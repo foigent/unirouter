@@ -146,6 +146,24 @@ const MOCK_TRACE_RESPONSE = {
       id: 5, event_type: 'provider.response_accepted', stage: 'provider', severity: 'info', model: 'gpt-4o', requested_model: 'gpt-4o',
       provider: 'azure', channel: 'secondary', status_code: 200, latency_ms: 220, attempt_id: 'att-secondary', metadata: {}, created_at: '2026-06-29T10:00:05Z',
     },
+    {
+      id: 6, event_type: 'billing.settle.succeeded', stage: 'billing', severity: 'info', model: 'gpt-4o', requested_model: 'gpt-4o',
+      provider: 'azure', channel: 'secondary', status_code: 200, latency_ms: 240, attempt_id: 'att-secondary',
+      metadata: {
+        billing_status: 'settled',
+        usage_source: 'upstream',
+        usage_confidence: 1,
+        actual_cost_micros: '150000',
+        charged_cost_micros: '150000',
+        money_schema: 'micro-cny.v1',
+        pricing_version: 'pv2_test',
+      },
+      capture_gap: 'redacted',
+      decision_kind: 'billing',
+      decision_result: 'allowed',
+      decision_reason: 'billing.settled',
+      created_at: '2026-06-29T10:00:06Z',
+    },
   ],
 };
 
@@ -160,6 +178,7 @@ function renderLogs() {
 describe('LogsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState(null, '', '/logs');
     auth.user = null;
     mockGetLogs.mockResolvedValue(MOCK_LOGS_RESPONSE);
     mockGetModelNames.mockResolvedValue(MOCK_MODEL_NAMES);
@@ -192,8 +211,7 @@ describe('LogsPage', () => {
       const html = container.textContent || '';
       expect(html).toContain('req-001-aaa');
       expect(html).toContain('req-002-bbb');
-      expect(html).toContain('¥0.150000');
-      expect(html).toContain('¥0.020000');
+      expect(html).toContain('执行决策凭证');
     });
   });
 
@@ -255,33 +273,35 @@ describe('LogsPage', () => {
     expect(container.querySelectorAll('button[aria-label="复制 Request ID"]').length).toBeGreaterThan(0);
   });
 
-  it('loads request trace events when opening log detail', async () => {
+  it('keeps the receipt inspector visible and automatically loads the first request trace', async () => {
     const { container } = renderLogs();
-    await waitFor(() => {
-      expect(container.textContent || '').toContain('req-001-aaa');
-    });
-
-    const requestID = await screen.findByText(/req-001-aaa/);
-    const row = requestID.closest('tr');
-    expect(row).toBeTruthy();
-    fireEvent.click(row as HTMLElement);
-
     await waitFor(() => {
       expect(mockGetLogTrace).toHaveBeenCalledWith(1);
     });
     await waitFor(() => {
-      expect(container.textContent || '').toContain('gateway.request.accepted');
+      const html = container.textContent || '';
+      expect(html).toContain('执行决策凭证');
+      expect(html).toContain('request accepted');
+      expect(html).toContain('api_key:key_123');
+      expect(window.location.search).toContain('log_id=1');
     });
+    expect(container.querySelector('.ur-explorer-detail')).toBeTruthy();
+    expect(container.querySelector('.semi-icon-close')).toBeFalsy();
   });
 
   it('shows authoritative provider prompt-cache usage separately from response caching', async () => {
     const { container } = renderLogs();
-    await waitFor(() => expect(container.textContent || '').toContain('req-001-aaa'));
-    const requestID = await screen.findByText(/req-001-aaa/);
-    fireEvent.click(requestID.closest('tr') as HTMLElement);
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Cost & Finality' }));
 
     await waitFor(() => {
       const html = container.textContent || '';
+      expect(html).toContain('财务终态');
+      expect(html).toContain('settled');
+      expect(html).toContain('Actual¥0.150000');
+      expect(html).toContain('Charged¥0.150000');
+      expect(html).toContain('micro-cny.v1');
+      expect(html).toContain('当前脱敏 Trace 合同不暴露');
       expect(html).toContain('供应商 Prompt Cache');
       expect(html).toContain('已回传缓存读/写');
       expect(html).toContain('普通输入350');
@@ -295,20 +315,97 @@ describe('LogsPage', () => {
     });
   });
 
-  it('renders PRD5 structural trace evidence fields in detail view', async () => {
-    const { container } = renderLogs();
-    await waitFor(() => {
-      expect(container.textContent || '').toContain('req-001-aaa');
+  it('does not infer financial finality from an HTTP success or log cost', async () => {
+    mockGetLogTrace.mockResolvedValue({
+      ...MOCK_TRACE_RESPONSE,
+      events: MOCK_TRACE_RESPONSE.events.filter(event => !event.event_type.startsWith('billing.')),
     });
-
-    const requestID = await screen.findByText(/req-001-aaa/);
-    const row = requestID.closest('tr');
-    expect(row).toBeTruthy();
-    fireEvent.click(row as HTMLElement);
+    const { container } = renderLogs();
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Cost & Finality' }));
 
     await waitFor(() => {
       const html = container.textContent || '';
-      expect(html).toContain('证据质量');
+      expect(html).toContain('Terminalnot captured');
+      expect(html).toContain('HTTP 成功和日志费用不会被当作财务终态');
+      expect(html).not.toContain('Terminalsettled');
+    });
+  });
+
+  it('preserves the exact cancelled no-billable-output terminal status', async () => {
+    mockGetLogTrace.mockResolvedValue({
+      ...MOCK_TRACE_RESPONSE,
+      events: [
+        ...MOCK_TRACE_RESPONSE.events.filter(event => !event.event_type.startsWith('billing.')),
+        {
+          id: 7,
+          event_type: 'billing.cancelled.no_billable_output',
+          stage: 'billing',
+          severity: 'info',
+          model: 'gpt-4o',
+          requested_model: 'gpt-4o',
+          provider: 'azure',
+          channel: 'secondary',
+          status_code: 200,
+          latency_ms: 240,
+          metadata: { billing_status: 'cancelled_no_billable_output' },
+          created_at: '2026-06-29T10:00:06Z',
+        },
+      ],
+    });
+    const { container } = renderLogs();
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Cost & Finality' }));
+
+    await waitFor(() => {
+      const html = container.textContent || '';
+      expect(html).toContain('Terminalcancelled_no_billable_output');
+      expect(html).toContain('billing.cancelled.no_billable_output');
+      expect(html).not.toContain('Terminalsettled');
+    });
+  });
+
+  it('does not present evidence as missing while the trace is still loading', async () => {
+    mockGetLogTrace.mockReturnValue(new Promise(() => {}));
+    const { container } = renderLogs();
+
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+    const html = container.textContent || '';
+    expect(html).toContain('执行证据加载中');
+    expect(html).toContain('加载完成前不作缺失或终态判断');
+    expect(html).not.toContain('not captured');
+    expect(html).not.toContain('执行证据不可用');
+  });
+
+  it('distinguishes unavailable trace evidence from successfully observed missing evidence', async () => {
+    mockGetLogTrace
+      .mockRejectedValueOnce(new Error('trace unavailable'))
+      .mockResolvedValueOnce(MOCK_TRACE_RESPONSE);
+    const { container } = renderLogs();
+
+    await waitFor(() => {
+      const html = container.textContent || '';
+      expect(html).toContain('执行证据不可用');
+      expect(html).toContain('unavailable');
+      expect(html).not.toContain('not captured');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '重试证据' }));
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Decision' })).toBeTruthy();
+      expect(container.textContent || '').toContain('request accepted');
+    });
+  });
+
+  it('renders PRD5 structural trace evidence fields in detail view', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Provenance & Gaps' }));
+
+    await waitFor(() => {
+      const html = container.textContent || '';
+      expect(html).toContain('Provenance 摘要');
       expect(html).toContain('capture: native');
       expect(html).toContain('payload: metadata_only');
       expect(html).toContain('decision: admission / accepted / request accepted');
@@ -322,9 +419,8 @@ describe('LogsPage', () => {
 
   it('summarizes route attempts and failover without changing routing semantics', async () => {
     const { container } = renderLogs();
-    await waitFor(() => expect(container.textContent || '').toContain('req-001-aaa'));
-    const requestID = await screen.findByText(/req-001-aaa/);
-    fireEvent.click(requestID.closest('tr') as HTMLElement);
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Attempts' }));
 
     await waitFor(() => {
       const html = container.textContent || '';
@@ -357,15 +453,54 @@ describe('LogsPage', () => {
     });
     const html = container.textContent || '';
     expect(html).not.toContain('req-001-aaa');
+    expect(html).toContain('暂无可检查的执行');
+    expect(container.querySelector('.ur-explorer-detail')).toBeTruthy();
   });
 
-  it('handles API error gracefully', async () => {
-    mockGetLogs.mockRejectedValue(new Error('Network error'));
+  it('switches the persistent inspector with keyboard navigation', async () => {
+    const { container } = renderLogs();
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(2));
+    const currentRequest = container.querySelector('.ur-request-id-full');
+    expect(currentRequest?.textContent || '').toContain('req-002-bbb');
+    expect(window.location.search).toContain('log_id=2');
+  });
+
+  it('does not hijack arrow keys from filter controls', async () => {
     renderLogs();
-    // Should not crash
-    await waitFor(() => {
-      expect(mockGetLogs).toHaveBeenCalled();
-    });
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
+
+    const filterControl = screen.getAllByRole('combobox')[0];
+    fireEvent.keyDown(filterControl, { key: 'ArrowDown' });
+
+    expect(mockGetLogTrace).not.toHaveBeenCalledWith(2);
+    expect(window.location.search).toContain('log_id=1');
+  });
+
+  it('restores a selected request from the log_id URL deep link', async () => {
+    window.history.replaceState(null, '', '/logs?log_id=2');
+    const { container } = renderLogs();
+
+    await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(2));
+    const currentRequest = container.querySelector('.ur-request-id-full');
+    expect(currentRequest?.textContent || '').toContain('req-002-bbb');
+    expect(window.location.search).toContain('log_id=2');
+  });
+
+  it('does not preserve stale receipts when the filtered log list is unavailable', async () => {
+    mockGetLogs.mockRejectedValueOnce(new Error('Network error'));
+    const { container } = renderLogs();
+
+    await waitFor(() => expect(container.textContent || '').toContain('请求列表不可用'));
+    expect(container.textContent || '').toContain('不会保留旧凭证');
+    expect(container.textContent || '').not.toContain('req-001-aaa');
+
+    fireEvent.click(screen.getByRole('button', { name: '重试列表' }));
+    await waitFor(() => expect(mockGetLogs).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(container.textContent || '').toContain('req-001-aaa'));
   });
 
   it('loads model names without requesting platform-only channel data', async () => {

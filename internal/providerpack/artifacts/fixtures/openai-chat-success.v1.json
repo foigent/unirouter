@@ -1,0 +1,79 @@
+{
+  "schema_version": "unirouter.provider-conformance-fixture.v1",
+  "fixture_id": "openai-chat-success.v1",
+  "adapter_type": "openai_compatible",
+  "request": {
+    "endpoint": "/v1/chat/completions",
+    "base_url": "https://api.openai.example/v1",
+    "requested_model": "company-chat",
+    "mapped_model": "gpt-4o-mini",
+    "request_id": "req-fixture-openai",
+    "adapter_config": {},
+    "body": {
+      "model": "company-chat",
+      "messages": [
+        {
+          "role": "user",
+          "content": "synthetic fixture"
+        }
+      ],
+      "max_tokens": 16
+    },
+    "expected": {
+      "method": "POST",
+      "url": "https://api.openai.example/v1/chat/completions",
+      "auth_header": "Authorization",
+      "model_on_wire": "gpt-4o-mini"
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "body": {
+      "id": "chatcmpl_fixture_openai",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "fixture response"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 7,
+        "completion_tokens": 5,
+        "total_tokens": 12
+      }
+    },
+    "expected_usage": {
+      "prompt_tokens": 7,
+      "completion_tokens": 5,
+      "total_tokens": 12,
+      "authority": "provider_reported",
+      "finality": "final"
+    }
+  },
+  "missing_usage_response": {
+    "status_code": 200,
+    "body": {
+      "id": "chatcmpl_fixture_openai_missing",
+      "choices": []
+    },
+    "expected_authority": "none",
+    "expected_finality": "missing"
+  },
+  "error_cases": [
+    {
+      "status_code": 429,
+      "body": {
+        "error": {
+          "code": "rate_limit",
+          "message": "synthetic rate limit"
+        }
+      },
+      "expected_failure_kind": "rate_limit",
+      "expected_retryable": true
+    }
+  ]
+}

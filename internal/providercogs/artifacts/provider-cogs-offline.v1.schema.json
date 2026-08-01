@@ -1,0 +1,348 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/provider-cogs-offline.v1.schema.json",
+  "title": "UniRouter Provider COGS Offline Import V1",
+  "description": "Structural schema. Cross-field identity, cursor, finality, attribution, decimal and financial-authority invariants are enforced by the zero-network conformance runner.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "import_id",
+    "provider",
+    "source_instance",
+    "currency",
+    "amount_scale",
+    "coverage",
+    "pages",
+    "source_snapshot"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "unirouter.provider-cogs-offline.v1"
+    },
+    "import_id": {
+      "$ref": "#/$defs/portable_id"
+    },
+    "provider": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "source_instance": {
+      "$ref": "#/$defs/hash_ref"
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "amount_scale": {
+      "$ref": "#/$defs/unsigned_decimal"
+    },
+    "coverage": {
+      "$ref": "#/$defs/coverage"
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/page"
+      }
+    },
+    "source_snapshot": {
+      "$ref": "#/$defs/source_snapshot"
+    }
+  },
+  "$defs": {
+    "portable_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "hash_ref": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "unsigned_decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "signed_decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*|-[1-9][0-9]*)$"
+    },
+    "utc_microsecond": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "provenance",
+        "detail"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "provider_data_delayed",
+            "request_attribution_unavailable",
+            "discount_credit_unallocated",
+            "tax_fx_unallocated"
+          ]
+        },
+        "provenance": {
+          "const": "declared"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_at",
+        "end_at",
+        "state",
+        "gaps"
+      ],
+      "properties": {
+        "start_at": {
+          "$ref": "#/$defs/utc_microsecond"
+        },
+        "end_at": {
+          "$ref": "#/$defs/utc_microsecond"
+        },
+        "state": {
+          "enum": [
+            "provisional",
+            "closed"
+          ]
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gap"
+          }
+        }
+      }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "line_id",
+        "revision",
+        "line_kind",
+        "granularity",
+        "evidence_level",
+        "observed_at",
+        "period_start",
+        "period_end",
+        "project_ref",
+        "upstream_request_id",
+        "line_item",
+        "amount_minor",
+        "finality"
+      ],
+      "properties": {
+        "line_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "revision": {
+          "$ref": "#/$defs/unsigned_decimal"
+        },
+        "line_kind": {
+          "enum": [
+            "charge",
+            "credit",
+            "tax",
+            "adjustment"
+          ]
+        },
+        "granularity": {
+          "enum": [
+            "request",
+            "project_bucket",
+            "account_bucket",
+            "invoice_line"
+          ]
+        },
+        "evidence_level": {
+          "enum": [
+            "exact_request_usage",
+            "aggregate_cost_matched",
+            "invoice_reconciled"
+          ]
+        },
+        "observed_at": {
+          "$ref": "#/$defs/utc_microsecond"
+        },
+        "period_start": {
+          "type": "string"
+        },
+        "period_end": {
+          "type": "string"
+        },
+        "project_ref": {
+          "type": "string"
+        },
+        "upstream_request_id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "line_item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "amount_minor": {
+          "$ref": "#/$defs/signed_decimal"
+        },
+        "finality": {
+          "enum": [
+            "provisional",
+            "final",
+            "invoice_reconciled"
+          ]
+        }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_id",
+        "page_index",
+        "cursor_in",
+        "cursor_out",
+        "is_last",
+        "lines"
+      ],
+      "properties": {
+        "page_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "page_index": {
+          "$ref": "#/$defs/unsigned_decimal"
+        },
+        "cursor_in": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "cursor_out": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "is_last": {
+          "type": "boolean"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/line"
+          }
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "org_ref",
+        "project_ref",
+        "request_id",
+        "attempt_id",
+        "provider",
+        "source_instance",
+        "upstream_request_id",
+        "occurred_at",
+        "provider_estimate_minor",
+        "provider_currency",
+        "provider_amount_scale",
+        "customer_revenue_micros",
+        "customer_currency",
+        "customer_amount_scale"
+      ],
+      "properties": {
+        "org_ref": {
+          "$ref": "#/$defs/hash_ref"
+        },
+        "project_ref": {
+          "type": "string"
+        },
+        "request_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "source_instance": {
+          "$ref": "#/$defs/hash_ref"
+        },
+        "upstream_request_id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/utc_microsecond"
+        },
+        "provider_estimate_minor": {
+          "$ref": "#/$defs/signed_decimal"
+        },
+        "provider_currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "provider_amount_scale": {
+          "$ref": "#/$defs/unsigned_decimal"
+        },
+        "customer_revenue_micros": {
+          "$ref": "#/$defs/unsigned_decimal"
+        },
+        "customer_currency": {
+          "const": "CNY"
+        },
+        "customer_amount_scale": {
+          "const": "1000000"
+        }
+      }
+    },
+    "source_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "snapshot_id",
+        "created_at",
+        "attempts"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "unirouter.provider-attempt-snapshot.v1"
+        },
+        "snapshot_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "created_at": {
+          "$ref": "#/$defs/utc_microsecond"
+        },
+        "attempts": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/attempt"
+          }
+        }
+      }
+    }
+  }
+}

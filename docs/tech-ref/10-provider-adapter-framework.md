@@ -54,8 +54,9 @@ This is a compatibility refactor, not a downstream API change.
 
 | Adapter Type | Phase | Purpose |
 |--------------|-------|---------|
-| `openai_compatible` | P0 | Existing relay semantics for OpenAI-compatible upstreams |
-| `anthropic_native` | P1 proof in progress | Native Anthropic Messages API non-stream and stream proof fixed locally; awaiting independent verification |
+| `openai_compatible` | Implemented | Existing relay semantics for OpenAI-compatible upstreams |
+| `anthropic_native` | Implemented | Native Anthropic Messages API conversion and normalization |
+| `azure_openai` | PRD7 B1 Local verified | Deployment-scoped Azure OpenAI Chat/Embeddings with GA API version and explicit auth mode |
 | `gemini_native` | P1/P2 candidate | Native Gemini API proof if customer demand requires |
 | `vendor_native_*` | Later | Baidu, Tongyi, Wenxin, or other native providers |
 
@@ -232,12 +233,17 @@ Every adapter must include:
 
 ## 12. Current Implementation Notes
 
-As of PRD2 Batch 13 local implementation, `anthropic_native` is registered in the default adapter registry for chat completions:
+`anthropic_native` is registered in the default adapter registry for chat
+completions:
 
 - Downstream clients still call UniRouter's OpenAI-compatible `/v1/chat/completions`.
 - The adapter converts OpenAI-compatible chat requests to Anthropic `/v1/messages`.
 - Anthropic `input_tokens/output_tokens` are normalized to `prompt_tokens/completion_tokens`.
 - Anthropic non-stream responses are converted back to OpenAI-compatible `chat.completion` response bodies before UniRouter injects `_uniroute`.
+
+As of PRD7 B1, `azure_openai` is also registered for Chat and Embeddings. Its
+strict wire contract, fixture identities and offline evidence are defined in
+`30-provider-conformance-pack-v1.md`.
 - Anthropic stream events are converted to OpenAI-compatible `chat.completion.chunk` SSE data chunks before downstream delivery.
 - Stream usage is taken from Anthropic `message_start` + `message_delta` when complete; missing completion usage falls back to UniRouter's stream counter path.
 - UniRouter still emits one final chunk containing `usage` and `_uniroute`, then exactly one terminal `[DONE]`.

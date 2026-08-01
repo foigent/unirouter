@@ -541,6 +541,207 @@ func TestLoad_InvalidStreamPolicyFailsClosed(t *testing.T) {
 	}
 }
 
+func TestValidateOTelExportIsDefaultOffAndFailClosedWhenEnabled(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			JWTSecret:          "secret",
+			APIKeyHashSecret:   "api-key-secret",
+			EncryptionKey:      "0123456789abcdef0123456789abcdef",
+			FreezeSafetyFactor: "1",
+			TraceEventsEnabled: true,
+			OTelExportEnabled:  true,
+			OTelExportEndpoint: "http://otel-collector:4318",
+		}
+	}
+	if err := base().Validate(); err != nil {
+		t.Fatalf("expected valid metadata-only exporter config: %v", err)
+	}
+
+	missingEndpoint := base()
+	missingEndpoint.OTelExportEndpoint = ""
+	if err := missingEndpoint.Validate(); err == nil || !strings.Contains(err.Error(), "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
+		t.Fatalf("expected missing endpoint failure, got %v", err)
+	}
+	traceDisabled := base()
+	traceDisabled.TraceEventsEnabled = false
+	if err := traceDisabled.Validate(); err == nil || !strings.Contains(err.Error(), "TRACE_EVENTS_ENABLED") {
+		t.Fatalf("expected trace source dependency failure, got %v", err)
+	}
+	credentialURL := base()
+	credentialURL.OTelExportEndpoint = "http://user:secret@collector:4318/v1/traces"
+	if err := credentialURL.Validate(); err == nil {
+		t.Fatal("expected endpoint userinfo rejection")
+	}
+	oversizedQueue := base()
+	oversizedQueue.OTelExportQueueSize = 65537
+	if err := oversizedQueue.Validate(); err == nil {
+		t.Fatal("expected bounded queue validation failure")
+	}
+}
+
+func TestLoadOTelExportDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load default config: %v", err)
+	}
+	if cfg.OTelExportEnabled {
+		t.Fatal("OTLP export must be default off")
+	}
+	if cfg.OTelExportQueueSize != 256 || cfg.OTelExportBatchSize != 32 ||
+		cfg.OTelExportFlushIntervalMS != 500 || cfg.OTelExportTimeoutMS != 2000 ||
+		cfg.OTelExportMaxRetries != 2 {
+		t.Fatalf("unexpected bounded exporter defaults: %+v", cfg.TelemetryExportConfig())
+	}
+
+	t.Setenv("UNIROUTE_OTEL_EXPORT_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://otel-collector:4318/v1/traces")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_QUEUE_SIZE", "64")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_BATCH_SIZE", "8")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_FLUSH_INTERVAL_MS", "100")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_TIMEOUT_MS", "750")
+	t.Setenv("UNIROUTE_OTEL_EXPORT_MAX_RETRIES", "1")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("load exporter overrides: %v", err)
+	}
+	effective := cfg.TelemetryExportConfig()
+	if !effective.Enabled || effective.QueueSize != 64 || effective.BatchSize != 8 ||
+		effective.FlushInterval != 100*time.Millisecond || effective.Timeout != 750*time.Millisecond ||
+		effective.MaxRetries != 1 {
+		t.Fatalf("unexpected exporter overrides: %+v", effective)
+	}
+}
+
+func TestValidateAsyncMediaImageV1IsDefaultOffAndFailClosed(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			JWTSecret: "secret", APIKeyHashSecret: "api-key-secret",
+			EncryptionKey:                 "0123456789abcdef0123456789abcdef",
+			FreezeSafetyFactor:            "1",
+			RuntimeEnvironment:            "production",
+			AsyncMediaEnabled:             true,
+			AsyncMediaAdmissionEnabled:    true,
+			AsyncMediaS3Region:            "us-east-1",
+			AsyncMediaS3Bucket:            "unirouter-media-prod",
+			AsyncMediaS3Endpoint:          "https://s3.example.test",
+			AsyncMediaS3Prefix:            "unirouter-media",
+			AsyncMediaLeaseSeconds:        300,
+			AsyncMediaPurgeLeaseSeconds:   60,
+			AsyncMediaPollMilliseconds:    500,
+			AsyncMediaProviderTimeoutSecs: 180,
+			AsyncMediaMaxAttempts:         3,
+		}
+	}
+	if err := base().Validate(); err != nil {
+		t.Fatalf("valid async-media config: %v", err)
+	}
+	for name, mutate := range map[string]func(*Config){
+		"missing bucket": func(c *Config) { c.AsyncMediaS3Bucket = "" },
+		"IP bucket":      func(c *Config) { c.AsyncMediaS3Bucket = "127.0.0.1" },
+		"insecure production endpoint": func(c *Config) {
+			c.AsyncMediaS3Endpoint = "http://s3.example.test"
+		},
+		"endpoint path": func(c *Config) {
+			c.AsyncMediaS3Endpoint = "https://s3.example.test/private"
+		},
+		"endpoint userinfo": func(c *Config) {
+			c.AsyncMediaS3Endpoint = "https://access:secret@s3.example.test"
+		},
+		"unsafe prefix":    func(c *Config) { c.AsyncMediaS3Prefix = "../media" },
+		"invalid attempts": func(c *Config) { c.AsyncMediaMaxAttempts = 0 },
+		"lease shorter than provider budget": func(c *Config) {
+			c.AsyncMediaLeaseSeconds = c.AsyncMediaProviderTimeoutSecs + 59
+		},
+		"admission without runtime": func(c *Config) {
+			c.AsyncMediaEnabled = false
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := base()
+			mutate(cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("expected async-media validation failure")
+			}
+		})
+	}
+	localHTTP := base()
+	localHTTP.RuntimeEnvironment = "local"
+	localHTTP.AsyncMediaS3Endpoint = "http://127.0.0.1:9000"
+	if err := localHTTP.Validate(); err != nil {
+		t.Fatalf("loopback S3-compatible development endpoint: %v", err)
+	}
+}
+
+func TestLoadAsyncMediaDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load default config: %v", err)
+	}
+	if cfg.AsyncMediaEnabled ||
+		cfg.AsyncMediaAdmissionEnabled ||
+		cfg.AsyncMediaS3Region != "us-east-1" ||
+		cfg.AsyncMediaS3Prefix != "unirouter-media" ||
+		cfg.AsyncMediaLeaseSeconds != 300 ||
+		cfg.AsyncMediaPurgeLeaseSeconds != 60 ||
+		cfg.AsyncMediaPollMilliseconds != 500 ||
+		cfg.AsyncMediaProviderTimeoutSecs != 180 ||
+		cfg.AsyncMediaMaxAttempts != 3 {
+		t.Fatalf("unexpected async-media defaults: %+v", cfg)
+	}
+
+	t.Setenv("ASYNC_MEDIA_ENABLED", "true")
+	t.Setenv("ASYNC_MEDIA_S3_REGION", "us-west-2")
+	t.Setenv("ASYNC_MEDIA_S3_BUCKET", "unirouter-media-fixture")
+	t.Setenv("ASYNC_MEDIA_S3_ENDPOINT", "https://s3.example.test")
+	t.Setenv("ASYNC_MEDIA_S3_PREFIX", "tenant-media")
+	t.Setenv("ASYNC_MEDIA_S3_FORCE_PATH_STYLE", "true")
+	t.Setenv("ASYNC_MEDIA_WORKER_ID", "worker-1")
+	t.Setenv("ASYNC_MEDIA_LEASE_SECONDS", "180")
+	t.Setenv("ASYNC_MEDIA_PURGE_LEASE_SECONDS", "30")
+	t.Setenv("ASYNC_MEDIA_POLL_MILLISECONDS", "250")
+	t.Setenv("ASYNC_MEDIA_PROVIDER_TIMEOUT_SECONDS", "90")
+	t.Setenv("ASYNC_MEDIA_MAX_ATTEMPTS", "2")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("load async-media overrides: %v", err)
+	}
+	if !cfg.AsyncMediaEnabled ||
+		cfg.AsyncMediaAdmissionEnabled ||
+		cfg.AsyncMediaS3Region != "us-west-2" ||
+		cfg.AsyncMediaS3Bucket != "unirouter-media-fixture" ||
+		!cfg.AsyncMediaS3ForcePathStyle ||
+		cfg.AsyncMediaWorkerID != "worker-1" ||
+		cfg.AsyncMediaLeaseSeconds != 180 ||
+		cfg.AsyncMediaMaxAttempts != 2 {
+		t.Fatalf("unexpected async-media overrides: %+v", cfg)
+	}
+
+	t.Setenv("ASYNC_MEDIA_ADMISSION_ENABLED", "true")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("load active async-media admission: %v", err)
+	}
+	if !cfg.AsyncMediaEnabled || !cfg.AsyncMediaAdmissionEnabled {
+		t.Fatalf("explicit admission enablement was not honored: %+v", cfg)
+	}
+
+	t.Setenv("ASYNC_MEDIA_ADMISSION_ENABLED", "false")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("load maintenance-mode async-media config: %v", err)
+	}
+	if !cfg.AsyncMediaEnabled || cfg.AsyncMediaAdmissionEnabled {
+		t.Fatalf("runtime cleanup must remain enabled while admission is paused: %+v", cfg)
+	}
+}
+
 func TestLoad_WorkloadAdmissionEnvOverrides(t *testing.T) {
 	t.Setenv("JWT_SECRET", "jwt-secret")
 	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")

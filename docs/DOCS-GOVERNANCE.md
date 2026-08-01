@@ -10,10 +10,10 @@
 | Codebase map | `docs/CODEBASE-MAP.md` | High-level implementation map, not a substitute for reading code |
 | Document inventory | `docs/DOC-INVENTORY.md` | Classifies current, reference, and historical docs |
 | Active delivery scope | `docs/agent-workflows/EXECUTION-RECORD.md` | Current issue/corrective batch, baseline, non-goals, verification and promotion state; it cannot silently reopen a completed PRD |
-| Product lineage | `docs/PRD-Phase1.md` through `docs/PRD-Phase6.md` | Frozen/completed requirements references, not current-progress sources |
+| Product lineage | `docs/PRD-Phase1.md` through `docs/PRD-Phase7.md` | PRD1–PRD6 are frozen/completed references; PRD7 is the accepted active product scope |
 | Current status | `docs/ops/CURRENT-STATUS.md` | Current verified summary for progress, tests, deployment, gaps and explicit non-claims |
-| PRD acceptance | `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | Evidence-backed acceptance state for completed or frozen PRD checklist items |
-| Future candidate backlog | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | Candidate and prerequisite-gated capability record; it is not Accepted Scope or execution authorization |
+| PRD acceptance | `docs/ops/PRD7-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD6-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD5-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD4-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD3-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD2-ACCEPTANCE-MATRIX.md`, `docs/ops/PRD-ACCEPTANCE-MATRIX.md` | Evidence-backed acceptance state for active, completed or frozen PRD checklist items |
+| Historical PRD7 candidate input | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | Preserved candidate and prerequisite record; later accepted scope is authoritative in `docs/PRD-Phase7.md` and its matrix |
 | Engineering governance | `docs/governance/README.md` | Minimum ADR, API compatibility, migration/rollback, release, incident, and deprecation rules |
 | Active issues | `docs/issues/OPEN-ISSUES.md` | Only active unresolved issues and recently closed items |
 | Agent protocol | `docs/agent-workflows/AGENT-PROTOCOL.md` | Single execution owner, approval, evidence and optional review rules |
@@ -34,7 +34,7 @@
 | PRD5 | Completed / Accepted Scope Complete | Preserve its scope and evidence; do not route new work back into PRD5. |
 | PRD6 | Completed (Accepted Scope) | Preserve the 27/27 accepted-row closeout. Later issue-driven corrections are separate batches, not silent PRD6 reopening. |
 | Post-PRD6 V1 corrections | Issue-driven delivery batches only | Use `EXECUTION-RECORD.md`, `OPEN-ISSUES.md` and new evidence. State exact non-goals and keep previous immutable closeout evidence unchanged. |
-| PRD7 | Candidate only | `PRD7-CANDIDATE-BACKLOG.md` records candidates and prior decisions; implementation requires explicit Accepted Scope. |
+| PRD7 | Accepted repository-local scope / active | `docs/PRD-Phase7.md`, its acceptance matrix and implementation plan govern execution; runtime and external actions retain separate gates. |
 
 ## Rules
 
@@ -46,7 +46,10 @@
 6. Execution is risk-tiered by `docs/agent-workflows/AGENT-PROTOCOL.md`: R2/R3/R4 changes update `EXECUTION-RECORD.md` and evidence as applicable; independent review is optional unless the User explicitly requires it. P0/P1 findings block an active batch; findings after release create a new corrective batch without rewriting evidence or silently reopening a completed PRD.
 7. Documentation-only changes use the protocol only when they alter current status, issue state, acceptance state, phase boundaries, reader entrypoints, or process rules.
 8. Root and docs README files must route readers to the active delivery batch and customer/developer task first, then frozen/historical references.
-9. PRD7 candidates must not be described as implemented, accepted, or scheduled unless a later approved PRD or an explicitly separate delivery decision says so; a separate V1 correction does not accept PRD7 as a whole.
+9. Historical PRD7 candidates must not be described as implemented unless the
+   active PRD7 matrix contains the row and exact evidence. The User's
+   2026-07-30/31 decisions accept the scope in `docs/PRD-Phase7.md`; they do
+   not retroactively change old evidence or authorize runtime actions.
 
 ## Cleanup Policy
 

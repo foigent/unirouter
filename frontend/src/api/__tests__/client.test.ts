@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock fetch globally
 const mockFetch = vi.fn()
@@ -21,6 +21,13 @@ vi.stubGlobal('window', { location: { href: '/' } })
 
 // Import after mocks are set up
 const { api, ApiError } = await import('../client')
+
+afterAll(() => {
+  // This suite replaces the complete Window object to make navigation
+  // assertions deterministic. Restore jsdom for later files when Vitest runs
+  // the repository in one worker.
+  vi.unstubAllGlobals()
+})
 
 function mockJsonResponse(payload: unknown, status = 200) {
   mockFetch.mockResolvedValueOnce({
@@ -409,6 +416,144 @@ describe('API Client', () => {
       await api.getReconciliation(2, 50, { model: 'company-chat', status: 'reconciled', usage_source: 'adapter_estimated' })
       const url = mockFetch.mock.calls[0][0]
       expect(url).toBe('/api/v1/reconciliation?page=2&page_size=50&model=company-chat&status=reconciled&usage_source=adapter_estimated')
+    })
+  })
+
+  describe('provider COGS offline preview', () => {
+    it('keeps the supplied evidence as the exact JSON request body', async () => {
+      const evidence = '{"contract_version":"unirouter.provider-cogs-offline.v1"}'
+      mockJsonResponse({ customer_ledger_mutation: 'none' })
+
+      await api.previewProviderCOGSOffline(evidence)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/provider-cogs/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: evidence,
+      }))
+    })
+
+    it('reads the non-persistent contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.provider-cogs-offline.v1' })
+
+      await api.getProviderCOGSOfflineContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/provider-cogs/offline-contract')
+    })
+  })
+
+  describe('governance simulation offline preview', () => {
+    it('keeps the supplied immutable snapshot as the exact JSON request body', async () => {
+      const snapshot = '{"contract_version":"unirouter.governance-simulation.v1"}'
+      mockJsonResponse({ runtime_mutation: 'none' })
+
+      await api.previewGovernanceSimulation(snapshot)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/governance-simulation/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: snapshot,
+      }))
+    })
+
+    it('reads the no-promotion contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.governance-simulation.v1' })
+
+      await api.getGovernanceSimulationContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/governance-simulation/offline-contract')
+    })
+  })
+
+  describe('member lifecycle offline preview', () => {
+    it('keeps the supplied lifecycle event as the exact JSON request body', async () => {
+      const event = '{"contract_version":"unirouter.member-lifecycle.v1"}'
+      mockJsonResponse({ runtime_mutation: 'none' })
+
+      await api.previewMemberLifecycle(event)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/member-lifecycle/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: event,
+      }))
+    })
+
+    it('reads the IdP-neutral contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.member-lifecycle.v1' })
+
+      await api.getMemberLifecycleContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/member-lifecycle/offline-contract')
+    })
+  })
+
+  describe('Agent Trust offline preview', () => {
+    it('keeps the supplied trust review as the exact JSON request body', async () => {
+      const review = '{"contract_version":"unirouter.agent-trust-review.v1"}'
+      mockJsonResponse({ runtime_mutation: 'none' })
+
+      await api.previewAgentTrust(review)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/agent-trust/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: review,
+      }))
+    })
+
+    it('reads the no-runtime-trust contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.agent-trust-review.v1' })
+
+      await api.getAgentTrustContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/agent-trust/offline-contract')
+    })
+  })
+
+  describe('Provenance Passport offline preview', () => {
+    it('keeps the supplied Source passport as the exact JSON request body', async () => {
+      const passport = '{"contract_version":"unirouter.provenance-passport.v1"}'
+      mockJsonResponse({ runtime_boundary: { runtime_mutation: 'none' } })
+
+      await api.previewProvenancePassport(passport)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/provenance-passport/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: passport,
+      }))
+    })
+
+    it('reads the no-runtime-connector contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.provenance-passport.v1' })
+
+      await api.getProvenancePassportContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/provenance-passport/offline-contract')
+    })
+  })
+
+  describe('Risk Control offline preview', () => {
+    it('keeps the supplied composition review as the exact JSON request body', async () => {
+      const review = '{"contract_version":"unirouter.risk-control-review.v1"}'
+      mockJsonResponse({ runtime_boundary: { runtime_mutation: 'none' } })
+
+      await api.previewRiskControl(review)
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/risk-control/offline-preview')
+      expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: review,
+      }))
+    })
+
+    it('reads the no-enforcement risk-control contract', async () => {
+      mockJsonResponse({ contract_version: 'unirouter.risk-control-review.v1' })
+
+      await api.getRiskControlContract()
+
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/risk-control/offline-contract')
     })
   })
 

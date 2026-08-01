@@ -163,7 +163,7 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('财务与用量总览')).toBeTruthy();
     expect(screen.getByText('任务入口')).toBeTruthy();
     expect(screen.getByRole('button', { name: '资金账户' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '计量校验' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '财务真值' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '上游通道' })).toBeNull();
     expect(screen.queryByRole('button', { name: '用户管理' })).toBeNull();
     expect(screen.getByText('可用余额')).toBeTruthy();

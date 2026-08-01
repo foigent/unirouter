@@ -43,6 +43,20 @@ const endpointGroups = [
     ],
   },
   {
+    area: 'Async Media',
+    endpoints: [
+      ['POST', '/v1/media/jobs', '项目根 API Key 提交单张 GPT Image V1 异步任务；必须提供 Idempotency-Key'],
+      ['GET', '/v1/media/jobs/{id}', '读取同一项目内的任务状态，不返回 Prompt、凭据或对象地址'],
+      ['POST', '/v1/media/jobs/{id}/cancel', '请求取消；终态成功竞争返回 too_late，不自动退款'],
+      ['GET', '/v1/media/jobs/{id}/content', '在固定七天期限内通过鉴权代理读取图像，不签发公开 URL'],
+      ['GET', '/api/v1/media-jobs/contract', '读取 Image V1 运行边界、启用状态、保留和计费事实合同'],
+      ['GET', '/api/v1/media-jobs', '按授权项目读取图像任务列表'],
+      ['GET', '/api/v1/media-jobs/{id}', '在常驻检查器中读取任务元数据'],
+      ['POST', '/api/v1/media-jobs/{id}/cancel', '项目操作员请求取消任务'],
+      ['GET', '/api/v1/media-jobs/{id}/content', '控制台通过 JWT 鉴权代理读取未到期图像'],
+    ],
+  },
+  {
     area: 'Private Integration',
     endpoints: [
       ['GET', '/api/v1/integrations/xinsight/completed-executions', 'X-Insight 使用项目绑定、网络绑定且不可调用模型的专用 service key 拉取终态执行元数据'],
@@ -93,6 +107,7 @@ const endpointGroups = [
       ['PUT', '/api/v1/channels/{id}', '更新上游通道'],
       ['DELETE', '/api/v1/channels/{id}', '删除上游通道'],
       ['POST', '/api/v1/channels/{id}/test', '测试上游通道'],
+      ['GET', '/api/v1/provider-packs', '列出离线 fixture-verified Provider Pack、能力和精确摘要'],
       ['GET', '/api/v1/routing/preview', '只读预览模型的路由候选、排除原因与快照状态'],
       ['GET', '/api/v1/channel-keys', '上游凭证列表'],
       ['POST', '/api/v1/channel-keys', '创建上游凭证'],
@@ -175,6 +190,18 @@ const endpointGroups = [
       ['GET', '/api/v1/reconciliation', '估算/实际用量及供应商 Prompt Cache 分项对账'],
       ['POST', '/api/v1/provider-cost/reconciliations', '平台管理员处理未决供应商成本；请求不接受金额，collect 仅重放权威用量与冻结客户价'],
       ['GET', '/api/v1/provider-cost/pending', '平台管理员按明确组织查看最多 100 条未决供应商成本元数据'],
+      ['GET', '/api/v1/provider-cogs/offline-contract', '查看供应商成本离线预览合同；不接凭据、不访问供应商、不保存数据'],
+      ['POST', '/api/v1/provider-cogs/offline-preview', '在内存中校验供应商成本证据；聚合成本不归因且不会修改客户账'],
+      ['GET', '/api/v1/governance-simulation/offline-contract', '平台管理员读取离线路由/策略模拟与 Provider Change Firewall 合同；不接收凭据、不提升运行时'],
+      ['POST', '/api/v1/governance-simulation/offline-preview', '平台管理员用同一套路由内核比较不可变快照；shadow/canary/enforced 仅为模拟目标模式'],
+      ['GET', '/api/v1/member-lifecycle/offline-contract', '平台或组织管理员读取 IdP 中立的成员生命周期合同；不选择 SCIM 供应商'],
+      ['POST', '/api/v1/member-lifecycle/offline-preview', '离线评估创建、更新、暂停和退场事件；不修改用户、会话、成员、能力或目录'],
+      ['GET', '/api/v1/agent-trust/offline-contract', '平台或组织管理员读取 Agent Trust、签名收据与数字孪生合同；fixture 公钥不是生产信任根'],
+      ['POST', '/api/v1/agent-trust/offline-preview', '离线校验权限衰减、祖先预算、TTL、撤销与签名；不接私钥、不授权运行时执行'],
+      ['GET', '/api/v1/provenance-passport/offline-contract', '平台或组织管理员读取精确 Source、Capture Gap 与两类 Connector 证据合同'],
+      ['POST', '/api/v1/provenance-passport/offline-preview', '从完整 Source bytes 生成 Passport；不修改 Feed、Cursor、Checkpoint 或运行时 registry'],
+      ['GET', '/api/v1/risk-control/offline-contract', '平台或组织管理员读取 B8/B10/B11 组合后的风险建议与人工审阅控制提案合同'],
+      ['POST', '/api/v1/risk-control/offline-preview', '生成有租户、Audience、TTL、Epoch 边界的离线建议；不读运行时策略、不发流量、不晋级或执行'],
     ],
   },
   {
@@ -209,6 +236,12 @@ const organizationModelGovernanceWrites = new Set([
 
 function endpointVisibleForRole(area: string, method: string, path: string, role?: string) {
   if (area === 'Auth' || area === 'Platform' || area === 'Gateway') return true;
+  if (area === 'Async Media') {
+    if (path.startsWith('/v1/')) return true;
+    if (isBillingRole(role) || isOrgViewerRole(role)) return false;
+    if (normalizeRole(role) === 'viewer') return method === 'GET';
+    return isPlatformAdminRole(role) || isOrgAdminRole(role) || isProjectConsoleRole(role);
+  }
   if (isPlatformAdminRole(role)) return true;
 
   if (area === '开发者工作台') {
@@ -250,8 +283,9 @@ function endpointVisibleForRole(area: string, method: string, path: string, role
     if (isBillingRole(role)) {
       return method === 'GET' && (
         path.includes('/model-prices') || path.includes('/model-names') ||
-        path.includes('/org-model-prices') || path.endsWith('/reconciliation')
-      );
+        path.includes('/org-model-prices') || path.endsWith('/reconciliation') ||
+        path.endsWith('/provider-cogs/offline-contract')
+      ) || (method === 'POST' && path.endsWith('/provider-cogs/offline-preview'));
     }
     if (isProjectAdminRole(role)) return method === 'GET' && path === '/api/v1/model-sets';
     return false;
@@ -313,7 +347,7 @@ export default function ApiDocsPage() {
             <Text><Text code>X-Request-ID</Text>：UniRouter 每次请求强制生成的操作 ID，用于串联网关、计费、审计和故障切换。</Text>
             <Text><Text code>X-UniRouter-Client-Request-ID</Text>：调用方自己的关联值，只用于查找，不作为全局财务主键。</Text>
             <Text><Text code>X-UniRouter-Limit-Policy-Version</Text>：本次网关准入实际使用的共享限额策略集合指纹，可与请求日志中的策略链一起排障。</Text>
-            <Text><Text code>Idempotency-Key</Text>：Chat / Embeddings 的 24 小时去重键，按组织、API Key 和请求内容隔离；当前仅返回状态回执，不保存或重放模型回答。</Text>
+            <Text><Text code>Idempotency-Key</Text>：Chat / Embeddings 使用 24 小时元数据去重；图像任务使用项目、API Key 与请求内容绑定的持久身份。两者都不会在准入响应中重放模型输出。</Text>
           </div>
         </Surface>
         <Surface title="Agent 能力边界" description="UniRouter 只授予模型网关调用权，不授予 Tool、IAM、数据库或导出权限。">

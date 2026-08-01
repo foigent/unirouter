@@ -1,0 +1,142 @@
+{
+  "schema_version": "unirouter.provider-conformance-report.v1",
+  "schema_sha256": "sha256:f2252611cc0bb84c98ef39a1bba50284aeeb09ec782046f0a15847135896377e",
+  "packs": [
+    {
+      "pack_id": "unirouter.anthropic.core",
+      "pack_version": "1.0.0",
+      "adapter_type": "anthropic_native",
+      "manifest_sha256": "sha256:2cc0948f70a70ade76f1dc6e5868e971e8c71cd3c4404028960d50e4895a2c67",
+      "fixtures": [
+        {
+          "fixture_id": "anthropic-chat-success.v1",
+          "sha256": "sha256:34a12e76ec3d77259c91cf8d7a7486f976ed0d0fbc925f82093da7669da5da6e"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "anthropic-chat-success.v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-chat-success.v1/usage",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-chat-success.v1/missing-usage",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-chat-success.v1/error-1",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "pack_id": "unirouter.azure-openai.core",
+      "pack_version": "1.0.0",
+      "adapter_type": "azure_openai",
+      "manifest_sha256": "sha256:d38c6ffe9147790d7cdbaa4f01fd6e772df29dbe2acd63e1e607244282fde9d6",
+      "fixtures": [
+        {
+          "fixture_id": "azure-openai-chat-success.v1",
+          "sha256": "sha256:8f9f36ff23c7d61d2708ac97c8cd09fd7ff631985622ec9de86ac9638581bb49"
+        },
+        {
+          "fixture_id": "azure-openai-embeddings-success.v1",
+          "sha256": "sha256:c38f2d0e6b92539125d5aa170a433582ad680cafb82ebe857592aac65bb7df69"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "azure-openai-chat-success.v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "azure-openai-chat-success.v1/usage",
+          "passed": true
+        },
+        {
+          "case_id": "azure-openai-chat-success.v1/missing-usage",
+          "passed": true
+        },
+        {
+          "case_id": "azure-openai-chat-success.v1/error-1",
+          "passed": true
+        },
+        {
+          "case_id": "azure-openai-embeddings-success.v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "azure-openai-embeddings-success.v1/usage",
+          "passed": true
+        },
+        {
+          "case_id": "azure-openai-embeddings-success.v1/missing-usage",
+          "passed": true
+        },
+        {
+          "case_id": "azure-openai-embeddings-success.v1/error-1",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "pack_id": "unirouter.openai.core",
+      "pack_version": "1.0.0",
+      "adapter_type": "openai_compatible",
+      "manifest_sha256": "sha256:aca97cdb6199acab6cb5107ba4213eec88bb873c415d0085d4c4176c96a0ced9",
+      "fixtures": [
+        {
+          "fixture_id": "openai-chat-success.v1",
+          "sha256": "sha256:6b95c320fb75b9e74e30dc2a5e07a282ad83e20329a19e4271d8fb79ac87a861"
+        },
+        {
+          "fixture_id": "openai-embeddings-success.v1",
+          "sha256": "sha256:5ba8db14c310d1ca60e953dc27806e2b71ea5dcaee3210b3ecd5849dc9d6b150"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "openai-chat-success.v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "openai-chat-success.v1/usage",
+          "passed": true
+        },
+        {
+          "case_id": "openai-chat-success.v1/missing-usage",
+          "passed": true
+        },
+        {
+          "case_id": "openai-chat-success.v1/error-1",
+          "passed": true
+        },
+        {
+          "case_id": "openai-embeddings-success.v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "openai-embeddings-success.v1/usage",
+          "passed": true
+        },
+        {
+          "case_id": "openai-embeddings-success.v1/missing-usage",
+          "passed": true
+        },
+        {
+          "case_id": "openai-embeddings-success.v1/error-1",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "packs": 3,
+    "cases": 20,
+    "passed": 20,
+    "failed": 0
+  }
+}

@@ -98,6 +98,13 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `TRACE_EVENT_SAMPLE_RATE` | `1` | 按 `request_id` 确定性采样，范围 `0..1`；例如 `0.1` 约采样 10% 请求并保留同一请求的完整事件段 |
 | `TRACE_EVENT_RETENTION_DAYS` | `LOG_RETENTION_DAYS` | `request_trace_events` 自动清理窗口；设为 `0` 时跳过 trace event 清理但不关闭写入，关闭写入仍使用 `TRACE_EVENTS_ENABLED=false` |
 | `PAYLOAD_CAPTURE_MODE` | `metadata_only` | PRD5 payload evidence 状态；当前仅支持 `metadata_only` 和 `disabled`，不会启用 raw prompt/response 存储 |
+| `UNIROUTE_OTEL_EXPORT_ENABLED` | `false` | 开启 metadata-only OTLP/HTTP trace export；必须同时保持 `TRACE_EVENTS_ENABLED=true`。默认关闭，collector 故障和队列丢弃不会改变网关请求、Outbox 或计费结果 |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | 空 | 开启导出时必填；可填 collector origin 或精确 `/v1/traces` URL，仅允许 http/https，拒绝 userinfo、query 和 fragment。B3 不支持自定义鉴权 header，需鉴权的 collector 等待 B4 secret-reference 接线或置于已受控的本地代理后 |
+| `UNIROUTE_OTEL_EXPORT_QUEUE_SIZE` | `256` | 单进程固定内存队列，范围 `1..65536`；满时 fail-open 丢弃 export snapshot，不阻塞请求 |
+| `UNIROUTE_OTEL_EXPORT_BATCH_SIZE` | `32` | 单次 OTLP 请求 span 上限，范围 `1..128` 且不得大于 queue |
+| `UNIROUTE_OTEL_EXPORT_FLUSH_INTERVAL_MS` | `500` | 非满批次刷新窗口，范围 `10..60000` 毫秒 |
+| `UNIROUTE_OTEL_EXPORT_TIMEOUT_MS` | `2000` | 每次 collector 请求的硬超时，范围 `50..60000` 毫秒 |
+| `UNIROUTE_OTEL_EXPORT_MAX_RETRIES` | `2` | 仅网络失败及 HTTP 429/502/503/504 的附加重试次数，范围 `0..5`；HTTP 200 partial success 已确认、不重试 |
 | `CHAT_REQUEST_MAX_BYTES` | `8388608` | Chat 同步 JSON 请求默认 8 MiB；应用按实际读取字节执行，不信任 `Content-Length` |
 | `EMBEDDINGS_REQUEST_MAX_BYTES` | `16777216` | Embeddings 批量同步请求默认 16 MiB；大媒体不应通过此端点传输 |
 | `NONSTREAM_RESPONSE_MAX_BYTES` | `16777216` | 最终非流式客户响应默认 16 MiB（其中为 UniRouter 元数据预留 64 KiB）；超限返回 502、不 failover、不向客户收费，并保留可能的上游成本待处理状态 |

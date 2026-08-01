@@ -1,6 +1,227 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-07-31 PRD7 repository-local closeout:** the User accepted the
+> enterprise AI execution trust/control-plane direction and instructed the
+> implementation owner to close the planned iterations unless a material
+> product decision is required. B0 through B14 are now complete for the
+> authorized repository-local scope. `docs/PRD-Phase7.md`,
+> `docs/ops/PRD7-ACCEPTANCE-MATRIX.md` and
+> `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` are the completed-scope,
+> evidence and remaining external-gate sources. Full Go tests/vet, real
+> isolated-PostgreSQL integration, the 48-file/336-test frontend regression,
+> frontend type-check/build and 1440/1024/390 static-mock browser verification
+> pass. Deployment, traffic, real credentials/providers/IdPs/object stores,
+> non-test database mutation, cursor/checkpoint changes, push, PR and merge
+> remain unauthorized. The completed-execution Feed compatibility baseline
+> and PRD5/PRD6 closeouts remain unchanged.
+> **2026-07-31 PRD7 B14 / P7-D03 checkpoint:** the User resolved P7-D03 for
+> repository-local Image V1 as GPT Image V1 plus tenant-scoped S3-compatible
+> persistence, seven-day retention and a charge-eligibility fact only after
+> validated provider success and durable output. No wallet debit or inferred
+> media price is allowed; video remains disabled until it has an independent
+> Endpoint Profile. P7-F19 now includes strict public/admin metadata APIs,
+> tenant/API-key-scoped idempotency, PostgreSQL queue/lease/fence/recovery and
+> purge state, unknown-outcome fail-closed semantics, authenticated output
+> proxying, admission/capacity controls and an always-rendered console
+> Inspector. The Endpoint Profile records repository-local image runtime
+> evidence while Responses and rerank remain contract-only. No real provider
+> or object-store call was made. Evidence:
+> `docs/ops/evidence/PRD7-B14-P7F19-async-media-image-v1-runtime-local-20260731.md`.
+> **Historical B13 predecessor:** the immutable metadata-only job-plan Schema,
+> text-to-image/image-to-video fixtures and 55-case/36-class report remain the
+> pre-decision record in
+> `docs/ops/evidence/PRD7-B13-P7F19-async-media-pre-gate-local-20260731.md`.
+> They are not rewritten as runtime evidence; their old
+> `unresolved_p7_d03` values describe that historical checkpoint only.
+> **2026-07-31 PRD7 B12 checkpoint:** P7-F17 and P7-F18 are Local verified
+> through exact B8/B10/B11 composition. The bounded unsigned assertion is
+> tenant/Audience/TTL/epoch scoped and downscope-only; four evidence-derived
+> controls stop at human review. The B10 opaque tenant to B11 numeric Source
+> org/project mapping is explicitly `unverified_product_local_mapping`, never
+> inferred, and has its own IAM review control. One fixture passes 28 cases
+> across 32 classes; no remote risk dependency, traffic, policy read,
+> enforcement or promotion was added. Evidence:
+> `docs/ops/evidence/PRD7-B12-P7F17-P7F18-risk-control-local-20260731.md`.
+> B13 followed.
+> **2026-07-31 PRD7 B11 checkpoint:** P7-F15 and P7-F16 are Local verified
+> through an exact-Source, zero-network boundary. The Provenance Passport uses
+> the existing completedfeed compatibility bridge, preserves the settled
+> Source bytes/hash, Envelope hash and idempotency key, and renders 9 direct,
+> 2 derived, 2 declared and 4 missing facts with exact Gap provenance. The
+> shared-authority LiteLLM Connector identities and independent Go/TypeScript
+> 20-case/11-class pass are pinned as the heterogeneous second Connector, but
+> LiteLLM remains outside UniRouter's runtime registry, credentials, Cursor and
+> Checkpoint ownership. OpenInference remains a metadata observer rather than
+> Source truth. One fixture passes 23 deterministic cases; platform/org-admin
+> no-store API/CLI and a persistent Passport Inspector are included. Evidence:
+> `docs/ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md`.
+> B12 followed.
+> **2026-07-31 PRD7 B10 checkpoint:** P7-F12, P7-F13 and P7-F14 are Local
+> verified through a metadata-only synthetic boundary. The Agent Trust
+> Firewall directly reuses current `agentcap.Limits` attenuation and the B8
+> governance evaluator; one fixture passes a deterministic 22-case report for
+> effective authority, ancestor budget lineage, TTL/revocation, canonical
+> Ed25519 receipt verification, tenant/audience/key-version binding, tamper
+> negatives and route/policy/Pack replay. The fixture public key proves
+> cryptographic bytes only and remains `runtime_trusted=false`; no private key,
+> synchronous risk dependency, runtime enforcement or policy promotion was
+> added. Platform/org-admin no-store API/CLI and a persistent Trust Inspector
+> are included. Evidence:
+> `docs/ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md`.
+> B11 followed.
+> **2026-07-31 PRD7 B9 checkpoint:** P7-F11 is Local verified through an
+> IdP-neutral zero-network boundary. One lifecycle fixture passes a 17-case
+> golden report for create/update/suspend/reactivate/terminal deprovision,
+> membership/capability revocation, replay/CAS, strict JSON, time and int64
+> boundaries. Role/status changes now atomically increment `auth_epoch` and
+> revoke live administrator sessions, preventing old JWT resurrection after
+> restore. Platform/org-admin no-store API/CLI and a persistent Lifecycle
+> Inspector are included. No SCIM vendor, IdP source of truth, credential,
+> directory call or live provisioning is selected; B10 is next. Evidence:
+> `docs/ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md`.
+> **2026-07-31 PRD7 B8 checkpoint:** P7-F04 and P7-F10 are Local verified
+> through a zero-persistence synthetic boundary. Gateway runtime selection and
+> offline simulation share one credential-free `routing-policy.v1` evaluator.
+> The strict 2 MiB contract compares immutable route, full policy and Provider
+> Pack snapshots; classifies exact schema/manifest/fixture/SemVer/semantic
+> changes; and emits CAS/replay/progression/rollback evidence without advancing
+> a blocked breaking change. One fixture passes a deterministic 17-case golden
+> report with SHA-256 `24ecba6e...`.
+> Platform-only no-store API/CLI and the persistent auto-selected Governance
+> Inspector passed full Go tests/vet, frontend 43-file/316-test suite,
+> type-check/build and 1440/390 synthetic browser checks. Every result keeps
+> runtime mutation `none`, runtime promotion unauthorized and an explicit
+> external promotion gate. Evidence:
+> `docs/ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md`.
+> No runtime release controller or live shadow/canary action was added; B9 is
+> next.
+> **2026-07-31 PRD7 B7 checkpoint:** P7-F09 is Local verified through a
+> zero-persistence offline/synthetic boundary. The strict Provider COGS
+> contract separates supplier cost, UniRouter estimate and customer revenue,
+> uses exact decimal strings, canonical semantic replay, page/cursor/finality
+> checks and four fixed declared gaps. Request attribution requires one unique
+> upstream match; aggregate evidence never acquires request/customer debt.
+> Two fixtures pass a deterministic 15-case report with golden SHA-256
+> `87ddc260...`. Billing-authorized no-store API/CLI surfaces have no
+> database/provider-network/credential/customer-ledger write path. The
+> “财务真值” UI preserves customer usage reconciliation and adds a persistent
+> auto-selected supplier-evidence inspector. Full Go tests/vet, frontend
+> 42-file/311-test single-worker suite, type-check/build and golden byte
+> comparison passed. Evidence:
+> `docs/ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md`.
+> P7-D05 still gates real provider accounts, credentials and retention; B8 is
+> next.
+> **2026-07-31 PRD7 B6 checkpoint:** P7-F08 is Local verified through a
+> zero-network endpoint-contract boundary. Three fixed profiles cover OpenAI
+> Responses text-only/stateless requests, Cohere Rerank V2 string documents
+> and decision-gated GPT Image single-inline results. Strict nested duplicate
+> rejection, request bytes/model mapping, terminal shapes, exact int64/decimal
+> units, output semantics and HTTP retry classes pass a deterministic
+> 3-profile/25-case runner; golden SHA-256 is `ab3d4ec6...`. All observations
+> remain `provider_observed_not_customer_chargeable`; no Gateway route,
+> Provider Pack V1 artifact, adapter registry, billing or media runtime
+> changed. Evidence:
+> `docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md`.
+> At this historical B6 checkpoint P7-D03 still gated image runtime. B14 later
+> changed only the profile's repository-local runtime-evidence metadata; the
+> frozen wire fixture remains byte-identical and B14 records the current
+> Schema/manifest/report digests.
+> **2026-07-31 PRD7 B5 checkpoint:** P7-F07 is Local verified through the
+> standalone service and Redis-fixture boundary. `unirouter.response-cache.v1`
+> binds tenant/project/key/authorization/policy/model/pricing/region/schema
+> identity plus exact post-policy request bytes into an opaque HMAC index,
+> encrypts values with versioned AES-256-GCM keys, admits only final settled
+> provider-reported text responses, and provides TTL, generation purge,
+> single-owner leases and bounded dependency/wait behavior. Tamper, ciphertext
+> relocation, duplicate JSON, tools/media, stale keys, outages and concurrent
+> misses fail safe. A hit states current provider requests/cost as `0`/`"0"`
+> but leaves customer charge explicitly
+> `requires_current_response_cache_pricing`; the supplier Prompt Cache ratio is
+> not reused. Evidence:
+> `docs/ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md`.
+> Gateway/admin/UI/billing integration and runtime hit serving remain
+> unchanged until P7-D07 defines the customer pricing/ledger semantics. B6 is
+> next.
+> **2026-07-31 PRD7 B4 checkpoint:** P7-F06 is Local verified through the
+> backend-neutral/in-memory-fixture boundary. `unirouter.secret-reference.v1`
+> defines strict metadata-only references, immutable secret versions, exact
+> lifecycle-revision CAS, separately monotonic active generations, a fixed
+> backend registry and stage/activate/rollback/revoke receipts. Old bindings
+> fail after activation/rollback; outages fail closed without stale fallback;
+> active versions cannot be revoked; callback error text and material never
+> enter returned evidence. Focused/race tests, full Go tests/vet, the
+> 42-file/308-test frontend suite, type-check/build and the deterministic
+> metadata-only golden passed. Evidence:
+> `docs/ops/evidence/PRD7-B4-P7F06-secret-reference-local-20260731.md`.
+> Current `channel_keys`, Gateway/admin/exporter paths and all runtime state are
+> unchanged. P7-D01 still gates the first production backend/operator. B5
+> followed.
+> **2026-07-31 PRD7 B3 checkpoint:** P7-F05 is Local verified.
+> `unirouter.telemetry-export.v1` is a default-off, Outbox-posted,
+> metadata-only OTLP/HTTP JSON exporter with a fixed non-blocking queue, one
+> worker, bounded batches/timeouts/retries and exact OpenInference
+> Chat/Embedding/Guardrail/Chain mapping. It recursively rejects restricted
+> content, exports only route-derived model identity, limits spans to 32
+> attributes, uses scoped hashed request references, does not export duplicate
+> Outbox observations, and treats HTTP 200 partial success as acknowledged.
+> Full Go tests/vet, exporter race tests, the 42-file/308-test frontend suite,
+> type-check/build, deterministic golden comparison and Compose YAML parsing
+> passed. Evidence:
+> `docs/ops/evidence/PRD7-B3-P7F05-otel-openinference-export-local-20260731.md`.
+> No collector, deployment, traffic, credential, database, Feed/cursor,
+> external integration, push, PR or merge action ran. B4 followed.
+> **2026-07-31 PRD7 B2 checkpoint:** P7-F02 is Local verified across Requests,
+> Providers, Audit and Projects. Audit and Projects now auto-select a valid
+> deep-linked or first current-page record, keep the read-only inspector
+> persistent, synchronize only their controlled URL state, support keyboard
+> selection and store at most 12 validated filter/workspace metadata views in
+> the current browser. Loading/failure clears stale cross-scope facts. Full Go
+> tests/vet, the 42-file/308-test frontend suite, type-check/build and synthetic
+> 1440/1024/390 browser checks passed. The browser pass found and closed a
+> StrictMode Semi Table update loop and a mobile 620px flex-height leak; final
+> page overflow is zero and product console errors are zero. Evidence:
+> `docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md`.
+> This is not synchronized saved-view, CI, Target or Production evidence and
+> changes no backend/API/database/IAM/routing/billing/Outbox/Feed/cursor/
+> credential/protocol behavior. B3 is next.
+> **2026-07-31 PRD7 B1 checkpoint:** Provider Conformance Pack V1 and the
+> Provider portion of the persistent-inspector requirement are Local verified.
+> Three strict embedded packs (OpenAI, Anthropic, Azure OpenAI) pass a
+> deterministic zero-network 3-pack/5-fixture/20-case runner; the golden
+> report SHA-256 is `803111ec...`. Azure OpenAI now has a native deployment-scoped
+> Chat/Embeddings adapter with GA `2024-10-21`, strict config and atomic
+> type/config validation. The platform-admin catalog API and Channels UI
+> distinguish fixture, network and circuit facts, use `(provider,
+> adapter_type)` identity, auto-select a channel and keep the inspector
+> visible. Full Go tests/vet, 41-file/300-test frontend suite,
+> type-check/build, deterministic report comparison and synthetic
+> 1440/1024/390 browser checks passed. Evidence:
+> `docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md`.
+> This is not real-provider, credential, billing, CI, Target or Production
+> evidence; no runtime/database/Feed/Cursor/protocol behavior changed. B2 is
+> next.
+> **2026-07-31 `UR-PRODUCT-ITERATION-RECEIPT-WORKSPACE-V0` checkpoint:**
+> the accepted first product-iteration slice is locally verified on
+> `codex/product-iteration-20260730` from baseline
+> `48a88bccbe182a3d3a6aec315d422f47d879a364`. Requests/Logs now keeps an
+> Execution Decision Receipt inspector visible, automatically selects the
+> newest server-ordered record, supports row/keyboard/`log_id` selection, and
+> separates Decision, Attempts, Policy & Guardrail, Cost & Finality, and
+> Provenance & Gaps. It reuses the existing sanitized trace DTO. Only explicit
+> billing terminal events establish financial finality; HTTP success and log
+> cost do not imply settlement, and absent evidence is not converted into a
+> negative claim. Focused tests passed 24/24; frontend type-check, the 41-file
+> / 299-test suite, production build, and focused trace/admin Go tests passed.
+> A synthetic local-browser check at 1440/1024/390 CSS pixels found and
+> verified a Semi Table nested-update fix and confirmed the receipt remains
+> visible/reachable without a detail-open click. Exact evidence:
+> `docs/ops/evidence/UR-EXECUTION-DECISION-RECEIPT-V0-LOCAL-20260731.md`.
+> This is not CI, real-data/runtime, Target or Production evidence. No backend/API/
+> DTO/schema, database, routing, billing result, Outbox/feed/cursor,
+> credential, deployment, traffic, X-Insight or protocol behavior changed.
+> This historical slice did not accept other PRD7 candidates; the later
+> explicit program checkpoint above does.
 > **2026-07-21
 > `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT` checkpoint:** UniRouter
 > accepted the exact User

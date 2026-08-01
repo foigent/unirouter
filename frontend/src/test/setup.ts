@@ -1,4 +1,10 @@
 import '@testing-library/jest-dom'
+import { cleanup } from '@testing-library/react'
+import { afterEach } from 'vitest'
+
+afterEach(() => {
+  cleanup()
+})
 
 // Polyfill ResizeObserver for Semi Design components in jsdom
 if (typeof globalThis.ResizeObserver === 'undefined') {

@@ -36,6 +36,7 @@ import (
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/streampolicy"
+	"github.com/uniroute/unirouter/internal/telemetryexport"
 	"github.com/uniroute/unirouter/internal/tokenutil"
 	"github.com/uniroute/unirouter/internal/traceutil"
 	"github.com/uniroute/unirouter/internal/workloadadmission"
@@ -63,16 +64,21 @@ type BillingProvider interface {
 	Cancel(ctx context.Context, requestID string, orgID int64) error
 }
 
+type TraceExporter interface {
+	TryExport(telemetryexport.SourceEvent) error
+}
+
 // Relay handles forwarding requests to upstream providers.
 type Relay struct {
-	db       db.DBQuerier
-	rdb      *redis.Client
-	router   *Router
-	billing  BillingProvider
-	filter   *filter.DFAFilter
-	encKey   []byte
-	eventSvc *billing.EventService
-	outbox   *outbox.Service
+	db            db.DBQuerier
+	rdb           *redis.Client
+	router        *Router
+	billing       BillingProvider
+	filter        *filter.DFAFilter
+	encKey        []byte
+	eventSvc      *billing.EventService
+	outbox        *outbox.Service
+	traceExporter TraceExporter
 
 	traceEventsEnabled         bool
 	traceEventSampleRate       float64
@@ -146,6 +152,14 @@ func (relay *Relay) SetEventService(svc *billing.EventService) {
 func (relay *Relay) SetOutbox(service *outbox.Service) {
 	if relay != nil {
 		relay.outbox = service
+	}
+}
+
+// SetTraceExporter attaches an optional metadata-only, non-blocking export
+// observer. Export failures never change source persistence or request results.
+func (relay *Relay) SetTraceExporter(exporter TraceExporter) {
+	if relay != nil {
+		relay.traceExporter = exporter
 	}
 }
 
@@ -742,7 +756,10 @@ func (relay *Relay) rejectModelNotAllowed(w http.ResponseWriter, ctx context.Con
 
 // HandleChatCompletion handles POST /v1/chat/completions.
 func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request) {
-	ctx := relay.contextWithTrustedEvidence(r.Context(), r.Header)
+	ctx := contextWithTelemetryOperationKind(
+		relay.contextWithTrustedEvidence(r.Context(), r.Header),
+		telemetryexport.OperationChatCompletion,
+	)
 	requestStart := time.Now()
 	requestID := middleware.GetRequestIDFromContext(ctx)
 	w.Header().Set("X-Request-ID", requestID)
@@ -2663,7 +2680,10 @@ type EmbeddingsRequest struct {
 
 // HandleEmbeddings handles POST /v1/embeddings.
 func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
-	ctx := relay.contextWithTrustedEvidence(r.Context(), r.Header)
+	ctx := contextWithTelemetryOperationKind(
+		relay.contextWithTrustedEvidence(r.Context(), r.Header),
+		telemetryexport.OperationEmbedding,
+	)
 	requestStart := time.Now()
 	requestID := middleware.GetRequestIDFromContext(ctx)
 	w.Header().Set("X-Request-ID", requestID)

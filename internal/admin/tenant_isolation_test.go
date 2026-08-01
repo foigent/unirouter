@@ -268,6 +268,7 @@ func TestP6F16ProjectMembershipRequiresActorOrg(t *testing.T) {
 
 func TestP6F16UpdateUserFinalPredicateProtectsPlatformRoles(t *testing.T) {
 	updateCalled := false
+	sessionRevokeCalled := false
 	tx := &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
@@ -287,6 +288,10 @@ func TestP6F16UpdateUserFinalPredicateProtectsPlatformRoles(t *testing.T) {
 			if strings.Contains(sql, "INSERT INTO audit_logs") {
 				return pgconn.NewCommandTag("INSERT 0 1"), nil
 			}
+			if strings.Contains(sql, "UPDATE admin_sessions") {
+				sessionRevokeCalled = true
+				return pgconn.NewCommandTag("UPDATE 1"), nil
+			}
 			if !strings.Contains(sql, "role NOT IN ('admin', 'platform_admin')") {
 				t.Fatalf("expected final update predicate to close platform-role race, got %s", sql)
 			}
@@ -303,6 +308,9 @@ func TestP6F16UpdateUserFinalPredicateProtectsPlatformRoles(t *testing.T) {
 	h.UpdateUser(rec, req)
 	if !updateCalled {
 		t.Fatal("expected guarded user update")
+	}
+	if !sessionRevokeCalled {
+		t.Fatal("expected live admin sessions to be revoked with the principal change")
 	}
 
 	if rec.Code != http.StatusOK {

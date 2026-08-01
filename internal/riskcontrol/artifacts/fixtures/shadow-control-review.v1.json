@@ -1,0 +1,70 @@
+{
+  "schema_version": "unirouter.risk-control-fixture.v1",
+  "fixture_id": "shadow-control-review.v1",
+  "dependencies": [
+    {
+      "path": "internal/agenttrust/artifacts/agent-trust-review.v1.schema.json",
+      "sha256": "sha256:1e375c8febfd93e9972cdaab88c15c1aecf08537fc56ee1a2dfc5e6b037c6a37"
+    },
+    {
+      "path": "internal/agenttrust/artifacts/fixtures/trust-firewall-review.v1.json",
+      "sha256": "sha256:4a8bef5a7500149252516fc081b18547e8e6af8657830153aff125c221849dba"
+    },
+    {
+      "path": "internal/agenttrust/artifacts/reports/core.v1.json",
+      "sha256": "sha256:032dd42f8ed7971d19f6f921838cd5efac432bcbde2266d4222095c7732e1653"
+    },
+    {
+      "path": "internal/governancesim/artifacts/fixtures/route-pack-review.v1.json",
+      "sha256": "sha256:0ee09c4965e659f1c004ab9c1eea9be45f354fe960a39a645a55f07e0e95f1c7"
+    },
+    {
+      "path": "internal/governancesim/artifacts/governance-simulation.v1.schema.json",
+      "sha256": "sha256:02e00f49039d813b7ef2a739c2c0f32200a7f9df68e0bd0356a84c1927d4e123"
+    },
+    {
+      "path": "internal/governancesim/artifacts/reports/core.v1.json",
+      "sha256": "sha256:24ecba6ec88ee5901dd0dd6c017dd1269f3426933ccce645f6c793b2019291f1"
+    },
+    {
+      "path": "internal/provenancepassport/artifacts/fixtures/settled-passport.v1.json",
+      "sha256": "sha256:545b9555a83308c52ac62f6be728fb4ee2bae9571e0346857e716d95df0aee08"
+    },
+    {
+      "path": "internal/provenancepassport/artifacts/provenance-passport.v1.schema.json",
+      "sha256": "sha256:4b577521cc5b7ce2a2e5ff6f38e21c34e367e7bde04153da399f02304fafe4db"
+    },
+    {
+      "path": "internal/provenancepassport/artifacts/reports/core.v1.json",
+      "sha256": "sha256:aa4d5d6570d735ba90ca44b02aa1fad00b2f37fa4706c3a13dd4cd96913acc75"
+    }
+  ],
+  "request_seed": {
+    "contract_version": "unirouter.risk-control-review.v1",
+    "review_id": "risk-control-b12-fixture-001",
+    "evaluated_at": "2026-07-31T08:05:00.000000Z",
+    "audience": "unirouter-risk-control-review",
+    "policy_version": "unirouter.risk-advice-policy.v1",
+    "risk_epoch": "1",
+    "assertion_ttl_seconds": "300"
+  },
+  "expected": {
+    "advice": "shadow_only",
+    "dimensions": {
+      "authority": "elevated",
+      "change": "elevated",
+      "provenance": "known_gap",
+      "financial": "low"
+    },
+    "proposal_state": "simulated_review_required",
+    "control_ids": [
+      "authority-downscope-review",
+      "capture-gap-resolution-review",
+      "route-candidate-shadow-review",
+      "tenant-source-scope-binding-review"
+    ],
+    "capture_gaps": 4,
+    "promotion_gate": "P7-D04",
+    "runtime_mutation": "none"
+  }
+}

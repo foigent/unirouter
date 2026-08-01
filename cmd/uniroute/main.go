@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -30,8 +32,10 @@ import (
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
+	"github.com/uniroute/unirouter/internal/mediajob"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
+	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/oidc"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
@@ -39,6 +43,7 @@ import (
 	"github.com/uniroute/unirouter/internal/redisx"
 	"github.com/uniroute/unirouter/internal/releasetrust"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
+	"github.com/uniroute/unirouter/internal/telemetryexport"
 )
 
 // buildVersion and buildCommit are set by release builds through -ldflags.
@@ -127,6 +132,109 @@ func main() {
 	router, err := gateway.NewRouterWithPolicy(postgres.Pool, effectiveConfig.RoutingPolicy.Config)
 	if err != nil {
 		log.Fatalf("Invalid effective routing configuration: %v", err)
+	}
+	mediaStore, err := mediajob.NewPostgresStore(postgres.Pool)
+	if err != nil {
+		log.Fatalf("Failed to initialize async-media store: %v", err)
+	}
+	mediaCipher, err := mediajob.NewApplicationCipher([]byte(cfg.EncryptionKey))
+	if err != nil {
+		log.Fatalf("Failed to initialize async-media payload protection: %v", err)
+	}
+	mediaIdentitySecret := sha256.Sum256([]byte(cfg.APIKeyHashSecret))
+	var mediaObjects mediajob.ObjectStore = mediajob.UnavailableObjectStore{}
+	if cfg.AsyncMediaEnabled {
+		mediaObjects, err = mediajob.NewS3ObjectStore(context.Background(), mediajob.S3Config{
+			Region: cfg.AsyncMediaS3Region, Bucket: cfg.AsyncMediaS3Bucket,
+			Endpoint: cfg.AsyncMediaS3Endpoint, Prefix: cfg.AsyncMediaS3Prefix,
+			ForcePathStyle: cfg.AsyncMediaS3ForcePathStyle,
+			KeySecret:      mediaIdentitySecret[:],
+		})
+		if err != nil {
+			log.Fatalf("Failed to initialize async-media object store: %v", err)
+		}
+	}
+	mediaAuthorizer := mediajob.ModelAuthorizerFunc(func(
+		ctx context.Context,
+		scope mediajob.Scope,
+		requestedModel string,
+	) (mediajob.ModelAuthorization, error) {
+		access, accessErr := modelgov.CheckAccess(
+			ctx, postgres.Pool, scope.OrgID, scope.ProjectID, requestedModel,
+		)
+		switch {
+		case errors.Is(accessErr, modelgov.ErrModelRetired),
+			errors.Is(accessErr, modelgov.ErrModelDenied),
+			errors.Is(accessErr, modelgov.ErrModelRequired):
+			return mediajob.ModelAuthorization{}, mediajob.ErrForbidden
+		case accessErr != nil:
+			return mediajob.ModelAuthorization{}, mediajob.ErrUnavailable
+		default:
+			return mediajob.ModelAuthorization{RoutingModel: access.ResolvedModel}, nil
+		}
+	})
+	mediaService, err := mediajob.NewService(
+		mediaStore, mediaObjects, mediaCipher, mediaAuthorizer,
+		mediaIdentitySecret[:],
+		mediajob.ServiceOptions{
+			Retention:        mediajob.DefaultRetention,
+			MaxAttempts:      cfg.AsyncMediaMaxAttempts,
+			RuntimeEnabled:   cfg.AsyncMediaEnabled,
+			AdmissionEnabled: cfg.AsyncMediaAdmissionEnabled,
+		},
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize async-media service: %v", err)
+	}
+	mediaHandler, err := mediajob.NewHTTPHandler(mediaService, postgres.Pool)
+	if err != nil {
+		log.Fatalf("Failed to initialize async-media HTTP boundary: %v", err)
+	}
+	var stopAsyncMedia context.CancelFunc
+	var asyncMediaDone chan struct{}
+	if cfg.AsyncMediaEnabled {
+		mediaProvider, providerErr := mediajob.NewGPTImageProvider(
+			router,
+			[]byte(cfg.EncryptionKey),
+			mediajob.GPTImageProviderOptions{
+				Timeout: time.Duration(cfg.AsyncMediaProviderTimeoutSecs) * time.Second,
+			},
+		)
+		if providerErr != nil {
+			log.Fatalf("Failed to initialize GPT Image provider: %v", providerErr)
+		}
+		mediaWorker, workerErr := mediajob.NewWorker(
+			mediaStore, mediaObjects, mediaProvider, mediaCipher,
+			mediajob.WorkerOptions{
+				Owner:              asyncMediaWorkerID(cfg.AsyncMediaWorkerID),
+				LeaseDuration:      time.Duration(cfg.AsyncMediaLeaseSeconds) * time.Second,
+				PurgeLeaseDuration: time.Duration(cfg.AsyncMediaPurgeLeaseSeconds) * time.Second,
+				PollInterval:       time.Duration(cfg.AsyncMediaPollMilliseconds) * time.Millisecond,
+				OnError: func(workerErr error) {
+					log.Printf("Async-media worker operation failed: %v", workerErr)
+				},
+			},
+		)
+		if workerErr != nil {
+			log.Fatalf("Failed to initialize async-media worker: %v", workerErr)
+		}
+		asyncMediaCtx, cancelAsyncMedia := context.WithCancel(context.Background())
+		stopAsyncMedia = cancelAsyncMedia
+		asyncMediaDone = make(chan struct{})
+		go func() {
+			defer close(asyncMediaDone)
+			runErr := mediaWorker.Run(asyncMediaCtx)
+			if runErr != nil && !errors.Is(runErr, context.Canceled) {
+				log.Printf("Async-media worker stopped: %v", runErr)
+			}
+		}()
+		log.Printf(
+			"Async-media Image V1 enabled: profile=%s retention=P7D video=false admission=%t",
+			mediajob.Evidence(true, cfg.AsyncMediaAdmissionEnabled).ProfileID,
+			cfg.AsyncMediaAdmissionEnabled,
+		)
+	} else {
+		log.Printf("Async-media Image V1 runtime disabled; contract and existing metadata remain readable")
 	}
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
 	completedFeedOptions := make([]completedfeed.ServiceOption, 0, 1)
@@ -219,6 +327,19 @@ func main() {
 	relay.SetTraceEvents(cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
 	relay.SetPayloadCaptureMode(cfg.PayloadCaptureMode)
 	relay.SetEvidenceContextTrustSecret(cfg.EvidenceContextTrustSecret)
+	var otelExporter *telemetryexport.Exporter
+	if cfg.OTelExportEnabled {
+		otelExporter, err = telemetryexport.New(cfg.TelemetryExportConfig(), nil)
+		if err != nil {
+			log.Fatalf("Failed to initialize metadata-only OTLP trace exporter: %v", err)
+		}
+		relay.SetTraceExporter(otelExporter)
+		log.Printf(
+			"Metadata-only OTLP trace export enabled: queue=%d batch=%d",
+			cfg.OTelExportQueueSize,
+			cfg.OTelExportBatchSize,
+		)
+	}
 	eventSvc := billing.NewEventService(postgres.Pool, cfg.NotificationWebhookSigningSecret)
 	eventSvc.SetOutbox(outboxSvc)
 	relay.SetEventService(eventSvc)
@@ -385,6 +506,7 @@ func main() {
 		log.Fatalf("Invalid trusted proxy configuration: %v", err)
 	}
 	gatewayAuth := middleware.GatewayAuthWithAgentCapabilitiesAndClientIP(postgres.Pool, cfg.APIKeyHashSecret, agentCapabilityService, clientIPResolver)
+	mediaAuth := middleware.GatewayAuthWithAgentCapabilitiesAndClientIP(postgres.Pool, cfg.APIKeyHashSecret, nil, clientIPResolver)
 	completedFeedAuth := middleware.CompletedExecutionFeedAuth(postgres.Pool, cfg.APIKeyHashSecret, clientIPResolver)
 	gatewayLicenseGate := licenseRuntime.Gate(licensing.FeatureGateway)
 	agentLicenseGate := licenseRuntime.GateAll(licensing.FeatureGateway, licensing.FeatureAgentCapabilities)
@@ -403,6 +525,10 @@ func main() {
 	mux.Handle("POST /v1/chat/completions", gatewayLicenseGate(gatewayAuth(chatPayloadGuard(idempotencyGuard(chatHandler)))))
 	mux.Handle("POST /v1/embeddings", gatewayLicenseGate(gatewayAuth(embeddingsPayloadGuard(idempotencyGuard(embeddingsHandler)))))
 	mux.Handle("GET /v1/models", gatewayLicenseGate(gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
+	mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(mediaAuth(rateLimiter(http.HandlerFunc(mediaHandler.Submit)))))
+	mux.Handle("GET /v1/media/jobs/{id}", gatewayLicenseGate(mediaAuth(rateLimiter(http.HandlerFunc(mediaHandler.Get)))))
+	mux.Handle("POST /v1/media/jobs/{id}/cancel", gatewayLicenseGate(mediaAuth(rateLimiter(http.HandlerFunc(mediaHandler.Cancel)))))
+	mux.Handle("GET /v1/media/jobs/{id}/content", gatewayLicenseGate(mediaAuth(rateLimiter(http.HandlerFunc(mediaHandler.Content)))))
 	mux.Handle(
 		"GET /api/v1/integrations/xinsight/completed-executions",
 		completedFeedAuth(completedFeedSvc.Handler()),
@@ -508,7 +634,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <h1>UniRouter API Documentation</h1>
 <p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. Gateway model APIs accept UniRouter API keys or endpoint-scoped Agent capabilities. The private completed-execution feed accepts only its project- and network-bound feed service key.</p>
 <p>Admin Base URL: <code>/api/v1</code> &nbsp; Gateway Base URL: <code>/v1</code></p>
-<p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat and Embeddings accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication; completed model responses are not stored or replayed.</p>
+<p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat and Embeddings accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication. Async image admission requires it for a persistent project/key/payload-bound job identity. Admission responses never replay model output bytes.</p>
+<p>Image V1 is an isolated job plane using <code>unirouter.openai.images.gpt-image.v1</code>. Output is available only through authenticated proxy routes for exactly seven days after durable persistence. Provider success plus durable output records an observed charge-eligibility fact; the current text-token rate table is not reused and no wallet amount is invented.</p>
 <p>Agent discovery is explicit: a supervisor exchanges its root API key, then registers each child with an attenuation-only capability. Capabilities last at most five minutes, normally refresh near minute three, grant model-gateway authority only, and never grant Tool, IAM, database or export authority. Model calls reserve cost, tokens, rolling rate, and concurrency on every signed ancestor before any upstream dispatch; Redis uncertainty denies new capability admission.</p>
 <table>
 <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
@@ -521,6 +648,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/v1/models</code></td><td>OpenAI-compatible model list</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>OpenAI-compatible chat completions</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/embeddings</code></td><td>OpenAI-compatible embeddings</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/media/jobs</code></td><td>Submit one asynchronous GPT Image V1 job using a project root API key</td></tr>
+<tr><td class="method">GET</td><td><code>/v1/media/jobs/{id}</code></td><td>Read tenant-scoped image job metadata</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/media/jobs/{id}/cancel</code></td><td>Request cancellation without refund semantics</td></tr>
+<tr><td class="method">GET</td><td><code>/v1/media/jobs/{id}/content</code></td><td>Read authenticated image bytes before fixed expiry</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/exchange</code></td><td>Register root Agent workflow using a root API key</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/delegate</code></td><td>Register one child Agent with attenuation-only authority</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/agent-capabilities/refresh</code></td><td>Refresh a five-minute Agent capability</td></tr>
@@ -540,6 +671,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">PUT</td><td><code>/api/v1/channels/{id}</code></td><td>Update channel</td></tr>
 <tr><td class="method">DELETE</td><td><code>/api/v1/channels/{id}</code></td><td>Delete channel</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/channels/{id}/test</code></td><td>Test channel</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/provider-packs</code></td><td>List immutable fixture-verified Provider Conformance Packs</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/routing/preview</code></td><td>Preview routing candidates and exclusions</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channel-keys</code></td><td>List upstream credentials</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/channel-keys</code></td><td>Create upstream credential</td></tr>
@@ -577,6 +709,11 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/grants</code></td><td>List grants</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/grants</code></td><td>Create grant</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/audit-logs</code></td><td>Audit logs</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/media-jobs/contract</code></td><td>Image V1 runtime and billing boundary</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/media-jobs</code></td><td>List image jobs in one authorized project</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/media-jobs/{id}</code></td><td>Inspect one image job</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/media-jobs/{id}/cancel</code></td><td>Request image job cancellation</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/media-jobs/{id}/content</code></td><td>Proxy authenticated image bytes</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/data-exchange/items</code></td><td>Data exchange approval candidates</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/data-exchange/items</code></td><td>Create data exchange approval candidate</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/data-exchange/items/{id}</code></td><td>Update data exchange approval status</td></tr>
@@ -626,6 +763,18 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/reconciliation</code></td><td>Usage reconciliation</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/provider-cost/reconciliations</code></td><td>Platform-authorized provider cost reconciliation without a caller-supplied amount</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/provider-cost/pending</code></td><td>List bounded unresolved provider attempts for one explicit organization</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/provider-cogs/offline-contract</code></td><td>Read the zero-persistence supplier-cost preview contract</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/provider-cogs/offline-preview</code></td><td>Evaluate bounded supplier-cost evidence without network, persistence or customer-ledger mutation</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/governance-simulation/offline-contract</code></td><td>Read the zero-persistence route/policy and Provider Change Firewall contract</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/governance-simulation/offline-preview</code></td><td>Compare immutable route, policy and Provider Pack snapshots without runtime promotion</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/member-lifecycle/offline-contract</code></td><td>Read the IdP-neutral project-member lifecycle contract</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/member-lifecycle/offline-preview</code></td><td>Evaluate one bounded lifecycle event without user, membership, key, session or IdP mutation</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/agent-trust/offline-contract</code></td><td>Read the metadata-only Agent Trust, signed receipt and Governance Digital Twin contract</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/agent-trust/offline-preview</code></td><td>Verify bounded authority and signed receipt evidence without runtime trust or enforcement</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/provenance-passport/offline-contract</code></td><td>Read the exact Source provenance, Capture-Gap and Connector attestation contract</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/provenance-passport/offline-preview</code></td><td>Build a metadata-only passport without Feed, Connector registry or runtime mutation</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/risk-control/offline-contract</code></td><td>Read the bounded routing-advice and human-reviewed control-proposal contract</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/risk-control/offline-preview</code></td><td>Compose B8/B10/B11 evidence without traffic, promotion or runtime enforcement</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/limit-policies</code></td><td>List versioned shared RPM/RPS/TPM/concurrency policies</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/limit-policies</code></td><td>Create a disabled, shadow or enforced shared limit policy</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/limit-policies/{id}</code></td><td>Update a shared limit policy and increment its version</td></tr>
@@ -658,6 +807,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/channels/{id}", platformRoute(adminHandler.GetChannel))
 	mux.Handle("PUT /api/v1/channels/{id}", platformRoute(adminHandler.UpdateChannel))
 	mux.Handle("DELETE /api/v1/channels/{id}", platformRoute(adminHandler.DeleteChannel))
+	mux.Handle("GET /api/v1/provider-packs", platformRoute(adminHandler.ListProviderPacks))
 	mux.Handle("GET /api/v1/routing/preview", platformRoute(adminHandler.PreviewRouting))
 
 	mux.Handle("GET /api/v1/keys", projectReadRoute(adminHandler.ListAPIKeys))
@@ -702,6 +852,12 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 
 	mux.Handle("GET /api/v1/reconciliation", billingRoute(adminHandler.ListReconciliation))
 	registerProviderCostRoutes(mux, adminHandler, platformRoute)
+	registerProviderCOGSOfflineRoutes(mux, adminHandler, billingRoute)
+	registerGovernanceSimulationRoutes(mux, adminHandler, platformRoute)
+	registerMemberLifecycleRoutes(mux, adminHandler, orgAdminRoute)
+	registerAgentTrustRoutes(mux, adminHandler, orgAdminRoute)
+	registerProvenancePassportRoutes(mux, adminHandler, orgAdminRoute)
+	registerRiskControlRoutes(mux, adminHandler, orgAdminRoute)
 	registerModelGovernanceRoutes(mux, adminHandler, modelGovernanceRouteGuards{
 		organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
 		projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute),
@@ -744,6 +900,13 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", notificationOperatorLicensedRoute(adminHandler.VerifyNotificationWebhookScope))
 
 	mux.Handle("GET /api/v1/audit-logs", roleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
+	mediaReadRoute := licensedRoute(licensing.FeatureGateway, projectReadRoute)
+	mediaWriteRoute := licensedRoute(licensing.FeatureGateway, projectWriteRoute)
+	mux.Handle("GET /api/v1/media-jobs/contract", mediaReadRoute(mediaHandler.Contract))
+	mux.Handle("GET /api/v1/media-jobs", mediaReadRoute(mediaHandler.AdminList))
+	mux.Handle("GET /api/v1/media-jobs/{id}", mediaReadRoute(mediaHandler.AdminGet))
+	mux.Handle("GET /api/v1/media-jobs/{id}/content", mediaReadRoute(mediaHandler.AdminContent))
+	mux.Handle("POST /api/v1/media-jobs/{id}/cancel", mediaWriteRoute(mediaHandler.AdminCancel))
 	dataExchangeRoute := licensedRoute(licensing.FeatureDataExchange, platformRoute)
 	mux.Handle("GET /api/v1/data-exchange/items", dataExchangeRoute(adminHandler.ListDataExchangeItems))
 	mux.Handle("POST /api/v1/data-exchange/items", dataExchangeRoute(adminHandler.CreateDataExchangeItem))
@@ -801,8 +964,31 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
+	if stopAsyncMedia != nil {
+		stopAsyncMedia()
+		select {
+		case <-asyncMediaDone:
+		case <-ctx.Done():
+			log.Printf("Async-media worker did not stop before shutdown timeout")
+		}
+	}
 	if err := gateway.ShutdownStreamAdvisoryScheduler(ctx); err != nil {
 		log.Printf("Guardrail advisory workers did not flush before shutdown timeout: %v", err)
+	}
+	if otelExporter != nil {
+		if err := otelExporter.Close(ctx); err != nil {
+			log.Printf("OTLP trace exporter did not flush before shutdown timeout: %v", err)
+		}
+		stats := otelExporter.Stats()
+		log.Printf(
+			"OTLP trace exporter stopped: queued=%d exported=%d partial_rejected=%d dropped=%d failures=%d retries=%d",
+			stats.Queued,
+			stats.Exported,
+			stats.PartialRejected,
+			stats.DroppedRestricted+stats.DroppedInvalid+stats.DroppedQueueFull+stats.DroppedAfterClose,
+			stats.ExportFailures,
+			stats.Retries,
+		)
 	}
 	stopOutbox()
 	select {
@@ -816,6 +1002,32 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		log.Printf("Completed-execution retention worker did not stop before shutdown timeout")
 	}
 	log.Println("Server exited")
+}
+
+func asyncMediaWorkerID(configured string) string {
+	configured = strings.TrimSpace(configured)
+	if configured != "" {
+		return configured
+	}
+	host, _ := os.Hostname()
+	host = strings.TrimSpace(host)
+	var portable strings.Builder
+	for _, r := range host {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9', r == '.', r == '_', r == ':', r == '-':
+			portable.WriteRune(r)
+		default:
+			portable.WriteByte('-')
+		}
+		if portable.Len() >= 96 {
+			break
+		}
+	}
+	if portable.Len() == 0 {
+		portable.WriteString("unirouter")
+	}
+	return fmt.Sprintf("%s:%d", portable.String(), os.Getpid())
 }
 
 func applyReleaseTrust(cfg *config.Config) (releasetrust.Bundle, error) {

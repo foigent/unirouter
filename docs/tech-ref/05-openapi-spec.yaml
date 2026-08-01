@@ -10,6 +10,7 @@ info:
 
     Authentication:
     - Gateway model calls: `Authorization: Bearer ur-XXXX-...` or a scoped `urc_...` Agent capability.
+    - Async image jobs: project-bound root UniRouter API key only; Agent capabilities are rejected.
     - Agent capability exchange/revoke: root UniRouter API key only.
     - Agent capability delegate/refresh: authenticated parent/current Agent capability only.
     - Admin: `Authorization: Bearer <JWT>`
@@ -18,7 +19,7 @@ info:
     Request identity:
     - Response `X-Request-ID` is a server-generated operation ID and cannot be overridden by a caller.
     - Caller correlation belongs in `X-UniRouter-Client-Request-ID`; inbound `X-Request-ID` remains a legacy alias only.
-    - `Idempotency-Key` enables tenant/API-key/payload-bound metadata-only deduplication for Chat and Embeddings.
+    - `Idempotency-Key` enables tenant/API-key/payload-bound metadata-only deduplication for Chat, Embeddings, and async image-job admission. Image jobs return the same job identity but never replay output bytes in the admission response.
 
 servers:
   - url: http://localhost:8080
@@ -26,6 +27,7 @@ servers:
 
 tags:
   - name: Gateway
+  - name: Async Media
   - name: Agent Capability
   - name: Private Integration
   - name: Auth
@@ -325,6 +327,143 @@ paths:
         "200":
           $ref: "#/components/responses/JSON"
 
+  /v1/media/jobs:
+    post:
+      tags: [Async Media]
+      summary: Submit one asynchronous text-to-image job
+      description: |
+        Creates one GPT Image V1 job in the API key's exact organization and project.
+        Admission requires both the isolated media runtime and its explicit
+        new-job admission control to be enabled. New work is capped at 10
+        nonterminal jobs per project and 100 per organization. An exact
+        idempotent replay is resolved before admission/capacity checks and can
+        therefore return its existing job while new admissions are paused or
+        capacity is full.
+        Prompt bytes are encrypted while work is nonterminal and erased from the
+        database at terminal state. This operation never debits the text-token wallet.
+      security:
+        - gatewayRootKey: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/ClientRequestId"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+          description: Tenant, project, API-key and payload-bound job identity. Reuse with different request bytes returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MediaJobSubmitRequest"
+      responses:
+        "200":
+          description: Existing job returned for an exact idempotent retry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaJobCreateResult"
+        "202":
+          description: New job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaJobCreateResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /v1/media/jobs/{id}:
+    get:
+      tags: [Async Media]
+      summary: Read one image job in the API key's project
+      security:
+        - gatewayRootKey: []
+      parameters:
+        - $ref: "#/components/parameters/MediaJobId"
+      responses:
+        "200":
+          description: Image job metadata without prompt, credentials, object locator, or output bytes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaJob"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /v1/media/jobs/{id}/cancel:
+    post:
+      tags: [Async Media]
+      summary: Request cancellation without implying a refund
+      security:
+        - gatewayRootKey: []
+      parameters:
+        - $ref: "#/components/parameters/MediaJobId"
+      responses:
+        "200":
+          description: Cancellation result; a raced terminal success is reported as too_late
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaCancellationResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /v1/media/jobs/{id}/content:
+    get:
+      tags: [Async Media]
+      summary: Read authenticated image bytes before fixed expiry
+      description: No public or presigned object URL is returned. Reads fail with 410 at the seven-day deadline even while physical deletion is retrying.
+      security:
+        - gatewayRootKey: []
+      parameters:
+        - $ref: "#/components/parameters/MediaJobId"
+      responses:
+        "200":
+          description: Persisted PNG, JPEG, or WebP bytes
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: ["private, no-store"] }
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+
   /v1/agent-capabilities/exchange:
     post:
       tags: [Agent Capability]
@@ -619,6 +758,17 @@ paths:
         - bearerAuth: []
       parameters:
         - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+
+  /api/v1/provider-packs:
+    get:
+      tags: [Admin]
+      summary: List immutable fixture-verified Provider Conformance Packs
+      description: Returns credential-free offline compatibility claims and exact manifest/schema digests. It is not live network, account, billing or production evidence.
+      security:
+        - bearerAuth: []
       responses:
         "200":
           $ref: "#/components/responses/JSON"
@@ -1564,6 +1714,66 @@ paths:
     description: List at most 100 unresolved provider attempts for one required explicit organization. Returns bounded metadata only and never prompt, response, credential, or full provider URL.
     get: *operation_list
 
+  /api/v1/provider-cogs/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin, billing_admin]
+    description: Returns the strict bounded supplier-cost preview contract. The endpoint discovers no accounts, accepts no credentials, performs no provider network call and changes no state.
+    get: *operation_list
+
+  /api/v1/provider-cogs/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Evaluates at most 4 MiB of supplied offline supplier-cost evidence in memory. Request-level attribution requires unique upstream evidence; aggregate rows remain unattributed. The endpoint never persists data or mutates the customer ledger.
+    post: *operation_create
+
+  /api/v1/governance-simulation/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin]
+    description: Returns the strict zero-persistence route/policy simulator, progressive-release evidence and Provider Change Firewall contract, immutable artifact identities, a synthetic sample and credential-free current Provider Pack identities. It performs no provider call and grants no runtime promotion authority.
+    get: *operation_list
+
+  /api/v1/governance-simulation/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Evaluates at most 2 MiB of supplied immutable baseline/candidate route, policy and Provider Pack snapshots in memory through the same credential-free routing kernel used by Gateway selection. Shadow, canary and enforced are evaluated target modes only; the endpoint persists nothing and cannot mutate or promote runtime state.
+    post: *operation_create
+
+  /api/v1/member-lifecycle/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns the strict IdP-neutral create/update/suspend/deprovision contract, immutable synthetic fixtures and conformance identities. It selects no SCIM vendor, accepts no credentials, performs no IdP call and changes no state.
+    get: *operation_list
+
+  /api/v1/member-lifecycle/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Evaluates at most 1 MiB of one sanitized lifecycle event in memory. It computes effective membership/capability revocation and exact local projection controls without changing users, memberships, sessions, keys, agent capabilities, a directory or a database.
+    post: *operation_create
+
+  /api/v1/agent-trust/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns the strict metadata-only Agent Trust Firewall, signed receipt verification and Governance Digital Twin contract with immutable synthetic artifacts. It accepts no signing key, treats the fixture public key as non-runtime trust, performs no network call and changes no state.
+    get: *operation_list
+
+  /api/v1/agent-trust/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Evaluates at most 3 MiB of effective authority, attenuation, ancestor budget, TTL/revocation and signed receipt evidence in memory while reusing the B8 routing simulator. It has no synchronous runtime dependency and cannot authorize enforcement, revoke live capability state or promote policy.
+    post: *operation_create
+
+  /api/v1/provenance-passport/offline-contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns the strict exact-Source provenance and Capture-Gap Passport contract, current Reference Connector identities and the shared-authority LiteLLM conformance-only attestation. It accepts no credential, Cursor or Checkpoint and does not register a second product runtime Connector.
+    get: *operation_list
+
+  /api/v1/provenance-passport/offline-preview:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Evaluates at most 3 MiB of base64-preserved completed-execution Source bytes through the existing Reference projector. It groups direct, derived, declared and missing evidence, proves current Feed compatibility, and changes no Source, Feed, registry, delivery or runtime state.
+    post: *operation_create
+
   /api/v1/users:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]
@@ -1906,6 +2116,122 @@ paths:
         "200":
           $ref: "#/components/responses/JSON"
 
+  /api/v1/media-jobs/contract:
+    get:
+      tags: [Async Media]
+      summary: Read the fixed Image V1 runtime boundary
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Runtime evidence; false means new admission is disabled, not that historical metadata is hidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaRuntimeEvidence"
+        "403":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/media-jobs:
+    get:
+      tags: [Async Media]
+      summary: List image jobs in one authorized project
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrgId"
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Tenant-scoped job page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaJobListResult"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/media-jobs/{id}:
+    get:
+      tags: [Async Media]
+      summary: Inspect one image job in an authorized project
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MediaJobId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Image job metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaJob"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/media-jobs/{id}/cancel:
+    post:
+      tags: [Async Media]
+      summary: Request cancellation as an authorized project operator
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MediaJobId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Cancellation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaCancellationResult"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/v1/media-jobs/{id}/content:
+    get:
+      tags: [Async Media]
+      summary: Proxy authenticated image bytes to an authorized project viewer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MediaJobId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Persisted image bytes
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "410":
+          $ref: "#/components/responses/Error"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1976,6 +2302,30 @@ components:
       schema:
         type: string
         maxLength: 255
+    MediaJobId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^mediajob_[a-f0-9]{32}$'
+    ProjectId:
+      name: project_id
+      in: query
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    OrgId:
+      name: org_id
+      in: query
+      required: false
+      description: Platform administrators use this to bind the selected project's organization. Other roles remain bound to their authenticated organization.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
 
   headers:
     OperationId:
@@ -2046,6 +2396,139 @@ components:
             $ref: "#/components/schemas/CompletedExecutionFeedError"
 
   schemas:
+    MediaJobSubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [model, prompt]
+      properties:
+        model: { type: string, minLength: 1, maxLength: 200 }
+        prompt: { type: string, minLength: 1, maxLength: 32000 }
+        n: { type: integer, enum: [1], default: 1 }
+        size: { type: string, enum: [auto, 1024x1024, 1536x1024, 1024x1536] }
+        quality: { type: string, enum: [auto, low, medium, high] }
+        background: { type: string, enum: [auto, transparent, opaque] }
+        output_format: { type: string, enum: [png, jpeg, webp] }
+        stream: { type: boolean, enum: [false], default: false }
+    MediaLifecycle:
+      type: object
+      additionalProperties: false
+      required: [admission, queue, lease, execution, provider_outcome, cancellation, object, settlement]
+      properties:
+        admission: { type: string, enum: [accepted] }
+        queue: { type: string, enum: [queued, leased, terminal] }
+        lease: { type: string, enum: [unleased, leased, released] }
+        execution: { type: string, enum: [pending, running, terminal] }
+        provider_outcome: { type: string, enum: [pending, succeeded, failed, not_started, unknown] }
+        cancellation: { type: string, enum: [not_requested, requested, accepted, too_late, indeterminate] }
+        object: { type: string, enum: [pending, persisted, purge_pending, purged, not_created] }
+        settlement: { type: string, enum: [not_eligible, charge_fact_recorded] }
+    MediaUnitObservation:
+      type: object
+      additionalProperties: false
+      required: [class, quantity, authority, finality, charge_state]
+      properties:
+        class: { type: string, enum: [input_tokens, input_text_tokens, input_image_tokens, output_image_tokens] }
+        quantity: { type: string, pattern: '^(0|[1-9][0-9]*)$' }
+        authority: { type: string, enum: [provider_reported] }
+        finality: { type: string, enum: [final] }
+        charge_state: { type: string, enum: [provider_observed_not_customer_chargeable] }
+    MediaOutput:
+      type: object
+      additionalProperties: false
+      required: [content_sha256, media_type, size_bytes, persisted_at, expires_at]
+      properties:
+        content_sha256: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
+        media_type: { type: string, enum: [image/png, image/jpeg, image/webp] }
+        size_bytes: { type: integer, format: int64, minimum: 1, maximum: 33554432 }
+        persisted_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, description: Exactly seven days after persisted_at. }
+        purged_at: { type: string, format: date-time }
+    MediaChargeFact:
+      type: object
+      additionalProperties: false
+      required: [fact_id, trigger, amount_state, units, recorded_at]
+      properties:
+        fact_id: { type: string, pattern: '^mediacharge_[a-f0-9]{32}$' }
+        trigger: { type: string, enum: [provider_terminal_success_and_output_persisted] }
+        amount_state: { type: string, enum: [pricing_pending_media_rate_card] }
+        amount_micros: { type: integer, format: int64, nullable: true, description: Always absent/null in Image V1; no wallet debit is synthesized. }
+        units:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { $ref: "#/components/schemas/MediaUnitObservation" }
+        recorded_at: { type: string, format: date-time }
+    MediaJob:
+      type: object
+      additionalProperties: false
+      required: [contract_version, job_id, scope, request_id, operation, profile_id, requested_model, routing_model, request_sha256, lifecycle, attempt, max_attempts, lease_fence, next_attempt_at, created_at, updated_at]
+      properties:
+        contract_version: { type: string, enum: [unirouter.async-media-runtime.v1] }
+        job_id: { type: string, pattern: '^mediajob_[a-f0-9]{32}$' }
+        scope:
+          type: object
+          additionalProperties: false
+          required: [org_id, project_id]
+          properties:
+            org_id: { type: integer, format: int64, minimum: 1 }
+            project_id: { type: integer, format: int64, minimum: 1 }
+        request_id: { type: string }
+        client_request_id: { type: string }
+        operation: { type: string, enum: [text_to_image] }
+        profile_id: { type: string, enum: [unirouter.openai.images.gpt-image.v1] }
+        requested_model: { type: string }
+        routing_model: { type: string }
+        mapped_model: { type: string }
+        request_sha256: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
+        lifecycle: { $ref: "#/components/schemas/MediaLifecycle" }
+        attempt: { type: integer, minimum: 0 }
+        max_attempts: { type: integer, minimum: 1, maximum: 10 }
+        lease_fence: { type: integer, format: int64, minimum: 0 }
+        lease_expires_at: { type: string, format: date-time }
+        next_attempt_at: { type: string, format: date-time }
+        output: { $ref: "#/components/schemas/MediaOutput" }
+        charge_fact: { $ref: "#/components/schemas/MediaChargeFact" }
+        error_code: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        terminal_at: { type: string, format: date-time }
+    MediaJobCreateResult:
+      type: object
+      additionalProperties: false
+      required: [job, reused]
+      properties:
+        job: { $ref: "#/components/schemas/MediaJob" }
+        reused: { type: boolean }
+    MediaCancellationResult:
+      type: object
+      additionalProperties: false
+      required: [job, outcome]
+      properties:
+        job: { $ref: "#/components/schemas/MediaJob" }
+        outcome: { type: string, enum: [requested, accepted, too_late, indeterminate] }
+    MediaJobListResult:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/MediaJob" }
+        next_cursor: { type: string }
+    MediaRuntimeEvidence:
+      type: object
+      additionalProperties: false
+      required: [contract_version, profile_id, retention, video_enabled, runtime_enabled, admission_enabled, charge_trigger, amount_state]
+      properties:
+        contract_version: { type: string, enum: [unirouter.async-media-runtime.v1] }
+        profile_id: { type: string, enum: [unirouter.openai.images.gpt-image.v1] }
+        retention: { type: string, enum: [P7D] }
+        video_enabled: { type: boolean, enum: [false] }
+        runtime_enabled: { type: boolean }
+        admission_enabled: { type: boolean }
+        charge_trigger: { type: string, enum: [provider_terminal_success_and_output_persisted] }
+        amount_state: { type: string, enum: [pricing_pending_media_rate_card] }
     XInsightFeedCredentialSummary:
       type: object
       additionalProperties: false

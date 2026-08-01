@@ -1,0 +1,76 @@
+{
+  "schema_version": "unirouter.provider-conformance-fixture.v1",
+  "fixture_id": "azure-openai-embeddings-success.v1",
+  "adapter_type": "azure_openai",
+  "request": {
+    "endpoint": "/v1/embeddings",
+    "base_url": "https://contoso.services.ai.azure.com",
+    "requested_model": "company-embed",
+    "mapped_model": "embed-prod",
+    "request_id": "req-fixture-azure-embeddings",
+    "adapter_config": {
+      "api_version": "2024-10-21",
+      "deployment": "embed-prod",
+      "auth_mode": "entra_bearer"
+    },
+    "body": {
+      "model": "company-embed",
+      "input": "synthetic fixture"
+    },
+    "expected": {
+      "method": "POST",
+      "url": "https://contoso.services.ai.azure.com/openai/deployments/embed-prod/embeddings?api-version=2024-10-21",
+      "auth_header": "Authorization",
+      "model_on_wire": ""
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "body": {
+      "object": "list",
+      "data": [
+        {
+          "object": "embedding",
+          "index": 0,
+          "embedding": [
+            0.5,
+            -0.125
+          ]
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4,
+        "total_tokens": 4
+      }
+    },
+    "expected_usage": {
+      "prompt_tokens": 4,
+      "completion_tokens": 0,
+      "total_tokens": 4,
+      "authority": "provider_reported",
+      "finality": "final"
+    }
+  },
+  "missing_usage_response": {
+    "status_code": 200,
+    "body": {
+      "object": "list",
+      "data": []
+    },
+    "expected_authority": "none",
+    "expected_finality": "missing"
+  },
+  "error_cases": [
+    {
+      "status_code": 401,
+      "body": {
+        "error": {
+          "code": "Unauthorized",
+          "message": "synthetic auth failure"
+        }
+      },
+      "expected_failure_kind": "auth",
+      "expected_retryable": false
+    }
+  ]
+}

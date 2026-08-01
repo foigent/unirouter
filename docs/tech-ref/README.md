@@ -35,6 +35,10 @@
 | 27 | [Signed Offline Upgrade Bundle](27-signed-offline-upgrade.md) | V1 deterministic signed bundle, embedded independent trust root, tamper/rollback/schema preflight and installed-release readback | v1.1 |
 | 28 | [Completed-Execution Feed V1](28-completed-execution-feed-v1.md) | UniRouter-owned final metadata contract, private pull cursor, feed-only authorization, retention and rollback boundary | v1.0 |
 | 29 | [Foigent Event Connector 协议 Pin 与 Reference Runtime](29-foigent-event-connector-protocol-pin.md) | 协议 v1.1 authority、产品 pin、Reference runtime 与 LiteLLM conformance-only 所有权边界 | v1.1 |
+| 30 | [Provider Conformance Pack V1](30-provider-conformance-pack-v1.md) | 三个离线 Provider Pack、Azure OpenAI 原生适配、确定性 runner、Admin API 与兼容性声明边界 | v1.0 |
+| 31 | [Contextual Inspectors And Local Views](31-contextual-inspectors-and-local-views.md) | Audit/Projects 常驻检查器、受控深链、本地元数据视图、竞态与失效关闭合同 | v1.0 |
+| 32 | [OTel/OpenInference Metadata Export](32-otel-openinference-metadata-export.md) | 默认关闭、Outbox 后置、metadata-only OTLP/HTTP 导出、隐私/基数/重试与 Source 兼容边界 | v1.0 |
+| 39 | [Provenance Passport And Second Connector](39-provenance-passport-and-second-connector.md) | exact Source provenance、Capture Gap、LiteLLM 跨语言 conformance-only 证明与运行时隔离 | v1.0 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 历史需求参考

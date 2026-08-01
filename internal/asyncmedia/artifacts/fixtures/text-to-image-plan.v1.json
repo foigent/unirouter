@@ -1,0 +1,135 @@
+{
+  "schema_version": "unirouter.async-media-job-fixture.v1",
+  "fixture_id": "text-to-image-plan.v1",
+  "dependencies": [
+    {
+      "path": "internal/endpointprotocol/artifacts/endpoint-profile.v1.schema.json",
+      "sha256": "sha256:e1546a5a7638e400f89b43ea6684e2879a072eb13f0a74a312979aea356752cc"
+    },
+    {
+      "path": "internal/endpointprotocol/artifacts/fixtures/openai-gpt-image-v1.json",
+      "sha256": "sha256:3b802f15539ff4fe0309ca93a779a3639da5910b0f28df3087aa24520fa16755"
+    },
+    {
+      "path": "internal/endpointprotocol/artifacts/manifests/openai-gpt-image.v1.json",
+      "sha256": "sha256:792d54b5341ae13425afd24ffa864c068b705043f2b09f29c6c717963b9febd7"
+    },
+    {
+      "path": "internal/endpointprotocol/artifacts/reports/core.v1.json",
+      "sha256": "sha256:ab3d4ec66077922ce921f1def0ccfa501ba8bf5866190c3581fa5c71a91b5759"
+    }
+  ],
+  "plan": {
+    "contract_version": "unirouter.async-media-job-plan.v1",
+    "plan_id": "text-to-image-plan.v1.plan",
+    "runtime_state": "decision_gated_p7_d03",
+    "tenant_scope": {
+      "org_ref": "101",
+      "project_ref": "202"
+    },
+    "operation_class": "text_to_image",
+    "intent_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "idempotency_key": "sha256:ae4d66effd5b36a45299a4577354299142139ebd9828f98219227b0cae071691",
+    "input_objects": [],
+    "output": {
+      "modality": "image",
+      "count": "1"
+    },
+    "decision_gates": {
+      "media_provider": "unresolved_p7_d03",
+      "object_store": "unresolved_p7_d03",
+      "retention": "unresolved_p7_d03",
+      "charge_trigger": "unresolved_p7_d03"
+    },
+    "lifecycle": {
+      "admission_state": "contract_only",
+      "queue_state": "not_created",
+      "lease_state": "not_created",
+      "execution_state": "not_started",
+      "outcome_state": "unknown",
+      "cancellation_state": "not_requested",
+      "settlement_state": "not_started_decision_gated"
+    },
+    "endpoint_evidence": {
+      "coverage_status": "covered_by_decision_gated_profile",
+      "reference_profile_id": "unirouter.openai.images.gpt-image.v1",
+      "reference_manifest_path": "internal/endpointprotocol/artifacts/manifests/openai-gpt-image.v1.json",
+      "reference_manifest_sha256": "sha256:792d54b5341ae13425afd24ffa864c068b705043f2b09f29c6c717963b9febd7"
+    },
+    "charge_state": "unresolved_not_customer_chargeable",
+    "gaps": [
+      {
+        "gap_id": "charge_trigger_unresolved",
+        "state": "missing",
+        "provenance": "declared_by_product_gate"
+      },
+      {
+        "gap_id": "media_provider_unresolved",
+        "state": "missing",
+        "provenance": "declared_by_product_gate"
+      },
+      {
+        "gap_id": "object_store_unresolved",
+        "state": "missing",
+        "provenance": "declared_by_product_gate"
+      },
+      {
+        "gap_id": "retention_unresolved",
+        "state": "missing",
+        "provenance": "declared_by_product_gate"
+      }
+    ],
+    "threat_controls": [
+      "cancel_complete_race_and_double_charge",
+      "cross_tenant_object_reference",
+      "lease_split_brain_and_duplicate_dispatch",
+      "malformed_media_and_decompression_bomb",
+      "mutable_object_substitution",
+      "provider_callback_spoofing",
+      "raw_media_or_prompt_persistence",
+      "retention_purge_failure",
+      "signed_url_or_locator_leakage"
+    ],
+    "privacy": {
+      "metadata_only": true,
+      "raw_prompt_included": false,
+      "raw_media_bytes_included": false,
+      "storage_locator_included": false,
+      "signed_url_included": false,
+      "credential_included": false
+    },
+    "runtime_boundary": {
+      "runtime_registered": false,
+      "queue_created": false,
+      "lease_created": false,
+      "object_persisted": false,
+      "provider_network_call": false,
+      "credentials_accepted": false,
+      "callback_accepted": false,
+      "customer_charge_created": false,
+      "runtime_mutation": "none",
+      "external_decision_gate": "P7-D03"
+    },
+    "compatibility": {
+      "request_path_unchanged": true,
+      "routing_unchanged": true,
+      "billing_unchanged": true,
+      "completed_feed_wire_unchanged": true,
+      "outbox_identity_unchanged": true,
+      "cursor_behavior_unchanged": true
+    }
+  },
+  "expected": {
+    "operation_class": "text_to_image",
+    "input_object_count": 0,
+    "output_modality": "image",
+    "coverage_status": "covered_by_decision_gated_profile",
+    "gap_ids": [
+      "charge_trigger_unresolved",
+      "media_provider_unresolved",
+      "object_store_unresolved",
+      "retention_unresolved"
+    ],
+    "runtime_mutation": "none"
+  }
+}

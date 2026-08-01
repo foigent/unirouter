@@ -1,0 +1,40 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.cohere.rerank.v2",
+  "profile_version": "1.0.0",
+  "provider": "cohere",
+  "runtime_state": "local_contract_only",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.cohere.rerank.v2",
+    "profile_version": "1.0.0",
+    "provider": "cohere",
+    "endpoint_kind": "rerank",
+    "downstream_endpoint": "/v1/rerank",
+    "upstream_endpoint": "/v2/rerank",
+    "authentication": "bearer",
+    "runtime_state": "local_contract_only",
+    "provider_finality": "synchronous_results_with_billed_search_units",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "text"
+    ],
+    "observed_unit_classes": [
+      "search_units"
+    ],
+    "unsupported_semantics": [
+      "document_objects",
+      "provider_returned_documents",
+      "streaming"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "cohere-rerank-v2.v1",
+      "path": "fixtures/cohere-rerank-v2.v1.json",
+      "sha256": "sha256:d7de1ac04e98d7dd73d1616115f05d60daa3598fa747f26b0bbf48a4ce4ab49f"
+    }
+  ]
+}

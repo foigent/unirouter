@@ -1,0 +1,26 @@
+{
+  "schema_version": "unirouter.provenance-passport-fixture.v1",
+  "fixture_id": "settled-passport",
+  "request": {
+    "contract_version": "unirouter.provenance-passport.v1",
+    "passport_id": "passport-settled-001",
+    "source_profile": "unirouter.completedfeed.reference-v1",
+    "source_instance": "unirouter-development",
+    "source_revision": "1",
+    "source_snapshot_base64": "ewogICJzY2hlbWFfdmVyc2lvbiI6ICJ1bmlyb3V0ZXIuY29tcGxldGVkLWV4ZWN1dGlvbi52MSIsCiAgInJlcXVlc3RfaWQiOiAicmVxX2ZlZWRfdjFfc2V0dGxlZCIsCiAgIm9yZ19pZCI6IDEwMSwKICAicHJvamVjdF9pZCI6IDIwMiwKICAidGVybWluYWwiOiB7CiAgICAic3RhdHVzIjogInNldHRsZWQiLAogICAgImF2YWlsYWJsZV9hdCI6ICIyMDI2LTA3LTI1VDA0OjA1OjA2WiIKICB9LAogICJ1c2FnZSI6IHsKICAgICJtb2RlbCI6ICJzeW50aGV0aWMtbW9kZWwiLAogICAgInByb21wdF90b2tlbnMiOiA4LAogICAgInVuY2FjaGVkX3Byb21wdF90b2tlbnMiOiA1LAogICAgImNhY2hlX3JlYWRfdG9rZW5zIjogMiwKICAgICJjYWNoZV9jcmVhdGlvbl90b2tlbnMiOiAxLAogICAgImNvbXBsZXRpb25fdG9rZW5zIjogMywKICAgICJzb3VyY2UiOiAicHJvdmlkZXIiLAogICAgImF1dGhvcml0eSI6ICJwcm92aWRlciIsCiAgICAicHVycG9zZSI6ICJiaWxsaW5nIiwKICAgICJmaW5hbGl0eSI6ICJmaW5hbCIsCiAgICAiY29udHJhY3RfdmVyc2lvbiI6ICJ1c2FnZS52MSIsCiAgICAiY2FjaGVfdXNhZ2Vfc2NoZW1hIjogImNhY2hlLnYxIiwKICAgICJjYWNoZV91c2FnZV9zdGF0dXMiOiAicmVwb3J0ZWQiCiAgfSwKICAibW9uZXkiOiB7CiAgICAic2NoZW1hIjogIm1pY3JvLWNueS52MSIsCiAgICAiY3VycmVuY3kiOiAiQ05ZIiwKICAgICJhbW91bnRfc2NhbGUiOiAxMDAwMDAwLAogICAgImNhbGN1bGF0ZWRfY29zdF9taWNyb3MiOiAiMTciLAogICAgImNoYXJnZWRfY29zdF9taWNyb3MiOiAiMTciLAogICAgInByaWNpbmdfdmVyc2lvbiI6ICJwcmljaW5nLXYxIgogIH0sCiAgImNhcHR1cmVfZ2FwcyI6IFsKICAgIHsic291cmNlIjogImNhbGxfbG9nIiwgInJlYXNvbiI6ICJub3RfYXZhaWxhYmxlX2F0X2JpbGxpbmdfdGVybWluYWwifSwKICAgIHsic291cmNlIjogInJlcXVlc3RfdHJhY2UiLCAicmVhc29uIjogIm5vdF9hdmFpbGFibGVfYXRfYmlsbGluZ190ZXJtaW5hbCJ9LAogICAgeyJzb3VyY2UiOiAiY2xpZW50X2lwX3ByZXNlbmNlIiwgInJlYXNvbiI6ICJub3RfYXZhaWxhYmxlX2F0X2JpbGxpbmdfdGVybWluYWwifSwKICAgIHsic291cmNlIjogInVwc3RyZWFtX2Vycm9yX3ByZXNlbmNlIiwgInJlYXNvbiI6ICJub3RfYXZhaWxhYmxlX2F0X2JpbGxpbmdfdGVybWluYWwifQogIF0KfQo=",
+    "openinference_evidence_sha256": "sha256:25cead642e4e9a59f47e514580b5a69e889d8f78022117f2c32dd4e8fd6efe56"
+  },
+  "expected": {
+    "source_hash": "sha256:5e9eda0a2630d52c5589d38b8ec480604c47c2cc77391b75a57b2a159db6dd27",
+    "envelope_hash": "sha256:0d11f98f981427b7bcf175e82294511ca42981c0ecea8e02f841c3777743d1d2",
+    "idempotency_key": "sha256:c2822f0d940c01de77e2e06af1a5f6e1fd10fc66269be20fceb0939150c17b2e",
+    "direct_fields": 9,
+    "derived_fields": 2,
+    "declared_fields": 2,
+    "missing_fields": 4,
+    "capture_gaps": 4,
+    "second_connector_cases": 20,
+    "second_connector_classes": 11,
+    "runtime_mutation": "none"
+  }
+}

@@ -2,6 +2,32 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Current product iteration (2026-07-31):** PRD7 is accepted for
+> repository-local implementation and active on
+> `codex/product-iteration-20260730`. Read `docs/PRD-Phase7.md`,
+> `docs/ops/PRD7-ACCEPTANCE-MATRIX.md`,
+> `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` and the first section of
+> `docs/agent-workflows/EXECUTION-RECORD.md`. B0 through B14 are complete at
+> the Local evidence level allowed by the accepted scope. B14 resolves the
+> repository-local P7-D03 dependency with an isolated GPT Image V1 job plane:
+> tenant/API-key-bound idempotency, PostgreSQL queue/lease/fence/recovery,
+> S3-compatible immutable output and recovery receipt, seven-day read expiry
+> and purge, fail-closed ambiguous provider outcomes, charge-eligibility facts
+> without wallet debit, public/admin metadata APIs and an always-rendered
+> Media Jobs Inspector. Exact contract and evidence:
+> `docs/architecture/44-async-media-image-v1-runtime-contract.md` and
+> `docs/ops/evidence/PRD7-B14-P7F19-async-media-image-v1-runtime-local-20260731.md`.
+> Video remains disabled until an independent Endpoint Profile exists.
+> Responses and rerank remain contract-only; the GPT Image Endpoint Profile
+> records repository-local runtime evidence, not provider-network evidence.
+> Full Go/vet, isolated PostgreSQL integration, 48-file/336-test frontend,
+> type-check/build and 1440/1024/390 static-mock browser checks pass. Preserve
+> all earlier B1-B13 evidence, PRD5/PRD6 and completed-execution Feed
+> compatibility. There is no next autonomous repository-local batch in the
+> accepted plan: a future step must explicitly resolve one of P7-D01, D02,
+> D04, D05, D06 or D07. No deployment, traffic, real credentials/providers/
+> object stores/IdPs, non-test DB changes, cursor/checkpoint changes, push, PR
+> or merge is authorized by the product-iteration scope.
 > **Newest checkpoint (2026-07-21
 > `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT`):** UniRouter accepted the
 > exact User

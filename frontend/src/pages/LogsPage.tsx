@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Tooltip, Divider, Toast } from '@douyinfe/semi-ui';
-import { IconSearch, IconRefresh, IconClose, IconCopy } from '@douyinfe/semi-icons';
+import { IconSearch, IconRefresh, IconCopy } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
 import { isPlatformAdminRole } from '../navigation';
@@ -115,6 +115,16 @@ interface TraceEvent {
   source_event_hash?: string | null;
 }
 
+type ReceiptTab = 'decision' | 'attempts' | 'policy' | 'cost' | 'provenance';
+
+const receiptTabs: Array<{ key: ReceiptTab; label: string }> = [
+  { key: 'decision', label: 'Decision' },
+  { key: 'attempts', label: 'Attempts' },
+  { key: 'policy', label: 'Policy & Guardrail' },
+  { key: 'cost', label: 'Cost & Finality' },
+  { key: 'provenance', label: 'Provenance & Gaps' },
+];
+
 function filtersToParams(filters: LogFilters): string {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, v); });
@@ -129,6 +139,11 @@ function paramsToFilters(): LogFilters {
     if (v) (f as any)[k] = v;
   });
   return f;
+}
+
+function selectedLogIDFromParams(): number | undefined {
+  const value = Number(new URLSearchParams(window.location.search).get('log_id'));
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
 const filterLabels: Record<keyof LogFilters, string> = {
@@ -221,6 +236,20 @@ function uniqueEvidenceValues(events: TraceEvent[], key: keyof TraceEvent) {
   return [...new Set(events.map(event => event[key]).filter((value): value is string => typeof value === 'string' && value.length > 0))];
 }
 
+function metadataString(event: TraceEvent | undefined, key: string) {
+  const value = event?.metadata?.[key];
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+function isPolicyEvent(event: TraceEvent) {
+  const decisionKind = event.decision_kind || '';
+  return ['admission', 'auth', 'quota', 'budget', 'payload_capture', 'policy'].includes(decisionKind) ||
+    ['auth', 'quota', 'budget', 'guardrail', 'payload_policy', 'policy'].includes(event.stage) ||
+    /(guardrail|policy|quota|budget|auth|payload)/i.test(event.event_type);
+}
+
 function traceEvidenceTags(event: TraceEvent) {
   const tags = [
     { key: 'source', label: 'source', value: event.source_component, color: undefined },
@@ -299,35 +328,88 @@ export default function LogsPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
+  const [logsError, setLogsError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [filters, setFilters] = useState<LogFilters>(paramsToFilters);
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
-  const [showDetail, setShowDetail] = useState(false);
+  const [receiptTab, setReceiptTab] = useState<ReceiptTab>('decision');
   const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
   const [traceLoading, setTraceLoading] = useState(false);
+  const [traceError, setTraceError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const selectedLogIDRef = useRef<number | undefined>(selectedLogIDFromParams());
+  const traceRequestRef = useRef(0);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [customTimeStart, setCustomTimeStart] = useState('');
   const [customTimeEnd, setCustomTimeEnd] = useState('');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const targetOrgID = platform ? selectedOrgID : undefined;
 
+  const loadTrace = useCallback((record: Log) => {
+    const requestSequence = ++traceRequestRef.current;
+    setTraceEvents([]);
+    setTraceLoading(true);
+    setTraceError(null);
+    (targetOrgID ? api.getLogTrace(record.id, targetOrgID) : api.getLogTrace(record.id))
+      .then((data: any) => {
+        if (requestSequence !== traceRequestRef.current) return;
+        setTraceEvents(Array.isArray(data?.events) ? data.events : []);
+      })
+      .catch((e) => {
+        if (requestSequence !== traceRequestRef.current) return;
+        console.error('Failed to fetch request trace', e);
+        setTraceEvents([]);
+        setTraceError('执行证据加载失败；当前状态不能解释为“未捕获”。');
+      })
+      .finally(() => {
+        if (requestSequence === traceRequestRef.current) setTraceLoading(false);
+      });
+  }, [targetOrgID]);
+
+  const selectLog = useCallback((record: Log) => {
+    selectedLogIDRef.current = record.id;
+    setSelectedLog(record);
+    loadTrace(record);
+  }, [loadTrace]);
+
   const fetchLogs = useCallback(async (p?: number) => {
     setLoading(true);
+    setLogsError(null);
     try {
       const currentPage = p ?? page;
       const data = await api.getLogs(currentPage, pageSize, targetOrgID ? { ...filters, org_id: targetOrgID } : filters);
-      setLogs(data.data || []);
+      const nextLogs = Array.isArray(data.data) ? data.data : [];
+      setLogs(nextLogs);
       setTotal(data.total || 0);
+      const nextSelected = nextLogs.find((log: Log) => log.id === selectedLogIDRef.current) || nextLogs[0] || null;
+      if (nextSelected) {
+        selectLog(nextSelected);
+      } else {
+        selectedLogIDRef.current = undefined;
+        traceRequestRef.current += 1;
+        setSelectedLog(null);
+        setTraceEvents([]);
+        setTraceLoading(false);
+        setTraceError(null);
+      }
     } catch (e) {
       console.error('Failed to fetch logs', e);
+      setLogs([]);
+      setTotal(0);
+      selectedLogIDRef.current = undefined;
+      traceRequestRef.current += 1;
+      setSelectedLog(null);
+      setTraceEvents([]);
+      setTraceLoading(false);
+      setTraceError(null);
+      setLogsError('请求日志加载失败；当前筛选结果不可用。');
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, filters, targetOrgID]);
+  }, [page, pageSize, filters, targetOrgID, selectLog]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
@@ -351,9 +433,12 @@ export default function LogsPage() {
 
   useEffect(() => {
     const qs = filtersToParams(filters);
-    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    const params = new URLSearchParams(qs);
+    if (selectedLog?.id) params.set('log_id', String(selectedLog.id));
+    const query = params.toString();
+    const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
     window.history.replaceState(null, '', url);
-  }, [filters]);
+  }, [filters, selectedLog?.id]);
 
   const updateFilter = useCallback((key: keyof LogFilters, value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -368,35 +453,29 @@ export default function LogsPage() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         searchRef.current?.focus();
+        return;
       }
-      if (e.key === 'Escape' && showDetail) {
-        setShowDetail(false);
-      }
+      const target = e.target;
+      if (
+        target instanceof Element
+        && target.closest('input, textarea, select, button, [role="combobox"], [role="listbox"], [contenteditable="true"]')
+      ) return;
+      if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || logs.length === 0) return;
+      e.preventDefault();
+      const currentIndex = logs.findIndex(log => log.id === selectedLog?.id);
+      const nextIndex = e.key === 'ArrowDown'
+        ? Math.min(currentIndex < 0 ? 0 : currentIndex + 1, logs.length - 1)
+        : Math.max(currentIndex < 0 ? 0 : currentIndex - 1, 0);
+      selectLog(logs[nextIndex]);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [showDetail]);
+  }, [logs, selectedLog?.id, selectLog]);
 
   const clearFilters = () => {
     setFilters({});
     setPage(1);
   };
-
-  const openLogDetail = useCallback((record: Log) => {
-    setSelectedLog(record);
-    setShowDetail(true);
-    setTraceEvents([]);
-    setTraceLoading(true);
-    (targetOrgID ? api.getLogTrace(record.id, targetOrgID) : api.getLogTrace(record.id))
-      .then((data: any) => {
-        setTraceEvents(Array.isArray(data?.events) ? data.events : []);
-      })
-      .catch((e) => {
-        console.error('Failed to fetch request trace', e);
-        setTraceEvents([]);
-      })
-      .finally(() => setTraceLoading(false));
-  }, [targetOrgID]);
 
   const changeOrganization = (value: unknown) => {
     const orgID = Number(value);
@@ -405,9 +484,12 @@ export default function LogsPage() {
     setPage(1);
     setLogs([]);
     setTotal(0);
+    selectedLogIDRef.current = undefined;
+    traceRequestRef.current += 1;
     setSelectedLog(null);
-    setShowDetail(false);
     setTraceEvents([]);
+    setTraceLoading(false);
+    setTraceError(null);
   };
 
   const hasActiveFilters = Object.values(filters).some(v => v);
@@ -442,7 +524,8 @@ export default function LogsPage() {
     setPage(1);
   };
 
-  const columns = [
+  const tableColumns = useMemo(() => {
+    const columns = [
     {
       title: 'Request ID',
       dataIndex: 'request_id',
@@ -529,34 +612,72 @@ export default function LogsPage() {
       width: 160,
       render: (v: string) => <Text size="small">{formatDateTime(v)}</Text>,
     },
-  ];
-  const compactColumnWidths: Record<string, number> = {
-    request_id: 124,
-    model: 116,
-    provider: 86,
-    status_code: 68,
-  };
-  const compactColumns = columns
-    .filter(col => ['request_id', 'model', 'provider', 'status_code'].includes(col.key as string))
-    .map(col => ({ ...col, width: compactColumnWidths[col.key as string] }));
-  const tableColumns = showDetail && selectedLog ? compactColumns : columns;
+    ];
+    const compactColumnWidths: Record<string, number> = {
+      request_id: 124,
+      model: 116,
+      provider: 86,
+      status_code: 68,
+    };
+    return columns
+      .filter(col => ['request_id', 'model', 'provider', 'status_code'].includes(col.key as string))
+      .map(col => ({ ...col, width: compactColumnWidths[col.key as string] }));
+  }, []);
   const traceIDs = uniqueEvidenceValues(traceEvents, 'trace_id');
   const captureModes = uniqueEvidenceValues(traceEvents, 'capture_mode');
   const payloadModes = uniqueEvidenceValues(traceEvents, 'payload_capture_mode');
   const sourceComponents = uniqueEvidenceValues(traceEvents, 'source_component');
   const upstreamRequestIDs = uniqueEvidenceValues(traceEvents, 'upstream_request_id');
   const actorTypes = uniqueEvidenceValues(traceEvents, 'actor_type');
-  const captureGapCount = traceEvents.filter(event => event.capture_gap).length;
-  const decisionCount = traceEvents.filter(event => event.decision_kind || event.decision_result).length;
+  const actorRefs = uniqueEvidenceValues(traceEvents, 'actor_ref');
+  const onBehalfOf = uniqueEvidenceValues(traceEvents, 'on_behalf_of');
+  const evidenceRefs = uniqueEvidenceValues(traceEvents, 'evidence_ref');
+  const sourceEventHashes = uniqueEvidenceValues(traceEvents, 'source_event_hash');
+  const schemaVersions = uniqueEvidenceValues(traceEvents, 'schema_version');
+  const gapEvents = traceEvents.filter(event => event.capture_gap);
+  const decisionEvents = traceEvents.filter(event => event.decision_kind || event.decision_result);
+  const policyEvents = traceEvents.filter(isPolicyEvent);
   const routeAttempts = routeAttemptsFromTrace(traceEvents);
   const noRoute = traceEvents.some(event => event.event_type === 'routing.no_route');
+  const billingTerminalEvent = [...traceEvents].reverse().find(event =>
+    [
+      'billing.settle.succeeded',
+      'billing.settle.pending_recovery',
+      'billing.settlement_usage.failed',
+      'billing.cancelled.no_billable_output',
+    ].includes(event.event_type)
+  );
+  const exactBillingStatus = metadataString(billingTerminalEvent, 'billing_status');
+  const billingTerminalStatus = traceError
+    ? 'unavailable'
+    : billingTerminalEvent?.event_type === 'billing.settle.succeeded'
+    ? exactBillingStatus || 'settled'
+    : billingTerminalEvent?.event_type === 'billing.settle.pending_recovery'
+      ? exactBillingStatus || 'pending recovery'
+      : billingTerminalEvent?.event_type === 'billing.settlement_usage.failed'
+        ? exactBillingStatus || 'settlement usage failed'
+        : billingTerminalEvent?.event_type === 'billing.cancelled.no_billable_output'
+          ? exactBillingStatus || 'cancellation outcome captured'
+        : 'not captured';
+  const billingTerminalTone = billingTerminalStatus === 'settled' || billingTerminalStatus === 'cancelled_no_billable_output'
+    ? 'success'
+    : billingTerminalStatus.includes('failed')
+      ? 'failed'
+      : 'warning';
+  const authoritySummary = traceLoading
+    ? 'loading'
+    : traceError
+    ? 'unavailable'
+    : actorRefs.length > 0
+    ? `${actorTypes[0] || 'unknown'}:${compactEvidenceValue(actorRefs[0], 20)}`
+    : actorTypes[0] || '未捕获';
 
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="监控与用量"
-        title="请求日志"
-        description="用于定位失败请求、成本异常、延迟抖动和上游供应商问题。"
+        eyebrow="Operations"
+        title="执行请求"
+        description="以执行决策凭证定位权限、路由、策略、安全、成本终态和证据缺口。"
         actions={(
           <>
             {platform && (
@@ -581,7 +702,7 @@ export default function LogsPage() {
         )}
       />
 
-      <div className={`ur-explorer ${showDetail && selectedLog ? 'ur-explorer-with-detail' : ''}`}>
+      <div className="ur-explorer ur-explorer-with-detail">
         <aside className="ur-explorer-panel ur-explorer-filters">
           <div className="ur-panel-title">
             <Title heading={5} style={{ margin: 0 }}>筛选器</Title>
@@ -763,8 +884,18 @@ export default function LogsPage() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <Title heading={5} style={{ margin: 0 }}>日志记录</Title>
-            <Text className="ur-panel-hint">点击行查看详情</Text>
+            <Text className="ur-panel-hint">默认选择最新记录 · ↑/↓ 切换</Text>
           </div>
+
+          {logsError && (
+            <div className="ur-detail-card ur-detail-card-error" role="alert">
+              <Text className="ur-detail-card-title">请求列表不可用</Text>
+              <Text size="small">{logsError}</Text>
+              <div>
+                <Button size="small" type="primary" onClick={() => fetchLogs()}>重试列表</Button>
+              </div>
+            </div>
+          )}
 
           <div className="ur-table-shell">
             <Table
@@ -776,7 +907,7 @@ export default function LogsPage() {
               onRow={(record) => ({
                 onClick: () => {
                   if (record) {
-                    openLogDetail(record as Log);
+                    selectLog(record as Log);
                   }
                 },
                 style: { cursor: 'pointer', background: selectedLog?.id === (record as any)?.id ? 'var(--ur-bg-subtle)' : undefined },
@@ -794,232 +925,411 @@ export default function LogsPage() {
           </div>
         </main>
 
-        {showDetail && selectedLog && (
-          <aside className="ur-explorer-panel ur-explorer-detail">
-            <div className="ur-detail-header">
-              <div>
-                <Text className="ur-panel-hint">请求检查器</Text>
-                <Title heading={5} style={{ margin: 0 }}>请求详情</Title>
-              </div>
-              <Button type="tertiary" size="small" icon={<IconClose />} onClick={() => setShowDetail(false)} />
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="执行决策凭证">
+          <div className="ur-detail-header">
+            <div>
+              <Text className="ur-panel-hint">Execution Decision Receipt</Text>
+              <Title heading={5} style={{ margin: 0 }}>执行决策凭证</Title>
             </div>
+            <Tag size="small" color={selectedLog ? 'blue' : undefined}>{selectedLog ? '常驻检查器' : '等待记录'}</Tag>
+          </div>
 
+          {!selectedLog ? (
+            <div className="ur-receipt-empty" role="status">
+              <Title heading={5}>{logsError ? '等待可验证的请求列表' : '暂无可检查的执行'}</Title>
+              <Text type="tertiary">
+                {logsError
+                  ? '列表加载失败时不会保留旧凭证或把失败解释为空结果。'
+                  : '日志出现后将自动选择最新记录；无需再次点击打开详情。'}
+              </Text>
+            </div>
+          ) : (
             <div className="ur-detail-stack">
               <div className="ur-detail-hero">
                 <div>
                   <Text type="tertiary" size="small">操作 ID（Request ID）</Text>
                   <div className="ur-request-id-full">
                     <Text code>{selectedLog.request_id}</Text>
-                    <Button type="tertiary" size="small" icon={<IconCopy />} onClick={() => copyToClipboard(selectedLog.request_id)} className="ur-copy-button" aria-label="复制 Request ID" />
+                    <Button type="tertiary" size="small" icon={<IconCopy />} onClick={() => copyToClipboard(selectedLog.request_id)} className="ur-copy-button" aria-label="复制当前 Request ID" />
                   </div>
                 </div>
                 <StatusTag status={selectedLog.status_code}>{selectedLog.status_code}</StatusTag>
               </div>
 
-              <div className="ur-detail-card">
-                <Text className="ur-detail-card-title">请求信息</Text>
-                <div className="ur-detail-grid">
-                  <div>
-                    <Text type="tertiary" size="small">模型</Text>
-                    <div><Tag size="small">{selectedLog.model}</Tag></div>
-                  </div>
-                  <div>
-                    <Text type="tertiary" size="small">请求模型</Text>
-                    <div><Text size="small">{selectedLog.requested_model || '-'}</Text></div>
-                  </div>
-                  <div>
-                    <Text type="tertiary" size="small">通道名称</Text>
-                    <div><Text size="small">{selectedLog.channel || '-'}</Text></div>
-                  </div>
-                  <div>
-                    <Text type="tertiary" size="small">供应商 / 协议</Text>
-                    <div><Tag size="small" color="blue">{selectedLog.provider || '-'}</Tag></div>
-                  </div>
-                  <div>
-                    <Text type="tertiary" size="small">IP</Text>
-                    <div><Text size="small">{selectedLog.ip_address || '-'}</Text></div>
-                  </div>
-                  <div>
-                    <Text type="tertiary" size="small">时间</Text>
-                    <div><Text size="small">{formatDateTime(selectedLog.created_at)}</Text></div>
-                  </div>
-                  <div>
-                    <Text type="tertiary" size="small">客户端请求 ID</Text>
-                    <div><Text code size="small">{selectedLog.client_request_id || '-'}</Text></div>
-                  </div>
-                  <div>
-                    <Text type="tertiary" size="small">工作流 / Agent</Text>
-                    <div><Text code size="small">{selectedLog.workflow_id || '-'} / {selectedLog.agent_id || '-'}</Text></div>
-                  </div>
+              <div className="ur-receipt-summary" aria-label="执行凭证摘要">
+                <div>
+                  <Text type="tertiary" size="small">Authority</Text>
+                  <Text strong size="small">{authoritySummary}</Text>
+                </div>
+                <div>
+                  <Text type="tertiary" size="small">Route</Text>
+                  <Text strong size="small">{traceLoading ? '加载中' : traceError ? 'unavailable' : `${routeAttempts.length} attempt${routeAttempts.length === 1 ? '' : 's'}`}</Text>
+                </div>
+                <div>
+                  <Text type="tertiary" size="small">Financial finality</Text>
+                  <StatusTag status={billingTerminalTone}>{traceLoading ? 'loading' : billingTerminalStatus}</StatusTag>
+                </div>
+                <div>
+                  <Text type="tertiary" size="small">Declared gaps</Text>
+                  <StatusTag status={traceError ? 'warning' : gapEvents.length > 0 ? 'warning' : 'success'}>{traceLoading ? 'loading' : traceError ? 'unavailable' : gapEvents.length}</StatusTag>
                 </div>
               </div>
 
-              <div className="ur-detail-card">
-                <Text className="ur-detail-card-title">状态 & 性能</Text>
-                <Descriptions
-                  row
-                  size="small"
-                  data={[
-                    { key: '状态码', value: <StatusTag status={selectedLog.status_code}>{selectedLog.status_code}</StatusTag> },
-                    { key: '上游状态', value: selectedLog.upstream_status_code ? <StatusTag status={selectedLog.upstream_status_code}>{selectedLog.upstream_status_code}</StatusTag> : '-' },
-                    { key: '延迟', value: <LatencyText value={selectedLog.latency_ms} /> },
-                    { key: 'TTFT', value: selectedLog.ttft_ms ? `${selectedLog.ttft_ms}ms` : '-' },
-                    { key: '流式', value: selectedLog.is_stream ? <Tag size="small" color="blue">是</Tag> : <Tag size="small">否</Tag> },
-                  ]}
-                />
-              </div>
-
-              <div className="ur-detail-card">
-                <Text className="ur-detail-card-title">Token & 费用</Text>
-                <Descriptions
-                  row
-                  size="small"
-                  data={[
-                    { key: '提示词', value: selectedLog.prompt_tokens.toLocaleString() },
-                    { key: '生成', value: selectedLog.completion_tokens.toLocaleString() },
-                    { key: '合计', value: <Text strong>{selectedLog.total_tokens.toLocaleString()}</Text> },
-                    { key: '费用', value: <MoneyText micros={selectedLog.cost_micros || '0'} precision={6} strong tone="cost" /> },
-                    { key: '来源', value: usageSourceLabel(selectedLog.usage_source) },
-                  ]}
-                />
-              </div>
-
-              <div className="ur-detail-card">
-                <Text className="ur-detail-card-title">供应商 Prompt Cache</Text>
-                <Descriptions
-                  row
-                  size="small"
-                  data={[
-                    { key: '回传状态', value: <StatusTag status={selectedLog.cache_usage_schema ? 'success' : 'pending'}>{cacheUsageLabel(selectedLog.cache_usage_status)}</StatusTag> },
-                    { key: '普通输入', value: (selectedLog.uncached_prompt_tokens ?? selectedLog.prompt_tokens).toLocaleString() },
-                    { key: '缓存读取', value: (selectedLog.cache_read_tokens || 0).toLocaleString() },
-                    { key: '缓存写入', value: (selectedLog.cache_creation_tokens || 0).toLocaleString() },
-                    { key: '读取倍率', value: priceRatio(selectedLog.cache_read_ratio, selectedLog.effective_cache_read_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
-                    { key: '写入倍率', value: priceRatio(selectedLog.cache_creation_ratio, selectedLog.effective_cache_creation_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
-                    { key: '读取费用', value: <MoneyText micros={selectedLog.cache_read_cost_micros || '0'} precision={6} /> },
-                    { key: '写入费用', value: <MoneyText micros={selectedLog.cache_creation_cost_micros || '0'} precision={6} /> },
-                    { key: '价格版本', value: selectedLog.pricing_version ? <Text code size="small">{compactEvidenceValue(selectedLog.pricing_version, 28)}</Text> : '-' },
-                    { key: '字段合同', value: selectedLog.cache_usage_schema || '-' },
-                  ]}
-                />
-                <Text type="tertiary" size="small">这里仅展示供应商明确回传的 Prompt Cache 用量；“未回传”不会推测命中，也不会获得缓存折扣。</Text>
-              </div>
-
-              {!traceLoading && traceEvents.length > 0 && (
-                <div className="ur-detail-card">
-                  <Text className="ur-detail-card-title">证据质量</Text>
-                  <Descriptions
-                    row
-                    size="small"
-                    data={[
-                      { key: 'Trace ID', value: traceIDs.length > 0 ? <Text code>{compactEvidenceValue(traceIDs[0], 28)}</Text> : '-' },
-                      { key: '来源组件', value: sourceComponents.length > 0 ? sourceComponents.map(v => <Tag key={v} size="small">{v}</Tag>) : '-' },
-                      { key: '采集模式', value: captureModes.length > 0 ? captureModes.map(v => <Tag key={v} size="small" color="blue">{v}</Tag>) : '-' },
-                      { key: 'Payload', value: payloadModes.length > 0 ? payloadModes.map(v => <Tag key={v} size="small" color="cyan">{v}</Tag>) : '-' },
-                      { key: '上游 ID', value: upstreamRequestIDs.length > 0 ? <Text code>{compactEvidenceValue(upstreamRequestIDs[0], 28)}</Text> : '-' },
-                      { key: '决策事件', value: decisionCount > 0 ? `${decisionCount} 个` : '-' },
-                      { key: 'Actor', value: actorTypes.length > 0 ? actorTypes.map(v => <Tag key={v} size="small">{v}</Tag>) : '-' },
-                      { key: 'Capture gap', value: captureGapCount > 0 ? <Tag size="small" color="orange">{captureGapCount} 个</Tag> : <Tag size="small" color="green">0</Tag> },
-                    ]}
-                  />
+              {traceLoading ? (
+                <div className="ur-detail-card" role="status">
+                  <Text className="ur-detail-card-title">执行证据加载中</Text>
+                  <Text type="tertiary" size="small">正在读取当前请求的结构化 Trace；加载完成前不作缺失或终态判断。</Text>
                 </div>
-              )}
+              ) : traceError ? (
+                <div className="ur-detail-card ur-detail-card-error" role="alert">
+                  <Text className="ur-detail-card-title">执行证据不可用</Text>
+                  <Text size="small">{traceError}</Text>
+                  <div>
+                    <Button size="small" type="primary" onClick={() => loadTrace(selectedLog)}>重试证据</Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <nav className="ur-receipt-tabs" aria-label="执行凭证视图">
+                    {receiptTabs.map(tab => (
+                      <Button
+                        key={tab.key}
+                        size="small"
+                        type={receiptTab === tab.key ? 'primary' : 'tertiary'}
+                        theme={receiptTab === tab.key ? 'solid' : 'borderless'}
+                        aria-pressed={receiptTab === tab.key}
+                        onClick={() => setReceiptTab(tab.key)}
+                      >
+                        {tab.label}
+                      </Button>
+                    ))}
+                  </nav>
 
-              {!traceLoading && (routeAttempts.length > 0 || noRoute) && (
-                <div className="ur-detail-card">
-                  <Text className="ur-detail-card-title">路由与故障切换</Text>
-                  <Descriptions
-                    row
-                    size="small"
-                    data={[
-                      { key: '路由尝试', value: `${routeAttempts.length} 次` },
-                      { key: '故障切换', value: routeAttempts.length > 1 ? `${routeAttempts.length - 1} 次` : '0 次' },
-                      { key: '最终结果', value: noRoute ? <StatusTag status="failed">无可用路由</StatusTag> : routeAttempts[routeAttempts.length - 1]?.outcome === 'accepted' ? <StatusTag status="success">上游接受</StatusTag> : <StatusTag status="warning">未确认</StatusTag> },
-                    ]}
-                  />
-                  {routeAttempts.length > 0 && (
-                    <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
-                      {routeAttempts.map(attempt => (
-                        <div key={`${attempt.sequence}-${attempt.attemptID || attempt.channel}`} style={{ display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr) auto', gap: 8, alignItems: 'center' }}>
-                          <Tag size="small">#{attempt.sequence}</Tag>
-                          <div style={{ minWidth: 0 }}>
-                            <Text size="small">{attempt.provider} / {attempt.channel}</Text>
-                            <div><Text type="tertiary" size="small">{attempt.mappedModel} · {attempt.eventType}</Text></div>
-                            {attempt.attemptID && <div><Text code type="tertiary" size="small">{compactEvidenceValue(attempt.attemptID, 28)}</Text></div>}
+                  {receiptTab === 'decision' && (
+                <>
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">执行结论</Text>
+                    <div className="ur-detail-grid">
+                      <div>
+                        <Text type="tertiary" size="small">模型</Text>
+                        <div><Tag size="small">{selectedLog.model}</Tag></div>
+                      </div>
+                      <div>
+                        <Text type="tertiary" size="small">请求模型</Text>
+                        <div><Text size="small">{selectedLog.requested_model || '-'}</Text></div>
+                      </div>
+                      <div>
+                        <Text type="tertiary" size="small">供应商 / 通道</Text>
+                        <div><Text size="small">{selectedLog.provider || '-'} / {selectedLog.channel || '-'}</Text></div>
+                      </div>
+                      <div>
+                        <Text type="tertiary" size="small">时间</Text>
+                        <div><Text size="small">{formatDateTime(selectedLog.created_at)}</Text></div>
+                      </div>
+                      <div>
+                        <Text type="tertiary" size="small">客户端请求 ID</Text>
+                        <div><Text code size="small">{selectedLog.client_request_id || '-'}</Text></div>
+                      </div>
+                      <div>
+                        <Text type="tertiary" size="small">工作流 / Agent</Text>
+                        <div><Text code size="small">{selectedLog.workflow_id || '-'} / {selectedLog.agent_id || '-'}</Text></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">权限与委托</Text>
+                    <Descriptions
+                      row
+                      size="small"
+                      data={[
+                        { key: 'Actor type', value: actorTypes.length > 0 ? actorTypes.map(v => <Tag key={v} size="small">{v}</Tag>) : '未捕获' },
+                        { key: 'Actor ref', value: actorRefs.length > 0 ? actorRefs.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : '未捕获' },
+                        { key: 'On behalf of', value: onBehalfOf.length > 0 ? onBehalfOf.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : '未声明' },
+                        { key: 'IP', value: selectedLog.ip_address || '-' },
+                      ]}
+                    />
+                    {actorTypes.length === 0 && !traceLoading && (
+                      <Text type="tertiary" size="small">本次 Trace 未捕获权限主体；不会据此推断为匿名或未鉴权。</Text>
+                    )}
+                  </div>
+
+                  <div className="ur-detail-card">
+                    <div className="ur-panel-title" style={{ marginBottom: 10 }}>
+                      <Text className="ur-detail-card-title">决策链</Text>
+                      <Tag size="small" color="blue">{decisionEvents.length} 个</Tag>
+                    </div>
+                    {traceLoading ? (
+                      <Text type="tertiary" size="small">加载中</Text>
+                    ) : decisionEvents.length > 0 ? (
+                      <div className="ur-receipt-event-list">
+                        {decisionEvents.map(event => (
+                          <div key={event.id}>
+                            <div className="ur-receipt-event-heading">
+                              <Tag size="small">{event.decision_kind || event.stage}</Tag>
+                              <StatusTag status={event.decision_result || 'unknown'}>{event.decision_result || 'unknown'}</StatusTag>
+                            </div>
+                            <Text size="small">{event.decision_reason || event.event_type}</Text>
+                            <Text type="tertiary" size="small">{event.source_component || event.stage} · {formatDateTime(event.created_at)}</Text>
                           </div>
-                          <StatusTag status={attempt.outcome}>{attempt.statusCode || attempt.outcome}</StatusTag>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    ) : (
+                      <Text type="tertiary" size="small">本次 Trace 未捕获结构化决策事件；不会从最终 HTTP 状态反推决策原因。</Text>
+                    )}
+                  </div>
+                </>
+                  )}
+
+                  {receiptTab === 'attempts' && (
+                <>
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">状态与性能</Text>
+                    <Descriptions
+                      row
+                      size="small"
+                      data={[
+                        { key: '状态码', value: <StatusTag status={selectedLog.status_code}>{selectedLog.status_code}</StatusTag> },
+                        { key: '上游状态', value: selectedLog.upstream_status_code ? <StatusTag status={selectedLog.upstream_status_code}>{selectedLog.upstream_status_code}</StatusTag> : '-' },
+                        { key: '延迟', value: <LatencyText value={selectedLog.latency_ms} /> },
+                        { key: 'TTFT', value: selectedLog.ttft_ms ? `${selectedLog.ttft_ms}ms` : '-' },
+                        { key: '流式', value: selectedLog.is_stream ? <Tag size="small" color="blue">是</Tag> : <Tag size="small">否</Tag> },
+                      ]}
+                    />
+                  </div>
+
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">路由与故障切换</Text>
+                    <Descriptions
+                      row
+                      size="small"
+                      data={[
+                        { key: '路由尝试', value: traceLoading ? '加载中' : `${routeAttempts.length} 次` },
+                        { key: '故障切换', value: traceLoading ? '加载中' : routeAttempts.length > 1 ? `${routeAttempts.length - 1} 次` : '0 次' },
+                        { key: '最终结果', value: traceLoading ? '-' : noRoute ? <StatusTag status="failed">无可用路由</StatusTag> : routeAttempts[routeAttempts.length - 1]?.outcome === 'accepted' ? <StatusTag status="success">上游接受</StatusTag> : <StatusTag status="warning">未确认</StatusTag> },
+                      ]}
+                    />
+                    {!traceLoading && routeAttempts.length > 0 ? (
+                      <div className="ur-receipt-event-list">
+                        {routeAttempts.map(attempt => (
+                          <div key={`${attempt.sequence}-${attempt.attemptID || attempt.channel}`} className="ur-route-attempt">
+                            <Tag size="small">#{attempt.sequence}</Tag>
+                            <div>
+                              <Text size="small">{attempt.provider} / {attempt.channel}</Text>
+                              <div><Text type="tertiary" size="small">{attempt.mappedModel} · {attempt.eventType}</Text></div>
+                              {attempt.attemptID && <div><Text code type="tertiary" size="small">{compactEvidenceValue(attempt.attemptID, 28)}</Text></div>}
+                            </div>
+                            <StatusTag status={attempt.outcome}>{attempt.statusCode || attempt.outcome}</StatusTag>
+                          </div>
+                        ))}
+                      </div>
+                    ) : !traceLoading ? (
+                      <Text type="tertiary" size="small">本次 Trace 未捕获路由尝试；不会将日志中的供应商字段解释为完整路由链。</Text>
+                    ) : null}
+                  </div>
+
+                  {selectedLog.upstream_error && (
+                    <div className="ur-detail-card ur-detail-card-error">
+                      <Text className="ur-detail-card-title">上游错误</Text>
+                      <Text size="small">{selectedLog.upstream_error}</Text>
                     </div>
                   )}
-                </div>
-              )}
+                </>
+                  )}
 
-              <div className="ur-detail-card">
-                <div className="ur-panel-title" style={{ marginBottom: 10 }}>
-                  <Text className="ur-detail-card-title">请求路径</Text>
-                  {traceLoading ? <Tag size="small">加载中</Tag> : <Tag size="small" color="blue">{traceEvents.length} 事件</Tag>}
-                </div>
-                {traceLoading ? (
-                  <Text type="tertiary" size="small">加载中</Text>
-                ) : traceEvents.length > 0 ? (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {traceEvents.map((event) => (
-                      <div key={event.id} style={{ borderLeft: '2px solid var(--ur-border-strong)', paddingLeft: 10 }}>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <Tag size="small" color={traceSeverityColor(event.severity)}>{event.stage}</Tag>
-                          <Text strong size="small">{event.event_type}</Text>
-                          {event.status_code ? <StatusTag status={event.status_code}>{event.status_code}</StatusTag> : null}
-                        </div>
-                        <div style={{ marginTop: 4, display: 'grid', gap: 3 }}>
-                          <Text type="tertiary" size="small">{formatDateTime(event.created_at)} · {event.latency_ms}ms</Text>
-                          {(event.provider || event.channel) && (
-                            <Text size="small">{event.provider || '-'} / {event.channel || '-'}</Text>
-                          )}
-                          {(event.decision_kind || event.decision_result || event.decision_reason) && (
-                            <Text size="small">
-                              decision: {[event.decision_kind, event.decision_result, event.decision_reason].filter(Boolean).join(' / ')}
-                            </Text>
-                          )}
-                          {traceEvidenceTags(event)}
-                          {Object.keys(event.metadata || {}).length > 0 && (
-                            <div className="ur-chip-row">
-                              {Object.entries(event.metadata).slice(0, 8).map(([key, value]) => (
-                                <Tag key={key} size="small">{key}: {formatMetadataValue(value)}</Tag>
-                              ))}
+                  {receiptTab === 'policy' && (
+                <>
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">Policy & Guardrail 决策</Text>
+                    {traceLoading ? (
+                      <Text type="tertiary" size="small">加载中</Text>
+                    ) : policyEvents.length > 0 ? (
+                      <div className="ur-receipt-event-list">
+                        {policyEvents.map(event => (
+                          <div key={event.id}>
+                            <div className="ur-receipt-event-heading">
+                              <Tag size="small">{event.decision_kind || event.stage}</Tag>
+                              <StatusTag status={event.decision_result || event.severity}>{event.decision_result || event.severity}</StatusTag>
                             </div>
-                          )}
-                        </div>
+                            <Text size="small">{event.decision_reason || event.event_type}</Text>
+                            <Text type="tertiary" size="small">{event.event_type}</Text>
+                            {event.capture_gap && <Tag size="small" color="orange">gap: {event.capture_gap}</Tag>}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    ) : (
+                      <Text type="tertiary" size="small">本次 Trace 未捕获 Policy/Guardrail 决策；这不表示策略未执行，只表示当前凭证不能证明。</Text>
+                    )}
                   </div>
-                ) : (
-                  <Text type="tertiary" size="small">暂无请求路径事件</Text>
-                )}
-              </div>
 
-              {selectedLog.upstream_error && (
-                <div className="ur-detail-card" style={{ borderColor: 'var(--ur-red)' }}>
-                  <Text className="ur-detail-card-title">错误信息</Text>
-                  <Text size="small" style={{ color: 'var(--ur-red)', wordBreak: 'break-all' }}>
-                    {selectedLog.upstream_error}
-                  </Text>
-                </div>
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">Payload 策略边界</Text>
+                    <Descriptions
+                      row
+                      size="small"
+                      data={[
+                        { key: 'Payload capture', value: payloadModes.length > 0 ? payloadModes.map(v => <Tag key={v} size="small" color="cyan">{v}</Tag>) : '未捕获' },
+                        { key: 'Payload ref', value: traceEvents.some(event => event.payload_ref) ? '已声明' : '未声明' },
+                        { key: 'Raw body', value: '不在此页面存储或展示' },
+                      ]}
+                    />
+                  </div>
+                </>
+                  )}
+
+                  {receiptTab === 'cost' && (
+                <>
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">财务终态</Text>
+                    <Descriptions
+                      row
+                      size="small"
+                      data={[
+                        { key: 'Terminal', value: traceLoading ? '加载中' : <StatusTag status={billingTerminalTone}>{billingTerminalStatus}</StatusTag> },
+                        { key: 'Billing status', value: exactBillingStatus || '未捕获' },
+                        { key: 'Usage source', value: metadataString(billingTerminalEvent, 'usage_source') || '未捕获' },
+                        { key: 'Usage confidence', value: metadataString(billingTerminalEvent, 'usage_confidence') || '未捕获' },
+                        { key: 'Actual', value: metadataString(billingTerminalEvent, 'actual_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'actual_cost_micros')} precision={6} /> : '未捕获' },
+                        { key: 'Charged', value: metadataString(billingTerminalEvent, 'charged_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'charged_cost_micros')} precision={6} strong tone="cost" /> : '未捕获' },
+                        { key: 'Money schema', value: metadataString(billingTerminalEvent, 'money_schema') || '未捕获' },
+                        { key: 'Pricing version', value: metadataString(billingTerminalEvent, 'pricing_version') || '未捕获' },
+                        { key: 'Evidence event', value: billingTerminalEvent?.event_type || '未捕获' },
+                      ]}
+                    />
+                    {!billingTerminalEvent && !traceLoading && (
+                      <Text type="tertiary" size="small">HTTP 成功和日志费用不会被当作财务终态；只有 Billing terminal evidence 能证明 settled。</Text>
+                    )}
+                    <Text type="tertiary" size="small">当前脱敏 Trace 合同不暴露 usage_authority、usage_finality 或 usage_purpose；本凭证不会从事件名或日志字段补推这些值。</Text>
+                  </div>
+
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">Token & 日志费用</Text>
+                    <Descriptions
+                      row
+                      size="small"
+                      data={[
+                        { key: '提示词', value: selectedLog.prompt_tokens.toLocaleString() },
+                        { key: '生成', value: selectedLog.completion_tokens.toLocaleString() },
+                        { key: '合计', value: <Text strong>{selectedLog.total_tokens.toLocaleString()}</Text> },
+                        { key: '日志费用', value: <MoneyText micros={selectedLog.cost_micros || '0'} precision={6} strong tone="cost" /> },
+                        { key: '计量来源', value: usageSourceLabel(selectedLog.usage_source) },
+                      ]}
+                    />
+                  </div>
+
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">供应商 Prompt Cache</Text>
+                    <Descriptions
+                      row
+                      size="small"
+                      data={[
+                        { key: '回传状态', value: <StatusTag status={selectedLog.cache_usage_schema ? 'success' : 'pending'}>{cacheUsageLabel(selectedLog.cache_usage_status)}</StatusTag> },
+                        { key: '普通输入', value: (selectedLog.uncached_prompt_tokens ?? selectedLog.prompt_tokens).toLocaleString() },
+                        { key: '缓存读取', value: (selectedLog.cache_read_tokens || 0).toLocaleString() },
+                        { key: '缓存写入', value: (selectedLog.cache_creation_tokens || 0).toLocaleString() },
+                        { key: '读取倍率', value: priceRatio(selectedLog.cache_read_ratio, selectedLog.effective_cache_read_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
+                        { key: '写入倍率', value: priceRatio(selectedLog.cache_creation_ratio, selectedLog.effective_cache_creation_price_micros_per_million, selectedLog.effective_input_price_micros_per_million) },
+                        { key: '读取费用', value: <MoneyText micros={selectedLog.cache_read_cost_micros || '0'} precision={6} /> },
+                        { key: '写入费用', value: <MoneyText micros={selectedLog.cache_creation_cost_micros || '0'} precision={6} /> },
+                        { key: '价格版本', value: selectedLog.pricing_version ? <Text code size="small">{compactEvidenceValue(selectedLog.pricing_version, 28)}</Text> : '-' },
+                        { key: '字段合同', value: selectedLog.cache_usage_schema || '-' },
+                      ]}
+                    />
+                    <Text type="tertiary" size="small">只展示供应商明确回传的 Prompt Cache 用量；“未回传”不会推测命中，也不会获得缓存折扣。</Text>
+                  </div>
+                </>
+                  )}
+
+                  {receiptTab === 'provenance' && (
+                <>
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">Provenance 摘要</Text>
+                    <Descriptions
+                      row
+                      size="small"
+                      data={[
+                        { key: 'Trace ID', value: traceIDs.length > 0 ? <Text code>{compactEvidenceValue(traceIDs[0], 28)}</Text> : '未捕获' },
+                        { key: 'Schema', value: schemaVersions.length > 0 ? schemaVersions.map(v => <Tag key={v} size="small">{v}</Tag>) : '未捕获' },
+                        { key: '来源组件', value: sourceComponents.length > 0 ? sourceComponents.map(v => <Tag key={v} size="small">{v}</Tag>) : '未捕获' },
+                        { key: '采集模式', value: captureModes.length > 0 ? captureModes.map(v => <Tag key={v} size="small" color="blue">{v}</Tag>) : '未捕获' },
+                        { key: '上游 ID', value: upstreamRequestIDs.length > 0 ? <Text code>{compactEvidenceValue(upstreamRequestIDs[0], 28)}</Text> : '未捕获' },
+                        { key: 'Evidence refs', value: evidenceRefs.length },
+                        { key: 'Source hashes', value: sourceEventHashes.length },
+                        { key: 'Declared gaps', value: <StatusTag status={gapEvents.length > 0 ? 'warning' : 'success'}>{gapEvents.length}</StatusTag> },
+                      ]}
+                    />
+                    {!traceLoading && gapEvents.length === 0 && (
+                      <Text type="tertiary" size="small">0 仅表示本次 Trace 没有声明 Gap，不代表其他产品、Feed 或外部系统实现了完整采集。</Text>
+                    )}
+                  </div>
+
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">Capture Gaps</Text>
+                    {traceLoading ? (
+                      <Text type="tertiary" size="small">加载中</Text>
+                    ) : gapEvents.length > 0 ? (
+                      <div className="ur-receipt-event-list">
+                        {gapEvents.map(event => (
+                          <div key={event.id}>
+                            <Tag size="small" color="orange">{event.capture_gap}</Tag>
+                            <Text size="small">{event.event_type}</Text>
+                            <Text type="tertiary" size="small">{event.source_component || event.stage} · {formatDateTime(event.created_at)}</Text>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <Text type="tertiary" size="small">本次 Trace 没有声明 Capture Gap。</Text>
+                    )}
+                  </div>
+
+                  <div className="ur-detail-card">
+                    <div className="ur-panel-title" style={{ marginBottom: 10 }}>
+                      <Text className="ur-detail-card-title">请求路径</Text>
+                      {traceLoading ? <Tag size="small">加载中</Tag> : <Tag size="small" color="blue">{traceEvents.length} 事件</Tag>}
+                    </div>
+                    {traceLoading ? (
+                      <Text type="tertiary" size="small">加载中</Text>
+                    ) : traceEvents.length > 0 ? (
+                      <div className="ur-receipt-event-list">
+                        {traceEvents.map(event => (
+                          <div key={event.id}>
+                            <div className="ur-receipt-event-heading">
+                              <Tag size="small" color={traceSeverityColor(event.severity)}>{event.stage}</Tag>
+                              <Text strong size="small">{event.event_type}</Text>
+                              {event.status_code !== null && event.status_code !== undefined ? <StatusTag status={event.status_code}>{event.status_code}</StatusTag> : null}
+                            </div>
+                            <Text type="tertiary" size="small">{formatDateTime(event.created_at)} · {event.latency_ms}ms</Text>
+                            {(event.provider || event.channel) && <Text size="small">{event.provider || '-'} / {event.channel || '-'}</Text>}
+                            {(event.decision_kind || event.decision_result || event.decision_reason) && (
+                              <Text size="small">decision: {[event.decision_kind, event.decision_result, event.decision_reason].filter(Boolean).join(' / ')}</Text>
+                            )}
+                            {traceEvidenceTags(event)}
+                            {Object.keys(event.metadata || {}).length > 0 && (
+                              <div className="ur-chip-row">
+                                {Object.entries(event.metadata).slice(0, 8).map(([key, value]) => (
+                                  <Tag key={key} size="small">{key}: {formatMetadataValue(value)}</Tag>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <Text type="tertiary" size="small">暂无请求路径事件。</Text>
+                    )}
+                  </div>
+
+                  <div className="ur-detail-card">
+                    <Text className="ur-detail-card-title">隐私边界</Text>
+                    <Text type="tertiary" size="small">请求体与响应体内容未在本页面存储或展示。Payload 状态只来自结构化采集字段，不从日志文本推断。</Text>
+                  </div>
+                </>
+                  )}
+                </>
               )}
-
-              <div className="ur-detail-card">
-                <Text className="ur-detail-card-title">请求体</Text>
-                <Text type="tertiary" size="small" style={{ fontStyle: 'italic' }}>请求体内容未存储（隐私策略）</Text>
-              </div>
-
-              <div className="ur-detail-card">
-                <Text className="ur-detail-card-title">响应体</Text>
-                <Text type="tertiary" size="small" style={{ fontStyle: 'italic' }}>响应体内容未存储（隐私策略）</Text>
-              </div>
-
             </div>
-          </aside>
-        )}
+          )}
+        </aside>
       </div>
     </div>
   );

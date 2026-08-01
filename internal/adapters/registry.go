@@ -18,7 +18,7 @@ func NewRegistry(adapters ...Adapter) *Registry {
 }
 
 func DefaultRegistry() *Registry {
-	return NewRegistry(NewOpenAICompatible(), NewAnthropicNative())
+	return NewRegistry(NewOpenAICompatible(), NewAnthropicNative(), NewAzureOpenAI())
 }
 
 func (r *Registry) Register(adapter Adapter) {
@@ -40,6 +40,18 @@ func (r *Registry) Get(adapterType string) (Adapter, error) {
 func (r *Registry) Has(adapterType string) bool {
 	_, err := r.Get(adapterType)
 	return err == nil
+}
+
+func (r *Registry) ValidateConfig(adapterType string, raw []byte) error {
+	adapter, err := r.Get(adapterType)
+	if err != nil {
+		return err
+	}
+	validator, ok := adapter.(ConfigValidator)
+	if !ok {
+		return nil
+	}
+	return validator.ValidateConfig(raw)
 }
 
 func NormalizeType(adapterType string) string {

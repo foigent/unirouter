@@ -2,7 +2,18 @@
 
 ## 当前入口
 
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前已完成的 V1 安全/信息架构发布与七角色目标验收；不重开 PRD6
+- [PRD-Phase7.md](PRD-Phase7.md) — 当前已接受的企业 AI 执行可信控制面产品范围
+- [ops/PRD7-ACCEPTANCE-MATRIX.md](ops/PRD7-ACCEPTANCE-MATRIX.md) — 当前 PRD7 功能、证据等级与真实决策门
+- [planning/PRD7-IMPLEMENTATION-PLAN.md](planning/PRD7-IMPLEMENTATION-PLAN.md) — 依赖顺序、批次验收和运行时边界
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD7 批次、验证证据与下一依赖；不重开 PRD5/PRD6
+- [ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md](ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md) — 三个 Provider Pack、Azure OpenAI、常驻 Provider Inspector 与完整本地验证
+- [ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md](ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md) — Audit/Projects 常驻检查器、深链、本地视图、全量回归与响应式浏览器证据
+- [ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md](ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md) — Responses、Cohere Rerank V2、GPT Image 固定协议与 25 项零网络一致性证据
+- [ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md](ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md) — 供应商 COGS 离线合同、客户账分离、15 项一致性证据与常驻 Financial Truth 检查器
+- [ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md](ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md) — 同源路由模拟、Provider Change Firewall、渐进发布/回滚、17 项一致性和常驻 Governance Inspector
+- [ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md](ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md) — IdP 中立成员生命周期、访问收敛、旧会话失效、17 项一致性和常驻 Lifecycle Inspector
+- [ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md](ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md) — Agent 有效权限树、祖先预算、衰减/撤销、签名收据、B8 数字孪生复用与常驻 Trust Inspector
+- [ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md](ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md) — 精确 Source Passport、四类 provenance、固定 Capture Gaps 与隔离的第二 Connector 一致性证明
 - [PROJECT-HANDOFF.md](PROJECT-HANDOFF.md) — Agent 接手项目的第一阅读入口
 - [ops/CURRENT-STATUS.md](ops/CURRENT-STATUS.md) — 当前已验证项目状态和明确非声明
 - [ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md](ops/evidence/V1-SEVEN-ROLE-UI-API-DB-TARGET-CLOSEOUT-20260718.md) — 当前 `1.0.1` 七角色开发目标验收与清理证据
@@ -62,8 +73,10 @@
 - [ops/evidence/PRD6-FINAL-COMPLETION-20260714.md](ops/evidence/PRD6-FINAL-COMPLETION-20260714.md) — PRD6 最终完成审计、27/27 计数修正、正式阶段状态和后续边界
 - [planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md](planning/PRD6-HA-AND-STREAM-FAILOVER-RESEARCH-20260712.md) — LiteLLM/New API/Portkey/Kong 高可用模式、UniRouter 集群事实和 D6-12 流式边界
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
-- [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 未来首项方向已选；PRD6 已闭环，但实现仍按用户决定后置
+- [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 历史候选输入；当前已接受范围以 PRD7 与验收矩阵为准
 - [planning/PRD7-CACHE-SERVICE-CANDIDATE.md](planning/PRD7-CACHE-SERVICE-CANDIDATE.md) — 未来独立 Cache Service、容量拆分触发线和 SaaS cell 复用边界
+- [tech-ref/34-exact-response-cache.md](tech-ref/34-exact-response-cache.md) — PRD7 exact response cache 身份、加密、TTL/purge、stampede 与计费边界
+- [ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md](ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md) — P7-F07 独立服务/Redis 夹具本地验证与 P7-D07 运行时门槛
 - [planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md](planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — LiteLLM/New API/One API 固定版本核验、四象限和优先级矩阵
 - [planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md](planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md) — CARTA、影子评测、反串谋、四象限、三平面边界和 Killer Features
 - [planning/prd6-adaptive-trust-hardening/hardening.md](planning/prd6-adaptive-trust-hardening/hardening.md) — adaptive-trust 三种结构方案、安全权衡和 signed local enforcement 推荐
@@ -93,7 +106,7 @@
 - [PRD-Phase3.md](PRD-Phase3.md) — 已完成 PRD3 一致性、语义、契约和架构清理范围
 - [planning/PRD3-CONSISTENCY-AUDIT.md](planning/PRD3-CONSISTENCY-AUDIT.md) — PRD3 范围审计和 PRD1→PRD2 遗留问题梳理
 - [issues/OPEN-ISSUES.md](issues/OPEN-ISSUES.md) — 当前未关闭问题列表
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前已完成的 V1 安全/信息架构发布与七角色目标验收，以及此前 Post-PRD6 窗口的历史边界
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD7 本地实施批次及此前 V1/PRD6/PRD5 历史边界
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 可选独立复核记录格式和问题级别规则
 - [ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md](ops/evidence/AGENT-PROTOCOL-v2-single-owner-20260710.md) — 单一执行负责人、Git/CI、高影响授权和复核规则的确认记录
 - [ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md](ops/evidence/PRD5-B1W-pre-relay-model-permission-parity-local-20260710.md) — Batch 1W 根因、代码、回归和目标证据边界
@@ -136,6 +149,12 @@
 - [tech-ref/24-prd4-real-sso-evidence.md](tech-ref/24-prd4-real-sso-evidence.md) — PRD4 真实 SSO/Logto/OIDC 证据 harness、凭证门控和 PRD5 目标环境验收边界
 - [tech-ref/25-prd5-xinsight-sanitized-snapshot.md](tech-ref/25-prd5-xinsight-sanitized-snapshot.md) — PRD5 X-Insight Gate A sanitized snapshot 工具、handoff note、输出合同和只读访问门槛
 - [tech-ref/26-prd5-evidence-field-contract.md](tech-ref/26-prd5-evidence-field-contract.md) — PRD5 trace/span/source/capture/decision/actor/payload evidence 字段合同
+- [tech-ref/30-provider-conformance-pack-v1.md](tech-ref/30-provider-conformance-pack-v1.md) — Provider Pack V1、Azure OpenAI 原生适配与离线/真实兼容性声明边界
+- [tech-ref/35-provider-cogs-offline.md](tech-ref/35-provider-cogs-offline.md) — Provider COGS 离线导入、证据归因、缺口、重放与客户账隔离合同
+- [tech-ref/36-governance-simulation-v1.md](tech-ref/36-governance-simulation-v1.md) — 同源路由内核、Provider Change Firewall、渐进发布/回滚证据与零运行时提升边界
+- [tech-ref/37-member-lifecycle-v1.md](tech-ref/37-member-lifecycle-v1.md) — 创建/更新/暂停/退场、成员与能力撤销、会话版本化及 SCIM 决策门
+- [tech-ref/38-agent-trust-firewall.md](tech-ref/38-agent-trust-firewall.md) — Agent 有效权限树、签名收据和 B8 数字孪生复用边界
+- [tech-ref/39-provenance-passport-and-second-connector.md](tech-ref/39-provenance-passport-and-second-connector.md) — 精确 Source provenance、Capture-Gap Passport、LiteLLM conformance-only 第二 Connector 与 OpenInference observer 边界
 
 ## 工程治理
 - [governance/README.md](governance/README.md) — PRD3 最低工程治理：ADR、API 兼容、migration/rollback、release、incident、deprecation
@@ -166,7 +185,7 @@
 
 ## Agent 协作
 - [agent-workflows/AGENT-PROTOCOL.md](agent-workflows/AGENT-PROTOCOL.md) — 单一执行负责人、授权、证据和可选独立复核协议
-- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前已完成的 V1 安全/信息架构与七角色目标验收、已关闭批次、延期项和历史测试/CI/部署记录
+- [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD7 批次、已关闭批次、延期项和历史测试/CI/部署记录
 - [agent-workflows/reviews/README.md](agent-workflows/reviews/README.md) — 独立复核入口
 - [agent-workflows/FIX-SIGNAL.md](agent-workflows/FIX-SIGNAL.md) — 协议 v1.x 兼容入口
 - [agent-workflows/VERIFY-RESULT.md](agent-workflows/VERIFY-RESULT.md) — 协议 v1.x 历史结果

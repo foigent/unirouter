@@ -1,0 +1,154 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-report.v1",
+  "schema_sha256": "sha256:75a3f5a6bf601c8b041f2f1f6aef00f0a97e55d72422d1cb0222b9d74391222f",
+  "profiles": [
+    {
+      "profile_id": "unirouter.cohere.rerank.v2",
+      "profile_version": "1.0.0",
+      "runtime_state": "local_contract_only",
+      "manifest_sha256": "sha256:0860ccff6d441738c494cfc5d8adaf06cac56455b551041b34135975de7604e2",
+      "fixtures": [
+        {
+          "fixture_id": "cohere-rerank-v2.v1",
+          "sha256": "sha256:d7de1ac04e98d7dd73d1616115f05d60daa3598fa747f26b0bbf48a4ce4ab49f"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "cohere-rerank-v2.v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "cohere-rerank-v2.v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "cohere-rerank-v2.v1/negative-request/document-object-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "cohere-rerank-v2.v1/negative-request/return-documents-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "cohere-rerank-v2.v1/negative-response/order-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "cohere-rerank-v2.v1/negative-response/non-plain-units-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "cohere-rerank-v2.v1/status/timeout-retry",
+          "passed": true
+        },
+        {
+          "case_id": "cohere-rerank-v2.v1/status/bad-request-stop",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.openai.images.gpt-image.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "repository_local_image_v1",
+      "manifest_sha256": "sha256:deef774305f8b6210c011d6e606420bd6cce2f215bc3d779effbdca217f7ed0c",
+      "fixtures": [
+        {
+          "fixture_id": "openai-gpt-image-v1",
+          "sha256": "sha256:3b802f15539ff4fe0309ca93a779a3639da5910b0f28df3087aa24520fa16755"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "openai-gpt-image-v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "openai-gpt-image-v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "openai-gpt-image-v1/negative-request/multiple-images-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-gpt-image-v1/negative-request/stream-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-gpt-image-v1/negative-response/hosted-url-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-gpt-image-v1/negative-response/partition-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-gpt-image-v1/status/provider-failure-retry",
+          "passed": true
+        },
+        {
+          "case_id": "openai-gpt-image-v1/status/permission-stop",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.openai.responses.text.v1",
+      "profile_version": "1.0.0",
+      "runtime_state": "local_contract_only",
+      "manifest_sha256": "sha256:4757286316fb7f323cfbb5ef7b317ccf469ff341af7ff2c50494b52a13f1cc4a",
+      "fixtures": [
+        {
+          "fixture_id": "openai-responses-text.v1",
+          "sha256": "sha256:005c126da2d47bab7fdd4056d5e0c343fb74d5983c8d8c6288f943566b44d4c9"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "openai-responses-text.v1/request",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v1/response",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v1/negative-request/tools-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v1/negative-request/structured-input-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v1/negative-request/nested-duplicate-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v1/negative-response/non-final-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v1/negative-response/usage-mismatch-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v1/status/rate-limit",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v1/status/auth-stop",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "profiles": 3,
+    "cases": 25,
+    "passed": 25,
+    "failed": 0
+  }
+}

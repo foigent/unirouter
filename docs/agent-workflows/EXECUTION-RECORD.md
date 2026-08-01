@@ -1,6 +1,230 @@
 # Current Execution Record
 
-## Current Repository Execution — Existing-ECS Replacement Lifecycle
+## Current Repository Execution — PRD7 Enterprise AI Execution Trust Control Plane
+
+**Work item:** `UR-PRD7-ENTERPRISE-EXECUTION-TRUST-CONTROL-PLANE`
+
+**Owner:** UniRouter product/implementation owner
+
+**Risk:** R2/R3 repository product implementation. Runtime, external systems and
+release actions remain separately gated.
+
+**Authority:** The User accepted the researched UniRouter product-iteration
+direction on 2026-07-30 and on 2026-07-31 instructed the implementation owner
+to close all planned iterations using the optimal architecture, stopping only
+for a material User decision.
+
+**Accepted source:** `docs/PRD-Phase7.md`,
+`docs/ops/PRD7-ACCEPTANCE-MATRIX.md` and
+`docs/planning/PRD7-IMPLEMENTATION-PLAN.md`. The older
+`PRD7-CANDIDATE-BACKLOG.md` remains historical planning lineage.
+
+**Start baseline:** branch `codex/product-iteration-20260730`; Receipt V0
+commit `e36196427b12dfd5a120aab12ba9114a43a14afb`, tree
+`87901d41e87f5913b0d79a0cd57a423f7d51c2b8`.
+
+**Execution order:** deterministic contracts and synthetic conformance first;
+persistent inspector UI and operability next; external adapters and enforcement
+only after their explicit decision gates. Every batch requires focused tests,
+affected full suites, local evidence, one intentional local commit and a clean
+worktree.
+
+**Completed batches:** B0 froze scope/governance at `67e6d79`. B1 is Local
+verified: Provider Conformance Pack V1 embeds strict OpenAI, Anthropic and
+Azure OpenAI manifests/fixtures, a deterministic 3-pack/5-fixture/20-case offline
+runner, native deployment-scoped Azure OpenAI Chat/Embeddings, platform-admin
+catalog API and a persistent no-click Provider inspector. Provider claims bind
+`(provider, adapter_type)`, so compatible protocol reuse cannot fabricate a
+vendor pack result. Full Go tests/vet, 41-file/300-test frontend suite,
+type-check/build and synthetic 1440/1024/390 browser evidence passed. Exact
+evidence:
+`docs/ops/evidence/PRD7-B1-P7F02-P7F03-provider-conformance-local-20260731.md`.
+
+B2 is Local verified: Audit and Projects now have persistent no-click
+inspectors, fail-closed URL-restorable scope/page/selection state, keyboard
+selection and bounded browser-local metadata views. Full Go tests/vet,
+42-file/308-test frontend suite, type-check/build and synthetic
+1440/1024/390 browser checks passed. The browser pass found and closed a
+Projects StrictMode table loop and a mobile flex-height defect. Exact evidence:
+`docs/ops/evidence/PRD7-B2-P7F02-contextual-inspectors-local-20260731.md`.
+
+B3 is Local verified: a default-off, Outbox-posted metadata-only OTLP/HTTP
+exporter provides bounded asynchronous delivery, exact OpenInference mapping
+and strict raw-content/cardinality negatives. Exact evidence:
+`docs/ops/evidence/PRD7-B3-P7F05-otel-openinference-export-local-20260731.md`.
+
+B4 is Local verified through the backend-neutral/in-memory-fixture boundary:
+immutable secret versions, lifecycle CAS, active-generation stale-worker
+rejection, fixed backend registry, fail-closed outage behavior and
+metadata-only golden/audit evidence. Current credential/runtime paths remain
+unchanged and P7-D01 still gates a production backend. Exact evidence:
+`docs/ops/evidence/PRD7-B4-P7F06-secret-reference-local-20260731.md`.
+
+B5 is Local verified through the standalone service and Redis-fixture
+boundary: exact authority/policy/model/pricing/request identity, opaque HMAC
+keys, versioned AES-256-GCM values, final-settled usage proof,
+TTL/generation-purge, single-owner leases and strict tamper/outage/eligibility
+negatives. A hit records zero current provider execution/cost but remains
+explicitly unpriced for the customer. P7-D07 gates Gateway hit serving and
+customer-ledger integration. Exact evidence:
+`docs/ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md`.
+
+B6 is Local verified through a separate zero-network endpoint-contract
+boundary. Three fixed profiles cover stateless text Responses, Cohere Rerank
+V2 and decision-gated GPT Image generation. Strict request/response semantics,
+provider finality, exact units, nested duplicate rejection and explicit
+unsupported-semantics failures pass a deterministic 3-profile/25-case runner.
+No Gateway route, adapter registry, Provider Pack V1 artifact, customer
+billing or media runtime changed. Exact evidence:
+`docs/ops/evidence/PRD7-B6-P7F08-endpoint-protocol-conformance-local-20260731.md`.
+
+B7 is Local verified through a zero-persistence offline/synthetic boundary.
+The Provider COGS contract keeps supplier cost, UniRouter estimate and customer
+revenue authority separate; exact request attribution requires one unique
+upstream match and aggregate evidence never creates customer debt. Exact
+decimal/page/cursor/finality, canonical replay, four fixed gaps,
+duplicate/conflict and privacy boundaries pass two fixtures and a deterministic
+15-case golden report. Billing-authorized no-store API/CLI surfaces and the
+persistent auto-selected Financial Truth inspector add no provider network,
+credential, database or customer-ledger write path. Exact evidence:
+`docs/ops/evidence/PRD7-B7-P7F09-provider-cogs-financial-truth-local-20260731.md`.
+
+B8 is Local verified through a zero-persistence synthetic boundary. Gateway
+and the simulator now share one credential-free routing evaluator. The strict
+offline contract compares immutable route, full policy and Provider Pack
+snapshots; classifies Pack/SemVer/fixture/semantic changes; and proves
+deterministic progression, replay, CAS conflict and rollback evidence. All
+reports keep runtime mutation `none` and runtime promotion unauthorized.
+Platform-only no-store API/CLI and the persistent auto-selected Governance
+Inspector passed a 1-fixture/17-case golden runner, including the invariant
+that blocked breaking changes cannot advance even the offline release chain,
+plus full Go/frontend regression and 1440/390 synthetic browser verification.
+Exact evidence:
+`docs/ops/evidence/PRD7-B8-P7F04-P7F10-governance-simulation-local-20260731.md`.
+
+B9 is Local verified through a zero-network synthetic boundary. The strict
+IdP-neutral contract proves create/update/suspend/reactivate/terminal
+deprovision, assignment and capability revocation, semantic replay and CAS.
+Role/status mutations now version the principal and revoke live administrator
+sessions atomically so old JWTs cannot revive after account restoration. A
+1-fixture/17-case golden runner, no-store API/CLI and persistent Lifecycle
+Inspector are included; no SCIM vendor or IdP source of truth is selected.
+Exact evidence:
+`docs/ops/evidence/PRD7-B9-P7F11-member-lifecycle-local-20260731.md`.
+
+B10 is Local verified through a metadata-only synthetic boundary. The Agent
+Trust Firewall reuses the current Agent capability attenuation model and
+ancestor budget lineage, verifies exact TTL/revocation evidence and validates
+an Ed25519 metadata receipt whose key version, tenant, audience, decision and
+governance hashes are signed. The B8 Governance Digital Twin evaluator is
+called directly and pinned by its immutable artifact identities. One fixture
+passes 22 deterministic cases and the persistent Trust Inspector requires no
+detail-open click. Fixture cryptographic validity remains explicitly
+non-runtime trust; no signing private key, synchronous risk dependency,
+enforcement or policy promotion was added. Exact evidence:
+`docs/ops/evidence/PRD7-B10-P7F12-P7F13-P7F14-agent-trust-local-20260731.md`.
+
+B11 is Local verified through an exact-Source, zero-network boundary. The
+Passport calls the existing completedfeed Reference compatibility bridge,
+preserves Source/Envelope/idempotency Golden identity, separates
+direct/derived/declared/missing facts and renders four fixed Capture Gaps. The
+shared-authority LiteLLM Connector is recorded as the heterogeneous
+Go/TypeScript conformance proof without entering UniRouter's runtime registry
+or credential/Checkpoint ownership. One fixture passes 23 deterministic cases;
+the no-store API/CLI and persistent Inspector require no detail-open click.
+Exact evidence:
+`docs/ops/evidence/PRD7-B11-P7F15-P7F16-provenance-passport-local-20260731.md`.
+
+B12 is Local verified through exact B8/B10/B11 composition. Its categorical
+assertion is tenant/Audience/TTL/epoch scoped and downscope-only; the Source
+scope binding is explicitly unverified rather than inferred. Advice/shadow
+results and four evidence-derived controls stop at human review and cannot
+promote runtime policy. One fixture passes 28 cases across 32 classes. Exact
+evidence:
+`docs/ops/evidence/PRD7-B12-P7F17-P7F18-risk-control-local-20260731.md`.
+
+B13 is the immutable pre-P7-D03 record. Its metadata-only job-plan Schema,
+text-to-image and image-to-video fixtures, nine threat classes and 55-case /
+36-class report remain unchanged and continue to describe the then-unresolved
+product decisions. They are not rewritten as runtime evidence. Exact evidence:
+`docs/ops/evidence/PRD7-B13-P7F19-async-media-pre-gate-local-20260731.md`.
+
+B14 is Local verified after the User resolved P7-D03 for repository-local
+Image V1. It binds the frozen GPT Image Endpoint Profile to strict public/admin
+metadata APIs, org/project/API-key idempotency, replay-before-capacity
+admission, PostgreSQL queue/lease/fence/recovery/purge state, fail-closed
+unknown provider outcomes, tenant-scoped immutable S3-compatible image and
+receipt objects, seven-day read expiry and authenticated content proxying. A
+charge-eligibility fact is written only after validated provider success plus
+durable output; no wallet debit or media price is inferred. Video remains
+disabled. Full Go/vet, media-job race tests, isolated PostgreSQL integration,
+48-file/336-test frontend regression, type-check/build, route/OpenAPI/Compose
+checks and 1440/1024/390 static-mock Chromium verification pass. Browser
+verification found and closed 1024px Inspector clipping and 390px internal
+horizontal overflow. No real provider/object-store call, target migration,
+credential, deployment or traffic occurred. Exact evidence:
+`docs/ops/evidence/PRD7-B14-P7F19-async-media-image-v1-runtime-local-20260731.md`.
+
+**Current batch:** B14 closed. There is no further autonomous repository-local
+batch in the accepted plan; the next step requires an explicit remaining
+P7-D01/D02/D04/D05/D06/D07 decision or authority.
+
+**Authority boundary:** no deployment, traffic, credentials, live provider or
+IdP calls, non-test database mutation, cursor/checkpoint change, product-repo
+outside UniRouter, push, PR or merge. Existing completed-execution Feed and
+X-Insight compatibility behavior remain unchanged.
+
+## Historical Repository Execution — Execution Decision Receipt Workspace V0
+
+**Work item:** `UR-PRODUCT-ITERATION-RECEIPT-WORKSPACE-V0`
+
+**Owner:** UniRouter product/implementation owner
+
+**Risk:** R2 user-visible frontend behavior; no API, persistence, routing,
+billing, IAM or runtime semantic change
+
+**Authority:** User accepted closed-loop execution of the first product
+iteration slice on 2026-07-31. This acceptance covers the UniRouter
+Requests/Logs experience only; it does not accept the full PRD7 candidate
+backlog or authorize runtime/external actions.
+
+**Baseline:** `origin/main` and local start head
+`48a88bccbe182a3d3a6aec315d422f47d879a364`, tree
+`31b651fb1b2718a09efa9bd1c3a2abb244ebb44e`; branch
+`codex/product-iteration-20260730`.
+
+**Implemented behavior:** Requests/Logs now keeps an Execution Decision Receipt
+inspector visible. The first result from the existing server order
+`created_at DESC` is selected automatically; row click, `ArrowUp`/
+`ArrowDown`, and `log_id` deep links change selection. Decision, Attempts,
+Policy & Guardrail, Cost & Finality, and Provenance & Gaps views use the
+existing sanitized request-trace DTO.
+
+**Truth boundary:** only explicit billing terminal events can show financial
+finality. HTTP success and `call_logs.cost_micros` do not imply settlement.
+Missing actor, policy, route or gap evidence remains missing/undeclared rather
+than becoming a negative claim. Zero declared gaps does not claim complete
+cross-product capture.
+
+**Verification:** Local verified. Focused Logs test: 1 file / 24 tests passed.
+Frontend type-check passed. Full frontend suite: 41 files / 299 tests passed.
+Production build and focused Go trace/admin tests passed. A local static-mock
+browser pass at 1440, 1024 and 390 CSS pixels found and then verified the fix
+for a Semi Table nested-update loop; the receipt remains visible/reachable at
+all three widths. Final repository diff checks passed; this record closes with
+the local commit that contains it and the resulting clean worktree. Evidence:
+`docs/ops/evidence/UR-EXECUTION-DECISION-RECEIPT-V0-LOCAL-20260731.md`.
+
+**Claim boundary:** no backend/API/DTO/schema behavior, database, request
+record, routing, billing result, Outbox identity, feed endpoint, cursor,
+credential, deployment, traffic, X-Insight, protocol or external integration
+changed. Browser evidence used only synthetic in-memory responses; this is not
+CI, real-data/runtime, Target or Production evidence.
+
+**Next gate:** closed by the later explicit PRD7 scope above. No push, PR,
+merge or deployment was part of this historical work item.
+
+## Historical Repository Execution — Existing-ECS Replacement Lifecycle
 
 **Work item:** `FV-SOURCE-QUALIFICATION-CURRENT-ECS-REPLACEMENT`
 

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -102,6 +103,10 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.AdapterConfig) == 0 || string(req.AdapterConfig) == "null" {
 		req.AdapterConfig = json.RawMessage(`{}`)
+	}
+	if err := adapters.DefaultRegistry().ValidateConfig(req.AdapterType, req.AdapterConfig); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid adapter_config", "message": err.Error()})
+		return
 	}
 
 	if req.Name == "" || req.Provider == "" || req.BaseURL == "" || req.Models == "" {
@@ -301,6 +306,48 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		}
 		defer tx.Rollback(r.Context())
 		store = tx
+	}
+
+	// adapter_type and adapter_config form one versioned configuration unit.
+	// When a caller updates only one half, read and lock the other half so the
+	// resulting pair is validated atomically instead of persisting a latent
+	// runtime failure.
+	if req.AdapterType != nil || req.AdapterConfig != nil {
+		effectiveType := ""
+		var effectiveConfig json.RawMessage
+		if req.AdapterType != nil {
+			effectiveType = *req.AdapterType
+		}
+		if req.AdapterConfig != nil {
+			effectiveConfig = *req.AdapterConfig
+		}
+		if req.AdapterType == nil || req.AdapterConfig == nil {
+			var existingType string
+			var existingConfig json.RawMessage
+			query := `SELECT COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb)
+			          FROM channels WHERE id = $1`
+			if tx != nil {
+				query += " FOR UPDATE"
+			}
+			if err := store.QueryRow(r.Context(), query, id).Scan(&existingType, &existingConfig); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
+				} else {
+					writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to validate channel adapter configuration"})
+				}
+				return
+			}
+			if req.AdapterType == nil {
+				effectiveType = adapters.NormalizeType(existingType)
+			}
+			if req.AdapterConfig == nil {
+				effectiveConfig = existingConfig
+			}
+		}
+		if err := adapters.DefaultRegistry().ValidateConfig(effectiveType, effectiveConfig); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid adapter_config", "message": err.Error()})
+			return
+		}
 	}
 
 	before, beforeFound := h.channelAuditSnapshot(r.Context(), store, id, tx != nil)

@@ -61,6 +61,29 @@ async function request(path: string, options: RequestInit = {}) {
   return payload;
 }
 
+async function requestBlob(path: string) {
+  const token = localStorage.getItem('token');
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(`${BASE_URL}${path}`, { headers });
+  if (res.status === 401) {
+    localStorage.removeItem('token');
+    window.location.href = '/login';
+    throw new ApiError('Unauthorized', res.status, null);
+  }
+  if (!res.ok) {
+    const payload = await parseResponse(res);
+    throw new ApiError(
+      getErrorMessage(payload, `Request failed with status ${res.status}`),
+      res.status,
+      payload,
+    );
+  }
+  return res.blob();
+}
+
 function appendParams(path: string, params: Record<string, string | number | undefined | null>) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -101,6 +124,7 @@ export const api = {
     request(`/channels/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteChannel: (id: number) =>
     request(`/channels/${id}`, { method: 'DELETE' }),
+  getProviderPacks: () => request('/provider-packs'),
   previewRouting: (model: string) =>
     request(`/routing/preview?model=${encodeURIComponent(model)}`),
 
@@ -280,6 +304,30 @@ export const api = {
     request(appendParams('/internal-status', { org_id: filters?.org_id, project_id: filters?.project_id })),
   getRuntimeStatus: (orgId?: number) => request(appendParams('/runtime/status', { org_id: orgId })),
   getErrorDocs: () => request('/error-docs'),
+  getMediaJobContract: (projectId: number, orgId?: number) =>
+    request(appendParams('/media-jobs/contract', { project_id: projectId, org_id: orgId })),
+  getMediaJobs: (projectId: number, orgId?: number, cursor?: string, limit = 50) =>
+    request(appendParams('/media-jobs', {
+      project_id: projectId,
+      org_id: orgId,
+      cursor,
+      limit,
+    })),
+  getMediaJob: (jobId: string, projectId: number, orgId?: number) =>
+    request(appendParams(`/media-jobs/${encodeURIComponent(jobId)}`, {
+      project_id: projectId,
+      org_id: orgId,
+    })),
+  cancelMediaJob: (jobId: string, projectId: number, orgId?: number) =>
+    request(appendParams(`/media-jobs/${encodeURIComponent(jobId)}/cancel`, {
+      project_id: projectId,
+      org_id: orgId,
+    }), { method: 'POST' }),
+  getMediaJobContent: (jobId: string, projectId: number, orgId?: number) =>
+    requestBlob(appendParams(`/media-jobs/${encodeURIComponent(jobId)}/content`, {
+      project_id: projectId,
+      org_id: orgId,
+    })),
 
   // Projects and developer catalog
   getProjects: (page = 1, pageSize = 20, filters?: { status?: string; org_id?: number }) =>
@@ -427,6 +475,24 @@ export const api = {
     if (filters?.usage_source) url += `&usage_source=${encodeURIComponent(filters.usage_source)}`;
     return request(url);
   },
+  getProviderCOGSOfflineContract: () => request('/provider-cogs/offline-contract'),
+  previewProviderCOGSOffline: (body: string) =>
+    request('/provider-cogs/offline-preview', { method: 'POST', body }),
+  getGovernanceSimulationContract: () => request('/governance-simulation/offline-contract'),
+  previewGovernanceSimulation: (body: string) =>
+    request('/governance-simulation/offline-preview', { method: 'POST', body }),
+  getMemberLifecycleContract: () => request('/member-lifecycle/offline-contract'),
+  previewMemberLifecycle: (body: string) =>
+    request('/member-lifecycle/offline-preview', { method: 'POST', body }),
+  getAgentTrustContract: () => request('/agent-trust/offline-contract'),
+  previewAgentTrust: (body: string) =>
+    request('/agent-trust/offline-preview', { method: 'POST', body }),
+  getProvenancePassportContract: () => request('/provenance-passport/offline-contract'),
+  previewProvenancePassport: (body: string) =>
+    request('/provenance-passport/offline-preview', { method: 'POST', body }),
+  getRiskControlContract: () => request('/risk-control/offline-contract'),
+  previewRiskControl: (body: string) =>
+    request('/risk-control/offline-preview', { method: 'POST', body }),
 
   // Notifications
   getNotificationEvents: (page = 1, pageSize = 20, filters?: {

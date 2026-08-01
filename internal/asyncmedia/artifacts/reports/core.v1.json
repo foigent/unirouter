@@ -1,0 +1,564 @@
+{
+  "schema_version": "unirouter.async-media-conformance-report.v1",
+  "contract_version": "unirouter.async-media-job-plan.v1",
+  "schema": {
+    "path": "async-media-job.v1.schema.json",
+    "sha256": "sha256:17afc6a64c9bc5fc1c454fc5cc777b049bfd3827725eae238bbbdd2f8d5d8d80"
+  },
+  "fixtures": [
+    {
+      "path": "fixtures/image-to-video-plan.v1.json",
+      "sha256": "sha256:78dfebc8be843238cd14c6c00cdde9ea8c4371a3037f674be79e4a611d5f777f"
+    },
+    {
+      "path": "fixtures/text-to-image-plan.v1.json",
+      "sha256": "sha256:5caeed8cc3188c45de99e3b29ceb4b758ed7e92a02e2d60f6baac06394f170fd"
+    }
+  ],
+  "dependencies": [
+    {
+      "path": "internal/endpointprotocol/artifacts/endpoint-profile.v1.schema.json",
+      "sha256": "sha256:e1546a5a7638e400f89b43ea6684e2879a072eb13f0a74a312979aea356752cc"
+    },
+    {
+      "path": "internal/endpointprotocol/artifacts/fixtures/openai-gpt-image-v1.json",
+      "sha256": "sha256:3b802f15539ff4fe0309ca93a779a3639da5910b0f28df3087aa24520fa16755"
+    },
+    {
+      "path": "internal/endpointprotocol/artifacts/manifests/openai-gpt-image.v1.json",
+      "sha256": "sha256:792d54b5341ae13425afd24ffa864c068b705043f2b09f29c6c717963b9febd7"
+    },
+    {
+      "path": "internal/endpointprotocol/artifacts/reports/core.v1.json",
+      "sha256": "sha256:ab3d4ec66077922ce921f1def0ccfa501ba8bf5866190c3581fa5c71a91b5759"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "image-to-video-plan.v1/strict-validation",
+      "case_classes": [
+        "fixture",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "strict_fixture_valid"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/determinism",
+      "case_classes": [
+        "canonicalization",
+        "determinism",
+        "hash"
+      ],
+      "passed": true,
+      "result": "semantic_hash_stable"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/dependency-pin",
+      "case_classes": [
+        "dependency",
+        "hash"
+      ],
+      "passed": true,
+      "result": "b6_artifacts_exact"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/identity",
+      "case_classes": [
+        "identity",
+        "plan"
+      ],
+      "passed": true,
+      "result": "plan_identity_decision_gated"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/tenant-scope",
+      "case_classes": [
+        "object",
+        "tenant"
+      ],
+      "passed": true,
+      "result": "tenant_scoped_opaque_references"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/idempotency",
+      "case_classes": [
+        "hash",
+        "idempotency"
+      ],
+      "passed": true,
+      "result": "idempotency_key_exact"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/decision-gates",
+      "case_classes": [
+        "decision_gate",
+        "missing"
+      ],
+      "passed": true,
+      "result": "four_product_decisions_unresolved"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/lifecycle",
+      "case_classes": [
+        "cancellation",
+        "lease",
+        "lifecycle",
+        "queue"
+      ],
+      "passed": true,
+      "result": "no_job_state_created"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/endpoint-coverage",
+      "case_classes": [
+        "endpoint",
+        "gap",
+        "profile"
+      ],
+      "passed": true,
+      "result": "endpoint_coverage_explicit"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/object-metadata",
+      "case_classes": [
+        "media",
+        "object",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "metadata_only_object_identity"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/charge",
+      "case_classes": [
+        "billing",
+        "finality"
+      ],
+      "passed": true,
+      "result": "charge_trigger_unresolved_no_debt"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/privacy",
+      "case_classes": [
+        "privacy"
+      ],
+      "passed": true,
+      "result": "no_raw_content_locator_or_credential"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/threat-model",
+      "case_classes": [
+        "security",
+        "threat_model"
+      ],
+      "passed": true,
+      "result": "required_threat_classes_exact"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/runtime-boundary",
+      "case_classes": [
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "runtime_mutation_none"
+    },
+    {
+      "case_id": "image-to-video-plan.v1/compatibility",
+      "case_classes": [
+        "compatibility",
+        "cursor",
+        "feed",
+        "outbox"
+      ],
+      "passed": true,
+      "result": "existing_runtime_and_feed_unchanged"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/strict-validation",
+      "case_classes": [
+        "fixture",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "strict_fixture_valid"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/determinism",
+      "case_classes": [
+        "canonicalization",
+        "determinism",
+        "hash"
+      ],
+      "passed": true,
+      "result": "semantic_hash_stable"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/dependency-pin",
+      "case_classes": [
+        "dependency",
+        "hash"
+      ],
+      "passed": true,
+      "result": "b6_artifacts_exact"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/identity",
+      "case_classes": [
+        "identity",
+        "plan"
+      ],
+      "passed": true,
+      "result": "plan_identity_decision_gated"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/tenant-scope",
+      "case_classes": [
+        "object",
+        "tenant"
+      ],
+      "passed": true,
+      "result": "tenant_scoped_opaque_references"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/idempotency",
+      "case_classes": [
+        "hash",
+        "idempotency"
+      ],
+      "passed": true,
+      "result": "idempotency_key_exact"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/decision-gates",
+      "case_classes": [
+        "decision_gate",
+        "missing"
+      ],
+      "passed": true,
+      "result": "four_product_decisions_unresolved"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/lifecycle",
+      "case_classes": [
+        "cancellation",
+        "lease",
+        "lifecycle",
+        "queue"
+      ],
+      "passed": true,
+      "result": "no_job_state_created"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/endpoint-coverage",
+      "case_classes": [
+        "endpoint",
+        "gap",
+        "profile"
+      ],
+      "passed": true,
+      "result": "endpoint_coverage_explicit"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/object-metadata",
+      "case_classes": [
+        "media",
+        "object",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "metadata_only_object_identity"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/charge",
+      "case_classes": [
+        "billing",
+        "finality"
+      ],
+      "passed": true,
+      "result": "charge_trigger_unresolved_no_debt"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/privacy",
+      "case_classes": [
+        "privacy"
+      ],
+      "passed": true,
+      "result": "no_raw_content_locator_or_credential"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/threat-model",
+      "case_classes": [
+        "security",
+        "threat_model"
+      ],
+      "passed": true,
+      "result": "required_threat_classes_exact"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/runtime-boundary",
+      "case_classes": [
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "runtime_mutation_none"
+    },
+    {
+      "case_id": "text-to-image-plan.v1/compatibility",
+      "case_classes": [
+        "compatibility",
+        "cursor",
+        "feed",
+        "outbox"
+      ],
+      "passed": true,
+      "result": "existing_runtime_and_feed_unchanged"
+    },
+    {
+      "case_id": "negative/duplicate-key",
+      "case_classes": [
+        "negative",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "duplicate_json_key_rejected"
+    },
+    {
+      "case_id": "negative/raw-prompt-field",
+      "case_classes": [
+        "negative",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "input_shape_invalid_rejected"
+    },
+    {
+      "case_id": "negative/storage-locator-field",
+      "case_classes": [
+        "negative",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "input_shape_invalid_rejected"
+    },
+    {
+      "case_id": "negative/trailing-json",
+      "case_classes": [
+        "negative",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "input_json_invalid_rejected"
+    },
+    {
+      "case_id": "negative/provider-decision",
+      "case_classes": [
+        "decision_gate",
+        "negative"
+      ],
+      "passed": true,
+      "result": "p7_d03_decision_invented_rejected"
+    },
+    {
+      "case_id": "negative/object-store-decision",
+      "case_classes": [
+        "decision_gate",
+        "negative"
+      ],
+      "passed": true,
+      "result": "p7_d03_decision_invented_rejected"
+    },
+    {
+      "case_id": "negative/retention-decision",
+      "case_classes": [
+        "decision_gate",
+        "negative",
+        "retention"
+      ],
+      "passed": true,
+      "result": "p7_d03_decision_invented_rejected"
+    },
+    {
+      "case_id": "negative/charge-trigger-decision",
+      "case_classes": [
+        "billing",
+        "decision_gate",
+        "negative"
+      ],
+      "passed": true,
+      "result": "p7_d03_decision_invented_rejected"
+    },
+    {
+      "case_id": "negative/runtime-registration",
+      "case_classes": [
+        "negative",
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "runtime_boundary_violated_rejected"
+    },
+    {
+      "case_id": "negative/provider-network",
+      "case_classes": [
+        "negative",
+        "network",
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "runtime_boundary_violated_rejected"
+    },
+    {
+      "case_id": "negative/customer-charge",
+      "case_classes": [
+        "billing",
+        "negative",
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "runtime_boundary_violated_rejected"
+    },
+    {
+      "case_id": "negative/lifecycle-start",
+      "case_classes": [
+        "lifecycle",
+        "negative",
+        "queue"
+      ],
+      "passed": true,
+      "result": "lifecycle_started_before_gate_rejected"
+    },
+    {
+      "case_id": "negative/cross-tenant-object",
+      "case_classes": [
+        "negative",
+        "object",
+        "tenant"
+      ],
+      "passed": true,
+      "result": "cross_tenant_object_reference_rejected"
+    },
+    {
+      "case_id": "negative/mutable-object",
+      "case_classes": [
+        "negative",
+        "object"
+      ],
+      "passed": true,
+      "result": "object_reference_invalid_rejected"
+    },
+    {
+      "case_id": "negative/leading-zero-size",
+      "case_classes": [
+        "decimal",
+        "negative",
+        "object"
+      ],
+      "passed": true,
+      "result": "object_size_invalid_rejected"
+    },
+    {
+      "case_id": "negative/int64-overflow-size",
+      "case_classes": [
+        "decimal",
+        "int64",
+        "negative",
+        "object"
+      ],
+      "passed": true,
+      "result": "object_size_invalid_rejected"
+    },
+    {
+      "case_id": "negative/invalid-content-digest",
+      "case_classes": [
+        "hash",
+        "negative",
+        "object"
+      ],
+      "passed": true,
+      "result": "object_reference_invalid_rejected"
+    },
+    {
+      "case_id": "negative/idempotency-tamper",
+      "case_classes": [
+        "hash",
+        "idempotency",
+        "negative"
+      ],
+      "passed": true,
+      "result": "idempotency_key_mismatch_rejected"
+    },
+    {
+      "case_id": "negative/duplicate-object-ref",
+      "case_classes": [
+        "negative",
+        "object"
+      ],
+      "passed": true,
+      "result": "duplicate_object_ref_rejected"
+    },
+    {
+      "case_id": "negative/missing-threat-control",
+      "case_classes": [
+        "negative",
+        "security",
+        "threat_model"
+      ],
+      "passed": true,
+      "result": "threat_control_coverage_incomplete_rejected"
+    },
+    {
+      "case_id": "negative/missing-gap",
+      "case_classes": [
+        "gap",
+        "negative"
+      ],
+      "passed": true,
+      "result": "gap_declarations_incomplete_rejected"
+    },
+    {
+      "case_id": "negative/video-profile-overclaim",
+      "case_classes": [
+        "endpoint",
+        "gap",
+        "negative"
+      ],
+      "passed": true,
+      "result": "image_to_video_semantics_invalid_rejected"
+    },
+    {
+      "case_id": "negative/endpoint-reference-digest",
+      "case_classes": [
+        "endpoint",
+        "hash",
+        "negative"
+      ],
+      "passed": true,
+      "result": "endpoint_reference_digest_mismatch_rejected"
+    },
+    {
+      "case_id": "negative/dependency-digest",
+      "case_classes": [
+        "dependency",
+        "hash",
+        "negative"
+      ],
+      "passed": true,
+      "result": "dependency_identity_mismatch_rejected"
+    },
+    {
+      "case_id": "negative/fixture-expected",
+      "case_classes": [
+        "fixture",
+        "negative"
+      ],
+      "passed": true,
+      "result": "fixture_expected_mismatch_rejected"
+    }
+  ],
+  "summary": {
+    "fixtures": 2,
+    "cases": 55,
+    "passed": 55,
+    "failed": 0
+  }
+}

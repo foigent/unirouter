@@ -1,0 +1,47 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.openai.responses.text.v1",
+  "profile_version": "1.0.0",
+  "provider": "openai",
+  "runtime_state": "local_contract_only",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.openai.responses.text.v1",
+    "profile_version": "1.0.0",
+    "provider": "openai",
+    "endpoint_kind": "responses",
+    "downstream_endpoint": "/v1/responses",
+    "upstream_endpoint": "/v1/responses",
+    "authentication": "bearer",
+    "runtime_state": "local_contract_only",
+    "provider_finality": "status_completed_with_provider_usage",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "text"
+    ],
+    "observed_unit_classes": [
+      "input_tokens",
+      "cache_read_tokens",
+      "cache_write_tokens",
+      "output_tokens"
+    ],
+    "unsupported_semantics": [
+      "background",
+      "conversation_state",
+      "function_or_hosted_tools",
+      "multimodal_or_structured_input",
+      "streaming",
+      "stored_response_state",
+      "structured_output"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "openai-responses-text.v1",
+      "path": "fixtures/openai-responses-text.v1.json",
+      "sha256": "sha256:005c126da2d47bab7fdd4056d5e0c343fb74d5983c8d8c6288f943566b44d4c9"
+    }
+  ]
+}

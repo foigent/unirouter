@@ -1,0 +1,48 @@
+{
+  "schema_version": "unirouter.provider-pack.v1",
+  "pack_id": "unirouter.azure-openai.core",
+  "pack_version": "1.0.0",
+  "provider": "azure",
+  "adapter_type": "azure_openai",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "endpoints": [
+    "/v1/chat/completions",
+    "/v1/embeddings"
+  ],
+  "modalities": [
+    "text",
+    "embeddings"
+  ],
+  "auth_profiles": [
+    {
+      "type": "api_key",
+      "wire_header": "api-key"
+    },
+    {
+      "type": "entra_bearer",
+      "wire_header": "Authorization"
+    }
+  ],
+  "usage_profile": {
+    "authority_when_complete": "provider_reported",
+    "missing_behavior": "missing_not_zero",
+    "cache_classes": []
+  },
+  "error_profile": {
+    "classifier": "unirouter.http-failure.v1",
+    "unknown_behavior": "unknown_not_retryable_without_status_evidence"
+  },
+  "fixtures": [
+    {
+      "fixture_id": "azure-openai-chat-success.v1",
+      "path": "fixtures/azure-openai-chat-success.v1.json",
+      "sha256": "sha256:8f9f36ff23c7d61d2708ac97c8cd09fd7ff631985622ec9de86ac9638581bb49"
+    },
+    {
+      "fixture_id": "azure-openai-embeddings-success.v1",
+      "path": "fixtures/azure-openai-embeddings-success.v1.json",
+      "sha256": "sha256:c38f2d0e6b92539125d5aa170a433582ad680cafb82ebe857592aac65bb7df69"
+    }
+  ]
+}

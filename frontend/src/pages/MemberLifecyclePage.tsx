@@ -1,0 +1,273 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Banner, Button, Table, Tag, TextArea, Typography } from '@douyinfe/semi-ui';
+import { api, ApiError } from '../api/client';
+import { EmptyState, MetricTile, PageHeader } from '../ui';
+import { formatInteger } from '../utils/formatNumber';
+
+interface ArtifactIdentity {
+  path: string;
+  sha256: string;
+}
+
+interface LifecycleEvent {
+  event_id: string;
+  operation: string;
+  revision: string;
+  subject_ref: string;
+  after: {
+    status: string;
+    memberships: unknown[];
+    capabilities: unknown[];
+  };
+}
+
+interface LifecycleContract {
+  contract_version: string;
+  report_version: string;
+  operations: string[];
+  sample_events: LifecycleEvent[];
+  artifacts: {
+    schema: ArtifactIdentity;
+    fixtures: ArtifactIdentity[];
+    golden_report: ArtifactIdentity;
+  };
+  authority_boundary: {
+    directory_vendor_selected: boolean;
+    idp_network_access: boolean;
+    runtime_mutation: string;
+  };
+}
+
+interface Revocation {
+  kind: string;
+  ref: string;
+  reason: string;
+}
+
+interface LifecycleReport {
+  report_version: string;
+  event_id: string;
+  subject_ref: string;
+  operation: string;
+  revision: string;
+  state_status: string;
+  input_semantic_hash: string;
+  effective_memberships: unknown[];
+  effective_capabilities: unknown[];
+  revocations: Revocation[];
+  controls: {
+    deny_admin_sessions: boolean;
+    revoke_live_admin_sessions: boolean;
+    disable_personal_keys_before_delete: boolean;
+    agent_capability_recheck_seconds: string;
+  };
+  local_projection: {
+    user_status: string;
+    membership_storage: string;
+    personal_key_handling: string;
+    session_handling: string;
+  };
+  vendor_adapter_authorized: boolean;
+  runtime_mutation: string;
+}
+
+const operationNames: Record<string, string> = {
+  create: '创建',
+  update: '更新 / 恢复',
+  suspend: '暂停',
+  deprovision: '退场',
+};
+
+const statusNames: Record<string, string> = {
+  active: '有效',
+  suspended: '已暂停',
+  deprovisioned: '已退场',
+};
+
+export default function MemberLifecyclePage() {
+  const [contract, setContract] = useState<LifecycleContract | null>(null);
+  const [input, setInput] = useState('');
+  const [report, setReport] = useState<LifecycleReport | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const preview = (body: string) => {
+    setLoading(true);
+    setError('');
+    return api.previewMemberLifecycle(body)
+      .then((next: LifecycleReport) => setReport(next))
+      .catch((previewError: unknown) => {
+        setReport(null);
+        setError(previewError instanceof ApiError
+          ? `校验失败（${previewError.status}）：${previewError.message}`
+          : '成员生命周期事件不满足严格合同。');
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    let active = true;
+    api.getMemberLifecycleContract()
+      .then((next: LifecycleContract) => {
+        if (!active) return;
+        setContract(next);
+        const first = next.sample_events[0];
+        if (first) {
+          const body = JSON.stringify(first, null, 2);
+          setInput(body);
+          void preview(body);
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (!active) return;
+        setError(loadError instanceof ApiError
+          ? `合同加载失败（${loadError.status}）：${loadError.message}`
+          : '成员生命周期合同暂不可用。');
+      });
+    return () => { active = false; };
+  }, []);
+
+  const selectEvent = (event: LifecycleEvent, index: number) => {
+    const body = JSON.stringify(event, null, 2);
+    setSelectedIndex(index);
+    setInput(body);
+    void preview(body);
+  };
+
+  const columns = useMemo(() => [
+    {
+      title: '阶段',
+      dataIndex: 'operation',
+      width: 150,
+      render: (value: string) => <Tag color={value === 'deprovision' ? 'red' : value === 'suspend' ? 'orange' : 'blue'}>{operationNames[value] || value}</Tag>,
+    },
+    { title: '事件', dataIndex: 'event_id', width: 250 },
+    { title: '修订', dataIndex: 'revision', width: 90 },
+    {
+      title: '结果状态',
+      render: (_: unknown, event: LifecycleEvent) => statusNames[event.after.status] || event.after.status,
+    },
+  ], []);
+
+  return (
+    <div className="ur-page">
+      <PageHeader
+        eyebrow="访问与安全"
+        title="成员生命周期"
+        description="先用供应商无关的合同证明创建、更新、暂停和退场会收敛成员关系、会话与 Agent 能力，再由未来单独批准的目录适配器接入。"
+      />
+      <Banner
+        type="info"
+        description="当前只做离线预演：不会连接 SCIM / IdP，不接收凭据，不写用户、项目成员、会话、API Key、Agent 能力或数据库。"
+        style={{ marginBottom: 16 }}
+      />
+
+      <div className="ur-context-explorer ur-governance-explorer">
+        <main className="ur-explorer-panel">
+          <div className="ur-panel-title">
+            <div>
+              <Typography.Title heading={5} style={{ margin: 0 }}>生命周期链与事件合同</Typography.Title>
+              <Typography.Text className="ur-panel-hint">
+                {contract ? `${contract.contract_version} · 目录供应商未选择` : '正在读取离线合同'}
+              </Typography.Text>
+            </div>
+            <Tag color="blue">IdP-neutral</Tag>
+          </div>
+
+          <div className="ur-table-shell">
+            <Table
+              rowKey="event_id"
+              columns={columns}
+              dataSource={contract?.sample_events || []}
+              pagination={false}
+              scroll={{ x: 660 }}
+              onRow={(event?: LifecycleEvent) => {
+                const index = event && contract ? contract.sample_events.indexOf(event) : 0;
+                return {
+                  onClick: () => event && selectEvent(event, Math.max(index, 0)),
+                  'aria-selected': selectedIndex === Math.max(index, 0),
+                };
+              }}
+            />
+          </div>
+
+          <Typography.Title heading={6}>当前事件 JSON</Typography.Title>
+          <TextArea
+            aria-label="成员生命周期事件 JSON"
+            value={input}
+            onChange={value => {
+              setInput(value);
+              setReport(null);
+              setError('');
+            }}
+            autosize={{ minRows: 9, maxRows: 16 }}
+          />
+          <div className="ur-governance-actions">
+            <Button type="primary" loading={loading} onClick={() => void preview(input)}>运行离线校验</Button>
+            <Button
+              disabled={!contract?.sample_events[selectedIndex]}
+              onClick={() => {
+                const event = contract?.sample_events[selectedIndex];
+                if (event) selectEvent(event, selectedIndex);
+              }}
+            >
+              恢复选中示例
+            </Button>
+          </div>
+          {error && <Banner type="danger" description={error} style={{ marginTop: 12 }} />}
+
+          {report && (
+            <div className="ur-kpi-grid ur-governance-kpis">
+              <MetricTile label="有效项目" value={formatInteger(report.effective_memberships.length)} tone="blue" />
+              <MetricTile label="有效能力" value={formatInteger(report.effective_capabilities.length)} tone="green" />
+              <MetricTile label="撤销项" value={formatInteger(report.revocations.length)} tone={report.revocations.length ? 'amber' : 'blue'} />
+              <MetricTile label="运行时变更" value={report.runtime_mutation === 'none' ? '无' : report.runtime_mutation} tone="blue" />
+            </div>
+          )}
+        </main>
+
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="成员生命周期检查器">
+          <div className="ur-detail-header">
+            <div>
+              <Typography.Text className="ur-panel-hint">Lifecycle Inspector</Typography.Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>访问收敛证据</Typography.Title>
+            </div>
+            <Tag color={report?.state_status === 'deprovisioned' ? 'red' : report?.state_status === 'suspended' ? 'orange' : 'green'}>
+              {statusNames[report?.state_status || ''] || '等待校验'}
+            </Tag>
+          </div>
+          {report ? (
+            <dl className="ur-financial-truth-detail">
+              <dt>事件</dt><dd>{report.event_id}</dd>
+              <dt>操作</dt><dd>{operationNames[report.operation] || report.operation}</dd>
+              <dt>修订</dt><dd>{report.revision}</dd>
+              <dt>账号投影</dt><dd>{report.local_projection.user_status}</dd>
+              <dt>成员存储</dt><dd>{report.local_projection.membership_storage}</dd>
+              <dt>个人 Key</dt><dd>{report.local_projection.personal_key_handling}</dd>
+              <dt>管理员会话</dt><dd>{report.local_projection.session_handling}</dd>
+              <dt>拒绝旧会话</dt><dd>{report.controls.deny_admin_sessions ? '是' : '否'}</dd>
+              <dt>撤销在线会话</dt><dd>{report.controls.revoke_live_admin_sessions ? '是' : '否'}</dd>
+              <dt>Agent 权限重检</dt><dd>≤ {report.controls.agent_capability_recheck_seconds} 秒</dd>
+              <dt>目录适配授权</dt><dd>{report.vendor_adapter_authorized ? '是' : '否'}</dd>
+              <dt>运行时变更</dt><dd>{report.runtime_mutation}</dd>
+              <dt>语义哈希</dt><dd className="ur-mono-break">{report.input_semantic_hash}</dd>
+              <dt>撤销明细</dt>
+              <dd>
+                {report.revocations.length
+                  ? report.revocations.map(item => `${item.kind}:${item.reason}`).join('；')
+                  : '无'}
+              </dd>
+            </dl>
+          ) : (
+            <EmptyState
+              title="等待严格事件"
+              description="安全示例载入后会自动校验并选中首个阶段；不需要点击展开右侧检查器。"
+              minHeight={240}
+            />
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}

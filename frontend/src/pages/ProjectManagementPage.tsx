@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Banner, Button, Form, Input, Modal, Select, SideSheet, Space, Table, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconDelete, IconPlus, IconRefresh } from '@douyinfe/semi-icons';
 import { ApiError, api } from '../api/client';
@@ -6,6 +6,14 @@ import { isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
+import {
+  deleteLocalView,
+  loadSavedViews,
+  readPositiveQueryParam,
+  replaceControlledQuery,
+  saveLocalView,
+  type SavedView,
+} from '../utils/viewState';
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
@@ -55,6 +63,26 @@ interface ModelSet {
   status: string;
 }
 
+type ProjectTab = 'overview' | 'members' | 'models';
+
+interface ProjectSavedState {
+  org_id?: number;
+  project_id: number;
+  project_tab: ProjectTab;
+  project_page: number;
+  project_page_size: number;
+}
+
+const projectQueryKeys = [
+  'org_id',
+  'project_id',
+  'project_tab',
+  'project_page',
+  'project_page_size',
+] as const;
+
+const projectSavedViewStorageKey = 'unirouter.projects.saved-views.v1';
+
 const roleNames: Record<string, string> = {
   project_admin: '项目管理员',
   project_developer: '开发者',
@@ -66,6 +94,61 @@ const periodOptions = [
   { label: '每日', value: 'daily' },
   { label: '每月', value: 'monthly' },
 ];
+
+function normalizeProjectTab(value: unknown): ProjectTab {
+  return value === 'members' || value === 'models' ? value : 'overview';
+}
+
+function readInitialProjectState() {
+  const params = new URLSearchParams(window.location.search);
+  const pageSize = readPositiveQueryParam(params, 'project_page_size');
+  return {
+    orgID: readPositiveQueryParam(params, 'org_id'),
+    projectID: readPositiveQueryParam(params, 'project_id'),
+    tab: normalizeProjectTab(params.get('project_tab')),
+    page: readPositiveQueryParam(params, 'project_page') || 1,
+    pageSize: pageSize && [20, 50, 100].includes(pageSize) ? pageSize : 20,
+  };
+}
+
+function normalizeProjectSavedState(value: unknown): ProjectSavedState | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  const projectID = Number(source.project_id);
+  const orgID = source.org_id === undefined ? undefined : Number(source.org_id);
+  const page = Number(source.project_page);
+  const pageSize = Number(source.project_page_size);
+  if (!Number.isSafeInteger(projectID) || projectID <= 0 ||
+    (orgID !== undefined && (!Number.isSafeInteger(orgID) || orgID <= 0)) ||
+    !Number.isSafeInteger(page) || page <= 0 ||
+    !Number.isSafeInteger(pageSize) || ![20, 50, 100].includes(pageSize)) {
+    return null;
+  }
+  return {
+    org_id: orgID,
+    project_id: projectID,
+    project_tab: normalizeProjectTab(source.project_tab),
+    project_page: page,
+    project_page_size: pageSize,
+  };
+}
+
+function syncProjectURL(state: {
+  platform: boolean;
+  orgID?: number;
+  projectID?: number;
+  tab: ProjectTab;
+  page: number;
+  pageSize: number;
+}) {
+  replaceControlledQuery(projectQueryKeys, {
+    org_id: state.platform ? state.orgID : undefined,
+    project_id: state.projectID,
+    project_tab: state.tab === 'overview' ? undefined : state.tab,
+    project_page: state.page === 1 ? undefined : state.page,
+    project_page_size: state.pageSize === 20 ? undefined : state.pageSize,
+  });
+}
 
 function yuanFromCents(cents: number) {
   return Number((Number(cents || 0) / 100).toFixed(2));
@@ -80,20 +163,27 @@ export default function ProjectManagementPage() {
   const currentUser = useAuthStore(state => state.user);
   const role = currentUser?.role || '';
   const platform = isPlatformAdminRole(role);
+  const initialState = useRef(readInitialProjectState()).current;
   const canCreateProject = platform || role === 'org_admin';
   const canManageMembers = platform || role === 'org_admin' || role === 'project_admin';
   const canEditProject = canManageMembers;
   const licenseModelGovernance = currentUser?.license_access?.features?.model_governance === true;
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(currentUser?.org_id);
+  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(
+    platform ? (initialState.orgID || currentUser?.org_id) : currentUser?.org_id,
+  );
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectTotal, setProjectTotal] = useState(0);
-  const [projectPage, setProjectPage] = useState(1);
-  const [projectPageSize, setProjectPageSize] = useState(20);
+  const [projectPage, setProjectPage] = useState(initialState.page);
+  const [projectPageSize, setProjectPageSize] = useState(initialState.pageSize);
   const [projectLoading, setProjectLoading] = useState(false);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [projectLoadError, setProjectLoadError] = useState('');
+  const [selectedProjectID, setSelectedProjectID] = useState<number | undefined>(initialState.projectID);
+  const selectedProjectIDRef = useRef<number | undefined>(initialState.projectID);
+  const [activeTab, setActiveTab] = useState<ProjectTab>(initialState.tab);
+  const activeTabRef = useRef<ProjectTab>(initialState.tab);
+  const [reloadVersion, setReloadVersion] = useState(0);
   const [createSheet, setCreateSheet] = useState(false);
   const [createFormApi, setCreateFormApi] = useState<any>(null);
   const [overviewFormApi, setOverviewFormApi] = useState<any>(null);
@@ -111,62 +201,123 @@ export default function ProjectManagementPage() {
   const [assignedModelSetIDs, setAssignedModelSetIDs] = useState<number[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelError, setModelError] = useState('');
-  const detailRef = useRef<HTMLDivElement>(null);
+  const projectRequestVersion = useRef(0);
+  const memberRequestVersion = useRef(0);
+  const modelRequestVersion = useRef(0);
+  const [savedViews, setSavedViews] = useState<SavedView<ProjectSavedState>[]>(() => (
+    loadSavedViews(projectSavedViewStorageKey, normalizeProjectSavedState)
+  ));
+  const [savedViewName, setSavedViewName] = useState('');
+  const [selectedSavedView, setSelectedSavedView] = useState<string>();
+
+  const selectedProject = useMemo(
+    () => projects.find(project => project.id === selectedProjectID) || null,
+    [projects, selectedProjectID],
+  );
 
   useEffect(() => {
     if (!platform) return;
     loadAllPages<Organization>((page, size) => api.getOrganizations(page, size))
       .then(items => {
         setOrganizations(items);
-        if (!selectedOrgID && items[0]) setSelectedOrgID(items[0].id);
+        setSelectedOrgID(current => current || items[0]?.id);
       })
       .catch(() => setOrganizations([]));
-  }, [platform, selectedOrgID]);
+  }, [platform]);
 
-  const loadProjects = useCallback((page = projectPage, pageSize = projectPageSize) => {
-    if (platform && !selectedOrgID) return Promise.resolve();
+  const loadProjects = useCallback((page: number, pageSize: number) => {
+    if (platform && !selectedOrgID) {
+      setProjects([]);
+      setProjectTotal(0);
+      selectedProjectIDRef.current = undefined;
+      setSelectedProjectID(undefined);
+      return Promise.resolve();
+    }
+    const version = ++projectRequestVersion.current;
+    const desiredProjectID = selectedProjectIDRef.current;
+    memberRequestVersion.current += 1;
+    modelRequestVersion.current += 1;
     setProjectLoading(true);
+    setProjectLoadError('');
+    setProjects([]);
+    setProjectTotal(0);
+    setSelectedProjectID(undefined);
+    setMembers([]);
+    setMemberTotal(0);
+    setEligibleUsers([]);
+    setMembersLoading(false);
+    setModelSets([]);
+    setAssignedModelSetIDs([]);
+    setModelsLoading(false);
+    setModelError('');
     return api.getProjects(page, pageSize, { org_id: platform ? selectedOrgID : undefined })
       .then((response: any) => {
+        if (version !== projectRequestVersion.current) return;
         const nextProjects = response.data || [];
+        const preferred = nextProjects.find((project: Project) => project.id === desiredProjectID) || nextProjects[0];
         setProjects(nextProjects);
         setProjectTotal(response.total || 0);
-        if (selectedProject) {
-          const refreshed = nextProjects.find((project: Project) => project.id === selectedProject.id);
-          if (refreshed) setSelectedProject(refreshed);
-        }
+        selectedProjectIDRef.current = preferred?.id;
+        setSelectedProjectID(preferred?.id);
+        syncProjectURL({
+          platform,
+          orgID: selectedOrgID,
+          projectID: preferred?.id,
+          tab: activeTabRef.current,
+          page,
+          pageSize,
+        });
       })
       .catch(() => {
+        if (version !== projectRequestVersion.current) return;
         setProjects([]);
         setProjectTotal(0);
+        selectedProjectIDRef.current = undefined;
+        setSelectedProjectID(undefined);
+        setProjectLoadError('无法加载当前组织与分页范围内的项目。');
+        syncProjectURL({
+          platform,
+          orgID: selectedOrgID,
+          tab: activeTabRef.current,
+          page,
+          pageSize,
+        });
         Toast.error('项目列表加载失败');
       })
-      .finally(() => setProjectLoading(false));
-  }, [platform, projectPage, projectPageSize, selectedOrgID, selectedProject]);
+      .finally(() => {
+        if (version === projectRequestVersion.current) setProjectLoading(false);
+      });
+  }, [platform, selectedOrgID]);
 
   useEffect(() => {
-    setSelectedProject(null);
-    setProjectPage(1);
-    void loadProjects(1, projectPageSize);
-  }, [selectedOrgID]);
+    void loadProjects(projectPage, projectPageSize);
+    return () => { projectRequestVersion.current += 1; };
+  }, [loadProjects, projectPage, projectPageSize, reloadVersion]);
 
   const loadMembers = useCallback((projectID: number, page = 1, pageSize = 20, query = '') => {
+    const version = ++memberRequestVersion.current;
     setMembersLoading(true);
     return api.getProjectMembers(projectID, page, pageSize, query)
       .then((response: any) => {
+        if (version !== memberRequestVersion.current) return;
         setMembers(response.data || []);
         setMemberTotal(response.total || 0);
         setEligibleUsers(response.eligible_users || []);
       })
       .catch(() => {
+        if (version !== memberRequestVersion.current) return;
         setMembers([]);
+        setMemberTotal(0);
         setEligibleUsers([]);
         Toast.error('项目成员加载失败');
       })
-      .finally(() => setMembersLoading(false));
+      .finally(() => {
+        if (version === memberRequestVersion.current) setMembersLoading(false);
+      });
   }, []);
 
   const loadModels = useCallback(async (project: Project) => {
+    const version = ++modelRequestVersion.current;
     setModelsLoading(true);
     setModelError('');
     try {
@@ -174,16 +325,18 @@ export default function ProjectManagementPage() {
         loadAllPages<ModelSet>((page, size) => api.getModelSets(page, size, { org_id: project.org_id })),
         api.getProjectModelSets(project.id),
       ]);
+      if (version !== modelRequestVersion.current) return;
       setModelSets(sets.filter(item => item.status === 'active'));
       setAssignedModelSetIDs((assigned.data || assigned.model_set_ids || []).map((item: any) => Number(item.model_set_id ?? item.id ?? item)));
     } catch (error) {
+      if (version !== modelRequestVersion.current) return;
       setModelSets([]);
       setAssignedModelSetIDs([]);
       setModelError(error instanceof ApiError && error.status === 403
         ? '当前角色或商业授权不允许维护项目模型范围。'
         : '模型范围加载失败，请稍后重试。');
     } finally {
-      setModelsLoading(false);
+      if (version === modelRequestVersion.current) setModelsLoading(false);
     }
   }, []);
 
@@ -201,25 +354,163 @@ export default function ProjectManagementPage() {
 
   useEffect(() => {
     if (!selectedProject) return;
-    const timer = window.setTimeout(() => {
-      detailRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-      detailRef.current?.focus({ preventScroll: true });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [selectedProject]);
-
-  useEffect(() => {
-    if (!selectedProject) return;
     if (activeTab === 'members' && canManageMembers) void loadMembers(selectedProject.id, 1, memberPageSize);
     if (activeTab === 'models' && canManageMembers && licenseModelGovernance) void loadModels(selectedProject);
   }, [activeTab, canManageMembers, licenseModelGovernance, loadMembers, loadModels, memberPageSize, selectedProject]);
 
-  const openProject = (project: Project) => {
-    setSelectedProject(project);
+  useEffect(() => {
+    if (canManageMembers || activeTab === 'overview') return;
+    activeTabRef.current = 'overview';
+    setActiveTab('overview');
+  }, [activeTab, canManageMembers]);
+
+  const selectProject = useCallback((project: Project) => {
+    memberRequestVersion.current += 1;
+    modelRequestVersion.current += 1;
+    selectedProjectIDRef.current = project.id;
+    setSelectedProjectID(project.id);
+    activeTabRef.current = 'overview';
     setActiveTab('overview');
     setMemberPage(1);
+    setMembers([]);
+    setMemberTotal(0);
+    setEligibleUsers([]);
+    setModelSets([]);
+    setAssignedModelSetIDs([]);
+    setModelError('');
     setSelectedCandidateID(undefined);
     setCandidateQuery('');
+    syncProjectURL({
+      platform,
+      orgID: selectedOrgID,
+      projectID: project.id,
+      tab: 'overview',
+      page: projectPage,
+      pageSize: projectPageSize,
+    });
+  }, [platform, projectPage, projectPageSize, selectedOrgID]);
+
+  const changeActiveTab = (value: string) => {
+    const nextTab = canManageMembers ? normalizeProjectTab(value) : 'overview';
+    activeTabRef.current = nextTab;
+    setActiveTab(nextTab);
+    syncProjectURL({
+      platform,
+      orgID: selectedOrgID,
+      projectID: selectedProjectIDRef.current,
+      tab: nextTab,
+      page: projectPage,
+      pageSize: projectPageSize,
+    });
+  };
+
+  const changeOrganization = (value: unknown) => {
+    const nextOrgID = Number(value);
+    if (!Number.isSafeInteger(nextOrgID) || nextOrgID <= 0 || nextOrgID === selectedOrgID) return;
+    selectedProjectIDRef.current = undefined;
+    setSelectedProjectID(undefined);
+    setProjects([]);
+    setProjectTotal(0);
+    setSelectedOrgID(nextOrgID);
+    setProjectPage(1);
+    activeTabRef.current = 'overview';
+    setActiveTab('overview');
+    syncProjectURL({
+      platform,
+      orgID: nextOrgID,
+      tab: 'overview',
+      page: 1,
+      pageSize: projectPageSize,
+    });
+  };
+
+  const changeProjectPage = (nextPage: number) => {
+    selectedProjectIDRef.current = undefined;
+    setSelectedProjectID(undefined);
+    setProjectPage(nextPage);
+    syncProjectURL({
+      platform,
+      orgID: selectedOrgID,
+      tab: activeTabRef.current,
+      page: nextPage,
+      pageSize: projectPageSize,
+    });
+  };
+
+  const changeProjectPageSize = (nextPageSize: number) => {
+    selectedProjectIDRef.current = undefined;
+    setSelectedProjectID(undefined);
+    setProjectPageSize(nextPageSize);
+    setProjectPage(1);
+    syncProjectURL({
+      platform,
+      orgID: selectedOrgID,
+      tab: activeTabRef.current,
+      page: 1,
+      pageSize: nextPageSize,
+    });
+  };
+
+  const saveCurrentProjectView = () => {
+    if (!selectedProjectIDRef.current) {
+      Toast.warning('当前没有可保存的项目工作区');
+      return;
+    }
+    const next = saveLocalView(projectSavedViewStorageKey, savedViews, savedViewName, {
+      org_id: platform ? selectedOrgID : undefined,
+      project_id: selectedProjectIDRef.current,
+      project_tab: activeTabRef.current,
+      project_page: projectPage,
+      project_page_size: projectPageSize,
+    });
+    if (!next.saved) {
+      Toast.error('视图名称需为 1 至 40 个字符，并且浏览器存储必须可用。');
+      return;
+    }
+    const name = savedViewName.trim();
+    setSavedViews(next.views);
+    setSelectedSavedView(name);
+    setSavedViewName(name);
+    Toast.success('项目工作区已保存在此浏览器');
+  };
+
+  const applyProjectView = (name: string) => {
+    const view = savedViews.find(item => item.name === name);
+    if (!view) return;
+    const nextTab = canManageMembers ? view.state.project_tab : 'overview';
+    memberRequestVersion.current += 1;
+    modelRequestVersion.current += 1;
+    setSelectedSavedView(name);
+    setSavedViewName(name);
+    if (platform && view.state.org_id) setSelectedOrgID(view.state.org_id);
+    selectedProjectIDRef.current = view.state.project_id;
+    setSelectedProjectID(view.state.project_id);
+    activeTabRef.current = nextTab;
+    setActiveTab(nextTab);
+    setProjectPage(view.state.project_page);
+    setProjectPageSize(view.state.project_page_size);
+    syncProjectURL({
+      platform,
+      orgID: platform ? view.state.org_id : selectedOrgID,
+      projectID: view.state.project_id,
+      tab: nextTab,
+      page: view.state.project_page,
+      pageSize: view.state.project_page_size,
+    });
+    setReloadVersion(version => version + 1);
+  };
+
+  const deleteProjectView = () => {
+    if (!selectedSavedView) return;
+    const next = deleteLocalView(projectSavedViewStorageKey, savedViews, selectedSavedView);
+    if (!next.deleted) {
+      Toast.error('无法删除此浏览器中的项目工作区');
+      return;
+    }
+    setSavedViews(next.views);
+    setSelectedSavedView(undefined);
+    setSavedViewName('');
+    Toast.success('已删除此浏览器中的项目工作区');
   };
 
   const submitCreate = async (values: any) => {
@@ -239,7 +530,9 @@ export default function ProjectManagementPage() {
       });
       Toast.success('项目已创建');
       setCreateSheet(false);
-      await loadProjects(1, projectPageSize);
+      selectedProjectIDRef.current = undefined;
+      setProjectPage(1);
+      setReloadVersion(version => version + 1);
     } catch {
       Toast.error('项目创建失败');
     }
@@ -262,7 +555,7 @@ export default function ProjectManagementPage() {
         budget_period: values.budget_period,
       });
       Toast.success('项目已更新');
-      await loadProjects(projectPage, projectPageSize);
+      setReloadVersion(version => version + 1);
     } catch {
       Toast.error('项目更新失败');
     }
@@ -282,22 +575,23 @@ export default function ProjectManagementPage() {
     }
   };
 
-  const removeMember = (member: ProjectMember) => {
+  const removeMember = useCallback((member: ProjectMember) => {
     if (!selectedProject) return;
+    const project = selectedProject;
     Modal.confirm({
       title: '移除项目成员',
-      content: `确认从 ${selectedProject.name} 移除 ${member.username}？启用中的项目角色必须保留至少一个项目。`,
+      content: `确认从 ${project.name} 移除 ${member.username}？启用中的项目角色必须保留至少一个项目。`,
       onOk: async () => {
         try {
-          await api.deleteProjectMember(selectedProject.id, member.user_id);
+          await api.deleteProjectMember(project.id, member.user_id);
           Toast.success('成员已移除');
-          await loadMembers(selectedProject.id, memberPage, memberPageSize, candidateQuery);
+          await loadMembers(project.id, memberPage, memberPageSize, candidateQuery);
         } catch (error) {
           Toast.error(error instanceof ApiError ? error.message : '移除成员失败');
         }
       },
     });
-  };
+  }, [candidateQuery, loadMembers, memberPage, memberPageSize, selectedProject]);
 
   const saveModels = async () => {
     if (!selectedProject) return;
@@ -309,17 +603,19 @@ export default function ProjectManagementPage() {
     }
   };
 
-  const columns = [
-    { title: '项目', dataIndex: 'name', render: (name: string, project: Project) => <Button theme="borderless" onClick={() => openProject(project)}>{name}</Button> },
-    { title: '组织', dataIndex: 'org_name', render: (name: string, project: Project) => name || `组织 #${project.org_id}` },
-    { title: '标识', dataIndex: 'slug' },
-    { title: '状态', dataIndex: 'status', render: (status: string) => <StatusTag status={status}>{status === 'active' ? '启用' : status === 'disabled' ? '停用' : '归档'}</StatusTag> },
-    { title: '预算', key: 'budget', render: (_: unknown, project: Project) => project.budget_period === 'none' || !project.budget_cents ? '不限制' : `¥${yuanFromCents(project.budget_cents).toFixed(2)} / ${project.budget_period === 'daily' ? '日' : '月'}` },
-    { title: '凭证数', dataIndex: 'key_count', render: (count: number) => Number(count || 0) },
-    { title: '操作', render: (_: unknown, project: Project) => <Button onClick={() => openProject(project)}>查看与管理</Button> },
-  ];
+  // Semi Table compares column identity in componentDidUpdate. Keeping these
+  // pure definitions stable prevents an application-StrictMode render from
+  // turning the persistent table + inspector form into a nested update loop.
+  const columns = useMemo(() => [
+    { title: '项目', dataIndex: 'name', width: 180, render: (name: string) => <Text strong>{name}</Text> },
+    { title: '组织', dataIndex: 'org_name', width: 150, render: (name: string, project: Project) => name || `组织 #${project.org_id}` },
+    { title: '标识', dataIndex: 'slug', width: 130 },
+    { title: '状态', dataIndex: 'status', width: 90, render: (status: string) => <StatusTag status={status}>{status === 'active' ? '启用' : status === 'disabled' ? '停用' : '归档'}</StatusTag> },
+    { title: '预算', key: 'budget', width: 150, render: (_: unknown, project: Project) => project.budget_period === 'none' || !project.budget_cents ? '不限制' : `¥${yuanFromCents(project.budget_cents).toFixed(2)} / ${project.budget_period === 'daily' ? '日' : '月'}` },
+    { title: '凭证数', dataIndex: 'key_count', width: 88, render: (count: number) => Number(count || 0) },
+  ], []);
 
-  const memberColumns = [
+  const memberColumns = useMemo(() => [
     { title: '用户', dataIndex: 'username', render: (username: string, member: ProjectMember) => <span>{username}{member.email ? <Text type="tertiary"> · {member.email}</Text> : null}</span> },
     { title: '项目角色', dataIndex: 'membership_role', render: (value: string) => <Tag>{roleNames[value] || value}</Tag> },
     { title: '账号来源', dataIndex: 'auth_provider', render: (value: string) => value === 'oidc' ? '企业 OIDC' : '本地账号' },
@@ -336,7 +632,26 @@ export default function ProjectManagementPage() {
         >移除</Button>
       ),
     },
-  ];
+  ], [removeMember, role]);
+
+  const projectRowProps = useCallback((record?: Project) => {
+    if (!record) return {};
+    return {
+      onClick: () => selectProject(record),
+      onKeyDown: (event: KeyboardEvent) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectProject(record);
+        }
+      },
+      tabIndex: 0,
+      'aria-selected': selectedProjectID === record.id,
+      style: {
+        cursor: 'pointer',
+        background: selectedProjectID === record.id ? 'var(--ur-bg-subtle)' : undefined,
+      },
+    };
+  }, [selectProject, selectedProjectID]);
 
   const candidateOptions = useMemo(() => eligibleUsers.map(candidate => ({
     value: candidate.user_id,
@@ -348,56 +663,113 @@ export default function ProjectManagementPage() {
       <PageHeader
         eyebrow="访问与安全"
         title="项目与成员"
-        description="选择项目后，可在同一工作区维护项目资料、预算、成员角色与可用模型范围。"
+        description="项目列表与工作区保持并列；首个项目自动进入检查器，无需再次打开详情。"
         actions={<Space>
-          <Button icon={<IconRefresh />} onClick={() => loadProjects(projectPage, projectPageSize)}>刷新</Button>
+          <Button icon={<IconRefresh />} loading={projectLoading} onClick={() => setReloadVersion(version => version + 1)}>刷新</Button>
           {canCreateProject && <Button type="primary" icon={<IconPlus />} onClick={() => setCreateSheet(true)}>新建项目</Button>}
         </Space>}
       />
 
-      {platform && (
-        <Surface>
-          <Space>
+      <Surface title="工作区视图" description="组织、项目、分页和当前 Tab 会写入 URL；命名视图只保存在当前浏览器。">
+        <div className="ur-project-view-bar">
+          {platform && (
+            <Space>
             <Text strong>目标组织</Text>
             <Select
+              aria-label="目标组织"
               value={selectedOrgID}
               optionList={organizations.map(org => ({ label: `${org.name} (#${org.id})`, value: org.id }))}
-              onChange={value => setSelectedOrgID(Number(value))}
+              onChange={changeOrganization}
               style={{ width: 280 }}
             />
           </Space>
-        </Surface>
-      )}
+          )}
+          <div className="ur-saved-view-bar">
+            <div role="group" aria-label="已保存的项目工作区">
+              <Select
+                placeholder="已保存工作区（此浏览器）"
+                value={selectedSavedView}
+                optionList={savedViews.map(view => ({ label: view.name, value: view.name }))}
+                onChange={value => applyProjectView(String(value))}
+                showClear
+                onClear={() => setSelectedSavedView(undefined)}
+                className="ur-saved-view-select"
+              />
+            </div>
+            <Input
+              aria-label="项目工作区名称"
+              placeholder="工作区名称"
+              value={savedViewName}
+              maxLength={40}
+              onChange={setSavedViewName}
+              onEnterPress={saveCurrentProjectView}
+            />
+            <Button onClick={saveCurrentProjectView}>保存 / 覆盖</Button>
+            <Button disabled={!selectedSavedView} onClick={deleteProjectView}>删除</Button>
+          </div>
+        </div>
+      </Surface>
 
-      <Surface>
-        <div className="ur-table-shell">
+      <div className="ur-context-explorer ur-project-explorer">
+        <main className="ur-explorer-panel">
+          <div className="ur-panel-title">
+            <div>
+              <Typography.Title heading={5} style={{ margin: 0 }}>项目列表</Typography.Title>
+              <Text className="ur-panel-hint">默认选择首条记录 · 键盘可切换项目</Text>
+            </div>
+            <Tag size="small">{projectTotal} projects</Tag>
+          </div>
+          <div className="ur-table-shell">
           <Table
             rowKey="id"
             columns={columns}
             dataSource={projects}
             loading={projectLoading}
+            scroll={{ x: 788 }}
+            onRow={projectRowProps}
+            empty={projectLoadError ? (
+              <EmptyState
+                title="项目列表加载失败"
+                description={projectLoadError}
+                actions={<Button type="primary" onClick={() => setReloadVersion(version => version + 1)}>重新加载项目</Button>}
+                minHeight={240}
+              />
+            ) : <EmptyState title="当前范围暂无项目" minHeight={240} />}
             pagination={{
               currentPage: projectPage,
               pageSize: projectPageSize,
               total: projectTotal,
               showSizeChanger: true,
               pageSizeOpts: [20, 50, 100],
-              onPageChange: page => { setProjectPage(page); void loadProjects(page, projectPageSize); },
-              onPageSizeChange: size => { setProjectPage(1); setProjectPageSize(size); void loadProjects(1, size); },
+              onPageChange: changeProjectPage,
+              onPageSizeChange: changeProjectPageSize,
             }}
           />
-        </div>
-      </Surface>
+          </div>
+        </main>
 
-      {selectedProject ? (
-        <div ref={detailRef} className="ur-project-detail" tabIndex={-1} aria-label={`项目详情：${selectedProject.name}`}>
-        <Surface>
-          <PageHeader
-            eyebrow={`当前项目 · ${selectedProject.org_name || `组织 #${selectedProject.org_id}`}`}
-            title={selectedProject.name}
-            description={selectedProject.description || '暂无项目说明'}
-          />
-          <Tabs activeKey={activeTab} onChange={setActiveTab}>
+        <aside className="ur-explorer-panel ur-explorer-detail ur-project-workspace" aria-label="项目工作区检查器">
+          <div className="ur-detail-header">
+            <div>
+              <Text className="ur-panel-hint">Project Workspace</Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>项目工作区</Typography.Title>
+            </div>
+            <Tag size="small" color={selectedProject ? 'blue' : undefined}>{selectedProject ? `project:${selectedProject.id}` : '等待项目'}</Tag>
+          </div>
+
+          {selectedProject ? (
+            <div className="ur-project-detail" aria-label={`项目详情：${selectedProject.name}`}>
+              <div className="ur-detail-hero">
+                <div>
+                  <Text type="tertiary" size="small">{selectedProject.org_name || `组织 #${selectedProject.org_id}`}</Text>
+                  <div><Typography.Title heading={5} style={{ margin: 0 }}>{selectedProject.name}</Typography.Title></div>
+                  <Text type="tertiary">{selectedProject.description || '暂无项目说明'}</Text>
+                </div>
+                <StatusTag status={selectedProject.status}>
+                  {selectedProject.status === 'active' ? '启用' : selectedProject.status === 'disabled' ? '停用' : '归档'}
+                </StatusTag>
+              </div>
+              <Tabs activeKey={activeTab} onChange={changeActiveTab}>
             <TabPane tab="项目概况" itemKey="overview">
               <Form getFormApi={setOverviewFormApi} onSubmit={submitOverview} style={{ maxWidth: 720 }}>
                 <Form.Input field="name" label="项目名称" disabled={!canEditProject} rules={[{ required: true, message: '必填' }]} />
@@ -476,12 +848,22 @@ export default function ProjectManagementPage() {
                 )}
               </TabPane>
             )}
-          </Tabs>
-        </Surface>
-        </div>
-      ) : (
-        <EmptyState title="请选择项目" description="从上方项目列表进入资料、预算、成员或模型范围。" />
-      )}
+              </Tabs>
+            </div>
+          ) : (
+            <div className="ur-receipt-empty" role="status">
+              <Typography.Title heading={5}>
+                {projectLoading ? '正在加载项目工作区' : projectLoadError ? '等待可验证项目' : '暂无可管理项目'}
+              </Typography.Title>
+              <Text type="tertiary">
+                {projectLoadError
+                  ? '加载失败时不会保留上一组织或分页范围的项目详情。'
+                  : '有项目时会自动选择当前页第一项，无需再次点击打开。'}
+              </Text>
+            </div>
+          )}
+        </aside>
+      </div>
 
       <SideSheet title="新建项目" visible={createSheet} onCancel={() => setCreateSheet(false)} width={520}>
         <Form getFormApi={setCreateFormApi} onSubmit={submitCreate}>

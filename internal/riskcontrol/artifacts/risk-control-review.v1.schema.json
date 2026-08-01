@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.unirouter.local/risk-control-review.v1.schema.json",
+  "title": "UniRouter Risk Advice And Evidence-to-Control Review V1",
+  "description": "A zero-network composition contract. Nested Agent Trust and Provenance Passport objects are validated by their exact authoritative schemas and evaluators instead of copied into a second editable definition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "review_id",
+    "evaluated_at",
+    "tenant_ref",
+    "audience",
+    "policy_version",
+    "risk_epoch",
+    "assertion_ttl_seconds",
+    "agent_trust",
+    "provenance_passport",
+    "evidence_binding"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "unirouter.risk-control-review.v1"
+    },
+    "review_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$"
+    },
+    "evaluated_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"
+    },
+    "tenant_ref": {
+      "$ref": "#/$defs/digest"
+    },
+    "audience": {
+      "const": "unirouter-risk-control-review"
+    },
+    "policy_version": {
+      "const": "unirouter.risk-advice-policy.v1"
+    },
+    "risk_epoch": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "assertion_ttl_seconds": {
+      "const": "300"
+    },
+    "agent_trust": {
+      "type": "object",
+      "description": "Delegated strict validation by Agent Trust V1; no copied semantics.",
+      "x-authoritative-schema": {
+        "path": "internal/agenttrust/artifacts/agent-trust-review.v1.schema.json",
+        "sha256": "sha256:1e375c8febfd93e9972cdaab88c15c1aecf08537fc56ee1a2dfc5e6b037c6a37"
+      }
+    },
+    "provenance_passport": {
+      "type": "object",
+      "description": "Delegated strict validation by Provenance Passport V1; no copied semantics.",
+      "x-authoritative-schema": {
+        "path": "internal/provenancepassport/artifacts/provenance-passport.v1.schema.json",
+        "sha256": "sha256:4b577521cc5b7ce2a2e5ff6f38e21c34e367e7bde04153da399f02304fafe4db"
+      }
+    },
+    "evidence_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provenance_ref",
+        "agent_trust_input_semantic_hash",
+        "agent_trust_receipt_payload_hash",
+        "passport_input_semantic_hash",
+        "passport_source_hash",
+        "passport_envelope_hash",
+        "passport_source_scope_hash"
+      ],
+      "properties": {
+        "provenance_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "agent_trust_input_semantic_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "agent_trust_receipt_payload_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "passport_input_semantic_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "passport_source_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "passport_envelope_hash": {
+          "$ref": "#/$defs/digest"
+        },
+        "passport_source_scope_hash": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "x-runtime-boundary": {
+    "mode": "offline_advice_and_shadow_evidence",
+    "persistent": false,
+    "remote_risk_dependency": false,
+    "provider_or_shadow_traffic": false,
+    "credentials_accepted": false,
+    "runtime_policy_read": false,
+    "runtime_enforcement_authorized": false,
+    "runtime_promotion_authorized": false,
+    "external_decision_gate": "P7-D04"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "schema_version": "unirouter.provider-conformance-fixture.v1",
+  "fixture_id": "anthropic-chat-success.v1",
+  "adapter_type": "anthropic_native",
+  "request": {
+    "endpoint": "/v1/chat/completions",
+    "base_url": "https://api.anthropic.example",
+    "requested_model": "company-chat",
+    "mapped_model": "claude-sonnet-fixture",
+    "request_id": "req-fixture-anthropic",
+    "adapter_config": {
+      "anthropic_version": "2023-06-01"
+    },
+    "body": {
+      "model": "company-chat",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Be concise."
+        },
+        {
+          "role": "user",
+          "content": "synthetic fixture"
+        }
+      ],
+      "max_tokens": 16
+    },
+    "expected": {
+      "method": "POST",
+      "url": "https://api.anthropic.example/v1/messages",
+      "auth_header": "x-api-key",
+      "version_header": "2023-06-01",
+      "model_on_wire": "claude-sonnet-fixture"
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "body": {
+      "id": "msg_fixture_anthropic",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-fixture",
+      "content": [
+        {
+          "type": "text",
+          "text": "fixture response"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "usage": {
+        "input_tokens": 7,
+        "output_tokens": 5
+      }
+    },
+    "expected_usage": {
+      "prompt_tokens": 7,
+      "completion_tokens": 5,
+      "total_tokens": 12,
+      "authority": "provider_reported",
+      "finality": "final"
+    }
+  },
+  "missing_usage_response": {
+    "status_code": 200,
+    "body": {
+      "id": "msg_fixture_anthropic_missing",
+      "content": []
+    },
+    "expected_authority": "none",
+    "expected_finality": "missing"
+  },
+  "error_cases": [
+    {
+      "status_code": 529,
+      "body": {
+        "error": {
+          "type": "overloaded_error",
+          "message": "synthetic overload"
+        }
+      },
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    }
+  ]
+}

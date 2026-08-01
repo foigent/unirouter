@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foigent.example/schemas/unirouter/member-lifecycle.v1.schema.json",
+  "title": "UniRouter Member Lifecycle Event V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "event_id",
+    "subject_ref",
+    "source_ref",
+    "operation",
+    "occurred_at",
+    "parent_revision",
+    "revision",
+    "before",
+    "after"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "unirouter.member-lifecycle.v1"
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$"
+    },
+    "subject_ref": {
+      "$ref": "#/$defs/digest"
+    },
+    "source_ref": {
+      "$ref": "#/$defs/digest"
+    },
+    "operation": {
+      "enum": [
+        "create",
+        "update",
+        "suspend",
+        "deprovision"
+      ]
+    },
+    "occurred_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"
+    },
+    "parent_revision": {
+      "$ref": "#/$defs/decimalInt64"
+    },
+    "revision": {
+      "$ref": "#/$defs/positiveDecimalInt64"
+    },
+    "before": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/state"
+        }
+      ]
+    },
+    "after": {
+      "$ref": "#/$defs/state"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "decimalInt64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "positiveDecimalInt64": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_ref",
+        "role"
+      ],
+      "properties": {
+        "project_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "role": {
+          "enum": [
+            "project_admin",
+            "project_developer",
+            "project_viewer"
+          ]
+        }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_ref",
+        "kind",
+        "project_ref",
+        "status"
+      ],
+      "properties": {
+        "capability_ref": {
+          "$ref": "#/$defs/digest"
+        },
+        "kind": {
+          "enum": [
+            "admin_session",
+            "personal_api_key",
+            "agent_capability_root"
+          ]
+        },
+        "project_ref": {
+          "oneOf": [
+            {
+              "const": ""
+            },
+            {
+              "$ref": "#/$defs/digest"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "disabled"
+          ]
+        }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "role",
+        "revision",
+        "memberships",
+        "capabilities"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "active",
+            "suspended",
+            "deprovisioned"
+          ]
+        },
+        "role": {
+          "enum": [
+            "project_admin",
+            "developer",
+            "viewer"
+          ]
+        },
+        "revision": {
+          "$ref": "#/$defs/positiveDecimalInt64"
+        },
+        "memberships": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/membership"
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": {
+            "$ref": "#/$defs/capability"
+          }
+        }
+      }
+    }
+  }
+}

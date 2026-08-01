@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   createChannel: vi.fn(),
   updateChannel: vi.fn(),
   deleteChannel: vi.fn(),
+  getProviderPacks: vi.fn(),
   previewRouting: vi.fn(),
 }));
 
@@ -27,6 +28,7 @@ vi.mock('../../api/client', () => ({
 describe('ChannelsPage routing-policy.v1 controls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState(null, '', '/channels');
     mocks.getChannels.mockResolvedValue({
       data: [{
         id: 7,
@@ -77,13 +79,37 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
         requires_probe: false,
       }],
     });
+    mocks.getProviderPacks.mockResolvedValue({
+      data: [{
+        manifest: {
+          pack_id: 'unirouter.openai.core',
+          pack_version: '1.0.0',
+          provider: 'openai',
+          adapter_type: 'openai_compatible',
+          conformance_level: 'fixture_verified',
+          network_verified: false,
+          endpoints: ['/v1/chat/completions', '/v1/embeddings'],
+          modalities: ['text', 'embeddings'],
+          auth_profiles: [{ type: 'bearer', wire_header: 'Authorization' }],
+        },
+        manifest_sha256: `sha256:${'a'.repeat(64)}`,
+        schema_sha256: `sha256:${'b'.repeat(64)}`,
+      }],
+      total: 1,
+      claim_boundary: {
+        conformance_level: 'fixture_verified',
+        network_verified: false,
+        live_calls: false,
+        credentials_used: false,
+      },
+    });
     mocks.updateChannel.mockResolvedValue({ message: 'Channel updated' });
   });
 
   it('explains weight semantics and renders safe candidate/exclusion preview', async () => {
     render(<ChannelsPage />);
 
-    expect(await screen.findByText('primary-cn')).toBeTruthy();
+    expect((await screen.findAllByText('primary-cn')).length).toBeGreaterThan(0);
     expect(mocks.getChannels).toHaveBeenCalledWith(1, 20);
     expect(screen.getByText('同级权重')).toBeTruthy();
     expect(screen.getByText(/熔断阈值决定连续失败多少次/)).toBeTruthy();
@@ -101,6 +127,17 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 
     fireEvent.change(screen.getByPlaceholderText('模型名称，例如 gpt-4o'), { target: { value: 'claude-3-5-sonnet' } });
     expect(screen.queryByText(/策略 routing-policy.v1/)).toBeNull();
+  });
+
+  it('auto-selects the first channel and keeps fixture-only compatibility visible without an open-details click', async () => {
+    render(<ChannelsPage />);
+
+    expect(await screen.findByRole('complementary', { name: 'Provider 兼容性检查器' })).toBeTruthy();
+    expect((await screen.findAllByText('fixture verified')).length).toBeGreaterThan(0);
+    expect(screen.getByText('not verified')).toBeTruthy();
+    expect(screen.getByText('unirouter.openai.core@1.0.0')).toBeTruthy();
+    expect(screen.getByText(/不代表真实账号、网络、额度或账单/)).toBeTruthy();
+    expect(new URLSearchParams(window.location.search).get('channel_id')).toBe('7');
   });
 
   it('does not present a failed channel request as an empty list', async () => {
@@ -135,6 +172,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     });
 
     render(<ChannelsPage />);
+    expect((await screen.findAllByText('undeclared')).length).toBeGreaterThan(0);
     fireEvent.click(await screen.findByRole('button', { name: '编辑通道 kimi-cn' }));
 
     expect(await screen.findByRole('combobox', { name: '供应商' })).toHaveTextContent('Kimi');

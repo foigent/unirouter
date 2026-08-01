@@ -1,0 +1,180 @@
+{
+  "schema_version": "unirouter.governance-simulation-conformance-report.v1",
+  "contract_version": "unirouter.governance-simulation.v1",
+  "schema": {
+    "path": "governance-simulation.v1.schema.json",
+    "sha256": "sha256:02e00f49039d813b7ef2a739c2c0f32200a7f9df68e0bd0356a84c1927d4e123"
+  },
+  "fixtures": [
+    {
+      "path": "fixtures/route-pack-review.v1.json",
+      "sha256": "sha256:0ee09c4965e659f1c004ab9c1eea9be45f354fe960a39a645a55f07e0e95f1c7"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "route-pack-review.v1/evaluation",
+      "case_classes": [
+        "policy",
+        "provider_firewall",
+        "route"
+      ],
+      "passed": true,
+      "result": "evaluation_accepted"
+    },
+    {
+      "case_id": "route-pack-review.v1/determinism",
+      "case_classes": [
+        "determinism",
+        "hash"
+      ],
+      "passed": true,
+      "result": "report_bytes_stable"
+    },
+    {
+      "case_id": "route-pack-review.v1/route-outcome",
+      "case_classes": [
+        "route",
+        "shared_kernel"
+      ],
+      "passed": true,
+      "result": "route_outcome_exact"
+    },
+    {
+      "case_id": "route-pack-review.v1/firewall",
+      "case_classes": [
+        "provider_firewall",
+        "semver"
+      ],
+      "passed": true,
+      "result": "change_risk_exact"
+    },
+    {
+      "case_id": "route-pack-review.v1/runtime-boundary",
+      "case_classes": [
+        "privacy",
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "runtime_mutation_none"
+    },
+    {
+      "case_id": "route-pack-review.v1/current-pack-identity",
+      "case_classes": [
+        "artifact_identity",
+        "provider_firewall"
+      ],
+      "passed": true,
+      "result": "baseline_pack_matches_catalog"
+    },
+    {
+      "case_id": "replay/accepted",
+      "case_classes": [
+        "replay"
+      ],
+      "passed": true,
+      "result": "accepted"
+    },
+    {
+      "case_id": "replay/duplicate-noop",
+      "case_classes": [
+        "canonicalization",
+        "replay"
+      ],
+      "passed": true,
+      "result": "duplicate_noop"
+    },
+    {
+      "case_id": "replay/conflict",
+      "case_classes": [
+        "conflict",
+        "replay"
+      ],
+      "passed": true,
+      "result": "identity_conflict"
+    },
+    {
+      "case_id": "release/progression",
+      "case_classes": [
+        "cas",
+        "lifecycle"
+      ],
+      "passed": true,
+      "result": "draft_validated_shadow_canary"
+    },
+    {
+      "case_id": "release/rollback",
+      "case_classes": [
+        "audit",
+        "lifecycle",
+        "rollback"
+      ],
+      "passed": true,
+      "result": "rollback_simulated"
+    },
+    {
+      "case_id": "release/stale-cas",
+      "case_classes": [
+        "conflict",
+        "lifecycle"
+      ],
+      "passed": true,
+      "result": "stale_revision_rejected"
+    },
+    {
+      "case_id": "release/breaking-no-advance",
+      "case_classes": [
+        "breaking",
+        "lifecycle",
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "blocked_change_did_not_advance"
+    },
+    {
+      "case_id": "negative/duplicate-key",
+      "case_classes": [
+        "negative",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "duplicate_rejected"
+    },
+    {
+      "case_id": "negative/unknown-field",
+      "case_classes": [
+        "negative",
+        "privacy",
+        "schema"
+      ],
+      "passed": true,
+      "result": "credential_field_rejected"
+    },
+    {
+      "case_id": "negative/submicrosecond-time",
+      "case_classes": [
+        "negative",
+        "precision",
+        "time"
+      ],
+      "passed": true,
+      "result": "submicrosecond_rejected"
+    },
+    {
+      "case_id": "negative/route-exhaustion",
+      "case_classes": [
+        "breaking",
+        "negative",
+        "route"
+      ],
+      "passed": true,
+      "result": "breaking_change_blocked"
+    }
+  ],
+  "summary": {
+    "fixtures": 1,
+    "cases": 17,
+    "passed": 17,
+    "failed": 0
+  }
+}

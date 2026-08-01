@@ -276,7 +276,11 @@ describe('DeveloperConsolePage', () => {
     const secondaryLabels = await screen.findAllByText('Secondary Project (secondary)');
     fireEvent.click(secondaryLabels[secondaryLabels.length - 1]);
 
-    expect(await screen.findByText('正在加载当前项目数据')).toBeTruthy();
+    expect(await screen.findByText(
+      '正在加载当前项目数据',
+      undefined,
+      { timeout: 5000 },
+    )).toBeTruthy();
     expect(screen.queryByText('req-001')).toBeNull();
     expect(screen.queryByText('请求数')).toBeNull();
     await waitFor(() => expect(mockGetKeys).toHaveBeenCalledWith(1, 100, { project_id: 8 }));
@@ -305,7 +309,11 @@ describe('DeveloperConsolePage', () => {
 
     fireEvent.click(screen.getByText('刷新'));
 
-    expect(await screen.findByText('正在加载当前项目数据')).toBeTruthy();
+    expect(await screen.findByText(
+      '正在加载当前项目数据',
+      undefined,
+      { timeout: 5000 },
+    )).toBeTruthy();
     expect(screen.queryByText('req-001')).toBeNull();
     expect(screen.queryByText('请求数')).toBeNull();
 

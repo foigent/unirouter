@@ -1,0 +1,214 @@
+{
+  "schema_version": "unirouter.agent-trust-fixture.v1",
+  "fixture_id": "trust-firewall-review.v1",
+  "governance_fixture": {
+    "path": "fixtures/route-pack-review.v1.json",
+    "sha256": "sha256:0ee09c4965e659f1c004ab9c1eea9be45f354fe960a39a645a55f07e0e95f1c7"
+  },
+  "request": {
+    "contract_version": "unirouter.agent-trust-review.v1",
+    "review_id": "agent-trust-b10-fixture-001",
+    "evaluated_at": "2026-07-31T08:05:00.000000Z",
+    "tenant_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "audience": "unirouter-governance-review",
+    "subject_agent_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "provenance_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "authority": {
+      "snapshot_ref": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "root_agent_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "nodes": [
+        {
+          "agent_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "parent_agent_ref": "",
+          "depth": 0,
+          "authority_version": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "issued_at": "2026-07-31T08:00:00.000000Z",
+          "expires_at": "2026-07-31T12:00:00.000000Z",
+          "revoked_at": "",
+          "limits": {
+            "max_depth": 4,
+            "max_children": 8,
+            "max_descendants": 32,
+            "cost_budget_cents": 10000,
+            "token_budget": 100000,
+            "rpm_limit": 100,
+            "rps_limit": 10,
+            "concurrency_limit": 8,
+            "allowed_models": [
+              "gpt-4.1",
+              "text-embedding-3-large"
+            ],
+            "allowed_endpoints": [
+              "/v1/chat/completions",
+              "/v1/embeddings"
+            ]
+          }
+        },
+        {
+          "agent_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "parent_agent_ref": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "depth": 1,
+          "authority_version": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "issued_at": "2026-07-31T08:01:00.000000Z",
+          "expires_at": "2026-07-31T10:00:00.000000Z",
+          "revoked_at": "",
+          "limits": {
+            "max_depth": 3,
+            "max_children": 4,
+            "max_descendants": 12,
+            "cost_budget_cents": 5000,
+            "token_budget": 50000,
+            "rpm_limit": 60,
+            "rps_limit": 6,
+            "concurrency_limit": 4,
+            "allowed_models": [
+              "gpt-4.1"
+            ],
+            "allowed_endpoints": [
+              "/v1/chat/completions"
+            ]
+          }
+        },
+        {
+          "agent_ref": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "parent_agent_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "depth": 2,
+          "authority_version": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "issued_at": "2026-07-31T08:02:00.000000Z",
+          "expires_at": "2026-07-31T09:00:00.000000Z",
+          "revoked_at": "2026-07-31T08:04:00.000000Z",
+          "limits": {
+            "max_depth": 2,
+            "max_children": 0,
+            "max_descendants": 0,
+            "cost_budget_cents": 1000,
+            "token_budget": 10000,
+            "rpm_limit": 20,
+            "rps_limit": 2,
+            "concurrency_limit": 1,
+            "allowed_models": [
+              "gpt-4.1"
+            ],
+            "allowed_endpoints": [
+              "/v1/chat/completions"
+            ]
+          }
+        }
+      ],
+      "revocations": [
+        {
+          "event_ref": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "agent_ref": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "revoked_at": "2026-07-31T08:04:00.000000Z",
+          "reason": "operator_revoked"
+        }
+      ]
+    },
+    "digital_twin": {
+      "contract_version": "",
+      "simulation_id": "",
+      "created_at": "",
+      "selection_key": "",
+      "evaluation_mode": "",
+      "baseline": {
+        "policy": {
+          "max_retry_count": 0,
+          "circuit_breaker_threshold": 0,
+          "circuit_breaker_recover_seconds": 0,
+          "circuit_breaker_half_open_percent": 0,
+          "rate_limit_cooldown_seconds": 0,
+          "auth_failure_cooldown_seconds": 0,
+          "key_failure_threshold": 0,
+          "snapshot_refresh_seconds": 0,
+          "snapshot_stale_seconds": 0,
+          "half_open_probe_lease_seconds": 0,
+          "max_candidate_count": 0,
+          "max_snapshot_count": 0
+        },
+        "route_snapshot": {
+          "snapshot_id": "",
+          "model": "",
+          "db_now": "",
+          "source": "",
+          "degraded": false,
+          "channels": null
+        },
+        "provider_packs": null
+      },
+      "candidate": {
+        "policy": {
+          "max_retry_count": 0,
+          "circuit_breaker_threshold": 0,
+          "circuit_breaker_recover_seconds": 0,
+          "circuit_breaker_half_open_percent": 0,
+          "rate_limit_cooldown_seconds": 0,
+          "auth_failure_cooldown_seconds": 0,
+          "key_failure_threshold": 0,
+          "snapshot_refresh_seconds": 0,
+          "snapshot_stale_seconds": 0,
+          "half_open_probe_lease_seconds": 0,
+          "max_candidate_count": 0,
+          "max_snapshot_count": 0
+        },
+        "route_snapshot": {
+          "snapshot_id": "",
+          "model": "",
+          "db_now": "",
+          "source": "",
+          "degraded": false,
+          "channels": null
+        },
+        "provider_packs": null
+      },
+      "release": {
+        "contract_version": "",
+        "release_id": "",
+        "revision": "",
+        "parent_revision": "",
+        "action": "",
+        "from_stage": "",
+        "to_stage": "",
+        "rollback_to_revision": "",
+        "actor_ref": "",
+        "occurred_at": "",
+        "reason": ""
+      }
+    },
+    "signed_receipt": {
+      "payload": {
+        "receipt_version": "unirouter.signed-decision-receipt.v1",
+        "receipt_id": "agent-trust-b10-fixture-001.receipt",
+        "review_id": "agent-trust-b10-fixture-001",
+        "tenant_ref": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "audience": "unirouter-governance-review",
+        "decision": "shadow_only",
+        "decided_at": "2026-07-31T08:05:00.000000Z",
+        "subject_ref": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "authority_snapshot_hash": "sha256:9d6ea09798ce65c7b89bf63ea86c01229f6051e9d62d3548dbbb67afc088fedc",
+        "governance_request_hash": "sha256:aeb574b40ea7f7061be91ac3352ee36af992dfc4007e97f669332782c1ca181c",
+        "baseline_policy_hash": "sha256:e0f58a59b7d8761303360c411c1368eaf231e4fff5880285004f684e4a7b3f9e",
+        "candidate_policy_hash": "sha256:e0f58a59b7d8761303360c411c1368eaf231e4fff5880285004f684e4a7b3f9e",
+        "baseline_route_hash": "sha256:69e53c74cd9ccd3d4560ed23dce0c5fce223cac0a99c9f48fd5ea01e31c00b46",
+        "candidate_route_hash": "sha256:bb7d92d397989364578fc8cfecf099c1f2996bff20eb60a423c11d8e5c7efe9c",
+        "provider_pack_set_hash": "sha256:e259776803613cb305e5c53d540399c04c645298bf89b289192089b8ddc6b516",
+        "provenance_ref": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+        "synchronous_dependency": false,
+        "runtime_action_authorized": false
+      },
+      "algorithm": "Ed25519",
+      "key_id": "fixture-agent-trust-2026-a",
+      "key_version": "1",
+      "public_key": "yhvzTOEZhqDJzpJRuKcbgUeCmYzUPA54S06RNxciTrc=",
+      "signature": "d2d29wEgGzTF9bFFe0+cOzYEizxXxjacsHCjAN+nPAVepZ3SX5aaBU4rFRAYNMrfYdDRDkxlLk88HqGPpfC8Cw==",
+      "trust_profile": "fixture_local"
+    }
+  },
+  "expected": {
+    "decision": "shadow_only",
+    "active_nodes": 2,
+    "revoked_nodes": 1,
+    "attenuation_diffs": 2,
+    "overall_risk": "review_required",
+    "runtime_mutation": "none"
+  }
+}

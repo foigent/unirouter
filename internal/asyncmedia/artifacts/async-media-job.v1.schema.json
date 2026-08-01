@@ -1,0 +1,488 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/async-media-job.v1.schema.json",
+  "title": "UniRouter Async Media Job Pre-Gate Fixture V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fixture_id",
+    "dependencies",
+    "plan",
+    "expected"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "unirouter.async-media-job-fixture.v1"
+    },
+    "fixture_id": {
+      "$ref": "#/$defs/portable_id"
+    },
+    "dependencies": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/artifact_identity"
+      }
+    },
+    "plan": {
+      "$ref": "#/$defs/job_plan"
+    },
+    "expected": {
+      "$ref": "#/$defs/expected"
+    }
+  },
+  "$defs": {
+    "portable_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "positive_decimal": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "artifact_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "tenant_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "org_ref",
+        "project_ref"
+      ],
+      "properties": {
+        "org_ref": {
+          "$ref": "#/$defs/positive_decimal"
+        },
+        "project_ref": {
+          "$ref": "#/$defs/positive_decimal"
+        }
+      }
+    },
+    "media_object_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "object_ref",
+        "tenant_scope",
+        "content_sha256",
+        "media_type",
+        "size_bytes",
+        "immutable"
+      ],
+      "properties": {
+        "object_ref": {
+          "type": "string",
+          "pattern": "^media_[a-z0-9][a-z0-9._-]{0,95}$"
+        },
+        "tenant_scope": {
+          "$ref": "#/$defs/tenant_scope"
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "media_type": {
+          "enum": [
+            "image/jpeg",
+            "image/png"
+          ]
+        },
+        "size_bytes": {
+          "$ref": "#/$defs/positive_decimal"
+        },
+        "immutable": {
+          "const": true
+        }
+      }
+    },
+    "decision_gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "media_provider",
+        "object_store",
+        "retention",
+        "charge_trigger"
+      ],
+      "properties": {
+        "media_provider": {
+          "const": "unresolved_p7_d03"
+        },
+        "object_store": {
+          "const": "unresolved_p7_d03"
+        },
+        "retention": {
+          "const": "unresolved_p7_d03"
+        },
+        "charge_trigger": {
+          "const": "unresolved_p7_d03"
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "admission_state",
+        "queue_state",
+        "lease_state",
+        "execution_state",
+        "outcome_state",
+        "cancellation_state",
+        "settlement_state"
+      ],
+      "properties": {
+        "admission_state": {
+          "const": "contract_only"
+        },
+        "queue_state": {
+          "const": "not_created"
+        },
+        "lease_state": {
+          "const": "not_created"
+        },
+        "execution_state": {
+          "const": "not_started"
+        },
+        "outcome_state": {
+          "const": "unknown"
+        },
+        "cancellation_state": {
+          "const": "not_requested"
+        },
+        "settlement_state": {
+          "const": "not_started_decision_gated"
+        }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gap_id",
+        "state",
+        "provenance"
+      ],
+      "properties": {
+        "gap_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "state": {
+          "const": "missing"
+        },
+        "provenance": {
+          "const": "declared_by_product_gate"
+        }
+      }
+    },
+    "job_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "plan_id",
+        "runtime_state",
+        "tenant_scope",
+        "operation_class",
+        "intent_sha256",
+        "idempotency_key",
+        "input_objects",
+        "output",
+        "decision_gates",
+        "lifecycle",
+        "endpoint_evidence",
+        "charge_state",
+        "gaps",
+        "threat_controls",
+        "privacy",
+        "runtime_boundary",
+        "compatibility"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "unirouter.async-media-job-plan.v1"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "runtime_state": {
+          "const": "decision_gated_p7_d03"
+        },
+        "tenant_scope": {
+          "$ref": "#/$defs/tenant_scope"
+        },
+        "operation_class": {
+          "enum": [
+            "text_to_image",
+            "image_to_video"
+          ]
+        },
+        "intent_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/digest"
+        },
+        "input_objects": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/media_object_ref"
+          }
+        },
+        "output": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "modality",
+            "count"
+          ],
+          "properties": {
+            "modality": {
+              "enum": [
+                "image",
+                "video"
+              ]
+            },
+            "count": {
+              "const": "1"
+            }
+          }
+        },
+        "decision_gates": {
+          "$ref": "#/$defs/decision_gates"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle"
+        },
+        "endpoint_evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "coverage_status",
+            "reference_profile_id",
+            "reference_manifest_path",
+            "reference_manifest_sha256"
+          ],
+          "properties": {
+            "coverage_status": {
+              "enum": [
+                "covered_by_decision_gated_profile",
+                "no_endpoint_profile_available"
+              ]
+            },
+            "reference_profile_id": {
+              "const": "unirouter.openai.images.gpt-image.v1"
+            },
+            "reference_manifest_path": {
+              "const": "internal/endpointprotocol/artifacts/manifests/openai-gpt-image.v1.json"
+            },
+            "reference_manifest_sha256": {
+              "$ref": "#/$defs/digest"
+            }
+          }
+        },
+        "charge_state": {
+          "const": "unresolved_not_customer_chargeable"
+        },
+        "gaps": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/gap"
+          }
+        },
+        "threat_controls": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/portable_id"
+          }
+        },
+        "privacy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "metadata_only",
+            "raw_prompt_included",
+            "raw_media_bytes_included",
+            "storage_locator_included",
+            "signed_url_included",
+            "credential_included"
+          ],
+          "properties": {
+            "metadata_only": {
+              "const": true
+            },
+            "raw_prompt_included": {
+              "const": false
+            },
+            "raw_media_bytes_included": {
+              "const": false
+            },
+            "storage_locator_included": {
+              "const": false
+            },
+            "signed_url_included": {
+              "const": false
+            },
+            "credential_included": {
+              "const": false
+            }
+          }
+        },
+        "runtime_boundary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "runtime_registered",
+            "queue_created",
+            "lease_created",
+            "object_persisted",
+            "provider_network_call",
+            "credentials_accepted",
+            "callback_accepted",
+            "customer_charge_created",
+            "runtime_mutation",
+            "external_decision_gate"
+          ],
+          "properties": {
+            "runtime_registered": {
+              "const": false
+            },
+            "queue_created": {
+              "const": false
+            },
+            "lease_created": {
+              "const": false
+            },
+            "object_persisted": {
+              "const": false
+            },
+            "provider_network_call": {
+              "const": false
+            },
+            "credentials_accepted": {
+              "const": false
+            },
+            "callback_accepted": {
+              "const": false
+            },
+            "customer_charge_created": {
+              "const": false
+            },
+            "runtime_mutation": {
+              "const": "none"
+            },
+            "external_decision_gate": {
+              "const": "P7-D03"
+            }
+          }
+        },
+        "compatibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "request_path_unchanged",
+            "routing_unchanged",
+            "billing_unchanged",
+            "completed_feed_wire_unchanged",
+            "outbox_identity_unchanged",
+            "cursor_behavior_unchanged"
+          ],
+          "properties": {
+            "request_path_unchanged": {
+              "const": true
+            },
+            "routing_unchanged": {
+              "const": true
+            },
+            "billing_unchanged": {
+              "const": true
+            },
+            "completed_feed_wire_unchanged": {
+              "const": true
+            },
+            "outbox_identity_unchanged": {
+              "const": true
+            },
+            "cursor_behavior_unchanged": {
+              "const": true
+            }
+          }
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_class",
+        "input_object_count",
+        "output_modality",
+        "coverage_status",
+        "gap_ids",
+        "runtime_mutation"
+      ],
+      "properties": {
+        "operation_class": {
+          "enum": [
+            "text_to_image",
+            "image_to_video"
+          ]
+        },
+        "input_object_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "output_modality": {
+          "enum": [
+            "image",
+            "video"
+          ]
+        },
+        "coverage_status": {
+          "enum": [
+            "covered_by_decision_gated_profile",
+            "no_endpoint_profile_available"
+          ]
+        },
+        "gap_ids": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/portable_id"
+          }
+        },
+        "runtime_mutation": {
+          "const": "none"
+        }
+      }
+    }
+  }
+}

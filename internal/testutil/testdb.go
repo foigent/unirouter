@@ -180,6 +180,8 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 	}
 
 	tables := []string{
+		"async_media_charge_facts",
+		"async_media_jobs",
 		"guardrail_policies",
 		"distributed_limit_policies",
 		"provider_cost_reconciliations",

@@ -1,0 +1,327 @@
+{
+  "schema_version": "unirouter.risk-control-conformance-report.v1",
+  "contract_version": "unirouter.risk-control-review.v1",
+  "schema": {
+    "path": "risk-control-review.v1.schema.json",
+    "sha256": "sha256:1881dce71817e4d76d89809c96f6a74b764a67d8ba20a3e88d3f58813bf1fb40"
+  },
+  "fixtures": [
+    {
+      "path": "fixtures/shadow-control-review.v1.json",
+      "sha256": "sha256:0386af70534b11c4c010192184f013c2b8db3199629cd2923817f228a2933469"
+    }
+  ],
+  "dependencies": [
+    {
+      "path": "internal/agenttrust/artifacts/agent-trust-review.v1.schema.json",
+      "sha256": "sha256:1e375c8febfd93e9972cdaab88c15c1aecf08537fc56ee1a2dfc5e6b037c6a37"
+    },
+    {
+      "path": "internal/agenttrust/artifacts/fixtures/trust-firewall-review.v1.json",
+      "sha256": "sha256:4a8bef5a7500149252516fc081b18547e8e6af8657830153aff125c221849dba"
+    },
+    {
+      "path": "internal/agenttrust/artifacts/reports/core.v1.json",
+      "sha256": "sha256:032dd42f8ed7971d19f6f921838cd5efac432bcbde2266d4222095c7732e1653"
+    },
+    {
+      "path": "internal/governancesim/artifacts/fixtures/route-pack-review.v1.json",
+      "sha256": "sha256:0ee09c4965e659f1c004ab9c1eea9be45f354fe960a39a645a55f07e0e95f1c7"
+    },
+    {
+      "path": "internal/governancesim/artifacts/governance-simulation.v1.schema.json",
+      "sha256": "sha256:02e00f49039d813b7ef2a739c2c0f32200a7f9df68e0bd0356a84c1927d4e123"
+    },
+    {
+      "path": "internal/governancesim/artifacts/reports/core.v1.json",
+      "sha256": "sha256:24ecba6ec88ee5901dd0dd6c017dd1269f3426933ccce645f6c793b2019291f1"
+    },
+    {
+      "path": "internal/provenancepassport/artifacts/fixtures/settled-passport.v1.json",
+      "sha256": "sha256:545b9555a83308c52ac62f6be728fb4ee2bae9571e0346857e716d95df0aee08"
+    },
+    {
+      "path": "internal/provenancepassport/artifacts/provenance-passport.v1.schema.json",
+      "sha256": "sha256:4b577521cc5b7ce2a2e5ff6f38e21c34e367e7bde04153da399f02304fafe4db"
+    },
+    {
+      "path": "internal/provenancepassport/artifacts/reports/core.v1.json",
+      "sha256": "sha256:aa4d5d6570d735ba90ca44b02aa1fad00b2f37fa4706c3a13dd4cd96913acc75"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "shadow-control-review.v1/determinism",
+      "case_classes": [
+        "canonicalization",
+        "determinism",
+        "hash"
+      ],
+      "passed": true,
+      "result": "report_bytes_stable"
+    },
+    {
+      "case_id": "shadow-control-review.v1/agent-trust",
+      "case_classes": [
+        "agent_trust",
+        "receipt",
+        "signature"
+      ],
+      "passed": true,
+      "result": "b10_receipt_verified_not_runtime_trusted"
+    },
+    {
+      "case_id": "shadow-control-review.v1/provenance",
+      "case_classes": [
+        "capture_gap",
+        "provenance",
+        "source"
+      ],
+      "passed": true,
+      "result": "b11_exact_source_and_gaps_bound"
+    },
+    {
+      "case_id": "shadow-control-review.v1/source-scope",
+      "case_classes": [
+        "binding",
+        "source",
+        "tenant"
+      ],
+      "passed": true,
+      "result": "source_scope_exact_tenant_mapping_unverified"
+    },
+    {
+      "case_id": "shadow-control-review.v1/evidence-binding",
+      "case_classes": [
+        "binding",
+        "hash",
+        "tenant"
+      ],
+      "passed": true,
+      "result": "evidence_binding_exact"
+    },
+    {
+      "case_id": "shadow-control-review.v1/risk-dimensions",
+      "case_classes": [
+        "advice",
+        "risk"
+      ],
+      "passed": true,
+      "result": "categorical_risk_dimensions_exact"
+    },
+    {
+      "case_id": "shadow-control-review.v1/advice",
+      "case_classes": [
+        "advice",
+        "shadow"
+      ],
+      "passed": true,
+      "result": "shadow_advice_only"
+    },
+    {
+      "case_id": "shadow-control-review.v1/bounded-assertion",
+      "case_classes": [
+        "assertion",
+        "audience",
+        "epoch",
+        "ttl"
+      ],
+      "passed": true,
+      "result": "bounded_unsigned_offline_assertion"
+    },
+    {
+      "case_id": "shadow-control-review.v1/assertion-hash",
+      "case_classes": [
+        "assertion",
+        "hash"
+      ],
+      "passed": true,
+      "result": "assertion_hash_exact"
+    },
+    {
+      "case_id": "shadow-control-review.v1/proposal-controls",
+      "case_classes": [
+        "control",
+        "proposal"
+      ],
+      "passed": true,
+      "result": "evidence_derived_controls_exact"
+    },
+    {
+      "case_id": "shadow-control-review.v1/proposal-lifecycle",
+      "case_classes": [
+        "human_review",
+        "lifecycle",
+        "proposal"
+      ],
+      "passed": true,
+      "result": "simulated_human_review_required"
+    },
+    {
+      "case_id": "shadow-control-review.v1/digital-twin",
+      "case_classes": [
+        "digital_twin",
+        "replay",
+        "routing"
+      ],
+      "passed": true,
+      "result": "b8_evaluator_reused"
+    },
+    {
+      "case_id": "shadow-control-review.v1/replay",
+      "case_classes": [
+        "conflict",
+        "replay"
+      ],
+      "passed": true,
+      "result": "duplicate_noop"
+    },
+    {
+      "case_id": "shadow-control-review.v1/privacy",
+      "case_classes": [
+        "privacy"
+      ],
+      "passed": true,
+      "result": "metadata_only_report"
+    },
+    {
+      "case_id": "shadow-control-review.v1/runtime-boundary",
+      "case_classes": [
+        "runtime_boundary"
+      ],
+      "passed": true,
+      "result": "runtime_mutation_none"
+    },
+    {
+      "case_id": "negative/duplicate-key",
+      "case_classes": [
+        "negative",
+        "strict_json"
+      ],
+      "passed": true,
+      "result": "duplicate_rejected"
+    },
+    {
+      "case_id": "negative/secret-field",
+      "case_classes": [
+        "negative",
+        "privacy"
+      ],
+      "passed": true,
+      "result": "secret_field_rejected"
+    },
+    {
+      "case_id": "negative/tenant-binding",
+      "case_classes": [
+        "negative",
+        "tenant"
+      ],
+      "passed": true,
+      "result": "cross_tenant_binding_rejected"
+    },
+    {
+      "case_id": "negative/audience",
+      "case_classes": [
+        "audience",
+        "negative"
+      ],
+      "passed": true,
+      "result": "wrong_audience_rejected"
+    },
+    {
+      "case_id": "negative/risk-epoch",
+      "case_classes": [
+        "epoch",
+        "negative"
+      ],
+      "passed": true,
+      "result": "zero_epoch_rejected"
+    },
+    {
+      "case_id": "negative/assertion-ttl",
+      "case_classes": [
+        "negative",
+        "ttl"
+      ],
+      "passed": true,
+      "result": "unfrozen_ttl_rejected"
+    },
+    {
+      "case_id": "negative/submicrosecond-time",
+      "case_classes": [
+        "negative",
+        "precision",
+        "time"
+      ],
+      "passed": true,
+      "result": "submicrosecond_rejected"
+    },
+    {
+      "case_id": "negative/source-hash-binding",
+      "case_classes": [
+        "binding",
+        "negative",
+        "source"
+      ],
+      "passed": true,
+      "result": "source_hash_tamper_rejected"
+    },
+    {
+      "case_id": "negative/source-scope-binding",
+      "case_classes": [
+        "binding",
+        "negative",
+        "source",
+        "tenant"
+      ],
+      "passed": true,
+      "result": "source_scope_tamper_rejected"
+    },
+    {
+      "case_id": "negative/semantic-binding",
+      "case_classes": [
+        "binding",
+        "hash",
+        "negative"
+      ],
+      "passed": true,
+      "result": "semantic_hash_tamper_rejected"
+    },
+    {
+      "case_id": "negative/receipt-signature",
+      "case_classes": [
+        "negative",
+        "receipt",
+        "signature"
+      ],
+      "passed": true,
+      "result": "receipt_signature_tamper_rejected"
+    },
+    {
+      "case_id": "negative/source-snapshot",
+      "case_classes": [
+        "negative",
+        "provenance",
+        "source"
+      ],
+      "passed": true,
+      "result": "source_tamper_rejected"
+    },
+    {
+      "case_id": "negative/replay-conflict",
+      "case_classes": [
+        "conflict",
+        "negative",
+        "replay"
+      ],
+      "passed": true,
+      "result": "semantic_conflict_rejected"
+    }
+  ],
+  "summary": {
+    "fixtures": 1,
+    "cases": 28,
+    "passed": 28,
+    "failed": 0
+  }
+}

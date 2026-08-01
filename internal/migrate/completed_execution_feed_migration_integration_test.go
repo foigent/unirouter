@@ -196,6 +196,7 @@ func TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRoll
 
 func rollbackXInsightFeedControl(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
+	rollbackAsyncMediaImageMigration(t, pool)
 	receiverDownSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000045_v1_receiver_feed_credential.down.sql",

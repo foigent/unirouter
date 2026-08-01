@@ -159,6 +159,16 @@ Gateway trace/log writers persist the configured `payload_capture_mode` and
 include it in source-event hashes. This does not enable raw prompt/response
 capture.
 
+PRD7 B3 metadata-only OTLP/OpenInference export is implemented in
+`internal/telemetryexport`, wired through `internal/gateway/trace.go`,
+`internal/config/config.go` and `cmd/uniroute/main.go`. It observes only newly
+created transactional Outbox trace facts, uses a fixed non-blocking queue and
+bounded OTLP/HTTP worker, exports route-derived model identity plus explicit
+provenance/capture gaps, and recursively rejects restricted content. It is
+default off and does not alter request, billing, Outbox, completed-execution
+Feed or cursor behavior. The exact contract is
+`docs/tech-ref/32-otel-openinference-metadata-export.md`.
+
 PRD5 Batch 1G trusted evidence context intake is implemented in
 `internal/traceutil/evidence_context.go`, `internal/config/config.go`,
 `cmd/uniroute/main.go`, `internal/gateway/relay.go`, and

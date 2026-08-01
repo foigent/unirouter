@@ -99,8 +99,8 @@
 
 **交互规范**:
 - 筛选器变更即时刷新结果（debounce 300ms）
-- 点击行展开右侧详情面板
-- 详情面板可关闭，关闭后表格占满宽度
+- 点击行选择右侧检查对象
+- 右侧面板是否常驻由页面规范决定；Logs v3 使用不可关闭的常驻凭证
 - 支持导出当前筛选结果
 
 ### 模板 C：分析视图
@@ -203,6 +203,11 @@
 
 ## 5. Logs Explorer 设计
 
+> 2026-07-31 supersession: 本节保留 v1 设计沿革。当前已实现交互以
+> [`pages/logs-explorer-v2.md`](pages/logs-explorer-v2.md) 的 v3 规范为准：
+> 右侧 Execution Decision Receipt 永久可见、默认选择最新记录，不能关闭，也不从
+> HTTP 状态或日志费用推断财务终态。
+
 ### 5.1 目标
 
 将 Logs 从"日志表格"升级为"调查工作区"。
@@ -258,25 +263,26 @@
 
 ### 5.6 详情面板
 
-点击行展开右侧详情面板：
+页面默认选择最新结果并保持右侧 Execution Decision Receipt 可见；点击行、键盘
+上下方向键或 URL `log_id` 只改变当前检查对象：
 
 | 区域 | 内容 |
 |------|------|
-| 基本信息 | Request ID, 模型, 渠道, 用户, 时间 |
-| 性能 | 延迟, Token 用量, 费用 |
-| 错误 | Error Code, Error Message（如有） |
-| 请求 | Headers, Body（如有） |
-| 响应 | Status Code, Body（如有） |
+| Decision | 执行结论、权限与结构化决策链 |
+| Attempts | 路由、故障切换、性能和上游错误 |
+| Policy & Guardrail | 已捕获的策略证据和 Payload 边界 |
+| Cost & Finality | Billing terminal evidence、当前脱敏合同缺口、Token、日志费用和 Prompt Cache |
+| Provenance & Gaps | Trace/Schema/Source、Capture Gap 和事件路径 |
 
 **交互**:
-- 详情面板可关闭
-- 关闭后表格占满宽度
+- 详情面板常驻且不可关闭
+- HTTP 成功或日志费用不推断财务终态
 - 支持复制单个字段
 
 ### 5.7 全局搜索
 
-- 顶部搜索栏，全宽
-- 支持：Request ID, 模型, 渠道, 用户, 错误码
+- 左侧搜索栏
+- 支持：Request ID、模型、供应商和结构化证据标识
 - 快捷键：⌘K / Ctrl+K
 
 ### 5.8 暂缓功能
@@ -285,7 +291,7 @@
 |------|------|------|
 | Saved Views | 暂缓 | 当前筛选器够用，后续迭代 |
 | Explorer Modes | 暂缓 | 单一视图模式，后续按需拆分 |
-| Trace 关联 | 暂缓 | 需要后端支持 Trace ID |
+| 跨产品 Trace 拼接 | 暂缓 | 当前只展示 UniRouter 已捕获 Trace |
 | 导出 | 暂缓 | 后续迭代 |
 
 ---

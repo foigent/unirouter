@@ -1,0 +1,72 @@
+{
+  "schema_version": "unirouter.provider-conformance-fixture.v1",
+  "fixture_id": "openai-embeddings-success.v1",
+  "adapter_type": "openai_compatible",
+  "request": {
+    "endpoint": "/v1/embeddings",
+    "base_url": "https://api.openai.example/v1",
+    "requested_model": "company-embed",
+    "mapped_model": "text-embedding-3-small",
+    "request_id": "req-fixture-openai-embeddings",
+    "adapter_config": {},
+    "body": {
+      "model": "company-embed",
+      "input": "synthetic fixture"
+    },
+    "expected": {
+      "method": "POST",
+      "url": "https://api.openai.example/v1/embeddings",
+      "auth_header": "Authorization",
+      "model_on_wire": "text-embedding-3-small"
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "body": {
+      "object": "list",
+      "data": [
+        {
+          "object": "embedding",
+          "index": 0,
+          "embedding": [
+            0.125,
+            -0.25
+          ]
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4,
+        "total_tokens": 4
+      }
+    },
+    "expected_usage": {
+      "prompt_tokens": 4,
+      "completion_tokens": 0,
+      "total_tokens": 4,
+      "authority": "provider_reported",
+      "finality": "final"
+    }
+  },
+  "missing_usage_response": {
+    "status_code": 200,
+    "body": {
+      "object": "list",
+      "data": []
+    },
+    "expected_authority": "none",
+    "expected_finality": "missing"
+  },
+  "error_cases": [
+    {
+      "status_code": 503,
+      "body": {
+        "error": {
+          "code": "service_unavailable",
+          "message": "synthetic outage"
+        }
+      },
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    }
+  ]
+}

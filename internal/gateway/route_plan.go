@@ -3,11 +3,8 @@ package gateway
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -60,12 +57,6 @@ type snapshotLoad struct {
 	Snapshot *routeSnapshot
 	Source   string
 	Degraded bool
-}
-
-type eligibleRoute struct {
-	channel       snapshotChannel
-	key           models.ChannelKey
-	requiresProbe bool
 }
 
 // Route selects the first route from routing-policy.v1. It remains for callers
@@ -295,237 +286,66 @@ func routeSnapshotVersion(snapshot *routeSnapshot) string {
 
 func (r *Router) evaluateSnapshot(load snapshotLoad, modelName, selectionKey string) ([]RouteResult, []routingpolicy.PreviewCandidate, []routingpolicy.PreviewCandidate) {
 	snapshot := load.Snapshot
-	if selectionKey == "" {
-		selectionKey = "server:" + modelName
+	policySnapshot := routingpolicy.SelectionSnapshot{
+		Model:    modelName,
+		DBNow:    snapshot.DBNow,
+		Version:  snapshot.Version,
+		Source:   load.Source,
+		Degraded: load.Degraded,
+		Channels: make([]routingpolicy.SelectionChannel, 0, len(snapshot.Channels)),
 	}
-	eligible := make([]eligibleRoute, 0, len(snapshot.Channels))
-	exclusions := make([]routingpolicy.PreviewCandidate, 0)
-	reasonCounts := make(map[string]int)
-
+	channelByID := make(map[int64]snapshotChannel, len(snapshot.Channels))
 	for _, candidate := range snapshot.Channels {
-		key, requiresProbe, reason := r.evaluateChannel(candidate, modelName, selectionKey, snapshot.DBNow)
-		if reason != "" {
-			reasonCounts[reason]++
-			exclusions = appendPreviewBounded(exclusions, previewExclusion(candidate, reason), r.policy.MaxCandidateCount)
-			continue
+		channelByID[candidate.Channel.ID] = candidate
+		keys := make([]routingpolicy.SelectionKey, 0, len(candidate.Keys))
+		for _, item := range candidate.Keys {
+			keys = append(keys, routingpolicy.SelectionKey{
+				ID:            item.Key.ID,
+				Status:        item.Key.Status,
+				CooldownUntil: item.Key.CooldownUntil,
+				AllowedModels: item.AllowedModels,
+			})
 		}
-		if len(eligible) >= r.policy.MaxCandidateCount {
-			reason = "candidate_limit"
-			reasonCounts[reason]++
-			exclusions = appendPreviewBounded(exclusions, previewExclusion(candidate, reason), r.policy.MaxCandidateCount)
-			continue
-		}
-		eligible = append(eligible, eligibleRoute{channel: candidate, key: key, requiresProbe: requiresProbe})
+		policySnapshot.Channels = append(policySnapshot.Channels, routingpolicy.SelectionChannel{
+			ID:            candidate.Channel.ID,
+			Name:          candidate.Channel.Name,
+			Provider:      candidate.Channel.Provider,
+			Priority:      candidate.Channel.Priority,
+			Weight:        candidate.Channel.RoutingWeight,
+			Status:        candidate.Channel.Status,
+			CircuitState:  candidate.Channel.CircuitState,
+			HalfOpenUntil: candidate.Channel.HalfOpenUntil,
+			Keys:          keys,
+		})
 	}
-
-	ordered := weightedPriorityOrder(eligible, selectionKey)
-	exclusionSummary := summarizeReasons(reasonCounts)
-	routes := make([]RouteResult, 0, len(ordered))
-	previews := make([]routingpolicy.PreviewCandidate, 0, len(ordered))
-	for index, item := range ordered {
-		ch := item.channel.Channel
-		selectionReason := "priority_failover"
-		if hasEqualPriorityPeer(ordered, index) {
-			selectionReason = "equal_priority_static_weight"
+	evaluation := routingpolicy.EvaluateSelection(policySnapshot, r.policy, selectionKey)
+	routes := make([]RouteResult, 0, len(evaluation.Selected))
+	previews := make([]routingpolicy.PreviewCandidate, 0, len(evaluation.Selected))
+	for _, item := range evaluation.Selected {
+		candidate := channelByID[item.ChannelID]
+		ch := candidate.Channel
+		var selectedKey models.ChannelKey
+		for _, key := range candidate.Keys {
+			if key.Key.ID == item.KeyID {
+				selectedKey = key.Key
+				break
+			}
 		}
 		routes = append(routes, RouteResult{
 			Channel:              ch,
-			ChannelKey:           item.key,
+			ChannelKey:           selectedKey,
 			MappedModel:          resolveModelMapping(modelName, ch.ModelMapping),
 			RoutingPolicyVersion: routingpolicy.SelectionVersion,
 			SnapshotVersion:      snapshot.Version,
 			SnapshotSource:       load.Source,
 			SnapshotDegraded:     load.Degraded,
-			CandidateCount:       len(ordered),
-			ExcludedCount:        totalReasonCount(reasonCounts),
-			ExclusionReasons:     exclusionSummary,
-			SelectionReason:      selectionReason,
-			RequiresProbe:        item.requiresProbe,
+			CandidateCount:       len(evaluation.Selected),
+			ExcludedCount:        evaluation.ExcludedCount,
+			ExclusionReasons:     evaluation.ExclusionReasons,
+			SelectionReason:      item.Preview.Reason,
+			RequiresProbe:        item.RequiresProbe,
 		})
-		previews = append(previews, routingpolicy.PreviewCandidate{
-			ChannelID:        ch.ID,
-			ChannelName:      ch.Name,
-			Provider:         ch.Provider,
-			Priority:         ch.Priority,
-			Weight:           ch.RoutingWeight,
-			Order:            index + 1,
-			CircuitState:     ch.CircuitState,
-			EligibleKeyCount: eligibleKeyCount(item.channel, modelName, snapshot.DBNow),
-			Reason:           selectionReason,
-			RequiresProbe:    item.requiresProbe,
-		})
+		previews = append(previews, item.Preview)
 	}
-	return routes, previews, exclusions
-}
-
-func (r *Router) evaluateChannel(candidate snapshotChannel, modelName, selectionKey string, dbNow time.Time) (models.ChannelKey, bool, string) {
-	ch := candidate.Channel
-	if ch.Status != "active" {
-		return models.ChannelKey{}, false, "channel_inactive"
-	}
-	requiresProbe := false
-	switch ch.CircuitState {
-	case "healthy":
-	case "half_open":
-		if ch.HalfOpenUntil == nil || ch.HalfOpenUntil.After(dbNow) {
-			return models.ChannelKey{}, false, "circuit_recovery_pending"
-		}
-		if stableModulo(selectionKey+"|probe|"+strconv.FormatInt(ch.ID, 10), 100) >= uint64(r.policy.CircuitBreakerHalfOpenPct) {
-			return models.ChannelKey{}, false, "probe_sample_not_selected"
-		}
-		requiresProbe = true
-	default:
-		return models.ChannelKey{}, false, "circuit_unavailable"
-	}
-
-	keys := make([]models.ChannelKey, 0, len(candidate.Keys))
-	hasActive, hasCooldown, hasModelMismatch := false, false, false
-	for _, item := range candidate.Keys {
-		if item.Key.Status != "active" {
-			continue
-		}
-		hasActive = true
-		if item.Key.CooldownUntil != nil && item.Key.CooldownUntil.After(dbNow) {
-			hasCooldown = true
-			continue
-		}
-		if !modelAllowed(item.AllowedModels, modelName) {
-			hasModelMismatch = true
-			continue
-		}
-		keys = append(keys, item.Key)
-	}
-	if len(keys) == 0 {
-		switch {
-		case len(candidate.Keys) == 0:
-			return models.ChannelKey{}, false, "no_key"
-		case !hasActive:
-			return models.ChannelKey{}, false, "no_active_key"
-		case hasCooldown:
-			return models.ChannelKey{}, false, "key_cooldown"
-		case hasModelMismatch:
-			return models.ChannelKey{}, false, "key_model_not_allowed"
-		default:
-			return models.ChannelKey{}, false, "no_eligible_key"
-		}
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i].ID < keys[j].ID })
-	keyIndex := stableModulo(selectionKey+"|key|"+strconv.FormatInt(ch.ID, 10), uint64(len(keys)))
-	return keys[keyIndex], requiresProbe, ""
-}
-
-func modelAllowed(allowedModels, modelName string) bool {
-	allowedModels = strings.TrimSpace(allowedModels)
-	if allowedModels == "" {
-		return true
-	}
-	for _, allowed := range strings.Split(allowedModels, ",") {
-		if strings.TrimSpace(allowed) == modelName {
-			return true
-		}
-	}
-	return false
-}
-
-func eligibleKeyCount(candidate snapshotChannel, modelName string, dbNow time.Time) int {
-	count := 0
-	for _, item := range candidate.Keys {
-		if item.Key.Status == "active" && (item.Key.CooldownUntil == nil || !item.Key.CooldownUntil.After(dbNow)) && modelAllowed(item.AllowedModels, modelName) {
-			count++
-		}
-	}
-	return count
-}
-
-func weightedPriorityOrder(input []eligibleRoute, selectionKey string) []eligibleRoute {
-	byPriority := make(map[int][]eligibleRoute)
-	priorities := make([]int, 0)
-	for _, item := range input {
-		priority := item.channel.Channel.Priority
-		if _, exists := byPriority[priority]; !exists {
-			priorities = append(priorities, priority)
-		}
-		byPriority[priority] = append(byPriority[priority], item)
-	}
-	sort.Ints(priorities)
-	result := make([]eligibleRoute, 0, len(input))
-	for _, priority := range priorities {
-		pool := append([]eligibleRoute(nil), byPriority[priority]...)
-		sort.Slice(pool, func(i, j int) bool { return pool[i].channel.Channel.ID < pool[j].channel.Channel.ID })
-		for round := 0; len(pool) > 0; round++ {
-			total := uint64(0)
-			for _, item := range pool {
-				total += uint64(item.channel.Channel.RoutingWeight)
-			}
-			ticket := stableModulo(selectionKey+"|weight|"+strconv.Itoa(priority)+"|"+strconv.Itoa(round), total)
-			selected := 0
-			for index, item := range pool {
-				weight := uint64(item.channel.Channel.RoutingWeight)
-				if ticket < weight {
-					selected = index
-					break
-				}
-				ticket -= weight
-			}
-			result = append(result, pool[selected])
-			pool = append(pool[:selected], pool[selected+1:]...)
-		}
-	}
-	return result
-}
-
-func stableModulo(value string, modulus uint64) uint64 {
-	if modulus == 0 {
-		return 0
-	}
-	hash := sha256.Sum256([]byte(value))
-	return binary.BigEndian.Uint64(hash[:8]) % modulus
-}
-
-func hasEqualPriorityPeer(routes []eligibleRoute, index int) bool {
-	priority := routes[index].channel.Channel.Priority
-	return (index > 0 && routes[index-1].channel.Channel.Priority == priority) ||
-		(index+1 < len(routes) && routes[index+1].channel.Channel.Priority == priority)
-}
-
-func previewExclusion(candidate snapshotChannel, reason string) routingpolicy.PreviewCandidate {
-	ch := candidate.Channel
-	return routingpolicy.PreviewCandidate{
-		ChannelID:        ch.ID,
-		ChannelName:      ch.Name,
-		Provider:         ch.Provider,
-		Priority:         ch.Priority,
-		Weight:           ch.RoutingWeight,
-		CircuitState:     ch.CircuitState,
-		EligibleKeyCount: 0,
-		Reason:           reason,
-	}
-}
-
-func appendPreviewBounded(items []routingpolicy.PreviewCandidate, item routingpolicy.PreviewCandidate, limit int) []routingpolicy.PreviewCandidate {
-	if len(items) >= limit {
-		return items
-	}
-	return append(items, item)
-}
-
-func summarizeReasons(counts map[string]int) string {
-	keys := make([]string, 0, len(counts))
-	for key := range counts {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		parts = append(parts, key+"="+strconv.Itoa(counts[key]))
-	}
-	return strings.Join(parts, ",")
-}
-
-func totalReasonCount(counts map[string]int) int {
-	total := 0
-	for _, count := range counts {
-		total += count
-	}
-	return total
+	return routes, previews, evaluation.Exclusions
 }

@@ -104,6 +104,8 @@ const taskNavItems: NavItem[] = [
     icon: <IconSendStroked />,
     items: [
       { itemKey: '/channels', text: '上游通道', icon: <IconRoute /> },
+      { itemKey: '/governance-simulation', text: '变更防火墙', icon: <IconShield /> },
+      { itemKey: '/risk-control', text: '风险与控制建议', icon: <IconPulse /> },
       { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconLockStroked /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers />, licenseFeature: 'model_governance' },
       { itemKey: '/test', text: '连通性检测', icon: <IconTestScore />, licenseFeature: 'gateway' },
@@ -116,6 +118,8 @@ const taskNavItems: NavItem[] = [
     items: [
       { itemKey: '/keys', text: '访问凭证', icon: <IconKeyStroked /> },
       { itemKey: '/project-management', text: '项目与成员', icon: <IconUserGroup /> },
+      { itemKey: '/member-lifecycle', text: '成员生命周期', icon: <IconShield /> },
+      { itemKey: '/agent-trust', text: 'Agent 信任防火墙', icon: <IconShieldStroked /> },
       { itemKey: '/limit-policies', text: '共享限额', icon: <IconPulse /> },
       { itemKey: '/guardrail-policies', text: '内容安全', icon: <IconShieldStroked />, licenseFeature: 'guardrails' },
       { itemKey: '/users', text: '用户管理', icon: <IconUserGroup /> },
@@ -128,6 +132,8 @@ const taskNavItems: NavItem[] = [
     icon: <IconMonitorStroked />,
     items: [
       { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
+      { itemKey: '/media-jobs', text: '图像任务', icon: <IconFile />, licenseFeature: 'gateway' },
+      { itemKey: '/provenance-passport', text: '来源与缺口 Passport', icon: <IconFlowChartStroked /> },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell />, licenseFeature: 'notifications' },
       { itemKey: '/status', text: '运行状态', icon: <IconPulse /> },
@@ -140,7 +146,7 @@ const taskNavItems: NavItem[] = [
     items: [
       { itemKey: '/wallet', text: '资金账户', icon: <IconCreditCard /> },
       { itemKey: '/model-prices', text: '模型计费', icon: <IconPriceTag /> },
-      { itemKey: '/reconciliation', text: '计量校验', icon: <IconFlowChartStroked /> },
+      { itemKey: '/reconciliation', text: '财务真值', icon: <IconFlowChartStroked /> },
     ],
   },
   {
@@ -160,16 +166,17 @@ const accessStateItem: NavItem = { itemKey: '/access', text: '访问状态', ico
 
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
 const orgAdminRoutes = new Set([
-  '/', '/model-governance', '/keys', '/project-management', '/limit-policies', '/guardrail-policies', '/users',
-  '/logs', '/usage-analytics', '/notifications', '/status', '/audit-logs',
+  '/', '/model-governance', '/risk-control', '/keys', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
+  '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
+  '/media-jobs',
   '/model-prices', '/docs',
 ]);
 const billingRoutes = new Set([
   '/', '/logs', '/usage-analytics', '/notifications',
   '/wallet', '/model-prices', '/reconciliation', '/docs',
 ]);
-const projectAdminRoutes = new Set(['/project-management', '/docs']);
-const developerRoutes = new Set(['/docs']);
+const projectAdminRoutes = new Set(['/project-management', '/media-jobs', '/docs']);
+const developerRoutes = new Set(['/media-jobs', '/docs']);
 const orgViewerRoutes = new Set(['/', '/docs']);
 
 function filterTaskNavigation(allowedRoutes: Set<string>) {
@@ -238,6 +245,7 @@ const routeLicenseFeatures: Partial<Record<string, LicenseFeature>> = {
   '/test': 'gateway',
   '/guardrail-policies': 'guardrails',
   '/notifications': 'notifications',
+  '/media-jobs': 'gateway',
 };
 
 export function getRequiredLicenseFeatureForRoute(path: string): LicenseFeature | undefined {
@@ -324,9 +332,14 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
       '/',
       '/keys',
       '/project-management',
+      '/member-lifecycle',
+      '/agent-trust',
+      '/risk-control',
       '/limit-policies',
       '/guardrail-policies',
       '/logs',
+      '/media-jobs',
+      '/provenance-passport',
       '/usage-analytics',
       '/notifications',
       '/users',
@@ -346,6 +359,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
   if (isProjectConsoleRole(role)) {
     if (isProjectAdminRole(role) && route === '/project-management') return true;
     if (isProjectAdminRole(role) && route === '/notifications') return hasPositiveProjectID(path);
+    if (route === '/media-jobs') return true;
     return false;
   }
 

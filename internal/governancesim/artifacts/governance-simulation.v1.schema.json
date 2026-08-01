@@ -1,0 +1,511 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/governance-simulation.v1.schema.json",
+  "title": "UniRouter offline governance simulation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "simulation_id",
+    "created_at",
+    "selection_key",
+    "evaluation_mode",
+    "baseline",
+    "candidate",
+    "release"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "unirouter.governance-simulation.v1"
+    },
+    "simulation_id": {
+      "$ref": "#/$defs/portable_id"
+    },
+    "created_at": {
+      "$ref": "#/$defs/utc_micros"
+    },
+    "selection_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "evaluation_mode": {
+      "enum": [
+        "shadow",
+        "canary",
+        "enforced"
+      ]
+    },
+    "baseline": {
+      "$ref": "#/$defs/bundle"
+    },
+    "candidate": {
+      "$ref": "#/$defs/bundle"
+    },
+    "release": {
+      "$ref": "#/$defs/release"
+    }
+  },
+  "$defs": {
+    "portable_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "decimal_int64": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "positive_decimal_int64": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "utc_micros": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_retry_count",
+        "circuit_breaker_threshold",
+        "circuit_breaker_recover_seconds",
+        "circuit_breaker_half_open_percent",
+        "rate_limit_cooldown_seconds",
+        "auth_failure_cooldown_seconds",
+        "key_failure_threshold",
+        "snapshot_refresh_seconds",
+        "snapshot_stale_seconds",
+        "half_open_probe_lease_seconds",
+        "max_candidate_count",
+        "max_snapshot_count"
+      ],
+      "properties": {
+        "max_retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "circuit_breaker_threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "circuit_breaker_recover_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "circuit_breaker_half_open_percent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "rate_limit_cooldown_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "auth_failure_cooldown_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "key_failure_threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "snapshot_refresh_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "snapshot_stale_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        },
+        "half_open_probe_lease_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        },
+        "max_candidate_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "max_snapshot_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
+    },
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "cooldown_until",
+        "allowed_models"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/positive_decimal_int64"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "disabled"
+          ]
+        },
+        "cooldown_until": {
+          "oneOf": [
+            {
+              "const": ""
+            },
+            {
+              "$ref": "#/$defs/utc_micros"
+            }
+          ]
+        },
+        "allowed_models": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "provider",
+        "priority",
+        "weight",
+        "status",
+        "circuit_state",
+        "half_open_until",
+        "keys"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/positive_decimal_int64"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "status": {
+          "enum": [
+            "active",
+            "disabled"
+          ]
+        },
+        "circuit_state": {
+          "enum": [
+            "healthy",
+            "half_open",
+            "open"
+          ]
+        },
+        "half_open_until": {
+          "oneOf": [
+            {
+              "const": ""
+            },
+            {
+              "$ref": "#/$defs/utc_micros"
+            }
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/key"
+          }
+        }
+      }
+    },
+    "route_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_id",
+        "model",
+        "db_now",
+        "source",
+        "degraded",
+        "channels"
+      ],
+      "properties": {
+        "snapshot_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "db_now": {
+          "$ref": "#/$defs/utc_micros"
+        },
+        "source": {
+          "enum": [
+            "fixture",
+            "synthetic",
+            "sanitized_export"
+          ]
+        },
+        "degraded": {
+          "type": "boolean"
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/channel"
+          }
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixture_id",
+        "sha256"
+      ],
+      "properties": {
+        "fixture_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "provider_pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "schema_sha256",
+        "pack_id",
+        "pack_version",
+        "manifest_sha256",
+        "provider",
+        "adapter_type",
+        "network_verified",
+        "endpoints",
+        "modalities",
+        "auth_profiles",
+        "usage_signature",
+        "error_signature",
+        "fixtures"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "unirouter.provider-pack.v1"
+        },
+        "schema_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "pack_id": {
+          "type": "string",
+          "pattern": "^unirouter\\.[a-z0-9.-]+$"
+        },
+        "pack_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+        },
+        "adapter_type": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "network_verified": {
+          "type": "boolean"
+        },
+        "endpoints": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "modalities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "auth_profiles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "usage_signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "error_signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "fixtures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/fixture"
+          }
+        }
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "route_snapshot",
+        "provider_packs"
+      ],
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/policy"
+        },
+        "route_snapshot": {
+          "$ref": "#/$defs/route_snapshot"
+        },
+        "provider_packs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/provider_pack"
+          }
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "release_id",
+        "revision",
+        "parent_revision",
+        "action",
+        "from_stage",
+        "to_stage",
+        "rollback_to_revision",
+        "actor_ref",
+        "occurred_at",
+        "reason"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "unirouter.progressive-release.v1"
+        },
+        "release_id": {
+          "$ref": "#/$defs/portable_id"
+        },
+        "revision": {
+          "$ref": "#/$defs/positive_decimal_int64"
+        },
+        "parent_revision": {
+          "$ref": "#/$defs/decimal_int64"
+        },
+        "action": {
+          "enum": [
+            "advance",
+            "rollback"
+          ]
+        },
+        "from_stage": {
+          "$ref": "#/$defs/release_stage"
+        },
+        "to_stage": {
+          "$ref": "#/$defs/release_stage"
+        },
+        "rollback_to_revision": {
+          "oneOf": [
+            {
+              "const": ""
+            },
+            {
+              "$ref": "#/$defs/positive_decimal_int64"
+            }
+          ]
+        },
+        "actor_ref": {
+          "$ref": "#/$defs/sha256"
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/utc_micros"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "release_stage": {
+      "enum": [
+        "draft",
+        "validated",
+        "shadow",
+        "canary",
+        "approved_for_external_promotion"
+      ]
+    }
+  }
+}

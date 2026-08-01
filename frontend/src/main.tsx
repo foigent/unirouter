@@ -30,6 +30,12 @@ import DataExchangePage from './pages/DataExchangePage'
 import LimitPoliciesPage from './pages/LimitPoliciesPage'
 import GuardrailPoliciesPage from './pages/GuardrailPoliciesPage'
 import ProjectManagementPage from './pages/ProjectManagementPage'
+import GovernanceSimulationPage from './pages/GovernanceSimulationPage'
+import MemberLifecyclePage from './pages/MemberLifecyclePage'
+import AgentTrustPage from './pages/AgentTrustPage'
+import ProvenancePassportPage from './pages/ProvenancePassportPage'
+import RiskControlPage from './pages/RiskControlPage'
+import MediaJobsPage from './pages/MediaJobsPage'
 import { profileNeedsRefresh, useAuthStore } from './store/auth'
 import { getDefaultPathForRole, isRouteAllowedForRole } from './navigation'
 
@@ -106,6 +112,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route index element={<HomeRoute />} />
             <Route path="developer" element={<RoleRoute><DeveloperConsolePage /></RoleRoute>} />
             <Route path="channels" element={<RoleRoute><ChannelsPage /></RoleRoute>} />
+            <Route path="governance-simulation" element={<RoleRoute><GovernanceSimulationPage /></RoleRoute>} />
             <Route path="keys" element={<RoleRoute><KeysPage /></RoleRoute>} />
             <Route path="limit-policies" element={<RoleRoute><LimitPoliciesPage /></RoleRoute>} />
             <Route path="guardrail-policies" element={<RoleRoute><GuardrailPoliciesPage /></RoleRoute>} />
@@ -114,6 +121,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="logs" element={<RoleRoute><LogsPage /></RoleRoute>} />
             <Route path="users" element={<RoleRoute><UsersPage /></RoleRoute>} />
             <Route path="project-management" element={<RoleRoute><ProjectManagementPage /></RoleRoute>} />
+            <Route path="member-lifecycle" element={<RoleRoute><MemberLifecyclePage /></RoleRoute>} />
+            <Route path="agent-trust" element={<RoleRoute><AgentTrustPage /></RoleRoute>} />
+            <Route path="provenance-passport" element={<RoleRoute><ProvenancePassportPage /></RoleRoute>} />
+            <Route path="risk-control" element={<RoleRoute><RiskControlPage /></RoleRoute>} />
+            <Route path="media-jobs" element={<RoleRoute><MediaJobsPage /></RoleRoute>} />
             <Route path="model-governance" element={<RoleRoute><ModelGovernancePage /></RoleRoute>} />
             <Route path="model-prices" element={<RoleRoute><ModelBillingPage /></RoleRoute>} />
             <Route path="org-model-prices" element={<Navigate to="/model-prices?tab=org" replace />} />
