@@ -335,7 +335,7 @@ func TestCreateChannel_Success_Integration(t *testing.T) {
 	).Scan(&name, &status)
 	require.NoError(t, err)
 	require.Equal(t, "test-channel", name)
-	require.Equal(t, "active", status)
+	require.Equal(t, "staged", status, "new channels must pass the runtime release gate before activation")
 }
 
 func TestCreateChannel_MissingFields_Integration(t *testing.T) {
