@@ -8,6 +8,7 @@
 - [architecture/PRD8-ENTERPRISE-ORG-FINANCE-UI-MIGRATION-20260801.md](architecture/PRD8-ENTERPRISE-ORG-FINANCE-UI-MIGRATION-20260801.md) — 企业组织、财务与 UI 的代码映射、兼容不变量和当前 Local 实现状态
 - [ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md](ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md) — UI-1..5、UI-PERF-1、DOMAIN-0、ORG-1..2、FIN-1..3 的最终 Local 回归与 ORG-3/FIN-4 停止门
 - [ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md](ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md) — Provider 激活门禁、有界渐进发布、模型调用授权 PEP 与兼容性 Local 证据
+- [ops/evidence/PRD8-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260802.md](ops/evidence/PRD8-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260802.md) — PR #247 CI/合并、开发测试 ECS 备份与迁移、精确发布、兼容性回读和登录后 UI 验收
 - [PRD-Phase7.md](PRD-Phase7.md) 与 [ops/PRD7-ACCEPTANCE-MATRIX.md](ops/PRD7-ACCEPTANCE-MATRIX.md) — 已完成 repository-local 实现与证据基线；不再决定新增能力所有权
 - [planning/PRD7-IMPLEMENTATION-PLAN.md](planning/PRD7-IMPLEMENTATION-PLAN.md) — 已完成 B0–B14 的历史依赖顺序和仍未授权的外部门
 - [agent-workflows/EXECUTION-RECORD.md](agent-workflows/EXECUTION-RECORD.md) — 当前 PRD8 文档封板和此前 PRD7 实施记录；不重开 PRD5/PRD6

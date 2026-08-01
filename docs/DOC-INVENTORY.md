@@ -12,6 +12,7 @@
 | `docs/architecture/PRD8-ENTERPRISE-ORG-FINANCE-UI-MIGRATION-20260801.md` | Current UI/domain/code mapping and compatibility contract for the Local-verified organization and finance migration |
 | `docs/ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md` | Final Local regression, build/browser evidence, compatibility conclusion and explicit non-runtime/non-release boundary for the PRD8 autonomous sequence |
 | `docs/ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md` | Provider activation gate, bounded progressive route release, Model Call Authorization PEP, Local verification and compatibility boundary |
+| `docs/ops/evidence/PRD8-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260802.md` | PR #247 CI/merge, exact development/test ECS backup/migration/release, compatibility readback and authenticated PRD8 UI verification |
 | `docs/PRD-Phase7.md` | Completed repository-local implementation scope and immutable product/evidence baseline; subordinate to PRD8 for future ownership |
 | `docs/ops/PRD7-ACCEPTANCE-MATRIX.md` | Authoritative PRD7 row implementation/evidence level; no longer the forward ownership contract |
 | `docs/planning/PRD7-IMPLEMENTATION-PLAN.md` | Completed B0–B14 dependency order and external gates; historical execution reference |

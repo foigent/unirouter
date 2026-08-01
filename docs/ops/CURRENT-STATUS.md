@@ -1,6 +1,20 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-02 PRD8 CI/merge/Target checkpoint:** PR #247 exact head
+> `aab74a669` passed required application CI and Protocol Conformance, then
+> squash-merged as `12efe9e3ba4dd753f6019468ca3b26d01a154c31`; the merge tree is
+> byte-identical to the CI-passed tree. The authorized development/test ECS
+> release created and verified a pre-migration backup, applied `000046`–`000053`
+> non-rolling, and started exact stable/canary/frontend images from the
+> commit-addressed release. Public/stable/canary health all return DB/Redis
+> `ok`; authenticated browser readback confirms the expanded two-level shell,
+> lightweight toolbar, organization/accounts, enterprise finance, Model Call
+> Authorization and fixed Inspector surfaces. Existing business/Feed counts,
+> Source bytes/hash and Cursor/Checkpoint behavior are unchanged. ORG-3 and
+> FIN-4 still wait for real customer systems; P7-F17/P7-F18 remain intentional
+> offline/manual stops. Evidence:
+> `docs/ops/evidence/PRD8-TARGET-DEPLOYMENT-AND-UI-VERIFICATION-20260802.md`.
 > **2026-08-02 PRD8 bounded runtime-control Local checkpoint:** the remaining
 > UniRouter-owned P7-F04/P7-F10/P7-F12 product gap is implemented in the current
 > product-iteration working tree. Migration `000052` adds Provider Pack-pinned,
@@ -15,9 +29,9 @@
 > Request/settlement/Outbox/Feed/Source hash
 > and Cursor identities remain compatible. P7-F17/P7-F18 remain read-only
 > offline/manual-stop evidence; ORG-3/FIN-4 still require a real customer
-> environment. The Product Owner has separately authorized commit/PR/CI and an
-> evidence-backed release to the existing UniRouter environment; CI, Target and
-> login/browser evidence remain pending until actually completed. Evidence:
+> environment. The separately authorized CI, merge and Target promotion are now
+> complete and recorded in the Target evidence above. Local implementation
+> evidence:
 > `docs/ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md`.
 > **2026-08-02 PRD8 enterprise organization/finance Local closeout:** after the
 > separate PRD8 UI/code authorization, the complete autonomous sequence
