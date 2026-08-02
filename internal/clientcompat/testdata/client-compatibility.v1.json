@@ -1,0 +1,14 @@
+{
+  "contract_version": "unirouter.client-compatibility.v1",
+  "cases": [
+    {"case_id":"openai-sdk-chat","profile_id":"client.openai-sdk.chat.v1","endpoint":"/v1/chat/completions","expected_runtime_state":"runtime_supported","expected_evidence_level":"verified"},
+    {"case_id":"openai-agents-chat","profile_id":"client.openai-agents.chat.v1","endpoint":"/v1/chat/completions","expected_runtime_state":"protocol_compatible","expected_evidence_level":"protocol_compatible"},
+    {"case_id":"openai-agents-responses","profile_id":"client.openai-agents.responses.v1","endpoint":"/v1/responses","expected_runtime_state":"contract_only","expected_evidence_level":"unsupported"},
+    {"case_id":"langchain-chat","profile_id":"client.langchain-openai.chat.v1","endpoint":"/v1/chat/completions","expected_runtime_state":"protocol_compatible","expected_evidence_level":"protocol_compatible"},
+    {"case_id":"autogen-chat","profile_id":"client.autogen-openai.chat.v1","endpoint":"/v1/chat/completions","expected_runtime_state":"protocol_compatible","expected_evidence_level":"protocol_compatible"},
+    {"case_id":"openclaw-chat","profile_id":"client.openclaw-openai.chat.v1","endpoint":"/v1/chat/completions","expected_runtime_state":"protocol_compatible","expected_evidence_level":"protocol_compatible"},
+    {"case_id":"tencent-workbuddy-chat","profile_id":"client.tencent-workbuddy.chat.v1","endpoint":"/v1/chat/completions","expected_runtime_state":"protocol_compatible","expected_evidence_level":"protocol_compatible"},
+    {"case_id":"feishu-bot-adapter","profile_id":"client.feishu-bot.adapter.v1","endpoint":"/v1/chat/completions","expected_runtime_state":"adapter_required","expected_evidence_level":"unsupported"},
+    {"case_id":"feishu-aily-adapter","profile_id":"client.feishu-aily.adapter.v1","endpoint":"/v1/chat/completions","expected_runtime_state":"adapter_required","expected_evidence_level":"unsupported"}
+  ]
+}

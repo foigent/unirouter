@@ -797,6 +797,23 @@ describe('API Client', () => {
     })
   })
 
+  describe('PRD8 workload application and deployment contracts', () => {
+    it('encodes application readiness context and desired-state endpoint operations', async () => {
+      mockJsonResponse({ overall: 'ready' })
+      await api.getWorkloadApplicationReadiness('app_claims', { org_id: 7, model: 'company-chat', endpoint: '/v1/chat/completions' })
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/workload-applications/app_claims/readiness?org_id=7&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions')
+
+      mockJsonResponse({ data: [] })
+      await api.getGatewayEndpoints('dep_ecs_poc')
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/deployment/endpoints?deployment_profile_ref=dep_ecs_poc')
+
+      mockJsonResponse({ endpoint_ref: 'gwe_ecs_poc' })
+      await api.createGatewayEndpoint({ endpoint_ref: 'gwe_ecs_poc', base_url: 'https://gateway.example.com' })
+      expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/deployment/endpoints')
+      expect(mockFetch.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'POST' }))
+    })
+  })
+
   describe('error handling', () => {
     it('throws ApiError for non-2xx responses', async () => {
       mockJsonResponse({ error: { message: 'invalid amount' } }, 400)

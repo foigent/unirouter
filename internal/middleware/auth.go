@@ -192,13 +192,16 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		        o.status
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
-		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
-		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
-		 LEFT JOIN project_members pm ON pm.project_id = ak.project_id AND pm.user_id = ak.owner_user_id
-		 WHERE ak.key_hash = $1
-		   AND ak.verifier_scheme = $2
-		   AND (ak.project_id IS NULL OR p.status = 'active')
-		   AND (
+		  LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
+		  LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
+		  LEFT JOIN project_members pm ON pm.project_id = ak.project_id AND pm.user_id = ak.owner_user_id
+		  LEFT JOIN workload_applications app
+		    ON app.id = ak.workload_application_id AND app.org_id = ak.org_id
+		  WHERE ak.key_hash = $1
+		    AND ak.verifier_scheme = $2
+		    AND (ak.project_id IS NULL OR p.status = 'active')
+		    AND (ak.workload_application_id IS NULL OR app.status = 'active')
+		    AND (
 		       COALESCE(NULLIF(ak.key_type, ''), 'shared') <> 'personal'
 		       OR (
 		           u.status = 'active'

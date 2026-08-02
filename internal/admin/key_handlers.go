@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/workloadapp"
 )
 
 const apiKeyPrefixInsertMaxAttempts = 4
@@ -40,6 +41,7 @@ type apiKeyAuthorizationIntent struct {
 	validateOwnership       bool
 	ownerUserID             int64
 	keyType                 string
+	workloadApplicationID   int64
 }
 
 type apiKeyAuditState struct {
@@ -173,6 +175,22 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 	if intent.validateOwnership {
 		if err := reauthorizeAPIKeyOwnerTx(ctx, tx, intent.targetOrgID, intent.targetProjectID, intent.ownerUserID, intent.keyType); err != nil {
 			return err
+		}
+	}
+	if intent.workloadApplicationID > 0 {
+		var kind, identityMode, status string
+		err := tx.QueryRow(ctx, `
+			SELECT kind, identity_mode, status
+			  FROM workload_applications
+			 WHERE id=$1 AND org_id=$2 AND project_id=$3
+			 FOR SHARE`, intent.workloadApplicationID, intent.targetOrgID, intent.targetProjectID).Scan(
+			&kind, &identityMode, &status)
+		if errors.Is(err, pgx.ErrNoRows) || status != workloadapp.StatusActive ||
+			!credentialTypeMatchesApplication(intent.keyType, kind, identityMode) {
+			return errAPIKeyAuthorizationChanged
+		}
+		if err != nil {
+			return fmt.Errorf("read workload application authorization: %w", err)
 		}
 	}
 	return nil
@@ -389,11 +407,13 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at,
 		        o.name as org_name, COALESCE(p.name, '') as project_name,
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'), COALESCE(u.username, ''),
-		        COALESCE(ak.policy_labels, ''), COALESCE(ak.purpose, '')
+		        COALESCE(ak.policy_labels, ''), COALESCE(ak.purpose, ''),
+		        COALESCE(ak.workload_application_id, 0), COALESCE(wa.application_ref, ''), COALESCE(wa.display_name, '')
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
 		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
 		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
+		 LEFT JOIN workload_applications wa ON wa.id = ak.workload_application_id AND wa.org_id = ak.org_id
 		 %s
 		 ORDER BY ak.id ASC LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1),
 		append(args, pageSize, offset)...,
@@ -406,12 +426,13 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 	keys := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var id, orgID, projectID, ownerUserID int64
+		var id, orgID, projectID, ownerUserID, workloadApplicationID int64
 		var name, keyPrefix, status, orgName, projectName, keyType, ownerUsername string
+		var workloadApplicationRef, workloadApplicationName string
 		var rpmLimit, qpsLimit, budgetLimit int
 		var allowedIPs, allowedModels, policyLabels, purpose string
 		var createdAt time.Time
-		if err := rows.Scan(&id, &orgID, &projectID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName, &projectName, &ownerUserID, &keyType, &ownerUsername, &policyLabels, &purpose); err != nil {
+		if err := rows.Scan(&id, &orgID, &projectID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName, &projectName, &ownerUserID, &keyType, &ownerUsername, &policyLabels, &purpose, &workloadApplicationID, &workloadApplicationRef, &workloadApplicationName); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -426,8 +447,11 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"policy_labels": splitPolicyLabelCSV(policyLabels),
 			"created_at":    createdAt, "org_name": orgName, "project_name": projectName,
 			"owner_user_id": owner, "owner_username": ownerUsername, "key_type": keyType,
-			"purpose": purpose,
-			"quota":   apiKeyQuotaPayload(rpmLimit, qpsLimit, budgetLimit),
+			"purpose":                   purpose,
+			"quota":                     apiKeyQuotaPayload(rpmLimit, qpsLimit, budgetLimit),
+			"workload_application_id":   nullableWorkloadApplicationID(workloadApplicationID),
+			"workload_application_ref":  workloadApplicationRef,
+			"workload_application_name": workloadApplicationName,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -440,18 +464,19 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		OrgID         int64    `json:"org_id"`
-		ProjectID     int64    `json:"project_id"`
-		OwnerUserID   *int64   `json:"owner_user_id"`
-		KeyType       string   `json:"key_type"`
-		Name          string   `json:"name"`
-		RPMLimit      int      `json:"rpm_limit"`
-		RPSLimit      *int     `json:"rps_limit"`
-		QPSLimit      int      `json:"qps_limit"`
-		AllowedIPs    string   `json:"allowed_ips"`
-		AllowedModels string   `json:"allowed_models"`
-		PolicyLabels  []string `json:"policy_labels"`
-		Purpose       string   `json:"purpose"`
+		OrgID          int64    `json:"org_id"`
+		ProjectID      int64    `json:"project_id"`
+		OwnerUserID    *int64   `json:"owner_user_id"`
+		KeyType        string   `json:"key_type"`
+		Name           string   `json:"name"`
+		RPMLimit       int      `json:"rpm_limit"`
+		RPSLimit       *int     `json:"rps_limit"`
+		QPSLimit       int      `json:"qps_limit"`
+		AllowedIPs     string   `json:"allowed_ips"`
+		AllowedModels  string   `json:"allowed_models"`
+		PolicyLabels   []string `json:"policy_labels"`
+		Purpose        string   `json:"purpose"`
+		ApplicationRef string   `json:"workload_application_ref"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -564,6 +589,13 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": validationErr})
 		return
 	}
+	workloadApplicationID, workloadApplicationRef, err := resolveWorkloadApplicationForCredential(
+		r.Context(), h.db, req.OrgID, projectID, req.ApplicationRef, keyType, purpose,
+	)
+	if err != nil {
+		writeWorkloadCredentialBindingError(w, err)
+		return
+	}
 	keyStatus := "active"
 	if purpose == middleware.APIKeyPurposeXInsightFeedRead {
 		// A purpose-active status is deliberately unknown to older binaries,
@@ -578,19 +610,21 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		"key_type":   keyType,
 		"name":       req.Name,
 		"after": map[string]interface{}{
-			"org_id":         req.OrgID,
-			"project_id":     projectID,
-			"owner_user_id":  nullableOwnerUserID(ownerUserID),
-			"key_type":       keyType,
-			"name":           req.Name,
-			"status":         keyStatus,
-			"rpm_limit":      req.RPMLimit,
-			"rps_limit":      req.QPSLimit,
-			"qps_limit":      req.QPSLimit,
-			"allowed_ips":    req.AllowedIPs,
-			"allowed_models": req.AllowedModels,
-			"policy_labels":  splitPolicyLabelCSV(policyLabels),
-			"purpose":        purpose,
+			"org_id":                   req.OrgID,
+			"project_id":               projectID,
+			"owner_user_id":            nullableOwnerUserID(ownerUserID),
+			"key_type":                 keyType,
+			"name":                     req.Name,
+			"status":                   keyStatus,
+			"rpm_limit":                req.RPMLimit,
+			"rps_limit":                req.QPSLimit,
+			"qps_limit":                req.QPSLimit,
+			"allowed_ips":              req.AllowedIPs,
+			"allowed_models":           req.AllowedModels,
+			"policy_labels":            splitPolicyLabelCSV(policyLabels),
+			"purpose":                  purpose,
+			"workload_application_id":  nullableWorkloadApplicationID(workloadApplicationID),
+			"workload_application_ref": workloadApplicationRef,
 		},
 	}
 
@@ -607,10 +641,10 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		keyHash := auth.HashAPIKey(rawKey, h.apiKeyHashSecret)
 		if !atomicAudit {
 			err = h.db.QueryRow(r.Context(),
-				`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, purpose, created_at, updated_at)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+				`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, purpose, workload_application_id, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
 				 RETURNING id`,
-				req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, keyStatus, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels, purpose,
+				req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, keyStatus, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels, purpose, nullableWorkloadApplicationID(workloadApplicationID),
 			).Scan(&id)
 			if err == nil || !isAPIKeyPrefixCollision(err) {
 				break
@@ -631,15 +665,16 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 			ownerUserID:             ownerUserID,
 			keyType:                 keyType,
 			validateOwnership:       true,
+			workloadApplicationID:   workloadApplicationID,
 		}); err != nil {
 			_ = tx.Rollback(r.Context())
 			break
 		}
 		err = tx.QueryRow(r.Context(),
-			`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, purpose, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+			`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, purpose, workload_application_id, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
 			 RETURNING id`,
-			req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, keyStatus, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels, purpose,
+			req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, keyStatus, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels, purpose, nullableWorkloadApplicationID(workloadApplicationID),
 		).Scan(&id)
 		if err != nil {
 			_ = tx.Rollback(r.Context())
@@ -676,18 +711,20 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"id":            id,
-		"key":           rawKey,
-		"key_prefix":    keyPrefix,
-		"project_id":    projectID,
-		"owner_user_id": nullableOwnerUserID(ownerUserID),
-		"key_type":      keyType,
-		"rpm_limit":     req.RPMLimit,
-		"rps_limit":     req.QPSLimit,
-		"qps_limit":     req.QPSLimit,
-		"policy_labels": splitPolicyLabelCSV(policyLabels),
-		"purpose":       purpose,
-		"quota":         apiKeyQuotaPayload(req.RPMLimit, req.QPSLimit, 0),
+		"id":                       id,
+		"key":                      rawKey,
+		"key_prefix":               keyPrefix,
+		"project_id":               projectID,
+		"owner_user_id":            nullableOwnerUserID(ownerUserID),
+		"key_type":                 keyType,
+		"rpm_limit":                req.RPMLimit,
+		"rps_limit":                req.QPSLimit,
+		"qps_limit":                req.QPSLimit,
+		"policy_labels":            splitPolicyLabelCSV(policyLabels),
+		"purpose":                  purpose,
+		"workload_application_id":  nullableWorkloadApplicationID(workloadApplicationID),
+		"workload_application_ref": workloadApplicationRef,
+		"quota":                    apiKeyQuotaPayload(req.RPMLimit, req.QPSLimit, 0),
 	}
 	if policyLabels != "" {
 		response["runtime_snapshot_applied"] = h.refreshLimitPolicySnapshot(r.Context())
@@ -1402,6 +1439,62 @@ func nullableOwnerUserID(ownerUserID int64) interface{} {
 		return ownerUserID
 	}
 	return nil
+}
+
+func nullableWorkloadApplicationID(applicationID int64) interface{} {
+	if applicationID > 0 {
+		return applicationID
+	}
+	return nil
+}
+
+func resolveWorkloadApplicationForCredential(
+	ctx context.Context,
+	rower interface {
+		QueryRow(context.Context, string, ...interface{}) pgx.Row
+	},
+	orgID, projectID int64,
+	applicationRef, keyType, purpose string,
+) (int64, string, error) {
+	applicationRef = strings.ToLower(strings.TrimSpace(applicationRef))
+	if applicationRef == "" {
+		return 0, "", nil
+	}
+	if purpose != "" {
+		return 0, "", fmt.Errorf("%w: purpose credentials cannot bind workload applications", workloadapp.ErrInvalid)
+	}
+	var applicationID int64
+	var kind, identityMode, status string
+	err := rower.QueryRow(ctx, `
+		SELECT id, kind, identity_mode, status
+		  FROM workload_applications
+		 WHERE org_id=$1 AND project_id=$2 AND application_ref=$3`,
+		orgID, projectID, applicationRef,
+	).Scan(&applicationID, &kind, &identityMode, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, "", errors.New("workload application is outside credential scope")
+	}
+	if err != nil {
+		return 0, "", fmt.Errorf("workload application store unavailable: %w", err)
+	}
+	if status != workloadapp.StatusActive {
+		return 0, "", fmt.Errorf("%w: workload application is not active", workloadapp.ErrInvalid)
+	}
+	if !credentialTypeMatchesApplication(keyType, kind, identityMode) {
+		return 0, "", fmt.Errorf("%w: credential identity type does not match application", workloadapp.ErrInvalid)
+	}
+	return applicationID, applicationRef, nil
+}
+
+func writeWorkloadCredentialBindingError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, workloadapp.ErrInvalid):
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid application credential binding", "message": err.Error()})
+	case strings.Contains(strings.ToLower(err.Error()), "outside"):
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Application credential scope forbidden"})
+	default:
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application store unavailable"})
+	}
 }
 
 func writeAPIKeyOwnershipError(w http.ResponseWriter, err error) {

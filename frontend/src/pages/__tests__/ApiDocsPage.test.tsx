@@ -4,10 +4,14 @@ import ApiDocsPage from '../ApiDocsPage';
 import { useAuthStore } from '../../store/auth';
 
 const mockGetErrorDocs = vi.fn();
+const mockGetWorkloadApplicationContract = vi.fn();
+const mockGetGatewayEndpoints = vi.fn();
 
 vi.mock('../../api/client', () => ({
   api: {
     getErrorDocs: (...args: any[]) => mockGetErrorDocs(...args),
+    getWorkloadApplicationContract: (...args: any[]) => mockGetWorkloadApplicationContract(...args),
+    getGatewayEndpoints: (...args: any[]) => mockGetGatewayEndpoints(...args),
   },
 }));
 
@@ -28,6 +32,12 @@ describe('ApiDocsPage', () => {
         resolution: 'Create a valid project API key.',
       }],
     });
+    mockGetWorkloadApplicationContract.mockResolvedValue({ client_profiles: [{
+      profile_id: 'client.openai-sdk.chat.v1', display_name: 'OpenAI SDK / Chat Completions',
+      supported_endpoints: ['/v1/chat/completions'], runtime_state: 'runtime_supported',
+      evidence_level: 'verified', recommended_for_poc: true, configuration_note: 'Use configured endpoint.',
+    }] });
+    mockGetGatewayEndpoints.mockResolvedValue({ data: [] });
   });
 
   it('renders the current API contract index and post-PRD1 routes', async () => {
@@ -37,8 +47,9 @@ describe('ApiDocsPage', () => {
       expect(mockGetErrorDocs).toHaveBeenCalled();
     });
 
-    expect(screen.getByText('开发者文档')).toBeTruthy();
-    expect(screen.getByText(/管理 API 按当前控制台角色过滤/)).toBeTruthy();
+    expect(screen.getByText('API 与兼容性')).toBeTruthy();
+    expect(screen.getByText(/协议兼容不等于已完成真实客户端认证/)).toBeTruthy();
+    expect(screen.getByText('OpenAI SDK / Chat Completions')).toBeTruthy();
     expect(screen.getByText(/Gateway 使用项目 API Key 或 Agent 能力令牌鉴权/)).toBeTruthy();
     expect(screen.queryByText(/PRD1 API index/)).toBeNull();
     expect(screen.queryByText(/PRD2 当前可用接口索引/)).toBeNull();
@@ -164,7 +175,7 @@ describe('ApiDocsPage', () => {
 
     render(<ApiDocsPage />);
 
-    expect(screen.getByText('开发者文档')).toBeTruthy();
+    expect(screen.getByText('API 与兼容性')).toBeTruthy();
     expect(screen.getByText('Dashboard 聚合数据')).toBeTruthy();
     expect(screen.queryByText('Error Docs')).toBeNull();
     expect(mockGetErrorDocs).not.toHaveBeenCalled();

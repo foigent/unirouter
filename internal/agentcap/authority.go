@@ -158,7 +158,10 @@ func queryAuthority(ctx context.Context, q db.DBQuerier, keyID int64) (authority
 		LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
 		LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
 		LEFT JOIN project_members pm ON pm.project_id = ak.project_id AND pm.user_id = ak.owner_user_id
-		WHERE ak.id = $1`, keyID).Scan(
+		LEFT JOIN workload_applications app
+		  ON app.id = ak.workload_application_id AND app.org_id = ak.org_id
+		WHERE ak.id = $1
+		  AND (ak.workload_application_id IS NULL OR app.status = 'active')`, keyID).Scan(
 		&snapshot.APIKey.ID,
 		&snapshot.APIKey.OrgID,
 		&projectID,

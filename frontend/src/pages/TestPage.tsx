@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Banner, Form, Button, Toast, Typography, Table, Modal } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
-import { LatencyText, PageHeader, StatusTag, Surface } from '../ui';
+import { LatencyText, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
 import {
   channelStatusLabel,
@@ -88,6 +88,12 @@ export default function TestPage() {
   const excludedBatchDescription = batchScope.excluded.length > 0
     ? batchScope.excluded.map(channel => `${channel.name}（通道${channelStatusLabel(channel.status)}）`).join('、')
     : '无';
+  const executableBatchCount = credentialsLoaded
+    ? batchScope.included.filter(channel => {
+        const model = firstChannelModel(channel);
+        return Boolean(model) && eligibleCredentialsForModel(channel, channelKeys, model).length > 0;
+      }).length
+    : 0;
 
   const runTest = async (channelId: number, channelName: string, model: string, prompt: string) => {
     try {
@@ -191,7 +197,7 @@ export default function TestPage() {
       return;
     }
     Modal.confirm({
-      title: `确认检测 ${activeCount} 个活跃通道`,
+      title: `确认检查 ${activeCount} 个生效通道`,
       content: (
         <div>
           <p>当前共 {channels.length} 个通道，本次只纳入 {activeCount} 个“生效”通道；排除 {batchScope.excluded.length} 个：{excludedBatchDescription}。</p>
@@ -257,7 +263,7 @@ export default function TestPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="模型接入"
-        title="连通性检测"
+        title="上游检测"
         description="向真实供应商发起非流式模型请求，验证凭证、模型和网络链路；检测可能产生供应商费用，并写入正常用量与计费记录。"
       />
 
@@ -270,6 +276,13 @@ export default function TestPage() {
       {credentialLoadError && (
         <Banner type="danger" description={`${credentialLoadError}；为避免选错凭证，真实检测操作已阻止。`} closeIcon={null} style={{ marginBottom: 16 }} />
       )}
+
+      <div className="ur-kpi-grid ur-workload-kpis">
+        <MetricTile label="全部通道" value={channels.length} tone="blue" />
+        <MetricTile label="生效通道" value={batchScope.included.length} tone="green" meta="由通道生命周期决定" />
+        <MetricTile label="可发起真实检测" value={credentialsLoaded ? executableBatchCount : '待凭证状态'} tone={credentialsLoaded && executableBatchCount === batchScope.included.length ? 'green' : 'amber'} meta="还需凭证、模型和冷却状态" />
+        <MetricTile label="待发布 / 禁用" value={batchScope.excluded.length} tone={batchScope.excluded.length ? 'amber' : 'slate'} meta="凭证启用不会改变此状态" />
+      </div>
 
       <Surface title="检测请求">
         <Form onSubmit={handleTest} getFormApi={(api) => { formApiRef.current = api; }}>

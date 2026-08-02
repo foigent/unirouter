@@ -56,6 +56,8 @@ func runCLIWithAdminPasswordInput(ctx context.Context, args []string, cfg *confi
 		return true, runAdminCLIWithPasswordInput(ctx, args[1:], cfg, input)
 	case "migrate":
 		return true, runMigrateCLI(ctx, args[1:], cfg)
+	case "reset":
+		return true, runResetCLI(ctx, args[1:], cfg)
 	case "upgrade":
 		return true, runUpgradeCLI(ctx, args[1:], cfg)
 	default:

@@ -13,6 +13,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const DeveloperConsolePage = lazy(() => import('./pages/DeveloperConsolePage'))
 const ChannelsPage = lazy(() => import('./pages/ChannelsPage'))
 const KeysPage = lazy(() => import('./pages/KeysPage'))
+const WorkloadApplicationsPage = lazy(() => import('./pages/WorkloadApplicationsPage'))
 const WalletPage = lazy(() => import('./pages/WalletPage'))
 const ChannelKeysPage = lazy(() => import('./pages/ChannelKeysPage'))
 const LogsPage = lazy(() => import('./pages/LogsPage'))
@@ -28,7 +29,8 @@ const InternalStatusPage = lazy(() => import('./pages/InternalStatusPage'))
 const TestPage = lazy(() => import('./pages/TestPage'))
 const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'))
 const AccessStatePage = lazy(() => import('./pages/AccessStatePage'))
-const DataExchangePage = lazy(() => import('./pages/DataExchangePage'))
+const DeploymentNetworkPage = lazy(() => import('./pages/DeploymentNetworkPage'))
+const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'))
 const LimitPoliciesPage = lazy(() => import('./pages/LimitPoliciesPage'))
 const GuardrailPoliciesPage = lazy(() => import('./pages/GuardrailPoliciesPage'))
 const GovernanceSimulationPage = lazy(() => import('./pages/GovernanceSimulationPage'))
@@ -115,6 +117,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="channels" element={<RoleRoute><ChannelsPage /></RoleRoute>} />
               <Route path="governance-simulation" element={<RoleRoute><GovernanceSimulationPage /></RoleRoute>} />
               <Route path="keys" element={<RoleRoute><KeysPage /></RoleRoute>} />
+              <Route path="applications" element={<RoleRoute><WorkloadApplicationsPage /></RoleRoute>} />
               <Route path="limit-policies" element={<RoleRoute><LimitPoliciesPage /></RoleRoute>} />
               <Route path="guardrail-policies" element={<RoleRoute><GuardrailPoliciesPage /></RoleRoute>} />
               <Route path="wallet" element={<RoleRoute><WalletPage /></RoleRoute>} />
@@ -134,7 +137,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="org-model-prices" element={<Navigate to="/model-prices?tab=org" replace />} />
               <Route path="grants" element={<Navigate to="/wallet?tab=grants" replace />} />
               <Route path="audit-logs" element={<RoleRoute><AuditLogsPage /></RoleRoute>} />
-              <Route path="data-exchange" element={<RoleRoute><DataExchangePage /></RoleRoute>} />
+              <Route path="data-exchange" element={<RoleRoute><Navigate to="/integrations?tab=xinsight" replace /></RoleRoute>} />
+              <Route path="deployment" element={<RoleRoute><DeploymentNetworkPage /></RoleRoute>} />
+              <Route path="integrations" element={<RoleRoute><IntegrationsPage /></RoleRoute>} />
               <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
               <Route path="usage-analytics" element={<RoleRoute><UsageAnalyticsPage /></RoleRoute>} />
               <Route path="notifications" element={<RoleRoute><NotificationCenterPage /></RoleRoute>} />

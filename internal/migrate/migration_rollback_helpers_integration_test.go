@@ -20,6 +20,8 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000055_prd8_deployment_profiles.down.sql",
+	"000054_prd8_workload_applications.down.sql",
 	"000053_prd8_model_call_authorization.down.sql",
 	"000052_prd8_runtime_change_control.down.sql",
 }

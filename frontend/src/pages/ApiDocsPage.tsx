@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Typography, Table, Tag } from '@douyinfe/semi-ui';
+import { Banner, Typography, Table, Tag } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
 import { PageHeader, Surface } from '../ui';
 import { isBillingRole, isOrgAdminRole, isOrgViewerRole, isPlatformAdminRole, isProjectAdminRole, isProjectConsoleRole, normalizeRole } from '../navigation';
@@ -181,6 +181,22 @@ const endpointGroups = [
       ['POST', '/api/v1/model-call-authorizations', '创建访问凭证、项目、人员或 Agent 维度的授权草稿'],
       ['POST', '/api/v1/model-call-authorizations/{ref}/activate', '按修订激活拒绝优先、允许范围求交集的策略'],
       ['POST', '/api/v1/model-call-authorizations/{ref}/revoke', '按修订撤销一条生效策略并原子记录审计'],
+      ['GET', '/api/v1/workload-applications/contract', '读取应用身份、客户端兼容等级和可用性轴合同；不授予 Tool/MCP 权限'],
+      ['GET', '/api/v1/workload-applications', '按组织/项目读取应用与 Agent 登记'],
+      ['POST', '/api/v1/workload-applications', '在同租户启用项目中登记企业应用、Agent、工作流或隔离 Adapter'],
+      ['GET', '/api/v1/workload-applications/{ref}', '读取应用身份、项目、Client Profile 和凭证汇总'],
+      ['PUT', '/api/v1/workload-applications/{ref}', '按修订更新非身份元数据和启停状态'],
+      ['POST', '/api/v1/workload-applications/{ref}/archive', '归档应用并停用绑定凭证，不删除历史执行证据'],
+      ['GET', '/api/v1/workload-applications/{ref}/credentials', '读取应用绑定凭证元数据，不返回完整密钥'],
+      ['POST', '/api/v1/workload-applications/{ref}/credentials/{key_id}/bind', '把同租户同项目的未绑定普通 Key 绑定到应用'],
+      ['GET', '/api/v1/workload-applications/{ref}/readiness', '统一解析客户端、端点、凭证、授权、限额、模型和上游路由阻塞原因'],
+      ['GET', '/api/v1/deployment/contract', '读取 Deployment/Endpoint Profile 合同；不保存 TLS 私钥、不修改运行时'],
+      ['GET', '/api/v1/deployment/profiles', '读取 ECS、本地 Compose 与 Kubernetes 部署期望状态（仅平台管理员）'],
+      ['POST', '/api/v1/deployment/profiles', '登记部署期望状态，不执行 Ingress 或运行时变更（仅平台管理员）'],
+      ['PUT', '/api/v1/deployment/profiles/{ref}', '按修订更新部署期望状态，不执行运行时变更（仅平台管理员）'],
+      ['GET', '/api/v1/deployment/endpoints', '读取非秘密 Gateway Endpoint 期望与观测状态'],
+      ['POST', '/api/v1/deployment/endpoints', '登记 Gateway Endpoint；公网必须 HTTPS，拒绝私钥内容（仅平台管理员）'],
+      ['PUT', '/api/v1/deployment/endpoints/{ref}', '更新 Endpoint 期望状态且保持观测状态不变（仅平台管理员）'],
       ['GET', '/api/v1/model-prices', '查看 CNY/百万 tokens 基础价格与供应商 Prompt Cache 倍率（平台、组织或账务管理员）'],
       ['POST', '/api/v1/model-prices', '创建或覆盖 CNY/百万 tokens 基础价格与 Prompt Cache 倍率（仅平台管理员）'],
       ['PUT', '/api/v1/model-prices/{id}', '更新 CNY/百万 tokens 基础价格与 Prompt Cache 倍率（仅平台管理员）'],
@@ -347,6 +363,8 @@ function endpointVisibleForRole(area: string, method: string, path: string, role
 export default function ApiDocsPage() {
   const role = useAuthStore((state) => state.user?.role);
   const [errorDocs, setErrorDocs] = useState<any[]>([]);
+  const [clientProfiles, setClientProfiles] = useState<any[]>([]);
+  const [gatewayEndpoints, setGatewayEndpoints] = useState<any[]>([]);
   const canLoadErrorDocs = isPlatformAdminRole(role) || isOrgAdminRole(role) || isBillingRole(role) || isProjectConsoleRole(role);
   const visibleEndpointGroups = endpointGroups
     .map(group => ({
@@ -365,21 +383,60 @@ export default function ApiDocsPage() {
       .catch(() => setErrorDocs([]));
   }, [canLoadErrorDocs]);
 
+  useEffect(() => {
+    if (!isOrgAdminRole(role)) {
+      setClientProfiles([]);
+      setGatewayEndpoints([]);
+      return;
+    }
+    Promise.all([
+      api.getWorkloadApplicationContract(),
+      api.getGatewayEndpoints().catch(() => ({ data: [] })),
+    ]).then(([contract, endpoints]) => {
+      setClientProfiles(contract?.client_profiles || []);
+      setGatewayEndpoints(endpoints?.data || []);
+    }).catch(() => {
+      setClientProfiles([]);
+      setGatewayEndpoints([]);
+    });
+  }, [role]);
+
   const errorColumns = [
     { title: 'Code', dataIndex: 'code', width: 250, render: (value: string) => <Text id={`error-${value}`} code>{value}</Text> },
     { title: 'HTTP', dataIndex: 'http_status', width: 90 },
     { title: '说明', dataIndex: 'summary' },
     { title: '处理建议', dataIndex: 'resolution' },
   ];
+  const compatibilityColumns = [
+    { title: '客户端', dataIndex: 'display_name', width: 260 },
+    { title: '协议路径', dataIndex: 'supported_endpoints', render: (value: string[]) => (value || []).map(path => <Tag key={path}>{path}</Tag>) },
+    { title: '运行时', dataIndex: 'runtime_state', width: 150, render: (value: string) => <Tag color={value === 'runtime_supported' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'orange'}>{value}</Tag> },
+    { title: '证据等级', dataIndex: 'evidence_level', width: 150, render: (value: string) => <Tag color={value === 'verified' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'red'}>{value}</Tag> },
+    { title: 'POC', dataIndex: 'recommended_for_poc', width: 80, render: (value: boolean) => value ? '推荐' : '不推荐' },
+    { title: '配置边界', dataIndex: 'configuration_note' },
+  ];
 
   return (
     <div className="ur-page">
       <PageHeader
         eyebrow="系统与集成"
-        title="开发者文档"
-        description="管理 API 按当前控制台角色过滤；Gateway 协议文档始终展示，调用时使用项目 API Key 或 Agent 能力令牌，而非控制台 JWT。"
+        title="API 与兼容性"
+        description="同时查看真实 Gateway API、Client Profile、证据等级与配置边界；协议兼容不等于已完成真实客户端认证。"
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {isOrgAdminRole(role) && <Surface title="Agent 客户端兼容矩阵" description="等级从代码合同返回；只有通过独立客户端或端到端证据的能力才标记 verified。">
+          <Banner
+            type={gatewayEndpoints.some(endpoint => endpoint.status === 'active' && endpoint.observed_status === 'ready') ? 'success' : 'warning'}
+            description={gatewayEndpoints.some(endpoint => endpoint.status === 'active' && endpoint.observed_status === 'ready')
+              ? '存在已启用且独立验证通过的 Gateway Endpoint。'
+              : '当前没有“已启用且独立验证通过”的 Gateway Endpoint；配置可以生成，但不能宣称现场可用。'}
+            style={{ marginBottom: 12 }}
+          />
+          <div className="ur-table-shell">
+            <Table columns={compatibilityColumns} dataSource={clientProfiles} rowKey="profile_id" pagination={false} scroll={{ x: 1100 }} />
+          </div>
+          <Text type="tertiary">OpenAI Agents SDK 的默认 Responses 路径仍为 contract_only / unsupported；第二次联调必须显式使用 Chat Completions 适配路径。</Text>
+        </Surface>}
         <Surface title="请求身份与幂等" description="这些字段用途不同，不能互相替代。">
           <div style={{ display: 'grid', gap: 8 }}>
             <Text><Text code>X-Request-ID</Text>：UniRouter 每次请求强制生成的操作 ID，用于串联网关、计费、审计和故障切换。</Text>

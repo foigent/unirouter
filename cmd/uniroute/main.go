@@ -906,6 +906,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	registerGovernanceSimulationRoutes(mux, adminHandler, platformRoute)
 	registerRuntimeChangeRoutes(mux, adminHandler, platformRoute)
 	registerModelAuthorizationRoutes(mux, adminHandler, orgAdminRoute)
+	registerWorkloadApplicationRoutes(mux, adminHandler, orgAdminRoute)
+	registerDeploymentNetworkRoutes(mux, adminHandler, deploymentNetworkRouteGuards{read: orgAdminRoute, write: platformRoute})
 	registerMemberLifecycleRoutes(mux, adminHandler, orgAdminRoute)
 	registerEnterpriseDirectoryRoutes(mux, adminHandler, orgAdminRoute)
 	registerEnterpriseFinanceRoutes(mux, adminHandler, enterpriseFinanceRouteGuards{
