@@ -43,7 +43,7 @@ interface ModelAuthorization {
 
 const subjectLabels: Record<string, string> = { api_key: '访问凭证', project: '项目', user: '人员', agent: 'Agent' };
 const endpointLabels: Record<string, string> = {
-  '/v1/chat/completions': 'Chat', '/v1/embeddings': 'Embeddings', '/v1/models': '模型目录', '/v1/media/jobs': '模型任务',
+  '/v1/chat/completions': 'Chat', '/v1/embeddings': 'Embeddings', '/v1/models': '模型目录', '/v1/media/jobs': '异步模型任务',
 };
 
 function splitSet(value: unknown) {

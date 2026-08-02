@@ -52,7 +52,7 @@ Every batch must preserve:
 |---|---|---|
 | UI-1 | one permanently expanded sidebar; duplicate dashboard launcher removed | navigation/App tests |
 | UI-2 | Users, Projects and lifecycle evidence composed under Organization & Members; legacy routes redirect | route/RBAC/component tests |
-| UI-3 | Runtime-backed Model Call Authorization is the primary workspace; historical Agent Trust evidence remains a distinct offline tab | copy/route/component tests |
+| UI-3 | Runtime-backed Model Call Authorization is the primary workspace; historical Agent Trust fixtures move to the auxiliary `/agent-trust-evidence` validation route | copy/route/RBAC/component tests |
 | UI-4 | enterprise finance labels and truthful current-capability notices | finance page tests |
 | UI-5 | lightweight sticky toolbar and bounded persistent Inspector layout | shell test and rendered smoke |
 | UI-PERF-1 | route and nested-workspace lazy loading; no forced monolithic vendor chunk | current full regression 347/347 frontend tests, type-check and production build |

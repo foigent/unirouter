@@ -128,7 +128,7 @@ const taskNavItems: NavItem[] = [
     icon: <IconMonitorStroked />,
     items: [
       { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
-      { itemKey: '/media-jobs', text: '模型任务', icon: <IconFile />, licenseFeature: 'gateway' },
+      { itemKey: '/media-jobs', text: '异步模型任务', icon: <IconFile />, licenseFeature: 'gateway' },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell />, licenseFeature: 'notifications' },
       { itemKey: '/status', text: '运行状态', icon: <IconPulse /> },
@@ -162,10 +162,10 @@ const accessStateItem: NavItem = { itemKey: '/access', text: '访问状态', ico
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
 const compatibilityRoutes = new Set([
   '/governance-simulation', '/risk-control', '/member-lifecycle', '/users', '/project-management',
-  '/provenance-passport', '/org-model-prices', '/grants',
+  '/provenance-passport', '/org-model-prices', '/grants', '/agent-trust-evidence',
 ]);
 const orgAdminRoutes = new Set([
-  '/', '/model-governance', '/risk-control', '/keys', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/limit-policies', '/guardrail-policies', '/users',
+  '/', '/model-governance', '/risk-control', '/keys', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
   '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
   '/media-jobs',
   '/model-prices', '/docs',
@@ -334,6 +334,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
       '/project-management',
       '/member-lifecycle',
       '/agent-trust',
+      '/agent-trust-evidence',
       '/risk-control',
       '/limit-policies',
       '/guardrail-policies',

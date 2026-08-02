@@ -1,8 +1,14 @@
-import { useState, useEffect, useRef } from 'react';
-import { Form, Button, Toast, Typography, Table, Modal } from '@douyinfe/semi-ui';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Banner, Form, Button, Toast, Typography, Table, Modal } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
 import { LatencyText, PageHeader, StatusTag, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
+import {
+  channelStatusLabel,
+  eligibleCredentialsForModel,
+  parseChannelModels,
+  type ChannelReadinessCredential,
+} from '../utils/channelReadiness';
 
 const { Text } = Typography;
 
@@ -26,12 +32,7 @@ interface TestResult {
   tokens_used?: number;
 }
 
-export function parseChannelModels(models?: string) {
-  return String(models || '')
-    .split(',')
-    .map(model => model.trim())
-    .filter(Boolean);
-}
+export { parseChannelModels } from '../utils/channelReadiness';
 
 export function firstChannelModel(channel?: Pick<Channel, 'models'>) {
   return parseChannelModels(channel?.models)[0] || '';
@@ -41,18 +42,39 @@ export function resolveChannelTestModel(channel?: Pick<Channel, 'models'>, selec
   return String(selectedModel || '').trim() || firstChannelModel(channel);
 }
 
+export function summarizeBatchChannels(channels: Channel[]) {
+  return {
+    included: channels.filter(channel => channel.status === 'active'),
+    excluded: channels.filter(channel => channel.status !== 'active'),
+  };
+}
+
 export default function TestPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [testing, setTesting] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
   const [selectedModel, setSelectedModel] = useState('');
+  const [channelKeys, setChannelKeys] = useState<ChannelReadinessCredential[]>([]);
+  const [credentialsLoaded, setCredentialsLoaded] = useState(false);
+  const [credentialLoadError, setCredentialLoadError] = useState('');
   const formApiRef = useRef<any>(null);
 
   useEffect(() => {
     loadAllPages<Channel>((page, size) => api.getChannels(page, size))
       .then(setChannels)
       .catch((error: any) => Toast.error({ content: `通道列表加载失败${error?.message ? `：${error.message}` : ''}` }));
+    loadAllPages<ChannelReadinessCredential>((page, size) => api.getChannelKeys(page, size))
+      .then((items) => {
+        setChannelKeys(items);
+        setCredentialsLoaded(true);
+        setCredentialLoadError('');
+      })
+      .catch((error: any) => {
+        setChannelKeys([]);
+        setCredentialsLoaded(false);
+        setCredentialLoadError(`供应商凭证状态加载失败${error?.message ? `：${error.message}` : ''}`);
+      });
   }, []);
 
   const withResultKey = (result: Omit<TestResult, 'result_key'>): TestResult => ({
@@ -62,6 +84,10 @@ export default function TestPage() {
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId);
   const modelOptions = parseChannelModels(selectedChannel?.models).map(m => ({ label: m, value: m }));
+  const batchScope = useMemo(() => summarizeBatchChannels(channels), [channels]);
+  const excludedBatchDescription = batchScope.excluded.length > 0
+    ? batchScope.excluded.map(channel => `${channel.name}（通道${channelStatusLabel(channel.status)}）`).join('、')
+    : '无';
 
   const runTest = async (channelId: number, channelName: string, model: string, prompt: string) => {
     try {
@@ -88,6 +114,14 @@ export default function TestPage() {
     const model = resolveChannelTestModel(channel, values.model || selectedModel);
     if (!channel || !model) {
       Toast.error({ content: '请选择已配置模型的上游通道' });
+      return;
+    }
+    if (!credentialsLoaded) {
+      Toast.error({ content: credentialLoadError || '供应商凭证状态尚未加载，已阻止真实检测请求' });
+      return;
+    }
+    if (eligibleCredentialsForModel(channel, channelKeys, model).length === 0) {
+      Toast.error({ content: '该通道没有已启用、未冷却且允许所选模型的供应商凭证，未发起真实请求' });
       return;
     }
     setTesting(true);
@@ -124,6 +158,18 @@ export default function TestPage() {
         }));
         continue;
       }
+      if (eligibleCredentialsForModel(channel, channelKeys, model).length === 0) {
+        batchResults.push(withResultKey({
+          success: false,
+          channel_id: channel.id,
+          channel_name: channel.name,
+          latency_ms: 0,
+          status_code: 0,
+          model,
+          error: '没有已启用、未冷却且允许检测模型的供应商凭证；未发起真实请求',
+        }));
+        continue;
+      }
       const result = await runTest(channel.id, channel.name, model, 'Hello, this is a test message.');
       batchResults.push(result);
     }
@@ -135,14 +181,23 @@ export default function TestPage() {
   };
 
   const handleBatchTest = () => {
-    const activeCount = channels.filter((channel) => channel.status === 'active').length;
+    const activeCount = batchScope.included.length;
     if (activeCount === 0) {
       Toast.warning({ content: '当前没有可检测的活跃通道' });
       return;
     }
+    if (!credentialsLoaded) {
+      Toast.error({ content: credentialLoadError || '供应商凭证状态尚未加载，已阻止真实检测请求' });
+      return;
+    }
     Modal.confirm({
       title: `确认检测 ${activeCount} 个活跃通道`,
-      content: '每个通道都会向真实供应商发起一次非流式模型请求，可能产生供应商费用和 UniRouter 计费记录。确定继续吗？',
+      content: (
+        <div>
+          <p>当前共 {channels.length} 个通道，本次只纳入 {activeCount} 个“生效”通道；排除 {batchScope.excluded.length} 个：{excludedBatchDescription}。</p>
+          <p>每个具备匹配凭证的通道都会向真实供应商发起一次非流式模型请求，可能产生供应商费用和 UniRouter 计费记录。</p>
+        </div>
+      ),
       okText: '确认并发起真实请求',
       onOk: executeBatchTest,
     });
@@ -206,6 +261,16 @@ export default function TestPage() {
         description="向真实供应商发起非流式模型请求，验证凭证、模型和网络链路；检测可能产生供应商费用，并写入正常用量与计费记录。"
       />
 
+      <Banner
+        type={batchScope.excluded.length > 0 ? 'warning' : 'info'}
+        description={`批量检测口径：共 ${channels.length} 个通道，只检测 ${batchScope.included.length} 个状态为“生效”的通道；排除 ${batchScope.excluded.length} 个（${excludedBatchDescription}）。手动检测可用于待发布/禁用通道的上线前验证，但不会改变通道状态。`}
+        closeIcon={null}
+        style={{ marginBottom: 16 }}
+      />
+      {credentialLoadError && (
+        <Banner type="danger" description={`${credentialLoadError}；为避免选错凭证，真实检测操作已阻止。`} closeIcon={null} style={{ marginBottom: 16 }} />
+      )}
+
       <Surface title="检测请求">
         <Form onSubmit={handleTest} getFormApi={(api) => { formApiRef.current = api; }}>
           <Form.Select
@@ -214,7 +279,7 @@ export default function TestPage() {
             rules={[{ required: true, message: '请选择通道' }]}
             placeholder="选择要检测的上游通道"
             optionList={channels.map(c => ({
-              label: `${c.name} (${c.provider})`,
+              label: `${c.name} (${c.provider}) · 通道${channelStatusLabel(c.status)}`,
               value: c.id,
             }))}
             style={{ width: 300 }}
@@ -226,6 +291,14 @@ export default function TestPage() {
               formApiRef.current?.setValue('model', (nextModel || undefined) as any);
             }}
           />
+          {selectedChannel && selectedChannel.status !== 'active' && (
+            <Banner
+              type="warning"
+              description={`当前选择的是“通道${channelStatusLabel(selectedChannel.status)}”配置。手动检测只验证凭证、模型和网络，不会使该通道进入运行时路由。`}
+              closeIcon={null}
+              style={{ marginBottom: 12 }}
+            />
+          )}
           <Form.Select
             field="model"
             label="检测模型"
@@ -246,7 +319,7 @@ export default function TestPage() {
               检测选中通道
             </Button>
             <Button onClick={handleBatchTest} loading={testing}>
-              批量检测活跃通道
+              批量检测 {batchScope.included.length} 个生效通道
             </Button>
           </div>
         </Form>

@@ -24,6 +24,7 @@ describe('ChannelKeysPage', () => {
         id: 7,
         channel_id: 3,
         channel_name: 'mimo',
+        channel_status: 'staged',
         key_prefix: '****c20c',
         allowed_models: 'mimo-v2.5-pro，mimo-v2.5',
         status: 'active',
@@ -31,7 +32,7 @@ describe('ChannelKeysPage', () => {
       }],
       total: 1,
     });
-    mockGetChannels.mockResolvedValue({ data: [{ id: 3, name: 'mimo' }] });
+    mockGetChannels.mockResolvedValue({ data: [{ id: 3, name: 'mimo', status: 'staged', models: 'mimo-v2.5-pro,mimo-v2.5' }] });
     mockUpdateChannelKey.mockResolvedValue({ success: true });
   });
 
@@ -60,5 +61,40 @@ describe('ChannelKeysPage', () => {
 
     expect(await screen.findByRole('heading', { name: '供应商凭证加载失败' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新加载供应商凭证' })).toBeTruthy();
+  });
+
+  it('explains an enabled credential on a disabled channel with no model overlap', async () => {
+    mockGetChannelKeys.mockResolvedValueOnce({
+      data: [{
+        id: 6,
+        channel_id: 6,
+        channel_name: 'kimi',
+        channel_status: 'disabled',
+        key_prefix: '****89ec',
+        allowed_models: 'Kimi K2.7 Code,kimi-k2.6',
+        status: 'active',
+        fail_count: 0,
+        cooldown_until: '2026-07-01T00:52:45Z',
+        created_at: '2026-06-27T05:05:15Z',
+      }],
+      total: 1,
+    });
+    mockGetChannels.mockResolvedValueOnce({
+      data: [{
+        id: 6,
+        name: 'kimi',
+        status: 'disabled',
+        models: 'moonshot-v1-8k,moonshot-v1-32k,moonshot-v1-128k',
+      }],
+    });
+
+    render(<ChannelKeysPage />);
+
+    expect(await screen.findByText('凭证启用')).toBeTruthy();
+    expect(screen.getByText('通道禁用')).toBeTruthy();
+    expect(screen.getByText('模型范围无交集')).toBeTruthy();
+    expect(screen.getByText('阻断：模型无交集')).toBeTruthy();
+    expect(screen.getByText(/1 条启用凭证绑定待发布\/禁用通道，1 条凭证与通道模型范围无交集/)).toBeTruthy();
+    expect(screen.queryByText(/冷却至/)).toBeNull();
   });
 });

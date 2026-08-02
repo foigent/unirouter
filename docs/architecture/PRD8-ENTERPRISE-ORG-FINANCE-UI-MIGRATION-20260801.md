@@ -18,8 +18,9 @@ exact target and authority boundary.
 The product owner accepted the following forward design:
 
 1. Rename `Model Execution Authority` to **Model Call Authorization**. The
-   navigation entry remains visible with an explicit `Planned` status until a
-   runtime-backed authorization workflow exists.
+   runtime-backed policy lifecycle and request PEP are implemented through
+   migration `000053`; historical Agent Trust fixtures remain an auxiliary
+   offline validation route and are not presented as runtime authority.
 2. Enterprise HCM/directory systems own official people and organization
    structure. UniRouter stores a versioned local projection and continues to
    own project membership, product roles, model access, limits, and request
@@ -40,7 +41,7 @@ The product owner accepted the following forward design:
 | UI surface | Product/domain owner | Backing model | Current implementation state |
 |---|---|---|---|
 | Organization & Members | UniRouter local IAM; external directory owns official hierarchy | effective-dated directory projection, user/account binding, project membership | local users/projects plus source-neutral organization, people/account projections and fail-closed IAM convergence are Local verified; real Connector deferred |
-| Model Call Authorization | UniRouter model PEP | subject-to-model grant plus effective ceilings and revocation | offline contract evidence only; runtime management is planned |
+| Model Call Authorization | UniRouter model PEP | subject-to-model grant, environment/model/Endpoint intersection, deny precedence, activation and revocation | runtime policy management and request PEP are Local/Target verified; historical Agent Trust fixtures are isolated at `/agent-trust-evidence` |
 | Shared Limits | UniRouter model PEP | organization/project/subject RPM, TPM, concurrency, and spend policies | runtime-backed for existing supported scopes |
 | Budgets & Cost Centers | Finance owns planning dimensions; UniRouter owns execution spend controls | cost centers, fiscal periods, budgets, forecasts, enforcement binding | fiscal periods, cost centers, report-only budgets and exact allocated actuals are Local verified; committed/forecast remain explicitly not modeled |
 | Rates & Rating | UniRouter pricing authority | versioned provider, contracted, and internal rate cards | base prices/multipliers remain the request path; five-layer enterprise Rate Cards and immutable snapshot reads are Local verified but not activated for settlement |
@@ -193,7 +194,7 @@ runtime-backed.
 |---|---|---|---|
 | UI-1 | all secondary menus permanently expanded; remove duplicate dashboard task launcher | controlled navigation state only | frontend navigation and App-shell tests |
 | UI-2 | consolidate Users, Projects, and lifecycle evidence under Organization & Members | composed product-local workspace; legacy URLs redirect to exact tabs | route/RBAC and component tests |
-| UI-3 | Model Call Authorization marked Planned | rename and boundary copy only; no new runtime authority | offline-contract tests and no-mutation statement |
+| UI-3 | Model Call Authorization is the primary runtime workspace; offline Agent fixture validation is an auxiliary route, not a peer tab | product-local policy lifecycle and request PEP from migration `000053`; Tool/MCP authority remains excluded | handler, PEP, route/RBAC and component tests |
 | UI-4 | enterprise finance labels and current-capability notices | retain wallet/model-price/reconciliation APIs unchanged | existing finance tests plus copy assertions |
 | UI-5 | lightweight sticky global utility bar and consistent desktop Inspector sizing | global search/environment/notification/account only; no duplicate navigation or business actions | App-shell structure test, responsive CSS review and rendered-page acceptance |
 | UI-PERF-1 | reduce initial UI payload after visual/interaction acceptance | route-level lazy loading first; measured vendor chunking second; loading/error boundaries remain explicit | compare against 2,235.70 kB minified / 625.78 kB gzip baseline, full frontend tests, build and authenticated route smoke |
