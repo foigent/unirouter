@@ -181,3 +181,151 @@ plugin runtime was introduced.
 - This is development/test Target evidence, not Production, real enterprise
   directory/ERP integration, paid Provider traffic, load, HA/DR or failover
   evidence.
+
+## 2026-08-03 Agent And On-Prem POC Readiness Addendum
+
+This addendum records the final development/test Target after the second
+integration preparation work. It supersedes the earlier live release identity,
+runtime measurements and remaining implementation gates in this document; the
+earlier sections remain immutable historical evidence for PR #247.
+
+### Repository And CI Chain
+
+| Change | CI-passed head / tree | Required evidence | Squash merge / tree |
+|---|---|---|---|
+| [#250](https://github.com/foigent/unirouter/pull/250) Agent and on-prem POC readiness | `9144620ae350997d1ce3752716e9c2d7c472add3` / `3cebacc40fa607776a3cb227e66de896b3808417` | CI run `30758756376`: routing, backend, frontend and Docker passed; Protocol run `30758756367` passed | `7b8d6015c8a40499e333d2021d70c155dc49bf27` / same tree |
+| [#251](https://github.com/foigent/unirouter/pull/251) overview attention closeout | `05799cc5a5276f2f7fd21a5068537d7e188a6c27` / `a4fc5651c35df273705a7205d63088eea1553325` | CI run `30761155534`: routing, frontend and Docker passed; backend correctly skipped for the frontend-only diff | `aac30fe1d2509c2e1fa624c5f836b94871b349b9` / same tree |
+| [#252](https://github.com/foigent/unirouter/pull/252) channel-list fail-closed UI | `f1fd1482d163a0bb04a988efed79fbddf967537a` / `29ef34eb96557f3c0f2c16fc59f13fe57ab3fed9` | CI run `30762581400`: routing 9 s, frontend 8 m 08 s and Docker 1 m 39 s passed; backend correctly skipped for the frontend-only diff | `f81d8431aed9fea1f1ff63467f2c4df6cecfd2f5` / same tree |
+
+The final code-bearing release commit is therefore `f81d8431...`; each squash
+merge tree is byte-identical to its CI-passed head tree. The repository has no
+automatic post-merge application CI, so this evidence does not invent one.
+Local verification immediately before #252 included 54/54 frontend test files,
+362/362 tests, TypeScript, the production build, `git diff --check`, and the
+bundle budget. The largest JavaScript asset was 379,777 bytes against a
+460,800-byte limit. PR #250's package-serialized Go, focused race, frontend,
+compatibility-artifact and bundle checks remain recorded in
+`PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md`.
+
+### Product Scope Delivered
+
+- `WorkloadApplication` is the long-lived enterprise application/Agent
+  identity. Credentials bind to it without conflating person, account,
+  project, application and API key. Effective readiness is the intersection of
+  application, endpoint, credential, model authorization, limit, governance
+  and eligible Provider route facts.
+- Deployment Profiles and Gateway Endpoints persist versioned desired state.
+  They do not store TLS private keys, apply host networking, or infer observed
+  readiness. Public endpoints require HTTPS and were intentionally not created
+  for the current HTTP-only ECS.
+- Integration Management keeps the X-Insight completed-execution Feed as the
+  Reference Connector and presents Feishu/Aily and future enterprise adapters
+  without granting Tool Gateway, MCP Gateway or X-Insight authority.
+- Zero-network compatibility artifacts cover the OpenAI SDK, OpenAI Agents SDK
+  Chat path, LangChain, AutoGen, OpenClaw and Tencent WorkBuddy. They do not
+  claim `/v1/responses` runtime support that UniRouter has not implemented.
+- The reset CLI remains preview-only and fail-closed. It cannot delete data,
+  overwrite an existing plan or reuse the current Source Instance. No reset was
+  executed in this release.
+- Platform Overview now provides compact, verifiable risk and pending-action
+  summaries without duplicating the left navigation taxonomy. Runtime Status
+  renders the exact version and commit.
+- Upstream Test distinguishes channel-list loading, failure and ready states.
+  A list failure reports unknown counts, offers retry and blocks every real
+  Provider test; it can no longer present failure as zero channels.
+
+### Final Target Backup And Release Identity
+
+- Final pre-switch PostgreSQL custom-format backup:
+  `/opt/unirouter/backups/pre-f81d8431-20260802T192126Z.dump`.
+- Mode / size / SHA-256: `0600` / 571,421 bytes /
+  `292cd7cd83fb752bb736b6c4cd02eea6578a0b39d9cee3a73311514afb38cc40`.
+  `pg_restore -l` passed.
+- Commit-addressed release directory:
+  `/opt/unirouter/releases/f81d8431aed9fea1f1ff63467f2c4df6cecfd2f5`.
+- Incremental `aac30fe1...` to `f81d8431...` Git bundle SHA-256:
+  `71022eb59f468abeaa01ff90fd91c76485e7571a421c1c81a1b62041377af4a9`.
+  Local and Target bundle verification passed; checkout commit/tree and a clean
+  tracked state were read back before build.
+- Final frontend image:
+  `sha256:45a53f4061ded313331555f26696e468c2b7ab2ee4d930c2c3894f66e257c378`.
+- Final stable backend image:
+  `sha256:effbbe22d08beee93a5a0060f90b907edf4ecd9171a3fa5b47061b75ba862c94`.
+- Final canary backend image:
+  `sha256:9db4818ec4e5efeb88d0a2d7be7f4facc989b6b891177586487d164f75745bbf`.
+- Explicit `aac30fe1` rollback tags retain frontend
+  `sha256:f649d6a868474ce7da7e80fa80dd8ce12417f76c83d95459c67032368b7d0abf`,
+  stable
+  `sha256:ed9e5d930783317762249d88f49fc084f6320c098cbedcb17993ee3897213ff8`
+  and canary
+  `sha256:f10e0eeab472e8b32d4f9afc3b90eb76bfc5ef7ed78869da5d571434f140b249`
+  image identities.
+- Build and rollout used the existing Compose project `unirouter`. Canary,
+  stable, frontend and Nginx were recreated separately with `--no-deps` and
+  `--no-build`; PostgreSQL, Redis, Prometheus and Grafana were not restarted.
+- Stable and canary were healthy with restart count zero. Nginx configuration
+  validation passed. Local and public `/health/ready` returned
+  `{"status":"ok","db":"ok","redis":"ok"}`.
+- Runtime Status reported `1.1.2-prd8-poc · f81d8431aed9`, environment
+  `development`, role `stable`, and available PostgreSQL, Redis, Prometheus and
+  Grafana.
+
+### Zero-Drift Data Readback
+
+The same read-only queries were run immediately before and after the final
+switch. Every result was byte-for-byte equal:
+
+| Fact | Before | After |
+|---|---:|---:|
+| Migration rows / maximum | `54 / 000055_prd8_deployment_profiles` | same |
+| Organizations / users / projects | `1 / 20 / 1` | same |
+| API keys / channels | `56 / 3` | same |
+| Channel lifecycle | `active=2 / disabled=1` | same |
+| Call logs / transactions | `60 / 286` | same |
+| Feed items / max sequence / retained floor sum / acknowledged sum | `8 / 12 / 4 / 12` | same |
+| Workload applications / deployment profiles / Gateway Endpoints | `0 / 0 / 0` | same |
+| Freeze terminal rows | `cancelled=9 / settled=51` | same |
+| Provider attempts | `rejected=6 / settled=13` | same |
+| Pending runtime terminal hooks / internal Outbox rows | `0 / 0` | same |
+
+No application, deployment profile, endpoint, credential, call, transaction,
+Feed event, Cursor/Checkpoint, or synthetic POC record was created. Migrations
+`000054` and `000055` were already applied by the prior #250 release; #251 and
+#252 added no migration.
+
+### Final Authenticated UI Verification
+
+The existing authenticated browser session was reused. No password, token or
+secret was read, and no real Provider test control was activated.
+
+- `/test` rendered three channels, two `active` channels, one explicit
+  `kimi（通道禁用）` exclusion and two executable routes. The result table
+  remained empty. This confirms that an enabled Kimi credential does not
+  override a disabled channel. The transient-failure branch was validated by
+  an isolated regression test rather than deliberately breaking the Target
+  API.
+- `/status` rendered the exact final runtime identity and healthy dependencies.
+- At 1,024- and 767-CSS-pixel widths, document `scrollWidth` equaled
+  `clientWidth`; no horizontal overflow was present.
+- Captured browser console logs were empty. The browser was left on `/test` at
+  its default viewport for Product Owner inspection.
+
+### Final Boundaries And Risks
+
+- The visible Target is `http://8.130.18.85/`. Public HTTPS remains unavailable:
+  Nginx is HTTP-only and the cloud 443 ingress/certificate decision is outside
+  this release. A public Gateway Endpoint must remain unverified until TLS,
+  ingress and second-device evidence exist.
+- Root filesystem use after retaining exact release and rollback images was
+  85%, with 6.0 GB available. No image prune or destructive cleanup ran.
+- The existing Compose top-level `version` warning remains. Dependency builds
+  also retain the previously observed two moderate and one high npm advisory;
+  no unreviewed `npm audit fix` changed the CI-tested lockfile.
+- ORG-3 still requires a real customer HCM/IdP/directory; FIN-4 still requires
+  a named ERP/GL and finance mapping. Neither was simulated.
+- This remains development/test Target evidence, not Production, customer
+  directory/ERP, paid Provider traffic, load, HA/DR, failover or second-device
+  POC evidence.
+- A later documentation-only evidence commit is not part of the deployed
+  `f81d8431...` code-bearing release and must not be reported as a runtime
+  commit.
