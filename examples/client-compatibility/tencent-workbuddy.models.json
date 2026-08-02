@@ -1,0 +1,15 @@
+{
+  "models": [
+    {
+      "id": "<UNIROUTER_MODEL>",
+      "name": "<UNIROUTER_MODEL>",
+      "vendor": "UniRouter",
+      "apiKey": "<UNIROUTER_API_KEY>",
+      "url": "https://<configured-gateway-host>/v1/chat/completions",
+      "supportsToolCall": true,
+      "supportsImages": false,
+      "supportsReasoning": false
+    }
+  ],
+  "availableModels": ["<UNIROUTER_MODEL>"]
+}

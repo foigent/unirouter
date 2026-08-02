@@ -35,6 +35,14 @@ func TestPRD8RuntimeControlMigrationsAndRollbackGuards(t *testing.T) {
 	require.Equal(t, 7, constraints)
 	require.Equal(t, 2, ledger)
 
+	// This test exercises the 000052/000053 rollback guards directly. Newer,
+	// empty PRD8 migrations must be reversed first so their ordering guard does
+	// not mask the evidence-specific assertions below.
+	rollbackEmptyMigrations(t, pool, []string{
+		"000055_prd8_deployment_profiles.down.sql",
+		"000054_prd8_workload_applications.down.sql",
+	})
+
 	var orgID, userID int64
 	require.NoError(t, pool.QueryRow(ctx, `
 		INSERT INTO orgs (name,status,org_type)

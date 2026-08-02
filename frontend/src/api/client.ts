@@ -156,6 +156,49 @@ export const api = {
   disableKey: (id: number) =>
     request(`/keys/${id}/disable`, { method: 'POST' }),
 
+  // Product-local workload/application identity. This surface composes model
+  // execution authority only; it never grants Tool or MCP capabilities.
+  getWorkloadApplicationContract: () => request('/workload-applications/contract'),
+  getWorkloadApplications: (filters?: { org_id?: number; project_id?: number; status?: string }) =>
+    request(appendParams('/workload-applications', {
+      org_id: filters?.org_id,
+      project_id: filters?.project_id,
+      status: filters?.status,
+    })),
+  getWorkloadApplication: (applicationRef: string, orgId?: number) =>
+    request(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}`, { org_id: orgId })),
+  createWorkloadApplication: (data: any) =>
+    request('/workload-applications', { method: 'POST', body: JSON.stringify(data) }),
+  updateWorkloadApplication: (applicationRef: string, data: any) =>
+    request(`/workload-applications/${encodeURIComponent(applicationRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  archiveWorkloadApplication: (applicationRef: string, data: { org_id?: number; expected_revision: number }) =>
+    request(`/workload-applications/${encodeURIComponent(applicationRef)}/archive`, { method: 'POST', body: JSON.stringify(data) }),
+  getWorkloadApplicationCredentials: (applicationRef: string, orgId?: number) =>
+    request(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}/credentials`, { org_id: orgId })),
+  bindWorkloadApplicationCredential: (applicationRef: string, keyId: number, data: { org_id?: number; expected_revision: number }) =>
+    request(`/workload-applications/${encodeURIComponent(applicationRef)}/credentials/${keyId}/bind`, { method: 'POST', body: JSON.stringify(data) }),
+  getWorkloadApplicationReadiness: (applicationRef: string, filters?: { org_id?: number; model?: string; endpoint?: string }) =>
+    request(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}/readiness`, {
+      org_id: filters?.org_id,
+      model: filters?.model,
+      endpoint: filters?.endpoint,
+    })),
+
+  // Desired deployment/network state. The API stores no TLS private keys and
+  // does not apply or restart runtime infrastructure.
+  getDeploymentNetworkContract: () => request('/deployment/contract'),
+  getDeploymentProfiles: () => request('/deployment/profiles'),
+  createDeploymentProfile: (data: any) =>
+    request('/deployment/profiles', { method: 'POST', body: JSON.stringify(data) }),
+  updateDeploymentProfile: (profileRef: string, data: any) =>
+    request(`/deployment/profiles/${encodeURIComponent(profileRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  getGatewayEndpoints: (deploymentProfileRef?: string) =>
+    request(appendParams('/deployment/endpoints', { deployment_profile_ref: deploymentProfileRef })),
+  createGatewayEndpoint: (data: any) =>
+    request('/deployment/endpoints', { method: 'POST', body: JSON.stringify(data) }),
+  updateGatewayEndpoint: (endpointRef: string, data: any) =>
+    request(`/deployment/endpoints/${encodeURIComponent(endpointRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
+
   // Shared RPM/RPS/TPM/concurrency policies
   getLimitPolicies: (page = 1, pageSize = 20, filters?: { org_id?: number; mode?: string }) =>
     request(appendParams('/limit-policies', { page, page_size: pageSize, org_id: filters?.org_id, mode: filters?.mode })),

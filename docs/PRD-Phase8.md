@@ -396,10 +396,11 @@ UniRouter 不新增“Tool Center”“MCP Servers”“跨产品调查”“Cas
 - 本批次只改变前端加载边界，不改变 API、授权、请求执行、计费、Outbox、Feed 或
   Cursor 语义。
 
-当前本地证据：生产入口 JavaScript 为 `275.35 kB` minified / `87.11 kB`
-gzip，相对基线 gzip 下降约 86.1%；最大 minified JavaScript chunk 为
-`376.63 kB` / `100.87 kB` gzip，最大 gzip JavaScript payload 为 `103.75 kB`，
-已无 500 kB 警告。全量前端 50/50 文件、347/347 测试、type-check、production
+当前本地证据：生产入口 JavaScript 为 `278.33 kB` minified / `87.64 kB`
+gzip，相对基线 gzip 下降约 86.0%；最大 minified JavaScript chunk 为
+`376.58 kB` / `100.86 kB` gzip，最大 gzip JavaScript payload 为 `103.74 kB`，
+并以 450 KiB 单资产预算作为构建门禁，已无 500 kB 警告。全量前端 54/54 文件、
+359/359 测试、type-check、production
 build 和 1440/1024/768 本地合成 API 浏览器 smoke 通过；Target 验收必须在对应
 证据实际执行后才能声明，本地合成 API smoke 不等同
 Target、Production 或真实企业目录/财务环境验证。
@@ -410,9 +411,9 @@ Target、Production 或真实企业目录/财务环境验证。
 
 | 首屏路径 | JS 资产 | JS gzip | CSS 资产 | CSS gzip |
 |---|---:|---:|---:|---:|
-| 登录页 | 20 | 359.47 kB | 10 | 56.44 kB |
-| 平台总览 | 26 | 348.75 kB | 11 | 37.85 kB |
-| 组织与成员（默认账号页） | 34 | 442.67 kB | 18 | 69.07 kB |
+| 登录页 | 19 | 359.95 kB | 10 | 56.82 kB |
+| 平台总览 | 25 | 349.22 kB | 11 | 38.22 kB |
+| 组织与成员（默认账号页） | 33 | 443.13 kB | 18 | 69.44 kB |
 
 “组织与成员”的项目与成员生命周期标签继续二次按需加载，不进入默认账号页的上述静态
 依赖闭包。当前测量不支持再强制合成一个全局 vendor 包：它会增大登录等冷路径的共同依赖，
@@ -464,9 +465,35 @@ Target、Production 或真实企业目录/财务环境验证。
 两者继续停在只读离线证据与人工审阅边界。精确命令和结果见
 `docs/ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md`。
 
+## 11.4 Agent 与本地化 POC 就绪性本地实现状态
+
+`APP-1/2`、`UI-6`、`DEPLOY-1`、`COMPAT-1`、`INTEGRATION-1` 和仅预览的
+`RESET-1` 已在当前产品工作树完成并通过 Local 验证：
+
+- “应用接入”以 `WorkloadApplication` 作为企业应用/Agent/工作流身份，API Key
+  只作为凭证；新增绑定受同组织、同项目和身份类型约束，已有未绑定 Key 保持兼容；
+- Effective Access Inspector 由后端统一组合客户端、端点、应用、凭证、模型授权、
+  限额、模型治理和合格上游路由，不再把“供应商凭证启用”误显示成“模型可执行”；
+- “部署与网络”保存非秘密 desired state，并区分独立 observed evidence；公开入口必须
+  HTTPS，UI 不接收 TLS 私钥、不重启 Ingress；
+- OpenAI SDK、OpenAI Agents Chat、LangChain、AutoGen、OpenClaw 与 Tencent
+  WorkBuddy 具备版本化配置样例和零网络验证输入；`/v1/responses` 仍为
+  `contract_only`；
+- X-Insight Feed 继续作为首个 Reference Connector；飞书机器人、飞书 Aily 和企业
+  目录/ERP 只显示真实的规划中/待环境状态，不进入 Gateway 关键路径；
+- 重置 CLI 只有 REPEATABLE READ READ ONLY 的 preview，没有 apply/delete SQL，未知表
+  会 fail-closed，且要求新的显式 Source Instance；现有数据仍等待第二次联调开始时的
+  单独授权。
+
+当前验证为前端 54/54 文件、359/359 测试、全量串行 Go、`go vet`、新增
+PostgreSQL race 集成、OpenAPI/路由、客户端样例与生产构建预算通过。只读 ECS 预检
+确认现有 HTTP 入口健康，但公网 443 当前超时且 Nginx 只监听 80，因此尚不能声明
+HTTPS Target ready。精确证据见
+`docs/ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md`。
+
 ## 12. 封板声明
 
-PRD8 冻结产品边界；实现状态只以第 11.1、11.2、11.3 节列明的精确证据为准，
+PRD8 冻结产品边界；实现状态只以第 11.1、11.2、11.3、11.4 节列明的精确证据为准，
 不得外推为 Target、Production 或外部集成已经完成：
 
 - UniRouter 的差异化核心是可证明的模型执行决定与经济终态；

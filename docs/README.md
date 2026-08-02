@@ -5,6 +5,10 @@
 - [PRD-Phase8.md](PRD-Phase8.md) — 当前前向产品合同：UniRouter、X-Insight、Tool Gateway、MCP Gateway 和共享协议边界封板
 - [ops/PRD8-BOUNDARY-MATRIX.md](ops/PRD8-BOUNDARY-MATRIX.md) — PRD7 十九项能力的保留、收窄、迁出、UI 归并和兼容处置
 - [planning/PRD8-IMPLEMENTATION-PLAN.md](planning/PRD8-IMPLEMENTATION-PLAN.md) — UI、企业目录/财务、受控发布与模型调用授权的依赖顺序、已闭环 Local 批次和真实客户决策门
+- [architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md](architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md) — 应用与 Agent 身份、统一可用性、客户端兼容、部署/TLS 和第二次联调重置边界
+- [research/AGENT-CLIENT-COMPATIBILITY-20260802.md](research/AGENT-CLIENT-COMPATIBILITY-20260802.md) — OpenAI Agents、LangChain、AutoGen、OpenClaw、WorkBuddy 与飞书的官方配置事实和证据等级
+- [runbooks/SECOND-INTEGRATION-POC.md](runbooks/SECOND-INTEGRATION-POC.md) — 第二次联调前置、只读重置预览、客户端顺序和验收标准
+- [ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md](ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md) — APP/DEPLOY/COMPAT/INTEGRATION/RESET 与最新 359 项前端、Go、迁移、race、构建预算及 ECS HTTPS 只读基线
 - [architecture/PRD8-ENTERPRISE-ORG-FINANCE-UI-MIGRATION-20260801.md](architecture/PRD8-ENTERPRISE-ORG-FINANCE-UI-MIGRATION-20260801.md) — 企业组织、财务与 UI 的代码映射、兼容不变量和当前 Local 实现状态
 - [ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md](ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md) — UI-1..5、UI-PERF-1、DOMAIN-0、ORG-1..2、FIN-1..3 的最终 Local 回归与 ORG-3/FIN-4 停止门
 - [ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md](ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md) — Provider 激活门禁、有界渐进发布、模型调用授权 PEP 与兼容性 Local 证据

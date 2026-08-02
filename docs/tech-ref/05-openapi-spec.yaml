@@ -1814,6 +1814,86 @@ paths:
     description: Revokes one active narrow-only policy with optimistic revision control and atomic audit evidence.
     post: *operation_create
 
+  /api/v1/workload-applications/contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns the product-local WorkloadApplication, ClientProfile and readiness contract. It grants no Tool or MCP authority and explicitly marks contract-only or adapter-required clients.
+    get: *operation_get
+
+  /api/v1/workload-applications:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin, org_admin]
+    description: Lists tenant-scoped applications or creates one inside an active same-tenant project. An application is the governed caller identity; an API Key is only one credential proof.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/workload-applications/{ref}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      put: [platform_admin, org_admin]
+    description: Reads or updates non-identity application metadata with optimistic revision control. Organization, project, application_ref, kind and identity mode remain immutable.
+    get: *operation_get
+    put: *operation_create
+
+  /api/v1/workload-applications/{ref}/archive:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Terminally archives an application and atomically disables its active model credentials without deleting request, ledger, audit, Receipt or Source evidence.
+    post: *operation_create
+
+  /api/v1/workload-applications/{ref}/credentials:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Lists credential metadata bound to one tenant-scoped application. Full credential material is never returned.
+    get: *operation_list
+
+  /api/v1/workload-applications/{ref}/credentials/{key_id}/bind:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Binds one unbound same-tenant, same-project, non-Feed API Key to an application with identity-mode checks and optimistic application revision control. Historical keys cannot be rebound to another application.
+    post: *operation_create
+
+  /api/v1/workload-applications/{ref}/readiness:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Resolves application, credential, client, endpoint, model authorization, limit, governance, channel and Provider credential axes through authoritative backend state. Missing model context is explicit and no mutation occurs.
+    get: *operation_get
+
+  /api/v1/deployment/contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns DeploymentProfile and EndpointProfile contracts. TLS private-key storage and direct runtime mutation are explicitly forbidden.
+    get: *operation_get
+
+  /api/v1/deployment/profiles:
+    x-unirouter-rbac:
+      get: [platform_admin]
+      post: [platform_admin]
+    description: Lists or creates non-secret deployment desired state. It does not apply Compose, Helm, Ingress, DNS or TLS changes.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/deployment/profiles/{ref}:
+    x-unirouter-rbac:
+      put: [platform_admin]
+    description: Updates deployment desired state with optimistic revision control and atomic audit evidence, without changing runtime.
+    put: *operation_create
+
+  /api/v1/deployment/endpoints:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin]
+    description: Lists or registers Gateway Endpoint desired state. Public endpoints require HTTPS; certificate references are non-secret and private-key material is rejected.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/deployment/endpoints/{ref}:
+    x-unirouter-rbac:
+      put: [platform_admin]
+    description: Updates non-secret Gateway Endpoint desired state without changing independently observed runtime state.
+    put: *operation_create
+
   /api/v1/member-lifecycle/offline-contract:
     x-unirouter-rbac:
       get: [platform_admin, org_admin]

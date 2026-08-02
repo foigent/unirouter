@@ -47,13 +47,13 @@ function routeKeys(role: string): string[] {
 const expectedRoutes: Record<string, string[]> = {
   platform_admin: [
     '/', '/channels', '/channel-keys', '/model-governance', '/test',
-    '/keys', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
+    '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
     '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
     '/wallet', '/model-prices', '/reconciliation',
-    '/license', '/data-exchange', '/docs',
+    '/deployment', '/integrations', '/docs', '/license',
   ],
   org_admin: [
-    '/', '/model-governance', '/keys', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
+    '/', '/model-governance', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
     '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
     '/model-prices', '/docs',
   ],
@@ -127,6 +127,8 @@ describe('navigation role boundaries', () => {
 
   it('keeps platform-only controls out of tenant roles', () => {
     expect(isRouteAllowedForRole('/license', 'platform_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/deployment', 'platform_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/integrations', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/data-exchange', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/governance-simulation', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/risk-control', 'platform_admin')).toBe(true);
@@ -142,6 +144,8 @@ describe('navigation role boundaries', () => {
     expect(isRouteAllowedForRole('/provenance-passport', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/provenance-passport', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/license', 'org_admin')).toBe(false);
+    expect(isRouteAllowedForRole('/deployment', 'org_admin')).toBe(false);
+    expect(isRouteAllowedForRole('/integrations', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/data-exchange', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/governance-simulation', 'org_admin')).toBe(false);
     expect(isRouteAllowedForRole('/risk-control', 'billing_admin')).toBe(false);
@@ -226,7 +230,7 @@ describe('navigation role boundaries', () => {
     expect(canDisableProjectKey('project_admin')).toBe(true);
   });
 
-  it('keeps the X-Insight safety route reachable while locking unrelated licensed routes', () => {
+  it('keeps Integration Management and the legacy X-Insight safety route reachable while locking unrelated licensed routes', () => {
     const partial = licenseAccess('active', true, ['gateway', 'notifications']);
     const platformItems = getNavItemsForRole('platform_admin', partial);
     const platformChildren = platformItems.flatMap(item => item.items || []);
@@ -238,11 +242,12 @@ describe('navigation role boundaries', () => {
       licenseLocked: true,
       disabled: true,
     });
-    expect(platformChildren.find(item => item.itemKey === '/data-exchange')).toMatchObject({
-      text: 'X-Insight 数据交换',
+    expect(platformChildren.find(item => item.itemKey === '/integrations')).toMatchObject({
+      text: '集成管理',
     });
-    expect(platformChildren.find(item => item.itemKey === '/data-exchange')?.licenseLocked).toBeUndefined();
-    expect(platformChildren.find(item => item.itemKey === '/data-exchange')?.disabled).toBeUndefined();
+    expect(platformChildren.find(item => item.itemKey === '/integrations')?.licenseLocked).toBeUndefined();
+    expect(platformChildren.find(item => item.itemKey === '/integrations')?.disabled).toBeUndefined();
+    expect(platformChildren.find(item => item.itemKey === '/data-exchange')).toBeUndefined();
 
     expect(routeKeys('billing_admin')).not.toContain('/data-exchange');
     expect(getNavItemsForRole('billing_admin', partial).flatMap(item => item.items || []).some(item => item.itemKey === '/data-exchange')).toBe(false);

@@ -168,7 +168,9 @@ describe('App shell', () => {
     expect(screen.getByText('组织与成员')).toBeTruthy();
     expect(screen.getByText('请求日志')).toBeTruthy();
     expect(screen.getByText('预算与成本中心')).toBeTruthy();
-    expect(screen.getByText('X-Insight 数据交换')).toBeTruthy();
+    expect(screen.getByText('部署与网络')).toBeTruthy();
+    expect(screen.getByText('集成管理')).toBeTruthy();
+    expect(screen.getByText('API 与兼容性')).toBeTruthy();
   });
 
   it('hides request-log search from roles without request-log access', () => {

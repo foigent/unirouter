@@ -9,6 +9,10 @@
 | `docs/PRD-Phase8.md` | Active forward product boundary: UniRouter/X-Insight/Tool Gateway/MCP Gateway/shared-protocol ownership, UI exposure and non-goals |
 | `docs/ops/PRD8-BOUNDARY-MATRIX.md` | Authoritative P7-F01–F19 forward disposition; explicitly not implementation-migration evidence |
 | `docs/planning/PRD8-IMPLEMENTATION-PLAN.md` | Current dependency plan and exact stop gate; Local batches through ORG-2/FIN-3 plus bounded runtime release/authorization are complete, ORG-3/FIN-4 require real customer targets |
+| `docs/architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md` | Current Workload Application, effective-access, client-profile, Gateway Endpoint/TLS and second-integration reset contract |
+| `docs/research/AGENT-CLIENT-COMPATIBILITY-20260802.md` | Official-source client configuration facts and evidence-level boundaries for the second-integration callers |
+| `docs/runbooks/SECOND-INTEGRATION-POC.md` | Current second-device POC preflight, reset gate, exact client order and acceptance boundary |
+| `docs/ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md` | APP/DEPLOY/COMPAT/INTEGRATION/RESET implementation, current full Local verification and read-only ECS HTTPS baseline |
 | `docs/architecture/PRD8-ENTERPRISE-ORG-FINANCE-UI-MIGRATION-20260801.md` | Current UI/domain/code mapping and compatibility contract for the Local-verified organization and finance migration |
 | `docs/ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md` | Final Local regression, build/browser evidence, compatibility conclusion and explicit non-runtime/non-release boundary for the PRD8 autonomous sequence |
 | `docs/ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md` | Provider activation gate, bounded progressive route release, Model Call Authorization PEP, Local verification and compatibility boundary |

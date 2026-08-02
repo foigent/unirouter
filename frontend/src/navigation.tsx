@@ -106,7 +106,7 @@ const taskNavItems: NavItem[] = [
       { itemKey: '/channels', text: '上游通道', icon: <IconRoute /> },
       { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconLockStroked /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers />, licenseFeature: 'model_governance' },
-      { itemKey: '/test', text: '连通性检测', icon: <IconTestScore />, licenseFeature: 'gateway' },
+      { itemKey: '/test', text: '上游检测', icon: <IconTestScore />, licenseFeature: 'gateway' },
     ],
   },
   {
@@ -114,7 +114,7 @@ const taskNavItems: NavItem[] = [
     text: '访问与安全',
     icon: <IconShieldStroked />,
     items: [
-      { itemKey: '/keys', text: '访问凭证', icon: <IconKeyStroked /> },
+      { itemKey: '/applications', text: '应用接入', icon: <IconKeyStroked /> },
       { itemKey: '/organization-members', text: '组织与成员', icon: <IconUserGroup /> },
       { itemKey: '/agent-trust', text: '模型调用授权', icon: <IconShieldStroked /> },
       { itemKey: '/limit-policies', text: '共享限额', icon: <IconPulse /> },
@@ -149,9 +149,10 @@ const taskNavItems: NavItem[] = [
     text: '系统与集成',
     icon: <IconSettingStroked />,
     items: [
+      { itemKey: '/deployment', text: '部署与网络', icon: <IconMonitorStroked /> },
+      { itemKey: '/integrations', text: '集成管理', icon: <IconConnectionPoint1 /> },
+      { itemKey: '/docs', text: 'API 与兼容性', icon: <IconBookOpenStroked /> },
       { itemKey: '/license', text: '商业授权', icon: <IconShield /> },
-      { itemKey: '/data-exchange', text: 'X-Insight 数据交换', icon: <IconConnectionPoint1 /> },
-      { itemKey: '/docs', text: 'API 文档', icon: <IconBookOpenStroked /> },
     ],
   },
 ];
@@ -162,10 +163,10 @@ const accessStateItem: NavItem = { itemKey: '/access', text: '访问状态', ico
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
 const compatibilityRoutes = new Set([
   '/governance-simulation', '/risk-control', '/member-lifecycle', '/users', '/project-management',
-  '/provenance-passport', '/org-model-prices', '/grants', '/agent-trust-evidence',
+  '/provenance-passport', '/org-model-prices', '/grants', '/agent-trust-evidence', '/keys', '/data-exchange',
 ]);
 const orgAdminRoutes = new Set([
-  '/', '/model-governance', '/risk-control', '/keys', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
+  '/', '/model-governance', '/risk-control', '/applications', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
   '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
   '/media-jobs',
   '/model-prices', '/docs',
@@ -329,6 +330,7 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
   if (isOrgAdminRole(role)) {
     return [
       '/',
+      '/applications',
       '/keys',
       '/organization-members',
       '/project-management',

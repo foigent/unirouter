@@ -55,7 +55,7 @@ Every batch must preserve:
 | UI-3 | Runtime-backed Model Call Authorization is the primary workspace; historical Agent Trust fixtures move to the auxiliary `/agent-trust-evidence` validation route | copy/route/RBAC/component tests |
 | UI-4 | enterprise finance labels and truthful current-capability notices | finance page tests |
 | UI-5 | lightweight sticky toolbar and bounded persistent Inspector layout | shell test and rendered smoke |
-| UI-PERF-1 | route and nested-workspace lazy loading; no forced monolithic vendor chunk | current full regression 347/347 frontend tests, type-check and production build |
+| UI-PERF-1 | route and nested-workspace lazy loading plus a 450 KiB generated-JS budget; no forced monolithic vendor chunk | current full regression 359/359 frontend tests, type-check and production build |
 | DOMAIN-0 | source-neutral directory and finance contracts with no persistence or connector | pure Go contract tests |
 | ORG-1 | metadata-only source health and effective-dated organization tree | migration, tenant-isolation and PostgreSQL integration evidence |
 | ORG-2 | source-owned people/accounts plus fail-closed local IAM convergence | replay, tombstone, capture-gap, last-admin, tenant and race evidence |
@@ -64,9 +64,18 @@ Every batch must preserve:
 | FIN-3 | exact allocation, close gates and adjustment/reversal journals | replay, coverage, close, reversal and wallet non-mutation evidence |
 | RUNTIME-1 | Provider Pack-pinned activation gate and bounded route release lifecycle | migration, lifecycle, CAS, deterministic canary, emergency-disable and Gateway trace evidence |
 | AUTHZ-1 | product-local Model Call Authorization management and request PEP | migration, deny precedence, allow intersection, scope/lifecycle, catalog-filter and Gateway trace evidence |
-| Final Local gate | full backend/frontend regression, build and rendered UI review | 50/50 files, 347/347 frontend tests; full Go, integration, race, vet and browser checks |
+| APP-1/2 | governed Workload Application identity, transactional credential binding, lifecycle enforcement and backend readiness composition | migrations `000054`, tenant/RBAC/admin/Gateway/integration/race evidence |
+| UI-6 | final six-workspace navigation, Application workspace and persistent Effective Access Inspector | navigation, shell, application and responsive layout tests |
+| DEPLOY-1 | Deployment Profile and Gateway Endpoint desired/observed state with no TLS private-key or runtime apply surface | migration `000055`, validation, RBAC/redaction and integration evidence |
+| COMPAT-1 | zero-network profiles and config artifacts for six Agent/client families | artifact, contract, syntax and route-documentation tests |
+| INTEGRATION-1 | X-Insight Reference Connector retained; Feishu and enterprise adapters truthfully classified | integration page and boundary tests |
+| RESET-1 | read-only, fail-closed, no-overwrite reset inventory and Source Instance transition preview | unit and isolated PostgreSQL integration evidence |
+| Final Local gate | full backend/frontend regression, build and focused integration race checks | 54/54 files, 359/359 frontend tests; full serialized Go, integration, race, vet and bundle budget checks |
 
-These results are working-tree Local evidence. CI, Target and Production are
+These results are working-tree Local evidence. The current Agent/on-prem batch
+is recorded in
+`docs/ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md`.
+CI, Target and Production are
 recorded only after the separately authorized delivery steps actually pass;
 external directory/ERP/Provider integration remains unclaimed.
 
@@ -249,12 +258,12 @@ Results:
 - required local-PostgreSQL directory/finance/admin/migration integration
   selection: PASS;
 - complete migration integration suite, including legacy rollback ordering
-  through new migrations `000047`–`000053`: PASS;
+  through new migrations `000047`–`000055`: PASS;
 - directory, finance, runtime-change and authorization race tests: PASS;
-- frontend 50/50 files and 347/347 tests, type-check and production build:
+- frontend 54/54 files and 359/359 tests, type-check and production build:
   PASS;
-- production build: 4,313 modules, no 500 kB warning, 275.35 kB / 87.11 kB
-  gzip entry JavaScript;
+- production build: 4,318 modules, 78 JavaScript assets, largest generated
+  JavaScript 376,583 bytes against a 460,800-byte enforced limit;
 - rendered 1440/1024/768 UI review: no document-width overflow and browser
   console 0 errors / 0 warnings; and
 - exact evidence:
@@ -262,7 +271,8 @@ Results:
   `docs/ops/evidence/PRD8-ORG2-enterprise-directory-iam-convergence-local-20260802.md`,
   `docs/ops/evidence/PRD8-FIN1-FIN3-enterprise-finance-local-20260802.md`, and
   `docs/ops/evidence/PRD8-enterprise-org-finance-local-closeout-20260802.md`, and
-  `docs/ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md`.
+  `docs/ops/evidence/PRD8-P7F04-P7F10-P7F12-runtime-controls-local-20260802.md`, and
+  `docs/ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md`.
 
 ## 6. User decision gate
 
