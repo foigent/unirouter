@@ -1,9 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
-import { Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Banner, Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { EmptyState, PagedTable, PageHeader, PasswordField, StatusTag, Surface } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
+import {
+  channelStatusLabel,
+  credentialModelCoverage,
+  evaluateCredentialCombination,
+  isCredentialCoolingDown,
+  type ChannelReadinessChannel,
+  type CredentialCombinationState,
+} from '../utils/channelReadiness';
 
 interface ChannelKey {
   id: number;
@@ -18,6 +26,26 @@ interface ChannelKey {
   cooldown_until?: string | null;
   created_at: string;
 }
+
+const combinationStatus: Record<CredentialCombinationState, string> = {
+  credential_disabled: 'disabled',
+  cooling_down: 'warning',
+  model_mismatch: 'failed',
+  route_candidate: 'success',
+  awaiting_release: 'warning',
+  channel_disabled: 'disabled',
+  unknown_channel: 'warning',
+};
+
+const combinationLabel: Record<CredentialCombinationState, string> = {
+  credential_disabled: '凭证停用',
+  cooling_down: '凭证冷却中',
+  model_mismatch: '阻断：模型无交集',
+  route_candidate: '可进入路由候选',
+  awaiting_release: '凭证就绪·待发布',
+  channel_disabled: '凭证保留·通道禁用',
+  unknown_channel: '通道状态待确认',
+};
 
 function normalizeAllowedModels(value: unknown) {
   return String(value || '')
@@ -39,7 +67,7 @@ export default function ChannelKeysPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [channels, setChannels] = useState<Array<{ label: string; value: number; status: string }>>([]);
+  const [channels, setChannels] = useState<Array<ChannelReadinessChannel & { label: string; value: number }>>([]);
 
   const load = (p = page, size = pageSize) => {
     const version = ++requestVersion.current;
@@ -64,7 +92,14 @@ export default function ChannelKeysPage() {
   const loadChannels = () => {
     api.getChannels(1, 100)
       .then((d: any) => {
-        const list = (d.data || d.channels || []).map((c: any) => ({ label: `${c.name} · ${c.status === 'staged' ? '待发布' : c.status}`, value: c.id, status: c.status }));
+        const list = (d.data || d.channels || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          label: `${c.name} · ${channelStatusLabel(c.status)}`,
+          value: c.id,
+          status: c.status,
+          models: c.models || '',
+        }));
         setChannels(list);
       })
       .catch(() => {});
@@ -138,18 +173,71 @@ export default function ChannelKeysPage() {
     }
   }, [editing, formApi, showDrawer]);
 
+  const channelByID = useMemo(
+    () => new Map(channels.map(channel => [channel.id, channel])),
+    [channels],
+  );
+  const enabledOnInactiveChannelCount = keys.filter(key => (
+    key.status === 'active' && key.channel_status !== 'active'
+  )).length;
+  const modelMismatchCount = keys.filter(key => {
+    const channel = channelByID.get(key.channel_id);
+    return key.status === 'active'
+      && Boolean(channel?.models)
+      && credentialModelCoverage(channel?.models, key.allowed_models).kind === 'none';
+  }).length;
+
+  const recordChannel = (record: ChannelKey): ChannelReadinessChannel => channelByID.get(record.channel_id) || {
+    id: record.channel_id,
+    name: record.channel_name,
+    status: record.channel_status,
+  };
+
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
-    { title: '通道', dataIndex: 'channel_name', render: (v: string) => v || '-' },
-    { title: '凭证标识', dataIndex: 'key_prefix', render: (v: string) => <code>{v}</code> },
-    { title: '允许模型', dataIndex: 'allowed_models', render: (v: string) => v || '全部' },
     {
-      title: '状态', dataIndex: 'status', width: 80,
-      render: (v: string) => <StatusTag status={v}>{v === 'active' ? '启用' : v === 'disabled' ? '停用' : v}</StatusTag>,
+      title: '所属通道', width: 150,
+      render: (_: unknown, record: ChannelKey) => (
+        <div style={{ display: 'grid', gap: 4 }}>
+          <span>{record.channel_name || '-'}</span>
+          <StatusTag status={record.channel_status}>{`通道${channelStatusLabel(record.channel_status)}`}</StatusTag>
+        </div>
+      ),
+    },
+    { title: '凭证标识', dataIndex: 'key_prefix', render: (v: string) => <code>{v}</code> },
+    {
+      title: '凭证状态', dataIndex: 'status', width: 100,
+      render: (v: string) => <StatusTag status={v}>{v === 'active' ? '凭证启用' : v === 'disabled' ? '凭证停用' : v}</StatusTag>,
+    },
+    {
+      title: '模型覆盖', width: 210,
+      render: (_: unknown, record: ChannelKey) => {
+        const coverage = credentialModelCoverage(recordChannel(record).models, record.allowed_models);
+        const label = coverage.kind === 'all'
+          ? `全部通道模型（${coverage.matching.length}）`
+          : coverage.kind === 'partial'
+            ? `相交 ${coverage.matching.length}/${coverage.channelModels.length}`
+            : coverage.kind === 'none'
+              ? '模型范围无交集'
+              : '通道模型未配置或待加载';
+        return (
+          <div style={{ display: 'grid', gap: 4 }}>
+            <span>{record.allowed_models || '全部'}</span>
+            <StatusTag status={coverage.kind === 'none' ? 'failed' : coverage.kind === 'channel_unconfigured' ? 'warning' : 'success'}>{label}</StatusTag>
+          </div>
+        );
+      },
+    },
+    {
+      title: '组合状态', width: 170,
+      render: (_: unknown, record: ChannelKey) => {
+        const state = evaluateCredentialCombination(record, recordChannel(record));
+        return <StatusTag status={combinationStatus[state]}>{combinationLabel[state]}</StatusTag>;
+      },
     },
     {
       title: '失败 / 冷却', width: 180,
-      render: (_: unknown, record: ChannelKey) => record.cooldown_until
+      render: (_: unknown, record: ChannelKey) => isCredentialCoolingDown(record)
         ? <StatusTag status="warning">失败 {record.fail_count || 0} 次 · 冷却至 {formatDateTime(record.cooldown_until)}</StatusTag>
         : `失败 ${record.fail_count || 0} 次`,
     },
@@ -171,8 +259,15 @@ export default function ChannelKeysPage() {
       <PageHeader
         eyebrow="模型接入"
         title="供应商凭证"
-        description="凭证只能在 staged/disabled 通道中新增、轮换或删除；active 通道仅允许紧急停用凭证。凭证标识来自加密存储记录，并非供应商 Key 前缀。"
+        description="凭证状态、所属通道状态和模型覆盖是三个独立条件；凭证启用不代表通道已经生效。凭证标识来自加密存储记录，并非供应商 Key 前缀。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>}
+      />
+
+      <Banner
+        type={(enabledOnInactiveChannelCount > 0 || modelMismatchCount > 0) ? 'warning' : 'info'}
+        description={`只有“通道生效 + 凭证启用且未冷却 + 模型范围相交”才可进入路由候选。当前页 ${enabledOnInactiveChannelCount} 条启用凭证绑定待发布/禁用通道，${modelMismatchCount} 条凭证与通道模型范围无交集。`}
+        closeIcon={null}
+        style={{ marginBottom: 16 }}
       />
 
       <Surface>

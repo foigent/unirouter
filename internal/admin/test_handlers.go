@@ -48,24 +48,54 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "model is required"})
 		return
 	}
+	reqBody.Model = strings.TrimSpace(reqBody.Model)
+	if !channelTestModelConfigured(channelModels, reqBody.Model) {
+		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
+			"success": false,
+			"status":  "model_not_configured",
+			"error":   "Selected model is not configured on this channel",
+		})
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":  "Selected model is not configured on this channel",
+			"status": "model_not_configured",
+		})
+		return
+	}
 	if strings.TrimSpace(reqBody.Prompt) == "" {
 		reqBody.Prompt = "Hello, this is a test message."
 	}
 
-	// Get first active channel key for this channel
+	// Connectivity checks may validate staged or disabled channels before a
+	// release, but they must still use the same credential model scope and
+	// cooldown eligibility as runtime routing. Never fall back to an arbitrary
+	// active credential for a model it does not permit.
 	var keyEnc string
 	err = h.db.QueryRow(r.Context(),
-		`SELECT key_enc FROM channel_keys WHERE channel_id = $1 AND status = 'active' ORDER BY id LIMIT 1`, id,
+		`SELECT ck.key_enc
+		   FROM channel_keys ck
+		  WHERE ck.channel_id = $1
+		    AND ck.status = 'active'
+		    AND (ck.cooldown_until IS NULL OR ck.cooldown_until <= NOW())
+		    AND (
+		        BTRIM(COALESCE(ck.allowed_models, '')) = ''
+		        OR EXISTS (
+		            SELECT 1
+		              FROM unnest(string_to_array(COALESCE(ck.allowed_models, ''), ',')) AS allowed(model)
+		             WHERE BTRIM(allowed.model) = $2
+		        )
+		    )
+		  ORDER BY ck.id
+		  LIMIT 1`, id, reqBody.Model,
 	).Scan(&keyEnc)
 	if err != nil {
 		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
 			"success": false,
-			"status":  "no_key",
-			"error":   "No active key found for this channel",
+			"status":  "no_eligible_key",
+			"error":   "No active, non-cooling credential allows the selected model",
 		})
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
-			"error":  "No active key found for this channel",
-			"status": "no_key",
+			"error":  "No active, non-cooling credential allows the selected model",
+			"status": "no_eligible_key",
 		})
 		return
 	}
@@ -152,6 +182,19 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		"response":     string(result.Body),
 		"curl_example": curlExample,
 	})
+}
+
+func channelTestModelConfigured(channelModels, selectedModel string) bool {
+	selectedModel = strings.TrimSpace(selectedModel)
+	if selectedModel == "" {
+		return false
+	}
+	for _, configured := range strings.Split(channelModels, ",") {
+		if strings.TrimSpace(configured) == selectedModel {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) recordChannelTestAudit(r *http.Request, channelID int64, model, adapterType string, result map[string]interface{}) {

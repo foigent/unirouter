@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import AgentTrustPage from '../AgentTrustPage';
+import { MemoryRouter } from 'react-router-dom';
+import AgentTrustPage, { OfflineAgentTrustWorkspace } from '../AgentTrustPage';
 
 const mocks = vi.hoisted(() => ({
   getAgentTrustContract: vi.fn(),
@@ -157,9 +158,10 @@ describe('AgentTrustPage', () => {
   });
 
   it('opens on the live model-call authorization workspace with a persistent inspector', async () => {
-    render(<AgentTrustPage />);
+    render(<MemoryRouter><AgentTrustPage /></MemoryRouter>);
 
-    expect(screen.getByRole('tab', { name: '运行时授权策略' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.getByRole('button', { name: '离线合同验证' })).toBeTruthy();
     expect((await screen.findAllByText('mca_project_company_chat')).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole('complementary', { name: '模型调用授权检查器' })).toBeTruthy();
     expect(screen.getByText('显式拒绝优先，多个主体的允许范围取交集', { exact: false })).toBeTruthy();
@@ -167,9 +169,7 @@ describe('AgentTrustPage', () => {
   });
 
   it('auto-runs the safe review and keeps the inspector present', async () => {
-    render(<AgentTrustPage />);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Agent 离线证据' }));
+    render(<OfflineAgentTrustWorkspace />);
 
     expect(screen.getByLabelText('Agent Trust 检查器')).toBeTruthy();
     await waitFor(() => expect(mocks.previewAgentTrust).toHaveBeenCalledWith(JSON.stringify(SAMPLE, null, 2)));
@@ -180,8 +180,7 @@ describe('AgentTrustPage', () => {
   });
 
   it('changes the selected Agent without a detail-open action', async () => {
-    render(<AgentTrustPage />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Agent 离线证据' }));
+    render(<OfflineAgentTrustWorkspace />);
     await waitFor(() => expect(screen.getAllByText(/sha256:bbbb/).length).toBeGreaterThanOrEqual(1));
 
     fireEvent.click(screen.getByText(/sha256:dddd/));

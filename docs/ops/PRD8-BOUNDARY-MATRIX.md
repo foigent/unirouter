@@ -57,7 +57,7 @@ planning. It does not rewrite PRD7 evidence:
 | `/member-lifecycle` | offline contract plus local auth changes | Compatibility redirect to the lifecycle tab inside Organization & Members |
 | `/users` | runtime-backed local/OIDC accounts | Compatibility redirect to the default account tab inside Organization & Members |
 | `/project-management` | runtime-backed projects and membership | Compatibility redirect to the project tab inside Organization & Members |
-| `/agent-trust` | runtime-backed Model Call Authorization with a separate offline-evidence tab | Rename/narrow to Model Call Authorization; never expose Tool/MCP authority or relabel the historical fixture as runtime evidence |
+| `/agent-trust` | runtime-backed Model Call Authorization only; auxiliary `/agent-trust-evidence` holds historical fixture validation | Keep the primary authorization flow free of offline evidence; never expose Tool/MCP authority or relabel the historical fixture as runtime evidence |
 | `/provenance-passport` | exact-Source offline projection | Remove from main navigation; keep Receipt facts and X-Insight integration link |
 | `/wallet` | runtime settlement wallet plus Local-verified fiscal periods, cost centers and report-only enterprise budgets | Budgets & Cost Centers explicitly separates compatibility settlement from enterprise planning; budgets do not become request admission policy |
 | `/model-prices` | runtime base prices/multipliers plus Local-verified five-layer enterprise Rate Cards and snapshot reads | Rates & Rating retains compatibility APIs and request-path pricing; enterprise Rate Cards are not activated for settlement |

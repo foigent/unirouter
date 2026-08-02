@@ -33,6 +33,7 @@ const LimitPoliciesPage = lazy(() => import('./pages/LimitPoliciesPage'))
 const GuardrailPoliciesPage = lazy(() => import('./pages/GuardrailPoliciesPage'))
 const GovernanceSimulationPage = lazy(() => import('./pages/GovernanceSimulationPage'))
 const AgentTrustPage = lazy(() => import('./pages/AgentTrustPage'))
+const AgentTrustEvidencePage = lazy(() => import('./pages/AgentTrustEvidencePage'))
 const ProvenancePassportPage = lazy(() => import('./pages/ProvenancePassportPage'))
 const RiskControlPage = lazy(() => import('./pages/RiskControlPage'))
 const MediaJobsPage = lazy(() => import('./pages/MediaJobsPage'))
@@ -124,6 +125,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="project-management" element={<RoleRoute><Navigate to="/organization-members?section=projects" replace /></RoleRoute>} />
               <Route path="member-lifecycle" element={<RoleRoute><Navigate to="/organization-members?section=lifecycle" replace /></RoleRoute>} />
               <Route path="agent-trust" element={<RoleRoute><AgentTrustPage /></RoleRoute>} />
+              <Route path="agent-trust-evidence" element={<RoleRoute><AgentTrustEvidencePage /></RoleRoute>} />
               <Route path="provenance-passport" element={<RoleRoute><ProvenancePassportPage /></RoleRoute>} />
               <Route path="risk-control" element={<RoleRoute><RiskControlPage /></RoleRoute>} />
               <Route path="media-jobs" element={<RoleRoute><MediaJobsPage /></RoleRoute>} />

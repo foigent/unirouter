@@ -4,6 +4,7 @@ import { api, ApiError } from '../api/client';
 import { EmptyState, MetricTile, PageHeader } from '../ui';
 import { formatInteger } from '../utils/formatNumber';
 import ModelAuthorizationWorkspace from './ModelAuthorizationWorkspace';
+import { useNavigate } from 'react-router-dom';
 
 interface ArtifactIdentity {
   path: string;
@@ -122,7 +123,7 @@ const compactRef = (value: string) => value.length > 24
   ? `${value.slice(0, 15)}…${value.slice(-8)}`
   : value;
 
-function OfflineAgentTrustWorkspace() {
+export function OfflineAgentTrustWorkspace() {
   const [contract, setContract] = useState<AgentTrustContract | null>(null);
   const [input, setInput] = useState('');
   const [report, setReport] = useState<AgentTrustReport | null>(null);
@@ -323,19 +324,16 @@ function OfflineAgentTrustWorkspace() {
 }
 
 export default function AgentTrustPage() {
-  const [view, setView] = useState<'authorization' | 'evidence'>('authorization');
+  const navigate = useNavigate();
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
         eyebrow="访问与安全"
         title="模型调用授权"
         description="按访问凭证、项目、人员或 Agent 收窄可调用模型与端点；右侧固定显示适用原因与生命周期操作，不扩展 Tool 或 MCP 权限。"
+        actions={<Button onClick={() => navigate('/agent-trust-evidence')}>离线合同验证</Button>}
       />
-      <div className="ur-modelgov-tabs" role="tablist" aria-label="模型调用授权视图">
-        <Button role="tab" aria-selected={view === 'authorization'} type={view === 'authorization' ? 'primary' : 'tertiary'} theme={view === 'authorization' ? 'solid' : 'borderless'} onClick={() => setView('authorization')}>运行时授权策略</Button>
-        <Button role="tab" aria-selected={view === 'evidence'} type={view === 'evidence' ? 'primary' : 'tertiary'} theme={view === 'evidence' ? 'solid' : 'borderless'} onClick={() => setView('evidence')}>Agent 离线证据</Button>
-      </div>
-      {view === 'authorization' ? <ModelAuthorizationWorkspace /> : <OfflineAgentTrustWorkspace />}
+      <ModelAuthorizationWorkspace />
     </div>
   );
 }

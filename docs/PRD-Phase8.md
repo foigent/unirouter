@@ -213,7 +213,7 @@ Provider 测试流量。
 - 其他产品尚未实现的完整工作区不以 disabled/coming soon 方式占据 UniRouter
   一级或二级菜单；可以在 Integration 页说明边界和连接状态。UniRouter 自有的
   “模型调用授权”已经接入真实产品本地策略与请求 PEP，不再显示“规划中”；历史
-  离线 Agent Trust 证据放在页内独立 Tab，不伪装为运行时授权。
+  离线 Agent Trust 夹具从主工作区移到辅助 `/agent-trust-evidence` 合同验证页，不伪装为运行时授权。
 
 ### 6.2 UniRouter 菜单归并
 
@@ -223,12 +223,12 @@ Provider 测试流量。
 | `风险与控制建议` | 退出主导航；当前保留离线证据，未来才可成为模型治理中的 proposal inbox，以及 Receipt 中的只读风险摘要/调查跳转 |
 | `成员生命周期` | 并入“组织与成员”；不再作为独立二级菜单 |
 | `项目与成员` + `用户管理` | 合并为“组织与成员”；当前默认进入可用的本地账号管理，企业目录投影、项目成员和离线生命周期证据使用页内 Tab，不复制菜单 |
-| `Agent 信任防火墙` | 改名“模型调用授权”，并入访问与安全；运行时策略只约束 UniRouter 模型调用，历史 Agent Trust 证据页内保留，任何 Tool/MCP 权限仍不属于这里 |
+| `Agent 信任防火墙` | 改名“模型调用授权”，并入访问与安全；运行时策略只约束 UniRouter 模型调用，历史 Agent Trust 夹具通过辅助验证页保留，任何 Tool/MCP 权限仍不属于这里 |
 | `来源与缺口 Passport` | 退出主导航；UniRouter Source provenance 留在 Receipt，跨源 Passport 进入 X-Insight |
 | `资金账户` | 改名“预算与成本中心”；现有 wallet 只作为请求级结算兼容内核，不再宣称企业现金或总账 |
 | `模型计费` | 改名“费率与计价”；当前基础价格/组织倍率是兼容能力，未来升级为版本化 Rate Card |
 | `财务真值` | 改名“分摊与对账”；UniRouter 保留账本/供应商对账，跨期异常和原因进入 X-Insight |
-| `图像任务` | 改名“模型任务”；Image V1 是任务类型，不是单独业务域；未来 audio/video 必须分别有 Endpoint Profile |
+| `图像任务` | 改名“异步模型任务”；当前仅实现 Image V1 Endpoint Profile，不暗示文字、语音或视频任务已经可用；未来 audio/video 必须分别有 Endpoint Profile |
 | `X-Insight 数据交换控制` | 保留在“系统与集成”；只管理 outbound enable/pause、Source identity、交付/回执/Gap 和受控 deep link |
 
 UniRouter 不新增“Tool Center”“MCP Servers”“跨产品调查”“Cases”“Findings”或
@@ -255,7 +255,7 @@ UniRouter 不新增“Tool Center”“MCP Servers”“跨产品调查”“Cas
 | 访问与安全 | 内容安全 | 模型输入/输出 Guardrail、敏感内容默认脱敏和有权开启原文查看；不开启工具副作用审批 |
 | 访问与安全 | 审计日志 | UniRouter 管理动作、策略变更和访问记录；跨来源 Evidence/Case 进入 X-Insight |
 | 监控与用量 | 请求日志 | 单次模型请求列表、Receipt 和常驻右侧 Inspector，支持受控跳转至 X-Insight 深度调查 |
-| 监控与用量 | 模型任务 | Image 等异步模型 Endpoint 任务；未来 audio/video 各自通过独立 Profile 接入，不按媒体类型继续增加平级菜单 |
+| 监控与用量 | 异步模型任务 | 当前仅为 Image V1；未来 audio/video 各自通过独立 Profile 接入，不按媒体类型继续增加平级菜单，也不得在未实现时显示为已支持 |
 | 监控与用量 | 用量分析 | 整体、模型、部门、项目和个人的用量/成本切片；跨执行原因分析跳转 X-Insight |
 | 监控与用量 | 通知中心 | UniRouter 配额、账务、运行状态和模型策略通知；不作为跨产品 Case 系统 |
 | 监控与用量 | 运行状态 | UniRouter 实例、Provider、模型路由和依赖健康；Tool/MCP 运行状态由其产品承载 |

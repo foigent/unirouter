@@ -137,6 +137,8 @@ describe('navigation role boundaries', () => {
     expect(isRouteAllowedForRole('/organization-members', 'project_admin')).toBe(true);
     expect(isRouteAllowedForRole('/agent-trust', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/agent-trust', 'org_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/agent-trust-evidence', 'platform_admin')).toBe(true);
+    expect(isRouteAllowedForRole('/agent-trust-evidence', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/provenance-passport', 'platform_admin')).toBe(true);
     expect(isRouteAllowedForRole('/provenance-passport', 'org_admin')).toBe(true);
     expect(isRouteAllowedForRole('/license', 'org_admin')).toBe(false);
@@ -145,6 +147,7 @@ describe('navigation role boundaries', () => {
     expect(isRouteAllowedForRole('/risk-control', 'billing_admin')).toBe(false);
     expect(isRouteAllowedForRole('/member-lifecycle', 'billing_admin')).toBe(false);
     expect(isRouteAllowedForRole('/agent-trust', 'billing_admin')).toBe(false);
+    expect(isRouteAllowedForRole('/agent-trust-evidence', 'billing_admin')).toBe(false);
     expect(isRouteAllowedForRole('/provenance-passport', 'billing_admin')).toBe(false);
   });
 
