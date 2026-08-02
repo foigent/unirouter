@@ -5,6 +5,7 @@ import { Typography, Table, Spin, Tag, Tooltip, Button, Progress, Checkbox, Sele
 import {
   IconActivity,
   IconAlertTriangle,
+  IconBell,
   IconClock,
   IconCoinMoney,
   IconHistogram,
@@ -23,7 +24,7 @@ import { api } from '../api/client';
 import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney, microsToChartYuan, parseMicros } from '../ui';
 import { formatCompactNumber } from '../utils/formatNumber';
 import { useAuthStore } from '../store/auth';
-import { isBillingRole, isOrgViewerRole, isPlatformAdminRole, isRouteAllowedForRole } from '../navigation';
+import { hasLicensedFeature, isBillingRole, isOrgViewerRole, isPlatformAdminRole, isRouteAllowedForRole } from '../navigation';
 import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
@@ -48,6 +49,15 @@ interface DashboardStats {
   channel_health?: { id: number; name: string; provider: string; enabled: boolean; status: string; success_count: number; fail_count: number }[];
 	delta_vs_yesterday?: { cost_micros: string; latency_ms: number; success_rate: number };
 }
+
+interface DashboardAttention {
+  summary_kind: 'notification_events';
+  attention_level: string;
+  open_critical: number;
+  open_warning: number;
+}
+
+type AttentionLoadState = 'idle' | 'loading' | 'ready' | 'error' | 'locked';
 
 // Semi Table compares dataSource references during componentDidUpdate. Keep the
 // empty state stable so unrelated dashboard state updates cannot trigger an
@@ -128,6 +138,19 @@ function channelHealthView(ch: NonNullable<DashboardStats['channel_health']>[num
   if (ch.status === 'error') return { tone: 'error', label: '异常', icon: <IconAlertTriangle /> };
   if (ch.status === 'warning' || ch.status === 'degraded') return { tone: 'warning', label: '告警', icon: <IconAlertTriangle /> };
   return { tone: 'healthy', label: '健康', icon: <IconTickCircle /> };
+}
+
+function notificationAttentionLabel(level?: string) {
+  switch (level) {
+    case 'critical':
+      return '严重';
+    case 'warning':
+      return '预警';
+    case 'none':
+      return '无待处理';
+    default:
+      return level || '-';
+  }
 }
 
 function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_health']>[number] }) {
@@ -229,7 +252,11 @@ export default function DashboardPage() {
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
   const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [organizationsError, setOrganizationsError] = useState('');
+  const [attention, setAttention] = useState<DashboardAttention | null>(null);
+  const [attentionLoadState, setAttentionLoadState] = useState<AttentionLoadState>('idle');
   const requestVersion = useRef(0);
+  const attentionRequestVersion = useRef(0);
+  const notificationsLicensed = hasLicensedFeature(user?.license_access, 'notifications');
 
   const loadOrganizations = useCallback(async () => {
     if (!platform) return;
@@ -264,7 +291,39 @@ export default function DashboardPage() {
     }
   }, [platform, range, selectedOrgID]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const fetchAttention = useCallback(async () => {
+    const version = ++attentionRequestVersion.current;
+    if (!platform) {
+      setAttention(null);
+      setAttentionLoadState('idle');
+      return;
+    }
+    if (!notificationsLicensed) {
+      setAttention(null);
+      setAttentionLoadState('locked');
+      return;
+    }
+    setAttention(null);
+    setAttentionLoadState('loading');
+    try {
+      const data = await api.getInternalStatus(selectedOrgID ? { org_id: selectedOrgID } : undefined);
+      if (!data) throw new Error('服务未返回通知摘要');
+      if (version !== attentionRequestVersion.current) return;
+      setAttention(data);
+      setAttentionLoadState('ready');
+    } catch {
+      if (version !== attentionRequestVersion.current) return;
+      setAttention(null);
+      setAttentionLoadState('error');
+    }
+  }, [notificationsLicensed, platform, selectedOrgID]);
+
+  const refreshDashboard = useCallback(() => {
+    void fetchData();
+    void fetchAttention();
+  }, [fetchAttention, fetchData]);
+
+  useEffect(() => { refreshDashboard(); }, [refreshDashboard]);
 
   const comparableDelta = range === '24h' ? stats?.delta_vs_yesterday : undefined;
   const trendData = (stats?.daily_trend || []).map(d => ({
@@ -288,6 +347,15 @@ export default function DashboardPage() {
   const p99Latency = stats?.p99_latency_ms ?? p95Latency;
   const healthyChannels = (stats?.channel_health || []).filter(ch => channelHealthView(ch).tone === 'healthy').length;
   const channelTotal = (stats?.channel_health || []).length;
+  const enabledUnhealthyChannels = (stats?.channel_health || []).filter(ch => {
+    const tone = channelHealthView(ch).tone;
+    return ch.enabled && (tone === 'warning' || tone === 'error');
+  }).length;
+  const recentChannelFailures = (stats?.channel_health || []).reduce((total, ch) => total + ch.fail_count, 0);
+  const hasWindowSample = (stats?.total_requests || 0) > 0 || (stats?.channel_health || []).some(ch => ch.success_count + ch.fail_count > 0);
+  const windowNeedsAttention = hasWindowSample && (enabledUnhealthyChannels > 0 || (stats?.success_rate || 0) < 0.99);
+  const openNotificationCount = (attention?.open_critical || 0) + (attention?.open_warning || 0);
+  const canOpenNotifications = notificationsLicensed && isRouteAllowedForRole('/notifications', user?.role);
   const canReadWallet = platform || isBillingRole(user?.role);
   const canReadChannelHealth = platform;
   const canOpenRecentRequests = isRouteAllowedForRole('/logs', user?.role);
@@ -407,7 +475,7 @@ export default function DashboardPage() {
             ))}
           </div>
           <Tooltip content="刷新">
-            <Button icon={<IconRefresh />} size="small" onClick={fetchData} className="ur-icon-button" aria-label="刷新总览" />
+            <Button icon={<IconRefresh />} size="small" onClick={refreshDashboard} className="ur-icon-button" aria-label="刷新总览" />
           </Tooltip>
         </>
       )}
@@ -422,7 +490,7 @@ export default function DashboardPage() {
           <EmptyState
             title="总览数据加载失败"
             description={loadError}
-            actions={<Button type="primary" icon={<IconRefresh />} onClick={fetchData} aria-label="重新加载总览">重新加载</Button>}
+            actions={<Button type="primary" icon={<IconRefresh />} onClick={refreshDashboard} aria-label="重新加载总览">重新加载</Button>}
           />
         </Surface>
       </div>
@@ -446,7 +514,7 @@ export default function DashboardPage() {
               <div className="ur-dashboard-status-card">
                 <IconServer />
                 <div>
-                  <Text>健康通道</Text>
+                  <Text>窗口健康通道</Text>
                   <strong>{healthyChannels}/{channelTotal || 0}</strong>
                 </div>
               </div>
@@ -505,6 +573,64 @@ export default function DashboardPage() {
             ) : <Text type="tertiary" size="small">按所选时间窗口累计</Text>}
           />
         </div>
+
+        {platform && (
+          <Surface
+            title="运行关注与待处理动作"
+            description="只汇总当前窗口信号和未确认通知，不把统计相关性写成根因；深度归因仍进入 X-Insight 调查工作区。"
+            actions={(
+              <div className="ur-toolbar">
+                <Button size="small" onClick={() => navigate('/status')}>查看运行状态</Button>
+                {canOpenNotifications && <Button size="small" type="primary" onClick={() => navigate('/notifications')}>处理通知</Button>}
+              </div>
+            )}
+          >
+            <div className="ur-dashboard-attention-grid">
+              <div className="ur-dashboard-status-card">
+                <IconPulse />
+                <div>
+                  <Text>运行信号</Text>
+                  <strong>
+                    <StatusTag status={!hasWindowSample ? 'pending' : windowNeedsAttention ? 'warning' : 'available'}>
+                      {!hasWindowSample ? '暂无可判定样本' : windowNeedsAttention ? '需要关注' : '当前窗口正常'}
+                    </StatusTag>
+                  </strong>
+                  <Text>{hasWindowSample ? `异常通道 ${enabledUnhealthyChannels} · 失败请求 ${formatCompactNumber(recentChannelFailures)}` : '等待真实请求后评估成功率与通道窗口状态'}</Text>
+                </div>
+              </div>
+              <div className="ur-dashboard-status-card">
+                <IconBell />
+                <div>
+                  <Text>未确认通知</Text>
+                  <strong>
+                    {attentionLoadState === 'ready' && attention ? (
+                      <StatusTag status={attention.attention_level}>{notificationAttentionLabel(attention.attention_level)} · {openNotificationCount}</StatusTag>
+                    ) : attentionLoadState === 'loading' ? (
+                      <StatusTag status="pending">读取中</StatusTag>
+                    ) : attentionLoadState === 'locked' ? (
+                      <StatusTag status="disabled">授权未包含</StatusTag>
+                    ) : (
+                      <StatusTag status="error">读取失败</StatusTag>
+                    )}
+                  </strong>
+                  <Text>{attentionLoadState === 'ready' && attention ? `严重 ${attention.open_critical} · 预警 ${attention.open_warning}` : '不以缺失或读取失败冒充零事件'}</Text>
+                </div>
+              </div>
+              <div className="ur-dashboard-status-card">
+                <IconCoinMoney />
+                <div>
+                  <Text>结算风险</Text>
+                  <strong>
+                    <StatusTag status={!hasWalletThreshold ? 'pending' : lowBalance ? 'warning' : 'available'}>
+                      {!hasWalletThreshold ? '阈值未配置' : lowBalance ? '低余额待处理' : '余额正常'}
+                    </StatusTag>
+                  </strong>
+                  <Text>{hasWalletThreshold ? `可用 ${formatMoney(walletAvailable)} · 阈值 ${formatMoney(walletThreshold)}` : '配置企业低余额阈值后才进行风险判断'}</Text>
+                </div>
+              </div>
+            </div>
+          </Surface>
+        )}
 
         <div className="ur-dashboard-analytics-grid">
           <Surface

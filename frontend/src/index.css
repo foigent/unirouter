@@ -674,6 +674,29 @@ body {
   gap: 12px;
 }
 
+.ur-dashboard-attention-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ur-dashboard-attention-grid .ur-dashboard-status-card {
+  align-items: flex-start;
+}
+
+.ur-dashboard-attention-grid .ur-dashboard-status-card > div {
+  min-width: 0;
+}
+
+.ur-dashboard-attention-grid .ur-dashboard-status-card strong {
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+.ur-dashboard-attention-grid .ur-dashboard-status-card strong span {
+  color: inherit !important;
+}
+
 .ur-project-detail {
   scroll-margin-top: 20px;
   border-radius: var(--ur-radius);
@@ -2410,6 +2433,10 @@ body {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .ur-dashboard-attention-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .ur-provider-explorer .semi-table-pagination-info,
   .ur-context-explorer .semi-table-pagination-info {
     display: none;
@@ -2534,6 +2561,7 @@ body {
   .ur-modelgov-form-grid,
   .ur-modelgov-assignment,
   .ur-dashboard-analytics-grid,
+  .ur-dashboard-attention-grid,
   .ur-dashboard-status-strip,
   .ur-dashboard-hero,
   .ur-login-shell,

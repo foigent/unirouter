@@ -508,7 +508,13 @@ export default function InternalStatusPage() {
               value={<StatusTag status={runtimeData?.status || 'pending'}>{runtimeStatusLabel(runtimeData?.status)}</StatusTag>}
               icon={<IconServer />}
               tone={runtimeData?.status === 'degraded' ? 'red' : runtimeData?.status === 'warning' ? 'amber' : 'green'}
-              meta={`${runtimeData?.runtime_environment.environment || '-'} / ${runtimeData?.runtime_environment.deployment_role || '-'}`}
+              meta={(
+                <span>
+                  {runtimeData?.runtime_environment.environment || '-'} / {runtimeData?.runtime_environment.deployment_role || '-'}
+                  <br />
+                  {runtimeData?.runtime_environment.version || '版本未声明'} · {runtimeData?.runtime_environment.commit ? runtimeData.runtime_environment.commit.slice(0, 12) : 'commit 未声明'}
+                </span>
+              )}
             />
             <MetricTile
               label="数据库"
