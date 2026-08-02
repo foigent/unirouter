@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import TestPage, { firstChannelModel, parseChannelModels, resolveChannelTestModel, summarizeBatchChannels } from '../TestPage';
 
 const mocks = vi.hoisted(() => ({
@@ -67,6 +67,26 @@ describe('TestPage model selection helpers', () => {
 
     expect(await screen.findByRole('button', { name: '批量检测 2 个生效通道' })).toBeTruthy();
     expect(screen.getByText(/只检测 2 个状态为“生效”的通道；排除 1 个（kimi（通道禁用））/)).toBeTruthy();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it('fails closed instead of presenting a transient channel-list failure as zero channels', async () => {
+    mocks.getChannels
+      .mockRejectedValueOnce(new Error('temporary unavailable'))
+      .mockResolvedValue({ data: CHANNELS, total: CHANNELS.length });
+
+    render(<TestPage />);
+
+    expect(await screen.findByText('读取失败')).toBeTruthy();
+    expect(screen.getByText(/当前数量未知，真实检测操作已阻止/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '批量检测（通道未就绪）' })).toBeDisabled();
+    expect(screen.queryByText(/批量检测口径：共 0 个通道/)).toBeNull();
+    expect(mocks.request).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '重试通道列表' }));
+
+    expect(await screen.findByRole('button', { name: '批量检测 2 个生效通道' })).toBeTruthy();
+    expect(mocks.getChannels).toHaveBeenCalledTimes(2);
     expect(mocks.request).not.toHaveBeenCalled();
   });
 });

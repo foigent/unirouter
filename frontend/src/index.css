@@ -697,6 +697,17 @@ body {
   color: inherit !important;
 }
 
+.ur-inline-alert-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ur-inline-alert-action > span {
+  min-width: 0;
+}
+
 .ur-project-detail {
   scroll-margin-top: 20px;
   border-radius: var(--ur-radius);
@@ -2456,6 +2467,11 @@ body {
 
   .ur-audit-filter-actions,
   .ur-project-view-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ur-inline-alert-action {
     align-items: stretch;
     flex-direction: column;
   }

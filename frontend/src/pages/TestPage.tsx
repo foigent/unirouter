@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Banner, Form, Button, Toast, Typography, Table, Modal } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
 import { LatencyText, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
@@ -32,6 +32,8 @@ interface TestResult {
   tokens_used?: number;
 }
 
+type ChannelLoadState = 'loading' | 'ready' | 'error';
+
 export { parseChannelModels } from '../utils/channelReadiness';
 
 export function firstChannelModel(channel?: Pick<Channel, 'models'>) {
@@ -56,14 +58,30 @@ export default function TestPage() {
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
   const [selectedModel, setSelectedModel] = useState('');
   const [channelKeys, setChannelKeys] = useState<ChannelReadinessCredential[]>([]);
+  const [channelLoadState, setChannelLoadState] = useState<ChannelLoadState>('loading');
+  const [channelLoadError, setChannelLoadError] = useState('');
   const [credentialsLoaded, setCredentialsLoaded] = useState(false);
   const [credentialLoadError, setCredentialLoadError] = useState('');
   const formApiRef = useRef<any>(null);
 
+  const loadChannels = useCallback(async () => {
+    setChannelLoadState('loading');
+    setChannelLoadError('');
+    try {
+      const items = await loadAllPages<Channel>((page, size) => api.getChannels(page, size));
+      setChannels(items);
+      setChannelLoadState('ready');
+    } catch (error: any) {
+      setChannels([]);
+      setSelectedChannelId(null);
+      setSelectedModel('');
+      setChannelLoadError(`通道列表加载失败${error?.message ? `：${error.message}` : ''}`);
+      setChannelLoadState('error');
+    }
+  }, []);
+
   useEffect(() => {
-    loadAllPages<Channel>((page, size) => api.getChannels(page, size))
-      .then(setChannels)
-      .catch((error: any) => Toast.error({ content: `通道列表加载失败${error?.message ? `：${error.message}` : ''}` }));
+    void loadChannels();
     loadAllPages<ChannelReadinessCredential>((page, size) => api.getChannelKeys(page, size))
       .then((items) => {
         setChannelKeys(items);
@@ -75,7 +93,7 @@ export default function TestPage() {
         setCredentialsLoaded(false);
         setCredentialLoadError(`供应商凭证状态加载失败${error?.message ? `：${error.message}` : ''}`);
       });
-  }, []);
+  }, [loadChannels]);
 
   const withResultKey = (result: Omit<TestResult, 'result_key'>): TestResult => ({
     ...result,
@@ -115,6 +133,10 @@ export default function TestPage() {
   };
 
   const handleTest = async (values: Record<string, any>) => {
+    if (channelLoadState !== 'ready') {
+      Toast.error({ content: channelLoadError || '通道列表尚未加载，已阻止真实检测请求' });
+      return;
+    }
     const channelId = Number(values.channel_id || selectedChannelId);
     const channel = channels.find(c => c.id === channelId);
     const model = resolveChannelTestModel(channel, values.model || selectedModel);
@@ -147,6 +169,10 @@ export default function TestPage() {
   };
 
   const executeBatchTest = async () => {
+    if (channelLoadState !== 'ready') {
+      Toast.error({ content: channelLoadError || '通道列表尚未加载，已阻止真实检测请求' });
+      return;
+    }
     setTesting(true);
     const activeChannels = channels.filter(c => c.status === 'active');
     const batchResults: TestResult[] = [];
@@ -187,6 +213,10 @@ export default function TestPage() {
   };
 
   const handleBatchTest = () => {
+    if (channelLoadState !== 'ready') {
+      Toast.error({ content: channelLoadError || '通道列表尚未加载，已阻止真实检测请求' });
+      return;
+    }
     const activeCount = batchScope.included.length;
     if (activeCount === 0) {
       Toast.warning({ content: '当前没有可检测的活跃通道' });
@@ -267,21 +297,37 @@ export default function TestPage() {
         description="向真实供应商发起非流式模型请求，验证凭证、模型和网络链路；检测可能产生供应商费用，并写入正常用量与计费记录。"
       />
 
-      <Banner
-        type={batchScope.excluded.length > 0 ? 'warning' : 'info'}
-        description={`批量检测口径：共 ${channels.length} 个通道，只检测 ${batchScope.included.length} 个状态为“生效”的通道；排除 ${batchScope.excluded.length} 个（${excludedBatchDescription}）。手动检测可用于待发布/禁用通道的上线前验证，但不会改变通道状态。`}
-        closeIcon={null}
-        style={{ marginBottom: 16 }}
-      />
+      {channelLoadState === 'ready' ? (
+        <Banner
+          type={batchScope.excluded.length > 0 ? 'warning' : 'info'}
+          description={`批量检测口径：共 ${channels.length} 个通道，只检测 ${batchScope.included.length} 个状态为“生效”的通道；排除 ${batchScope.excluded.length} 个（${excludedBatchDescription}）。手动检测可用于待发布/禁用通道的上线前验证，但不会改变通道状态。`}
+          closeIcon={null}
+          style={{ marginBottom: 16 }}
+        />
+      ) : channelLoadState === 'error' ? (
+        <Banner
+          type="danger"
+          description={(
+            <div className="ur-inline-alert-action">
+              <span>{channelLoadError}；当前数量未知，真实检测操作已阻止。</span>
+              <Button size="small" onClick={() => void loadChannels()}>重试通道列表</Button>
+            </div>
+          )}
+          closeIcon={null}
+          style={{ marginBottom: 16 }}
+        />
+      ) : (
+        <Banner type="info" description="正在加载通道列表；完成前不显示数量，也不会发起真实检测请求。" closeIcon={null} style={{ marginBottom: 16 }} />
+      )}
       {credentialLoadError && (
         <Banner type="danger" description={`${credentialLoadError}；为避免选错凭证，真实检测操作已阻止。`} closeIcon={null} style={{ marginBottom: 16 }} />
       )}
 
       <div className="ur-kpi-grid ur-workload-kpis">
-        <MetricTile label="全部通道" value={channels.length} tone="blue" />
-        <MetricTile label="生效通道" value={batchScope.included.length} tone="green" meta="由通道生命周期决定" />
-        <MetricTile label="可发起真实检测" value={credentialsLoaded ? executableBatchCount : '待凭证状态'} tone={credentialsLoaded && executableBatchCount === batchScope.included.length ? 'green' : 'amber'} meta="还需凭证、模型和冷却状态" />
-        <MetricTile label="待发布 / 禁用" value={batchScope.excluded.length} tone={batchScope.excluded.length ? 'amber' : 'slate'} meta="凭证启用不会改变此状态" />
+        <MetricTile label="全部通道" value={channelLoadState === 'ready' ? channels.length : channelLoadState === 'error' ? '读取失败' : '加载中'} tone={channelLoadState === 'error' ? 'red' : 'blue'} />
+        <MetricTile label="生效通道" value={channelLoadState === 'ready' ? batchScope.included.length : '未知'} tone={channelLoadState === 'ready' ? 'green' : 'slate'} meta="由通道生命周期决定" />
+        <MetricTile label="可发起真实检测" value={channelLoadState !== 'ready' ? '未知' : credentialsLoaded ? executableBatchCount : '待凭证状态'} tone={channelLoadState === 'ready' && credentialsLoaded && executableBatchCount === batchScope.included.length ? 'green' : 'amber'} meta="还需凭证、模型和冷却状态" />
+        <MetricTile label="待发布 / 禁用" value={channelLoadState === 'ready' ? batchScope.excluded.length : '未知'} tone={channelLoadState === 'ready' && batchScope.excluded.length ? 'amber' : 'slate'} meta="凭证启用不会改变此状态" />
       </div>
 
       <Surface title="检测请求">
@@ -295,6 +341,7 @@ export default function TestPage() {
               label: `${c.name} (${c.provider}) · 通道${channelStatusLabel(c.status)}`,
               value: c.id,
             }))}
+            disabled={channelLoadState !== 'ready'}
             style={{ width: 300 }}
             onChange={(v) => {
               const nextChannel = channels.find(c => c.id === Number(v));
@@ -328,11 +375,11 @@ export default function TestPage() {
             style={{ width: 400 }}
           />
           <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
-            <Button type="primary" onClick={submitSelectedChannelTest} loading={testing}>
+            <Button type="primary" onClick={submitSelectedChannelTest} loading={testing} disabled={channelLoadState !== 'ready'}>
               检测选中通道
             </Button>
-            <Button onClick={handleBatchTest} loading={testing}>
-              批量检测 {batchScope.included.length} 个生效通道
+            <Button onClick={handleBatchTest} loading={testing} disabled={channelLoadState !== 'ready'}>
+              {channelLoadState === 'ready' ? `批量检测 ${batchScope.included.length} 个生效通道` : '批量检测（通道未就绪）'}
             </Button>
           </div>
         </Form>
