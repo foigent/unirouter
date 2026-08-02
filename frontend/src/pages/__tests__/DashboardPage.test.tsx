@@ -27,10 +27,12 @@ vi.mock('react-router-dom', async () => {
 
 const mockGetDashboardStats = vi.fn();
 const mockGetOrganizations = vi.fn();
+const mockGetInternalStatus = vi.fn();
 vi.mock('../../api/client', () => ({
   api: {
     getDashboardStats: (...args: any[]) => mockGetDashboardStats(...args),
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
+    getInternalStatus: (...args: any[]) => mockGetInternalStatus(...args),
   },
 }));
 
@@ -95,6 +97,12 @@ describe('DashboardPage', () => {
       data: [{ id: 1, name: '北区组织' }, { id: 2, name: '南区组织' }],
       total: 2,
     });
+    mockGetInternalStatus.mockResolvedValue({
+      summary_kind: 'notification_events',
+      attention_level: 'warning',
+      open_critical: 1,
+      open_warning: 2,
+    });
     useAuthStore.setState({
       token: 'token',
       isAuthenticated: true,
@@ -124,6 +132,40 @@ describe('DashboardPage', () => {
     expect(html).toContain('统一观察请求量、成功率、延迟、成本和通道健康状态。');
     expect(html).not.toContain('Gateway overview');
     expect(html).not.toContain('AI Gateway 控制台');
+  });
+
+  it('summarizes verifiable risks and contextual actions without duplicating the navigation taxonomy', async () => {
+    renderDashboard();
+
+    expect(await screen.findByText('运行关注与待处理动作')).toBeTruthy();
+    expect(mockGetInternalStatus).toHaveBeenCalledWith({ org_id: 1 });
+    expect(screen.getByText('运行信号')).toBeTruthy();
+    expect(screen.getByText('需要关注')).toBeTruthy();
+    expect(screen.getByText(/异常通道 1 · 失败请求 350/)).toBeTruthy();
+    expect(screen.getByText('预警 · 3')).toBeTruthy();
+    expect(screen.getByText('严重 1 · 预警 2')).toBeTruthy();
+    expect(screen.getByText('结算风险')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '查看运行状态' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '处理通知' })).toBeTruthy();
+    expect(screen.queryByText('任务入口')).toBeNull();
+  });
+
+  it('does not turn missing traffic or a failed notification summary into a healthy result', async () => {
+    mockGetDashboardStats.mockResolvedValue({
+      ...MOCK_STATS,
+      total_requests: 0,
+      success_rate: 0,
+      channel_health: [],
+      recent_logs: [],
+    });
+    mockGetInternalStatus.mockRejectedValue(new Error('unavailable'));
+
+    renderDashboard();
+
+    expect(await screen.findByText('暂无可判定样本')).toBeTruthy();
+    expect(await screen.findByText('读取失败')).toBeTruthy();
+    expect(screen.getByText('不以缺失或读取失败冒充零事件')).toBeTruthy();
+    expect(screen.queryByText('当前窗口正常')).toBeNull();
   });
 
   it('uses the selected platform organization as the explicit dashboard scope', async () => {
@@ -167,8 +209,10 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('button', { name: '上游通道' })).toBeNull();
     expect(screen.queryByRole('button', { name: '用户管理' })).toBeNull();
     expect(screen.getByText('结算可用额度')).toBeTruthy();
-    expect(screen.queryByText('健康通道')).toBeNull();
+    expect(screen.queryByText('窗口健康通道')).toBeNull();
     expect(screen.queryByText('通道健康状态')).toBeNull();
+    expect(screen.queryByText('运行关注与待处理动作')).toBeNull();
+    expect(mockGetInternalStatus).not.toHaveBeenCalled();
   });
 
   it('does not reproduce licensed navigation controls as dashboard task cards', async () => {
@@ -340,7 +384,7 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('组织只读总览')).toBeTruthy();
     expect(screen.getByText(/当前只读角色不提供日志明细入口/)).toBeTruthy();
     expect(screen.queryByText('结算可用额度')).toBeNull();
-    expect(screen.queryByText('健康通道')).toBeNull();
+    expect(screen.queryByText('窗口健康通道')).toBeNull();
     expect(screen.queryByText('通道健康状态')).toBeNull();
     fireEvent.click(screen.getByText(/req-abc-123/));
     expect(mockNavigate).not.toHaveBeenCalled();

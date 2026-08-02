@@ -40,6 +40,8 @@ describe('InternalStatusPage', () => {
         environment: 'staging',
         deployment_mode: 'docker-compose',
         deployment_role: 'canary',
+        version: '1.1.2-prd8-poc',
+        commit: '7b8d6015c8a40499e333d2021d70c155dc49bf27',
         go_version: 'go1.24',
         num_cpu: 8,
         goroutines: 12,
@@ -211,6 +213,7 @@ describe('InternalStatusPage', () => {
     expect(screen.getByText('通知关注级别')).toBeTruthy();
     expect(screen.getByText('未确认预警事件')).toBeTruthy();
     expect(screen.getAllByText('运行状态').length).toBeGreaterThan(1);
+    expect(screen.getByText(/1\.1\.2-prd8-poc · 7b8d6015c8a4/)).toBeTruthy();
     expect(screen.getByRole('link', { name: '打开通知中心' }).getAttribute('href')).toBe('/notifications');
     const advanced = screen.getByText('高级运行参数（排障时展开）').closest('details');
     expect(advanced?.hasAttribute('open')).toBe(false);
