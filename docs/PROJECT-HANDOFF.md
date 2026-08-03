@@ -2,6 +2,19 @@
 
 > Purpose: fast onboarding for Codex or any other executor/reviewer taking over this repository.
 > Read this file first, then follow the linked current-state documents.
+> **Newest product/Target checkpoint (2026-08-03):** PRD8 is the active
+> product boundary. The authorized existing-ECS release remains exact deployed
+> code `f81d8431aed9fea1f1ff63467f2c4df6cecfd2f5`; the development Gateway is now
+> externally verified at `https://8.130.18.85/` with Base URL
+> `https://8.130.18.85/v1`, a publicly trusted IP SAN certificate, automated
+> short-lived renewal, HTTP redirect, blocked internal ports and zero business/
+> Feed/Cursor data drift. Future development-target release commands must retain
+> `/opt/unirouter/tls/docker-compose.https.yml`. Do not use the ICP-blocked
+> `sslip.io` hostname. This does not start the user-gated data reset, fresh
+> Provider credentials/traffic or second-device Agent POC, and does not claim
+> customer DNS/CA or Production. Read `docs/PRD-Phase8.md`,
+> `docs/runbooks/SECOND-INTEGRATION-POC.md` and
+> `docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md` before action.
 > **Current product iteration (2026-07-31):** PRD7 is accepted for
 > repository-local implementation and active on
 > `codex/product-iteration-20260730`. Read `docs/PRD-Phase7.md`,

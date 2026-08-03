@@ -1177,19 +1177,36 @@ stable 与 canary 必须读取同一个
 docker compose -f docker-compose.yml -f docker-compose.canary.yml config
 ```
 
-staging 启用 TLS 时，把 `docker-compose.canary.yml` 的 Nginx mount 改为 `./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro`，并挂载证书：
+共享 Target 启用 TLS 时，不要编辑 commit-addressed release，也不要把证书或私钥
+复制进仓库。使用一个受控宿主拥有的第三 Compose overlay，按容器目标路径替换
+`/etc/nginx/conf.d/default.conf`，只读挂载 ACME webroot、证书 `live` 目录及其
+`archive` 目录：
 
 ```bash
-# TLS staging 配置示例
-# - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-# - /etc/letsencrypt/live/your-domain/fullchain.pem:/etc/nginx/ssl/fullchain.pem:ro
-# - /etc/letsencrypt/live/your-domain/privkey.pem:/etc/nginx/ssl/privkey.pem:ro
+# Target-owned TLS overlay example
+# - /opt/unirouter/tls/nginx.https.conf:/etc/nginx/conf.d/default.conf:ro
+# - /opt/unirouter/tls/acme-webroot:/var/www/certbot:ro
+# - /opt/unirouter/tls/letsencrypt/live/<identity>:/etc/letsencrypt/live/<identity>:ro
+# - /opt/unirouter/tls/letsencrypt/archive/<identity>:/etc/letsencrypt/archive/<identity>:ro
 ```
+
+证书 `live` 文件是指向 `archive` 的相对符号链接，所以两者必须一起按目录挂载；
+不要只绑定一个当前证书文件，否则续期切换符号链接后运行中容器可能继续读取旧
+inode。HTTP 80 必须保留 `/.well-known/acme-challenge/`，其他请求才重定向到
+HTTPS。每次 release 切换都必须继续带上同一个 Target-owned overlay，否则默认
+canary 配置会按设计恢复为 HTTP-only。
+
+先渲染三层 Compose，再用一次性 Nginx 容器和真实挂载执行 `nginx -t`；验证通过后
+仅重建 Nginx。续期必须由宿主调度、固定 Certbot image digest，并只在证书字节发生
+变化且 `nginx -t` 通过后 reload。开发 ECS 的精确实现、回滚和 SHA 见
+`docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md`；客户正式部署仍遵循 10.3，
+使用客户批准的 DNS/CA/TLS 代理。
 
 启动后可检查 Nginx 配置语法：
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.canary.yml exec nginx nginx -t
+docker compose -f docker-compose.yml -f docker-compose.canary.yml \
+  -f /path/to/target-owned-tls-overlay.yml exec nginx nginx -t
 ```
 
 ### 9.2 架构说明

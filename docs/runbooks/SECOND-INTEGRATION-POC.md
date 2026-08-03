@@ -29,6 +29,21 @@ a new Source/Cursor epoch and complete post-reset migration/bootstrap/readback.
 - Do not change provider credentials, traffic, Cursor/Checkpoint or the X-Insight Reference Connector while X-Insight remains under iteration.
 - Deployment secrets, TLS private keys and database credentials are not product data and are not handled by the reset procedure.
 
+## Current development Gateway Endpoint
+
+The current externally verified development endpoint is:
+
+- console: `https://8.130.18.85/`;
+- OpenAI-compatible Base URL: `https://8.130.18.85/v1`.
+
+It uses a publicly trusted short-lived IP SAN certificate with automated
+renewal. Do not use `8-130-18-85.sslip.io`: Alibaba Cloud's ICP interception
+returns 403 for that unfiled shared hostname. The current operator-browser and
+protocol checks close the development HTTPS prerequisite only. At POC start,
+revalidate the endpoint from the actual second device before creating or using
+fresh application credentials. Exact Target evidence is in
+`docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md`.
+
 ## Preflight order
 
 1. Record the exact release commit/tree, image digest, migration ledger and current ECS Deployment Profile.
