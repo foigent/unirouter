@@ -491,6 +491,12 @@ PostgreSQL race 集成、OpenAPI/路由、客户端样例与生产构建预算�
 HTTPS Target ready。精确证据见
 `docs/ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md`。
 
+上述只读预检已被 2026-08-03 的独立 Target 操作证据取代：当前开发 ECS 通过
+Let’s Encrypt 公网 IP SAN 证书提供 `https://8.130.18.85/`，自动续期、外部浏览器、
+端口隔离与数据库零漂移均已验证。它只关闭开发 Target 的 HTTPS 前置项；第二设备
+Agent 调用、数据清空、新 Provider 凭据、客户 DNS/CA 和 Production 仍未开始。精确
+证据见 `docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md`。
+
 ## 12. 封板声明
 
 PRD8 冻结产品边界；实现状态只以第 11.1、11.2、11.3、11.4 节列明的精确证据为准，

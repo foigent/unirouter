@@ -3,7 +3,7 @@
 > Work item: `UR-PRD8-ENTERPRISE-CONTROL-PLANE`
 > Date: 2026-08-02
 > Owner: UniRouter product/implementation owner
-> Status: Local implementation complete; PR/CI and existing-environment release separately authorized; customer-target integrations gated
+> Status: Local implementation, PR/CI, existing-environment release and development-Target HTTPS complete; second-device/data-reset and customer integrations gated
 > Product contract: `docs/PRD-Phase8.md`
 
 ## 1. Outcome
@@ -75,9 +75,12 @@ Every batch must preserve:
 These results are working-tree Local evidence. The current Agent/on-prem batch
 is recorded in
 `docs/ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md`.
-CI, Target and Production are
-recorded only after the separately authorized delivery steps actually pass;
-external directory/ERP/Provider integration remains unclaimed.
+CI, the non-clearing Target release and the development public HTTPS entrypoint
+have now passed under their separate authorizations. Exact HTTPS certificate,
+renewal, external-browser and zero-drift evidence is recorded in
+`docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md`. The user-started data
+reset, fresh Provider traffic, second-device client matrix, Production and
+external directory/ERP integration remain unclaimed.
 
 ## 4. Closed batch contracts
 

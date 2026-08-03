@@ -1,6 +1,20 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-03 PRD8 public HTTPS Target checkpoint:** the authorized
+> development ECS now serves a publicly trusted endpoint at
+> `https://8.130.18.85/` with OpenAI-compatible Base URL
+> `https://8.130.18.85/v1`. Let’s Encrypt IP SAN issuance, HTTP-to-HTTPS
+> redirect, HTTP/2 UI/health, unauthenticated API rejection, external browser
+> rendering, blocked internal ports and automated short-lived-certificate
+> renewal all pass. Only Nginx and the existing exact 443 security-group rule
+> changed; stable/canary/frontend/PostgreSQL/Redis identities and all recorded
+> business/Feed/Cursor counts remained unchanged. The `sslip.io` candidate was
+> rejected after Alibaba Cloud's ICP interception returned 403, so it is not a
+> supported endpoint. This remains a development Target result, not the
+> user-started data reset, fresh Provider traffic, second-device Agent POC,
+> customer DNS/CA or Production evidence. Evidence:
+> `docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md`.
 > **2026-08-02 PRD8 CI/merge/Target checkpoint:** PR #247 exact head
 > `aab74a669` passed required application CI and Protocol Conformance, then
 > squash-merged as `12efe9e3ba4dd753f6019468ca3b26d01a154c31`; the merge tree is
