@@ -8,6 +8,7 @@
 - [architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md](architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md) — 应用与 Agent 身份、统一可用性、客户端兼容、部署/TLS 和第二次联调重置边界
 - [architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md](architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md) — 成本优化权威口径、Prompt Cache 精确节省公式、Response Cache/Compression 决策、CO-1 API/UI 与后续运行时门禁
 - [ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md](ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md) — CO-0/CO-1 的精确 PostgreSQL 公式/租户隔离、全量 Go、365 项前端、构建预算与响应式 Inspector 本地证据
+- [ops/evidence/PRD8-COST-OPTIMIZATION-CO1-TARGET-20260804.md](ops/evidence/PRD8-COST-OPTIMIZATION-CO1-TARGET-20260804.md) — PR #255 精确 CI/合并、ECS 备份与发布、零漂移数据回读、公网 HTTPS 和登录后成本优化 UI 验收
 - [research/AGENT-CLIENT-COMPATIBILITY-20260802.md](research/AGENT-CLIENT-COMPATIBILITY-20260802.md) — OpenAI Agents、LangChain、AutoGen、OpenClaw、WorkBuddy 与飞书的官方配置事实和证据等级
 - [runbooks/SECOND-INTEGRATION-POC.md](runbooks/SECOND-INTEGRATION-POC.md) — 第二次联调前置、只读重置预览、客户端顺序和验收标准
 - [ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md](ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md) — APP/DEPLOY/COMPAT/INTEGRATION/RESET 与最新 359 项前端、Go、迁移、race、构建预算及 ECS HTTPS 只读基线

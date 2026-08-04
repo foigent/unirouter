@@ -1,6 +1,6 @@
 # Current Execution Record
 
-## Current Repository Execution — PRD8 Cost Optimization CO-0 / CO-1
+## Completed Repository And Target Execution — PRD8 Cost Optimization CO-0 / CO-1
 
 **Work item:** `UR-PRD8-COST-OPTIMIZATION-V1`
 
@@ -19,8 +19,9 @@ material decision gate. Exact contract:
 `a826702cfd3ccfa060a217ac961fb62d12835730` with a clean worktree before this
 batch.
 
-**Current result:** CO-0 and CO-1 form a Local verified candidate. Provider
-Prompt Cache is the only realized savings driver. Four
+**Current result:** CO-0 and CO-1 are merged and verified on the existing
+development/test Target. Provider Prompt Cache is the only realized savings
+driver. Four
 tenant-scoped GET APIs, exact micro-CNY formulas, daily/cumulative trend,
 evidence coverage, deterministic review candidates and a persistent Inspector
 are implemented. Exact Response Cache and Compression are explicitly excluded
@@ -33,10 +34,21 @@ parity and 1440/1024/768 local synthetic browser interaction checks pass.
 Evidence:
 `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md`.
 
+**CI and Target verification:** PR #255 exact head/tree
+`20cf0303072713b42c3015ddbcb7211f5e0ca06c` /
+`3b9351b4a18ba032e9b9fa6772eeb71c7cecec2b` passed Backend, Frontend,
+Docker, Change Routing and Protocol checks, then squash-merged as
+`dde6eff214067a594f26b6aa080286f6cb4682d9` with the same tree. The
+commit-addressed release is running as `1.1.3-prd8-costopt`; stable, canary and
+frontend health, HTTPS/401 boundaries, pre/post data equality and authenticated
+Cost Optimization UI at 1440/1024/767 pass. Evidence:
+`docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO1-TARGET-20260804.md`.
+
 **Boundary:** no Provider COGS claim, Prompt/response storage, migration,
 runtime cache/compression, route, settlement, Outbox, Feed, Cursor, Checkpoint,
-credential, traffic or deployment change. Commit, CI and release remain
-unclaimed. CO-2/CO-3 and CO-4/CO-5 require their separately defined gates.
+credential, data-reset or Provider-traffic change. CO-2/CO-3 and CO-4/CO-5
+require their separately defined gates; the completed development Target is
+not Production or second-device POC evidence.
 
 ## Completed Repository Execution — PRD8 Enterprise Control Plane Delivery
 
