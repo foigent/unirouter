@@ -52,10 +52,32 @@ fresh application credentials. Exact Target evidence is in
 4. Complete model governance/runtime release so each intended channel is `active`; an enabled provider credential does not activate a channel.
 5. Register one Workload Application per POC caller and create a bound credential.
 6. Select a model in the Effective Access Inspector and require all readiness axes to be ready.
-7. Run `scripts/poc/check-unirouter-gateway.sh` from the second device.
-8. Run exact-version clients in this order: OpenAI SDK, OpenAI Agents SDK Chat model, LangChain, AutoGen, OpenClaw, Tencent WorkBuddy.
-9. Validate request logs, usage, charge/finality and audit evidence after each client.
-10. Record failures by Client Profile, Endpoint Profile, model, channel and request ID; do not hide them behind a generic “connection failed”.
+7. Keep Invocation Optimization absent/default-off for the baseline Agent POC. It is not a prerequisite for Gateway compatibility.
+8. Run `scripts/poc/check-unirouter-gateway.sh` from the second device.
+9. Run exact-version clients in this order: OpenAI SDK, OpenAI Agents SDK Chat model, LangChain, AutoGen, OpenClaw, Tencent WorkBuddy.
+10. Validate request logs, usage, charge/finality and audit evidence after each client.
+11. Record failures by Client Profile, Endpoint Profile, model, channel and request ID; do not hide them behind a generic “connection failed”.
+
+## Optional Invocation Optimization experiment gate
+
+Do not configure Exact Cache keys or create an optimization policy merely to
+make the baseline POC pass. If the Product Owner separately authorizes an
+optimization experiment after baseline compatibility is closed:
+
+1. create one bounded project/model policy and advance it through Draft,
+   Validated and metadata-only Shadow;
+2. read
+   `GET /api/v1/invocation-optimization/policies/{ref}/readiness` for that
+   organization and exact policy revision;
+3. require `canary_admission_ready=true`, zero blockers and the expected
+   content-free Shadow counts for every targeted driver; and
+4. record a separate activation decision and a separate caller opt-in cohort.
+
+The readiness response has `runtime_mutation=none` and explicitly grants no
+activation or traffic authority. A Cache experiment additionally needs an
+operator key ceremony, rotation/recovery plan and all-or-none runtime binding.
+A Compression experiment does not need Cache keys, but still requires its own
+representative Shadow evidence and Product Owner Canary decision.
 
 ## Data reset gate
 

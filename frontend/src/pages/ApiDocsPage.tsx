@@ -218,6 +218,7 @@ const endpointGroups = [
       ['GET', '/api/v1/invocation-optimization/policies', '读取组织级调用优化策略与 Draft/Validated/Shadow/Canary/Rolled back 阶段'],
       ['POST', '/api/v1/invocation-optimization/policies', '创建默认关闭的调用优化草稿；不读写缓存、不修改 Prompt'],
       ['GET', '/api/v1/invocation-optimization/policies/{ref}', '读取一条租户隔离策略与精确修订'],
+      ['GET', '/api/v1/invocation-optimization/policies/{ref}/readiness', '读取当前修订的 Cache 运行时、Shadow 样本、eligible 与失败门禁；不授予启用或流量权限'],
       ['PUT', '/api/v1/invocation-optimization/policies/{ref}', '按 expected_revision 更新草稿或已回滚策略；不能关闭请求 opt-in'],
       ['POST', '/api/v1/invocation-optimization/policies/{ref}/validate', '校验并冻结策略修订，不改变请求执行'],
       ['POST', '/api/v1/invocation-optimization/policies/{ref}/shadow', '启动元数据 Shadow；不读缓存响应、不修改 Prompt'],

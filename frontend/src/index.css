@@ -2156,6 +2156,56 @@ body {
   font-weight: 650;
 }
 
+.ur-optimization-readiness {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ur-optimization-readiness-header,
+.ur-optimization-readiness-driver > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ur-optimization-readiness-header > strong,
+.ur-optimization-readiness-driver strong {
+  min-width: 0;
+  color: var(--ur-text);
+}
+
+.ur-optimization-readiness-drivers {
+  display: grid;
+  gap: 8px;
+}
+
+.ur-optimization-readiness-driver {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 10px;
+  background: var(--ur-bg-subtle);
+  padding: 9px 10px;
+}
+
+.ur-optimization-readiness-driver small {
+  color: var(--ur-text-muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ur-optimization-readiness-blockers {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ur-red);
+  font-size: 12px;
+}
+
 @media (max-width: 1279px) and (min-width: 769px) {
   .ur-explorer,
   .ur-explorer-with-detail {

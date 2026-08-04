@@ -151,6 +151,8 @@ export const api = {
   getInvocationOptimizationContract: () => request('/invocation-optimization/contract'),
   getInvocationOptimizationPolicies: (orgId?: number) =>
     request(appendParams('/invocation-optimization/policies', { org_id: orgId })),
+  getInvocationOptimizationPolicyReadiness: (policyRef: string, orgId?: number) =>
+    request(appendParams(`/invocation-optimization/policies/${encodeURIComponent(policyRef)}/readiness`, { org_id: orgId })),
   createInvocationOptimizationPolicy: (data: any) =>
     request('/invocation-optimization/policies', { method: 'POST', body: JSON.stringify(data) }),
   updateInvocationOptimizationPolicy: (policyRef: string, data: any) =>

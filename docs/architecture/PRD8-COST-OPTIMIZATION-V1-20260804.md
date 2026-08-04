@@ -3,7 +3,7 @@
 > Work item: `UR-PRD8-COST-OPTIMIZATION-V1`
 > Date: 2026-08-04
 > Product owner: UniRouter
-> Status: CO-0/CO-1 Target verified; CO-2 through CO-5 Local verified candidate
+> Status: CO-0 through CO-5 Target verified default-off; Canary readiness V1 Local verified candidate
 > Runtime mutation: none
 
 ## 1. Outcome
@@ -171,6 +171,13 @@ runtime readiness, evidence gates and only valid next transitions. Policy
 forms and transition reasons use side sheets; they do not add another global
 navigation row.
 
+The persistent inspector also reads one product-local, organization-scoped
+Canary readiness result for the selected policy revision. It shows exact
+content-free Shadow counters and stable blocker codes, fails closed if the
+readiness API is unavailable, and never treats technical readiness as
+activation or traffic authority. The transition endpoint independently reuses
+the same resolver and database evidence rather than trusting UI state.
+
 ## 7. Dependency-ordered continuation
 
 | Batch | Scope | Entry gate | Runtime effect |
@@ -181,6 +188,10 @@ navigation row.
 | CO-3 | Gateway Response Cache adapter, exact route identity, zero-charge delivery, Shadow/Canary and rollback | CO-2 contracts plus target key backend and explicit policy transition | Local implemented; target default-off |
 | CO-4 | Compression measurement contract and conservative whitespace-only Shadow evaluator | Quality/safety/token/latency gates | Local implemented; no target Shadow policy |
 | CO-5 | Content-free deterministic assignment and bounded Compression Canary | current-revision zero-failure Shadow evidence and explicit request opt-in | Local implemented; target default-off |
+
+The subsequent readiness increment is read-only. It adds no key, policy,
+request cohort, Provider traffic or runtime setting and does not change the
+CO-2 through CO-5 driver semantics.
 
 CO-2 must preserve the current route-outcome identity decision and cannot
 reuse Provider Prompt Cache pricing. CO-4/CO-5 cannot persist raw prompts by

@@ -73,6 +73,7 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"GET /api/v1/invocation-optimization/policies",
 		"POST /api/v1/invocation-optimization/policies",
 		"GET /api/v1/invocation-optimization/policies/{ref}",
+		"GET /api/v1/invocation-optimization/policies/{ref}/readiness",
 		"PUT /api/v1/invocation-optimization/policies/{ref}",
 		"POST /api/v1/invocation-optimization/policies/{ref}/validate",
 		"POST /api/v1/invocation-optimization/policies/{ref}/shadow",

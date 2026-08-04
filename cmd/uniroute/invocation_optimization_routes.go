@@ -20,6 +20,7 @@ func registerInvocationOptimizationRoutes(
 	mux.Handle("GET /api/v1/invocation-optimization/policies", guard(handler.ListInvocationOptimizationPolicies))
 	mux.Handle("POST /api/v1/invocation-optimization/policies", guard(handler.CreateInvocationOptimizationPolicy))
 	mux.Handle("GET /api/v1/invocation-optimization/policies/{ref}", guard(handler.GetInvocationOptimizationPolicy))
+	mux.Handle("GET /api/v1/invocation-optimization/policies/{ref}/readiness", guard(handler.GetInvocationOptimizationReadiness))
 	mux.Handle("PUT /api/v1/invocation-optimization/policies/{ref}", guard(handler.UpdateInvocationOptimizationPolicy))
 	mux.Handle("POST /api/v1/invocation-optimization/policies/{ref}/validate", guard(handler.ValidateInvocationOptimizationPolicy))
 	mux.Handle("POST /api/v1/invocation-optimization/policies/{ref}/shadow", guard(handler.ShadowInvocationOptimizationPolicy))

@@ -30,6 +30,7 @@ func TestRegisterInvocationOptimizationRoutesUsesOrganizationAdminAuthority(t *t
 		{http.MethodGet, "/api/v1/invocation-optimization/policies", ""},
 		{http.MethodPost, "/api/v1/invocation-optimization/policies", "{}"},
 		{http.MethodGet, "/api/v1/invocation-optimization/policies/opt_company_chat", ""},
+		{http.MethodGet, "/api/v1/invocation-optimization/policies/opt_company_chat/readiness", ""},
 		{http.MethodPut, "/api/v1/invocation-optimization/policies/opt_company_chat", "{}"},
 		{http.MethodPost, "/api/v1/invocation-optimization/policies/opt_company_chat/validate", "{}"},
 		{http.MethodPost, "/api/v1/invocation-optimization/policies/opt_company_chat/shadow", "{}"},

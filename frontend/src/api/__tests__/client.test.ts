@@ -812,6 +812,12 @@ describe('API Client', () => {
       expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/deployment/endpoints')
       expect(mockFetch.mock.calls[2][1]).toEqual(expect.objectContaining({ method: 'POST' }))
     })
+
+    it('encodes the tenant-scoped invocation optimization readiness request', async () => {
+      mockJsonResponse({ overall: 'blocked', runtime_mutation: 'none' })
+      await api.getInvocationOptimizationPolicyReadiness('opt/company chat', 7)
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/invocation-optimization/policies/opt%2Fcompany%20chat/readiness?org_id=7')
+    })
   })
 
   describe('error handling', () => {

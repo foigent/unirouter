@@ -42,6 +42,45 @@ interface OptimizationContract {
   x_insight_in_request_path: boolean;
 }
 
+interface OptimizationShadowEvidence {
+  samples: number;
+  eligible: number;
+  failures: number;
+}
+
+interface OptimizationReadinessBlocker {
+  code: string;
+  driver?: string;
+  description: string;
+}
+
+interface OptimizationDriverReadiness {
+  driver: 'response_cache' | 'compression';
+  target: 'disabled' | 'canary';
+  state: 'not_targeted' | 'pending_shadow' | 'blocked' | 'ready' | 'canary_active' | 'rolled_back';
+  runtime_required: boolean;
+  runtime_ready: boolean;
+  minimum_shadow_samples: number;
+  evidence: OptimizationShadowEvidence;
+  blockers: OptimizationReadinessBlocker[];
+}
+
+interface OptimizationCanaryReadiness {
+  contract_version: string;
+  purpose: 'canary_admission';
+  overall: 'ready' | 'blocked' | 'not_applicable';
+  canary_admission_ready: boolean;
+  policy_ref: string;
+  policy_revision: number;
+  policy_stage: string;
+  policy_status: string;
+  drivers: OptimizationDriverReadiness[];
+  blockers: OptimizationReadinessBlocker[];
+  runtime_mutation: 'none';
+  grants_activation_authority: false;
+  grants_traffic_authority: false;
+}
+
 interface ProjectOption {
   id: number;
   name: string;
@@ -58,6 +97,21 @@ const transitionCopy: Record<TransitionAction, { label: string; title: string; d
   shadow: { label: '启动 Shadow', title: '进入影子评估', description: '只记录资格、质量与节省估算，不读取缓存、不修改 Prompt。' },
   canary: { label: '启动 Canary', title: '启动受控灰度', description: '仅命中确定性分桶且显式 opt-in 的请求可能被优化；比例上限 10%。' },
   rollback: { label: '立即回滚', title: '回滚优化策略', description: '停止后续优化分配；既有终态证据保持不可变。' },
+};
+
+const readinessStateLabels: Record<string, string> = {
+  ready: '技术门禁满足', blocked: '尚有阻塞项', not_applicable: '当前不适用',
+  not_targeted: '未纳入', pending_shadow: '等待 Shadow', canary_active: 'Canary 运行中', rolled_back: '已回滚',
+};
+
+const readinessBlockerLabels: Record<string, string> = {
+  policy_inactive: '策略未处于可评估状态',
+  no_driver_targeted: '尚未选择需要评估的优化驱动',
+  policy_stage_not_shadow: '策略必须先推进到 Shadow 阶段',
+  response_cache_runtime_unavailable: 'Exact Cache 密钥与索引运行时尚未配置',
+  shadow_samples_insufficient: '当前策略修订的 Shadow 样本不足',
+  shadow_no_eligible_samples: '当前策略修订尚无 eligible 样本',
+  shadow_failures_present: 'Shadow 证据中存在分配、变更、安全或质量失败',
 };
 
 function percentLabel(basisPoints: number) {
@@ -81,6 +135,9 @@ function policyFormValues(policy?: InvocationOptimizationPolicy) {
 export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: number }) {
   const [policies, setPolicies] = useState<InvocationOptimizationPolicy[]>([]);
   const [contract, setContract] = useState<OptimizationContract | null>(null);
+  const [readiness, setReadiness] = useState<OptimizationCanaryReadiness | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [readinessError, setReadinessError] = useState('');
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [selectedRef, setSelectedRef] = useState('');
   const [loading, setLoading] = useState(false);
@@ -121,6 +178,42 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
   }, [orgId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    let current = true;
+    if (!selected) {
+      setReadiness(null);
+      setReadinessError('');
+      setReadinessLoading(false);
+      return () => { current = false; };
+    }
+    setReadiness(null);
+    setReadinessError('');
+    setReadinessLoading(true);
+    void api.getInvocationOptimizationPolicyReadiness(selected.policy_ref, orgId)
+      .then((result: OptimizationCanaryReadiness) => {
+        if (!current) return;
+        const exactContract = result?.contract_version === 'unirouter.invocation-optimization-readiness.v1'
+          && result?.purpose === 'canary_admission'
+          && result?.policy_ref === selected.policy_ref
+          && result?.policy_revision === selected.revision
+          && result?.runtime_mutation === 'none'
+          && result?.grants_activation_authority === false
+          && result?.grants_traffic_authority === false;
+        if (!exactContract) {
+          setReadinessError('准备度合同或策略修订与当前选择不一致。');
+          return;
+        }
+        setReadiness(result);
+      })
+      .catch((error: any) => {
+        if (current) setReadinessError(error?.message || '无法读取 Canary 准备度。');
+      })
+      .finally(() => {
+        if (current) setReadinessLoading(false);
+      });
+    return () => { current = false; };
+  }, [orgId, selected?.policy_ref, selected?.revision]);
 
   useEffect(() => {
     if (editing === undefined || !formApi) return;
@@ -289,6 +382,38 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
                 <dt>请求许可</dt><dd>两个驱动均强制显式 opt-in</dd>
                 <dt>内容保留</dt><dd>策略证据不保存 Prompt / Response 明文</dd>
               </dl>
+              <div className="ur-detail-card ur-optimization-readiness" aria-label="Canary 启用准备度">
+                <div className="ur-optimization-readiness-header">
+                  <strong>Canary 技术准备度</strong>
+                  <StatusTag status={readinessError ? 'unavailable' : readiness?.overall || 'pending'}>
+                    {readinessLoading ? '读取中' : readinessError ? '读取失败' : readinessStateLabels[readiness?.overall || ''] || '待读取'}
+                  </StatusTag>
+                </div>
+                <Typography.Text type="tertiary">这是只读技术门禁，不授予启用或真实流量权限；服务端在状态推进时会再次校验。</Typography.Text>
+                {readinessError && <Typography.Text type="danger">{readinessError}（按 fail-closed 禁止 Canary）</Typography.Text>}
+                {readiness && (
+                  <>
+                    <div className="ur-optimization-readiness-drivers">
+                      {readiness.drivers.filter(driver => driver.target === 'canary').map(driver => (
+                        <div key={driver.driver} className="ur-optimization-readiness-driver">
+                          <span>
+                            <strong>{driver.driver === 'response_cache' ? 'Exact Cache' : 'Compression'}</strong>
+                            <StatusTag status={driver.state}>{readinessStateLabels[driver.state] || driver.state}</StatusTag>
+                          </span>
+                          <small>Shadow {driver.evidence.samples}/{driver.minimum_shadow_samples} · eligible {driver.evidence.eligible} · 失败 {driver.evidence.failures}</small>
+                        </div>
+                      ))}
+                    </div>
+                    {readiness.blockers.length > 0 && (
+                      <ul className="ur-optimization-readiness-blockers">
+                        {readiness.blockers.map((blocker, index) => (
+                          <li key={`${blocker.code}-${blocker.driver || 'policy'}-${index}`}>{readinessBlockerLabels[blocker.code] || blocker.description}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
+              </div>
               <div className="ur-detail-card">
                 <strong className="ur-detail-card-title">长期执行边界</strong>
                 <Typography.Text>Exact Cache 只接受精确身份与终态来源证明；Compression V1 只做可逆空白规整。路由、IAM、计费、Guardrail 和最终执行权限仍由 UniRouter 核心拥有。</Typography.Text>
@@ -297,7 +422,7 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
                 {['draft', 'rolled_back'].includes(selected.stage) && <Button icon={<IconEdit />} onClick={() => setEditing(selected)}>编辑草稿</Button>}
                 {nextActions.map(action => (
                   <Button key={action} type={action === 'canary' ? 'warning' : action === 'rollback' ? 'danger' : 'primary'}
-                    disabled={action === 'canary' && selected.response_cache_target === 'canary' && !contract?.response_cache_runtime_ready}
+                    disabled={action === 'canary' && (readinessLoading || Boolean(readinessError) || !readiness?.canary_admission_ready)}
                     onClick={() => { setTransition(action); setTransitionReason(''); }}>
                     {transitionCopy[action].label}
                   </Button>
