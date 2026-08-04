@@ -518,6 +518,21 @@ jobs:
             exit 1
           fi
           deploy/customer/preflight.sh /dev/null
+          RESPONSE_CACHE_INDEX_KEY=iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii \
+          RESPONSE_CACHE_ENCRYPTION_KEY=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee \
+          RESPONSE_CACHE_KEY_VERSION=cache-key-v1 \
+            deploy/customer/preflight.sh /dev/null
+          if RESPONSE_CACHE_INDEX_KEY=iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject a partial response-cache key binding' >&2
+            exit 1
+          fi
+          if RESPONSE_CACHE_INDEX_KEY=iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii \
+             RESPONSE_CACHE_ENCRYPTION_KEY=short \
+             RESPONSE_CACHE_KEY_VERSION=cache-key-v1 \
+             deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject an invalid response-cache encryption key' >&2
+            exit 1
+          fi
           if JWT_SECRET=short deploy/customer/preflight.sh /dev/null; then
             echo 'customer preflight must reject a short JWT secret' >&2
             exit 1

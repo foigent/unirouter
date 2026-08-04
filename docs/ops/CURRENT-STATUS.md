@@ -1,6 +1,19 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-04 PRD8 Cost Optimization CO-2 through CO-5 Local checkpoint:**
+> Exact Response Cache V2, zero-Provider/zero-charge delivery/commercial
+> evidence, API-key authorization epochs, and the default-off Invocation
+> Optimization lifecycle are implemented in the current branch. Compression V1
+> is conservative whitespace-only; Shadow is metadata-only; Canary is capped at
+> 10%, content-free, current-revision evidence-gated and caller opt-in. Invalid
+> or unassigned Shadow/Canary cache state cannot change the original Provider
+> path. Full serialized integration and Go regressions, focused race, vet,
+> 56-file/369-test frontend, production build budget, OpenAPI and preflight
+> checks pass. This is Local evidence only at this checkpoint: no real cache
+> key, policy, Shadow/Canary, Provider traffic, credential, reset,
+> Cursor/Checkpoint or X-Insight runtime change occurred. Evidence:
+> `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-LOCAL-20260804.md`.
 > **2026-08-04 PRD8 Cost Optimization CO-1 CI/merge/Target checkpoint:** PR
 > #255 exact head/tree `20cf0303072713b42c3015ddbcb7211f5e0ca06c` /
 > `3b9351b4a18ba032e9b9fa6772eeb71c7cecec2b` passed Backend, Frontend,

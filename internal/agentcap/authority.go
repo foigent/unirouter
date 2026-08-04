@@ -148,7 +148,7 @@ func queryAuthority(ctx context.Context, q db.DBQuerier, keyID int64) (authority
 		SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), COALESCE(ak.owner_user_id, 0),
 		       COALESCE(NULLIF(ak.key_type, ''), 'shared'), ak.name, ak.key_prefix,
 		       ak.status, COALESCE(ak.allowed_ips, ''), COALESCE(ak.allowed_models, ''),
-		       COALESCE(ak.purpose, ''),
+		       COALESCE(ak.purpose, ''), ak.auth_epoch,
 		       ak.rpm_limit, ak.qps_limit, COALESCE(ak.budget_limit, -1),
 		       o.status,
 		       COALESCE(p.status, ''), COALESCE(u.status, ''), COALESCE(u.role, ''),
@@ -173,6 +173,7 @@ func queryAuthority(ctx context.Context, q db.DBQuerier, keyID int64) (authority
 		&snapshot.APIKey.IPWhitelist,
 		&snapshot.APIKey.AllowedModels,
 		&snapshot.APIKey.Purpose,
+		&snapshot.APIKey.AuthEpoch,
 		&snapshot.APIKey.RPMLimit,
 		&snapshot.APIKey.QPSLimit,
 		&budgetLimit,
@@ -206,6 +207,7 @@ func authorityVersion(snapshot authoritySnapshot) string {
 		OwnerUserID    int64  `json:"owner_user_id"`
 		KeyType        string `json:"key_type"`
 		KeyStatus      string `json:"key_status"`
+		AuthEpoch      int64  `json:"auth_epoch"`
 		Purpose        string `json:"purpose"`
 		OrgStatus      string `json:"org_status"`
 		ProjectStatus  string `json:"project_status"`
@@ -223,6 +225,7 @@ func authorityVersion(snapshot authoritySnapshot) string {
 		OrgID:          snapshot.APIKey.OrgID,
 		KeyType:        snapshot.APIKey.KeyType,
 		KeyStatus:      snapshot.APIKey.Status,
+		AuthEpoch:      snapshot.APIKey.AuthEpoch,
 		Purpose:        snapshot.APIKey.Purpose,
 		OrgStatus:      snapshot.OrgStatus,
 		ProjectStatus:  snapshot.ProjectStatus,

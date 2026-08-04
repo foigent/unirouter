@@ -86,23 +86,10 @@ func (s *Service) Begin(ctx context.Context, request Request) Decision {
 	if err := ctx.Err(); err != nil {
 		return invalidDecision(ReasonRequestCancelled)
 	}
-	if err := request.Identity.Validate(); err != nil {
-		return invalidDecision(ReasonInvalidConfiguration)
+	if decision := s.Evaluate(request); decision.Kind != DecisionEligible {
+		return decision
 	}
-	switch {
-	case !request.OptIn:
-		return bypassDecision(ReasonNotOptedIn)
-	case !request.PersistenceAllowed:
-		return bypassDecision(ReasonPersistenceDenied)
-	case request.NoStore:
-		return bypassDecision(ReasonNoStore)
-	}
-	if len(request.EffectiveBody) == 0 || len(request.EffectiveBody) > s.config.MaxRequestBytes {
-		return bypassDecision(ReasonIneligibleShape)
-	}
-	if err := validateCacheableRequest(request.EffectiveBody); err != nil {
-		return bypassDecision(ReasonIneligibleShape)
-	}
+	entryTTL := s.entryTTL(request)
 
 	scopeKey := s.scopeKey(request.Identity.Scope)
 	backendCtx, cancelBackend := s.dependencyContext(ctx)
@@ -113,7 +100,7 @@ func (s *Service) Begin(ctx context.Context, request Request) Decision {
 	}
 	entryKey := s.entryKey(request.Identity, request.EffectiveBody, generation)
 	leaseKey := strings.Replace(entryKey, ":entry:", ":lease:", 1)
-	identityDigest := strings.TrimPrefix(entryKey, "rc:v1:entry:")
+	identityDigest := strings.TrimPrefix(entryKey, "rc:v2:entry:")
 
 	if hit, readErr := s.readHit(ctx, request.Identity, entryKey, identityDigest, generation); readErr == nil {
 		return Decision{Kind: DecisionHit, Reason: ReasonHit, Hit: hit}
@@ -125,11 +112,57 @@ func (s *Service) Begin(ctx context.Context, request Request) Decision {
 			if err != nil {
 				return bypassDecision(ReasonBackendUnavailable)
 			}
-			return s.acquire(ctx, request.Identity, entryKey, leaseKey, identityDigest, generation, ReasonIntegrityRecovery)
+			return s.acquire(ctx, request.Identity, entryKey, leaseKey, identityDigest, generation, entryTTL, ReasonIntegrityRecovery)
 		}
 		return bypassDecision(ReasonBackendUnavailable)
 	}
-	return s.acquire(ctx, request.Identity, entryKey, leaseKey, identityDigest, generation, ReasonMissOwner)
+	return s.acquire(ctx, request.Identity, entryKey, leaseKey, identityDigest, generation, entryTTL, ReasonMissOwner)
+}
+
+// Evaluate is the zero-I/O shadow path. It verifies the exact same identity,
+// consent and request-shape boundary as Begin without reading or mutating the
+// cache backend.
+func (s *Service) Evaluate(request Request) Decision {
+	if s == nil || s.backend == nil {
+		return bypassDecision(ReasonInvalidConfiguration)
+	}
+	return EvaluateRequest(request, s.config.MaxRequestBytes)
+}
+
+// EvaluateRequest is the dependency-free eligibility contract used by
+// metadata-only Shadow evaluation when no persistence key backend exists.
+func EvaluateRequest(request Request, maxRequestBytes int) Decision {
+	if maxRequestBytes <= 0 || maxRequestBytes > 16*1024*1024 {
+		maxRequestBytes = 1024 * 1024
+	}
+	if err := request.Identity.Validate(); err != nil {
+		return invalidDecision(ReasonInvalidConfiguration)
+	}
+	switch {
+	case !request.OptIn:
+		return bypassDecision(ReasonNotOptedIn)
+	case !request.PersistenceAllowed:
+		return bypassDecision(ReasonPersistenceDenied)
+	case request.NoStore:
+		return bypassDecision(ReasonNoStore)
+	case request.TTL < 0 || request.TTL > 24*time.Hour:
+		return invalidDecision(ReasonInvalidConfiguration)
+	case request.TTL > 0 && request.TTL < time.Minute:
+		return invalidDecision(ReasonInvalidConfiguration)
+	case len(request.EffectiveBody) == 0 || len(request.EffectiveBody) > maxRequestBytes:
+		return bypassDecision(ReasonIneligibleShape)
+	}
+	if err := validateCacheableRequest(request.EffectiveBody); err != nil {
+		return bypassDecision(ReasonIneligibleShape)
+	}
+	return Decision{Kind: DecisionEligible, Reason: ReasonEligible}
+}
+
+func (s *Service) entryTTL(request Request) time.Duration {
+	if request.TTL > 0 {
+		return request.TTL
+	}
+	return s.config.TTL
 }
 
 func (s *Service) acquire(
@@ -137,6 +170,7 @@ func (s *Service) acquire(
 	identity Identity,
 	entryKey, leaseKey, identityDigest string,
 	generation uint64,
+	entryTTL time.Duration,
 	ownerReason string,
 ) Decision {
 	token, err := s.randomToken()
@@ -155,7 +189,7 @@ func (s *Service) acquire(
 			Reservation: &Reservation{
 				serviceID: s.serviceID, entryKey: entryKey, leaseKey: leaseKey, leaseToken: token,
 				scopeGeneration: generation, identity: identity, identityDigest: identityDigest,
-				acquiredAt: s.clock().UTC(),
+				entryTTL: entryTTL, acquiredAt: s.clock().UTC(),
 			},
 		}
 	}
@@ -163,7 +197,7 @@ func (s *Service) acquire(
 		Kind: DecisionWait, Reason: ReasonMissWait,
 		Wait: &Wait{
 			serviceID: s.serviceID, entryKey: entryKey, leaseKey: leaseKey,
-			scopeGeneration: generation, identity: identity, identityDigest: identityDigest,
+			scopeGeneration: generation, identity: identity, identityDigest: identityDigest, entryTTL: entryTTL,
 		},
 	}
 }
@@ -222,7 +256,7 @@ func (s *Service) Await(ctx context.Context, wait *Wait) Decision {
 					serviceID: s.serviceID, entryKey: wait.entryKey, leaseKey: wait.leaseKey,
 					leaseToken: token, scopeGeneration: wait.scopeGeneration,
 					identity: wait.identity, identityDigest: wait.identityDigest,
-					acquiredAt: s.clock().UTC(),
+					entryTTL: wait.entryTTL, acquiredAt: s.clock().UTC(),
 				},
 			}
 		}
@@ -260,7 +294,7 @@ func (s *Service) Commit(ctx context.Context, reservation *Reservation, entry St
 	record := encryptedRecord{
 		ContractVersion: Version, IdentityDigest: reservation.identityDigest,
 		ScopeGeneration: reservation.scopeGeneration,
-		CreatedAt:       now, ExpiresAt: now.Add(s.config.TTL),
+		CreatedAt:       now, ExpiresAt: now.Add(reservation.entryTTL),
 		SourceResponse: append([]byte(nil), entry.SourceResponse...), Proof: entry.Proof,
 	}
 	encrypted, err := s.seal(ctx, reservation.entryKey, record)
@@ -271,7 +305,7 @@ func (s *Service) Commit(ctx context.Context, reservation *Reservation, entry St
 	defer cancelBackend()
 	return s.backend.Commit(
 		backendCtx, reservation.entryKey, reservation.leaseKey, reservation.leaseToken,
-		encrypted, s.config.TTL,
+		encrypted, reservation.entryTTL,
 	)
 }
 
@@ -321,18 +355,21 @@ func (s *Service) readHit(
 		!now.Before(record.ExpiresAt) ||
 		record.CreatedAt.After(now) ||
 		record.ExpiresAt.Sub(record.CreatedAt) <= 0 ||
-		record.ExpiresAt.Sub(record.CreatedAt) > s.config.TTL ||
+		record.ExpiresAt.Sub(record.CreatedAt) > 24*time.Hour ||
 		len(record.SourceResponse) == 0 ||
 		len(record.SourceResponse) > s.config.MaxEntryBytes ||
 		record.Proof.Validate(identity) != nil ||
 		validateCacheableResponse(record.SourceResponse) != nil {
 		return nil, ErrIntegrity
 	}
+	responseDigest := sha256.Sum256(record.SourceResponse)
 	return &Hit{
 		SourceResponse:          append([]byte(nil), record.SourceResponse...),
 		SourceProof:             record.Proof,
+		IdentityDigest:          "hmac-sha256:" + identityDigest,
+		SourceResponseSHA256:    "sha256:" + hex.EncodeToString(responseDigest[:]),
 		CurrentProviderRequests: 0, CurrentProviderCostMicros: CurrentProviderCostZero,
-		CustomerChargeState: CustomerChargeUnpriced,
+		CustomerChargeState: CustomerChargeZero,
 		CreatedAt:           record.CreatedAt, ExpiresAt: record.ExpiresAt,
 	}, nil
 }
@@ -423,7 +460,7 @@ func (s *Service) scopeKey(scope Scope) string {
 	writeInt64(mac, scope.ProjectID)
 	writeLP(mac, scope.Region)
 	writeLP(mac, scope.Residency)
-	return "rc:v1:scope:" + hex.EncodeToString(mac.Sum(nil))
+	return "rc:v2:scope:" + hex.EncodeToString(mac.Sum(nil))
 }
 
 func (s *Service) entryKey(identity Identity, requestBody []byte, generation uint64) string {
@@ -433,12 +470,18 @@ func (s *Service) entryKey(identity Identity, requestBody []byte, generation uin
 	writeInt64(mac, identity.Scope.OrgID)
 	writeInt64(mac, identity.Scope.ProjectID)
 	writeInt64(mac, identity.APIKeyID)
+	writeInt64(mac, identity.ChannelID)
+	writeInt64(mac, identity.ChannelRoutingEpoch)
+	writeInt64(mac, identity.ChannelCircuitEpoch)
+	writeInt64(mac, identity.CredentialID)
+	writeInt64(mac, identity.CredentialEpoch)
 	for _, value := range []string{
 		identity.Scope.Region, identity.Scope.Residency,
 		identity.AuthorizationEpoch,
 		identity.Endpoint, identity.RequestedModel, identity.ResolvedModel,
-		identity.AdapterProfileVersion, identity.RoutePolicyVersion,
-		identity.GuardrailPolicyVersion, identity.CustomerPricingVersion,
+		identity.Provider, identity.AdapterProfileVersion, identity.RoutePolicyVersion,
+		identity.RuntimeReleaseRef, identity.RuntimeStage, identity.RuntimeAssignmentID,
+		identity.GuardrailPolicyVersion, identity.OptimizationPolicyVersion, identity.CustomerPricingVersion,
 		identity.ResponseCachePriceVersion, identity.RequestSchemaVersion,
 		identity.ResponseSchemaVersion,
 	} {
@@ -447,7 +490,7 @@ func (s *Service) entryKey(identity Identity, requestBody []byte, generation uin
 	requestDigest := sha256.Sum256(requestBody)
 	writeLPBytes(mac, requestDigest[:])
 	writeUint64(mac, uint64(len(requestBody)))
-	return "rc:v1:entry:" + hex.EncodeToString(mac.Sum(nil))
+	return "rc:v2:entry:" + hex.EncodeToString(mac.Sum(nil))
 }
 
 func writeInt64(w io.Writer, value int64) {
@@ -565,8 +608,10 @@ func validateCacheableResponse(raw []byte) error {
 	if err := decoder.Decode(&payload); err != nil || payload == nil {
 		return ErrInvalidResponse
 	}
-	if _, exists := payload["uniroute"]; exists {
-		return ErrInvalidResponse
+	for _, field := range []string{"_uniroute", "uniroute"} {
+		if _, exists := payload[field]; exists {
+			return ErrInvalidResponse
+		}
 	}
 	choices, ok := payload["choices"].([]any)
 	if !ok || len(choices) == 0 {

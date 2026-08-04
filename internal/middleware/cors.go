@@ -24,8 +24,8 @@ func CORSWithOptions(options CORSOptions) func(http.Handler) http.Handler {
 				if allowOrigin(origin, allowed) {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-					w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-UniRouter-Client-Request-ID, Idempotency-Key, Traceparent")
-					w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, X-UniRouter-Client-Request-ID, X-UniRouter-Original-Request-ID, X-UniRouter-Limit-Policy-Version, X-UniRouter-Workload-Class")
+					w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, X-Request-ID, X-UniRouter-Client-Request-ID, Idempotency-Key, Traceparent, X-UniRouter-Response-Cache, X-UniRouter-Prompt-Compression")
+					w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, X-UniRouter-Client-Request-ID, X-UniRouter-Original-Request-ID, X-UniRouter-Limit-Policy-Version, X-UniRouter-Workload-Class, X-UniRouter-Response-Cache, X-UniRouter-Prompt-Compression")
 					w.Header().Set("Access-Control-Max-Age", "86400")
 				} else if r.Method == http.MethodOptions {
 					w.WriteHeader(http.StatusForbidden)

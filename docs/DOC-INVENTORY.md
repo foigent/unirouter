@@ -10,9 +10,10 @@
 | `docs/ops/PRD8-BOUNDARY-MATRIX.md` | Authoritative P7-F01–F19 forward disposition; explicitly not implementation-migration evidence |
 | `docs/planning/PRD8-IMPLEMENTATION-PLAN.md` | Current dependency plan and exact stop gate; Local batches through ORG-2/FIN-3 plus bounded runtime release/authorization are complete, ORG-3/FIN-4 require real customer targets |
 | `docs/architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md` | Current Workload Application, effective-access, client-profile, Gateway Endpoint/TLS and second-integration reset contract |
-| `docs/architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md` | Cost Optimization ownership, exact Prompt Cache savings formulas, Response Cache/compression decisions, CO-1 API/UI and later runtime gates |
+| `docs/architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md` | Cost Optimization ownership, exact Prompt Cache formulas, Exact Response Cache/Compression CO-2 through CO-5 control-plane contracts and default-off runtime gates |
 | `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md` | CO-0/CO-1 Local verification: exact PostgreSQL formulas/tenant scope, full Go and 365-test frontend gates, production bundle budget and responsive Inspector evidence |
 | `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO1-TARGET-20260804.md` | PR #255 exact CI/merge, development ECS backup/release, zero-drift data readback, public HTTPS and authenticated Cost Optimization UI evidence |
+| `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-LOCAL-20260804.md` | CO-2 through CO-5 Local verification: encrypted exact cache, zero-charge delivery truth, Compression Shadow/Canary control plane, full database/Go/race/frontend/build gates and no-runtime boundary |
 | `docs/research/AGENT-CLIENT-COMPATIBILITY-20260802.md` | Official-source client configuration facts and evidence-level boundaries for the second-integration callers |
 | `docs/runbooks/SECOND-INTEGRATION-POC.md` | Current second-device POC preflight, reset gate, exact client order and acceptance boundary |
 | `docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md` | Current public HTTPS development-Target endpoint, IP certificate/renewal, security-group/Nginx identities, zero-drift data and external-browser evidence |
@@ -91,7 +92,8 @@
 | `docs/planning/PRD6-UPSTREAM-COST-RECONCILIATION-AND-PROVIDER-COVERAGE-20260713.md` | Accepted customer-revenue/provider-COGS boundary, competitor and supplier billing evidence, Four Quadrants, PRD6 non-claims and future cost/metering/media candidates |
 | `docs/planning/PRD7-CANDIDATE-BACKLOG.md` | Historical candidate split retained as planning lineage; PRD7 preserves implementation facts while PRD8 governs forward ownership |
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
-| `docs/tech-ref/34-exact-response-cache.md` | PRD7 exact response-cache contract: exact authority/policy/request identity, encrypted values, TTL/purge, lease and billing truth |
+| `docs/tech-ref/34-exact-response-cache.md` | Exact Response Cache V2: route-complete identity, encrypted Redis values, Shadow/Canary, current delivery identity, zero Provider/charge settlement and recovery |
+| `docs/tech-ref/40-invocation-optimization-v1.md` | Product-local invocation-optimization lifecycle, content-free deterministic assignment, conservative Compression evaluator and metadata-only evidence |
 | `docs/tech-ref/35-provider-cogs-offline.md` | PRD7 Provider COGS offline contract, financial authority separation, exact attribution, capture gaps, replay and non-persistence boundary |
 | `docs/tech-ref/36-governance-simulation-v1.md` | PRD7 strict offline route/policy simulator, shared kernel, Provider Pack change classification and no-runtime-promotion lifecycle |
 | `docs/tech-ref/37-member-lifecycle-v1.md` | PRD7 IdP-neutral project-member lifecycle, effective-access convergence, session versioning and SCIM decision boundary |

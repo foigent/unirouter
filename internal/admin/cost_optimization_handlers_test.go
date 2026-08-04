@@ -38,25 +38,63 @@ func TestCostOptimizationSummaryUsesTenantAndEvidenceConditions(t *testing.T) {
 	var capturedQuery string
 	var capturedArgs []any
 	db := &testutil.MockDB{QueryRowFn: func(_ context.Context, query string, args ...any) pgx.Row {
-		capturedQuery = query
-		capturedArgs = append([]any(nil), args...)
-		return &testutil.MockRow{ScanFn: func(dest ...any) error {
-			*dest[0].(*int64) = 10
-			*dest[1].(*int64) = 8
-			*dest[2].(*int64) = 6
-			*dest[3].(*int64) = 5
-			*dest[4].(*int64) = 4
-			*dest[5].(*int64) = 1000
-			*dest[6].(*int64) = 400
-			*dest[7].(*int64) = 200
-			*dest[8].(*string) = "1000000"
-			*dest[9].(*string) = "700000"
-			*dest[10].(*string) = "300000"
-			*dest[11].(*string) = "350000"
-			*dest[12].(*string) = "50000"
-			*dest[13].(*string) = "0"
-			return nil
-		}}
+		switch {
+		case strings.Contains(query, "FROM invocation_optimization_policies"):
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				*dest[1].(*int) = 4
+				return nil
+			}}
+		case strings.Contains(query, "FROM invocation_optimization_receipts"):
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 12
+				*dest[1].(*int64) = 8
+				*dest[2].(*int64) = 10
+				*dest[3].(*int64) = 7
+				*dest[4].(*int64) = 0
+				*dest[5].(*int64) = 420
+				return nil
+			}}
+		case strings.Contains(query, "FROM response_cache_commercial_receipts"):
+			for _, required := range []string{
+				"JOIN freeze_idempotency f",
+				"f.status='settled'",
+				"f.usage_source='response_cache'",
+				"f.usage_authority='local_cache'",
+				"f.usage_contract_version='unirouter.usage.v2'",
+				"f.calculated_cost_micros=0",
+				"f.charged_cost_micros=0",
+			} {
+				if !strings.Contains(query, required) {
+					t.Fatalf("realized response-cache savings must require terminal zero-charge evidence %q: %s", required, query)
+				}
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 3
+				*dest[1].(*string) = "125000"
+				return nil
+			}}
+		default:
+			capturedQuery = query
+			capturedArgs = append([]any(nil), args...)
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 10
+				*dest[1].(*int64) = 8
+				*dest[2].(*int64) = 6
+				*dest[3].(*int64) = 5
+				*dest[4].(*int64) = 4
+				*dest[5].(*int64) = 1000
+				*dest[6].(*int64) = 400
+				*dest[7].(*int64) = 200
+				*dest[8].(*string) = "1000000"
+				*dest[9].(*string) = "700000"
+				*dest[10].(*string) = "300000"
+				*dest[11].(*string) = "350000"
+				*dest[12].(*string) = "50000"
+				*dest[13].(*string) = "0"
+				return nil
+			}}
+		}
 	}}
 	h := newTestHandler(db)
 	rec := httptest.NewRecorder()
@@ -93,7 +131,11 @@ func TestCostOptimizationSummaryUsesTenantAndEvidenceConditions(t *testing.T) {
 	}
 	if response.Summary.AmountAuthority != "request_time_frozen_customer_pricing" ||
 		response.Summary.SupplierCOGSAuthority != "not_claimed_use_provider_reconciliation" ||
-		response.Summary.ResponseCacheRuntime != "not_connected_to_gateway" {
+		response.Summary.ResponseCacheRuntime != "runtime_unavailable" ||
+		response.Summary.CompressionRuntime != "shadow_active" ||
+		response.Summary.ResponseCacheHits != 3 ||
+		response.Summary.ResponseCacheAvoidedCostMicros != "125000" ||
+		response.Summary.CompressionEstimatedSavedTokens != 420 {
 		t.Fatalf("authority boundary drifted: %#v", response.Summary)
 	}
 }

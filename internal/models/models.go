@@ -161,6 +161,7 @@ type ApiKey struct {
 	RPMLimit      int       `json:"rpm_limit" db:"rpm_limit"`
 	QPSLimit      int       `json:"qps_limit" db:"qps_limit"`
 	BudgetLimit   *int      `json:"budget_limit" db:"budget_limit"`
+	AuthEpoch     int64     `json:"auth_epoch" db:"auth_epoch"`
 	Status        string    `json:"status" db:"status"`
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`

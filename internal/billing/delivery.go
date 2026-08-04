@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 )
@@ -258,6 +259,35 @@ func updateRequestIdempotencyUsageTx(ctx context.Context, tx pgx.Tx, req SettleR
 }
 
 func requireChargeableDeliveryTx(ctx context.Context, tx pgx.Tx, record reservationRecord, req SettleRequest) error {
+	if req.UsageAuthority == metering.UsageAuthorityLocalCache {
+		if record.DeliveryAttemptID.Valid || record.UsageAuthority != metering.UsageAuthorityLocalCache {
+			return ErrDeliveryAttemptConflict
+		}
+		var outcome string
+		var deliveredBytes int64
+		var deliveredChunks int
+		err := tx.QueryRow(ctx, `
+			SELECT outcome,delivered_bytes,delivered_chunks
+			FROM response_cache_delivery_receipts
+			WHERE org_id=$1 AND request_id=$2
+			ORDER BY sequence DESC LIMIT 1`, req.OrgID, req.RequestID,
+		).Scan(&outcome, &deliveredBytes, &deliveredChunks)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrDeliveryNotChargeable
+			}
+			return fmt.Errorf("read response-cache delivery receipt: %w", err)
+		}
+		if outcome == DeliveryOutcomeCompleted && deliveredBytes > 0 && deliveredChunks == 1 {
+			return nil
+		}
+		// A failed local-cache delivery has zero customer and provider cost, but
+		// still needs a terminal zero settlement to release its reservation.
+		if outcome == DeliveryOutcomeWriteFailed {
+			return nil
+		}
+		return ErrDeliveryNotChargeable
+	}
 	if record.DeliveryAttemptID.Valid {
 		if req.AttemptID == "" || req.AttemptID != record.DeliveryAttemptID.String {
 			return ErrDeliveryAttemptConflict

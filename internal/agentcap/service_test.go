@@ -93,7 +93,7 @@ func newTestService(t *testing.T, fixture *authorityFixture, clock *testClock) (
 			if len(args) != 1 || args[0] != fixture.keyID {
 				return fmt.Errorf("unexpected key lookup: %v", args)
 			}
-			if len(dest) != 19 {
+			if len(dest) != 20 {
 				return fmt.Errorf("unexpected authority scan width: %d", len(dest))
 			}
 			*dest[0].(*int64) = fixture.keyID
@@ -107,14 +107,15 @@ func newTestService(t *testing.T, fixture *authorityFixture, clock *testClock) (
 			*dest[8].(*string) = fixture.allowedIPs
 			*dest[9].(*string) = fixture.allowedModels
 			*dest[10].(*string) = ""
-			*dest[11].(*int) = fixture.rpmLimit
-			*dest[12].(*int) = fixture.rpsLimit
-			*dest[13].(*int) = fixture.budgetLimit
-			*dest[14].(*string) = fixture.orgStatus
-			*dest[15].(*string) = fixture.projectStatus
-			*dest[16].(*string) = fixture.ownerStatus
-			*dest[17].(*string) = fixture.ownerRole
-			*dest[18].(*string) = fixture.membershipRole
+			*dest[11].(*int64) = 1
+			*dest[12].(*int) = fixture.rpmLimit
+			*dest[13].(*int) = fixture.rpsLimit
+			*dest[14].(*int) = fixture.budgetLimit
+			*dest[15].(*string) = fixture.orgStatus
+			*dest[16].(*string) = fixture.projectStatus
+			*dest[17].(*string) = fixture.ownerStatus
+			*dest[18].(*string) = fixture.ownerRole
+			*dest[19].(*string) = fixture.membershipRole
 			return nil
 		}}
 	}}
@@ -140,6 +141,7 @@ func rootKey(fixture *authorityFixture) *models.ApiKey {
 		OwnerUserID:   &ownerUserID,
 		KeyType:       fixture.keyType,
 		Status:        fixture.keyStatus,
+		AuthEpoch:     1,
 		AllowedModels: fixture.allowedModels,
 		RPMLimit:      fixture.rpmLimit,
 		QPSLimit:      fixture.rpsLimit,

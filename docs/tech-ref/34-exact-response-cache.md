@@ -1,178 +1,182 @@
-# Exact Response Cache Contract
+# Exact Response Cache V2
 
-> Contract: `unirouter.response-cache.v1`
-> Scope: PRD7 B5 / P7-F07
-> Runtime status: standalone service boundary with memory and Redis adapters;
-> Gateway hit serving remains decision-gated
+> Contract: `unirouter.response-cache.v2`
+> Scope: PRD8 CO-2 / CO-3
+> Implementation status: Local verified candidate
+> Runtime status: default-off; no target key material or Canary is authorized by this document
 
-## 1. Product Boundary
+## 1. Product boundary
 
-The exact response cache reduces repeated provider execution only when the
-post-policy request bytes and every relevant authority, route, model, pricing
-and residency identity are identical. It is not a semantic cache and never
-uses similarity, embeddings or model-generated equivalence.
+Exact Response Cache avoids a repeated model-provider execution only when the
+post-policy request bytes and every execution authority are identical. It is
+not a semantic cache, does not use embeddings or generated equivalence, and is
+not shared with Tool Gateway, MCP Gateway or X-Insight.
 
-The implementation lives in `internal/responsecache`. It has no dependency on
-the Gateway Relay, X-Insight, an analytics engine or a dynamic plugin runtime.
-It does not alter existing request records, routing, policy enforcement,
-provider attempts, billing settlement, Outbox events or the
-completed-execution Feed.
+V2 is integrated into UniRouter's existing non-streaming Chat Completions
+path. Authorization, model permission, Guardrail pinning, reservation, routing,
+credential selection, delivery evidence, settlement, request logs and final
+execution remain owned by the normal UniRouter path. A cache hit performs zero
+provider attempts and does not make X-Insight a synchronous dependency.
 
-Raw prompt and response persistence remains default-off. A lookup is eligible
-only when the caller explicitly opts in, the effective data policy allows
-persistence and the request does not carry `no-store`.
+Only text-only requests are eligible. Streaming, tools/functions, structured
+content, image/audio/video, duplicate JSON keys and request shapes that cannot
+be proven safe are bypassed.
 
-## 2. Exact Identity
+## 2. Default-off and request permission
 
-Every key binds:
+Runtime evaluation requires all of the following:
 
-- organization and explicit project scope (`project_id=0` means an
-  organization-scoped key, not an unknown project);
-- region and residency;
-- API-key identity and authorization epoch;
-- endpoint;
-- requested and resolved model;
-- adapter-profile, route-policy and guardrail-policy versions;
-- customer pricing version and the separate response-cache price version;
-- request and response schema versions;
-- scope purge generation;
-- SHA-256 and exact length of the post-input-policy request bytes.
+1. an active product-local policy at `stage=shadow` or `stage=canary`;
+2. `response_cache_target=canary` with a reviewed allocation of `1..1000`
+   basis points;
+3. persistence explicitly allowed by the policy;
+4. exact request header `X-UniRouter-Response-Cache: allow`;
+5. no `Cache-Control: no-store` directive; and
+6. a complete, server-injected response-cache key binding.
 
-Whitespace, object-key order or any other request-byte difference intentionally
-creates a miss. The cache does not canonicalize requests because
-canonicalization could erase adapter-significant distinctions.
+Shadow computes metadata-only eligibility and identity evidence. It does not
+read, write or decrypt cache entries. Deterministic assignment is computed
+only after the policy enters Canary; Shadow receipts always record
+`assigned=false` and `mutation_applied=false`.
 
-The index is HMAC-SHA-256 under a dedicated 32-byte index key. Signed inputs use
-fixed-width big-endian integers and four-byte length-prefixed UTF-8 strings or
-byte arrays. Redis and memory backends receive only opaque HMAC-derived scope,
-entry and lease keys; prompt, response, model, tenant, provider and policy
-values are not embedded in backend keys.
+Canary assignment is content-free and binds the policy revision, tenant,
+project, API-key identity, driver and server-owned operation ID. The maximum
+allocation is 10%. Omission of the opt-in header never enables persistence.
 
-The deterministic synthetic vectors are:
+Response headers are bounded signals:
 
-- scope:
-  `rc:v1:scope:f326daea3bf39bb1982c92558b8fa604555999b87b28bdd75560359185e668cc`;
-- generation-zero entry:
-  `rc:v1:entry:2e3c1d1bf915257844868441b8e4779e921acaedcd5f4f7446917a93df8d7ca5`.
+- `X-UniRouter-Response-Cache: HIT` — current response came from an exact local
+  entry;
+- `MISS` — this request owns the bounded upstream fill lease;
+- `BYPASS` — the request made no cache-hit claim; and
+- no header — no applicable cache policy was evaluated.
 
-They are regression vectors, not production keys or data.
+## 3. Exact identity
 
-## 3. Eligibility And Poisoning Boundary
+The HMAC input binds:
 
-B5 admits only text-only, non-streaming Chat Completions:
+- organization, explicit project scope, region and residency;
+- API-key ID and monotonic `auth_epoch`;
+- endpoint and exact post-input-policy request bytes plus byte length;
+- requested model, resolved model and provider;
+- channel ID, routing epoch and circuit epoch;
+- credential ID and credential state epoch;
+- adapter-profile digest and route-policy version;
+- runtime release, stage and allocation identity;
+- pinned Guardrail policy-set version;
+- invocation-optimization policy reference and revision;
+- request-time customer-pricing version and the independent
+  `unirouter.response-cache-zero-charge.v1` commercial version;
+- request/response schema versions; and
+- the scope purge generation.
 
-- `messages` must be a non-empty array;
-- roles are limited to `system`, `developer`, `user` and `assistant`;
-- structured content, tool/function roles, calls or results, images, audio,
-  video and other media are excluded;
-- top-level tools/functions, tool choice, parallel tool calls and modalities
-  are excluded;
-- strict recursive JSON parsing rejects duplicate keys at any depth.
+Request JSON is not canonicalized. Whitespace, key order and every other byte
+difference intentionally produce a miss. Backend keys are opaque
+HMAC-SHA-256 values; they do not contain tenant, model, provider, prompt or
+response text.
 
-A stored `SourceResponse` must contain at least one message choice and cannot
-contain tool/function/media results or the UniRouter request-local `uniroute`
-extension. The extension is rebuilt, if applicable, by the future current
-request path; replaying an old request identifier or receipt is prohibited.
-`Hit` is deliberately not a wire-response type: the source response identifier
-and usage belong to the historical provider execution. A future endpoint
-adapter must construct current request-local identity and cache-aware usage
-before any bytes can be returned to a caller.
+## 4. Source entry and poisoning boundary
 
-HTTP 200 alone is insufficient. A write requires an exact encrypted
-`UsageProof` with:
+An entry is committed only after the original provider execution has:
 
-- provider-reported upstream usage under `unirouter.usage.v1`;
-- a lossless prompt-token partition and bounded non-negative counters;
-- current customer-pricing-version identity;
-- exact resolved-model identity;
-- at least one source provider request;
-- completed local delivery;
+- provider-reported final `unirouter.usage.v1` counters with a lossless prompt
+  token partition;
+- at least one provider request and HTTP 200;
+- the same resolved model, provider and request-time pricing identity;
+- completed local response delivery; and
 - settled financial finality.
 
-Estimated usage, missing usage, incomplete delivery, pending settlement,
-pricing/model mismatch and invalid token partitions cannot be cached.
+Estimated/missing usage, pending settlement, incomplete delivery, oversized
+responses, invalid token partitions, request-local `_uniroute`/legacy
+`uniroute` extensions and tool/media responses are rejected.
 
-## 4. Encryption And Key Rotation
+The source response and source proof are encrypted evidence, not a wire
+response. On a hit, the Gateway replaces the historical provider execution ID
+and timestamp with the current server operation identity/time, replaces
+historical usage with an OpenAI-compatible all-zero usage object, and rebuilds
+the current `_uniroute` delivery/billing extension. The encrypted source bytes
+remain unchanged and are linked by `source_response_sha256` in the commercial
+receipt.
 
-Values are encrypted with AES-256-GCM. The authenticated additional data binds
-the cache contract and exact opaque entry key, so ciphertext copied to another
-entry cannot decrypt. The only outer fields are contract version, encryption
-key version, nonce and ciphertext.
+## 5. Storage, encryption and concurrency
 
-`EncryptionKeyring` provides a current immutable key version and exact
-historical version lookup. New writes use the current version; existing values
-remain readable while their historical key version is available. Missing
-historical keys, modified ciphertext, invalid envelopes and invalid decrypted
-records are never served. The entry is invalidated and one miss owner may
-recover it.
+Values use AES-256-GCM. Additional authenticated data binds the contract and
+opaque entry key, so ciphertext copied between entries cannot decrypt. Redis
+uses the isolated prefix `uniroute:response-cache:v2`.
 
-The static keyring is a local fixture boundary. A production key backend and
-operator remain subject to P7-D01 and must preserve bounded lookup, versioned
-read and no-readback behavior.
+A monotonic per-scope generation makes old entries unreachable after logical
+purge. TTL is policy-bounded to `60..86400` seconds. One atomic lease owns a
+miss fill; waiters may consume the committed hit or become the next owner only
+after release/expiry. A normal contention timeout rejects rather than creating
+a provider stampede. Backend outage, decryption failure, malformed data or
+missing key versions become a miss/bypass and never fabricate a hit.
 
-## 5. TTL, Purge And Stampede Semantics
+## 6. Key injection and rotation
 
-Each scope has a monotonic purge generation. Purge increments the generation
-before any later lookup; old encrypted values may age out physically, but no
-new lookup can derive an old-generation entry key. This is a tombstone, not a
-claim of immediate storage destruction.
+The process stays disabled unless all three values are present and valid:
 
-On a miss, an atomic lease creates exactly one owner. Other contenders receive
-opaque wait capabilities. A successful owner commit compares the exact lease
-token, writes the encrypted entry and releases the lease atomically.
+- `RESPONSE_CACHE_INDEX_KEY`: independent exact 32-byte HMAC secret;
+- `RESPONSE_CACHE_ENCRYPTION_KEY`: independent exact 32-byte AES secret; and
+- `RESPONSE_CACHE_KEY_VERSION`: portable non-secret immutable label.
 
-Waiters may:
+These values must not reuse JWT, API-key hashing, provider credential or
+general encryption material. Development, canary and customer Compose only
+pass external values through; no real value belongs in the repository.
 
-- read the committed hit;
-- become the single new owner after a released or expired lease;
-- fail closed on bounded waiter capacity or normal wait timeout;
-- bypass only when the cache dependency is unavailable.
+The current self-hosted adapter loads one encryption version. A version/key
+rotation therefore makes older ciphertext fail closed and cold-miss until its
+bounded TTL expires; it must never reuse a version label. A future managed
+secret backend may provide bounded historical-key reads through the existing
+`EncryptionKeyring` interface without changing cache identity semantics.
 
-A normal contention timeout never becomes an upstream bypass, preventing a
-healthy but slow owner from creating a provider stampede. Memory and Redis
-backends implement the same lease and generation contract; the memory backend
-is a deterministic fixture, not a multi-replica production store.
+## 7. Delivery and commercial truth
 
-All backend and encryption-keyring operations have a hard dependency timeout.
-Backend failure does not fabricate a hit, usage or price.
+A completed hit records:
 
-## 6. Billing Truth
+- current provider requests: `0`;
+- current provider cost: `0` micro-CNY;
+- current customer charge: `0` micro-CNY;
+- avoided customer cost: recomputed from the current frozen customer price;
+- usage authority: `local_cache`, purpose `customer_charge`, finality `final`,
+  contract `unirouter.usage.v2`; and
+- prompt, cache-read, cache-create and completion counters: all `0` for the
+  current delivery.
 
-A cache hit reports:
+The historical provider usage remains only inside encrypted source evidence.
+It is never re-attributed to the cache-hit request. The response-cache price
+version is separate from provider Prompt Cache ratios.
 
-- current provider request count: `0`;
-- current provider cost in micros: `"0"`;
-- encrypted source execution proof: historical evidence only;
-- current customer charge state:
-  `requires_current_response_cache_pricing`.
+Before any bytes are written, billing records a funded zero-charge delivery
+preparation. Completed or failed local delivery has an append-only receipt and
+settles the existing reservation to zero; recoverable post-write gaps remain
+in the existing settlement-recovery state machine. The commercial receipt is
+append-only and can be aggregated only after completed delivery.
 
-The existing `cache_read_ratio` describes supplier prompt-token cache pricing.
-It is not a response-cache customer price and must not be reused.
+## 8. Lifecycle, rollback and evidence
 
-P7-D07 must choose the customer commercial rule before Gateway hit serving:
-free, fixed request price, subscription/quota consumption, a versioned
-discount, or another explicitly defined policy. That decision must specify
-ledger unit, tax/rounding behavior, refunds, plan/version binding and UI/API
-representation. Until then the service returns an explicit unpriced state and
-cannot create customer debt.
+Policy lifecycle is `draft -> validated -> shadow -> canary -> rolled_back`.
+Every transition uses exact revision locking and a required 1–500 character
+audit reason. Canary entry fails closed unless every targeted driver has at
+least the configured Shadow samples, at least one eligible sample, and zero
+assigned, mutated, safety-failed or quality-failed Shadow receipts. Cache
+Canary additionally requires the key runtime to be ready.
 
-## 7. Verified Local Boundary And Remaining Work
+Rollback stops future assignments. The new policy revision also makes prior
+entries unreachable from the current identity; encrypted values age out under
+TTL. It does not rewrite append-only receipts.
 
-The repository-local package and Redis adapter cover exact identity, encrypted
-values, strict eligibility, proof finality, lease ownership, bounded waiting,
-TTL, generation purge, outage, tamper and key-rotation behavior with synthetic
-tests.
+Current repository evidence covers strict JSON, identity vectors, encryption,
+tamper, TTL/generation, Redis lease behavior, key failures, request headers,
+Shadow/Canary separation, zero-provider/zero-charge settlement, failed-delivery
+recovery and migration rollback guards. It is Local evidence only until exact
+CI, target deployment and read-only target verification are recorded.
 
-Not included:
+## 9. Non-goals
 
-- Gateway, admin API or UI integration;
-- a production Redis/KV deployment, KMS or credential;
-- live traffic, load/soak or multi-region evidence;
-- response-cache customer pricing or billing-ledger writes;
-- semantic cache;
-- target, CI, external-integration or production claims.
-
-After P7-D07, runtime integration must still execute current authorization,
-policy, data-residency and billing checks before serving a hit, rebuild only
-request-local response metadata, and preserve the existing finality and
-evidence model.
+- semantic/similarity cache;
+- streaming/tool/media response cache;
+- shared high-privilege plugin runtime;
+- Provider Prompt Cache pricing reuse;
+- raw prompt/response in policy receipts or logs;
+- automatic Canary activation, test traffic or credential creation; or
+- an X-Insight, Tool Gateway or MCP Gateway dependency in the request path.

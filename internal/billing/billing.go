@@ -788,11 +788,15 @@ func normalizeSettlementUsageContract(req SettleRequest) (SettleRequest, error) 
 			req.UsageAuthority = metering.UsageAuthorityConservativeEstimate
 			req.UsageFinality = metering.UsageFinalityEstimated
 			req.UsageEstimateVersion = metering.ConservativeEstimateVersionV1
+		case metering.UsageSourceResponseCache:
+			req.UsageContractVersion = metering.UsageContractVersionV2
+			req.UsageAuthority = metering.UsageAuthorityLocalCache
+			req.UsageFinality = metering.UsageFinalityFinal
 		}
 	}
 	req.UsageContractVersion = strings.TrimSpace(req.UsageContractVersion)
 	req.UsageEstimateVersion = strings.TrimSpace(req.UsageEstimateVersion)
-	if req.UsageContractVersion != metering.UsageContractVersion {
+	if req.UsageContractVersion != metering.UsageContractVersion && req.UsageContractVersion != metering.UsageContractVersionV2 {
 		return req, fmt.Errorf("billing usage contract version %q is unsupported", req.UsageContractVersion)
 	}
 	if req.UsagePurpose != metering.UsagePurposeCustomerCharge {
@@ -810,6 +814,14 @@ func normalizeSettlementUsageContract(req SettleRequest) (SettleRequest, error) 
 	case metering.UsageAuthorityConservativeEstimate:
 		if (req.UsageSource != metering.UsageSourceEstimated && req.UsageSource != metering.UsageSourceAdapterEstimated) || req.UsageFinality != metering.UsageFinalityEstimated || req.UsageEstimateVersion == "" {
 			return req, fmt.Errorf("billing conservative-estimate usage contract is inconsistent")
+		}
+	case metering.UsageAuthorityLocalCache:
+		if req.UsageContractVersion != metering.UsageContractVersionV2 ||
+			req.UsageSource != metering.UsageSourceResponseCache ||
+			req.UsageFinality != metering.UsageFinalityFinal || req.UsageEstimateVersion != "" ||
+			req.PromptTokens != 0 || req.UncachedPromptTokens != 0 || req.CacheReadTokens != 0 ||
+			req.CacheCreationTokens != 0 || req.CompletionTokens != 0 {
+			return req, fmt.Errorf("billing local-cache usage contract is inconsistent")
 		}
 	default:
 		return req, fmt.Errorf("billing settlement rejects usage authority %q", req.UsageAuthority)

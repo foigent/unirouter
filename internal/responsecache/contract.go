@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	Version                  = "unirouter.response-cache.v1"
+	Version                  = "unirouter.response-cache.v2"
 	RequestSchemaChatV1      = "openai.chat.completions.request.v1"
 	ResponseSchemaChatV1     = "openai.chat.completions.response.v1"
 	EndpointChatCompletions  = "chat.completions"
 	DeliveryCompleted        = "completed"
 	SettlementSettled        = "settled"
-	CustomerChargeUnpriced   = "requires_current_response_cache_pricing"
+	CustomerChargeZero       = "zero_charge_v1"
 	CurrentProviderCostZero  = "0"
 	defaultMaximumEntryBytes = 1024 * 1024
 	maxUsageTokens           = int64(1<<31 - 1)
@@ -70,9 +70,19 @@ type Identity struct {
 	Endpoint                  string `json:"endpoint"`
 	RequestedModel            string `json:"requested_model"`
 	ResolvedModel             string `json:"resolved_model"`
+	Provider                  string `json:"provider"`
+	ChannelID                 int64  `json:"channel_id"`
+	ChannelRoutingEpoch       int64  `json:"channel_routing_epoch"`
+	ChannelCircuitEpoch       int64  `json:"channel_circuit_epoch"`
+	CredentialID              int64  `json:"credential_id"`
+	CredentialEpoch           int64  `json:"credential_epoch"`
 	AdapterProfileVersion     string `json:"adapter_profile_version"`
 	RoutePolicyVersion        string `json:"route_policy_version"`
+	RuntimeReleaseRef         string `json:"runtime_release_ref"`
+	RuntimeStage              string `json:"runtime_stage"`
+	RuntimeAssignmentID       string `json:"runtime_assignment_id"`
 	GuardrailPolicyVersion    string `json:"guardrail_policy_version"`
+	OptimizationPolicyVersion string `json:"optimization_policy_version"`
 	CustomerPricingVersion    string `json:"customer_pricing_version"`
 	ResponseCachePriceVersion string `json:"response_cache_price_version"`
 	RequestSchemaVersion      string `json:"request_schema_version"`
@@ -83,7 +93,8 @@ func (i Identity) Validate() error {
 	if err := i.Scope.Validate(); err != nil {
 		return err
 	}
-	if i.APIKeyID <= 0 ||
+	if i.APIKeyID <= 0 || i.ChannelID <= 0 || i.ChannelRoutingEpoch <= 0 ||
+		i.ChannelCircuitEpoch <= 0 || i.CredentialID <= 0 || i.CredentialEpoch <= 0 ||
 		i.Endpoint != EndpointChatCompletions ||
 		i.RequestSchemaVersion != RequestSchemaChatV1 ||
 		i.ResponseSchemaVersion != ResponseSchemaChatV1 {
@@ -93,9 +104,14 @@ func (i Identity) Validate() error {
 		i.AuthorizationEpoch,
 		i.RequestedModel,
 		i.ResolvedModel,
+		i.Provider,
 		i.AdapterProfileVersion,
 		i.RoutePolicyVersion,
+		i.RuntimeReleaseRef,
+		i.RuntimeStage,
+		i.RuntimeAssignmentID,
 		i.GuardrailPolicyVersion,
+		i.OptimizationPolicyVersion,
 		i.CustomerPricingVersion,
 		i.ResponseCachePriceVersion,
 	} {
@@ -114,21 +130,23 @@ func portableIdentity(value string) bool {
 // Request contains the post-input-policy bytes that would be sent upstream.
 // EffectiveBody is HMAC-bound but is never stored in the cache index.
 type Request struct {
-	Identity           Identity `json:"identity"`
-	EffectiveBody      []byte   `json:"-"`
-	OptIn              bool     `json:"opt_in"`
-	PersistenceAllowed bool     `json:"persistence_allowed"`
-	NoStore            bool     `json:"no_store"`
+	Identity           Identity      `json:"identity"`
+	EffectiveBody      []byte        `json:"-"`
+	TTL                time.Duration `json:"-"`
+	OptIn              bool          `json:"opt_in"`
+	PersistenceAllowed bool          `json:"persistence_allowed"`
+	NoStore            bool          `json:"no_store"`
 }
 
 type DecisionKind string
 
 const (
-	DecisionHit    DecisionKind = "hit"
-	DecisionOwner  DecisionKind = "owner"
-	DecisionWait   DecisionKind = "wait"
-	DecisionBypass DecisionKind = "bypass"
-	DecisionReject DecisionKind = "reject"
+	DecisionHit      DecisionKind = "hit"
+	DecisionOwner    DecisionKind = "owner"
+	DecisionWait     DecisionKind = "wait"
+	DecisionBypass   DecisionKind = "bypass"
+	DecisionReject   DecisionKind = "reject"
+	DecisionEligible DecisionKind = "eligible"
 )
 
 const (
@@ -145,12 +163,14 @@ const (
 	ReasonIntegrityRecovery    = "integrity_recovery"
 	ReasonInvalidConfiguration = "invalid_configuration"
 	ReasonRequestCancelled     = "request_cancelled"
+	ReasonEligible             = "eligible"
 )
 
 // UsageProof is an encrypted cache-entry field. B5 admits only provider-
 // reported, final usage whose customer delivery and settlement completed.
 // Estimated or merely HTTP-success responses are not cacheable.
 type UsageProof struct {
+	SourceRequestID      string                  `json:"source_request_id"`
 	PromptTokens         int64                   `json:"prompt_tokens"`
 	UncachedPromptTokens int64                   `json:"uncached_prompt_tokens"`
 	CacheReadTokens      int64                   `json:"provider_prompt_cache_read_tokens"`
@@ -174,7 +194,7 @@ func (p UsageProof) Validate(identity Identity) error {
 	if err := identity.Validate(); err != nil {
 		return ErrInvalidProof
 	}
-	if p.PromptTokens < 0 || p.UncachedPromptTokens < 0 ||
+	if !portableIdentity(p.SourceRequestID) || p.PromptTokens < 0 || p.UncachedPromptTokens < 0 ||
 		p.CacheReadTokens < 0 || p.CacheCreationTokens < 0 ||
 		p.CompletionTokens < 0 ||
 		p.PromptTokens > maxUsageTokens || p.UncachedPromptTokens > maxUsageTokens ||
@@ -210,6 +230,8 @@ type StoreEntry struct {
 type Hit struct {
 	SourceResponse            []byte     `json:"-"`
 	SourceProof               UsageProof `json:"source_proof"`
+	IdentityDigest            string     `json:"identity_digest"`
+	SourceResponseSHA256      string     `json:"source_response_sha256"`
 	CurrentProviderRequests   int64      `json:"current_provider_requests"`
 	CurrentProviderCostMicros string     `json:"current_provider_cost_micros"`
 	CustomerChargeState       string     `json:"customer_charge_state"`
@@ -235,7 +257,15 @@ type Reservation struct {
 	scopeGeneration uint64
 	identity        Identity
 	identityDigest  string
+	entryTTL        time.Duration
 	acquiredAt      time.Time
+}
+
+func (r *Reservation) IdentityDigest() string {
+	if r == nil || r.identityDigest == "" {
+		return ""
+	}
+	return "hmac-sha256:" + r.identityDigest
 }
 
 type Wait struct {
@@ -245,6 +275,7 @@ type Wait struct {
 	scopeGeneration uint64
 	identity        Identity
 	identityDigest  string
+	entryTTL        time.Duration
 }
 
 type Config struct {

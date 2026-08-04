@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -45,9 +44,19 @@ func fixtureIdentity() Identity {
 		Endpoint:                  EndpointChatCompletions,
 		RequestedModel:            "gpt-4o",
 		ResolvedModel:             "gpt-4o-2024-08-06",
+		Provider:                  "openai",
+		ChannelID:                 17,
+		ChannelRoutingEpoch:       3,
+		ChannelCircuitEpoch:       8,
+		CredentialID:              29,
+		CredentialEpoch:           4,
 		AdapterProfileVersion:     "openai-v1",
 		RoutePolicyVersion:        "route-v7",
+		RuntimeReleaseRef:         "none",
+		RuntimeStage:              "stable",
+		RuntimeAssignmentID:       "none",
 		GuardrailPolicyVersion:    "guardrail-v3",
+		OptimizationPolicyVersion: "opt-default-r4",
 		CustomerPricingVersion:    "customer-price-v5",
 		ResponseCachePriceVersion: "response-cache-price-unresolved-v1",
 		RequestSchemaVersion:      RequestSchemaChatV1,
@@ -64,7 +73,8 @@ func fixtureRequest() Request {
 
 func fixtureProof(identity Identity) UsageProof {
 	return UsageProof{
-		PromptTokens: 4, UncachedPromptTokens: 4, CompletionTokens: 3,
+		SourceRequestID: "req-source-1",
+		PromptTokens:    4, UncachedPromptTokens: 4, CompletionTokens: 3,
 		UsageSource:          metering.UsageSourceUpstream,
 		UsageAuthority:       metering.UsageAuthorityProviderReported,
 		UsagePurpose:         metering.UsagePurposeCustomerCharge,
@@ -149,7 +159,9 @@ func TestExactHitIsEncryptedAndDoesNotInventBilling(t *testing.T) {
 	require.Equal(t, fixtureResponseBody, hit.Hit.SourceResponse)
 	require.EqualValues(t, 0, hit.Hit.CurrentProviderRequests)
 	require.Equal(t, CurrentProviderCostZero, hit.Hit.CurrentProviderCostMicros)
-	require.Equal(t, CustomerChargeUnpriced, hit.Hit.CustomerChargeState)
+	require.Equal(t, CustomerChargeZero, hit.Hit.CustomerChargeState)
+	require.Regexp(t, `^hmac-sha256:[0-9a-f]{64}$`, hit.Hit.IdentityDigest)
+	require.Regexp(t, `^sha256:[0-9a-f]{64}$`, hit.Hit.SourceResponseSHA256)
 	require.Equal(t, fixtureProof(request.Identity), hit.Hit.SourceProof)
 
 	backend.mu.Lock()
@@ -158,7 +170,7 @@ func TestExactHitIsEncryptedAndDoesNotInventBilling(t *testing.T) {
 	for key, value := range backend.values {
 		require.NotContains(t, key, "exact private")
 		require.NotContains(t, key, request.Identity.RequestedModel)
-		require.NotContains(t, key, fmt.Sprintf("%d", request.Identity.Scope.OrgID))
+		require.Regexp(t, `^rc:v2:entry:[0-9a-f]{64}$`, key)
 		require.False(t, bytes.Contains(value.bytes, []byte("exact private prompt")))
 		require.False(t, bytes.Contains(value.bytes, []byte("exact private answer")))
 		require.False(t, bytes.Contains(value.bytes, []byte(request.Identity.ResolvedModel)))
@@ -171,12 +183,12 @@ func TestDeterministicOpaqueIndexVectors(t *testing.T) {
 	request := fixtureRequest()
 	require.Equal(
 		t,
-		"rc:v1:scope:f326daea3bf39bb1982c92558b8fa604555999b87b28bdd75560359185e668cc",
+		"rc:v2:scope:f326daea3bf39bb1982c92558b8fa604555999b87b28bdd75560359185e668cc",
 		service.scopeKey(request.Identity.Scope),
 	)
 	require.Equal(
 		t,
-		"rc:v1:entry:2e3c1d1bf915257844868441b8e4779e921acaedcd5f4f7446917a93df8d7ca5",
+		"rc:v2:entry:6c45d5e99bf642f77147fc022e82ddf6647ece6b005397110996eeb5496f3734",
 		service.entryKey(request.Identity, request.EffectiveBody, 0),
 	)
 }
@@ -198,9 +210,19 @@ func TestExactIdentityAndRequestBytesAreIsolationBoundary(t *testing.T) {
 		{"authorization-epoch", func(r *Request) { r.Identity.AuthorizationEpoch = "auth-v2" }},
 		{"requested-model", func(r *Request) { r.Identity.RequestedModel = "gpt-4o-mini" }},
 		{"resolved-model", func(r *Request) { r.Identity.ResolvedModel = "gpt-4o-mini-2024-07-18" }},
+		{"provider", func(r *Request) { r.Identity.Provider = "azure" }},
+		{"channel", func(r *Request) { r.Identity.ChannelID++ }},
+		{"channel-routing-epoch", func(r *Request) { r.Identity.ChannelRoutingEpoch++ }},
+		{"channel-circuit-epoch", func(r *Request) { r.Identity.ChannelCircuitEpoch++ }},
+		{"credential", func(r *Request) { r.Identity.CredentialID++ }},
+		{"credential-epoch", func(r *Request) { r.Identity.CredentialEpoch++ }},
 		{"adapter", func(r *Request) { r.Identity.AdapterProfileVersion = "openai-v2" }},
 		{"route-policy", func(r *Request) { r.Identity.RoutePolicyVersion = "route-v8" }},
+		{"runtime-release", func(r *Request) { r.Identity.RuntimeReleaseRef = "rel-2" }},
+		{"runtime-stage", func(r *Request) { r.Identity.RuntimeStage = "canary" }},
+		{"runtime-assignment", func(r *Request) { r.Identity.RuntimeAssignmentID = "assign-2" }},
 		{"guardrail", func(r *Request) { r.Identity.GuardrailPolicyVersion = "guardrail-v4" }},
+		{"optimization-policy", func(r *Request) { r.Identity.OptimizationPolicyVersion = "opt-default-r5" }},
 		{"customer-pricing", func(r *Request) { r.Identity.CustomerPricingVersion = "customer-price-v6" }},
 		{"cache-pricing", func(r *Request) { r.Identity.ResponseCachePriceVersion = "response-cache-price-v2" }},
 		{"request-bytes", func(r *Request) {
@@ -293,7 +315,8 @@ func TestCommitRequiresFinalProviderProofAndSafeResponse(t *testing.T) {
 			p.SettlementFinality = ""
 		}, fixtureResponseBody, ErrInvalidProof},
 		{"tool response", nil, []byte(`{"choices":[{"message":{"role":"assistant","tool_calls":[]},"finish_reason":"tool_calls"}]}`), ErrInvalidResponse},
-		{"request extension replay", nil, []byte(`{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"uniroute":{"request_id":"secret"}}`), ErrInvalidResponse},
+		{"request extension replay", nil, []byte(`{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"_uniroute":{"request_id":"secret"}}`), ErrInvalidResponse},
+		{"legacy request extension replay", nil, []byte(`{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"uniroute":{"request_id":"secret"}}`), ErrInvalidResponse},
 		{"nested duplicate response", nil, []byte(`{"choices":[{"message":{"role":"assistant","content":"a","content":"b"},"finish_reason":"stop"}]}`), ErrInvalidResponse},
 	}
 

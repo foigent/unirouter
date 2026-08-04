@@ -21,7 +21,7 @@ type RedisBackend struct {
 func NewRedisBackend(client *redis.Client, prefix string) (*RedisBackend, error) {
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
-		prefix = "uniroute:response-cache:v1"
+		prefix = "uniroute:response-cache:v2"
 	}
 	if client == nil || !redisPrefixPattern.MatchString(prefix) {
 		return nil, ErrInvalidConfig

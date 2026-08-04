@@ -52,6 +52,20 @@ func NewMissingUsage() Usage {
 	}
 }
 
+// NewResponseCacheUsage is the current execution's zero-token, zero-charge
+// authority. Historical provider usage remains only in the encrypted cache
+// proof and is never copied into the current billing counters.
+func NewResponseCacheUsage() Usage {
+	return Usage{
+		Source:           metering.UsageSourceResponseCache,
+		Authority:        metering.UsageAuthorityLocalCache,
+		Purpose:          metering.UsagePurposeCustomerCharge,
+		Finality:         metering.UsageFinalityFinal,
+		ContractVersion:  metering.UsageContractVersionV2,
+		CacheUsageStatus: CacheUsageStatusNotReported,
+	}
+}
+
 func NewConservativeEstimate(promptTokens, completionTokens int) (Usage, error) {
 	usage, err := NewUsage(
 		promptTokens,
@@ -206,6 +220,18 @@ func (u Usage) ForCustomerCharge() (Usage, error) {
 }
 
 func (u Usage) ValidateContract() error {
+	if u.Authority == metering.UsageAuthorityLocalCache {
+		if u.ContractVersion != metering.UsageContractVersionV2 ||
+			u.Source != metering.UsageSourceResponseCache ||
+			u.Purpose != metering.UsagePurposeCustomerCharge ||
+			u.Finality != metering.UsageFinalityFinal || u.EstimateVersion != "" ||
+			u.PromptTokens != 0 || u.UncachedPromptTokens != 0 ||
+			u.CacheReadTokens != 0 || u.CacheCreationTokens != 0 ||
+			u.CompletionTokens != 0 || u.TotalTokens != 0 {
+			return fmt.Errorf("local response-cache usage contract is inconsistent")
+		}
+		return nil
+	}
 	if strings.TrimSpace(u.ContractVersion) != metering.UsageContractVersion {
 		return fmt.Errorf("unsupported usage contract version %q", u.ContractVersion)
 	}

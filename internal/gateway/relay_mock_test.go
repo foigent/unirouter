@@ -38,23 +38,32 @@ import (
 // --- Mock BillingProvider ---
 
 type mockBilling struct {
-	queryModelPriceFn func(ctx context.Context, orgID int64, model string) (int64, int64, error)
-	calculateCostFn   func(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error)
-	freezeFn          func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
-	extendFn          func(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error)
-	beginStreamFn     func(ctx context.Context, start billing.StreamDeliveryStart) error
-	renewStreamFn     func(ctx context.Context, start billing.StreamDeliveryStart) error
-	checkpointFn      func(ctx context.Context, checkpoint billing.StreamDeliveryCheckpoint) (*billing.StreamCheckpointResult, error)
-	finishStreamFn    func(ctx context.Context, start billing.StreamDeliveryStart, state, reason string) error
-	beginAttemptFn    func(ctx context.Context, req billing.ProviderAttemptStart) error
-	completeAttemptFn func(ctx context.Context, req billing.ProviderAttemptCompletion) error
-	prepareDeliveryFn func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
-	holdOutputFn      func(ctx context.Context, req billing.SettleRequest, reason string) error
-	recordDeliveryFn  func(ctx context.Context, event billing.DeliveryEvent) error
-	markOutputFn      func(ctx context.Context, requestID string, orgID int64) error
-	persistUsageFn    func(ctx context.Context, req billing.SettleRequest) error
-	settleFn          func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
-	cancelFn          func(ctx context.Context, requestID string, orgID int64) error
+	queryModelPriceFn      func(ctx context.Context, orgID int64, model string) (int64, int64, error)
+	calculateCostFn        func(ctx context.Context, orgID int64, model string, promptTokens, completionTokens int) (int64, error)
+	freezeFn               func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error)
+	extendFn               func(ctx context.Context, req billing.ExtendReservationRequest) (*billing.ExtendReservationResult, error)
+	beginStreamFn          func(ctx context.Context, start billing.StreamDeliveryStart) error
+	renewStreamFn          func(ctx context.Context, start billing.StreamDeliveryStart) error
+	checkpointFn           func(ctx context.Context, checkpoint billing.StreamDeliveryCheckpoint) (*billing.StreamCheckpointResult, error)
+	finishStreamFn         func(ctx context.Context, start billing.StreamDeliveryStart, state, reason string) error
+	beginAttemptFn         func(ctx context.Context, req billing.ProviderAttemptStart) error
+	completeAttemptFn      func(ctx context.Context, req billing.ProviderAttemptCompletion) error
+	prepareDeliveryFn      func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	prepareCacheDeliveryFn func(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	holdOutputFn           func(ctx context.Context, req billing.SettleRequest, reason string) error
+	recordDeliveryFn       func(ctx context.Context, event billing.DeliveryEvent) error
+	recordCacheDeliveryFn  func(ctx context.Context, event billing.ResponseCacheDeliveryEvent) error
+	markOutputFn           func(ctx context.Context, requestID string, orgID int64) error
+	persistUsageFn         func(ctx context.Context, req billing.SettleRequest) error
+	settleFn               func(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
+	cancelFn               func(ctx context.Context, requestID string, orgID int64) error
+}
+
+func (m *mockBilling) PrepareResponseCacheDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+	if m.prepareCacheDeliveryFn != nil {
+		return m.prepareCacheDeliveryFn(ctx, req)
+	}
+	return &billing.PrepareDeliveryResult{Funded: true, Preview: billing.SettleResult{Success: true}}, nil
 }
 
 func (m *mockBilling) BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error {
@@ -91,6 +100,13 @@ func (m *mockBilling) HoldNonStreamOutput(ctx context.Context, req billing.Settl
 func (m *mockBilling) RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error {
 	if m.recordDeliveryFn != nil {
 		return m.recordDeliveryFn(ctx, event)
+	}
+	return nil
+}
+
+func (m *mockBilling) RecordResponseCacheDelivery(ctx context.Context, event billing.ResponseCacheDeliveryEvent) error {
+	if m.recordCacheDeliveryFn != nil {
+		return m.recordCacheDeliveryFn(ctx, event)
 	}
 	return nil
 }

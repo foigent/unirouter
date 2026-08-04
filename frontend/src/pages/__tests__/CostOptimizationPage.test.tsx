@@ -52,8 +52,16 @@ describe('CostOptimizationPage', () => {
         evidence_coverage_ratio: 0.8,
         cache_read_token_ratio: 0.4,
         read_to_creation_token_ratio: 2,
-        response_cache_runtime: 'not_connected_to_gateway',
-        compression_runtime: 'default_off_shadow_not_started',
+        response_cache_runtime: 'runtime_unavailable',
+        compression_runtime: 'shadow_active',
+        response_cache_shadow_samples: 12,
+        response_cache_eligible_requests: 8,
+        response_cache_hits: 3,
+        response_cache_avoided_cost_micros: '125000',
+        compression_shadow_samples: 10,
+        compression_eligible_requests: 7,
+        compression_applied_requests: 0,
+        compression_estimated_saved_tokens: 420,
         supplier_cogs_authority: 'not_claimed_use_provider_reconciliation',
       },
     });
@@ -111,14 +119,16 @@ describe('CostOptimizationPage', () => {
     expect(screen.getByText('Provider Prompt Cache')).toBeTruthy();
     expect(screen.getByText('Exact Response Cache')).toBeTruthy();
     expect(screen.getByText('Compression')).toBeTruthy();
-    expect(screen.getByText('Gateway 未接入')).toBeTruthy();
-    expect(screen.getByText('默认关闭 / Shadow 未启动')).toBeTruthy();
+    expect(screen.getByText('运行时密钥未配置')).toBeTruthy();
+    expect(screen.getByText('Shadow 评估中')).toBeTruthy();
+    expect(screen.getByText('Exact Cache 已实现避免成本')).toBeTruthy();
+    expect(screen.getByText('Compression 预计节省 Token')).toBeTruthy();
     expect(screen.getAllByText('¥0.300000').length).toBeGreaterThanOrEqual(2);
 
     const inspector = screen.getByLabelText('成本优化证据检查器');
     expect(within(inspector).getByRole('heading', { name: 'gpt-4o' })).toBeTruthy();
     expect(within(inspector).getByText('已自动选中')).toBeTruthy();
-    expect(within(inspector).getByText(/供应商 COGS、未接入 Gateway/)).toBeTruthy();
+    expect(within(inspector).getByText(/供应商 COGS 不进入/)).toBeTruthy();
     expect(within(inspector).getByRole('button', { name: /查看请求证据/ })).toBeTruthy();
   });
 

@@ -104,11 +104,19 @@ func (p *fakeProvider) PrepareNonStreamDelivery(context.Context, billing.SettleR
 	return &billing.PrepareDeliveryResult{Funded: true, Preview: billing.SettleResult{Success: true}}, nil
 }
 
+func (p *fakeProvider) PrepareResponseCacheDelivery(context.Context, billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+	return &billing.PrepareDeliveryResult{Funded: true, Preview: billing.SettleResult{Success: true}}, nil
+}
+
 func (p *fakeProvider) HoldNonStreamOutput(context.Context, billing.SettleRequest, string) error {
 	return nil
 }
 
 func (p *fakeProvider) RecordDelivery(context.Context, billing.DeliveryEvent) error { return nil }
+
+func (p *fakeProvider) RecordResponseCacheDelivery(context.Context, billing.ResponseCacheDeliveryEvent) error {
+	return nil
+}
 
 func (p *fakeProvider) MarkBillableOutput(context.Context, string, int64) error { return nil }
 

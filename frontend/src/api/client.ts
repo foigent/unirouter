@@ -146,6 +146,25 @@ export const api = {
   rollbackRuntimeChange: (releaseRef: string, expectedVersion: number) =>
     request(`/runtime-changes/${encodeURIComponent(releaseRef)}/rollback`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
 
+  // Product-local invocation optimization. Policies always require explicit
+  // request opt-in; only an evidence-gated canary stage may affect execution.
+  getInvocationOptimizationContract: () => request('/invocation-optimization/contract'),
+  getInvocationOptimizationPolicies: (orgId?: number) =>
+    request(appendParams('/invocation-optimization/policies', { org_id: orgId })),
+  createInvocationOptimizationPolicy: (data: any) =>
+    request('/invocation-optimization/policies', { method: 'POST', body: JSON.stringify(data) }),
+  updateInvocationOptimizationPolicy: (policyRef: string, data: any) =>
+    request(`/invocation-optimization/policies/${encodeURIComponent(policyRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  transitionInvocationOptimizationPolicy: (
+    policyRef: string,
+    action: 'validate' | 'shadow' | 'canary' | 'rollback',
+    expectedRevision: number,
+    reason: string,
+  ) => request(`/invocation-optimization/policies/${encodeURIComponent(policyRef)}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ expected_revision: expectedRevision, reason }),
+  }),
+
   // Keys
   getKeys: (page = 1, pageSize = 20, filters?: { project_id?: number }) =>
     request(appendParams('/keys', { page, page_size: pageSize, project_id: filters?.project_id })),

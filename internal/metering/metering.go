@@ -7,6 +7,7 @@ const (
 	UsageSourceEstimated        = "estimated"
 	UsageSourceAdapterEstimated = "adapter_estimated"
 	UsageSourceCounterV2        = "counter_v2"
+	UsageSourceResponseCache    = "response_cache"
 	UsageSourceMissing          = "missing"
 	UsageSourceNoRoute          = "no_route"
 	UsageSourceUpstreamFailed   = "upstream_failed"
@@ -20,6 +21,7 @@ const (
 	UsageAuthorityProviderReported     UsageAuthority = "provider_reported"
 	UsageAuthorityGatewayCounter       UsageAuthority = "gateway_counter"
 	UsageAuthorityConservativeEstimate UsageAuthority = "conservative_estimate"
+	UsageAuthorityLocalCache           UsageAuthority = "local_cache"
 	UsageAuthorityNone                 UsageAuthority = "none"
 )
 
@@ -40,6 +42,7 @@ const (
 
 const (
 	UsageContractVersion            = "unirouter.usage.v1"
+	UsageContractVersionV2          = "unirouter.usage.v2"
 	ConservativeEstimateVersionV1   = "unirouter.token-ceiling.v1"
 	GatewayCounterEstimateVersionV2 = "unirouter.stream-counter.v2"
 )
@@ -50,7 +53,7 @@ func NormalizeUsageSource(source string) string {
 		return UsageSourceUpstream
 	case "stream_estimate":
 		return UsageSourceCounterV2
-	case UsageSourceUpstream, UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2, UsageSourceMissing, UsageSourceNoRoute, UsageSourceUpstreamFailed:
+	case UsageSourceUpstream, UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2, UsageSourceResponseCache, UsageSourceMissing, UsageSourceNoRoute, UsageSourceUpstreamFailed:
 		return strings.TrimSpace(source)
 	default:
 		return strings.TrimSpace(source)
@@ -76,7 +79,7 @@ func LegacyUsageContract(source string, customerCharge bool) (UsageAuthority, Us
 
 func IsNonUpstreamUsage(source string) bool {
 	switch NormalizeUsageSource(source) {
-	case UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2:
+	case UsageSourceEstimated, UsageSourceAdapterEstimated, UsageSourceCounterV2, UsageSourceResponseCache:
 		return true
 	default:
 		return false
@@ -86,6 +89,8 @@ func IsNonUpstreamUsage(source string) bool {
 func SourceConfidence(source string) float64 {
 	switch NormalizeUsageSource(source) {
 	case UsageSourceUpstream:
+		return 1.0
+	case UsageSourceResponseCache:
 		return 1.0
 	case UsageSourceAdapterEstimated:
 		return 0.75

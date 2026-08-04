@@ -387,7 +387,10 @@ func (b *Billing) claimPendingSettlements(ctx context.Context, limit int) ([]pen
 			    FROM freeze_idempotency f
 			    WHERE status = 'settlement_pending'
 		      AND settlement_payload_ready_at IS NOT NULL
-			      AND settlement_pending_reason IN ('billable_output', 'delivery_completed')
+			      AND settlement_pending_reason IN (
+			          'billable_output', 'delivery_completed',
+			          'response_cache_delivery_completed', 'response_cache_delivery_failed'
+			      )
 			      AND (
 			          delivery_attempt_id IS NOT NULL
 			          OR NOT EXISTS (

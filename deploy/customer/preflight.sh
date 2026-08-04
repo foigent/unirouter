@@ -23,6 +23,7 @@ fi
 
 load_effective_value() {
   local key="$1"
+  local optional="${2:-false}"
 
   if ! effective_value="$(awk -v key="${key}" '
     index($0, key "=") == 1 {
@@ -32,6 +33,10 @@ load_effective_value() {
     }
     END { if (!found) exit 1 }
   ' <<<"${interpolation_environment}")"; then
+    if [[ "${optional}" == "true" ]]; then
+      effective_value=""
+      return 0
+    fi
     echo "customer preflight: ${key} is missing from the effective Compose interpolation environment" >&2
     exit 1
   fi
@@ -76,6 +81,25 @@ require_release_secret JWT_SECRET
 require_release_secret API_KEY_HASH_SECRET
 require_release_secret UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET
 require_exact_bytes ENCRYPTION_KEY 32
+
+load_effective_value RESPONSE_CACHE_INDEX_KEY true
+response_cache_index_key="${effective_value}"
+load_effective_value RESPONSE_CACHE_ENCRYPTION_KEY true
+response_cache_encryption_key="${effective_value}"
+load_effective_value RESPONSE_CACHE_KEY_VERSION true
+response_cache_key_version="${effective_value}"
+if [[ -n "${response_cache_index_key}" || -n "${response_cache_encryption_key}" || -n "${response_cache_key_version}" ]]; then
+  response_cache_index_bytes="$(LC_ALL=C printf '%s' "${response_cache_index_key}" | wc -c | tr -d '[:space:]')"
+  response_cache_encryption_bytes="$(LC_ALL=C printf '%s' "${response_cache_encryption_key}" | wc -c | tr -d '[:space:]')"
+  if [[ "${response_cache_index_bytes}" -ne 32 || "${response_cache_encryption_bytes}" -ne 32 ]]; then
+    echo "customer preflight: enabled Exact Response Cache requires independent exact 32-byte index and encryption keys" >&2
+    exit 1
+  fi
+  if [[ ! "${response_cache_key_version}" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$ ]]; then
+    echo "customer preflight: RESPONSE_CACHE_KEY_VERSION must be a portable 1-128 character identifier" >&2
+    exit 1
+  fi
+fi
 require_configured_value POSTGRES_PASSWORD
 require_configured_value DB_DSN
 require_configured_value REDIS_PASSWORD
@@ -153,6 +177,11 @@ unset network_c
 unset network_prefix
 unset gateway_host
 unset frontend_host
+unset response_cache_index_key
+unset response_cache_encryption_key
+unset response_cache_key_version
+unset response_cache_index_bytes
+unset response_cache_encryption_bytes
 
 if grep -Eq '^[[:space:]]*build:' <<<"${rendered}"; then
   echo "customer preflight: customer Compose must not contain build contexts" >&2

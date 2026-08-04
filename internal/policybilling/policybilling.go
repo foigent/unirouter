@@ -41,8 +41,10 @@ type Provider interface {
 	BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error
 	CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	PrepareResponseCacheDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
 	HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error
 	RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error
+	RecordResponseCacheDelivery(ctx context.Context, event billing.ResponseCacheDeliveryEvent) error
 	MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error
 	PersistSettlementUsage(ctx context.Context, req billing.SettleRequest) error
 	Settle(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
@@ -236,12 +238,20 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, req billing.Sett
 	return b.inner.PrepareNonStreamDelivery(ctx, req)
 }
 
+func (b *Billing) PrepareResponseCacheDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+	return b.inner.PrepareResponseCacheDelivery(ctx, req)
+}
+
 func (b *Billing) HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error {
 	return b.inner.HoldNonStreamOutput(ctx, req, reason)
 }
 
 func (b *Billing) RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error {
 	return b.inner.RecordDelivery(ctx, event)
+}
+
+func (b *Billing) RecordResponseCacheDelivery(ctx context.Context, event billing.ResponseCacheDeliveryEvent) error {
+	return b.inner.RecordResponseCacheDelivery(ctx, event)
 }
 
 func (b *Billing) MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error {

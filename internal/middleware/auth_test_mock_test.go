@@ -42,7 +42,8 @@ func TestResolveAPIKey_Success(t *testing.T) {
 					*dest[11].(*int64) = 42          // owner_user_id
 					*dest[12].(*string) = "personal" // key_type
 					*dest[13].(*string) = ""         // purpose
-					*dest[14].(*string) = "active"   // org_status
+					*dest[14].(*int64) = 7           // auth_epoch
+					*dest[15].(*string) = "active"   // org_status
 					return nil
 				},
 			}
@@ -73,6 +74,9 @@ func TestResolveAPIKey_Success(t *testing.T) {
 	}
 	if apiKey.KeyType != "personal" {
 		t.Fatalf("expected KeyType=personal, got %s", apiKey.KeyType)
+	}
+	if apiKey.AuthEpoch != 7 {
+		t.Fatalf("expected AuthEpoch=7, got %d", apiKey.AuthEpoch)
 	}
 	if verifierScheme != auth.LegacyAPIVerifierScheme {
 		t.Fatalf("general gateway resolver accepted non-legacy verifier scheme: %v", verifierScheme)
@@ -118,7 +122,8 @@ func TestGatewayAuth_Success(t *testing.T) {
 					*dest[11].(*int64) = 42
 					*dest[12].(*string) = "personal"
 					*dest[13].(*string) = ""
-					*dest[14].(*string) = "active"
+					*dest[14].(*int64) = 1
+					*dest[15].(*string) = "active"
 					return nil
 				},
 			}
@@ -188,7 +193,8 @@ func TestGatewayAuthWithAPIKeyHashSecret_UsesSeparateSecret(t *testing.T) {
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
 					*dest[13].(*string) = ""
-					*dest[14].(*string) = "active"
+					*dest[14].(*int64) = 1
+					*dest[15].(*string) = "active"
 					return nil
 				},
 			}
@@ -282,7 +288,8 @@ func TestGatewayAuth_DisabledKey(t *testing.T) {
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
 					*dest[13].(*string) = ""
-					*dest[14].(*string) = "active"
+					*dest[14].(*int64) = 1
+					*dest[15].(*string) = "active"
 					return nil
 				},
 			}
@@ -326,7 +333,8 @@ func TestGatewayAuth_DisabledOrg(t *testing.T) {
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
 					*dest[13].(*string) = ""
-					*dest[14].(*string) = "disabled" // org disabled
+					*dest[14].(*int64) = 1
+					*dest[15].(*string) = "disabled" // org disabled
 					return nil
 				},
 			}
@@ -370,7 +378,8 @@ func TestGatewayAuth_IPWhitelist(t *testing.T) {
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
 					*dest[13].(*string) = ""
-					*dest[14].(*string) = "active"
+					*dest[14].(*int64) = 1
+					*dest[15].(*string) = "active"
 					return nil
 				},
 			}
@@ -416,7 +425,8 @@ func TestGatewayAuth_IPWhitelistUsesTrustedProxyChain(t *testing.T) {
 					*dest[11].(*int64) = 0
 					*dest[12].(*string) = "shared"
 					*dest[13].(*string) = ""
-					*dest[14].(*string) = "active"
+					*dest[14].(*int64) = 1
+					*dest[15].(*string) = "active"
 					return nil
 				},
 			}

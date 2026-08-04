@@ -59,6 +59,52 @@ func TestValidate_Exact32ByteKey(t *testing.T) {
 	}
 }
 
+func TestValidate_ResponseCacheIsDefaultOffAndRequiresCompleteKeySet(t *testing.T) {
+	base := Config{
+		JWTSecret:          "secret",
+		APIKeyHashSecret:   "api-key-secret",
+		EncryptionKey:      "0123456789abcdef0123456789abcdef",
+		FreezeSafetyFactor: "1",
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("response cache must remain optional by default: %v", err)
+	}
+	if base.ResponseCacheConfigured() {
+		t.Fatal("response cache must be disabled without the complete key set")
+	}
+
+	configured := base
+	configured.ResponseCacheIndexKey = strings.Repeat("i", 32)
+	configured.ResponseCacheEncryptionKey = strings.Repeat("e", 32)
+	configured.ResponseCacheKeyVersion = "cache-key-v1"
+	if err := configured.Validate(); err != nil {
+		t.Fatalf("complete response-cache key set should validate: %v", err)
+	}
+	if !configured.ResponseCacheConfigured() {
+		t.Fatal("complete response-cache key set should enable runtime readiness")
+	}
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*Config)
+	}{
+		{"missing index key", func(cfg *Config) { cfg.ResponseCacheIndexKey = "" }},
+		{"missing encryption key", func(cfg *Config) { cfg.ResponseCacheEncryptionKey = "" }},
+		{"missing key version", func(cfg *Config) { cfg.ResponseCacheKeyVersion = "" }},
+		{"short index key", func(cfg *Config) { cfg.ResponseCacheIndexKey = "short" }},
+		{"short encryption key", func(cfg *Config) { cfg.ResponseCacheEncryptionKey = "short" }},
+		{"non-portable version", func(cfg *Config) { cfg.ResponseCacheKeyVersion = "bad version" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := configured
+			test.mutate(&candidate)
+			if err := candidate.Validate(); err == nil {
+				t.Fatal("expected incomplete or invalid response-cache key set to fail closed")
+			}
+		})
+	}
+}
+
 func TestValidateReleaseSecretsRequires32BytesWithoutChangingDevelopmentValidation(t *testing.T) {
 	cfg := &Config{
 		JWTSecret:          "development-secret",
@@ -903,6 +949,7 @@ func TestLoad_Defaults(t *testing.T) {
 	envVars := []string{
 		"LISTEN_PORT", "LOG_LEVEL", "GIN_MODE", "SHUTDOWN_TIMEOUT_SECONDS", "DB_DSN", "DB_MAX_CONNECTIONS",
 		"REDIS_ADDR", "REDIS_PASSWORD", "REDIS_DB", "JWT_SECRET", "API_KEY_HASH_SECRET", "ENCRYPTION_KEY",
+		"RESPONSE_CACHE_INDEX_KEY", "RESPONSE_CACHE_ENCRYPTION_KEY", "RESPONSE_CACHE_KEY_VERSION",
 		"TRACE_EVENTS_ENABLED", "TRACE_EVENT_SAMPLE_RATE", "TRACE_EVENT_RETENTION_DAYS", "LOG_RETENTION_DAYS",
 		"PAYLOAD_CAPTURE_MODE", "EVIDENCE_CONTEXT_TRUST_SECRET", "UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET",
 		"STREAM_MAX_SSE_LINE_BYTES", "STREAM_WRITE_IDLE_TIMEOUT_SECONDS", "STREAM_HEARTBEAT_SECONDS", "STREAM_MAX_DURATION_SECONDS",

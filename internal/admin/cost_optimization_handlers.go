@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/money"
@@ -45,6 +46,14 @@ type costOptimizationSummary struct {
 	ReadToCreationTokenRatio        *float64 `json:"read_to_creation_token_ratio"`
 	ResponseCacheRuntime            string   `json:"response_cache_runtime"`
 	CompressionRuntime              string   `json:"compression_runtime"`
+	ResponseCacheShadowSamples      int64    `json:"response_cache_shadow_samples"`
+	ResponseCacheEligibleRequests   int64    `json:"response_cache_eligible_requests"`
+	ResponseCacheHits               int64    `json:"response_cache_hits"`
+	ResponseCacheAvoidedCostMicros  string   `json:"response_cache_avoided_cost_micros"`
+	CompressionShadowSamples        int64    `json:"compression_shadow_samples"`
+	CompressionEligibleRequests     int64    `json:"compression_eligible_requests"`
+	CompressionAppliedRequests      int64    `json:"compression_applied_requests"`
+	CompressionEstimatedSavedTokens int64    `json:"compression_estimated_saved_tokens"`
 	SupplierCOGSAuthority           string   `json:"supplier_cogs_authority"`
 	PromptRetention                 string   `json:"prompt_retention"`
 	ResponseRetention               string   `json:"response_retention"`
@@ -206,8 +215,9 @@ func scanCostOptimizationSummary(row interface{ Scan(...any) error }) (costOptim
 	result.EvidenceCoverageRatio = costOptimizationRatio(result.EligibleRequests, result.CandidateRequests)
 	result.CacheReadTokenRatio = costOptimizationRatio(result.CacheReadTokens, result.PromptTokens)
 	result.ReadToCreationTokenRatio = optionalCostOptimizationRatio(result.CacheReadTokens, result.CacheCreationTokens)
-	result.ResponseCacheRuntime = "not_connected_to_gateway"
-	result.CompressionRuntime = "default_off_shadow_not_started"
+	result.ResponseCacheRuntime = "runtime_unavailable"
+	result.CompressionRuntime = "default_off"
+	result.ResponseCacheAvoidedCostMicros = "0"
 	result.SupplierCOGSAuthority = "not_claimed_use_provider_reconciliation"
 	result.PromptRetention = "not_stored_by_default"
 	result.ResponseRetention = "not_stored_by_default"
@@ -248,7 +258,146 @@ func (h *Handler) CostOptimizationSummary(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Cost optimization summary failed"})
 		return
 	}
+	if err := h.populateInvocationOptimizationSummary(r, &result); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Invocation optimization summary failed"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"summary": result})
+}
+
+func (h *Handler) populateInvocationOptimizationSummary(r *http.Request, result *costOptimizationSummary) error {
+	if h == nil || h.db == nil || result == nil {
+		return fmt.Errorf("invocation optimization summary unavailable")
+	}
+	orgID, err := resolveRequestOrganization(r)
+	if err != nil {
+		return err
+	}
+	projectID := int64(0)
+	if value := strings.TrimSpace(r.URL.Query().Get("project_id")); value != "" {
+		projectID, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || projectID <= 0 {
+			return fmt.Errorf("invalid project scope")
+		}
+	}
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	var responseStage, compressionStage int
+	err = h.db.QueryRow(r.Context(), `
+SELECT
+ COALESCE(MAX(CASE stage WHEN 'canary' THEN 5 WHEN 'shadow' THEN 4 WHEN 'validated' THEN 3 WHEN 'draft' THEN 2 WHEN 'rolled_back' THEN 1 ELSE 0 END)
+   FILTER (WHERE status='active' AND response_cache_target='canary'),0),
+ COALESCE(MAX(CASE stage WHEN 'canary' THEN 5 WHEN 'shadow' THEN 4 WHEN 'validated' THEN 3 WHEN 'draft' THEN 2 WHEN 'rolled_back' THEN 1 ELSE 0 END)
+   FILTER (WHERE status='active' AND compression_target='canary'),0)
+FROM invocation_optimization_policies
+WHERE org_id=$1
+  AND ($2::bigint=0 OR project_id=$2 OR project_id IS NULL)
+  AND ($3::text='' OR model_selector='*' OR model_selector=$3)`, orgID, projectID, model,
+	).Scan(&responseStage, &compressionStage)
+	if err != nil {
+		return err
+	}
+	result.ResponseCacheRuntime = invocationOptimizationRuntimeLabel(responseStage, h.responseCacheRuntimeReady)
+	result.CompressionRuntime = invocationOptimizationRuntimeLabel(compressionStage, true)
+
+	receiptWhere, receiptArgs := invocationOptimizationReceiptScope(r, orgID, projectID, "ior", "c")
+	err = h.db.QueryRow(r.Context(), `
+SELECT
+ COUNT(*) FILTER (WHERE ior.driver='response_cache' AND ior.effective_mode='shadow'),
+ COUNT(*) FILTER (WHERE ior.driver='response_cache' AND ior.eligible),
+ COUNT(*) FILTER (WHERE ior.driver='compression' AND ior.effective_mode='shadow'),
+ COUNT(*) FILTER (WHERE ior.driver='compression' AND ior.eligible),
+ COUNT(*) FILTER (WHERE ior.driver='compression' AND ior.mutation_applied),
+ COALESCE(SUM(ior.estimated_saved_tokens) FILTER (WHERE ior.driver='compression' AND ior.eligible),0)
+FROM invocation_optimization_receipts ior
+LEFT JOIN channels c ON c.id=ior.route_channel_id
+WHERE `+receiptWhere, receiptArgs...).Scan(
+		&result.ResponseCacheShadowSamples,
+		&result.ResponseCacheEligibleRequests,
+		&result.CompressionShadowSamples,
+		&result.CompressionEligibleRequests,
+		&result.CompressionAppliedRequests,
+		&result.CompressionEstimatedSavedTokens,
+	)
+	if err != nil {
+		return err
+	}
+	commercialWhere, commercialArgs := invocationOptimizationCommercialScope(r, orgID, projectID)
+	return h.db.QueryRow(r.Context(), `
+SELECT COUNT(*),COALESCE(SUM(rcr.avoided_customer_cost_micros),0)::text
+FROM response_cache_commercial_receipts rcr
+JOIN channels c ON c.id=rcr.channel_id
+JOIN freeze_idempotency f
+  ON f.org_id=rcr.org_id AND f.request_id=rcr.request_id
+WHERE f.status='settled'
+  AND f.usage_source='response_cache'
+  AND f.usage_authority='local_cache'
+  AND f.usage_purpose='customer_charge'
+  AND f.usage_finality='final'
+  AND f.usage_contract_version='unirouter.usage.v2'
+  AND f.calculated_cost_micros=0
+  AND f.charged_cost_micros=0
+  AND `+commercialWhere, commercialArgs...).Scan(
+		&result.ResponseCacheHits,
+		&result.ResponseCacheAvoidedCostMicros,
+	)
+}
+
+func invocationOptimizationRuntimeLabel(stage int, runtimeReady bool) string {
+	if !runtimeReady {
+		return "runtime_unavailable"
+	}
+	switch stage {
+	case 5:
+		return "canary_active"
+	case 4:
+		return "shadow_active"
+	case 3:
+		return "validated"
+	case 2:
+		return "draft"
+	case 1:
+		return "rolled_back"
+	default:
+		return "ready_default_off"
+	}
+}
+
+func invocationOptimizationReceiptScope(r *http.Request, orgID, projectID int64, receiptAlias, channelAlias string) (string, []interface{}) {
+	args := []interface{}{orgID}
+	conditions := []string{receiptAlias + ".org_id=$1"}
+	add := func(condition string, value interface{}) {
+		args = append(args, value)
+		conditions = append(conditions, fmt.Sprintf(condition, len(args)))
+	}
+	if projectID > 0 {
+		add(receiptAlias+".project_id=$%d", projectID)
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("model")); value != "" {
+		args = append(args, value)
+		placeholder := len(args)
+		conditions = append(conditions, fmt.Sprintf(
+			"("+receiptAlias+".requested_model=$%d OR "+receiptAlias+".resolved_model=$%d)",
+			placeholder,
+			placeholder,
+		))
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("provider")); value != "" {
+		add(receiptAlias+".provider=$%d", value)
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("channel")); value != "" {
+		add(channelAlias+".name=$%d", value)
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("start_time")); value != "" {
+		add(receiptAlias+".created_at >= $%d", value)
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("end_time")); value != "" {
+		add(receiptAlias+".created_at <= $%d", value)
+	}
+	return strings.Join(conditions, " AND "), args
+}
+
+func invocationOptimizationCommercialScope(r *http.Request, orgID, projectID int64) (string, []interface{}) {
+	return invocationOptimizationReceiptScope(r, orgID, projectID, "rcr", "c")
 }
 
 func (h *Handler) CostOptimizationTrend(w http.ResponseWriter, r *http.Request) {

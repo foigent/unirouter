@@ -28,7 +28,7 @@ func TestCapabilityControlHTTPFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := NewHandler(service)
-	rootKey := &models.ApiKey{ID: 9, OrgID: 4, Status: "active", AllowedModels: "gpt-4o", RPMLimit: 60, QPSLimit: 10}
+	rootKey := &models.ApiKey{ID: 9, OrgID: 4, AuthEpoch: 1, Status: "active", AllowedModels: "gpt-4o", RPMLimit: 60, QPSLimit: 10}
 
 	exchangeBody := `{"root_agent_id":"agent:root","workflow_ttl_seconds":3600,"limits":{"max_depth":2,"max_children":2,"max_descendants":4,"cost_budget_cents":1000,"token_budget":10000,"rpm_limit":60,"rps_limit":10,"concurrency_limit":2,"allowed_models":["gpt-4o"],"allowed_endpoints":["/v1/chat/completions"]}}`
 	exchangeRequest := httptest.NewRequest(http.MethodPost, "/v1/agent-capabilities/exchange", strings.NewReader(exchangeBody))
@@ -96,7 +96,7 @@ func capabilityHandlerDB(t *testing.T) *testutil.MockDB {
 			if len(args) != 1 || args[0] != int64(9) {
 				t.Fatalf("unexpected authority lookup: %v", args)
 			}
-			if len(dest) != 19 {
+			if len(dest) != 20 {
 				t.Fatalf("unexpected authority scan width: %d", len(dest))
 			}
 			*dest[0].(*int64) = 9
@@ -110,14 +110,15 @@ func capabilityHandlerDB(t *testing.T) *testutil.MockDB {
 			*dest[8].(*string) = ""
 			*dest[9].(*string) = "gpt-4o"
 			*dest[10].(*string) = ""
-			*dest[11].(*int) = 60
-			*dest[12].(*int) = 10
-			*dest[13].(*int) = -1
-			*dest[14].(*string) = "active"
-			*dest[15].(*string) = ""
+			*dest[11].(*int64) = 1
+			*dest[12].(*int) = 60
+			*dest[13].(*int) = 10
+			*dest[14].(*int) = -1
+			*dest[15].(*string) = "active"
 			*dest[16].(*string) = ""
 			*dest[17].(*string) = ""
 			*dest[18].(*string) = ""
+			*dest[19].(*string) = ""
 			return nil
 		}}
 	}}
