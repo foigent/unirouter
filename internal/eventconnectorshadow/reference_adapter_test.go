@@ -423,7 +423,7 @@ func TestPhase2BReferenceRegistryBinding(t *testing.T) {
 	}
 }
 
-func TestPhase2CProtocolV111PinsLiteLLMConformanceWithoutChangingReferenceRuntime(t *testing.T) {
+func TestProtocolV202PinsSourceNeutralConformanceWithoutChangingReferenceRuntime(t *testing.T) {
 	t.Parallel()
 
 	payload, err := os.ReadFile(filepath.Join("..", "..", "contracts", "foigent", "event-connector-protocol.pin.json"))
@@ -442,21 +442,29 @@ func TestPhase2CProtocolV111PinsLiteLLMConformanceWithoutChangingReferenceRuntim
 		t.Fatalf("decode protocol pin: %v", err)
 	}
 	expectedComponents := map[string]string{
-		"shared_ci_action":                "sha256:d582bf286035d20fb99d67a35a637a697e62411de8d669340a549142381bdc38",
-		"source_projection_contract":      "sha256:5425ab384bebcd9d4a7e81882bfa1bb1700df7cc397863b91f69e2855df12928",
-		"source_lifecycle_mapping":        "sha256:1618c86e3d8fae206322e1d928b8b5f0401865623b4267f5b685d7ac02b2968f",
-		"source_identity_mapping":         "sha256:0cdbcdcf42658ee12d14ae13ef5d43b54488dca7cec8182055047585eb62e890",
-		"canonical_vector_bundle":         "sha256:50fc8e8be08c37381611d6423e29780894741fb108fc4569df7c895452e5d4db",
-		"conformance_contract":            "sha256:f3ae834265170ff22088943283fd23dcb562bc2308571ccc722414c2c896dc23",
-		"litellm_connector_manifest":      "sha256:d4386de89b24271aef32014cd33a11b02865c8eab5a4d594d742a051dd65ae28",
-		"litellm_upstream_source_mapping": "sha256:828a3d840ca880626ab5b1a3bc8836102265f209051f274d9da94e3decfbd08c",
-		"litellm_compatibility_matrix":    "sha256:3b0a2c5e3bfa89dc060299fa0b4351edcd33d92b2702cf95c99b1f26b51dd4ec",
-		"litellm_conformance_contract":    "sha256:9f6859446dce72c80762a49fc9b62926f1b1c6350af79bc6b50e8eec9e29fde2",
-		"litellm_vector_bundle":           "sha256:44681fdec12476284e3c88f8aab710e04bcd35456007e829ae5199421df995d4",
+		"shared_ci_action":              "sha256:a3e05a99664bbd173d77582a7d5542cdae86323618a6cd1c70d3d3254eeda8f3",
+		"protocol_spec":                 "sha256:4a8efd02b07c29f4ce19fb30bd5fa9f256254ba6cfe92420bf8e6a268b22702d",
+		"predecessor_release_manifest":  "sha256:fa097dfa08ba318334f78f4690f65247f080e86fde5695742b3ad49aaeba6a60",
+		"event_envelope_schema":         "sha256:6942e85d9b5d8b08ff9828b970c317596394184ef29908cbf2b8fc792187cf26",
+		"capture_gap_schema":            "sha256:1a5be69da99f62033ceadf05f66d45296d1d5f8b662830f77c0fc6af49edaec8",
+		"connector_manifest_schema":     "sha256:ce1e8e84b49e50d0740366e42c64a6899b27834c3cf83116a63a35d3c1a901e5",
+		"connector_lifecycle_schema":    "sha256:b2b8475605fe58e75b97ebe2c6fdab567647757a64112dfeed1b1d4b48afefd0",
+		"connector_checkpoint_schema":   "sha256:80bf1e98b24424a25a14985f36aa179c838363c4deb540c7521b20582eccdd6b",
+		"event_batch_schema":            "sha256:36e7da64aa6c33e74e60379274d8426459f1e2ee520e44d0d935fc794b4925da",
+		"connector_error_schema":        "sha256:bae3e9a0ee4096feb01655e1f9fc0e4032b3656c0cd0e2a7cad78ec7379a3dee",
+		"operational_receipt_schema":    "sha256:d2d091c2571d54df7a65329da049f13a4d7465af38b7916e4ae79e57255a04b6",
+		"reference_connector_manifest":  "sha256:a3bc97bd5d5c7aab6452de9518be0b00f62776877deb431a91c175da5287de79",
+		"source_projection_contract":    "sha256:5425ab384bebcd9d4a7e81882bfa1bb1700df7cc397863b91f69e2855df12928",
+		"source_lifecycle_mapping":      "sha256:1618c86e3d8fae206322e1d928b8b5f0401865623b4267f5b685d7ac02b2968f",
+		"source_identity_mapping":       "sha256:0cdbcdcf42658ee12d14ae13ef5d43b54488dca7cec8182055047585eb62e890",
+		"v1_to_v2_compatibility_matrix": "sha256:bdc2527ca947bf7b6a9c1feb2d5a97a9426b5b3ec602690a2d7b23d3f85ace52",
+		"conformance_contract":          "sha256:f820936448590144156c2e499134eb4b3142ca0265275b6e9bdf1e5cd7855e14",
+		"vector_bundle":                 "sha256:9e50bb4570dcc1ff07157ad6198641e937357b641ae052cddcb3420b52ad11ed",
+		"conformance_kit_runner":        "sha256:a7fb4d8fb4013f8aae1bbf86c517cd52f33438366ad843e5438c48ac8e4914f2",
 	}
-	if pin.ProtocolVersion != "1.1.1" ||
-		pin.Authority.Tag != "v1.1.1" ||
-		pin.ReleaseDigest != "sha256:21a666a2c605271d64e3a1c1c8d7dd2af3c205967693adc8af2b02fc42a5173b" ||
+	if pin.ProtocolVersion != "2.0.2" ||
+		pin.Authority.Tag != "v2.0.2" ||
+		pin.ReleaseDigest != "sha256:99f8a541b6d33b0a74d2e4c06aa312c6d6c88c35a4bfb1d4d34b98b4e4e2e8e8" ||
 		!reflect.DeepEqual(pin.Components, expectedComponents) {
 		t.Fatalf("unexpected protocol pin: %#v", pin)
 	}

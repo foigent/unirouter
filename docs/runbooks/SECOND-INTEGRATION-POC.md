@@ -94,6 +94,24 @@ representative Shadow evidence and Product Owner Canary decision.
 
 The reset is a separate destructive operation. Before execution, produce a count-only preview covering organization/account/project/application/API-key/channel/provider-credential/model-governance/limit/usage/cost/audit/Feed data and explicitly list preserved deployment secrets and infrastructure. Execute only after the user confirms that exact preview.
 
+## X-Insight dual-track handoff
+
+The second integration uses two separately accepted tracks:
+
+1. The existing completed-execution Feed remains the V1 compatibility path. It keeps its endpoint, DTO, credential,
+   order, Cursor and source result semantics. After reset it must use a new explicit Source Instance and X-Insight
+   checkpoint epoch; neither side may reuse the first campaign Cursor.
+2. Selected second-campaign request IDs use the existing approval-manifest-bound
+   `scripts/prd5_xinsight_snapshot.go` path for high-fidelity product validation. This artifact remains metadata-only
+   and controlled; it is not a continuous Connector and must not be described as one.
+
+The safe receiver handoff order is: prepare the X-Insight receiver credential; register its public Frozen Registration
+Bundle while the source Feed is paused; use the staged credential to obtain the new Source's empty bootstrap
+Cursor/high-watermark; activate the X-Insight checkpoint epoch while its worker remains inactive and disabled; then
+activate the receiver credential and start the bounded V1 window. If the epoch barrier has been crossed, do not edit
+checkpoint rows or attempt an abort—keep the Feed off and either resume the exact credential operation or use the
+verified X-Insight database recovery path.
+
 ## Pass criteria
 
 - External device uses the configured HTTPS Gateway Endpoint and a newly created application-bound credential.

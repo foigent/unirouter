@@ -5,22 +5,29 @@
 UniRouter 产品 CI 固定使用以下不可变协议权威：
 
 - repository: `https://github.com/foigent/event-connector-spec`
-- tag: `v1.1.1`
-- commit: `ef659a22c35911739d7f5c507126c826e70b9584`
-- tree: `4fe19c7148a5b284dc48a0a9d0c81436bdccf621`
+- tag: `v2.0.2`
+- annotated tag object: `1fece056b251239b8a557264c5d95043c4b5bdd2`
+- commit: `ad8fe7a38c9d7335657630baa8670dd07556b98c`
+- tree: `288fa23b0591b6ed2953e14bc4a9d3571e2839ac`
 - content digest:
-  `sha256:c7204f26dbfe313da2da135369346156852ef8bd8d822efeb41359a9fe650651`
+  `sha256:9dce6081e15be0028441513291808f8d58becb25f00887ae66299031bc79c1c0`
 - release digest:
-  `sha256:21a666a2c605271d64e3a1c1c8d7dd2af3c205967693adc8af2b02fc42a5173b`
+  `sha256:99f8a541b6d33b0a74d2e4c06aa312c6d6c88c35a4bfb1d4d34b98b4e4e2e8e8`
 
 `contracts/foigent/event-connector-protocol.pin.json` 是产品 CI pin；
 `contracts/foigent/connector-registry.pin.v1.json` 是 UniRouter 本地运行时 registry
 pin。两者用途不同，不得相互替代。
 
-协议 `v1.1.1` 只修正 LiteLLM `startTime` coverage 文案。由于 Reference
-Connector 的 manifest、Schema、mapping、vector、Golden identity/hash 和
-实现 bytes 均未变化，本地 runtime registry 与 `ReferenceRuntimeBinding`
-继续保持已经验证的 `v1.1.0` 身份；本次不重写运行时描述符。
+协议 `v2.0.2` 是共享协议的 PATCH-compatible CI portability release：远程
+composite Action 在产品 snapshot 中不需要 `.git`、权威仓历史或产品侧私有仓
+凭据。`v2.0.2` 相对 `v2.0.1` 不修改 Event、Schema、vector、mapping、M0、
+Gap、provenance、identity、hash、canonicalization、Receipt、Cursor 或
+Checkpoint 语义。
+
+Reference Connector 的 manifest、Source Schema、Source projection 和既有
+Golden identity/hash 均未变化，因此本地 runtime registry 与
+`ReferenceRuntimeBinding` 继续保持已经验证的 `v1.1.0` 身份；产品级 pin
+升级不重写运行时描述符。
 
 ## 产品所有权边界
 
@@ -30,10 +37,10 @@ UniRouter 已持久化的 completed-execution Source bytes 生成共享
 `model.request.completed` Envelope，并保留现有 Feed、Cursor、鉴权、保留期和
 确认语义。
 
-协议 v1.1.0 新增的 LiteLLM manifest、upstream mapping、compatibility
-matrix、conformance contract 和跨语言 vectors，以及 v1.1.1 对 LiteLLM
-coverage 的准确说明，只进入产品 pin 与共享 CI 验证。它们证明 UniRouter
-所依赖的共享协议仍可被第二种 Source Connector 实现，不表示 UniRouter：
+协议 v2 的 source-neutral Envelope、Manifest、Lifecycle、Checkpoint、Error、
+Receipt、兼容矩阵和跨语言 vectors 只进入产品 pin 与共享 CI 验证。它们证明
+UniRouter 的 Reference Connector 与 X-Insight Consumer 使用同一不可变协议
+权威，不表示 UniRouter：
 
 - 注册或运行 LiteLLM Connector；
 - 连接、部署或管理 LiteLLM；
@@ -46,7 +53,7 @@ owner 和 Consumer 产品的独立隔离运行时。
 
 ## 兼容性不变量
 
-产品 CI authority 从 v1.1.0 更新到 v1.1.1，但 Reference Connector 的下列
+产品 CI authority 更新到 v2.0.2，但 Reference Connector 的下列
 内容保持不变：
 
 - Connector manifest；
