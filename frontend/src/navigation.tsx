@@ -141,6 +141,7 @@ const taskNavItems: NavItem[] = [
     items: [
       { itemKey: '/wallet', text: '预算与成本中心', icon: <IconCreditCard /> },
       { itemKey: '/model-prices', text: '费率与计价', icon: <IconPriceTag /> },
+      { itemKey: '/cost-optimization', text: '成本优化', icon: <IconBarChartVStroked /> },
       { itemKey: '/reconciliation', text: '分摊与对账', icon: <IconFlowChartStroked /> },
     ],
   },
@@ -169,11 +170,11 @@ const orgAdminRoutes = new Set([
   '/', '/model-governance', '/risk-control', '/applications', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
   '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
   '/media-jobs',
-  '/model-prices', '/docs',
+  '/model-prices', '/cost-optimization', '/docs',
 ]);
 const billingRoutes = new Set([
   '/', '/logs', '/usage-analytics', '/notifications',
-  '/wallet', '/model-prices', '/reconciliation', '/docs',
+  '/wallet', '/model-prices', '/cost-optimization', '/reconciliation', '/docs',
 ]);
 const projectAdminRoutes = new Set(['/organization-members', '/media-jobs', '/docs']);
 const developerRoutes = new Set(['/media-jobs', '/docs']);
@@ -351,12 +352,13 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
       '/settings',
       '/model-governance',
       '/model-prices',
+      '/cost-optimization',
       '/org-model-prices',
     ].includes(route);
   }
 
   if (isBillingRole(role)) {
-    return ['/', '/logs', '/wallet', '/model-prices', '/reconciliation', '/usage-analytics', '/notifications', '/grants'].includes(route);
+    return ['/', '/logs', '/wallet', '/model-prices', '/cost-optimization', '/reconciliation', '/usage-analytics', '/notifications', '/grants'].includes(route);
   }
 
   if (isProjectConsoleRole(role)) {

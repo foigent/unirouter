@@ -10,6 +10,8 @@
 | `docs/ops/PRD8-BOUNDARY-MATRIX.md` | Authoritative P7-F01–F19 forward disposition; explicitly not implementation-migration evidence |
 | `docs/planning/PRD8-IMPLEMENTATION-PLAN.md` | Current dependency plan and exact stop gate; Local batches through ORG-2/FIN-3 plus bounded runtime release/authorization are complete, ORG-3/FIN-4 require real customer targets |
 | `docs/architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md` | Current Workload Application, effective-access, client-profile, Gateway Endpoint/TLS and second-integration reset contract |
+| `docs/architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md` | Cost Optimization ownership, exact Prompt Cache savings formulas, Response Cache/compression decisions, CO-1 API/UI and later runtime gates |
+| `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md` | CO-0/CO-1 Local verification: exact PostgreSQL formulas/tenant scope, full Go and 365-test frontend gates, production bundle budget and responsive Inspector evidence |
 | `docs/research/AGENT-CLIENT-COMPATIBILITY-20260802.md` | Official-source client configuration facts and evidence-level boundaries for the second-integration callers |
 | `docs/runbooks/SECOND-INTEGRATION-POC.md` | Current second-device POC preflight, reset gate, exact client order and acceptance boundary |
 | `docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md` | Current public HTTPS development-Target endpoint, IP certificate/renewal, security-group/Nginx identities, zero-drift data and external-browser evidence |

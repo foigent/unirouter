@@ -1,6 +1,22 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-04 PRD8 Cost Optimization CO-0/CO-1 Local checkpoint:** the
+> Product Owner approved the enterprise cost-optimization decisions and
+> repository-local implementation. UniRouter now has a read-only
+> `成本与财务 → 成本优化` workspace backed by four tenant-scoped GET APIs. It
+> uses existing terminal Prompt Cache partitions and request-time frozen
+> customer prices to show exact net/read/write amounts, coverage Gaps,
+> daily/cumulative trends, deterministic review candidates and a persistent
+> Evidence Inspector. Response Cache remains disconnected from Gateway and
+> Compression remains default-off without Shadow evidence. Full serialized Go
+> against `uniroute_test`/temporary migrated DBs, vet, 55-file/365-test
+> frontend, type-check, production bundle budget and 1440/1024/768 synthetic
+> browser checks pass. This Local candidate evidence does not itself claim an
+> exact-commit CI or Target release; no migration, deployment, traffic,
+> credential, runtime cache/compression, data reset, Cursor or Checkpoint
+> mutation occurred. Evidence:
+> `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md`.
 > **2026-08-03 PRD8 public HTTPS Target checkpoint:** the authorized
 > development ECS now serves a publicly trusted endpoint at
 > `https://8.130.18.85/` with OpenAI-compatible Base URL

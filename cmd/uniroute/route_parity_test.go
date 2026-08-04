@@ -65,6 +65,10 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"GET /api/v1/logs/{id}",
 		"GET /api/v1/logs/{id}/trace",
 		"GET /api/v1/usage/analytics",
+		"GET /api/v1/cost-optimization/summary",
+		"GET /api/v1/cost-optimization/trend",
+		"GET /api/v1/cost-optimization/breakdown",
+		"GET /api/v1/cost-optimization/opportunities",
 		"GET /api/v1/internal-status",
 		"GET /api/v1/runtime/status",
 		"GET /api/v1/error-docs",
@@ -146,6 +150,17 @@ func TestMainRegistersExtractedPricingRoutes(t *testing.T) {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("main.go pricing route wiring missing %q", fragment)
 		}
+	}
+}
+
+func TestMainRegistersCostOptimizationWithPricingReadAuthority(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	const registration = "registerCostOptimizationRoutes(mux, adminHandler, pricingReadRoute)"
+	if !strings.Contains(string(src), registration) {
+		t.Fatalf("main.go cost optimization routes must use pricing-read authority: %s", registration)
 	}
 }
 
@@ -325,6 +340,7 @@ func TestBackendDocsPageUsesCurrentContractLanguage(t *testing.T) {
 	currentMarkers := []string{
 		"Current API contract index",
 		"/api/v1/usage/analytics",
+		"/api/v1/cost-optimization/summary",
 		"/api/v1/internal-status",
 		"/api/v1/runtime/status",
 		"/api/v1/error-docs",

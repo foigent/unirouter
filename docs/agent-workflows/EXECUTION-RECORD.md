@@ -1,6 +1,44 @@
 # Current Execution Record
 
-## Current Repository Execution — PRD8 Enterprise Control Plane Delivery
+## Current Repository Execution — PRD8 Cost Optimization CO-0 / CO-1
+
+**Work item:** `UR-PRD8-COST-OPTIMIZATION-V1`
+
+**Owner:** UniRouter product/implementation owner
+
+**Risk:** `R2` read-only aggregation, admin API and UI. No migration or request
+runtime behavior is part of CO-0/CO-1.
+
+**Authority:** On 2026-08-04 the Product Owner accepted the researched
+cost-optimization decisions and instructed autonomous implementation until a
+material decision gate. Exact contract:
+`docs/architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md`.
+
+**Baseline:** `main` commit/tree
+`c93c12b3e082a39f6a29e3c95e3029e640980682` /
+`a826702cfd3ccfa060a217ac961fb62d12835730` with a clean worktree before this
+batch.
+
+**Current result:** CO-0 and CO-1 form a Local verified candidate. Provider
+Prompt Cache is the only realized savings driver. Four
+tenant-scoped GET APIs, exact micro-CNY formulas, daily/cumulative trend,
+evidence coverage, deterministic review candidates and a persistent Inspector
+are implemented. Exact Response Cache and Compression are explicitly excluded
+from current savings.
+
+**Verification:** full package-serialized Go using only `uniroute_test` and
+temporary migrated databases, `go vet`, 55/55 frontend files and 365/365
+tests, type-check, production build/bundle budget, route/OpenAPI/frontend-doc
+parity and 1440/1024/768 local synthetic browser interaction checks pass.
+Evidence:
+`docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md`.
+
+**Boundary:** no Provider COGS claim, Prompt/response storage, migration,
+runtime cache/compression, route, settlement, Outbox, Feed, Cursor, Checkpoint,
+credential, traffic or deployment change. Commit, CI and release remain
+unclaimed. CO-2/CO-3 and CO-4/CO-5 require their separately defined gates.
+
+## Completed Repository Execution — PRD8 Enterprise Control Plane Delivery
 
 **Work item:** `UR-PRD8-ENTERPRISE-CONTROL-PLANE`
 
