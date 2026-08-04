@@ -23,6 +23,7 @@ fi
 
 load_effective_value() {
   local key="$1"
+  local optional="${2:-false}"
 
   if ! effective_value="$(awk -v key="${key}" '
     index($0, key "=") == 1 {
@@ -32,6 +33,10 @@ load_effective_value() {
     }
     END { if (!found) exit 1 }
   ' <<<"${interpolation_environment}")"; then
+    if [[ "${optional}" == "true" ]]; then
+      effective_value=""
+      return 0
+    fi
     echo "customer preflight: ${key} is missing from the effective Compose interpolation environment" >&2
     exit 1
   fi
@@ -77,11 +82,11 @@ require_release_secret API_KEY_HASH_SECRET
 require_release_secret UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET
 require_exact_bytes ENCRYPTION_KEY 32
 
-load_effective_value RESPONSE_CACHE_INDEX_KEY
+load_effective_value RESPONSE_CACHE_INDEX_KEY true
 response_cache_index_key="${effective_value}"
-load_effective_value RESPONSE_CACHE_ENCRYPTION_KEY
+load_effective_value RESPONSE_CACHE_ENCRYPTION_KEY true
 response_cache_encryption_key="${effective_value}"
-load_effective_value RESPONSE_CACHE_KEY_VERSION
+load_effective_value RESPONSE_CACHE_KEY_VERSION true
 response_cache_key_version="${effective_value}"
 if [[ -n "${response_cache_index_key}" || -n "${response_cache_encryption_key}" || -n "${response_cache_key_version}" ]]; then
   response_cache_index_bytes="$(LC_ALL=C printf '%s' "${response_cache_index_key}" | wc -c | tr -d '[:space:]')"

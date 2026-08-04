@@ -64,6 +64,9 @@ regression testing:
    corresponding reservation is terminal `settled`, usage authority is
    response-cache v2/local-cache/final and calculated/customer charge are both
    zero; delivery-complete but recovery-pending work is not shown early.
+10. Customer preflight treats the three response-cache bindings as optional
+    only when all are absent. The default-off path passes, while a partial
+    binding or an invalid 32-byte key still fails closed.
 
 ## Exact Local verification
 
@@ -99,6 +102,12 @@ git diff --check
 ruby YAML parse of docs/tech-ref/05-openapi-spec.yaml
 bash -n deploy/customer/preflight.sh
   PASS
+
+isolated fake-Compose preflight matrix
+  PASS: all three response-cache values absent
+  PASS: all three response-cache values valid
+  PASS: partial binding rejected
+  PASS: short encryption key rejected
 ```
 
 The first parallel `go test ./...` attempt is not counted as a pass. While the
