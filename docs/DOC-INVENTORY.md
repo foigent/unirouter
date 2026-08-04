@@ -12,6 +12,7 @@
 | `docs/architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md` | Current Workload Application, effective-access, client-profile, Gateway Endpoint/TLS and second-integration reset contract |
 | `docs/architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md` | Cost Optimization ownership, exact Prompt Cache savings formulas, Response Cache/compression decisions, CO-1 API/UI and later runtime gates |
 | `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md` | CO-0/CO-1 Local verification: exact PostgreSQL formulas/tenant scope, full Go and 365-test frontend gates, production bundle budget and responsive Inspector evidence |
+| `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO1-TARGET-20260804.md` | PR #255 exact CI/merge, development ECS backup/release, zero-drift data readback, public HTTPS and authenticated Cost Optimization UI evidence |
 | `docs/research/AGENT-CLIENT-COMPATIBILITY-20260802.md` | Official-source client configuration facts and evidence-level boundaries for the second-integration callers |
 | `docs/runbooks/SECOND-INTEGRATION-POC.md` | Current second-device POC preflight, reset gate, exact client order and acceptance boundary |
 | `docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md` | Current public HTTPS development-Target endpoint, IP certificate/renewal, security-group/Nginx identities, zero-drift data and external-browser evidence |

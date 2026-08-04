@@ -1,6 +1,20 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-04 PRD8 Cost Optimization CO-1 CI/merge/Target checkpoint:** PR
+> #255 exact head/tree `20cf0303072713b42c3015ddbcb7211f5e0ca06c` /
+> `3b9351b4a18ba032e9b9fa6772eeb71c7cecec2b` passed Backend, Frontend,
+> Docker, Change Routing and Protocol checks, then squash-merged as
+> `dde6eff214067a594f26b6aa080286f6cb4682d9` with the same tree. The
+> existing development/test ECS now runs exact stable/canary/frontend images
+> from that commit as `1.1.3-prd8-costopt`. PostgreSQL backup and bundle
+> verification passed; pre/post business, Feed floor/acknowledgement, Cursor
+> and pending-state readbacks are identical. Public HTTPS/health/401 boundaries
+> and authenticated Cost Optimization UI pass; the persistent Inspector is
+> side-by-side at 1440 and stacks without horizontal overflow at 1024/767.
+> No migration, Provider traffic, credential, data reset, Response Cache,
+> Compression, Cursor or Checkpoint change occurred. Evidence:
+> `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO1-TARGET-20260804.md`.
 > **2026-08-04 PRD8 Cost Optimization CO-0/CO-1 Local checkpoint:** the
 > Product Owner approved the enterprise cost-optimization decisions and
 > repository-local implementation. UniRouter now has a read-only
