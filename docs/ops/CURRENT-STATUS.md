@@ -1,6 +1,24 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-04 PRD8 Cost Optimization CO-2 through CO-5 CI/merge/Target
+> checkpoint:** PR #257 exact head/tree
+> `eb4bfad8a379d05d20872d8405f31a5bac3c3b47` /
+> `fa307303f68891327960e3cffd1b38d617473491` passed Backend, Frontend,
+> Docker, Change Routing and Protocol checks, then squash-merged as
+> `e8931c78d982b3d2adaf77b38361b74a6f84394d` with the same tree. The
+> development/test ECS now runs exact stable/canary/frontend images as
+> `1.1.4-prd8-invopt`; backup/bundle verification and migration `000056`
+> passed. Existing organization, user, project, credential, request,
+> transaction, Feed floor/acknowledgement, Outbox and financial-terminal
+> readbacks are unchanged. Cache deployment values remain absent/blank,
+> policies/revisions/receipts and Redis Cache keys are all zero, and no
+> Compression Shadow/Canary or Provider request ran. Authenticated UI confirms
+> the default-off Cost Optimization and Model Governance → Invocation
+> Optimization surfaces, persistent Policy Inspector and exact Runtime Status.
+> This is development Target evidence, not Production or real optimization
+> efficacy. Evidence:
+> `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-TARGET-20260804.md`.
 > **2026-08-04 PRD8 Cost Optimization CO-2 through CO-5 Local checkpoint:**
 > Exact Response Cache V2, zero-Provider/zero-charge delivery/commercial
 > evidence, API-key authorization epochs, and the default-off Invocation

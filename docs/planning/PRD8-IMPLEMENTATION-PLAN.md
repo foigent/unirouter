@@ -3,7 +3,7 @@
 > Work item: `UR-PRD8-ENTERPRISE-CONTROL-PLANE`
 > Date: 2026-08-02
 > Owner: UniRouter product/implementation owner
-> Status: Base PRD8 and CO-1 Target complete; CO-2 through CO-5 Local verified candidate; exact-commit CI/Target pending; second-device/data-reset and customer integrations gated
+> Status: Base PRD8 and CO-1 through CO-5 development Target complete; optimizations remain default-off; second-device/data-reset and customer integrations gated
 > Product contract: `docs/PRD-Phase8.md`
 
 > 2026-08-04 continuation: the Product Owner approved the cost-optimization
@@ -80,11 +80,11 @@ Every batch must preserve:
 | Final Local gate | full backend/frontend regression, build and focused integration race checks | 54/54 files, 359/359 frontend tests; full serialized Go, integration, race, vet and bundle budget checks |
 | CO-0 | Cost Optimization ownership, exact formulas, commercial/cache identity decisions and UI placement | frozen in `PRD8-COST-OPTIMIZATION-V1-20260804.md` |
 | CO-1 | read-only Prompt Cache savings summary/trend/breakdown/opportunities and persistent Evidence Inspector | Local verified: full serialized Go/vet, 55-file/365-test frontend, build budget and 1440/1024/768 browser evidence; no runtime mutation |
-| CO-2 | Exact Response Cache commercial truth, local-cache usage v2, append-only delivery/commercial receipts and all-or-none key injection | Local verified; no real key material or runtime policy |
-| CO-3 | Exact route/outcome identity, encrypted Redis adapter, one-owner fill, zero-Provider/zero-charge hit delivery and recovery | Local verified; default-off and caller opt-in required |
-| CO-4 | conservative whitespace-only Compression evaluator and metadata-only Shadow evidence | Local verified; no prompt/response/candidate body persisted |
-| CO-5 | content-free assignment, current-revision Shadow gate, maximum 10% Canary and rollback | Local verified; no Target Shadow/Canary policy or model traffic |
-| CO-2..CO-5 final Local gate | full serialized database and Go regressions, focused race, vet, frontend, build budget and static contract checks | 56/56 frontend files and 369/369 tests; 4,320-module build, 80 assets, largest 362,347 bytes; exact evidence linked below |
+| CO-2 | Exact Response Cache commercial truth, local-cache usage v2, append-only delivery/commercial receipts and all-or-none key injection | Local/CI/development Target verified; key triple absent, runtime disabled, zero policy/receipt/Redis Cache state |
+| CO-3 | Exact route/outcome identity, encrypted Redis adapter, one-owner fill, zero-Provider/zero-charge hit delivery and recovery | Local/CI/development Target verified default-off; caller opt-in and separate enablement still required |
+| CO-4 | conservative whitespace-only Compression evaluator and metadata-only Shadow evidence | Local/CI/development Target verified default-off; no Prompt/Response/candidate body persisted and zero Shadow samples |
+| CO-5 | content-free assignment, current-revision Shadow gate, maximum 10% Canary and rollback | Local/CI/development Target verified default-off; no policy, Canary assignment or model traffic |
+| CO-2..CO-5 final gate | full serialized database and Go regressions, focused race, vet, frontend, build budget, exact CI, migration, zero-drift Target release and authenticated UI | PR #257 merged as `e8931c78`; migration `000056`; 56/56 frontend files and 369/369 tests; 4,320-module build, 80 assets, largest 362,347 bytes; Target evidence linked below |
 
 These results are working-tree Local evidence. The current Agent/on-prem batch
 is recorded in
@@ -106,6 +106,13 @@ Local regression are recorded in
 `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-LOCAL-20260804.md`. It does
 not inherit CO-1's CI/Target evidence and does not authorize a key, policy,
 Shadow/Canary transition, model request or data reset.
+
+The separately authorized exact-commit CI, migration and development Target
+release are recorded in
+`docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-TARGET-20260804.md`. That
+release keeps the Cache key triple absent, all policies and receipts at zero,
+Compression Shadow/Canary stopped and the second-integration reset/traffic
+gate closed. It does not authorize later enablement or claim Production.
 
 ## 4. Closed batch contracts
 
