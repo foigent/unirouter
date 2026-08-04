@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.16
-> **日期**：2026-07-17
+> **版本**：v1.17
+> **日期**：2026-08-04
 > **用途**：运维人员部署和维护 UniRouter 的操作手册
-> **变更记录**：v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.17 增加默认关闭的 Exact Response Cache 三段式密钥注入、客户 preflight all-or-none 校验、冷失效轮换边界和迁移 `000056` 运维约束；v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -44,6 +44,7 @@ cp .env.example .env
 # - JWT_SECRET: 32 字节随机字符串
 # - API_KEY_HASH_SECRET: API Key HMAC 稳定密钥
 # - ENCRYPTION_KEY: 32 字节随机字符串
+# - RESPONSE_CACHE_*: 默认全部留空；只有获批启用 Exact Cache 时才同时注入两把独立 32-byte 密钥和一个版本标签
 # - UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET: 启用签名通知时至少 32 字节；stable/canary 必须相同
 # - LICENSE_DEPLOYMENT_ID: 仅在本地测试商业 License 时填写绑定标识
 # - GRAFANA_ADMIN_PASSWORD: Grafana 管理员强密码
@@ -54,7 +55,9 @@ cp .env.example .env
 # 生成随机密钥
 openssl rand -hex 32  # 用于 JWT_SECRET
 openssl rand -hex 32  # 用于 API_KEY_HASH_SECRET
-openssl rand -hex 32  # 用于 ENCRYPTION_KEY
+openssl rand -base64 24  # 恰好 32 个 ASCII bytes，用于 ENCRYPTION_KEY
+openssl rand -base64 24  # 恰好 32 个 ASCII bytes，用于 RESPONSE_CACHE_INDEX_KEY
+openssl rand -base64 24  # 恰好 32 个 ASCII bytes，用于 RESPONSE_CACHE_ENCRYPTION_KEY
 openssl rand -hex 32  # 用于 UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET
 openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 ```
@@ -66,6 +69,8 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `JWT_SECRET` | Admin JWT 签名 | 管理员需要重新登录；不应影响 API Key |
 | `API_KEY_HASH_SECRET` | API Key HMAC 哈希 | 变更会导致既有 API Key 全部失效 |
 | `ENCRYPTION_KEY` | 上游渠道密钥 AES-GCM 加密 | 变更且无法恢复会导致已保存 channel key 无法解密 |
+| `RESPONSE_CACHE_INDEX_KEY` | Exact Cache 不透明索引 HMAC；默认空 | 非空时必须与加密密钥和版本同时配置；轮换会使旧索引不可达并冷启动缓存 |
+| `RESPONSE_CACHE_ENCRYPTION_KEY` / `RESPONSE_CACHE_KEY_VERSION` | Exact Cache 值 AES-GCM 与不可变版本标签；默认空 | 当前进程只加载一个版本；轮换后旧条目 fail-closed miss 并按 TTL 老化，不得复用版本标签 |
 | `UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET` | 出站通知 Webhook HMAC | 非空必须至少 32 字节；stable/canary 不一致会造成接收端间歇验签失败 |
 | 正式镜像内嵌 License 公钥环 | V1 商业 License Ed25519 验签根 | 发布构建缺失时镜像构建失败；客户运行时不能替换 |
 | `LICENSE_DEPLOYMENT_ID` | V1 License 绑定的稳定部署标识 | 缺失或与签名 payload 不一致时商业 License 不可强制执行 |
@@ -86,6 +91,7 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | 变量 | 默认 | 建议 |
 |------|------|------|
 | `SHUTDOWN_TIMEOUT_SECONDS` | `120` | graceful shutdown 等待时间；默认与 backend `WriteTimeout` 对齐，避免 30 秒内强制截断较长流式响应 |
+| `RESPONSE_CACHE_INDEX_KEY` / `RESPONSE_CACHE_ENCRYPTION_KEY` / `RESPONSE_CACHE_KEY_VERSION` | 全空 | 全空表示运行时不可用且策略默认关闭；任一非空则必须三者完整、两把密钥各 32 bytes。配置就绪也不会自动创建/推进策略或启用流量 |
 | `ADMIN_CORS_ALLOWED_ORIGINS` | 空 | 为空表示只支持同源/服务端代理访问；需要 Vite 或跨域控制台直连 backend 时填精确 origin，如 `http://localhost:3000,http://localhost:5173`；不支持 `*` |
 | `LOGIN_RATE_LIMIT_ENABLED` | `true` | 保持开启；分别按可信代理解析后的客户端 IP 与规范化 username 计数；没有可信代理时安全退回 backend `RemoteAddr` |
 | `LOGIN_RATE_LIMIT_WINDOW_SECONDS` | `60` | 登录尝试固定窗口秒数 |

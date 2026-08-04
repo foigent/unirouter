@@ -214,6 +214,15 @@ const endpointGroups = [
       ['GET', '/api/v1/model-registry', '本组织模型注册表；平台管理员可显式选择组织'],
       ['POST', '/api/v1/model-registry', '在本组织创建模型注册记录；跨组织请求返回 403'],
       ['PUT', '/api/v1/model-registry/{id}', '更新本组织记录；越权组织参数返回 403，越权或不存在的 ID 返回 404'],
+      ['GET', '/api/v1/invocation-optimization/contract', '读取强制 opt-in、最高 10% Canary、无明文证据和 Exact Cache 运行时就绪状态'],
+      ['GET', '/api/v1/invocation-optimization/policies', '读取组织级调用优化策略与 Draft/Validated/Shadow/Canary/Rolled back 阶段'],
+      ['POST', '/api/v1/invocation-optimization/policies', '创建默认关闭的调用优化草稿；不读写缓存、不修改 Prompt'],
+      ['GET', '/api/v1/invocation-optimization/policies/{ref}', '读取一条租户隔离策略与精确修订'],
+      ['PUT', '/api/v1/invocation-optimization/policies/{ref}', '按 expected_revision 更新草稿或已回滚策略；不能关闭请求 opt-in'],
+      ['POST', '/api/v1/invocation-optimization/policies/{ref}/validate', '校验并冻结策略修订，不改变请求执行'],
+      ['POST', '/api/v1/invocation-optimization/policies/{ref}/shadow', '启动元数据 Shadow；不读缓存响应、不修改 Prompt'],
+      ['POST', '/api/v1/invocation-optimization/policies/{ref}/canary', '在 Shadow 样本、质量、运行时门禁通过后启动最高 10% 确定性灰度'],
+      ['POST', '/api/v1/invocation-optimization/policies/{ref}/rollback', '停止后续优化分配并保留不可变证据'],
       ['GET', '/api/v1/model-catalog', '组织模型目录；project_id 决定组织，项目角色必须提供 project_id'],
       ['GET', '/api/v1/model-aliases', '本组织模型别名；平台管理员可显式选择组织'],
       ['POST', '/api/v1/model-aliases', '在本组织创建模型别名；跨组织请求返回 403'],
@@ -295,6 +304,12 @@ const organizationModelGovernanceWrites = new Set([
   'PUT /api/v1/model-aliases/{id}',
   'POST /api/v1/model-sets',
   'PUT /api/v1/model-sets/{id}/items',
+  'POST /api/v1/invocation-optimization/policies',
+  'PUT /api/v1/invocation-optimization/policies/{ref}',
+  'POST /api/v1/invocation-optimization/policies/{ref}/validate',
+  'POST /api/v1/invocation-optimization/policies/{ref}/shadow',
+  'POST /api/v1/invocation-optimization/policies/{ref}/canary',
+  'POST /api/v1/invocation-optimization/policies/{ref}/rollback',
 ]);
 
 function endpointVisibleForRole(area: string, method: string, path: string, role?: string) {

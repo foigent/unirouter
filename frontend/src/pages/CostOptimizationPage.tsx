@@ -58,6 +58,14 @@ interface CostOptimizationSummary {
   read_to_creation_token_ratio: number | null;
   response_cache_runtime: string;
   compression_runtime: string;
+  response_cache_shadow_samples: number;
+  response_cache_eligible_requests: number;
+  response_cache_hits: number;
+  response_cache_avoided_cost_micros: string;
+  compression_shadow_samples: number;
+  compression_eligible_requests: number;
+  compression_applied_requests: number;
+  compression_estimated_saved_tokens: number;
   supplier_cogs_authority: string;
 }
 
@@ -143,9 +151,22 @@ function ratioLabel(value: number | null | undefined) {
 }
 
 function driverStatusLabel(value?: string) {
-  if (value === 'not_connected_to_gateway') return 'Gateway 未接入';
-  if (value === 'default_off_shadow_not_started') return '默认关闭 / Shadow 未启动';
+  if (value === 'runtime_unavailable') return '运行时密钥未配置';
+  if (value === 'ready_default_off') return '运行时就绪 / 默认关闭';
+  if (value === 'shadow_active') return 'Shadow 评估中';
+  if (value === 'canary_active') return '受控 Canary';
+  if (value === 'validated') return '已验证 / 待 Shadow';
+  if (value === 'draft') return '草稿';
+  if (value === 'rolled_back') return '已回滚';
+  if (value === 'default_off') return '默认关闭';
   return value || '未声明';
+}
+
+function driverStatusTone(value?: string) {
+  if (value === 'canary_active') return 'warning';
+  if (value === 'shadow_active' || value === 'validated') return 'processing';
+  if (value === 'runtime_unavailable' || value === 'rolled_back') return 'disabled';
+  return 'ok';
 }
 
 export default function CostOptimizationPage() {
@@ -321,7 +342,7 @@ export default function CostOptimizationPage() {
 
       <Banner
         type="info"
-        description="这里的 Prompt Cache 节省按每次请求冻结的客户计价证据计算，不等于供应商 COGS。Exact Response Cache 是另一套本地支撑组件，尚未接入 Gateway；Compression 默认关闭且尚未开始 Shadow。"
+        description="Provider Prompt Cache、Exact Response Cache 和 Compression 分开计量：前两者的已实现客户节省来自终态客户计价证据，不等于供应商 COGS；Compression 的 Shadow 数字只表示预计 Token 变化，未进入 Canary 前不宣称真实金额节省。"
         style={{ marginBottom: 16 }}
       />
 
@@ -368,12 +389,12 @@ export default function CostOptimizationPage() {
         <div>
           <IconServer />
           <span><strong>Exact Response Cache</strong><Text type="tertiary">精确隔离组件；不复用 Prompt Cache 定价</Text></span>
-          <StatusTag status="disabled">{driverStatusLabel(summary?.response_cache_runtime)}</StatusTag>
+          <StatusTag status={driverStatusTone(summary?.response_cache_runtime)}>{driverStatusLabel(summary?.response_cache_runtime)}</StatusTag>
         </div>
         <div>
           <IconFlowChartStroked />
           <span><strong>Compression</strong><Text type="tertiary">先 Shadow 评估质量与 Token 变化</Text></span>
-          <StatusTag status="disabled">{driverStatusLabel(summary?.compression_runtime)}</StatusTag>
+          <StatusTag status={driverStatusTone(summary?.compression_runtime)}>{driverStatusLabel(summary?.compression_runtime)}</StatusTag>
         </div>
       </div>
 
@@ -413,6 +434,42 @@ export default function CostOptimizationPage() {
               meta={`${formatCompactNumber(summary?.eligible_requests)} / ${formatCompactNumber(summary?.candidate_requests)} 个成功上游请求`}
             />
           </div>
+
+          <Surface
+            title="Exact Cache 与 Compression 结果"
+            description="Exact Cache 命中为当前请求零 Provider 调用、零客户收费；Compression Shadow 只保留元数据证据，不保存 Prompt 或 Response 明文。"
+          >
+            <div className="ur-kpi-grid">
+              <MetricTile
+                label="Exact Cache 已实现避免成本"
+                value={<MoneyText micros={summary?.response_cache_avoided_cost_micros || '0'} precision={6} strong tone="income" />}
+                icon={<IconCoinMoney />}
+                tone="green"
+                meta={`${formatCompactNumber(summary?.response_cache_hits)} 次已完成本地交付`}
+              />
+              <MetricTile
+                label="Cache Shadow 证据"
+                value={formatCompactNumber(summary?.response_cache_shadow_samples)}
+                icon={<IconServer />}
+                tone="blue"
+                meta={`${formatCompactNumber(summary?.response_cache_eligible_requests)} 次满足精确身份与请求边界`}
+              />
+              <MetricTile
+                label="Compression 预计节省 Token"
+                value={formatCompactNumber(summary?.compression_estimated_saved_tokens)}
+                icon={<IconFlowChartStroked />}
+                tone="violet"
+                meta={`${formatCompactNumber(summary?.compression_shadow_samples)} 个 Shadow 样本`}
+              />
+              <MetricTile
+                label="Compression 实际应用"
+                value={formatCompactNumber(summary?.compression_applied_requests)}
+                icon={<IconBarChartVStroked />}
+                tone="slate"
+                meta={`${formatCompactNumber(summary?.compression_eligible_requests)} 次满足安全与质量门槛`}
+              />
+            </div>
+          </Surface>
 
           <Surface
             title="节省趋势"
@@ -511,7 +568,7 @@ export default function CostOptimizationPage() {
                   <div className="ur-detail-card">
                     <strong className="ur-detail-card-title">公式与可信边界</strong>
                     <Text>普通输入基线使用请求时冻结的 input/output 费率重新计算；实际值使用同一终态请求记录的 cost_micros。只纳入成功、上游权威计量、缓存合同与计价版本完整且 Token 分区守恒的请求。</Text>
-                    <Text type="tertiary">供应商 COGS、未接入 Gateway 的 Response Cache、尚未 Shadow 的 Compression 均不进入本页节省。</Text>
+                    <Text type="tertiary">供应商 COGS 不进入客户计价节省；Exact Cache 只纳入完成本地交付的商业回执；Compression Shadow 仅展示预计 Token，不折算成已实现金额。</Text>
                   </div>
                   {selectedOpportunities.map((item, index) => (
                     <div className="ur-detail-card" key={`${item.kind}-${index}`}>

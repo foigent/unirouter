@@ -26,7 +26,7 @@ func TestGatewayAuthWithAgentCapabilitiesBindsTrustedIdentityAndEndpoint(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootKey := &models.ApiKey{ID: 42, OrgID: 7, Status: "active", AllowedModels: "gpt-4o", RPMLimit: 60, QPSLimit: 10}
+	rootKey := &models.ApiKey{ID: 42, OrgID: 7, AuthEpoch: 1, Status: "active", AllowedModels: "gpt-4o", RPMLimit: 60, QPSLimit: 10}
 	issued, err := service.Exchange(context.Background(), rootKey, agentcap.ExchangeRequest{
 		RootAgentID:        "agent:supervisor",
 		WorkflowTTLSeconds: 3600,
@@ -106,14 +106,15 @@ func agentCapabilityAuthorityDB(t *testing.T) *testutil.MockDB {
 			*dest[8].(*string) = ""
 			*dest[9].(*string) = "gpt-4o"
 			*dest[10].(*string) = ""
-			*dest[11].(*int) = 60
-			*dest[12].(*int) = 10
-			*dest[13].(*int) = -1
-			*dest[14].(*string) = "active"
-			*dest[15].(*string) = ""
+			*dest[11].(*int64) = 1
+			*dest[12].(*int) = 60
+			*dest[13].(*int) = 10
+			*dest[14].(*int) = -1
+			*dest[15].(*string) = "active"
 			*dest[16].(*string) = ""
 			*dest[17].(*string) = ""
 			*dest[18].(*string) = ""
+			*dest[19].(*string) = ""
 			return nil
 		}}
 	}}

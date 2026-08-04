@@ -15,7 +15,10 @@ import (
 func TestWorkloadApplicationMigrationScopeAndRollbackGuard(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	rollbackEmptyMigrations(t, pool, []string{"000055_prd8_deployment_profiles.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{
+		"000056_prd8_invocation_optimization.down.sql",
+		"000055_prd8_deployment_profiles.down.sql",
+	})
 
 	var tables, columns, constraints, ledger int
 	require.NoError(t, pool.QueryRow(ctx, `

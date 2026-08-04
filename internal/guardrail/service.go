@@ -471,6 +471,15 @@ type Pinned struct {
 	detectors  map[string]Detector
 }
 
+// PolicySetVersion exposes only the immutable metadata identity used to bind
+// downstream caches and evidence; it never exposes policy content.
+func (p *Pinned) PolicySetVersion() string {
+	if p == nil || p.version == "" {
+		return "none"
+	}
+	return p.version
+}
+
 func (s *Service) Pin(subject Subject) *Pinned {
 	if s == nil {
 		return &Pinned{stale: true, version: "unavailable"}

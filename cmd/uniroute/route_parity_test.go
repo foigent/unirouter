@@ -69,6 +69,15 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"GET /api/v1/cost-optimization/trend",
 		"GET /api/v1/cost-optimization/breakdown",
 		"GET /api/v1/cost-optimization/opportunities",
+		"GET /api/v1/invocation-optimization/contract",
+		"GET /api/v1/invocation-optimization/policies",
+		"POST /api/v1/invocation-optimization/policies",
+		"GET /api/v1/invocation-optimization/policies/{ref}",
+		"PUT /api/v1/invocation-optimization/policies/{ref}",
+		"POST /api/v1/invocation-optimization/policies/{ref}/validate",
+		"POST /api/v1/invocation-optimization/policies/{ref}/shadow",
+		"POST /api/v1/invocation-optimization/policies/{ref}/canary",
+		"POST /api/v1/invocation-optimization/policies/{ref}/rollback",
 		"GET /api/v1/internal-status",
 		"GET /api/v1/runtime/status",
 		"GET /api/v1/error-docs",
@@ -161,6 +170,22 @@ func TestMainRegistersCostOptimizationWithPricingReadAuthority(t *testing.T) {
 	const registration = "registerCostOptimizationRoutes(mux, adminHandler, pricingReadRoute)"
 	if !strings.Contains(string(src), registration) {
 		t.Fatalf("main.go cost optimization routes must use pricing-read authority: %s", registration)
+	}
+}
+
+func TestMainRegistersInvocationOptimizationBehindModelGovernanceAndOrganizationAdmin(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	mainSource := string(src)
+	for _, fragment := range []string{
+		"registerInvocationOptimizationRoutes(",
+		"licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute)",
+	} {
+		if !strings.Contains(mainSource, fragment) {
+			t.Fatalf("main.go invocation optimization authority missing %q", fragment)
+		}
 	}
 }
 

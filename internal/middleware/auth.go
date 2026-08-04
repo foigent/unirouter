@@ -188,7 +188,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.status, ak.allowed_ips, ak.allowed_models,
 		        ak.rpm_limit, ak.qps_limit, ak.budget_limit, ak.key_prefix, ak.name,
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'),
-		        COALESCE(ak.purpose, ''),
+		        COALESCE(ak.purpose, ''), ak.auth_epoch,
 		        o.status
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
@@ -213,7 +213,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 	).Scan(
 		&apiKey.ID, &apiKey.OrgID, &projectID, &apiKey.Status, &apiKey.IPWhitelist,
 		&apiKey.AllowedModels, &apiKey.RPMLimit, &apiKey.QPSLimit,
-		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &ownerUserID, &apiKey.KeyType, &apiKey.Purpose, &orgStatus,
+		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &ownerUserID, &apiKey.KeyType, &apiKey.Purpose, &apiKey.AuthEpoch, &orgStatus,
 	)
 	if err != nil {
 		return nil, "", err

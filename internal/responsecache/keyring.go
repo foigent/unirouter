@@ -5,9 +5,10 @@ import (
 	"sync"
 )
 
-// StaticKeyring is a fixture and local-deployment keyring. Production key
-// ownership remains behind EncryptionKeyring and the B4 secret-reference
-// boundary.
+// StaticKeyring is a single-process keyring for secret-injected self-hosted
+// deployments and fixtures. Production secret ownership remains outside the
+// repository behind EncryptionKeyring; the process receives only key bytes and
+// a non-secret version identifier.
 type StaticKeyring struct {
 	mu      sync.RWMutex
 	current string

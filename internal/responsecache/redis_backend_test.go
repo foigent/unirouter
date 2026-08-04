@@ -42,7 +42,7 @@ func TestRedisBackendEndToEndUsesOpaqueKeysAndEncryptedValues(t *testing.T) {
 	keys := server.Keys()
 	require.Len(t, keys, 1)
 	for _, key := range keys {
-		require.True(t, strings.HasPrefix(key, "uniroute:response-cache:test:rc:v1:entry:"))
+		require.True(t, strings.HasPrefix(key, "uniroute:response-cache:test:rc:v2:entry:"))
 		require.NotContains(t, key, "exact private")
 		require.NotContains(t, key, request.Identity.RequestedModel)
 		require.NotContains(t, key, request.Identity.AuthorizationEpoch)
@@ -67,8 +67,8 @@ func TestRedisLeaseCompareAndSet(t *testing.T) {
 	_, backend, _, _ := newRedisFixture(t)
 	ctx := context.Background()
 	const (
-		entryKey = "rc:v1:entry:opaque"
-		leaseKey = "rc:v1:lease:opaque"
+		entryKey = "rc:v2:entry:opaque"
+		leaseKey = "rc:v2:lease:opaque"
 	)
 	acquired, err := backend.Acquire(ctx, leaseKey, "owner-a", time.Second)
 	require.NoError(t, err)

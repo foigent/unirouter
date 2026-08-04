@@ -6,9 +6,10 @@
 - [ops/PRD8-BOUNDARY-MATRIX.md](ops/PRD8-BOUNDARY-MATRIX.md) — PRD7 十九项能力的保留、收窄、迁出、UI 归并和兼容处置
 - [planning/PRD8-IMPLEMENTATION-PLAN.md](planning/PRD8-IMPLEMENTATION-PLAN.md) — UI、企业目录/财务、受控发布与模型调用授权的依赖顺序、已闭环 Local 批次和真实客户决策门
 - [architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md](architecture/PRD8-AGENT-ONPREM-POC-READINESS-20260802.md) — 应用与 Agent 身份、统一可用性、客户端兼容、部署/TLS 和第二次联调重置边界
-- [architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md](architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md) — 成本优化权威口径、Prompt Cache 精确节省公式、Response Cache/Compression 决策、CO-1 API/UI 与后续运行时门禁
+- [architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md](architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md) — 成本优化权威口径、Prompt Cache 精确公式、Exact Response Cache/Compression 控制面、CO-1～CO-5 API/UI 与默认关闭边界
 - [ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md](ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md) — CO-0/CO-1 的精确 PostgreSQL 公式/租户隔离、全量 Go、365 项前端、构建预算与响应式 Inspector 本地证据
 - [ops/evidence/PRD8-COST-OPTIMIZATION-CO1-TARGET-20260804.md](ops/evidence/PRD8-COST-OPTIMIZATION-CO1-TARGET-20260804.md) — PR #255 精确 CI/合并、ECS 备份与发布、零漂移数据回读、公网 HTTPS 和登录后成本优化 UI 验收
+- [ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-LOCAL-20260804.md](ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-LOCAL-20260804.md) — Exact Response Cache、零收费交付、Compression Shadow/Canary、全量数据库/Go、focused race、369 项前端与默认关闭边界
 - [research/AGENT-CLIENT-COMPATIBILITY-20260802.md](research/AGENT-CLIENT-COMPATIBILITY-20260802.md) — OpenAI Agents、LangChain、AutoGen、OpenClaw、WorkBuddy 与飞书的官方配置事实和证据等级
 - [runbooks/SECOND-INTEGRATION-POC.md](runbooks/SECOND-INTEGRATION-POC.md) — 第二次联调前置、只读重置预览、客户端顺序和验收标准
 - [ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md](ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md) — APP/DEPLOY/COMPAT/INTEGRATION/RESET 与最新 359 项前端、Go、迁移、race、构建预算及 ECS HTTPS 只读基线
@@ -88,7 +89,8 @@
 - [planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md](planning/PRD6-PRODUCT-ARCHITECTURE-UX-AUDIT-20260711.md) — UI、对账、链路身份、架构与 2B 升级审计
 - [planning/PRD7-CANDIDATE-BACKLOG.md](planning/PRD7-CANDIDATE-BACKLOG.md) — 历史候选输入；PRD7 与验收矩阵保留实现事实，未来所有权以 PRD8 为准
 - [planning/PRD7-CACHE-SERVICE-CANDIDATE.md](planning/PRD7-CACHE-SERVICE-CANDIDATE.md) — 未来独立 Cache Service、容量拆分触发线和 SaaS cell 复用边界
-- [tech-ref/34-exact-response-cache.md](tech-ref/34-exact-response-cache.md) — PRD7 exact response cache 身份、加密、TTL/purge、stampede 与计费边界
+- [tech-ref/34-exact-response-cache.md](tech-ref/34-exact-response-cache.md) — Exact Response Cache V2 精确身份、加密 Redis、Shadow/Canary、零 Provider/零收费交付与计费恢复边界
+- [tech-ref/40-invocation-optimization-v1.md](tech-ref/40-invocation-optimization-v1.md) — 调用优化策略生命周期、内容无关分桶、Compression Shadow/Canary 与 metadata-only 证据
 - [ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md](ops/evidence/PRD7-B5-P7F07-exact-response-cache-local-20260731.md) — P7-F07 独立服务/Redis 夹具本地验证与 P7-D07 运行时门槛
 - [planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md](planning/PRD6-COMPETITOR-ALIGNMENT-20260711.md) — LiteLLM/New API/One API 固定版本核验、四象限和优先级矩阵
 - [planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md](planning/PRD6-ADAPTIVE-TRUST-INNOVATION-20260711.md) — CARTA、影子评测、反串谋、四象限、三平面边界和 Killer Features

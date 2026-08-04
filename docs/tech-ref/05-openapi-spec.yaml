@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: UniRouter API
-  version: 1.0.0
+  version: 1.4.0
   description: |
     Current UniRouter API contract snapshot for active backend routes.
 
@@ -216,6 +216,9 @@ paths:
         - $ref: "#/components/parameters/XRequestId"
         - $ref: "#/components/parameters/ClientRequestId"
         - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ResponseCacheOptIn"
+        - $ref: "#/components/parameters/PromptCompressionOptIn"
+        - $ref: "#/components/parameters/RequestCacheControl"
       requestBody:
         required: true
         content:
@@ -234,6 +237,10 @@ paths:
               $ref: "#/components/headers/LimitPolicyVersion"
             X-UniRouter-Workload-Class:
               $ref: "#/components/headers/WorkloadClass"
+            X-UniRouter-Response-Cache:
+              $ref: "#/components/headers/ResponseCacheOutcome"
+            X-UniRouter-Prompt-Compression:
+              $ref: "#/components/headers/PromptCompressionOutcome"
           content:
             application/json:
               schema:
@@ -1454,8 +1461,8 @@ paths:
   /api/v1/cost-optimization/summary:
     get:
       tags: [Admin]
-      summary: Summarize evidence-bounded Prompt Cache savings using request-time frozen customer prices
-      description: Does not claim supplier COGS, Response Cache hits, compression savings, or unreported cache usage.
+      summary: Summarize evidence-bounded Prompt Cache, Exact Response Cache and Compression outcomes
+      description: Prompt Cache and completed Exact Response Cache deliveries report realized customer-pricing evidence; Compression Shadow reports estimated token changes only. Supplier COGS and unreported provider cache usage are never inferred.
       security:
         - bearerAuth: []
       parameters:
@@ -1662,6 +1669,62 @@ paths:
       the query; when omitted, the existing record supplies the explicit target
       organization. A missing/zero tenant JWT organization fails closed.
     put: *operation_update_by_id
+
+  /api/v1/invocation-optimization/contract:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns the product-local policy, receipt, explicit opt-in, maximum 10% canary and runtime-readiness contract. It does not expose secret bytes or place X-Insight in the request path.
+    get: *operation_get
+
+  /api/v1/invocation-optimization/policies:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      post: [platform_admin, org_admin]
+    description: Lists tenant-scoped invocation optimization policies or creates a default-off draft. Creating a draft does not read/write cache entries or mutate prompts.
+    get: *operation_list
+    post: *operation_create
+
+  /api/v1/invocation-optimization/policies/{ref}:
+    parameters:
+      - $ref: "#/components/parameters/InvocationOptimizationPolicyRef"
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+      put: [platform_admin, org_admin]
+    description: Reads one tenant-scoped policy or updates a draft/rolled-back policy by exact revision. Request opt-in cannot be disabled.
+    get: *operation_get
+    put: *operation_create
+
+  /api/v1/invocation-optimization/policies/{ref}/validate:
+    parameters:
+      - $ref: "#/components/parameters/InvocationOptimizationPolicyRef"
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Validates a draft contract and records an immutable revision without changing request execution.
+    post: *operation_create
+
+  /api/v1/invocation-optimization/policies/{ref}/shadow:
+    parameters:
+      - $ref: "#/components/parameters/InvocationOptimizationPolicyRef"
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Starts metadata-only eligibility and quality evaluation. Shadow neither accesses cached response bytes nor modifies prompts.
+    post: *operation_create
+
+  /api/v1/invocation-optimization/policies/{ref}/canary:
+    parameters:
+      - $ref: "#/components/parameters/InvocationOptimizationPolicyRef"
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Starts at most a 10% deterministic canary only after sufficient eligible, zero-failure Shadow evidence. Exact Cache additionally requires its secret-injected runtime.
+    post: *operation_create
+
+  /api/v1/invocation-optimization/policies/{ref}/rollback:
+    parameters:
+      - $ref: "#/components/parameters/InvocationOptimizationPolicyRef"
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    description: Stops future optimization assignment without mutating append-only policy or delivery evidence.
+    post: *operation_create
 
   /api/v1/model-catalog:
     x-unirouter-rbac:
@@ -2662,6 +2725,36 @@ components:
       schema:
         type: string
         maxLength: 255
+    ResponseCacheOptIn:
+      name: X-UniRouter-Response-Cache
+      in: header
+      required: false
+      description: Exact case-insensitive value `allow` opts this request into an otherwise eligible, policy-assigned Exact Response Cache canary. Omission never enables cache reads or writes.
+      schema:
+        type: string
+        enum: [allow]
+    PromptCompressionOptIn:
+      name: X-UniRouter-Prompt-Compression
+      in: header
+      required: false
+      description: Exact case-insensitive value `allow` permits a policy-assigned Compression canary to apply the reviewed whitespace-only candidate. Shadow never mutates the request.
+      schema:
+        type: string
+        enum: [allow]
+    RequestCacheControl:
+      name: Cache-Control
+      in: header
+      required: false
+      description: A `no-store` directive always bypasses Exact Response Cache persistence and lookup. `no-cache` alone does not opt in or opt out.
+      schema:
+        type: string
+    InvocationOptimizationPolicyRef:
+      name: ref
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^opt_[a-z0-9][a-z0-9._-]{2,59}$'
     MediaJobId:
       name: id
       in: path
@@ -2707,6 +2800,16 @@ components:
       schema:
         type: string
         enum: [interactive, stream, embedding]
+    ResponseCacheOutcome:
+      description: Present only when an applicable Exact Response Cache policy was evaluated. HIT served a current zero-token/zero-charge local delivery; MISS owns an upstream fill; BYPASS made no cache read/write claim.
+      schema:
+        type: string
+        enum: [HIT, MISS, BYPASS]
+    PromptCompressionOutcome:
+      description: SHADOW and CANARY expose the effective policy stage without claiming mutation; only APPLIED means the current request body used the reviewed whitespace-only candidate.
+      schema:
+        type: string
+        enum: [SHADOW, CANARY, APPLIED]
 
   responses:
     JSON:

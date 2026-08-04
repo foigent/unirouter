@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,7 @@ import (
 	"github.com/uniroute/unirouter/internal/errdocs"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/guardrail"
+	"github.com/uniroute/unirouter/internal/invocationopt"
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
@@ -34,6 +36,7 @@ import (
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
+	"github.com/uniroute/unirouter/internal/responsecache"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/streampolicy"
@@ -57,8 +60,10 @@ type BillingProvider interface {
 	BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error
 	CompleteProviderAttempt(ctx context.Context, req billing.ProviderAttemptCompletion) error
 	PrepareNonStreamDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
+	PrepareResponseCacheDelivery(ctx context.Context, req billing.SettleRequest) (*billing.PrepareDeliveryResult, error)
 	HoldNonStreamOutput(ctx context.Context, req billing.SettleRequest, reason string) error
 	RecordDelivery(ctx context.Context, event billing.DeliveryEvent) error
+	RecordResponseCacheDelivery(ctx context.Context, event billing.ResponseCacheDeliveryEvent) error
 	MarkBillableOutput(ctx context.Context, requestID string, orgID int64) error
 	PersistSettlementUsage(ctx context.Context, req billing.SettleRequest) error
 	Settle(ctx context.Context, req billing.SettleRequest) (*billing.SettleResult, error)
@@ -91,6 +96,11 @@ type Relay struct {
 	freezeSafetyFactor         string
 	minFreezeCents             int64
 	modelAuthorization         *modelauthz.Evaluator
+	invocationOptimization     *invocationopt.Manager
+	responseCache              *responsecache.Service
+	runtimeVersion             string
+	runtimeCommit              string
+	runtimeEnvironment         string
 }
 
 func (relay *Relay) SetModelAuthorization(evaluator *modelauthz.Evaluator) {
@@ -849,6 +859,17 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.rejectModelNotAllowed(w, ctx, requestID, req.Model, requestedModel, requestStart)
 		return
 	}
+	optimizationState := relay.evaluateCompression(ctx, r.Header, requestID, requestedModel, callerAPIKey, req.Model, body)
+	if !bytes.Equal(optimizationState.effectiveBody, body) {
+		body = optimizationState.effectiveBody
+		if err := json.Unmarshal(body, &req); err != nil {
+			writeError(w, http.StatusInternalServerError, "server_error", "prompt_compression.invalid_candidate", "Prompt compression candidate failed validation")
+			return
+		}
+		w.Header().Set(compressionOptInHeader, "APPLIED")
+	} else if optimizationState.compression != nil {
+		w.Header().Set(compressionOptInHeader, strings.ToUpper(optimizationState.compression.EffectiveMode))
+	}
 
 	// Reserve both estimated input and the allowed output ceiling. P6-F07
 	// settles this reservation to actual usage at the same terminal boundary as
@@ -858,6 +879,13 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	orgID := middleware.GetOrgIDFromContext(ctx)
 	keyID := middleware.GetKeyIDFromContext(ctx)
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "chat"})
+	compressionReceiptRecorded := false
+	recordCompressionReceipt := func(route *RouteResult) {
+		if compressionReceiptRecorded {
+			return
+		}
+		compressionReceiptRecorded = relay.recordCompressionReceipt(ctx, optimizationState, route, reqLog)
+	}
 	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
 		"stream":           req.Stream,
 		"estimated_tokens": estimatedTokens,
@@ -927,6 +955,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	// Get all available routes for failover
 	routes, err := relay.router.RouteAllWithKey(ctx, req.Model, requestID)
 	if err != nil {
+		recordCompressionReceipt(nil)
 		relay.billing.Cancel(ctx, requestID, orgID)
 		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
 		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, 503, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -935,7 +964,6 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, estimatedTokens, "")
 		return
 	}
-
 	client := &http.Client{Timeout: providerTimeout}
 	adapterRegistry := adapters.DefaultRegistry()
 	routingPolicy := relay.router.Policy()
@@ -991,17 +1019,49 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			lastErr = err
 			continue
 		}
+		cacheDecision := relay.evaluateResponseCache(
+			attemptCtx, r.Header, requestID, requestedModel, callerAPIKey, optimizationState,
+			route, upstreamReq, freezeResult.PricingVersion, reqLog,
+		)
+		if cacheDecision.hit != nil {
+			recordCompressionReceipt(route)
+			relay.recordResponseCacheDecision(attemptCtx, cacheDecision, reqLog)
+			w.Header().Set(responseCacheOptInHeader, "HIT")
+			relay.serveResponseCacheHit(
+				attemptCtx, w, route, cacheDecision.hit, cacheDecision.identity,
+				optimizationState.policy, requestID, orgID, keyID, req.Model,
+				requestedModel, r.RemoteAddr, requestStart, reqLog,
+			)
+			return
+		}
+		if cacheDecision.reject {
+			recordCompressionReceipt(route)
+			relay.recordResponseCacheDecision(attemptCtx, cacheDecision, reqLog)
+			relay.billing.Cancel(context.WithoutCancel(attemptCtx), requestID, orgID)
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "server_error", "response_cache.contention", "Response cache contention could not be resolved safely")
+			return
+		}
+		if cacheDecision.miss != nil {
+			attemptCtx = contextWithResponseCacheMiss(attemptCtx, cacheDecision.miss)
+			w.Header().Set(responseCacheOptInHeader, "MISS")
+		} else if cacheDecision.reason != "" {
+			w.Header().Set(responseCacheOptInHeader, "BYPASS")
+		}
 		prepared, err := relay.router.PrepareRoute(attemptCtx, route)
 		if err != nil {
+			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
 			lastErr = err
 			relay.recordTraceEvent(attemptCtx, requestID, "routing.probe_claim_failed", "routing", "warning", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
 			continue
 		}
 		if !prepared {
+			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
 			lastErr = fmt.Errorf("half-open probe lease unavailable")
 			relay.recordTraceEvent(attemptCtx, requestID, "routing.probe_lease_unavailable", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
 			continue
 		}
+		relay.recordResponseCacheDecision(attemptCtx, cacheDecision, reqLog)
 		lastRoute = route
 		routeForTrace = *route
 		relay.recordTraceEvent(attemptCtx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
@@ -1009,6 +1069,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 
 		attemptStart := providerAttemptStartFromRoute(attemptCtx, requestID, orgID, keyID, adapters.EndpointChatCompletions, route)
 		if err := relay.beginProviderAttemptWithRetry(attemptCtx, attemptStart, reqLog); err != nil {
+			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
 			stopProbeLease()
 			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			if cancelErr := relay.billing.Cancel(cleanupCtx, requestID, orgID); cancelErr != nil {
@@ -1024,12 +1085,14 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
+		recordCompressionReceipt(route)
 		providerAttempts++
 		upstreamStart := time.Now()
 		resp, err := client.Do(upstreamReq)
 		upstreamDuration := time.Since(upstreamStart)
 		middleware.RecordUpstreamLatency(route.Channel.Provider, req.Model, upstreamDuration)
 		if err != nil {
+			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
 			stopProbeLease()
 			classified := adapters.ClassifyTransportError(attemptCtx, err)
 			completionErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
@@ -1063,6 +1126,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		}
 		upstreamRequestID := upstreamRequestIDFromHeader(resp.Header)
 		if resp.StatusCode != http.StatusOK {
+			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
 			stopProbeLease()
 			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 			// Per PRD F12: adapters normalize provider-specific HTTP semantics
@@ -1119,6 +1183,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			attemptCtx, requestID, orgID, billing.ProviderAttemptOutcomeResponseAccepted,
 			false, resp.StatusCode, "", upstreamRequestID,
 		), reqLog); err != nil {
+			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
 			stopProbeLease()
 			resp.Body.Close()
 			relay.recordTraceEvent(attemptCtx, requestID, "billing.provider_attempt.complete_failed", "billing", "critical", req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
@@ -1131,12 +1196,14 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		if req.Stream {
 			relay.relayStreamRequest(attemptCtx, w, resp, route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, req.Messages, reqLog, requestStart, estimatedTokens, adapter, upstreamRequestID, stopProbeLease)
 		} else {
-			relay.relayNonStreamRequest(attemptCtx, w, resp, route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter, estimatedInputTokens, reservedCompletionTokens, upstreamRequestID, stopProbeLease)
+			deliveryCtx := contextWithProviderRequestCount(attemptCtx, int64(providerAttempts))
+			relay.relayNonStreamRequest(deliveryCtx, w, resp, route, requestID, orgID, keyID, req.Model, requestedModel, r.RemoteAddr, reqLog, requestStart, adapter, estimatedInputTokens, reservedCompletionTokens, upstreamRequestID, stopProbeLease)
 		}
 		return
 	}
 
 	// All channels failed
+	recordCompressionReceipt(nil)
 	relay.billing.Cancel(ctx, requestID, orgID)
 	if providerAttempts == 0 {
 		relay.recordTraceEvent(ctx, requestID, "routing.no_dispatch", "routing", "warning", req.Model, requestedModel, nil, http.StatusServiceUnavailable, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -1170,6 +1237,10 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	}
 	defer stopProbeLease()
 	defer resp.Body.Close()
+	cacheMiss := responseCacheMissFromContext(ctx)
+	if cacheMiss != nil {
+		defer relay.releaseResponseCacheMiss(ctx, reqLog)
+	}
 
 	body, releaseResponsePayload, err := relay.responsePayload(ctx, resp.Body)
 	if err != nil {
@@ -1430,6 +1501,9 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	middleware.RecordTokenUsage("completion", model, normalized.Usage.CompletionTokens)
 	relay.recordRequestWithUsage(ctx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, model, requestedModel, clientIP,
 		normalized.Usage, chargedCost, resp.StatusCode, elapsedMilliseconds(requestStart), 0, false, estimatedTokens, upstreamRequestID, settleOutcome.Result)
+	if cacheMiss != nil {
+		relay.commitResponseCacheMiss(ctx, cacheMiss, basePayload, normalized.Usage, requestID, providerRequestCountFromContext(ctx), reqLog)
+	}
 	relay.checkProjectBudgetAlert(ctx)
 }
 

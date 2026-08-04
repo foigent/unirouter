@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 )
 
@@ -206,7 +207,10 @@ func TestCORS_Headers(t *testing.T) {
 		t.Fatal("expected 86400 max age")
 	}
 	allowedHeaders := splitComma(rec.Header().Get("Access-Control-Allow-Headers"))
-	for _, expected := range []string{"X-Request-ID", "X-UniRouter-Client-Request-ID", "Idempotency-Key"} {
+	for _, expected := range []string{
+		"X-Request-ID", "X-UniRouter-Client-Request-ID", "Idempotency-Key", "Cache-Control",
+		"X-UniRouter-Response-Cache", "X-UniRouter-Prompt-Compression",
+	} {
 		found := false
 		for _, allowed := range allowedHeaders {
 			if allowed == expected {
@@ -226,24 +230,16 @@ func TestCORS_Headers(t *testing.T) {
 		}
 	}
 	exposedHeaders := splitComma(rec.Header().Get("Access-Control-Expose-Headers"))
-	versionExposed := false
-	workloadClassExposed := false
-	for _, exposed := range exposedHeaders {
-		if exposed == "X-UniRouter-Limit-Policy-Version" {
-			versionExposed = true
-		}
-		if exposed == "X-UniRouter-Workload-Class" {
-			workloadClassExposed = true
+	for _, expected := range []string{
+		"X-UniRouter-Limit-Policy-Version", "X-UniRouter-Workload-Class",
+		"X-UniRouter-Response-Cache", "X-UniRouter-Prompt-Compression",
+	} {
+		if !slices.Contains(exposedHeaders, expected) {
+			t.Fatalf("expected %s to be browser-readable: %#v", expected, exposedHeaders)
 		}
 	}
-	if !versionExposed {
-		t.Fatal("limit-policy version response header must be browser-readable")
-	}
-	if !workloadClassExposed {
-		t.Fatal("server-derived workload class response header must be browser-readable")
-	}
-	if len(exposedHeaders) != 5 {
-		t.Fatalf("expected three public identity headers plus policy-version and workload-class headers, got %#v", exposedHeaders)
+	if len(exposedHeaders) != 7 {
+		t.Fatalf("expected identity, policy, workload and invocation-optimization headers, got %#v", exposedHeaders)
 	}
 }
 

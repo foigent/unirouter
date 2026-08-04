@@ -1335,6 +1335,14 @@ body {
   gap: 12px;
 }
 
+.ur-optimization-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ur-optimization-runtime {
+  font-size: 18px !important;
+}
+
 .ur-modelgov-summary > div {
   display: grid;
   gap: 4px;
@@ -1397,7 +1405,8 @@ body {
 }
 
 .ur-runtime-release-workspace,
-.ur-model-authorization-workspace {
+.ur-model-authorization-workspace,
+.ur-invocation-optimization-workspace {
   margin-top: 0;
 }
 

@@ -10,7 +10,7 @@
 | 02 | [计费状态机](02-billing-state-machine.md) | 计费流程完整定义 | v2.0 |
 | 03 | [错误处理矩阵](03-error-handling-matrix.md) | 错误分类 + 重试策略 | v2.0 |
 | 04 | [OneAPI Hook 清单](04-oneapi-hook-manifest.md) | 未实现的历史架构参考，不是当前扩展合同 | — |
-| 05 | [OpenAPI Spec](05-openapi-spec.yaml) | 当前 UniRouter API、RBAC 与非敏感 License 能力合同，按路由、handler 和 route parity 对齐 | v1.3 |
+| 05 | [OpenAPI Spec](05-openapi-spec.yaml) | 当前 UniRouter API、RBAC、调用优化 opt-in/结果头与非敏感 License 能力合同，按路由、handler 和 route parity 对齐 | v1.4 |
 | 06 | [前端页面规格](06-frontend-spec.md) | PRD1 历史设计快照；当前 UI 以代码、OpenAPI 和测试为准 | — |
 | 07 | [结构化日志](07-structured-logging.md) | 日志架构 + 使用方式 | v1.0 |
 | 08 | [监控指标](08-prometheus-metrics.md) | Prometheus 指标体系 | v1.0 |
@@ -38,7 +38,15 @@
 | 30 | [Provider Conformance Pack V1](30-provider-conformance-pack-v1.md) | 三个离线 Provider Pack、Azure OpenAI 原生适配、确定性 runner、Admin API 与兼容性声明边界 | v1.0 |
 | 31 | [Contextual Inspectors And Local Views](31-contextual-inspectors-and-local-views.md) | Audit/Projects 常驻检查器、受控深链、本地元数据视图、竞态与失效关闭合同 | v1.0 |
 | 32 | [OTel/OpenInference Metadata Export](32-otel-openinference-metadata-export.md) | 默认关闭、Outbox 后置、metadata-only OTLP/HTTP 导出、隐私/基数/重试与 Source 兼容边界 | v1.0 |
+| 33 | [Secret Reference And Rotation](33-secret-reference-rotation.md) | 后端中立的版本化密钥引用、生命周期和 fail-closed 消费边界 | v1.0 |
+| 34 | [Exact Response Cache V2](34-exact-response-cache.md) | 精确身份、加密 Redis、Shadow/Canary、零 Provider/零收费交付与默认关闭运行时 | v2.0 |
+| 35 | [Endpoint Protocol Conformance](35-endpoint-protocol-conformance.md) | 模型端点协议一致性 Runner 与兼容边界 | v1.0 |
+| 35b | [Provider COGS Offline](35-provider-cogs-offline.md) | 离线供应商成本事实、对账与客户计价隔离边界 | v1.0 |
+| 36 | [Governance Simulation V1](36-governance-simulation-v1.md) | 治理策略只读模拟、证据和失效关闭合同 | v1.0 |
+| 37 | [Member Lifecycle V1](37-member-lifecycle-v1.md) | 企业人员/账号生命周期预览与执行边界 | v1.0 |
+| 38 | [Agent Trust Firewall](38-agent-trust-firewall.md) | Agent 执行信任控制、风险和授权边界 | v1.0 |
 | 39 | [Provenance Passport And Second Connector](39-provenance-passport-and-second-connector.md) | exact Source provenance、Capture Gap、LiteLLM 跨语言 conformance-only 证明与运行时隔离 | v1.0 |
+| 40 | [Invocation Optimization And Compression V1](40-invocation-optimization-v1.md) | 调用优化生命周期、内容无关分桶、Compression Shadow/Canary 与元数据证据 | v1.0 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 历史需求参考

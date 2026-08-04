@@ -30,6 +30,7 @@ import (
 	"github.com/uniroute/unirouter/internal/eventconnectorshadow"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/gateway"
+	"github.com/uniroute/unirouter/internal/invocationopt"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/mediajob"
@@ -43,6 +44,7 @@ import (
 	"github.com/uniroute/unirouter/internal/policybilling"
 	"github.com/uniroute/unirouter/internal/redisx"
 	"github.com/uniroute/unirouter/internal/releasetrust"
+	"github.com/uniroute/unirouter/internal/responsecache"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/telemetryexport"
@@ -102,6 +104,36 @@ func main() {
 	}
 	defer redisClient.Close()
 	log.Println("Connected to Redis")
+	invocationOptimizationManager, err := invocationopt.NewManager(postgres.Pool)
+	if err != nil {
+		log.Fatalf("Failed to initialize invocation-optimization policy manager: %v", err)
+	}
+	var responseCacheService *responsecache.Service
+	if cfg.ResponseCacheConfigured() {
+		responseCacheBackend, backendErr := responsecache.NewRedisBackend(redisClient.Client, "uniroute:response-cache:v2")
+		if backendErr != nil {
+			log.Fatalf("Failed to initialize exact response-cache backend: %v", backendErr)
+		}
+		responseCacheKeyring, keyringErr := responsecache.NewStaticKeyring(
+			cfg.ResponseCacheKeyVersion,
+			map[string][]byte{cfg.ResponseCacheKeyVersion: []byte(cfg.ResponseCacheEncryptionKey)},
+		)
+		if keyringErr != nil {
+			log.Fatalf("Failed to initialize exact response-cache encryption keyring: %v", keyringErr)
+		}
+		responseCacheService, err = responsecache.NewService(
+			responseCacheBackend,
+			[]byte(cfg.ResponseCacheIndexKey),
+			responseCacheKeyring,
+			responsecache.DefaultConfig(),
+		)
+		if err != nil {
+			log.Fatalf("Failed to initialize exact response-cache service: %v", err)
+		}
+		log.Printf("Exact response-cache runtime ready: contract=%s key_version=%s policies_default=disabled", responsecache.Version, cfg.ResponseCacheKeyVersion)
+	} else {
+		log.Printf("Exact response-cache runtime disabled: encryption/index key references are not configured")
+	}
 	agentCapabilityService, err := agentcap.NewService(postgres.Pool, redisClient.Client, cfg.APIKeyHashSecret)
 	if err != nil {
 		log.Fatalf("Failed to initialize Agent capability service: %v", err)
@@ -361,6 +393,13 @@ func main() {
 	relay.SetTraceEvents(cfg.TraceEventsEnabled, cfg.TraceEventSampleRate)
 	relay.SetPayloadCaptureMode(cfg.PayloadCaptureMode)
 	relay.SetEvidenceContextTrustSecret(cfg.EvidenceContextTrustSecret)
+	relay.SetInvocationOptimization(
+		invocationOptimizationManager,
+		responseCacheService,
+		cfg.RuntimeVersion,
+		cfg.RuntimeCommit,
+		cfg.RuntimeEnvironment,
+	)
 	var otelExporter *telemetryexport.Exporter
 	if cfg.OTelExportEnabled {
 		otelExporter, err = telemetryexport.New(cfg.TelemetryExportConfig(), nil)
@@ -387,6 +426,7 @@ func main() {
 	adminHandler.SetGuardrailController(guardrailService)
 	adminHandler.SetProviderCostReconciler(billingSvc)
 	adminHandler.SetLimitPolicyReloader(limitPolicyService)
+	adminHandler.SetInvocationOptimization(invocationOptimizationManager, responseCacheService != nil)
 	legacyLicenseKey, err := licensing.ParsePublicKey(cfg.LicensePublicKey)
 	if err != nil {
 		log.Fatalf("Invalid license configuration: %v", err)
@@ -788,6 +828,15 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/model-registry</code></td><td>List model registry</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-registry</code></td><td>Create model registry entry</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/model-registry/{id}</code></td><td>Update model registry entry</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/invocation-optimization/contract</code></td><td>Read opt-in, canary and runtime-readiness contract</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/invocation-optimization/policies</code></td><td>List tenant-scoped invocation optimization policies</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/invocation-optimization/policies</code></td><td>Create a default-off policy draft</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/invocation-optimization/policies/{ref}</code></td><td>Read one exact policy revision</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/invocation-optimization/policies/{ref}</code></td><td>Update a draft or rolled-back policy</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/invocation-optimization/policies/{ref}/validate</code></td><td>Validate policy without runtime mutation</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/invocation-optimization/policies/{ref}/shadow</code></td><td>Start metadata-only shadow evidence</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/invocation-optimization/policies/{ref}/canary</code></td><td>Start an evidence-gated maximum 10% canary</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/invocation-optimization/policies/{ref}/rollback</code></td><td>Stop future assignments and preserve evidence</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-catalog</code></td><td>Approved model catalog</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-aliases</code></td><td>List model aliases</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-aliases</code></td><td>Create model alias</td></tr>
@@ -928,6 +977,11 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 			return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin)
 		}),
 	})
+	registerInvocationOptimizationRoutes(
+		mux,
+		adminHandler,
+		licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
+	)
 	registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: pricingReadRoute, write: platformRoute})
 	registerLimitPolicyRoutes(mux, adminHandler, limitPolicyRouteGuards{
 		read: func(h http.HandlerFunc) http.Handler {

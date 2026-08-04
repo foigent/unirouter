@@ -45,6 +45,11 @@ type Config struct {
 	JWTSecret        string
 	APIKeyHashSecret string
 	EncryptionKey    string
+	// Exact response cache uses an isolated HMAC index key and AES key. The
+	// runtime stays disabled unless the complete three-part key binding exists.
+	ResponseCacheIndexKey      string
+	ResponseCacheEncryptionKey string
+	ResponseCacheKeyVersion    string
 	// NotificationWebhookSigningSecret signs outbound notification Webhook
 	// bodies. It is optional for source development, but customer Compose makes
 	// it mandatory so receivers can authenticate deliveries.
@@ -229,6 +234,18 @@ func (c *Config) Validate() error {
 	}
 	if len(c.EncryptionKey) != 32 {
 		return fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes for AES-256, got %d bytes", len(c.EncryptionKey))
+	}
+	cacheConfigured := c.ResponseCacheIndexKey != "" || c.ResponseCacheEncryptionKey != "" || c.ResponseCacheKeyVersion != ""
+	if cacheConfigured {
+		if len(c.ResponseCacheIndexKey) != 32 {
+			return fmt.Errorf("RESPONSE_CACHE_INDEX_KEY must be exactly 32 bytes when response cache is configured")
+		}
+		if len(c.ResponseCacheEncryptionKey) != 32 {
+			return fmt.Errorf("RESPONSE_CACHE_ENCRYPTION_KEY must be exactly 32 bytes when response cache is configured")
+		}
+		if !completedExecutionSourceInstancePattern.MatchString(c.ResponseCacheKeyVersion) {
+			return fmt.Errorf("RESPONSE_CACHE_KEY_VERSION must use a portable 1-128 character identifier")
+		}
 	}
 	if c.NotificationWebhookSigningSecret != "" && len(c.NotificationWebhookSigningSecret) < 32 {
 		return fmt.Errorf("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET must be at least 32 bytes when set")
@@ -480,6 +497,9 @@ func Load() (*Config, error) {
 		JWTSecret:                        jwtSecret,
 		APIKeyHashSecret:                 getEnvStr("API_KEY_HASH_SECRET", jwtSecret),
 		EncryptionKey:                    getEnvStr("ENCRYPTION_KEY", ""),
+		ResponseCacheIndexKey:            getEnvStr("RESPONSE_CACHE_INDEX_KEY", ""),
+		ResponseCacheEncryptionKey:       getEnvStr("RESPONSE_CACHE_ENCRYPTION_KEY", ""),
+		ResponseCacheKeyVersion:          strings.TrimSpace(getEnvStr("RESPONSE_CACHE_KEY_VERSION", "")),
 		NotificationWebhookSigningSecret: getEnvStr("UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET", ""),
 
 		AdminCORSAllowedOrigins:              splitCSVAllowEmpty(getEnvStr("ADMIN_CORS_ALLOWED_ORIGINS", "")),
@@ -618,6 +638,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func (c Config) ResponseCacheConfigured() bool {
+	return len(c.ResponseCacheIndexKey) == 32 && len(c.ResponseCacheEncryptionKey) == 32 && c.ResponseCacheKeyVersion != ""
 }
 
 func (c Config) GuardrailOptions() guardrail.Options {

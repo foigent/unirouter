@@ -227,7 +227,7 @@ Provider 测试流量。
 | `来源与缺口 Passport` | 退出主导航；UniRouter Source provenance 留在 Receipt，跨源 Passport 进入 X-Insight |
 | `资金账户` | 改名“预算与成本中心”；现有 wallet 只作为请求级结算兼容内核，不再宣称企业现金或总账 |
 | `模型计费` | 改名“费率与计价”；当前基础价格/组织倍率是兼容能力，未来升级为版本化 Rate Card |
-| `成本优化` | 新增在“成本与财务”；V1 只按终态计量和请求时冻结客户费率解释 Provider Prompt Cache 节省，不把供应商 COGS、未接入 Gateway 的 Response Cache 或尚未 Shadow 的 Compression 写成已实现节省；改变请求的策略归“模型治理 → 调用优化” |
+| `成本优化` | 位于“成本与财务”；Provider Prompt Cache 使用终态计量和请求时冻结客户费率，Exact Response Cache 只认完成本地交付的零 Provider/零收费商业回执，Compression 只展示预计 Token、不伪装成已实现金额；改变请求的策略归“模型治理 → 调用优化” |
 | `财务真值` | 改名“分摊与对账”；UniRouter 保留账本/供应商对账，跨期异常和原因进入 X-Insight |
 | `图像任务` | 改名“异步模型任务”；当前仅实现 Image V1 Endpoint Profile，不暗示文字、语音或视频任务已经可用；未来 audio/video 必须分别有 Endpoint Profile |
 | `X-Insight 数据交换控制` | 保留在“系统与集成”；只管理 outbound enable/pause、Source identity、交付/回执/Gap 和受控 deep link |
@@ -246,7 +246,7 @@ UniRouter 不新增“Tool Center”“MCP Servers”“跨产品调查”“Cas
 |---|---|---|
 | 平台总览 | 无二级菜单，直接进入 | 整体用量/成本、模型健康、异常与风险摘要、待处理动作；摘要可进入对应详情或 X-Insight 调查，不复制完整工作区 |
 | 模型接入 | 上游通道 | Provider、模型 Endpoint、可用状态和 UniRouter 路由入口；不注册 Tool/MCP Server |
-| 模型接入 | 模型治理 | 模型目录/准入、路由与策略、离线 Change Preview，以及仅覆盖通道准入/优先级/权重的确定性发布、Provider Pack Pin、canary/promotion/rollback；X-Insight Finding proposal inbox 仍未实现 |
+| 模型接入 | 模型治理 | 模型目录/准入、路由与策略、离线 Change Preview、Provider Pack Pin 与通道发布；页内“调用优化”以 Draft/Validated/Shadow/最高 10% Canary/Rollback 管理 Exact Response Cache 和保守 Compression，强制请求 opt-in；X-Insight Finding proposal inbox 仍未实现 |
 | 模型接入 | 供应商凭证 | 仅管理模型 Provider 的 Secret reference、版本和轮换状态；不显示明文，不接管 Tool OAuth |
 | 模型接入 | 连通性检测 | 对已配置模型 Endpoint 做受控探测和协议检查；不承担跨产品调查 |
 | 访问与安全 | 访问凭证 | UniRouter API Key 与本产品访问凭证生命周期 |
@@ -262,7 +262,7 @@ UniRouter 不新增“Tool Center”“MCP Servers”“跨产品调查”“Cas
 | 监控与用量 | 运行状态 | UniRouter 实例、Provider、模型路由和依赖健康；Tool/MCP 运行状态由其产品承载 |
 | 成本与财务 | 预算与成本中心 | 法人/部门/成本中心/项目的预算、实际、预测和运行时花费策略绑定；现有 wallet/冻结/释放只作为兼容结算内核，不等同企业现金或总账 |
 | 成本与财务 | 费率与计价 | Provider 标价、合同成本、有效供应商成本和内部 showback/chargeback Rate Card；当前基础价格和组织倍率保留兼容 |
-| 成本与财务 | 成本优化 | 按终态计量事实展示 Prompt Cache 净节省、读取节省、写入溢价、覆盖 Gap、每日/累计趋势和确定性复核候选；Response Cache 与 Compression 必须按真实运行状态展示，不提前计入节省 |
+| 成本与财务 | 成本优化 | 按终态计量展示 Prompt Cache 净节省/读取节省/写入溢价/覆盖 Gap；Exact Response Cache 只累计完成交付回执的避免成本；Compression 展示 Shadow/Canary 预计 Token 和应用次数但不折算实现金额；所有驱动按真实运行状态展示 |
 | 成本与财务 | 分摊与对账 | 请求级账本、捕获的供应商成本 evidence、分摊覆盖、未归属/冲突、对账和关账记录；供应商拥有原始账单事实，跨期异常原因分析进入 X-Insight |
 | 系统与集成 | 商业授权 | UniRouter License 状态与本产品 Feature entitlement |
 | 系统与集成 | X-Insight 数据交换 | outbound enable/pause、Source identity、凭据元数据、交付/回执/Gap 和受控 deep link；不嵌入调查工作区 |

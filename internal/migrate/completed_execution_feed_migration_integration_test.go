@@ -74,7 +74,25 @@ func TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed(t *test
 	).Scan(&legacyStatus))
 	require.Equal(t, "disabled", legacyStatus)
 
+	// Migration 000056 treats the incremented auth_epoch as security evidence
+	// and correctly refuses to discard it during rollback. Remove this exact
+	// credential before crossing that boundary, then recreate the disabled
+	// historical shape after later migrations have been reversed so the 000043
+	// scoped-credential guard is still exercised on its own schema.
+	_, err = pool.Exec(ctx, `DELETE FROM api_keys WHERE id = $1`, keyID)
+	require.NoError(t, err)
 	rollbackXInsightFeedControl(t, pool)
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO api_keys (
+		    org_id, project_id, key_type, name, key_prefix, key_hash,
+		    status, allowed_ips, allowed_models, purpose
+		 ) VALUES (
+		    $1, $2, 'service', 'X-Insight feed', 'ur-feed-rollback',
+		    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+		    'disabled', '127.0.0.1/32', '', 'xinsight.feed.read'
+		 ) RETURNING id`,
+		orgID, projectID,
+	).Scan(&keyID))
 	downSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000043_v1_completed_execution_feed.down.sql",

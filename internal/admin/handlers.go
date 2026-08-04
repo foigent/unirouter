@@ -10,6 +10,7 @@ import (
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/guardrail"
+	"github.com/uniroute/unirouter/internal/invocationopt"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
@@ -69,6 +70,15 @@ type Handler struct {
 	completedFeedController      completedFeedController
 	modelAuthorizationEvaluator  *modelauthz.Evaluator
 	runtimeChangeManager         *runtimechange.Manager
+	invocationOptimization       *invocationopt.Manager
+	responseCacheRuntimeReady    bool
+}
+
+func (h *Handler) SetInvocationOptimization(manager *invocationopt.Manager, responseCacheReady bool) {
+	if h != nil {
+		h.invocationOptimization = manager
+		h.responseCacheRuntimeReady = responseCacheReady
+	}
 }
 
 func (h *Handler) SetModelAuthorizationEvaluator(evaluator *modelauthz.Evaluator) {
