@@ -3,7 +3,7 @@
 > Work item: `UR-PRD8-ENTERPRISE-CONTROL-PLANE`
 > Date: 2026-08-02
 > Owner: UniRouter product/implementation owner
-> Status: Base PRD8, CO-1 through CO-5 and Canary readiness V1 development Target complete; optimizations remain default-off; second-device/data-reset and customer integrations gated
+> Status: Base PRD8, CO-1 through CO-5 and Canary readiness V1 development Target complete; pre-reset read-only gate complete; optimizations remain default-off; destructive reset, second-device traffic and customer integrations gated
 > Product contract: `docs/PRD-Phase8.md`
 
 > 2026-08-04 continuation: the Product Owner approved the cost-optimization
@@ -19,6 +19,14 @@
 > Shadow/Canary, model traffic and product data unchanged; technical readiness
 > grants neither activation nor traffic authority and baseline second-device
 > Agent compatibility remains independent of optimization experiments.
+
+> 2026-08-05 pre-reset continuation: two exact Target reset previews produced
+> stable ordered table counts with complete classification and no mutation. The
+> current release/HTTPS and repository compatibility artifacts were rechecked.
+> The destructive reset, backup-at-reset-time, new Source/Cursor epoch binding,
+> fresh credentials and second-device traffic remain stopped until the User
+> explicitly starts the second integration. Exact evidence is
+> `docs/ops/evidence/PRD8-SECOND-INTEGRATION-PRE-RESET-GATE-20260805.md`.
 
 ## 1. Outcome
 
