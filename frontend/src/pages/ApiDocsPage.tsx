@@ -98,6 +98,15 @@ const endpointGroups = [
     ],
   },
   {
+    area: '成本优化',
+    endpoints: [
+      ['GET', '/api/v1/cost-optimization/summary', '读取 Prompt Cache 净节省、证据覆盖与未接入能力边界'],
+      ['GET', '/api/v1/cost-optimization/trend', '按日读取 Prompt Cache 节省趋势'],
+      ['GET', '/api/v1/cost-optimization/breakdown', '按项目、模型、供应商或上游通道拆解节省'],
+      ['GET', '/api/v1/cost-optimization/opportunities', '读取由确定性证据规则生成的复核候选'],
+    ],
+  },
+  {
     area: 'Admin',
     endpoints: [
       ['GET', '/api/v1/dashboard/stats', 'Dashboard 聚合数据'],

@@ -406,6 +406,56 @@ export const api = {
     end_time: filters?.end_time,
     format: filters?.format,
   })),
+  getCostOptimizationSummary: (filters?: {
+    org_id?: string | number; project_id?: string | number; model?: string;
+    provider?: string; channel?: string; start_time?: string; end_time?: string;
+  }) => request(appendParams('/cost-optimization/summary', {
+    org_id: filters?.org_id,
+    project_id: filters?.project_id,
+    model: filters?.model,
+    provider: filters?.provider,
+    channel: filters?.channel,
+    start_time: filters?.start_time,
+    end_time: filters?.end_time,
+  })),
+  getCostOptimizationTrend: (filters?: {
+    org_id?: string | number; project_id?: string | number; model?: string;
+    provider?: string; channel?: string; start_time?: string; end_time?: string;
+  }) => request(appendParams('/cost-optimization/trend', {
+    org_id: filters?.org_id,
+    project_id: filters?.project_id,
+    model: filters?.model,
+    provider: filters?.provider,
+    channel: filters?.channel,
+    start_time: filters?.start_time,
+    end_time: filters?.end_time,
+  })),
+  getCostOptimizationBreakdown: (filters?: {
+    group_by?: string; org_id?: string | number; project_id?: string | number; model?: string;
+    provider?: string; channel?: string; start_time?: string; end_time?: string;
+  }) => request(appendParams('/cost-optimization/breakdown', {
+    group_by: filters?.group_by,
+    org_id: filters?.org_id,
+    project_id: filters?.project_id,
+    model: filters?.model,
+    provider: filters?.provider,
+    channel: filters?.channel,
+    start_time: filters?.start_time,
+    end_time: filters?.end_time,
+  })),
+  getCostOptimizationOpportunities: (filters?: {
+    group_by?: string; org_id?: string | number; project_id?: string | number; model?: string;
+    provider?: string; channel?: string; start_time?: string; end_time?: string;
+  }) => request(appendParams('/cost-optimization/opportunities', {
+    group_by: filters?.group_by,
+    org_id: filters?.org_id,
+    project_id: filters?.project_id,
+    model: filters?.model,
+    provider: filters?.provider,
+    channel: filters?.channel,
+    start_time: filters?.start_time,
+    end_time: filters?.end_time,
+  })),
   getInternalStatus: (filters?: { org_id?: string | number; project_id?: string | number }) =>
     request(appendParams('/internal-status', { org_id: filters?.org_id, project_id: filters?.project_id })),
   getRuntimeStatus: (orgId?: number) => request(appendParams('/runtime/status', { org_id: orgId })),

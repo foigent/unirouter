@@ -734,6 +734,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/logs/{id}</code></td><td>Call log detail</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/logs/{id}/trace</code></td><td>Request trace events</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/usage/analytics</code></td><td>Usage analytics and CSV export</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/cost-optimization/summary</code></td><td>Evidence-bounded Prompt Cache savings summary</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/cost-optimization/trend</code></td><td>Daily Prompt Cache savings trend</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/cost-optimization/breakdown</code></td><td>Prompt Cache savings breakdown</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/cost-optimization/opportunities</code></td><td>Deterministic cost optimization review candidates</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/internal-status</code></td><td>Event-derived internal status</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/runtime/status</code></td><td>Runtime environment, capacity, and external monitoring status</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/error-docs</code></td><td>Error documentation registry</td></tr>
@@ -896,6 +900,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/logs/{id}/trace", usageRoute(adminHandler.GetRequestTrace))
 	mux.Handle("GET /api/v1/dashboard/stats", dashboardRoute(adminHandler.DashboardStats))
 	mux.Handle("GET /api/v1/usage/analytics", usageRoute(adminHandler.UsageAnalytics))
+	registerCostOptimizationRoutes(mux, adminHandler, pricingReadRoute)
 	mux.Handle("GET /api/v1/internal-status", licensedRoute(licensing.FeatureNotifications, orgAdminRoute)(adminHandler.InternalStatus))
 	mux.Handle("GET /api/v1/runtime/status", roleRoute(adminHandler.RuntimeStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
 	mux.Handle("GET /api/v1/error-docs", usageRoute(adminHandler.ListErrorDocs))

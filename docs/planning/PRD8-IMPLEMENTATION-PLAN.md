@@ -6,6 +6,13 @@
 > Status: Local implementation, PR/CI, existing-environment release and development-Target HTTPS complete; second-device/data-reset and customer integrations gated
 > Product contract: `docs/PRD-Phase8.md`
 
+> 2026-08-04 continuation: the Product Owner approved the cost-optimization
+> decisions and autonomous repository-local implementation. The exact CO-0/CO-1
+> contract, formulas, role boundary and later runtime gates are
+> `docs/architecture/PRD8-COST-OPTIMIZATION-V1-20260804.md`. This continuation
+> does not reopen completed enterprise-directory/finance batches or authorize
+> deployment, traffic, credentials, data reset or runtime cache/compression.
+
 ## 1. Outcome
 
 This plan turns the PRD8 product boundary into a dependency-ordered local
@@ -71,6 +78,8 @@ Every batch must preserve:
 | INTEGRATION-1 | X-Insight Reference Connector retained; Feishu and enterprise adapters truthfully classified | integration page and boundary tests |
 | RESET-1 | read-only, fail-closed, no-overwrite reset inventory and Source Instance transition preview | unit and isolated PostgreSQL integration evidence |
 | Final Local gate | full backend/frontend regression, build and focused integration race checks | 54/54 files, 359/359 frontend tests; full serialized Go, integration, race, vet and bundle budget checks |
+| CO-0 | Cost Optimization ownership, exact formulas, commercial/cache identity decisions and UI placement | frozen in `PRD8-COST-OPTIMIZATION-V1-20260804.md` |
+| CO-1 | read-only Prompt Cache savings summary/trend/breakdown/opportunities and persistent Evidence Inspector | Local verified: full serialized Go/vet, 55-file/365-test frontend, build budget and 1440/1024/768 browser evidence; no runtime mutation |
 
 These results are working-tree Local evidence. The current Agent/on-prem batch
 is recorded in
@@ -81,6 +90,11 @@ renewal, external-browser and zero-drift evidence is recorded in
 `docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md`. The user-started data
 reset, fresh Provider traffic, second-device client matrix, Production and
 external directory/ERP integration remain unclaimed.
+
+The later CO-0/CO-1 continuation is separately recorded in
+`docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md`. Its Local
+evidence does not inherit the earlier CI/Target release claim; exact-commit CI
+and any later Target release require their own evidence.
 
 ## 4. Closed batch contracts
 

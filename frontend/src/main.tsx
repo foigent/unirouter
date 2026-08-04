@@ -25,6 +25,7 @@ const AuditLogsPage = lazy(() => import('./pages/AuditLogsPage'))
 const ReconciliationPage = lazy(() => import('./pages/ReconciliationPage'))
 const NotificationCenterPage = lazy(() => import('./pages/NotificationCenterPage'))
 const UsageAnalyticsPage = lazy(() => import('./pages/UsageAnalyticsPage'))
+const CostOptimizationPage = lazy(() => import('./pages/CostOptimizationPage'))
 const InternalStatusPage = lazy(() => import('./pages/InternalStatusPage'))
 const TestPage = lazy(() => import('./pages/TestPage'))
 const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'))
@@ -142,6 +143,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="integrations" element={<RoleRoute><IntegrationsPage /></RoleRoute>} />
               <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
               <Route path="usage-analytics" element={<RoleRoute><UsageAnalyticsPage /></RoleRoute>} />
+              <Route path="cost-optimization" element={<RoleRoute><CostOptimizationPage /></RoleRoute>} />
               <Route path="notifications" element={<RoleRoute><NotificationCenterPage /></RoleRoute>} />
               <Route path="status" element={<RoleRoute><InternalStatusPage /></RoleRoute>} />
               <Route path="test" element={<RoleRoute><TestPage /></RoleRoute>} />
