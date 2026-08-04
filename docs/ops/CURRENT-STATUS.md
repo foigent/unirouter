@@ -1,6 +1,23 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-05 Invocation Optimization Canary readiness CI/merge/Target
+> checkpoint:** PR #259 exact head/tree
+> `f0a54facc9969438487fa10a66ea0d307abb294e` /
+> `aacb40c932c668e802aeb31feeda43d4abede0b4` passed Backend, Frontend,
+> Docker, Change Routing and Protocol checks, then squash-merged as
+> `0def6b436b8b92bd68bf666c6ecc59072f6251ec` with the same tree. Exact main
+> Protocol Conformance also passed. The development ECS now runs
+> stable/canary/frontend from that commit as
+> `1.1.5-prd8-invopt-readiness`; there is no migration change. Pre/post core
+> data, Feed floor/acknowledgement, Outbox, policy/receipt and Redis Cache-key
+> readbacks are identical. Cache deployment values remain absent and no
+> policy, Shadow/Canary, model request, credential, reset or Cursor/Checkpoint
+> operation ran. Authenticated UI confirms the persistent Readiness Inspector,
+> default-off state, no horizontal overflow and exact Runtime Status. This is
+> development Target evidence, not Production or optimization efficacy.
+> Evidence:
+> `docs/ops/evidence/PRD8-INVOCATION-OPTIMIZATION-READINESS-V1-TARGET-20260805.md`.
 > **2026-08-05 Invocation Optimization Canary readiness Local checkpoint:**
 > the current branch adds the read-only, organization-scoped
 > `unirouter.invocation-optimization-readiness.v1` contract and selected-policy

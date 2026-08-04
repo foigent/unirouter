@@ -3,7 +3,7 @@
 > Work item: `UR-PRD8-ENTERPRISE-CONTROL-PLANE`
 > Date: 2026-08-02
 > Owner: UniRouter product/implementation owner
-> Status: Base PRD8 and CO-1 through CO-5 development Target complete; Canary readiness V1 Local verified; optimizations remain default-off; second-device/data-reset and customer integrations gated
+> Status: Base PRD8, CO-1 through CO-5 and Canary readiness V1 development Target complete; optimizations remain default-off; second-device/data-reset and customer integrations gated
 > Product contract: `docs/PRD-Phase8.md`
 
 > 2026-08-04 continuation: the Product Owner approved the cost-optimization
@@ -13,11 +13,12 @@
 > does not reopen completed enterprise-directory/finance batches or authorize
 > deployment, traffic, credentials, data reset or runtime cache/compression.
 
-> 2026-08-05 continuation: the default-off Target remains unchanged. A
-> read-only, exact-policy-revision Canary readiness contract and persistent UI
-> evidence view are Local verified; they grant neither activation nor traffic
-> authority and keep baseline second-device Agent compatibility independent of
-> optimization experiments.
+> 2026-08-05 continuation: the read-only, exact-policy-revision Canary
+> readiness contract and persistent UI evidence view are Local, CI and
+> development Target verified. The release leaves Cache keys, policies,
+> Shadow/Canary, model traffic and product data unchanged; technical readiness
+> grants neither activation nor traffic authority and baseline second-device
+> Agent compatibility remains independent of optimization experiments.
 
 ## 1. Outcome
 
@@ -91,7 +92,7 @@ Every batch must preserve:
 | CO-4 | conservative whitespace-only Compression evaluator and metadata-only Shadow evidence | Local/CI/development Target verified default-off; no Prompt/Response/candidate body persisted and zero Shadow samples |
 | CO-5 | content-free assignment, current-revision Shadow gate, maximum 10% Canary and rollback | Local/CI/development Target verified default-off; no policy, Canary assignment or model traffic |
 | CO-2..CO-5 final gate | full serialized database and Go regressions, focused race, vet, frontend, build budget, exact CI, migration, zero-drift Target release and authenticated UI | PR #257 merged as `e8931c78`; migration `000056`; 56/56 frontend files and 369/369 tests; 4,320-module build, 80 assets, largest 362,347 bytes; Target evidence linked below |
-| CO-R1 | exact current-revision Canary readiness API, shared server admission resolver and fail-closed persistent Inspector | Local verified: full Go/vet, focused PostgreSQL lifecycle and tenant isolation, 56/56 frontend files and 373/373 tests, build budget; no key/policy/traffic/runtime mutation |
+| CO-R1 | exact current-revision Canary readiness API, shared server admission resolver and fail-closed persistent Inspector | Local/CI/development Target verified: full Go/vet, focused PostgreSQL lifecycle and tenant isolation, 56/56 frontend files and 373/373 tests, build budget, exact PR/main CI and zero-drift release; no key/policy/traffic mutation |
 
 These results are working-tree Local evidence. The current Agent/on-prem batch
 is recorded in
@@ -123,8 +124,11 @@ gate closed. It does not authorize later enablement or claim Production.
 
 The subsequent read-only Canary readiness increment is recorded in
 `docs/ops/evidence/PRD8-INVOCATION-OPTIMIZATION-READINESS-V1-LOCAL-20260805.md`.
-It does not inherit the preceding Target claim; CI and a new development Target
-release must be recorded independently.
+Its exact-commit CI, merge and independently verified default-off development
+Target release are recorded in
+`docs/ops/evidence/PRD8-INVOCATION-OPTIMIZATION-READINESS-V1-TARGET-20260805.md`.
+Neither record authorizes Cache keys, a policy lifecycle transition, a model
+request, the second-integration reset or Production.
 
 ## 4. Closed batch contracts
 
