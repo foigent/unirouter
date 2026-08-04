@@ -1,0 +1,563 @@
+{
+  "contract_version": "unirouter.reset-preview.v1",
+  "generated_at": "2026-08-04T18:03:09.146883Z",
+  "mode": "dry_run_read_only",
+  "profile": "second_integration_product_data",
+  "current_source_instance": "unirouter-dev-149a8220bf1e",
+  "next_source_instance": "ecs.second-integration.v2",
+  "source_identity_action": "mint_and_configure_before_any_reset",
+  "action_authorized": false,
+  "apply_supported": false,
+  "mutation_performed": false,
+  "scope_complete": true,
+  "summary": {
+    "table_count": 88,
+    "row_count": 1623,
+    "reset_candidate_count": 81,
+    "protected_count": 6,
+    "schema_ledger_count": 1,
+    "review_required_count": 0
+  },
+  "tables": [
+    {
+      "name": "admin_sessions",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "api_keys",
+      "row_count": 56,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "async_media_charge_facts",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "async_media_jobs",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "audit_logs",
+      "row_count": 461,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "billing_provider_attempts",
+      "row_count": 19,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "billing_reservation_extensions",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "billing_reservation_grant_allocations",
+      "row_count": 14,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "call_logs",
+      "row_count": 60,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "channel_keys",
+      "row_count": 3,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "channels",
+      "row_count": 3,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "commercial_license_entitlements",
+      "row_count": 1,
+      "scope": "protected",
+      "reason": "commercial release authority is deployment-scoped and is not business test data"
+    },
+    {
+      "name": "completed_execution_feed_connections",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "completed_execution_feed_items",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "completed_execution_feed_states",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "delivery_attempt_quarantine",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "deployment_profiles",
+      "row_count": 0,
+      "scope": "protected",
+      "reason": "deployment desired state is preserved across a product-data reset"
+    },
+    {
+      "name": "distributed_limit_policies",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_directory_account_snapshots",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_directory_iam_actions",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_directory_person_snapshots",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_directory_snapshots",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_directory_sources",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_directory_unit_snapshots",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_adjustment_journal_versions",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_allocation_results",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_allocation_runs",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_budget_versions",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_cost_center_versions",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_fiscal_periods",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_period_events",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_pricing_bindings",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_pricing_snapshots",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_rate_card_versions",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "enterprise_finance_rate_components",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "freeze_idempotency",
+      "row_count": 60,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "gateway_endpoints",
+      "row_count": 0,
+      "scope": "protected",
+      "reason": "gateway network and TLS references are preserved across a product-data reset"
+    },
+    {
+      "name": "grants",
+      "row_count": 5,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "guardrail_advisory_gap_batches",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "guardrail_advisory_gap_receipts",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "guardrail_policies",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "integration_exchange_deliveries",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "integration_exchange_items",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "integration_exchange_members",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "integration_exchange_receipts",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "integration_exchanges",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "internal_outbox_events",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "invocation_optimization_policies",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "invocation_optimization_policy_revisions",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "invocation_optimization_receipts",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "micro_ledger_runtime_state",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "model_aliases",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "model_call_authorizations",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "model_prices",
+      "row_count": 11,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "model_registry",
+      "row_count": 11,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "model_set_items",
+      "row_count": 2,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "model_sets",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "notification_deliveries",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "notification_events",
+      "row_count": 22,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "notification_webhooks",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "org_model_prices",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "orgs",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "project_budget_usage",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "project_members",
+      "row_count": 6,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "project_model_sets",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "projects",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "provider_cost_reconciliations",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "release_history",
+      "row_count": 5,
+      "scope": "protected",
+      "reason": "installed release provenance must remain append-only"
+    },
+    {
+      "name": "release_state",
+      "row_count": 1,
+      "scope": "protected",
+      "reason": "installed release and rollback protection state must remain intact"
+    },
+    {
+      "name": "request_delivery_receipt_quarantine",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "request_delivery_receipts",
+      "row_count": 27,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "request_idempotency",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "request_trace_events",
+      "row_count": 415,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "response_cache_commercial_receipts",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "response_cache_delivery_receipts",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "runtime_change_events",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "runtime_change_releases",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "runtime_change_slots",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "runtime_terminal_hooks",
+      "row_count": 19,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "schema_migrations",
+      "row_count": 55,
+      "scope": "schema_ledger",
+      "reason": "migration history is immutable reset infrastructure"
+    },
+    {
+      "name": "settings",
+      "row_count": 16,
+      "scope": "protected",
+      "reason": "deployment and security settings require a separate explicit review"
+    },
+    {
+      "name": "stream_delivery_checkpoints",
+      "row_count": 2,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "stream_delivery_leases",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "transactions",
+      "row_count": 286,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "usage_finalization_journal",
+      "row_count": 32,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "users",
+      "row_count": 20,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "wallets",
+      "row_count": 1,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    },
+    {
+      "name": "workload_applications",
+      "row_count": 0,
+      "scope": "reset_candidate",
+      "reason": "product or control-plane data included in the future reset review"
+    }
+  ],
+  "execution_preconditions": [
+    "explicit_user_reset_authorization",
+    "quiesced_model_and_connector_traffic",
+    "verified_database_backup",
+    "backup_sha256_recorded",
+    "exact_delete_order_and_bootstrap_plan_reviewed",
+    "new_source_instance_configured",
+    "response_cache_scope_purged_or_index_key_rotated",
+    "cursor_and_checkpoint_epoch_rebound_without_reuse",
+    "post_reset_migration_bootstrap_and_readback"
+  ],
+  "plan_sha256": "sha256:c491132982eed86adf00b3b28ccfefad640cf482b642013203d38d8782440bf2"
+}

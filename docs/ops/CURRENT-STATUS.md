@@ -1,6 +1,19 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-05 second-integration pre-reset gate:** the current development
+> Target release, public HTTPS endpoint, fail-closed reset scope and zero-network
+> Agent compatibility artifacts were revalidated without mutation. Two
+> PostgreSQL `REPEATABLE READ READ ONLY` previews returned the same ordered
+> 88-table counts/classifications: 81 reset-candidate tables, 6 protected
+> tables, 1 schema ledger and 0 review-required tables. The exact captured plan
+> is complete, has `action_authorized=false`, `apply_supported=false` and
+> `mutation_performed=false`, and proposes a new explicit Source Instance
+> `ecs.second-integration.v2`. Invocation Optimization remains absent/default-
+> off. The next action is the destructive data-reset transaction itself and is
+> stopped pending the User's explicit start instruction; no credential,
+> traffic, Cursor/Checkpoint, Feed or runtime change ran. Evidence:
+> `docs/ops/evidence/PRD8-SECOND-INTEGRATION-PRE-RESET-GATE-20260805.md`.
 > **2026-08-05 Invocation Optimization Canary readiness CI/merge/Target
 > checkpoint:** PR #259 exact head/tree
 > `f0a54facc9969438487fa10a66ea0d307abb294e` /

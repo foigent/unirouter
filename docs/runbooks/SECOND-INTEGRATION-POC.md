@@ -23,6 +23,17 @@ digest. A future authorized reset must still quiesce traffic, create and verify
 a database backup and its SHA-256, review exact delete/bootstrap ordering, bind
 a new Source/Cursor epoch and complete post-reset migration/bootstrap/readback.
 
+The latest captured development-Target preview is
+`docs/ops/evidence/PRD8-SECOND-INTEGRATION-RESET-PREVIEW-20260805.json`
+(artifact SHA-256
+`f1c08727870e2094e6aa6f69fd81cf374ea44f08fb5d353a68ef21eaefd3c4da`,
+plan SHA-256
+`sha256:c491132982eed86adf00b3b28ccfefad640cf482b642013203d38d8782440bf2`).
+It covers 88 tables with no unclassified table and proposes
+`ecs.second-integration.v2` as the next explicit Source Instance. It is
+approval evidence, not reset authority. Re-run it after traffic is quiesced and
+stop if any table, count, classification or digest input differs.
+
 ## Boundary before the user starts the POC
 
 - Do not clear current control/business data yet. The user will explicitly announce the start.
