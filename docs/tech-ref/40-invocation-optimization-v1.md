@@ -115,6 +115,7 @@ Control endpoints:
 - `GET /api/v1/invocation-optimization/contract`
 - `GET|POST /api/v1/invocation-optimization/policies`
 - `GET|PUT /api/v1/invocation-optimization/policies/{ref}`
+- `GET /api/v1/invocation-optimization/policies/{ref}/readiness`
 - `POST .../{ref}/validate`
 - `POST .../{ref}/shadow`
 - `POST .../{ref}/canary`
@@ -123,6 +124,16 @@ Control endpoints:
 The UI keeps a persistent right inspector with scope, revision, exact driver
 allocation, evidence gate, content-retention boundary and only the legal next
 actions. Draft creation never starts runtime evaluation.
+
+The readiness endpoint and inspector use
+`unirouter.invocation-optimization-readiness.v1` to expose the exact current
+policy revision's content-free Shadow sample, eligible and failure counts plus
+the Exact Cache runtime gate. The same resolver is used again by the server
+when a Canary transition is requested, so the UI cannot reinterpret or bypass
+the admission contract. `runtime_mutation=none`,
+`grants_activation_authority=false` and `grants_traffic_authority=false` are
+explicit: a technically ready result is evidence for a later audited decision,
+not permission to enable real traffic.
 
 ## 7. Current evidence boundary
 

@@ -14,6 +14,8 @@
 | `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO0-CO1-LOCAL-20260804.md` | CO-0/CO-1 Local verification: exact PostgreSQL formulas/tenant scope, full Go and 365-test frontend gates, production bundle budget and responsive Inspector evidence |
 | `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO1-TARGET-20260804.md` | PR #255 exact CI/merge, development ECS backup/release, zero-drift data readback, public HTTPS and authenticated Cost Optimization UI evidence |
 | `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-LOCAL-20260804.md` | CO-2 through CO-5 Local verification: encrypted exact cache, zero-charge delivery truth, Compression Shadow/Canary control plane, full database/Go/race/frontend/build gates and no-runtime boundary |
+| `docs/ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-TARGET-20260804.md` | PR #257 exact CI/merge, migration `000056`, default-off development Target release, zero-drift product/Feed readback and authenticated Invocation Optimization UI evidence |
+| `docs/ops/evidence/PRD8-INVOCATION-OPTIMIZATION-READINESS-V1-LOCAL-20260805.md` | Exact current-revision Canary gate API/server resolver, fail-closed persistent Inspector, full Local verification and explicit no-activation/no-traffic boundary |
 | `docs/research/AGENT-CLIENT-COMPATIBILITY-20260802.md` | Official-source client configuration facts and evidence-level boundaries for the second-integration callers |
 | `docs/runbooks/SECOND-INTEGRATION-POC.md` | Current second-device POC preflight, reset gate, exact client order and acceptance boundary |
 | `docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md` | Current public HTTPS development-Target endpoint, IP certificate/renewal, security-group/Nginx identities, zero-drift data and external-browser evidence |

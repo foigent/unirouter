@@ -16,10 +16,10 @@ function colorForStatus(status: string | number | boolean) {
   if (typeof status === 'boolean') return status ? 'green' : 'grey';
 
   const normalized = status.toLowerCase();
-  if (['healthy', 'active', 'enabled', 'success', 'passed', 'ok', 'connected', 'available', 'configured'].includes(normalized)) return 'green';
-  if (['warning', 'degraded', 'cooldown', 'pending', 'half_open', 'deprecated', 'stale', 'misconfigured', 'unknown'].includes(normalized)) return 'orange';
+  if (['healthy', 'active', 'enabled', 'success', 'passed', 'ok', 'connected', 'available', 'configured', 'ready', 'canary_active'].includes(normalized)) return 'green';
+  if (['warning', 'degraded', 'cooldown', 'pending', 'pending_shadow', 'half_open', 'deprecated', 'stale', 'misconfigured', 'unknown'].includes(normalized)) return 'orange';
   if (['failed', 'error', 'unhealthy', 'blocked', 'open', 'unavailable'].includes(normalized)) return 'red';
-  if (['disabled', 'inactive', 'closed', 'not_configured'].includes(normalized)) return 'grey';
+  if (['disabled', 'inactive', 'closed', 'not_configured', 'not_targeted', 'not_applicable', 'rolled_back'].includes(normalized)) return 'grey';
   return 'blue';
 }
 

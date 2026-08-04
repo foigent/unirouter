@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,6 +76,32 @@ func (h *Handler) GetInvocationOptimizationPolicy(w http.ResponseWriter, r *http
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
+}
+
+// GetInvocationOptimizationReadiness reports the exact technical Canary
+// admission gates for one tenant-scoped policy revision. It is read-only and
+// deliberately cannot grant activation or traffic authority.
+func (h *Handler) GetInvocationOptimizationReadiness(w http.ResponseWriter, r *http.Request) {
+	orgID, err := resolveRequestOrganization(r)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
+	if h == nil || h.invocationOptimization == nil || h.db == nil {
+		writeInvocationOptimizationError(w, invocationopt.ErrUnavailable)
+		return
+	}
+	policy, err := h.invocationOptimization.Get(r.Context(), orgID, strings.TrimSpace(r.PathValue("ref")))
+	if err != nil {
+		writeInvocationOptimizationError(w, err)
+		return
+	}
+	result, err := h.invocationOptimizationCanaryReadiness(r.Context(), h.db, policy)
+	if err != nil {
+		writeInvocationOptimizationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) CreateInvocationOptimizationPolicy(w http.ResponseWriter, r *http.Request) {
@@ -359,34 +386,67 @@ UPDATE invocation_optimization_policies
 }
 
 func (h *Handler) requireInvocationOptimizationCanaryEvidence(r *http.Request, tx pgx.Tx, policy invocationopt.Policy) error {
-	if policy.ResponseCacheTarget == invocationopt.TargetCanary && !h.responseCacheRuntimeReady {
-		return fmt.Errorf("%w: response-cache key backend is unavailable", invocationopt.ErrUnavailable)
+	result, err := h.invocationOptimizationCanaryReadiness(r.Context(), tx, policy)
+	if err != nil {
+		return err
 	}
-	for _, driver := range []string{invocationopt.DriverResponseCache, invocationopt.DriverCompression} {
-		target := policy.ResponseCacheTarget
-		if driver == invocationopt.DriverCompression {
-			target = policy.CompressionTarget
+	if result.CanaryAdmissionReady {
+		return nil
+	}
+	for _, item := range result.Blockers {
+		if item.Code == "response_cache_runtime_unavailable" {
+			return fmt.Errorf("%w: response-cache key backend is unavailable", invocationopt.ErrUnavailable)
 		}
-		if target != invocationopt.TargetCanary {
-			continue
-		}
-		var samples, eligible, failures int
-		err := tx.QueryRow(r.Context(), `
-SELECT COUNT(*),COUNT(*) FILTER (WHERE eligible),
+	}
+	code := "readiness_unavailable"
+	if len(result.Blockers) > 0 {
+		code = result.Blockers[0].Code
+	}
+	return fmt.Errorf("%w: canary readiness blocked by %s", invocationopt.ErrConflict, code)
+}
+
+type invocationOptimizationEvidenceQuerier interface {
+	Query(context.Context, string, ...interface{}) (pgx.Rows, error)
+}
+
+func (h *Handler) invocationOptimizationCanaryReadiness(
+	ctx context.Context,
+	querier invocationOptimizationEvidenceQuerier,
+	policy invocationopt.Policy,
+) (invocationopt.CanaryReadinessResult, error) {
+	evidence := map[string]invocationopt.ShadowEvidence{
+		invocationopt.DriverResponseCache: {},
+		invocationopt.DriverCompression:   {},
+	}
+	if policy.Stage == invocationopt.StageShadow {
+		rows, err := querier.Query(ctx, `
+SELECT driver,COUNT(*),COUNT(*) FILTER (WHERE eligible),
        COUNT(*) FILTER (WHERE mutation_applied OR assigned OR
          (eligible AND (NOT safety_passed OR NOT quality_passed)))
   FROM invocation_optimization_receipts
- WHERE org_id=$1 AND policy_ref=$2 AND policy_revision=$3 AND driver=$4
-   AND stage='shadow' AND effective_mode='shadow'`, policy.OrgID, policy.PolicyRef, policy.Revision, driver,
-		).Scan(&samples, &eligible, &failures)
+ WHERE org_id=$1 AND policy_ref=$2 AND policy_revision=$3
+   AND driver IN ('response_cache','compression')
+   AND stage='shadow' AND effective_mode='shadow'
+ GROUP BY driver`, policy.OrgID, policy.PolicyRef, policy.Revision)
 		if err != nil {
-			return invocationopt.ErrUnavailable
+			return invocationopt.CanaryReadinessResult{}, invocationopt.ErrUnavailable
 		}
-		if samples < policy.MinimumShadowSamples || eligible == 0 || failures != 0 {
-			return fmt.Errorf("%w: %s shadow evidence requires samples>=%d, eligible>0 and failures=0", invocationopt.ErrConflict, driver, policy.MinimumShadowSamples)
+		defer rows.Close()
+		for rows.Next() {
+			var driver string
+			var item invocationopt.ShadowEvidence
+			if err := rows.Scan(&driver, &item.Samples, &item.Eligible, &item.Failures); err != nil {
+				return invocationopt.CanaryReadinessResult{}, invocationopt.ErrUnavailable
+			}
+			evidence[driver] = item
+		}
+		if err := rows.Err(); err != nil {
+			return invocationopt.CanaryReadinessResult{}, invocationopt.ErrUnavailable
 		}
 	}
-	return nil
+	return invocationopt.ResolveCanaryReadiness(invocationopt.CanaryReadinessInput{
+		Policy: policy, ResponseCacheRuntimeReady: h.responseCacheRuntimeReady, Evidence: evidence,
+	}), nil
 }
 
 func insertInvocationOptimizationRevision(r *http.Request, tx pgx.Tx, item invocationopt.Policy, reason string) error {

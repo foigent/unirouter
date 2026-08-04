@@ -1694,6 +1694,14 @@ paths:
     get: *operation_get
     put: *operation_create
 
+  /api/v1/invocation-optimization/policies/{ref}/readiness:
+    parameters:
+      - $ref: "#/components/parameters/InvocationOptimizationPolicyRef"
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+    description: Returns exact current-revision technical Canary admission gates for one tenant-scoped policy. It reports Cache runtime availability and content-free Shadow sample, eligibility and failure counts, performs no runtime mutation, and grants neither activation nor traffic authority.
+    get: *operation_get
+
   /api/v1/invocation-optimization/policies/{ref}/validate:
     parameters:
       - $ref: "#/components/parameters/InvocationOptimizationPolicyRef"

@@ -832,6 +832,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/invocation-optimization/policies</code></td><td>List tenant-scoped invocation optimization policies</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/invocation-optimization/policies</code></td><td>Create a default-off policy draft</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/invocation-optimization/policies/{ref}</code></td><td>Read one exact policy revision</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/invocation-optimization/policies/{ref}/readiness</code></td><td>Read exact current-revision Canary admission gates without granting activation authority</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/invocation-optimization/policies/{ref}</code></td><td>Update a draft or rolled-back policy</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/invocation-optimization/policies/{ref}/validate</code></td><td>Validate policy without runtime mutation</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/invocation-optimization/policies/{ref}/shadow</code></td><td>Start metadata-only shadow evidence</td></tr>

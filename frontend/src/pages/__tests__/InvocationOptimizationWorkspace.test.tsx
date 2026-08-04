@@ -4,6 +4,7 @@ import InvocationOptimizationWorkspace from '../InvocationOptimizationWorkspace'
 
 const getPolicies = vi.fn();
 const getContract = vi.fn();
+const getReadiness = vi.fn();
 const getProjects = vi.fn();
 const transitionPolicy = vi.fn();
 
@@ -11,6 +12,7 @@ vi.mock('../../api/client', () => ({
   api: {
     getInvocationOptimizationPolicies: (...args: any[]) => getPolicies(...args),
     getInvocationOptimizationContract: (...args: any[]) => getContract(...args),
+    getInvocationOptimizationPolicyReadiness: (...args: any[]) => getReadiness(...args),
     getProjects: (...args: any[]) => getProjects(...args),
     transitionInvocationOptimizationPolicy: (...args: any[]) => transitionPolicy(...args),
     createInvocationOptimizationPolicy: vi.fn(),
@@ -46,6 +48,36 @@ const policy = {
   updated_at: '2026-08-04T00:00:00Z',
 };
 
+const blockedReadiness = {
+  contract_version: 'unirouter.invocation-optimization-readiness.v1',
+  purpose: 'canary_admission',
+  overall: 'blocked',
+  canary_admission_ready: false,
+  policy_ref: 'opt_company_chat',
+  policy_revision: 3,
+  policy_stage: 'shadow',
+  policy_status: 'active',
+  drivers: [
+    {
+      driver: 'response_cache', target: 'canary', state: 'blocked', runtime_required: true, runtime_ready: false,
+      minimum_shadow_samples: 100, evidence: { samples: 0, eligible: 0, failures: 0 },
+      blockers: [{ code: 'response_cache_runtime_unavailable', driver: 'response_cache', description: 'runtime unavailable' }],
+    },
+    {
+      driver: 'compression', target: 'canary', state: 'blocked', runtime_required: false, runtime_ready: true,
+      minimum_shadow_samples: 100, evidence: { samples: 12, eligible: 2, failures: 1 },
+      blockers: [{ code: 'shadow_failures_present', driver: 'compression', description: 'failures present' }],
+    },
+  ],
+  blockers: [
+    { code: 'response_cache_runtime_unavailable', driver: 'response_cache', description: 'runtime unavailable' },
+    { code: 'shadow_failures_present', driver: 'compression', description: 'failures present' },
+  ],
+  runtime_mutation: 'none',
+  grants_activation_authority: false,
+  grants_traffic_authority: false,
+};
+
 describe('InvocationOptimizationWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -58,6 +90,7 @@ describe('InvocationOptimizationWorkspace', () => {
       raw_content_in_receipts: false,
       x_insight_in_request_path: false,
     });
+    getReadiness.mockResolvedValue(blockedReadiness);
     getProjects.mockResolvedValue({ data: [{ id: 11, name: '核心项目' }], total: 1 });
     transitionPolicy.mockResolvedValue({ ...policy, stage: 'rolled_back', revision: 4 });
   });
@@ -67,16 +100,59 @@ describe('InvocationOptimizationWorkspace', () => {
 
     expect(await screen.findByText(/Exact Cache 密钥运行时未配置/)).toBeTruthy();
     expect(getPolicies).toHaveBeenCalledWith(7);
+    expect(getReadiness).toHaveBeenCalledWith('opt_company_chat', 7);
     expect(getProjects).toHaveBeenCalledWith(1, 100, { status: 'active', org_id: 7 });
 
     const inspector = screen.getByLabelText('调用优化策略检查器');
     expect(within(inspector).getByText('证据门禁与执行边界')).toBeTruthy();
     expect(within(inspector).getByText(/两个驱动均强制显式 opt-in/)).toBeTruthy();
     expect(within(inspector).getByText(/策略证据不保存 Prompt \/ Response 明文/)).toBeTruthy();
+    expect(within(inspector).getByText('Canary 技术准备度')).toBeTruthy();
+    expect(within(inspector).getByText(/不授予启用或真实流量权限/)).toBeTruthy();
+    expect(await within(inspector).findByText(/Exact Cache 密钥与索引运行时尚未配置/)).toBeTruthy();
 
     const canary = within(inspector).getByRole('button', { name: '启动 Canary' });
     expect(canary).toBeDisabled();
     expect(screen.queryByRole('button', { name: /全量/ })).toBeNull();
+  });
+
+  it('enables the canary action only when the exact readiness revision is technically ready', async () => {
+    getReadiness.mockResolvedValueOnce({
+      ...blockedReadiness,
+      overall: 'ready',
+      canary_admission_ready: true,
+      drivers: blockedReadiness.drivers.map(driver => ({ ...driver, state: 'ready', runtime_ready: true, blockers: [], evidence: { samples: 100, eligible: 20, failures: 0 } })),
+      blockers: [],
+    });
+
+    render(<InvocationOptimizationWorkspace orgId={7} />);
+    const inspector = await screen.findByLabelText('调用优化策略检查器');
+    await waitFor(() => expect(within(inspector).getAllByText('技术门禁满足')).toHaveLength(3));
+    expect(within(inspector).getByRole('button', { name: '启动 Canary' })).not.toBeDisabled();
+  });
+
+  it('fails closed when the readiness evidence cannot be read', async () => {
+    getReadiness.mockRejectedValueOnce(new Error('readiness unavailable'));
+
+    render(<InvocationOptimizationWorkspace orgId={7} />);
+    const inspector = await screen.findByLabelText('调用优化策略检查器');
+    expect(await within(inspector).findByText(/readiness unavailable.*fail-closed/)).toBeTruthy();
+    expect(within(inspector).getByRole('button', { name: '启动 Canary' })).toBeDisabled();
+  });
+
+  it('rejects readiness for a stale policy revision', async () => {
+    getReadiness.mockResolvedValueOnce({
+      ...blockedReadiness,
+      overall: 'ready',
+      canary_admission_ready: true,
+      policy_revision: 2,
+      blockers: [],
+    });
+
+    render(<InvocationOptimizationWorkspace orgId={7} />);
+    const inspector = await screen.findByLabelText('调用优化策略检查器');
+    expect(await within(inspector).findByText(/准备度合同或策略修订与当前选择不一致/)).toBeTruthy();
+    expect(within(inspector).getByRole('button', { name: '启动 Canary' })).toBeDisabled();
   });
 
   it('requires and submits an auditable rollback reason', async () => {

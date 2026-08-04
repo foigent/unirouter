@@ -34,6 +34,7 @@ func TestInvocationOptimizationLifecycleEvidenceGateAndTenantScope(t *testing.T)
 	}
 	mux.Handle("POST /api/v1/invocation-optimization/policies", guard(handler.CreateInvocationOptimizationPolicy))
 	mux.Handle("GET /api/v1/invocation-optimization/policies/{ref}", guard(handler.GetInvocationOptimizationPolicy))
+	mux.Handle("GET /api/v1/invocation-optimization/policies/{ref}/readiness", guard(handler.GetInvocationOptimizationReadiness))
 	mux.Handle("POST /api/v1/invocation-optimization/policies/{ref}/validate", guard(handler.ValidateInvocationOptimizationPolicy))
 	mux.Handle("POST /api/v1/invocation-optimization/policies/{ref}/shadow", guard(handler.ShadowInvocationOptimizationPolicy))
 	mux.Handle("POST /api/v1/invocation-optimization/policies/{ref}/canary", guard(handler.CanaryInvocationOptimizationPolicy))
@@ -112,6 +113,20 @@ func TestInvocationOptimizationLifecycleEvidenceGateAndTenantScope(t *testing.T)
 	require.Equal(t, http.StatusOK, shadow.Code, shadow.Body.String())
 	require.Contains(t, shadow.Body.String(), `"stage":"shadow"`)
 
+	runtimeBlockedReadiness := serve(http.MethodGet,
+		"/api/v1/invocation-optimization/policies/opt_company_chat/readiness", "",
+		fixture.orgAdminA, fixture.orgA, auth.RoleOrgAdmin)
+	require.Equal(t, http.StatusOK, runtimeBlockedReadiness.Code, runtimeBlockedReadiness.Body.String())
+	require.Contains(t, runtimeBlockedReadiness.Body.String(), `"contract_version":"`+invocationopt.ReadinessContractVersion+`"`)
+	require.Contains(t, runtimeBlockedReadiness.Body.String(), `"canary_admission_ready":false`)
+	require.Contains(t, runtimeBlockedReadiness.Body.String(), `"code":"response_cache_runtime_unavailable"`)
+	require.Contains(t, runtimeBlockedReadiness.Body.String(), `"grants_activation_authority":false`)
+
+	foreignReadiness := serve(http.MethodGet,
+		"/api/v1/invocation-optimization/policies/opt_company_chat/readiness", "",
+		fixture.orgAdminB, fixture.orgB, auth.RoleOrgAdmin)
+	require.Equal(t, http.StatusNotFound, foreignReadiness.Code, foreignReadiness.Body.String())
+
 	cacheUnavailable := transition("canary", 3, fixture.orgA, fixture.orgAdminA)
 	require.Equal(t, http.StatusServiceUnavailable, cacheUnavailable.Code, cacheUnavailable.Body.String())
 	require.Contains(t, cacheUnavailable.Body.String(), "response-cache key backend is unavailable")
@@ -119,6 +134,11 @@ func TestInvocationOptimizationLifecycleEvidenceGateAndTenantScope(t *testing.T)
 	handler.SetInvocationOptimization(manager, true)
 	insufficientEvidence := transition("canary", 3, fixture.orgA, fixture.orgAdminA)
 	require.Equal(t, http.StatusConflict, insufficientEvidence.Code, insufficientEvidence.Body.String())
+	insufficientReadiness := serve(http.MethodGet,
+		"/api/v1/invocation-optimization/policies/opt_company_chat/readiness", "",
+		fixture.orgAdminA, fixture.orgA, auth.RoleOrgAdmin)
+	require.Equal(t, http.StatusOK, insufficientReadiness.Code, insufficientReadiness.Body.String())
+	require.Contains(t, insufficientReadiness.Body.String(), `"code":"shadow_samples_insufficient"`)
 
 	for index := 1; index <= 10; index++ {
 		requestID := fmt.Sprintf("invopt-shadow-%02d", index)
@@ -139,11 +159,23 @@ func TestInvocationOptimizationLifecycleEvidenceGateAndTenantScope(t *testing.T)
 			require.NoError(t, err)
 		}
 	}
+	ready := serve(http.MethodGet,
+		"/api/v1/invocation-optimization/policies/opt_company_chat/readiness", "",
+		fixture.orgAdminA, fixture.orgA, auth.RoleOrgAdmin)
+	require.Equal(t, http.StatusOK, ready.Code, ready.Body.String())
+	require.Contains(t, ready.Body.String(), `"overall":"ready"`)
+	require.Contains(t, ready.Body.String(), `"canary_admission_ready":true`)
+	require.Contains(t, ready.Body.String(), `"blockers":[]`)
 
 	canary := transition("canary", 3, fixture.orgA, fixture.orgAdminA)
 	require.Equal(t, http.StatusOK, canary.Code, canary.Body.String())
 	require.Contains(t, canary.Body.String(), `"stage":"canary"`)
 	require.Contains(t, canary.Body.String(), `"revision":4`)
+	activeReadiness := serve(http.MethodGet,
+		"/api/v1/invocation-optimization/policies/opt_company_chat/readiness", "",
+		fixture.orgAdminA, fixture.orgA, auth.RoleOrgAdmin)
+	require.Equal(t, http.StatusOK, activeReadiness.Code, activeReadiness.Body.String())
+	require.Contains(t, activeReadiness.Body.String(), `"overall":"not_applicable"`)
 
 	var revisions, audits int
 	require.NoError(t, pool.QueryRow(ctx, `

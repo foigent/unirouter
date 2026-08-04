@@ -1,6 +1,19 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-05 Invocation Optimization Canary readiness Local checkpoint:**
+> the current branch adds the read-only, organization-scoped
+> `unirouter.invocation-optimization-readiness.v1` contract and selected-policy
+> Inspector. The API/UI show exact current-revision Cache/Compression runtime,
+> Shadow sample, eligible and failure gates; response identity/contract drift or
+> API failure disables Canary. The mutating transition reuses the same resolver
+> inside its database transaction and does not trust browser state. Full Go,
+> vet, exact isolated-PostgreSQL lifecycle/tenant integration, 56-file/373-test
+> frontend, production build/bundle budget, OpenAPI and diff checks pass. This
+> remains Local only: no key, policy, Shadow/Canary, traffic, credential, reset,
+> Cursor/Checkpoint or product runtime changed, and technical readiness grants
+> no activation or traffic authority. Evidence:
+> `docs/ops/evidence/PRD8-INVOCATION-OPTIMIZATION-READINESS-V1-LOCAL-20260805.md`.
 > **2026-08-04 PRD8 Cost Optimization CO-2 through CO-5 CI/merge/Target
 > checkpoint:** PR #257 exact head/tree
 > `eb4bfad8a379d05d20872d8405f31a5bac3c3b47` /
