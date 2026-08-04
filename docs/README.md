@@ -12,6 +12,7 @@
 - [ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-LOCAL-20260804.md](ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-LOCAL-20260804.md) — Exact Response Cache、零收费交付、Compression Shadow/Canary、全量数据库/Go、focused race、369 项前端与默认关闭边界
 - [ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-TARGET-20260804.md](ops/evidence/PRD8-COST-OPTIMIZATION-CO2-CO5-TARGET-20260804.md) — PR #257 精确 CI/合并、000056 迁移、默认关闭 ECS 发布、零数据漂移和登录后调用优化 UI 验收
 - [ops/evidence/PRD8-INVOCATION-OPTIMIZATION-READINESS-V1-LOCAL-20260805.md](ops/evidence/PRD8-INVOCATION-OPTIMIZATION-READINESS-V1-LOCAL-20260805.md) — 当前策略修订的 Cache/Compression 技术门禁、服务端同源准入、常驻 Inspector、373 项前端与无启用权限边界
+- [ops/evidence/PRD8-INVOCATION-OPTIMIZATION-READINESS-V1-TARGET-20260805.md](ops/evidence/PRD8-INVOCATION-OPTIMIZATION-READINESS-V1-TARGET-20260805.md) — PR #259 精确 CI/合并、无迁移默认关闭 ECS 发布、零数据漂移、常驻 Readiness Inspector 与运行版本验收
 - [research/AGENT-CLIENT-COMPATIBILITY-20260802.md](research/AGENT-CLIENT-COMPATIBILITY-20260802.md) — OpenAI Agents、LangChain、AutoGen、OpenClaw、WorkBuddy 与飞书的官方配置事实和证据等级
 - [runbooks/SECOND-INTEGRATION-POC.md](runbooks/SECOND-INTEGRATION-POC.md) — 第二次联调前置、只读重置预览、客户端顺序和验收标准
 - [ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md](ops/evidence/PRD8-AGENT-ONPREM-POC-READINESS-LOCAL-20260803.md) — APP/DEPLOY/COMPAT/INTEGRATION/RESET 与最新 359 项前端、Go、迁移、race、构建预算及 ECS HTTPS 只读基线
