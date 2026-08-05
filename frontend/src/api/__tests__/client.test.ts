@@ -96,6 +96,25 @@ describe('API Client', () => {
     })
   })
 
+  describe('first-customer bootstrap', () => {
+    it('binds the organization body to one explicit client request identity', async () => {
+      mockJsonResponse({ organization_id: 9, wallet_balance_micros: 0 })
+
+      await api.bootstrapFirstCustomer('First Customer', 'bootstrap-client-001')
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/v1/bootstrap/first-customer',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ organization_name: 'First Customer' }),
+          headers: expect.objectContaining({
+            'X-UniRouter-Client-Request-ID': 'bootstrap-client-001',
+          }),
+        }),
+      )
+    })
+  })
+
   describe('getChannels', () => {
     it('sends GET to /api/v1/channels with pagination', async () => {
       mockJsonResponse({ data: [], total: 0 })

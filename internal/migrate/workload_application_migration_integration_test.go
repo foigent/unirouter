@@ -16,6 +16,7 @@ func TestWorkloadApplicationMigrationScopeAndRollbackGuard(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	rollbackEmptyMigrations(t, pool, []string{
+		"000057_second_integration_reset_support.down.sql",
 		"000056_prd8_invocation_optimization.down.sql",
 		"000055_prd8_deployment_profiles.down.sql",
 	})

@@ -15,7 +15,10 @@ import (
 func TestDeploymentProfileMigrationContractAndRollbackGuard(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	rollbackEmptyMigrations(t, pool, []string{"000056_prd8_invocation_optimization.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{
+		"000057_second_integration_reset_support.down.sql",
+		"000056_prd8_invocation_optimization.down.sql",
+	})
 
 	var count int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('deployment_profiles','gateway_endpoints')`).Scan(&count))

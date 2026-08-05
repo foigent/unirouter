@@ -827,6 +827,53 @@ paths:
   /api/v1/organizations:
     get: *operation_list
 
+  /api/v1/bootstrap/first-customer:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Admin]
+      summary: Create the first customer organization and a zero-value wallet from the strict post-reset baseline
+      description: Requires exactly the preserved active local admin and organization shell. Every reset-owned product table must remain empty; only post-reset admin login sessions and login audit/outbox state are tolerated. This operation never creates a user, project, Provider or Feed credential, application key, policy, or traffic.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: X-UniRouter-Client-Request-ID
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          description: Stable caller identity used for exact replay-safe bootstrap.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [organization_name]
+              properties:
+                organization_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "201":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
   /api/v1/limit-policies:
     get:
       tags: [Admin]

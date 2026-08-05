@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Banner, Button, Spin, Tabs, Tag, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Input, Spin, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import { isOrgAdminRole } from '../navigation';
+import { isOrgAdminRole, isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import UsersPage from './UsersPage';
@@ -13,7 +13,7 @@ const ProjectManagementPage = lazy(() => import('./ProjectManagementPage'));
 const { TabPane } = Tabs;
 const { Paragraph, Text, Title } = Typography;
 
-type OrganizationSection = 'directory' | 'people' | 'projects' | 'lifecycle';
+type OrganizationSection = 'bootstrap' | 'directory' | 'people' | 'projects' | 'lifecycle';
 
 type DirectoryHealth = {
   connection: string;
@@ -45,10 +45,81 @@ function SectionLoading() {
   return <div className="ur-route-loading" role="status" aria-label="正在加载工作区"><Spin size="large" /></div>;
 }
 
-function normalizeSection(value: string | null, canManageOrganization: boolean): OrganizationSection {
+function normalizeSection(value: string | null, canManageOrganization: boolean, platformAdmin: boolean): OrganizationSection {
   if (!canManageOrganization) return 'projects';
+  if (value === 'bootstrap' && platformAdmin) return value;
   if (value === 'directory' || value === 'people' || value === 'projects' || value === 'lifecycle') return value;
   return 'people';
+}
+
+type BootstrapResult = {
+  organization_id: number;
+  organization_name: string;
+  wallet_balance_micros: number;
+  idempotent: boolean;
+};
+
+function FirstCustomerBootstrap() {
+  const [organizationName, setOrganizationName] = useState('');
+  const [clientRequestId] = useState(() => `first-customer-${globalThis.crypto.randomUUID()}`);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<BootstrapResult | null>(null);
+
+  const submit = async () => {
+    const normalizedName = organizationName.trim();
+    if (!normalizedName) {
+      Toast.warning('请输入首个客户组织名称');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payload = await api.bootstrapFirstCustomer(normalizedName, clientRequestId) as BootstrapResult;
+      setResult(payload);
+      Toast.success(payload.idempotent ? '已读回同一次初始化结果' : '首个客户组织与零余额钱包已创建');
+    } catch (error: any) {
+      Toast.error(`初始化失败${error?.message ? `：${error.message}` : ''}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="ur-embedded-page">
+      <Banner
+        type="warning"
+        description="仅在 DATA_RESET 空基线已验收、且收到独立 BOOTSTRAP baton 后使用。本操作只创建一个 active 客户组织和 CNY 零余额钱包；不会创建用户、项目、Provider/Feed 凭据、应用 Key 或测试流量。"
+      />
+      <Surface title="首客户初始化" description="后端会在同一事务中重新验证唯一 admin、最小组织壳、登录后允许状态和所有 reset-owned 表的严格空基线。">
+        <div style={{ display: 'grid', gap: 12, maxWidth: 620 }}>
+          <Input
+            aria-label="首个客户组织名称"
+            value={organizationName}
+            onChange={setOrganizationName}
+            maxLength={160}
+            disabled={Boolean(result)}
+            placeholder="输入真实客户组织名称"
+          />
+          <div>
+            <Button
+              theme="solid"
+              type="primary"
+              loading={submitting}
+              disabled={Boolean(result) || !organizationName.trim()}
+              onClick={submit}
+            >
+              创建组织与零余额钱包
+            </Button>
+          </div>
+          {result ? (
+            <Banner
+              type="success"
+              description={`已创建 ${result.organization_name}（ID ${result.organization_id}），钱包余额 ${result.wallet_balance_micros} micro-CNY。后续用户、项目与凭据仍需按 BOOTSTRAP 顺序单独创建。`}
+            />
+          ) : null}
+        </div>
+      </Surface>
+    </div>
+  );
 }
 
 function healthColor(value: string) {
@@ -192,8 +263,9 @@ export default function OrganizationMembersPage() {
   const role = useAuthStore(state => state.user?.role);
   const orgId = useAuthStore(state => state.user?.org_id);
   const canManageOrganization = isOrgAdminRole(role);
+  const platformAdmin = isPlatformAdminRole(role);
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeSection = normalizeSection(searchParams.get('section'), canManageOrganization);
+  const activeSection = normalizeSection(searchParams.get('section'), canManageOrganization, platformAdmin);
 
   const changeSection = (next: string) => {
     const params = new URLSearchParams(searchParams);
@@ -219,6 +291,11 @@ export default function OrganizationMembersPage() {
       />
 
       <Tabs activeKey={activeSection} onChange={changeSection} type="line">
+        {platformAdmin ? (
+          <TabPane tab="首客户初始化" itemKey="bootstrap">
+            {activeSection === 'bootstrap' ? <FirstCustomerBootstrap /> : null}
+          </TabPane>
+        ) : null}
         <TabPane tab="账号与身份" itemKey="people">
           {activeSection === 'people' ? <UsersPage embedded /> : null}
         </TabPane>

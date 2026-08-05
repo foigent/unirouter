@@ -185,6 +185,15 @@ jobs:
         # 10-minute package timeout on a slower hosted runner.
         run: go test -tags=integration -race ./internal/admin -count=1 -timeout=20m
 
+      - name: Run second-integration reset and bootstrap gates
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: >-
+          go test -tags=integration -race
+          ./internal/resetexec ./internal/migrate ./internal/admin ./cmd/uniroute
+          -run '^(Test(ApplyDeterministicReset|ApplyStopsBeforeRedisMutation|SecondIntegrationResetSupportMigration|FirstCustomerBootstrap|ResetPreviewCLI).*)$'
+          -count=1 -timeout=20m
+
       - name: Run PRD8 enterprise and runtime-control integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
@@ -375,7 +384,7 @@ jobs:
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.frontend == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-frontend
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}

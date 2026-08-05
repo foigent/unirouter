@@ -1,121 +1,346 @@
 # UniRouter second-integration POC runbook
 
-## Current read-only reset preview
+## Authority model
 
-Before the user explicitly announces that the second integration and data reset
-may start, the only permitted reset operation is the read-only preview:
+Opening a task, saying “start the second integration”, accepting a design, or
+reusing evidence from an earlier campaign grants no mutation authority. The
+three user batons are independent and never inherit authority from one another:
+
+1. `START_SECOND_INTEGRATION_DATA_RESET` authorizes only quiescence, one fresh
+   rollback backup, final preview, controlled product-data resets, binding and
+   readback of the next UniRouter Source identity, recording the old X-Insight
+   Cursor/Checkpoint before reset, and strict empty-baseline verification. It
+   does not authorize X-Insight to create or activate a new Cursor, checkpoint,
+   credential, or consumer epoch.
+2. `START_SECOND_INTEGRATION_BOOTSTRAP` authorizes creation of the new customer
+   organization, zero wallet, users, projects, channels, Provider/Feed
+   credentials, Workload Applications, and application credentials.
+3. `START_SECOND_INTEGRATION_TRAFFIC` authorizes only the jointly frozen callers,
+   models, request/provider-attempt counts, CNY cap, time window, and stop
+   conditions.
+
+The DATA_RESET user baton is further split by the coordinator into two narrow
+operator batons. `DATA_RESET.PREPARE` permits quiescence, backup, isolated
+restore verification, next-Source configuration, and the final read-only
+preview. `DATA_RESET.DELETE` permits `reset apply` only when bound to the exact
+final artifact SHA-256, stable scope SHA-256, next Source Instance, Target
+runtime identity, classification, and user-confirmation time. A changed table,
+count, classification, runtime identity, schema/trigger/FK/sequence digest, or
+protected-content digest returns `RESET_PLAN_DRIFT_DETECTED` and stops.
+
+The next-Source configuration in `DATA_RESET.PREPARE` is UniRouter state only.
+It must be read back before the first new Outbox/Feed fact, but it neither
+creates nor activates any X-Insight Cursor/Checkpoint state. That X-side state
+requires the later, independent X-Insight BOOTSTRAP authority.
+
+Receiver credential creation or staging is BOOTSTRAP-only. Provider calls,
+Feed pulls, and test requests are TRAFFIC-only. Invocation Optimization, Exact
+Cache, and Compression remain absent/default-off unless separately authorized.
+
+## Release and environmental gate
+
+Before any destructive preparation, freeze one sanitized gate artifact that
+proves all of the following:
+
+- GitHub `main` exact commit/tree and terminal-green CI for that commit;
+- Target runtime version, commit, source tree, release manifest/artifact/image
+  digests, schema ledger, and protocol/binding pin are exact-current-main;
+- health/readiness and PostgreSQL/Redis dependencies are ready;
+- commercial License is enforceable and remains valid through the planned
+  integration window plus seven days;
+- TLS hostname/SAN validation succeeds and the leaf remains valid for strictly
+  more than seven days at reset time;
+- authenticated admin UI smoke is verified with the preserved account;
+- Feed/Outbox workers, current Source Instance, and public/auth boundaries have
+  been read back without sending a model or Provider request; and
+- disk and build headroom pass the formulas below.
+
+Record actual byte values, not percentages alone:
+
+- `R0 = pg_database_size + max(25% of pg_database_size, current WAL retained)`:
+  transactional database/WAL rollback headroom;
+- `R1 = actual fresh-backup bytes` when staged on the Target filesystem, or
+  zero on the Target only when the verified backup resides on separate durable
+  storage; and
+- `R2 = new uncompressed image bytes + largest retained rollback image bytes +
+  2 GiB` for image extraction and build/runtime scratch.
+
+Stop if Target root usage exceeds 75%, or if free Target bytes are less than
+`R0 + R1 + R2`. The backup destination separately needs at least twice the
+estimated backup size before backup starts. Re-read these values after an
+exact-main deployment. Deployment, restart, TLS renewal, and storage cleanup
+require their own authority and are not implied by this runbook.
+
+## Product-owned reset contract
+
+The supported command is an in-place PostgreSQL transaction. It never uses a
+broad table wipe, cascading truncate, sequence reset, replication-role bypass,
+or an ad-hoc operator SQL script.
+
+The current 88-table contract classifies:
+
+- 80 reset-candidate tables: 78 are deleted completely; `users` retains only
+  the selected admin; `orgs` retains only that admin’s active root organization
+  shell;
+- `settings` as partially protected, retaining only `ledger.amount_scale`,
+  `ledger.version`, optional `license.offline`, plus the runtime-required
+  `sensitive_words` row reset to the safe empty JSON-array baseline;
+- six fully protected platform tables:
+  `commercial_license_entitlements`, `deployment_profiles`,
+  `gateway_endpoints`, `micro_ledger_runtime_state`, `release_history`, and
+  `release_state`; and
+- `schema_migrations` as the protected schema ledger.
+
+TLS keys/certificates, database and Redis credentials, host configuration,
+release images/manifests, and certificate-renewal configuration are outside the
+product-data reset. Every PostgreSQL sequence is read and digest-bound but is
+not changed. Its owner table/column, positive increment, non-cycling state,
+current maximum row ID, and next allocatable value must prove the next value is
+strictly greater than every existing ID. A new or unclassified table blocks
+the plan.
+
+The selected-account preflight requires exactly one local account whose
+normalized login is `admin`, active platform-admin authority, an active root
+organization shell, and a supported password verifier. The plan stores only
+row/verifier digests; it never serializes the verifier. Protected
+deployment/network rows may reference only the retained account. Apply removes
+every pre-reset session, preserves the exact verifier and login/role identity,
+clears optional email/OIDC identity fields, advances `auth_epoch`, and empties
+the retained organization’s settings. Those minimum-shell postconditions are
+read back before commit.
+
+Migration `000057_second_integration_reset_support` changes only the two
+reviewed cross-table cycle constraints from non-deferrable `RESTRICT` to
+initially-immediate, deferrable `NO ACTION`; PostgreSQL `RESTRICT` itself cannot
+be deferred. Preview derives a deterministic
+child-before-parent order from the live FK catalog and rejects any other cycle.
+Apply takes a transaction-scoped advisory lock and `ACCESS EXCLUSIVE` locks on
+the exact classified table set, repeats the plan under lock, defers only those
+two constraints, and temporarily disables only the exact reviewed append-only
+and micro-ledger evidence triggers. Trigger definitions and enabled states are
+digest-bound. Apply validates the deferred FK events before restoring those
+triggers, then re-reads both before commit. Every delete command asserts its
+exact affected-row count.
+
+Redis is not globally flushed. Only these reviewed product prefixes are scanned
+and unlinked, then re-scanned to zero:
+
+- `limit:{`
+- `rl:`
+- `uniroute:response-cache:v2:`
+- `ur:agentcap:v2:`
+- `wallet:v2:`
+- `workload:{admission-v1}:`
+
+Unrelated Redis keys are preserved. A read-only no-drift PostgreSQL check runs
+before Redis mutation. If PostgreSQL later fails, its transaction rolls back;
+the only possible residual is a safe cold product cache, which must be recorded
+and revalidated before retry.
+
+## Stable preview and apply inputs
+
+Preview requires the explicit current runtime identity, selected account, and
+next Source Instance:
 
 ```bash
 uniroute reset preview \
-  --next-source-instance ecs.second-integration-<epoch> \
-  --output ./reset-preview.json
+  --next-source-instance '<reviewed-next-source>' \
+  --target-tree '<40-character-target-tree>' \
+  --preserve-local-login admin \
+  --output '<new-private-preview-file>'
 ```
 
-The command uses a PostgreSQL `REPEATABLE READ READ ONLY` snapshot and only
-counts tables and rows. It creates the output with mode `0600` and refuses to
-overwrite an existing file. It has no delete SQL, cannot apply a reset, does not
-move Cursor/Checkpoint state and does not change the configured Source Instance.
-Any newly introduced table that lacks an explicit classification makes
-`scope_complete=false`.
+The output is a new mode-`0600` file. `artifact_sha256` covers the exact bytes,
+including `generated_at` and current Redis observations. `scope_sha256` is the
+stable semantic digest and deliberately excludes `generated_at`, its own digest,
+and volatile Redis counts. It binds contract/profile, Target version/commit/tree,
+current/next Source, selected admin/org digests, protected contents, ordered
+table counts/classifications/reasons/actions, the required setting’s current-row
+and safe-target digests, delete order, FK/trigger/sequence schema evidence, and
+execution preconditions. A new timestamp alone does not require renewed user
+approval; semantic drift does.
 
-The output `plan_sha256` protects the preview scope; it is not a database backup
-digest. A future authorized reset must still quiesce traffic, create and verify
-a database backup and its SHA-256, review exact delete/bootstrap ordering, bind
-a new Source/Cursor epoch and complete post-reset migration/bootstrap/readback.
+`reset apply` requires all flags below and verifies every referenced regular
+file is private and matches its supplied SHA-256 before connecting to runtime
+dependencies:
 
-The latest captured development-Target preview is
-`docs/ops/evidence/PRD8-SECOND-INTEGRATION-RESET-PREVIEW-20260805.json`
-(artifact SHA-256
-`f1c08727870e2094e6aa6f69fd81cf374ea44f08fb5d353a68ef21eaefd3c4da`,
-plan SHA-256
-`sha256:c491132982eed86adf00b3b28ccfefad640cf482b642013203d38d8782440bf2`).
-It covers 88 tables with no unclassified table and proposes
-`ecs.second-integration.v2` as the next explicit Source Instance. It is
-approval evidence, not reset authority. Re-run it after traffic is quiesced and
-stop if any table, count, classification or digest input differs.
+```bash
+uniroute reset apply \
+  --plan-file '<final-preview>' \
+  --plan-sha256 'sha256:<exact-artifact>' \
+  --scope-sha256 'sha256:<stable-scope>' \
+  --target-tree '<40-character-target-tree>' \
+  --backup-file '<one-fresh-rollback-backup>' \
+  --backup-sha256 'sha256:<backup>' \
+  --isolated-restore-evidence-file '<restore-evidence>' \
+  --isolated-restore-evidence-sha256 'sha256:<restore-evidence>' \
+  --target-gate-evidence-file '<exact-main-ci-tls-license-capacity-evidence>' \
+  --target-gate-evidence-sha256 'sha256:<target-gate-evidence>' \
+  --quiesce-evidence-file '<quiesce-evidence>' \
+  --quiesce-evidence-sha256 'sha256:<quiesce-evidence>' \
+  --consumer-epoch-evidence-file '<xinsight-epoch-evidence>' \
+  --consumer-epoch-evidence-sha256 'sha256:<epoch-evidence>' \
+  --authorization-id '<coordinator-delete-baton-id>' \
+  --authorized-at '<user-confirmation-RFC3339>' \
+  --confirm DELETE_PRODUCT_DATA_KEEP_EXACT_ADMIN
+```
 
-## Boundary before the user starts the POC
+The apply process additionally requires the effective runtime Source Instance
+to equal the reviewed `next_source_instance`. It is not allowed to fall back to
+an empty/default value or the old identity.
 
-- Do not clear current control/business data yet. The user will explicitly announce the start.
-- Do not change provider credentials, traffic, Cursor/Checkpoint or the X-Insight Reference Connector while X-Insight remains under iteration.
-- Deployment secrets, TLS private keys and database credentials are not product data and are not handled by the reset procedure.
+The `consumer-epoch-evidence` input proves only that the X-Insight consumer is
+stopped, its old Cursor/Checkpoint was recorded, and the proposed next Source
+has not been used. It is not evidence or authority for creating or activating a
+new X-Insight Cursor, checkpoint, credential, or consumer epoch.
 
-## Current development Gateway Endpoint
+## DATA_RESET execution and rollback order
 
-The current externally verified development endpoint is:
+1. Confirm exact-main Target, CI, TLS, License, capacity, authenticated UI, and
+   protocol/binding gates.
+2. Stop new model admission and background producers. Drain in-flight model
+   work, billing finalization, internal Outbox, Feed materialization, and
+   delivery attempts. Prove pending, claimed, and dead-letter counts.
+3. X-Insight Owner stops the UniRouter consumer and records its old
+   Cursor/Checkpoint. UniRouter never edits X-Insight Cursor/Checkpoint state.
+4. Create one fresh PostgreSQL rollback backup, compute SHA-256, run archive or
+   directory consistency checks, restore it to an isolated database, and verify
+   schema ledger, protected state, selected admin digest, and representative
+   counts. Never restore over Development during verification.
+5. While the old Source Instance is still the explicit effective identity, run
+   the final preview with the reviewed next Source supplied separately. The
+   coordinator compares the stable scope digest and issues `DATA_RESET.DELETE`
+   only for the exact artifact and Target.
+6. Keep every producer stopped, configure and read back the reviewed next
+   Source Instance, then run product-owned `reset apply`; apply refuses to
+   delete unless its effective Source equals the plan's next Source. The
+   proposed `ecs.second-integration.v2` remains conditional until X-Insight
+   independently proves non-use and reservation for the later bootstrap epoch.
+   This UniRouter readback creates no X-Insight Cursor/Checkpoint state. Any
+   drift or assertion failure stops.
+7. Verify the empty baseline before login/bootstrap: exactly the selected admin
+   and normalized minimum organization shell; unchanged password verifier;
+   advanced auth epoch; zero sessions; zero rows in every delete-all table;
+   only protected settings plus empty `sensitive_words`; unchanged
+   schema/FK/trigger/sequence evidence; zero reviewed Redis prefixes; no
+   Provider/Feed traffic.
+8. Verify old Source identity, API/application/provider/Feed credentials, and
+   old IDs cannot authenticate, publish, pull, or be selected. Do not create a
+   replacement credential during this phase.
+9. Under its own reviewed DATA_RESET operator authorization, the X-Insight
+   Owner resets X-Insight to the strict fresh-database baseline defined below.
+   Prove that baseline before either product begins BOOTSTRAP. Do not create a
+   new Cursor, checkpoint, consumer epoch, or credential; keep all X-Insight
+   workers inactive/disabled and send no traffic.
 
-- console: `https://8.130.18.85/`;
-- OpenAI-compatible Base URL: `https://8.130.18.85/v1`.
+Rollback points are intentionally small:
 
-It uses a publicly trusted short-lived IP SAN certificate with automated
-renewal. Do not use `8-130-18-85.sslip.io`: Alibaba Cloud's ICP interception
-returns 403 for that unfiled shared hostname. The current operator-browser and
-protocol checks close the development HTTPS prerequisite only. At POC start,
-revalidate the endpoint from the actual second device before creating or using
-fresh application credentials. Exact Target evidence is in
-`docs/ops/evidence/PRD8-PUBLIC-HTTPS-TARGET-20260803.md`.
+- before apply: resume only after canceling the unused delete baton and
+  restoring the old explicit Source configuration;
+- before PostgreSQL commit: the transaction rolls back automatically; recheck
+  cold Redis state and regenerate the final preview;
+- after commit but before BOOTSTRAP: restore the one verified backup only by an
+  explicitly approved recovery procedure, then restore the old Source epoch as
+  one coordinated action; and
+- after BOOTSTRAP begins: stop and make a joint recovery decision. Never mix a
+  restored pre-reset database with new-epoch Feed/Cursor state.
 
-## Preflight order
+Retain the one fresh backup until the second-integration acceptance plus seven
+days, with a minimum of 14 days. Deletion after that window requires the normal
+backup-retention approval; this runbook grants none.
 
-1. Record the exact release commit/tree, image digest, migration ledger and current ECS Deployment Profile.
-2. Confirm a public HTTPS Gateway Endpoint from a second device. A declared port 443 is not evidence.
-3. Create fresh organization, users, project, upstream channels and provider credentials.
-4. Complete model governance/runtime release so each intended channel is `active`; an enabled provider credential does not activate a channel.
-5. Register one Workload Application per POC caller and create a bound credential.
-6. Select a model in the Effective Access Inspector and require all readiness axes to be ready.
-7. Keep Invocation Optimization absent/default-off for the baseline Agent POC. It is not a prerequisite for Gateway compatibility.
-8. Run `scripts/poc/check-unirouter-gateway.sh` from the second device.
-9. Run exact-version clients in this order: OpenAI SDK, OpenAI Agents SDK Chat model, LangChain, AutoGen, OpenClaw, Tencent WorkBuddy.
-10. Validate request logs, usage, charge/finality and audit evidence after each client.
-11. Record failures by Client Profile, Endpoint Profile, model, channel and request ID; do not hide them behind a generic “connection failed”.
+## BOOTSTRAP order
 
-## Optional Invocation Optimization experiment gate
+After both strict empty baselines are accepted, one new authenticated admin UI
+session and its login audit/outbox record are allowed. Under the separate
+UniRouter BOOTSTRAP baton, the platform admin calls:
 
-Do not configure Exact Cache keys or create an optimization policy merely to
-make the baseline POC pass. If the Product Owner separately authorizes an
-optimization experiment after baseline compatibility is closed:
+```text
+POST /api/v1/bootstrap/first-customer
+X-UniRouter-Client-Request-ID: <stable-operation-id>
+{"organization_name":"<reviewed-customer-name>"}
+```
 
-1. create one bounded project/model policy and advance it through Draft,
-   Validated and metadata-only Shadow;
-2. read
-   `GET /api/v1/invocation-optimization/policies/{ref}/readiness` for that
-   organization and exact policy revision;
-3. require `canary_admission_ready=true`, zero blockers and the expected
-   content-free Shadow counts for every targeted driver; and
-4. record a separate activation decision and a separate caller opt-in cohort.
+The endpoint runs serializably, locks the unique normalized `admin`, and
+rechecks the strict empty baseline. It atomically creates only one active root
+customer organization, one CNY wallet whose balance/granted/frozen/spent values
+are all zero, and one audit row. It creates no users, projects, credentials,
+policies, connections, or traffic. The same client request identity is an exact
+idempotent replay; a different payload or a second customer attempt fails.
 
-The readiness response has `runtime_mutation=none` and explicitly grants no
-activation or traffic authority. A Cache experiment additionally needs an
-operator key ceremony, rotation/recovery plan and all-or-none runtime binding.
-A Compression experiment does not need Cache keys, but still requires its own
-representative Shadow evidence and Product Owner Canary decision.
+Only after that succeeds may the remaining bootstrap objects be created in a
+reviewed order: customer admin/users, project, channel metadata, Provider
+credential, model governance/runtime release, Workload Application, application
+credential, then receiver-generated staged Feed credential and connection.
+Credential plaintext follows the existing one-time handling contract and is
+never placed in evidence. The Feed stays paused until both owners accept the new
+epoch.
 
-## Data reset gate
+Under a separate X-Insight BOOTSTRAP authorization, the X-Insight Owner may
+create only the new UniRouter Source Cursor/Checkpoint epoch and the associated
+credential-registration state. UniRouter credential issuance or staging remains
+under the UniRouter BOOTSTRAP baton. X-Insight workers remain inactive/disabled,
+the Feed is not pulled, and no Provider, Feed, or test traffic is sent. Worker
+activation and any real consumption remain TRAFFIC-only.
 
-The reset is a separate destructive operation. Before execution, produce a count-only preview covering organization/account/project/application/API-key/channel/provider-credential/model-governance/limit/usage/cost/audit/Feed data and explicitly list preserved deployment secrets and infrastructure. Execute only after the user confirms that exact preview.
+## X-Insight boundary
 
-## X-Insight dual-track handoff
+X-Insight DATA_RESET is a strict global fresh-database product-data reset, not a
+UniRouter source-dependency-closure cleanup. It preserves exactly the unique
+`demo.operator` identity and the release-defined schema/catalog closure. It
+removes all historical product data and state derived from UniRouter, LiteLLM,
+and OpenInference, including historical Cursor, checkpoint, lease, credential,
+consumer, audit, event, and integration state. Any unclassified table, row, or
+ambiguous cross-source ownership fails closed instead of being preserved.
 
-The second integration uses two separately accepted tracks:
+The X-Insight empty-baseline proof must show only `demo.operator` plus the exact
+release-defined schema/catalog closure, zero historical product rows for all
+three source families, zero old Cursor/Checkpoint/lease/credential state,
+inactive/disabled workers, and zero traffic. DATA_RESET creates no replacement
+epoch or credential state. Only the later X-Insight BOOTSTRAP authorization may
+create the new UniRouter Source Cursor/Checkpoint epoch and credential-
+registration state, while workers remain inactive/disabled and traffic remains
+zero.
 
-1. The existing completed-execution Feed remains the V1 compatibility path. It keeps its endpoint, DTO, credential,
-   order, Cursor and source result semantics. After reset it must use a new explicit Source Instance and X-Insight
-   checkpoint epoch; neither side may reuse the first campaign Cursor.
-2. Selected second-campaign request IDs use the existing approval-manifest-bound
-   `scripts/prd5_xinsight_snapshot.go` path for high-fidelity product validation. This artifact remains metadata-only
-   and controlled; it is not a continuous Connector and must not be described as one.
+Old-epoch Outbox/Feed facts must never be republished under the new Source
+identity. X-Insight DATA_RESET deletes the old Cursor/Checkpoint/lease and
+credential state and must leave all of them at zero. X-Insight BOOTSTRAP alone
+may create the new UniRouter Source Cursor/Checkpoint epoch and X-side
+credential-registration state; UniRouter credential issuance/staging remains
+UniRouter BOOTSTRAP-only. Feed activation, pulls, acknowledgements, and real
+consumption are TRAFFIC-only. Any retained-floor value used for traffic must be
+read back and jointly bound before that baton. Any identity/Feed/Cursor
+disagreement returns to the coordinator before either side proceeds.
 
-The safe receiver handoff order is: prepare the X-Insight receiver credential; register its public Frozen Registration
-Bundle while the source Feed is paused; use the staged credential to obtain the new Source's empty bootstrap
-Cursor/high-watermark; activate the X-Insight checkpoint epoch while its worker remains inactive and disabled; then
-activate the receiver credential and start the bounded V1 window. If the epoch barrier has been crossed, do not edit
-checkpoint rows or attempt an abort—keep the Feed off and either resume the exact credential operation or use the
-verified X-Insight database recovery path.
+## TRAFFIC freeze and stop conditions
 
-## Pass criteria
+Before `START_SECOND_INTEGRATION_TRAFFIC`, record the exact current Provider
+price readback, billing unit, model, caller/device, number of external requests,
+maximum Provider attempts per request, total Provider-attempt ceiling, CNY cap,
+time window, and request-level stop conditions. No prior campaign key, budget,
+traffic allowance, or unused request count carries forward.
 
-- External device uses the configured HTTPS Gateway Endpoint and a newly created application-bound credential.
-- At least one non-stream and one stream request complete with stable request identity, settled billing and visible evidence.
-- Invalid credential, disabled application, unauthorized model, exhausted limit and unavailable route fail with actionable error identities.
-- Restart does not lose application identity, route publication, billing finality or logs.
-- No X-Insight availability is present in the synchronous request path.
+Stop immediately on identity mismatch, more Provider attempts than frozen,
+ambiguous billing finality, CNY cap exhaustion, TLS/License degradation,
+unexpected Feed publication, dead-letter growth, or any request outside the
+approved caller/model set.
+
+## Verification matrix
+
+| Gate | Required evidence | Mutating external traffic |
+|---|---|---:|
+| Local Go | format, unit, race, vet, reset semantic-digest and security-literal tests | 0 |
+| PostgreSQL | clean migrate up/down/up; preview read-only; exact admin/password digest; FK cycle; row assertions; rollback/drift; protected/settings/sequence readback | 0 |
+| Redis | prefix observation/purge; unrelated-key preservation; no global flush | 0 |
+| Frontend | type-check, unit tests, production build, platform-only bootstrap UI | 0 |
+| Docker | image build, migration availability, non-root/runtime identity checks | 0 |
+| Protocol | exact Binding pin and existing Feed/OpenAI conformance; no protocol semantic expansion | 0 |
+| Security literals | no broad truncate/cascade, sequence reset, replication-role bypass, all-trigger disable, secret/credential literal, or private address in new evidence | 0 |
+| External integration | only after TRAFFIC baton and frozen budget/request envelope | bounded |
+
+Post-deploy/pre-reset acceptance requires exact artifact/source parity, terminal
+CI, TLS `>7d`, valid License window, authenticated admin UI, healthy dependencies,
+idle/quiesced workers, drained Feed/Outbox, and zero test traffic. Post-reset
+acceptance requires the strict UniRouter baseline and the strict global
+X-Insight empty-baseline proof above; proof limited to any single source is not
+sufficient. Production remains not authorized.
