@@ -18,9 +18,9 @@ const (
 	SourceRevision       = "1"
 	OpenInferenceProfile = "otel.openinference.metadata-only"
 
-	ProductProtocolVersion = "1.1.1"
-	ProductProtocolCommit  = "ef659a22c35911739d7f5c507126c826e70b9584"
-	ProductProtocolDigest  = "sha256:21a666a2c605271d64e3a1c1c8d7dd2af3c205967693adc8af2b02fc42a5173b"
+	ProductProtocolVersion = "2.0.2"
+	ProductProtocolCommit  = "ad8fe7a38c9d7335657630baa8670dd07556b98c"
+	ProductProtocolDigest  = "sha256:99f8a541b6d33b0a74d2e4c06aa312c6d6c88c35a4bfb1d4d34b98b4e4e2e8e8"
 
 	ReferenceMappingDigest  = "sha256:5425ab384bebcd9d4a7e81882bfa1bb1700df7cc397863b91f69e2855df12928"
 	ReferenceCompatDigest   = "sha256:03fb035134b173165e6a03f348d40a58fe1d28d82c24bacb1dec553c8b769c89"

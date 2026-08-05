@@ -95,14 +95,11 @@ func TestPinnedProtocolAndSecondConnectorEvidenceRemainExact(t *testing.T) {
 		t.Fatalf("decode product protocol pin: %v", err)
 	}
 	expected := map[string]string{
-		"source_projection_contract":      ReferenceMappingDigest,
-		"canonical_vector_bundle":         ReferenceVectorDigest,
-		"conformance_contract":            ReferenceContractDigest,
-		"litellm_connector_manifest":      LiteLLMManifestDigest,
-		"litellm_upstream_source_mapping": LiteLLMMappingDigest,
-		"litellm_compatibility_matrix":    LiteLLMCompatDigest,
-		"litellm_conformance_contract":    LiteLLMContractDigest,
-		"litellm_vector_bundle":           LiteLLMVectorDigest,
+		"source_projection_contract":    ReferenceMappingDigest,
+		"reference_connector_manifest":  "sha256:a3bc97bd5d5c7aab6452de9518be0b00f62776877deb431a91c175da5287de79",
+		"v1_to_v2_compatibility_matrix": "sha256:bdc2527ca947bf7b6a9c1feb2d5a97a9426b5b3ec602690a2d7b23d3f85ace52",
+		"conformance_contract":          "sha256:f820936448590144156c2e499134eb4b3142ca0265275b6e9bdf1e5cd7855e14",
+		"vector_bundle":                 "sha256:9e50bb4570dcc1ff07157ad6198641e937357b641ae052cddcb3420b52ad11ed",
 	}
 	if pin.ProtocolVersion != ProductProtocolVersion ||
 		pin.Authority.Tag != "v"+ProductProtocolVersion ||
@@ -143,7 +140,7 @@ func TestProductRuntimeRegistryStillContainsOnlyReferenceConnector(t *testing.T)
 	}
 	if !bytes.Contains(
 		workflow,
-		[]byte("uses: foigent/event-connector-spec@"+ProductProtocolCommit),
+		[]byte("uses: foigent/event-connector-spec/actions/source-neutral-v2@"+ProductProtocolCommit),
 	) {
 		t.Fatal("product CI no longer pins the exact shared protocol authority commit")
 	}
