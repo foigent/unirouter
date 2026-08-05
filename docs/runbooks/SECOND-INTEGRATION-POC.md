@@ -7,8 +7,11 @@ reusing evidence from an earlier campaign grants no mutation authority. The
 three user batons are independent and never inherit authority from one another:
 
 1. `START_SECOND_INTEGRATION_DATA_RESET` authorizes only quiescence, one fresh
-   rollback backup, final preview, controlled product-data reset, Source/Cursor
-   epoch transition, and empty-baseline verification.
+   rollback backup, final preview, controlled product-data resets, binding and
+   readback of the next UniRouter Source identity, recording the old X-Insight
+   Cursor/Checkpoint before reset, and strict empty-baseline verification. It
+   does not authorize X-Insight to create or activate a new Cursor, checkpoint,
+   credential, or consumer epoch.
 2. `START_SECOND_INTEGRATION_BOOTSTRAP` authorizes creation of the new customer
    organization, zero wallet, users, projects, channels, Provider/Feed
    credentials, Workload Applications, and application credentials.
@@ -24,6 +27,11 @@ final artifact SHA-256, stable scope SHA-256, next Source Instance, Target
 runtime identity, classification, and user-confirmation time. A changed table,
 count, classification, runtime identity, schema/trigger/FK/sequence digest, or
 protected-content digest returns `RESET_PLAN_DRIFT_DETECTED` and stops.
+
+The next-Source configuration in `DATA_RESET.PREPARE` is UniRouter state only.
+It must be read back before the first new Outbox/Feed fact, but it neither
+creates nor activates any X-Insight Cursor/Checkpoint state. That X-side state
+requires the later, independent X-Insight BOOTSTRAP authority.
 
 Receiver credential creation or staging is BOOTSTRAP-only. Provider calls,
 Feed pulls, and test requests are TRAFFIC-only. Invocation Optimization, Exact
@@ -181,6 +189,11 @@ The apply process additionally requires the effective runtime Source Instance
 to equal the reviewed `next_source_instance`. It is not allowed to fall back to
 an empty/default value or the old identity.
 
+The `consumer-epoch-evidence` input proves only that the X-Insight consumer is
+stopped, its old Cursor/Checkpoint was recorded, and the proposed next Source
+has not been used. It is not evidence or authority for creating or activating a
+new X-Insight Cursor, checkpoint, credential, or consumer epoch.
+
 ## DATA_RESET execution and rollback order
 
 1. Confirm exact-main Target, CI, TLS, License, capacity, authenticated UI, and
@@ -202,8 +215,9 @@ an empty/default value or the old identity.
    Source Instance, then run product-owned `reset apply`; apply refuses to
    delete unless its effective Source equals the plan's next Source. The
    proposed `ecs.second-integration.v2` remains conditional until X-Insight
-   independently proves non-use and epoch binding. Any drift or assertion
-   failure stops.
+   independently proves non-use and reservation for the later bootstrap epoch.
+   This UniRouter readback creates no X-Insight Cursor/Checkpoint state. Any
+   drift or assertion failure stops.
 7. Verify the empty baseline before login/bootstrap: exactly the selected admin
    and normalized minimum organization shell; unchanged password verifier;
    advanced auth epoch; zero sessions; zero rows in every delete-all table;
@@ -213,6 +227,11 @@ an empty/default value or the old identity.
 8. Verify old Source identity, API/application/provider/Feed credentials, and
    old IDs cannot authenticate, publish, pull, or be selected. Do not create a
    replacement credential during this phase.
+9. Under its own reviewed DATA_RESET operator authorization, the X-Insight
+   Owner resets X-Insight to the strict fresh-database baseline defined below.
+   Prove that baseline before either product begins BOOTSTRAP. Do not create a
+   new Cursor, checkpoint, consumer epoch, or credential; keep all X-Insight
+   workers inactive/disabled and send no traffic.
 
 Rollback points are intentionally small:
 
@@ -232,9 +251,9 @@ backup-retention approval; this runbook grants none.
 
 ## BOOTSTRAP order
 
-After the empty checkpoint is accepted, one new authenticated admin UI session
-and its login audit/outbox record are allowed. Under the separate BOOTSTRAP
-baton, the platform admin calls:
+After both strict empty baselines are accepted, one new authenticated admin UI
+session and its login audit/outbox record are allowed. Under the separate
+UniRouter BOOTSTRAP baton, the platform admin calls:
 
 ```text
 POST /api/v1/bootstrap/first-customer
@@ -257,20 +276,41 @@ Credential plaintext follows the existing one-time handling contract and is
 never placed in evidence. The Feed stays paused until both owners accept the new
 epoch.
 
+Under a separate X-Insight BOOTSTRAP authorization, the X-Insight Owner may
+create only the new UniRouter Source Cursor/Checkpoint epoch and the associated
+credential-registration state. UniRouter credential issuance or staging remains
+under the UniRouter BOOTSTRAP baton. X-Insight workers remain inactive/disabled,
+the Feed is not pulled, and no Provider, Feed, or test traffic is sent. Worker
+activation and any real consumption remain TRAFFIC-only.
+
 ## X-Insight boundary
 
-X-Insight cleanup is limited to the dependency closure of the old UniRouter
-Source. It must preserve unrelated LiteLLM/OpenInference data and unchanged
-unrelated checkpoints. Ambiguous cross-source rows fail closed. Therefore
-“empty baseline” on X-Insight means zero UniRouter-derived rows/state plus a
-reconciliation proving unrelated-source preservation; it never means a global
-X-Insight product reset.
+X-Insight DATA_RESET is a strict global fresh-database product-data reset, not a
+UniRouter source-dependency-closure cleanup. It preserves exactly the unique
+`demo.operator` identity and the release-defined schema/catalog closure. It
+removes all historical product data and state derived from UniRouter, LiteLLM,
+and OpenInference, including historical Cursor, checkpoint, lease, credential,
+consumer, audit, event, and integration state. Any unclassified table, row, or
+ambiguous cross-source ownership fails closed instead of being preserved.
+
+The X-Insight empty-baseline proof must show only `demo.operator` plus the exact
+release-defined schema/catalog closure, zero historical product rows for all
+three source families, zero old Cursor/Checkpoint/lease/credential state,
+inactive/disabled workers, and zero traffic. DATA_RESET creates no replacement
+epoch or credential state. Only the later X-Insight BOOTSTRAP authorization may
+create the new UniRouter Source Cursor/Checkpoint epoch and credential-
+registration state, while workers remain inactive/disabled and traffic remains
+zero.
 
 Old-epoch Outbox/Feed facts must never be republished under the new Source
-identity. Feed connection/credential deletion, replacement registration,
-activation, retained floor, acknowledgement, and X-Insight checkpoint creation
-are joint decisions. Any identity/Feed/Cursor disagreement returns to the
-coordinator before either side proceeds.
+identity. X-Insight DATA_RESET deletes the old Cursor/Checkpoint/lease and
+credential state and must leave all of them at zero. X-Insight BOOTSTRAP alone
+may create the new UniRouter Source Cursor/Checkpoint epoch and X-side
+credential-registration state; UniRouter credential issuance/staging remains
+UniRouter BOOTSTRAP-only. Feed activation, pulls, acknowledgements, and real
+consumption are TRAFFIC-only. Any retained-floor value used for traffic must be
+read back and jointly bound before that baton. Any identity/Feed/Cursor
+disagreement returns to the coordinator before either side proceeds.
 
 ## TRAFFIC freeze and stop conditions
 
@@ -301,5 +341,6 @@ approved caller/model set.
 Post-deploy/pre-reset acceptance requires exact artifact/source parity, terminal
 CI, TLS `>7d`, valid License window, authenticated admin UI, healthy dependencies,
 idle/quiesced workers, drained Feed/Outbox, and zero test traffic. Post-reset
-acceptance requires the strict UniRouter baseline and X-Insight source-closure
-reconciliation above. Production remains not authorized.
+acceptance requires the strict UniRouter baseline and the strict global
+X-Insight empty-baseline proof above; proof limited to any single source is not
+sufficient. Production remains not authorized.
