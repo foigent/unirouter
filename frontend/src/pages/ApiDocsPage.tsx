@@ -133,6 +133,7 @@ const endpointGroups = [
       ['DELETE', '/api/v1/channel-keys/{id}', '删除上游凭证'],
       ['GET', '/api/v1/keys', '访问凭证列表'],
       ['GET', '/api/v1/organizations', '当前角色可见的组织选项；平台查看全部，组织角色仅查看所属组织'],
+      ['POST', '/api/v1/bootstrap/first-customer', '严格空基线后，仅创建首个客户组织与零余额钱包；不创建凭据、项目或流量'],
       ['GET', '/api/v1/limit-policies', '查看跨副本 RPM/RPS/TPM/并发策略及其版本'],
       ['POST', '/api/v1/limit-policies', '创建 disabled/shadow/enforce 共享限额策略'],
       ['PUT', '/api/v1/limit-policies/{id}', '按当前 version 更新策略；冲突返回 409，成功后版本递增'],

@@ -4,52 +4,124 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestBuildIsReadOnlyFailClosedAndDeterministic(t *testing.T) {
-	now := time.Date(2026, 8, 2, 3, 4, 5, 123456789, time.FixedZone("test", 8*60*60))
-	inventory := []TableInventory{
-		{Name: "channels", RowCount: 3},
-		{Name: "schema_migrations", RowCount: 55},
-		{Name: "deployment_profiles", RowCount: 1},
-	}
-	first, err := Build(inventory, "ecs.first-integration", "ecs.second-integration", now)
+const testDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
+	firstSnapshot := completeSnapshot()
+	secondSnapshot := completeSnapshot()
+	secondSnapshot.Redis.Prefixes[0].KeyCount = 77
+	first, err := Build(firstSnapshot, testTarget(), "ecs.first-integration", "ecs.second-integration.v2", time.Unix(0, 0))
 	if err != nil {
-		t.Fatalf("Build: %v", err)
+		t.Fatalf("Build first: %v", err)
 	}
-	second, err := Build(inventory, "ecs.first-integration", "ecs.second-integration", now)
+	second, err := Build(secondSnapshot, testTarget(), "ecs.first-integration", "ecs.second-integration.v2", time.Unix(100, 0))
 	if err != nil {
 		t.Fatalf("Build second: %v", err)
 	}
-	if first.PlanSHA256 != second.PlanSHA256 || first.GeneratedAt != "2026-08-01T19:04:05.123456Z" {
-		t.Fatalf("preview is not deterministic: first=%+v second=%+v", first, second)
+	if first.ScopeSHA256 != second.ScopeSHA256 {
+		t.Fatalf("generated_at or Redis observation changed semantic scope: %s != %s", first.ScopeSHA256, second.ScopeSHA256)
 	}
-	if first.ActionAuthorized || first.ApplySupported || first.MutationPerformed || !first.ScopeComplete {
-		t.Fatalf("dry-run boundary widened: %+v", first)
+	firstJSON, err := Marshal(first)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if first.Summary.ResetCandidateCount != 1 || first.Summary.ProtectedCount != 1 || first.Summary.SchemaLedgerCount != 1 {
-		t.Fatalf("unexpected classification: %+v", first.Summary)
+	secondJSON, err := Marshal(second)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(first.Tables) != 3 || first.Tables[0].Name != "channels" || !strings.HasPrefix(first.PlanSHA256, "sha256:") {
-		t.Fatalf("unexpected plan ordering or digest: %+v", first)
+	if ArtifactSHA256(firstJSON) == ArtifactSHA256(secondJSON) {
+		t.Fatal("different generated artifacts unexpectedly have the same artifact digest")
+	}
+	if first.ActionAuthorized || !first.ApplySupported || first.MutationPerformed || !first.ScopeComplete {
+		t.Fatalf("unexpected preview authority boundary: %+v", first)
+	}
+	if first.Summary.ReviewRequiredCount != 0 || first.Summary.ProtectedCount != len(protectedTables) {
+		t.Fatalf("unexpected classification summary: %+v", first.Summary)
+	}
+	if first.Summary.TableCount != 88 || first.Summary.ResetCandidateCount != 80 ||
+		first.Summary.ProtectedCount != 6 || first.Summary.ProtectedPartialCount != 1 ||
+		first.Summary.SchemaLedgerCount != 1 {
+		t.Fatalf("reset classification cardinality drifted: %+v", first.Summary)
+	}
+	if !strings.HasPrefix(first.ScopeSHA256, "sha256:") || len(first.DeleteOrder) == 0 {
+		t.Fatalf("missing digest or deterministic delete order: %+v", first)
 	}
 }
 
-func TestBuildRequiresNewExplicitSourceInstanceAndRejectsUnknownTables(t *testing.T) {
-	now := time.Unix(0, 0)
-	if _, err := Build(nil, "source-a", "source-a", now); err == nil {
+func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T) {
+	snapshot := completeSnapshot()
+	if _, err := Build(snapshot, testTarget(), "source-a", "source-a", time.Unix(0, 0)); err == nil {
 		t.Fatal("reusing source_instance must fail")
 	}
-	plan, err := Build([]TableInventory{{Name: "future_unknown", RowCount: 0}}, "source-a", "source-b", now)
+
+	badAdmin := completeSnapshot()
+	badAdmin.Admin.NormalizedLogin = "other"
+	if _, err := Build(badAdmin, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil {
+		t.Fatal("non-admin selected identity must fail")
+	}
+
+	unknown := completeSnapshot()
+	unknown.Tables = append(unknown.Tables, TableInventory{Name: "future_unknown"})
+	plan, err := Build(unknown, testTarget(), "source-a", "source-b", time.Unix(0, 0))
 	if err != nil {
 		t.Fatalf("Build unknown inventory: %v", err)
 	}
-	if plan.ScopeComplete || plan.Summary.ReviewRequiredCount != 1 || plan.Tables[0].Scope != ScopeReviewRequired {
-		t.Fatalf("unknown table did not fail closed: %+v", plan)
+	if plan.ScopeComplete || plan.Summary.ReviewRequiredCount != 1 {
+		t.Fatalf("unknown table did not fail closed: %+v", plan.Summary)
+	}
+}
+
+func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
+	cycle := completeSnapshot()
+	cycle.ForeignKeys = append(cycle.ForeignKeys,
+		ForeignKey{Name: "cycle_a", ChildTable: "channels", ParentTable: "api_keys"},
+		ForeignKey{Name: "cycle_b", ChildTable: "api_keys", ParentTable: "channels"},
+	)
+	if _, err := Build(cycle, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "unreviewed_fk_cycle") {
+		t.Fatalf("unreviewed FK cycle error = %v", err)
+	}
+
+	missingTrigger := completeSnapshot()
+	missingTrigger.Triggers = missingTrigger.Triggers[1:]
+	if _, err := Build(missingTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "guarded_delete_trigger") {
+		t.Fatalf("missing guarded trigger error = %v", err)
+	}
+
+	restrictCycle := completeSnapshot()
+	restrictCycle.ForeignKeys[0].DeleteAction = "RESTRICT"
+	if _, err := Build(restrictCycle, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "deferred_cycle_constraint") {
+		t.Fatalf("non-deferable delete action error = %v", err)
+	}
+
+	unsafeSequence := completeSnapshot()
+	unsafeSequence.Sequences[0].NextValue = unsafeSequence.Sequences[0].MaxObservedValue
+	if _, err := Build(unsafeSequence, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "sequence_state") {
+		t.Fatalf("sequence reuse risk error = %v", err)
+	}
+}
+
+func TestPlanUnmarshalRejectsUnknownAndTrailingJSON(t *testing.T) {
+	plan, err := Build(completeSnapshot(), testTarget(), "source-a", "source-b", time.Unix(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Unmarshal(append(payload, []byte("\n{}")...)); err == nil {
+		t.Fatal("trailing JSON was accepted")
+	}
+	payload = []byte(strings.Replace(string(payload), `"mode":`, `"unknown_field":true,"mode":`, 1))
+	if _, err := Unmarshal(payload); err == nil {
+		t.Fatal("unknown plan field was accepted")
 	}
 }
 
@@ -71,12 +143,95 @@ func TestEveryCurrentMigrationTableHasAnExplicitResetClassification(t *testing.T
 	}
 	var unknown []string
 	for name := range seen {
-		if scope, _ := ClassifyTable(name); scope == ScopeReviewRequired {
+		if scope, _, _ := ClassifyTable(name); scope == ScopeReviewRequired {
 			unknown = append(unknown, name)
 		}
 	}
 	sort.Strings(unknown)
 	if len(unknown) != 0 {
 		t.Fatalf("migration tables missing explicit reset classification: %v", unknown)
+	}
+}
+
+func completeSnapshot() Snapshot {
+	allTables := []string{"schema_migrations", "settings"}
+	for name := range protectedTables {
+		allTables = append(allTables, name)
+	}
+	for name := range resetCandidateTables {
+		allTables = append(allTables, name)
+	}
+	slices.Sort(allTables)
+	tables := make([]TableInventory, 0, len(allTables))
+	for _, name := range allTables {
+		count := int64(0)
+		switch name {
+		case "schema_migrations":
+			count = 57
+		case "settings":
+			count = 3
+		case "users", "orgs", "micro_ledger_runtime_state", "release_state":
+			count = 1
+		}
+		tables = append(tables, TableInventory{Name: name, RowCount: count})
+	}
+	protected := ProtectedState{
+		SettingKeys: ProtectedSettingKeys(),
+		Settings:    ContentDigest{Name: "settings:protected_keys", RowCount: 2, SHA256: testDigest},
+	}
+	for name := range protectedTables {
+		count := int64(0)
+		if name == "micro_ledger_runtime_state" || name == "release_state" {
+			count = 1
+		}
+		protected.Tables = append(protected.Tables, ContentDigest{Name: name, RowCount: count, SHA256: testDigest})
+	}
+	triggers := make([]TriggerState, 0, len(resetDeleteTriggers))
+	for _, ref := range resetDeleteTriggers {
+		triggers = append(triggers, TriggerState{
+			Table: ref.Table, Name: ref.Name,
+			Definition: "CREATE TRIGGER " + ref.Name + " BEFORE DELETE OR UPDATE ON public." + ref.Table,
+			Enabled:    "O",
+		})
+	}
+	return Snapshot{
+		Tables: tables,
+		Admin: AdminSelection{
+			UserID: 1, OrganizationID: 1, NormalizedLogin: PreservedLogin,
+			Role: "platform_admin", Status: "active", AuthProvider: "local",
+			OrganizationStatus: "active", PasswordVerifierValid: true,
+			OrganizationType: "partner", PasswordSHA256: testDigest,
+			UserRowSHA256: testDigest, OrganizationRowSHA256: testDigest,
+		},
+		Protected: protected,
+		SettingResets: []SettingReset{{
+			Key: "sensitive_words", CurrentRowSHA256: testDigest,
+			TargetValueSHA256: "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			AlreadyAtTarget:   true,
+		}},
+		MigrationVersions: []string{
+			"000056_prd8_invocation_optimization",
+			"000057_second_integration_reset_support",
+		},
+		Sequences: []SequenceState{{
+			Name: "users_id_seq", OwnedTable: "users", OwnedColumn: "id",
+			IncrementBy: 1, LastValue: 10, IsCalled: true, NextValue: 11, MaxObservedValue: 1,
+		}},
+		ForeignKeys: []ForeignKey{
+			{Name: "billing_provider_attempts_reservation_fk", ChildTable: "billing_provider_attempts", ParentTable: "freeze_idempotency", DeleteAction: "NO ACTION", Deferrable: true},
+			{Name: "freeze_idempotency_delivery_attempt_provider_fk", ChildTable: "freeze_idempotency", ParentTable: "billing_provider_attempts", DeleteAction: "NO ACTION", Deferrable: true},
+		},
+		Triggers: triggers,
+		Redis: RedisObservation{Prefixes: []RedisPrefixObservation{
+			{Prefix: "limit:{"},
+		}},
+	}
+}
+
+func testTarget() TargetIdentity {
+	return TargetIdentity{
+		RuntimeVersion: "v2.0.2",
+		RuntimeCommit:  strings.Repeat("a", 40),
+		SourceTree:     strings.Repeat("b", 40),
 	}
 }

@@ -818,6 +818,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">PUT</td><td><code>/api/v1/license</code></td><td>Import offline license (platform admin)</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/users</code></td><td>List users</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/users</code></td><td>Create user</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/bootstrap/first-customer</code></td><td>Create first customer organization and zero wallet from a strict empty baseline</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/users/{id}</code></td><td>Update user</td></tr>
 <tr><td class="method">DELETE</td><td><code>/api/v1/users/{id}</code></td><td>Delete user</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-prices</code></td><td>List model prices (platform, organization, or billing admin)</td></tr>
@@ -921,6 +922,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/keys/{id}/disable", roleRoute(adminHandler.DisableAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper))
 
 	mux.Handle("GET /api/v1/organizations", usageRoute(adminHandler.ListOrganizations))
+	mux.Handle("POST /api/v1/bootstrap/first-customer", platformRoute(adminHandler.BootstrapFirstCustomer))
 	mux.Handle("GET /api/v1/projects", projectListRoute(adminHandler.ListProjects))
 	mux.Handle("POST /api/v1/projects", orgAdminRoute(adminHandler.CreateProject))
 	mux.Handle("GET /api/v1/projects/{id}", projectReadRoute(adminHandler.GetProject))

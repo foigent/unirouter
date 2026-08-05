@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '../../store/auth';
@@ -7,6 +7,7 @@ import OrganizationMembersPage from '../OrganizationMembersPage';
 const apiMocks = vi.hoisted(() => ({
   getEnterpriseDirectorySources: vi.fn(),
   getEnterpriseDirectoryTree: vi.fn(),
+  bootstrapFirstCustomer: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({
@@ -41,8 +42,15 @@ describe('OrganizationMembersPage', () => {
   beforeEach(() => {
     apiMocks.getEnterpriseDirectorySources.mockReset();
     apiMocks.getEnterpriseDirectoryTree.mockReset();
+    apiMocks.bootstrapFirstCustomer.mockReset();
     apiMocks.getEnterpriseDirectorySources.mockResolvedValue({ data: [], total: 0 });
     apiMocks.getEnterpriseDirectoryTree.mockResolvedValue({ data: [], total: 0 });
+    apiMocks.bootstrapFirstCustomer.mockResolvedValue({
+      organization_id: 9,
+      organization_name: 'First Customer',
+      wallet_balance_micros: 0,
+      idempotent: false,
+    });
     useAuthStore.setState({
       user: { id: 1, username: 'org-admin', role: 'org_admin', org_id: 7, license_access: null },
     });
@@ -56,6 +64,23 @@ describe('OrganizationMembersPage', () => {
     expect(screen.getByText('项目与成员')).toBeTruthy();
     expect(screen.getByText('组织架构（POC）')).toBeTruthy();
     expect(screen.getByText('生命周期证据')).toBeTruthy();
+    expect(screen.queryByText('首客户初始化')).toBeNull();
+  });
+
+  it('exposes the narrow first-customer bootstrap only to platform admins', async () => {
+    useAuthStore.setState({
+      user: { id: 1, username: 'admin', role: 'platform_admin', org_id: 1, license_access: null },
+    });
+    renderPage('/organization-members?section=bootstrap');
+
+    expect(screen.getByRole('tab', { name: '首客户初始化' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('首个客户组织名称'), { target: { value: 'First Customer' } });
+    fireEvent.click(screen.getByText('创建组织与零余额钱包'));
+
+    await waitFor(() => expect(apiMocks.bootstrapFirstCustomer).toHaveBeenCalledTimes(1));
+    expect(apiMocks.bootstrapFirstCustomer.mock.calls[0][0]).toBe('First Customer');
+    expect(apiMocks.bootstrapFirstCustomer.mock.calls[0][1]).toMatch(/^first-customer-/);
+    expect(await screen.findByText(/钱包余额 0 micro-CNY/)).toBeTruthy();
   });
 
   it('keeps the POC directory boundary visible without fabricating directory data', async () => {

@@ -609,6 +609,12 @@ export const api = {
   // Users
   getOrganizations: (page = 1, pageSize = 100) =>
     request(`/organizations?page=${page}&page_size=${pageSize}`),
+  bootstrapFirstCustomer: (organizationName: string, clientRequestId: string) =>
+    request('/bootstrap/first-customer', {
+      method: 'POST',
+      headers: { 'X-UniRouter-Client-Request-ID': clientRequestId },
+      body: JSON.stringify({ organization_name: organizationName }),
+    }),
   getEnterpriseDirectorySources: (orgId?: number) =>
     request(appendParams('/enterprise-directory/sources', { org_id: orgId })),
   getEnterpriseDirectoryTree: (sourceRef: string, effectiveAt?: string, orgId?: number) =>
