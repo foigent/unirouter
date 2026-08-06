@@ -1,10 +1,12 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -4013,9 +4015,16 @@ func TestDashboardStats_RejectsInvalidTimeRangeBeforeQuerying(t *testing.T) {
 }
 
 func TestDashboardStats_ReturnsServerErrorWhenOverviewQueryFails(t *testing.T) {
+	var diagnosticLog bytes.Buffer
+	previousLogWriter := log.Writer()
+	log.SetOutput(&diagnosticLog)
+	t.Cleanup(func() { log.SetOutput(previousLogWriter) })
+
 	db := &testutil.MockDB{
 		QueryRowFn: func(context.Context, string, ...any) pgx.Row {
-			return &testutil.MockRow{ScanFn: func(...any) error { return fmt.Errorf("database unavailable") }}
+			return &testutil.MockRow{ScanFn: func(...any) error {
+				return &pgconn.PgError{Code: "08006", Message: "database unavailable raw-diagnostic-marker"}
+			}}
 		},
 	}
 	h := newTestHandler(db)
@@ -4027,6 +4036,22 @@ func TestDashboardStats_ReturnsServerErrorWhenOverviewQueryFails(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response["code"] != "dashboard_query_failed" || response["stage"] != "overview" || response["reason_code"] != dashboardReasonPostgres {
+		t.Fatalf("unexpected sanitized diagnostic: %#v", response)
+	}
+	if strings.Contains(rec.Body.String(), "database unavailable") || strings.Contains(rec.Body.String(), "raw-diagnostic-marker") || strings.Contains(rec.Body.String(), "08006") {
+		t.Fatalf("response disclosed database details: %s", rec.Body.String())
+	}
+	if !strings.Contains(diagnosticLog.String(), "stage=overview") || !strings.Contains(diagnosticLog.String(), "reason_code=postgres_query_error") || !strings.Contains(diagnosticLog.String(), "sqlstate=08006") {
+		t.Fatalf("missing sanitized query diagnostic: %s", diagnosticLog.String())
+	}
+	if strings.Contains(diagnosticLog.String(), "database unavailable") || strings.Contains(diagnosticLog.String(), "raw-diagnostic-marker") || strings.Contains(diagnosticLog.String(), "SELECT") {
+		t.Fatalf("diagnostic log disclosed raw database details: %s", diagnosticLog.String())
 	}
 }
 

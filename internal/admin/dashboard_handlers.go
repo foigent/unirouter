@@ -2,14 +2,40 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/money"
+)
+
+type dashboardQueryStage string
+
+const (
+	dashboardStageOverview            dashboardQueryStage = "overview"
+	dashboardStageLatencyPercentiles  dashboardQueryStage = "latency_percentiles"
+	dashboardStageRecentLogs          dashboardQueryStage = "recent_logs"
+	dashboardStageDailyTrend          dashboardQueryStage = "daily_trend"
+	dashboardStageModelDistribution   dashboardQueryStage = "model_distribution"
+	dashboardStagePreviousPeriodDelta dashboardQueryStage = "previous_period_delta"
+	dashboardStageWallet              dashboardQueryStage = "wallet"
+	dashboardStageModelPrices         dashboardQueryStage = "model_prices"
+	dashboardStageChannelHealth       dashboardQueryStage = "channel_health"
+)
+
+const (
+	dashboardReasonContextCanceled  = "context_canceled"
+	dashboardReasonDeadlineExceeded = "deadline_exceeded"
+	dashboardReasonNoRows           = "unexpected_no_rows"
+	dashboardReasonPostgres         = "postgres_query_error"
+	dashboardReasonDatabase         = "database_query_error"
 )
 
 func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
@@ -29,32 +55,32 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 
 	totalRequests, todayCostMicros, avgLatencyMs, successRate, err := h.dashboardOverview(ctx, orgID, startTime, endTime)
 	if err != nil {
-		writeDashboardQueryError(w, err)
+		writeDashboardQueryError(w, r, dashboardStageOverview, err)
 		return
 	}
 	p95LatencyMs, p99LatencyMs, err := h.dashboardLatencyPercentiles(ctx, orgID, startTime, endTime)
 	if err != nil {
-		writeDashboardQueryError(w, err)
+		writeDashboardQueryError(w, r, dashboardStageLatencyPercentiles, err)
 		return
 	}
 	recentLogs, err := h.dashboardRecentLogs(ctx, orgID)
 	if err != nil {
-		writeDashboardQueryError(w, err)
+		writeDashboardQueryError(w, r, dashboardStageRecentLogs, err)
 		return
 	}
 	dailyTrend, err := h.dashboardDailyTrend(ctx, orgID, startTime, endTime)
 	if err != nil {
-		writeDashboardQueryError(w, err)
+		writeDashboardQueryError(w, r, dashboardStageDailyTrend, err)
 		return
 	}
 	modelDistribution, err := h.dashboardModelDistribution(ctx, orgID, startTime, endTime)
 	if err != nil {
-		writeDashboardQueryError(w, err)
+		writeDashboardQueryError(w, r, dashboardStageModelDistribution, err)
 		return
 	}
 	deltaCostMicros, deltaLatency, deltaRate, err := h.dashboardPreviousPeriodDelta(ctx, orgID, start, end, todayCostMicros, p95LatencyMs, successRate)
 	if err != nil {
-		writeDashboardQueryError(w, err)
+		writeDashboardQueryError(w, r, dashboardStagePreviousPeriodDelta, err)
 		return
 	}
 
@@ -84,7 +110,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	if unitContext || auth.IsBillingAdmin(role) {
 		walletBalance, walletGranted, walletFrozen, walletThreshold, err := h.dashboardWalletInfo(ctx, orgID)
 		if err != nil {
-			writeDashboardQueryError(w, err)
+			writeDashboardQueryError(w, r, dashboardStageWallet, err)
 			return
 		}
 		response["wallet_balance_micros"] = strconv.FormatInt(walletBalance, 10)
@@ -95,7 +121,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	if unitContext || auth.RoleIn(role, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin) {
 		modelPrices, err := h.dashboardModelPrices(ctx)
 		if err != nil {
-			writeDashboardQueryError(w, err)
+			writeDashboardQueryError(w, r, dashboardStageModelPrices, err)
 			return
 		}
 		response["model_prices"] = modelPrices
@@ -103,7 +129,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	if unitContext || auth.IsPlatformAdmin(role) {
 		channelHealth, err := h.dashboardChannelHealth(ctx, orgID, startTime, endTime)
 		if err != nil {
-			writeDashboardQueryError(w, err)
+			writeDashboardQueryError(w, r, dashboardStageChannelHealth, err)
 			return
 		}
 		response["channel_health"] = channelHealth
@@ -135,8 +161,34 @@ func dashboardTimeRange(r *http.Request, now time.Time) (time.Time, time.Time, e
 	return start.UTC(), end.UTC(), nil
 }
 
-func writeDashboardQueryError(w http.ResponseWriter, _ error) {
-	writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Dashboard query failed"})
+func writeDashboardQueryError(w http.ResponseWriter, r *http.Request, stage dashboardQueryStage, err error) {
+	reasonCode, sqlState := classifyDashboardQueryError(err)
+	logger.New(logger.Fields{
+		RequestID: middleware.GetRequestIDFromContext(r.Context()),
+		Module:    "dashboard",
+	}).Error("query_failed stage=%s reason_code=%s sqlstate=%s", stage, reasonCode, sqlState)
+	writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+		"error":       "Dashboard query failed",
+		"code":        "dashboard_query_failed",
+		"stage":       stage,
+		"reason_code": reasonCode,
+	})
+}
+
+func classifyDashboardQueryError(err error) (reasonCode, sqlState string) {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return dashboardReasonContextCanceled, "none"
+	case errors.Is(err, context.DeadlineExceeded):
+		return dashboardReasonDeadlineExceeded, "none"
+	case errors.Is(err, pgx.ErrNoRows):
+		return dashboardReasonNoRows, "none"
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return dashboardReasonPostgres, pgErr.SQLState()
+	}
+	return dashboardReasonDatabase, "none"
 }
 
 // dashboardOverview returns total requests, period cost, avg latency, and success rate.
@@ -333,6 +385,9 @@ func (h *Handler) dashboardWalletInfo(ctx context.Context, orgID int64) (balance
 		 FROM wallets WHERE org_id = $1`,
 		orgID,
 	).Scan(&balance, &granted, &frozen, &thresholdCents)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, 0, 0, nil
+	}
 	if err != nil {
 		return
 	}

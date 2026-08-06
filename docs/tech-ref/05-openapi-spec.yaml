@@ -1703,7 +1703,24 @@ paths:
       org_id; otherwise their positive JWT organization is used. No organization is
       selected by database order or a hard-coded fallback.
     get: *operation_list
-    post: *operation_create
+    post:
+      tags: [Admin]
+      summary: Create an organization-scoped model registry entry
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelRegistryCreateRequest" }
+      responses:
+        "201": { $ref: "#/components/responses/JSON" }
+        "400":
+          description: Invalid model registry input. Invalid context_length values return code=invalid_context_length and reason_code=integer_tokens_0_to_2147483647_required without attempting a database mutation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/model-registry/{id}:
     x-unirouter-rbac:
@@ -1715,7 +1732,25 @@ paths:
       platform administrator (including normalized legacy admin) may select org_id in
       the query; when omitted, the existing record supplies the explicit target
       organization. A missing/zero tenant JWT organization fails closed.
-    put: *operation_update_by_id
+    put:
+      tags: [Admin]
+      summary: Update an organization-scoped model registry entry
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelRegistryMutation" }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "400":
+          description: Invalid model registry input. Invalid context_length values return code=invalid_context_length and reason_code=integer_tokens_0_to_2147483647_required without attempting a database mutation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
 
   /api/v1/invocation-optimization/contract:
     x-unirouter-rbac:
@@ -3561,6 +3596,34 @@ components:
         price_basis_tokens: { type: integer, format: int64, enum: [1000000] }
         updated_at: { type: string, format: date-time }
       additionalProperties: false
+    ExactTokenCount:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 2147483647
+      description: Exact canonical token count. Zero means unknown or not declared. K/M shorthand is a UI-only decimal-SI input convenience and is not valid JSON API input.
+    ModelRegistryMutation:
+      type: object
+      properties:
+        model_name: { type: string, minLength: 1 }
+        display_name: { type: string }
+        provider_family: { type: string }
+        lifecycle: { type: string, enum: [staging, ga, deprecated, retired] }
+        context_length: { $ref: "#/components/schemas/ExactTokenCount" }
+        output_limit: { type: integer, minimum: 0 }
+        capability_tags: { type: string }
+        data_residency: { type: string }
+        pricing_model_name: { type: string }
+        approved_catalog: { type: boolean }
+        migration_recommendation: { type: string }
+      additionalProperties: true
+    ModelRegistryCreateRequest:
+      allOf:
+        - $ref: "#/components/schemas/ModelRegistryMutation"
+        - type: object
+          required: [model_name]
+          properties:
+            org_id: { type: integer, format: int64, minimum: 1 }
     ModelPriceMutation:
       type: object
       properties:

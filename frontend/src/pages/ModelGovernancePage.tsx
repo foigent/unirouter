@@ -4,7 +4,7 @@ import { IconEdit, IconPlus, IconRefresh, IconServer, IconSetting } from '@douyi
 import { api } from '../api/client';
 import { isPlatformAdminRole } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
+import { EmptyState, ExactTokenCountInput, PageHeader, parseExactTokenCount, StatusTag, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
 import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 import InvocationOptimizationWorkspace from './InvocationOptimizationWorkspace';
@@ -445,12 +445,17 @@ export default function ModelGovernancePage() {
   };
 
   const handleRegistrySubmit = async (values: Record<string, any>) => {
+    const parsedContextLength = parseExactTokenCount(values.context_length);
+    if (!parsedContextLength.ok) {
+      Toast.error('上下文长度必须是 0..2147483647 的整数 tokens，或十进制整数 K/M');
+      return;
+    }
     const payload = {
       model_name: String(values.model_name || '').trim(),
       display_name: String(values.display_name || values.model_name || '').trim(),
       provider_family: String(values.provider_family || '').trim(),
       lifecycle: String(values.lifecycle || 'staging'),
-      context_length: toNumber(values.context_length),
+      context_length: parsedContextLength.value,
       output_limit: toNumber(values.output_limit),
       capability_tags: String(values.capability_tags || '').trim(),
       data_residency: String(values.data_residency || '').trim(),
@@ -915,7 +920,12 @@ export default function ModelGovernancePage() {
           <Form.Input field="provider_family" label="供应商族" placeholder="openai / anthropic / gemini" />
           <Form.Select field="lifecycle" label="生命周期" optionList={lifecycleOptions} rules={[{ required: true, message: '请选择生命周期' }]} />
           <div className="ur-modelgov-form-grid">
-            <Form.InputNumber field="context_length" label="上下文长度" min={0} style={{ width: '100%' }} />
+            <ExactTokenCountInput
+              field="context_length"
+              initialValue={registrySheet?.record?.context_length ?? 0}
+              resetKey={`${registrySheet?.mode || 'closed'}-${registrySheet?.record?.id || 'new'}`}
+              style={{ width: '100%' }}
+            />
             <Form.InputNumber field="output_limit" label="输出上限" min={0} style={{ width: '100%' }} />
           </div>
           <Form.Input field="capability_tags" label="能力标签" placeholder="chat,vision,json" />

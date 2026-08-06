@@ -22,6 +22,47 @@ type modelSetItemRequest struct {
 	ItemName string `json:"item_name"`
 }
 
+const maxContextLengthTokens int64 = 2147483647
+
+const (
+	contextLengthErrorCode  = "invalid_context_length"
+	contextLengthReasonCode = "integer_tokens_0_to_2147483647_required"
+)
+
+var errInvalidContextLength = errors.New("invalid context_length")
+
+// contextLengthInput keeps the public JSON contract on exact integer tokens.
+// K/M shorthand is a UI-only input convenience and is never accepted by the
+// canonical API.
+type contextLengthInput int
+
+func (value *contextLengthInput) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" {
+		return errInvalidContextLength
+	}
+	for _, char := range raw {
+		if char < '0' || char > '9' {
+			return errInvalidContextLength
+		}
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || parsed > maxContextLengthTokens {
+		return errInvalidContextLength
+	}
+	*value = contextLengthInput(parsed)
+	return nil
+}
+
+func writeContextLengthValidationError(w http.ResponseWriter) {
+	writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+		"error":       "context_length must be an integer token count between 0 and 2147483647",
+		"code":        contextLengthErrorCode,
+		"field":       "context_length",
+		"reason_code": contextLengthReasonCode,
+	})
+}
+
 type modelRegistryAuditState struct {
 	OrgID                   int64
 	ModelName               string
@@ -134,20 +175,24 @@ func (h *Handler) ListModelRegistry(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		OrgID                   *int64 `json:"org_id"`
-		ModelName               string `json:"model_name"`
-		DisplayName             string `json:"display_name"`
-		ProviderFamily          string `json:"provider_family"`
-		Lifecycle               string `json:"lifecycle"`
-		ContextLength           int    `json:"context_length"`
-		OutputLimit             int    `json:"output_limit"`
-		CapabilityTags          string `json:"capability_tags"`
-		DataResidency           string `json:"data_residency"`
-		PricingModelName        string `json:"pricing_model_name"`
-		ApprovedCatalog         bool   `json:"approved_catalog"`
-		MigrationRecommendation string `json:"migration_recommendation"`
+		OrgID                   *int64             `json:"org_id"`
+		ModelName               string             `json:"model_name"`
+		DisplayName             string             `json:"display_name"`
+		ProviderFamily          string             `json:"provider_family"`
+		Lifecycle               string             `json:"lifecycle"`
+		ContextLength           contextLengthInput `json:"context_length"`
+		OutputLimit             int                `json:"output_limit"`
+		CapabilityTags          string             `json:"capability_tags"`
+		DataResidency           string             `json:"data_residency"`
+		PricingModelName        string             `json:"pricing_model_name"`
+		ApprovedCatalog         bool               `json:"approved_catalog"`
+		MigrationRecommendation string             `json:"migration_recommendation"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if errors.Is(err, errInvalidContextLength) {
+			writeContextLengthValidationError(w)
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
@@ -171,8 +216,8 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid lifecycle"})
 		return
 	}
-	if req.ContextLength < 0 || req.OutputLimit < 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "context_length and output_limit must be >= 0"})
+	if req.OutputLimit < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "output_limit must be >= 0"})
 		return
 	}
 	req.CapabilityTags = modelgov.NormalizeCSV(req.CapabilityTags)
@@ -198,7 +243,7 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
 		 RETURNING id`,
 		orgID, req.ModelName, req.DisplayName, req.ProviderFamily, req.Lifecycle,
-		req.ContextLength, req.OutputLimit, req.CapabilityTags, req.DataResidency,
+		int(req.ContextLength), req.OutputLimit, req.CapabilityTags, req.DataResidency,
 		req.PricingModelName, req.ApprovedCatalog, req.MigrationRecommendation,
 	).Scan(&id)
 	if err != nil {
@@ -213,7 +258,7 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 	afterState := map[string]interface{}{
 		"id": id, "org_id": orgID, "model_name": req.ModelName, "display_name": req.DisplayName,
 		"provider_family": req.ProviderFamily, "lifecycle": req.Lifecycle,
-		"context_length": req.ContextLength, "output_limit": req.OutputLimit,
+		"context_length": int(req.ContextLength), "output_limit": req.OutputLimit,
 		"capability_tags": req.CapabilityTags, "data_residency": req.DataResidency,
 		"pricing_model_name": req.PricingModelName, "approved_catalog": req.ApprovedCatalog,
 		"migration_recommendation": req.MigrationRecommendation,
@@ -243,19 +288,23 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ModelName               *string `json:"model_name"`
-		DisplayName             *string `json:"display_name"`
-		ProviderFamily          *string `json:"provider_family"`
-		Lifecycle               *string `json:"lifecycle"`
-		ContextLength           *int    `json:"context_length"`
-		OutputLimit             *int    `json:"output_limit"`
-		CapabilityTags          *string `json:"capability_tags"`
-		DataResidency           *string `json:"data_residency"`
-		PricingModelName        *string `json:"pricing_model_name"`
-		ApprovedCatalog         *bool   `json:"approved_catalog"`
-		MigrationRecommendation *string `json:"migration_recommendation"`
+		ModelName               *string             `json:"model_name"`
+		DisplayName             *string             `json:"display_name"`
+		ProviderFamily          *string             `json:"provider_family"`
+		Lifecycle               *string             `json:"lifecycle"`
+		ContextLength           *contextLengthInput `json:"context_length"`
+		OutputLimit             *int                `json:"output_limit"`
+		CapabilityTags          *string             `json:"capability_tags"`
+		DataResidency           *string             `json:"data_residency"`
+		PricingModelName        *string             `json:"pricing_model_name"`
+		ApprovedCatalog         *bool               `json:"approved_catalog"`
+		MigrationRecommendation *string             `json:"migration_recommendation"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if errors.Is(err, errInvalidContextLength) {
+			writeContextLengthValidationError(w)
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
@@ -284,12 +333,8 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if req.ContextLength != nil {
-		if *req.ContextLength < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "context_length must be >= 0"})
-			return
-		}
 		sets = append(sets, fmt.Sprintf("context_length = $%d", argIdx))
-		args = append(args, *req.ContextLength)
+		args = append(args, int(*req.ContextLength))
 		argIdx++
 	}
 	if req.OutputLimit != nil {
