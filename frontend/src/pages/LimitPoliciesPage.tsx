@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Form, SideSheet, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { isBillingRole, isOrgAdminRole, isPlatformAdminRole } from '../navigation';
+import { isBillingRole, isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { PageHeader, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
@@ -82,10 +82,11 @@ function modeTag(mode: LimitPolicy['mode']) {
 }
 
 export default function LimitPoliciesPage() {
-  const role = useAuthStore((state) => state.user?.role);
+  const user = useAuthStore((state) => state.user);
+  const organizationRole = organizationRoleForUser(user);
   const userOrgId = useAuthStore((state) => state.user?.org_id);
-  const canManage = isOrgAdminRole(role) && !isBillingRole(role);
-  const platform = isPlatformAdminRole(role);
+  const canManage = isOrgAdminRole(organizationRole) && !isBillingRole(organizationRole);
+  const platform = isPlatformAdminRole(organizationRole);
   const [policies, setPolicies] = useState<LimitPolicy[]>([]);
   const [keys, setKeys] = useState<KeyOption[]>([]);
   const [models, setModels] = useState<string[]>([]);

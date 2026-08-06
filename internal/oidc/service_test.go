@@ -27,6 +27,34 @@ func TestServiceKeepsOrganizationViewerDefaultRoleDistinct(t *testing.T) {
 	}
 }
 
+func TestClassifyOIDCRoleSeparatesOrganizationAndProjectAxes(t *testing.T) {
+	tests := []struct {
+		input             string
+		organizationRole  string
+		compatibilityRole string
+		projectRole       string
+		valid             bool
+	}{
+		{input: auth.RoleOrgAdmin, organizationRole: auth.RoleOrgAdmin, compatibilityRole: auth.RoleOrgAdmin, valid: true},
+		{input: auth.RoleOrgViewer, organizationRole: auth.RoleOrgViewer, compatibilityRole: auth.RoleOrgViewer, valid: true},
+		{input: auth.ProjectRoleAdmin, organizationRole: auth.RoleMember, compatibilityRole: auth.RoleProjectAdmin, projectRole: auth.ProjectRoleAdmin, valid: true},
+		{input: auth.ProjectRoleUser, organizationRole: auth.RoleMember, compatibilityRole: auth.RoleDeveloper, projectRole: auth.ProjectRoleUser, valid: true},
+		{input: auth.ProjectRoleViewer, organizationRole: auth.RoleMember, compatibilityRole: auth.RoleViewer, projectRole: auth.ProjectRoleViewer, valid: true},
+		{input: auth.LegacyProjectRoleDeveloper, organizationRole: auth.RoleMember, compatibilityRole: auth.RoleDeveloper, projectRole: auth.ProjectRoleUser, valid: true},
+		{input: auth.RoleDeveloper, organizationRole: auth.RoleMember, compatibilityRole: auth.RoleDeveloper, projectRole: auth.ProjectRoleUser, valid: true},
+		{input: auth.RoleViewer, organizationRole: auth.RoleMember, compatibilityRole: auth.RoleViewer, projectRole: auth.ProjectRoleViewer, valid: true},
+		{input: "project_owner", valid: false},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			organizationRole, compatibilityRole, projectRole, valid := classifyOIDCRole(test.input)
+			if valid != test.valid || organizationRole != test.organizationRole || compatibilityRole != test.compatibilityRole || projectRole != test.projectRole {
+				t.Fatalf("classifyOIDCRole(%q) = (%q,%q,%q,%v)", test.input, organizationRole, compatibilityRole, projectRole, valid)
+			}
+		})
+	}
+}
+
 func TestServiceAuthCodeURL(t *testing.T) {
 	provider := newOIDCTestProvider(t, "nonce-1")
 	defer provider.Close()

@@ -6,7 +6,7 @@ import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
 import { keyTypeOptions } from '../utils/displayLabels';
 import { useAuthStore } from '../store/auth';
-import { isPlatformAdminRole } from '../navigation';
+import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
@@ -141,7 +141,7 @@ export default function KeysPage() {
       const organizationItems = await loadAllPages<Organization>((page, size) => api.getOrganizations(page, size))
         .catch(() => fallbackOrganizations);
       const effectiveOrganizations = organizationItems.length ? organizationItems : fallbackOrganizations;
-      const projectItems = isPlatformAdminRole(currentUser?.role)
+      const projectItems = isPlatformAdminRole(organizationRoleForUser(currentUser))
         ? (await Promise.all(effectiveOrganizations.map(org =>
             loadAllPages<Project>((page, size) => api.getProjects(page, size, { status: 'active', org_id: org.id })).catch(() => []),
           ))).flat()
@@ -151,7 +151,7 @@ export default function KeysPage() {
       setProjects(projectItems);
       setOwners(ownerItems);
     })();
-  }, [currentUser?.org_id, currentUser?.org_name, currentUser?.role]);
+  }, [currentUser?.org_id, currentUser?.org_name, currentUser?.organization_role, currentUser?.role]);
 
   const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
 

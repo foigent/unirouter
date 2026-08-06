@@ -154,11 +154,29 @@ func TestMainRegistersExtractedPricingRoutes(t *testing.T) {
 	}
 	mainSource := string(src)
 	for _, fragment := range []string{
-		"return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)",
+		"return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)",
 		"registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: pricingReadRoute, write: platformRoute})",
 	} {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("main.go pricing route wiring missing %q", fragment)
+		}
+	}
+}
+
+func TestProductionRoutesDoNotAuthorizeFromCompatibilityRole(t *testing.T) {
+	production := productionRouteSource(t)
+	for _, forbidden := range []string{
+		"middleware.RequireRoles(",
+		"middleware.RequireExactRoles(",
+		"roleRoute(",
+	} {
+		if strings.Contains(production, forbidden) {
+			t.Fatalf("production route wiring must not authorize from users.role compatibility shadow: %s", forbidden)
+		}
+	}
+	for _, projectRole := range []string{"auth.RoleProjectAdmin", "auth.RoleDeveloper", "auth.RoleViewer"} {
+		if strings.Contains(production, "organizationRoleRoute(h, "+projectRole) {
+			t.Fatalf("project role must not be wired into an organization-role route: %s", projectRole)
 		}
 	}
 }
@@ -201,19 +219,19 @@ func TestMainOrganizationRouteUsesScopedReadGuard(t *testing.T) {
 	}
 }
 
-func TestMainKeyMutationRoutesAllowDeveloperDisableOnly(t *testing.T) {
+func TestMainKeyMutationRoutesDeferToLiveMembershipAuthorization(t *testing.T) {
 	src, err := os.ReadFile("main.go")
 	if err != nil {
 		t.Fatalf("read main.go: %v", err)
 	}
 	mainSource := string(src)
-	disableRoute := `mux.Handle("POST /api/v1/keys/{id}/disable", roleRoute(adminHandler.DisableAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper))`
+	disableRoute := `mux.Handle("POST /api/v1/keys/{id}/disable", adminRoute(adminHandler.DisableAPIKey))`
 	if !strings.Contains(mainSource, disableRoute) {
-		t.Fatalf("developer-owned key disable route must include developer: %s", disableRoute)
+		t.Fatalf("key disable route must let the handler authorize live membership: %s", disableRoute)
 	}
-	updateRoute := `mux.Handle("PUT /api/v1/keys/{id}", roleRoute(adminHandler.UpdateAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))`
+	updateRoute := `mux.Handle("PUT /api/v1/keys/{id}", adminRoute(adminHandler.UpdateAPIKey))`
 	if !strings.Contains(mainSource, updateRoute) {
-		t.Fatalf("general key update route must remain administrator-only: %s", updateRoute)
+		t.Fatalf("key update route must let the handler authorize live membership: %s", updateRoute)
 	}
 
 	spec, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
@@ -221,11 +239,38 @@ func TestMainKeyMutationRoutesAllowDeveloperDisableOnly(t *testing.T) {
 		t.Fatalf("read OpenAPI spec: %v", err)
 	}
 	for _, fragment := range []string{
-		"  /api/v1/keys/{id}/disable:\n    x-unirouter-rbac:\n      post: [platform_admin, org_admin, project_admin, developer]",
-		"The API authorizes a developer only when owner_user_id is their own user ID and they retain project membership.",
+		"  /api/v1/keys/{id}:\n    x-unirouter-rbac:\n      get: [platform_admin, org_admin, project_admin, project_user, project_viewer]\n      put: [platform_admin, org_admin, project_admin, project_user]",
+		"  /api/v1/keys/{id}/disable:\n    x-unirouter-rbac:\n      post: [platform_admin, org_admin, project_admin, project_user]",
+		"users.role compatibility shadow is never an authorization source",
 	} {
 		if !strings.Contains(string(spec), fragment) {
-			t.Fatalf("OpenAPI developer key-disable boundary missing %q", fragment)
+			t.Fatalf("OpenAPI live-membership key boundary missing %q", fragment)
+		}
+	}
+}
+
+func TestModelCatalogRouteAndOpenAPIDocumentTwoAxisAuthorization(t *testing.T) {
+	routes, err := os.ReadFile("model_governance_routes.go")
+	if err != nil {
+		t.Fatalf("read model_governance_routes.go: %v", err)
+	}
+	const registration = `mux.Handle("GET /api/v1/model-catalog", guards.projectRead(handler.ListApprovedModelCatalog))`
+	if !strings.Contains(string(routes), registration) {
+		t.Fatalf("model catalog must reach the handler's live-membership authorization: %s", registration)
+	}
+
+	spec, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
+	if err != nil {
+		t.Fatalf("read OpenAPI spec: %v", err)
+	}
+	for _, fragment := range []string{
+		"  /api/v1/model-catalog:\n    x-unirouter-rbac:\n      get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]",
+		"billing_admin is\n      denied model-governance access",
+		"organization_role=member must provide project_id",
+		"users.role compatibility aliases are never an authorization source",
+	} {
+		if !strings.Contains(string(spec), fragment) {
+			t.Fatalf("model-catalog handler/OpenAPI parity missing %q", fragment)
 		}
 	}
 }
@@ -337,7 +382,7 @@ func TestFrontendEntrypointHasRoleAwareUnknownRouteFallback(t *testing.T) {
 	src := string(srcBytes)
 	for _, fragment := range []string{
 		"function UnknownRoute()",
-		"getDefaultPathForRole(role)",
+		"getDefaultPathForAuthz(authzContextForUser(user))",
 		`<Route path="*" element={<UnknownRoute />} />`,
 	} {
 		if !strings.Contains(src, fragment) {

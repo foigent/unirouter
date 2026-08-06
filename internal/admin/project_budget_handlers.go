@@ -18,14 +18,14 @@ func (h *Handler) GetProjectBudget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	role := actorRole(r.Context())
+	organizationRole := actorOrganizationRole(r.Context())
 	allowed := false
-	switch role {
+	switch organizationRole {
 	case auth.RolePlatformAdmin:
 		allowed = true
 	case auth.RoleOrgAdmin, auth.RoleBillingAdmin:
 		allowed = h.projectBelongsToActorOrg(r.Context(), projectID)
-	case auth.RoleProjectAdmin:
+	default:
 		allowed = h.hasProjectMembership(r.Context(), projectID, projectMemberAdmin)
 	}
 	if !allowed {
@@ -62,11 +62,7 @@ func (h *Handler) UpdateProjectBudget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	role := actorRole(r.Context())
-	if !auth.RoleIn(role, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin) {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-		return
-	}
+	organizationRole := actorOrganizationRole(r.Context())
 	var req struct {
 		BudgetCents  *int64  `json:"budget_cents"`
 		BudgetPeriod *string `json:"budget_period"`
@@ -111,12 +107,12 @@ func (h *Handler) UpdateProjectBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allowed := false
-	switch role {
+	switch organizationRole {
 	case auth.RolePlatformAdmin:
 		allowed = true
 	case auth.RoleOrgAdmin, auth.RoleBillingAdmin:
 		allowed = actorCanAccessOrg(r.Context(), orgID)
-	case auth.RoleProjectAdmin:
+	default:
 		allowed, err = canManageProjectMembersTx(r.Context(), tx, projectID, orgID)
 	}
 	if err != nil {

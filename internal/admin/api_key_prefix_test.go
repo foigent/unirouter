@@ -39,7 +39,7 @@ func TestCreateAPIKeyRetriesPrefixCollision(t *testing.T) {
 		},
 	}
 	h := NewHandler(db, "test-secret", []byte("0123456789abcdef01234567"), nil)
-	req := httptest.NewRequest(http.MethodPost, "/keys", strings.NewReader(`{"org_id":1,"name":"collision-retry"}`))
+	req := httptest.NewRequest(http.MethodPost, "/keys", strings.NewReader(`{"org_id":1,"project_id":9,"name":"collision-retry"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -84,7 +84,7 @@ func TestCreateAPIKeyPrefixCollisionRetryIsBounded(t *testing.T) {
 		},
 	}
 	h := NewHandler(db, "test-secret", []byte("0123456789abcdef01234567"), nil)
-	req := httptest.NewRequest(http.MethodPost, "/keys", strings.NewReader(`{"org_id":1,"name":"collision-exhausted"}`))
+	req := httptest.NewRequest(http.MethodPost, "/keys", strings.NewReader(`{"org_id":1,"project_id":9,"name":"collision-exhausted"}`))
 	rec := httptest.NewRecorder()
 
 	h.CreateAPIKey(rec, req)

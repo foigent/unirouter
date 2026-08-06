@@ -143,15 +143,16 @@ func TestLogin_Success(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1         // id
-					*dest[1].(*int64) = 1         // org_id
-					*dest[2].(*string) = hash     // password_hash
-					*dest[3].(*string) = "admin"  // role
-					*dest[4].(*string) = "active" // status
-					*dest[5].(*string) = "Acme"   // org_name
-					*dest[6].(*string) = "admin@example.com"
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[0].(*int64) = 1                 // id
+					*dest[1].(*int64) = 1                 // org_id
+					*dest[2].(*string) = hash             // password_hash
+					*dest[3].(*string) = "platform_admin" // organization_role
+					*dest[4].(*string) = "admin"          // compatibility role
+					*dest[5].(*string) = "active"         // status
+					*dest[6].(*string) = "Acme"           // org_name
+					*dest[7].(*string) = "admin@example.com"
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -196,12 +197,13 @@ func TestLogin_ExternalProviderWithBcryptDenied(t *testing.T) {
 				*dest[0].(*int64) = 1
 				*dest[1].(*int64) = 1
 				*dest[2].(*string) = hash
-				*dest[3].(*string) = "admin"
-				*dest[4].(*string) = "active"
-				*dest[5].(*string) = "Acme"
-				*dest[6].(*string) = "admin@example.com"
-				*dest[7].(*string) = "oidc"
-				*dest[9].(*string) = "admin"
+				*dest[3].(*string) = "platform_admin"
+				*dest[4].(*string) = "admin"
+				*dest[5].(*string) = "active"
+				*dest[6].(*string) = "Acme"
+				*dest[7].(*string) = "admin@example.com"
+				*dest[8].(*string) = "oidc"
+				*dest[10].(*string) = "admin"
 				return nil
 			}}
 		},
@@ -239,12 +241,13 @@ func TestLogin_WritesAuditWithActor(t *testing.T) {
 					*dest[0].(*int64) = 7
 					*dest[1].(*int64) = 3
 					*dest[2].(*string) = hash
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "active"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -284,12 +287,13 @@ func TestLogin_WrongPassword(t *testing.T) {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = hash
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "active"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -322,12 +326,13 @@ func TestLogin_PublicDefaultPasswordBlockedWithoutApplicationUsernameFold(t *tes
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = string(hash)
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "active"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "unicode-\u0130dentity"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "unicode-\u0130dentity"
 					return nil
 				},
 			}
@@ -359,12 +364,13 @@ func TestLogin_DefaultAdminPasswordAllowedForExplicitDevOverride(t *testing.T) {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = string(hash)
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "active"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -552,12 +558,13 @@ func TestGetMe_IncludesIdentityProviderAndEmail(t *testing.T) {
 		return &testutil.MockRow{ScanFn: func(dest ...any) error {
 			*dest[0].(*string) = "alice"
 			*dest[1].(*string) = "org_admin"
-			*dest[2].(*string) = "active"
-			*dest[3].(*int64) = 22
-			*dest[4].(*time.Time) = createdAt
-			*dest[5].(*string) = "Acme"
-			*dest[6].(*string) = "alice@example.com"
-			*dest[7].(*string) = "oidc"
+			*dest[2].(*string) = "org_admin"
+			*dest[3].(*string) = "active"
+			*dest[4].(*int64) = 22
+			*dest[5].(*time.Time) = createdAt
+			*dest[6].(*string) = "Acme"
+			*dest[7].(*string) = "alice@example.com"
+			*dest[8].(*string) = "oidc"
 			return nil
 		}}
 	}}
@@ -616,12 +623,13 @@ func TestLogin_DisabledAccount(t *testing.T) {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = hash
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "disabled"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "disabled"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -1536,8 +1544,8 @@ func TestCreateUser_DefaultRole(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d", rec.Code)
 	}
-	if insertedRole != "org_viewer" {
-		t.Fatalf("expected default role org_viewer, got %s", insertedRole)
+	if insertedRole != auth.RoleMember {
+		t.Fatalf("expected default organization role member, got %s", insertedRole)
 	}
 }
 
@@ -1940,6 +1948,7 @@ func TestCreateAPIKey_Success(t *testing.T) {
 	body := `{"org_id":1,"name":"test-key","rpm_limit":120,"qps_limit":20}`
 	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin))
 	rec := httptest.NewRecorder()
 
 	h.CreateAPIKey(rec, req)
@@ -2024,6 +2033,7 @@ func TestCreateAPIKey_PersonalOwnerFields(t *testing.T) {
 	body := `{"org_id":1,"project_id":9,"owner_user_id":42,"key_type":"personal","name":"alice-key"}`
 	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin))
 	rec := httptest.NewRecorder()
 
 	h.CreateAPIKey(rec, req)
@@ -2148,6 +2158,7 @@ func TestCreateAPIKey_DBError(t *testing.T) {
 	body := `{"org_id":1,"name":"test-key"}`
 	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin))
 	rec := httptest.NewRecorder()
 
 	h.CreateAPIKey(rec, req)
@@ -2529,16 +2540,19 @@ func TestListUsers_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*int64) = 1                    // id
-						*dest[1].(*int64) = 1                    // org_id
-						*dest[2].(**string) = strPtr("Default")  // org_name
-						*dest[3].(*string) = "admin"             // username
-						*dest[4].(*string) = "admin"             // role
-						*dest[5].(*string) = "active"            // status
-						*dest[6].(*string) = "admin@example.com" // email
-						*dest[7].(*string) = "local"             // auth_provider
-						*dest[8].(*time.Time) = now              // created_at
-						*dest[9].(*time.Time) = now              // updated_at
+						*dest[0].(*int64) = 1                       // id
+						*dest[1].(*int64) = 1                       // org_id
+						*dest[2].(**string) = strPtr("Default")     // org_name
+						*dest[3].(*string) = "admin"                // username
+						*dest[4].(*string) = auth.RolePlatformAdmin // organization_role
+						*dest[5].(*string) = auth.RolePlatformAdmin // compatibility role
+						*dest[6].(*string) = "active"               // status
+						*dest[7].(*string) = "admin@example.com"    // email
+						*dest[8].(*string) = "local"                // auth_provider
+						*dest[9].(*time.Time) = now                 // created_at
+						*dest[10].(*time.Time) = now                // updated_at
+						*dest[11].(*[]int64) = []int64{}            // project_ids
+						*dest[12].(*string) = ""                    // project_names
 						return nil
 					},
 				},
@@ -4335,11 +4349,19 @@ func TestDisableAPIKey_DeveloperCanDisableOwnedKeyWithProjectMembership(t *testi
 					*dest[3].(*string) = "Developer key"
 					*dest[4].(*string) = "uk_developer"
 					*dest[5].(*string) = "active"
+					*dest[6].(*string) = ""
+					*dest[7].(*string) = "personal"
 					return nil
 				}}
 			case strings.Contains(sql, "FROM project_members"):
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {
-					*dest[0].(*int) = 1
+					roles, _ := args[3].([]string)
+					*dest[0].(*int) = 0
+					for _, role := range roles {
+						if role == auth.ProjectRoleUser || role == auth.RoleDeveloper {
+							*dest[0].(*int) = 1
+						}
+					}
 					return nil
 				}}
 			default:
@@ -4375,15 +4397,28 @@ func TestDisableAPIKey_DeveloperCannotDisableAnotherUsersKey(t *testing.T) {
 	execCalled := false
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*dest[0].(*int64) = 3
-				*dest[1].(*int64) = 9
-				*dest[2].(*int64) = 77
-				*dest[3].(*string) = "Another developer key"
-				*dest[4].(*string) = "uk_other"
-				*dest[5].(*string) = "active"
-				return nil
-			}}
+			switch {
+			case strings.Contains(sql, "FROM api_keys WHERE id"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 3
+					*dest[1].(*int64) = 9
+					*dest[2].(*int64) = 77
+					*dest[3].(*string) = "Another developer key"
+					*dest[4].(*string) = "uk_other"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = ""
+					*dest[7].(*string) = "personal"
+					return nil
+				}}
+			case strings.Contains(sql, "FROM project_members"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int) = 0
+					return nil
+				}}
+			default:
+				t.Fatalf("unexpected QueryRow: %s", sql)
+				return &testutil.MockRow{}
+			}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCalled = true

@@ -380,7 +380,7 @@ func (h *Handler) ListModelPrices(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": prices, "total": total, "page": page, "page_size": pageSize,
-		"can_mutate": auth.IsPlatformAdmin(actorRole(r.Context())),
+		"can_mutate": auth.IsPlatformAdmin(actorOrganizationRole(r.Context())),
 	})
 }
 
@@ -798,7 +798,7 @@ func (h *Handler) ListOrgModelPrices(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": items, "items": items, "total": total, "page": page, "page_size": pageSize,
-		"org_id": orgID, "can_mutate": auth.IsPlatformAdmin(actorRole(r.Context())),
+		"org_id": orgID, "can_mutate": auth.IsPlatformAdmin(actorOrganizationRole(r.Context())),
 	})
 }
 
@@ -1140,7 +1140,7 @@ func loadOrgModelPriceByOrgModel(ctx context.Context, q pricingQueryRower, orgID
 }
 
 func requirePlatformPriceMutation(w http.ResponseWriter, r *http.Request) bool {
-	if auth.IsPlatformAdmin(actorRole(r.Context())) {
+	if auth.IsPlatformAdmin(actorOrganizationRole(r.Context())) {
 		return true
 	}
 	writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})

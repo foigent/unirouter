@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { Banner, Button, Input, Spin, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import { isOrgAdminRole, isPlatformAdminRole } from '../navigation';
+import { isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import UsersPage from './UsersPage';
@@ -260,10 +260,11 @@ function DirectoryFoundation({ orgId }: { orgId?: number }) {
 }
 
 export default function OrganizationMembersPage() {
-  const role = useAuthStore(state => state.user?.role);
+  const user = useAuthStore(state => state.user);
+  const organizationRole = organizationRoleForUser(user);
   const orgId = useAuthStore(state => state.user?.org_id);
-  const canManageOrganization = isOrgAdminRole(role);
-  const platformAdmin = isPlatformAdminRole(role);
+  const canManageOrganization = isOrgAdminRole(organizationRole);
+  const platformAdmin = isPlatformAdminRole(organizationRole);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeSection = normalizeSection(searchParams.get('section'), canManageOrganization, platformAdmin);
 

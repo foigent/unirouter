@@ -23,7 +23,7 @@ import {
 } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { isPlatformAdminRole } from '../navigation';
+import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, MoneyText, PageHeader, StatusTag, Surface, microsToChartYuan } from '../ui';
 import { formatCompactNumber, formatPercent } from '../utils/formatNumber';
@@ -172,7 +172,7 @@ function driverStatusTone(value?: string) {
 export default function CostOptimizationPage() {
   const navigate = useNavigate();
   const user = useAuthStore(state => state.user);
-  const platform = isPlatformAdminRole(user?.role);
+  const platform = isPlatformAdminRole(organizationRoleForUser(user));
   const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
   const [groupBy, setGroupBy] = useState<GroupKey>('model');

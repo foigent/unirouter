@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/errdocs"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
@@ -117,7 +116,6 @@ func (h *Handler) analyticsConditions(r *http.Request) ([]string, []interface{},
 		conditions = append(conditions, fmt.Sprintf(condition, len(args)))
 	}
 
-	role := actorRole(r.Context())
 	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("Invalid org_id")
@@ -153,7 +151,7 @@ func (h *Handler) analyticsConditions(r *http.Request) ([]string, []interface{},
 			return nil, nil, fmt.Errorf("Forbidden")
 		}
 		add("project_id = $%d", projectID)
-	} else if auth.IsProjectScopedRole(role) && !myScope {
+	} else if !actorHasOrganizationUsageScope(r.Context()) && !myScope {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
 
@@ -184,7 +182,7 @@ func (h *Handler) analyticsConditions(r *http.Request) ([]string, []interface{},
 		if myScope && ownerUserID != currentUserID {
 			return nil, nil, fmt.Errorf("owner_user_id conflicts with scope")
 		}
-		if auth.IsProjectScopedRole(role) && ownerUserID != currentUserID {
+		if !actorHasOrganizationUsageScope(r.Context()) && ownerUserID != currentUserID {
 			return nil, nil, fmt.Errorf("Forbidden")
 		}
 		if !myScope {
@@ -384,7 +382,6 @@ func (h *Handler) internalStatusConditions(r *http.Request) ([]string, []interfa
 		conditions = append(conditions, fmt.Sprintf(condition, len(args)))
 	}
 
-	role := actorRole(r.Context())
 	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("Invalid org_id")
@@ -403,7 +400,7 @@ func (h *Handler) internalStatusConditions(r *http.Request) ([]string, []interfa
 			return nil, nil, fmt.Errorf("Forbidden")
 		}
 		add("project_id = $%d", projectID)
-	} else if auth.IsProjectScopedRole(role) {
+	} else if !actorHasOrganizationUsageScope(r.Context()) {
 		return nil, nil, fmt.Errorf("project_id is required")
 	}
 	return conditions, args, nil

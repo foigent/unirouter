@@ -25,9 +25,17 @@ const (
 	RoleDeveloper     = "developer"
 	RoleViewer        = "viewer"
 	RoleOrgViewer     = "org_viewer"
+	RoleMember        = "member"
+
+	ProjectRoleAdmin  = "project_admin"
+	ProjectRoleUser   = "project_user"
+	ProjectRoleViewer = "project_viewer"
+
+	LegacyProjectRoleDeveloper = "project_developer"
 
 	apiKeyDisplayPrefixLength = 20
-	adminJWTVersion           = 2
+	adminJWTLegacyVersion     = 2
+	adminJWTVersion           = 3
 	adminSessionIDBytes       = 32
 )
 
@@ -113,12 +121,13 @@ func DecryptKey(encoded string, key []byte) (string, error) {
 
 // Claims represents the JWT claims for admin users.
 type Claims struct {
-	UserID        int64  `json:"user_id"`
-	OrgID         int64  `json:"org_id"`
-	Role          string `json:"role"`
-	SessionID     string `json:"sid"`
-	AuthEpoch     int64  `json:"auth_epoch"`
-	SchemaVersion int    `json:"ver"`
+	UserID           int64  `json:"user_id"`
+	OrgID            int64  `json:"org_id"`
+	Role             string `json:"role"`
+	OrganizationRole string `json:"organization_role,omitempty"`
+	SessionID        string `json:"sid"`
+	AuthEpoch        int64  `json:"auth_epoch"`
+	SchemaVersion    int    `json:"ver"`
 	jwt.RegisteredClaims
 }
 
@@ -132,8 +141,12 @@ type AdminSession struct {
 
 // GenerateAdminSessionJWT creates a versioned admin JWT and the hashed session
 // record that must be persisted before the token is returned to a client.
-func GenerateAdminSessionJWT(userID, orgID int64, role string, authEpoch int64, secret string, expireHours int) (string, AdminSession, error) {
-	if userID <= 0 || orgID <= 0 || !IsValidRole(role) || authEpoch < 0 || expireHours <= 0 {
+func GenerateAdminSessionJWT(userID, orgID int64, organizationRole, role string, authEpoch int64, secret string, expireHours int) (string, AdminSession, error) {
+	canonicalOrganizationRole, organizationRoleOK := NormalizeOrganizationRole(organizationRole)
+	derivedFromCompatibilityRole, roleOK := NormalizeOrganizationRole(role)
+	if userID <= 0 || orgID <= 0 || !IsValidRole(role) || !organizationRoleOK || !roleOK ||
+		canonicalOrganizationRole != organizationRole || derivedFromCompatibilityRole != organizationRole ||
+		authEpoch < 0 || expireHours <= 0 {
 		return "", AdminSession{}, fmt.Errorf("invalid admin session claims")
 	}
 	sidBytes := make([]byte, adminSessionIDBytes)
@@ -144,12 +157,13 @@ func GenerateAdminSessionJWT(userID, orgID int64, role string, authEpoch int64, 
 	issuedAt := time.Now().UTC()
 	expiresAt := issuedAt.Add(time.Duration(expireHours) * time.Hour)
 	claims := Claims{
-		UserID:        userID,
-		OrgID:         orgID,
-		Role:          role,
-		SessionID:     sessionID,
-		AuthEpoch:     authEpoch,
-		SchemaVersion: adminJWTVersion,
+		UserID:           userID,
+		OrgID:            orgID,
+		Role:             role,
+		OrganizationRole: organizationRole,
+		SessionID:        sessionID,
+		AuthEpoch:        authEpoch,
+		SchemaVersion:    adminJWTVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(issuedAt),
@@ -193,13 +207,34 @@ func ParseJWT(tokenStr, secret string) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token")
 	}
 	decodedSID, decodeErr := base64.RawURLEncoding.DecodeString(claims.SessionID)
-	if claims.SchemaVersion != adminJWTVersion || claims.UserID <= 0 || claims.OrgID <= 0 ||
+	if (claims.SchemaVersion != adminJWTLegacyVersion && claims.SchemaVersion != adminJWTVersion) || claims.UserID <= 0 || claims.OrgID <= 0 ||
 		!IsValidRole(claims.Role) || claims.AuthEpoch < 0 || claims.IssuedAt == nil ||
 		claims.Subject != strconv.FormatInt(claims.UserID, 10) ||
 		len(decodedSID) != adminSessionIDBytes || decodeErr != nil {
 		return nil, fmt.Errorf("invalid admin session token")
 	}
+	if claims.SchemaVersion == adminJWTVersion {
+		canonical, ok := NormalizeOrganizationRole(claims.OrganizationRole)
+		derivedFromCompatibilityRole, roleOK := NormalizeOrganizationRole(claims.Role)
+		if !ok || !roleOK || canonical != claims.OrganizationRole || derivedFromCompatibilityRole != canonical {
+			return nil, fmt.Errorf("invalid admin session token")
+		}
+	}
 	return claims, nil
+}
+
+// EffectiveOrganizationRole returns the canonical account-level role for both
+// current v3 JWTs and accepted v2 compatibility JWTs. A v2 project-role shadow
+// deterministically maps to member and remains constrained by live membership.
+func (claims *Claims) EffectiveOrganizationRole() string {
+	if claims == nil {
+		return ""
+	}
+	if canonical, ok := NormalizeOrganizationRole(claims.OrganizationRole); ok && claims.OrganizationRole != "" {
+		return canonical
+	}
+	canonical, _ := NormalizeOrganizationRole(claims.Role)
+	return canonical
 }
 
 // --- Permission helpers ---
@@ -217,10 +252,81 @@ func NormalizeRole(role string) string {
 // IsValidRole checks whether a role is known to UniRouter.
 func IsValidRole(role string) bool {
 	switch role {
-	case RoleLegacyAdmin, RolePlatformAdmin, RoleOrgAdmin, RoleBillingAdmin, RoleProjectAdmin, RoleDeveloper, RoleViewer, RoleOrgViewer:
+	case RoleLegacyAdmin, RolePlatformAdmin, RoleOrgAdmin, RoleBillingAdmin, RoleProjectAdmin, RoleDeveloper, RoleViewer, RoleOrgViewer, RoleMember:
 		return true
 	default:
 		return false
+	}
+}
+
+// NormalizeOrganizationRole maps every accepted account-level input onto the
+// canonical organization authority stored in users.organization_role. Legacy
+// project-scoped user roles deliberately collapse to member: their authority
+// comes only from live project_members rows.
+func NormalizeOrganizationRole(role string) (string, bool) {
+	switch role {
+	case RoleLegacyAdmin, RolePlatformAdmin:
+		return RolePlatformAdmin, true
+	case RoleOrgAdmin, RoleBillingAdmin, RoleOrgViewer, RoleMember:
+		return role, true
+	case RoleProjectAdmin, RoleDeveloper, RoleViewer, ProjectRoleUser, ProjectRoleViewer, LegacyProjectRoleDeveloper:
+		return RoleMember, true
+	default:
+		return "", false
+	}
+}
+
+// IsOrganizationRole reports whether role is a canonical account-level role.
+func IsOrganizationRole(role string) bool {
+	if role == RoleLegacyAdmin {
+		return true
+	}
+	_, ok := NormalizeOrganizationRole(role)
+	return ok && !IsLegacyProjectRole(role)
+}
+
+// NormalizeProjectMembershipRole accepts compatibility aliases at API/OIDC
+// boundaries and returns the canonical role persisted in project_members.
+func NormalizeProjectMembershipRole(role string) (string, bool) {
+	switch role {
+	case RoleProjectAdmin:
+		return ProjectRoleAdmin, true
+	case ProjectRoleUser, LegacyProjectRoleDeveloper, RoleDeveloper:
+		return ProjectRoleUser, true
+	case ProjectRoleViewer, RoleViewer:
+		return ProjectRoleViewer, true
+	default:
+		return "", false
+	}
+}
+
+// IsLegacyProjectRole identifies user-level aliases retained only for backward
+// compatible JWTs, configuration, and request decoding.
+func IsLegacyProjectRole(role string) bool {
+	switch role {
+	case RoleProjectAdmin, RoleDeveloper, RoleViewer, ProjectRoleUser, ProjectRoleViewer, LegacyProjectRoleDeveloper:
+		return true
+	default:
+		return false
+	}
+}
+
+// CompatibilityRoleForMembership computes the users.role shadow used by old
+// JWTs and route gates. The live project_members row remains authoritative.
+func CompatibilityRoleForMembership(role string) (string, bool) {
+	normalized, ok := NormalizeProjectMembershipRole(role)
+	if !ok {
+		return "", false
+	}
+	switch normalized {
+	case ProjectRoleAdmin:
+		return RoleProjectAdmin, true
+	case ProjectRoleUser:
+		return RoleDeveloper, true
+	case ProjectRoleViewer:
+		return RoleViewer, true
+	default:
+		return "", false
 	}
 }
 

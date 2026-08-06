@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 const testDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -78,6 +80,44 @@ func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T)
 	}
 }
 
+func TestBuildSupportsExactSchema58AndRejectsPreviousOrFutureMax(t *testing.T) {
+	current := completeSnapshot()
+	plan, err := Build(current, testTarget(), "source-a", "source-b", time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("Build schema 58: %v", err)
+	}
+	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
+		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
+	}
+	if plan.Summary.TableCount != 88 || plan.Summary.ResetCandidateCount != 80 || plan.Summary.ReviewRequiredCount != 0 {
+		t.Fatalf("schema 58 changed reviewed table classification: %+v", plan.Summary)
+	}
+	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+2 {
+		t.Fatalf("schema 58 compatibility trigger missing from reset contract: %+v", plan.Schema)
+	}
+	if plan.SelectedAdmin.OrganizationRole != "platform_admin" || plan.SelectedAdmin.Role != "platform_admin" {
+		t.Fatalf("selected admin identity axes drifted: %+v", plan.SelectedAdmin)
+	}
+
+	previous := completeSnapshot()
+	previous.MigrationVersions = previous.MigrationVersions[:len(previous.MigrationVersions)-1]
+	if _, err := Build(previous, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
+		t.Fatalf("schema 57 as max error = %v", err)
+	}
+
+	future := completeSnapshot()
+	future.MigrationVersions = append(future.MigrationVersions, "000059_future_contract")
+	if _, err := Build(future, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
+		t.Fatalf("future migration error = %v", err)
+	}
+
+	wrongAdminAxis := completeSnapshot()
+	wrongAdminAxis.Admin.OrganizationRole = "member"
+	if _, err := Build(wrongAdminAxis, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "selected_admin") {
+		t.Fatalf("wrong selected admin organization role error = %v", err)
+	}
+}
+
 func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 	cycle := completeSnapshot()
 	cycle.ForeignKeys = append(cycle.ForeignKeys,
@@ -92,6 +132,22 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 	missingTrigger.Triggers = missingTrigger.Triggers[1:]
 	if _, err := Build(missingTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "guarded_delete_trigger") {
 		t.Fatalf("missing guarded trigger error = %v", err)
+	}
+
+	missingCompatibilityTrigger := completeSnapshot()
+	missingCompatibilityTrigger.Triggers = slices.DeleteFunc(missingCompatibilityTrigger.Triggers, func(trigger TriggerState) bool {
+		return trigger.Name == legacyRoleCompatibilityTrigger.Name
+	})
+	if _, err := Build(missingCompatibilityTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "legacy_role_compatibility_trigger") {
+		t.Fatalf("missing legacy-role compatibility trigger error = %v", err)
+	}
+
+	missingProjectMemberCompatibilityTrigger := completeSnapshot()
+	missingProjectMemberCompatibilityTrigger.Triggers = slices.DeleteFunc(missingProjectMemberCompatibilityTrigger.Triggers, func(trigger TriggerState) bool {
+		return trigger.Name == projectMemberRoleCompatibilityTrigger.Name
+	})
+	if _, err := Build(missingProjectMemberCompatibilityTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "project_member_role_compatibility_trigger") {
+		t.Fatalf("missing project-member compatibility trigger error = %v", err)
 	}
 
 	restrictCycle := completeSnapshot()
@@ -167,7 +223,7 @@ func completeSnapshot() Snapshot {
 		count := int64(0)
 		switch name {
 		case "schema_migrations":
-			count = 57
+			count = 58
 		case "settings":
 			count = 3
 		case "users", "orgs", "micro_ledger_runtime_state", "release_state":
@@ -194,11 +250,25 @@ func completeSnapshot() Snapshot {
 			Enabled:    "O",
 		})
 	}
+	triggers = append(triggers, TriggerState{
+		Table: legacyRoleCompatibilityTrigger.Table,
+		Name:  legacyRoleCompatibilityTrigger.Name,
+		Definition: "CREATE TRIGGER " + legacyRoleCompatibilityTrigger.Name +
+			" BEFORE INSERT OR UPDATE ON public.users EXECUTE FUNCTION " + legacyRoleCompatibilityFunction + "()",
+		Enabled: "O",
+	})
+	triggers = append(triggers, TriggerState{
+		Table: projectMemberRoleCompatibilityTrigger.Table,
+		Name:  projectMemberRoleCompatibilityTrigger.Name,
+		Definition: "CREATE TRIGGER " + projectMemberRoleCompatibilityTrigger.Name +
+			" BEFORE INSERT OR UPDATE ON public.project_members EXECUTE FUNCTION " + projectMemberRoleCompatibilityFunction + "()",
+		Enabled: "O",
+	})
 	return Snapshot{
 		Tables: tables,
 		Admin: AdminSelection{
 			UserID: 1, OrganizationID: 1, NormalizedLogin: PreservedLogin,
-			Role: "platform_admin", Status: "active", AuthProvider: "local",
+			OrganizationRole: "platform_admin", Role: "platform_admin", Status: "active", AuthProvider: "local",
 			OrganizationStatus: "active", PasswordVerifierValid: true,
 			OrganizationType: "partner", PasswordSHA256: testDigest,
 			UserRowSHA256: testDigest, OrganizationRowSHA256: testDigest,
@@ -212,6 +282,7 @@ func completeSnapshot() Snapshot {
 		MigrationVersions: []string{
 			"000056_prd8_invocation_optimization",
 			"000057_second_integration_reset_support",
+			schemaauthority.LatestSupportedMigration,
 		},
 		Sequences: []SequenceState{{
 			Name: "users_id_seq", OwnedTable: "users", OwnedColumn: "id",

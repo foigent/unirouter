@@ -5,7 +5,7 @@ import { Button, Spin } from '@douyinfe/semi-ui'
 import './index.css'
 import ErrorBoundary from './components/ErrorBoundary'
 import { profileNeedsRefresh, useAuthStore } from './store/auth'
-import { getDefaultPathForRole, isRouteAllowedForRole } from './navigation'
+import { authzContextForUser, getDefaultPathForAuthz, isRouteAllowedForAuthz } from './navigation'
 
 const App = lazy(() => import('./App'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -80,18 +80,19 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function RoleRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation()
-  const role = useAuthStore((s) => s.user?.role)
+  const user = useAuthStore((s) => s.user)
+  const authz = authzContextForUser(user)
   const routeWithSearch = `${location.pathname}${location.search}`
 
-  if (!isRouteAllowedForRole(routeWithSearch, role)) {
-    return <Navigate to={getDefaultPathForRole(role)} replace />
+  if (!isRouteAllowedForAuthz(routeWithSearch, authz)) {
+    return <Navigate to={getDefaultPathForAuthz(authz)} replace />
   }
   return <>{children}</>
 }
 
 function HomeRoute() {
-  const role = useAuthStore((s) => s.user?.role)
-  const defaultPath = getDefaultPathForRole(role)
+  const user = useAuthStore((s) => s.user)
+  const defaultPath = getDefaultPathForAuthz(authzContextForUser(user))
   if (defaultPath !== '/') return <Navigate to={defaultPath} replace />
   return (
     <RoleRoute>
@@ -101,8 +102,8 @@ function HomeRoute() {
 }
 
 function UnknownRoute() {
-  const role = useAuthStore((s) => s.user?.role)
-  return <Navigate to={getDefaultPathForRole(role)} replace />
+  const user = useAuthStore((s) => s.user)
+  return <Navigate to={getDefaultPathForAuthz(authzContextForUser(user))} replace />
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

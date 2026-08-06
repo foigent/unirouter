@@ -748,7 +748,7 @@ func (h *Handler) notificationDeliveryConditions(w http.ResponseWriter, r *http.
 }
 
 func appendBillingNotificationEventScope(ctx context.Context, eventTypeColumn string, conditions []string, args []interface{}, argIdx int) ([]string, []interface{}, int, bool) {
-	if actorRole(ctx) != auth.RoleBillingAdmin {
+	if actorOrganizationRole(ctx) != auth.RoleBillingAdmin {
 		return conditions, args, argIdx, true
 	}
 	conditions = append(conditions, fmt.Sprintf("%s = ANY($%d::text[])", eventTypeColumn, argIdx))
@@ -757,7 +757,7 @@ func appendBillingNotificationEventScope(ctx context.Context, eventTypeColumn st
 }
 
 func rejectBillingNotificationWebhookAccess(w http.ResponseWriter, r *http.Request) bool {
-	if !isUnauthenticatedUnitContext(r.Context()) && actorRole(r.Context()) == auth.RoleBillingAdmin {
+	if !isUnauthenticatedUnitContext(r.Context()) && actorOrganizationRole(r.Context()) == auth.RoleBillingAdmin {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return true
 	}
@@ -769,7 +769,7 @@ func (h *Handler) notificationWebhookConditions(w http.ResponseWriter, r *http.R
 	if !ok {
 		return nil, nil, 0, false
 	}
-	if requireWritable && auth.IsProjectScopedRole(actorRole(r.Context())) {
+	if requireWritable && !auth.RoleIn(actorOrganizationRole(r.Context()), auth.RolePlatformAdmin, auth.RoleOrgAdmin) {
 		projectID, valid := projectIDFromQuery(r)
 		if !valid {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
@@ -820,13 +820,23 @@ func (h *Handler) notificationProjectScopedConditions(w http.ResponseWriter, r *
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
 		return nil, nil, 0, false
 	}
-	if auth.IsProjectScopedRole(actorRole(r.Context())) {
-		if projectID <= 0 || !h.canReadProjectUsage(r.Context(), projectID) {
+	organizationRole := actorOrganizationRole(r.Context())
+	hasOrganizationRead := auth.RoleIn(organizationRole, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)
+	if !isUnauthenticatedUnitContext(r.Context()) && !hasOrganizationRead {
+		if projectID <= 0 || !h.canReadNotificationProject(r.Context(), projectID) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "project_id is required"})
 			return nil, nil, 0, false
 		}
 	}
 	if projectID > 0 {
+		canRead := h.canReadNotificationProject(r.Context(), projectID)
+		if hasOrganizationRead {
+			canRead = h.canReadProjectUsage(r.Context(), projectID)
+		}
+		if !isUnauthenticatedUnitContext(r.Context()) && !canRead {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return nil, nil, 0, false
+		}
 		conditions = append(conditions, fmt.Sprintf("%s = $%d", projectColumn, argIdx))
 		args = append(args, projectID)
 		argIdx++
@@ -837,6 +847,15 @@ func (h *Handler) notificationProjectScopedConditions(w http.ResponseWriter, r *
 	return conditions, args, argIdx, true
 }
 
+func (h *Handler) canReadNotificationProject(ctx context.Context, projectID int64) bool {
+	if isUnauthenticatedUnitContext(ctx) {
+		return true
+	}
+	return h.hasProjectMembership(ctx, projectID,
+		projectMemberAdmin, projectMemberUser, projectMemberViewer,
+		projectMemberLegacyDeveloper, auth.RoleDeveloper, auth.RoleViewer)
+}
+
 func (h *Handler) canWriteNotificationWebhook(r *http.Request, orgID, projectID int64) bool {
 	if isUnauthenticatedUnitContext(r.Context()) {
 		return true
@@ -845,14 +864,14 @@ func (h *Handler) canWriteNotificationWebhook(r *http.Request, orgID, projectID 
 		return false
 	}
 
-	role := actorRole(r.Context())
+	role := actorOrganizationRole(r.Context())
 	if projectID > 0 && !h.projectBelongsToOrg(r.Context(), projectID, orgID) {
 		return false
 	}
-	if auth.IsProjectScopedRole(role) {
-		return projectID > 0 && h.canWriteProject(r.Context(), projectID)
+	if role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin {
+		return true
 	}
-	return role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin
+	return projectID > 0 && h.canWriteProject(r.Context(), projectID)
 }
 
 func (h *Handler) canWriteNotificationEvent(r *http.Request, orgID, projectID int64) bool {
@@ -862,15 +881,15 @@ func (h *Handler) canWriteNotificationEvent(r *http.Request, orgID, projectID in
 	if !actorCanAccessOrg(r.Context(), orgID) {
 		return false
 	}
-	role := actorRole(r.Context())
+	role := actorOrganizationRole(r.Context())
 	if projectID > 0 && !h.projectBelongsToOrg(r.Context(), projectID, orgID) {
 		return false
 	}
-	if auth.IsProjectScopedRole(role) {
-		requestedProjectID, valid := projectIDFromQuery(r)
-		return valid && projectID > 0 && requestedProjectID == projectID && h.canWriteProject(r.Context(), projectID)
+	if role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin || role == auth.RoleBillingAdmin {
+		return true
 	}
-	return role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin || role == auth.RoleBillingAdmin
+	requestedProjectID, valid := projectIDFromQuery(r)
+	return valid && projectID > 0 && requestedProjectID == projectID && h.canWriteProject(r.Context(), projectID)
 }
 
 func projectIDFromQuery(r *http.Request) (int64, bool) {

@@ -695,7 +695,7 @@ func requireActiveWorkloadProject(ctx context.Context, rower interface {
 }
 
 func resolveWorkloadApplicationOrg(r *http.Request, requested int64) (int64, error) {
-	role := middleware.GetUserRoleFromContext(r.Context())
+	role := actorOrganizationRole(r.Context())
 	contextOrg := middleware.GetOrgIDFromContext(r.Context())
 	if auth.IsPlatformAdmin(role) {
 		if requested > 0 {

@@ -37,7 +37,7 @@ describe('UsersPage enterprise identity presentation', () => {
       isAuthenticated: true,
       profileLoading: false,
       profileError: null,
-      user: { id: 1, username: 'admin', role: 'platform_admin', org_id: 1, org_name: '总部' },
+      user: { id: 1, username: 'admin', organization_role: 'platform_admin', role: 'platform_admin', org_id: 1, org_name: '总部' },
     });
     mocks.getOrganizations.mockResolvedValue({ data: [{ id: 1, name: '总部' }, { id: 2, name: '分部' }] });
     mocks.getProjects.mockResolvedValue({ data: [{ id: 31, org_id: 1, name: '核心项目', status: 'active' }], total: 1 });
@@ -49,6 +49,7 @@ describe('UsersPage enterprise identity presentation', () => {
         username: 'oidc-user',
         email: 'user@example.com',
         auth_provider: 'oidc',
+        organization_role: 'member',
         role: 'developer',
         status: 'active',
         project_ids: [31],
@@ -78,9 +79,8 @@ describe('UsersPage enterprise identity presentation', () => {
 
     fireEvent.click(screen.getByText('更新'));
     await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith(9, expect.objectContaining({
-      role: 'developer',
+      organization_role: 'member',
       status: 'active',
-      project_ids: [31],
     })));
   });
 
@@ -101,9 +101,8 @@ describe('UsersPage enterprise identity presentation', () => {
       org_id: 1,
       username: 'local-user',
       password: 'secret-password-123',
-      role: 'org_viewer',
+      organization_role: 'member',
       status: 'active',
-      project_ids: [],
     }));
   });
 
@@ -220,9 +219,8 @@ describe('UsersPage enterprise identity presentation', () => {
       org_id: 1,
       username: 'disabled-user',
       password: 'secret-password-123',
-      role: 'org_viewer',
+      organization_role: 'member',
       status: 'disabled',
-      project_ids: [],
     }));
   });
 

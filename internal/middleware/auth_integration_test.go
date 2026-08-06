@@ -375,7 +375,7 @@ func TestAdminAuth_DisabledUserTokenRejected_Integration(t *testing.T) {
 	require.NoError(t, err)
 
 	secret := "admin-test-secret"
-	token, session, err := auth.GenerateAdminSessionJWT(userID, orgID, auth.RoleOrgAdmin, 0, secret, 1)
+	token, session, err := auth.GenerateAdminSessionJWT(userID, orgID, auth.RoleOrgAdmin, auth.RoleOrgAdmin, 0, secret, 1)
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(),
 		`INSERT INTO admin_sessions (user_id, sid_hash, issued_at, expires_at) VALUES ($1, $2, $3, $4)`,

@@ -20,6 +20,7 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000058_enterprise_project_role_separation.down.sql",
 	"000057_second_integration_reset_support.down.sql",
 	"000056_prd8_invocation_optimization.down.sql",
 	"000055_prd8_deployment_profiles.down.sql",

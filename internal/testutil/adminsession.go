@@ -25,7 +25,11 @@ func MustAdminSessionJWT(tb testing.TB, ctx context.Context, q db.DBQuerier, use
 	if orgID <= 0 || !auth.IsValidRole(role) {
 		return mustMalformedAdminSessionJWT(tb, userID, orgID, role, authEpoch, secret)
 	}
-	token, session, err := auth.GenerateAdminSessionJWT(userID, orgID, role, authEpoch, secret, 1)
+	organizationRole, ok := auth.NormalizeOrganizationRole(role)
+	if !ok {
+		tb.Fatalf("invalid compatibility role %q", role)
+	}
+	token, session, err := auth.GenerateAdminSessionJWT(userID, orgID, organizationRole, role, authEpoch, secret, 1)
 	if err != nil {
 		tb.Fatalf("generate admin session JWT: %v", err)
 	}

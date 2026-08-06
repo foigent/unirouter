@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/resetplan"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -92,10 +93,21 @@ func TestFirstCustomerBootstrapFailsClosedOnSchemaDrift(t *testing.T) {
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
-		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000058_future_contract')`)
+		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000059_future_contract')`)
 		require.NoError(t, err)
 
 		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-002", "First Customer")
+		require.Equal(t, http.StatusConflict, response.Code)
+	})
+
+	t.Run("previous migration as max", func(t *testing.T) {
+		pool := testutil.SetupMigratedTestDB(t)
+		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
+		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
+		_, err := pool.Exec(context.Background(), `DELETE FROM schema_migrations WHERE version=$1`, schemaauthority.LatestSupportedMigration)
+		require.NoError(t, err)
+
+		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-003", "First Customer")
 		require.Equal(t, http.StatusConflict, response.Code)
 	})
 }
@@ -115,8 +127,8 @@ func seedFirstCustomerBootstrapAdmin(t *testing.T, pool *pgxpool.Pool) (int64, i
 		INSERT INTO orgs (name, status, org_type)
 		VALUES ('Bootstrap Admin Shell', 'active', 'partner') RETURNING id`).Scan(&orgID))
 	require.NoError(t, pool.QueryRow(ctx, `
-		INSERT INTO users (org_id, username, password_hash, role, status, auth_provider)
-		VALUES ($1, 'ADMIN', $2, 'platform_admin', 'active', 'local') RETURNING id`,
+		INSERT INTO users (org_id, username, password_hash, organization_role, role, status, auth_provider)
+		VALUES ($1, 'ADMIN', $2, 'platform_admin', 'platform_admin', 'active', 'local') RETURNING id`,
 		orgID, string(passwordHash)).Scan(&userID))
 	_, err = pool.Exec(ctx, `
 		INSERT INTO admin_sessions (user_id, sid_hash, issued_at, expires_at)

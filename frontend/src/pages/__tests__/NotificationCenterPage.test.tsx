@@ -12,6 +12,7 @@ const mockVerifyNotificationWebhookScope = vi.fn();
 const mockAcknowledgeNotificationEvent = vi.fn();
 const mockResolveNotificationEvent = vi.fn();
 const mockGetOrganizations = vi.fn();
+const mockGetProjects = vi.fn();
 const auth = vi.hoisted(() => ({ user: null as any }));
 
 function deferred<T>() {
@@ -31,6 +32,7 @@ vi.mock('../../api/client', () => ({
     acknowledgeNotificationEvent: (...args: any[]) => mockAcknowledgeNotificationEvent(...args),
     resolveNotificationEvent: (...args: any[]) => mockResolveNotificationEvent(...args),
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
+    getProjects: (...args: any[]) => mockGetProjects(...args),
   },
 }));
 
@@ -43,7 +45,7 @@ describe('NotificationCenterPage', () => {
     Modal.destroyAll();
     Toast.destroyAll();
     vi.clearAllMocks();
-    auth.user = null;
+    auth.user = { id: 1, username: 'org-admin', role: 'org_admin', organization_role: 'org_admin', org_id: 7 };
     window.history.replaceState({}, '', '/notifications');
     mockGetNotificationEvents.mockResolvedValue({
       data: [{
@@ -90,6 +92,7 @@ describe('NotificationCenterPage', () => {
       total: 1,
     });
     mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
+    mockGetProjects.mockResolvedValue({ data: [], total: 0 });
   });
 
   afterEach(() => {
@@ -191,6 +194,11 @@ describe('NotificationCenterPage', () => {
 
   it('passes explicit project context to every project-scoped list and action', async () => {
     window.history.replaceState({}, '', '/notifications?project_id=9');
+    auth.user = { id: 5, username: 'project-admin', role: 'project_admin', organization_role: 'member', org_id: 7 };
+    mockGetProjects.mockResolvedValue({
+      data: [{ id: 9, current_user_membership_role: 'project_admin' }],
+      total: 1,
+    });
     mockResolveNotificationEvent.mockResolvedValue({ id: 1, status: 'resolved' });
     render(<NotificationCenterPage />);
 

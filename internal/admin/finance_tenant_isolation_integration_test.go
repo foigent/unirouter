@@ -48,7 +48,7 @@ func TestP6F32FinanceAndUsageTenantIsolationIntegration(t *testing.T) {
 	).Scan(&projectB2))
 	_, err := pool.Exec(ctx,
 		`INSERT INTO project_members (project_id, user_id, role)
-		 VALUES ($1, $2, 'project_developer'), ($1, $3, 'project_viewer')`, fx.projectB, developerB, projectViewerB)
+		 VALUES ($1, $2, 'project_user'), ($1, $3, 'project_viewer')`, fx.projectB, developerB, projectViewerB)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx,

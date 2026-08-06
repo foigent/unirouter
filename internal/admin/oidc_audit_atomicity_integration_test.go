@@ -197,12 +197,14 @@ func TestOIDCMutationAuditAtomicityIntegration(t *testing.T) {
 
 func oidcAuditIdentity(orgID int64, subject, email string) *oidc.Identity {
 	return &oidc.Identity{
-		Issuer:   "https://issuer.example.test",
-		Subject:  subject,
-		Email:    email,
-		Username: subject,
-		Role:     auth.RoleDeveloper,
-		OrgID:    orgID,
+		Issuer:           "https://issuer.example.test",
+		Subject:          subject,
+		Email:            email,
+		Username:         subject,
+		Role:             auth.RoleDeveloper,
+		OrganizationRole: auth.RoleMember,
+		ProjectRole:      auth.ProjectRoleUser,
+		OrgID:            orgID,
 	}
 }
 

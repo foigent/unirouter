@@ -670,6 +670,8 @@ paths:
     get:
       tags: [Auth]
       summary: OIDC public login configuration
+      description: |-
+        Returns only public login capability. Provisioning resolves organization roles independently from live project membership: organization roles never imply project access; project role inputs create organization_role=member and one canonical membership in the configured default project. Legacy developer/project_developer/viewer inputs are compatibility aliases only.
       responses:
         "200":
           $ref: "#/components/responses/JSON"
@@ -678,6 +680,7 @@ paths:
     get:
       tags: [Auth]
       summary: Start OIDC login flow
+      description: Starts authentication only. First-login provisioning uses the same two-axis organization-role and default-project-membership contract described by the public OIDC configuration.
       responses:
         "302":
           description: Redirects to the configured OIDC identity provider
@@ -806,16 +809,26 @@ paths:
     post: *operation_create
 
   /api/v1/keys/{id}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin, project_user, project_viewer]
+      put: [platform_admin, org_admin, project_admin, project_user]
+    description: Project roles are resolved from the current project_members row. A project_user may update only their own personal credential; users.role compatibility shadow is never an authorization source.
     get: *operation_get_by_id
     put: *operation_update_by_id
 
   /api/v1/keys/{id}/disable:
     x-unirouter-rbac:
-      post: [platform_admin, org_admin, project_admin, developer]
+      post: [platform_admin, org_admin, project_admin, project_user]
     post:
       tags: [Admin]
       summary: Disable API key
-      description: The developer console exposes this action only for active keys. The API authorizes a developer only when owner_user_id is their own user ID and they retain project membership. Administrators retain their existing scope rules.
+      description: |
+        project_admin and project_user here are live project-membership roles,
+        not account/JWT organization roles. A project user may disable only
+        their own personal credential while that exact membership remains
+        callable. Organization-role accounts with an explicit membership use
+        the same rule; their users.role compatibility shadow is never an
+        authorization source.
       security:
         - bearerAuth: []
       parameters:
@@ -988,24 +1001,25 @@ paths:
 
   /api/v1/projects:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin, billing_admin, project_admin, developer, viewer]
+      get: [platform_admin, org_admin, billing_admin, org_viewer, project_admin, project_user, project_viewer]
       post: [platform_admin, org_admin]
-    description: Organization-scoped roles list their organization; project roles list only projects with a matching membership. Billing administrators receive only id, org_id, name, slug, status, budget_cents, and budget_period for project-budget administration; they do not gain project detail, member, model-set, or key authority.
+    description: Platform administrators, organization administrators, billing administrators, and organization viewers keep their implemented organization-level list scope. organization_role=member lists only projects with a live membership, whose canonical role is returned separately from users.role. An explicit membership may coexist with any organization_role and never propagates to another project.
     get: *operation_list
     post: *operation_create
 
   /api/v1/projects/{id}:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin, project_admin, developer, viewer]
+      get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
       put: [platform_admin, org_admin, project_admin]
+    description: org_viewer may read ordinary metadata for projects in its organization but cannot write or invoke. Other non-admin organization roles require the exact live project membership shown in this canonical list; users.role does not grant access.
     get: *operation_get_by_id
     put: *operation_update_by_id
 
   /api/v1/projects/{id}/model-sets:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin, project_admin, developer, viewer]
+      get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
       put: [platform_admin, org_admin, project_admin]
-    description: Requires the model_governance License feature. Project-scoped actors are constrained to an authorized project; PUT requires the actor's active project_admin account and membership roles for that project.
+    description: Requires the model_governance License feature. org_viewer may read ordinary model-set assignment metadata in its organization. organization_role=member is constrained by the exact live membership; PUT requires a live project_admin membership. The users.role/JWT compatibility shadow cannot grant a role in another project.
     get: *operation_list_by_id
     put: *operation_update_by_id
 
@@ -1015,7 +1029,7 @@ paths:
     get:
       tags: [Admin]
       summary: List project members and eligible same-organization users
-      description: A project administrator can access only a project where their active user and membership roles are both project_admin. Their eligible-user list excludes project_admin accounts so the role cannot grant peer administrators.
+      description: A project administrator can access only a project where their live membership is project_admin. The candidate list includes every active same-organization human account and returns its independent organization_role; listing a candidate grants nothing. Membership-scoped project administrators cannot grant project_admin or change their own membership.
       security:
         - bearerAuth: []
       parameters:
@@ -1051,7 +1065,7 @@ paths:
     put:
       tags: [Admin]
       summary: Add or update a project membership
-      description: User and project must share an organization. The requested membership role must exactly match the user's project-scoped account role. Project administrators cannot grant project_admin or change their own membership. The membership and audit record commit atomically.
+      description: User and project must share an organization and the user must be active. organization_role and project membership are orthogonal, so any same-organization account may be assigned explicitly. Project administrators cannot grant project_admin or change their own membership. Legacy developer/project_developer/viewer inputs remain accepted during the compatibility window and responses are canonical. Membership, compatibility-shadow maintenance, credential revocation where required, and audit commit atomically.
       security:
         - bearerAuth: []
       requestBody:
@@ -1063,7 +1077,7 @@ paths:
               additionalProperties: false
               required: [role]
               properties:
-                role: { $ref: "#/components/schemas/ProjectMembershipRole" }
+                role: { $ref: "#/components/schemas/ProjectMembershipRoleInput" }
       responses:
         "200": { $ref: "#/components/responses/JSON" }
         "400": { $ref: "#/components/responses/Error" }
@@ -1073,7 +1087,7 @@ paths:
     delete:
       tags: [Admin]
       summary: Remove a project membership
-      description: Project administrators cannot remove project_admin memberships or themselves. An active project-scoped user must retain at least one project; concurrent membership and user mutations are serialized, and the removal and audit record commit atomically.
+      description: Project administrators cannot remove project_admin memberships or themselves. A member account may legitimately have zero memberships. Concurrent membership and user mutations are serialized; removal disables that project's active personal credentials, recomputes only the compatibility shadow for organization_role=member, and commits with audit atomically.
       security:
         - bearerAuth: []
       responses:
@@ -1818,14 +1832,17 @@ paths:
 
   /api/v1/model-catalog:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin, project_admin, developer, viewer]
+      get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
     description: |
-      Organization-scoped approved catalog. Organization administrators are bound to
-      their JWT organization and platform administrators (including normalized legacy
-      admin) may explicitly select org_id. When project_id is present, the project's
-      organization is canonical and any explicit org_id mismatch is rejected. Project-
-      scoped roles must provide project_id and have membership in that project. Foreign
-      organization selection returns 403; missing/zero tenant organization fails closed.
+      Organization-scoped approved catalog. Organization administrators and organization
+      viewers are bound to their JWT organization, while platform administrators
+      (including normalized legacy admin) may explicitly select org_id. billing_admin is
+      denied model-governance access. organization_role=member must provide project_id;
+      the handler then authorizes the exact live project_members role
+      (project_admin/project_user/project_viewer). When project_id is present, the
+      project's organization is canonical and any explicit org_id mismatch is rejected.
+      Foreign organization selection returns 403; missing/zero tenant organization fails
+      closed. users.role compatibility aliases are never an authorization source.
     get: *operation_list
 
   /api/v1/model-aliases:
@@ -1855,14 +1872,15 @@ paths:
 
   /api/v1/model-sets:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin, project_admin]
+      get: [platform_admin, org_admin, org_viewer, project_admin]
       post: [platform_admin, org_admin]
     description: |
-      Requires the model_governance License feature. Organization administrators always
-      use their JWT organization; a foreign org_id query or request-body value returns
-      403, and a missing/zero JWT organization fails closed. Project administrators may
-      list only their JWT organization so the project assignment UI can select from the
-      existing candidate sets; this does not grant create or item read/write authority.
+      Requires the model_governance License feature. Organization administrators and
+      organization viewers always use their JWT organization; a foreign org_id query or
+      request-body value returns 403, and a missing/zero JWT organization fails closed.
+      A member may list candidate sets only with project_id and a live project_admin
+      membership so the project assignment UI can select from the existing sets; this
+      does not grant create or item read/write authority.
       Platform administrators (including normalized legacy admin) may explicitly select
       a positive org_id; otherwise their positive JWT organization is used. Creating a
       set and all of its initial items is one transaction: either the whole model set is
@@ -2293,7 +2311,7 @@ paths:
       post: [platform_admin, org_admin]
     get:
       tags: [Admin]
-      summary: List users and their effective project memberships
+      summary: List users with canonical organization roles and independent project memberships
       security:
         - bearerAuth: []
       parameters:
@@ -2304,8 +2322,8 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
     post:
       tags: [Admin]
-      summary: Create a local user with atomic project assignments
-      description: The local login ID is deployment-global, ignores case and outer Unicode whitespace, and remains reserved while a local account is disabled. A collision returns the same generic 409 response without revealing the owning organization. An active project_admin, developer, or viewer requires at least one project_id. Project IDs are allowed only for those three roles and every project must belong to the user's organization. User creation and memberships commit atomically.
+      summary: Create a local account with an organization role
+      description: The local login ID is deployment-global, ignores case and outer Unicode whitespace, and remains reserved while a local account is disabled. A collision returns the same generic 409 response without revealing the owning organization. The default organization_role is least-privilege member. Project roles and project_ids are deliberately not accepted here; use the project-membership endpoint after account creation.
       security:
         - bearerAuth: []
       requestBody:
@@ -2316,7 +2334,7 @@ paths:
               $ref: "#/components/schemas/UserCreateRequest"
       responses:
         "201":
-          description: Created user and normalized project IDs
+          description: Created user organization identity
           content:
             application/json:
               schema:
@@ -2331,8 +2349,8 @@ paths:
       delete: [platform_admin, org_admin]
     put:
       tags: [Admin]
-      summary: Update a user role, status, and project assignments atomically
-      description: The resulting active project-scoped role must retain at least one same-organization project. Changing to an organization-scoped role removes memberships; supplying non-empty project_ids for such a role is rejected. An actor cannot change their own role or disable the current account.
+      summary: Update a user's organization role or account status
+      description: Project membership is a separate axis and is never added, removed, or rewritten by this endpoint. project_ids and project roles are rejected. An actor cannot change their own organization role or disable the current account.
       security:
         - bearerAuth: []
       parameters:
@@ -2345,7 +2363,7 @@ paths:
               $ref: "#/components/schemas/UserUpdateRequest"
       responses:
         "200":
-          description: Updated user and normalized project IDs
+          description: Updated user organization identity
           content:
             application/json:
               schema:
@@ -2386,8 +2404,8 @@ paths:
 
   /api/v1/notification-events:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin, billing_admin, project_admin]
-    description: Requires the notifications License feature. Billing administrators are SQL-filtered to the financial taxonomy `project_budget.threshold` and `token_metering.estimated_ratio.high`; project administrators require an explicit readable project_id.
+      get: [platform_admin, org_admin, billing_admin, project_admin, project_user, project_viewer]
+    description: Requires the notifications License feature. Billing administrators are SQL-filtered to the financial taxonomy `project_budget.threshold` and `token_metering.estimated_ratio.high`; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
     get: *operation_list
 
   /api/v1/notification-events/{id}/acknowledge:
@@ -2404,7 +2422,7 @@ paths:
         - name: project_id
           in: query
           required: false
-          description: Required for project-scoped roles; ignored only where the caller has organization-wide scope
+          description: Required for membership-scoped callers; omitted only where the organization role has organization-wide event authority
           schema: { type: integer, format: int64, minimum: 1 }
       responses:
         "200":
@@ -2434,7 +2452,7 @@ paths:
         - name: project_id
           in: query
           required: false
-          description: Required for project-scoped roles; ignored only where the caller has organization-wide scope
+          description: Required for membership-scoped callers; omitted only where the organization role has organization-wide event authority
           schema: { type: integer, format: int64, minimum: 1 }
       responses:
         "200":
@@ -2452,13 +2470,13 @@ paths:
 
   /api/v1/notification-deliveries:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin, billing_admin, project_admin]
-    description: Requires the notifications License feature. Billing administrators see delivery rows only when the joined event is in the two-type financial taxonomy; project administrators require an explicit readable project_id.
+      get: [platform_admin, org_admin, billing_admin, project_admin, project_user, project_viewer]
+    description: Requires the notifications License feature. Billing administrators see delivery rows only when the joined event is in the two-type financial taxonomy; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
     get: *operation_list
 
   /api/v1/notification-webhooks:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin, project_admin]
+      get: [platform_admin, org_admin, project_admin, project_user, project_viewer]
       post: [platform_admin, org_admin, project_admin]
     description: Requires the notifications License feature. Billing administrators have no webhook authority; route middleware excludes the role and every handler also returns 403 before persistence as defense in depth.
     get: *operation_list
@@ -3332,11 +3350,15 @@ components:
     CurrentUserProfile:
       type: object
       additionalProperties: false
-      required: [id, username, role, status, org_id, org_name, email, auth_provider, created_at, license_access]
+      required: [id, username, organization_role, role, status, org_id, org_name, email, auth_provider, created_at, license_access]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
-        role: { $ref: "#/components/schemas/UserRole" }
+        organization_role: { $ref: "#/components/schemas/OrganizationRole" }
+        role:
+          allOf: [{ $ref: "#/components/schemas/CompatibilityUserRole" }]
+          deprecated: true
+          description: Version-2 compatibility shadow. It is not authoritative for project access; use live project membership.
         status: { type: string, enum: [active, disabled] }
         org_id: { type: integer, format: int64 }
         org_name: { type: string }
@@ -3344,16 +3366,24 @@ components:
         auth_provider: { type: string, description: "`local` for password-managed users; otherwise the configured external identity provider." }
         created_at: { type: string, format: date-time }
         license_access: { $ref: "#/components/schemas/LicenseCapabilityProjection" }
+    OrganizationRole:
+      type: string
+      enum: [platform_admin, org_admin, billing_admin, org_viewer, member]
+    CompatibilityUserRole:
+      type: string
+      enum: [admin, platform_admin, org_admin, billing_admin, org_viewer, member, project_admin, developer, viewer]
+      description: Temporary users.role/JWT-v2 shadow. New clients must not use it as project authorization evidence.
     UserRole:
-      type: string
-      enum: [admin, platform_admin, org_admin, billing_admin, project_admin, developer, viewer, org_viewer]
-    UserProjectRole:
-      type: string
-      enum: [project_admin, developer, viewer]
+      allOf: [{ $ref: "#/components/schemas/CompatibilityUserRole" }]
+      deprecated: true
     ProjectMembershipRole:
       type: string
-      enum: [project_admin, project_developer, project_viewer]
-      description: Persisted membership role derived one-to-one from the user's project-scoped account role; callers cannot choose a different privilege level.
+      enum: [project_admin, project_user, project_viewer]
+      description: Canonical live per-project role, independent from organization_role and users.role.
+    ProjectMembershipRoleInput:
+      type: string
+      enum: [project_admin, project_user, project_viewer, project_developer, developer, viewer]
+      description: Canonical roles plus compatibility aliases. Responses always normalize aliases to project_user/project_viewer.
     UserCreateRequest:
       type: object
       additionalProperties: false
@@ -3366,44 +3396,48 @@ components:
           minLength: 12
           description: At least 12 Unicode characters and at most 72 UTF-8 bytes. Creates a local identity under the shared backend, recovery CLI, and UI password policy; externally managed identities are provisioned through OIDC.
           x-unirouter-max-utf8-bytes: 72
-        role: { $ref: "#/components/schemas/UserRole" }
+        organization_role:
+          allOf: [{ $ref: "#/components/schemas/OrganizationRole" }]
+          default: member
+        role:
+          allOf: [{ $ref: "#/components/schemas/OrganizationRole" }]
+          deprecated: true
+          description: Compatibility input alias for organization_role only; project-role values are rejected.
         status: { type: string, enum: [active, disabled], default: active }
-        project_ids:
-          type: array
-          description: Accepted only for project_admin, developer, and viewer. Duplicate IDs are normalized; all IDs must belong to org_id.
-          items: { type: integer, format: int64, minimum: 1 }
     UserUpdateRequest:
       type: object
       additionalProperties: false
       minProperties: 1
-      description: At least one of role, status, or project_ids is required.
+      description: At least one of organization_role, the deprecated organization-only role alias, or status is required.
       properties:
-        role: { $ref: "#/components/schemas/UserRole" }
+        organization_role: { $ref: "#/components/schemas/OrganizationRole" }
+        role:
+          allOf: [{ $ref: "#/components/schemas/OrganizationRole" }]
+          deprecated: true
+          description: Compatibility input alias for organization_role only; project-role values are rejected.
         status: { type: string, enum: [active, disabled] }
-        project_ids:
-          type: array
-          description: Replaces the complete project membership set. Duplicate IDs are normalized; all IDs must belong to the user's organization.
-          items: { type: integer, format: int64, minimum: 1 }
     UserMutationResponse:
       type: object
       additionalProperties: false
       properties:
         id: { type: integer, format: int64, description: Present on create. }
         success: { type: boolean, description: Present on update. }
-        project_ids:
-          type: array
-          nullable: true
-          items: { type: integer, format: int64, minimum: 1 }
+        organization_role: { $ref: "#/components/schemas/OrganizationRole" }
+        role:
+          allOf: [{ $ref: "#/components/schemas/CompatibilityUserRole" }]
+          deprecated: true
     ProjectMember:
       type: object
       additionalProperties: false
-      required: [user_id, username, email, auth_provider, user_role, status, membership_role, created_at, updated_at]
+      required: [user_id, username, email, auth_provider, organization_role, role, user_role, status, membership_role, created_at, updated_at]
       properties:
         user_id: { type: integer, format: int64, minimum: 1 }
         username: { type: string }
         email: { type: string }
         auth_provider: { type: string }
-        user_role: { $ref: "#/components/schemas/UserRole" }
+        organization_role: { $ref: "#/components/schemas/OrganizationRole" }
+        role: { $ref: "#/components/schemas/CompatibilityUserRole" }
+        user_role: { $ref: "#/components/schemas/CompatibilityUserRole", deprecated: true }
         status: { type: string, enum: [active, disabled] }
         membership_role: { $ref: "#/components/schemas/ProjectMembershipRole" }
         created_at: { type: string, format: date-time }
@@ -3411,13 +3445,14 @@ components:
     EligibleProjectUser:
       type: object
       additionalProperties: false
-      required: [user_id, username, email, user_role, membership_role, status]
+      required: [user_id, username, email, organization_role, role, user_role, status]
       properties:
         user_id: { type: integer, format: int64, minimum: 1 }
         username: { type: string }
         email: { type: string }
-        user_role: { $ref: "#/components/schemas/UserProjectRole" }
-        membership_role: { $ref: "#/components/schemas/ProjectMembershipRole" }
+        organization_role: { $ref: "#/components/schemas/OrganizationRole" }
+        role: { $ref: "#/components/schemas/CompatibilityUserRole" }
+        user_role: { $ref: "#/components/schemas/CompatibilityUserRole", deprecated: true }
         status: { type: string, enum: [active, disabled] }
     ProjectMemberListResponse:
       type: object

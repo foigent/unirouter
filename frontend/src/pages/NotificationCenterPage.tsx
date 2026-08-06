@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Form, Modal, Select, SideSheet, Table, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconBell, IconPlus, IconRefresh, IconSetting } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { isBillingRole, isPlatformAdminRole } from '../navigation';
+import { canonicalProjectMembershipRole, isBillingRole, isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { formatDateTime } from '../utils/formatDate';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
@@ -124,13 +124,23 @@ function notificationEventStatusLabel(status?: string) {
 
 export default function NotificationCenterPage() {
   const user = useAuthStore((state) => state.user);
-  const platform = isPlatformAdminRole(user?.role);
-  const billing = isBillingRole(user?.role);
+  const organizationRole = organizationRoleForUser(user);
+  const platform = isPlatformAdminRole(organizationRole);
+  const organizationAdmin = isOrgAdminRole(organizationRole);
+  const billing = isBillingRole(organizationRole);
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
   const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('events');
   const projectID = projectIDFromLocation();
   const targetOrgID = platform ? selectedOrgID : undefined;
+  const [projectMembershipRole, setProjectMembershipRole] = useState('');
+  const [projectMembershipLoaded, setProjectMembershipLoaded] = useState(!projectID);
+  const hasOrganizationNotificationScope = organizationAdmin || billing;
+  const canReadProjectNotifications = Boolean(canonicalProjectMembershipRole(projectMembershipRole));
+  const canWriteProjectNotifications = canonicalProjectMembershipRole(projectMembershipRole) === 'project_admin';
+  const canReadNotifications = hasOrganizationNotificationScope || (Boolean(projectID) && projectMembershipLoaded && canReadProjectNotifications);
+  const canWriteEvents = hasOrganizationNotificationScope || (Boolean(projectID) && canWriteProjectNotifications);
+  const canManageWebhooks = organizationAdmin || (Boolean(projectID) && canWriteProjectNotifications);
 
   const [events, setEvents] = useState<NotificationEvent[]>([]);
   const [eventTotal, setEventTotal] = useState(0);
@@ -166,6 +176,7 @@ export default function NotificationCenterPage() {
   const webhookRequestVersion = useRef(0);
 
   const loadEvents = useCallback(async (page = eventPage, pageSize = eventPageSize) => {
+    if (!canReadNotifications) return;
     const version = ++eventRequestVersion.current;
     setEventLoading(true);
     setEventLoadError('');
@@ -190,9 +201,10 @@ export default function NotificationCenterPage() {
     } finally {
       if (version === eventRequestVersion.current) setEventLoading(false);
     }
-  }, [deliveryState, eventPage, eventPageSize, eventStatus, eventType, projectID, severity, targetOrgID]);
+  }, [canReadNotifications, deliveryState, eventPage, eventPageSize, eventStatus, eventType, projectID, severity, targetOrgID]);
 
   const loadDeliveries = useCallback(async (page = deliveryPage, pageSize = deliveryPageSize) => {
+    if (!canReadNotifications) return;
     const version = ++deliveryRequestVersion.current;
     setDeliveryLoading(true);
     setDeliveryLoadError('');
@@ -215,9 +227,10 @@ export default function NotificationCenterPage() {
     } finally {
       if (version === deliveryRequestVersion.current) setDeliveryLoading(false);
     }
-  }, [deliveryEventID, deliveryPage, deliveryPageSize, deliveryStatus, projectID, targetOrgID]);
+  }, [canReadNotifications, deliveryEventID, deliveryPage, deliveryPageSize, deliveryStatus, projectID, targetOrgID]);
 
   const loadWebhooks = useCallback(async (page = webhookPage, pageSize = webhookPageSize) => {
+    if (!canReadNotifications || billing) return;
     const version = ++webhookRequestVersion.current;
     setWebhookLoading(true);
     setWebhookLoadError('');
@@ -238,7 +251,7 @@ export default function NotificationCenterPage() {
     } finally {
       if (version === webhookRequestVersion.current) setWebhookLoading(false);
     }
-  }, [projectID, targetOrgID, webhookPage, webhookPageSize]);
+  }, [billing, canReadNotifications, projectID, targetOrgID, webhookPage, webhookPageSize]);
 
   const invalidateEvents = () => {
     eventRequestVersion.current += 1;
@@ -259,6 +272,25 @@ export default function NotificationCenterPage() {
   useEffect(() => {
     if (!billing) loadWebhooks();
   }, [billing, loadWebhooks]);
+
+  useEffect(() => {
+    if (!projectID) {
+      setProjectMembershipRole('');
+      setProjectMembershipLoaded(true);
+      return;
+    }
+    setProjectMembershipLoaded(false);
+    setProjectMembershipRole('');
+    loadAllPages<{ id: number; current_user_membership_role?: string }>((page, size) => (
+      api.getProjects(page, size, { status: 'active' })
+    )).then(projects => {
+      setProjectMembershipRole(projects.find(project => project.id === projectID)?.current_user_membership_role || '');
+      setProjectMembershipLoaded(true);
+    }).catch(() => {
+      setProjectMembershipRole('');
+      setProjectMembershipLoaded(true);
+    });
+  }, [projectID]);
 
   useEffect(() => {
     if (!platform) return;
@@ -432,8 +464,8 @@ export default function NotificationCenterPage() {
       render: (_: unknown, row: NotificationEvent) => (
         <div style={{ display: 'flex', gap: 6 }}>
           <Button size="small" onClick={() => showEventDeliveries(row)}>查看投递</Button>
-          {row.status === 'open' && <Button size="small" loading={eventActionID === row.id} onClick={() => updateEventStatus(row, 'acknowledge')}>确认</Button>}
-          {row.status !== 'resolved' && <Button size="small" type="primary" loading={eventActionID === row.id} onClick={() => confirmEventResolution(row)}>解决</Button>}
+          {canWriteEvents && row.status === 'open' && <Button size="small" loading={eventActionID === row.id} onClick={() => updateEventStatus(row, 'acknowledge')}>确认</Button>}
+          {canWriteEvents && row.status !== 'resolved' && <Button size="small" type="primary" loading={eventActionID === row.id} onClick={() => confirmEventResolution(row)}>解决</Button>}
         </div>
       ),
     },
@@ -479,8 +511,8 @@ export default function NotificationCenterPage() {
       width: 190,
       render: (_: unknown, row: NotificationWebhook) => (
         <div style={{ display: 'flex', gap: 8 }}>
-          <Button size="small" icon={<IconSetting />} onClick={() => openWebhookSheet(row)}>编辑</Button>
-          {!row.scope_verified && <Button size="small" type="primary" onClick={() => verifyWebhookScope(row)}>确认范围</Button>}
+          {canManageWebhooks && <Button size="small" icon={<IconSetting />} onClick={() => openWebhookSheet(row)}>编辑</Button>}
+          {canManageWebhooks && !row.scope_verified && <Button size="small" type="primary" onClick={() => verifyWebhookScope(row)}>确认范围</Button>}
         </div>
       ),
     },
@@ -584,7 +616,7 @@ export default function NotificationCenterPage() {
           {!billing && (
             <TabPane tab="Webhook" itemKey="webhooks">
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-                <Button icon={<IconPlus />} type="primary" onClick={() => openWebhookSheet()}>新增 Webhook</Button>
+                {canManageWebhooks && <Button icon={<IconPlus />} type="primary" onClick={() => openWebhookSheet()}>新增 Webhook</Button>}
               </div>
               <div className="ur-table-shell">
                 <Table
@@ -614,7 +646,7 @@ export default function NotificationCenterPage() {
         </Tabs>
       </Surface>
 
-      {!billing && (
+      {!billing && canManageWebhooks && (
         <SideSheet
           title={webhookSheet?.mode === 'edit' ? '编辑 Webhook' : '新增 Webhook'}
           visible={!!webhookSheet}

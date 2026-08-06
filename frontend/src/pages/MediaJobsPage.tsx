@@ -10,7 +10,13 @@ import {
   Typography,
 } from '@douyinfe/semi-ui';
 import { api, ApiError } from '../api/client';
-import { normalizeRole } from '../navigation';
+import {
+  authzContextForUser,
+  canInvokeProject,
+  canonicalProjectMembershipRole,
+  isOrgAdminRole,
+  organizationRoleForUser,
+} from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, PageHeader } from '../ui';
 
@@ -22,6 +28,7 @@ interface Project {
   name: string;
   slug?: string;
   status: string;
+  current_user_membership_role?: string;
 }
 
 interface Lifecycle {
@@ -124,7 +131,8 @@ function outputReadable(job: MediaJob, nowMilliseconds: number) {
 }
 
 export default function MediaJobsPage() {
-  const role = normalizeRole(useAuthStore((state) => state.user?.role));
+  const user = useAuthStore((state) => state.user);
+  const organizationRole = organizationRoleForUser(user);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectID, setProjectID] = useState<number>();
   const [contract, setContract] = useState<RuntimeContract | null>(null);
@@ -140,8 +148,10 @@ export default function MediaJobsPage() {
     [jobs, selectedID],
   );
   const selectedProject = projects.find((project) => project.id === projectID);
+  const selectedProjectMembershipRole = canonicalProjectMembershipRole(selectedProject?.current_user_membership_role);
+  const selectedProjectAuthz = authzContextForUser(user, selectedProjectMembershipRole, true);
   const outputURLRef = useRef('');
-  const canCancel = role !== 'viewer' && selected?.lifecycle.execution !== 'terminal';
+  const canCancel = canInvokeProject(selectedProjectAuthz) && selected?.lifecycle.execution !== 'terminal';
   const selectedOutputReadable = Boolean(selected && outputReadable(selected, clock));
   const nextOutputExpiry = useMemo(() => {
     const futureExpiries = jobs
@@ -192,11 +202,14 @@ export default function MediaJobsPage() {
       .then((value: unknown) => {
         if (!active) return;
         const next = responseData<Project>(value);
-        setProjects(next);
+        const readable = isOrgAdminRole(organizationRole)
+          ? next
+          : next.filter(project => canonicalProjectMembershipRole(project.current_user_membership_role));
+        setProjects(readable);
         const queryProject = Number(new URLSearchParams(window.location.search).get('project_id'));
-        setProjectID(next.some((project) => project.id === queryProject)
+        setProjectID(readable.some((project) => project.id === queryProject)
           ? queryProject
-          : next[0]?.id);
+          : readable[0]?.id);
       })
       .catch((loadError: unknown) => {
         if (!active) return;
@@ -208,7 +221,7 @@ export default function MediaJobsPage() {
       active = false;
       clearOutput();
     };
-  }, [clearOutput]);
+  }, [clearOutput, organizationRole]);
 
   useEffect(() => {
     clearOutput();

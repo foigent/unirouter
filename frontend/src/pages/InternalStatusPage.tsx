@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Button, Select, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconBell, IconRefresh, IconRoute, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { canReadRuntimeStatus, hasLicensedFeature, isPlatformAdminRole, licenseRestrictionMessage } from '../navigation';
+import { authzContextForUser, canReadRuntimeStatus, hasLicensedFeature, isPlatformAdminRole, licenseRestrictionMessage } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
@@ -319,7 +319,8 @@ function projectIDFromLocation() {
 
 export default function InternalStatusPage() {
   const user = useAuthStore((state) => state.user);
-  const platform = isPlatformAdminRole(user?.role);
+  const authz = authzContextForUser(user);
+  const platform = isPlatformAdminRole(authz.organizationRole);
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
   const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [data, setData] = useState<InternalStatus | null>(null);
@@ -329,8 +330,7 @@ export default function InternalStatusPage() {
   const [notificationLoadError, setNotificationLoadError] = useState('');
   const [runtimeLoadState, setRuntimeLoadState] = useState<LoadState>('loading');
   const [runtimeLoadError, setRuntimeLoadError] = useState('');
-  const role = user?.role;
-  const canViewRuntime = canReadRuntimeStatus(role);
+  const canViewRuntime = canReadRuntimeStatus(authz);
   const notificationsLicensed = hasLicensedFeature(user?.license_access, 'notifications');
   const notificationsRestriction = user?.license_access
     ? licenseRestrictionMessage(user.license_access, 'notifications')

@@ -439,6 +439,16 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
+	organizationRole := actorOrganizationRole(r.Context())
+	if !isUnauthenticatedUnitContext(r.Context()) && organizationRole == auth.RoleBillingAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if !isUnauthenticatedUnitContext(r.Context()) && !auth.RoleIn(organizationRole,
+		auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer, auth.RoleMember) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
 	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
 	if err != nil {
 		writeOrganizationScopeError(w, err)
@@ -470,7 +480,7 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	} else {
-		if auth.IsProjectScopedRole(actorRole(r.Context())) {
+		if organizationRole == auth.RoleMember {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "project_id is required"})
 			return
 		}
@@ -785,6 +795,27 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListModelSets(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
+	organizationRole := actorOrganizationRole(r.Context())
+	if !isUnauthenticatedUnitContext(r.Context()) && organizationRole == auth.RoleBillingAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if !isUnauthenticatedUnitContext(r.Context()) && !auth.RoleIn(organizationRole,
+		auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer, auth.RoleMember) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if organizationRole == auth.RoleMember {
+		projectID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("project_id")), 10, 64)
+		if err != nil || projectID <= 0 {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "project_id is required"})
+			return
+		}
+		if !h.canWriteProject(r.Context(), projectID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+	}
 	orgID, err := resolveRequestOrganization(r)
 	if err != nil {
 		writeOrganizationScopeError(w, err)
@@ -1168,7 +1199,7 @@ func resolveModelGovernancePathScope(r *http.Request) (modelGovernanceOrgScope, 
 	if err != nil {
 		return modelGovernanceOrgScope{}, err
 	}
-	if auth.IsPlatformAdmin(actorRole(r.Context())) {
+	if auth.IsPlatformAdmin(actorOrganizationRole(r.Context())) {
 		return modelGovernanceOrgScope{orgID: requestedOrgID, constrained: requestedOrgID > 0}, nil
 	}
 	orgID, err := resolveActorOrganization(r.Context(), requestedOrgID)

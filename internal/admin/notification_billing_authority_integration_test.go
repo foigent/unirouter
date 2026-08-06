@@ -175,14 +175,12 @@ func TestBillingNotificationAuthorityIntegration(t *testing.T) {
 		foreignProject := serve(t, http.MethodGet,
 			fmt.Sprintf("/api/v1/notification-events?project_id=%d", fx.projectB),
 			"", fx.billingAdminA, fx.orgA, auth.RoleBillingAdmin)
-		assertStatus(t, foreignProject, http.StatusOK)
-		require.Empty(t, decodeEvents(t, foreignProject))
+		assertStatus(t, foreignProject, http.StatusForbidden)
 
 		foreignProjectDeliveries := serve(t, http.MethodGet,
 			fmt.Sprintf("/api/v1/notification-deliveries?project_id=%d", fx.projectB),
 			"", fx.billingAdminA, fx.orgA, auth.RoleBillingAdmin)
-		assertStatus(t, foreignProjectDeliveries, http.StatusOK)
-		require.Empty(t, decodeDeliveryIDs(t, foreignProjectDeliveries))
+		assertStatus(t, foreignProjectDeliveries, http.StatusForbidden)
 	})
 
 	t.Run("billing lifecycle transitions preserve finance tenant and project scope", func(t *testing.T) {

@@ -77,14 +77,16 @@ type tokenResponse struct {
 }
 
 type Identity struct {
-	Issuer    string
-	Subject   string
-	Email     string
-	Username  string
-	Name      string
-	Role      string
-	OrgID     int64
-	RawClaims map[string]interface{}
+	Issuer           string
+	Subject          string
+	Email            string
+	Username         string
+	Name             string
+	Role             string // users.role compatibility shadow
+	OrganizationRole string
+	ProjectRole      string
+	OrgID            int64
+	RawClaims        map[string]interface{}
 }
 
 func NewService(cfg Config) (*Service, error) {
@@ -243,8 +245,8 @@ func (s *Service) VerifyIDToken(ctx context.Context, idToken, expectedNonce stri
 	if role == "" {
 		role = s.cfg.DefaultRole
 	}
-	role = auth.NormalizeRole(role)
-	if !auth.IsValidRole(role) {
+	organizationRole, compatibilityRole, projectRole, ok := classifyOIDCRole(role)
+	if !ok {
 		return nil, fmt.Errorf("invalid oidc role %q", role)
 	}
 
@@ -268,15 +270,29 @@ func (s *Service) VerifyIDToken(ctx context.Context, idToken, expectedNonce stri
 	}
 
 	return &Identity{
-		Issuer:    s.cfg.IssuerURL,
-		Subject:   sub,
-		Email:     email,
-		Username:  username,
-		Name:      claimString(claims, "name"),
-		Role:      role,
-		OrgID:     orgID,
-		RawClaims: map[string]interface{}(claims),
+		Issuer:           s.cfg.IssuerURL,
+		Subject:          sub,
+		Email:            email,
+		Username:         username,
+		Name:             claimString(claims, "name"),
+		Role:             compatibilityRole,
+		OrganizationRole: organizationRole,
+		ProjectRole:      projectRole,
+		OrgID:            orgID,
+		RawClaims:        map[string]interface{}(claims),
 	}, nil
+}
+
+func classifyOIDCRole(role string) (organizationRole, compatibilityRole, projectRole string, ok bool) {
+	if canonicalProjectRole, projectOK := auth.NormalizeProjectMembershipRole(role); projectOK {
+		shadow, shadowOK := auth.CompatibilityRoleForMembership(canonicalProjectRole)
+		return auth.RoleMember, shadow, canonicalProjectRole, shadowOK
+	}
+	canonicalOrganizationRole, organizationOK := auth.NormalizeOrganizationRole(role)
+	if !organizationOK || !auth.IsOrganizationRole(role) {
+		return "", "", "", false
+	}
+	return canonicalOrganizationRole, canonicalOrganizationRole, "", true
 }
 
 func (s *Service) discovery(ctx context.Context) (*discoveryDoc, error) {
@@ -410,7 +426,9 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.DefaultRole == "" {
 		cfg.DefaultRole = auth.RoleViewer
 	}
-	cfg.DefaultRole = auth.NormalizeRole(cfg.DefaultRole)
+	if cfg.DefaultRole == auth.RoleLegacyAdmin {
+		cfg.DefaultRole = auth.RolePlatformAdmin
+	}
 	if cfg.DefaultProjectSlug == "" {
 		cfg.DefaultProjectSlug = "default"
 	}
@@ -445,7 +463,7 @@ func (cfg Config) validate() error {
 	if cfg.RedirectURL == "" {
 		return errors.New("OIDC_REDIRECT_URL is required when OIDC is enabled")
 	}
-	if !auth.IsValidRole(cfg.DefaultRole) {
+	if _, _, _, ok := classifyOIDCRole(cfg.DefaultRole); !ok {
 		return fmt.Errorf("invalid OIDC_DEFAULT_ROLE %q", cfg.DefaultRole)
 	}
 	if cfg.AutoProvision && cfg.DefaultOrgID <= 0 {

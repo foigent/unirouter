@@ -8,8 +8,9 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 )
 
-// RequireRoles gates an authenticated admin route by normalized PRD2 role.
-// It assumes AdminAuth has already injected CtxUserRole into the request context.
+// Deprecated: compatibility-only test helper for pre-v3 route harnesses.
+// Production routes must use RequireOrganizationRoles for organization scope
+// or AdminAuth plus a live project_members check for project scope.
 func RequireRoles(allowed ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -25,9 +26,31 @@ func RequireRoles(allowed ...string) func(http.Handler) http.Handler {
 	}
 }
 
-// RequireExactRoles gates roles without legacy normalization. Use it when a
-// route contract is expressed in stored-role identities rather than capability
-// aliases.
+// RequireOrganizationRoles gates an authenticated admin route by the
+// canonical account-level organization role. Project authority is deliberately
+// excluded: project handlers must authorize against the live project_members
+// row for the requested project.
+func RequireOrganizationRoles(allowed ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			role := GetOrganizationRoleFromContext(r.Context())
+			if role == "" {
+				// Compatibility for direct middleware tests and accepted v2 JWTs.
+				role, _ = auth.NormalizeOrganizationRole(GetUserRoleFromContext(r.Context()))
+			}
+			if !auth.RoleIn(role, allowed...) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				fmt.Fprintf(w, `{"error":{"type":"auth_error.forbidden","message":"Organization role %s is not allowed","allowed_roles":"%s"}}`, role, strings.Join(allowed, ","))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// Deprecated: compatibility-only test helper for frozen stored-role fixtures.
+// Production authorization must not use users.role as an authority source.
 func RequireExactRoles(allowed ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -72,7 +72,8 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 	actorUserID := middleware.GetUserIDFromContext(ctx)
 	actorOrgID := middleware.GetOrgIDFromContext(ctx)
 	expectedRole := middleware.GetUserRoleFromContext(ctx)
-	if actorUserID <= 0 || actorOrgID <= 0 || expectedRole == "" || intent.targetOrgID <= 0 {
+	expectedOrganizationRole := actorOrganizationRole(ctx)
+	if actorUserID <= 0 || actorOrgID <= 0 || expectedRole == "" || expectedOrganizationRole == "" || intent.targetOrgID <= 0 {
 		return errAPIKeyAuthorizationChanged
 	}
 	if intent.validateOwnership && (!validAPIKeyType(intent.keyType) ||
@@ -93,39 +94,31 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 	}
 
 	var currentOrgID int64
-	var currentRole, userStatus, actorOrganizationStatus string
+	var currentOrganizationRole, currentRole, userStatus, actorOrganizationStatus string
 	err := tx.QueryRow(ctx,
-		`SELECT u.org_id, u.role, u.status, o.status
+		`SELECT u.org_id, u.organization_role, u.role, u.status, o.status
 		 FROM users u
 		 JOIN orgs o ON o.id = u.org_id
 		 WHERE u.id = $1
 		 FOR SHARE OF u, o`,
 		actorUserID,
-	).Scan(&currentOrgID, &currentRole, &userStatus, &actorOrganizationStatus)
+	).Scan(&currentOrgID, &currentOrganizationRole, &currentRole, &userStatus, &actorOrganizationStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return errAPIKeyAuthorizationChanged
 	}
 	if err != nil {
 		return fmt.Errorf("read current API-key actor: %w", err)
 	}
-	if currentOrgID != actorOrgID || currentRole != expectedRole || userStatus != "active" || actorOrganizationStatus != "active" {
+	if currentOrgID != actorOrgID || currentOrganizationRole != expectedOrganizationRole || currentRole != expectedRole || userStatus != "active" || actorOrganizationStatus != "active" {
 		return errAPIKeyAuthorizationChanged
 	}
 
-	role := auth.NormalizeRole(currentRole)
 	switch intent.operation {
-	case apiKeyMutationCreate:
-		if !auth.RoleIn(role, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper) {
-			return errAPIKeyAuthorizationChanged
-		}
-	case apiKeyMutationUpdate:
-		if !auth.RoleIn(role, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin) {
-			return errAPIKeyAuthorizationChanged
-		}
+	case apiKeyMutationCreate, apiKeyMutationUpdate:
 	default:
 		return errAPIKeyAuthorizationChanged
 	}
-	if role != auth.RolePlatformAdmin && currentOrgID != intent.targetOrgID {
+	if currentOrganizationRole != auth.RolePlatformAdmin && currentOrgID != intent.targetOrgID {
 		return errAPIKeyAuthorizationChanged
 	}
 
@@ -152,7 +145,7 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 		return errAPIKeyAuthorizationChanged
 	}
 	if intent.operation == apiKeyMutationUpdate && intent.sourceProjectID <= 0 &&
-		role != auth.RolePlatformAdmin && role != auth.RoleOrgAdmin {
+		currentOrganizationRole != auth.RolePlatformAdmin && currentOrganizationRole != auth.RoleOrgAdmin {
 		return errAPIKeyAuthorizationChanged
 	}
 	projectIDs := make([]int64, 0, len(projectRequirements))
@@ -162,14 +155,8 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 	sort.Slice(projectIDs, func(i, j int) bool { return projectIDs[i] < projectIDs[j] })
 	for _, projectID := range projectIDs {
 		mustBeActive := projectRequirements[projectID]
-		if err := reauthorizeAPIKeyProjectTx(ctx, tx, role, actorUserID, intent.targetOrgID, projectID, mustBeActive, intent.operation); err != nil {
+		if err := reauthorizeAPIKeyProjectTx(ctx, tx, currentOrganizationRole, actorUserID, intent.targetOrgID, projectID, mustBeActive, intent); err != nil {
 			return err
-		}
-	}
-
-	if intent.operation == apiKeyMutationCreate && auth.IsProjectScopedRole(role) {
-		if intent.keyType == "service" || (role == auth.RoleDeveloper && (intent.keyType != "personal" || intent.ownerUserID != actorUserID)) {
-			return errAPIKeyAuthorizationChanged
 		}
 	}
 	if intent.validateOwnership {
@@ -199,10 +186,10 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 func reauthorizeAPIKeyProjectTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	role string,
+	organizationRole string,
 	actorUserID, orgID, projectID int64,
 	mustBeActive bool,
-	operation apiKeyMutationOperation,
+	intent apiKeyAuthorizationIntent,
 ) error {
 	var projectStatus string
 	err := tx.QueryRow(ctx,
@@ -218,7 +205,7 @@ func reauthorizeAPIKeyProjectTx(
 	if mustBeActive && projectStatus != "active" {
 		return errAPIKeyAuthorizationChanged
 	}
-	if role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin {
+	if organizationRole == auth.RolePlatformAdmin || organizationRole == auth.RoleOrgAdmin {
 		return nil
 	}
 
@@ -236,13 +223,11 @@ func reauthorizeAPIKeyProjectTx(
 	if err != nil {
 		return fmt.Errorf("read current API-key project membership: %w", err)
 	}
-	if operation == apiKeyMutationCreate {
-		if membershipRole != projectMemberAdmin && membershipRole != projectMemberDeveloper && membershipRole != auth.RoleDeveloper {
-			return errAPIKeyAuthorizationChanged
-		}
-		return nil
+	canonicalMembershipRole, ok := auth.NormalizeProjectMembershipRole(membershipRole)
+	if !ok || canonicalMembershipRole == projectMemberViewer {
+		return errAPIKeyAuthorizationChanged
 	}
-	if role != auth.RoleProjectAdmin || membershipRole != projectMemberAdmin {
+	if canonicalMembershipRole == projectMemberUser && (intent.keyType != "personal" || intent.ownerUserID != actorUserID) {
 		return errAPIKeyAuthorizationChanged
 	}
 	return nil
@@ -293,6 +278,10 @@ func reauthorizeAPIKeyOwnerTx(ctx context.Context, tx pgx.Tx, orgID, projectID, 
 	}
 	if err != nil {
 		return fmt.Errorf("read current API-key owner membership: %w", err)
+	}
+	canonicalOwnerRole, ok := auth.NormalizeProjectMembershipRole(ownerMembershipRole)
+	if !ok || canonicalOwnerRole == projectMemberViewer {
+		return errAPIKeyAuthorizationChanged
 	}
 	return nil
 }
@@ -372,7 +361,7 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
 			return
 		}
-		if !h.canReadProject(r.Context(), projectID) {
+		if !h.canReadProjectCredentialMetadata(r.Context(), projectID) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
@@ -380,7 +369,8 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		args = append(args, projectID)
 		argIdx++
 	}
-	if auth.IsProjectScopedRole(actorRole(r.Context())) {
+	organizationRole := actorOrganizationRole(r.Context())
+	if organizationRole != auth.RolePlatformAdmin && organizationRole != auth.RoleOrgAdmin {
 		conditions = append(conditions, fmt.Sprintf(`EXISTS (
 			SELECT 1 FROM project_members pm
 			JOIN projects scope_project ON scope_project.id = pm.project_id AND scope_project.org_id = ak.org_id
@@ -523,7 +513,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Purpose-specific feed credentials must be created from X-Insight Data Exchange control"})
 		return
 	}
-	if policyLabels != "" && !auth.IsOrgAdmin(actorRole(r.Context())) && !isUnauthenticatedUnitContext(r.Context()) {
+	if policyLabels != "" && !auth.IsOrgAdmin(actorOrganizationRole(r.Context())) && !isUnauthenticatedUnitContext(r.Context()) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Only organization administrators can assign policy labels"})
 		return
 	}
@@ -562,7 +552,7 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if auth.IsProjectScopedRole(actorRole(r.Context())) && req.ProjectID == 0 {
+	if actorOrganizationRole(r.Context()) != auth.RolePlatformAdmin && actorOrganizationRole(r.Context()) != auth.RoleOrgAdmin && req.ProjectID == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "project_id is required"})
 		return
 	}
@@ -788,8 +778,17 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		if !h.canWriteAPIKey(r.Context(), currentOrgID, currentProjectID) {
+		canAdministerKey := h.canWriteAPIKey(r.Context(), currentOrgID, currentProjectID)
+		canManageOwnPersonalKey := h.canManageOwnPersonalAPIKey(
+			r.Context(), currentOrgID, currentProjectID, currentOwnerUserID, currentKeyType,
+		)
+		if !canAdministerKey && !canManageOwnPersonalKey {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+		if canManageOwnPersonalKey && !canAdministerKey &&
+			(req.ProjectID != nil || req.OwnerUserID != nil || req.KeyType != nil || req.PolicyLabels != nil) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Personal credential ownership and project binding cannot be changed by its owner"})
 			return
 		}
 	}
@@ -828,7 +827,7 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if req.PolicyLabels != nil {
-		if !auth.IsOrgAdmin(actorRole(r.Context())) && !isUnauthenticatedUnitContext(r.Context()) {
+		if !auth.IsOrgAdmin(actorOrganizationRole(r.Context())) && !isUnauthenticatedUnitContext(r.Context()) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Only organization administrators can assign policy labels"})
 			return
 		}
@@ -1091,12 +1090,13 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var eventOrgID, eventProjectID, eventOwnerUserID int64
-	var eventName, eventKeyPrefix, currentStatus, currentPurpose string
+	var eventName, eventKeyPrefix, currentStatus, currentPurpose, currentKeyType string
 	if err := h.db.QueryRow(r.Context(),
-		`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status, COALESCE(purpose, '')
+		`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status,
+		        COALESCE(purpose, ''), COALESCE(NULLIF(key_type, ''), 'shared')
 		 FROM api_keys WHERE id = $1`,
 		id,
-	).Scan(&eventOrgID, &eventProjectID, &eventOwnerUserID, &eventName, &eventKeyPrefix, &currentStatus, &currentPurpose); err != nil {
+	).Scan(&eventOrgID, &eventProjectID, &eventOwnerUserID, &eventName, &eventKeyPrefix, &currentStatus, &currentPurpose, &currentKeyType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
 		} else {
@@ -1109,32 +1109,19 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	role := actorRole(r.Context())
 	actorUserID := middleware.GetUserIDFromContext(r.Context())
-	developerOwnsProjectKey := role == auth.RoleDeveloper &&
-		actorUserID > 0 &&
-		eventProjectID > 0 &&
-		eventOwnerUserID == actorUserID &&
-		actorCanAccessOrg(r.Context(), eventOrgID) &&
-		h.hasProjectMembership(
-			r.Context(),
-			eventProjectID,
-			projectMemberAdmin,
-			projectMemberDeveloper,
-			auth.RoleDeveloper,
-		)
-	if role == auth.RoleDeveloper && !developerOwnsProjectKey {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-		return
-	}
-	if role != auth.RoleDeveloper && !h.canWriteAPIKey(r.Context(), eventOrgID, eventProjectID) {
+	canAdministerKey := h.canWriteAPIKey(r.Context(), eventOrgID, eventProjectID)
+	canManageOwnPersonalKey := h.canManageOwnPersonalAPIKey(
+		r.Context(), eventOrgID, eventProjectID, eventOwnerUserID, currentKeyType,
+	)
+	if !canAdministerKey && !canManageOwnPersonalKey {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 
 	query := `UPDATE api_keys SET status = 'disabled', updated_at = NOW() WHERE id = $1`
 	args := []interface{}{id}
-	if role == auth.RoleDeveloper {
+	if canManageOwnPersonalKey && !canAdministerKey {
 		query += ` AND org_id = $2 AND project_id = $3 AND owner_user_id = $4`
 		args = append(args, eventOrgID, eventProjectID, actorUserID)
 	} else if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
@@ -1169,11 +1156,9 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		eventName, eventKeyPrefix, currentStatus = lockedName, lockedKeyPrefix, lockedStatus
-		if role != auth.RoleDeveloper {
-			if _, constrained := actorOrgConstraint(r.Context()); !constrained {
-				query += fmt.Sprintf(" AND org_id = $%d", len(args)+1)
-				args = append(args, eventOrgID)
-			}
+		if _, constrained := actorOrgConstraint(r.Context()); !constrained {
+			query += fmt.Sprintf(" AND org_id = $%d", len(args)+1)
+			args = append(args, eventOrgID)
 		}
 	}
 	tag, err := execer.Exec(r.Context(), query, args...)
@@ -1515,7 +1500,6 @@ func validAPIKeyType(keyType string) bool {
 }
 
 func (h *Handler) resolveCreateAPIKeyOwnership(ctx context.Context, orgID, projectID int64, ownerReq *int64, keyTypeReq string) (int64, string, error) {
-	role := actorRole(ctx)
 	actorID := middleware.GetUserIDFromContext(ctx)
 	ownerUserID := int64(0)
 	if ownerReq != nil {
@@ -1528,7 +1512,7 @@ func (h *Handler) resolveCreateAPIKeyOwnership(ctx context.Context, orgID, proje
 	keyType := strings.TrimSpace(keyTypeReq)
 	if keyType == "" {
 		switch {
-		case auth.IsProjectScopedRole(role) && actorID > 0:
+		case actorOrganizationRole(ctx) != auth.RolePlatformAdmin && actorOrganizationRole(ctx) != auth.RoleOrgAdmin && actorID > 0:
 			keyType = "personal"
 			if ownerReq == nil || ownerUserID == 0 {
 				ownerUserID = actorID
@@ -1554,7 +1538,6 @@ func (h *Handler) resolveAPIKeyOwnership(ctx context.Context, orgID, projectID, 
 	if !validAPIKeyType(keyType) {
 		return 0, "", fmt.Errorf("Invalid key_type")
 	}
-	role := actorRole(ctx)
 	actorID := middleware.GetUserIDFromContext(ctx)
 
 	switch keyType {
@@ -1573,11 +1556,20 @@ func (h *Handler) resolveAPIKeyOwnership(ctx context.Context, orgID, projectID, 
 		ownerUserID = 0
 	}
 
-	if role == auth.RoleDeveloper && ownerUserID != actorID {
-		return 0, "", fmt.Errorf("Forbidden")
-	}
-	if auth.IsProjectScopedRole(role) && keyType == "service" {
-		return 0, "", fmt.Errorf("Forbidden")
+	organizationRole := actorOrganizationRole(ctx)
+	if !isUnauthenticatedUnitContext(ctx) && organizationRole != auth.RolePlatformAdmin && organizationRole != auth.RoleOrgAdmin {
+		switch keyType {
+		case "personal":
+			if ownerUserID != actorID {
+				return 0, "", fmt.Errorf("Forbidden")
+			}
+		case "shared":
+			if !h.hasProjectMembership(ctx, projectID, projectMemberAdmin) {
+				return 0, "", fmt.Errorf("Forbidden")
+			}
+		case "service":
+			return 0, "", fmt.Errorf("Forbidden")
+		}
 	}
 	if ownerUserID > 0 {
 		if err := h.validateAPIKeyOwnerUser(ctx, orgID, projectID, ownerUserID); err != nil {
@@ -1601,7 +1593,8 @@ func (h *Handler) validateAPIKeyOwnerUser(ctx context.Context, orgID, projectID,
 			 FROM project_members pm
 			 JOIN projects p ON p.id = pm.project_id AND p.org_id = $3
 			 JOIN users u ON u.id = pm.user_id AND u.org_id = p.org_id
-			 WHERE pm.project_id = $1 AND pm.user_id = $2`,
+			 WHERE pm.project_id = $1 AND pm.user_id = $2
+			   AND pm.role IN ('project_admin', 'project_user', 'project_developer', 'developer')`,
 			projectID, ownerUserID, orgID,
 		).Scan(&count); err != nil || count == 0 {
 			return fmt.Errorf("owner_user_id is not a member of the project")

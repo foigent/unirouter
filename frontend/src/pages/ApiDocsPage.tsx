@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react';
-import { Banner, Typography, Table, Tag } from '@douyinfe/semi-ui';
+import { useEffect, useMemo, useState } from 'react';
+import { Banner, Typography, Table, Tag, Select } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
 import { PageHeader, Surface } from '../ui';
-import { isBillingRole, isOrgAdminRole, isOrgViewerRole, isPlatformAdminRole, isProjectAdminRole, isProjectConsoleRole, normalizeRole } from '../navigation';
+import {
+  type AuthzContext,
+  authzContextForUser,
+  canonicalProjectMembershipRole,
+  isBillingRole,
+  isOrgAdminRole,
+  isOrgViewerRole,
+  isPlatformAdminRole,
+} from '../navigation';
 import { useAuthStore } from '../store/auth';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
 
@@ -63,7 +72,7 @@ const endpointGroups = [
     ],
   },
   {
-    area: '开发者工作台',
+    area: '项目工作台',
     endpoints: [
       ['GET', '/api/v1/projects', '当前账号可访问项目'],
       ['GET', '/api/v1/projects/{id}', '项目详情'],
@@ -71,15 +80,15 @@ const endpointGroups = [
       ['GET', '/api/v1/projects/{id}/model-sets', '项目模型集合绑定'],
       ['PUT', '/api/v1/projects/{id}/model-sets', '更新项目模型集合绑定'],
       ['GET', '/api/v1/projects/{id}/members', '查看项目成员与同组织可加入用户'],
-      ['PUT', '/api/v1/projects/{id}/members/{user_id}', '加入或同步项目成员；成员角色必须与账号项目角色一致'],
-      ['DELETE', '/api/v1/projects/{id}/members/{user_id}', '移除项目成员；启用账号必须保留至少一个项目'],
+      ['PUT', '/api/v1/projects/{id}/members/{user_id}', '显式创建或更新项目成员关系；账号组织角色与项目成员角色独立，普通 project_admin 不得覆盖既有 project_admin'],
+      ['DELETE', '/api/v1/projects/{id}/members/{user_id}', '移除显式项目成员关系；member 可保留零项目，普通 project_admin 不得移除自己或其他 project_admin'],
       ['GET', '/api/v1/projects/{id}/budget', '查看项目预算（账务管理员仅有预算权限）'],
       ['PUT', '/api/v1/projects/{id}/budget', '仅更新项目预算金额与周期并原子记录审计'],
       ['GET', '/api/v1/keys?project_id={id}', '项目访问凭证列表'],
       ['GET', '/api/v1/keys/{id}', '访问凭证详情'],
       ['POST', '/api/v1/keys', '创建项目访问凭证'],
       ['PUT', '/api/v1/keys/{id}', '更新访问凭证'],
-      ['POST', '/api/v1/keys/{id}/disable', '停用访问凭证；developer 仅限本人拥有且仍有项目成员关系的 active Key'],
+      ['POST', '/api/v1/keys/{id}/disable', '停用访问凭证；project_user 仅限本人 personal credential，project_admin 可管理本项目 active credential'],
       ['GET', '/api/v1/model-catalog?project_id={id}', '项目可用模型目录'],
       ['GET', '/api/v1/logs?project_id={id}', '项目调用日志'],
       ['GET', '/api/v1/logs/{id}', '请求日志详情'],
@@ -225,7 +234,7 @@ const endpointGroups = [
       ['POST', '/api/v1/invocation-optimization/policies/{ref}/shadow', '启动元数据 Shadow；不读缓存响应、不修改 Prompt'],
       ['POST', '/api/v1/invocation-optimization/policies/{ref}/canary', '在 Shadow 样本、质量、运行时门禁通过后启动最高 10% 确定性灰度'],
       ['POST', '/api/v1/invocation-optimization/policies/{ref}/rollback', '停止后续优化分配并保留不可变证据'],
-      ['GET', '/api/v1/model-catalog', '组织模型目录；project_id 决定组织，项目角色必须提供 project_id'],
+      ['GET', '/api/v1/model-catalog', '组织模型目录；org_viewer 可只读本组织，member 必须提供 project_id 并通过 live membership'],
       ['GET', '/api/v1/model-aliases', '本组织模型别名；平台管理员可显式选择组织'],
       ['POST', '/api/v1/model-aliases', '在本组织创建模型别名；跨组织请求返回 403'],
       ['PUT', '/api/v1/model-aliases/{id}', '更新本组织别名；越权组织参数返回 403，越权或不存在的 ID 返回 404'],
@@ -314,90 +323,134 @@ const organizationModelGovernanceWrites = new Set([
   'POST /api/v1/invocation-optimization/policies/{ref}/rollback',
 ]);
 
-function endpointVisibleForRole(area: string, method: string, path: string, role?: string) {
+interface ProjectOption {
+  id: number;
+  name: string;
+  current_user_membership_role?: string;
+}
+
+function endpointVisibleForAuthz(area: string, method: string, path: string, authz: AuthzContext) {
+  const organizationRole = authz.organizationRole;
+  const membershipRole = authz.projectMembershipRole;
+  const hasProjectRead = Boolean(membershipRole);
+  const hasProjectWrite = membershipRole === 'project_admin' || membershipRole === 'project_user';
+  const hasProjectAdmin = membershipRole === 'project_admin';
+
   if (area === 'Auth' || area === 'Platform' || area === 'Gateway') return true;
   if (area === 'Async Media') {
     if (path.startsWith('/v1/')) return true;
-    if (isBillingRole(role) || isOrgViewerRole(role)) return false;
-    if (normalizeRole(role) === 'viewer') return method === 'GET';
-    return isPlatformAdminRole(role) || isOrgAdminRole(role) || isProjectConsoleRole(role);
+    if (isOrgAdminRole(organizationRole)) return true;
+    return method === 'GET' ? hasProjectRead : hasProjectWrite;
   }
-  if (isPlatformAdminRole(role)) return true;
+  if (isPlatformAdminRole(organizationRole)) return true;
 
-  if (area === '开发者工作台') {
+  if (area === '项目工作台') {
     const isMemberPath = path.includes('/members');
     const isBudgetPath = path.endsWith('/budget');
-    if (isBillingRole(role)) {
-      return (method === 'GET' && path === '/api/v1/projects') || isBudgetPath;
-    }
-    if (isMemberPath || isBudgetPath) return isOrgAdminRole(role) || isProjectAdminRole(role);
-    if (isOrgAdminRole(role) || isProjectAdminRole(role)) return true;
-    if (normalizeRole(role) === 'developer') {
+    if (isBillingRole(organizationRole) && isBudgetPath) return true;
+    if (isMemberPath || isBudgetPath) return isOrgAdminRole(organizationRole) || hasProjectAdmin;
+    if (isOrgAdminRole(organizationRole) || hasProjectAdmin) return true;
+    if (membershipRole === 'project_user') {
       return method === 'GET' || (method === 'POST' && (
         path === '/api/v1/keys' ||
         path === '/api/v1/keys/{id}/disable' ||
         path === '/v1/chat/completions'
       ));
     }
-    if (normalizeRole(role) === 'viewer') return method === 'GET';
+    if (membershipRole === 'project_viewer') return method === 'GET';
+    if (isBillingRole(organizationRole)) return method === 'GET' && path === '/api/v1/projects';
     return false;
   }
   if (area === '产品与运行状态') {
-    if (path.endsWith('/error-docs')) return isPlatformAdminRole(role) || isOrgAdminRole(role) || isBillingRole(role) || isProjectConsoleRole(role);
-    if (path.endsWith('/usage/analytics')) return isOrgAdminRole(role) || isBillingRole(role) || isProjectConsoleRole(role);
-    if (path.endsWith('/internal-status')) return isOrgAdminRole(role);
-    if (path.endsWith('/runtime/status')) return isOrgAdminRole(role);
+    if (path.endsWith('/error-docs')) return isOrgAdminRole(organizationRole) || isBillingRole(organizationRole) || isOrgViewerRole(organizationRole) || hasProjectRead;
+    if (path.endsWith('/usage/analytics')) return isOrgAdminRole(organizationRole) || isBillingRole(organizationRole) || isOrgViewerRole(organizationRole) || hasProjectRead;
+    if (path.endsWith('/internal-status')) return isOrgAdminRole(organizationRole);
+    if (path.endsWith('/runtime/status')) return isOrgAdminRole(organizationRole);
     return false;
   }
   if (area === 'Notifications') {
-    if (isBillingRole(role)) return !path.includes('/notification-webhooks');
-    return isOrgAdminRole(role) || isProjectAdminRole(role);
+    if (isBillingRole(organizationRole)) return !path.includes('/notification-webhooks');
+    if (isOrgAdminRole(organizationRole)) return true;
+    if (path.includes('/notification-webhooks')) return method === 'GET' ? hasProjectRead : hasProjectAdmin;
+    return method === 'GET' ? hasProjectRead : hasProjectAdmin;
   }
   if (area === 'Model Governance') {
-    if (isOrgAdminRole(role)) {
+    if (isOrgAdminRole(organizationRole)) {
       if (method === 'GET') {
         return !path.includes('/provider-cost/') && !path.endsWith('/reconciliation');
       }
       return organizationModelGovernanceWrites.has(`${method} ${path}`);
     }
-    if (isBillingRole(role)) {
+    if (isBillingRole(organizationRole)) {
       return method === 'GET' && (
         path.includes('/model-prices') || path.includes('/model-names') ||
         path.includes('/org-model-prices') || path.endsWith('/reconciliation') ||
         path.endsWith('/provider-cogs/offline-contract')
       ) || (method === 'POST' && path.endsWith('/provider-cogs/offline-preview'));
     }
-    if (isProjectAdminRole(role)) return method === 'GET' && path === '/api/v1/model-sets';
+    if (isOrgViewerRole(organizationRole)) {
+      return method === 'GET' && (path === '/api/v1/model-catalog' || path === '/api/v1/model-sets');
+    }
+    if (hasProjectRead) return method === 'GET' && path === '/api/v1/model-sets';
     return false;
   }
   if (area === 'Admin') {
-    if (isOrgViewerRole(role)) return method === 'GET' && path.endsWith('/dashboard/stats');
-    if (isOrgAdminRole(role)) {
+    if (isOrgViewerRole(organizationRole)) {
+      return method === 'GET' && (path.endsWith('/dashboard/stats') || path.includes('/projects'));
+    }
+    if (isOrgAdminRole(organizationRole)) {
       return [
         '/dashboard/stats', '/keys', '/limit-policies', '/guardrail-policies',
         '/projects', '/logs', '/users', '/audit-logs',
       ].some(fragment => path.includes(fragment)) && !path.includes('/wallet');
     }
-    if (isBillingRole(role)) {
+    if (isBillingRole(organizationRole)) {
       return ['/dashboard/stats', '/logs', '/wallet', '/grants'].some(fragment => path.includes(fragment));
     }
+    if (hasProjectRead) return method === 'GET' && ['/keys', '/projects', '/logs'].some(fragment => path.includes(fragment));
     return false;
   }
-  return !isOrgViewerRole(role);
+  return !isOrgViewerRole(organizationRole);
 }
 
 export default function ApiDocsPage() {
-  const role = useAuthStore((state) => state.user?.role);
+  const user = useAuthStore((state) => state.user);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [selectedProjectID, setSelectedProjectID] = useState<number>();
   const [errorDocs, setErrorDocs] = useState<any[]>([]);
   const [clientProfiles, setClientProfiles] = useState<any[]>([]);
   const [gatewayEndpoints, setGatewayEndpoints] = useState<any[]>([]);
-  const canLoadErrorDocs = isPlatformAdminRole(role) || isOrgAdminRole(role) || isBillingRole(role) || isProjectConsoleRole(role);
+  const selectedProject = useMemo(
+    () => projects.find(project => project.id === selectedProjectID),
+    [projects, selectedProjectID],
+  );
+  const authz = authzContextForUser(
+    user,
+    selectedProject?.current_user_membership_role,
+    selectedProjectID !== undefined,
+  );
+  const canLoadErrorDocs = isOrgAdminRole(authz.organizationRole) ||
+    isBillingRole(authz.organizationRole) ||
+    isOrgViewerRole(authz.organizationRole) ||
+    Boolean(authz.projectMembershipRole);
   const visibleEndpointGroups = endpointGroups
     .map(group => ({
       ...group,
-      endpoints: group.endpoints.filter(([method, path]) => endpointVisibleForRole(group.area, method, path, role)),
+      endpoints: group.endpoints.filter(([method, path]) => endpointVisibleForAuthz(group.area, method, path, authz)),
     }))
     .filter(group => group.endpoints.length > 0);
+
+  useEffect(() => {
+    loadAllPages<ProjectOption>((page, size) => api.getProjects(page, size, { status: 'active' }))
+      .then(items => {
+        setProjects(items);
+        setSelectedProjectID(current => current && items.some(item => item.id === current) ? current : items[0]?.id);
+      })
+      .catch(() => {
+        setProjects([]);
+        setSelectedProjectID(undefined);
+      });
+  }, []);
 
   useEffect(() => {
     if (!canLoadErrorDocs) {
@@ -410,7 +463,7 @@ export default function ApiDocsPage() {
   }, [canLoadErrorDocs]);
 
   useEffect(() => {
-    if (!isOrgAdminRole(role)) {
+    if (!isOrgAdminRole(authz.organizationRole)) {
       setClientProfiles([]);
       setGatewayEndpoints([]);
       return;
@@ -425,7 +478,7 @@ export default function ApiDocsPage() {
       setClientProfiles([]);
       setGatewayEndpoints([]);
     });
-  }, [role]);
+  }, [authz.organizationRole]);
 
   const errorColumns = [
     { title: 'Code', dataIndex: 'code', width: 250, render: (value: string) => <Text id={`error-${value}`} code>{value}</Text> },
@@ -448,9 +501,21 @@ export default function ApiDocsPage() {
         eyebrow="系统与集成"
         title="API 与兼容性"
         description="同时查看真实 Gateway API、Client Profile、证据等级与配置边界；协议兼容不等于已完成真实客户端认证。"
+        actions={projects.length > 0 ? (
+          <Select
+            aria-label="API 文档项目范围"
+            value={selectedProjectID}
+            optionList={projects.map(project => ({
+              label: `${project.name} · ${canonicalProjectMembershipRole(project.current_user_membership_role) || '无显式项目角色'}`,
+              value: project.id,
+            }))}
+            onChange={value => setSelectedProjectID(Number(value))}
+            style={{ width: 280 }}
+          />
+        ) : undefined}
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {isOrgAdminRole(role) && <Surface title="Agent 客户端兼容矩阵" description="等级从代码合同返回；只有通过独立客户端或端到端证据的能力才标记 verified。">
+        {isOrgAdminRole(authz.organizationRole) && <Surface title="Agent 客户端兼容矩阵" description="等级从代码合同返回；只有通过独立客户端或端到端证据的能力才标记 verified。">
           <Banner
             type={gatewayEndpoints.some(endpoint => endpoint.status === 'active' && endpoint.observed_status === 'ready') ? 'success' : 'warning'}
             description={gatewayEndpoints.some(endpoint => endpoint.status === 'active' && endpoint.observed_status === 'ready')

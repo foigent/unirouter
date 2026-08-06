@@ -620,27 +620,26 @@ func main() {
 	adminRoute := func(h http.HandlerFunc) http.Handler {
 		return adminAuth(http.HandlerFunc(h))
 	}
-	roleRoute := func(h http.HandlerFunc, roles ...string) http.Handler {
-		return adminAuth(middleware.RequireRoles(roles...)(http.HandlerFunc(h)))
+	organizationRoleRoute := func(h http.HandlerFunc, roles ...string) http.Handler {
+		return adminAuth(middleware.RequireOrganizationRoles(roles...)(http.HandlerFunc(h)))
 	}
 	platformRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin)
+		return organizationRoleRoute(h, auth.RolePlatformAdmin)
 	}
 	orgAdminRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
+		return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
 	}
 	pricingReadRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)
+		return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)
 	}
 	billingRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleBillingAdmin)
+		return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleBillingAdmin)
 	}
 	usageRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer)
+		return adminRoute(h)
 	}
 	dashboardRoute := func(h http.HandlerFunc) http.Handler {
-		return adminAuth(middleware.RequireExactRoles(
-			auth.RoleLegacyAdmin,
+		return adminAuth(middleware.RequireOrganizationRoles(
 			auth.RolePlatformAdmin,
 			auth.RoleOrgAdmin,
 			auth.RoleBillingAdmin,
@@ -648,28 +647,28 @@ func main() {
 		)(http.HandlerFunc(h)))
 	}
 	notificationEventReadRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin)
+		return adminRoute(h)
 	}
 	notificationEventWriteRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin)
+		return adminRoute(h)
 	}
 	notificationOperatorRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin)
+		return adminRoute(h)
 	}
 	projectListRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer)
+		return adminRoute(h)
 	}
 	projectReadRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer)
+		return adminRoute(h)
 	}
 	projectManagementRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin)
+		return adminRoute(h)
 	}
 	projectBudgetRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin)
+		return adminRoute(h)
 	}
 	projectWriteRoute := func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper)
+		return adminRoute(h)
 	}
 	licensedRoute := func(feature string, route func(http.HandlerFunc) http.Handler) func(http.HandlerFunc) http.Handler {
 		return func(h http.HandlerFunc) http.Handler {
@@ -918,18 +917,18 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/keys", projectReadRoute(adminHandler.ListAPIKeys))
 	mux.Handle("POST /api/v1/keys", projectWriteRoute(adminHandler.CreateAPIKey))
 	mux.Handle("GET /api/v1/keys/{id}", projectReadRoute(adminHandler.GetAPIKey))
-	mux.Handle("PUT /api/v1/keys/{id}", roleRoute(adminHandler.UpdateAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
-	mux.Handle("POST /api/v1/keys/{id}/disable", roleRoute(adminHandler.DisableAPIKey, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper))
+	mux.Handle("PUT /api/v1/keys/{id}", adminRoute(adminHandler.UpdateAPIKey))
+	mux.Handle("POST /api/v1/keys/{id}/disable", adminRoute(adminHandler.DisableAPIKey))
 
 	mux.Handle("GET /api/v1/organizations", usageRoute(adminHandler.ListOrganizations))
 	mux.Handle("POST /api/v1/bootstrap/first-customer", platformRoute(adminHandler.BootstrapFirstCustomer))
 	mux.Handle("GET /api/v1/projects", projectListRoute(adminHandler.ListProjects))
 	mux.Handle("POST /api/v1/projects", orgAdminRoute(adminHandler.CreateProject))
 	mux.Handle("GET /api/v1/projects/{id}", projectReadRoute(adminHandler.GetProject))
-	mux.Handle("PUT /api/v1/projects/{id}", roleRoute(adminHandler.UpdateProject, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
+	mux.Handle("PUT /api/v1/projects/{id}", adminRoute(adminHandler.UpdateProject))
 	mux.Handle("GET /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)(adminHandler.ListProjectModelSets))
 	mux.Handle("PUT /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, func(h http.HandlerFunc) http.Handler {
-		return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin)
+		return adminRoute(h)
 	})(adminHandler.ReplaceProjectModelSets))
 	mux.Handle("GET /api/v1/projects/{id}/members", projectManagementRoute(adminHandler.ListProjectMembers))
 	mux.Handle("PUT /api/v1/projects/{id}/members/{user_id}", projectManagementRoute(adminHandler.UpsertProjectMember))
@@ -954,7 +953,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/usage/analytics", usageRoute(adminHandler.UsageAnalytics))
 	registerCostOptimizationRoutes(mux, adminHandler, pricingReadRoute)
 	mux.Handle("GET /api/v1/internal-status", licensedRoute(licensing.FeatureNotifications, orgAdminRoute)(adminHandler.InternalStatus))
-	mux.Handle("GET /api/v1/runtime/status", roleRoute(adminHandler.RuntimeStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
+	mux.Handle("GET /api/v1/runtime/status", organizationRoleRoute(adminHandler.RuntimeStatus, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
 	mux.Handle("GET /api/v1/error-docs", usageRoute(adminHandler.ListErrorDocs))
 
 	mux.Handle("GET /api/v1/reconciliation", billingRoute(adminHandler.ListReconciliation))
@@ -977,7 +976,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 		organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
 		projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute),
 		modelSetRead: licensedRoute(licensing.FeatureModelGovernance, func(h http.HandlerFunc) http.Handler {
-			return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin)
+			return adminRoute(h)
 		}),
 	})
 	registerInvocationOptimizationRoutes(
@@ -988,13 +987,13 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	registerPricingRoutes(mux, adminHandler, pricingRouteGuards{read: pricingReadRoute, write: platformRoute})
 	registerLimitPolicyRoutes(mux, adminHandler, limitPolicyRouteGuards{
 		read: func(h http.HandlerFunc) http.Handler {
-			return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
+			return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
 		},
 		write: orgAdminRoute,
 	})
 	registerGuardrailPolicyRoutes(mux, adminHandler, guardrailPolicyRouteGuards{
 		read: licensedRoute(licensing.FeatureGuardrails, func(h http.HandlerFunc) http.Handler {
-			return roleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
+			return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
 		}),
 		write: licensedRoute(licensing.FeatureGuardrails, orgAdminRoute),
 	})
@@ -1019,7 +1018,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("PUT /api/v1/notification-webhooks/{id}", notificationOperatorLicensedRoute(adminHandler.UpdateNotificationWebhook))
 	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", notificationOperatorLicensedRoute(adminHandler.VerifyNotificationWebhookScope))
 
-	mux.Handle("GET /api/v1/audit-logs", roleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
+	mux.Handle("GET /api/v1/audit-logs", organizationRoleRoute(adminHandler.ListAuditLogs, auth.RolePlatformAdmin, auth.RoleOrgAdmin))
 	mediaReadRoute := licensedRoute(licensing.FeatureGateway, projectReadRoute)
 	mediaWriteRoute := licensedRoute(licensing.FeatureGateway, projectWriteRoute)
 	mux.Handle("GET /api/v1/media-jobs/contract", mediaReadRoute(mediaHandler.Contract))

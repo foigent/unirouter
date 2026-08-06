@@ -6,6 +6,7 @@ export interface UserProfile {
   id: number;
   username: string;
   role?: string;
+  organization_role?: string;
   org_id?: number;
   org_name?: string;
   status?: string;
@@ -48,6 +49,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         id: data.user_id,
         username: data.username,
         role: data.role,
+        organization_role: data.organization_role,
         org_id: data.org_id,
         org_name: data.org_name,
         status: data.status,
@@ -94,6 +96,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         id: data.id,
         username: data.username,
         role: data.role,
+        organization_role: data.organization_role,
         org_id: data.org_id,
         org_name: data.org_name,
         status: data.status,

@@ -32,7 +32,8 @@ func guardedUserMutationTx(targetRole, targetStatus string, activePlatformAdmins
 				}
 				*dest[0].(*int64) = 1
 				*dest[1].(*string) = targetRole
-				*dest[2].(*string) = targetStatus
+				*dest[2].(*string) = targetRole
+				*dest[3].(*string) = targetStatus
 				return nil
 			}}
 		},

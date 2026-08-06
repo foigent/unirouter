@@ -112,8 +112,9 @@ func TestAPIKeyMutationsRejectAStaleAuthorizedSnapshot(t *testing.T) {
 						return &testutil.MockRow{ScanFn: func(dest ...any) error {
 							*dest[0].(*int64) = 1
 							*dest[1].(*string) = auth.RolePlatformAdmin
-							*dest[2].(*string) = "active"
+							*dest[2].(*string) = auth.RolePlatformAdmin
 							*dest[3].(*string) = "active"
+							*dest[4].(*string) = "active"
 							return nil
 						}}
 					case strings.Contains(sql, "SELECT status FROM orgs"):
@@ -367,7 +368,7 @@ func TestListAPIKeysUsesDatabaseTotalAndPagination(t *testing.T) {
 		},
 	}
 	h := newTestHandler(db)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/keys?page=3&page_size=10", nil)
+	req := p6f16Request(http.MethodGet, "/api/v1/keys?page=3&page_size=10", "", auth.RolePlatformAdmin, 1, 10)
 	rec := httptest.NewRecorder()
 
 	h.ListAPIKeys(rec, req)

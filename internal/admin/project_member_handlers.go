@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -15,8 +16,9 @@ import (
 
 // ListProjectMembers returns the current project memberships and a bounded,
 // searchable list of same-organization users that the actor may add. The
-// candidate list is intentionally authorization-filtered on the server so a
-// project administrator never learns or grants organization-level roles.
+// candidate list is bounded and same-organization only. It returns the
+// account's organization_role for operator context, but this endpoint can
+// grant only a project membership role and never organization authority.
 func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := parsePositivePathID(w, r, "id", "Invalid project ID")
 	if !ok {
@@ -57,12 +59,12 @@ func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(),
 		`SELECT u.id, u.username, COALESCE(u.email, ''),
 		        COALESCE(NULLIF(u.auth_provider, ''), 'local'),
-		        u.role, u.status, pm.role, pm.created_at, pm.updated_at
+		        u.organization_role, u.role, u.status, pm.role, pm.created_at, pm.updated_at
 		 FROM project_members pm
 		 JOIN users u ON u.id = pm.user_id
 		 JOIN projects p ON p.id = pm.project_id AND p.org_id = u.org_id
 		 WHERE pm.project_id = $1 AND p.org_id = $2
-		 ORDER BY CASE pm.role WHEN 'project_admin' THEN 0 WHEN 'project_developer' THEN 1 ELSE 2 END,
+		 ORDER BY CASE pm.role WHEN 'project_admin' THEN 0 WHEN 'project_user' THEN 1 WHEN 'project_developer' THEN 1 ELSE 2 END,
 		          u.username ASC, u.id ASC
 		 LIMIT $3 OFFSET $4`,
 		projectID, orgID, pageSize, offset,
@@ -76,16 +78,17 @@ func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 	members := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var userID int64
-		var username, email, authProvider, userRole, status, membershipRole string
+		var username, email, authProvider, organizationRole, compatibilityRole, status, membershipRole string
 		var createdAt, updatedAt time.Time
-		if err := rows.Scan(&userID, &username, &email, &authProvider, &userRole, &status, &membershipRole, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&userID, &username, &email, &authProvider, &organizationRole, &compatibilityRole, &status, &membershipRole, &createdAt, &updatedAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
 		members = append(members, map[string]interface{}{
 			"user_id": userID, "username": username, "email": email,
-			"auth_provider": authProvider, "user_role": userRole, "status": status,
-			"membership_role": membershipRole, "created_at": createdAt, "updated_at": updatedAt,
+			"auth_provider": authProvider, "organization_role": organizationRole,
+			"role": compatibilityRole, "user_role": compatibilityRole, "status": status,
+			"membership_role": canonicalProjectMembershipRole(membershipRole), "created_at": createdAt, "updated_at": updatedAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -93,10 +96,6 @@ func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eligibleRoles := []string{auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer}
-	if actorRole(r.Context()) == auth.RoleProjectAdmin {
-		eligibleRoles = []string{auth.RoleDeveloper, auth.RoleViewer}
-	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	likeQuery := "%" + query + "%"
 	var eligibleTotal int
@@ -104,29 +103,29 @@ func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 		`SELECT COUNT(*)
 		 FROM users u
 		 WHERE u.org_id = $1
-		   AND u.role = ANY($2::text[])
-		   AND ($3 = '' OR u.username ILIKE $4 OR COALESCE(u.email, '') ILIKE $4)
+		   AND u.status = 'active'
+		   AND ($2 = '' OR u.username ILIKE $3 OR COALESCE(u.email, '') ILIKE $3)
 		   AND NOT EXISTS (
-		       SELECT 1 FROM project_members pm WHERE pm.project_id = $5 AND pm.user_id = u.id
+		       SELECT 1 FROM project_members pm WHERE pm.project_id = $4 AND pm.user_id = u.id
 		   )`,
-		orgID, eligibleRoles, query, likeQuery, projectID,
+		orgID, query, likeQuery, projectID,
 	).Scan(&eligibleTotal); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Candidate count failed"})
 		return
 	}
 
 	candidateRows, err := h.db.Query(r.Context(),
-		`SELECT u.id, u.username, COALESCE(u.email, ''), u.role, u.status
+		`SELECT u.id, u.username, COALESCE(u.email, ''), u.organization_role, u.role, u.status
 		 FROM users u
 		 WHERE u.org_id = $1
-		   AND u.role = ANY($2::text[])
-		   AND ($3 = '' OR u.username ILIKE $4 OR COALESCE(u.email, '') ILIKE $4)
+		   AND u.status = 'active'
+		   AND ($2 = '' OR u.username ILIKE $3 OR COALESCE(u.email, '') ILIKE $3)
 		   AND NOT EXISTS (
-		       SELECT 1 FROM project_members pm WHERE pm.project_id = $5 AND pm.user_id = u.id
+		       SELECT 1 FROM project_members pm WHERE pm.project_id = $4 AND pm.user_id = u.id
 		   )
 		 ORDER BY CASE u.status WHEN 'active' THEN 0 ELSE 1 END, u.username ASC, u.id ASC
 		 LIMIT 100`,
-		orgID, eligibleRoles, query, likeQuery, projectID,
+		orgID, query, likeQuery, projectID,
 	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Candidate query failed"})
@@ -137,15 +136,15 @@ func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 	eligibleUsers := make([]map[string]interface{}, 0)
 	for candidateRows.Next() {
 		var userID int64
-		var username, email, userRole, status string
-		if err := candidateRows.Scan(&userID, &username, &email, &userRole, &status); err != nil {
+		var username, email, organizationRole, compatibilityRole, status string
+		if err := candidateRows.Scan(&userID, &username, &email, &organizationRole, &compatibilityRole, &status); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Candidate scan failed"})
 			return
 		}
-		membershipRole, _ := projectMemberRoleForUserRole(userRole)
 		eligibleUsers = append(eligibleUsers, map[string]interface{}{
 			"user_id": userID, "username": username, "email": email,
-			"user_role": userRole, "membership_role": membershipRole, "status": status,
+			"organization_role": organizationRole, "role": compatibilityRole,
+			"user_role": compatibilityRole, "status": status,
 		})
 	}
 	if err := candidateRows.Err(); err != nil {
@@ -169,15 +168,16 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !auth.RoleIn(actorRole(r.Context()), auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin) {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-		return
-	}
 	var req struct {
 		Role string `json:"role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
+		return
+	}
+	membershipRole, valid := auth.NormalizeProjectMembershipRole(strings.TrimSpace(req.Role))
+	if !valid {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project membership role"})
 		return
 	}
 
@@ -208,10 +208,10 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var targetOrgID int64
-	var targetRole, targetStatus string
+	var targetOrganizationRole, targetRole, targetStatus string
 	if err := tx.QueryRow(r.Context(),
-		`SELECT org_id, role, status FROM users WHERE id = $1 FOR UPDATE`, userID,
-	).Scan(&targetOrgID, &targetRole, &targetStatus); err != nil {
+		`SELECT org_id, organization_role, role, status FROM users WHERE id = $1 FOR UPDATE`, userID,
+	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		return
 	}
@@ -219,18 +219,28 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "User and project must belong to the same organization"})
 		return
 	}
-	membershipRole, valid := projectMemberRoleForUserRole(targetRole)
-	if !valid || req.Role != membershipRole {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Membership role must match the user's project role"})
+	if targetStatus != "active" {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Only active accounts can receive project membership"})
 		return
 	}
-	if actorRole(r.Context()) == auth.RoleProjectAdmin {
-		if membershipRole == projectMemberAdmin {
-			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Project administrators cannot grant project_admin"})
-			return
-		}
+	var existingMembershipRole string
+	existingMembershipErr := tx.QueryRow(r.Context(),
+		`SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2 FOR UPDATE`,
+		projectID, userID,
+	).Scan(&existingMembershipRole)
+	if existingMembershipErr != nil && !errors.Is(existingMembershipErr, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Membership lookup failed"})
+		return
+	}
+	hasExistingMembership := existingMembershipErr == nil
+	if actorOrganizationRole(r.Context()) != auth.RolePlatformAdmin && actorOrganizationRole(r.Context()) != auth.RoleOrgAdmin {
 		if middleware.GetUserIDFromContext(r.Context()) == userID {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Project administrators cannot change their own membership"})
+			return
+		}
+		if membershipRole == projectMemberAdmin ||
+			(hasExistingMembership && canonicalProjectMembershipRole(existingMembershipRole) == projectMemberAdmin) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Project administrators cannot create or modify project_admin memberships"})
 			return
 		}
 	}
@@ -246,8 +256,27 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to save project membership"})
 		return
 	}
+	disabledPersonalCredentials := int64(0)
+	if membershipRole == projectMemberViewer {
+		disabledPersonalCredentials, err = disablePersonalCredentialsForMembershipTx(r.Context(), tx, userID, orgID, projectID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to enforce non-calling membership"})
+			return
+		}
+	}
+	roleTransition, err := syncUserCompatibilityRoleTx(r.Context(), tx, userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update compatibility role"})
+		return
+	}
 	auditDetail := map[string]interface{}{
-		"after": map[string]interface{}{"user_id": userID, "role": membershipRole, "status": targetStatus},
+		"after":                         map[string]interface{}{"user_id": userID, "role": membershipRole, "status": targetStatus},
+		"compatibility_role":            map[string]interface{}{"before": roleTransition.BeforeRole, "after": roleTransition.AfterRole},
+		"live_sessions_revoked":         roleTransition.RevokedSessions,
+		"personal_credentials_disabled": disabledPersonalCredentials,
+	}
+	if hasExistingMembership {
+		auditDetail["before"] = map[string]interface{}{"user_id": userID, "role": canonicalProjectMembershipRole(existingMembershipRole)}
 	}
 	if err := insertAuditEntry(r.Context(), tx, "project.member.upsert", "project_member",
 		fmt.Sprintf("%d:%d", projectID, userID), auditDetail, auditMeta{
@@ -279,10 +308,6 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !auth.RoleIn(actorRole(r.Context()), auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin) {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-		return
-	}
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to remove project membership"})
@@ -295,16 +320,16 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var orgID int64
-	var targetRole, targetStatus, membershipRole string
+	var targetOrganizationRole, targetRole, targetStatus, membershipRole string
 	err = tx.QueryRow(r.Context(),
-		`SELECT p.org_id, u.role, u.status, pm.role
+		`SELECT p.org_id, u.organization_role, u.role, u.status, pm.role
 		 FROM project_members pm
 		 JOIN projects p ON p.id = pm.project_id
 		 JOIN users u ON u.id = pm.user_id AND u.org_id = p.org_id
 		 WHERE pm.project_id = $1 AND pm.user_id = $2
 		 FOR UPDATE OF pm, u`,
 		projectID, userID,
-	).Scan(&orgID, &targetRole, &targetStatus, &membershipRole)
+	).Scan(&orgID, &targetOrganizationRole, &targetRole, &targetStatus, &membershipRole)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project membership not found"})
@@ -322,7 +347,7 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
-	if actorRole(r.Context()) == auth.RoleProjectAdmin {
+	if actorOrganizationRole(r.Context()) != auth.RolePlatformAdmin && actorOrganizationRole(r.Context()) != auth.RoleOrgAdmin {
 		if membershipRole == projectMemberAdmin {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Project administrators cannot remove project administrators"})
 			return
@@ -332,24 +357,6 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if auth.IsProjectScopedRole(targetRole) && targetStatus == "active" {
-		var otherMemberships int
-		if err := tx.QueryRow(r.Context(),
-			`SELECT COUNT(*)
-			 FROM project_members pm
-			 JOIN projects p ON p.id = pm.project_id
-			 WHERE pm.user_id = $1 AND pm.project_id <> $2 AND p.org_id = $3`,
-			userID, projectID, orgID,
-		).Scan(&otherMemberships); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Membership check failed"})
-			return
-		}
-		if otherMemberships == 0 {
-			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "An active project user must keep at least one project; assign another project or disable the account first"})
-			return
-		}
-	}
-
 	tag, err := tx.Exec(r.Context(),
 		`DELETE FROM project_members pm
 		 USING projects p, users u
@@ -366,8 +373,22 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project membership not found"})
 		return
 	}
+	disabledPersonalCredentials, err := disablePersonalCredentialsForMembershipTx(r.Context(), tx, userID, orgID, projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to revoke project calling credentials"})
+		return
+	}
+	roleTransition, err := syncUserCompatibilityRoleTx(r.Context(), tx, userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update compatibility role"})
+		return
+	}
 	auditDetail := map[string]interface{}{
-		"before": map[string]interface{}{"user_id": userID, "role": membershipRole},
+		"before":                        map[string]interface{}{"user_id": userID, "role": canonicalProjectMembershipRole(membershipRole)},
+		"organization_role":             targetOrganizationRole,
+		"compatibility_role":            map[string]interface{}{"before": roleTransition.BeforeRole, "after": roleTransition.AfterRole},
+		"live_sessions_revoked":         roleTransition.RevokedSessions,
+		"personal_credentials_disabled": disabledPersonalCredentials,
 	}
 	if err := insertAuditEntry(r.Context(), tx, "project.member.remove", "project_member",
 		fmt.Sprintf("%d:%d", projectID, userID), auditDetail, auditMeta{
@@ -387,6 +408,13 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
+func canonicalProjectMembershipRole(role string) string {
+	if normalized, ok := auth.NormalizeProjectMembershipRole(role); ok {
+		return normalized
+	}
+	return role
 }
 
 func parsePositivePathID(w http.ResponseWriter, r *http.Request, name, message string) (int64, bool) {

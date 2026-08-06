@@ -122,6 +122,17 @@ digest-bound. Apply validates the deferred FK events before restoring those
 triggers, then re-reads both before commit. Every delete command asserts its
 exact affected-row count.
 
+Migration `000058_enterprise_project_role_separation` adds the canonical
+organization-role axis and canonicalizes project membership role values. It is
+the reset-v2 binary's exact latest-supported schema gate, but it adds no public
+table and does not change reset classification, delete order, protected scope,
+Source, backup, sequence, credential, Bootstrap, or traffic semantics. Its two
+one-release rolling-compatibility triggers map legacy `users.role` writes onto
+the organization axis and normalize legacy project-membership aliases before
+the canonical CHECK; both trigger identities are reset schema evidence. Unknown
+roles still fail closed, and removing either trigger requires a later explicit
+migration after old writers retire.
+
 Redis is not globally flushed. Only these reviewed product prefixes are scanned
 and unlinked, then re-scanned to zero:
 

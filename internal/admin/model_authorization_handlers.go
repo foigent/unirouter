@@ -222,7 +222,7 @@ func (h *Handler) transitionModelAuthorization(w http.ResponseWriter, r *http.Re
 }
 
 func resolveModelAuthorizationOrg(r *http.Request, requested int64) (int64, error) {
-	role := middleware.GetUserRoleFromContext(r.Context())
+	role := actorOrganizationRole(r.Context())
 	contextOrg := middleware.GetOrgIDFromContext(r.Context())
 	if role == auth.RolePlatformAdmin {
 		if requested <= 0 {

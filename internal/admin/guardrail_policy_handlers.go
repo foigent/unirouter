@@ -119,7 +119,7 @@ func (h *Handler) ListGuardrailPolicies(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		payload := guardrailPolicyPayload(record)
-		if record.OrgID == nil && !auth.IsPlatformAdmin(actorRole(r.Context())) {
+		if record.OrgID == nil && !auth.IsPlatformAdmin(actorOrganizationRole(r.Context())) {
 			payload["config"] = map[string]interface{}{}
 			payload["config_redacted"] = true
 		}
@@ -239,7 +239,7 @@ func (h *Handler) UpdateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Policy not found"})
 		return
 	}
-	if current.OrgID == nil && !auth.IsPlatformAdmin(actorRole(r.Context())) {
+	if current.OrgID == nil && !auth.IsPlatformAdmin(actorOrganizationRole(r.Context())) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
@@ -367,7 +367,7 @@ func (h *Handler) normalizeAndAuthorizeGuardrailPolicy(ctx context.Context, reco
 	if record.Name == "" || len(record.Name) > 120 {
 		return fmt.Errorf("name is required and must be at most 120 characters")
 	}
-	role := actorRole(ctx)
+	role := actorOrganizationRole(ctx)
 	if !auth.IsPlatformAdmin(role) {
 		actorOrgID := middleware.GetOrgIDFromContext(ctx)
 		if !auth.IsOrgAdmin(role) || actorOrgID <= 0 || record.Mandatory {

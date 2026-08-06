@@ -271,9 +271,11 @@ func assertAPIKeyAuditValue(t *testing.T, state map[string]any, field string, wa
 
 func apiKeySecurityRequest(method, target, body, role string) *http.Request {
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	organizationRole, _ := auth.NormalizeOrganizationRole(role)
 	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(7))
 	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	ctx = context.WithValue(ctx, middleware.CtxUserRole, role)
+	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, organizationRole)
 	ctx = context.WithValue(ctx, middleware.CtxRequestID, "api-key-security-test")
 	return req.WithContext(ctx)
 }
@@ -339,10 +341,12 @@ func newAPIKeySecurityTestHandler(state *apiKeySecurityTestState) *Handler {
 					*dest[0].(*int64) = 42
 					return nil
 				case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
+					organizationRole, _ := auth.NormalizeOrganizationRole(state.actorRole)
 					*dest[0].(*int64) = state.actorOrgID
-					*dest[1].(*string) = state.actorRole
-					*dest[2].(*string) = state.actorStatus
-					*dest[3].(*string) = state.actorOrgStatus
+					*dest[1].(*string) = organizationRole
+					*dest[2].(*string) = state.actorRole
+					*dest[3].(*string) = state.actorStatus
+					*dest[4].(*string) = state.actorOrgStatus
 					return nil
 				case strings.Contains(sql, "FROM orgs"):
 					*dest[0].(*string) = state.actorOrgStatus

@@ -228,7 +228,7 @@ func TestHashAPIKey_HexLength(t *testing.T) {
 // --- JWT edge cases ---
 
 func TestGenerateJWT_ExpiredToken(t *testing.T) {
-	if _, _, err := GenerateAdminSessionJWT(1, 1, "admin", 0, "secret", 0); err == nil {
+	if _, _, err := GenerateAdminSessionJWT(1, 1, RolePlatformAdmin, "admin", 0, "secret", 0); err == nil {
 		t.Fatal("expected non-positive session lifetime to be rejected")
 	}
 }
@@ -236,7 +236,7 @@ func TestGenerateJWT_ExpiredToken(t *testing.T) {
 func TestGenerateJWT_DifferentRoles(t *testing.T) {
 	roles := []string{"platform_admin", "org_admin", "org_viewer"}
 	for _, role := range roles {
-		token, _, err := GenerateAdminSessionJWT(1, 1, role, 0, "secret", 1)
+		token, _, err := GenerateAdminSessionJWT(1, 1, role, role, 0, "secret", 1)
 		if err != nil {
 			t.Fatalf("role %s: unexpected error: %v", role, err)
 		}

@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/traceutil"
@@ -143,7 +142,7 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
-	} else if auth.IsProjectScopedRole(actorRole(r.Context())) {
+	} else if !actorHasOrganizationUsageScope(r.Context()) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "project_id is required"})
 		return
 	}

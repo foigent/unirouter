@@ -274,7 +274,8 @@ func TestP6F16UpdateUserFinalPredicateProtectsPlatformRoles(t *testing.T) {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int64) = 7
 				*dest[1].(*string) = auth.RoleOrgViewer
-				*dest[2].(*string) = "active"
+				*dest[2].(*string) = auth.RoleOrgViewer
+				*dest[3].(*string) = "active"
 				return nil
 			}}
 		},
@@ -292,8 +293,11 @@ func TestP6F16UpdateUserFinalPredicateProtectsPlatformRoles(t *testing.T) {
 				sessionRevokeCalled = true
 				return pgconn.NewCommandTag("UPDATE 1"), nil
 			}
-			if !strings.Contains(sql, "role NOT IN ('admin', 'platform_admin')") {
+			if !strings.Contains(sql, "organization_role <> 'platform_admin'") {
 				t.Fatalf("expected final update predicate to close platform-role race, got %s", sql)
+			}
+			if !strings.Contains(sql, "organization_role = $1") || !strings.Contains(sql, "role = $2") {
+				t.Fatalf("current organization-role writer must update both canonical and compatibility axes, got %s", sql)
 			}
 			updateCalled = true
 			return pgconn.NewCommandTag("UPDATE 1"), nil
@@ -301,7 +305,7 @@ func TestP6F16UpdateUserFinalPredicateProtectsPlatformRoles(t *testing.T) {
 	}
 	db := &testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) { return tx, nil }}
 	h := newTestHandler(db)
-	req := p6f16Request(http.MethodPut, "/api/v1/users/9", `{"status":"disabled"}`, auth.RoleOrgAdmin, 7, 70)
+	req := p6f16Request(http.MethodPut, "/api/v1/users/9", `{"organization_role":"billing_admin"}`, auth.RoleOrgAdmin, 7, 70)
 	req.SetPathValue("id", "9")
 	rec := httptest.NewRecorder()
 

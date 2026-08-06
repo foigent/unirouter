@@ -3,10 +3,10 @@ import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography } from '@
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
-import { roleLabel, roleTagColor, userManagementRoleOptions } from '../utils/displayLabels';
+import { organizationRoleLabel, roleTagColor, userManagementOrganizationRoleOptions } from '../utils/displayLabels';
 import { EmptyState, PageHeader, PasswordField, StatusTag, Surface } from '../ui';
 import { useAuthStore } from '../store/auth';
-import { isPlatformAdminRole } from '../navigation';
+import { canonicalOrganizationRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { loadAllPages } from '../utils/loadAllPages';
 import {
   LOCAL_PASSWORD_MAX_UTF8_BYTES,
@@ -20,15 +20,6 @@ interface Organization {
   name: string;
 }
 
-interface ProjectOption {
-  id: number;
-  org_id: number;
-  name: string;
-  status: string;
-}
-
-const projectScopedRoles = new Set(['project_admin', 'developer', 'viewer']);
-
 const apiErrorCode = (error: ApiError) => {
   if (!error.payload || typeof error.payload !== 'object') return '';
   const code = (error.payload as { code?: unknown }).code;
@@ -39,7 +30,6 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const currentUser = useAuthStore((state) => state.user);
   const [users, setUsers] = useState<any[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -49,9 +39,6 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const [showDrawer, setShowDrawer] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
-  const [selectedOrgId, setSelectedOrgId] = useState<number | undefined>();
-  const [selectedRole, setSelectedRole] = useState('org_viewer');
-  const [selectedStatus, setSelectedStatus] = useState('active');
 
   const load = (p = page, size = pageSize) => {
     const version = ++requestVersion.current;
@@ -84,43 +71,20 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       })
       .catch(() => setOrganizations(fallback));
   }, [currentUser?.org_id, currentUser?.org_name]);
-  useEffect(() => {
-    if (!showDrawer || !selectedOrgId) {
-      setProjects([]);
-      return;
-    }
-    let active = true;
-    loadAllPages<ProjectOption>((projectPage, size) => api.getProjects(projectPage, size, { org_id: selectedOrgId }))
-      .then(items => { if (active) setProjects(items); })
-      .catch(() => { if (active) setProjects([]); });
-    return () => { active = false; };
-  }, [selectedOrgId, showDrawer]);
-
   const roleOptions = useMemo(
-    () => isPlatformAdminRole(currentUser?.role)
-      ? userManagementRoleOptions
-      : userManagementRoleOptions.filter(option => option.value !== 'platform_admin'),
-    [currentUser?.role],
+    () => isPlatformAdminRole(organizationRoleForUser(currentUser))
+      ? userManagementOrganizationRoleOptions
+      : userManagementOrganizationRoleOptions.filter(option => option.value !== 'platform_admin'),
+    [currentUser?.organization_role, currentUser?.role],
   );
 
   const closeDrawer = () => { setShowDrawer(false); setEditUser(null); };
-
-  const projectOptions = useMemo(
-    () => projects
-      .filter(project => !selectedOrgId || project.org_id === Number(selectedOrgId))
-      .map(project => ({
-        label: `${project.name}${project.status === 'active' ? '' : `（${project.status === 'disabled' ? '已停用' : '已归档'}）`}`,
-        value: project.id,
-        disabled: project.status === 'archived',
-      })),
-    [projects, selectedOrgId],
-  );
 
   const mutationRestriction = (user: any) => {
     if (Number(user.id) === Number(currentUser?.id)) {
       return '当前登录账号不能在这里修改角色、停用或删除';
     }
-    if (!isPlatformAdminRole(currentUser?.role) && isPlatformAdminRole(user.role)) {
+    if (!isPlatformAdminRole(organizationRoleForUser(currentUser)) && isPlatformAdminRole(canonicalOrganizationRole(user.organization_role, user.role))) {
       return '组织管理员只能查看平台管理员，不能修改或删除';
     }
     return '';
@@ -130,9 +94,8 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     try {
       if (editUser) {
         await api.updateUser(editUser.id, {
-          role: v.role,
+          organization_role: v.organization_role,
           status: v.status,
-          project_ids: projectScopedRoles.has(v.role) ? (v.project_ids || []) : [],
         });
         Toast.success('更新成功');
       } else {
@@ -140,9 +103,8 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           org_id: Number(v.org_id),
           username: v.username,
           password: v.password,
-          role: v.role,
+          organization_role: v.organization_role,
           status: v.status || 'active',
-          project_ids: projectScopedRoles.has(v.role) ? (v.project_ids || []) : [],
         });
         Toast.success('用户创建成功');
       }
@@ -200,34 +162,21 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     if (!showDrawer || !formApi) return;
     formApi.reset();
     if (editUser) {
-      setSelectedOrgId(Number(editUser.org_id));
-      setSelectedRole(editUser.role);
-      setSelectedStatus(editUser.status);
       formApi.setValues({
         org_id: editUser.org_id,
         username: editUser.username,
-        role: editUser.role,
+        organization_role: editUser.organization_role || 'member',
         status: editUser.status,
-        project_ids: editUser.project_ids || [],
       });
     } else {
       const defaultOrgID = Number(currentUser?.org_id || organizations[0]?.id || 0) || undefined;
-      setSelectedOrgId(defaultOrgID);
-      setSelectedRole('org_viewer');
-      setSelectedStatus('active');
       formApi.setValues({
         org_id: defaultOrgID,
-        role: 'org_viewer',
+        organization_role: 'member',
         status: 'active',
-        project_ids: [],
       });
     }
   }, [currentUser?.org_id, editUser, formApi, organizations, showDrawer]);
-  useEffect(() => {
-    if (!showDrawer || !formApi || !projectScopedRoles.has(selectedRole)) return;
-    formApi.setValue('project_ids', editUser?.project_ids || []);
-  }, [editUser, formApi, selectedRole, showDrawer]);
-
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     {
@@ -248,12 +197,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     },
     { title: '邮箱', dataIndex: 'email', render: (v: string) => v || '-' },
     { title: '认证来源', dataIndex: 'auth_provider', width: 110, render: (v: string) => v === 'oidc' ? '企业 OIDC' : '本地账号' },
-    { title: '角色', dataIndex: 'role', render: (v: string) => <Tag color={roleTagColor(v) as any}>{roleLabel(v)}</Tag> },
-    {
-      title: '所属项目',
-      dataIndex: 'project_names',
-      render: (value: string, record: any) => projectScopedRoles.has(record.role) ? (value || '未分配') : '—',
-    },
+    { title: '组织角色', dataIndex: 'organization_role', render: (v: string) => <Tag color={roleTagColor(v) as any}>{organizationRoleLabel(v)}</Tag> },
     { title: '状态', dataIndex: 'status', render: (v: string) => <StatusTag status={v}>{v === 'active' ? '启用' : v === 'disabled' ? '停用' : v}</StatusTag> },
     { title: '创建时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
     {
@@ -290,14 +234,14 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         <div className="ur-embedded-heading">
           <div>
             <Typography.Title heading={4} style={{ margin: 0 }}>账号与身份</Typography.Title>
-            <Typography.Text type="tertiary">无需企业目录即可创建本地账号并配置角色和项目归属；账号、人员和调用主体仍是不同实体，不把 Key Owner 当成实际调用人。</Typography.Text>
+            <Typography.Text type="tertiary">创建登录账号并设置组织角色；项目角色在“项目与成员”中按项目独立维护。</Typography.Text>
           </div>
           <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>
         </div>
       ) : <PageHeader
         eyebrow="访问与安全"
         title="用户管理"
-        description="管理本地账号及企业 OIDC 映射账号的角色与状态；企业密码和目录资料由身份提供方维护，项目角色还需要项目成员关系。"
+        description="管理本地账号及企业 OIDC 映射账号的组织角色与状态；项目角色在项目入口独立维护。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
       />}
 
@@ -331,15 +275,10 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           <Form.Select
             field="org_id"
             label="所属组织"
-            disabled={!!editUser || (!isPlatformAdminRole(currentUser?.role) && organizations.length <= 1)}
+            disabled={!!editUser || (!isPlatformAdminRole(organizationRoleForUser(currentUser)) && organizations.length <= 1)}
             optionList={organizations.map(org => ({ label: `${org.name} (#${org.id})`, value: org.id }))}
             rules={[{ required: true, message: '请选择所属组织' }]}
             style={{ width: '100%' }}
-            onChange={(value: unknown) => {
-              const orgID = Number(value) || undefined;
-              setSelectedOrgId(orgID);
-              formApi?.setValue('project_ids', []);
-            }}
           />
           <Form.Input
             field="username"
@@ -365,34 +304,17 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
             visibilityResetKey={`${showDrawer ? 'open' : 'closed'}-${editUser?.id || 'create'}`}
           />}
           <Form.Select
-            field="role"
-            label="角色"
+            field="organization_role"
+            label="组织角色"
             optionList={roleOptions}
             rules={[{ required: true, message: '必填' }]}
-            onChange={(value: unknown) => {
-              const role = String(value || '');
-              setSelectedRole(role);
-              if (!projectScopedRoles.has(role)) formApi?.setValue('project_ids', []);
-            }}
+            extraText="普通账号使用“普通成员”；项目管理员、项目使用者和项目只读在具体项目中分配。"
           />
-          {projectScopedRoles.has(selectedRole) && (
-            <Form.Select
-              field="project_ids"
-              label="所属项目"
-              multiple
-              filter
-              optionList={projectOptions}
-              rules={selectedStatus === 'active' ? [{ required: true, message: '启用的项目角色至少需要一个项目' }] : []}
-              extraText="项目管理员可管理项目成员；开发者和只读成员只能访问所选项目。"
-              style={{ width: '100%' }}
-            />
-          )}
           <Form.Select
             field="status"
             label="状态"
             optionList={[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]}
             initValue="active"
-            onChange={(value: unknown) => setSelectedStatus(String(value || 'active'))}
           />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>

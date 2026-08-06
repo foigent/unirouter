@@ -24,7 +24,7 @@ import { api } from '../api/client';
 import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney, microsToChartYuan, parseMicros } from '../ui';
 import { formatCompactNumber } from '../utils/formatNumber';
 import { useAuthStore } from '../store/auth';
-import { hasLicensedFeature, isBillingRole, isOrgViewerRole, isPlatformAdminRole, isRouteAllowedForRole } from '../navigation';
+import { authzContextForUser, hasLicensedFeature, isBillingRole, isOrgViewerRole, isPlatformAdminRole, isRouteAllowedForAuthz } from '../navigation';
 import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
@@ -242,13 +242,15 @@ function TrendTooltip({ active, payload, label }: any) {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const authz = authzContextForUser(user);
+  const organizationRole = authz.organizationRole;
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [range, setRange] = useState<TimeRange>('24h');
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [visibleTrendMetrics, setVisibleTrendMetrics] = useState<TrendMetric[]>(['requests', 'cost_yuan']);
-  const platform = isPlatformAdminRole(user?.role);
+  const platform = isPlatformAdminRole(organizationRole);
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
   const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [organizationsError, setOrganizationsError] = useState('');
@@ -355,20 +357,20 @@ export default function DashboardPage() {
   const hasWindowSample = (stats?.total_requests || 0) > 0 || (stats?.channel_health || []).some(ch => ch.success_count + ch.fail_count > 0);
   const windowNeedsAttention = hasWindowSample && (enabledUnhealthyChannels > 0 || (stats?.success_rate || 0) < 0.99);
   const openNotificationCount = (attention?.open_critical || 0) + (attention?.open_warning || 0);
-  const canOpenNotifications = notificationsLicensed && isRouteAllowedForRole('/notifications', user?.role);
-  const canReadWallet = platform || isBillingRole(user?.role);
+  const canOpenNotifications = notificationsLicensed && isRouteAllowedForAuthz('/notifications', authz);
+  const canReadWallet = platform || isBillingRole(organizationRole);
   const canReadChannelHealth = platform;
-  const canOpenRecentRequests = isRouteAllowedForRole('/logs', user?.role);
-  const dashboardTitle = isPlatformAdminRole(user?.role)
+  const canOpenRecentRequests = isRouteAllowedForAuthz('/logs', authz);
+  const dashboardTitle = isPlatformAdminRole(organizationRole)
     ? '平台总览'
-    : isBillingRole(user?.role)
+    : isBillingRole(organizationRole)
       ? '财务与用量总览'
-      : isOrgViewerRole(user?.role)
+      : isOrgViewerRole(organizationRole)
         ? '组织只读总览'
         : '组织运营总览';
-  const dashboardDescription = isPlatformAdminRole(user?.role)
+  const dashboardDescription = isPlatformAdminRole(organizationRole)
     ? '统一观察请求量、成功率、延迟、成本和通道健康状态。'
-    : isBillingRole(user?.role)
+    : isBillingRole(organizationRole)
       ? '统一观察用量、费用、余额和近期请求状态。'
       : '统一观察当前组织的请求量、成功率、延迟和费用。';
   const recentCols = useMemo(() => [

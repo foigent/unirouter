@@ -3,7 +3,7 @@ import { Typography, Table, Tag, Input, Select, Button, Space, Descriptions, Too
 import { IconSearch, IconRefresh, IconCopy } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
-import { isPlatformAdminRole } from '../navigation';
+import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { LatencyText, microsRatio, MoneyText, PageHeader, StatusTag } from '../ui';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
@@ -323,7 +323,7 @@ function routeAttemptsFromTrace(events: TraceEvent[]): RouteAttempt[] {
 
 export default function LogsPage() {
   const user = useAuthStore((state) => state.user);
-  const platform = isPlatformAdminRole(user?.role);
+  const platform = isPlatformAdminRole(organizationRoleForUser(user));
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);

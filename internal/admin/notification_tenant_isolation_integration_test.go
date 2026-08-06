@@ -136,6 +136,22 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 		assertResponseOrgIDs(t, rec.Body.Bytes(), fx.orgB)
 	})
 
+	t.Run("organization viewer needs live project membership for notification scope", func(t *testing.T) {
+		projectTarget := fmt.Sprintf("/api/v1/notification-events?project_id=%d", fx.projectA)
+		assertStatus(t, serve(t, http.MethodGet, projectTarget, "", fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusForbidden)
+		_, err := pool.Exec(ctx,
+			`INSERT INTO project_members (project_id, user_id, role)
+			 VALUES ($1, $2, 'project_admin')`, fx.projectA, fx.orgViewerA)
+		require.NoError(t, err)
+		assertStatus(t, serve(t, http.MethodGet, projectTarget, "", fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusOK)
+		assertStatus(t, serve(t, http.MethodPost, "/api/v1/notification-webhooks",
+			fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"org-viewer-project-admin","url":"https://project.example.test/org-viewer","event_types":["project.own"]}`, fx.orgA, fx.projectA),
+			fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusCreated)
+		assertStatus(t, serve(t, http.MethodGet,
+			fmt.Sprintf("/api/v1/notification-events?project_id=%d", projectAOther), "",
+			fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusForbidden)
+	})
+
 	t.Run("event lifecycle enforces tenant and project write scope", func(t *testing.T) {
 		ackPath := fmt.Sprintf("/api/v1/notification-events/%d/acknowledge", eventA)
 		foreignPath := fmt.Sprintf("/api/v1/notification-events/%d/acknowledge", eventB)
@@ -452,17 +468,16 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 
 func p6f33AdminMux(h *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
-	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
+	adminRoute := func(handler http.HandlerFunc) http.Handler {
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(handler)
 	}
-	readRoles := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleProjectAdmin}
-	mux.Handle("GET /api/v1/notification-events", roleRoute(h.ListNotificationEvents, readRoles...))
-	mux.Handle("POST /api/v1/notification-events/{id}/acknowledge", roleRoute(h.AcknowledgeNotificationEvent, readRoles...))
-	mux.Handle("POST /api/v1/notification-events/{id}/resolve", roleRoute(h.ResolveNotificationEvent, readRoles...))
-	mux.Handle("GET /api/v1/notification-deliveries", roleRoute(h.ListNotificationDeliveries, readRoles...))
-	mux.Handle("GET /api/v1/notification-webhooks", roleRoute(h.ListNotificationWebhooks, readRoles...))
-	mux.Handle("POST /api/v1/notification-webhooks", roleRoute(h.CreateNotificationWebhook, readRoles...))
-	mux.Handle("PUT /api/v1/notification-webhooks/{id}", roleRoute(h.UpdateNotificationWebhook, readRoles...))
-	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", roleRoute(h.VerifyNotificationWebhookScope, readRoles...))
+	mux.Handle("GET /api/v1/notification-events", adminRoute(h.ListNotificationEvents))
+	mux.Handle("POST /api/v1/notification-events/{id}/acknowledge", adminRoute(h.AcknowledgeNotificationEvent))
+	mux.Handle("POST /api/v1/notification-events/{id}/resolve", adminRoute(h.ResolveNotificationEvent))
+	mux.Handle("GET /api/v1/notification-deliveries", adminRoute(h.ListNotificationDeliveries))
+	mux.Handle("GET /api/v1/notification-webhooks", adminRoute(h.ListNotificationWebhooks))
+	mux.Handle("POST /api/v1/notification-webhooks", adminRoute(h.CreateNotificationWebhook))
+	mux.Handle("PUT /api/v1/notification-webhooks/{id}", adminRoute(h.UpdateNotificationWebhook))
+	mux.Handle("POST /api/v1/notification-webhooks/{id}/verify-scope", adminRoute(h.VerifyNotificationWebhookScope))
 	return mux
 }

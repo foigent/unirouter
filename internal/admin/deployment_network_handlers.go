@@ -201,7 +201,7 @@ UPDATE deployment_profiles SET display_name=$1, kind=$2, environment=$3,
 
 func (h *Handler) ListGatewayEndpoints(w http.ResponseWriter, r *http.Request) {
 	profileRef := strings.TrimSpace(r.URL.Query().Get("deployment_profile_ref"))
-	includeOperatorEvidence := auth.IsPlatformAdmin(middleware.GetUserRoleFromContext(r.Context()))
+	includeOperatorEvidence := auth.IsPlatformAdmin(actorOrganizationRole(r.Context()))
 	rows, err := h.db.Query(r.Context(), `
 SELECT e.id, e.deployment_profile_id, p.profile_ref, p.display_name, e.endpoint_ref,
        e.display_name, e.base_url, e.visibility, e.tls_mode, e.certificate_ref,

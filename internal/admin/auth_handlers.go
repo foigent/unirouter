@@ -36,22 +36,22 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var userID, orgID, authEpoch int64
-	var storedUsername, passwordHash, role, status, orgName, email, authProvider string
+	var storedUsername, passwordHash, organizationRole, role, status, orgName, email, authProvider string
 	err = h.db.QueryRow(r.Context(),
 		`WITH local_candidates AS MATERIALIZED (
-		     SELECT u.id, u.org_id, u.username, u.password_hash, u.role, u.status,
+		     SELECT u.id, u.org_id, u.username, u.password_hash, u.organization_role, u.role, u.status,
 		        COALESCE(o.name, '') AS org_name, COALESCE(u.email, '') AS email,
 		        COALESCE(NULLIF(u.auth_provider, ''), 'local') AS auth_provider, u.auth_epoch
 		       FROM users u LEFT JOIN orgs o ON o.id = u.org_id
 		      WHERE COALESCE(NULLIF(u.auth_provider, ''), 'local') = 'local'
 		        AND public.normalize_local_login_id(u.username) = public.normalize_local_login_id($1)
 		 )
-		 SELECT id, org_id, password_hash, role, status,
+		 SELECT id, org_id, password_hash, organization_role, role, status,
 		        org_name, email, auth_provider, auth_epoch, username
 		 FROM local_candidates
 		 WHERE (SELECT COUNT(*) FROM local_candidates) = 1`,
 		username,
-	).Scan(&userID, &orgID, &passwordHash, &role, &status, &orgName, &email, &authProvider, &authEpoch, &storedUsername)
+	).Scan(&userID, &orgID, &passwordHash, &organizationRole, &role, &status, &orgName, &email, &authProvider, &authEpoch, &storedUsername)
 	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "Invalid credentials"})
 		return
@@ -77,7 +77,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.issueAdminSession(r.Context(), userID, orgID, role, authEpoch)
+	token, err := h.issueAdminSession(r.Context(), userID, orgID, organizationRole, role, authEpoch)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create session"})
 		return
@@ -86,24 +86,25 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	auditCtx := context.WithValue(context.Background(), middleware.CtxOrgID, orgID)
 	auditCtx = context.WithValue(auditCtx, middleware.CtxUserID, userID)
 	h.recordAudit(auditCtx, "login", "user", fmt.Sprintf("%d", userID),
-		map[string]interface{}{"username": storedUsername, "role": role}, r.RemoteAddr)
+		map[string]interface{}{"username": storedUsername, "organization_role": organizationRole, "compatibility_role": role}, r.RemoteAddr)
 
 	setAuthTokenResponseHeaders(w)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"token":         token,
-		"user_id":       userID,
-		"username":      storedUsername,
-		"role":          role,
-		"org_id":        orgID,
-		"org_name":      orgName,
-		"status":        status,
-		"email":         email,
-		"auth_provider": authProvider,
+		"token":             token,
+		"user_id":           userID,
+		"username":          storedUsername,
+		"role":              role,
+		"organization_role": organizationRole,
+		"org_id":            orgID,
+		"org_name":          orgName,
+		"status":            status,
+		"email":             email,
+		"auth_provider":     authProvider,
 	})
 }
 
-func (h *Handler) issueAdminSession(ctx context.Context, userID, orgID int64, role string, authEpoch int64) (string, error) {
-	token, session, err := auth.GenerateAdminSessionJWT(userID, orgID, role, authEpoch, h.jwtSecret, adminSessionTTLHours)
+func (h *Handler) issueAdminSession(ctx context.Context, userID, orgID int64, organizationRole, role string, authEpoch int64) (string, error) {
+	token, session, err := auth.GenerateAdminSessionJWT(userID, orgID, organizationRole, role, authEpoch, h.jwtSecret, adminSessionTTLHours)
 	if err != nil {
 		return "", err
 	}

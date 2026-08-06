@@ -119,7 +119,7 @@ func inspectTables(ctx context.Context, q queryer) ([]resetplan.TableInventory, 
 
 func inspectSelectedAdmin(ctx context.Context, q queryer) (resetplan.AdminSelection, error) {
 	rows, err := q.Query(ctx, `
-		SELECT u.id, u.org_id, u.password_hash, u.role, u.status,
+		SELECT u.id, u.org_id, u.password_hash, u.organization_role, u.role, u.status,
 		       COALESCE(NULLIF(u.auth_provider, ''), 'local'), u.auth_epoch,
 		       o.status, o.parent_id, o.org_type, o.settings = '{}'::jsonb,
 		       u.email IS NOT NULL,
@@ -146,7 +146,7 @@ func inspectSelectedAdmin(ctx context.Context, q queryer) (resetplan.AdminSelect
 		item.selection.NormalizedLogin = resetplan.PreservedLogin
 		if err := rows.Scan(
 			&item.selection.UserID, &item.selection.OrganizationID,
-			&item.passwordHash, &item.selection.Role, &item.selection.Status,
+			&item.passwordHash, &item.selection.OrganizationRole, &item.selection.Role, &item.selection.Status,
 			&item.selection.AuthProvider, &item.selection.AuthEpoch,
 			&item.selection.OrganizationStatus, &item.parentID,
 			&item.selection.OrganizationType, &item.selection.OrganizationEmpty,

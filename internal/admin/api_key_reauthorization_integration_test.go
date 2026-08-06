@@ -142,6 +142,78 @@ func TestCreateAPIKeyRequiresExistingDefaultProjectIntegration(t *testing.T) {
 	require.Equal(t, 1, auditCount)
 }
 
+func TestOrganizationRoleAccountsUseLiveMembershipForPersonalCredentialsIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	var orgID, projectA, projectB, orgViewerID, billingID int64
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO orgs (name,status,org_type) VALUES ('orthogonal-key-org','active','standard') RETURNING id`,
+	).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO projects (org_id,name,slug,status) VALUES ($1,'Orthogonal A','orthogonal-a','active') RETURNING id`, orgID,
+	).Scan(&projectA))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO projects (org_id,name,slug,status) VALUES ($1,'Orthogonal B','orthogonal-b','active') RETURNING id`, orgID,
+	).Scan(&projectB))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		 VALUES ($1,'orthogonal-org-viewer','hash','org_viewer','org_viewer','active') RETURNING id`, orgID,
+	).Scan(&orgViewerID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		 VALUES ($1,'orthogonal-billing','hash','billing_admin','billing_admin','active') RETURNING id`, orgID,
+	).Scan(&billingID))
+	_, err := pool.Exec(ctx,
+		`INSERT INTO project_members (project_id,user_id,role) VALUES
+		 ($1,$2,'project_user'),($1,$3,'project_viewer')`, projectA, orgViewerID, billingID)
+	require.NoError(t, err)
+
+	h := NewHandler(pool, "orthogonal-key-secret", []byte("0123456789abcdef01234567"), nil)
+	create := httptest.NewRecorder()
+	h.CreateAPIKey(create, apiKeyIntegrationRequest(http.MethodPost, "/api/v1/keys",
+		fmt.Sprintf(`{"name":"orthogonal-personal","project_id":%d}`, projectA),
+		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-create"))
+	require.Equal(t, http.StatusCreated, create.Code, create.Body.String())
+
+	var keyID, ownerUserID, storedProjectID int64
+	var keyType, status string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT id,owner_user_id,project_id,key_type,status FROM api_keys WHERE org_id=$1 AND name='orthogonal-personal'`, orgID,
+	).Scan(&keyID, &ownerUserID, &storedProjectID, &keyType, &status))
+	require.Equal(t, orgViewerID, ownerUserID)
+	require.Equal(t, projectA, storedProjectID)
+	require.Equal(t, "personal", keyType)
+	require.Equal(t, "active", status)
+
+	update := httptest.NewRecorder()
+	updateRequest := apiKeyIntegrationRequest(http.MethodPut, "/api/v1/keys/target", `{"name":"orthogonal-personal-renamed"}`,
+		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-update")
+	updateRequest.SetPathValue("id", stringInt64(keyID))
+	h.UpdateAPIKey(update, updateRequest)
+	require.Equal(t, http.StatusOK, update.Code, update.Body.String())
+
+	disable := httptest.NewRecorder()
+	disableRequest := apiKeyIntegrationRequest(http.MethodPost, "/api/v1/keys/target/disable", "",
+		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-disable")
+	disableRequest.SetPathValue("id", stringInt64(keyID))
+	h.DisableAPIKey(disable, disableRequest)
+	require.Equal(t, http.StatusOK, disable.Code, disable.Body.String())
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM api_keys WHERE id=$1`, keyID).Scan(&status))
+	require.Equal(t, "disabled", status)
+
+	outsideMembership := httptest.NewRecorder()
+	h.CreateAPIKey(outsideMembership, apiKeyIntegrationRequest(http.MethodPost, "/api/v1/keys",
+		fmt.Sprintf(`{"name":"orthogonal-forbidden","project_id":%d}`, projectB),
+		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-forbidden"))
+	require.Equal(t, http.StatusForbidden, outsideMembership.Code, outsideMembership.Body.String())
+
+	viewerCannotCall := httptest.NewRecorder()
+	h.CreateAPIKey(viewerCannotCall, apiKeyIntegrationRequest(http.MethodPost, "/api/v1/keys",
+		fmt.Sprintf(`{"name":"billing-viewer-forbidden","project_id":%d}`, projectA),
+		billingID, orgID, auth.RoleBillingAdmin, "orthogonal-billing-forbidden"))
+	require.Equal(t, http.StatusForbidden, viewerCannotCall.Code, viewerCannotCall.Body.String())
+}
+
 type apiKeyInterleavingDB struct {
 	pool         *pgxpool.Pool
 	beginReached chan struct{}

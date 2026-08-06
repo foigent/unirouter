@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button, Modal, Form, Toast, Space, SideSheet, Select } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { isPlatformAdminRole } from '../navigation';
+import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { PagedTable, PageHeader, Surface } from '../ui';
 import { canonicalExactDecimal } from '../utils/exactDecimal';
@@ -24,7 +24,7 @@ function mutationError(prefix: string, error: unknown) {
 
 export default function OrgModelPricesPage({ embedded = false }: { embedded?: boolean }) {
   const user = useAuthStore((s) => s.user);
-  const canMutate = isPlatformAdminRole(user?.role);
+  const canMutate = isPlatformAdminRole(organizationRoleForUser(user));
   const [prices, setPrices] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);

@@ -49,10 +49,12 @@ func TestReauthorizeXInsightFeedControlTxUsesExistingCommitOrderInvariant(t *tes
 						switch {
 						case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
 							operations = append(operations, "actor")
+							organizationRole, _ := auth.NormalizeOrganizationRole(test.currentRole)
 							*dest[0].(*int64) = 1
-							*dest[1].(*string) = test.currentRole
-							*dest[2].(*string) = test.actorStatus
-							*dest[3].(*string) = "active"
+							*dest[1].(*string) = organizationRole
+							*dest[2].(*string) = test.currentRole
+							*dest[3].(*string) = test.actorStatus
+							*dest[4].(*string) = "active"
 							return nil
 						case strings.Contains(sql, "SELECT status FROM orgs"):
 							operations = append(operations, "target-org")

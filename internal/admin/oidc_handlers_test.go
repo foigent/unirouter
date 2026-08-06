@@ -220,8 +220,8 @@ func TestEnsureDefaultProjectMembershipSkipsOrganizationViewer(t *testing.T) {
 		role        string
 		wantInserts int
 	}{
-		{name: "project viewer", role: auth.RoleViewer, wantInserts: 1},
-		{name: "organization viewer", role: auth.RoleOrgViewer, wantInserts: 0},
+		{name: "project viewer", role: auth.ProjectRoleViewer, wantInserts: 1},
+		{name: "organization-only identity", role: "", wantInserts: 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			membershipInserts := 0

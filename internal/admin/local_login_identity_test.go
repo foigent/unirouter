@@ -34,12 +34,13 @@ func TestLoginUsesExactlyOneNormalizedLocalCandidateAndStoredIdentity(t *testing
 				*dest[1].(*int64) = 7
 				*dest[2].(*string) = hash
 				*dest[3].(*string) = "org_admin"
-				*dest[4].(*string) = "active"
-				*dest[5].(*string) = "Example Org"
-				*dest[6].(*string) = "stored@example.test"
-				*dest[7].(*string) = "local"
-				*dest[8].(*int64) = 3
-				*dest[9].(*string) = "CaseStored"
+				*dest[4].(*string) = "org_admin"
+				*dest[5].(*string) = "active"
+				*dest[6].(*string) = "Example Org"
+				*dest[7].(*string) = "stored@example.test"
+				*dest[8].(*string) = "local"
+				*dest[9].(*int64) = 3
+				*dest[10].(*string) = "CaseStored"
 				return nil
 			}}
 		},

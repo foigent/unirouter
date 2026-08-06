@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 const (
@@ -112,7 +114,15 @@ var (
 		{Table: "usage_finalization_journal", Name: "usage_journal_micro_ledger_evidence"},
 		{Table: "wallets", Name: "wallets_micro_ledger_evidence"},
 	}
-	redisKeyPrefixes = []string{
+	legacyRoleCompatibilityTrigger = TriggerRef{
+		Table: "users", Name: "users_legacy_role_organization_role_compatibility",
+	}
+	legacyRoleCompatibilityFunction       = "sync_users_organization_role_from_legacy_role_write"
+	projectMemberRoleCompatibilityTrigger = TriggerRef{
+		Table: "project_members", Name: "project_members_legacy_role_compatibility",
+	}
+	projectMemberRoleCompatibilityFunction = "normalize_project_members_role_from_legacy_write"
+	redisKeyPrefixes                       = []string{
 		"limit:{",
 		"rl:",
 		"uniroute:response-cache:v2:",
@@ -155,6 +165,7 @@ type AdminSelection struct {
 	UserID                int64  `json:"user_id"`
 	OrganizationID        int64  `json:"organization_id"`
 	NormalizedLogin       string `json:"normalized_login"`
+	OrganizationRole      string `json:"organization_role"`
 	Role                  string `json:"role"`
 	Status                string `json:"status"`
 	AuthProvider          string `json:"auth_provider"`
@@ -417,6 +428,12 @@ func Build(snapshot Snapshot, target TargetIdentity, currentSourceInstance, next
 	if err := validateResetDeleteTriggers(snapshot.Triggers); err != nil {
 		return Plan{}, err
 	}
+	if err := validateLegacyRoleCompatibilityTrigger(snapshot.Triggers); err != nil {
+		return Plan{}, err
+	}
+	if err := validateProjectMemberRoleCompatibilityTrigger(snapshot.Triggers); err != nil {
+		return Plan{}, err
+	}
 	order, err := buildDeleteOrder(tableByName, snapshot.ForeignKeys)
 	if err != nil {
 		return Plan{}, err
@@ -622,7 +639,7 @@ func scopeDigest(plan Plan) (string, error) {
 func buildSchemaEvidence(snapshot Snapshot) (SchemaEvidence, error) {
 	migrations := slices.Clone(snapshot.MigrationVersions)
 	slices.Sort(migrations)
-	if len(migrations) == 0 || migrations[len(migrations)-1] != "000057_second_integration_reset_support" {
+	if len(migrations) == 0 || migrations[len(migrations)-1] != schemaauthority.LatestSupportedMigration {
 		return SchemaEvidence{}, fmt.Errorf("%w: reset_support_migration", ErrInvalid)
 	}
 	foreignKeys := slices.Clone(snapshot.ForeignKeys)
@@ -800,6 +817,7 @@ func validateTarget(target TargetIdentity) error {
 
 func validateAdmin(admin AdminSelection) error {
 	if admin.UserID <= 0 || admin.OrganizationID <= 0 || admin.NormalizedLogin != PreservedLogin ||
+		admin.OrganizationRole != "platform_admin" ||
 		(admin.Role != "admin" && admin.Role != "platform_admin") || admin.Status != "active" ||
 		admin.AuthProvider != "local" || admin.AuthEpoch < 0 || admin.AuthEpoch == int64(^uint64(0)>>1) ||
 		admin.OrganizationStatus != "active" || strings.TrimSpace(admin.OrganizationType) == "" ||
@@ -868,6 +886,36 @@ func validateResetDeleteTriggers(triggers []TriggerState) error {
 		}
 	}
 	return nil
+}
+
+func validateLegacyRoleCompatibilityTrigger(triggers []TriggerState) error {
+	identity := legacyRoleCompatibilityTrigger.Table + "." + legacyRoleCompatibilityTrigger.Name
+	for _, trigger := range triggers {
+		if trigger.Table+"."+trigger.Name != identity {
+			continue
+		}
+		definition := strings.ToLower(trigger.Definition)
+		if trigger.Enabled == "O" && strings.Contains(definition, strings.ToLower(legacyRoleCompatibilityFunction)) {
+			return nil
+		}
+		break
+	}
+	return fmt.Errorf("%w: legacy_role_compatibility_trigger", ErrInvalid)
+}
+
+func validateProjectMemberRoleCompatibilityTrigger(triggers []TriggerState) error {
+	identity := projectMemberRoleCompatibilityTrigger.Table + "." + projectMemberRoleCompatibilityTrigger.Name
+	for _, trigger := range triggers {
+		if trigger.Table+"."+trigger.Name != identity {
+			continue
+		}
+		definition := strings.ToLower(trigger.Definition)
+		if trigger.Enabled == "O" && strings.Contains(definition, strings.ToLower(projectMemberRoleCompatibilityFunction)) {
+			return nil
+		}
+		break
+	}
+	return fmt.Errorf("%w: project_member_role_compatibility_trigger", ErrInvalid)
 }
 
 func canonicalProtected(protected ProtectedState) ProtectedState {
