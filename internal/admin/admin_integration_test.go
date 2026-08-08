@@ -58,31 +58,22 @@ func TestLogin_Success_Integration(t *testing.T) {
 	require.Equal(t, "local", resp["auth_provider"])
 }
 
-func TestLogin_RoleAxisMismatchCreatesNoSessionOrAudit_Integration(t *testing.T) {
+func TestUsersRoleAxisCompatibilityCheckRejectsMismatch_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	hash, err := bcrypt.GenerateFromPassword([]byte("mismatch-password-123"), bcrypt.DefaultCost)
 	require.NoError(t, err)
-	var userID int64
-	require.NoError(t, pool.QueryRow(t.Context(),
+	_, err = pool.Exec(t.Context(),
 		`INSERT INTO users (org_id, username, password_hash, organization_role, role, status, auth_provider)
-		 VALUES ($1, 'mismatched-role-login', $2, 'org_viewer', 'project_admin', 'active', 'local')
-		 RETURNING id`, orgID, string(hash),
-	).Scan(&userID))
-
-	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login",
-		bytes.NewBufferString(`{"username":"mismatched-role-login","password":"mismatch-password-123"}`))
-	rec := httptest.NewRecorder()
-	h.Login(rec, req)
-
-	require.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
-	require.NotContains(t, rec.Body.String(), "token")
-	var sessions, audits int
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM admin_sessions WHERE user_id=$1`, userID).Scan(&sessions))
-	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM audit_logs WHERE org_id=$1 AND action='login'`, orgID).Scan(&audits))
-	require.Zero(t, sessions)
-	require.Zero(t, audits)
+		 VALUES ($1, 'mismatched-role-login', $2, 'org_viewer', 'project_admin', 'active', 'local')`,
+		orgID, string(hash),
+	)
+	require.ErrorContains(t, err, "users_organization_role_compatibility_check")
+	var persisted int
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`SELECT COUNT(*) FROM users WHERE org_id=$1 AND username='mismatched-role-login'`, orgID,
+	).Scan(&persisted))
+	require.Zero(t, persisted)
 }
 
 func TestLogin_ExternalProviderWithBcryptDenied_Integration(t *testing.T) {

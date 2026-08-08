@@ -812,7 +812,7 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, project_admin, project_user, project_viewer]
       put: [platform_admin, org_admin, project_admin, project_user]
-    description: Project roles are resolved from the current project_members row. A project_user may update only their own personal credential; users.role compatibility shadow is never an authorization source.
+    description: Project roles are resolved from the current project_members row. A project_user may update only their own personal credential; users.role compatibility shadow is never an authorization source. An absent ID and an ID outside the actor's credential-metadata or mutation scope both return the same stable 404 API key not found response; object existence and purpose are not disclosed before authorization.
     get: *operation_get_by_id
     put: *operation_update_by_id
 
@@ -828,7 +828,9 @@ paths:
         their own personal credential while that exact membership remains
         callable. Organization-role accounts with an explicit membership use
         the same rule; their users.role compatibility shadow is never an
-        authorization source.
+        authorization source. An absent ID and an ID outside that live scope
+        both return the same stable 404 API key not found response. Feed-key
+        purpose is inspected only after object authorization succeeds.
       security:
         - bearerAuth: []
       parameters:

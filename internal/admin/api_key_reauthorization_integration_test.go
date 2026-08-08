@@ -21,6 +21,35 @@ import (
 )
 
 func TestUpdateAPIKeyReauthorizesAfterProjectMembershipRevocationIntegration(t *testing.T) {
+	testAPIKeyMutationReauthorizesAfterProjectMembershipRevocationIntegration(
+		t,
+		http.MethodPut,
+		`{"status":"disabled"}`,
+		"update",
+		func(handler *Handler, response http.ResponseWriter, request *http.Request) {
+			handler.UpdateAPIKey(response, request)
+		},
+	)
+}
+
+func TestDisableAPIKeyReauthorizesAfterProjectMembershipRevocationIntegration(t *testing.T) {
+	testAPIKeyMutationReauthorizesAfterProjectMembershipRevocationIntegration(
+		t,
+		http.MethodPost,
+		"",
+		"disable",
+		func(handler *Handler, response http.ResponseWriter, request *http.Request) {
+			handler.DisableAPIKey(response, request)
+		},
+	)
+}
+
+func testAPIKeyMutationReauthorizesAfterProjectMembershipRevocationIntegration(
+	t *testing.T,
+	method, body, operation string,
+	invoke func(*Handler, http.ResponseWriter, *http.Request),
+) {
+	t.Helper()
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 
@@ -53,20 +82,20 @@ func TestUpdateAPIKeyReauthorizesAfterProjectMembershipRevocationIntegration(t *
 	allowBegin := make(chan struct{})
 	db := &apiKeyInterleavingDB{pool: pool, beginReached: beginReached, allowBegin: allowBegin}
 	h := NewHandler(db, "test-secret", []byte("0123456789abcdef01234567"), nil)
-	req := apiKeyIntegrationRequest(http.MethodPut, "/api/v1/keys/target", `{"status":"disabled"}`,
-		actorID, orgID, auth.RoleProjectAdmin, "api-key-reauthorization-revoked")
+	req := apiKeyIntegrationRequest(method, "/api/v1/keys/target", body,
+		actorID, orgID, auth.RoleProjectAdmin, "api-key-reauthorization-"+operation+"-revoked")
 	req.SetPathValue("id", stringInt64(keyID))
 	recorderCh := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
 		recorder := httptest.NewRecorder()
-		h.UpdateAPIKey(recorder, req)
+		invoke(h, recorder, req)
 		recorderCh <- recorder
 	}()
 
 	select {
 	case <-beginReached:
 	case <-time.After(5 * time.Second):
-		t.Fatal("API-key update did not reach its committing transaction after preauthorization")
+		t.Fatalf("API-key %s did not reach its committing transaction after preauthorization", operation)
 	}
 
 	revocationTx, err := pool.Begin(ctx)
@@ -83,7 +112,7 @@ func TestUpdateAPIKeyReauthorizesAfterProjectMembershipRevocationIntegration(t *
 	select {
 	case recorder = <-recorderCh:
 	case <-time.After(5 * time.Second):
-		t.Fatal("API-key update did not finish after revocation committed")
+		t.Fatalf("API-key %s did not finish after revocation committed", operation)
 	}
 	require.Equal(t, http.StatusForbidden, recorder.Code, recorder.Body.String())
 	var status string
@@ -91,7 +120,7 @@ func TestUpdateAPIKeyReauthorizesAfterProjectMembershipRevocationIntegration(t *
 	require.Equal(t, "active", status)
 	var auditCount int
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM audit_logs WHERE request_id = 'api-key-reauthorization-revoked'`,
+		`SELECT COUNT(*) FROM audit_logs WHERE request_id = $1`, "api-key-reauthorization-"+operation+"-revoked",
 	).Scan(&auditCount))
 	require.Zero(t, auditCount)
 }
@@ -185,6 +214,13 @@ func TestOrganizationRoleAccountsUseLiveMembershipForPersonalCredentialsIntegrat
 	require.Equal(t, "personal", keyType)
 	require.Equal(t, "active", status)
 
+	get := httptest.NewRecorder()
+	getRequest := apiKeyIntegrationRequest(http.MethodGet, "/api/v1/keys/target", "",
+		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-get")
+	getRequest.SetPathValue("id", stringInt64(keyID))
+	h.GetAPIKey(get, getRequest)
+	require.Equal(t, http.StatusOK, get.Code, get.Body.String())
+
 	update := httptest.NewRecorder()
 	updateRequest := apiKeyIntegrationRequest(http.MethodPut, "/api/v1/keys/target", `{"name":"orthogonal-personal-renamed"}`,
 		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-update")
@@ -212,6 +248,137 @@ func TestOrganizationRoleAccountsUseLiveMembershipForPersonalCredentialsIntegrat
 		fmt.Sprintf(`{"name":"billing-viewer-forbidden","project_id":%d}`, projectA),
 		billingID, orgID, auth.RoleBillingAdmin, "orthogonal-billing-forbidden"))
 	require.Equal(t, http.StatusForbidden, viewerCannotCall.Code, viewerCannotCall.Body.String())
+}
+
+func TestAPIKeyObjectLookupResponseEquivalenceIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	var actorOrgID, foreignOrgID, foreignProjectID, actorID int64
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO orgs (name,status,org_type) VALUES ('key-oracle-actor-org','active','standard') RETURNING id`,
+	).Scan(&actorOrgID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO orgs (name,status,org_type) VALUES ('key-oracle-foreign-org','active','standard') RETURNING id`,
+	).Scan(&foreignOrgID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO projects (org_id,name,slug,status) VALUES ($1,'Foreign key project','key-oracle-foreign','active') RETURNING id`, foreignOrgID,
+	).Scan(&foreignProjectID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		 VALUES ($1,'key-oracle-actor','hash','org_viewer','org_viewer','active') RETURNING id`, actorOrgID,
+	).Scan(&actorID))
+
+	nextPrefix := 0
+	insertKey := func(name, purpose, status string) int64 {
+		t.Helper()
+		nextPrefix++
+		var id int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`INSERT INTO api_keys
+			 (org_id,project_id,key_type,name,key_hash,key_prefix,status,rpm_limit,qps_limit,allowed_ips,allowed_models,purpose)
+			 VALUES ($1,$2,'service',$3,'hash',$4,$5,60,1,'127.0.0.1/32','',$6) RETURNING id`,
+			foreignOrgID, foreignProjectID, name, fmt.Sprintf("ko-%d", nextPrefix), status, purpose,
+		).Scan(&id))
+		return id
+	}
+	ordinaryID := insertKey("key-oracle-ordinary", "", "active")
+	feedID := insertKey("key-oracle-feed", middleware.APIKeyPurposeXInsightFeedRead, middleware.APIKeyStatusFeedActive)
+	absentID := feedID + 100000
+
+	h := NewHandler(pool, "key-oracle-secret", []byte("0123456789abcdef01234567"), nil)
+	type operation struct {
+		name   string
+		method string
+		body   string
+		invoke func(http.ResponseWriter, *http.Request)
+	}
+	operations := []operation{
+		{name: "get", method: http.MethodGet, invoke: func(w http.ResponseWriter, r *http.Request) { h.GetAPIKey(w, r) }},
+		{name: "update", method: http.MethodPut, body: `{"name":"must-not-change"}`, invoke: func(w http.ResponseWriter, r *http.Request) { h.UpdateAPIKey(w, r) }},
+		{name: "disable", method: http.MethodPost, invoke: func(w http.ResponseWriter, r *http.Request) { h.DisableAPIKey(w, r) }},
+	}
+	serve := func(operation operation, id int64, requestID string) *httptest.ResponseRecorder {
+		request := apiKeyIntegrationRequest(operation.method, "/api/v1/keys/target", operation.body,
+			actorID, actorOrgID, auth.RoleOrgViewer, requestID)
+		request.SetPathValue("id", stringInt64(id))
+		response := httptest.NewRecorder()
+		operation.invoke(response, request)
+		return response
+	}
+	for _, operation := range operations {
+		t.Run(operation.name, func(t *testing.T) {
+			absent := serve(operation, absentID, "key-oracle-"+operation.name+"-absent")
+			inaccessible := serve(operation, ordinaryID, "key-oracle-"+operation.name+"-foreign")
+			inaccessibleFeed := serve(operation, feedID, "key-oracle-"+operation.name+"-feed")
+			for label, response := range map[string]*httptest.ResponseRecorder{
+				"absent": absent, "inaccessible": inaccessible, "inaccessible_feed": inaccessibleFeed,
+			} {
+				require.Equal(t, http.StatusNotFound, response.Code, "%s: %s", label, response.Body.String())
+				require.JSONEq(t, `{"error":"API key not found"}`, response.Body.String(), label)
+			}
+			require.Equal(t, absent.Body.String(), inaccessible.Body.String())
+			require.Equal(t, absent.Body.String(), inaccessibleFeed.Body.String())
+		})
+	}
+
+	var ordinaryName, ordinaryStatus, feedStatus string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT name,status FROM api_keys WHERE id=$1`, ordinaryID).Scan(&ordinaryName, &ordinaryStatus))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM api_keys WHERE id=$1`, feedID).Scan(&feedStatus))
+	require.Equal(t, "key-oracle-ordinary", ordinaryName)
+	require.Equal(t, "active", ordinaryStatus)
+	require.Equal(t, middleware.APIKeyStatusFeedActive, feedStatus)
+}
+
+func TestAPIKeyActorScopedLookupPreservesOrganizationAdminIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	var orgID, projectID, adminID int64
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO orgs (name,status,org_type) VALUES ('key-scope-admin-org','active','standard') RETURNING id`,
+	).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO projects (org_id,name,slug,status) VALUES ($1,'Admin key project','key-scope-admin','active') RETURNING id`, orgID,
+	).Scan(&projectID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		 VALUES ($1,'key-scope-org-admin','hash','org_admin','org_admin','active') RETURNING id`, orgID,
+	).Scan(&adminID))
+	nextPrefix := 0
+	insertKey := func(name string) int64 {
+		t.Helper()
+		nextPrefix++
+		var id int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`INSERT INTO api_keys (org_id,project_id,key_type,name,key_hash,key_prefix,status,rpm_limit,qps_limit)
+			 VALUES ($1,$2,'shared',$3,'hash',$4,'active',60,1) RETURNING id`,
+			orgID, projectID, name, fmt.Sprintf("ksa-%d", nextPrefix),
+		).Scan(&id))
+		return id
+	}
+	h := NewHandler(pool, "key-scope-admin-secret", []byte("0123456789abcdef01234567"), nil)
+
+	getID := insertKey("key-scope-admin-get")
+	getRequest := apiKeyIntegrationRequest(http.MethodGet, "/api/v1/keys/target", "", adminID, orgID, auth.RoleOrgAdmin, "key-scope-admin-get")
+	getRequest.SetPathValue("id", stringInt64(getID))
+	getResponse := httptest.NewRecorder()
+	h.GetAPIKey(getResponse, getRequest)
+	require.Equal(t, http.StatusOK, getResponse.Code, getResponse.Body.String())
+
+	updateID := insertKey("key-scope-admin-update")
+	updateRequest := apiKeyIntegrationRequest(http.MethodPut, "/api/v1/keys/target", `{"name":"key-scope-admin-updated"}`,
+		adminID, orgID, auth.RoleOrgAdmin, "key-scope-admin-update")
+	updateRequest.SetPathValue("id", stringInt64(updateID))
+	updateResponse := httptest.NewRecorder()
+	h.UpdateAPIKey(updateResponse, updateRequest)
+	require.Equal(t, http.StatusOK, updateResponse.Code, updateResponse.Body.String())
+
+	disableID := insertKey("key-scope-admin-disable")
+	disableRequest := apiKeyIntegrationRequest(http.MethodPost, "/api/v1/keys/target/disable", "",
+		adminID, orgID, auth.RoleOrgAdmin, "key-scope-admin-disable")
+	disableRequest.SetPathValue("id", stringInt64(disableID))
+	disableResponse := httptest.NewRecorder()
+	h.DisableAPIKey(disableResponse, disableRequest)
+	require.Equal(t, http.StatusOK, disableResponse.Code, disableResponse.Body.String())
 }
 
 type apiKeyInterleavingDB struct {
@@ -247,6 +414,9 @@ func apiKeyIntegrationRequest(method, target, body string, userID, orgID int64, 
 	ctx := context.WithValue(req.Context(), middleware.CtxUserID, userID)
 	ctx = context.WithValue(ctx, middleware.CtxOrgID, orgID)
 	ctx = context.WithValue(ctx, middleware.CtxUserRole, role)
+	if organizationRole, ok := auth.NormalizeOrganizationRole(role); ok {
+		ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, organizationRole)
+	}
 	ctx = context.WithValue(ctx, middleware.CtxRequestID, requestID)
 	return req.WithContext(ctx)
 }

@@ -28,8 +28,16 @@ var errAPIKeyAuthorizationChanged = errors.New("API-key authorization changed")
 type apiKeyMutationOperation string
 
 const (
-	apiKeyMutationCreate apiKeyMutationOperation = "create"
-	apiKeyMutationUpdate apiKeyMutationOperation = "update"
+	apiKeyMutationCreate  apiKeyMutationOperation = "create"
+	apiKeyMutationUpdate  apiKeyMutationOperation = "update"
+	apiKeyMutationDisable apiKeyMutationOperation = "disable"
+)
+
+type apiKeyObjectAccess uint8
+
+const (
+	apiKeyObjectRead apiKeyObjectAccess = iota
+	apiKeyObjectWrite
 )
 
 type apiKeyAuthorizationIntent struct {
@@ -57,6 +65,66 @@ type apiKeyAuditState struct {
 	AllowedIPs    string
 	AllowedModels string
 	PolicyLabels  string
+}
+
+func writeAPIKeyNotFound(w http.ResponseWriter) {
+	writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "API key not found"})
+}
+
+// actorScopedAPIKeyLookupClause constrains the first object lookup itself.
+// That makes an absent ID and an existing but inaccessible ID indistinguishable
+// and prevents handlers from interpreting purpose-specific metadata before the
+// caller has live access to the key's exact project.
+func actorScopedAPIKeyLookupClause(ctx context.Context, access apiKeyObjectAccess, relation string, firstArg int) (string, []interface{}, bool) {
+	if isUnauthenticatedUnitContext(ctx) || actorOrganizationRole(ctx) == auth.RolePlatformAdmin {
+		return "", nil, true
+	}
+	actorOrgID := middleware.GetOrgIDFromContext(ctx)
+	if actorOrgID <= 0 {
+		return "", nil, false
+	}
+	if actorOrganizationRole(ctx) == auth.RoleOrgAdmin {
+		return fmt.Sprintf(" AND %s.org_id = $%d", relation, firstArg), []interface{}{actorOrgID}, true
+	}
+	actorUserID := middleware.GetUserIDFromContext(ctx)
+	if actorUserID <= 0 {
+		return "", nil, false
+	}
+
+	orgArg, userArg, rolesArg := firstArg, firstArg+1, firstArg+2
+	roles := []string{
+		projectMemberAdmin, projectMemberUser, projectMemberViewer,
+		projectMemberLegacyDeveloper, auth.RoleDeveloper, auth.RoleViewer,
+	}
+	rolePredicate := fmt.Sprintf("pm.role = ANY($%d::text[])", rolesArg)
+	if access == apiKeyObjectWrite {
+		roles = []string{projectMemberAdmin, projectMemberUser, projectMemberLegacyDeveloper, auth.RoleDeveloper}
+		rolePredicate = fmt.Sprintf(`(
+			pm.role = '%s'
+			OR (
+				COALESCE(NULLIF(%s.key_type, ''), 'shared') = 'personal'
+				AND %s.owner_user_id = $%d
+				AND pm.role = ANY($%d::text[])
+			)
+		)`, projectMemberAdmin, relation, relation, userArg, rolesArg)
+	} else if access != apiKeyObjectRead {
+		return "", nil, false
+	}
+
+	clause := fmt.Sprintf(` AND %s.org_id = $%d
+		AND %s.project_id IS NOT NULL
+		AND EXISTS (
+			SELECT 1
+			FROM project_members pm
+			JOIN projects scope_project ON scope_project.id = pm.project_id
+			JOIN users scope_user ON scope_user.id = pm.user_id AND scope_user.org_id = scope_project.org_id
+			WHERE pm.project_id = %s.project_id
+			  AND pm.user_id = $%d
+			  AND scope_project.org_id = %s.org_id
+			  AND scope_user.org_id = %s.org_id
+			  AND %s
+		)`, relation, orgArg, relation, relation, userArg, relation, relation, rolePredicate)
+	return clause, []interface{}{actorOrgID, actorUserID, roles}, true
 }
 
 func isAPIKeyPrefixCollision(err error) bool {
@@ -114,7 +182,7 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 	}
 
 	switch intent.operation {
-	case apiKeyMutationCreate, apiKeyMutationUpdate:
+	case apiKeyMutationCreate, apiKeyMutationUpdate, apiKeyMutationDisable:
 	default:
 		return errAPIKeyAuthorizationChanged
 	}
@@ -757,11 +825,17 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var currentOrgID, currentProjectID, currentOwnerUserID int64
 	var currentKeyType, currentPurpose, currentAllowedIPs, currentAllowedModels string
 	if !isUnauthenticatedUnitContext(r.Context()) {
-		if err := h.db.QueryRow(r.Context(),
+		lookupClause, lookupArgs, ok := actorScopedAPIKeyLookupClause(r.Context(), apiKeyObjectWrite, "api_keys", 2)
+		if !ok {
+			writeAPIKeyNotFound(w)
+			return
+		}
+		queryArgs := append([]interface{}{id}, lookupArgs...)
+		if err := h.db.QueryRow(r.Context(), fmt.Sprintf(
 			`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0),
 			        COALESCE(NULLIF(key_type, ''), 'shared'), COALESCE(purpose, ''),
 			        COALESCE(allowed_ips, ''), COALESCE(allowed_models, '')
-			 FROM api_keys WHERE id = $1`, id,
+			 FROM api_keys WHERE id = $1%s`, lookupClause), queryArgs...,
 		).Scan(
 			&currentOrgID,
 			&currentProjectID,
@@ -772,7 +846,7 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			&currentAllowedModels,
 		); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+				writeAPIKeyNotFound(w)
 			} else {
 				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read key"})
 			}
@@ -960,14 +1034,19 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		beforeAuditState, err = loadAPIKeyAuditStateTx(r.Context(), tx, id, true)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+				writeAPIKeyNotFound(w)
 			} else {
 				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read key"})
 			}
 			return
 		}
+		if beforeAuditState.Purpose == middleware.APIKeyPurposeXInsightFeedRead {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Feed credentials are managed only from X-Insight Data Exchange control"})
+			return
+		}
 		if beforeAuditState.OrgID != currentOrgID || beforeAuditState.ProjectID != currentProjectID ||
-			beforeAuditState.OwnerUserID != currentOwnerUserID || beforeAuditState.KeyType != currentKeyType {
+			beforeAuditState.OwnerUserID != currentOwnerUserID || beforeAuditState.KeyType != currentKeyType ||
+			beforeAuditState.Purpose != currentPurpose {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Key changed; retry the update"})
 			return
 		}
@@ -989,7 +1068,7 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+		writeAPIKeyNotFound(w)
 		return
 	}
 
@@ -1091,14 +1170,20 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	var eventOrgID, eventProjectID, eventOwnerUserID int64
 	var eventName, eventKeyPrefix, currentStatus, currentPurpose, currentKeyType string
-	if err := h.db.QueryRow(r.Context(),
+	lookupClause, lookupArgs, ok := actorScopedAPIKeyLookupClause(r.Context(), apiKeyObjectWrite, "api_keys", 2)
+	if !ok {
+		writeAPIKeyNotFound(w)
+		return
+	}
+	queryArgs := append([]interface{}{id}, lookupArgs...)
+	if err := h.db.QueryRow(r.Context(), fmt.Sprintf(
 		`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status,
 		        COALESCE(purpose, ''), COALESCE(NULLIF(key_type, ''), 'shared')
-		 FROM api_keys WHERE id = $1`,
-		id,
+		 FROM api_keys WHERE id = $1%s`, lookupClause),
+		queryArgs...,
 	).Scan(&eventOrgID, &eventProjectID, &eventOwnerUserID, &eventName, &eventKeyPrefix, &currentStatus, &currentPurpose, &currentKeyType); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+			writeAPIKeyNotFound(w)
 		} else {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read key"})
 		}
@@ -1138,20 +1223,41 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 		defer tx.Rollback(r.Context())
 		execer = tx
+		if err := h.reauthorizeAPIKeyMutationTx(r.Context(), tx, apiKeyAuthorizationIntent{
+			operation:       apiKeyMutationDisable,
+			targetOrgID:     eventOrgID,
+			sourceProjectID: eventProjectID,
+			targetProjectID: eventProjectID,
+			ownerUserID:     eventOwnerUserID,
+			keyType:         currentKeyType,
+		}); err != nil {
+			if errors.Is(err, errAPIKeyAuthorizationChanged) {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to reauthorize key disable"})
+			}
+			return
+		}
 		var lockedOrgID, lockedProjectID, lockedOwnerUserID int64
-		var lockedName, lockedKeyPrefix, lockedStatus string
+		var lockedName, lockedKeyPrefix, lockedStatus, lockedPurpose, lockedKeyType string
 		if err := tx.QueryRow(r.Context(),
-			`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status
+			`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status,
+			        COALESCE(purpose, ''), COALESCE(NULLIF(key_type, ''), 'shared')
 			 FROM api_keys WHERE id = $1 FOR UPDATE`, id,
-		).Scan(&lockedOrgID, &lockedProjectID, &lockedOwnerUserID, &lockedName, &lockedKeyPrefix, &lockedStatus); err != nil {
+		).Scan(&lockedOrgID, &lockedProjectID, &lockedOwnerUserID, &lockedName, &lockedKeyPrefix, &lockedStatus, &lockedPurpose, &lockedKeyType); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+				writeAPIKeyNotFound(w)
 			} else {
 				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read key"})
 			}
 			return
 		}
-		if lockedOrgID != eventOrgID || lockedProjectID != eventProjectID || lockedOwnerUserID != eventOwnerUserID {
+		if lockedPurpose == middleware.APIKeyPurposeXInsightFeedRead {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Feed credentials are managed only from X-Insight Data Exchange control"})
+			return
+		}
+		if lockedOrgID != eventOrgID || lockedProjectID != eventProjectID || lockedOwnerUserID != eventOwnerUserID ||
+			lockedPurpose != currentPurpose || lockedKeyType != currentKeyType {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Key changed; retry the update"})
 			return
 		}
@@ -1167,7 +1273,7 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Key not found"})
+		writeAPIKeyNotFound(w)
 		return
 	}
 
@@ -1214,7 +1320,13 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		OrgName, ProjectName              string
 		CreatedAt                         time.Time
 	}
-	err = h.db.QueryRow(r.Context(),
+	lookupClause, lookupArgs, ok := actorScopedAPIKeyLookupClause(r.Context(), apiKeyObjectRead, "ak", 2)
+	if !ok {
+		writeAPIKeyNotFound(w)
+		return
+	}
+	queryArgs := append([]interface{}{id}, lookupArgs...)
+	err = h.db.QueryRow(r.Context(), fmt.Sprintf(
 		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
 		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at, o.name, COALESCE(p.name, ''),
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'), COALESCE(u.username, ''),
@@ -1222,15 +1334,11 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		 FROM api_keys ak JOIN orgs o ON o.id = ak.org_id
 		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
 		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
-		 WHERE ak.id = $1`, id).Scan(
+		 WHERE ak.id = $1%s`, lookupClause), queryArgs...).Scan(
 		&k.ID, &k.OrgID, &k.ProjectID, &k.Name, &k.KeyPrefix, &k.Status, &k.RPMLimit, &k.QPSLimit,
 		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName, &k.ProjectName, &k.OwnerUserID, &k.KeyType, &k.OwnerUsername, &k.PolicyLabels, &k.Purpose)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "API key not found"})
-		return
-	}
-	if !h.canReadAPIKey(r.Context(), k.OrgID, k.ProjectID) {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		writeAPIKeyNotFound(w)
 		return
 	}
 	var owner interface{}

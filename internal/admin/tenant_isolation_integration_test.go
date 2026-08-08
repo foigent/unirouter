@@ -105,7 +105,7 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/projects/%d", fx.projectA), `{"name":"must-not-change"}`, fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusForbidden)
 		assertStatus(t, serve(t, http.MethodPost, "/api/v1/keys", fmt.Sprintf(`{"project_id":%d,"name":"must-not-create"}`, fx.projectA), fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusForbidden)
 		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/keys?project_id=%d", fx.projectA), "", fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusForbidden)
-		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/keys/%d", fx.keyA), "", fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/keys/%d", fx.keyA), "", fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusNotFound)
 
 		_, err := pool.Exec(ctx,
 			`INSERT INTO project_members (project_id, user_id, role)
@@ -123,7 +123,7 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		} {
 			assertStatus(t, serve(t, http.MethodGet, target, "", fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusOK)
 		}
-		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", fx.keyA), `{"name":"must-not-update"}`, fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", fx.keyA), `{"name":"must-not-update"}`, fx.orgViewerA, fx.orgA, auth.RoleOrgViewer), http.StatusNotFound)
 	})
 
 	t.Run("organization choices respect platform and tenant scope", func(t *testing.T) {
@@ -217,7 +217,7 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		var auditBefore, eventsBefore int
 		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs`).Scan(&auditBefore))
 		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM notification_events WHERE org_id = $1`, fx.orgB).Scan(&eventsBefore))
-		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/keys/%d", fx.keyB), "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/keys/%d", fx.keyB), "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusNotFound)
 
 		var beforeCount int
 		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM api_keys WHERE org_id = $1`, fx.orgB).Scan(&beforeCount))
@@ -226,8 +226,8 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM api_keys WHERE org_id = $1`, fx.orgB).Scan(&afterCount))
 		require.Equal(t, beforeCount, afterCount)
 
-		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", fx.keyB), `{"name":"foreign-changed"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
-		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", fx.keyB), "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", fx.keyB), `{"name":"foreign-changed"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusNotFound)
+		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", fx.keyB), "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusNotFound)
 		var name, status string
 		require.NoError(t, pool.QueryRow(ctx, `SELECT name, status FROM api_keys WHERE id = $1`, fx.keyB).Scan(&name, &status))
 		require.Equal(t, "key-b", name)
@@ -268,7 +268,7 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 			 VALUES ($1, $2, $3, 'personal', 'developer-unassigned-key', $4, 'p6f16-dev-unassign', 'active', 60, 10) RETURNING id`,
 			fx.orgA, unassignedProjectID, fx.developerA, strings.Repeat("c", 64),
 		).Scan(&unassignedKeyID))
-		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", unassignedKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", unassignedKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusNotFound)
 
 		_, err := pool.Exec(ctx,
 			`INSERT INTO project_members (project_id, user_id, role)
@@ -295,7 +295,7 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		).Scan(&otherKeyID))
 
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", ownedKeyID), `{"name":"developer-owned-key-updated"}`, fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusOK)
-		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", otherKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", otherKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusNotFound)
 		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", ownedKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusOK)
 
 		var ownedStatus, otherStatus, unassignedStatus string

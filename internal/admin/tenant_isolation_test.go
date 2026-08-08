@@ -137,17 +137,14 @@ func TestP6F16OrgAdminCannotCreatePlatformAdmin(t *testing.T) {
 	}
 }
 
-func TestP6F16UpdateAPIKeyRejectsForeignOrgBeforeMutation(t *testing.T) {
+func TestP6F16UpdateAPIKeyMasksForeignOrgBeforeMutation(t *testing.T) {
 	execCalled := false
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*dest[0].(*int64) = 8
-				*dest[1].(*int64) = 0
-				*dest[2].(*int64) = 0
-				*dest[3].(*string) = "shared"
-				return nil
-			}}
+			if !strings.Contains(sql, "api_keys.org_id = $2") || len(args) < 2 || args[1] != int64(7) {
+				t.Fatalf("foreign-key lookup must be actor scoped: sql=%s args=%#v", sql, args)
+			}
+			return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			if strings.Contains(sql, "pg_advisory_xact_lock") {
@@ -164,8 +161,8 @@ func TestP6F16UpdateAPIKeyRejectsForeignOrgBeforeMutation(t *testing.T) {
 
 	h.UpdateAPIKey(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected stable 404, got %d: %s", rec.Code, rec.Body.String())
 	}
 	if execCalled {
 		t.Fatal("foreign key update must have no mutation")
