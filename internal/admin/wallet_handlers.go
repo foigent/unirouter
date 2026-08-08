@@ -106,7 +106,7 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	role := actorRole(r.Context())
+	role := actorOrganizationRole(r.Context())
 	canManage := role == auth.RolePlatformAdmin || role == auth.RoleBillingAdmin
 
 	thresholdMicros, err := money.CentsToMicros(lowThresholdCents)

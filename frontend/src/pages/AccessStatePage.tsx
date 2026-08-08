@@ -3,15 +3,16 @@ import { IconBookOpenStroked } from '@douyinfe/semi-icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
-import { roleLabel } from '../utils/displayLabels';
+import { organizationRoleLabel } from '../utils/displayLabels';
+import { organizationRoleForUser } from '../navigation';
 
 const { Text } = Typography;
 
 export default function AccessStatePage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const role = user?.role || '';
-  const currentRoleLabel = roleLabel(role, '未识别角色');
+  const organizationRole = organizationRoleForUser(user);
+  const currentRoleLabel = organizationRoleLabel(organizationRole || 'member');
 
   return (
     <div className="ur-page">

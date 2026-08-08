@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
@@ -428,6 +429,43 @@ func TestLoad_OIDCEnvOverrides(t *testing.T) {
 	}
 	if len(cfg.OIDCScopes) != 4 || cfg.OIDCScopes[3] != "groups" {
 		t.Fatalf("unexpected oidc scopes: %#v", cfg.OIDCScopes)
+	}
+}
+
+func TestValidateAcceptsCanonicalAndAliasOIDCProjectRoles(t *testing.T) {
+	roles := []string{
+		auth.ProjectRoleAdmin,
+		auth.ProjectRoleUser,
+		auth.ProjectRoleViewer,
+		auth.LegacyProjectRoleDeveloper,
+		auth.RoleDeveloper,
+		auth.RoleViewer,
+	}
+	base := func(role string) *Config {
+		return &Config{
+			JWTSecret:                "secret",
+			APIKeyHashSecret:         "api-key-secret",
+			EncryptionKey:            "0123456789abcdef0123456789abcdef",
+			FreezeSafetyFactor:       "1",
+			LicenseExpiryWarningDays: 30,
+			OIDCEnabled:              true,
+			OIDCIssuerURL:            "https://idp.example.test",
+			OIDCClientID:             "unirouter",
+			OIDCClientSecret:         "secret",
+			OIDCRedirectURL:          "https://console.example.test/api/v1/auth/oidc/callback",
+			OIDCDefaultRole:          role,
+		}
+	}
+	for _, role := range roles {
+		t.Run(role, func(t *testing.T) {
+			if err := base(role).Validate(); err != nil {
+				t.Fatalf("canonical/alias project role %q rejected: %v", role, err)
+			}
+		})
+	}
+
+	if err := base("project_owner").Validate(); err == nil || !strings.Contains(err.Error(), "OIDC_DEFAULT_ROLE is invalid") {
+		t.Fatalf("invalid OIDC project role error = %v", err)
 	}
 }
 

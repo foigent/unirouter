@@ -2,9 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { Banner, Button, Form, Input, Modal, Select, SideSheet, Space, Table, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconDelete, IconPlus, IconRefresh } from '@douyinfe/semi-icons';
 import { ApiError, api } from '../api/client';
-import { isPlatformAdminRole } from '../navigation';
+import {
+  canonicalOrganizationRole,
+  canonicalProjectMembershipRole,
+  isPlatformAdminRole,
+} from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
+import { organizationRoleLabel } from '../utils/displayLabels';
 import { loadAllPages } from '../utils/loadAllPages';
 import {
   deleteLocalView,
@@ -27,9 +32,10 @@ interface Project {
   slug: string;
   description?: string;
   status: string;
-  budget_cents: number;
-  budget_period: string;
+  budget_cents?: number;
+  budget_period?: string;
   key_count?: number;
+  current_user_membership_role?: string;
 }
 
 interface Organization {
@@ -42,6 +48,7 @@ interface ProjectMember {
   username: string;
   email?: string;
   auth_provider: string;
+  organization_role: string;
   user_role: string;
   status: string;
   membership_role: string;
@@ -51,8 +58,8 @@ interface EligibleUser {
   user_id: number;
   username: string;
   email?: string;
+  organization_role: string;
   user_role: string;
-  membership_role: string;
   status: string;
 }
 
@@ -85,9 +92,18 @@ const projectSavedViewStorageKey = 'unirouter.projects.saved-views.v1';
 
 const roleNames: Record<string, string> = {
   project_admin: '项目管理员',
-  project_developer: '开发者',
-  project_viewer: '只读成员',
+  project_user: '项目使用者（可调用）',
+  project_viewer: '项目只读',
+  project_developer: '项目使用者（兼容）',
+  developer: '项目使用者（兼容）',
+  viewer: '项目只读（兼容）',
 };
+
+const projectMembershipOptions = [
+  { label: '项目管理员', value: 'project_admin' },
+  { label: '项目使用者（可调用）', value: 'project_user' },
+  { label: '项目只读', value: 'project_viewer' },
+];
 
 const periodOptions = [
   { label: '不限制', value: 'none' },
@@ -162,11 +178,10 @@ function centsFromYuan(yuan: unknown) {
 export default function ProjectManagementPage({ embedded = false }: { embedded?: boolean }) {
   const currentUser = useAuthStore(state => state.user);
   const role = currentUser?.role || '';
-  const platform = isPlatformAdminRole(role);
+  const organizationRole = canonicalOrganizationRole(currentUser?.organization_role, role);
+  const platform = isPlatformAdminRole(organizationRole);
   const initialState = useRef(readInitialProjectState()).current;
-  const canCreateProject = platform || role === 'org_admin';
-  const canManageMembers = platform || role === 'org_admin' || role === 'project_admin';
-  const canEditProject = canManageMembers;
+  const canCreateProject = platform || organizationRole === 'org_admin';
   const licenseModelGovernance = currentUser?.license_access?.features?.model_governance === true;
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -194,6 +209,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   const [memberPageSize, setMemberPageSize] = useState(20);
   const [eligibleUsers, setEligibleUsers] = useState<EligibleUser[]>([]);
   const [selectedCandidateID, setSelectedCandidateID] = useState<number>();
+  const [selectedMembershipRole, setSelectedMembershipRole] = useState('project_user');
   const [candidateQuery, setCandidateQuery] = useState('');
   const [membersLoading, setMembersLoading] = useState(false);
 
@@ -214,6 +230,14 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     () => projects.find(project => project.id === selectedProjectID) || null,
     [projects, selectedProjectID],
   );
+  const selectedProjectMembershipRole = canonicalProjectMembershipRole(selectedProject?.current_user_membership_role);
+  const organizationCanManageProjects = platform || organizationRole === 'org_admin';
+  const canManageMembers = organizationCanManageProjects || selectedProjectMembershipRole === 'project_admin';
+  const canEditProject = canManageMembers;
+  const canGrantProjectAdmin = organizationCanManageProjects;
+  const membershipOptions = canGrantProjectAdmin
+    ? projectMembershipOptions
+    : projectMembershipOptions.filter(option => option.value !== 'project_admin');
 
   useEffect(() => {
     if (!platform) return;
@@ -342,13 +366,14 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
 
   useEffect(() => {
     if (!selectedProject) return;
+    const budgetVisible = selectedProject.budget_cents !== undefined && selectedProject.budget_period !== undefined;
     overviewFormApi?.setValues({
       name: selectedProject.name,
       slug: selectedProject.slug,
       description: selectedProject.description || '',
       status: selectedProject.status,
-      budget_yuan: yuanFromCents(selectedProject.budget_cents),
-      budget_period: selectedProject.budget_period,
+      budget_yuan: budgetVisible ? yuanFromCents(selectedProject.budget_cents as number) : undefined,
+      budget_period: budgetVisible ? selectedProject.budget_period : undefined,
     });
   }, [overviewFormApi, selectedProject]);
 
@@ -379,6 +404,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     setAssignedModelSetIDs([]);
     setModelError('');
     setSelectedCandidateID(undefined);
+    setSelectedMembershipRole('project_user');
     setCandidateQuery('');
     syncProjectURL({
       platform,
@@ -566,7 +592,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     const candidate = eligibleUsers.find(item => item.user_id === selectedCandidateID);
     if (!candidate) return;
     try {
-      await api.upsertProjectMember(selectedProject.id, candidate.user_id, candidate.membership_role);
+      await api.upsertProjectMember(selectedProject.id, candidate.user_id, selectedMembershipRole);
       Toast.success('成员已加入项目');
       setSelectedCandidateID(undefined);
       await loadMembers(selectedProject.id, memberPage, memberPageSize, candidateQuery);
@@ -575,12 +601,23 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     }
   };
 
+  const updateMemberRole = useCallback(async (member: ProjectMember, nextRole: string) => {
+    if (!selectedProject) return;
+    try {
+      await api.upsertProjectMember(selectedProject.id, member.user_id, nextRole);
+      Toast.success('项目角色已更新');
+      await loadMembers(selectedProject.id, memberPage, memberPageSize, candidateQuery);
+    } catch (error) {
+      Toast.error(error instanceof ApiError ? error.message : '项目角色更新失败');
+    }
+  }, [candidateQuery, loadMembers, memberPage, memberPageSize, selectedProject]);
+
   const removeMember = useCallback((member: ProjectMember) => {
     if (!selectedProject) return;
     const project = selectedProject;
     Modal.confirm({
       title: '移除项目成员',
-      content: `确认从 ${project.name} 移除 ${member.username}？启用中的项目角色必须保留至少一个项目。`,
+      content: `确认从 ${project.name} 移除 ${member.username}？这不会改变其组织角色或其他项目成员关系。`,
       onOk: async () => {
         try {
           await api.deleteProjectMember(project.id, member.user_id);
@@ -611,13 +648,32 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     { title: '组织', dataIndex: 'org_name', width: 150, render: (name: string, project: Project) => name || `组织 #${project.org_id}` },
     { title: '标识', dataIndex: 'slug', width: 130 },
     { title: '状态', dataIndex: 'status', width: 90, render: (status: string) => <StatusTag status={status}>{status === 'active' ? '启用' : status === 'disabled' ? '停用' : '归档'}</StatusTag> },
-    { title: '预算', key: 'budget', width: 150, render: (_: unknown, project: Project) => project.budget_period === 'none' || !project.budget_cents ? '不限制' : `¥${yuanFromCents(project.budget_cents).toFixed(2)} / ${project.budget_period === 'daily' ? '日' : '月'}` },
-    { title: '凭证数', dataIndex: 'key_count', width: 88, render: (count: number) => Number(count || 0) },
+    { title: '预算', key: 'budget', width: 150, render: (_: unknown, project: Project) => !project.budget_period ? '受限字段' : project.budget_period === 'none' || !project.budget_cents ? '不限制' : `¥${yuanFromCents(project.budget_cents).toFixed(2)} / ${project.budget_period === 'daily' ? '日' : '月'}` },
+    { title: '凭证数', dataIndex: 'key_count', width: 88, render: (count: number | undefined) => typeof count === 'number' ? count : '受限字段' },
+    { title: '我的项目角色', dataIndex: 'current_user_membership_role', width: 170, render: (value: string) => value ? roleNames[canonicalProjectMembershipRole(value)] || value : '组织级权限' },
   ], []);
 
   const memberColumns = useMemo(() => [
     { title: '用户', dataIndex: 'username', render: (username: string, member: ProjectMember) => <span>{username}{member.email ? <Text type="tertiary"> · {member.email}</Text> : null}</span> },
-    { title: '项目角色', dataIndex: 'membership_role', render: (value: string) => <Tag>{roleNames[value] || value}</Tag> },
+    { title: '组织角色', dataIndex: 'organization_role', render: (value: string) => <Tag>{organizationRoleLabel(value)}</Tag> },
+    {
+      title: '项目角色',
+      dataIndex: 'membership_role',
+      render: (value: string, member: ProjectMember) => {
+        const normalized = canonicalProjectMembershipRole(value);
+        const membershipScopedAdminCannotChange = !canGrantProjectAdmin && normalized === 'project_admin';
+        return (
+          <Select
+            aria-label={`${member.username}的项目角色`}
+            value={normalized}
+            optionList={membershipOptions}
+            disabled={membershipScopedAdminCannotChange}
+            onChange={next => void updateMemberRole(member, String(next))}
+            style={{ width: 190 }}
+          />
+        );
+      },
+    },
     { title: '账号来源', dataIndex: 'auth_provider', render: (value: string) => value === 'oidc' ? '企业 OIDC' : '本地账号' },
     { title: '状态', dataIndex: 'status', render: (value: string) => <StatusTag status={value}>{value === 'active' ? '启用' : '停用'}</StatusTag> },
     {
@@ -627,12 +683,12 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
           type="danger"
           theme="borderless"
           icon={<IconDelete />}
-          disabled={role === 'project_admin' && member.membership_role === 'project_admin'}
+          disabled={!canGrantProjectAdmin && canonicalProjectMembershipRole(member.membership_role) === 'project_admin'}
           onClick={() => removeMember(member)}
         >移除</Button>
       ),
     },
-  ], [removeMember, role]);
+  ], [canGrantProjectAdmin, membershipOptions, removeMember, updateMemberRole]);
 
   const projectRowProps = useCallback((record?: Project) => {
     if (!record) return {};
@@ -655,7 +711,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
 
   const candidateOptions = useMemo(() => eligibleUsers.map(candidate => ({
     value: candidate.user_id,
-    label: `${candidate.username} · ${roleNames[candidate.membership_role] || candidate.user_role}${candidate.status === 'active' ? '' : '（已停用）'}`,
+    label: `${candidate.username} · ${organizationRoleLabel(candidate.organization_role || candidate.user_role)}${candidate.status === 'active' ? '' : '（已停用）'}`,
   })), [eligibleUsers]);
 
   return (
@@ -782,6 +838,13 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
               </div>
               <Tabs activeKey={activeTab} onChange={changeActiveTab}>
             <TabPane tab="项目概况" itemKey="overview">
+              {(selectedProject.budget_cents === undefined || selectedProject.budget_period === undefined) && (
+                <Banner
+                  type="info"
+                  description="当前组织只读视图不包含预算和凭证统计；缺失值不会按 0 或“不限制”解释。"
+                  style={{ marginBottom: 12 }}
+                />
+              )}
               <Form getFormApi={setOverviewFormApi} onSubmit={submitOverview} style={{ maxWidth: 720 }}>
                 <Form.Input field="name" label="项目名称" disabled={!canEditProject} rules={[{ required: true, message: '必填' }]} />
                 <Form.Input field="slug" label="项目标识" disabled={!canEditProject} rules={[{ required: true, message: '必填' }]} />
@@ -789,9 +852,9 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                 <Form.Select field="status" label="项目状态" disabled={!canEditProject} optionList={[
                   { label: '启用', value: 'active' }, { label: '停用', value: 'disabled' }, { label: '归档', value: 'archived' },
                 ]} />
-                <Form.InputNumber field="budget_yuan" label="预算金额（元）" min={0} max={maxProjectBudgetYuan} precision={2} extraText="0 表示不限制；结算和告警以所选预算周期为准。" style={{ width: '100%' }} />
-                <Form.Select field="budget_period" label="预算周期" optionList={periodOptions} style={{ width: '100%' }} />
-                <Button type="primary" htmlType="submit">保存项目</Button>
+                <Form.InputNumber field="budget_yuan" label="预算金额（元）" disabled={!canEditProject} min={0} max={maxProjectBudgetYuan} precision={2} extraText="0 表示不限制；结算和告警以所选预算周期为准。" style={{ width: '100%' }} />
+                <Form.Select field="budget_period" label="预算周期" disabled={!canEditProject} optionList={periodOptions} style={{ width: '100%' }} />
+                {canEditProject && <Button type="primary" htmlType="submit">保存项目</Button>}
               </Form>
             </TabPane>
 
@@ -808,11 +871,18 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                   <Button onClick={() => loadMembers(selectedProject.id, 1, memberPageSize, candidateQuery)}>搜索</Button>
                   <Select
                     value={selectedCandidateID}
-                    placeholder="选择同组织的项目角色用户"
+                    placeholder="选择同组织的活跃账号"
                     optionList={candidateOptions}
                     onChange={value => setSelectedCandidateID(Number(value))}
                     filter
                     className="ur-project-member-select"
+                  />
+                  <Select
+                    aria-label="将授予的项目角色"
+                    value={selectedMembershipRole}
+                    optionList={membershipOptions}
+                    onChange={value => setSelectedMembershipRole(String(value))}
+                    style={{ width: 210 }}
                   />
                   <Button type="primary" disabled={!selectedCandidateID} onClick={addMember}>加入项目</Button>
                 </div>

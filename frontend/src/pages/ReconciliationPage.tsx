@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Banner, Button, Table, Select, TextArea, Toast, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconCoinMoney, IconRefresh, IconServer } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
-import { isBillingRole, isPlatformAdminRole } from '../navigation';
+import { isBillingRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, formatMoney, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
@@ -317,8 +317,9 @@ function ProviderCOGSOfflineWorkspace() {
 
 export default function ReconciliationPage() {
   const user = useAuthStore((state) => state.user);
-  const platform = isPlatformAdminRole(user?.role);
-	const canManageEnterpriseFinance = platform || isBillingRole(user?.role);
+  const organizationRole = organizationRoleForUser(user);
+  const platform = isPlatformAdminRole(organizationRole);
+	const canManageEnterpriseFinance = platform || isBillingRole(organizationRole);
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
   const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [records, setRecords] = useState<ReconRecord[]>([]);

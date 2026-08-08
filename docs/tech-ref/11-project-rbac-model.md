@@ -1,6 +1,6 @@
 # Project And RBAC Model
 
-> Version: v1.0
+> Version: v2.0
 > Status: Current implementation contract
 > Source of truth: `internal/auth/auth.go`, `internal/admin/rbac_helpers.go`, project/user/member/budget handlers, and `cmd/uniroute/main.go`
 
@@ -14,7 +14,17 @@ Target hierarchy:
 org -> project -> api key -> request
 ```
 
-RBAC must enforce this hierarchy in backend handlers and gateway authorization. Frontend navigation is a convenience layer, not the security boundary.
+Human authorization has two orthogonal axes:
+
+```text
+users.organization_role + live project_members.role
+```
+
+`users.role` remains a one-release compatibility shadow for old binaries and
+accepted v2 sessions. It is not an authorization source in current handlers.
+RBAC must enforce organization and project authority in backend handlers and
+gateway authorization. Frontend navigation is a convenience layer, not the
+security boundary.
 
 ## 2. Core Entities
 
@@ -44,17 +54,38 @@ Default project rule:
 |-------|---------|
 | `project_id` | Project |
 | `user_id` | User |
-| `role` | Persisted membership role: `project_admin`, `project_developer`, or `project_viewer` |
+| `role` | Canonical membership role: `project_admin`, `project_user`, or `project_viewer` |
 | `created_at`, `updated_at` | Timestamps |
 
 Rules:
 
-- A project member must also be a user in the same organization.
-- For project-scoped accounts, user role and membership role are one-to-one: `project_admin -> project_admin`, `developer -> project_developer`, `viewer -> project_viewer`.
-- An active project-scoped user must belong to at least one project. A disabled project-scoped user may temporarily have none.
-- `project_ids` is invalid for organization-scoped roles. Changing to an organization-scoped role removes existing project memberships.
-- User role/status updates and membership mutations use one per-user transaction lock so concurrent requests cannot remove the last project from an active project user.
-- Migration `000009` retained default-project membership rows for pre-existing platform/org administrators; those organization-scoped roles authorize through their account scope, and new member writes accept only the three project-scoped account roles.
+- A project member must also be an active human account in the same organization.
+- `users.organization_role` and `project_members.role` are independent. Any
+  same-organization account, including an organization administrator or viewer,
+  may hold an explicit membership without gaining that role in another project.
+- One person may be `project_admin` in project A and `project_viewer` in project
+  B. Every project decision reads the live membership for that exact project.
+- `organization_role=member` may have zero memberships. Account creation and
+  organization-role editing do not implicitly create, replace, or delete project
+  memberships.
+- Organization roles retain their organization authority but do not
+  automatically become project members. Explicit memberships remain when an
+  organization role changes.
+- Membership mutations serialize on the user/project rows, update the
+  conservative `users.role` compatibility shadow where applicable, revoke stale
+  sessions/credentials when required, and write audit in the same transaction.
+- During one rolling-release window, DB triggers normalize legacy
+  `users.role` writes and `developer`/`project_developer`/`viewer` membership
+  writes to canonical values. An INSERT that omits `organization_role` is
+  identified by a non-persistable sentinel default; an explicit value is not
+  inferred. PostgreSQL cannot distinguish a legacy UPDATE of only `role` from
+  a client that also redundantly assigns `organization_role` to its unchanged
+  old value. For this bounded window, that exact ambiguous UPDATE shape uses
+  legacy normalization semantics. Current product services validate and write
+  both axes for organization-role changes and never rely on that shape.
+  Unknown values still fail closed. Removing the users and project-membership
+  compatibility triggers and sentinel default requires a later explicit
+  migration after old writers retire.
 
 ### API Key Scope
 
@@ -64,37 +95,47 @@ new project keys carry the selected project in the key row and gateway context.
 
 ## 3. Roles
 
+Organization roles (`users.organization_role`):
+
 | Role | Scope | Can Do |
 |------|-------|--------|
-| `platform_admin` | system | All admin actions |
-| `org_admin` | org | Manage org users, projects, model access, org settings |
-| `billing_admin` | org | Wallet, project budgets, usage, reconciliation |
-| `project_admin` | project | Manage project members, keys, allowed models, budget |
-| `developer` | project | Use models, manage permitted project keys, view usage |
-| `viewer` | project | Read-only project usage/config where granted |
+| `platform_admin` | system | Platform administration and explicit tenant operations |
+| `org_admin` | org | Manage organization users, projects, model access, and settings |
+| `billing_admin` | org | Wallet, project budgets, usage, pricing reads, and reconciliation |
+| `org_viewer` | org | Read ordinary organization/project metadata; no calls or writes |
+| `member` | account | No organization-wide authority; project access requires live membership |
 
-Compatibility:
+Project membership roles (`project_members.role`):
 
-- Existing `org_viewer` remains a distinct organization-scoped read-only role and does not inherit project `viewer` membership or APIs.
-- Existing `org_admin` remains org-level admin.
+| Role | Scope | Can Do |
+|------|-------|--------|
+| `project_admin` | one project | Manage non-admin members, project settings, credentials, and model assignment |
+| `project_user` | one project | Invoke approved models and manage only their own personal credential |
+| `project_viewer` | one project | Read non-secret project metadata and usage; cannot invoke or write |
+
+Compatibility aliases `project_developer`, `developer`, and `viewer` are accepted
+only at documented migration/OIDC/API boundaries and normalize to canonical
+membership roles. Current responses, UI, and authorization use canonical names.
 
 ## 4. Permission Matrix
 
-| Action | platform_admin | org_admin | billing_admin | project_admin | developer | viewer |
-|--------|----------------|-----------|---------------|---------------|-----------|--------|
-| Manage provider channels | yes | no | no | no | no | no |
-| Manage channel keys | yes | no | no | no | no | no |
-| Manage model registry | yes | yes if licensed | no | no | no | no |
-| Read approved model catalog | yes | yes if licensed | no | own project if licensed | own project if licensed | own project if licensed |
-| Assign model sets to project | yes | yes | no | yes for own project if allowed | no | no |
-| Create project | yes | yes | no | no | no | no |
-| Manage project members | yes | yes | no | own project | no | no |
-| Create project API key | yes | yes | no | own project | own project if allowed | no |
-| Disable project API key | yes | yes | no | own project | own key if allowed | no |
-| View project usage | yes | yes | yes | own project | own project | own project read-only |
-| Manage wallet adjustment | yes | no | yes if allowed | no | no | no |
-| View audit logs | yes | org scope | no | no | no | no |
-| License management | yes | no | no | no | no | no |
+| Action | platform_admin | org_admin | billing_admin | org_viewer | project_admin | project_user | project_viewer |
+|--------|----------------|-----------|---------------|------------|---------------|--------------|----------------|
+| Manage provider channels | yes | no | no | no | no | no | no |
+| Manage channel keys | yes | no | no | no | no | no | no |
+| Manage model registry | yes | yes if licensed | no | no | no | no | no |
+| Read approved model catalog | yes | yes if licensed | no | org read if licensed | own project if licensed | own project if licensed | own project if licensed |
+| Assign model sets to project | yes | yes | no | no | own project | no | no |
+| Create project | yes | yes | no | no | no | no | no |
+| Read ordinary project metadata | yes | yes | list only | org read | own project | own project | own project |
+| Manage project members | yes | yes | no | no | own project with restrictions | no | no |
+| Create project credential | yes | yes | no | no | own project | own personal credential | no |
+| Disable project credential | yes | yes | no | no | own project | own active personal credential | no |
+| Invoke approved models | yes | yes | no | no | own project | own project | no |
+| View project usage | yes | yes | org finance scope | org read | own project | own project | own project read-only |
+| Manage wallet adjustment | yes | no | yes if allowed | no | no | no | no |
+| View audit logs | yes | org scope | no | no | no | no | no |
+| License management | yes | no | no | no | no | no | no |
 
 Budget authority is intentionally narrower than project authority. `billing_admin`
 may list projects in its JWT organization and use only
@@ -129,17 +170,28 @@ Implemented member constraints:
 
 - `platform_admin` and the owning `org_admin` may manage eligible project roles.
 - `project_admin` must have an active `project_admin` membership in the target project.
-- `project_admin` cannot grant or remove another `project_admin`, and cannot alter its own membership.
+- `project_admin` cannot create, promote, downgrade, overwrite, or remove another
+  `project_admin`, and cannot alter its own membership. Platform/org admins keep
+  that authority.
 - A target user from another organization is rejected.
 - Membership add/update/removal and its audit entry commit in the same transaction.
 
 Implemented APIs:
 
 - `GET /api/v1/projects/{id}/members` returns paginated members plus a bounded, server-filtered list of eligible same-organization users.
-- `PUT /api/v1/projects/{id}/members/{user_id}` adds or aligns a membership with the target user's account role.
-- `DELETE /api/v1/projects/{id}/members/{user_id}` removes a membership while preserving the active-user invariant.
+- `PUT /api/v1/projects/{id}/members/{user_id}` explicitly creates or updates a
+  canonical membership independently of the target account's organization role.
+- `DELETE /api/v1/projects/{id}/members/{user_id}` removes that one membership;
+  a `member` account may remain active with zero memberships.
 - `GET/PUT /api/v1/projects/{id}/budget` is the field-limited, tenant-bound budget surface.
-- `POST /api/v1/users` and `PUT /api/v1/users/{id}` accept `project_ids` and update the user/membership state atomically.
+- `POST /api/v1/users` and `PUT /api/v1/users/{id}` manage account identity and
+  organization role only. Project memberships are maintained at the project
+  endpoint and are never inferred from the compatibility shadow.
+
+OIDC applies the same split: organization-role defaults create only the account
+axis; canonical project roles (and accepted aliases) create
+`organization_role=member` plus one membership in the configured default
+project. OIDC never converts an organization role into implicit project access.
 
 ## 6. Gateway Authorization
 
@@ -174,12 +226,12 @@ allowed = key_allows(requested_model_or_alias)
 Retired models must not be callable even if old keys or project sets reference them.
 
 All model-set list/assignment routes require the commercial
-`model_governance` feature. `project_admin` may list model sets in its JWT
-organization only to obtain assignment candidates, and may read/replace
-`/projects/{id}/model-sets` only for a project where both its active account
-role and membership role are `project_admin`. It cannot create model sets or
-read/replace `/model-sets/{id}/items`; those remain platform/org governance
-actions. `developer` and `viewer` may read the sets assigned to their own
+`model_governance` feature. `project_admin` may list model sets only after live
+membership authorization and may read/replace `/projects/{id}/model-sets` only
+for that project. Its organization role and compatibility shadow do not grant
+project authority. It cannot create model sets or read/replace
+`/model-sets/{id}/items`; those remain platform/org governance actions.
+`project_user` and `project_viewer` may read the sets assigned to their own
 project but cannot replace them.
 
 ## 8. Audit Requirements
@@ -220,6 +272,10 @@ Implemented sequence:
 7. Add indexes for `(org_id, project_id, created_at)` on high-volume tables.
 8. Update gateway context to carry project_id.
 9. Enforce new RBAC in admin/developer handlers.
+10. Migration `000058` adds `users.organization_role`, canonicalizes
+    `project_members.role`, creates conservative `users.role` and legacy-write
+    compatibility guards, and fails closed when a down migration would collapse
+    an orthogonal or heterogeneous state.
 
 Historical data rule: migration `000009` uses only the linked API key project or
 the owning organization's explicit `default` project; later handlers do not
@@ -230,16 +286,20 @@ reassign that stored project provenance.
 Minimum tests:
 
 - Existing key remains valid after default project migration.
-- Developer can create/call with project key.
-- Developer cannot read another project.
+- Project user can create/call with their personal project credential.
+- Project user cannot read another project.
 - Project admin cannot manage another project.
+- One account can be project admin in A and project viewer in B without the
+  compatibility shadow granting B writes.
+- An organization role plus an explicit project membership remains orthogonal.
 - Billing admin cannot edit channel.
 - Retired model blocked even if project set still contains it.
 - Audit writes project_id for project key creation.
 - Route parity covers Developer Console API routes.
 
-## 11. Resolved V1 Behavior
+## 11. Resolved Current Behavior
 
-- An active `developer` with a matching project membership can create a project key and disable only an active key it owns in that project.
+- An active `project_user` with live membership can create a personal project
+  credential and disable only an active credential it owns in that project.
 - Project budgets are alert thresholds. Reaching a daily/monthly threshold emits a deduplicated `project_budget.threshold` event; it does not reject gateway traffic.
 - Historical request rows keep their migrated provenance; handlers do not fabricate a project outside the implemented migration/backfill rules.

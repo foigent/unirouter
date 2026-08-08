@@ -38,8 +38,8 @@ Optional mapping and provisioning controls:
 | `OIDC_ALLOWED_EMAIL_DOMAIN` | empty | Optional email-domain allow-list |
 | `OIDC_AUTO_PROVISION` | `false` | If false, only pre-bound users can log in |
 | `OIDC_DEFAULT_ORG_ID` | `0` unless set | Required when auto provisioning is enabled |
-| `OIDC_DEFAULT_ROLE` | `viewer` | First-login fallback role |
-| `OIDC_DEFAULT_PROJECT_SLUG` | `default` | Project membership target for project-scoped roles |
+| `OIDC_DEFAULT_ROLE` | `viewer` | First-login fallback authority input. Organization roles set `users.organization_role`; project roles create `organization_role=member` plus one default-project membership. |
+| `OIDC_DEFAULT_PROJECT_SLUG` | `default` | Membership target only when the resolved input is a project role |
 | `OIDC_USERNAME_CLAIM` | `preferred_username` | Preferred username claim |
 | `OIDC_EMAIL_CLAIM` | `email` | Email claim |
 | `OIDC_ROLE_CLAIM` | `uniroute_role` | UniRouter role claim |
@@ -60,11 +60,15 @@ If auto provisioning is enabled and no binding exists:
 
 1. The configured/default org must exist and be active.
 2. Username comes from the username claim, then email, then subject.
-3. Role comes from `OIDC_ROLE_CLAIM` if present and valid, otherwise `OIDC_DEFAULT_ROLE`.
-4. `project_admin`, `developer`, and `viewer` users are added to the configured default project as `project_admin`, `project_developer`, or `project_viewer`.
-5. A `login.oidc` audit row is recorded without `id_token`, `access_token`, client secret, or raw provider response.
+3. Authority input comes from `OIDC_ROLE_CLAIM` if present and valid, otherwise `OIDC_DEFAULT_ROLE`.
+4. Organization inputs `platform_admin` (`admin` is an accepted legacy alias), `org_admin`, `billing_admin`, `org_viewer`, and `member` set the canonical `users.organization_role`. They do not create or imply any project membership.
+5. Project inputs `project_admin`, `project_user`, and `project_viewer` set `users.organization_role=member` and add exactly one canonical membership in the project named by `OIDC_DEFAULT_PROJECT_SLUG`. Compatibility aliases `developer`/`project_developer` map to `project_user`, and `viewer` maps to `project_viewer`; aliases are not persisted in `project_members` after migration `000058`.
+6. `users.role` remains a conservative rolling-upgrade shadow and is not an authorization source for the current binary. Project authorization reads the live `project_members` row for the requested project.
+7. A `login.oidc` audit row is recorded without `id_token`, `access_token`, client secret, or raw provider response.
 
-Existing OIDC users keep their stored role/org. Role changes should be controlled in UniRouter unless a future policy explicitly enables continuous claim sync.
+Existing OIDC users keep their stored organization role, compatibility shadow,
+organization, and project memberships. Role changes should be controlled in
+UniRouter unless a future policy explicitly enables continuous claim sync.
 
 ## Security Notes
 

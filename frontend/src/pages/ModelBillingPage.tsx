@@ -5,7 +5,7 @@ import ModelPricesPage from './ModelPricesPage';
 import OrgModelPricesPage from './OrgModelPricesPage';
 import { EnterpriseRateCardWorkspace } from './EnterpriseFinanceWorkspaces';
 import { useAuthStore } from '../store/auth';
-import { isBillingRole, isPlatformAdminRole } from '../navigation';
+import { isBillingRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { api } from '../api/client';
 import { loadAllPages } from '../utils/loadAllPages';
 
@@ -13,8 +13,9 @@ const { TabPane } = Tabs;
 
 export default function ModelBillingPage() {
 	const user = useAuthStore(state => state.user);
-	const platform = isPlatformAdminRole(user?.role);
-	const canManageEnterpriseFinance = isBillingRole(user?.role) || platform;
+	const organizationRole = organizationRoleForUser(user);
+	const platform = isPlatformAdminRole(organizationRole);
+	const canManageEnterpriseFinance = isBillingRole(organizationRole) || platform;
 	const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
 	const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(user?.org_id);
   const initialTab = new URLSearchParams(window.location.search).get('tab');

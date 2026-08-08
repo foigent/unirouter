@@ -6,12 +6,14 @@ import { useAuthStore } from '../../store/auth';
 const mockGetErrorDocs = vi.fn();
 const mockGetWorkloadApplicationContract = vi.fn();
 const mockGetGatewayEndpoints = vi.fn();
+const mockGetProjects = vi.fn();
 
 vi.mock('../../api/client', () => ({
   api: {
     getErrorDocs: (...args: any[]) => mockGetErrorDocs(...args),
     getWorkloadApplicationContract: (...args: any[]) => mockGetWorkloadApplicationContract(...args),
     getGatewayEndpoints: (...args: any[]) => mockGetGatewayEndpoints(...args),
+    getProjects: (...args: any[]) => mockGetProjects(...args),
   },
 }));
 
@@ -38,6 +40,7 @@ describe('ApiDocsPage', () => {
       evidence_level: 'verified', recommended_for_poc: true, configuration_note: 'Use configured endpoint.',
     }] });
     mockGetGatewayEndpoints.mockResolvedValue({ data: [] });
+    mockGetProjects.mockResolvedValue({ data: [], total: 0 });
   });
 
   it('renders the current API contract index and post-PRD1 routes', async () => {
@@ -72,7 +75,7 @@ describe('ApiDocsPage', () => {
       'License 状态（仅平台管理员）',
       '全局输入阻断词库（仅平台管理员）',
       '本组织模型注册表；平台管理员可显式选择组织',
-      '组织模型目录；project_id 决定组织，项目角色必须提供 project_id',
+      '组织模型目录；org_viewer 可只读本组织，member 必须提供 project_id 并通过 live membership',
       '更新本组织别名；越权组织参数返回 403，越权或不存在的 ID 返回 404',
       '原子创建本组织模型集合及其全部初始条目',
       '原子替换本组织模型集合条目；不会暴露部分结果',
@@ -118,7 +121,11 @@ describe('ApiDocsPage', () => {
   });
 
   it('shows project administrators the project update contracts only available to that role', async () => {
-    useAuthStore.setState({ user: { id: 3, username: 'project-admin', role: 'project_admin', org_id: 1 } });
+    useAuthStore.setState({ user: { id: 3, username: 'project-admin', role: 'project_admin', organization_role: 'member', org_id: 1 } });
+    mockGetProjects.mockResolvedValue({
+      data: [{ id: 7, name: 'Core', current_user_membership_role: 'project_admin' }],
+      total: 1,
+    });
 
     render(<ApiDocsPage />);
 
@@ -135,11 +142,15 @@ describe('ApiDocsPage', () => {
   });
 
   it('documents developer-owned key disable without exposing general key updates', async () => {
-    useAuthStore.setState({ user: { id: 5, username: 'developer', role: 'developer', org_id: 1 } });
+    useAuthStore.setState({ user: { id: 5, username: 'developer', role: 'developer', organization_role: 'member', org_id: 1 } });
+    mockGetProjects.mockResolvedValue({
+      data: [{ id: 7, name: 'Core', current_user_membership_role: 'project_user' }],
+      total: 1,
+    });
 
     render(<ApiDocsPage />);
 
-    expect(await screen.findByText('停用访问凭证；developer 仅限本人拥有且仍有项目成员关系的 active Key')).toBeTruthy();
+    expect(await screen.findByText('停用访问凭证；project_user 仅限本人 personal credential，project_admin 可管理本项目 active credential')).toBeTruthy();
     expect(screen.queryByText('更新访问凭证')).toBeNull();
   });
 
@@ -159,25 +170,31 @@ describe('ApiDocsPage', () => {
   });
 
   it('shows project viewers only read operations and no paid debug endpoint', async () => {
-    useAuthStore.setState({ user: { id: 2, username: 'viewer', role: 'viewer', org_id: 1 } });
+    useAuthStore.setState({ user: { id: 2, username: 'viewer', role: 'viewer', organization_role: 'member', org_id: 1 } });
+    mockGetProjects.mockResolvedValue({
+      data: [{ id: 7, name: 'Core', current_user_membership_role: 'project_viewer' }],
+      total: 1,
+    });
 
     render(<ApiDocsPage />);
 
     expect(await screen.findByText('项目访问凭证列表')).toBeTruthy();
     expect(screen.queryByText('创建项目访问凭证')).toBeNull();
     expect(screen.queryByText('更新访问凭证')).toBeNull();
-    expect(screen.queryByText('停用访问凭证；developer 仅限本人拥有且仍有项目成员关系的 active Key')).toBeNull();
+    expect(screen.queryByText('停用访问凭证；project_user 仅限本人 personal credential，project_admin 可管理本项目 active credential')).toBeNull();
     expect(screen.queryByText('请求调试台直接使用项目访问凭证调用')).toBeNull();
   });
 
-  it('does not call a role-protected error registry for organization viewers', async () => {
-    useAuthStore.setState({ user: { id: 3, username: 'reader', role: 'org_viewer', org_id: 1 } });
+  it('uses organization role for organization-wide docs without inventing project membership', async () => {
+    useAuthStore.setState({ user: { id: 3, username: 'reader', role: 'org_viewer', organization_role: 'org_viewer', org_id: 1 } });
 
     render(<ApiDocsPage />);
 
     expect(screen.getByText('API 与兼容性')).toBeTruthy();
     expect(screen.getByText('Dashboard 聚合数据')).toBeTruthy();
-    expect(screen.queryByText('Error Docs')).toBeNull();
-    expect(mockGetErrorDocs).not.toHaveBeenCalled();
+    expect(await screen.findByText('auth_error.invalid_api_key')).toBeTruthy();
+    expect(screen.getByText('Error Docs')).toBeTruthy();
+    expect(mockGetErrorDocs).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('创建项目访问凭证')).toBeNull();
   });
 });

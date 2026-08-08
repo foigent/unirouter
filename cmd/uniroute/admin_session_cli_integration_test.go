@@ -67,16 +67,38 @@ func TestAdminCreateCLIUsesStdinAndPreservesNormalizedIdentityAndPasswordIntegra
 		"--password-stdin",
 	}, adminCLIConfig(pool.Config().ConnString()), nonTerminalAdminPasswordInput(password+"\r\n")))
 
-	var username, passwordHash, role, provider string
+	var username, passwordHash, organizationRole, role, provider string
 	require.NoError(t, pool.QueryRow(t.Context(), `
-		SELECT username, password_hash, role, auth_provider
+		SELECT username, password_hash, organization_role, role, auth_provider
 		  FROM users
 		 WHERE org_id=$1 AND public.normalize_local_login_id(username)='displayadmin'`, orgID,
-	).Scan(&username, &passwordHash, &role, &provider))
+	).Scan(&username, &passwordHash, &organizationRole, &role, &provider))
 	require.Equal(t, "DisplayAdmin", username)
+	require.Equal(t, auth.RoleOrgAdmin, organizationRole)
 	require.Equal(t, auth.RoleOrgAdmin, role)
 	require.Equal(t, "local", provider)
 	require.NoError(t, bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)))
+}
+
+func TestAdminCreateCLILegacyAdminWritesExplicitCanonicalPairIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+
+	require.NoError(t, runAdminCLIWithPasswordInput(t.Context(), []string{
+		"create",
+		"--username", "LegacyBreakGlassAdmin",
+		"--role", auth.RoleLegacyAdmin,
+		"--org-id", strconv.FormatInt(orgID, 10),
+		"--password-stdin",
+	}, adminCLIConfig(pool.Config().ConnString()), nonTerminalAdminPasswordInput("break-glass-password-456\n")))
+
+	var organizationRole, compatibilityRole string
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT organization_role,role FROM users
+		WHERE org_id=$1 AND public.normalize_local_login_id(username)='legacybreakglassadmin'`, orgID,
+	).Scan(&organizationRole, &compatibilityRole))
+	require.Equal(t, auth.RolePlatformAdmin, organizationRole)
+	require.Equal(t, auth.RoleLegacyAdmin, compatibilityRole)
 }
 
 func TestAdminCreateCLIMapsGlobalIdentityConflictWithoutDatabaseDetailIntegration(t *testing.T) {

@@ -39,6 +39,7 @@ func TestPRD8RuntimeControlMigrationsAndRollbackGuards(t *testing.T) {
 	// empty PRD8 migrations must be reversed first so their ordering guard does
 	// not mask the evidence-specific assertions below.
 	rollbackEmptyMigrations(t, pool, []string{
+		"000058_enterprise_project_role_separation.down.sql",
 		"000057_second_integration_reset_support.down.sql",
 		"000056_prd8_invocation_optimization.down.sql",
 		"000055_prd8_deployment_profiles.down.sql",

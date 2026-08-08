@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form, Input, Select, SideSheet, Space, Table, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus, IconRefresh, IconServer, IconSetting } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { isPlatformAdminRole } from '../navigation';
+import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, ExactTokenCountInput, PageHeader, parseExactTokenCount, StatusTag, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
@@ -136,7 +136,7 @@ export function formatModelSetItems(items: ModelSetItem[]) {
 
 export default function ModelGovernancePage() {
   const user = useAuthStore((state) => state.user);
-  const platform = isPlatformAdminRole(user?.role);
+  const platform = isPlatformAdminRole(organizationRoleForUser(user));
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(user?.org_id);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('registry');

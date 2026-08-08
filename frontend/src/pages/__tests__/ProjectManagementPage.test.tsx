@@ -35,6 +35,7 @@ describe('ProjectManagementPage', () => {
       user: {
         id: 2,
         username: 'org-admin',
+        organization_role: 'org_admin',
         role: 'org_admin',
         org_id: 1,
         org_name: '总部',
@@ -103,6 +104,7 @@ describe('ProjectManagementPage', () => {
       user: {
         id: 7,
         username: 'project-admin',
+        organization_role: 'member',
         role: 'project_admin',
         org_id: 1,
         org_name: '总部',
@@ -112,6 +114,41 @@ describe('ProjectManagementPage', () => {
     render(<ProjectManagementPage />);
     await screen.findByLabelText('项目详情：核心项目');
     expect(screen.queryByText('新建项目')).toBeNull();
+  });
+
+  it('does not misrepresent metadata-only project fields as zero or unlimited', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 8,
+        username: 'organization-viewer',
+        organization_role: 'org_viewer',
+        role: 'org_viewer',
+        org_id: 1,
+        org_name: '总部',
+        license_access: { status: 'valid', enforceable: true, features: { gateway: true, agent_capabilities: true, oidc: true, guardrails: true, notifications: true, model_governance: true, data_exchange: true } },
+      },
+    });
+    mocks.getProjects.mockResolvedValueOnce({
+      data: [{
+        id: 31,
+        org_id: 1,
+        org_name: '总部',
+        name: '只读项目',
+        slug: 'read-only',
+        description: '普通项目元数据',
+        status: 'active',
+      }],
+      total: 1,
+    });
+
+    render(<ProjectManagementPage />);
+
+    expect(await screen.findByLabelText('项目详情：只读项目')).toBeTruthy();
+    expect((await screen.findAllByText('受限字段')).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('不限制')).toBeNull();
+    expect(screen.getByText(/缺失值不会按 0 或“不限制”解释/)).toBeTruthy();
+    expect(screen.queryByText('成员与角色')).toBeNull();
+    expect(mocks.getProjectMembers).not.toHaveBeenCalled();
   });
 
   it('restores the selected project and member tab from a deep link', async () => {

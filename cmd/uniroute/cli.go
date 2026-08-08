@@ -98,6 +98,10 @@ func runAdminCLIWithPasswordInput(ctx context.Context, args []string, cfg *confi
 		if err != nil {
 			return fmt.Errorf("--username is required: %w", err)
 		}
+		organizationRole, compatibilityRole, err := normalizeAdminCreateRoles(*role)
+		if err != nil {
+			return err
+		}
 		password, err := readAdminPassword(input, *passwordStdin)
 		if err != nil {
 			return err
@@ -108,7 +112,7 @@ func runAdminCLIWithPasswordInput(ctx context.Context, args []string, cfg *confi
 		if err := auth.ValidateLocalPassword(password); err != nil {
 			return err
 		}
-		return createAdmin(ctx, cfg, normalizedUsername, password, *role, *orgID)
+		return createAdmin(ctx, cfg, normalizedUsername, password, organizationRole, compatibilityRole, *orgID)
 
 	case "set-password":
 		fs := flag.NewFlagSet("admin set-password", flag.ContinueOnError)
@@ -264,7 +268,22 @@ func runMigrateCLI(ctx context.Context, args []string, cfg *config.Config) error
 	}
 }
 
-func createAdmin(ctx context.Context, cfg *config.Config, username, password, role string, orgID int64) error {
+func normalizeAdminCreateRoles(role string) (organizationRole, compatibilityRole string, err error) {
+	if !auth.IsOrganizationRole(role) {
+		return "", "", fmt.Errorf("invalid --role: expected platform_admin, org_admin, billing_admin, org_viewer, or member (admin is a compatibility alias for platform_admin)")
+	}
+	organizationRole, ok := auth.NormalizeOrganizationRole(role)
+	if !ok {
+		return "", "", fmt.Errorf("invalid --role")
+	}
+	compatibilityRole = organizationRole
+	if role == auth.RoleLegacyAdmin {
+		compatibilityRole = auth.RoleLegacyAdmin
+	}
+	return organizationRole, compatibilityRole, nil
+}
+
+func createAdmin(ctx context.Context, cfg *config.Config, username, password, organizationRole, compatibilityRole string, orgID int64) error {
 	postgres, err := db.NewPostgres(cfg.DB_DSN, cfg.DBMaxConnections, cfg.DBMaxIdleConns)
 	if err != nil {
 		return fmt.Errorf("connect PostgreSQL: %w", err)
@@ -277,9 +296,9 @@ func createAdmin(ctx context.Context, cfg *config.Config, username, password, ro
 	}
 
 	_, err = postgres.Pool.Exec(ctx,
-		`INSERT INTO users (org_id, username, password_hash, role, status, auth_provider, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, 'active', 'local', NOW(), NOW())`,
-		orgID, username, string(hash), role,
+		`INSERT INTO users (org_id, username, password_hash, organization_role, role, status, auth_provider, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, 'active', 'local', NOW(), NOW())`,
+		orgID, username, string(hash), organizationRole, compatibilityRole,
 	)
 	if err != nil {
 		var pgErr *pgconn.PgError

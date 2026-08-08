@@ -8,24 +8,34 @@ export const roleLabels: Record<string, string> = {
   platform_admin: '平台管理员',
   org_admin: '组织管理员',
   billing_admin: '账务管理员',
+  member: '普通成员',
   project_admin: '项目管理员',
-  developer: '开发者',
-  viewer: '项目只读成员',
+  project_user: '项目使用者（可调用）',
+  project_viewer: '项目只读',
+  project_developer: '项目使用者（兼容）',
+  developer: '项目使用者（兼容）',
+  viewer: '项目只读（兼容）',
   org_viewer: '组织只读',
 };
 
-export const userManagementRoleOptions: SelectOption[] = [
+export const userManagementOrganizationRoleOptions: SelectOption[] = [
   { label: '平台管理员 (platform_admin)', value: 'platform_admin' },
   { label: '组织管理员 (org_admin)', value: 'org_admin' },
   { label: '账务管理员 (billing_admin)', value: 'billing_admin' },
-  { label: '项目管理员 (project_admin)', value: 'project_admin' },
-  { label: '开发者 / 项目成员 (developer)', value: 'developer' },
-  { label: '项目只读成员 (viewer)', value: 'viewer' },
   { label: '组织只读 (org_viewer)', value: 'org_viewer' },
+  { label: '普通成员 (member)', value: 'member' },
 ];
+
+// Retained for rolling frontend consumers. New account forms must use the
+// organization-only options above; project roles are managed per project.
+export const userManagementRoleOptions = userManagementOrganizationRoleOptions;
 
 export function roleLabel(value?: string | null, fallback = '-') {
   return roleLabels[value || ''] || value || fallback;
+}
+
+export function organizationRoleLabel(value?: string | null, fallback = '-') {
+  return roleLabel(value, fallback);
 }
 
 export function roleTagColor(value?: string | null) {
@@ -33,7 +43,7 @@ export function roleTagColor(value?: string | null) {
   if (value === 'org_admin') return 'blue';
   if (value === 'billing_admin') return 'orange';
   if (value === 'project_admin') return 'purple';
-  if (value === 'developer') return 'green';
+  if (value === 'project_user' || value === 'project_developer' || value === 'developer') return 'green';
   return 'grey';
 }
 

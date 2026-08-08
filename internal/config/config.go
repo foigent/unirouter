@@ -439,7 +439,8 @@ func (c *Config) Validate() error {
 		if c.OIDCRedirectURL == "" {
 			return fmt.Errorf("OIDC_REDIRECT_URL is required when OIDC is enabled")
 		}
-		if !auth.IsValidRole(c.OIDCDefaultRole) {
+		_, projectRoleOK := auth.NormalizeProjectMembershipRole(c.OIDCDefaultRole)
+		if !auth.IsValidRole(c.OIDCDefaultRole) && !projectRoleOK {
 			return fmt.Errorf("OIDC_DEFAULT_ROLE is invalid: %s", c.OIDCDefaultRole)
 		}
 		if c.OIDCAutoProvision && c.OIDCDefaultOrgID <= 0 {

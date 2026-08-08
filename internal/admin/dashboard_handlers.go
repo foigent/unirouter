@@ -105,7 +105,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	// The dashboard must not become a capability bypass. Direct handler unit
 	// tests have no authenticated role, so they keep the complete legacy shape;
 	// production requests expose only data the same role may read elsewhere.
-	role := middleware.GetUserRoleFromContext(ctx)
+	role := actorOrganizationRole(ctx)
 	unitContext := isUnauthenticatedUnitContext(ctx)
 	if unitContext || auth.IsBillingAdmin(role) {
 		walletBalance, walletGranted, walletFrozen, walletThreshold, err := h.dashboardWalletInfo(ctx, orgID)

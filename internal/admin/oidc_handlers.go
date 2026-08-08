@@ -32,12 +32,13 @@ type oidcStateCookie struct {
 }
 
 type oidcUser struct {
-	ID        int64
-	OrgID     int64
-	Username  string
-	Role      string
-	Status    string
-	AuthEpoch int64
+	ID               int64
+	OrgID            int64
+	Username         string
+	OrganizationRole string
+	Role             string
+	Status           string
+	AuthEpoch        int64
 }
 
 func (h *Handler) OIDCConfig(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +146,7 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.issueAdminSession(r.Context(), user.ID, user.OrgID, user.Role, user.AuthEpoch)
+	token, err := h.issueAdminSession(r.Context(), user.ID, user.OrgID, user.OrganizationRole, user.Role, user.AuthEpoch)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create session"})
 		return
@@ -173,11 +174,12 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("format") == "json" {
 		setAuthTokenResponseHeaders(w)
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"token":    token,
-			"user_id":  user.ID,
-			"username": user.Username,
-			"role":     user.Role,
-			"org_id":   user.OrgID,
+			"token":             token,
+			"user_id":           user.ID,
+			"username":          user.Username,
+			"role":              user.Role,
+			"organization_role": user.OrganizationRole,
+			"org_id":            user.OrgID,
 		})
 		return
 	}
@@ -219,18 +221,19 @@ func (h *Handler) upsertOIDCUser(ctx context.Context, identity *oidc.Identity) (
 		}
 		var userID, authEpoch int64
 		err = tx.QueryRow(ctx,
-			`INSERT INTO users (org_id, username, password_hash, role, status, email, auth_provider, oidc_issuer, oidc_subject)
-			 VALUES ($1, $2, $3, $4, 'active', $5, 'oidc', $6, $7)
+			`INSERT INTO users (org_id, username, password_hash, organization_role, role, status, email, auth_provider, oidc_issuer, oidc_subject)
+			 VALUES ($1, $2, $3, $4, $5, 'active', $6, 'oidc', $7, $8)
 			 ON CONFLICT DO NOTHING
 			 RETURNING id, auth_epoch`,
-			identity.OrgID, username, passwordHash, identity.Role, nullableString(identity.Email), identity.Issuer, identity.Subject,
+			identity.OrgID, username, passwordHash, identity.OrganizationRole, identity.Role,
+			nullableString(identity.Email), identity.Issuer, identity.Subject,
 		).Scan(&userID, &authEpoch)
 		if err == nil {
 			if err := lockProjectMembershipMutation(ctx, tx, userID); err != nil {
 				_ = tx.Rollback(ctx)
 				return oidcUser{}, err
 			}
-			if err := ensureDefaultProjectMembershipTx(ctx, tx, identity.OrgID, userID, identity.Role, cfg.DefaultProjectSlug); err != nil {
+			if err := ensureDefaultProjectMembershipTx(ctx, tx, identity.OrgID, userID, identity.ProjectRole, cfg.DefaultProjectSlug); err != nil {
 				_ = tx.Rollback(ctx)
 				return oidcUser{}, err
 			}
@@ -239,7 +242,7 @@ func (h *Handler) upsertOIDCUser(ctx context.Context, identity *oidc.Identity) (
 				_ = tx.Rollback(ctx)
 				return oidcUser{}, projectErr
 			}
-			provisioned := oidcUser{ID: userID, OrgID: identity.OrgID, Username: username, Role: identity.Role, Status: "active", AuthEpoch: authEpoch}
+			provisioned := oidcUser{ID: userID, OrgID: identity.OrgID, Username: username, OrganizationRole: identity.OrganizationRole, Role: identity.Role, Status: "active", AuthEpoch: authEpoch}
 			auditCtx := oidcMutationAuditContext(ctx, provisioned)
 			if auditErr := insertAuditEntry(auditCtx, tx, "user.oidc_provision", "user", fmt.Sprintf("%d", userID), map[string]interface{}{
 				"after": oidcUserAuditState(provisioned, identity.Email, identity, projectIDs),
@@ -278,12 +281,12 @@ func (h *Handler) upsertOIDCUser(ctx context.Context, identity *oidc.Identity) (
 func (h *Handler) findOIDCUser(ctx context.Context, issuer, subject string) (oidcUser, error) {
 	var existing oidcUser
 	err := h.db.QueryRow(ctx,
-		`SELECT id, org_id, username, role, status, auth_epoch
+		`SELECT id, org_id, username, organization_role, role, status, auth_epoch
 		 FROM users
 		 WHERE oidc_issuer = $1 AND oidc_subject = $2
 		 LIMIT 1`,
 		issuer, subject,
-	).Scan(&existing.ID, &existing.OrgID, &existing.Username, &existing.Role, &existing.Status, &existing.AuthEpoch)
+	).Scan(&existing.ID, &existing.OrgID, &existing.Username, &existing.OrganizationRole, &existing.Role, &existing.Status, &existing.AuthEpoch)
 	return existing, err
 }
 
@@ -301,9 +304,9 @@ func (h *Handler) reconcileExistingOIDCUser(ctx context.Context, existing oidcUs
 	}
 	var existingEmail string
 	if err := tx.QueryRow(ctx,
-		`SELECT id, org_id, username, role, status, auth_epoch, COALESCE(email, '')
+		`SELECT id, org_id, username, organization_role, role, status, auth_epoch, COALESCE(email, '')
 		 FROM users WHERE id = $1 FOR UPDATE`, existing.ID,
-	).Scan(&existing.ID, &existing.OrgID, &existing.Username, &existing.Role, &existing.Status, &existing.AuthEpoch, &existingEmail); err != nil {
+	).Scan(&existing.ID, &existing.OrgID, &existing.Username, &existing.OrganizationRole, &existing.Role, &existing.Status, &existing.AuthEpoch, &existingEmail); err != nil {
 		return oidcUser{}, err
 	}
 	if existing.Status != "active" {
@@ -320,9 +323,10 @@ func (h *Handler) reconcileExistingOIDCUser(ctx context.Context, existing oidcUs
 		}
 	}
 	membershipRestored := false
-	if auth.IsProjectScopedRole(existing.Role) {
-		if len(beforeProjectIDs) == 0 {
-			if err := ensureDefaultProjectMembershipTx(ctx, tx, existing.OrgID, existing.ID, existing.Role, h.oidcService.Config().DefaultProjectSlug); err != nil {
+	if existing.OrganizationRole == auth.RoleMember && len(beforeProjectIDs) == 0 {
+		canonicalProjectRole, hasLegacyProjectShadow := auth.NormalizeProjectMembershipRole(existing.Role)
+		if hasLegacyProjectShadow {
+			if err := ensureDefaultProjectMembershipTx(ctx, tx, existing.OrgID, existing.ID, canonicalProjectRole, h.oidcService.Config().DefaultProjectSlug); err != nil {
 				return oidcUser{}, err
 			}
 			membershipRestored = true
@@ -377,6 +381,7 @@ func oidcUserAuditState(user oidcUser, email string, identity *oidc.Identity, pr
 		"org_id":            user.OrgID,
 		"username_ref":      oidcAuditReference("username", user.Username),
 		"role":              user.Role,
+		"organization_role": user.OrganizationRole,
 		"status":            user.Status,
 		"auth_provider":     "oidc",
 		"oidc_identity_ref": oidcAuditReference("identity", identity.Issuer, identity.Subject),
@@ -407,16 +412,12 @@ func (h *Handler) ensureOIDCOrg(ctx context.Context, orgID int64) error {
 }
 
 func ensureDefaultProjectMembershipTx(ctx context.Context, tx pgx.Tx, orgID, userID int64, role, projectSlug string) error {
-	memberRole := ""
-	switch auth.NormalizeRole(role) {
-	case auth.RoleProjectAdmin:
-		memberRole = projectMemberAdmin
-	case auth.RoleDeveloper:
-		memberRole = projectMemberDeveloper
-	case auth.RoleViewer:
-		memberRole = projectMemberViewer
-	default:
+	if strings.TrimSpace(role) == "" {
 		return nil
+	}
+	memberRole, ok := auth.NormalizeProjectMembershipRole(role)
+	if !ok || memberRole != role {
+		return fmt.Errorf("invalid OIDC project role %q", role)
 	}
 	if projectSlug == "" {
 		projectSlug = "default"

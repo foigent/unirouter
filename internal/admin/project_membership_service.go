@@ -3,43 +3,21 @@ package admin
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/http"
-	"sort"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
-	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 const projectMembershipMutationLockBase int64 = 4120000000000000000
 
 var (
-	errProjectIDsInvalid       = errors.New("project_ids must contain positive project IDs")
-	errProjectIDsRequired      = errors.New("an active project role must belong to at least one project")
-	errProjectIDsNotAllowed    = errors.New("project_ids are only valid for project roles")
-	errProjectOrganization     = errors.New("all projects must belong to the user's organization")
 	errProjectMembershipUpdate = errors.New("failed to update project memberships")
 )
 
-// normalizeProjectIDs gives every membership mutation a stable lock and write
-// order. Duplicate IDs are accepted from UI multi-select controls and reduced
-// to one membership; non-positive IDs fail closed.
-func normalizeProjectIDs(projectIDs []int64) ([]int64, error) {
-	seen := make(map[int64]struct{}, len(projectIDs))
-	normalized := make([]int64, 0, len(projectIDs))
-	for _, projectID := range projectIDs {
-		if projectID <= 0 {
-			return nil, errProjectIDsInvalid
-		}
-		if _, exists := seen[projectID]; exists {
-			continue
-		}
-		seen[projectID] = struct{}{}
-		normalized = append(normalized, projectID)
-	}
-	sort.Slice(normalized, func(i, j int) bool { return normalized[i] < normalized[j] })
-	return normalized, nil
+type compatibilityRoleTransition struct {
+	BeforeRole      string
+	AfterRole       string
+	RevokedSessions int64
 }
 
 // lockProjectMembershipMutation serializes every path that can change a
@@ -54,36 +32,91 @@ func lockProjectMembershipMutation(ctx context.Context, tx pgx.Tx, userID int64)
 	return err
 }
 
-func canManageProjectMembersTx(ctx context.Context, tx pgx.Tx, projectID, orgID int64) (bool, error) {
-	role := actorRole(ctx)
-	switch role {
-	case auth.RolePlatformAdmin:
-		return true, nil
-	case auth.RoleOrgAdmin:
-		return actorCanAccessOrg(ctx, orgID), nil
-	case auth.RoleProjectAdmin:
-		if !actorCanAccessOrg(ctx, orgID) {
-			return false, nil
-		}
-		var membershipRole string
-		err := tx.QueryRow(ctx,
-			`SELECT pm.role
-			 FROM project_members pm
-			 JOIN projects p ON p.id = pm.project_id
-			 JOIN users u ON u.id = pm.user_id AND u.org_id = p.org_id
-			 WHERE pm.project_id = $1 AND pm.user_id = $2 AND p.org_id = $3
-			   AND u.role = $4 AND u.status = 'active' AND pm.role = $5
-			 FOR SHARE OF pm, u`,
-			projectID, middleware.GetUserIDFromContext(ctx), orgID,
-			auth.RoleProjectAdmin, projectMemberAdmin,
-		).Scan(&membershipRole)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return err == nil && membershipRole == projectMemberAdmin, err
-	default:
-		return false, nil
+// syncUserCompatibilityRoleTx keeps users.role usable by version-2 JWTs and
+// older route gates without giving an old binary more authority than the
+// user's least-privileged live project membership. Current binaries authorize
+// organization_role and project_members independently.
+func syncUserCompatibilityRoleTx(ctx context.Context, tx pgx.Tx, userID int64) (compatibilityRoleTransition, error) {
+	var transition compatibilityRoleTransition
+	var organizationRole, currentRole string
+	if err := tx.QueryRow(ctx,
+		`SELECT organization_role, role FROM users WHERE id = $1 FOR UPDATE`,
+		userID,
+	).Scan(&organizationRole, &currentRole); err != nil {
+		return transition, err
 	}
+	transition.BeforeRole = currentRole
+	nextRole := currentRole
+	if organizationRole != auth.RoleMember {
+		// Preserve the legacy admin shadow until that account is explicitly
+		// edited; all other organization roles have an exact old-role value.
+		if !(currentRole == auth.RoleLegacyAdmin && organizationRole == auth.RolePlatformAdmin) {
+			nextRole = organizationRole
+		}
+	} else {
+		conservativeRole, err := projectCompatibilityRoleTx(ctx, tx, userID)
+		if err != nil {
+			return transition, err
+		}
+		nextRole = conservativeRole
+	}
+	transition.AfterRole = nextRole
+	if nextRole == currentRole {
+		return transition, nil
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE users
+		 SET role = $2, auth_epoch = auth_epoch + 1, updated_at = NOW()
+		 WHERE id = $1`,
+		userID, nextRole,
+	); err != nil {
+		return transition, err
+	}
+	tag, err := tx.Exec(ctx,
+		`UPDATE admin_sessions
+		 SET revoked_at = COALESCE(revoked_at, NOW())
+		 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()`,
+		userID,
+	)
+	if err != nil {
+		return transition, err
+	}
+	transition.RevokedSessions = tag.RowsAffected()
+	return transition, nil
+}
+
+func projectCompatibilityRoleTx(ctx context.Context, tx pgx.Tx, userID int64) (string, error) {
+	var conservativeRole string
+	err := tx.QueryRow(ctx,
+		`SELECT CASE
+		    WHEN COUNT(*) = 0 THEN 'member'
+		    WHEN bool_or(pm.role IN ('project_viewer', 'viewer')) THEN 'viewer'
+		    WHEN bool_or(pm.role IN ('project_user', 'project_developer', 'developer')) THEN 'developer'
+		    WHEN bool_and(pm.role = 'project_admin') THEN 'project_admin'
+		    ELSE 'member'
+		 END
+		 FROM project_members pm
+		 WHERE pm.user_id = $1`,
+		userID,
+	).Scan(&conservativeRole)
+	return conservativeRole, err
+}
+
+func disablePersonalCredentialsForMembershipTx(ctx context.Context, tx pgx.Tx, userID, orgID, projectID int64) (int64, error) {
+	tag, err := tx.Exec(ctx,
+		`UPDATE api_keys
+		 SET status = 'disabled', updated_at = NOW()
+		 WHERE owner_user_id = $1
+		   AND org_id = $2
+		   AND project_id = $3
+		   AND key_type = 'personal'
+		   AND status <> 'disabled'`,
+		userID, orgID, projectID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 func listUserProjectIDsTx(ctx context.Context, tx pgx.Tx, userID, orgID int64) ([]int64, error) {
@@ -113,82 +146,4 @@ func listUserProjectIDsTx(ctx context.Context, tx pgx.Tx, userID, orgID int64) (
 		return nil, err
 	}
 	return projectIDs, nil
-}
-
-func validateProjectIDsForOrgTx(ctx context.Context, tx pgx.Tx, orgID int64, projectIDs []int64) error {
-	if len(projectIDs) == 0 {
-		return nil
-	}
-	var count int
-	if err := tx.QueryRow(ctx,
-		`SELECT COUNT(*)
-		 FROM projects
-		 WHERE org_id = $1 AND id = ANY($2::bigint[])`,
-		orgID, projectIDs,
-	).Scan(&count); err != nil {
-		return err
-	}
-	if count != len(projectIDs) {
-		return errProjectOrganization
-	}
-	return nil
-}
-
-func validateProjectRoleMembership(role, status string, projectIDs []int64) error {
-	if !auth.IsProjectScopedRole(role) {
-		if len(projectIDs) > 0 {
-			return errProjectIDsNotAllowed
-		}
-		return nil
-	}
-	if status == "active" && len(projectIDs) == 0 {
-		return errProjectIDsRequired
-	}
-	return nil
-}
-
-func projectMembershipErrorResponse(err error) (int, string) {
-	switch {
-	case errors.Is(err, errProjectIDsInvalid), errors.Is(err, errProjectIDsNotAllowed):
-		return http.StatusBadRequest, err.Error()
-	case errors.Is(err, errProjectIDsRequired):
-		return http.StatusConflict, err.Error()
-	case errors.Is(err, errProjectOrganization):
-		return http.StatusForbidden, err.Error()
-	default:
-		return http.StatusInternalServerError, "Failed to update project memberships"
-	}
-}
-
-func replaceUserProjectMembershipsTx(ctx context.Context, tx pgx.Tx, userID, orgID int64, userRole string, projectIDs []int64) error {
-	membershipRole, projectRole := projectMemberRoleForUserRole(userRole)
-	if !projectRole {
-		if _, err := tx.Exec(ctx, `DELETE FROM project_members WHERE user_id = $1`, userID); err != nil {
-			return fmt.Errorf("%w: %v", errProjectMembershipUpdate, err)
-		}
-		return nil
-	}
-
-	if _, err := tx.Exec(ctx,
-		`DELETE FROM project_members
-		 WHERE user_id = $1
-		   AND NOT (project_id = ANY($2::bigint[]))`,
-		userID, projectIDs,
-	); err != nil {
-		return fmt.Errorf("%w: %v", errProjectMembershipUpdate, err)
-	}
-	if len(projectIDs) == 0 {
-		return nil
-	}
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO project_members (project_id, user_id, role, created_at, updated_at)
-		 SELECT project_id, $2, $3, NOW(), NOW()
-		 FROM unnest($1::bigint[]) AS project_id
-		 ON CONFLICT (project_id, user_id) DO UPDATE
-		 SET role = EXCLUDED.role, updated_at = NOW()`,
-		projectIDs, userID, membershipRole,
-	); err != nil {
-		return fmt.Errorf("%w: %v", errProjectMembershipUpdate, err)
-	}
-	return nil
 }

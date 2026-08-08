@@ -141,6 +141,53 @@ func TestRunCLI_AdminCreateRejectsInvalidUTF8PasswordBeforeDatabaseAccess(t *tes
 	}
 }
 
+func TestAdminCreateRoleNormalizationRejectsProjectRoles(t *testing.T) {
+	for _, test := range []struct {
+		input                 string
+		wantOrganizationRole  string
+		wantCompatibilityRole string
+	}{
+		{input: auth.RoleLegacyAdmin, wantOrganizationRole: auth.RolePlatformAdmin, wantCompatibilityRole: auth.RoleLegacyAdmin},
+		{input: auth.RolePlatformAdmin, wantOrganizationRole: auth.RolePlatformAdmin, wantCompatibilityRole: auth.RolePlatformAdmin},
+		{input: auth.RoleOrgAdmin, wantOrganizationRole: auth.RoleOrgAdmin, wantCompatibilityRole: auth.RoleOrgAdmin},
+		{input: auth.RoleBillingAdmin, wantOrganizationRole: auth.RoleBillingAdmin, wantCompatibilityRole: auth.RoleBillingAdmin},
+		{input: auth.RoleOrgViewer, wantOrganizationRole: auth.RoleOrgViewer, wantCompatibilityRole: auth.RoleOrgViewer},
+		{input: auth.RoleMember, wantOrganizationRole: auth.RoleMember, wantCompatibilityRole: auth.RoleMember},
+	} {
+		organizationRole, compatibilityRole, err := normalizeAdminCreateRoles(test.input)
+		if err != nil {
+			t.Fatalf("normalizeAdminCreateRoles(%q): %v", test.input, err)
+		}
+		if organizationRole != test.wantOrganizationRole || compatibilityRole != test.wantCompatibilityRole {
+			t.Fatalf("normalizeAdminCreateRoles(%q) = %q/%q, want %q/%q", test.input, organizationRole, compatibilityRole, test.wantOrganizationRole, test.wantCompatibilityRole)
+		}
+	}
+
+	for _, role := range []string{
+		auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer,
+		auth.ProjectRoleUser, auth.ProjectRoleViewer, auth.LegacyProjectRoleDeveloper,
+		"unknown_role",
+	} {
+		if _, _, err := normalizeAdminCreateRoles(role); err == nil {
+			t.Fatalf("project/unknown role %q must not be accepted by admin create", role)
+		}
+	}
+}
+
+func TestRunCLIAdminCreateRejectsProjectRoleBeforePasswordOrDatabase(t *testing.T) {
+	input := nonTerminalAdminPasswordInput("must-not-be-read\n")
+	input.stdin = errorReader{err: errors.New("password reader must not be reached")}
+	handled, err := runCLIWithAdminPasswordInput(context.Background(), []string{
+		"admin", "create", "--username", "operator", "--role", auth.RoleProjectAdmin, "--password-stdin",
+	}, &config.Config{}, input)
+	if !handled {
+		t.Fatal("expected admin CLI to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "invalid --role") {
+		t.Fatalf("expected project role rejection before password/database work, got %v", err)
+	}
+}
+
 func TestReadAdminPasswordLinePreservesPasswordCharacters(t *testing.T) {
 	for _, tt := range []struct {
 		name  string

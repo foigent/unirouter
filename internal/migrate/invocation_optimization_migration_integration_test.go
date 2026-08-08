@@ -16,7 +16,10 @@ import (
 func TestInvocationOptimizationMigrationSafetyAndRollbackGuards(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	rollbackEmptyMigrations(t, pool, []string{"000057_second_integration_reset_support.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{
+		"000058_enterprise_project_role_separation.down.sql",
+		"000057_second_integration_reset_support.down.sql",
+	})
 
 	var tables, columns, ledger int
 	require.NoError(t, pool.QueryRow(ctx, `

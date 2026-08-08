@@ -63,7 +63,7 @@ type globalSettingAuditSnapshot struct {
 }
 
 func requirePlatformGlobalControl(w http.ResponseWriter, r *http.Request) bool {
-	if auth.IsPlatformAdmin(actorRole(r.Context())) {
+	if auth.IsPlatformAdmin(actorOrganizationRole(r.Context())) {
 		return true
 	}
 	writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})

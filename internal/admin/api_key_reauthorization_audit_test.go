@@ -118,6 +118,44 @@ func TestUpdateAPIKeyReauthorizesActorAtCommit(t *testing.T) {
 	}
 }
 
+func TestDisableAPIKeyReauthorizesActorAtCommit(t *testing.T) {
+	state := newAPIKeySecurityTestState()
+	state.actorMembership = false
+	h := newAPIKeySecurityTestHandler(state)
+	recorder := httptest.NewRecorder()
+	req := apiKeySecurityRequest(http.MethodPost, "/api/v1/keys/42/disable", "", auth.RoleProjectAdmin)
+	req.SetPathValue("id", "42")
+
+	h.DisableAPIKey(recorder, req)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("stale authorization must not disable a key, got status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if state.keyMutated || state.committed || !state.rolledBack {
+		t.Fatalf("stale disable must roll back before mutation: %+v", state)
+	}
+	if state.auditAttempted {
+		t.Fatal("rejected stale disable must not write an audit entry")
+	}
+}
+
+func TestDisableAPIKeyReauthorizationAllowsAuthorizedControl(t *testing.T) {
+	state := newAPIKeySecurityTestState()
+	h := newAPIKeySecurityTestHandler(state)
+	recorder := httptest.NewRecorder()
+	req := apiKeySecurityRequest(http.MethodPost, "/api/v1/keys/42/disable", "", auth.RoleProjectAdmin)
+	req.SetPathValue("id", "42")
+
+	h.DisableAPIKey(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("currently authorized actor must still disable a key, got status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !state.actorLock || !state.keyMutated || !state.auditAttempted || !state.committed || state.rolledBack {
+		t.Fatalf("authorized disable must reauthorize, mutate, audit, and commit: %+v", state)
+	}
+}
+
 func TestUpdateAPIKeyAuditRetainsRedactedBeforeAfter(t *testing.T) {
 	state := newAPIKeySecurityTestState()
 	state.actorRole = auth.RoleOrgAdmin
@@ -133,7 +171,7 @@ func TestUpdateAPIKeyAuditRetainsRedactedBeforeAfter(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("authorized update must remain available, got status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if !state.actorLock || !state.keyMutated || !state.auditAttempted || !state.committed {
+	if !state.actorLock || !state.keyMutated || !state.auditAttempted || !state.committed || state.rolledBack {
 		t.Fatalf("authorized update must reauthorize, mutate, audit, and commit: %+v", state)
 	}
 	var before, after map[string]any
@@ -271,9 +309,13 @@ func assertAPIKeyAuditValue(t *testing.T, state map[string]any, field string, wa
 
 func apiKeySecurityRequest(method, target, body, role string) *http.Request {
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	organizationRole, _ := auth.NormalizeOrganizationRole(role)
 	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(7))
 	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	ctx = context.WithValue(ctx, middleware.CtxUserRole, role)
+	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, organizationRole)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("api-key-security-session-hash"))
 	ctx = context.WithValue(ctx, middleware.CtxRequestID, "api-key-security-test")
 	return req.WithContext(ctx)
 }
@@ -339,13 +381,31 @@ func newAPIKeySecurityTestHandler(state *apiKeySecurityTestState) *Handler {
 					*dest[0].(*int64) = 42
 					return nil
 				case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
+					organizationRole, _ := auth.NormalizeOrganizationRole(state.actorRole)
 					*dest[0].(*int64) = state.actorOrgID
-					*dest[1].(*string) = state.actorRole
-					*dest[2].(*string) = state.actorStatus
-					*dest[3].(*string) = state.actorOrgStatus
+					*dest[1].(*string) = organizationRole
+					*dest[2].(*string) = state.actorRole
+					*dest[3].(*string) = state.actorStatus
+					*dest[4].(*int64) = 0
+					*dest[5].(*string) = state.actorOrgStatus
+					return nil
+				case strings.Contains(sql, "FROM admin_sessions"):
+					*dest[0].(*int64) = 101
 					return nil
 				case strings.Contains(sql, "FROM orgs"):
 					*dest[0].(*string) = state.actorOrgStatus
+					return nil
+				case strings.Contains(sql, "FROM projects p") && len(dest) == 3:
+					if !state.actorMembership {
+						return pgx.ErrNoRows
+					}
+					*dest[0].(*int64) = state.actorOrgID
+					*dest[1].(*string) = "active"
+					*dest[2].(*string) = projectMemberAdmin
+					return nil
+				case strings.Contains(sql, "FROM projects p") && len(dest) == 2:
+					*dest[0].(*int64) = state.actorOrgID
+					*dest[1].(*string) = "active"
 					return nil
 				case strings.Contains(sql, "FROM projects"):
 					*dest[0].(*string) = "active"
@@ -370,7 +430,7 @@ func newAPIKeySecurityTestHandler(state *apiKeySecurityTestState) *Handler {
 					return nil
 				case strings.Contains(sql, "FROM api_keys"):
 					lowerSQL := strings.ToLower(sql)
-					if strings.Contains(lowerSQL, "key_hash") || strings.Contains(lowerSQL, "key_prefix") {
+					if len(dest) == 12 && (strings.Contains(lowerSQL, "key_hash") || strings.Contains(lowerSQL, "key_prefix")) {
 						return errors.New("audit state query selected credential material")
 					}
 					return scanAPIKeySecurityRow(dest, state.keyState)
@@ -432,6 +492,9 @@ func newAPIKeySecurityTestHandler(state *apiKeySecurityTestState) *Handler {
 			return nil
 		},
 		RollbackFn: func(context.Context) error {
+			if state.committed {
+				return nil
+			}
 			state.rolledBack = true
 			return nil
 		},
@@ -484,6 +547,26 @@ func scanAPIKeySecurityRow(dest []any, row apiKeySecurityRow) error {
 		*dest[4].(*string) = row.purpose
 		*dest[5].(*string) = row.allowedIPs
 		*dest[6].(*string) = row.allowedModels
+		return nil
+	}
+	if len(dest) == 8 {
+		*dest[0].(*int64) = row.orgID
+		*dest[1].(*int64) = row.projectID
+		*dest[2].(*int64) = row.ownerUserID
+		*dest[3].(*string) = row.name
+		*dest[4].(*string) = "ur-prefix"
+		*dest[5].(*string) = row.status
+		*dest[6].(*string) = row.purpose
+		*dest[7].(*string) = row.keyType
+		return nil
+	}
+	if len(dest) == 6 {
+		*dest[0].(*int64) = row.orgID
+		*dest[1].(*int64) = row.projectID
+		*dest[2].(*int64) = row.ownerUserID
+		*dest[3].(*string) = row.name
+		*dest[4].(*string) = "ur-prefix"
+		*dest[5].(*string) = row.status
 		return nil
 	}
 	if len(dest) != 12 {

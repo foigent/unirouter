@@ -97,7 +97,7 @@ func (h *HTTPHandler) Content(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) AdminList(w http.ResponseWriter, r *http.Request) {
-	scope, err := h.resolveAdminScope(r)
+	scope, err := h.resolveAdminScope(r, adminScopeRead)
 	if err != nil {
 		writeMediaError(w, err)
 		return
@@ -126,7 +126,7 @@ func (h *HTTPHandler) AdminList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) AdminGet(w http.ResponseWriter, r *http.Request) {
-	scope, err := h.resolveAdminScope(r)
+	scope, err := h.resolveAdminScope(r, adminScopeRead)
 	if err != nil {
 		writeMediaError(w, err)
 		return
@@ -140,7 +140,7 @@ func (h *HTTPHandler) AdminGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) AdminCancel(w http.ResponseWriter, r *http.Request) {
-	scope, err := h.resolveAdminScope(r)
+	scope, err := h.resolveAdminScope(r, adminScopeWrite)
 	if err != nil {
 		writeMediaError(w, err)
 		return
@@ -154,7 +154,7 @@ func (h *HTTPHandler) AdminCancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) AdminContent(w http.ResponseWriter, r *http.Request) {
-	scope, err := h.resolveAdminScope(r)
+	scope, err := h.resolveAdminScope(r, adminScopeRead)
 	if err != nil {
 		writeMediaError(w, err)
 		return
@@ -163,7 +163,7 @@ func (h *HTTPHandler) AdminContent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) Contract(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.resolveAdminScope(r); err != nil {
+	if _, err := h.resolveAdminScope(r, adminScopeRead); err != nil {
 		writeMediaError(w, err)
 		return
 	}
@@ -213,10 +213,20 @@ func publicScope(r *http.Request) (Scope, error) {
 	return scope, nil
 }
 
-func (h *HTTPHandler) resolveAdminScope(r *http.Request) (Scope, error) {
-	role := middleware.GetUserRoleFromContext(r.Context())
+type adminScopeMode uint8
+
+const (
+	adminScopeRead adminScopeMode = iota
+	adminScopeWrite
+)
+
+func (h *HTTPHandler) resolveAdminScope(r *http.Request, mode adminScopeMode) (Scope, error) {
+	organizationRole := middleware.GetOrganizationRoleFromContext(r.Context())
+	if organizationRole == "" {
+		organizationRole, _ = auth.NormalizeOrganizationRole(middleware.GetUserRoleFromContext(r.Context()))
+	}
 	orgID := middleware.GetOrgIDFromContext(r.Context())
-	if role == auth.RolePlatformAdmin {
+	if organizationRole == auth.RolePlatformAdmin {
 		if raw := r.URL.Query().Get("org_id"); raw != "" {
 			value, err := strconv.ParseInt(raw, 10, 64)
 			if err != nil || value <= 0 {
@@ -231,7 +241,31 @@ func (h *HTTPHandler) resolveAdminScope(r *http.Request) (Scope, error) {
 	}
 	userID := middleware.GetUserIDFromContext(r.Context())
 	var allowed bool
-	if auth.IsProjectScopedRole(role) {
+	if organizationRole == auth.RolePlatformAdmin || organizationRole == auth.RoleOrgAdmin {
+		err = h.db.QueryRow(r.Context(), `
+			SELECT EXISTS (
+			    SELECT 1 FROM projects
+			     WHERE id=$1 AND org_id=$2 AND status='active'
+			)`,
+			projectID, orgID,
+		).Scan(&allowed)
+	} else {
+		roles := []string{
+			auth.ProjectRoleAdmin,
+			auth.ProjectRoleUser,
+			auth.ProjectRoleViewer,
+			auth.LegacyProjectRoleDeveloper,
+			auth.RoleDeveloper,
+			auth.RoleViewer,
+		}
+		if mode == adminScopeWrite {
+			roles = []string{
+				auth.ProjectRoleAdmin,
+				auth.ProjectRoleUser,
+				auth.LegacyProjectRoleDeveloper,
+				auth.RoleDeveloper,
+			}
+		}
 		err = h.db.QueryRow(r.Context(), `
 			SELECT EXISTS (
 			    SELECT 1
@@ -240,16 +274,9 @@ func (h *HTTPHandler) resolveAdminScope(r *http.Request) (Scope, error) {
 			      JOIN users u ON u.id=pm.user_id AND u.org_id=p.org_id
 			     WHERE p.id=$1 AND p.org_id=$2 AND p.status='active'
 			       AND pm.user_id=$3 AND u.status='active'
+			       AND pm.role = ANY($4::text[])
 			)`,
-			projectID, orgID, userID,
-		).Scan(&allowed)
-	} else {
-		err = h.db.QueryRow(r.Context(), `
-			SELECT EXISTS (
-			    SELECT 1 FROM projects
-			     WHERE id=$1 AND org_id=$2 AND status='active'
-			)`,
-			projectID, orgID,
+			projectID, orgID, userID, roles,
 		).Scan(&allowed)
 	}
 	if err != nil {

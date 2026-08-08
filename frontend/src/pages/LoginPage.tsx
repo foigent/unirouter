@@ -4,7 +4,7 @@ import { Form, Button, Typography, Tag } from '@douyinfe/semi-ui';
 import { IconBolt, IconHistogram, IconShield, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
-import { getDefaultPathForRole } from '../navigation';
+import { authzContextForUser, getDefaultPathForAuthz } from '../navigation';
 import { PasswordField } from '../ui';
 
 const { Title, Text } = Typography;
@@ -47,7 +47,7 @@ export default function LoginPage() {
     setError('');
     try {
       const user = await login(values.username, values.password);
-      navigate(getDefaultPathForRole(user.role));
+      navigate(getDefaultPathForAuthz(authzContextForUser(user)));
     } catch (e: any) {
       setError(e.message || '登录失败');
     } finally {

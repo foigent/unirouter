@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, Input, Select, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconCoinMoney, IconDownload, IconRefresh, IconSearch, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { isPlatformAdminRole } from '../navigation';
+import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
 import { keyTypeOptions, requestStatusOptions, usageAnalyticsGroupOptions, usageScopeOptions, usageSourceOptions } from '../utils/displayLabels';
@@ -50,7 +50,7 @@ function retentionLabel(value?: string) {
 
 export default function UsageAnalyticsPage() {
   const user = useAuthStore((state) => state.user);
-  const platform = isPlatformAdminRole(user?.role);
+  const platform = isPlatformAdminRole(organizationRoleForUser(user));
   const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
   const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
   const [rows, setRows] = useState<AnalyticsRow[]>([]);

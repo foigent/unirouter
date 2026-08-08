@@ -174,6 +174,16 @@ func (h *Handler) transitionNotificationEvent(w http.ResponseWriter, r *http.Req
 		return
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, notificationMutationRequirement(
+		event.OrgID, event.ProjectID, true,
+	)); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Notification authorization failed"})
+		}
+		return
+	}
 
 	tag, err := tx.Exec(r.Context(),
 		`UPDATE notification_events
@@ -427,6 +437,16 @@ func (h *Handler) CreateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, notificationMutationRequirement(
+		req.OrgID, req.ProjectID, false,
+	)); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Webhook authorization failed"})
+		}
+		return
+	}
 
 	var id int64
 	err = tx.QueryRow(r.Context(),
@@ -466,20 +486,35 @@ type notificationWebhookRecord struct {
 
 func (h *Handler) notificationWebhookForActorWithDB(ctx context.Context, querier internaldb.DBQuerier, id int64, lock bool) (notificationWebhookRecord, int) {
 	var record notificationWebhookRecord
-	query := `SELECT org_id, COALESCE(project_id, 0), name, url, event_types, enabled, scope_verified,
-		        scope_quarantine_previous_enabled, updated_at
-		 FROM notification_webhooks
-		 WHERE id = $1`
+	query := `SELECT webhook.org_id, COALESCE(webhook.project_id, 0), webhook.name, webhook.url,
+		        webhook.event_types, webhook.enabled, webhook.scope_verified,
+			        scope_quarantine_previous_enabled, updated_at
+			 FROM notification_webhooks webhook
+			 WHERE webhook.id = $1`
 	args := []interface{}{id}
-	if actorOrgID, constrained := actorOrgConstraint(ctx); constrained {
+	if !isUnauthenticatedUnitContext(ctx) && actorOrganizationRole(ctx) != auth.RolePlatformAdmin {
+		actorOrgID := middleware.GetOrgIDFromContext(ctx)
 		if actorOrgID <= 0 {
-			return record, http.StatusForbidden
+			return record, http.StatusNotFound
 		}
-		query += " AND org_id = $2"
+		query += " AND webhook.org_id = $2"
 		args = append(args, actorOrgID)
+		if actorOrganizationRole(ctx) != auth.RoleOrgAdmin {
+			actorUserID := middleware.GetUserIDFromContext(ctx)
+			if actorUserID <= 0 {
+				return record, http.StatusNotFound
+			}
+			query += ` AND webhook.project_id IS NOT NULL
+				AND EXISTS (
+					SELECT 1 FROM project_members pm
+					 WHERE pm.project_id=webhook.project_id AND pm.user_id=$3
+					   AND pm.role=ANY($4::text[])
+				)`
+			args = append(args, actorUserID, projectMembershipStorageValues([]string{projectMemberAdmin}))
+		}
 	}
 	if lock {
-		query += " FOR UPDATE"
+		query += " FOR UPDATE OF webhook"
 	}
 	err := querier.QueryRow(ctx, query, args...).Scan(
 		&record.OrgID,
@@ -532,12 +567,29 @@ func (h *Handler) UpdateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	preflight, status := h.notificationWebhookForActorWithDB(r.Context(), h.db, id, false)
+	if status != 0 {
+		writeNotificationWebhookLookupError(w, status)
+		return
+	}
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to start webhook update"})
 		return
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, notificationMutationRequirement(
+		preflight.OrgID, preflight.ProjectID, false,
+	)); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		} else if errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Webhook not found"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Webhook authorization failed"})
+		}
+		return
+	}
 
 	existing, status := h.notificationWebhookForActorWithDB(r.Context(), tx, id, true)
 	if status != 0 {
@@ -659,12 +711,29 @@ func (h *Handler) VerifyNotificationWebhookScope(w http.ResponseWriter, r *http.
 		return
 	}
 
+	preflight, status := h.notificationWebhookForActorWithDB(r.Context(), h.db, id, false)
+	if status != 0 {
+		writeNotificationWebhookLookupError(w, status)
+		return
+	}
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to start webhook verification"})
 		return
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, notificationMutationRequirement(
+		preflight.OrgID, preflight.ProjectID, false,
+	)); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		} else if errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Webhook not found"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Webhook authorization failed"})
+		}
+		return
+	}
 
 	existing, status := h.notificationWebhookForActorWithDB(r.Context(), tx, id, true)
 	if status != 0 {
@@ -731,6 +800,24 @@ func (h *Handler) VerifyNotificationWebhookScope(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Webhook scope verified", "scope_verified": true})
 }
 
+func notificationMutationRequirement(orgID, projectID int64, allowBilling bool) committingActorRequirement {
+	organizationRoles := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin}
+	if allowBilling {
+		organizationRoles = append(organizationRoles, auth.RoleBillingAdmin)
+	}
+	requirement := committingActorRequirement{
+		TargetOrgID:              orgID,
+		AllowedOrganizationRoles: organizationRoles,
+	}
+	if projectID > 0 {
+		requirement.Project = &committingActorProjectRequirement{
+			ProjectID:    projectID,
+			AllowedRoles: []string{projectMemberAdmin},
+		}
+	}
+	return requirement
+}
+
 func (h *Handler) notificationEventConditions(w http.ResponseWriter, r *http.Request) ([]string, []interface{}, int, bool) {
 	conditions, args, argIdx, ok := h.notificationProjectScopedConditions(w, r, "org_id", "project_id")
 	if !ok {
@@ -748,7 +835,7 @@ func (h *Handler) notificationDeliveryConditions(w http.ResponseWriter, r *http.
 }
 
 func appendBillingNotificationEventScope(ctx context.Context, eventTypeColumn string, conditions []string, args []interface{}, argIdx int) ([]string, []interface{}, int, bool) {
-	if actorRole(ctx) != auth.RoleBillingAdmin {
+	if actorOrganizationRole(ctx) != auth.RoleBillingAdmin {
 		return conditions, args, argIdx, true
 	}
 	conditions = append(conditions, fmt.Sprintf("%s = ANY($%d::text[])", eventTypeColumn, argIdx))
@@ -757,7 +844,7 @@ func appendBillingNotificationEventScope(ctx context.Context, eventTypeColumn st
 }
 
 func rejectBillingNotificationWebhookAccess(w http.ResponseWriter, r *http.Request) bool {
-	if !isUnauthenticatedUnitContext(r.Context()) && actorRole(r.Context()) == auth.RoleBillingAdmin {
+	if !isUnauthenticatedUnitContext(r.Context()) && actorOrganizationRole(r.Context()) == auth.RoleBillingAdmin {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return true
 	}
@@ -769,7 +856,7 @@ func (h *Handler) notificationWebhookConditions(w http.ResponseWriter, r *http.R
 	if !ok {
 		return nil, nil, 0, false
 	}
-	if requireWritable && auth.IsProjectScopedRole(actorRole(r.Context())) {
+	if requireWritable && !auth.RoleIn(actorOrganizationRole(r.Context()), auth.RolePlatformAdmin, auth.RoleOrgAdmin) {
 		projectID, valid := projectIDFromQuery(r)
 		if !valid {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
@@ -820,13 +907,23 @@ func (h *Handler) notificationProjectScopedConditions(w http.ResponseWriter, r *
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid project_id"})
 		return nil, nil, 0, false
 	}
-	if auth.IsProjectScopedRole(actorRole(r.Context())) {
-		if projectID <= 0 || !h.canReadProjectUsage(r.Context(), projectID) {
+	organizationRole := actorOrganizationRole(r.Context())
+	hasOrganizationRead := auth.RoleIn(organizationRole, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin)
+	if !isUnauthenticatedUnitContext(r.Context()) && !hasOrganizationRead {
+		if projectID <= 0 || !h.canReadNotificationProject(r.Context(), projectID) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "project_id is required"})
 			return nil, nil, 0, false
 		}
 	}
 	if projectID > 0 {
+		canRead := h.canReadNotificationProject(r.Context(), projectID)
+		if hasOrganizationRead {
+			canRead = h.canReadProjectUsage(r.Context(), projectID)
+		}
+		if !isUnauthenticatedUnitContext(r.Context()) && !canRead {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return nil, nil, 0, false
+		}
 		conditions = append(conditions, fmt.Sprintf("%s = $%d", projectColumn, argIdx))
 		args = append(args, projectID)
 		argIdx++
@@ -837,6 +934,15 @@ func (h *Handler) notificationProjectScopedConditions(w http.ResponseWriter, r *
 	return conditions, args, argIdx, true
 }
 
+func (h *Handler) canReadNotificationProject(ctx context.Context, projectID int64) bool {
+	if isUnauthenticatedUnitContext(ctx) {
+		return true
+	}
+	return h.hasProjectMembership(ctx, projectID,
+		projectMemberAdmin, projectMemberUser, projectMemberViewer,
+		projectMemberLegacyDeveloper, auth.RoleDeveloper, auth.RoleViewer)
+}
+
 func (h *Handler) canWriteNotificationWebhook(r *http.Request, orgID, projectID int64) bool {
 	if isUnauthenticatedUnitContext(r.Context()) {
 		return true
@@ -845,14 +951,14 @@ func (h *Handler) canWriteNotificationWebhook(r *http.Request, orgID, projectID 
 		return false
 	}
 
-	role := actorRole(r.Context())
+	role := actorOrganizationRole(r.Context())
 	if projectID > 0 && !h.projectBelongsToOrg(r.Context(), projectID, orgID) {
 		return false
 	}
-	if auth.IsProjectScopedRole(role) {
-		return projectID > 0 && h.canWriteProject(r.Context(), projectID)
+	if role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin {
+		return true
 	}
-	return role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin
+	return projectID > 0 && h.canWriteProject(r.Context(), projectID)
 }
 
 func (h *Handler) canWriteNotificationEvent(r *http.Request, orgID, projectID int64) bool {
@@ -862,15 +968,15 @@ func (h *Handler) canWriteNotificationEvent(r *http.Request, orgID, projectID in
 	if !actorCanAccessOrg(r.Context(), orgID) {
 		return false
 	}
-	role := actorRole(r.Context())
+	role := actorOrganizationRole(r.Context())
 	if projectID > 0 && !h.projectBelongsToOrg(r.Context(), projectID, orgID) {
 		return false
 	}
-	if auth.IsProjectScopedRole(role) {
-		requestedProjectID, valid := projectIDFromQuery(r)
-		return valid && projectID > 0 && requestedProjectID == projectID && h.canWriteProject(r.Context(), projectID)
+	if role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin || role == auth.RoleBillingAdmin {
+		return true
 	}
-	return role == auth.RolePlatformAdmin || role == auth.RoleOrgAdmin || role == auth.RoleBillingAdmin
+	requestedProjectID, valid := projectIDFromQuery(r)
+	return valid && projectID > 0 && requestedProjectID == projectID && h.canWriteProject(r.Context(), projectID)
 }
 
 func projectIDFromQuery(r *http.Request) (int64, bool) {

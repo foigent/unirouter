@@ -7,7 +7,7 @@ import { EmptyState, MetricTile, MoneyText, PagedTable, PageHeader, Surface, for
 import { formatDateTime } from '../utils/formatDate';
 import { GrantCreditsPanel } from './GrantsPage';
 import { loadAllPages } from '../utils/loadAllPages';
-import { isBillingRole, isPlatformAdminRole } from '../navigation';
+import { isBillingRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import ProjectBudgetPanel from './ProjectBudgetPanel';
 import { EnterpriseBudgetWorkspace } from './EnterpriseFinanceWorkspaces';
@@ -143,9 +143,10 @@ function createWalletOperationID(type: 'recharge' | 'adjust') {
 }
 
 export default function WalletPage() {
-  const role = useAuthStore(state => state.user?.role);
-  const canManageProjectBudgets = isBillingRole(role);
-	const canManageEnterpriseFinance = isBillingRole(role) || isPlatformAdminRole(role);
+  const user = useAuthStore(state => state.user);
+  const organizationRole = organizationRoleForUser(user);
+  const canManageProjectBudgets = isBillingRole(organizationRole);
+	const canManageEnterpriseFinance = isBillingRole(organizationRole) || isPlatformAdminRole(organizationRole);
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');

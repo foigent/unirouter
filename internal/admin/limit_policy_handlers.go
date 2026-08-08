@@ -227,7 +227,7 @@ func (h *Handler) UpdateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Policy not found"})
 		return
 	}
-	if current.OrgID == nil && !auth.IsPlatformAdmin(actorRole(r.Context())) {
+	if current.OrgID == nil && !auth.IsPlatformAdmin(actorOrganizationRole(r.Context())) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
@@ -380,7 +380,7 @@ func (h *Handler) normalizeAndAuthorizeLimitPolicy(ctx context.Context, record *
 		return fmt.Errorf("at least one positive RPM, RPS, TPM, or concurrency limit is required")
 	}
 
-	role := actorRole(ctx)
+	role := actorOrganizationRole(ctx)
 	if !auth.IsPlatformAdmin(role) {
 		actorOrgID := middleware.GetOrgIDFromContext(ctx)
 		if !auth.IsOrgAdmin(role) || actorOrgID <= 0 {

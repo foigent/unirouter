@@ -17,12 +17,16 @@ import {
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import {
+  authzContextForUser,
   canCreateProjectKey,
   canDisableProjectKey,
+  canInvokeProject,
+  canonicalProjectMembershipRole,
   hasLicensedFeature,
-  isProjectAdminRole,
+  isOrgAdminRole,
+  isProjectAdminMembership,
   licenseRestrictionMessage,
-  normalizeRole,
+  organizationRoleForUser,
 } from '../navigation';
 import { EmptyState, MetricTile, MoneyText, PageHeader, parseMicros, StatusTag, Surface } from '../ui';
 import { roleLabel as formatRoleLabel } from '../utils/displayLabels';
@@ -41,6 +45,7 @@ interface Project {
   budget_cents?: number;
   budget_period?: string;
   key_count?: number;
+  current_user_membership_role?: string;
 }
 
 interface ApiKey {
@@ -157,10 +162,10 @@ function fallbackCopyText(text: string) {
 
 export default function DeveloperConsolePage() {
   const navigate = useNavigate();
-  const role = useAuthStore((s) => s.user?.role);
+  const user = useAuthStore((s) => s.user);
+  const organizationRole = organizationRoleForUser(user);
   const currentUserID = useAuthStore((s) => s.user?.id);
   const licenseAccess = useAuthStore((s) => s.user?.license_access);
-  const roleLabel = formatRoleLabel(role, '项目成员');
   const gatewayLicensed = hasLicensedFeature(licenseAccess, 'gateway');
   const modelGovernanceLicensed = hasLicensedFeature(licenseAccess, 'model_governance');
   const notificationsLicensed = hasLicensedFeature(licenseAccess, 'notifications');
@@ -173,27 +178,6 @@ export default function DeveloperConsolePage() {
   const notificationsRestriction = licenseAccess && !notificationsLicensed
     ? licenseRestrictionMessage(licenseAccess, 'notifications')
     : '';
-  const mayCreateKey = canCreateProjectKey(role);
-  const mayDisableKey = canDisableProjectKey(role);
-  const developerOwnKeyOnly = normalizeRole(role) === 'developer';
-  const mayRunPlayground = normalizeRole(role) !== 'viewer';
-  const keySurfaceDescription = !gatewayLicensed
-    ? `${gatewayRestriction} 仍可管理凭证，但模型调用会被后端拒绝。`
-    : mayCreateKey
-      ? '创建后只显示一次完整凭证；列表仅显示前缀。'
-      : '只读查看当前项目的凭证前缀和使用范围；创建或停用请联系项目管理员。';
-  const emptyKeyDescription = mayCreateKey
-    ? '创建项目凭证后即可从内部应用调用网关。'
-    : '当前项目暂无可见凭证；如需调用权限，请联系项目管理员。';
-  const workbenchDescription = normalizeRole(role) === 'viewer'
-    ? '查看当前项目的个人用量、已批准模型和最近调用，并按 Request ID 排查请求。'
-    : isProjectAdminRole(role)
-      ? '创建和停用项目访问凭证、查看已批准模型、调试调用并排查当前项目请求。'
-      : '创建项目访问凭证、停用本人拥有的凭证、查看已批准模型、调试调用并排查当前项目请求。';
-  const noProjectDescription = normalizeRole(role) === 'viewer'
-    ? '请联系组织管理员把你的账号加入项目成员后查看用量和已批准模型。'
-    : '请联系组织管理员把你的账号加入项目成员后再创建项目 Key 和查看用量。';
-
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number>();
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -236,6 +220,28 @@ export default function DeveloperConsolePage() {
   const projectDataRequestVersion = useRef(0);
 
   const selectedProject = projects.find(project => project.id === selectedProjectId);
+  const selectedProjectMembershipRole = canonicalProjectMembershipRole(selectedProject?.current_user_membership_role);
+  const selectedProjectAuthz = authzContextForUser(user, selectedProjectMembershipRole, true);
+  const projectRoleLabel = formatRoleLabel(selectedProjectMembershipRole || organizationRole, '未分配项目角色');
+  const mayCreateKey = canCreateProjectKey(selectedProjectAuthz);
+  const mayDisableKey = canDisableProjectKey(selectedProjectAuthz);
+  const developerOwnKeyOnly = selectedProjectMembershipRole === 'project_user';
+  const mayRunPlayground = canInvokeProject(selectedProjectAuthz);
+  const projectReadOnly = selectedProjectMembershipRole === 'project_viewer';
+  const keySurfaceDescription = !gatewayLicensed
+    ? `${gatewayRestriction} 仍可管理凭证，但模型调用会被后端拒绝。`
+    : mayCreateKey
+      ? '创建后只显示一次完整凭证；列表仅显示前缀。'
+      : '只读查看当前项目的凭证前缀和使用范围；创建或停用请联系项目管理员。';
+  const emptyKeyDescription = mayCreateKey
+    ? '创建项目凭证后即可从内部应用调用网关。'
+    : '当前项目暂无可见凭证；如需调用权限，请联系项目管理员。';
+  const workbenchDescription = projectReadOnly
+    ? '查看当前项目的个人用量、已批准模型和最近调用，并按 Request ID 排查请求。'
+    : isProjectAdminMembership(selectedProjectMembershipRole)
+      ? '创建和停用项目访问凭证、查看已批准模型、调试调用并排查当前项目请求。'
+      : '创建项目访问凭证、停用本人拥有的凭证、查看已批准模型、调试调用并排查当前项目请求。';
+  const noProjectDescription = '请联系组织管理员或项目管理员把你的账号加入项目后，再使用项目工作台。';
 
   const modelOptions = useMemo(() => {
     const aliases = new Set<string>();
@@ -300,10 +306,13 @@ export default function DeveloperConsolePage() {
       const items = await loadAllPages<Project>((page, pageSize) => (
         api.getProjects(page, pageSize, { status: 'active' })
       ));
-      setProjects(items);
+      const workspaceProjects = isOrgAdminRole(organizationRole)
+        ? items
+        : items.filter(project => canonicalProjectMembershipRole(project.current_user_membership_role));
+      setProjects(workspaceProjects);
       setSelectedProjectId(current => {
-        if (current && items.some(project => project.id === current)) return current;
-        return items[0]?.id;
+        if (current && workspaceProjects.some(project => project.id === current)) return current;
+        return workspaceProjects[0]?.id;
       });
     } catch (err: any) {
       projectDataRequestVersion.current += 1;
@@ -315,7 +324,7 @@ export default function DeveloperConsolePage() {
     } finally {
       setInitialLoading(false);
     }
-  }, [clearProjectData]);
+  }, [clearProjectData, organizationRole]);
 
   const loadProjectData = useCallback(async () => {
     if (!selectedProjectId) {
@@ -711,7 +720,7 @@ export default function DeveloperConsolePage() {
               style={{ width: 280 }}
               aria-label="选择项目"
             />
-            {isProjectAdminRole(role) && selectedProjectId && (
+            {(isOrgAdminRole(organizationRole) || isProjectAdminMembership(selectedProjectMembershipRole)) && selectedProjectId && (
               <Tooltip content={notificationsLicensed ? '打开当前项目通知' : notificationsRestriction}>
                 <span>
                   <Button
@@ -737,7 +746,7 @@ export default function DeveloperConsolePage() {
           <Text type="tertiary">/{selectedProject?.slug}</Text>
         </div>
         <StatusTag status={selectedProject?.status || 'active'}>{selectedProject?.status || 'active'}</StatusTag>
-        <StatusTag status={roleLabel}>{roleLabel}</StatusTag>
+        <StatusTag status={projectRoleLabel}>{projectRoleLabel}</StatusTag>
         <Text type="tertiary">项目 ID：{selectedProject?.id}</Text>
       </section>
     </>

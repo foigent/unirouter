@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -156,7 +157,7 @@ func TestJWT_GenerateAndParse(t *testing.T) {
 	orgID := int64(7)
 	role := "admin"
 
-	token, session, err := GenerateAdminSessionJWT(userID, orgID, role, 3, secret, 24)
+	token, session, err := GenerateAdminSessionJWT(userID, orgID, RolePlatformAdmin, role, 3, secret, 24)
 	if err != nil {
 		t.Fatalf("GenerateJWT error: %v", err)
 	}
@@ -180,13 +181,114 @@ func TestJWT_GenerateAndParse(t *testing.T) {
 	if claims.Role != role {
 		t.Fatalf("Role mismatch: got %s, want %s", claims.Role, role)
 	}
+	if claims.SchemaVersion != adminJWTVersion || claims.OrganizationRole != RolePlatformAdmin || claims.EffectiveOrganizationRole() != RolePlatformAdmin {
+		t.Fatalf("v3 organization-role claims mismatch: %#v", claims)
+	}
 	if claims.AuthEpoch != 3 || !bytes.Equal(session.SIDHash, HashAdminSessionID(claims.SessionID)) {
 		t.Fatalf("session claims mismatch: %#v", claims)
 	}
 }
 
+func TestJWT_V2CompatibilityDerivesOrganizationRoleWithoutTrustingProjectShadow(t *testing.T) {
+	for _, test := range []struct {
+		role string
+		want string
+	}{
+		{role: RoleOrgAdmin, want: RoleOrgAdmin},
+		{role: RoleBillingAdmin, want: RoleBillingAdmin},
+		{role: RoleOrgViewer, want: RoleOrgViewer},
+		{role: RoleProjectAdmin, want: RoleMember},
+		{role: RoleDeveloper, want: RoleMember},
+		{role: RoleViewer, want: RoleMember},
+	} {
+		t.Run(test.role, func(t *testing.T) {
+			token := version2AdminJWTForTest(t, test.role, "v2-secret")
+			claims, err := ParseJWT(token, "v2-secret")
+			if err != nil {
+				t.Fatalf("ParseJWT v2: %v", err)
+			}
+			if claims.SchemaVersion != adminJWTLegacyVersion || claims.OrganizationRole != "" || claims.EffectiveOrganizationRole() != test.want {
+				t.Fatalf("v2 compatibility claims = %#v, want organization role %q", claims, test.want)
+			}
+		})
+	}
+}
+
+func TestJWT_V3RejectsMismatchedOrganizationRole(t *testing.T) {
+	token, _, err := GenerateAdminSessionJWT(1, 1, RoleOrgAdmin, RoleOrgAdmin, 0, "secret", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, _, err := new(jwt.Parser).ParseUnverified(token, &Claims{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := parsed.Claims.(*Claims)
+	claims.OrganizationRole = RoleMember
+	tampered, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseJWT(tampered, "secret"); err == nil {
+		t.Fatal("v3 JWT with organization_role inconsistent with its compatibility role was accepted")
+	}
+}
+
+func TestGenerateAdminSessionJWTRejectsMismatchedRoleAxes(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		organizationRole string
+		compatibility    string
+	}{
+		{name: "org viewer with project admin shadow", organizationRole: RoleOrgViewer, compatibility: RoleProjectAdmin},
+		{name: "member with organization admin shadow", organizationRole: RoleMember, compatibility: RoleOrgAdmin},
+		{name: "noncanonical legacy organization role", organizationRole: RoleLegacyAdmin, compatibility: RoleLegacyAdmin},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, err := GenerateAdminSessionJWT(1, 1, test.organizationRole, test.compatibility, 0, "secret", 1); err == nil {
+				t.Fatal("mismatched role axes must fail before generating bearer or session state")
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		organizationRole string
+		compatibility    string
+	}{
+		{organizationRole: RolePlatformAdmin, compatibility: RoleLegacyAdmin},
+		{organizationRole: RoleMember, compatibility: RoleProjectAdmin},
+		{organizationRole: RoleMember, compatibility: RoleDeveloper},
+		{organizationRole: RoleMember, compatibility: RoleViewer},
+		{organizationRole: RoleOrgViewer, compatibility: RoleOrgViewer},
+	} {
+		if _, _, err := GenerateAdminSessionJWT(1, 1, test.organizationRole, test.compatibility, 0, "secret", 1); err != nil {
+			t.Fatalf("valid axes %q/%q rejected: %v", test.organizationRole, test.compatibility, err)
+		}
+	}
+}
+
+func version2AdminJWTForTest(t *testing.T, role, secret string) string {
+	t.Helper()
+	now := time.Now().UTC()
+	sid := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, adminSessionIDBytes))
+	claims := Claims{
+		UserID: 1, OrgID: 1, Role: role, SessionID: sid, AuthEpoch: 0,
+		SchemaVersion: adminJWTLegacyVersion,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Issuer:    "uniroute", Subject: "1",
+		},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
 func TestJWT_WrongSecret(t *testing.T) {
-	token, _, _ := GenerateAdminSessionJWT(1, 1, "admin", 0, "secret-a", 24)
+	token, _, _ := GenerateAdminSessionJWT(1, 1, RolePlatformAdmin, "admin", 0, "secret-a", 24)
 	_, err := ParseJWT(token, "secret-b")
 	if err == nil {
 		t.Fatal("ParseJWT with wrong secret should fail")

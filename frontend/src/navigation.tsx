@@ -32,6 +32,68 @@ export function normalizeRole(role?: string | null) {
   return normalized;
 }
 
+export type OrganizationRole = 'platform_admin' | 'org_admin' | 'billing_admin' | 'org_viewer' | 'member';
+export type ProjectMembershipRole = 'project_admin' | 'project_user' | 'project_viewer';
+
+export interface AuthzContext {
+  organizationRole: OrganizationRole | '';
+  projectMembershipRole: ProjectMembershipRole | '';
+  projectMembershipKnown: boolean;
+}
+
+export interface AuthzUserIdentity {
+  organization_role?: string | null;
+  role?: string | null;
+}
+
+const organizationRoles = new Set<OrganizationRole>([
+  'platform_admin',
+  'org_admin',
+  'billing_admin',
+  'org_viewer',
+  'member',
+]);
+
+export function canonicalOrganizationRole(
+  organizationRole?: string | null,
+  compatibilityRole?: string | null,
+): OrganizationRole | '' {
+  const explicit = normalizeRole(organizationRole);
+  if (organizationRoles.has(explicit as OrganizationRole)) return explicit as OrganizationRole;
+  // An explicit but unknown organization role is never replaced by a more
+  // privileged compatibility shadow.
+  if (explicit) return 'member';
+
+  const fallback = normalizeRole(compatibilityRole);
+  if (organizationRoles.has(fallback as OrganizationRole)) return fallback as OrganizationRole;
+  // Legacy project-scoped role aliases carry no organization-wide authority.
+  return fallback ? 'member' : '';
+}
+
+export function canonicalProjectMembershipRole(role?: string | null): ProjectMembershipRole | '' {
+  const normalized = normalizeRole(role);
+  if (normalized === 'project_admin') return 'project_admin';
+  if (normalized === 'project_user' || normalized === 'project_developer' || normalized === 'developer') return 'project_user';
+  if (normalized === 'project_viewer' || normalized === 'viewer') return 'project_viewer';
+  return '';
+}
+
+export function authzContextForUser(
+  user?: AuthzUserIdentity | null,
+  projectMembershipRole?: string | null,
+  projectMembershipKnown = projectMembershipRole !== undefined,
+): AuthzContext {
+  return {
+    organizationRole: canonicalOrganizationRole(user?.organization_role, user?.role),
+    projectMembershipRole: canonicalProjectMembershipRole(projectMembershipRole),
+    projectMembershipKnown,
+  };
+}
+
+export function organizationRoleForUser(user?: AuthzUserIdentity | null) {
+  return canonicalOrganizationRole(user?.organization_role, user?.role);
+}
+
 export function isPlatformAdminRole(role?: string | null) {
   return ['admin', 'platform_admin'].includes(normalizeRole(role));
 }
@@ -48,24 +110,32 @@ export function isOrgViewerRole(role?: string | null) {
   return normalizeRole(role) === 'org_viewer';
 }
 
-export function isProjectConsoleRole(role?: string | null) {
-  return ['project_admin', 'developer', 'viewer'].includes(normalizeRole(role));
+export function isProjectMembershipRole(role?: string | null) {
+  return canonicalProjectMembershipRole(role) !== '';
 }
 
-export function isProjectAdminRole(role?: string | null) {
-  return normalizeRole(role) === 'project_admin';
+export function isProjectAdminMembership(role?: string | null) {
+  return canonicalProjectMembershipRole(role) === 'project_admin';
 }
 
-export function canReadRuntimeStatus(role?: string | null) {
-  return isOrgAdminRole(role);
+export function canReadRuntimeStatus(authz: AuthzContext) {
+  return isOrgAdminRole(authz.organizationRole);
 }
 
-export function canCreateProjectKey(role?: string | null) {
-  return ['admin', 'platform_admin', 'org_admin', 'project_admin', 'developer'].includes(normalizeRole(role));
+export function canCreateProjectKey(authz: AuthzContext) {
+  return isOrgAdminRole(authz.organizationRole) ||
+    authz.projectMembershipRole === 'project_admin' ||
+    authz.projectMembershipRole === 'project_user';
 }
 
-export function canDisableProjectKey(role?: string | null) {
-  return ['admin', 'platform_admin', 'org_admin', 'project_admin', 'developer'].includes(normalizeRole(role));
+export function canDisableProjectKey(authz: AuthzContext) {
+  return canCreateProjectKey(authz);
+}
+
+export function canInvokeProject(authz: AuthzContext) {
+  return isOrgAdminRole(authz.organizationRole) ||
+    authz.projectMembershipRole === 'project_admin' ||
+    authz.projectMembershipRole === 'project_user';
 }
 
 export type LicenseFeature =
@@ -173,12 +243,12 @@ const orgAdminRoutes = new Set([
   '/model-prices', '/cost-optimization', '/docs',
 ]);
 const billingRoutes = new Set([
-  '/', '/logs', '/usage-analytics', '/notifications',
+  '/', '/usage-analytics',
   '/wallet', '/model-prices', '/cost-optimization', '/reconciliation', '/docs',
 ]);
 const projectAdminRoutes = new Set(['/organization-members', '/media-jobs', '/docs']);
 const developerRoutes = new Set(['/media-jobs', '/docs']);
-const orgViewerRoutes = new Set(['/', '/docs']);
+const orgViewerRoutes = new Set(['/', '/organization-members', '/model-governance', '/docs']);
 
 function filterTaskNavigation(allowedRoutes: Set<string>) {
   return taskNavItems.flatMap(item => {
@@ -188,10 +258,10 @@ function filterTaskNavigation(allowedRoutes: Set<string>) {
   });
 }
 
-function labelOverviewForRole(items: NavItem[], role?: string | null) {
-  const overviewText = isBillingRole(role)
+function labelOverviewForRole(items: NavItem[], organizationRole?: string | null) {
+  const overviewText = isBillingRole(organizationRole)
     ? '财务与用量总览'
-    : isPlatformAdminRole(role)
+    : isPlatformAdminRole(organizationRole)
       ? '平台总览'
       : '组织总览';
   return items.map(item => item.itemKey === '/' ? { ...item, text: overviewText } : item);
@@ -216,21 +286,36 @@ function applyLicenseState(items: NavItem[], licenseAccess?: LicenseAccess | nul
   }));
 }
 
-export function getNavItemsForRole(role?: string | null, licenseAccess?: LicenseAccess | null): NavItem[] {
-  let items: NavItem[];
-  if (isProjectAdminRole(role)) items = [projectOverviewItem, ...filterTaskNavigation(projectAdminRoutes)];
-  else if (isProjectConsoleRole(role)) items = [projectOverviewItem, ...filterTaskNavigation(developerRoutes)];
-  else if (isBillingRole(role)) items = labelOverviewForRole(filterTaskNavigation(billingRoutes), role);
-  else if (isPlatformAdminRole(role)) items = labelOverviewForRole(filterTaskNavigation(platformRoutes), role);
-  else if (isOrgAdminRole(role)) items = labelOverviewForRole(filterTaskNavigation(orgAdminRoutes), role);
-  else if (isOrgViewerRole(role)) items = labelOverviewForRole(filterTaskNavigation(orgViewerRoutes), role);
-  else items = [accessStateItem, ...filterTaskNavigation(new Set(['/docs']))];
+export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: LicenseAccess | null): NavItem[] {
+  const organizationRole = authz.organizationRole;
+  let allowedRoutes: Set<string>;
+  if (isPlatformAdminRole(organizationRole)) allowedRoutes = new Set(platformRoutes);
+  else if (isOrgAdminRole(organizationRole)) allowedRoutes = new Set(orgAdminRoutes);
+  else if (isBillingRole(organizationRole)) allowedRoutes = new Set(billingRoutes);
+  else if (isOrgViewerRole(organizationRole)) allowedRoutes = new Set(orgViewerRoutes);
+  else allowedRoutes = new Set(['/docs']);
+
+  if (authz.projectMembershipRole === 'project_admin') {
+    projectAdminRoutes.forEach(route => allowedRoutes.add(route));
+  } else if (authz.projectMembershipRole) {
+    developerRoutes.forEach(route => allowedRoutes.add(route));
+  }
+
+  let items = filterTaskNavigation(allowedRoutes);
+  // The shell has no selected-project membership and must not hide the only
+  // discovery path for an orthogonal membership. The page loads the actor's
+  // project list and applies live per-project authority before exposing data or
+  // actions, so showing this entry grants nothing by itself.
+  const exposeProjectWorkbench = Boolean(organizationRole);
+  if (exposeProjectWorkbench) items = [projectOverviewItem, ...items];
+  if (organizationRole && organizationRole !== 'member') items = labelOverviewForRole(items, organizationRole);
+  if (!organizationRole) items = [accessStateItem, ...items];
   return applyLicenseState(items, licenseAccess);
 }
 
-export function getDefaultPathForRole(role?: string | null) {
-  if (isProjectConsoleRole(role)) return '/developer';
-  if (isOrgAdminRole(role) || isBillingRole(role) || isOrgViewerRole(role)) return '/';
+export function getDefaultPathForAuthz(authz: AuthzContext) {
+  if (authz.organizationRole === 'member') return '/developer';
+  if (isOrgAdminRole(authz.organizationRole) || isBillingRole(authz.organizationRole) || isOrgViewerRole(authz.organizationRole)) return '/';
   return '/access';
 }
 
@@ -312,23 +397,43 @@ function hasPositiveProjectID(path: string) {
   return Number.isSafeInteger(Number(rawProjectID));
 }
 
-export function isRouteAllowedForRole(path: string, role?: string | null) {
+function projectRouteAllowed(path: string, authz: AuthzContext) {
+  const route = firstSegmentPath(path);
+  if (route === '/developer') return true;
+
+  if (authz.projectMembershipRole === 'project_admin') {
+    if (route === '/notifications') return hasPositiveProjectID(path);
+    return ['/organization-members', '/project-management', '/media-jobs'].includes(route);
+  }
+  if (authz.projectMembershipRole === 'project_user' || authz.projectMembershipRole === 'project_viewer') {
+    return route === '/media-jobs';
+  }
+
+  // The shell has no authoritative selected-project membership. These routes
+  // are allowed only to load a project list; their pages must derive every
+  // capability from that project's live current_user_membership_role. The
+  // backend remains authoritative if the user has no membership.
+  if (!authz.projectMembershipKnown) {
+    if (route === '/notifications') return hasPositiveProjectID(path);
+    return ['/organization-members', '/project-management', '/media-jobs'].includes(route);
+  }
+  return false;
+}
+
+export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
   const route = firstSegmentPath(path);
   if (route === '/login') return true;
   if (route === '/access') return true;
   if (route === '/docs') return true;
   if (route === '/settings') return true;
-  if (route === '/license') return isPlatformAdminRole(role);
-
-  // The project workbench is a role-specific home, not a hidden platform-admin
-  // surface. Platform and organization admins use their own task dashboard.
-  if (route === '/developer') return isProjectConsoleRole(role);
+  if (route === '/license') return isPlatformAdminRole(authz.organizationRole);
+  if (route === '/developer') return Boolean(authz.organizationRole);
 
   if (!platformRoutes.has(route) && !compatibilityRoutes.has(route)) return false;
 
-  if (isPlatformAdminRole(role)) return true;
+  if (isPlatformAdminRole(authz.organizationRole)) return true;
 
-  if (isOrgAdminRole(role)) {
+  if (isOrgAdminRole(authz.organizationRole)) {
     return [
       '/',
       '/applications',
@@ -357,32 +462,30 @@ export function isRouteAllowedForRole(path: string, role?: string | null) {
     ].includes(route);
   }
 
-  if (isBillingRole(role)) {
-    return ['/', '/logs', '/wallet', '/model-prices', '/cost-optimization', '/reconciliation', '/usage-analytics', '/notifications', '/grants'].includes(route);
+  if (isBillingRole(authz.organizationRole)) {
+    if (['/', '/wallet', '/model-prices', '/cost-optimization', '/reconciliation', '/usage-analytics', '/grants'].includes(route)) return true;
+    return projectRouteAllowed(path, authz);
   }
 
-  if (isProjectConsoleRole(role)) {
-    if (isProjectAdminRole(role) && ['/organization-members', '/project-management'].includes(route)) return true;
-    if (isProjectAdminRole(role) && route === '/notifications') return hasPositiveProjectID(path);
-    if (route === '/media-jobs') return true;
-    return false;
+  if (isOrgViewerRole(authz.organizationRole)) {
+    if (['/', '/organization-members', '/project-management', '/model-governance'].includes(route)) return true;
+    return projectRouteAllowed(path, authz);
   }
 
-  if (isOrgViewerRole(role)) return route === '/';
-
-  return false;
+  if (authz.organizationRole === 'member') return projectRouteAllowed(path, authz);
+  return projectRouteAllowed(path, authz);
 }
 
-export function getOpenKeysForPath(path: string, role?: string | null, licenseAccess?: LicenseAccess | null) {
+export function getOpenKeysForPath(path: string, authz: AuthzContext, licenseAccess?: LicenseAccess | null) {
   const route = firstSegmentPath(path);
-  const parent = getNavItemsForRole(role, licenseAccess).find(item => item.items?.some(child => child.itemKey === route));
+  const parent = getNavItemsForAuthz(authz, licenseAccess).find(item => item.items?.some(child => child.itemKey === route));
   return parent ? [parent.itemKey] : [];
 }
 
-export function canSearchRequestLogs(role?: string | null) {
-  return isPlatformAdminRole(role) || isOrgAdminRole(role) || isBillingRole(role);
+export function canSearchRequestLogs(authz: AuthzContext) {
+  return isPlatformAdminRole(authz.organizationRole) || isOrgAdminRole(authz.organizationRole) || isBillingRole(authz.organizationRole);
 }
 
-export function canOpenUnscopedNotifications(role?: string | null) {
-  return isPlatformAdminRole(role) || isOrgAdminRole(role) || isBillingRole(role);
+export function canOpenUnscopedNotifications(authz: AuthzContext) {
+  return isPlatformAdminRole(authz.organizationRole) || isOrgAdminRole(authz.organizationRole) || isBillingRole(authz.organizationRole);
 }

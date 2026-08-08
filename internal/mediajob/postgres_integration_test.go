@@ -5,15 +5,62 @@ package mediajob
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+func TestAdminScopeUsesOrganizationRoleAndLiveMembershipIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	orgID, projectID, _ := seedMediaScope(t, pool)
+	var otherProjectID, userID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO projects (org_id, name, slug, status, budget_period)
+		VALUES ($1, 'Other media', 'other-media-scope', 'active', 'none')
+		RETURNING id`, orgID).Scan(&otherProjectID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id, username, password_hash, organization_role, role, status)
+		VALUES ($1, 'media-org-viewer', 'not-a-login-verifier', 'org_viewer', 'org_viewer', 'active')
+		RETURNING id`, orgID).Scan(&userID))
+	_, err := pool.Exec(ctx, `
+		INSERT INTO project_members (project_id, user_id, role)
+		VALUES ($1, $2, 'project_admin')`, projectID, userID)
+	require.NoError(t, err)
+
+	handler := &HTTPHandler{db: pool}
+	request := func(targetProjectID int64) *http.Request {
+		req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/media-jobs?project_id=%d", targetProjectID), nil)
+		requestCtx := context.WithValue(req.Context(), middleware.CtxOrgID, orgID)
+		requestCtx = context.WithValue(requestCtx, middleware.CtxUserID, userID)
+		requestCtx = context.WithValue(requestCtx, middleware.CtxUserRole, auth.RoleOrgViewer)
+		requestCtx = context.WithValue(requestCtx, middleware.CtxOrganizationRole, auth.RoleOrgViewer)
+		return req.WithContext(requestCtx)
+	}
+
+	_, err = handler.resolveAdminScope(request(projectID), adminScopeRead)
+	require.NoError(t, err, "explicit project_admin membership must allow media reads")
+	_, err = handler.resolveAdminScope(request(projectID), adminScopeWrite)
+	require.NoError(t, err, "explicit project_admin membership must allow media cancellation")
+	_, err = handler.resolveAdminScope(request(otherProjectID), adminScopeRead)
+	require.ErrorIs(t, err, ErrForbidden, "membership must not propagate across projects")
+
+	_, err = pool.Exec(ctx, `UPDATE project_members SET role='project_viewer' WHERE project_id=$1 AND user_id=$2`, projectID, userID)
+	require.NoError(t, err)
+	_, err = handler.resolveAdminScope(request(projectID), adminScopeRead)
+	require.NoError(t, err, "project_viewer membership must retain media read access")
+	_, err = handler.resolveAdminScope(request(projectID), adminScopeWrite)
+	require.ErrorIs(t, err, ErrForbidden, "project_viewer must not cancel media jobs")
+}
 
 func TestPostgresStoreImageLifecycleFencingAndTenantIsolation(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)

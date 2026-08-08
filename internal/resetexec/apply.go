@@ -372,6 +372,7 @@ func verifyPostconditions(plan resetplan.Plan, snapshot resetplan.Snapshot) erro
 	if selected.UserID != plan.SelectedAdmin.UserID ||
 		selected.OrganizationID != plan.SelectedAdmin.OrganizationID ||
 		selected.NormalizedLogin != plan.SelectedAdmin.NormalizedLogin ||
+		selected.OrganizationRole != plan.SelectedAdmin.OrganizationRole ||
 		selected.Role != plan.SelectedAdmin.Role || selected.Status != "active" ||
 		selected.AuthProvider != "local" || selected.AuthEpoch != plan.SelectedAdmin.AuthEpoch+1 ||
 		selected.PasswordSHA256 != plan.SelectedAdmin.PasswordSHA256 ||

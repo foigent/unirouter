@@ -15,13 +15,26 @@ var errActorOrganizationForbidden = errors.New("actor organization is required o
 var errInvalidOrganizationID = errors.New("invalid organization ID")
 
 const (
-	projectMemberAdmin     = "project_admin"
-	projectMemberDeveloper = "project_developer"
-	projectMemberViewer    = "project_viewer"
+	projectMemberAdmin           = auth.ProjectRoleAdmin
+	projectMemberUser            = auth.ProjectRoleUser
+	projectMemberDeveloper       = projectMemberUser // compatibility symbol; persisted value is project_user
+	projectMemberViewer          = auth.ProjectRoleViewer
+	projectMemberLegacyDeveloper = auth.LegacyProjectRoleDeveloper
 )
 
-func actorRole(ctx context.Context) string {
-	return auth.NormalizeRole(middleware.GetUserRoleFromContext(ctx))
+func actorOrganizationRole(ctx context.Context) string {
+	role := middleware.GetOrganizationRoleFromContext(ctx)
+	if role != "" {
+		return role
+	}
+	// Compatibility for direct-handler tests and accepted v2 JWTs.
+	canonical, _ := auth.NormalizeOrganizationRole(middleware.GetUserRoleFromContext(ctx))
+	return canonical
+}
+
+func actorHasOrganizationUsageScope(ctx context.Context) bool {
+	return auth.RoleIn(actorOrganizationRole(ctx),
+		auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin, auth.RoleOrgViewer)
 }
 
 func isUnauthenticatedUnitContext(ctx context.Context) bool {
@@ -32,7 +45,7 @@ func isUnauthenticatedUnitContext(ctx context.Context) bool {
 // authenticated non-platform actor. The unconstrained return preserves legacy
 // direct-handler unit tests while production routes always pass AdminAuth.
 func actorOrgConstraint(ctx context.Context) (int64, bool) {
-	if isUnauthenticatedUnitContext(ctx) || auth.IsPlatformAdmin(actorRole(ctx)) {
+	if isUnauthenticatedUnitContext(ctx) || auth.IsPlatformAdmin(actorOrganizationRole(ctx)) {
 		return 0, false
 	}
 	return middleware.GetOrgIDFromContext(ctx), true
@@ -56,7 +69,7 @@ func resolveActorOrganization(ctx context.Context, requestedOrgID int64) (int64,
 		return 0, errInvalidOrganizationID
 	}
 	actorOrgID := middleware.GetOrgIDFromContext(ctx)
-	if auth.IsPlatformAdmin(actorRole(ctx)) {
+	if auth.IsPlatformAdmin(actorOrganizationRole(ctx)) {
 		if requestedOrgID > 0 {
 			return requestedOrgID, nil
 		}
@@ -132,38 +145,34 @@ func (h *Handler) canReadProject(ctx context.Context, projectID int64) bool {
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
-	role := actorRole(ctx)
-	if role == auth.RolePlatformAdmin {
+	organizationRole := actorOrganizationRole(ctx)
+	if organizationRole == auth.RolePlatformAdmin {
 		return true
 	}
 	if projectID == 0 {
 		return false
 	}
-	if role == auth.RoleOrgAdmin {
+	if organizationRole == auth.RoleOrgAdmin || organizationRole == auth.RoleOrgViewer {
 		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
-	if !auth.IsProjectScopedRole(role) {
-		return false
-	}
-	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin, projectMemberDeveloper, projectMemberViewer, auth.RoleDeveloper, auth.RoleViewer)
+	return h.hasProjectMembership(ctx, projectID,
+		projectMemberAdmin, projectMemberUser, projectMemberViewer,
+		projectMemberLegacyDeveloper, auth.RoleDeveloper, auth.RoleViewer)
 }
 
 func (h *Handler) canWriteProject(ctx context.Context, projectID int64) bool {
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
-	role := actorRole(ctx)
-	if role == auth.RolePlatformAdmin {
+	organizationRole := actorOrganizationRole(ctx)
+	if organizationRole == auth.RolePlatformAdmin {
 		return true
 	}
 	if projectID == 0 {
 		return false
 	}
-	if role == auth.RoleOrgAdmin {
+	if organizationRole == auth.RoleOrgAdmin {
 		return h.projectBelongsToActorOrg(ctx, projectID)
-	}
-	if role != auth.RoleProjectAdmin {
-		return false
 	}
 	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin)
 }
@@ -176,73 +185,54 @@ func (h *Handler) canManageProjectMembers(ctx context.Context, projectID int64) 
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
-	role := actorRole(ctx)
-	if role == auth.RolePlatformAdmin {
+	organizationRole := actorOrganizationRole(ctx)
+	if organizationRole == auth.RolePlatformAdmin {
 		return true
 	}
 	if projectID <= 0 {
 		return false
 	}
-	if role == auth.RoleOrgAdmin {
+	if organizationRole == auth.RoleOrgAdmin {
 		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
-	if role != auth.RoleProjectAdmin {
-		return false
-	}
 	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin)
-}
-
-func projectMemberRoleForUserRole(role string) (string, bool) {
-	switch auth.NormalizeRole(role) {
-	case auth.RoleProjectAdmin:
-		return projectMemberAdmin, true
-	case auth.RoleDeveloper:
-		return projectMemberDeveloper, true
-	case auth.RoleViewer:
-		return projectMemberViewer, true
-	default:
-		return "", false
-	}
 }
 
 func (h *Handler) canCreateProjectKey(ctx context.Context, projectID int64) bool {
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
-	role := actorRole(ctx)
-	if role == auth.RolePlatformAdmin {
+	organizationRole := actorOrganizationRole(ctx)
+	if organizationRole == auth.RolePlatformAdmin {
 		return true
 	}
 	if projectID == 0 {
 		return false
 	}
-	if role == auth.RoleOrgAdmin {
+	if organizationRole == auth.RoleOrgAdmin {
 		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
-	if role != auth.RoleProjectAdmin && role != auth.RoleDeveloper {
-		return false
-	}
-	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin, projectMemberDeveloper, auth.RoleDeveloper)
+	return h.hasProjectMembership(ctx, projectID,
+		projectMemberAdmin, projectMemberUser, projectMemberLegacyDeveloper, auth.RoleDeveloper)
 }
 
 func (h *Handler) canReadProjectUsage(ctx context.Context, projectID int64) bool {
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
-	role := actorRole(ctx)
-	if role == auth.RolePlatformAdmin {
+	organizationRole := actorOrganizationRole(ctx)
+	if organizationRole == auth.RolePlatformAdmin {
 		return true
 	}
 	if projectID == 0 {
 		return false
 	}
-	if role == auth.RoleOrgAdmin || role == auth.RoleBillingAdmin {
+	if organizationRole == auth.RoleOrgAdmin || organizationRole == auth.RoleBillingAdmin || organizationRole == auth.RoleOrgViewer {
 		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
-	if !auth.IsProjectScopedRole(role) {
-		return false
-	}
-	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin, projectMemberDeveloper, projectMemberViewer, auth.RoleDeveloper, auth.RoleViewer)
+	return h.hasProjectMembership(ctx, projectID,
+		projectMemberAdmin, projectMemberUser, projectMemberViewer,
+		projectMemberLegacyDeveloper, auth.RoleDeveloper, auth.RoleViewer)
 }
 
 // canReadUsageRecord authorizes a concrete usage record after both its
@@ -257,17 +247,19 @@ func (h *Handler) canReadUsageRecord(ctx context.Context, orgID, projectID int64
 		return false
 	}
 
-	role := actorRole(ctx)
-	if role == auth.RolePlatformAdmin {
+	organizationRole := actorOrganizationRole(ctx)
+	if organizationRole == auth.RolePlatformAdmin {
 		return true
 	}
-	if role == auth.RoleOrgAdmin || role == auth.RoleBillingAdmin {
+	if organizationRole == auth.RoleOrgAdmin || organizationRole == auth.RoleBillingAdmin || organizationRole == auth.RoleOrgViewer {
 		return projectID == 0 || h.projectBelongsToOrg(ctx, projectID, orgID)
 	}
-	if projectID == 0 || !auth.IsProjectScopedRole(role) {
+	if projectID == 0 {
 		return false
 	}
-	return h.hasProjectMembership(ctx, projectID, projectMemberAdmin, projectMemberDeveloper, projectMemberViewer, auth.RoleDeveloper, auth.RoleViewer)
+	return h.hasProjectMembership(ctx, projectID,
+		projectMemberAdmin, projectMemberUser, projectMemberViewer,
+		projectMemberLegacyDeveloper, auth.RoleDeveloper, auth.RoleViewer)
 }
 
 func (h *Handler) hasProjectMembership(ctx context.Context, projectID int64, roles ...string) bool {
@@ -300,14 +292,33 @@ func (h *Handler) canReadAPIKey(ctx context.Context, orgID, projectID int64) boo
 	if !actorCanAccessOrg(ctx, orgID) {
 		return false
 	}
-	role := actorRole(ctx)
-	if role == auth.RolePlatformAdmin {
+	organizationRole := actorOrganizationRole(ctx)
+	if organizationRole == auth.RolePlatformAdmin {
 		return true
 	}
 	if projectID == 0 {
-		return role == auth.RoleOrgAdmin
+		return organizationRole == auth.RoleOrgAdmin
 	}
-	return h.canReadProject(ctx, projectID)
+	return h.canReadProjectCredentialMetadata(ctx, projectID)
+}
+
+// canReadProjectCredentialMetadata is intentionally narrower than
+// canReadProject. Organization viewers may read ordinary project metadata, but
+// credential metadata still requires an explicit live project membership.
+func (h *Handler) canReadProjectCredentialMetadata(ctx context.Context, projectID int64) bool {
+	if isUnauthenticatedUnitContext(ctx) {
+		return true
+	}
+	organizationRole := actorOrganizationRole(ctx)
+	if organizationRole == auth.RolePlatformAdmin {
+		return true
+	}
+	if organizationRole == auth.RoleOrgAdmin {
+		return h.projectBelongsToActorOrg(ctx, projectID)
+	}
+	return h.hasProjectMembership(ctx, projectID,
+		projectMemberAdmin, projectMemberUser, projectMemberViewer,
+		projectMemberLegacyDeveloper, auth.RoleDeveloper, auth.RoleViewer)
 }
 
 func (h *Handler) canWriteAPIKey(ctx context.Context, orgID, projectID int64) bool {
@@ -317,12 +328,24 @@ func (h *Handler) canWriteAPIKey(ctx context.Context, orgID, projectID int64) bo
 	if !actorCanAccessOrg(ctx, orgID) {
 		return false
 	}
-	role := actorRole(ctx)
-	if role == auth.RolePlatformAdmin {
+	organizationRole := actorOrganizationRole(ctx)
+	if organizationRole == auth.RolePlatformAdmin {
 		return true
 	}
 	if projectID == 0 {
-		return role == auth.RoleOrgAdmin
+		return organizationRole == auth.RoleOrgAdmin
 	}
 	return h.canWriteProject(ctx, projectID)
+}
+
+func (h *Handler) canManageOwnPersonalAPIKey(ctx context.Context, orgID, projectID, ownerUserID int64, keyType string) bool {
+	if isUnauthenticatedUnitContext(ctx) {
+		return true
+	}
+	actorUserID := middleware.GetUserIDFromContext(ctx)
+	if actorUserID <= 0 || actorUserID != ownerUserID || keyType != "personal" || projectID <= 0 || !actorCanAccessOrg(ctx, orgID) {
+		return false
+	}
+	return h.hasProjectMembership(ctx, projectID,
+		projectMemberAdmin, projectMemberUser, projectMemberLegacyDeveloper, auth.RoleDeveloper)
 }

@@ -12,7 +12,11 @@ import (
 
 func activeAdminToken(t testing.TB, userID, orgID int64, role, secret string) string {
 	t.Helper()
-	token, _, err := auth.GenerateAdminSessionJWT(userID, orgID, role, 0, secret, 1)
+	organizationRole, ok := auth.NormalizeOrganizationRole(role)
+	if !ok {
+		t.Fatalf("invalid role %q", role)
+	}
+	token, _, err := auth.GenerateAdminSessionJWT(userID, orgID, organizationRole, role, 0, secret, 1)
 	if err != nil {
 		t.Fatalf("generate admin session JWT: %v", err)
 	}

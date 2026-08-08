@@ -279,6 +279,34 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 			projectAdminA, fx.orgA, auth.RoleProjectAdmin, ""), http.StatusForbidden)
 	})
 
+	t.Run("mixed model governance reads use the two-axis role matrix", func(t *testing.T) {
+		for _, path := range []string{"/api/v1/model-catalog", "/api/v1/model-sets"} {
+			assertStatus(t, serve(t, http.MethodGet, path, "",
+				fx.billingAdminA, fx.orgA, auth.RoleBillingAdmin, ""), http.StatusForbidden)
+
+			organizationRead := serve(t, http.MethodGet, path, "",
+				fx.orgViewerA, fx.orgA, auth.RoleOrgViewer, "")
+			assertStatus(t, organizationRead, http.StatusOK)
+			assertResponseOrgIDs(t, organizationRead.Body.Bytes(), fx.orgA)
+			assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("%s?org_id=%d", path, fx.orgB), "",
+				fx.orgViewerA, fx.orgA, auth.RoleOrgViewer, ""), http.StatusForbidden)
+		}
+
+		assertStatus(t, serve(t, http.MethodGet, "/api/v1/model-catalog", "",
+			fx.normalA, fx.orgA, auth.RoleViewer, ""), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/model-catalog?project_id=%d", fx.projectA), "",
+			fx.normalA, fx.orgA, auth.RoleViewer, ""), http.StatusForbidden)
+
+		assertStatus(t, serve(t, http.MethodGet, "/api/v1/model-sets", "",
+			projectAdminA, fx.orgA, auth.RoleProjectAdmin, ""), http.StatusForbidden)
+		projectAdminSets := serve(t, http.MethodGet, fmt.Sprintf("/api/v1/model-sets?project_id=%d", fx.projectA), "",
+			projectAdminA, fx.orgA, auth.RoleProjectAdmin, "")
+		assertStatus(t, projectAdminSets, http.StatusOK)
+		assertResponseOrgIDs(t, projectAdminSets.Body.Bytes(), fx.orgA)
+		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/model-sets?project_id=%d", fx.projectB), "",
+			projectAdminA, fx.orgA, auth.RoleProjectAdmin, ""), http.StatusForbidden)
+	})
+
 	t.Run("live access enforcement ignores malformed cross organization assignments", func(t *testing.T) {
 		result, accessErr := modelgov.CheckAccess(ctx, pool, fx.orgA, fx.projectA, "p6f36-runtime-alias")
 		require.NoError(t, accessErr)
@@ -510,25 +538,25 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 
 func p6f36ModelGovernanceMux(h *Handler) *http.ServeMux {
 	mux := http.NewServeMux()
-	roleRoute := func(handler http.HandlerFunc, roles ...string) http.Handler {
-		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireRoles(roles...)(handler))
+	adminRoute := func(handler http.HandlerFunc) http.Handler {
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(handler)
 	}
-	orgAdmin := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin}
-	projectRead := []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin, auth.RoleDeveloper, auth.RoleViewer}
+	organizationRoute := func(handler http.HandlerFunc) http.Handler {
+		return middleware.AdminAuth(h.db, p6f16JWTSecret)(middleware.RequireOrganizationRoles(auth.RolePlatformAdmin, auth.RoleOrgAdmin)(handler))
+	}
 
-	mux.Handle("GET /api/v1/model-registry", roleRoute(h.ListModelRegistry, orgAdmin...))
-	mux.Handle("POST /api/v1/model-registry", roleRoute(h.CreateModelRegistry, orgAdmin...))
-	mux.Handle("PUT /api/v1/model-registry/{id}", roleRoute(h.UpdateModelRegistry, orgAdmin...))
-	mux.Handle("GET /api/v1/model-catalog", roleRoute(h.ListApprovedModelCatalog, projectRead...))
-	mux.Handle("GET /api/v1/model-aliases", roleRoute(h.ListModelAliases, orgAdmin...))
-	mux.Handle("POST /api/v1/model-aliases", roleRoute(h.CreateModelAlias, orgAdmin...))
-	mux.Handle("PUT /api/v1/model-aliases/{id}", roleRoute(h.UpdateModelAlias, orgAdmin...))
-	mux.Handle("GET /api/v1/model-sets", roleRoute(h.ListModelSets, orgAdmin...))
-	mux.Handle("POST /api/v1/model-sets", roleRoute(h.CreateModelSet, orgAdmin...))
-	mux.Handle("GET /api/v1/model-sets/{id}/items", roleRoute(h.ListModelSetItems, orgAdmin...))
-	mux.Handle("PUT /api/v1/model-sets/{id}/items", roleRoute(h.ReplaceModelSetItems, orgAdmin...))
-	mux.Handle("PUT /api/v1/projects/{id}/model-sets", roleRoute(h.ReplaceProjectModelSets,
-		auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleProjectAdmin))
+	mux.Handle("GET /api/v1/model-registry", organizationRoute(h.ListModelRegistry))
+	mux.Handle("POST /api/v1/model-registry", organizationRoute(h.CreateModelRegistry))
+	mux.Handle("PUT /api/v1/model-registry/{id}", organizationRoute(h.UpdateModelRegistry))
+	mux.Handle("GET /api/v1/model-catalog", adminRoute(h.ListApprovedModelCatalog))
+	mux.Handle("GET /api/v1/model-aliases", organizationRoute(h.ListModelAliases))
+	mux.Handle("POST /api/v1/model-aliases", organizationRoute(h.CreateModelAlias))
+	mux.Handle("PUT /api/v1/model-aliases/{id}", organizationRoute(h.UpdateModelAlias))
+	mux.Handle("GET /api/v1/model-sets", adminRoute(h.ListModelSets))
+	mux.Handle("POST /api/v1/model-sets", organizationRoute(h.CreateModelSet))
+	mux.Handle("GET /api/v1/model-sets/{id}/items", organizationRoute(h.ListModelSetItems))
+	mux.Handle("PUT /api/v1/model-sets/{id}/items", organizationRoute(h.ReplaceModelSetItems))
+	mux.Handle("PUT /api/v1/projects/{id}/model-sets", adminRoute(h.ReplaceProjectModelSets))
 	return mux
 }
 

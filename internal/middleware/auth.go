@@ -70,6 +70,8 @@ const (
 	CtxRequestID        contextKey = "request_id"
 	CtxUserID           contextKey = "user_id"
 	CtxUserRole         contextKey = "user_role"
+	CtxOrganizationRole contextKey = "organization_role"
+	CtxAuthEpoch        contextKey = "auth_epoch"
 	CtxAdminSessionHash contextKey = "admin_session_hash"
 	CtxModelAlias       contextKey = "model_alias"
 	CtxAuthKind         contextKey = "auth_kind"
@@ -121,6 +123,21 @@ func GetUserIDFromContext(ctx context.Context) int64 {
 func GetUserRoleFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(CtxUserRole).(string)
 	return v
+}
+
+// GetOrganizationRoleFromContext returns the canonical account-level role.
+// Project authority must be read from project_members, never inferred here.
+func GetOrganizationRoleFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(CtxOrganizationRole).(string)
+	return v
+}
+
+// GetAuthEpochFromContext returns the authorization epoch admitted by
+// AdminAuth. The boolean distinguishes the valid zero epoch from a context
+// that did not pass the production authentication middleware.
+func GetAuthEpochFromContext(ctx context.Context) (int64, bool) {
+	v, ok := ctx.Value(CtxAuthEpoch).(int64)
+	return v, ok
 }
 
 // GetAdminSessionHashFromContext returns a defensive copy of the current
@@ -445,6 +462,7 @@ func AdminAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler
 				return
 			}
 			sessionHash := auth.HashAdminSessionID(claims.SessionID)
+			organizationRole := claims.EffectiveOrganizationRole()
 			var principalActive bool
 			err = q.QueryRow(r.Context(),
 				`SELECT EXISTS (
@@ -457,13 +475,14 @@ func AdminAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler
 				       AND u.role = $3
 				       AND u.auth_epoch = $4
 				       AND s.sid_hash = $5
+				       AND ($6 = '' OR u.organization_role = $6)
 				       AND s.revoked_at IS NULL
 				       AND s.issued_at <= NOW()
 				       AND s.expires_at > NOW()
 				       AND u.status = 'active'
 				       AND o.status = 'active'
 				)`,
-				claims.UserID, claims.OrgID, claims.Role, claims.AuthEpoch, sessionHash,
+				claims.UserID, claims.OrgID, claims.Role, claims.AuthEpoch, sessionHash, claims.OrganizationRole,
 			).Scan(&principalActive)
 			if err != nil {
 				http.Error(w, `{"error":{"type":"auth_error.state_unavailable","message":"Authentication state is temporarily unavailable"}}`, http.StatusServiceUnavailable)
@@ -478,6 +497,8 @@ func AdminAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler
 			ctx := context.WithValue(r.Context(), CtxOrgID, claims.OrgID)
 			ctx = context.WithValue(ctx, CtxUserID, claims.UserID)
 			ctx = context.WithValue(ctx, CtxUserRole, claims.Role)
+			ctx = context.WithValue(ctx, CtxOrganizationRole, organizationRole)
+			ctx = context.WithValue(ctx, CtxAuthEpoch, claims.AuthEpoch)
 			ctx = context.WithValue(ctx, CtxAdminSessionHash, sessionHash)
 
 			next.ServeHTTP(w, r.WithContext(ctx))

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -15,6 +16,59 @@ import (
 )
 
 const activePlatformAdminMutationLockID int64 = 8675309001
+
+func resolveOrganizationRoleInput(organizationRole, legacyRole, defaultRole string) (string, error) {
+	var organizationRolePtr, legacyRolePtr *string
+	if strings.TrimSpace(organizationRole) != "" {
+		organizationRolePtr = &organizationRole
+	}
+	if strings.TrimSpace(legacyRole) != "" {
+		legacyRolePtr = &legacyRole
+	}
+	resolved, provided, err := resolveOrganizationRolePointers(organizationRolePtr, legacyRolePtr)
+	if err != nil {
+		return "", err
+	}
+	if provided {
+		return resolved, nil
+	}
+	return defaultRole, nil
+}
+
+func resolveOrganizationRolePointers(organizationRole, legacyRole *string) (string, bool, error) {
+	resolve := func(raw string) (string, error) {
+		role := strings.TrimSpace(raw)
+		if auth.IsLegacyProjectRole(role) {
+			return "", fmt.Errorf("project roles are managed from the project members API")
+		}
+		canonical, ok := auth.NormalizeOrganizationRole(role)
+		if !ok || !auth.IsOrganizationRole(role) {
+			return "", fmt.Errorf("invalid organization role")
+		}
+		return canonical, nil
+	}
+
+	var resolved string
+	provided := false
+	if organizationRole != nil {
+		canonical, err := resolve(*organizationRole)
+		if err != nil {
+			return "", false, err
+		}
+		resolved, provided = canonical, true
+	}
+	if legacyRole != nil {
+		canonical, err := resolve(*legacyRole)
+		if err != nil {
+			return "", false, err
+		}
+		if provided && canonical != resolved {
+			return "", false, fmt.Errorf("role and organization_role conflict")
+		}
+		resolved, provided = canonical, true
+	}
+	return resolved, provided, nil
+}
 
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
@@ -39,7 +93,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := fmt.Sprintf(
-		`SELECT u.id, u.org_id, o.name AS org_name, u.username, u.role, u.status,
+		`SELECT u.id, u.org_id, o.name AS org_name, u.username, u.organization_role, u.role, u.status,
 		        COALESCE(u.email, ''), COALESCE(NULLIF(u.auth_provider, ''), 'local'),
 		        u.created_at, u.updated_at,
 		        COALESCE(member_scope.project_ids, '{}'::bigint[]),
@@ -66,12 +120,12 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id, orgId int64
-		var username, role, status, email, authProvider string
+		var username, organizationRole, role, status, email, authProvider string
 		var orgName *string
 		var createdAt, updatedAt time.Time
 		var projectIDs []int64
 		var projectNames string
-		if err := rows.Scan(&id, &orgId, &orgName, &username, &role, &status, &email, &authProvider, &createdAt, &updatedAt, &projectIDs, &projectNames); err != nil {
+		if err := rows.Scan(&id, &orgId, &orgName, &username, &organizationRole, &role, &status, &email, &authProvider, &createdAt, &updatedAt, &projectIDs, &projectNames); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -81,7 +135,8 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		users = append(users, map[string]interface{}{
 			"id": id, "org_id": orgId, "org_name": oName,
-			"username": username, "role": role, "status": status, "email": email, "auth_provider": authProvider,
+			"username": username, "organization_role": organizationRole,
+			"role": role, "status": status, "email": email, "auth_provider": authProvider,
 			"created_at": createdAt, "updated_at": updatedAt,
 			"project_ids": projectIDs, "project_names": projectNames,
 		})
@@ -95,12 +150,13 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		OrgId      int64   `json:"org_id"`
-		Username   string  `json:"username"`
-		Password   string  `json:"password"`
-		Role       string  `json:"role"`
-		Status     string  `json:"status"`
-		ProjectIDs []int64 `json:"project_ids"`
+		OrgID            int64    `json:"org_id"`
+		Username         string   `json:"username"`
+		Password         string   `json:"password"`
+		OrganizationRole string   `json:"organization_role"`
+		Role             string   `json:"role"`
+		Status           string   `json:"status"`
+		ProjectIDs       *[]int64 `json:"project_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -112,11 +168,16 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Username = username
-	if req.Role == "" {
-		req.Role = auth.RoleOrgViewer
+	if req.ProjectIDs != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "project_ids is no longer accepted here; manage project membership from the project members API",
+			"code":  "project_membership_separate",
+		})
+		return
 	}
-	if !auth.IsValidRole(req.Role) {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid role"})
+	organizationRole, err := resolveOrganizationRoleInput(req.OrganizationRole, req.Role, auth.RoleMember)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_organization_role"})
 		return
 	}
 	if req.Status == "" {
@@ -126,7 +187,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid status"})
 		return
 	}
-	if req.OrgId < 0 {
+	if req.OrgID < 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid org_id"})
 		return
 	}
@@ -135,28 +196,19 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
-		if req.OrgId == 0 {
-			req.OrgId = actorOrgID
+		if req.OrgID == 0 {
+			req.OrgID = actorOrgID
 		}
-	} else if req.OrgId == 0 {
+	} else if req.OrgID == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "org_id is required"})
 		return
 	}
-	if !actorCanAccessOrg(r.Context(), req.OrgId) {
+	if !actorCanAccessOrg(r.Context(), req.OrgID) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
-	if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(req.Role) {
+	if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(organizationRole) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-		return
-	}
-	projectIDs, err := normalizeProjectIDs(req.ProjectIDs)
-	if err == nil {
-		err = validateProjectRoleMembership(req.Role, req.Status, projectIDs)
-	}
-	if err != nil {
-		status, message := projectMembershipErrorResponse(err)
-		writeJSON(w, status, map[string]interface{}{"error": message})
 		return
 	}
 	if err := auth.ValidateLocalPassword(req.Password); err != nil {
@@ -175,8 +227,9 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if isUnauthenticatedUnitContext(r.Context()) {
 		var id int64
 		err = h.db.QueryRow(r.Context(),
-			`INSERT INTO users (org_id, username, password_hash, role, status) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-			req.OrgId, req.Username, string(hash), req.Role, req.Status).Scan(&id)
+			`INSERT INTO users (org_id, username, password_hash, organization_role, role, status)
+			 VALUES ($1, $2, $3, $4, $4, $5) RETURNING id`,
+			req.OrgID, req.Username, string(hash), organizationRole, req.Status).Scan(&id)
 		if err != nil {
 			if writeCommercialLimitViolation(w, err) {
 				return
@@ -187,7 +240,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
 			return
 		}
-		writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "project_ids": projectIDs})
+		writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "organization_role": organizationRole, "role": organizationRole})
 		return
 	}
 
@@ -197,15 +250,22 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	if err := validateProjectIDsForOrgTx(r.Context(), tx, req.OrgId, projectIDs); err != nil {
-		status, message := projectMembershipErrorResponse(err)
-		writeJSON(w, status, map[string]interface{}{"error": message})
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+		TargetOrgID:              req.OrgID,
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+	}); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create authorization failed"})
+		}
 		return
 	}
 	var id int64
 	err = tx.QueryRow(r.Context(),
-		`INSERT INTO users (org_id, username, password_hash, role, status) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		req.OrgId, req.Username, string(hash), req.Role, req.Status).Scan(&id)
+		`INSERT INTO users (org_id, username, password_hash, organization_role, role, status)
+		 VALUES ($1, $2, $3, $4, $4, $5) RETURNING id`,
+		req.OrgID, req.Username, string(hash), organizationRole, req.Status).Scan(&id)
 	if err != nil {
 		if writeCommercialLimitViolation(w, err) {
 			return
@@ -216,23 +276,15 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
 		return
 	}
-	if err := lockProjectMembershipMutation(r.Context(), tx, id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
-		return
-	}
-	if err := replaceUserProjectMembershipsTx(r.Context(), tx, id, req.OrgId, req.Role, projectIDs); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
-		return
-	}
 	if err := insertAuditEntry(r.Context(), tx, "user.create", "user", strconv.FormatInt(id, 10), map[string]interface{}{
 		"after": map[string]interface{}{
-			"org_id":      req.OrgId,
-			"username":    req.Username,
-			"role":        req.Role,
-			"status":      req.Status,
-			"project_ids": projectIDs,
+			"org_id":             req.OrgID,
+			"username":           req.Username,
+			"organization_role":  organizationRole,
+			"compatibility_role": organizationRole,
+			"status":             req.Status,
 		},
-	}, requestAuditMeta(r, req.OrgId, 0)); err != nil {
+	}, requestAuditMeta(r, req.OrgID, 0)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
 		return
 	}
@@ -240,7 +292,7 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "project_ids": projectIDs})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "organization_role": organizationRole, "role": organizationRole})
 }
 
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -251,246 +303,256 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Role       *string  `json:"role"`
-		Status     *string  `json:"status"`
-		ProjectIDs *[]int64 `json:"project_ids"`
+		OrganizationRole *string  `json:"organization_role"`
+		Role             *string  `json:"role"`
+		Status           *string  `json:"status"`
+		ProjectIDs       *[]int64 `json:"project_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
 
-	var sets []string
-	var args []interface{}
-	argIdx := 1
-	if req.Role != nil {
-		if !auth.IsValidRole(*req.Role) {
-			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid role"})
-			return
-		}
-		if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(*req.Role) {
-			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-			return
-		}
-		sets = append(sets, fmt.Sprintf("role = $%d", argIdx))
-		args = append(args, *req.Role)
-		argIdx++
+	if req.ProjectIDs != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "project_ids is no longer accepted here; manage project membership from the project members API",
+			"code":  "project_membership_separate",
+		})
+		return
+	}
+	requestedOrganizationRole, organizationRoleProvided, err := resolveOrganizationRolePointers(req.OrganizationRole, req.Role)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_organization_role"})
+		return
 	}
 	if req.Status != nil {
 		if *req.Status != "active" && *req.Status != "disabled" {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid status"})
 			return
 		}
-		sets = append(sets, fmt.Sprintf("status = $%d", argIdx))
-		args = append(args, *req.Status)
-		argIdx++
 	}
-	if len(sets) == 0 && req.ProjectIDs == nil {
+	if !organizationRoleProvided && req.Status == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No fields to update"})
 		return
 	}
-	var requestedProjectIDs []int64
-	if req.ProjectIDs != nil {
-		requestedProjectIDs, err = normalizeProjectIDs(*req.ProjectIDs)
-		if err != nil {
-			status, message := projectMembershipErrorResponse(err)
-			writeJSON(w, status, map[string]interface{}{"error": message})
+	if organizationRoleProvided {
+		if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(requestedOrganizationRole) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
 	}
-	var targetOrgID int64
-	var targetRole, targetStatus string
-	if !isUnauthenticatedUnitContext(r.Context()) {
-		tx, err := h.db.Begin(r.Context())
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
-			return
-		}
-		defer tx.Rollback(r.Context())
 
-		if err := lockProjectMembershipMutation(r.Context(), tx, id); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
-			return
-		}
-		if err := tx.QueryRow(r.Context(), `SELECT org_id, role, status FROM users WHERE id = $1 FOR UPDATE`, id).Scan(&targetOrgID, &targetRole, &targetStatus); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
-			} else {
-				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
-			}
-			return
-		}
-		if !actorCanAccessOrg(r.Context(), targetOrgID) {
-			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-			return
-		}
-		if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(targetRole) {
-			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-			return
-		}
-
-		actorUserID := middleware.GetUserIDFromContext(r.Context())
-		if actorUserID == id {
-			roleChanged := req.Role != nil && auth.NormalizeRole(*req.Role) != auth.NormalizeRole(targetRole)
-			selfDisabled := req.Status != nil && *req.Status != "active"
-			if roleChanged || selfDisabled {
-				writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Cannot change your own role or disable the current account"})
-				return
-			}
-		}
-
-		nextRole, nextStatus := targetRole, targetStatus
-		if req.Role != nil {
-			nextRole = *req.Role
+	// Direct-handler unit tests do not carry an authenticated actor. Production
+	// always uses the audited transactional branch below.
+	if isUnauthenticatedUnitContext(r.Context()) {
+		sets := make([]string, 0, 3)
+		args := make([]interface{}, 0, 4)
+		if organizationRoleProvided {
+			sets = append(sets, fmt.Sprintf("organization_role = $%d", len(args)+1))
+			args = append(args, requestedOrganizationRole)
+			sets = append(sets, fmt.Sprintf("role = $%d", len(args)+1))
+			args = append(args, requestedOrganizationRole)
 		}
 		if req.Status != nil {
-			nextStatus = *req.Status
+			sets = append(sets, fmt.Sprintf("status = $%d", len(args)+1))
+			args = append(args, *req.Status)
 		}
-		securityPrincipalChanged := nextRole != targetRole || nextStatus != targetStatus
-		existingProjectIDs, err := listUserProjectIDsTx(r.Context(), tx, id, targetOrgID)
-		if err != nil {
+		sets = append(sets, "updated_at = NOW()")
+		args = append(args, id)
+		query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d", joinStrings(sets, ", "), len(args))
+		tag, execErr := h.db.Exec(r.Context(), query, args...)
+		if execErr != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
 			return
 		}
-		desiredProjectIDs := existingProjectIDs
-		if req.ProjectIDs != nil {
-			desiredProjectIDs = requestedProjectIDs
-		}
-		if !auth.IsProjectScopedRole(nextRole) {
-			if req.ProjectIDs != nil && len(desiredProjectIDs) > 0 {
-				status, message := projectMembershipErrorResponse(errProjectIDsNotAllowed)
-				writeJSON(w, status, map[string]interface{}{"error": message})
-				return
-			}
-			desiredProjectIDs = nil
-		}
-		if err := validateProjectRoleMembership(nextRole, nextStatus, desiredProjectIDs); err != nil {
-			status, message := projectMembershipErrorResponse(err)
-			writeJSON(w, status, map[string]interface{}{"error": message})
+		if tag.RowsAffected() == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 			return
 		}
-		if err := validateProjectIDsForOrgTx(r.Context(), tx, targetOrgID, desiredProjectIDs); err != nil {
-			status, message := projectMembershipErrorResponse(err)
-			writeJSON(w, status, map[string]interface{}{"error": message})
-			return
-		}
-		removesActivePlatformAdmin := auth.IsPlatformAdmin(targetRole) && targetStatus == "active" &&
-			(!auth.IsPlatformAdmin(nextRole) || nextStatus != "active")
-		if removesActivePlatformAdmin {
-			if _, err := tx.Exec(r.Context(), `SELECT pg_advisory_xact_lock($1)`, activePlatformAdminMutationLockID); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
-				return
-			}
-			var activePlatformAdmins int
-			if err := tx.QueryRow(r.Context(),
-				`SELECT COUNT(*) FROM users WHERE role IN ('admin', 'platform_admin') AND status = 'active'`,
-			).Scan(&activePlatformAdmins); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
-				return
-			}
-			if activePlatformAdmins <= 1 {
-				writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "At least one active platform admin is required"})
-				return
-			}
-		}
-
-		if len(sets) > 0 {
-			// A role or account-status transition invalidates every previously
-			// issued administrator JWT. Without the epoch bump and session
-			// revoke, a suspended account could regain an old live session
-			// after reactivation.
-			if securityPrincipalChanged {
-				sets = append(sets, "auth_epoch = auth_epoch + 1")
-			}
-			sets = append(sets, "updated_at = NOW()")
-			idArg := argIdx
-			args = append(args, id)
-			whereClause := fmt.Sprintf("id = $%d", idArg)
-			if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
-				whereClause += fmt.Sprintf(" AND org_id = $%d", idArg+1)
-				args = append(args, actorOrgID)
-				whereClause += " AND role NOT IN ('admin', 'platform_admin')"
-			}
-			query := fmt.Sprintf("UPDATE users SET %s WHERE %s", joinStrings(sets, ", "), whereClause)
-			tag, err := tx.Exec(r.Context(), query, args...)
-			if err != nil {
-				if writeCommercialLimitViolation(w, err) {
-					return
-				}
-				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
-				return
-			}
-			if tag.RowsAffected() == 0 {
-				writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
-				return
-			}
-		}
-		if err := replaceUserProjectMembershipsTx(r.Context(), tx, id, targetOrgID, nextRole, desiredProjectIDs); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
-			return
-		}
-		var revokedSessions int64
-		if securityPrincipalChanged {
-			tag, revokeErr := tx.Exec(r.Context(),
-				`UPDATE admin_sessions
-				 SET revoked_at = COALESCE(revoked_at, NOW())
-				 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()`,
-				id,
-			)
-			if revokeErr != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Session revocation failed; no change was committed"})
-				return
-			}
-			revokedSessions = tag.RowsAffected()
-		}
-		if err := insertAuditEntry(r.Context(), tx, "user.update", "user", idStr, map[string]interface{}{
-			"before": map[string]interface{}{
-				"role":        targetRole,
-				"status":      targetStatus,
-				"project_ids": existingProjectIDs,
-			},
-			"after": map[string]interface{}{
-				"role":                         nextRole,
-				"status":                       nextStatus,
-				"project_ids":                  desiredProjectIDs,
-				"security_principal_versioned": securityPrincipalChanged,
-				"live_sessions_revoked":        revokedSessions,
-			},
-		}, requestAuditMeta(r, targetOrgID, 0)); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
-			return
-		}
-		if err := tx.Commit(r.Context()); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true, "project_ids": desiredProjectIDs})
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 		return
 	}
 
-	sets = append(sets, "updated_at = NOW()")
-	idArg := argIdx
-	args = append(args, id)
-	whereClause := fmt.Sprintf("id = $%d", idArg)
-	if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
-		whereClause += fmt.Sprintf(" AND org_id = $%d", idArg+1)
-		args = append(args, actorOrgID)
-		whereClause += " AND role NOT IN ('admin', 'platform_admin')"
-	}
-	query := fmt.Sprintf("UPDATE users SET %s WHERE %s", joinStrings(sets, ", "), whereClause)
-	tag, err := h.db.Exec(r.Context(), query, args...)
+	var targetOrgID int64
+	var targetOrganizationRole, targetRole, targetStatus string
+	tx, err := h.db.Begin(r.Context())
 	if err != nil {
-		if writeCommercialLimitViolation(w, err) {
-			return
-		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
 		return
 	}
-	if tag.RowsAffected() == 0 {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
+	defer tx.Rollback(r.Context())
+
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+		TargetOrgID:              middleware.GetOrgIDFromContext(r.Context()),
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+		AdditionalUserIDs:        []int64{id},
+	}); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update authorization failed"})
+		}
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+	if err := tx.QueryRow(r.Context(),
+		`SELECT org_id, organization_role, role, status
+		   FROM users
+		  WHERE id = $1
+		    AND ($2::boolean OR org_id = $3)
+		  FOR UPDATE`, id, actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin,
+		middleware.GetOrgIDFromContext(r.Context()),
+	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+		}
+		return
+	}
+	if !actorCanAccessOrg(r.Context(), targetOrgID) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(targetOrganizationRole) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+
+	actorUserID := middleware.GetUserIDFromContext(r.Context())
+	if actorUserID == id {
+		roleChanged := organizationRoleProvided && requestedOrganizationRole != targetOrganizationRole
+		selfDisabled := req.Status != nil && *req.Status != "active"
+		if roleChanged || selfDisabled {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Cannot change your own role or disable the current account"})
+			return
+		}
+	}
+
+	nextOrganizationRole, nextStatus := targetOrganizationRole, targetStatus
+	if organizationRoleProvided {
+		nextOrganizationRole = requestedOrganizationRole
+	}
+	if req.Status != nil {
+		nextStatus = *req.Status
+	}
+	existingProjectIDs, err := listUserProjectIDsTx(r.Context(), tx, id, targetOrgID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+		return
+	}
+	nextCompatibilityRole := nextOrganizationRole
+	if nextOrganizationRole == auth.RoleMember {
+		nextCompatibilityRole, err = projectCompatibilityRoleTx(r.Context(), tx, id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+			return
+		}
+	}
+	securityPrincipalChanged := nextOrganizationRole != targetOrganizationRole || nextCompatibilityRole != targetRole || nextStatus != targetStatus
+	removesActivePlatformAdmin := auth.IsPlatformAdmin(targetOrganizationRole) && targetStatus == "active" &&
+		(!auth.IsPlatformAdmin(nextOrganizationRole) || nextStatus != "active")
+	if removesActivePlatformAdmin {
+		if _, err := tx.Exec(r.Context(), `SELECT pg_advisory_xact_lock($1)`, activePlatformAdminMutationLockID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+			return
+		}
+		var activePlatformAdmins int
+		if err := tx.QueryRow(r.Context(),
+			`SELECT COUNT(*) FROM users WHERE organization_role = 'platform_admin' AND status = 'active'`,
+		).Scan(&activePlatformAdmins); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+			return
+		}
+		if activePlatformAdmins <= 1 {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "At least one active platform admin is required"})
+			return
+		}
+	}
+
+	sets := make([]string, 0, 4)
+	args := make([]interface{}, 0, 5)
+	if organizationRoleProvided {
+		sets = append(sets, fmt.Sprintf("organization_role = $%d", len(args)+1))
+		args = append(args, nextOrganizationRole)
+		sets = append(sets, fmt.Sprintf("role = $%d", len(args)+1))
+		args = append(args, nextCompatibilityRole)
+	}
+	if req.Status != nil {
+		sets = append(sets, fmt.Sprintf("status = $%d", len(args)+1))
+		args = append(args, nextStatus)
+	}
+	if len(sets) > 0 {
+		// A role or account-status transition invalidates every previously
+		// issued administrator JWT. Without the epoch bump and session
+		// revoke, a suspended account could regain an old live session
+		// after reactivation.
+		if securityPrincipalChanged {
+			sets = append(sets, "auth_epoch = auth_epoch + 1")
+		}
+		sets = append(sets, "updated_at = NOW()")
+		idArg := len(args) + 1
+		args = append(args, id)
+		whereClause := fmt.Sprintf("id = $%d", idArg)
+		if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
+			whereClause += fmt.Sprintf(" AND org_id = $%d", len(args)+1)
+			args = append(args, actorOrgID)
+			whereClause += " AND organization_role <> 'platform_admin'"
+		}
+		query := fmt.Sprintf("UPDATE users SET %s WHERE %s", joinStrings(sets, ", "), whereClause)
+		tag, err := tx.Exec(r.Context(), query, args...)
+		if err != nil {
+			if writeCommercialLimitViolation(w, err) {
+				return
+			}
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+			return
+		}
+		if tag.RowsAffected() == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
+			return
+		}
+	}
+	var revokedSessions int64
+	if securityPrincipalChanged {
+		tag, revokeErr := tx.Exec(r.Context(),
+			`UPDATE admin_sessions
+				 SET revoked_at = COALESCE(revoked_at, NOW())
+				 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()`,
+			id,
+		)
+		if revokeErr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Session revocation failed; no change was committed"})
+			return
+		}
+		revokedSessions = tag.RowsAffected()
+	}
+	if err := insertAuditEntry(r.Context(), tx, "user.update", "user", idStr, map[string]interface{}{
+		"before": map[string]interface{}{
+			"organization_role":  targetOrganizationRole,
+			"compatibility_role": targetRole,
+			"status":             targetStatus,
+			"project_ids":        existingProjectIDs,
+		},
+		"after": map[string]interface{}{
+			"organization_role":            nextOrganizationRole,
+			"compatibility_role":           nextCompatibilityRole,
+			"status":                       nextStatus,
+			"security_principal_versioned": securityPrincipalChanged,
+			"live_sessions_revoked":        revokedSessions,
+			"project_ids":                  existingProjectIDs,
+		},
+	}, requestAuditMeta(r, targetOrgID, 0)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true, "organization_role": nextOrganizationRole, "role": nextCompatibilityRole,
+	})
+	return
 }
 
 func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -506,13 +568,33 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	if err := lockProjectMembershipMutation(r.Context(), tx, id); err != nil {
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+			TargetOrgID:              middleware.GetOrgIDFromContext(r.Context()),
+			AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+			AdditionalUserIDs:        []int64{id},
+		}); err != nil {
+			if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete authorization failed"})
+			}
+			return
+		}
+	} else if err := lockProjectMembershipMutation(r.Context(), tx, id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return
 	}
 	var targetOrgID int64
-	var targetRole, targetStatus string
-	if err := tx.QueryRow(r.Context(), `SELECT org_id, role, status FROM users WHERE id = $1 FOR UPDATE`, id).Scan(&targetOrgID, &targetRole, &targetStatus); err != nil {
+	var targetOrganizationRole, targetRole, targetStatus string
+	if err := tx.QueryRow(r.Context(),
+		`SELECT org_id, organization_role, role, status
+		   FROM users
+		  WHERE id = $1
+		    AND ($2::boolean OR org_id = $3 OR $3::bigint = 0)
+		  FOR UPDATE`, id, actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin,
+		middleware.GetOrgIDFromContext(r.Context()),
+	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		} else {
@@ -525,7 +607,7 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
-		if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(targetRole) {
+		if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(targetOrganizationRole) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
@@ -534,14 +616,14 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if auth.IsPlatformAdmin(targetRole) && targetStatus == "active" {
+	if auth.IsPlatformAdmin(targetOrganizationRole) && targetStatus == "active" {
 		if _, err := tx.Exec(r.Context(), `SELECT pg_advisory_xact_lock($1)`, activePlatformAdminMutationLockID); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 			return
 		}
 		var activePlatformAdmins int
 		if err := tx.QueryRow(r.Context(),
-			`SELECT COUNT(*) FROM users WHERE role IN ('admin', 'platform_admin') AND status = 'active'`,
+			`SELECT COUNT(*) FROM users WHERE organization_role = 'platform_admin' AND status = 'active'`,
 		).Scan(&activePlatformAdmins); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 			return
@@ -572,9 +654,10 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	if !isUnauthenticatedUnitContext(r.Context()) {
 		if err := insertAuditEntry(r.Context(), tx, "user.delete", "user", idStr, map[string]interface{}{
 			"before": map[string]interface{}{
-				"org_id": targetOrgID,
-				"role":   targetRole,
-				"status": targetStatus,
+				"org_id":             targetOrgID,
+				"organization_role":  targetOrganizationRole,
+				"compatibility_role": targetRole,
+				"status":             targetStatus,
 			},
 			"after": map[string]interface{}{"deleted": true, "personal_keys_disabled": true},
 		}, requestAuditMeta(r, targetOrgID, 0)); err != nil {

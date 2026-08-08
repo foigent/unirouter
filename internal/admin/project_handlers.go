@@ -60,7 +60,8 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		args = append(args, status)
 		argIdx++
 	}
-	if auth.IsProjectScopedRole(actorRole(r.Context())) {
+	organizationRole := actorOrganizationRole(r.Context())
+	if organizationRole != auth.RolePlatformAdmin && organizationRole != auth.RoleOrgAdmin && organizationRole != auth.RoleBillingAdmin && organizationRole != auth.RoleOrgViewer {
 		conditions = append(conditions, fmt.Sprintf(`EXISTS (
 			SELECT 1 FROM project_members pm
 			JOIN users scope_user ON scope_user.id = pm.user_id AND scope_user.org_id = p.org_id
@@ -84,7 +85,11 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf(
 		`SELECT p.id, p.org_id, p.name, p.slug, p.description, p.status,
 		        COALESCE(p.budget_cents, 0), p.budget_period, p.created_at, p.updated_at,
-		        COALESCE(o.name, ''), COUNT(ak.id)
+		        COALESCE(o.name, ''), COUNT(ak.id),
+		        COALESCE((
+		            SELECT pm.role FROM project_members pm
+		            WHERE pm.project_id = p.id AND pm.user_id = $%d
+		        ), '') AS current_user_membership_role
 		 FROM projects p
 		 JOIN orgs o ON o.id = p.org_id
 		 LEFT JOIN api_keys ak ON ak.project_id = p.id AND ak.org_id = p.org_id
@@ -92,9 +97,9 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		 GROUP BY p.id, o.name
 		 ORDER BY p.id ASC
 		 LIMIT $%d OFFSET $%d`,
-		whereClause, argIdx, argIdx+1,
+		argIdx, whereClause, argIdx+1, argIdx+2,
 	)
-	args = append(args, pageSize, offset)
+	args = append(args, middleware.GetUserIDFromContext(r.Context()), pageSize, offset)
 
 	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {
@@ -106,20 +111,28 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	projects := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id, orgID, keyCount int64
-		var name, slug, description, status, budgetPeriod, orgName string
+		var name, slug, description, status, budgetPeriod, orgName, membershipRole string
 		var budgetCents int
 		var createdAt, updatedAt time.Time
-		if err := rows.Scan(&id, &orgID, &name, &slug, &description, &status, &budgetCents, &budgetPeriod, &createdAt, &updatedAt, &orgName, &keyCount); err != nil {
+		if err := rows.Scan(&id, &orgID, &name, &slug, &description, &status, &budgetCents, &budgetPeriod, &createdAt, &updatedAt, &orgName, &keyCount, &membershipRole); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
-		if actorRole(r.Context()) == auth.RoleBillingAdmin {
+		switch actorOrganizationRole(r.Context()) {
+		case auth.RoleBillingAdmin:
 			projects = append(projects, map[string]interface{}{
 				"id": id, "org_id": orgID, "name": name, "slug": slug, "status": status,
 				"budget_cents": budgetCents, "budget_period": budgetPeriod,
+				"current_user_membership_role": canonicalProjectMembershipRole(membershipRole),
 			})
-		} else {
-			projects = append(projects, projectResponse(id, orgID, name, slug, description, status, budgetCents, budgetPeriod, orgName, keyCount, createdAt, updatedAt))
+		case auth.RoleOrgViewer:
+			response := projectMetadataResponse(id, orgID, name, slug, description, status, orgName, createdAt, updatedAt)
+			response["current_user_membership_role"] = canonicalProjectMembershipRole(membershipRole)
+			projects = append(projects, response)
+		default:
+			response := projectResponse(id, orgID, name, slug, description, status, budgetCents, budgetPeriod, orgName, keyCount, createdAt, updatedAt)
+			response["current_user_membership_role"] = canonicalProjectMembershipRole(membershipRole)
+			projects = append(projects, response)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -196,6 +209,17 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		}
 		defer tx.Rollback(r.Context())
 		queryer = tx
+		if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+			TargetOrgID:              req.OrgID,
+			AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+		}); err != nil {
+			if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project authorization failed"})
+			}
+			return
+		}
 	}
 
 	var id int64
@@ -271,6 +295,10 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if actorOrganizationRole(r.Context()) == auth.RoleOrgViewer {
+		writeJSON(w, http.StatusOK, projectMetadataResponse(id, orgID, name, slug, description, status, orgName, createdAt, updatedAt))
+		return
+	}
 	writeJSON(w, http.StatusOK, projectResponse(id, orgID, name, slug, description, status, budgetCents, budgetPeriod, orgName, keyCount, createdAt, updatedAt))
 }
 
@@ -382,6 +410,20 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		defer tx.Rollback(r.Context())
 		execer = tx
 		queryer = tx
+		if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+			AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+			Project: &committingActorProjectRequirement{
+				ProjectID:    id,
+				AllowedRoles: []string{projectMemberAdmin},
+			},
+		}); err != nil {
+			if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project authorization failed"})
+			}
+			return
+		}
 	}
 	before, err := projectAuditSnapshot(r.Context(), queryer, id, tx != nil)
 	if err != nil {
@@ -404,24 +446,6 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
-	if tx != nil && actorRole(r.Context()) == auth.RoleProjectAdmin {
-		// The fast preflight above keeps ordinary denials cheap, but it cannot
-		// authorize the eventual write: membership may be revoked before this
-		// transaction locks the project. Re-check while holding the project row
-		// lock and take a shared lock on the actor membership/user rows. A
-		// concurrent revoke therefore either commits first and denies this update,
-		// or waits until this already-authorized transaction finishes.
-		allowed, authErr := canManageProjectMembersTx(r.Context(), tx, id, targetOrgID)
-		if authErr != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project authorization failed"})
-			return
-		}
-		if !allowed {
-			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-			return
-		}
-	}
-
 	sets = append(sets, "updated_at = NOW()")
 	idArg := argIdx
 	args = append(args, id)
@@ -483,6 +507,20 @@ func projectResponse(id, orgID int64, name, slug, description, status string, bu
 		"updated_at":    updatedAt,
 		"org_name":      orgName,
 		"key_count":     keyCount,
+	}
+}
+
+func projectMetadataResponse(id, orgID int64, name, slug, description, status, orgName string, createdAt, updatedAt time.Time) map[string]interface{} {
+	return map[string]interface{}{
+		"id":          id,
+		"org_id":      orgID,
+		"name":        name,
+		"slug":        slug,
+		"description": description,
+		"status":      status,
+		"created_at":  createdAt,
+		"updated_at":  updatedAt,
+		"org_name":    orgName,
 	}
 }
 

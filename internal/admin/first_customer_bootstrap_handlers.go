@@ -14,6 +14,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/resetplan"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -39,7 +40,7 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"error": "Method not allowed"})
 		return
 	}
-	if !auth.IsPlatformAdmin(actorRole(r.Context())) {
+	if !auth.IsPlatformAdmin(actorOrganizationRole(r.Context())) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
@@ -75,6 +76,17 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 	defer func() { _ = tx.Rollback(r.Context()) }()
 	if _, err := tx.Exec(r.Context(), "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Bootstrap transaction failed"})
+		return
+	}
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+		TargetOrgID:              middleware.GetOrgIDFromContext(r.Context()),
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin},
+	}); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "First-customer bootstrap admin preflight failed"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Bootstrap authorization failed"})
+		}
 		return
 	}
 	if _, err := tx.Exec(r.Context(), "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", firstCustomerBootstrapAction); err != nil {
@@ -160,10 +172,10 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 
 func lockExactBootstrapAdmin(r *http.Request, tx pgx.Tx) (int64, int64, error) {
 	var userID, orgID int64
-	var role, userStatus, orgStatus, provider, passwordHash string
+	var organizationRole, role, userStatus, orgStatus, provider, passwordHash string
 	err := tx.QueryRow(r.Context(), `
 		WITH candidates AS MATERIALIZED (
-			SELECT u.id, u.org_id, u.role, u.status, u.password_hash,
+			SELECT u.id, u.org_id, u.organization_role, u.role, u.status, u.password_hash,
 			       COALESCE(NULLIF(u.auth_provider, ''), 'local') AS auth_provider,
 			       o.status AS org_status
 			  FROM users u
@@ -172,13 +184,14 @@ func lockExactBootstrapAdmin(r *http.Request, tx pgx.Tx) (int64, int64, error) {
 			   AND COALESCE(NULLIF(u.auth_provider, ''), 'local') = 'local'
 			 FOR UPDATE OF u, o
 		)
-		SELECT id, org_id, role, status, password_hash, auth_provider, org_status
+		SELECT id, org_id, organization_role, role, status, password_hash, auth_provider, org_status
 		  FROM candidates
 		 WHERE (SELECT COUNT(*) FROM candidates) = 1`, resetplan.PreservedLogin,
-	).Scan(&userID, &orgID, &role, &userStatus, &passwordHash, &provider, &orgStatus)
+	).Scan(&userID, &orgID, &organizationRole, &role, &userStatus, &passwordHash, &provider, &orgStatus)
 	if err != nil || userID != middleware.GetUserIDFromContext(r.Context()) ||
 		orgID != middleware.GetOrgIDFromContext(r.Context()) ||
-		!auth.IsPlatformAdmin(role) || userStatus != "active" || orgStatus != "active" || provider != "local" {
+		organizationRole != auth.RolePlatformAdmin || !auth.IsPlatformAdmin(role) ||
+		userStatus != "active" || orgStatus != "active" || provider != "local" {
 		return 0, 0, fmt.Errorf("exact selected administrator is not active")
 	}
 	if _, err := bcrypt.Cost([]byte(passwordHash)); err != nil {
@@ -234,9 +247,9 @@ func verifyFirstCustomerEmptyCheckpoint(r *http.Request, tx pgx.Tx, adminUserID,
 		{name: "ledger runtime marker", query: "SELECT COUNT(*) FROM micro_ledger_runtime_state WHERE singleton", want: 1},
 		{name: "known public tables", query: "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public' AND tablename = ANY($1::text[])", args: []any{expectedTables}, want: int64(len(expectedTables))},
 		{name: "exact public table inventory", query: "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public'", want: int64(len(expectedTables))},
-		{name: "latest reset support migration", query: `SELECT COUNT(*) FROM schema_migrations
-			WHERE version = '000057_second_integration_reset_support'
-			  AND version = (SELECT MAX(version) FROM schema_migrations)`, want: 1},
+		{name: "latest supported migration", query: `SELECT COUNT(*) FROM schema_migrations
+			WHERE version = $1
+			  AND version = (SELECT MAX(version) FROM schema_migrations)`, args: []any{schemaauthority.LatestSupportedMigration}, want: 1},
 	}
 	for _, check := range checks {
 		var count int64

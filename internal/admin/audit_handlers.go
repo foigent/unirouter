@@ -303,6 +303,9 @@ func marshalAuditJSON(value interface{}) string {
 }
 
 func auditSourceFromContext(ctx context.Context) string {
+	// users.role is consulted only to preserve the historical audit source
+	// label. It is not an authorization decision; route and handler authority
+	// comes from organization_role or a live project_members row.
 	role := middleware.GetUserRoleFromContext(ctx)
 	switch {
 	case auth.IsProjectScopedRole(role):

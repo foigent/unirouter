@@ -192,8 +192,20 @@ OIDC_AUTO_PROVISION=false
 如果允许首登自动创建用户，必须同时设置 `OIDC_AUTO_PROVISION=true`，并将
 `OIDC_DEFAULT_ORG_ID` 设置为已存在的活动组织 ID。不要复制带尖括号的占位符到
 shell 或 `.env`。角色可由 `OIDC_ROLE_CLAIM` 映射，缺失时使用
-`OIDC_DEFAULT_ROLE`；项目角色会被加入 `OIDC_DEFAULT_PROJECT_SLUG` 指向的默认
-项目。配置语义见 `docs/tech-ref/18-oidc-sso.md`。
+`OIDC_DEFAULT_ROLE`。组织角色只设置 canonical `organization_role`，不会自动获得
+任何项目；`project_admin`、`project_user`、`project_viewer`（以及兼容 alias
+`developer`/`project_developer`/`viewer`）会创建 `organization_role=member`，并仅在
+`OIDC_DEFAULT_PROJECT_SLUG` 指向的默认项目建立 canonical membership。配置语义见
+`docs/tech-ref/18-oidc-sso.md`。
+
+迁移 `000058_enterprise_project_role_separation` 支持一个版本窗口的滚动升级：旧
+binary 省略 `users.organization_role` 的 INSERT 由不可落盘 sentinel 识别，旧
+`users.role` UPDATE 与旧 `project_members.role` alias 由兼容 trigger 归一化。行级
+trigger 无法区分“旧 binary 只更新 role”和“客户端把 organization_role 重复写成
+旧值、同时写入不一致 role”这两种 UPDATE；因此该精确形状在兼容窗口内按 legacy
+语义归一化。当前 binary 的组织角色写路径必须始终验证并同时写入双轴。确认所有旧
+writer 退役后，应通过后续独立迁移移除 sentinel default 与两个兼容 trigger；不得把
+它们作为长期授权机制。
 
 非生产环境可用 Batch 24 mock-provider smoke 验证 OIDC 协议、用户映射和登录页入口：
 
@@ -312,6 +324,11 @@ docker compose exec -T backend ./uniroute admin create \
 当前二进制会在数据库访问前拒绝旧的 value-bearing `--password`，也会拒绝位置参数
 形式的密码。没有 `--password-stdin` 时，非 TTY 标准输入会明确失败，不会从环境变量
 回退读取秘密。
+
+`admin create --role` 只接受组织角色 `platform_admin`、`org_admin`、
+`billing_admin`、`org_viewer`、`member`，并保留 `admin` 作为
+`platform_admin` 的兼容别名。项目角色必须通过项目成员关系授予；
+`project_admin`、`project_user`、`project_viewer` 及旧别名会在数据库访问前被拒绝。
 
 ### 2.5 发布同步安全规则
 

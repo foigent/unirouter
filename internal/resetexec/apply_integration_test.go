@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/resetplan"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"golang.org/x/crypto/bcrypt"
@@ -51,14 +52,16 @@ func TestApplyDeterministicResetPreservesExactAdminPlatformStateAndSequences(t *
 	require.Equal(t, adminOrgID, result.RetainedOrgID)
 	require.Equal(t, int64(2), result.RedisKeysDeleted)
 
-	var retainedPassword, retainedUsername string
+	var retainedPassword, retainedUsername, retainedOrganizationRole, retainedCompatibilityRole string
 	var retainedAuthEpoch int64
 	var retainedEmail *string
 	var orgSettings string
-	require.NoError(t, pool.QueryRow(ctx, `SELECT username, password_hash, auth_epoch, email FROM users WHERE id=$1`, adminID).Scan(&retainedUsername, &retainedPassword, &retainedAuthEpoch, &retainedEmail))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT username, password_hash, organization_role, role, auth_epoch, email FROM users WHERE id=$1`, adminID).Scan(&retainedUsername, &retainedPassword, &retainedOrganizationRole, &retainedCompatibilityRole, &retainedAuthEpoch, &retainedEmail))
 	require.NoError(t, pool.QueryRow(ctx, `SELECT settings::text FROM orgs WHERE id=$1`, adminOrgID).Scan(&orgSettings))
 	require.Equal(t, "Admin", retainedUsername)
 	require.Equal(t, passwordHash, retainedPassword)
+	require.Equal(t, auth.RolePlatformAdmin, retainedOrganizationRole)
+	require.Equal(t, auth.RolePlatformAdmin, retainedCompatibilityRole)
 	require.EqualValues(t, 1, retainedAuthEpoch)
 	require.Nil(t, retainedEmail)
 	require.Equal(t, `{}`, orgSettings)
@@ -115,8 +118,8 @@ func seedResetIntegrationFixture(t *testing.T, pool *pgxpool.Pool) (int64, int64
 		INSERT INTO orgs (name, status, org_type, settings)
 		VALUES ('Reset Admin Shell', 'active', 'partner', '{"campaign":"old"}'::jsonb) RETURNING id`).Scan(&adminOrgID))
 	require.NoError(t, pool.QueryRow(ctx, `
-		INSERT INTO users (org_id, username, password_hash, role, status, auth_provider, email)
-		VALUES ($1, 'Admin', $2, 'platform_admin', 'active', 'local', 'old-admin@example.invalid') RETURNING id`,
+		INSERT INTO users (org_id, username, password_hash, organization_role, role, status, auth_provider, email)
+		VALUES ($1, 'Admin', $2, 'platform_admin', 'platform_admin', 'active', 'local', 'old-admin@example.invalid') RETURNING id`,
 		adminOrgID, passwordHash).Scan(&adminID))
 	_, err = pool.Exec(ctx, `
 		INSERT INTO admin_sessions (user_id, sid_hash, issued_at, expires_at)
@@ -128,8 +131,8 @@ func seedResetIntegrationFixture(t *testing.T, pool *pgxpool.Pool) (int64, int64
 		INSERT INTO orgs (name, status, org_type)
 		VALUES ('Old Campaign Customer', 'active', 'customer') RETURNING id`).Scan(&oldOrgID))
 	require.NoError(t, pool.QueryRow(ctx, `
-		INSERT INTO users (org_id, username, password_hash, role, status, auth_provider)
-		VALUES ($1, 'old-user', $2, 'org_admin', 'active', 'local') RETURNING id`,
+		INSERT INTO users (org_id, username, password_hash, organization_role, role, status, auth_provider)
+		VALUES ($1, 'old-user', $2, 'org_admin', 'org_admin', 'active', 'local') RETURNING id`,
 		oldOrgID, passwordHash).Scan(&oldUserID))
 	require.NoError(t, pool.QueryRow(ctx, `
 		INSERT INTO projects (org_id, name, slug, status, created_by)

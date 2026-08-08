@@ -160,6 +160,10 @@ func (h *Handler) CreateWorkloadApplication(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizeWorkloadApplicationMutationTx(r.Context(), tx, orgID); err != nil {
+		writeWorkloadCommitAuthorizationError(w, err)
+		return
+	}
 	if err := requireActiveWorkloadProject(r.Context(), tx, orgID, request.ProjectID); err != nil {
 		writeWorkloadApplicationError(w, err)
 		return
@@ -233,6 +237,10 @@ func (h *Handler) UpdateWorkloadApplication(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizeWorkloadApplicationMutationTx(r.Context(), tx, orgID); err != nil {
+		writeWorkloadCommitAuthorizationError(w, err)
+		return
+	}
 	before, err := readWorkloadApplication(r.Context(), tx, orgID, r.PathValue("ref"), true)
 	if err != nil {
 		writeWorkloadApplicationError(w, err)
@@ -309,6 +317,10 @@ func (h *Handler) ArchiveWorkloadApplication(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizeWorkloadApplicationMutationTx(r.Context(), tx, orgID); err != nil {
+		writeWorkloadCommitAuthorizationError(w, err)
+		return
+	}
 	before, err := readWorkloadApplication(r.Context(), tx, orgID, r.PathValue("ref"), true)
 	if err != nil {
 		writeWorkloadApplicationError(w, err)
@@ -427,6 +439,10 @@ func (h *Handler) BindWorkloadApplicationCredential(w http.ResponseWriter, r *ht
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizeWorkloadApplicationMutationTx(r.Context(), tx, orgID); err != nil {
+		writeWorkloadCommitAuthorizationError(w, err)
+		return
+	}
 	application, err := readWorkloadApplication(r.Context(), tx, orgID, r.PathValue("ref"), true)
 	if err != nil {
 		writeWorkloadApplicationError(w, err)
@@ -436,23 +452,19 @@ func (h *Handler) BindWorkloadApplicationCredential(w http.ResponseWriter, r *ht
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Application changed or is archived"})
 		return
 	}
-	var keyOrgID, keyProjectID, existingApplicationID int64
-	var keyType, purpose, status string
+	var existingApplicationID int64
+	var keyType, status string
 	err = tx.QueryRow(r.Context(), `
-SELECT org_id, COALESCE(project_id,0), COALESCE(NULLIF(key_type,''),'shared'),
-       COALESCE(purpose,''), status, COALESCE(workload_application_id,0)
-  FROM api_keys WHERE id=$1 FOR UPDATE`, keyID).Scan(
-		&keyOrgID, &keyProjectID, &keyType, &purpose, &status, &existingApplicationID)
+	SELECT COALESCE(NULLIF(key_type,''),'shared'), status, COALESCE(workload_application_id,0)
+	  FROM api_keys
+	 WHERE id=$1 AND org_id=$2 AND project_id=$3 AND COALESCE(purpose,'')=''
+	 FOR UPDATE`, keyID, orgID, application.ProjectID).Scan(&keyType, &status, &existingApplicationID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "API key not found"})
 		return
 	}
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
-		return
-	}
-	if keyOrgID != orgID || keyProjectID != application.ProjectID || purpose != "" {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Credential is outside application scope"})
 		return
 	}
 	if existingApplicationID == application.ID {
@@ -472,8 +484,10 @@ SELECT org_id, COALESCE(project_id,0), COALESCE(NULLIF(key_type,''),'shared'),
 		return
 	}
 	tag, err := tx.Exec(r.Context(), `
-UPDATE api_keys SET workload_application_id=$1, updated_at=NOW()
- WHERE id=$2 AND org_id=$3 AND workload_application_id IS NULL`, application.ID, keyID, orgID)
+	UPDATE api_keys SET workload_application_id=$1, updated_at=NOW()
+	 WHERE id=$2 AND org_id=$3 AND project_id=$4
+	   AND COALESCE(purpose,'')='' AND workload_application_id IS NULL`,
+		application.ID, keyID, orgID, application.ProjectID)
 	if err != nil || tag.RowsAffected() != 1 {
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Credential binding changed since it was loaded"})
 		return
@@ -505,6 +519,22 @@ UPDATE workload_applications
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"result": "bound", "application": item})
+}
+
+func (h *Handler) reauthorizeWorkloadApplicationMutationTx(ctx context.Context, tx pgx.Tx, orgID int64) error {
+	_, err := h.reauthorizeCommittingActorTx(ctx, tx, committingActorRequirement{
+		TargetOrgID:              orgID,
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+	})
+	return err
+}
+
+func writeWorkloadCommitAuthorizationError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Application scope forbidden"})
+		return
+	}
+	writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application authorization unavailable"})
 }
 
 func (h *Handler) GetWorkloadApplicationReadiness(w http.ResponseWriter, r *http.Request) {
@@ -695,7 +725,7 @@ func requireActiveWorkloadProject(ctx context.Context, rower interface {
 }
 
 func resolveWorkloadApplicationOrg(r *http.Request, requested int64) (int64, error) {
-	role := middleware.GetUserRoleFromContext(r.Context())
+	role := actorOrganizationRole(r.Context())
 	contextOrg := middleware.GetOrgIDFromContext(r.Context())
 	if auth.IsPlatformAdmin(role) {
 		if requested > 0 {

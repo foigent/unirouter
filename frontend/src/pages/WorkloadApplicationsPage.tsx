@@ -15,7 +15,7 @@ import {
 import { IconArchive, IconKeyStroked, IconPlus, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
-import { isPlatformAdminRole } from '../navigation';
+import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { EmptyState, MetricTile, PageHeader, Surface } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
 import { loadAllPages } from '../utils/loadAllPages';
@@ -180,7 +180,7 @@ export default function WorkloadApplicationsPage() {
   const currentUser = useAuthStore(state => state.user);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const platformAdmin = isPlatformAdminRole(currentUser?.role);
+  const platformAdmin = isPlatformAdminRole(organizationRoleForUser(currentUser));
   const requestVersion = useRef(0);
   const [contract, setContract] = useState<WorkloadContract | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);

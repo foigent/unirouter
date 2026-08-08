@@ -143,15 +143,16 @@ func TestLogin_Success(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1         // id
-					*dest[1].(*int64) = 1         // org_id
-					*dest[2].(*string) = hash     // password_hash
-					*dest[3].(*string) = "admin"  // role
-					*dest[4].(*string) = "active" // status
-					*dest[5].(*string) = "Acme"   // org_name
-					*dest[6].(*string) = "admin@example.com"
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[0].(*int64) = 1                 // id
+					*dest[1].(*int64) = 1                 // org_id
+					*dest[2].(*string) = hash             // password_hash
+					*dest[3].(*string) = "platform_admin" // organization_role
+					*dest[4].(*string) = "admin"          // compatibility role
+					*dest[5].(*string) = "active"         // status
+					*dest[6].(*string) = "Acme"           // org_name
+					*dest[7].(*string) = "admin@example.com"
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -187,6 +188,51 @@ func TestLogin_Success(t *testing.T) {
 	}
 }
 
+func TestLogin_RoleAxisMismatchFromControlledCorruptReadCreatesNoSessionOrAudit(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("mismatch-password-123"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writes := 0
+	db := &testutil.MockDB{
+		QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 9
+				*dest[1].(*int64) = 1
+				*dest[2].(*string) = string(hash)
+				// This deliberately models storage corruption or an older schema
+				// without 000058's CHECK. The current database cannot persist it.
+				*dest[3].(*string) = auth.RoleOrgViewer
+				*dest[4].(*string) = auth.RoleProjectAdmin
+				*dest[5].(*string) = "active"
+				*dest[6].(*string) = "Controlled Corruption Org"
+				*dest[7].(*string) = ""
+				*dest[8].(*string) = "local"
+				*dest[9].(*int64) = 0
+				*dest[10].(*string) = "mismatched-role-login"
+				return nil
+			}}
+		},
+		ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+			writes++
+			return pgconn.NewCommandTag("INSERT 1"), nil
+		},
+	}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login",
+		strings.NewReader(`{"username":"mismatched-role-login","password":"mismatch-password-123"}`))
+	rec := httptest.NewRecorder()
+
+	h.Login(rec, req)
+
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "token") {
+		t.Fatalf("corrupt dual-axis read must fail before bearer issuance, got %d %s", rec.Code, rec.Body.String())
+	}
+	if writes != 0 {
+		t.Fatalf("role-axis mismatch wrote session or login audit state: %d writes", writes)
+	}
+}
+
 func TestLogin_ExternalProviderWithBcryptDenied(t *testing.T) {
 	hash := "$2a$10$FQbk3L3IVXe.UiYojf7YVeq1nbfb4oI.igx8Jed8fxF6slCek.hLG"
 	auditWrites := 0
@@ -196,12 +242,13 @@ func TestLogin_ExternalProviderWithBcryptDenied(t *testing.T) {
 				*dest[0].(*int64) = 1
 				*dest[1].(*int64) = 1
 				*dest[2].(*string) = hash
-				*dest[3].(*string) = "admin"
-				*dest[4].(*string) = "active"
-				*dest[5].(*string) = "Acme"
-				*dest[6].(*string) = "admin@example.com"
-				*dest[7].(*string) = "oidc"
-				*dest[9].(*string) = "admin"
+				*dest[3].(*string) = "platform_admin"
+				*dest[4].(*string) = "admin"
+				*dest[5].(*string) = "active"
+				*dest[6].(*string) = "Acme"
+				*dest[7].(*string) = "admin@example.com"
+				*dest[8].(*string) = "oidc"
+				*dest[10].(*string) = "admin"
 				return nil
 			}}
 		},
@@ -239,12 +286,13 @@ func TestLogin_WritesAuditWithActor(t *testing.T) {
 					*dest[0].(*int64) = 7
 					*dest[1].(*int64) = 3
 					*dest[2].(*string) = hash
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "active"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -284,12 +332,13 @@ func TestLogin_WrongPassword(t *testing.T) {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = hash
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "active"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -322,12 +371,13 @@ func TestLogin_PublicDefaultPasswordBlockedWithoutApplicationUsernameFold(t *tes
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = string(hash)
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "active"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "unicode-\u0130dentity"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "unicode-\u0130dentity"
 					return nil
 				},
 			}
@@ -359,12 +409,13 @@ func TestLogin_DefaultAdminPasswordAllowedForExplicitDevOverride(t *testing.T) {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = string(hash)
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "active"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -552,12 +603,13 @@ func TestGetMe_IncludesIdentityProviderAndEmail(t *testing.T) {
 		return &testutil.MockRow{ScanFn: func(dest ...any) error {
 			*dest[0].(*string) = "alice"
 			*dest[1].(*string) = "org_admin"
-			*dest[2].(*string) = "active"
-			*dest[3].(*int64) = 22
-			*dest[4].(*time.Time) = createdAt
-			*dest[5].(*string) = "Acme"
-			*dest[6].(*string) = "alice@example.com"
-			*dest[7].(*string) = "oidc"
+			*dest[2].(*string) = "org_admin"
+			*dest[3].(*string) = "active"
+			*dest[4].(*int64) = 22
+			*dest[5].(*time.Time) = createdAt
+			*dest[6].(*string) = "Acme"
+			*dest[7].(*string) = "alice@example.com"
+			*dest[8].(*string) = "oidc"
 			return nil
 		}}
 	}}
@@ -616,12 +668,13 @@ func TestLogin_DisabledAccount(t *testing.T) {
 					*dest[0].(*int64) = 1
 					*dest[1].(*int64) = 1
 					*dest[2].(*string) = hash
-					*dest[3].(*string) = "admin"
-					*dest[4].(*string) = "disabled"
-					*dest[5].(*string) = "Default"
-					*dest[6].(*string) = ""
-					*dest[7].(*string) = "local"
-					*dest[9].(*string) = "admin"
+					*dest[3].(*string) = "platform_admin"
+					*dest[4].(*string) = "admin"
+					*dest[5].(*string) = "disabled"
+					*dest[6].(*string) = "Default"
+					*dest[7].(*string) = ""
+					*dest[8].(*string) = "local"
+					*dest[10].(*string) = "admin"
 					return nil
 				},
 			}
@@ -1536,8 +1589,8 @@ func TestCreateUser_DefaultRole(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d", rec.Code)
 	}
-	if insertedRole != "org_viewer" {
-		t.Fatalf("expected default role org_viewer, got %s", insertedRole)
+	if insertedRole != auth.RoleMember {
+		t.Fatalf("expected default organization role member, got %s", insertedRole)
 	}
 }
 
@@ -1925,27 +1978,21 @@ func TestListAPIKeys_ScanError(t *testing.T) {
 // ===================================================================
 
 func TestCreateAPIKey_Success(t *testing.T) {
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 42 // new key id
-					return nil
-				},
-			}
-		},
-	}
-	h := newTestHandler(db)
+	state := newAPIKeySecurityTestState()
+	state.actorRole = auth.RolePlatformAdmin
+	h := newAPIKeySecurityTestHandler(state)
 
-	body := `{"org_id":1,"name":"test-key","rpm_limit":120,"qps_limit":20}`
-	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	body := `{"org_id":1,"project_id":11,"name":"test-key","rpm_limit":120,"qps_limit":20}`
+	req := apiKeySecurityRequest(http.MethodPost, "/api/v1/keys", body, auth.RolePlatformAdmin)
 	rec := httptest.NewRecorder()
 
 	h.CreateAPIKey(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !state.actorLock || !state.keyMutated || !state.auditAttempted || !state.committed {
+		t.Fatalf("production-equivalent create must reauthorize, mutate, audit, and commit: %+v", state)
 	}
 }
 
@@ -1996,34 +2043,12 @@ func TestCreateAPIKey_AuditIncludesProjectAndAfterState(t *testing.T) {
 }
 
 func TestCreateAPIKey_PersonalOwnerFields(t *testing.T) {
-	var insertArgs []any
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					switch {
-					case strings.Contains(sql, "SELECT id FROM projects"):
-						*dest[0].(*int64) = 9
-					case strings.Contains(sql, "FROM users"):
-						*dest[0].(*int) = 1
-					case strings.Contains(sql, "FROM project_members"):
-						*dest[0].(*int) = 1
-					case strings.Contains(sql, "INSERT INTO api_keys"):
-						insertArgs = append([]any(nil), args...)
-						*dest[0].(*int64) = 42
-					default:
-						*dest[0].(*int64) = 42
-					}
-					return nil
-				},
-			}
-		},
-	}
-	h := newTestHandler(db)
+	state := newAPIKeySecurityTestState()
+	state.actorRole = auth.RolePlatformAdmin
+	h := newAPIKeySecurityTestHandler(state)
 
-	body := `{"org_id":1,"project_id":9,"owner_user_id":42,"key_type":"personal","name":"alice-key"}`
-	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	body := `{"org_id":1,"project_id":11,"owner_user_id":7,"key_type":"personal","name":"alice-key"}`
+	req := apiKeySecurityRequest(http.MethodPost, "/api/v1/keys", body, auth.RolePlatformAdmin)
 	rec := httptest.NewRecorder()
 
 	h.CreateAPIKey(rec, req)
@@ -2031,12 +2056,12 @@ func TestCreateAPIKey_PersonalOwnerFields(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(insertArgs) < 4 || insertArgs[2] != int64(42) || insertArgs[3] != "personal" {
-		t.Fatalf("expected owner/key_type insert args, got %#v", insertArgs)
+	if !state.actorLock || !state.keyMutated || !state.auditAttempted || !state.committed {
+		t.Fatalf("production-equivalent personal create must reauthorize, mutate, audit, and commit: %+v", state)
 	}
 	var resp map[string]interface{}
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["owner_user_id"] != float64(42) || resp["key_type"] != "personal" {
+	if resp["owner_user_id"] != float64(7) || resp["key_type"] != "personal" {
 		t.Fatalf("expected owner fields in create response, got %#v", resp)
 	}
 }
@@ -2094,6 +2119,12 @@ func TestCreateAPIKey_RejectsNegativeProjectID(t *testing.T) {
 
 func TestCreateAPIKey_DuplicateName(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 11
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			if strings.Contains(sql, "FROM api_keys") && strings.Contains(sql, "name") {
 				return &testutil.MockRows{
@@ -2107,7 +2138,7 @@ func TestCreateAPIKey_DuplicateName(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"org_id":1,"name":"test-key"}`
+	body := `{"org_id":1,"project_id":11,"name":"test-key"}`
 	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -2133,11 +2164,15 @@ func TestCreateAPIKey_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestCreateAPIKey_DBError(t *testing.T) {
+func TestCreateAPIKey_DirectHandlerCompatibilityDBError(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
+					if strings.Contains(sql, "FROM projects") {
+						*dest[0].(*int64) = 9
+						return nil
+					}
 					return fmt.Errorf("duplicate key")
 				},
 			}
@@ -2145,7 +2180,7 @@ func TestCreateAPIKey_DBError(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"org_id":1,"name":"test-key"}`
+	body := `{"org_id":1,"project_id":9,"name":"test-key"}`
 	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -2529,16 +2564,19 @@ func TestListUsers_Success(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*int64) = 1                    // id
-						*dest[1].(*int64) = 1                    // org_id
-						*dest[2].(**string) = strPtr("Default")  // org_name
-						*dest[3].(*string) = "admin"             // username
-						*dest[4].(*string) = "admin"             // role
-						*dest[5].(*string) = "active"            // status
-						*dest[6].(*string) = "admin@example.com" // email
-						*dest[7].(*string) = "local"             // auth_provider
-						*dest[8].(*time.Time) = now              // created_at
-						*dest[9].(*time.Time) = now              // updated_at
+						*dest[0].(*int64) = 1                       // id
+						*dest[1].(*int64) = 1                       // org_id
+						*dest[2].(**string) = strPtr("Default")     // org_name
+						*dest[3].(*string) = "admin"                // username
+						*dest[4].(*string) = auth.RolePlatformAdmin // organization_role
+						*dest[5].(*string) = auth.RolePlatformAdmin // compatibility role
+						*dest[6].(*string) = "active"               // status
+						*dest[7].(*string) = "admin@example.com"    // email
+						*dest[8].(*string) = "local"                // auth_provider
+						*dest[9].(*time.Time) = now                 // created_at
+						*dest[10].(*time.Time) = now                // updated_at
+						*dest[11].(*[]int64) = []int64{}            // project_ids
+						*dest[12].(*string) = ""                    // project_names
 						return nil
 					},
 				},
@@ -4303,18 +4341,60 @@ func TestDisableAPIKey_DeveloperCanDisableOwnedKeyWithProjectMembership(t *testi
 	var updateArgs []any
 	tx := &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			if !strings.Contains(sql, "FROM api_keys") || !strings.Contains(sql, "FOR UPDATE") {
+			switch {
+			case strings.Contains(sql, "FROM users u"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 3
+					*dest[1].(*string) = auth.RoleMember
+					*dest[2].(*string) = auth.RoleDeveloper
+					*dest[3].(*string) = "active"
+					*dest[4].(*int64) = 0
+					*dest[5].(*string) = "active"
+					return nil
+				}}
+			case strings.Contains(sql, "FROM admin_sessions"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 91
+					return nil
+				}}
+			case strings.Contains(sql, "FROM orgs"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*string) = "active"
+					return nil
+				}}
+			case strings.Contains(sql, "FROM projects p") && len(args) == 5:
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 3
+					*dest[1].(*string) = "active"
+					*dest[2].(*string) = auth.ProjectRoleUser
+					return nil
+				}}
+			case strings.Contains(sql, "FROM projects"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*string) = "active"
+					return nil
+				}}
+			case strings.Contains(sql, "FROM project_members pm"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*string) = auth.ProjectRoleUser
+					return nil
+				}}
+			case strings.Contains(sql, "FROM api_keys") && strings.Contains(sql, "FOR UPDATE"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 3
+					*dest[1].(*int64) = 9
+					*dest[2].(*int64) = 42
+					*dest[3].(*string) = "Developer key"
+					*dest[4].(*string) = "uk_developer"
+					*dest[5].(*string) = "active"
+					*dest[6].(*string) = ""
+					*dest[7].(*string) = "personal"
+					return nil
+				}}
+			default:
 				t.Fatalf("unexpected transaction query: %s", sql)
+				return &testutil.MockRow{}
 			}
-			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*dest[0].(*int64) = 3
-				*dest[1].(*int64) = 9
-				*dest[2].(*int64) = 42
-				*dest[3].(*string) = "Developer key"
-				*dest[4].(*string) = "uk_developer"
-				*dest[5].(*string) = "active"
-				return nil
-			}}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			if strings.Contains(sql, "UPDATE api_keys") {
@@ -4335,11 +4415,19 @@ func TestDisableAPIKey_DeveloperCanDisableOwnedKeyWithProjectMembership(t *testi
 					*dest[3].(*string) = "Developer key"
 					*dest[4].(*string) = "uk_developer"
 					*dest[5].(*string) = "active"
+					*dest[6].(*string) = ""
+					*dest[7].(*string) = "personal"
 					return nil
 				}}
 			case strings.Contains(sql, "FROM project_members"):
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {
-					*dest[0].(*int) = 1
+					roles, _ := args[3].([]string)
+					*dest[0].(*int) = 0
+					for _, role := range roles {
+						if role == auth.ProjectRoleUser || role == auth.RoleDeveloper {
+							*dest[0].(*int) = 1
+						}
+					}
 					return nil
 				}}
 			default:
@@ -4354,6 +4442,10 @@ func TestDisableAPIKey_DeveloperCanDisableOwnedKeyWithProjectMembership(t *testi
 	req := httptest.NewRequest(http.MethodPost, "/keys/1/disable", nil)
 	req.SetPathValue("id", "1")
 	req = withTestActor(req, 42, 3, auth.RoleDeveloper)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RoleMember)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("developer-disable-session"))
+	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	h.DisableAPIKey(rec, req)
@@ -4371,19 +4463,14 @@ func TestDisableAPIKey_DeveloperCanDisableOwnedKeyWithProjectMembership(t *testi
 	}
 }
 
-func TestDisableAPIKey_DeveloperCannotDisableAnotherUsersKey(t *testing.T) {
+func TestDisableAPIKey_InaccessiblePersonalKeyIsNotFound(t *testing.T) {
 	execCalled := false
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*dest[0].(*int64) = 3
-				*dest[1].(*int64) = 9
-				*dest[2].(*int64) = 77
-				*dest[3].(*string) = "Another developer key"
-				*dest[4].(*string) = "uk_other"
-				*dest[5].(*string) = "active"
-				return nil
-			}}
+			if !strings.Contains(sql, "FROM api_keys WHERE id") || !strings.Contains(sql, "api_keys.owner_user_id = $3") {
+				t.Fatalf("unexpected QueryRow: %s", sql)
+			}
+			return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			execCalled = true
@@ -4399,8 +4486,8 @@ func TestDisableAPIKey_DeveloperCannotDisableAnotherUsersKey(t *testing.T) {
 
 	h.DisableAPIKey(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected stable 404, got %d: %s", rec.Code, rec.Body.String())
 	}
 	if execCalled {
 		t.Fatal("developer must not update another user's key")

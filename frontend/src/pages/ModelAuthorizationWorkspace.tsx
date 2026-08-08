@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Form, Popconfirm, Select, SideSheet, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { isPlatformAdminRole } from '../navigation';
+import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
@@ -58,7 +58,7 @@ function statusColor(status: string) {
 
 export default function ModelAuthorizationWorkspace() {
   const user = useAuthStore(state => state.user);
-  const platform = isPlatformAdminRole(user?.role);
+  const platform = isPlatformAdminRole(organizationRoleForUser(user));
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [orgID, setOrgID] = useState<number | undefined>(user?.org_id);
   const [contract, setContract] = useState<AuthorizationContract | null>(null);

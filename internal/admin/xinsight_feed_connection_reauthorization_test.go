@@ -49,14 +49,22 @@ func TestReauthorizeXInsightFeedControlTxUsesExistingCommitOrderInvariant(t *tes
 						switch {
 						case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
 							operations = append(operations, "actor")
+							organizationRole, _ := auth.NormalizeOrganizationRole(test.currentRole)
 							*dest[0].(*int64) = 1
-							*dest[1].(*string) = test.currentRole
-							*dest[2].(*string) = test.actorStatus
-							*dest[3].(*string) = "active"
+							*dest[1].(*string) = organizationRole
+							*dest[2].(*string) = test.currentRole
+							*dest[3].(*string) = test.actorStatus
+							*dest[4].(*int64) = 0
+							*dest[5].(*string) = "active"
 							return nil
-						case strings.Contains(sql, "SELECT status FROM orgs"):
-							operations = append(operations, "target-org")
-							*dest[0].(*string) = "active"
+						case strings.Contains(sql, "FROM admin_sessions"):
+							operations = append(operations, "session")
+							*dest[0].(*int64) = 91
+							return nil
+						case strings.Contains(sql, "FROM projects p"):
+							operations = append(operations, "project-scope")
+							*dest[0].(*int64) = 1
+							*dest[1].(*string) = test.projectStatus
 							return nil
 						case strings.Contains(sql, "SELECT status FROM projects"):
 							operations = append(operations, "target-project")
@@ -79,7 +87,7 @@ func TestReauthorizeXInsightFeedControlTxUsesExistingCommitOrderInvariant(t *tes
 				require.ErrorIs(t, err, errAPIKeyAuthorizationChanged)
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, []string{"actor-advisory-lock", "actor", "target-org", "target-project"}, operations)
+				require.Equal(t, []string{"actor-advisory-lock", "actor", "session", "project-scope", "target-project"}, operations)
 			}
 			require.NotEmpty(t, operations)
 			require.Equal(t, "actor-advisory-lock", operations[0], "user advisory lock must precede project and feed/key locks")

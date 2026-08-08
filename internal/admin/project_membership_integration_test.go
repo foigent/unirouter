@@ -30,10 +30,12 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 	insertUser := func(orgID int64, username, role string) int64 {
 		t.Helper()
 		var userID int64
+		organizationRole, ok := auth.NormalizeOrganizationRole(role)
+		require.True(t, ok)
 		require.NoError(t, pool.QueryRow(ctx,
-			`INSERT INTO users (org_id, username, password_hash, role, status)
-			 VALUES ($1, $2, 'hash', $3, 'active') RETURNING id`,
-			orgID, username, role,
+			`INSERT INTO users (org_id, username, password_hash, organization_role, role, status)
+			 VALUES ($1, $2, 'hash', $3, $4, 'active') RETURNING id`,
+			orgID, username, organizationRole, role,
 		).Scan(&userID))
 		return userID
 	}
@@ -49,7 +51,9 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 	}
 
 	orgAdminA := insertUser(orgA, "v1-project-org-admin-a", auth.RoleOrgAdmin)
+	orgAdminWithoutMembership := insertUser(orgA, "v1-project-org-admin-no-membership", auth.RoleOrgAdmin)
 	billingA := insertUser(orgA, "v1-project-billing-a", auth.RoleBillingAdmin)
+	orgViewerA := insertUser(orgA, "v1-project-org-viewer-a", auth.RoleOrgViewer)
 	projectAdminA := insertUser(orgA, "v1-project-admin-a", auth.RoleProjectAdmin)
 	projectAdminTarget := insertUser(orgA, "v1-project-admin-target", auth.RoleProjectAdmin)
 	developerA := insertUser(orgA, "v1-project-developer-a", auth.RoleDeveloper)
@@ -69,6 +73,7 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 		req := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		req = withTestActor(req, actorID, actorOrgID, role)
+		req = withIntegrationCommittingActor(t, pool, req, actorID)
 		rec := httptest.NewRecorder()
 		switch {
 		case method == http.MethodPost && target == "/users":
@@ -82,44 +87,135 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 		return rec
 	}
 
-	t.Run("local project role creation is atomic and tenant bound", func(t *testing.T) {
+	t.Run("local account creation defaults to member and separates project membership", func(t *testing.T) {
 		rec := request(http.MethodPost, "/users",
-			fmt.Sprintf(`{"org_id":%d,"username":"v1-created-viewer","password":"secret-password-123","role":"viewer","project_ids":[%d]}`, orgA, projectA1),
+			fmt.Sprintf(`{"org_id":%d,"username":"v1-created-member","password":"secret-password-123"}`, orgA),
 			orgAdminA, orgA, auth.RoleOrgAdmin)
 		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 		userID := responseID(t, rec.Body.Bytes())
-		var membershipRole string
+		var organizationRole, compatibilityRole string
 		require.NoError(t, pool.QueryRow(ctx,
-			`SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`, projectA1, userID,
-		).Scan(&membershipRole))
-		require.Equal(t, projectMemberViewer, membershipRole)
+			`SELECT organization_role,role FROM users WHERE id=$1`, userID,
+		).Scan(&organizationRole, &compatibilityRole))
+		require.Equal(t, auth.RoleMember, organizationRole)
+		require.Equal(t, auth.RoleMember, compatibilityRole)
+		var membershipCount int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM project_members WHERE user_id=$1`, userID).Scan(&membershipCount))
+		require.Zero(t, membershipCount)
 
 		rec = request(http.MethodPost, "/users",
 			fmt.Sprintf(`{"org_id":%d,"username":"v1-cross-org-viewer","password":"secret-password-123","role":"viewer","project_ids":[%d]}`, orgA, projectB),
 			orgAdminA, orgA, auth.RoleOrgAdmin)
-		require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+		require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+		require.Contains(t, rec.Body.String(), "project_membership_separate")
 		var crossOrgUsers int
 		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE org_id=$1 AND username='v1-cross-org-viewer'`, orgA).Scan(&crossOrgUsers))
 		require.Zero(t, crossOrgUsers)
 	})
 
-	t.Run("active project role cannot be enabled or left without a project", func(t *testing.T) {
+	t.Run("account updates cannot rewrite the project axis", func(t *testing.T) {
 		rec := request(http.MethodPut, fmt.Sprintf("/users/%d", developerA), `{"project_ids":[]}`, orgAdminA, orgA, auth.RoleOrgAdmin)
-		require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
+		require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+		require.Contains(t, rec.Body.String(), "project_membership_separate")
+	})
 
-		rec = request(http.MethodPut, fmt.Sprintf("/users/%d", developerA), fmt.Sprintf(`{"project_ids":[%d]}`, projectA1), orgAdminA, orgA, auth.RoleOrgAdmin)
-		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-		rec = request(http.MethodPut, fmt.Sprintf("/users/%d", developerA), `{"status":"disabled","project_ids":[]}`, orgAdminA, orgA, auth.RoleOrgAdmin)
-		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-		rec = request(http.MethodPut, fmt.Sprintf("/users/%d", developerA), `{"status":"active"}`, orgAdminA, orgA, auth.RoleOrgAdmin)
-		require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
-		rec = request(http.MethodPut, fmt.Sprintf("/users/%d", developerA), fmt.Sprintf(`{"status":"active","project_ids":[%d]}`, projectA2), orgAdminA, orgA, auth.RoleOrgAdmin)
-		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	t.Run("organization roles may receive explicit non-propagating memberships", func(t *testing.T) {
+		upsert := func(userID, projectID int64, role string) *httptest.ResponseRecorder {
+			req := withTestActor(httptest.NewRequest(http.MethodPut, "/members", bytes.NewBufferString(fmt.Sprintf(`{"role":%q}`, role))), orgAdminA, orgA, auth.RoleOrgAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, orgAdminA)
+			req.SetPathValue("id", fmt.Sprintf("%d", projectID))
+			req.SetPathValue("user_id", fmt.Sprintf("%d", userID))
+			rec := httptest.NewRecorder()
+			h.UpsertProjectMember(rec, req)
+			return rec
+		}
+		require.Equal(t, http.StatusOK, upsert(orgAdminA, projectA1, auth.ProjectRoleUser).Code)
+		require.Equal(t, http.StatusOK, upsert(orgViewerA, projectA1, auth.ProjectRoleUser).Code)
+		require.Equal(t, http.StatusOK, upsert(billingA, projectA1, auth.ProjectRoleViewer).Code)
+
+		for _, userID := range []int64{orgAdminA, orgViewerA, billingA} {
+			var organizationRole, compatibilityRole string
+			require.NoError(t, pool.QueryRow(ctx, `SELECT organization_role,role FROM users WHERE id=$1`, userID).Scan(&organizationRole, &compatibilityRole))
+			require.Equal(t, organizationRole, compatibilityRole, "organization-role compatibility shadow changed for user %d", userID)
+			var otherProjectMemberships int
+			require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM project_members WHERE user_id=$1 AND project_id=$2`, userID, projectA2).Scan(&otherProjectMemberships))
+			require.Zero(t, otherProjectMemberships)
+		}
+
+		orgViewerRequest := withTestActor(httptest.NewRequest(http.MethodGet, "/projects", nil), orgViewerA, orgA, auth.RoleOrgViewer)
+		require.True(t, h.canReadProject(orgViewerRequest.Context(), projectA1))
+		require.True(t, h.canCreateProjectKey(orgViewerRequest.Context(), projectA1))
+		require.True(t, h.canReadProject(orgViewerRequest.Context(), projectA2), "organization viewers read ordinary project metadata without membership")
+		require.False(t, h.canCreateProjectKey(orgViewerRequest.Context(), projectA2), "explicit project capability must not propagate")
+		require.False(t, h.canManageProjectMembers(orgViewerRequest.Context(), projectA1))
+
+		billingRequest := withTestActor(httptest.NewRequest(http.MethodGet, "/projects", nil), billingA, orgA, auth.RoleBillingAdmin)
+		require.True(t, h.canReadProject(billingRequest.Context(), projectA1))
+		require.False(t, h.canWriteProject(billingRequest.Context(), projectA1))
+		require.False(t, h.canCreateProjectKey(billingRequest.Context(), projectA1))
+
+		orgAdminRequest := withTestActor(httptest.NewRequest(http.MethodGet, "/projects", nil), orgAdminWithoutMembership, orgA, auth.RoleOrgAdmin)
+		require.True(t, h.canWriteProject(orgAdminRequest.Context(), projectA1), "existing org-admin authority must not require automatic membership")
+		var orgAdminMemberships int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM project_members WHERE user_id=$1`, orgAdminWithoutMembership).Scan(&orgAdminMemberships))
+		require.Zero(t, orgAdminMemberships)
+	})
+
+	t.Run("compatibility shadow cannot leak a stronger role across projects", func(t *testing.T) {
+		heterogeneousMember := insertUser(orgA, "v1-heterogeneous-member", auth.RoleMember)
+		upsert := func(projectID int64, role string) {
+			req := withTestActor(httptest.NewRequest(http.MethodPut, "/members", bytes.NewBufferString(fmt.Sprintf(`{"role":%q}`, role))), orgAdminA, orgA, auth.RoleOrgAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, orgAdminA)
+			req.SetPathValue("id", fmt.Sprintf("%d", projectID))
+			req.SetPathValue("user_id", fmt.Sprintf("%d", heterogeneousMember))
+			rec := httptest.NewRecorder()
+			h.UpsertProjectMember(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		}
+		upsert(projectA1, auth.ProjectRoleAdmin)
+		var authEpochBeforeViewer int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT auth_epoch FROM users WHERE id=$1`, heterogeneousMember).Scan(&authEpochBeforeViewer))
+		_, err := pool.Exec(ctx,
+			`INSERT INTO admin_sessions (user_id, sid_hash, issued_at, expires_at)
+			 VALUES ($1, decode(repeat('ab', 32), 'hex'), NOW(), NOW() + INTERVAL '1 hour')`,
+			heterogeneousMember,
+		)
+		require.NoError(t, err)
+		upsert(projectA2, auth.ProjectRoleViewer)
+
+		var compatibilityRole string
+		var authEpochAfterViewer int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT role,auth_epoch FROM users WHERE id=$1`, heterogeneousMember).Scan(&compatibilityRole, &authEpochAfterViewer))
+		require.Equal(t, auth.RoleViewer, compatibilityRole, "rolling-upgrade shadow must be no stronger than every live membership")
+		require.Equal(t, authEpochBeforeViewer+1, authEpochAfterViewer)
+		var activeSessions int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM admin_sessions WHERE user_id=$1 AND revoked_at IS NULL AND expires_at > NOW()`,
+			heterogeneousMember,
+		).Scan(&activeSessions))
+		require.Zero(t, activeSessions, "a weaker compatibility shadow must revoke previously issued sessions")
+		actor := withTestActor(httptest.NewRequest(http.MethodGet, "/projects", nil), heterogeneousMember, orgA, compatibilityRole)
+		require.True(t, h.canWriteProject(actor.Context(), projectA1))
+		require.False(t, h.canWriteProject(actor.Context(), projectA2), "project_admin compatibility shadow leaked write authority into project_viewer membership")
+		require.True(t, h.canReadProject(actor.Context(), projectA2))
+		require.False(t, h.canCreateProjectKey(actor.Context(), projectA2), "project_viewer membership gained calling authority from the compatibility shadow")
 	})
 
 	t.Run("project admin cannot escalate or cross tenant", func(t *testing.T) {
+		orgAdminUpsert := withTestActor(
+			httptest.NewRequest(http.MethodPut, "/members", bytes.NewBufferString(`{"role":"project_admin"}`)),
+			orgAdminA, orgA, auth.RoleOrgAdmin,
+		)
+		orgAdminUpsert = withIntegrationCommittingActor(t, pool, orgAdminUpsert, orgAdminA)
+		orgAdminUpsert.SetPathValue("id", fmt.Sprintf("%d", projectA1))
+		orgAdminUpsert.SetPathValue("user_id", fmt.Sprintf("%d", projectAdminTarget))
+		orgAdminRec := httptest.NewRecorder()
+		h.UpsertProjectMember(orgAdminRec, orgAdminUpsert)
+		require.Equal(t, http.StatusOK, orgAdminRec.Code, orgAdminRec.Body.String())
+
 		serveMember := func(userID int64, body string) *httptest.ResponseRecorder {
 			req := withTestActor(httptest.NewRequest(http.MethodPut, "/members", bytes.NewBufferString(body)), projectAdminA, orgA, auth.RoleProjectAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, projectAdminA)
 			req.SetPathValue("id", fmt.Sprintf("%d", projectA1))
 			req.SetPathValue("user_id", fmt.Sprintf("%d", userID))
 			rec := httptest.NewRecorder()
@@ -127,11 +223,33 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 			return rec
 		}
 		require.Equal(t, http.StatusForbidden, serveMember(projectAdminTarget, `{"role":"project_admin"}`).Code)
-		require.Equal(t, http.StatusForbidden, serveMember(foreignDeveloper, `{"role":"project_developer"}`).Code)
+		start := make(chan struct{})
+		results := make(chan int, 2)
+		var wg sync.WaitGroup
+		for _, nextRole := range []string{auth.ProjectRoleUser, auth.ProjectRoleViewer} {
+			wg.Add(1)
+			go func(nextRole string) {
+				defer wg.Done()
+				<-start
+				results <- serveMember(projectAdminTarget, fmt.Sprintf(`{"role":%q}`, nextRole)).Code
+			}(nextRole)
+		}
+		close(start)
+		wg.Wait()
+		close(results)
+		for code := range results {
+			require.Equal(t, http.StatusForbidden, code)
+		}
+		var protectedRole string
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT role FROM project_members WHERE project_id=$1 AND user_id=$2`, projectA1, projectAdminTarget,
+		).Scan(&protectedRole))
+		require.Equal(t, auth.ProjectRoleAdmin, protectedRole)
+		require.Equal(t, http.StatusNotFound, serveMember(foreignDeveloper, `{"role":"project_developer"}`).Code)
 		require.Equal(t, http.StatusOK, serveMember(developerA, `{"role":"project_developer"}`).Code)
 	})
 
-	t.Run("concurrent removals preserve one project for an active user", func(t *testing.T) {
+	t.Run("concurrent removals permit a least-privilege member with zero projects", func(t *testing.T) {
 		concurrentUser := insertUser(orgA, "v1-concurrent-viewer", auth.RoleViewer)
 		_, err := pool.Exec(ctx,
 			`INSERT INTO project_members (project_id, user_id, role)
@@ -142,16 +260,21 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 		start := make(chan struct{})
 		codes := make(chan int, 2)
 		var wg sync.WaitGroup
+		requests := make(map[int64]*http.Request, 2)
+		for _, projectID := range []int64{projectA1, projectA2} {
+			req := withTestActor(httptest.NewRequest(http.MethodDelete, "/members", nil), orgAdminA, orgA, auth.RoleOrgAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, orgAdminA)
+			req.SetPathValue("id", fmt.Sprintf("%d", projectID))
+			req.SetPathValue("user_id", fmt.Sprintf("%d", concurrentUser))
+			requests[projectID] = req
+		}
 		for _, projectID := range []int64{projectA1, projectA2} {
 			wg.Add(1)
 			go func(projectID int64) {
 				defer wg.Done()
 				<-start
-				req := withTestActor(httptest.NewRequest(http.MethodDelete, "/members", nil), orgAdminA, orgA, auth.RoleOrgAdmin)
-				req.SetPathValue("id", fmt.Sprintf("%d", projectID))
-				req.SetPathValue("user_id", fmt.Sprintf("%d", concurrentUser))
 				rec := httptest.NewRecorder()
-				h.DeleteProjectMember(rec, req)
+				h.DeleteProjectMember(rec, requests[projectID])
 				codes <- rec.Code
 			}(projectID)
 		}
@@ -162,11 +285,14 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 		for code := range codes {
 			got[code]++
 		}
-		require.Equal(t, 1, got[http.StatusOK], got)
-		require.Equal(t, 1, got[http.StatusConflict], got)
+		require.Equal(t, 2, got[http.StatusOK], got)
 		var memberships int
 		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM project_members WHERE user_id=$1`, concurrentUser).Scan(&memberships))
-		require.Equal(t, 1, memberships)
+		require.Zero(t, memberships)
+		var organizationRole, compatibilityRole string
+		require.NoError(t, pool.QueryRow(ctx, `SELECT organization_role,role FROM users WHERE id=$1`, concurrentUser).Scan(&organizationRole, &compatibilityRole))
+		require.Equal(t, auth.RoleMember, organizationRole)
+		require.Equal(t, auth.RoleMember, compatibilityRole)
 	})
 
 	t.Run("committed membership revoke denies an update that passed preflight", func(t *testing.T) {
@@ -193,13 +319,14 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 			`SELECT id FROM projects WHERE id = $1 FOR UPDATE`, projectA1,
 		).Scan(&lockedProjectID))
 
+		req := withTestActor(
+			httptest.NewRequest(http.MethodPut, "/projects", bytes.NewBufferString(`{"name":"must-not-commit"}`)),
+			projectAdminA, orgA, auth.RoleProjectAdmin,
+		)
+		req = withIntegrationCommittingActor(t, pool, req, projectAdminA)
+		req.SetPathValue("id", fmt.Sprintf("%d", projectA1))
 		updateResult := make(chan *httptest.ResponseRecorder, 1)
 		go func() {
-			req := withTestActor(
-				httptest.NewRequest(http.MethodPut, "/projects", bytes.NewBufferString(`{"name":"must-not-commit"}`)),
-				projectAdminA, orgA, auth.RoleProjectAdmin,
-			)
-			req.SetPathValue("id", fmt.Sprintf("%d", projectA1))
 			rec := httptest.NewRecorder()
 			h.UpdateProject(rec, req)
 			updateResult <- rec
@@ -251,13 +378,14 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 	t.Run("billing update is field limited tenant bound audited and rollback safe", func(t *testing.T) {
 		updateBudget := func(projectID int64, body string) *httptest.ResponseRecorder {
 			req := withTestActor(httptest.NewRequest(http.MethodPut, "/budget", bytes.NewBufferString(body)), billingA, orgA, auth.RoleBillingAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, billingA)
 			req.SetPathValue("id", fmt.Sprintf("%d", projectID))
 			rec := httptest.NewRecorder()
 			h.UpdateProjectBudget(rec, req)
 			return rec
 		}
 		require.Equal(t, http.StatusOK, updateBudget(projectA1, `{"budget_cents":1234,"budget_period":"daily"}`).Code)
-		require.Equal(t, http.StatusForbidden, updateBudget(projectB, `{"budget_cents":777}`).Code)
+		require.Equal(t, http.StatusNotFound, updateBudget(projectB, `{"budget_cents":777}`).Code)
 		require.Equal(t, http.StatusBadRequest, updateBudget(projectA1, `{"name":"not-allowed"}`).Code)
 		require.Equal(t, http.StatusBadRequest, updateBudget(projectA1, `{"budget_cents":2147483648}`).Code)
 		var budget int64

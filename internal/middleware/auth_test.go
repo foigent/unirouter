@@ -22,7 +22,11 @@ const adminAuthTestEpoch int64 = 7
 
 func adminSessionToken(t *testing.T, userID, orgID int64, role, secret string) string {
 	t.Helper()
-	token, _, err := auth.GenerateAdminSessionJWT(userID, orgID, role, adminAuthTestEpoch, secret, 1)
+	organizationRole, ok := auth.NormalizeOrganizationRole(role)
+	if !ok {
+		t.Fatalf("invalid role %q", role)
+	}
+	token, _, err := auth.GenerateAdminSessionJWT(userID, orgID, organizationRole, role, adminAuthTestEpoch, secret, 1)
 	if err != nil {
 		t.Fatalf("generate admin session JWT: %v", err)
 	}
@@ -32,13 +36,14 @@ func adminSessionToken(t *testing.T, userID, orgID int64, role, secret string) s
 func adminPrincipalDB(t *testing.T, wantUserID, wantOrgID int64, wantRole string, active bool, scanErr error) *testutil.MockDB {
 	t.Helper()
 	return &testutil.MockDB{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-		if len(args) != 5 || args[0] != wantUserID || args[1] != wantOrgID || args[2] != wantRole || args[3] != adminAuthTestEpoch {
+		wantOrganizationRole, _ := auth.NormalizeOrganizationRole(wantRole)
+		if len(args) != 6 || args[0] != wantUserID || args[1] != wantOrgID || args[2] != wantRole || args[3] != adminAuthTestEpoch || args[5] != wantOrganizationRole {
 			t.Fatalf("unexpected principal lookup args: %#v", args)
 		}
 		if sidHash, ok := args[4].([]byte); !ok || len(sidHash) != 32 {
 			t.Fatalf("principal lookup must use a SHA-256 sid hash: %#v", args[4])
 		}
-		for _, fragment := range []string{"FROM users", "JOIN orgs", "JOIN admin_sessions", "u.auth_epoch", "s.revoked_at IS NULL", "s.expires_at > NOW()", "u.status = 'active'", "o.status = 'active'"} {
+		for _, fragment := range []string{"FROM users", "JOIN orgs", "JOIN admin_sessions", "u.auth_epoch", "u.organization_role", "s.revoked_at IS NULL", "s.expires_at > NOW()", "u.status = 'active'", "o.status = 'active'"} {
 			if !strings.Contains(sql, fragment) {
 				t.Fatalf("principal lookup missing %q: %s", fragment, sql)
 			}
@@ -113,6 +118,12 @@ func TestAdminAuth_ValidToken(t *testing.T) {
 		}
 		if role := GetUserRoleFromContext(r.Context()); role != "admin" {
 			t.Fatalf("expected role=admin, got %q", role)
+		}
+		if epoch, ok := GetAuthEpochFromContext(r.Context()); !ok || epoch != adminAuthTestEpoch {
+			t.Fatalf("expected admitted auth epoch %d, got %d present=%v", adminAuthTestEpoch, epoch, ok)
+		}
+		if sessionHash := GetAdminSessionHashFromContext(r.Context()); len(sessionHash) != 32 {
+			t.Fatalf("expected admitted session hash, got %d bytes", len(sessionHash))
 		}
 		w.WriteHeader(http.StatusOK)
 	}))

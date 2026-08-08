@@ -11,13 +11,14 @@ import {
 } from '@douyinfe/semi-icons';
 import { useAuthStore } from './store/auth';
 import {
+  authzContextForUser,
   canOpenUnscopedNotifications,
   canSearchRequestLogs,
-  getNavItemsForRole,
+  getNavItemsForAuthz,
   getRequiredLicenseFeatureForRoute,
   hasLicensedFeature,
   isPlatformAdminRole,
-  isRouteAllowedForRole,
+  isRouteAllowedForAuthz,
   isRouteLicensed,
   licenseFeatureLabel,
   licenseRestrictionMessage,
@@ -39,22 +40,22 @@ export default function App() {
   const location = useLocation();
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
-  const role = user?.role;
+  const authz = authzContextForUser(user);
   const licenseAccess = user?.license_access;
   const routeWithSearch = `${location.pathname}${location.search}`;
-  const navItems = getNavItemsForRole(role, licenseAccess);
+  const navItems = getNavItemsForAuthz(authz, licenseAccess);
   const openKeys = navItems.filter(item => item.items?.length).map(item => item.itemKey);
-  const currentRoleLabel = roleLabel(role, '未加载角色');
-  const canOpenNotifications = canOpenUnscopedNotifications(role);
+  const currentRoleLabel = roleLabel(authz.organizationRole, '未加载组织角色');
+  const canOpenNotifications = canOpenUnscopedNotifications(authz);
   const notificationsLicensed = hasLicensedFeature(licenseAccess, 'notifications');
   const notificationsRestrictionMessage = licenseAccess
     ? licenseRestrictionMessage(licenseAccess, 'notifications')
     : '';
-  const canSearchLogs = canSearchRequestLogs(role);
+  const canSearchLogs = canSearchRequestLogs(authz);
   const envBadge = getEnvironmentBadge();
   const requiredLicenseFeature = getRequiredLicenseFeatureForRoute(routeWithSearch);
   const licenseRestricted = requiredLicenseFeature !== undefined &&
-    isRouteAllowedForRole(routeWithSearch, role) &&
+    isRouteAllowedForAuthz(routeWithSearch, authz) &&
     !isRouteLicensed(routeWithSearch, licenseAccess);
   const restrictionMessage = requiredLicenseFeature && licenseAccess
     ? licenseRestrictionMessage(licenseAccess, requiredLicenseFeature)
@@ -202,7 +203,7 @@ export default function App() {
               <EmptyState
                 title="当前授权不可使用此功能"
                 description={restrictionMessage}
-                actions={isPlatformAdminRole(role) ? (
+                actions={isPlatformAdminRole(authz.organizationRole) ? (
                   <Button type="primary" onClick={() => navigate('/license')}>查看或更新商业授权</Button>
                 ) : undefined}
                 minHeight={320}

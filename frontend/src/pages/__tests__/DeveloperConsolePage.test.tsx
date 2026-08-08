@@ -29,7 +29,7 @@ vi.mock('../../api/client', () => ({
 
 const PROJECTS = {
   data: [
-    { id: 7, org_id: 1, name: 'Core Project', slug: 'core', status: 'active', key_count: 1 },
+    { id: 7, org_id: 1, name: 'Core Project', slug: 'core', status: 'active', key_count: 1, current_user_membership_role: 'project_user' },
   ],
   total: 1,
 };
@@ -107,10 +107,15 @@ function setupMocks() {
 }
 
 function renderPage(role = 'developer', licenseAccess?: LicenseAccess | null) {
+  PROJECTS.data[0].current_user_membership_role = role === 'project_admin'
+    ? 'project_admin'
+    : role === 'viewer' || role === 'project_viewer'
+      ? 'project_viewer'
+      : 'project_user';
   useAuthStore.setState({
     token: 'token',
     isAuthenticated: true,
-    user: { id: 5, username: 'dev', role, org_id: 1, license_access: licenseAccess },
+    user: { id: 5, username: 'dev', role, organization_role: 'member', org_id: 1, license_access: licenseAccess },
     profileLoading: false,
   });
   return render(
@@ -259,7 +264,7 @@ describe('DeveloperConsolePage', () => {
     mockGetProjects.mockResolvedValue({
       data: [
         ...PROJECTS.data,
-        { id: 8, org_id: 1, name: 'Secondary Project', slug: 'secondary', status: 'active', key_count: 0 },
+        { id: 8, org_id: 1, name: 'Secondary Project', slug: 'secondary', status: 'active', key_count: 0, current_user_membership_role: 'project_user' },
       ],
       total: 2,
     });
