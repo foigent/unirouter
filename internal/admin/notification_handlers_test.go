@@ -18,6 +18,52 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
+func withNotificationCommittingActor(request *http.Request, userID, orgID int64, organizationRole, compatibilityRole string) *http.Request {
+	ctx := context.WithValue(request.Context(), middleware.CtxUserID, userID)
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, orgID)
+	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, organizationRole)
+	ctx = context.WithValue(ctx, middleware.CtxUserRole, compatibilityRole)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("notification-test-session"))
+	return request.WithContext(ctx)
+}
+
+func notificationCommittingActorRow(query string, actorOrgID int64, organizationRole, compatibilityRole string, projectOrgID int64) (pgx.Row, bool) {
+	switch {
+	case strings.Contains(query, "FROM users u") && strings.Contains(query, "JOIN orgs o"):
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			*dest[0].(*int64) = actorOrgID
+			*dest[1].(*string) = organizationRole
+			*dest[2].(*string) = compatibilityRole
+			*dest[3].(*string) = "active"
+			*dest[4].(*int64) = 0
+			*dest[5].(*string) = "active"
+			return nil
+		}}, true
+	case strings.Contains(query, "FROM admin_sessions"):
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			*dest[0].(*int64) = 77
+			return nil
+		}}, true
+	case strings.Contains(query, "SELECT status FROM orgs"):
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			*dest[0].(*string) = "active"
+			return nil
+		}}, true
+	case strings.Contains(query, "FROM projects p"):
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			*dest[0].(*int64) = projectOrgID
+			*dest[1].(*string) = "active"
+			if len(dest) == 3 {
+				*dest[2].(*string) = projectMemberAdmin
+			}
+			return nil
+		}}, true
+	default:
+		return nil, false
+	}
+}
+
 func TestListNotificationEvents_Success(t *testing.T) {
 	now := time.Now().UTC()
 	db := &testutil.MockDB{
@@ -191,6 +237,9 @@ func TestCreateNotificationWebhook_WritesAudit(t *testing.T) {
 	var inserted, audited, committed bool
 	tx := &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, query string, args ...any) pgx.Row {
+			if row, ok := notificationCommittingActorRow(query, 3, auth.RoleOrgAdmin, auth.RoleOrgAdmin, 0); ok {
+				return row
+			}
 			if !strings.Contains(query, "INSERT INTO notification_webhooks") {
 				t.Fatalf("unexpected QueryRow: %s", query)
 			}
@@ -232,10 +281,7 @@ func TestCreateNotificationWebhook_WritesAudit(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/notification-webhooks", strings.NewReader(`{"org_id":3,"name":"Ops webhook","url":"https://ops.example.test/hook/token-123?access_key=secret","event_types":["project_budget.threshold"]}`))
 	req.Header.Set("Content-Type", "application/json")
-	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(3))
-	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(7))
-	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RoleOrgAdmin)
-	req = req.WithContext(ctx)
+	req = withNotificationCommittingActor(req, 7, 3, auth.RoleOrgAdmin, auth.RoleOrgAdmin)
 	rec := httptest.NewRecorder()
 
 	h.CreateNotificationWebhook(rec, req)
@@ -258,7 +304,10 @@ func TestCreateNotificationWebhook_AuditFailureRollsBackWebhook(t *testing.T) {
 	auditErr := errors.New("audit unavailable")
 	var committed, rolledBack bool
 	tx := &testutil.MockTx{
-		QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+		QueryRowFn: func(_ context.Context, query string, _ ...any) pgx.Row {
+			if row, ok := notificationCommittingActorRow(query, 3, auth.RoleOrgAdmin, auth.RoleOrgAdmin, 0); ok {
+				return row
+			}
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int64) = 7
 				return nil
@@ -283,10 +332,7 @@ func TestCreateNotificationWebhook_AuditFailureRollsBackWebhook(t *testing.T) {
 	h := newTestHandler(db)
 
 	req := httptest.NewRequest(http.MethodPost, "/notification-webhooks", strings.NewReader(`{"org_id":3,"name":"Ops webhook","url":"https://ops.example.test/hook","event_types":["project_budget.threshold"]}`))
-	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(3))
-	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(7))
-	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RoleOrgAdmin)
-	req = req.WithContext(ctx)
+	req = withNotificationCommittingActor(req, 7, 3, auth.RoleOrgAdmin, auth.RoleOrgAdmin)
 	rec := httptest.NewRecorder()
 
 	h.CreateNotificationWebhook(rec, req)
@@ -304,6 +350,9 @@ func TestUpdateNotificationWebhookLocksAndAuditsInTransaction(t *testing.T) {
 	now := time.Now().UTC()
 	tx := &testutil.MockTx{
 		QueryRowFn: func(_ context.Context, query string, args ...any) pgx.Row {
+			if row, ok := notificationCommittingActorRow(query, 1, auth.RolePlatformAdmin, auth.RolePlatformAdmin, 3); ok {
+				return row
+			}
 			if !strings.Contains(query, "FROM notification_webhooks") || !strings.Contains(query, "FOR UPDATE") {
 				t.Fatalf("webhook update must lock its snapshot in the transaction: %s", query)
 			}
@@ -326,6 +375,8 @@ func TestUpdateNotificationWebhookLocksAndAuditsInTransaction(t *testing.T) {
 		},
 		ExecFn: func(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 			switch {
+			case strings.Contains(query, "pg_advisory_xact_lock"):
+				return pgconn.NewCommandTag("SELECT 1"), nil
 			case strings.Contains(query, "UPDATE notification_webhooks"):
 				if !locked {
 					t.Fatal("webhook was updated before its snapshot was locked")
@@ -355,7 +406,21 @@ func TestUpdateNotificationWebhookLocksAndAuditsInTransaction(t *testing.T) {
 		},
 	}
 	db := &testutil.MockDB{
-		QueryRowFn: func(_ context.Context, query string, _ ...any) pgx.Row {
+		QueryRowFn: func(_ context.Context, query string, args ...any) pgx.Row {
+			if strings.Contains(query, "FROM notification_webhooks") && !strings.Contains(query, "FOR UPDATE") {
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 3
+					*dest[1].(*int64) = 9
+					*dest[2].(*string) = "Old name"
+					*dest[3].(*string) = "https://hooks.example.test/old-secret"
+					*dest[4].(*json.RawMessage) = json.RawMessage(`["old.event"]`)
+					*dest[5].(*bool) = true
+					*dest[6].(*bool) = true
+					*dest[7].(*sql.NullBool) = sql.NullBool{}
+					*dest[8].(*time.Time) = now
+					return nil
+				}}
+			}
 			if strings.Contains(query, "COUNT(*) FROM projects") {
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {
 					*dest[0].(*int) = 1
@@ -374,10 +439,7 @@ func TestUpdateNotificationWebhookLocksAndAuditsInTransaction(t *testing.T) {
 	h := newTestHandler(db)
 	req := httptest.NewRequest(http.MethodPut, "/notification-webhooks/7", strings.NewReader(`{"name":"Updated name"}`))
 	req.SetPathValue("id", "7")
-	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
-	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(5))
-	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RolePlatformAdmin)
-	req = req.WithContext(ctx)
+	req = withNotificationCommittingActor(req, 5, 1, auth.RolePlatformAdmin, auth.RolePlatformAdmin)
 	rec := httptest.NewRecorder()
 
 	h.UpdateNotificationWebhook(rec, req)
@@ -493,16 +555,24 @@ func TestCreateNotificationWebhookRejectsNegativeProjectScope(t *testing.T) {
 func TestTransitionNotificationEventAcknowledgesAndAudits(t *testing.T) {
 	var updateArgs []any
 	var auditAction string
-	tx := &testutil.MockTx{ExecFn: func(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
-		if strings.Contains(query, "UPDATE notification_events") {
-			updateArgs = append([]any(nil), args...)
-			return pgconn.NewCommandTag("UPDATE 1"), nil
-		}
-		if strings.Contains(query, "INSERT INTO audit_logs") {
-			auditAction = args[2].(string)
-		}
-		return pgconn.NewCommandTag("INSERT 1"), nil
-	}}
+	tx := &testutil.MockTx{
+		QueryRowFn: func(_ context.Context, query string, _ ...any) pgx.Row {
+			if row, ok := notificationCommittingActorRow(query, 3, auth.RoleOrgAdmin, auth.RoleOrgAdmin, 0); ok {
+				return row
+			}
+			return &testutil.MockRow{ScanFn: func(...any) error { return errors.New("unexpected transaction query") }}
+		},
+		ExecFn: func(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(query, "UPDATE notification_events") {
+				updateArgs = append([]any(nil), args...)
+				return pgconn.NewCommandTag("UPDATE 1"), nil
+			}
+			if strings.Contains(query, "INSERT INTO audit_logs") {
+				auditAction = args[2].(string)
+			}
+			return pgconn.NewCommandTag("INSERT 1"), nil
+		},
+	}
 	db := &testutil.MockDB{
 		QueryRowFn: func(_ context.Context, query string, args ...any) pgx.Row {
 			if !strings.Contains(query, "FROM notification_events") || args[len(args)-1] != int64(12) {
@@ -520,10 +590,7 @@ func TestTransitionNotificationEventAcknowledgesAndAudits(t *testing.T) {
 	h := newTestHandler(db)
 	req := httptest.NewRequest(http.MethodPost, "/notification-events/12/acknowledge", nil)
 	req.SetPathValue("id", "12")
-	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(3))
-	ctx = context.WithValue(ctx, middleware.CtxUserID, int64(7))
-	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RoleOrgAdmin)
-	req = req.WithContext(ctx)
+	req = withNotificationCommittingActor(req, 7, 3, auth.RoleOrgAdmin, auth.RoleOrgAdmin)
 	rec := httptest.NewRecorder()
 
 	h.AcknowledgeNotificationEvent(rec, req)
@@ -563,6 +630,12 @@ func TestTransitionNotificationEventRejectsReopeningResolvedEvent(t *testing.T) 
 func TestTransitionNotificationEventAuditFailureDoesNotCommit(t *testing.T) {
 	committed := false
 	tx := &testutil.MockTx{
+		QueryRowFn: func(_ context.Context, query string, _ ...any) pgx.Row {
+			if row, ok := notificationCommittingActorRow(query, 3, auth.RoleOrgAdmin, auth.RoleOrgAdmin, 0); ok {
+				return row
+			}
+			return &testutil.MockRow{ScanFn: func(...any) error { return errors.New("unexpected transaction query") }}
+		},
 		ExecFn: func(_ context.Context, query string, _ ...any) (pgconn.CommandTag, error) {
 			if strings.Contains(query, "INSERT INTO audit_logs") {
 				return pgconn.CommandTag{}, errors.New("injected audit failure")
@@ -588,9 +661,7 @@ func TestTransitionNotificationEventAuditFailureDoesNotCommit(t *testing.T) {
 	h := newTestHandler(db)
 	req := httptest.NewRequest(http.MethodPost, "/notification-events/12/resolve", nil)
 	req.SetPathValue("id", "12")
-	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(3))
-	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RoleOrgAdmin)
-	req = req.WithContext(ctx)
+	req = withNotificationCommittingActor(req, 7, 3, auth.RoleOrgAdmin, auth.RoleOrgAdmin)
 	rec := httptest.NewRecorder()
 
 	h.ResolveNotificationEvent(rec, req)

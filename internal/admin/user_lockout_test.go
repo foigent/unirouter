@@ -19,6 +19,9 @@ func userMutationRequest(method, target, body string, actorUserID int64) *http.R
 	ctx := context.WithValue(req.Context(), middleware.CtxUserID, actorUserID)
 	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RolePlatformAdmin)
+	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("user-mutation-session"))
 	return req.WithContext(ctx)
 }
 
@@ -26,15 +29,31 @@ func guardedUserMutationTx(targetRole, targetStatus string, activePlatformAdmins
 	return &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				if strings.Contains(sql, "COUNT(*)") {
+				switch {
+				case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
+					*dest[0].(*int64) = int64(1)
+					*dest[1].(*string) = auth.RolePlatformAdmin
+					*dest[2].(*string) = auth.RolePlatformAdmin
+					*dest[3].(*string) = "active"
+					*dest[4].(*int64) = int64(0)
+					*dest[5].(*string) = "active"
+					return nil
+				case strings.Contains(sql, "FROM admin_sessions"):
+					*dest[0].(*int64) = int64(77)
+					return nil
+				case strings.Contains(sql, "FROM orgs"):
+					*dest[0].(*string) = "active"
+					return nil
+				case strings.Contains(sql, "COUNT(*)"):
 					*dest[0].(*int) = activePlatformAdmins
 					return nil
+				default:
+					*dest[0].(*int64) = 1
+					*dest[1].(*string) = targetRole
+					*dest[2].(*string) = targetRole
+					*dest[3].(*string) = targetStatus
+					return nil
 				}
-				*dest[0].(*int64) = 1
-				*dest[1].(*string) = targetRole
-				*dest[2].(*string) = targetRole
-				*dest[3].(*string) = targetStatus
-				return nil
 			}}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -175,13 +194,30 @@ func TestUpdateUserVersionsPrincipalAndRevokesLiveSessions(t *testing.T) {
 	tx := &testutil.MockTx{
 		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				if !strings.Contains(sql, "FROM users") {
+				switch {
+				case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
+					*dest[0].(*int64) = int64(1)
+					*dest[1].(*string) = auth.RolePlatformAdmin
+					*dest[2].(*string) = auth.RolePlatformAdmin
+					*dest[3].(*string) = "active"
+					*dest[4].(*int64) = int64(0)
+					*dest[5].(*string) = "active"
+					return nil
+				case strings.Contains(sql, "FROM admin_sessions"):
+					*dest[0].(*int64) = int64(77)
+					return nil
+				case strings.Contains(sql, "FROM orgs"):
+					*dest[0].(*string) = "active"
+					return nil
+				case strings.Contains(sql, "FROM users"):
+					*dest[0].(*int64) = 1
+					*dest[1].(*string) = auth.RoleOrgViewer
+					*dest[2].(*string) = auth.RoleOrgViewer
+					*dest[3].(*string) = "active"
+					return nil
+				default:
 					return pgx.ErrNoRows
 				}
-				*dest[0].(*int64) = 1
-				*dest[1].(*string) = auth.RoleOrgViewer
-				*dest[2].(*string) = "active"
-				return nil
 			}}
 		},
 		QueryFn: func(context.Context, string, ...any) (pgx.Rows, error) {

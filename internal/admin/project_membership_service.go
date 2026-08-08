@@ -6,7 +6,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
-	"github.com/uniroute/unirouter/internal/middleware"
 )
 
 const projectMembershipMutationLockBase int64 = 4120000000000000000
@@ -31,37 +30,6 @@ func lockProjectMembershipMutation(ctx context.Context, tx pgx.Tx, userID int64)
 	}
 	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, projectMembershipMutationLockBase+userID)
 	return err
-}
-
-func canManageProjectMembersTx(ctx context.Context, tx pgx.Tx, projectID, orgID int64) (bool, error) {
-	organizationRole := actorOrganizationRole(ctx)
-	switch organizationRole {
-	case auth.RolePlatformAdmin:
-		return true, nil
-	case auth.RoleOrgAdmin:
-		return actorCanAccessOrg(ctx, orgID), nil
-	default:
-		if !actorCanAccessOrg(ctx, orgID) {
-			return false, nil
-		}
-		var membershipRole string
-		err := tx.QueryRow(ctx,
-			`SELECT pm.role
-			 FROM project_members pm
-			 JOIN projects p ON p.id = pm.project_id
-			 JOIN users u ON u.id = pm.user_id AND u.org_id = p.org_id
-			 WHERE pm.project_id = $1 AND pm.user_id = $2 AND p.org_id = $3
-			   AND u.status = 'active'
-			   AND pm.role = ANY($4::text[])
-			 FOR SHARE OF pm, u`,
-			projectID, middleware.GetUserIDFromContext(ctx), orgID,
-			[]string{projectMemberAdmin},
-		).Scan(&membershipRole)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return err == nil && membershipRole == projectMemberAdmin, err
-	}
 }
 
 // syncUserCompatibilityRoleTx keeps users.role usable by version-2 JWTs and

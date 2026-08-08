@@ -220,7 +220,7 @@ func TestCreateAPIKey_Success_Integration(t *testing.T) {
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := fmt.Sprintf(`{"org_id":%d,"name":"test-key","rpm_limit":100,"qps_limit":20}`, orgID)
+	body := fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"test-key","rpm_limit":100,"qps_limit":20}`, orgID, defaultProjectID)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -280,7 +280,7 @@ func TestCreateAPIKey_DefaultLimits_Integration(t *testing.T) {
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	// RPM/QPS not specified — should use defaults (60/10)
-	body := fmt.Sprintf(`{"org_id":%d,"name":"default-limits-key"}`, orgID)
+	body := fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"default-limits-key"}`, orgID, defaultProjectID)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -922,10 +922,11 @@ func TestCreateUser_DefaultRole_Integration(t *testing.T) {
 	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	var role string
-	err = pool.QueryRow(t.Context(), `SELECT role FROM users WHERE id = $1`, resp["id"]).Scan(&role)
+	var organizationRole, role string
+	err = pool.QueryRow(t.Context(), `SELECT organization_role, role FROM users WHERE id = $1`, resp["id"]).Scan(&organizationRole, &role)
 	require.NoError(t, err)
-	require.Equal(t, "org_viewer", role, "default role should be org_viewer")
+	require.Equal(t, auth.RoleMember, organizationRole, "default organization role should be least-privilege member")
+	require.Equal(t, auth.RoleMember, role, "default compatibility shadow should be member without project memberships")
 }
 
 func TestDeleteUser_Success_Integration(t *testing.T) {
@@ -1198,23 +1199,29 @@ func TestDisableAPIKey_NotFound_Integration(t *testing.T) {
 func TestListAPIKeys_Success_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	var defaultProjectID int64
+	var defaultProjectID, adminID int64
 	require.NoError(t, pool.QueryRow(t.Context(),
 		`INSERT INTO projects (org_id, name, slug, status) VALUES ($1, 'Default Project', 'default', 'active') RETURNING id`, orgID,
 	).Scan(&defaultProjectID))
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		INSERT INTO users (org_id, username, password_hash, organization_role, role, status)
+		VALUES ($1, 'list-key-admin', 'hash', 'org_admin', 'org_admin', 'active') RETURNING id`, orgID,
+	).Scan(&adminID))
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	// Create a key via handler
-	body := fmt.Sprintf(`{"org_id":%d,"name":"list-test-key"}`, orgID)
+	body := fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"list-test-key"}`, orgID, defaultProjectID)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	req = withIntegrationCommittingActor(t, pool, req, adminID)
 	rec := httptest.NewRecorder()
 	h.CreateAPIKey(rec, req)
 	require.Equal(t, http.StatusCreated, rec.Code, "create key: %s", rec.Body.String())
 
 	// List
 	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/keys", nil)
+	req2 = withIntegrationCommittingActor(t, pool, req2, adminID)
 	rec2 := httptest.NewRecorder()
 	h.ListAPIKeys(rec2, req2)
 

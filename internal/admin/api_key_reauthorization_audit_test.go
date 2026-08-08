@@ -314,6 +314,8 @@ func apiKeySecurityRequest(method, target, body, role string) *http.Request {
 	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	ctx = context.WithValue(ctx, middleware.CtxUserRole, role)
 	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, organizationRole)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("api-key-security-session-hash"))
 	ctx = context.WithValue(ctx, middleware.CtxRequestID, "api-key-security-test")
 	return req.WithContext(ctx)
 }
@@ -384,10 +386,26 @@ func newAPIKeySecurityTestHandler(state *apiKeySecurityTestState) *Handler {
 					*dest[1].(*string) = organizationRole
 					*dest[2].(*string) = state.actorRole
 					*dest[3].(*string) = state.actorStatus
-					*dest[4].(*string) = state.actorOrgStatus
+					*dest[4].(*int64) = 0
+					*dest[5].(*string) = state.actorOrgStatus
+					return nil
+				case strings.Contains(sql, "FROM admin_sessions"):
+					*dest[0].(*int64) = 101
 					return nil
 				case strings.Contains(sql, "FROM orgs"):
 					*dest[0].(*string) = state.actorOrgStatus
+					return nil
+				case strings.Contains(sql, "FROM projects p") && len(dest) == 3:
+					if !state.actorMembership {
+						return pgx.ErrNoRows
+					}
+					*dest[0].(*int64) = state.actorOrgID
+					*dest[1].(*string) = "active"
+					*dest[2].(*string) = projectMemberAdmin
+					return nil
+				case strings.Contains(sql, "FROM projects p") && len(dest) == 2:
+					*dest[0].(*int64) = state.actorOrgID
+					*dest[1].(*string) = "active"
 					return nil
 				case strings.Contains(sql, "FROM projects"):
 					*dest[0].(*string) = "active"

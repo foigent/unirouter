@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -114,12 +115,19 @@ func TestAPIKeyMutationsRejectAStaleAuthorizedSnapshot(t *testing.T) {
 							*dest[1].(*string) = auth.RolePlatformAdmin
 							*dest[2].(*string) = auth.RolePlatformAdmin
 							*dest[3].(*string) = "active"
-							*dest[4].(*string) = "active"
+							*dest[4].(*int64) = 0
+							*dest[5].(*string) = "active"
 							return nil
 						}}
-					case strings.Contains(sql, "SELECT status FROM orgs"):
+					case strings.Contains(sql, "FROM admin_sessions"):
 						return &testutil.MockRow{ScanFn: func(dest ...any) error {
-							*dest[0].(*string) = "active"
+							*dest[0].(*int64) = 81
+							return nil
+						}}
+					case strings.Contains(sql, "FROM projects p"):
+						return &testutil.MockRow{ScanFn: func(dest ...any) error {
+							*dest[0].(*int64) = int64(1)
+							*dest[1].(*string) = "active"
 							return nil
 						}}
 					case strings.Contains(sql, "SELECT status FROM projects"):
@@ -156,6 +164,10 @@ func TestAPIKeyMutationsRejectAStaleAuthorizedSnapshot(t *testing.T) {
 			}
 			h := newTestHandler(db)
 			req := p6f16Request(http.MethodPut, "/api/v1/keys/1", tc.body, auth.RolePlatformAdmin, 1, 70)
+			ctx := context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+			ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+			ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("stale-api-key-session"))
+			req = req.WithContext(ctx)
 			req.SetPathValue("id", "1")
 			rec := httptest.NewRecorder()
 
@@ -183,8 +195,27 @@ func TestUserMutationLookupDatabaseErrorsReturnInternalServerError(t *testing.T)
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tx := &testutil.MockTx{
-				QueryRowFn: func(context.Context, string, ...any) pgx.Row {
-					return &testutil.MockRow{ScanFn: func(...any) error { return fmt.Errorf("database unavailable") }}
+				QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						switch {
+						case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
+							*dest[0].(*int64) = int64(1)
+							*dest[1].(*string) = auth.RolePlatformAdmin
+							*dest[2].(*string) = auth.RolePlatformAdmin
+							*dest[3].(*string) = "active"
+							*dest[4].(*int64) = int64(0)
+							*dest[5].(*string) = "active"
+							return nil
+						case strings.Contains(sql, "FROM admin_sessions"):
+							*dest[0].(*int64) = int64(82)
+							return nil
+						case strings.Contains(sql, "FROM orgs"):
+							*dest[0].(*string) = "active"
+							return nil
+						default:
+							return fmt.Errorf("database unavailable")
+						}
+					}}
 				},
 				ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
 					return pgconn.NewCommandTag("SELECT 1"), nil
@@ -192,6 +223,10 @@ func TestUserMutationLookupDatabaseErrorsReturnInternalServerError(t *testing.T)
 			}
 			h := newTestHandler(&testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil }})
 			req := p6f16Request(tc.method, "/api/v1/users/42", tc.body, auth.RolePlatformAdmin, 1, 99)
+			ctx := context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+			ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+			ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("user-error-session"))
+			req = req.WithContext(ctx)
 			req.SetPathValue("id", "42")
 			rec := httptest.NewRecorder()
 
@@ -319,18 +354,45 @@ func TestCreateHandlersRejectNegativeOrganization(t *testing.T) {
 func TestCreateUserOrgAdminDefaultsToActorOrganization(t *testing.T) {
 	var insertedOrgID int64
 	tx := &testutil.MockTx{QueryRowFn: func(_ context.Context, sql string, args ...any) pgx.Row {
-		if !strings.Contains(sql, "INSERT INTO users") {
+		switch {
+		case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = int64(7)
+				*dest[1].(*string) = auth.RoleOrgAdmin
+				*dest[2].(*string) = auth.RoleOrgAdmin
+				*dest[3].(*string) = "active"
+				*dest[4].(*int64) = int64(0)
+				*dest[5].(*string) = "active"
+				return nil
+			}}
+		case strings.Contains(sql, "FROM admin_sessions"):
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = int64(71)
+				return nil
+			}}
+		case strings.Contains(sql, "FROM orgs"):
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*string) = "active"
+				return nil
+			}}
+		case strings.Contains(sql, "INSERT INTO users"):
+			insertedOrgID = args[0].(int64)
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 42
+				return nil
+			}}
+		default:
 			t.Fatalf("unexpected query: %s", sql)
+			return &testutil.MockRow{}
 		}
-		insertedOrgID = args[0].(int64)
-		return &testutil.MockRow{ScanFn: func(dest ...any) error {
-			*dest[0].(*int64) = 42
-			return nil
-		}}
 	}}
 	db := &testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil }}
 	h := newTestHandler(db)
 	req := p6f16Request(http.MethodPost, "/api/v1/users", `{"username":"own-org","password":"secret-password-123"}`, auth.RoleOrgAdmin, 7, 10)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RoleOrgAdmin)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("create-user-session"))
+	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	h.CreateUser(rec, req)

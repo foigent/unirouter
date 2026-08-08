@@ -209,6 +209,17 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		}
 		defer tx.Rollback(r.Context())
 		queryer = tx
+		if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+			TargetOrgID:              req.OrgID,
+			AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+		}); err != nil {
+			if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project authorization failed"})
+			}
+			return
+		}
 	}
 
 	var id int64
@@ -399,6 +410,20 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		defer tx.Rollback(r.Context())
 		execer = tx
 		queryer = tx
+		if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+			AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+			Project: &committingActorProjectRequirement{
+				ProjectID:    id,
+				AllowedRoles: []string{projectMemberAdmin},
+			},
+		}); err != nil {
+			if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project authorization failed"})
+			}
+			return
+		}
 	}
 	before, err := projectAuditSnapshot(r.Context(), queryer, id, tx != nil)
 	if err != nil {
@@ -421,24 +446,6 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
-	if tx != nil && actorOrganizationRole(r.Context()) != auth.RolePlatformAdmin && actorOrganizationRole(r.Context()) != auth.RoleOrgAdmin {
-		// The fast preflight above keeps ordinary denials cheap, but it cannot
-		// authorize the eventual write: membership may be revoked before this
-		// transaction locks the project. Re-check while holding the project row
-		// lock and take a shared lock on the actor membership/user rows. A
-		// concurrent revoke therefore either commits first and denies this update,
-		// or waits until this already-authorized transaction finishes.
-		allowed, authErr := canManageProjectMembersTx(r.Context(), tx, id, targetOrgID)
-		if authErr != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project authorization failed"})
-			return
-		}
-		if !allowed {
-			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-			return
-		}
-	}
-
 	sets = append(sets, "updated_at = NOW()")
 	idArg := argIdx
 	args = append(args, id)

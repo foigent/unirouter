@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
@@ -340,6 +341,81 @@ func TestEnterpriseProjectRoleSeparationDownRestoresRepresentableLegacyState(t *
 	require.NoError(t, pool.QueryRow(ctx, `SELECT role FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, userID).Scan(&membershipRole))
 	require.Equal(t, "developer", userRole)
 	require.Equal(t, "project_developer", membershipRole)
+}
+
+func TestEnterpriseProjectRoleSeparationDownWaitsForConcurrentWriterThenFailsClosed(t *testing.T) {
+	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
+	ctx := context.Background()
+	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+
+	var orgID, projectA, projectB, userID int64
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO orgs (name,status,org_type) VALUES ('role-down-concurrent','active','standard') RETURNING id`,
+	).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO projects (org_id,name,slug,status) VALUES ($1,'role-down-concurrent-a','role-down-concurrent-a','active') RETURNING id`, orgID,
+	).Scan(&projectA))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO projects (org_id,name,slug,status) VALUES ($1,'role-down-concurrent-b','role-down-concurrent-b','active') RETURNING id`, orgID,
+	).Scan(&projectB))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'role-down-concurrent-member','hash','member','project_admin','active') RETURNING id`, orgID,
+	).Scan(&userID))
+	_, err := pool.Exec(ctx,
+		`INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_admin')`, projectA, userID,
+	)
+	require.NoError(t, err)
+
+	writer, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	writerDone := false
+	t.Cleanup(func() {
+		if !writerDone {
+			_ = writer.Rollback(context.Background())
+		}
+	})
+	_, err = writer.Exec(ctx,
+		`INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_viewer')`, projectB, userID,
+	)
+	require.NoError(t, err)
+
+	downConn, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	defer downConn.Release()
+	var downPID int
+	require.NoError(t, downConn.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&downPID))
+	downSQL := readEnterpriseRoleDownMigration(t)
+	downResult := make(chan error, 1)
+	go func() {
+		_, execErr := downConn.Exec(context.Background(), downSQL)
+		downResult <- execErr
+	}()
+	require.Eventually(t, func() bool {
+		var waiting bool
+		err := pool.QueryRow(ctx, `
+			SELECT COALESCE(wait_event_type='Lock', false)
+			FROM pg_stat_activity WHERE pid=$1`, downPID,
+		).Scan(&waiting)
+		return err == nil && waiting
+	}, 5*time.Second, 20*time.Millisecond, "down migration must wait on the writer's table lock before checking representability")
+
+	require.NoError(t, writer.Commit(ctx))
+	writerDone = true
+	select {
+	case downErr := <-downResult:
+		require.ErrorContains(t, downErr, "member project roles are not representable")
+	case <-time.After(5 * time.Second):
+		t.Fatal("down migration did not recheck representability after the concurrent writer committed")
+	}
+	assertOrganizationRoleColumn(t, pool, true)
+	assertLegacyCompatibilityFunction(t, pool, true)
+	assertProjectMemberCompatibilityFunction(t, pool, true)
+	var migrationCount int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM schema_migrations WHERE version='000058_enterprise_project_role_separation'`,
+	).Scan(&migrationCount))
+	require.Equal(t, 1, migrationCount)
 }
 
 func readEnterpriseRoleDownMigration(t *testing.T) string {

@@ -1,5 +1,10 @@
 BEGIN;
 
+-- Stabilize every row that participates in representability before checking
+-- it. A writer already in flight must finish before these checks take their
+-- READ COMMITTED snapshot; later writers then wait until rollback completes.
+LOCK TABLE users, project_members IN SHARE ROW EXCLUSIVE MODE;
+
 DO $$
 BEGIN
     IF EXISTS (
@@ -37,8 +42,6 @@ BEGIN
     END IF;
 END;
 $$;
-
-LOCK TABLE users, project_members IN SHARE ROW EXCLUSIVE MODE;
 
 DROP TRIGGER users_legacy_role_organization_role_compatibility ON users;
 DROP FUNCTION sync_users_organization_role_from_legacy_role_write();

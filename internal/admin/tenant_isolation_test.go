@@ -269,11 +269,28 @@ func TestP6F16UpdateUserFinalPredicateProtectsPlatformRoles(t *testing.T) {
 	tx := &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*dest[0].(*int64) = 7
-				*dest[1].(*string) = auth.RoleOrgViewer
-				*dest[2].(*string) = auth.RoleOrgViewer
-				*dest[3].(*string) = "active"
-				return nil
+				switch {
+				case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
+					*dest[0].(*int64) = int64(7)
+					*dest[1].(*string) = auth.RoleOrgAdmin
+					*dest[2].(*string) = auth.RoleOrgAdmin
+					*dest[3].(*string) = "active"
+					*dest[4].(*int64) = int64(0)
+					*dest[5].(*string) = "active"
+					return nil
+				case strings.Contains(sql, "FROM admin_sessions"):
+					*dest[0].(*int64) = int64(71)
+					return nil
+				case strings.Contains(sql, "FROM orgs"):
+					*dest[0].(*string) = "active"
+					return nil
+				default:
+					*dest[0].(*int64) = 7
+					*dest[1].(*string) = auth.RoleOrgViewer
+					*dest[2].(*string) = auth.RoleOrgViewer
+					*dest[3].(*string) = "active"
+					return nil
+				}
 			}}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
@@ -303,6 +320,10 @@ func TestP6F16UpdateUserFinalPredicateProtectsPlatformRoles(t *testing.T) {
 	db := &testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) { return tx, nil }}
 	h := newTestHandler(db)
 	req := p6f16Request(http.MethodPut, "/api/v1/users/9", `{"organization_role":"billing_admin"}`, auth.RoleOrgAdmin, 7, 70)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RoleOrgAdmin)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("org-admin-update-session"))
+	req = req.WithContext(ctx)
 	req.SetPathValue("id", "9")
 	rec := httptest.NewRecorder()
 
@@ -380,14 +401,34 @@ func TestP6F16PlatformAdminCrossTenantException(t *testing.T) {
 	inserted := false
 	tx := &testutil.MockTx{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			inserted = true
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*dest[0].(*int64) = 42
-				return nil
+				switch {
+				case strings.Contains(sql, "FROM users u") && strings.Contains(sql, "JOIN orgs o"):
+					*dest[0].(*int64) = int64(7)
+					*dest[1].(*string) = auth.RolePlatformAdmin
+					*dest[2].(*string) = auth.RolePlatformAdmin
+					*dest[3].(*string) = "active"
+					*dest[4].(*int64) = int64(0)
+					*dest[5].(*string) = "active"
+					return nil
+				case strings.Contains(sql, "FROM admin_sessions"):
+					*dest[0].(*int64) = int64(72)
+					return nil
+				case strings.Contains(sql, "FROM orgs"):
+					*dest[0].(*string) = "active"
+					return nil
+				case strings.Contains(sql, "INSERT INTO projects"):
+					inserted = true
+					*dest[0].(*int64) = 42
+					return nil
+				default:
+					t.Fatalf("unexpected query: %s", sql)
+					return pgx.ErrNoRows
+				}
 			}}
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			if !strings.Contains(sql, "INSERT INTO audit_logs") {
+			if !strings.Contains(sql, "INSERT INTO audit_logs") && !strings.Contains(sql, "pg_advisory_xact_lock") {
 				t.Fatalf("unexpected exec: %s", sql)
 			}
 			return pgconn.NewCommandTag("INSERT 0 1"), nil
@@ -396,6 +437,10 @@ func TestP6F16PlatformAdminCrossTenantException(t *testing.T) {
 	db := &testutil.MockDB{BeginFn: func(ctx context.Context) (pgx.Tx, error) { return tx, nil }}
 	h := newTestHandler(db)
 	req := p6f16Request(http.MethodPost, "/api/v1/projects", `{"org_id":8,"name":"Foreign"}`, auth.RolePlatformAdmin, 7, 70)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("platform-project-session"))
+	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	h.CreateProject(rec, req)

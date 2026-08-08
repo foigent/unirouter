@@ -73,6 +73,7 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 		req := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		req = withTestActor(req, actorID, actorOrgID, role)
+		req = withIntegrationCommittingActor(t, pool, req, actorID)
 		rec := httptest.NewRecorder()
 		switch {
 		case method == http.MethodPost && target == "/users":
@@ -121,6 +122,7 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 	t.Run("organization roles may receive explicit non-propagating memberships", func(t *testing.T) {
 		upsert := func(userID, projectID int64, role string) *httptest.ResponseRecorder {
 			req := withTestActor(httptest.NewRequest(http.MethodPut, "/members", bytes.NewBufferString(fmt.Sprintf(`{"role":%q}`, role))), orgAdminA, orgA, auth.RoleOrgAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, orgAdminA)
 			req.SetPathValue("id", fmt.Sprintf("%d", projectID))
 			req.SetPathValue("user_id", fmt.Sprintf("%d", userID))
 			rec := httptest.NewRecorder()
@@ -163,6 +165,7 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 		heterogeneousMember := insertUser(orgA, "v1-heterogeneous-member", auth.RoleMember)
 		upsert := func(projectID int64, role string) {
 			req := withTestActor(httptest.NewRequest(http.MethodPut, "/members", bytes.NewBufferString(fmt.Sprintf(`{"role":%q}`, role))), orgAdminA, orgA, auth.RoleOrgAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, orgAdminA)
 			req.SetPathValue("id", fmt.Sprintf("%d", projectID))
 			req.SetPathValue("user_id", fmt.Sprintf("%d", heterogeneousMember))
 			rec := httptest.NewRecorder()
@@ -203,6 +206,7 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 			httptest.NewRequest(http.MethodPut, "/members", bytes.NewBufferString(`{"role":"project_admin"}`)),
 			orgAdminA, orgA, auth.RoleOrgAdmin,
 		)
+		orgAdminUpsert = withIntegrationCommittingActor(t, pool, orgAdminUpsert, orgAdminA)
 		orgAdminUpsert.SetPathValue("id", fmt.Sprintf("%d", projectA1))
 		orgAdminUpsert.SetPathValue("user_id", fmt.Sprintf("%d", projectAdminTarget))
 		orgAdminRec := httptest.NewRecorder()
@@ -211,6 +215,7 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 
 		serveMember := func(userID int64, body string) *httptest.ResponseRecorder {
 			req := withTestActor(httptest.NewRequest(http.MethodPut, "/members", bytes.NewBufferString(body)), projectAdminA, orgA, auth.RoleProjectAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, projectAdminA)
 			req.SetPathValue("id", fmt.Sprintf("%d", projectA1))
 			req.SetPathValue("user_id", fmt.Sprintf("%d", userID))
 			rec := httptest.NewRecorder()
@@ -240,7 +245,7 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 			`SELECT role FROM project_members WHERE project_id=$1 AND user_id=$2`, projectA1, projectAdminTarget,
 		).Scan(&protectedRole))
 		require.Equal(t, auth.ProjectRoleAdmin, protectedRole)
-		require.Equal(t, http.StatusForbidden, serveMember(foreignDeveloper, `{"role":"project_developer"}`).Code)
+		require.Equal(t, http.StatusNotFound, serveMember(foreignDeveloper, `{"role":"project_developer"}`).Code)
 		require.Equal(t, http.StatusOK, serveMember(developerA, `{"role":"project_developer"}`).Code)
 	})
 
@@ -255,16 +260,21 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 		start := make(chan struct{})
 		codes := make(chan int, 2)
 		var wg sync.WaitGroup
+		requests := make(map[int64]*http.Request, 2)
+		for _, projectID := range []int64{projectA1, projectA2} {
+			req := withTestActor(httptest.NewRequest(http.MethodDelete, "/members", nil), orgAdminA, orgA, auth.RoleOrgAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, orgAdminA)
+			req.SetPathValue("id", fmt.Sprintf("%d", projectID))
+			req.SetPathValue("user_id", fmt.Sprintf("%d", concurrentUser))
+			requests[projectID] = req
+		}
 		for _, projectID := range []int64{projectA1, projectA2} {
 			wg.Add(1)
 			go func(projectID int64) {
 				defer wg.Done()
 				<-start
-				req := withTestActor(httptest.NewRequest(http.MethodDelete, "/members", nil), orgAdminA, orgA, auth.RoleOrgAdmin)
-				req.SetPathValue("id", fmt.Sprintf("%d", projectID))
-				req.SetPathValue("user_id", fmt.Sprintf("%d", concurrentUser))
 				rec := httptest.NewRecorder()
-				h.DeleteProjectMember(rec, req)
+				h.DeleteProjectMember(rec, requests[projectID])
 				codes <- rec.Code
 			}(projectID)
 		}
@@ -309,13 +319,14 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 			`SELECT id FROM projects WHERE id = $1 FOR UPDATE`, projectA1,
 		).Scan(&lockedProjectID))
 
+		req := withTestActor(
+			httptest.NewRequest(http.MethodPut, "/projects", bytes.NewBufferString(`{"name":"must-not-commit"}`)),
+			projectAdminA, orgA, auth.RoleProjectAdmin,
+		)
+		req = withIntegrationCommittingActor(t, pool, req, projectAdminA)
+		req.SetPathValue("id", fmt.Sprintf("%d", projectA1))
 		updateResult := make(chan *httptest.ResponseRecorder, 1)
 		go func() {
-			req := withTestActor(
-				httptest.NewRequest(http.MethodPut, "/projects", bytes.NewBufferString(`{"name":"must-not-commit"}`)),
-				projectAdminA, orgA, auth.RoleProjectAdmin,
-			)
-			req.SetPathValue("id", fmt.Sprintf("%d", projectA1))
 			rec := httptest.NewRecorder()
 			h.UpdateProject(rec, req)
 			updateResult <- rec
@@ -367,13 +378,14 @@ func TestV1ProjectMembershipAndBudgetIntegration(t *testing.T) {
 	t.Run("billing update is field limited tenant bound audited and rollback safe", func(t *testing.T) {
 		updateBudget := func(projectID int64, body string) *httptest.ResponseRecorder {
 			req := withTestActor(httptest.NewRequest(http.MethodPut, "/budget", bytes.NewBufferString(body)), billingA, orgA, auth.RoleBillingAdmin)
+			req = withIntegrationCommittingActor(t, pool, req, billingA)
 			req.SetPathValue("id", fmt.Sprintf("%d", projectID))
 			rec := httptest.NewRecorder()
 			h.UpdateProjectBudget(rec, req)
 			return rec
 		}
 		require.Equal(t, http.StatusOK, updateBudget(projectA1, `{"budget_cents":1234,"budget_period":"daily"}`).Code)
-		require.Equal(t, http.StatusForbidden, updateBudget(projectB, `{"budget_cents":777}`).Code)
+		require.Equal(t, http.StatusNotFound, updateBudget(projectB, `{"budget_cents":777}`).Code)
 		require.Equal(t, http.StatusBadRequest, updateBudget(projectA1, `{"name":"not-allowed"}`).Code)
 		require.Equal(t, http.StatusBadRequest, updateBudget(projectA1, `{"budget_cents":2147483648}`).Code)
 		var budget int64

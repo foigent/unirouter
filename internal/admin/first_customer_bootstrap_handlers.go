@@ -78,6 +78,17 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Bootstrap transaction failed"})
 		return
 	}
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+		TargetOrgID:              middleware.GetOrgIDFromContext(r.Context()),
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin},
+	}); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "First-customer bootstrap admin preflight failed"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Bootstrap authorization failed"})
+		}
+		return
+	}
 	if _, err := tx.Exec(r.Context(), "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", firstCustomerBootstrapAction); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Bootstrap lock failed"})
 		return

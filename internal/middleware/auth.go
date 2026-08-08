@@ -71,6 +71,7 @@ const (
 	CtxUserID           contextKey = "user_id"
 	CtxUserRole         contextKey = "user_role"
 	CtxOrganizationRole contextKey = "organization_role"
+	CtxAuthEpoch        contextKey = "auth_epoch"
 	CtxAdminSessionHash contextKey = "admin_session_hash"
 	CtxModelAlias       contextKey = "model_alias"
 	CtxAuthKind         contextKey = "auth_kind"
@@ -129,6 +130,14 @@ func GetUserRoleFromContext(ctx context.Context) string {
 func GetOrganizationRoleFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(CtxOrganizationRole).(string)
 	return v
+}
+
+// GetAuthEpochFromContext returns the authorization epoch admitted by
+// AdminAuth. The boolean distinguishes the valid zero epoch from a context
+// that did not pass the production authentication middleware.
+func GetAuthEpochFromContext(ctx context.Context) (int64, bool) {
+	v, ok := ctx.Value(CtxAuthEpoch).(int64)
+	return v, ok
 }
 
 // GetAdminSessionHashFromContext returns a defensive copy of the current
@@ -489,6 +498,7 @@ func AdminAuth(q db.DBQuerier, jwtSecret string) func(http.Handler) http.Handler
 			ctx = context.WithValue(ctx, CtxUserID, claims.UserID)
 			ctx = context.WithValue(ctx, CtxUserRole, claims.Role)
 			ctx = context.WithValue(ctx, CtxOrganizationRole, organizationRole)
+			ctx = context.WithValue(ctx, CtxAuthEpoch, claims.AuthEpoch)
 			ctx = context.WithValue(ctx, CtxAdminSessionHash, sessionHash)
 
 			next.ServeHTTP(w, r.WithContext(ctx))

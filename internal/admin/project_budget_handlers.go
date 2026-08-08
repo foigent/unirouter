@@ -2,6 +2,7 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -62,7 +63,6 @@ func (h *Handler) UpdateProjectBudget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	organizationRole := actorOrganizationRole(r.Context())
 	var req struct {
 		BudgetCents  *int64  `json:"budget_cents"`
 		BudgetPeriod *string `json:"budget_period"`
@@ -90,37 +90,38 @@ func (h *Handler) UpdateProjectBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-
-	var orgID int64
-	var name, oldPeriod string
-	var oldBudget int64
-	if err := tx.QueryRow(r.Context(),
-		`SELECT org_id, name, COALESCE(budget_cents, 0), budget_period
-		 FROM projects WHERE id = $1 FOR UPDATE`, projectID,
-	).Scan(&orgID, &name, &oldBudget, &oldPeriod); err != nil {
-		if err == pgx.ErrNoRows {
-			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project not found"})
-			return
-		}
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project budget update failed"})
+	actorState, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleBillingAdmin},
+		Project: &committingActorProjectRequirement{
+			ProjectID:    projectID,
+			AllowedRoles: []string{projectMemberAdmin},
+		},
+	})
+	if errors.Is(err, errCommittingActorScopeNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project not found"})
 		return
 	}
-
-	allowed := false
-	switch organizationRole {
-	case auth.RolePlatformAdmin:
-		allowed = true
-	case auth.RoleOrgAdmin, auth.RoleBillingAdmin:
-		allowed = actorCanAccessOrg(r.Context(), orgID)
-	default:
-		allowed, err = canManageProjectMembersTx(r.Context(), tx, projectID, orgID)
+	if errors.Is(err, errCommittingActorAuthorizationChanged) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
 	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project budget authorization failed"})
 		return
 	}
-	if !allowed {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+
+	orgID := actorState.TargetOrgID
+	var name, oldPeriod string
+	var oldBudget int64
+	if err := tx.QueryRow(r.Context(),
+		`SELECT name, COALESCE(budget_cents, 0), budget_period
+		 FROM projects WHERE id = $1 AND org_id = $2 FOR UPDATE`, projectID, orgID,
+	).Scan(&name, &oldBudget, &oldPeriod); err != nil {
+		if err == pgx.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Project budget update failed"})
 		return
 	}
 

@@ -330,8 +330,8 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/users/%d", fx.platformA), `{"status":"disabled"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
 		assertStatus(t, serve(t, http.MethodDelete, fmt.Sprintf("/api/v1/users/%d", fx.platformA), "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
-		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/users/%d", fx.normalB), `{"status":"disabled"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
-		assertStatus(t, serve(t, http.MethodDelete, fmt.Sprintf("/api/v1/users/%d", fx.normalB), "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusForbidden)
+		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/users/%d", fx.normalB), `{"status":"disabled"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusNotFound)
+		assertStatus(t, serve(t, http.MethodDelete, fmt.Sprintf("/api/v1/users/%d", fx.normalB), "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusNotFound)
 
 		var foreignUserCount int
 		var foreignKeyStatus, foreignUserStatus, platformStatus string

@@ -119,6 +119,12 @@ func TestAdminAuth_ValidToken(t *testing.T) {
 		if role := GetUserRoleFromContext(r.Context()); role != "admin" {
 			t.Fatalf("expected role=admin, got %q", role)
 		}
+		if epoch, ok := GetAuthEpochFromContext(r.Context()); !ok || epoch != adminAuthTestEpoch {
+			t.Fatalf("expected admitted auth epoch %d, got %d present=%v", adminAuthTestEpoch, epoch, ok)
+		}
+		if sessionHash := GetAdminSessionHashFromContext(r.Context()); len(sessionHash) != 32 {
+			t.Fatalf("expected admitted session hash, got %d bytes", len(sessionHash))
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := httptest.NewRequest("GET", "/admin/test", nil)

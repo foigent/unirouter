@@ -2119,6 +2119,12 @@ func TestCreateAPIKey_RejectsNegativeProjectID(t *testing.T) {
 
 func TestCreateAPIKey_DuplicateName(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 11
+				return nil
+			}}
+		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			if strings.Contains(sql, "FROM api_keys") && strings.Contains(sql, "name") {
 				return &testutil.MockRows{
@@ -2132,7 +2138,7 @@ func TestCreateAPIKey_DuplicateName(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"org_id":1,"name":"test-key"}`
+	body := `{"org_id":1,"project_id":11,"name":"test-key"}`
 	req := httptest.NewRequest("POST", "/keys", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -4342,12 +4348,25 @@ func TestDisableAPIKey_DeveloperCanDisableOwnedKeyWithProjectMembership(t *testi
 					*dest[1].(*string) = auth.RoleMember
 					*dest[2].(*string) = auth.RoleDeveloper
 					*dest[3].(*string) = "active"
-					*dest[4].(*string) = "active"
+					*dest[4].(*int64) = 0
+					*dest[5].(*string) = "active"
+					return nil
+				}}
+			case strings.Contains(sql, "FROM admin_sessions"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 91
 					return nil
 				}}
 			case strings.Contains(sql, "FROM orgs"):
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {
 					*dest[0].(*string) = "active"
+					return nil
+				}}
+			case strings.Contains(sql, "FROM projects p") && len(args) == 5:
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 3
+					*dest[1].(*string) = "active"
+					*dest[2].(*string) = auth.ProjectRoleUser
 					return nil
 				}}
 			case strings.Contains(sql, "FROM projects"):
@@ -4423,6 +4442,10 @@ func TestDisableAPIKey_DeveloperCanDisableOwnedKeyWithProjectMembership(t *testi
 	req := httptest.NewRequest(http.MethodPost, "/keys/1/disable", nil)
 	req.SetPathValue("id", "1")
 	req = withTestActor(req, 42, 3, auth.RoleDeveloper)
+	ctx := context.WithValue(req.Context(), middleware.CtxOrganizationRole, auth.RoleMember)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("developer-disable-session"))
+	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	h.DisableAPIKey(rec, req)

@@ -133,7 +133,10 @@ func TestAnalyticsConditionsMyScopeAllowsProjectScopedRoleWithoutProjectID(t *te
 	if !strings.Contains(joined, "org_id") || !strings.Contains(joined, "owner_user_id") || !strings.Contains(joined, "key_type") {
 		t.Fatalf("expected org, owner, and key_type conditions, got %q", joined)
 	}
-	if len(args) != 3 || args[1] != int64(42) || args[2] != "personal" {
+	if !strings.Contains(joined, "EXISTS") || !strings.Contains(joined, "project_members") {
+		t.Fatalf("scope=my must require live project membership, got %q", joined)
+	}
+	if len(args) != 5 || args[1] != int64(42) || args[2] != int64(42) || args[4] != "personal" {
 		t.Fatalf("unexpected args: %#v", args)
 	}
 }

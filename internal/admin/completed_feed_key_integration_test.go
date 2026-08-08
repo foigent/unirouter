@@ -46,7 +46,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	genericCreateResponse := httptest.NewRecorder()
 	handler.CreateAPIKey(
 		genericCreateResponse,
-		apiKeyIntegrationRequest(
+		apiKeyIntegrationRequest(t, pool,
 			http.MethodPost,
 			"/api/v1/keys",
 			fmt.Sprintf(
@@ -61,7 +61,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	)
 	require.Equal(t, http.StatusBadRequest, genericCreateResponse.Code, genericCreateResponse.Body.String())
 
-	createRequest := apiKeyIntegrationRequest(
+	createRequest := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials", projectID),
 		xInsightFeedCreateBody(t, "lifecycle-initial", "127.0.0.1/32"),
@@ -106,7 +106,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, auth.HashReceiverFeedVerifier(decodedVerifier, "completed-feed-admin-secret"), storedHash)
 
-	genericUpdate := apiKeyIntegrationRequest(
+	genericUpdate := apiKeyIntegrationRequest(t, pool,
 		http.MethodPut,
 		fmt.Sprintf("/api/v1/keys/%d", keyID),
 		`{"status":"active"}`,
@@ -120,7 +120,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	handler.UpdateAPIKey(genericUpdateResponse, genericUpdate)
 	require.Equal(t, http.StatusConflict, genericUpdateResponse.Code, genericUpdateResponse.Body.String())
 
-	genericDisable := apiKeyIntegrationRequest(
+	genericDisable := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/keys/%d/disable", keyID),
 		"",
@@ -134,7 +134,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	handler.DisableAPIKey(genericDisableResponse, genericDisable)
 	require.Equal(t, http.StatusConflict, genericDisableResponse.Code, genericDisableResponse.Body.String())
 
-	activateRequest := apiKeyIntegrationRequest(
+	activateRequest := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials/activate", projectID),
 		fmt.Sprintf(`{"staged_credential_id":%d}`, keyID),
@@ -153,7 +153,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	).Scan(&storedStatus))
 	require.Equal(t, middleware.APIKeyStatusFeedActive, storedStatus)
 
-	resumeRequest := apiKeyIntegrationRequest(
+	resumeRequest := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/resume", projectID),
 		"",
@@ -167,7 +167,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	handler.ResumeXInsightFeedConnection(resumeResponse, resumeRequest)
 	require.Equal(t, http.StatusOK, resumeResponse.Code, resumeResponse.Body.String())
 
-	pauseRequest := apiKeyIntegrationRequest(
+	pauseRequest := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/pause", projectID),
 		"",
@@ -181,7 +181,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	handler.PauseXInsightFeedConnection(pauseResponse, pauseRequest)
 	require.Equal(t, http.StatusOK, pauseResponse.Code, pauseResponse.Body.String())
 
-	prepareRequest := apiKeyIntegrationRequest(
+	prepareRequest := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/rotation/prepare", projectID),
 		xInsightFeedRotationBody(t, "lifecycle-rotation-one"),
@@ -209,7 +209,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.Equal(t, 1, activeCount, "old credential must remain active during prepare")
 	require.Equal(t, 1, stagedCount, "one staged overlap is required during installation")
 
-	revokeOldDuringRotation := apiKeyIntegrationRequest(
+	revokeOldDuringRotation := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials/%d/revoke", projectID, keyID),
 		"",
@@ -226,7 +226,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM api_keys WHERE id = $1`, keyID).Scan(&storedStatus))
 	require.Equal(t, middleware.APIKeyStatusFeedActive, storedStatus, "rotation overlap must not expose an old-key 401 window")
 
-	rotationActivate := apiKeyIntegrationRequest(
+	rotationActivate := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/rotation/activate", projectID),
 		fmt.Sprintf(`{"staged_credential_id":%d}`, replacementID),
@@ -251,7 +251,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.Equal(t, middleware.APIKeyStatusFeedActive, replacementStatus)
 	require.Equal(t, xInsightFeedConnectionPaused, connectionStatus, "rotation never auto-resumes")
 
-	statusRequest := apiKeyIntegrationRequest(
+	statusRequest := apiKeyIntegrationRequest(t, pool,
 		http.MethodGet,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d", projectID),
 		"",
@@ -277,7 +277,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.Equal(t, rotationRegistration.OperationID, activeCredential["operation_id"])
 	require.Nil(t, controlStatus["staged_credential"])
 
-	oldReactivate := apiKeyIntegrationRequest(
+	oldReactivate := apiKeyIntegrationRequest(t, pool,
 		http.MethodPut,
 		fmt.Sprintf("/api/v1/keys/%d", keyID),
 		`{"status":"active"}`,
@@ -293,7 +293,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM api_keys WHERE id = $1`, keyID).Scan(&oldStatus))
 	require.Equal(t, middleware.APIKeyStatusFeedRevoked, oldStatus, "terminal credential cannot be reactivated")
 
-	secondPrepareRequest := apiKeyIntegrationRequest(
+	secondPrepareRequest := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/rotation/prepare", projectID),
 		xInsightFeedRotationBody(t, "lifecycle-rotation-two"),
@@ -310,7 +310,7 @@ func TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration(t *testing.T)
 	require.NoError(t, json.Unmarshal(secondPrepareResponse.Body.Bytes(), &cancelledReplacement))
 	cancelledID := int64(cancelledReplacement["id"].(float64))
 
-	cancelRequest := apiKeyIntegrationRequest(
+	cancelRequest := apiKeyIntegrationRequest(t, pool,
 		http.MethodPost,
 		fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/rotation/cancel", projectID),
 		fmt.Sprintf(`{"staged_credential_id":%d}`, cancelledID),

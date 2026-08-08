@@ -250,6 +250,17 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+		TargetOrgID:              req.OrgID,
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+	}); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create authorization failed"})
+		}
+		return
+	}
 	var id int64
 	err = tx.QueryRow(r.Context(),
 		`INSERT INTO users (org_id, username, password_hash, organization_role, role, status)
@@ -371,12 +382,25 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 
-	if err := lockProjectMembershipMutation(r.Context(), tx, id); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+		TargetOrgID:              middleware.GetOrgIDFromContext(r.Context()),
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+		AdditionalUserIDs:        []int64{id},
+	}); err != nil {
+		if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update authorization failed"})
+		}
 		return
 	}
 	if err := tx.QueryRow(r.Context(),
-		`SELECT org_id, organization_role, role, status FROM users WHERE id = $1 FOR UPDATE`, id,
+		`SELECT org_id, organization_role, role, status
+		   FROM users
+		  WHERE id = $1
+		    AND ($2::boolean OR org_id = $3)
+		  FOR UPDATE`, id, actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin,
+		middleware.GetOrgIDFromContext(r.Context()),
 	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
@@ -544,14 +568,32 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	if err := lockProjectMembershipMutation(r.Context(), tx, id); err != nil {
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+			TargetOrgID:              middleware.GetOrgIDFromContext(r.Context()),
+			AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+			AdditionalUserIDs:        []int64{id},
+		}); err != nil {
+			if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			} else {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete authorization failed"})
+			}
+			return
+		}
+	} else if err := lockProjectMembershipMutation(r.Context(), tx, id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return
 	}
 	var targetOrgID int64
 	var targetOrganizationRole, targetRole, targetStatus string
 	if err := tx.QueryRow(r.Context(),
-		`SELECT org_id, organization_role, role, status FROM users WHERE id = $1 FOR UPDATE`, id,
+		`SELECT org_id, organization_role, role, status
+		   FROM users
+		  WHERE id = $1
+		    AND ($2::boolean OR org_id = $3 OR $3::bigint = 0)
+		  FOR UPDATE`, id, actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin,
+		middleware.GetOrgIDFromContext(r.Context()),
 	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})

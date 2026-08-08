@@ -187,30 +187,33 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	if err := lockProjectMembershipMutation(r.Context(), tx, userID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to save project membership"})
-		return
-	}
-
-	var orgID int64
-	if err := tx.QueryRow(r.Context(), `SELECT org_id FROM projects WHERE id = $1 FOR SHARE`, projectID).Scan(&orgID); err != nil {
+	actorState, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+		Project: &committingActorProjectRequirement{
+			ProjectID:    projectID,
+			AllowedRoles: []string{projectMemberAdmin},
+		},
+		AdditionalUserIDs: []int64{userID},
+	})
+	if errors.Is(err, errCommittingActorScopeNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project not found"})
 		return
 	}
-	allowed, err := canManageProjectMembersTx(r.Context(), tx, projectID, orgID)
+	if errors.Is(err, errCommittingActorAuthorizationChanged) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Membership authorization failed"})
 		return
 	}
-	if !allowed {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-		return
-	}
+	orgID := actorState.TargetOrgID
 
 	var targetOrgID int64
 	var targetOrganizationRole, targetRole, targetStatus string
 	if err := tx.QueryRow(r.Context(),
-		`SELECT org_id, organization_role, role, status FROM users WHERE id = $1 FOR UPDATE`, userID,
+		`SELECT org_id, organization_role, role, status
+		   FROM users WHERE id = $1 AND org_id = $2 FOR UPDATE`, userID, orgID,
 	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		return
@@ -314,21 +317,36 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	if err := lockProjectMembershipMutation(r.Context(), tx, userID); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to remove project membership"})
+	actorState, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+		Project: &committingActorProjectRequirement{
+			ProjectID:    projectID,
+			AllowedRoles: []string{projectMemberAdmin},
+		},
+		AdditionalUserIDs: []int64{userID},
+	})
+	if errors.Is(err, errCommittingActorScopeNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project membership not found"})
 		return
 	}
-
-	var orgID int64
+	if errors.Is(err, errCommittingActorAuthorizationChanged) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Membership authorization failed"})
+		return
+	}
+	orgID := actorState.TargetOrgID
 	var targetOrganizationRole, targetRole, targetStatus, membershipRole string
 	err = tx.QueryRow(r.Context(),
 		`SELECT p.org_id, u.organization_role, u.role, u.status, pm.role
 		 FROM project_members pm
 		 JOIN projects p ON p.id = pm.project_id
 		 JOIN users u ON u.id = pm.user_id AND u.org_id = p.org_id
-		 WHERE pm.project_id = $1 AND pm.user_id = $2
+		 WHERE pm.project_id = $1 AND pm.user_id = $2 AND p.org_id = $3
 		 FOR UPDATE OF pm, u`,
-		projectID, userID,
+		projectID, userID, orgID,
 	).Scan(&orgID, &targetOrganizationRole, &targetRole, &targetStatus, &membershipRole)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -336,15 +354,6 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Membership lookup failed"})
-		return
-	}
-	allowed, authErr := canManageProjectMembersTx(r.Context(), tx, projectID, orgID)
-	if authErr != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Membership authorization failed"})
-		return
-	}
-	if !allowed {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
 	if actorOrganizationRole(r.Context()) != auth.RolePlatformAdmin && actorOrganizationRole(r.Context()) != auth.RoleOrgAdmin {

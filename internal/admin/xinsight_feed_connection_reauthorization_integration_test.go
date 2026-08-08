@@ -76,35 +76,34 @@ func TestXInsightFeedControlReauthorizesAfterCommittedActorAndProjectChangesInte
 			handler.SetCompletedFeedController(completedFeedControllerFixture{})
 			requestID := "xinsight-feed-reauthorization-" + strings.ReplaceAll(test.name, " ", "-")
 			var request *http.Request
-			invoke := func(response *httptest.ResponseRecorder) {
-				switch test.action {
-				case "create":
-					request = apiKeyIntegrationRequest(
-						http.MethodPost,
-						fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials", fixture.projectID),
-						xInsightFeedCreateBody(t, "reauthorization-"+test.name, "127.0.0.1/32"),
-						fixture.actorID,
-						fixture.orgID,
-						auth.RolePlatformAdmin,
-						requestID,
-					)
-					request.SetPathValue("project_id", strconv.FormatInt(fixture.projectID, 10))
-					handler.CreateXInsightFeedCredential(response, request)
-				case "pause":
-					request = apiKeyIntegrationRequest(
-						http.MethodPost,
-						fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/pause", fixture.projectID),
-						"",
-						fixture.actorID,
-						fixture.orgID,
-						auth.RolePlatformAdmin,
-						requestID,
-					)
-					request.SetPathValue("project_id", strconv.FormatInt(fixture.projectID, 10))
-					handler.PauseXInsightFeedConnection(response, request)
-				default:
-					t.Fatalf("unknown action %q", test.action)
-				}
+			var invoke func(*httptest.ResponseRecorder)
+			switch test.action {
+			case "create":
+				request = apiKeyIntegrationRequest(t, fixture.pool,
+					http.MethodPost,
+					fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials", fixture.projectID),
+					xInsightFeedCreateBody(t, "reauthorization-"+test.name, "127.0.0.1/32"),
+					fixture.actorID,
+					fixture.orgID,
+					auth.RolePlatformAdmin,
+					requestID,
+				)
+				request.SetPathValue("project_id", strconv.FormatInt(fixture.projectID, 10))
+				invoke = func(response *httptest.ResponseRecorder) { handler.CreateXInsightFeedCredential(response, request) }
+			case "pause":
+				request = apiKeyIntegrationRequest(t, fixture.pool,
+					http.MethodPost,
+					fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/pause", fixture.projectID),
+					"",
+					fixture.actorID,
+					fixture.orgID,
+					auth.RolePlatformAdmin,
+					requestID,
+				)
+				request.SetPathValue("project_id", strconv.FormatInt(fixture.projectID, 10))
+				invoke = func(response *httptest.ResponseRecorder) { handler.PauseXInsightFeedConnection(response, request) }
+			default:
+				t.Fatalf("unknown action %q", test.action)
 			}
 
 			responseCh := make(chan *httptest.ResponseRecorder, 1)
@@ -220,7 +219,7 @@ func TestXInsightFeedControlRequiresActiveProjectForExpansionIntegration(t *test
 		fixture := newXInsightFeedAuthorizationFixture(t, false)
 		disableXInsightFeedProject(t, fixture, "disabled")
 		handler := newXInsightFeedAuthorizationHandler(fixture)
-		request := xInsightFeedControlRequest(
+		request := xInsightFeedControlRequest(t,
 			http.MethodPost,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials", fixture.projectID),
 			xInsightFeedCreateBody(t, "inactive-project-create", "127.0.0.1/32"),
@@ -243,7 +242,7 @@ func TestXInsightFeedControlRequiresActiveProjectForExpansionIntegration(t *test
 		insertXInsightFeedAuthorizationConnection(t, fixture, xInsightFeedConnectionPaused)
 		disableXInsightFeedProject(t, fixture, "disabled")
 		handler := newXInsightFeedAuthorizationHandler(fixture)
-		request := xInsightFeedControlRequest(
+		request := xInsightFeedControlRequest(t,
 			http.MethodPost,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials/activate", fixture.projectID),
 			fmt.Sprintf(`{"staged_credential_id":%d}`, stagedKeyID),
@@ -271,7 +270,7 @@ func TestXInsightFeedControlRequiresActiveProjectForExpansionIntegration(t *test
 		require.NoError(t, err)
 		disableXInsightFeedProject(t, fixture, "archived")
 		handler := newXInsightFeedAuthorizationHandler(fixture)
-		request := xInsightFeedControlRequest(
+		request := xInsightFeedControlRequest(t,
 			http.MethodPost,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/resume", fixture.projectID),
 			"",
@@ -297,7 +296,7 @@ func TestXInsightFeedControlCleanupRemainsAvailableForInactiveProjectIntegration
 		disableXInsightFeedProject(t, fixture, "disabled")
 		handler := newXInsightFeedAuthorizationHandler(fixture)
 
-		statusRequest := xInsightFeedControlRequest(
+		statusRequest := xInsightFeedControlRequest(t,
 			http.MethodGet,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d", fixture.projectID),
 			"",
@@ -312,7 +311,7 @@ func TestXInsightFeedControlCleanupRemainsAvailableForInactiveProjectIntegration
 		require.NoError(t, json.Unmarshal(statusResponse.Body.Bytes(), &status))
 		require.Equal(t, "disabled", status["project_status"])
 
-		pauseRequest := xInsightFeedControlRequest(
+		pauseRequest := xInsightFeedControlRequest(t,
 			http.MethodPost,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/pause", fixture.projectID),
 			"",
@@ -324,7 +323,7 @@ func TestXInsightFeedControlCleanupRemainsAvailableForInactiveProjectIntegration
 		handler.PauseXInsightFeedConnection(pauseResponse, pauseRequest)
 		require.Equal(t, http.StatusOK, pauseResponse.Code, pauseResponse.Body.String())
 
-		cancelRequest := xInsightFeedControlRequest(
+		cancelRequest := xInsightFeedControlRequest(t,
 			http.MethodPost,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/rotation/cancel", fixture.projectID),
 			fmt.Sprintf(`{"staged_credential_id":%d}`, stagedKeyID),
@@ -336,7 +335,7 @@ func TestXInsightFeedControlCleanupRemainsAvailableForInactiveProjectIntegration
 		handler.CancelXInsightFeedRotation(cancelResponse, cancelRequest)
 		require.Equal(t, http.StatusOK, cancelResponse.Code, cancelResponse.Body.String())
 
-		revokeRequest := xInsightFeedControlRequest(
+		revokeRequest := xInsightFeedControlRequest(t,
 			http.MethodPost,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials/%d/revoke", fixture.projectID, fixture.activeKeyID),
 			"",
@@ -368,7 +367,7 @@ func TestXInsightFeedControlCleanupRemainsAvailableForInactiveProjectIntegration
 		disableXInsightFeedProject(t, fixture, "archived")
 		handler := newXInsightFeedAuthorizationHandler(fixture)
 
-		statusRequest := xInsightFeedControlRequest(
+		statusRequest := xInsightFeedControlRequest(t,
 			http.MethodGet,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d", fixture.projectID),
 			"",
@@ -383,7 +382,7 @@ func TestXInsightFeedControlCleanupRemainsAvailableForInactiveProjectIntegration
 		require.NoError(t, json.Unmarshal(statusResponse.Body.Bytes(), &status))
 		require.Equal(t, "archived", status["project_status"])
 
-		revokeRequest := xInsightFeedControlRequest(
+		revokeRequest := xInsightFeedControlRequest(t,
 			http.MethodPost,
 			fmt.Sprintf("/api/v1/data-exchange/xinsight/connections/%d/credentials/%d/revoke", fixture.projectID, stagedKeyID),
 			"",
@@ -415,11 +414,12 @@ func newXInsightFeedAuthorizationHandler(fixture xInsightFeedAuthorizationFixtur
 }
 
 func xInsightFeedControlRequest(
+	t *testing.T,
 	method, target, body string,
 	fixture xInsightFeedAuthorizationFixture,
 	requestID string,
 ) *http.Request {
-	return apiKeyIntegrationRequest(
+	return apiKeyIntegrationRequest(t, fixture.pool,
 		method,
 		target,
 		body,
@@ -551,7 +551,7 @@ func requireFeedCredentialCannotReactivate(
 	requestID string,
 ) {
 	t.Helper()
-	request := apiKeyIntegrationRequest(
+	request := apiKeyIntegrationRequest(t, fixture.pool,
 		http.MethodPut,
 		fmt.Sprintf("/api/v1/keys/%d", keyID),
 		`{"status":"active"}`,

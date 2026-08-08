@@ -138,10 +138,7 @@ func isAPIKeyPrefixCollision(err error) bool {
 // order before disabling personal keys.
 func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, intent apiKeyAuthorizationIntent) error {
 	actorUserID := middleware.GetUserIDFromContext(ctx)
-	actorOrgID := middleware.GetOrgIDFromContext(ctx)
-	expectedRole := middleware.GetUserRoleFromContext(ctx)
-	expectedOrganizationRole := actorOrganizationRole(ctx)
-	if actorUserID <= 0 || actorOrgID <= 0 || expectedRole == "" || expectedOrganizationRole == "" || intent.targetOrgID <= 0 {
+	if actorUserID <= 0 || intent.targetOrgID <= 0 {
 		return errAPIKeyAuthorizationChanged
 	}
 	if intent.validateOwnership && (!validAPIKeyType(intent.keyType) ||
@@ -150,34 +147,35 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 		return errAPIKeyAuthorizationChanged
 	}
 
-	lockUserIDs := []int64{actorUserID}
+	additionalUserIDs := make([]int64, 0, 1)
 	if intent.validateOwnership && intent.ownerUserID > 0 && intent.ownerUserID != actorUserID {
-		lockUserIDs = append(lockUserIDs, intent.ownerUserID)
+		additionalUserIDs = append(additionalUserIDs, intent.ownerUserID)
 	}
-	sort.Slice(lockUserIDs, func(i, j int) bool { return lockUserIDs[i] < lockUserIDs[j] })
-	for _, userID := range lockUserIDs {
-		if err := lockProjectMembershipMutation(ctx, tx, userID); err != nil {
-			return fmt.Errorf("lock API-key authorization user %d: %w", userID, err)
+	var targetProjectRequirement *committingActorProjectRequirement
+	if intent.targetProjectID > 0 {
+		allowedProjectRoles := []string{projectMemberAdmin}
+		if intent.keyType == "personal" && intent.ownerUserID == actorUserID {
+			allowedProjectRoles = append(allowedProjectRoles, projectMemberUser)
+		}
+		targetProjectRequirement = &committingActorProjectRequirement{
+			ProjectID:    intent.targetProjectID,
+			AllowedRoles: allowedProjectRoles,
+			MustBeActive: intent.targetProjectMustActive,
 		}
 	}
-
-	var currentOrgID int64
-	var currentOrganizationRole, currentRole, userStatus, actorOrganizationStatus string
-	err := tx.QueryRow(ctx,
-		`SELECT u.org_id, u.organization_role, u.role, u.status, o.status
-		 FROM users u
-		 JOIN orgs o ON o.id = u.org_id
-		 WHERE u.id = $1
-		 FOR SHARE OF u, o`,
-		actorUserID,
-	).Scan(&currentOrgID, &currentOrganizationRole, &currentRole, &userStatus, &actorOrganizationStatus)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return errAPIKeyAuthorizationChanged
-	}
+	actorState, err := h.reauthorizeCommittingActorTx(ctx, tx, committingActorRequirement{
+		TargetOrgID:              intent.targetOrgID,
+		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
+		Project:                  targetProjectRequirement,
+		AdditionalUserIDs:        additionalUserIDs,
+	})
 	if err != nil {
-		return fmt.Errorf("read current API-key actor: %w", err)
+		if errors.Is(err, errCommittingActorAuthorizationChanged) || errors.Is(err, errCommittingActorScopeNotFound) {
+			return errAPIKeyAuthorizationChanged
+		}
+		return err
 	}
-	if currentOrgID != actorOrgID || currentOrganizationRole != expectedOrganizationRole || currentRole != expectedRole || userStatus != "active" || actorOrganizationStatus != "active" {
+	if actorState.UserID == 0 && !isUnauthenticatedUnitContext(ctx) {
 		return errAPIKeyAuthorizationChanged
 	}
 
@@ -186,22 +184,6 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 	default:
 		return errAPIKeyAuthorizationChanged
 	}
-	if currentOrganizationRole != auth.RolePlatformAdmin && currentOrgID != intent.targetOrgID {
-		return errAPIKeyAuthorizationChanged
-	}
-
-	var targetOrganizationStatus string
-	err = tx.QueryRow(ctx, `SELECT status FROM orgs WHERE id = $1 FOR SHARE`, intent.targetOrgID).Scan(&targetOrganizationStatus)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return errAPIKeyAuthorizationChanged
-	}
-	if err != nil {
-		return fmt.Errorf("read API-key target organization: %w", err)
-	}
-	if targetOrganizationStatus != "active" {
-		return errAPIKeyAuthorizationChanged
-	}
-
 	projectRequirements := make(map[int64]bool, 2)
 	if intent.sourceProjectID > 0 {
 		projectRequirements[intent.sourceProjectID] = false
@@ -213,7 +195,7 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 		return errAPIKeyAuthorizationChanged
 	}
 	if intent.operation == apiKeyMutationUpdate && intent.sourceProjectID <= 0 &&
-		currentOrganizationRole != auth.RolePlatformAdmin && currentOrganizationRole != auth.RoleOrgAdmin {
+		actorState.OrganizationRole != auth.RolePlatformAdmin && actorState.OrganizationRole != auth.RoleOrgAdmin {
 		return errAPIKeyAuthorizationChanged
 	}
 	projectIDs := make([]int64, 0, len(projectRequirements))
@@ -223,7 +205,7 @@ func (h *Handler) reauthorizeAPIKeyMutationTx(ctx context.Context, tx pgx.Tx, in
 	sort.Slice(projectIDs, func(i, j int) bool { return projectIDs[i] < projectIDs[j] })
 	for _, projectID := range projectIDs {
 		mustBeActive := projectRequirements[projectID]
-		if err := reauthorizeAPIKeyProjectTx(ctx, tx, currentOrganizationRole, actorUserID, intent.targetOrgID, projectID, mustBeActive, intent); err != nil {
+		if err := reauthorizeAPIKeyProjectTx(ctx, tx, actorState.OrganizationRole, actorUserID, intent.targetOrgID, projectID, mustBeActive, intent); err != nil {
 			return err
 		}
 	}
@@ -603,23 +585,6 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	req.QPSLimit = rpsLimit
 
-	existingRows, err := h.db.Query(r.Context(),
-		`SELECT 1 FROM api_keys WHERE org_id = $1 AND name = $2 LIMIT 1`,
-		req.OrgID, req.Name)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to check duplicate key name"})
-		return
-	}
-	defer existingRows.Close()
-	if existingRows.Next() {
-		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "API key name already exists"})
-		return
-	}
-	if err := existingRows.Err(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to check duplicate key name"})
-		return
-	}
-
 	if actorOrganizationRole(r.Context()) != auth.RolePlatformAdmin && actorOrganizationRole(r.Context()) != auth.RoleOrgAdmin && req.ProjectID == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "project_id is required"})
 		return
@@ -636,6 +601,22 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if !h.canCreateProjectKey(r.Context(), projectID) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	existingRows, err := h.db.Query(r.Context(),
+		`SELECT 1 FROM api_keys WHERE org_id = $1 AND project_id = $2 AND name = $3 LIMIT 1`,
+		req.OrgID, projectID, req.Name)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to check duplicate key name"})
+		return
+	}
+	defer existingRows.Close()
+	if existingRows.Next() {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "API key name already exists"})
+		return
+	}
+	if err := existingRows.Err(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to check duplicate key name"})
 		return
 	}
 	ownerUserID, keyType, err := h.resolveCreateAPIKeyOwnership(r.Context(), req.OrgID, projectID, req.OwnerUserID, req.KeyType)

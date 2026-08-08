@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -67,11 +66,8 @@ func TestWorkloadApplicationLifecycleCredentialBindingReadinessAndTenantIsolatio
 		t.Helper()
 		request := httptest.NewRequest(method, target, strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
-		requestContext := context.WithValue(request.Context(), middleware.CtxUserID, tenant.userID)
-		requestContext = context.WithValue(requestContext, middleware.CtxOrgID, tenant.orgID)
-		requestContext = context.WithValue(requestContext, middleware.CtxUserRole, auth.RoleOrgAdmin)
-		requestContext = context.WithValue(requestContext, middleware.CtxRequestID, "req-workload-integration")
-		return request.WithContext(requestContext)
+		request = request.WithContext(context.WithValue(request.Context(), middleware.CtxRequestID, "req-workload-integration"))
+		return withIntegrationCommittingActor(t, pool, request, tenant.userID)
 	}
 	createBody := fmt.Sprintf(`{
 		"project_id":%d,"application_ref":"app_claims_agent","display_name":"Claims Agent",

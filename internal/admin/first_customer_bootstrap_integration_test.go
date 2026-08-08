@@ -62,6 +62,63 @@ func TestFirstCustomerBootstrapCreatesOnlyOrganizationZeroWalletAndAudit(t *test
 	require.Equal(t, http.StatusConflict, second.Code)
 }
 
+func TestFirstCustomerBootstrapRejectsCommittedExactSessionLogoutIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
+	ctx := context.Background()
+	_, err := pool.Exec(ctx, `DELETE FROM admin_sessions WHERE user_id=$1`, adminID)
+	require.NoError(t, err)
+
+	const jwtSecret = "bootstrap-session-reauthorization-secret"
+	token := testutil.MustAdminSessionJWT(t, ctx, pool, adminID, adminOrgID, "platform_admin", jwtSecret)
+	beginReached := make(chan struct{})
+	allowBegin := make(chan struct{})
+	interleavingDB := &apiKeyInterleavingDB{pool: pool, beginReached: beginReached, allowBegin: allowBegin}
+	mutationHandler := NewHandler(interleavingDB, jwtSecret, []byte("0123456789abcdef01234567"), nil)
+	liveHandler := NewHandler(pool, jwtSecret, []byte("0123456789abcdef01234567"), nil)
+	protected := middleware.OperationIdentity(middleware.AdminAuth(pool, jwtSecret)(http.HandlerFunc(mutationHandler.BootstrapFirstCustomer)))
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/first-customer",
+		bytes.NewBufferString(`{"organization_name":"Must Not Commit"}`))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set(middleware.ClientRequestIDHeader, "bootstrap-session-revoked")
+	responseCh := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		protected.ServeHTTP(response, request)
+		responseCh <- response
+	}()
+
+	select {
+	case <-beginReached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first-customer bootstrap did not reach its committing transaction after authenticated admission")
+	}
+	logoutRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	logoutRequest.Header.Set("Authorization", "Bearer "+token)
+	logoutResponse := httptest.NewRecorder()
+	liveHandler.Logout(logoutResponse, logoutRequest)
+	require.Equal(t, http.StatusOK, logoutResponse.Code, logoutResponse.Body.String())
+	close(allowBegin)
+
+	select {
+	case response := <-responseCh:
+		require.Equal(t, http.StatusConflict, response.Code, response.Body.String())
+		require.JSONEq(t, `{"error":"First-customer bootstrap admin preflight failed"}`, response.Body.String())
+	case <-time.After(5 * time.Second):
+		t.Fatal("first-customer bootstrap did not finish after logout committed")
+	}
+	var orgCount, walletCount, bootstrapAuditCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM orgs`).Scan(&orgCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM wallets`).Scan(&walletCount))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM audit_logs WHERE action=$1`, firstCustomerBootstrapAction,
+	).Scan(&bootstrapAuditCount))
+	require.Equal(t, 1, orgCount)
+	require.Zero(t, walletCount)
+	require.Zero(t, bootstrapAuditCount)
+}
+
 func TestFirstCustomerBootstrapFailsClosedOnDirtyBaselineAndRole(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
@@ -150,6 +207,9 @@ func serveFirstCustomerBootstrap(t *testing.T, handler *Handler, userID, orgID i
 	ctx := context.WithValue(request.Context(), middleware.CtxUserID, userID)
 	ctx = context.WithValue(ctx, middleware.CtxOrgID, orgID)
 	ctx = context.WithValue(ctx, middleware.CtxUserRole, role)
+	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, role)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, bytes.Repeat([]byte{0xcd}, 32))
 	request = request.WithContext(ctx)
 	recorder := httptest.NewRecorder()
 	middleware.OperationIdentity(http.HandlerFunc(handler.BootstrapFirstCustomer)).ServeHTTP(recorder, request)
