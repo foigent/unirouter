@@ -1,5 +1,10 @@
 BEGIN;
 
+-- Join the same lifecycle lock used by migrate.Run before inspecting either
+-- the schema ledger or authorization tables. A concurrent up/down participant
+-- must finish first; this transaction then evaluates a fresh stabilized state.
+SELECT pg_advisory_xact_lock(86420517831702491);
+
 -- Stabilize every row that participates in representability before checking
 -- it. A writer already in flight must finish before these checks take their
 -- READ COMMITTED snapshot; later writers then wait until rollback completes.

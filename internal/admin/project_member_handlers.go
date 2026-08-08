@@ -208,18 +208,41 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := actorState.TargetOrgID
+	organizationWideActor := auth.RoleIn(actorState.OrganizationRole, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
 
 	var targetOrgID int64
-	var targetOrganizationRole, targetRole, targetStatus string
-	if err := tx.QueryRow(r.Context(),
-		`SELECT org_id, organization_role, role, status
-		   FROM users WHERE id = $1 AND org_id = $2 FOR UPDATE`, userID, orgID,
-	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus); err != nil {
+	var targetStatus string
+	targetQuery := `SELECT u.org_id, u.status
+		  FROM users u
+		 WHERE u.id = $1 AND u.org_id = $2
+		 FOR UPDATE OF u`
+	targetArgs := []interface{}{userID, orgID}
+	if !organizationWideActor {
+		// A project administrator may resolve only an active candidate or an
+		// account whose exact-project membership already makes it visible.
+		// Keep this predicate in the first lookup so status and other account
+		// metadata cannot turn a hidden ID into an existence oracle.
+		targetQuery = `SELECT u.org_id, u.status
+			  FROM users u
+			 WHERE u.id = $1 AND u.org_id = $2
+			   AND (
+			       u.status = 'active'
+			       OR EXISTS (
+			           SELECT 1
+			             FROM project_members visible_pm
+			            WHERE visible_pm.project_id = $3
+			              AND visible_pm.user_id = u.id
+			       )
+			   )
+			 FOR UPDATE OF u`
+		targetArgs = append(targetArgs, projectID)
+	}
+	if err := tx.QueryRow(r.Context(), targetQuery, targetArgs...).Scan(&targetOrgID, &targetStatus); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		return
 	}
 	if targetOrgID != orgID {
-		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "User and project must belong to the same organization"})
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		return
 	}
 	if targetStatus != "active" {
@@ -236,7 +259,7 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hasExistingMembership := existingMembershipErr == nil
-	if actorOrganizationRole(r.Context()) != auth.RolePlatformAdmin && actorOrganizationRole(r.Context()) != auth.RoleOrgAdmin {
+	if !organizationWideActor {
 		if middleware.GetUserIDFromContext(r.Context()) == userID {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Project administrators cannot change their own membership"})
 			return
