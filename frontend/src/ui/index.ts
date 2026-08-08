@@ -1,4 +1,6 @@
 export { default as EmptyState } from './feedback/EmptyState';
+export { default as ExactTokenCountInput } from './form/ExactTokenCountInput';
+export { formatExactTokenCount, MAX_EXACT_TOKEN_COUNT, parseExactTokenCount } from './form/ExactTokenCountInput';
 export { default as LatencyText } from './data/LatencyText';
 export { default as MetricTile } from './layout/MetricTile';
 export { default as MoneyText, formatMoney, parseMicros, microsRatio, microsToChartYuan } from './data/MoneyText';

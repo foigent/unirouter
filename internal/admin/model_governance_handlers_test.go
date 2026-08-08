@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,6 +29,110 @@ func TestCreateModelRegistry_InvalidLifecycle(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestContextLengthInputJSONContract(t *testing.T) {
+	valid := []struct {
+		json string
+		want int
+	}{
+		{json: `0`, want: 0},
+		{json: `131072`, want: 131072},
+		{json: `2147483647`, want: 2147483647},
+	}
+	for _, testCase := range valid {
+		t.Run("accepts_"+testCase.json, func(t *testing.T) {
+			var value contextLengthInput
+			if err := json.Unmarshal([]byte(testCase.json), &value); err != nil {
+				t.Fatalf("expected exact integer to be accepted: %v", err)
+			}
+			if int(value) != testCase.want {
+				t.Fatalf("expected %d, got %d", testCase.want, value)
+			}
+		})
+	}
+
+	for _, input := range []string{`2147483648`, `1.5`, `1e3`, `-1`, `"128K"`, `"131072"`, `null`} {
+		t.Run("rejects_"+input, func(t *testing.T) {
+			var value contextLengthInput
+			if err := json.Unmarshal([]byte(input), &value); !errors.Is(err, errInvalidContextLength) {
+				t.Fatalf("expected stable context-length error for %s, got %v", input, err)
+			}
+		})
+	}
+}
+
+func TestModelRegistryContextLengthValidationIsStableAndPreDatabase(t *testing.T) {
+	testCases := []struct {
+		name   string
+		method string
+		target string
+		body   string
+	}{
+		{name: "create overflow", method: http.MethodPost, target: "/model-registry", body: `{"org_id":1,"model_name":"overflow","context_length":2147483648}`},
+		{name: "create fractional", method: http.MethodPost, target: "/model-registry", body: `{"org_id":1,"model_name":"fraction","context_length":1.5}`},
+		{name: "create string shorthand", method: http.MethodPost, target: "/model-registry", body: `{"org_id":1,"model_name":"shorthand","context_length":"128K"}`},
+		{name: "update scientific notation", method: http.MethodPut, target: "/model-registry/10", body: `{"context_length":1e3}`},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			beginCalled := false
+			db := &testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) {
+				beginCalled = true
+				return nil, errors.New("database must not be reached")
+			}}
+			h := newTestHandler(db)
+			req := httptest.NewRequest(testCase.method, testCase.target, strings.NewReader(testCase.body))
+			req.Header.Set("Content-Type", "application/json")
+			if testCase.method == http.MethodPut {
+				req.SetPathValue("id", "10")
+			}
+			req = platformModelGovernanceRequest(req)
+			rec := httptest.NewRecorder()
+
+			if testCase.method == http.MethodPost {
+				h.CreateModelRegistry(rec, req)
+			} else {
+				h.UpdateModelRegistry(rec, req)
+			}
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+			}
+			if beginCalled {
+				t.Fatal("invalid context_length must be rejected before PostgreSQL")
+			}
+			var response map[string]interface{}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if response["code"] != contextLengthErrorCode || response["field"] != "context_length" || response["reason_code"] != contextLengthReasonCode {
+				t.Fatalf("unexpected stable validation response: %#v", response)
+			}
+		})
+	}
+}
+
+func TestCreateModelRegistryAcceptsMaximumContextLengthBeforeDatabase(t *testing.T) {
+	beginCalled := false
+	db := &testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) {
+		beginCalled = true
+		return nil, errors.New("deliberate database stop")
+	}}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodPost, "/model-registry", strings.NewReader(`{"org_id":1,"model_name":"max-context","context_length":2147483647}`))
+	req = platformModelGovernanceRequest(req)
+	rec := httptest.NewRecorder()
+
+	h.CreateModelRegistry(rec, req)
+
+	if !beginCalled {
+		t.Fatal("maximum PostgreSQL INTEGER token count should reach the mutation transaction")
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected deliberate database stop after validation, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -170,6 +170,22 @@ describe('ModelGovernancePage', () => {
     expect(await screen.findByText('company-chat')).toBeTruthy();
   });
 
+  it('normalizes decimal-SI context shorthand before creating a model', async () => {
+    render(<ModelGovernancePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
+    fireEvent.change(await screen.findByPlaceholderText('gpt-4o'), { target: { value: 'exact-context-model' } });
+    const contextInput = await screen.findByPlaceholderText('128K / 1M / 131072');
+    fireEvent.change(contextInput, { target: { value: '128K' } });
+    expect(await screen.findByText(/规范化：128K → 128,000 tokens/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(mockCreateModelRegistry).toHaveBeenCalledWith(expect.objectContaining({
+      model_name: 'exact-context-model',
+      context_length: 128_000,
+    })));
+  });
+
   it('loads model set items from the model set table', async () => {
     render(<ModelGovernancePage />);
 
