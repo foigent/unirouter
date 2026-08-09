@@ -201,10 +201,9 @@ func (b *Budget) ReadAll(reader io.Reader, orgID int64, maxBytes int64) ([]byte,
 }
 
 type envelope struct {
-	body    []byte
-	profile string
-	max     int64
-	lease   *Lease
+	body  []byte
+	max   int64
+	lease *Lease
 }
 
 type envelopeContextKey struct{}
@@ -221,9 +220,33 @@ func BodyFromContext(ctx context.Context) ([]byte, bool) {
 }
 
 func RequestMiddleware(budget *Budget, profile string, orgID func(context.Context) int64) func(http.Handler) http.Handler {
+	return requestMiddleware(budget, func() (int64, error) {
+		return budget.Limits().MaxBytes(profile)
+	}, orgID)
+}
+
+// RequestMiddlewareWithMax applies the same retained-byte accounting to an
+// endpoint whose product contract owns a fixed maximum rather than a
+// configurable text profile. It is used for the small async-media submission
+// envelope so live authorization can be repeated after the complete body has
+// arrived without retaining unaccounted bytes.
+func RequestMiddlewareWithMax(budget *Budget, maxBytes int64, orgID func(context.Context) int64) func(http.Handler) http.Handler {
+	return requestMiddleware(budget, func() (int64, error) {
+		if maxBytes <= 0 || maxBytes > PlatformHardMaxBytes {
+			return 0, fmt.Errorf("payload maximum must be between 1 and %d bytes", PlatformHardMaxBytes)
+		}
+		return maxBytes, nil
+	}, orgID)
+}
+
+func requestMiddleware(
+	budget *Budget,
+	maximum func() (int64, error),
+	orgID func(context.Context) int64,
+) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			maxBytes, err := budget.Limits().MaxBytes(profile)
+			maxBytes, err := maximum()
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Payload policy is unavailable")
 				return
@@ -242,7 +265,7 @@ func RequestMiddleware(budget *Budget, profile string, orgID func(context.Contex
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			r.ContentLength = int64(len(body))
 			ctx := context.WithValue(r.Context(), envelopeContextKey{}, &envelope{
-				body: body, profile: profile, max: maxBytes, lease: lease,
+				body: body, max: maxBytes, lease: lease,
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

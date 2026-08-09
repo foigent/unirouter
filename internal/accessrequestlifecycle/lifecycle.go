@@ -5,6 +5,8 @@ package accessrequestlifecycle
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"time"
@@ -57,21 +59,27 @@ func cancel(ctx context.Context, tx pgx.Tx, orgID, projectID int64, subjectType 
 	if err != nil {
 		return Result{}, fmt.Errorf("lock terminal subject access requests: %w", err)
 	}
-	ids := make([]int64, 0)
+	var requestCount, firstRequestID, lastRequestID int64
+	requestDigest := sha256.New()
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
 			return Result{}, fmt.Errorf("scan terminal subject access request: %w", err)
 		}
-		ids = append(ids, id)
+		if requestCount == 0 {
+			firstRequestID = id
+		}
+		lastRequestID = id
+		requestCount++
+		_, _ = fmt.Fprintf(requestDigest, "%d\n", id)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return Result{}, fmt.Errorf("iterate terminal subject access requests: %w", err)
 	}
 	rows.Close()
-	if len(ids) == 0 {
+	if requestCount == 0 {
 		return Result{}, nil
 	}
 
@@ -91,7 +99,7 @@ func cancel(ctx context.Context, tx pgx.Tx, orgID, projectID int64, subjectType 
 	if err != nil {
 		return Result{}, fmt.Errorf("cancel terminal subject access requests: %w", err)
 	}
-	if tag.RowsAffected() != int64(len(ids)) {
+	if tag.RowsAffected() != requestCount {
 		return Result{}, fmt.Errorf("terminal subject access-request state changed")
 	}
 	resource := "user"
@@ -101,9 +109,11 @@ func cancel(ctx context.Context, tx pgx.Tx, orgID, projectID int64, subjectType 
 	if err := accessevidence.WriteAuditAndOutbox(ctx, tx, orgID, projectID, actorUserID,
 		"access_request.subject_lifecycle_cancel", resource, strconv.FormatInt(subjectID, 10),
 		requestID, clientRequestID, map[string]any{
-			"reason_code": reason, "requests_cancelled": len(ids), "request_ids": ids,
+			"reason_code": reason, "requests_cancelled": requestCount,
+			"first_request_id": firstRequestID, "last_request_id": lastRequestID,
+			"request_ids_sha256": hex.EncodeToString(requestDigest.Sum(nil)),
 		}, at); err != nil {
 		return Result{}, err
 	}
-	return Result{RequestsCancelled: int64(len(ids))}, nil
+	return Result{RequestsCancelled: requestCount}, nil
 }

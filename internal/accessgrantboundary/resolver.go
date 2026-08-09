@@ -172,6 +172,22 @@ func Resolve(ctx context.Context, q db.DBQuerier, keyID int64) (Snapshot, error)
 	snapshot.APIKey.CredentialConcurrencyLimit = intPointer(keyConcurrency)
 	snapshot.APIKey.GrantRPMLimit = intPointer(grantRPM)
 	snapshot.APIKey.GrantRPSLimit = intPointer(grantRPS)
+	if snapshot.APIKey.GrantBound {
+		// NULL is the persisted representation of the canonical project-default
+		// Grant rates, never an omitted enforcement layer. Materialize the
+		// effective values at the shared live boundary so every older physical
+		// Credential, Agent capability, synchronous provider admission, and media
+		// admission sees the same 60 RPM / 10 RPS ceiling. Explicit zero remains
+		// an exact denial.
+		if snapshot.APIKey.GrantRPMLimit == nil {
+			value := accessscope.ProjectDefaultRPMLimit
+			snapshot.APIKey.GrantRPMLimit = &value
+		}
+		if snapshot.APIKey.GrantRPSLimit == nil {
+			value := accessscope.ProjectDefaultRPSLimit
+			snapshot.APIKey.GrantRPSLimit = &value
+		}
+	}
 	snapshot.APIKey.GrantConcurrencyLimit = intPointer(grantConcurrency)
 
 	if !active(snapshot) {

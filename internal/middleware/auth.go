@@ -321,6 +321,26 @@ func GatewayAuthWithAgentCapabilities(q db.DBQuerier, apiKeyHashSecret string, c
 	return GatewayAuthWithAgentCapabilitiesAndClientIP(q, apiKeyHashSecret, capabilities, ClientIPResolver{})
 }
 
+// GatewayAuthAcrossBufferedBody composes one authentication pass before body
+// retention and the same live authentication pass immediately after it. The
+// first pass supplies the trusted tenant used for byte accounting; the second
+// replaces the request context with current authority before paid admission.
+// Callers must pass the exact same authenticator on both sides so API keys and
+// Agent capabilities retain identical attenuation semantics.
+func GatewayAuthAcrossBufferedBody(
+	authenticate func(http.Handler) http.Handler,
+	retainBody func(http.Handler) http.Handler,
+) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if authenticate == nil || retainBody == nil {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				writeGatewayAuthError(w, http.StatusInternalServerError, "server_error.internal_error", "Gateway authorization is unavailable")
+			})
+		}
+		return authenticate(retainBody(authenticate(next)))
+	}
+}
+
 // GatewayAuthWithAgentCapabilitiesAndClientIP applies the same explicit
 // trusted-proxy client-IP contract used by login throttling to API-key IP
 // allowlists. The zero resolver ignores forwarding headers.

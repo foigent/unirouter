@@ -532,9 +532,7 @@ func TestPostgresStoreIdempotencyUsesLogicalCredentialAcrossAtomicRotationIntegr
 	firstHash, err := AccessIdempotencyHash(secret, scope, predecessorID, credentialOneID, "media-operation")
 	require.NoError(t, err)
 	firstRecord := mediaCreateRecord(scope, predecessorID, "a", now, 3)
-	firstRecord.Job.AccessGrantID = positiveInt64Pointer(grantID)
-	firstRecord.Job.AccessCredentialID = positiveInt64Pointer(credentialOneID)
-	firstRecord.Job.CredentialRef = "cred_async_media_family_one"
+	bindMediaRecordToGrant(&firstRecord, grantID, credentialOneID, "cred_async_media_family_one", nil, nil)
 	firstRecord.Job.IdempotencyHash = firstHash
 	first, reused, err := store.CreateOrGet(ctx, firstRecord)
 	require.NoError(t, err)
@@ -557,9 +555,7 @@ func TestPostgresStoreIdempotencyUsesLogicalCredentialAcrossAtomicRotationIntegr
 	require.NoError(t, err)
 	require.Equal(t, firstHash, successorHash)
 	successorRecord := mediaCreateRecord(scope, successorID, "b", now.Add(time.Second), 3)
-	successorRecord.Job.AccessGrantID = positiveInt64Pointer(grantID)
-	successorRecord.Job.AccessCredentialID = positiveInt64Pointer(credentialOneID)
-	successorRecord.Job.CredentialRef = "cred_async_media_family_one"
+	bindMediaRecordToGrant(&successorRecord, grantID, credentialOneID, "cred_async_media_family_one", nil, nil)
 	successorRecord.Job.IdempotencyHash = successorHash
 	successorRecord.Job.RequestSHA256 = firstRecord.Job.RequestSHA256
 	replayed, reused, err := store.CreateOrGet(ctx, successorRecord)
@@ -573,9 +569,7 @@ func TestPostgresStoreIdempotencyUsesLogicalCredentialAcrossAtomicRotationIntegr
 	require.NoError(t, err)
 	require.NotEqual(t, firstHash, otherFamilyHash)
 	otherFamilyRecord := mediaCreateRecord(scope, otherFamilyKeyID, "c", now.Add(2*time.Second), 3)
-	otherFamilyRecord.Job.AccessGrantID = positiveInt64Pointer(grantID)
-	otherFamilyRecord.Job.AccessCredentialID = positiveInt64Pointer(credentialTwoID)
-	otherFamilyRecord.Job.CredentialRef = "cred_async_media_family_two"
+	bindMediaRecordToGrant(&otherFamilyRecord, grantID, credentialTwoID, "cred_async_media_family_two", nil, nil)
 	otherFamilyRecord.Job.IdempotencyHash = otherFamilyHash
 	_, reused, err = store.CreateOrGet(ctx, otherFamilyRecord)
 	require.NoError(t, err)
@@ -663,6 +657,63 @@ func TestPostgresStoreCommitReauthorizationSerializesGrantAndSponsorInvalidation
 			test.transition(context.Background(), t, pool, fixture)
 		})
 	}
+}
+
+func TestPostgresStoreRejectsReservedRateSubjectAfterGrantNarrowingIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	fixture := seedMediaCommitFixture(t, pool)
+	store, err := NewPostgresStore(pool)
+	require.NoError(t, err)
+	record := mediaCreateRecord(
+		Scope{OrgID: fixture.orgID, ProjectID: fixture.projectID},
+		fixture.apiKeyID, "r", fixture.now, 3,
+	)
+	credentialConcurrency, grantConcurrency := int64(1), int64(1)
+	bindMediaRecordToGrant(
+		&record, fixture.grantID, fixture.credentialID, fixture.credentialRef,
+		&credentialConcurrency, &grantConcurrency,
+	)
+
+	// The rate reservation was admitted under the materialized 60/10 Grant
+	// subject above. A supported scope revision narrows the same stable Grant
+	// before the durable job transaction starts.
+	var revisionRequestID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO access_requests (
+		  request_ref,client_request_id,semantic_hash,org_id,project_id,subject_type,
+		  subject_workload_application_id,request_kind,requested_project_role,requested_scope_mode,
+		  requested_models,requested_endpoints,requested_rpm_limit,requested_rps_limit,
+		  requested_concurrency_limit,environment,production_use,submission_mode,sponsor_user_id,
+		  target_access_grant_id,expected_grant_revision,status,decision_mode,policy_reason_codes,
+		  decision_reason_codes,policy_version,submitted_by,decided_by,decided_at
+		) VALUES (
+		  'req_media_commit_rate_narrowing','media-commit-rate-narrowing',repeat('d',64),$1,$2,
+		  'workload_application',$3,'workload_service','project_user','explicit',
+		  '["company-image"]','["/v1/media/jobs"]',30,5,1,'development',FALSE,
+		  'direct_grant',$4,$5,1,'approved','direct',ARRAY['special_endpoint'],
+		  ARRAY['direct_grant_authorized_nonproduction'],'unirouter.enterprise-access-policy.v1',
+		  $6,$6,$7
+		) RETURNING id`, fixture.orgID, fixture.projectID, fixture.workloadID,
+		fixture.sponsorID, fixture.grantID, fixture.adminID, fixture.now.Add(time.Second),
+	).Scan(&revisionRequestID))
+	command, err := pool.Exec(ctx, `
+		UPDATE access_grants
+		SET access_request_id=$1,rpm_limit=30,rps_limit=5,revision=2,
+		    semantic_hash=repeat('d',64),updated_by=$2,updated_at=$3
+		WHERE id=$4 AND revision=1`, revisionRequestID, fixture.adminID,
+		fixture.now.Add(time.Second), fixture.grantID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, command.RowsAffected())
+
+	_, _, err = store.CreateOrGet(ctx, record)
+	require.ErrorIs(t, err, ErrConflict)
+	var contractErr *Error
+	require.ErrorAs(t, err, &contractErr)
+	require.Equal(t, "submission_authority_revision_changed", contractErr.Code)
+	var jobCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM async_media_jobs WHERE org_id=$1`, fixture.orgID).Scan(&jobCount))
+	require.Zero(t, jobCount)
 }
 
 func TestQueuedExecutionFollowsLogicalCredentialAndReauthorizesBeforeDispatchIntegration(t *testing.T) {
@@ -828,9 +879,8 @@ func createClaimedMediaExecution(
 		Scope{OrgID: fixture.orgID, ProjectID: fixture.projectID}, fixture.apiKeyID,
 		suffix[:1], fixture.now, 3,
 	)
-	record.Job.AccessGrantID = positiveInt64Pointer(fixture.grantID)
-	record.Job.AccessCredentialID = positiveInt64Pointer(fixture.credentialID)
-	record.Job.CredentialRef = fixture.credentialRef
+	credentialConcurrency, grantConcurrency := int64(1), int64(1)
+	bindMediaRecordToGrant(&record, fixture.grantID, fixture.credentialID, fixture.credentialRef, &credentialConcurrency, &grantConcurrency)
 	job, reused, err := store.CreateOrGet(ctx, record)
 	require.NoError(t, err)
 	require.False(t, reused)
@@ -858,9 +908,8 @@ func TestProviderAttemptStartsOnlyAfterExecutionAdmissionIntegration(t *testing.
 	createBound := func(suffix string, createdAt time.Time) Job {
 		t.Helper()
 		record := mediaCreateRecord(scope, fixture.apiKeyID, suffix, createdAt, 3)
-		record.Job.AccessGrantID = positiveInt64Pointer(fixture.grantID)
-		record.Job.AccessCredentialID = positiveInt64Pointer(fixture.credentialID)
-		record.Job.CredentialRef = fixture.credentialRef
+		credentialConcurrency, grantConcurrency := int64(1), int64(1)
+		bindMediaRecordToGrant(&record, fixture.grantID, fixture.credentialID, fixture.credentialRef, &credentialConcurrency, &grantConcurrency)
 		job, reused, createErr := store.CreateOrGet(ctx, record)
 		require.NoError(t, createErr)
 		require.False(t, reused)
@@ -987,9 +1036,8 @@ func TestExecutionTerminalClaimIsFencedAndExpiresDeterministicallyIntegration(t 
 	createAndTerminalize := func(suffix, operationID string, expiresAt time.Time) (Job, int64) {
 		t.Helper()
 		record := mediaCreateRecord(scope, fixture.apiKeyID, suffix, now, 3)
-		record.Job.AccessGrantID = positiveInt64Pointer(fixture.grantID)
-		record.Job.AccessCredentialID = positiveInt64Pointer(fixture.credentialID)
-		record.Job.CredentialRef = fixture.credentialRef
+		credentialConcurrency, grantConcurrency := int64(1), int64(1)
+		bindMediaRecordToGrant(&record, fixture.grantID, fixture.credentialID, fixture.credentialRef, &credentialConcurrency, &grantConcurrency)
 		job, reused, createErr := store.CreateOrGet(ctx, record)
 		require.NoError(t, createErr)
 		require.False(t, reused)
@@ -1138,9 +1186,8 @@ func runBlockedMediaAdmission(t *testing.T, ctx context.Context, pool *pgxpool.P
 	store, err := NewPostgresStore(pool)
 	require.NoError(t, err)
 	record := mediaCreateRecord(Scope{OrgID: fixture.orgID, ProjectID: fixture.projectID}, fixture.apiKeyID, "commit", fixture.now, 3)
-	record.Job.AccessGrantID = positiveInt64Pointer(fixture.grantID)
-	record.Job.AccessCredentialID = positiveInt64Pointer(fixture.credentialID)
-	record.Job.CredentialRef = fixture.credentialRef
+	credentialConcurrency, grantConcurrency := int64(1), int64(1)
+	bindMediaRecordToGrant(&record, fixture.grantID, fixture.credentialID, fixture.credentialRef, &credentialConcurrency, &grantConcurrency)
 	result := make(chan error, 1)
 	go func() {
 		_, _, createErr := store.CreateOrGet(ctx, record)
@@ -1199,8 +1246,13 @@ func mediaCreateRecord(
 	now time.Time,
 	maxAttempts int,
 ) CreateRecord {
+	defaultRPS, defaultRPM := int64(10), int64(60)
 	return CreateRecord{
 		AllowCreate: true,
+		ExpectedLimitSubject: limitpolicy.Subject{
+			OrgID: scope.OrgID, ProjectID: scope.ProjectID, APIKeyID: keyID,
+			Model: "company-image", BaseRPSLimit: defaultRPS, BaseRPMLimit: defaultRPM,
+		},
 		Job: Job{
 			ContractVersion: ContractVersion,
 			JobID:           "mediajob_" + strings.Repeat(suffix, 32),
@@ -1222,6 +1274,25 @@ func mediaCreateRecord(
 			CreatedAt: now, UpdatedAt: now,
 		},
 	}
+}
+
+func bindMediaRecordToGrant(
+	record *CreateRecord,
+	grantID, credentialID int64,
+	credentialRef string,
+	credentialConcurrency, grantConcurrency *int64,
+) {
+	record.Job.AccessGrantID = positiveInt64Pointer(grantID)
+	record.Job.AccessCredentialID = positiveInt64Pointer(credentialID)
+	record.Job.CredentialRef = credentialRef
+	record.ExpectedLimitSubject.AccessGrantID = grantID
+	record.ExpectedLimitSubject.AccessCredentialID = credentialID
+	record.ExpectedLimitSubject.CredentialRef = credentialRef
+	record.ExpectedLimitSubject.CredentialConcurrencyLimit = credentialConcurrency
+	defaultRPS, defaultRPM := int64(10), int64(60)
+	record.ExpectedLimitSubject.GrantRPSLimit = &defaultRPS
+	record.ExpectedLimitSubject.GrantRPMLimit = &defaultRPM
+	record.ExpectedLimitSubject.GrantConcurrencyLimit = grantConcurrency
 }
 
 func leaseFromClaimed(job Job) Lease {

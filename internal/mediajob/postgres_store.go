@@ -141,15 +141,15 @@ func utcTimePointer(value *time.Time) *time.Time {
 	return &normalized
 }
 
-func resolveJobAccessBinding(ctx context.Context, tx pgx.Tx, job Job) (Job, error) {
+func resolveJobAccessBinding(ctx context.Context, tx pgx.Tx, job Job) (Job, accessgrantboundary.Snapshot, error) {
 	snapshot, err := accessgrantboundary.ResolveForCommit(
 		ctx, tx, job.APIKeyID, job.Scope.OrgID, job.Scope.ProjectID,
 	)
 	if err != nil {
 		if errors.Is(err, accessgrantboundary.ErrInactive) {
-			return Job{}, domainError(ErrForbidden, "submission_authority_changed")
+			return Job{}, accessgrantboundary.Snapshot{}, domainError(ErrForbidden, "submission_authority_changed")
 		}
-		return Job{}, fmt.Errorf("mediajob: resolve live API key access binding: %w", err)
+		return Job{}, accessgrantboundary.Snapshot{}, fmt.Errorf("mediajob: resolve live API key access binding: %w", err)
 	}
 	grantID := snapshot.APIKey.AccessGrantID
 	credentialID := snapshot.APIKey.AccessCredentialID
@@ -157,11 +157,16 @@ func resolveJobAccessBinding(ctx context.Context, tx pgx.Tx, job Job) (Job, erro
 	if (job.AccessGrantID != nil && !sameNullableID(job.AccessGrantID, grantID)) ||
 		(job.AccessCredentialID != nil && !sameNullableID(job.AccessCredentialID, credentialID)) ||
 		(job.CredentialRef != "" && job.CredentialRef != credentialRef) {
-		return Job{}, fmt.Errorf("mediajob: supplied access binding does not match API key")
+		return Job{}, accessgrantboundary.Snapshot{}, fmt.Errorf("mediajob: supplied access binding does not match API key")
 	}
 	if (grantID == nil) != (credentialID == nil) ||
 		(credentialID == nil) != (credentialRef == "") {
-		return Job{}, fmt.Errorf("mediajob: incomplete API key access binding")
+		return Job{}, accessgrantboundary.Snapshot{}, fmt.Errorf("mediajob: incomplete API key access binding")
+	}
+	if snapshot.APIKey.GrantBound && (snapshot.APIKey.EndpointDenied || snapshot.APIKey.ModelScopeDenied ||
+		!mediaScopeContains(snapshot.APIKey.AllowedEndpoints, "/v1/media/jobs") ||
+		!modelAllowed(snapshot.APIKey.AllowedModels, job.RequestedModel, job.RoutingModel)) {
+		return Job{}, accessgrantboundary.Snapshot{}, domainError(ErrForbidden, "submission_authority_changed")
 	}
 	job.AccessGrantID = grantID
 	job.AccessCredentialID = credentialID
@@ -173,7 +178,17 @@ func resolveJobAccessBinding(ctx context.Context, tx pgx.Tx, job Job) (Job, erro
 		job.IdempotencySubjectType = "access_credential"
 		job.IdempotencySubjectID = *credentialID
 	}
-	return job, nil
+	return job, snapshot, nil
+}
+
+func mediaScopeContains(raw, required string) bool {
+	for _, value := range strings.Split(raw, ",") {
+		value = strings.TrimSpace(value)
+		if value == "*" || value == required {
+			return true
+		}
+	}
+	return false
 }
 
 func sameNullableID(left, right *int64) bool {
@@ -418,8 +433,11 @@ func sameExecutionSubject(left, right limitpolicy.Subject) bool {
 	return stableIdentity && left.OrgID == right.OrgID && left.ProjectID == right.ProjectID &&
 		left.AccessCredentialID == right.AccessCredentialID && left.CredentialRef == right.CredentialRef &&
 		left.AccessGrantID == right.AccessGrantID && left.Model == right.Model &&
+		left.BaseRPSLimit == right.BaseRPSLimit && left.BaseRPMLimit == right.BaseRPMLimit &&
 		strings.Join(left.PolicyLabels, ",") == strings.Join(right.PolicyLabels, ",") &&
 		sameMediaLimit(left.CredentialConcurrencyLimit, right.CredentialConcurrencyLimit) &&
+		sameMediaLimit(left.GrantRPSLimit, right.GrantRPSLimit) &&
+		sameMediaLimit(left.GrantRPMLimit, right.GrantRPMLimit) &&
 		sameMediaLimit(left.GrantConcurrencyLimit, right.GrantConcurrencyLimit)
 }
 
@@ -564,9 +582,15 @@ func (s *PostgresStore) CreateOrGet(
 	); err != nil {
 		return Job{}, false, fmt.Errorf("mediajob: acquire organization admission lock: %w", err)
 	}
-	job, err = resolveJobAccessBinding(ctx, tx, job)
+	var live accessgrantboundary.Snapshot
+	job, live, err = resolveJobAccessBinding(ctx, tx, job)
 	if err != nil {
 		return Job{}, false, err
+	}
+	currentLimitSubject := executionSubject(live)
+	currentLimitSubject.Model = job.RoutingModel
+	if !sameExecutionSubject(record.ExpectedLimitSubject, currentLimitSubject) {
+		return Job{}, false, domainError(ErrConflict, "submission_authority_revision_changed")
 	}
 	existing, existingErr := scanJobExact(tx.QueryRow(ctx, `
 		SELECT `+jobColumns+`

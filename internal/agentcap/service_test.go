@@ -138,6 +138,27 @@ func rootKey(fixture *authorityFixture) *models.ApiKey {
 	}
 }
 
+func TestValidateRootLimitsUsesMaterializedGrantDefaultsAndExplicitZero(t *testing.T) {
+	authority := authoritySnapshot{APIKey: models.ApiKey{
+		ID: 41, OrgID: 7, GrantBound: true, RPMLimit: 120, QPSLimit: 20,
+	}}
+	if err := validateRootLimits(Limits{RPMLimit: 60, RPSLimit: 10}, authority); err != nil {
+		t.Fatalf("nil Grant rates must inherit the canonical defaults: %v", err)
+	}
+	for _, limits := range []Limits{{RPMLimit: 61, RPSLimit: 10}, {RPMLimit: 60, RPSLimit: 11}} {
+		if err := validateRootLimits(limits, authority); !errors.Is(err, ErrLimitExceeded) {
+			t.Fatalf("limits %#v exceeded nil/default Grant rates without rejection: %v", limits, err)
+		}
+	}
+
+	zero := 0
+	authority.APIKey.GrantRPMLimit = &zero
+	authority.APIKey.GrantRPSLimit = &zero
+	if err := validateRootLimits(Limits{RPMLimit: 1, RPSLimit: 1}, authority); !errors.Is(err, ErrLimitExceeded) {
+		t.Fatalf("explicit zero Grant rates were not fail-closed: %v", err)
+	}
+}
+
 func rootLimits(maxDepth, maxChildren, maxDescendants int) Limits {
 	return Limits{
 		MaxDepth:         maxDepth,

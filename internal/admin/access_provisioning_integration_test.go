@@ -18,8 +18,78 @@ import (
 	"github.com/uniroute/unirouter/internal/accessprovisioning"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/principallock"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+func TestForeignAccessSubjectFailsBeforePrincipalMutationLanesIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var foreignOrgID, foreignUserID, actorOrgID, projectID, actorID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO orgs (name,status,org_type)
+		VALUES ('foreign-subject-lane-target','active','customer') RETURNING id`).Scan(&foreignOrgID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'foreign-subject-lane-user','hash','member','developer','active') RETURNING id`, foreignOrgID).Scan(&foreignUserID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO orgs (name,status,org_type)
+		VALUES ('foreign-subject-lane-actor','active','customer') RETURNING id`).Scan(&actorOrgID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO projects (org_id,name,slug,status)
+		VALUES ($1,'Foreign Subject Lane Actor','foreign-subject-lane-actor','active') RETURNING id`, actorOrgID).Scan(&projectID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'foreign-subject-lane-actor','hash','member','developer','active') RETURNING id`, actorOrgID).Scan(&actorID))
+	_, err := pool.Exec(ctx, `INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_user')`, projectID, actorID)
+	require.NoError(t, err)
+
+	handler := NewHandlerWithAPIKeyHashSecret(
+		pool, "foreign-subject-lane-jwt", "foreign-subject-lane-key-hash",
+		[]byte("0123456789abcdef01234567"), nil,
+	)
+	payload := fmt.Sprintf(`{
+		"org_id":%d,"project_id":%d,
+		"subject":{"type":"user","user_id":%d},
+		"request_kind":"human_personal",
+		"requested_scope":{"project_role":"project_user","scope_mode":"project_default","models":[],"endpoints":[]},
+		"environment":"personal","production_use":false,"submission_mode":"self"
+	}`, actorOrgID, projectID, foreignUserID)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/access-requests", bytes.NewBufferString(payload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(middleware.ClientRequestIDHeader, "foreign-subject-lane-request")
+	request = withIntegrationCommittingActor(t, pool, request, actorID)
+
+	// Holding the legitimate actor lane distinguishes scope-first rejection
+	// from the former behavior, which projected both actor and foreign subject
+	// into sorted deployment-global lanes before discovering the tenant mismatch.
+	holdActor, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer holdActor.Rollback(ctx) //nolint:errcheck
+	require.NoError(t, principallock.LockUser(ctx, holdActor, actorID))
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		middleware.OperationIdentity(http.HandlerFunc(handler.CreateAccessRequest)).ServeHTTP(response, request)
+		done <- response
+	}()
+	select {
+	case response := <-done:
+		require.Equal(t, http.StatusNotFound, response.Code, response.Body.String())
+	case <-time.After(2 * time.Second):
+		t.Fatal("foreign subject request waited on a principal mutation lane before scope rejection")
+	}
+
+	var requestCount, auditCount, outboxCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM access_requests`).Scan(&requestCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs WHERE action='access_request.provision'`).Scan(&auditCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM internal_outbox_events WHERE event_type='access_request.provision'`).Scan(&outboxCount))
+	require.Zero(t, requestCount)
+	require.Zero(t, auditCount)
+	require.Zero(t, outboxCount)
+}
 
 func TestSelfAccessProvisioningKeepsSatisfiedLiveMembershipAndCommitsEvidenceIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
@@ -307,6 +377,16 @@ func TestLegacyPutGrantBoundStatusUsesCredentialRevokeLifecycleIntegration(t *te
 	var credential accessprovisioning.Credential
 	require.NoError(t, json.Unmarshal(credentialResponse.Body.Bytes(), &credential))
 	require.Positive(t, credential.ID)
+	rotationResponse := invoke(subjectID,
+		http.MethodPost, fmt.Sprintf("/api/v1/access-grants/%s/credentials/%d/rotate", grantResult.Grant.GrantRef, credential.ID),
+		`{}`, "legacy-put-grant-rotate",
+		map[string]string{"ref": grantResult.Grant.GrantRef, "key_id": fmt.Sprint(credential.ID)}, handler.RotateAccessGrantCredential,
+	)
+	require.Equal(t, http.StatusCreated, rotationResponse.Code, rotationResponse.Body.String())
+	var rotation accessprovisioning.RotationResult
+	require.NoError(t, json.Unmarshal(rotationResponse.Body.Bytes(), &rotation))
+	require.Positive(t, rotation.Credential.ID)
+	require.Equal(t, credential.CredentialRef, rotation.Credential.CredentialRef)
 
 	keyPathValues := map[string]string{"id": fmt.Sprint(credential.ID)}
 	reactivate := invoke(actorID, http.MethodPut, "/api/v1/keys/"+fmt.Sprint(credential.ID),
@@ -317,6 +397,9 @@ func TestLegacyPutGrantBoundStatusUsesCredentialRevokeLifecycleIntegration(t *te
 	var initialEpoch int64
 	var status string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT status,auth_epoch FROM api_keys WHERE id=$1`, credential.ID).Scan(&status, &initialEpoch))
+	require.Equal(t, "disabled", status)
+	var successorInitialEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status,auth_epoch FROM api_keys WHERE id=$1`, rotation.Credential.ID).Scan(&status, &successorInitialEpoch))
 	require.Equal(t, "active", status)
 
 	revoke := invoke(actorID, http.MethodPut, "/api/v1/keys/"+fmt.Sprint(credential.ID),
@@ -325,7 +408,14 @@ func TestLegacyPutGrantBoundStatusUsesCredentialRevokeLifecycleIntegration(t *te
 	var revokedEpoch int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT status,auth_epoch FROM api_keys WHERE id=$1`, credential.ID).Scan(&status, &revokedEpoch))
 	require.Equal(t, "disabled", status)
-	require.Equal(t, initialEpoch+1, revokedEpoch)
+	require.Equal(t, initialEpoch, revokedEpoch)
+	var successorStatus, familyStatus string
+	var successorEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status,auth_epoch FROM api_keys WHERE id=$1`, rotation.Credential.ID).Scan(&successorStatus, &successorEpoch))
+	require.Equal(t, "disabled", successorStatus)
+	require.Equal(t, successorInitialEpoch+1, successorEpoch)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM access_credentials WHERE credential_ref=$1`, credential.CredentialRef).Scan(&familyStatus))
+	require.Equal(t, "revoked", familyStatus)
 
 	assertEvidenceCounts := func(expected int) {
 		t.Helper()
@@ -350,14 +440,14 @@ func TestLegacyPutGrantBoundStatusUsesCredentialRevokeLifecycleIntegration(t *te
 	assertEvidenceCounts(1)
 
 	putReplay := invoke(actorID, http.MethodPut, "/api/v1/keys/"+fmt.Sprint(credential.ID),
-		`{"status":"disabled"}`, "legacy-put-grant-revoke-replay", keyPathValues, handler.UpdateAPIKey)
+		`{"status":"disabled"}`, "legacy-put-grant-revoke", keyPathValues, handler.UpdateAPIKey)
 	require.Equal(t, http.StatusOK, putReplay.Code, putReplay.Body.String())
 	disableReplay := invoke(actorID, http.MethodPost, "/api/v1/keys/"+fmt.Sprint(credential.ID)+"/disable",
 		"", "legacy-disable-grant-replay", keyPathValues, handler.DisableAPIKey)
-	require.Equal(t, http.StatusOK, disableReplay.Code, disableReplay.Body.String())
+	require.Equal(t, http.StatusConflict, disableReplay.Code, disableReplay.Body.String())
 	assertEvidenceCounts(1)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT auth_epoch FROM api_keys WHERE id=$1`, credential.ID).Scan(&revokedEpoch))
-	require.Equal(t, initialEpoch+1, revokedEpoch)
+	require.Equal(t, initialEpoch, revokedEpoch)
 }
 
 func TestLegacyCreateAPIKeyDelegatedPersonalProvisionRequiresOwnerSelfServiceIntegration(t *testing.T) {

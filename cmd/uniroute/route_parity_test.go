@@ -350,7 +350,7 @@ func TestPublicMediaRoutesOnlySubmitExecutionWork(t *testing.T) {
 	}
 	mainSource := string(src)
 	for _, registration := range []string{
-		`mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Submit))))`,
+		`mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(http.HandlerFunc(mediaHandler.Submit))))`,
 		`mux.Handle("GET /v1/media/jobs/{id}", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Get))))`,
 		`mux.Handle("POST /v1/media/jobs/{id}/cancel", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Cancel))))`,
 		`mux.Handle("GET /v1/media/jobs/{id}/content", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Content))))`,

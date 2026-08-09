@@ -22,8 +22,9 @@ func WriteAuditAndOutbox(ctx context.Context, tx pgx.Tx, orgID, projectID, actor
 	if err != nil {
 		return fmt.Errorf("marshal access audit: %w", err)
 	}
+	projectValue := nullableProjectID(projectID)
 	payload := map[string]any{
-		"org_id": orgID, "project_id": projectID, "user_id": actorUserID,
+		"org_id": orgID, "project_id": projectValue, "user_id": actorUserID,
 		"action": action, "resource": resource, "resource_id": resourceID,
 		"detail": json.RawMessage(detailJSON), "before_state": json.RawMessage(`{}`),
 		"after_state": json.RawMessage(detailJSON), "ip": "", "user_agent": "",
@@ -42,13 +43,20 @@ func WriteAuditAndOutbox(ctx context.Context, tx pgx.Tx, orgID, projectID, actor
 		  before_state,after_state,client_request_id,outbox_event_key,created_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,'admin_console',$8,'{}'::jsonb,$6,$9,$10,$11)
 		ON CONFLICT (outbox_event_key) DO NOTHING`, orgID, actorUserID, action, resource,
-		resourceID, detailJSON, requestID, projectID, nullableString(clientRequestID), eventKey, now); err != nil {
+		resourceID, detailJSON, requestID, projectValue, nullableString(clientRequestID), eventKey, now); err != nil {
 		return fmt.Errorf("insert access audit: %w", err)
 	}
 	if _, _, err := outbox.EnqueueTx(ctx, tx, event); err != nil {
 		return fmt.Errorf("enqueue access audit: %w", err)
 	}
 	return nil
+}
+
+func nullableProjectID(value int64) any {
+	if value <= 0 {
+		return nil
+	}
+	return value
 }
 
 func nullableString(value string) any {

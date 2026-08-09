@@ -1002,7 +1002,7 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		h.revokeGrantBoundAPIKeyCompatibility(w, r, id, currentAccessGrantID, currentGrantRef, currentStatus)
+		h.revokeGrantBoundAPIKeyCompatibility(w, r, id, currentAccessGrantID, currentGrantRef)
 		return
 	}
 	if currentAccessGrantID > 0 && (req.Name != nil || req.AllowedIPs != nil || req.AllowedModels != nil ||
@@ -1372,7 +1372,7 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if currentAccessGrantID > 0 {
-		h.revokeGrantBoundAPIKeyCompatibility(w, r, id, currentAccessGrantID, currentGrantRef, currentStatus)
+		h.revokeGrantBoundAPIKeyCompatibility(w, r, id, currentAccessGrantID, currentGrantRef)
 		return
 	}
 
@@ -1477,15 +1477,8 @@ func (h *Handler) revokeGrantBoundAPIKeyCompatibility(
 	w http.ResponseWriter,
 	r *http.Request,
 	keyID, accessGrantID int64,
-	grantRef, currentStatus string,
+	grantRef string,
 ) {
-	if currentStatus == "disabled" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"message": "Key disabled", "classification": "grant_bound",
-			"access_grant_id": accessGrantID, "grant_ref": grantRef,
-		})
-		return
-	}
 	requestID := middleware.GetRequestIDFromContext(r.Context())
 	clientRequestID := middleware.GetClientRequestIDFromContext(r.Context())
 	if clientRequestID == "" {

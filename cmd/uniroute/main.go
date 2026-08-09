@@ -638,11 +638,15 @@ func main() {
 	embeddingsHandler := newGatewayEmbeddingsHandler(postgres.Pool, relay, outboxSvc)
 	chatPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext)
 	embeddingsPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileEmbeddingsRequest, middleware.GetOrgIDFromContext)
+	mediaPayloadGuard := payloadpolicy.RequestMiddlewareWithMax(payloadBudget, mediajob.MaxRequestBytes, middleware.GetOrgIDFromContext)
 
-	mux.Handle("POST /v1/chat/completions", gatewayLicenseGate(gatewayAuth(chatPayloadGuard(idempotencyGuard(chatHandler)))))
-	mux.Handle("POST /v1/embeddings", gatewayLicenseGate(gatewayAuth(embeddingsPayloadGuard(idempotencyGuard(embeddingsHandler)))))
+	// Repeat live authentication after the complete body is retained. A slow
+	// upload cannot carry a pre-revocation Grant, Credential, membership,
+	// capability, endpoint, or provider-liability snapshot into paid admission.
+	mux.Handle("POST /v1/chat/completions", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(idempotencyGuard(chatHandler))))
+	mux.Handle("POST /v1/embeddings", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(idempotencyGuard(embeddingsHandler))))
 	mux.Handle("GET /v1/models", gatewayLicenseGate(gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
-	mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Submit))))
+	mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(http.HandlerFunc(mediaHandler.Submit))))
 	mux.Handle("GET /v1/media/jobs/{id}", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Get))))
 	mux.Handle("POST /v1/media/jobs/{id}/cancel", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Cancel))))
 	mux.Handle("GET /v1/media/jobs/{id}/content", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Content))))

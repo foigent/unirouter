@@ -213,8 +213,9 @@ func (j Job) ContentReadable(now time.Time) bool {
 }
 
 type CreateRecord struct {
-	Job         Job
-	AllowCreate bool
+	Job                  Job
+	AllowCreate          bool
+	ExpectedLimitSubject limitpolicy.Subject
 }
 
 type IdempotencyLookup struct {

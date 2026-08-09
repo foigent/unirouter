@@ -531,6 +531,116 @@ func TestGrantEnvelopeExpansionRequiresReviewAndNarrowingRemainsAutomaticIntegra
 	require.EqualValues(t, 3, direct.Grant.Revision)
 }
 
+func TestMutableCatalogClassificationSerializesProvisionAndDecisionAuthorityIntegration(t *testing.T) {
+	fixture := newAccessServiceFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := fixture.service.db.Exec(ctx, `
+		INSERT INTO model_registry (org_id,model_name,display_name,lifecycle,approved_catalog)
+		VALUES ($1,'catalog-race-model','Catalog Race Model','ga',TRUE)`, fixture.orgID)
+	require.NoError(t, err)
+
+	makeInput := func(clientID string, userID int64) ProvisionInput {
+		return ProvisionInput{
+			ClientRequestID: clientID, RequestID: "req-" + clientID,
+			OrgID: fixture.orgID, ProjectID: fixture.projectID,
+			Subject:     Subject{Type: SubjectUser, UserID: userID},
+			RequestKind: RequestKindHumanPersonal,
+			Envelope: Envelope{ProjectRole: auth.ProjectRoleUser, ScopeMode: "explicit",
+				Models: []string{"catalog-race-model"}, Endpoints: []string{"/v1/chat/completions"}},
+			Environment: PersonalEnvironment, SubmissionMode: SubmissionSelf,
+		}
+	}
+
+	t.Run("catalog de-list committed first prevents automatic approval", func(t *testing.T) {
+		fixture.useActor(fixture.subjectID, auth.RoleMember, auth.ProjectRoleUser)
+		delist, beginErr := fixture.service.db.Begin(ctx)
+		require.NoError(t, beginErr)
+		defer delist.Rollback(ctx) //nolint:errcheck
+		_, err = delist.Exec(ctx, `UPDATE model_registry SET approved_catalog=FALSE WHERE org_id=$1 AND model_name='catalog-race-model'`, fixture.orgID)
+		require.NoError(t, err)
+
+		type provisionOutcome struct {
+			result ProvisionResult
+			err    error
+		}
+		outcome := make(chan provisionOutcome, 1)
+		go func() {
+			result, provisionErr := fixture.service.Provision(ctx, makeInput("catalog-race-auto", fixture.subjectID))
+			outcome <- provisionOutcome{result: result, err: provisionErr}
+		}()
+		select {
+		case result := <-outcome:
+			t.Fatalf("provision escaped uncommitted catalog transition: result=%#v err=%v", result.result, result.err)
+		case <-time.After(150 * time.Millisecond):
+		}
+		require.NoError(t, delist.Commit(ctx))
+		result := <-outcome
+		require.NoError(t, result.err)
+		require.Nil(t, result.result.Grant)
+		require.Equal(t, RequestNeedsReview, result.result.Request.Status)
+		require.Contains(t, result.result.Request.PolicyReasonCodes, ReasonSpecialModel)
+	})
+
+	t.Run("stale request cannot retain weaker project-admin authority", func(t *testing.T) {
+		_, err = fixture.service.db.Exec(ctx, `UPDATE model_registry SET approved_catalog=TRUE WHERE org_id=$1 AND model_name='catalog-race-model'`, fixture.orgID)
+		require.NoError(t, err)
+		var applicantID, projectAdminID int64
+		require.NoError(t, fixture.service.db.QueryRow(ctx, `
+			INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+			VALUES ($1,'catalog-race-applicant','hash','member','member','active') RETURNING id`, fixture.orgID).Scan(&applicantID))
+		require.NoError(t, fixture.service.db.QueryRow(ctx, `
+			INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+			VALUES ($1,'catalog-race-project-admin','hash','member','project_admin','active') RETURNING id`, fixture.orgID).Scan(&projectAdminID))
+		_, err = fixture.service.db.Exec(ctx, `INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_admin')`, fixture.projectID, projectAdminID)
+		require.NoError(t, err)
+
+		fixture.useActor(applicantID, auth.RoleMember, "")
+		stale, err := fixture.service.Provision(ctx, makeInput("catalog-stale-request", applicantID))
+		require.NoError(t, err)
+		require.Equal(t, RequestNeedsReview, stale.Request.Status)
+		require.Contains(t, stale.Request.PolicyReasonCodes, ReasonFirstCrossProject)
+		require.NotContains(t, stale.Request.PolicyReasonCodes, ReasonSpecialModel)
+		_, err = fixture.service.db.Exec(ctx, `UPDATE model_registry SET approved_catalog=FALSE WHERE org_id=$1 AND model_name='catalog-race-model'`, fixture.orgID)
+		require.NoError(t, err)
+
+		projectAdminScope := fixture.useActor(projectAdminID, auth.RoleMember, auth.ProjectRoleAdmin)
+		_, err = fixture.service.Decide(ctx, projectAdminScope, DecisionInput{
+			RequestRef: stale.Request.RequestRef, ExpectedRevision: stale.Request.Revision,
+			Decision: "approve", ReasonCodes: []string{ReasonManualApproved},
+			RequestID: "req-catalog-stale-approve", ClientRequestID: "catalog-stale-approve",
+		})
+		require.ErrorIs(t, err, ErrConflict)
+		stored, _, err := fixture.service.GetRequest(ctx, ActorScope{
+			UserID: applicantID, OrgID: fixture.orgID, OrganizationRole: auth.RoleMember,
+		}, stale.Request.RequestRef)
+		require.NoError(t, err)
+		require.Equal(t, RequestNeedsReview, stored.Status)
+
+		fixture.useActor(applicantID, auth.RoleMember, "")
+		fresh, err := fixture.service.Provision(ctx, makeInput("catalog-fresh-request", applicantID))
+		require.NoError(t, err)
+		require.Contains(t, fresh.Request.PolicyReasonCodes, ReasonSpecialModel)
+		projectAdminScope = fixture.useActor(projectAdminID, auth.RoleMember, auth.ProjectRoleAdmin)
+		_, err = fixture.service.Decide(ctx, projectAdminScope, DecisionInput{
+			RequestRef: fresh.Request.RequestRef, ExpectedRevision: fresh.Request.Revision,
+			Decision: "approve", ReasonCodes: []string{ReasonManualApproved},
+			RequestID: "req-catalog-fresh-project-approve", ClientRequestID: "catalog-fresh-project-approve",
+		})
+		require.ErrorIs(t, err, ErrForbidden)
+
+		orgAdminScope := fixture.useActor(fixture.orgAdminID, auth.RoleOrgAdmin, "")
+		approved, err := fixture.service.Decide(ctx, orgAdminScope, DecisionInput{
+			RequestRef: fresh.Request.RequestRef, ExpectedRevision: fresh.Request.Revision,
+			Decision: "approve", ReasonCodes: []string{ReasonManualApproved},
+			RequestID: "req-catalog-fresh-org-approve", ClientRequestID: "catalog-fresh-org-approve",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, approved.Grant)
+		require.Contains(t, approved.Request.PolicyReasonCodes, ReasonSpecialModel)
+	})
+}
+
 func TestRejectClosesStaleNeedsReviewRequestsWhileApproveFailsClosedIntegration(t *testing.T) {
 	tests := []struct {
 		name       string

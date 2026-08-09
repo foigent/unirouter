@@ -143,6 +143,15 @@ func (s *Service) ProvisionAndIssueCredential(
 }
 
 func (s *Service) provisionTx(ctx context.Context, tx pgx.Tx, input ProvisionInput) (ProvisionResult, error) {
+	// Do not project caller-supplied foreign IDs into the deployment-global
+	// principal advisory lanes. This first read is deliberately non-authoritative:
+	// it only establishes that every referenced principal belongs to the claimed
+	// tenant/project before CommitAuthorizer constructs its deterministic lock
+	// order. The authoritative status, role, identity, and sponsor checks are
+	// repeated below after those lanes and the admitted session are locked.
+	if err := prevalidateProvisionPrincipalScope(ctx, tx, input); err != nil {
+		return ProvisionResult{}, err
+	}
 	additional := []int64{input.SponsorUserID, input.Subject.UserID}
 	allowSelfWithoutMembershipUserID := int64(0)
 	if input.SubmissionMode == SubmissionSelf && input.Subject.Type == SubjectUser {
@@ -313,6 +322,45 @@ func (s *Service) provisionTx(ctx context.Context, tx pgx.Tx, input ProvisionInp
 		return ProvisionResult{}, err
 	}
 	return result, nil
+}
+
+func prevalidateProvisionPrincipalScope(ctx context.Context, tx pgx.Tx, input ProvisionInput) error {
+	if input.OrgID <= 0 || input.ProjectID <= 0 {
+		return ErrInvalid
+	}
+	var visible bool
+	switch input.Subject.Type {
+	case SubjectUser:
+		// Reject malformed cross-axis IDs before they can be projected into
+		// deployment-global user/workload advisory lanes. Human requests never
+		// carry a sponsor; submitted_by is their complete actor evidence.
+		if input.Subject.UserID <= 0 || input.Subject.WorkloadApplicationID != 0 || input.SponsorUserID != 0 {
+			return ErrInvalid
+		}
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1 FROM users WHERE id=$1 AND org_id=$2
+		)`, input.Subject.UserID, input.OrgID).Scan(&visible); err != nil {
+			return fmt.Errorf("prevalidate access subject scope: %w", err)
+		}
+	case SubjectWorkloadApplication:
+		if input.Subject.UserID != 0 || input.Subject.WorkloadApplicationID <= 0 || input.SponsorUserID <= 0 {
+			return ErrInvalid
+		}
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (
+			SELECT 1
+			FROM workload_applications app
+			JOIN users sponsor ON sponsor.id=$4 AND sponsor.org_id=app.org_id
+			WHERE app.id=$1 AND app.org_id=$2 AND app.project_id=$3
+		)`, input.Subject.WorkloadApplicationID, input.OrgID, input.ProjectID, input.SponsorUserID).Scan(&visible); err != nil {
+			return fmt.Errorf("prevalidate workload subject scope: %w", err)
+		}
+	default:
+		return ErrInvalid
+	}
+	if !visible {
+		return ErrNotFound
+	}
+	return nil
 }
 
 type policyDecision struct {
@@ -702,22 +750,47 @@ func modelsOutsideProjectCatalogTx(ctx context.Context, tx pgx.Tx, projectID, or
 			  JOIN model_set_items msi ON msi.model_set_id=ms.id
 			  WHERE pms.project_id=$1 AND msi.item_type IN ('model','alias') AND msi.item_name=$3
 			)`
-		args := []any{projectID, orgID, model}
-		if !hasExplicitSets {
-			query = `SELECT EXISTS (
-			  SELECT 1
-			  FROM model_registry mr
-			  LEFT JOIN model_aliases ma
-			    ON ma.org_id=mr.org_id AND ma.target_model=mr.model_name
-			   AND ma.status='active' AND ma.alias=$2
-			  WHERE mr.org_id=$1 AND mr.approved_catalog
-			    AND mr.lifecycle <> 'retired'
-			    AND (mr.model_name=$2 OR ma.alias=$2)
-			)`
-			args = []any{orgID, model}
-		}
-		if err := tx.QueryRow(ctx, query, args...).Scan(&allowed); err != nil {
-			return false, fmt.Errorf("read project model scope: %w", err)
+		if hasExplicitSets {
+			if err := tx.QueryRow(ctx, query, projectID, orgID, model).Scan(&allowed); err != nil {
+				return false, fmt.Errorf("read project model scope: %w", err)
+			}
+		} else {
+			// The base approved catalog is mutable decision input. Lock the exact
+			// registry row (and alias row, when applicable) through commit so an
+			// automatic approval cannot race a catalog de-list. If the de-list
+			// commits first, neither query finds an eligible row and the request is
+			// classified as special instead.
+			var registryID int64
+			err := tx.QueryRow(ctx, `
+				SELECT id
+				  FROM model_registry
+				 WHERE org_id=$1 AND model_name=$2
+				   AND approved_catalog AND lifecycle <> 'retired'
+				 FOR SHARE`, orgID, model).Scan(&registryID)
+			switch {
+			case err == nil:
+				allowed = true
+			case !errors.Is(err, pgx.ErrNoRows):
+				return false, fmt.Errorf("lock approved project model: %w", err)
+			default:
+				var aliasID int64
+				err = tx.QueryRow(ctx, `
+					SELECT mr.id,ma.id
+					  FROM model_aliases ma
+					  JOIN model_registry mr
+					    ON mr.org_id=ma.org_id AND mr.model_name=ma.target_model
+					 WHERE ma.org_id=$1 AND ma.alias=$2 AND ma.status='active'
+					   AND mr.approved_catalog AND mr.lifecycle <> 'retired'
+					 FOR SHARE OF mr,ma`, orgID, model).Scan(&registryID, &aliasID)
+				switch {
+				case err == nil:
+					allowed = true
+				case errors.Is(err, pgx.ErrNoRows):
+					allowed = false
+				default:
+					return false, fmt.Errorf("lock approved project model alias: %w", err)
+				}
+			}
 		}
 		if !allowed {
 			return true, nil
@@ -1004,6 +1077,20 @@ func (s *Service) Decide(ctx context.Context, scope ActorScope, input DecisionIn
 		}
 		if request.Envelope.ProjectRole == auth.ProjectRoleViewer || subjectOrganizationRole == auth.RoleOrgViewer {
 			return ProvisionResult{}, fmt.Errorf("%w: read-only subjects cannot receive calling grants", ErrConflict)
+		}
+		currentSpecialModel, validateErr := modelsOutsideProjectCatalogTx(
+			ctx, tx, request.ProjectID, request.OrgID, request.Envelope.Models,
+		)
+		if validateErr != nil {
+			return ProvisionResult{}, validateErr
+		}
+		recordedSpecialModel := slices.Contains(request.PolicyReasonCodes, ReasonSpecialModel)
+		if currentSpecialModel != recordedSpecialModel {
+			// Policy reasons are immutable decision evidence. A mutable catalog
+			// classification change cannot be folded silently into the old
+			// request; keep it pending and require a new request whose evidence
+			// and decision authority reflect the current classification.
+			return ProvisionResult{}, fmt.Errorf("%w: model classification changed; submit a new access request", ErrConflict)
 		}
 		if request.RequestedValidUntil != nil && !request.RequestedValidUntil.After(now) {
 			return ProvisionResult{}, fmt.Errorf("%w: requested access validity expired before approval", ErrConflict)

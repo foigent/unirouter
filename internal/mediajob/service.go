@@ -189,7 +189,8 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 	}
 	now := s.now().UTC()
 	record := CreateRecord{
-		AllowCreate: s.admissionEnabled,
+		AllowCreate:          s.admissionEnabled,
+		ExpectedLimitSubject: limitSubject,
 		Job: Job{
 			ContractVersion: ContractVersion,
 			JobID:           jobID, Scope: input.Scope, APIKeyID: input.APIKeyID,

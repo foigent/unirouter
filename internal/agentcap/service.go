@@ -16,6 +16,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/models"
 )
@@ -431,11 +432,21 @@ func validateRootLimits(limits Limits, authority authoritySnapshot) error {
 	root := authority.APIKey
 	rpmLimit := effectiveRPM(root.RPMLimit)
 	rpsLimit := effectiveRPS(root.QPSLimit)
-	if root.GrantRPMLimit != nil && *root.GrantRPMLimit < rpmLimit {
-		rpmLimit = *root.GrantRPMLimit
-	}
-	if root.GrantRPSLimit != nil && *root.GrantRPSLimit < rpsLimit {
-		rpsLimit = *root.GrantRPSLimit
+	if root.GrantBound {
+		grantRPM := accessscope.ProjectDefaultRPMLimit
+		if root.GrantRPMLimit != nil {
+			grantRPM = *root.GrantRPMLimit
+		}
+		grantRPS := accessscope.ProjectDefaultRPSLimit
+		if root.GrantRPSLimit != nil {
+			grantRPS = *root.GrantRPSLimit
+		}
+		if grantRPM < rpmLimit {
+			rpmLimit = grantRPM
+		}
+		if grantRPS < rpsLimit {
+			rpsLimit = grantRPS
+		}
 	}
 	if limits.RPMLimit > rpmLimit || limits.RPSLimit > rpsLimit {
 		return fmt.Errorf("%w: capability rate limits exceed the root API key", ErrLimitExceeded)

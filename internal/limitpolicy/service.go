@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
@@ -329,7 +330,7 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 	if authorityErr != nil {
 		return nil, ErrStateUnavailable
 	}
-	request.Subject = authoritativeSubject
+	request.Subject = materializeGrantRateDefaults(authoritativeSubject)
 	if request.WorkloadClass == "" {
 		request.WorkloadClass = workloadadmission.ClassInteractive
 	}
@@ -586,6 +587,7 @@ func parseStoreResult(result interface{}) (storeResult, error) {
 }
 
 func (s *Service) matchingPolicies(subject Subject) []Policy {
+	subject = materializeGrantRateDefaults(subject)
 	snapshot := s.snapshot.Load()
 	baseRPS := subject.BaseRPSLimit
 	if baseRPS <= 0 {
@@ -657,6 +659,21 @@ func (s *Service) matchingPolicies(subject Subject) []Policy {
 		}
 	}
 	return policies
+}
+
+func materializeGrantRateDefaults(subject Subject) Subject {
+	if subject.AccessGrantID <= 0 {
+		return subject
+	}
+	if subject.GrantRPMLimit == nil {
+		value := int64(accessscope.ProjectDefaultRPMLimit)
+		subject.GrantRPMLimit = &value
+	}
+	if subject.GrantRPSLimit == nil {
+		value := int64(accessscope.ProjectDefaultRPSLimit)
+		subject.GrantRPSLimit = &value
+	}
+	return subject
 }
 
 func projectPoliciesForAdmission(policies []Policy, phase string) []Policy {

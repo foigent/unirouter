@@ -11,6 +11,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
@@ -121,6 +122,25 @@ func TestBuiltinAccessGrantPolicyBindsOrganizationAndGrant(t *testing.T) {
 	foreignSelector.OrgID = &foreignOrgID
 	if grantPolicy.selectorHash() == foreignSelector.selectorHash() {
 		t.Fatal("selector hash must bind the organization as well as the grant")
+	}
+}
+
+func TestBuiltinAccessGrantPolicyMaterializesCanonicalDefaultRates(t *testing.T) {
+	service := &Service{}
+	subject := Subject{
+		OrgID: 7, ProjectID: 11, APIKeyID: 13, AccessGrantID: 17,
+		BaseRPSLimit: 100, BaseRPMLimit: 1000,
+	}
+	policies := service.matchingPolicies(subject)
+	if len(policies) != 2 {
+		t.Fatalf("expected credential/key and access-grant policies, got %d", len(policies))
+	}
+	grantPolicy := policies[1]
+	if got, want := grantPolicy.RPMLimit, int64(accessscope.ProjectDefaultRPMLimit); got != want {
+		t.Fatalf("nil Grant RPM materialized as %d, want %d", got, want)
+	}
+	if got, want := grantPolicy.RPSLimit, int64(accessscope.ProjectDefaultRPSLimit); got != want {
+		t.Fatalf("nil Grant RPS materialized as %d, want %d", got, want)
 	}
 }
 
