@@ -625,8 +625,8 @@ export const api = {
     })),
   getEnterpriseDirectoryIAMActions: (limit = 100, orgId?: number) =>
     request(appendParams('/enterprise-directory/iam-actions', { limit, org_id: orgId })),
-  getUsers: (page = 1, pageSize = 20) =>
-    request(`/users?page=${page}&page_size=${pageSize}`),
+  getUsers: (page = 1, pageSize = 20, authProvider?: 'local' | 'enterprise') =>
+    request(appendParams('/users', { page, page_size: pageSize, auth_provider: authProvider })),
   createUser: (data: any) =>
     request('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id: number, data: any) =>

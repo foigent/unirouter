@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography, Tabs, TabPane } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
@@ -39,14 +39,15 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const [showDrawer, setShowDrawer] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
+	const [providerScope, setProviderScope] = useState<'local' | 'enterprise'>('local');
 
-  const load = (p = page, size = pageSize) => {
+  const load = (p = page, size = pageSize, provider: 'local' | 'enterprise' = providerScope) => {
     const version = ++requestVersion.current;
     setLoading(true);
     setLoadError('');
     setUsers([]);
     setTotal(0);
-    api.getUsers(p, size)
+    api.getUsers(p, size, provider)
       .then((d: any) => {
         if (version !== requestVersion.current) return;
         setUsers(d.data || []);
@@ -60,7 +61,10 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       });
   };
 
-  useEffect(() => { load(1, pageSize); }, []);
+	useEffect(() => {
+		setPage(1);
+		load(1, pageSize, providerScope);
+	}, [providerScope]);
   useEffect(() => {
     const fallback = currentUser?.org_id
       ? [{ id: currentUser.org_id, name: currentUser.org_name || `组织 #${currentUser.org_id}` }]
@@ -81,6 +85,9 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const closeDrawer = () => { setShowDrawer(false); setEditUser(null); };
 
   const mutationRestriction = (user: any) => {
+		if (providerScope === 'enterprise' || user.auth_provider !== 'local') {
+			return '企业身份由 OIDC / 企业目录管理，此处只读';
+		}
     if (Number(user.id) === Number(currentUser?.id)) {
       return '当前登录账号不能在这里修改角色、停用或删除';
     }
@@ -109,7 +116,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         Toast.success('用户创建成功');
       }
       closeDrawer();
-      load(editUser ? page : 1);
+      load(editUser ? page : 1, pageSize, providerScope);
     } catch (error) {
       const code = error instanceof ApiError ? apiErrorCode(error) : '';
       if (!editUser && code === 'local_login_id_conflict') {
@@ -144,6 +151,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   };
 
   const openCreate = () => {
+		if (providerScope !== 'local') return;
     setEditUser(null);
     setShowDrawer(true);
   };
@@ -236,16 +244,25 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
             <Typography.Title heading={4} style={{ margin: 0 }}>账号与身份</Typography.Title>
             <Typography.Text type="tertiary">创建登录账号并设置组织角色；项目角色在“项目与成员”中按项目独立维护。</Typography.Text>
           </div>
-          <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>
+			{providerScope === 'local' && <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
         </div>
       ) : <PageHeader
         eyebrow="访问与安全"
         title="用户管理"
         description="管理本地账号及企业 OIDC 映射账号的组织角色与状态；项目角色在项目入口独立维护。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
+		actions={providerScope === 'local' ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button> : undefined}
       />}
 
       <Surface>
+		<Tabs activeKey={providerScope} onChange={(key) => setProviderScope(key as 'local' | 'enterprise')}>
+			<TabPane itemKey="local" tab="本地账号 / Local User" />
+			<TabPane itemKey="enterprise" tab="企业身份 / OIDC" />
+		</Tabs>
+		<Typography.Text type="tertiary">
+			{providerScope === 'local'
+				? '本页服务端只查询 auth_provider=local；可创建本地账号并管理本地生命周期。'
+				: '本页服务端只查询企业身份；身份来源与登录属性只读，项目角色仍在“项目与成员”中分配。'}
+		</Typography.Text>
         <div className="ur-table-shell">
           <Table
             columns={columns}
@@ -258,8 +275,8 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
             pagination={{
               currentPage: page, pageSize, total,
               pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
+              onPageChange: (p: number) => { setPage(p); load(p, pageSize, providerScope); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s, providerScope); },
             }}
           />
         </div>

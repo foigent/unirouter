@@ -242,6 +242,30 @@ func (s *Service) Policies() []Policy {
 	return append([]Policy(nil), snapshot.policies...)
 }
 
+// Readiness reuses the exact authoritative-subject reload and selector
+// matching used by admission, but performs no Redis reservation or mutation.
+func (s *Service) Readiness(ctx context.Context, subject Subject) (Readiness, error) {
+	if s == nil {
+		return Readiness{}, ErrStateUnavailable
+	}
+	authoritative, err := s.authoritativeSubject(ctx, subject)
+	if err != nil {
+		return Readiness{}, err
+	}
+	authoritative = materializeGrantRateDefaults(authoritative)
+	policies := s.matchingPolicies(authoritative)
+	projection := Readiness{MatchingPolicyCount: len(policies)}
+	for _, policy := range policies {
+		if policy.Mode == ModeEnforce {
+			projection.EnforcedPolicyCount++
+		}
+	}
+	if snapshot := s.snapshot.Load(); snapshot != nil {
+		projection.SnapshotLoadedAt = snapshot.loadedAt
+	}
+	return projection, nil
+}
+
 func (s *Service) BuiltinLimits() map[string]int64 {
 	if s == nil {
 		return map[string]int64{}

@@ -40,7 +40,17 @@ describe('auth store', () => {
       email: 'alice@example.com',
       auth_provider: 'oidc',
     };
-    const refreshedUser = { ...loginUser, license_access: ACTIVE_LICENSE_ACCESS };
+    const refreshedUser = {
+      ...loginUser,
+      organization_role: 'org_admin',
+      license_access: ACTIVE_LICENSE_ACCESS,
+      navigation_capabilities: {
+        has_live_project_membership: true,
+        has_project_admin_membership: false,
+        can_discover_access_review: true,
+        can_discover_workloads: true,
+      },
+    };
     vi.spyOn(api, 'login').mockResolvedValue({
       token: 'fresh-token',
       user_id: loginUser.id,

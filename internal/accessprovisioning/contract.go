@@ -55,6 +55,7 @@ type RequestPage struct {
 type GrantPage struct {
 	Data       []Grant  `json:"data"`
 	Pagination PageInfo `json:"pagination"`
+	Scope      string   `json:"scope,omitempty"`
 }
 
 type GrantCredentialPage struct {
@@ -172,35 +173,55 @@ type ProvisionInput struct {
 }
 
 type Request struct {
-	ID                    int64      `json:"id"`
-	RequestRef            string     `json:"request_ref"`
-	ClientRequestID       string     `json:"client_request_id"`
-	SemanticHash          string     `json:"semantic_hash"`
-	SemanticRevision      int64      `json:"semantic_revision"`
-	OrgID                 int64      `json:"org_id"`
-	ProjectID             int64      `json:"project_id"`
-	Subject               Subject    `json:"subject"`
-	RequestKind           string     `json:"request_kind"`
-	Envelope              Envelope   `json:"requested_scope"`
-	Environment           string     `json:"environment"`
-	ProductionUse         bool       `json:"production_use"`
-	RequestedValidUntil   *time.Time `json:"requested_valid_until,omitempty"`
-	SubmissionMode        string     `json:"submission_mode"`
-	SponsorUserID         int64      `json:"sponsor_user_id,omitempty"`
-	TargetAccessGrantID   int64      `json:"target_access_grant_id,omitempty"`
-	ExpectedGrantRevision int64      `json:"expected_grant_revision,omitempty"`
-	Status                string     `json:"status"`
-	DecisionMode          string     `json:"decision_mode"`
-	PolicyReasonCodes     []string   `json:"policy_reason_codes"`
-	DecisionReasonCodes   []string   `json:"decision_reason_codes"`
-	PolicyVersion         string     `json:"policy_version"`
-	SubmittedBy           int64      `json:"submitted_by"`
-	DecidedBy             int64      `json:"decided_by,omitempty"`
-	CancelledBy           int64      `json:"cancelled_by,omitempty"`
-	SubmittedAt           time.Time  `json:"submitted_at"`
-	DecidedAt             *time.Time `json:"decided_at,omitempty"`
-	CancelledAt           *time.Time `json:"cancelled_at,omitempty"`
-	Revision              int64      `json:"revision"`
+	ID                    int64           `json:"id"`
+	RequestRef            string          `json:"request_ref"`
+	ClientRequestID       string          `json:"client_request_id"`
+	SemanticHash          string          `json:"semantic_hash"`
+	SemanticRevision      int64           `json:"semantic_revision"`
+	OrgID                 int64           `json:"org_id"`
+	ProjectID             int64           `json:"project_id"`
+	Subject               Subject         `json:"subject"`
+	RequestKind           string          `json:"request_kind"`
+	Envelope              Envelope        `json:"requested_scope"`
+	Environment           string          `json:"environment"`
+	ProductionUse         bool            `json:"production_use"`
+	RequestedValidUntil   *time.Time      `json:"requested_valid_until,omitempty"`
+	SubmissionMode        string          `json:"submission_mode"`
+	SponsorUserID         int64           `json:"sponsor_user_id,omitempty"`
+	TargetAccessGrantID   int64           `json:"target_access_grant_id,omitempty"`
+	ExpectedGrantRevision int64           `json:"expected_grant_revision,omitempty"`
+	Status                string          `json:"status"`
+	DecisionMode          string          `json:"decision_mode"`
+	PolicyReasonCodes     []string        `json:"policy_reason_codes"`
+	DecisionReasonCodes   []string        `json:"decision_reason_codes"`
+	PolicyVersion         string          `json:"policy_version"`
+	SubmittedBy           int64           `json:"submitted_by"`
+	DecidedBy             int64           `json:"decided_by,omitempty"`
+	CancelledBy           int64           `json:"cancelled_by,omitempty"`
+	SubmittedAt           time.Time       `json:"submitted_at"`
+	DecidedAt             *time.Time      `json:"decided_at,omitempty"`
+	CancelledAt           *time.Time      `json:"cancelled_at,omitempty"`
+	Revision              int64           `json:"revision"`
+	Actions               *RequestActions `json:"actions,omitempty"`
+}
+
+// RequestActions is a read-only, actor-specific projection for the exact
+// admitted actor. It is deliberately advisory: Decide and Cancel still repeat
+// their full commit-time authorization and optimistic-revision checks.
+type RequestActions struct {
+	CanApprove bool   `json:"can_approve"`
+	CanReject  bool   `json:"can_reject"`
+	CanCancel  bool   `json:"can_cancel"`
+	ReasonCode string `json:"reason_code"`
+}
+
+type RequestListFilter struct {
+	Status                       string
+	SubjectWorkloadApplicationID int64
+}
+
+type GrantListFilter struct {
+	SubjectWorkloadApplicationID int64
 }
 
 type Grant struct {

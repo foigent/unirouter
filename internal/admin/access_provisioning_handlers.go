@@ -183,7 +183,8 @@ func (h *Handler) ListAccessRequests(w http.ResponseWriter, r *http.Request) {
 	}
 	scopeMode := strings.TrimSpace(r.URL.Query().Get("scope"))
 	if scopeMode == "my" {
-		if strings.TrimSpace(r.URL.Query().Get("project_id")) != "" || strings.TrimSpace(r.URL.Query().Get("org_id")) != "" {
+		if strings.TrimSpace(r.URL.Query().Get("project_id")) != "" || strings.TrimSpace(r.URL.Query().Get("org_id")) != "" ||
+			strings.TrimSpace(r.URL.Query().Get("status")) != "" || strings.TrimSpace(r.URL.Query().Get("workload_application_id")) != "" {
 			writeAccessProvisioningError(w, accessprovisioning.ErrInvalid)
 			return
 		}
@@ -213,7 +214,16 @@ func (h *Handler) ListAccessRequests(w http.ResponseWriter, r *http.Request) {
 		writeAccessProvisioningUnavailable(w)
 		return
 	}
-	page, err := service.ListRequests(r.Context(), accessActorScope(r.Context()), orgID, projectID, pageInput)
+	workloadID, err := optionalPositiveInt64Query(r, "workload_application_id")
+	if err != nil {
+		writeAccessProvisioningError(w, err)
+		return
+	}
+	page, err := service.ListRequestsFiltered(r.Context(), accessActorScope(r.Context()), orgID, projectID,
+		accessprovisioning.RequestListFilter{
+			Status:                       strings.TrimSpace(r.URL.Query().Get("status")),
+			SubjectWorkloadApplicationID: workloadID,
+		}, pageInput)
 	if err != nil {
 		writeAccessProvisioningError(w, err)
 		return
@@ -293,21 +303,58 @@ func (h *Handler) ListAccessGrants(w http.ResponseWriter, r *http.Request) {
 		writeAccessProvisioningError(w, err)
 		return
 	}
-	orgID, projectID, ok := h.resolveAccessProjectRead(w, r)
-	if !ok {
-		return
-	}
 	service, err := h.accessProvisioningService()
 	if err != nil {
 		writeAccessProvisioningUnavailable(w)
 		return
 	}
-	page, err := service.ListGrants(r.Context(), accessActorScope(r.Context()), orgID, projectID, pageInput)
+	scopeMode := strings.TrimSpace(r.URL.Query().Get("scope"))
+	if scopeMode == "my" {
+		if strings.TrimSpace(r.URL.Query().Get("project_id")) != "" || strings.TrimSpace(r.URL.Query().Get("org_id")) != "" ||
+			strings.TrimSpace(r.URL.Query().Get("workload_application_id")) != "" {
+			writeAccessProvisioningError(w, accessprovisioning.ErrInvalid)
+			return
+		}
+		page, err := service.ListMyGrants(r.Context(), accessActorScope(r.Context()), pageInput)
+		if err != nil {
+			writeAccessProvisioningError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, page)
+		return
+	}
+	if scopeMode != "" && scopeMode != "project" {
+		writeAccessProvisioningError(w, accessprovisioning.ErrInvalid)
+		return
+	}
+	orgID, projectID, ok := h.resolveAccessProjectRead(w, r)
+	if !ok {
+		return
+	}
+	workloadID, err := optionalPositiveInt64Query(r, "workload_application_id")
+	if err != nil {
+		writeAccessProvisioningError(w, err)
+		return
+	}
+	page, err := service.ListGrantsFiltered(r.Context(), accessActorScope(r.Context()), orgID, projectID,
+		accessprovisioning.GrantListFilter{SubjectWorkloadApplicationID: workloadID}, pageInput)
 	if err != nil {
 		writeAccessProvisioningError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+func optionalPositiveInt64Query(r *http.Request, name string) (int64, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 {
+		return 0, accessprovisioning.ErrInvalid
+	}
+	return value, nil
 }
 
 func (h *Handler) GetAccessGrant(w http.ResponseWriter, r *http.Request) {

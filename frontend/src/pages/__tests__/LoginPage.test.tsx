@@ -116,7 +116,7 @@ describe('LoginPage', () => {
     })
   })
 
-  it('navigates project users to developer console after login', async () => {
+  it('lands a login-only project identity on My Access until /me projects live membership', async () => {
     mockLogin.mockResolvedValueOnce({ id: 2, username: 'dev', role: 'developer' })
     const user = userEvent.setup()
     renderLoginPage()
@@ -126,7 +126,7 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: /登录/i }))
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/developer')
+      expect(mockNavigate).toHaveBeenCalledWith('/access')
     })
   })
 

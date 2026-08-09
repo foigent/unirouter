@@ -125,6 +125,30 @@ func TestBuiltinAccessGrantPolicyBindsOrganizationAndGrant(t *testing.T) {
 	}
 }
 
+func TestReadinessProjectsAuthoritativePoliciesWithoutRedisMutation(t *testing.T) {
+	orgID, projectID := int64(7), int64(11)
+	service, redisServer := newPolicyTestService(t, testOptions(), Policy{
+		ID: 91, Ref: "policy:91", Name: "Project readiness", Version: 1,
+		OrgID: &orgID, ProjectID: &projectID, Mode: ModeEnforce,
+		FailureMode: FailureFailClosed, RPMLimit: 30,
+	})
+	before := redisServer.Keys()
+	projection, err := service.Readiness(context.Background(), Subject{
+		OrgID: orgID, ProjectID: projectID, APIKeyID: 13,
+		Model: "company-chat", BaseRPSLimit: 10, BaseRPMLimit: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.MatchingPolicyCount != 2 || projection.EnforcedPolicyCount != 2 {
+		t.Fatalf("unexpected safe projection: %#v", projection)
+	}
+	after := redisServer.Keys()
+	if len(before) != len(after) {
+		t.Fatalf("readiness mutated Redis: before=%v after=%v", before, after)
+	}
+}
+
 func TestBuiltinAccessGrantPolicyMaterializesCanonicalDefaultRates(t *testing.T) {
 	service := &Service{}
 	subject := Subject{

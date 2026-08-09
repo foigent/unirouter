@@ -2008,6 +2008,9 @@ func (s *Service) GetRequest(ctx context.Context, scope ActorScope, requestRef s
 	if !found {
 		return Request{}, nil, ErrNotFound
 	}
+	if err := s.projectRequestActions(ctx, scope, &request); err != nil {
+		return Request{}, nil, err
+	}
 	grant, grantFound, err := readGrantByRequestID(ctx, s.db, request.ID)
 	if err != nil {
 		return Request{}, nil, err
@@ -2229,16 +2232,33 @@ func effectiveCredentialVersionStatus(status string, familyStatus string, grant 
 }
 
 func (s *Service) ListRequests(ctx context.Context, scope ActorScope, orgID, projectID int64, pageInput PageInput) (RequestPage, error) {
+	return s.ListRequestsFiltered(ctx, scope, orgID, projectID, RequestListFilter{}, pageInput)
+}
+
+// ListRequestsFiltered applies every queue filter in PostgreSQL before the
+// keyset limit. This prevents a browser page from manufacturing false empty
+// review queues by filtering an already-truncated result.
+func (s *Service) ListRequestsFiltered(ctx context.Context, scope ActorScope, orgID, projectID int64, filter RequestListFilter, pageInput PageInput) (RequestPage, error) {
 	pageInput, err := NormalizePageInput(pageInput)
 	if err != nil {
 		return RequestPage{}, err
+	}
+	filter.Status = strings.TrimSpace(filter.Status)
+	if filter.Status != "" && !slices.Contains([]string{RequestApproved, RequestNeedsReview, RequestRejected, RequestCancelled}, filter.Status) {
+		return RequestPage{}, ErrInvalid
+	}
+	if filter.SubjectWorkloadApplicationID < 0 {
+		return RequestPage{}, ErrInvalid
 	}
 	if !scope.valid() {
 		return RequestPage{Data: []Request{}, Pagination: PageInfo{Limit: pageInput.Limit}, Scope: "project"}, nil
 	}
 	rows, err := s.db.Query(ctx, requestSelect+` WHERE $1::text='' AND ar.org_id=$5 AND ar.project_id=$6 AND (`+requestAccessPredicate(objectRead)+`)
-		AND ($7::bigint=0 OR ar.id<$7) ORDER BY ar.id DESC LIMIT $8`,
-		"", scope.UserID, scope.OrgID, scope.OrganizationRole, orgID, projectID, pageInput.AfterID, pageInput.Limit+1)
+		AND ($7::text='' OR ar.status=$7)
+		AND ($8::bigint=0 OR ar.subject_workload_application_id=$8)
+		AND ($9::bigint=0 OR ar.id<$9) ORDER BY ar.id DESC LIMIT $10`,
+		"", scope.UserID, scope.OrgID, scope.OrganizationRole, orgID, projectID,
+		filter.Status, filter.SubjectWorkloadApplicationID, pageInput.AfterID, pageInput.Limit+1)
 	if err != nil {
 		return RequestPage{}, err
 	}
@@ -2247,6 +2267,9 @@ func (s *Service) ListRequests(ctx context.Context, scope ActorScope, orgID, pro
 	for rows.Next() {
 		request, err := scanRequest(rows)
 		if err != nil {
+			return RequestPage{}, err
+		}
+		if err := s.projectRequestActions(ctx, scope, &request); err != nil {
 			return RequestPage{}, err
 		}
 		result = append(result, request)
@@ -2285,6 +2308,9 @@ func (s *Service) ListMyRequests(ctx context.Context, scope ActorScope, pageInpu
 		if err != nil {
 			return RequestPage{}, err
 		}
+		if err := s.projectRequestActions(ctx, scope, &request); err != nil {
+			return RequestPage{}, err
+		}
 		result = append(result, request)
 	}
 	if err := rows.Err(); err != nil {
@@ -2294,21 +2320,30 @@ func (s *Service) ListMyRequests(ctx context.Context, scope ActorScope, pageInpu
 }
 
 func (s *Service) ListGrants(ctx context.Context, scope ActorScope, orgID, projectID int64, pageInput PageInput) (GrantPage, error) {
+	return s.ListGrantsFiltered(ctx, scope, orgID, projectID, GrantListFilter{}, pageInput)
+}
+
+func (s *Service) ListGrantsFiltered(ctx context.Context, scope ActorScope, orgID, projectID int64, filter GrantListFilter, pageInput PageInput) (GrantPage, error) {
 	pageInput, err := NormalizePageInput(pageInput)
 	if err != nil {
 		return GrantPage{}, err
 	}
 	if !scope.valid() {
-		return GrantPage{Data: []Grant{}, Pagination: PageInfo{Limit: pageInput.Limit}}, nil
+		return GrantPage{Data: []Grant{}, Pagination: PageInfo{Limit: pageInput.Limit}, Scope: "project"}, nil
+	}
+	if filter.SubjectWorkloadApplicationID < 0 {
+		return GrantPage{}, ErrInvalid
 	}
 	rows, err := s.db.Query(ctx, grantSelect+` WHERE $1::text='' AND ag.org_id=$5 AND ag.project_id=$6 AND (`+grantAccessPredicate(objectRead)+`)
-		AND ($7::bigint=0 OR ag.id<$7) ORDER BY ag.id DESC LIMIT $8`,
-		"", scope.UserID, scope.OrgID, scope.OrganizationRole, orgID, projectID, pageInput.AfterID, pageInput.Limit+1)
+		AND ($7::bigint=0 OR ag.subject_workload_application_id=$7)
+		AND ($8::bigint=0 OR ag.id<$8) ORDER BY ag.id DESC LIMIT $9`,
+		"", scope.UserID, scope.OrgID, scope.OrganizationRole, orgID, projectID,
+		filter.SubjectWorkloadApplicationID, pageInput.AfterID, pageInput.Limit+1)
 	if err != nil {
 		return GrantPage{}, err
 	}
 	defer rows.Close()
-	var result []Grant
+	result := make([]Grant, 0)
 	for rows.Next() {
 		grant, err := scanGrant(rows)
 		if err != nil {
@@ -2319,7 +2354,7 @@ func (s *Service) ListGrants(ctx context.Context, scope ActorScope, orgID, proje
 	if err := rows.Err(); err != nil {
 		return GrantPage{}, err
 	}
-	page := GrantPage{Data: result, Pagination: PageInfo{Limit: pageInput.Limit}}
+	page := GrantPage{Data: result, Pagination: PageInfo{Limit: pageInput.Limit}, Scope: "project"}
 	if len(page.Data) > pageInput.Limit {
 		page.Data = page.Data[:pageInput.Limit]
 		page.Pagination.HasMore = true
@@ -2329,7 +2364,102 @@ func (s *Service) ListGrants(ctx context.Context, scope ActorScope, orgID, proje
 	return page, nil
 }
 
+// ListMyGrants returns only human Grants whose subject is the admitted actor.
+// It deliberately does not require a current membership so suspended,
+// revoked, expired, or first-project history remains visible without granting
+// project enumeration or exposing sponsored workload access.
+func (s *Service) ListMyGrants(ctx context.Context, scope ActorScope, pageInput PageInput) (GrantPage, error) {
+	pageInput, err := NormalizePageInput(pageInput)
+	if err != nil {
+		return GrantPage{}, err
+	}
+	if !scope.valid() {
+		return GrantPage{Data: []Grant{}, Pagination: PageInfo{Limit: pageInput.Limit}, Scope: "my"}, nil
+	}
+	rows, err := s.db.Query(ctx, grantSelect+`
+		WHERE ag.subject_type='user' AND ag.subject_user_id=$1
+		  AND ($2::bigint=0 OR ag.id<$2)
+		ORDER BY ag.id DESC LIMIT $3`, scope.UserID, pageInput.AfterID, pageInput.Limit+1)
+	if err != nil {
+		return GrantPage{}, err
+	}
+	defer rows.Close()
+	result := make([]Grant, 0)
+	for rows.Next() {
+		grant, err := scanGrant(rows)
+		if err != nil {
+			return GrantPage{}, err
+		}
+		result = append(result, grant)
+	}
+	if err := rows.Err(); err != nil {
+		return GrantPage{}, err
+	}
+	page := GrantPage{Data: result, Pagination: PageInfo{Limit: pageInput.Limit}, Scope: "my"}
+	if len(page.Data) > pageInput.Limit {
+		page.Data = page.Data[:pageInput.Limit]
+		page.Pagination.HasMore = true
+		next := page.Data[len(page.Data)-1].ID
+		page.Pagination.NextAfterID = &next
+	}
+	return page, nil
+}
+
+func (s *Service) projectRequestActions(ctx context.Context, scope ActorScope, request *Request) error {
+	actions := RequestActions{ReasonCode: "request_terminal"}
+	request.Actions = &actions
+	if request.Status != RequestNeedsReview {
+		return nil
+	}
+	actions.CanCancel = request.SubmittedBy == scope.UserID ||
+		(request.Subject.Type == SubjectWorkloadApplication && request.SponsorUserID == scope.UserID)
+	if scope.OrganizationRole == auth.RolePlatformAdmin ||
+		(scope.OrgID == request.OrgID && scope.OrganizationRole == auth.RoleOrgAdmin) {
+		actions.CanApprove = true
+		actions.CanReject = true
+		actions.ReasonCode = "organization_admin_actionable"
+		return nil
+	}
+	if scope.OrgID != request.OrgID {
+		actions.ReasonCode = "not_authorized"
+		return nil
+	}
+	var actorProjectAdmin bool
+	var subjectRole string
+	err := s.db.QueryRow(ctx, `
+		SELECT EXISTS (
+		         SELECT 1 FROM project_members pm
+		         WHERE pm.project_id=$1 AND pm.user_id=$2 AND pm.role='project_admin'
+		       ),
+		       COALESCE((
+		         SELECT pm.role FROM project_members pm
+		         WHERE pm.project_id=$1 AND pm.user_id=$3
+		       ),'')`, request.ProjectID, scope.UserID, request.Subject.UserID).Scan(&actorProjectAdmin, &subjectRole)
+	if err != nil {
+		return err
+	}
+	if actorProjectAdmin {
+		canonicalSubjectRole, _ := auth.NormalizeProjectMembershipRole(subjectRole)
+		actions.CanApprove = projectAdminMayDecide(*request, canonicalSubjectRole)
+		actions.CanReject = projectAdminMayReject(*request)
+	}
+	switch {
+	case actions.CanApprove || actions.CanReject:
+		actions.ReasonCode = "project_admin_actionable"
+	case actions.CanCancel:
+		actions.ReasonCode = "requester_actionable"
+	case actorProjectAdmin:
+		actions.ReasonCode = "organization_admin_required"
+	default:
+		actions.ReasonCode = "not_authorized"
+	}
+	return nil
+}
+
 func requestPage(result []Request, input PageInput, scope string) RequestPage {
+	if result == nil {
+		result = make([]Request, 0)
+	}
 	page := RequestPage{Data: result, Pagination: PageInfo{Limit: input.Limit}, Scope: scope}
 	if len(page.Data) > input.Limit {
 		page.Data = page.Data[:input.Limit]

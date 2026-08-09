@@ -125,6 +125,15 @@ type Limits struct {
 	Concurrency int64 `json:"concurrency,omitempty"`
 }
 
+// Readiness is a safe, read-only projection of the exact authoritative
+// subject and policy population used by admission. It contains no Redis key,
+// policy selector value, secret, or mutation handle.
+type Readiness struct {
+	MatchingPolicyCount int       `json:"matching_policy_count"`
+	EnforcedPolicyCount int       `json:"enforced_policy_count"`
+	SnapshotLoadedAt    time.Time `json:"snapshot_loaded_at"`
+}
+
 type Decision struct {
 	PolicyID       int64  `json:"policy_id,omitempty"`
 	PolicyRef      string `json:"policy_ref"`

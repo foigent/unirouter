@@ -51,6 +51,9 @@ type workloadApplicationRecord struct {
 	ActiveCredentialCount   int        `json:"active_credential_count"`
 	IdentityClassification  string     `json:"identity_classification"`
 	CompatibilityEvidence   string     `json:"compatibility_evidence,omitempty"`
+	CanManage               bool       `json:"can_manage"`
+	CanRequestAccess        bool       `json:"can_request_access"`
+	CanReadCredentials      bool       `json:"can_read_credentials"`
 }
 
 type workloadCredentialRecord struct {
@@ -149,6 +152,11 @@ SELECT a.id, a.org_id, a.project_id, a.application_ref,a.contract_version,
 			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application store unavailable"})
 			return
 		}
+		item, scanErr = h.decorateWorkloadApplicationCapabilities(r.Context(), item)
+		if scanErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application store unavailable"})
+			return
+		}
 		items = append(items, item)
 	}
 	if rows.Err() != nil {
@@ -167,6 +175,11 @@ func (h *Handler) GetWorkloadApplication(w http.ResponseWriter, r *http.Request)
 	item, err := readWorkloadApplication(r.Context(), h.db, orgID, r.PathValue("ref"), false)
 	if err != nil {
 		writeWorkloadApplicationError(w, err)
+		return
+	}
+	item, err = h.decorateWorkloadApplicationCapabilities(r.Context(), item)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application store unavailable"})
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
@@ -307,6 +320,11 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11,NULLIF($12,''),$13,$14,$15,1,$1
 	if compatibilityAdapted {
 		item.CompatibilityEvidence = "legacy_endpoint_payload_adapted_to_v2"
 	}
+	item, err = h.decorateWorkloadApplicationCapabilities(r.Context(), item)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application store unavailable"})
+		return
+	}
 	writeJSON(w, http.StatusCreated, item)
 }
 
@@ -435,6 +453,11 @@ UPDATE workload_applications
 		writeWorkloadApplicationError(w, err)
 		return
 	}
+	item, err = h.decorateWorkloadApplicationCapabilities(r.Context(), item)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application store unavailable"})
+		return
+	}
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -530,6 +553,11 @@ UPDATE workload_applications
 	item, err := readWorkloadApplication(r.Context(), h.db, orgID, before.ApplicationRef, false)
 	if err != nil {
 		writeWorkloadApplicationError(w, err)
+		return
+	}
+	item, err = h.decorateWorkloadApplicationCapabilities(r.Context(), item)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application store unavailable"})
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
@@ -878,7 +906,44 @@ UPDATE workload_applications
 		writeWorkloadApplicationError(w, err)
 		return
 	}
+	item, err = h.decorateWorkloadApplicationCapabilities(r.Context(), item)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application store unavailable"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"result": "bound", "application": item})
+}
+
+func (h *Handler) decorateWorkloadApplicationCapabilities(ctx context.Context, item workloadApplicationRecord) (workloadApplicationRecord, error) {
+	item.CanManage = h.canWriteProject(ctx, item.ProjectID)
+	item.CanRequestAccess = item.CanManage && item.Status == workloadapp.StatusActive && item.ProjectStatus == "active"
+	if item.CanManage {
+		item.CanReadCredentials = true
+		return item, nil
+	}
+	actorUserID := middleware.GetUserIDFromContext(ctx)
+	if actorUserID <= 0 {
+		return item, nil
+	}
+	if err := h.db.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1
+		FROM access_grants g
+		JOIN users sponsor ON sponsor.id=g.sponsor_user_id AND sponsor.org_id=g.org_id
+		WHERE g.org_id=$1 AND g.project_id=$2
+		  AND g.subject_type='workload_application' AND g.subject_workload_application_id=$3
+		  AND g.sponsor_user_id=$4 AND sponsor.status='active'
+		  AND (
+		    sponsor.organization_role IN ('platform_admin','org_admin')
+		    OR EXISTS (
+		      SELECT 1 FROM project_members sponsor_pm
+		      WHERE sponsor_pm.project_id=g.project_id AND sponsor_pm.user_id=sponsor.id
+		        AND sponsor_pm.role IN ('project_admin','project_user','project_developer','developer')
+		    )
+		  )
+	)`, item.OrgID, item.ProjectID, item.ID, actorUserID).Scan(&item.CanReadCredentials); err != nil {
+		return workloadApplicationRecord{}, err
+	}
+	return item, nil
 }
 
 func (h *Handler) reauthorizeWorkloadApplicationMutationTx(ctx context.Context, tx pgx.Tx, orgID, projectID int64, workloadIDs ...int64) error {

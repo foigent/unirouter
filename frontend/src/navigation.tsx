@@ -39,11 +39,21 @@ export interface AuthzContext {
   organizationRole: OrganizationRole | '';
   projectMembershipRole: ProjectMembershipRole | '';
   projectMembershipKnown: boolean;
+	hasLiveProjectMembership: boolean;
+	hasProjectAdminMembership: boolean;
+	canDiscoverAccessReview: boolean;
+	canDiscoverWorkloads: boolean;
 }
 
 export interface AuthzUserIdentity {
   organization_role?: string | null;
   role?: string | null;
+	navigation_capabilities?: {
+		has_live_project_membership?: boolean;
+		has_project_admin_membership?: boolean;
+		can_discover_access_review?: boolean;
+		can_discover_workloads?: boolean;
+	} | null;
 }
 
 const organizationRoles = new Set<OrganizationRole>([
@@ -87,6 +97,10 @@ export function authzContextForUser(
     organizationRole: canonicalOrganizationRole(user?.organization_role, user?.role),
     projectMembershipRole: canonicalProjectMembershipRole(projectMembershipRole),
     projectMembershipKnown,
+		hasLiveProjectMembership: user?.navigation_capabilities?.has_live_project_membership === true || canonicalProjectMembershipRole(projectMembershipRole) !== '',
+		hasProjectAdminMembership: user?.navigation_capabilities?.has_project_admin_membership === true || canonicalProjectMembershipRole(projectMembershipRole) === 'project_admin',
+		canDiscoverAccessReview: user?.navigation_capabilities?.can_discover_access_review === true,
+		canDiscoverWorkloads: user?.navigation_capabilities?.can_discover_workloads === true,
   };
 }
 
@@ -176,6 +190,7 @@ const taskNavItems: NavItem[] = [
       { itemKey: '/channels', text: '上游通道', icon: <IconRoute /> },
       { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconLockStroked /> },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers />, licenseFeature: 'model_governance' },
+		{ itemKey: '/model-readiness', text: '模型 Readiness', icon: <IconPulse /> },
       { itemKey: '/test', text: '上游检测', icon: <IconTestScore />, licenseFeature: 'gateway' },
     ],
   },
@@ -184,7 +199,8 @@ const taskNavItems: NavItem[] = [
     text: '访问与安全',
     icon: <IconShieldStroked />,
     items: [
-      { itemKey: '/applications', text: '应用接入', icon: <IconKeyStroked /> },
+		{ itemKey: '/access-review', text: '访问审核', icon: <IconChecklistStroked /> },
+		{ itemKey: '/applications', text: '应用与 Agent', icon: <IconKeyStroked /> },
       { itemKey: '/organization-members', text: '组织与成员', icon: <IconUserGroup /> },
       { itemKey: '/agent-trust', text: '模型调用授权', icon: <IconShieldStroked /> },
       { itemKey: '/limit-policies', text: '共享限额', icon: <IconPulse /> },
@@ -229,7 +245,7 @@ const taskNavItems: NavItem[] = [
 ];
 
 const projectOverviewItem: NavItem = { itemKey: '/developer', text: '项目工作台', icon: <IconTerminal /> };
-const accessStateItem: NavItem = { itemKey: '/access', text: '访问状态', icon: <IconShieldStroked /> };
+const accessStateItem: NavItem = { itemKey: '/access', text: '我的访问', icon: <IconShieldStroked /> };
 
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
 const compatibilityRoutes = new Set([
@@ -237,7 +253,7 @@ const compatibilityRoutes = new Set([
   '/provenance-passport', '/org-model-prices', '/grants', '/agent-trust-evidence', '/keys', '/data-exchange',
 ]);
 const orgAdminRoutes = new Set([
-  '/', '/model-governance', '/risk-control', '/applications', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
+	'/', '/model-governance', '/model-readiness', '/risk-control', '/access-review', '/applications', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
   '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
   '/media-jobs',
   '/model-prices', '/cost-optimization', '/docs',
@@ -246,7 +262,7 @@ const billingRoutes = new Set([
   '/', '/usage-analytics',
   '/wallet', '/model-prices', '/cost-optimization', '/reconciliation', '/docs',
 ]);
-const projectAdminRoutes = new Set(['/organization-members', '/media-jobs', '/docs']);
+const projectAdminRoutes = new Set(['/organization-members', '/access-review', '/applications', '/model-readiness', '/media-jobs', '/docs']);
 const developerRoutes = new Set(['/media-jobs', '/docs']);
 const orgViewerRoutes = new Set(['/', '/organization-members', '/model-governance', '/docs']);
 
@@ -300,6 +316,9 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
   } else if (authz.projectMembershipRole) {
     developerRoutes.forEach(route => allowedRoutes.add(route));
   }
+	if (authz.canDiscoverAccessReview || authz.hasProjectAdminMembership) allowedRoutes.add('/access-review');
+	if (authz.canDiscoverWorkloads || authz.hasProjectAdminMembership) allowedRoutes.add('/applications');
+	if (authz.hasLiveProjectMembership || isOrgAdminRole(organizationRole) || isOrgViewerRole(organizationRole)) allowedRoutes.add('/model-readiness');
 
   let items = filterTaskNavigation(allowedRoutes);
   // The shell has no selected-project membership and must not hide the only
@@ -309,12 +328,12 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
   const exposeProjectWorkbench = Boolean(organizationRole);
   if (exposeProjectWorkbench) items = [projectOverviewItem, ...items];
   if (organizationRole && organizationRole !== 'member') items = labelOverviewForRole(items, organizationRole);
-  if (!organizationRole) items = [accessStateItem, ...items];
+	items = [accessStateItem, ...items];
   return applyLicenseState(items, licenseAccess);
 }
 
 export function getDefaultPathForAuthz(authz: AuthzContext) {
-  if (authz.organizationRole === 'member') return '/developer';
+	if (authz.organizationRole === 'member') return authz.hasLiveProjectMembership ? '/developer' : '/access';
   if (isOrgAdminRole(authz.organizationRole) || isBillingRole(authz.organizationRole) || isOrgViewerRole(authz.organizationRole)) return '/';
   return '/access';
 }
@@ -424,6 +443,9 @@ export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
   const route = firstSegmentPath(path);
   if (route === '/login') return true;
   if (route === '/access') return true;
+	if (route === '/access-review') return isOrgAdminRole(authz.organizationRole) || authz.canDiscoverAccessReview || authz.hasProjectAdminMembership;
+	if (route === '/applications') return isOrgAdminRole(authz.organizationRole) || authz.canDiscoverWorkloads || authz.hasProjectAdminMembership;
+	if (route === '/model-readiness') return isOrgAdminRole(authz.organizationRole) || isOrgViewerRole(authz.organizationRole) || authz.hasLiveProjectMembership;
   if (route === '/docs') return true;
   if (route === '/settings') return true;
   if (route === '/license') return isPlatformAdminRole(authz.organizationRole);
@@ -436,7 +458,9 @@ export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
   if (isOrgAdminRole(authz.organizationRole)) {
     return [
       '/',
+		'/access-review',
       '/applications',
+		'/model-readiness',
       '/keys',
       '/organization-members',
       '/project-management',
