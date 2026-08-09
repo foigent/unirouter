@@ -28,10 +28,17 @@ export default function AccessReviewPage() {
   const [cursor, setCursor] = useState<number>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [mutatingRef, setMutatingRef] = useState('');
+	const [queueProjectID, setQueueProjectID] = useState<number>();
+	const [mutation, setMutation] = useState<{ projectID: number; requestRef: string } | null>(null);
 	const currentProjectID = useRef<number | undefined>(selectedProjectID);
 	const queueGeneration = useRef(0);
 	currentProjectID.current = selectedProjectID;
+	const queueIsCurrent = !!selectedProjectID && queueProjectID === selectedProjectID;
+	const visibleRequests = queueIsCurrent ? requests : [];
+	const visibleCursor = queueIsCurrent ? cursor : undefined;
+	const visibleLoading = queueIsCurrent ? loading : !!selectedProjectID;
+	const visibleError = queueIsCurrent ? error : '';
+	const mutatingRef = mutation && mutation.projectID === selectedProjectID ? mutation.requestRef : '';
 
   const replaceProject = useCallback((projectID?: number) => {
     const next = new URLSearchParams(search);
@@ -59,13 +66,16 @@ export default function AccessReviewPage() {
 
   const loadQueue = useCallback(async (append = false) => {
 	const projectID = selectedProjectID;
+	if (currentProjectID.current !== projectID) return;
 	const generation = ++queueGeneration.current;
 	if (!projectID) {
+	  setQueueProjectID(undefined);
       setRequests([]);
       setCursor(undefined);
 	  setLoading(false);
       return;
     }
+	setQueueProjectID(projectID);
 	if (!append) {
 		setRequests([]);
 		setCursor(undefined);
@@ -107,17 +117,19 @@ export default function AccessReviewPage() {
 			return;
 		}
         const intent = `decision:${request.request_ref}:${request.revision}:${decision}`;
-        setMutatingRef(request.request_ref);
+		setMutation({ projectID, requestRef: request.request_ref });
         try {
           await accessApi.decideRequest(request.request_ref, {
             expected_revision: request.revision, decision,
             reason_codes: [decision === 'approve' ? 'manual_approved' : 'manual_rejected'],
           }, intents.get(intent));
           intents.complete(intent);
+		  if (currentProjectID.current !== projectID) return;
           Toast.success(`请求已${verb}`);
-			if (currentProjectID.current === projectID) await loadQueue();
+		  await loadQueue();
         } catch (decisionError) {
           intents.settleError(intent, decisionError);
+		  if (currentProjectID.current !== projectID) return;
           if (decisionError instanceof ApiError && decisionError.status === 409) {
             Toast.warning('请求已被其他操作更新，已刷新审核队列。');
             await loadQueue();
@@ -125,7 +137,7 @@ export default function AccessReviewPage() {
             Toast.error(`无法${verb}此请求`);
           }
         } finally {
-          setMutatingRef('');
+		  setMutation((current) => current?.projectID === projectID && current.requestRef === request.request_ref ? null : current);
         }
       },
     });
@@ -158,8 +170,8 @@ export default function AccessReviewPage() {
         )}
       </Surface>
       <Surface title="待审核请求" description="状态筛选在 PostgreSQL cursor limit 之前完成；非 actionable 项不会靠尝试写入探测权限。">
-        {!selectedProjectID ? <EmptyState title="暂无可审核项目" description="当前账号没有可发现的实时项目管理员范围。" /> : error ? <EmptyState title="审核队列暂时不可用" description={error} actions={<Button onClick={() => loadQueue()}>重试</Button>} /> : (
-          <><Table columns={columns} dataSource={requests} rowKey="id" pagination={false} loading={loading && requests.length === 0} empty={<EmptyState title="当前项目没有待审核请求" />} />{cursor && <Button block loading={loading} onClick={() => loadQueue(true)}>加载更多待审核请求</Button>}</>
+        {!selectedProjectID ? <EmptyState title="暂无可审核项目" description="当前账号没有可发现的实时项目管理员范围。" /> : visibleError ? <EmptyState title="审核队列暂时不可用" description={visibleError} actions={<Button onClick={() => loadQueue()}>重试</Button>} /> : (
+          <><Table columns={columns} dataSource={visibleRequests} rowKey="id" pagination={false} loading={visibleLoading && visibleRequests.length === 0} empty={<EmptyState title="当前项目没有待审核请求" />} />{visibleCursor && <Button block loading={visibleLoading} onClick={() => loadQueue(true)}>加载更多待审核请求</Button>}</>
         )}
       </Surface>
     </div>

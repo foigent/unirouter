@@ -39,6 +39,7 @@ const (
 	pr4BrowserEncryptionKey  = "0123456789abcdef01234567"
 	pr4BrowserProviderTarget = "https://provider.pr4.invalid"
 	pr4BrowserFeedTarget     = "https://feed.pr4.invalid"
+	pr4BrowserCanonicalFeed  = "/api/v1/integrations/xinsight/completed-executions"
 )
 
 type pr4BrowserTrafficTrap struct {
@@ -154,6 +155,7 @@ type pr4BrowserFixture struct {
 	TrapURLs           map[string]string `json:"trap_urls"`
 	ControlTrapURLs    map[string]string `json:"control_trap_urls"`
 	EgressTargets      map[string]string `json:"egress_targets"`
+	CanonicalFeedPath  string            `json:"canonical_feed_path"`
 }
 
 func TestPR4AccessUXModelReadinessBrowserE2E(t *testing.T) {
@@ -207,6 +209,7 @@ func TestPR4AccessUXModelReadinessBrowserE2E(t *testing.T) {
 		"provider": pr4BrowserProviderTarget,
 		"feed":     pr4BrowserFeedTarget,
 	}
+	fixture.CanonicalFeedPath = pr4BrowserCanonicalFeed
 	routing := gateway.NewRouter(pool)
 
 	evaluator, err := modelauthz.NewEvaluator(pool, "development")
@@ -236,9 +239,9 @@ func TestPR4AccessUXModelReadinessBrowserE2E(t *testing.T) {
 	}
 	t.Logf("PR4 browser output:\n%s", output)
 	require.Equal(t, int64(2), controlProviderTrap.count.Load(), "backend and browser provider controls must both be observed")
-	require.Equal(t, int64(2), controlFeedTrap.count.Load(), "backend and browser Feed controls must both be observed")
+	require.Equal(t, int64(3), controlFeedTrap.count.Load(), "backend, browser external Feed and browser canonical same-origin Feed controls must all be observed")
 	require.Equal(t, int64(2), controlUpstreamTrap.count.Load(), "backend and browser upstream controls must both be observed")
-	t.Log("PR4_CAUSAL_EGRESS_CONTROLS backend=observed browser=observed provider=2 feed=2 upstream=2")
+	t.Log("PR4_CAUSAL_EGRESS_CONTROLS backend=observed browser=observed provider=2 feed_external=2 feed_same_origin_canonical=1 upstream=2")
 
 	for _, trap := range []*pr4BrowserTrafficTrap{providerTrap, feedTrap, upstreamTrap} {
 		require.Zero(t, trap.count.Load(), "%s traffic must remain zero", trap.name)

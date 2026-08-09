@@ -15,6 +15,11 @@ const { Text } = Typography;
 type Project = { id: number; org_id: number; name: string; status: string; current_user_membership_role?: string };
 type ApplicationScope = { projectID: number; applicationID?: number; applicationRef?: string };
 
+function grantBelongsToApplication(grant: AccessGrant, application: WorkloadApplication) {
+  return grant.org_id === application.org_id && grant.project_id === application.project_id &&
+    grant.subject.type === 'workload_application' && grant.subject.workload_application_id === application.id;
+}
+
 export default function ApplicationsV2Page() {
   const user = useAuthStore((state) => state.user);
   const organizationRole = organizationRoleForUser(user);
@@ -37,6 +42,7 @@ export default function ApplicationsV2Page() {
   const [grantError, setGrantError] = useState('');
   const [credentialError, setCredentialError] = useState('');
 	const [credentialHasMore, setCredentialHasMore] = useState(false);
+	const [accessStateScope, setAccessStateScope] = useState<ApplicationScope | null>(null);
   const [legacy, setLegacy] = useState<LegacyAccessClassification[]>([]);
   const [legacyLoading, setLegacyLoading] = useState(false);
   const [legacyError, setLegacyError] = useState('');
@@ -54,9 +60,18 @@ export default function ApplicationsV2Page() {
 
   const selectedApplication = applications.find((item) => item.application_ref === selectedApplicationRef && item.project_id === selectedProjectID);
   const selectedProject = projects.find((item) => item.id === selectedProjectID);
+	const accessStateIsCurrent = !!selectedApplication && accessStateScope?.projectID === selectedApplication.project_id &&
+		accessStateScope.applicationID === selectedApplication.id && accessStateScope.applicationRef === selectedApplication.application_ref;
+	const visibleAccessRequests = accessStateIsCurrent ? accessRequests : [];
+	const visibleGrants = accessStateIsCurrent ? grants : [];
+	const visibleCredentials = accessStateIsCurrent ? credentials : [];
+	const visibleRequestError = accessStateIsCurrent ? requestError : '';
+	const visibleGrantError = accessStateIsCurrent ? grantError : '';
+	const visibleCredentialError = accessStateIsCurrent ? credentialError : '';
+	const visibleCredentialHasMore = accessStateIsCurrent && credentialHasMore;
   const canManageSelectedProject = isOrgAdminRole(organizationRole) ||
     canonicalProjectMembershipRole(selectedProject?.current_user_membership_role) === 'project_admin';
-  const activeGrant = grants.find((grant) => isGrantCurrentlyActive(grant));
+	const activeGrant = selectedApplication && visibleGrants.find((grant) => grantBelongsToApplication(grant, selectedApplication) && isGrantCurrentlyActive(grant));
   const maySeeLegacy = isOrgAdminRole(organizationRole);
 	const isCurrentScope = useCallback((scope: ApplicationScope) => currentProjectID.current === scope.projectID &&
 		(scope.applicationRef === undefined || (currentApplicationRef.current === scope.applicationRef &&
@@ -97,6 +112,7 @@ export default function ApplicationsV2Page() {
 	const generation = ++applicationsGeneration.current;
 	accessGeneration.current++;
 	setApplications([]);
+	setAccessStateScope(null);
 	setAccessRequests([]); setGrants([]); setCredentials([]); setCredentialHasMore(false);
 	if (!projectID) { setApplicationsLoading(false); return; }
     setApplicationsLoading(true);
@@ -121,12 +137,15 @@ export default function ApplicationsV2Page() {
   const loadApplicationAccess = useCallback(async () => {
 	const application = selectedApplication;
 	const generation = ++accessGeneration.current;
-	setAccessRequests([]); setGrants([]); setCredentials([]); setCredentialHasMore(false);
 	if (!application) {
+	  setAccessStateScope(null);
       setAccessRequests([]); setGrants([]); setCredentials([]); setRequestError(''); setGrantError(''); setCredentialError('');
+	  setCredentialHasMore(false);
       return;
     }
 	const scope = applicationScope(application);
+	setAccessStateScope(scope);
+	setAccessRequests([]); setGrants([]); setCredentials([]); setCredentialHasMore(false);
     setRequestError('');
     setGrantError('');
     const [requestResult, grantResult] = await Promise.allSettled([
@@ -134,9 +153,10 @@ export default function ApplicationsV2Page() {
 	  accessApi.listProjectGrants(application.project_id, { workload_application_id: application.id, limit: 50 }),
     ]);
 	if (!isCurrentScope(scope) || accessGeneration.current !== generation) return;
-    if (requestResult.status === 'fulfilled') setAccessRequests(requestResult.value.data);
+    if (requestResult.status === 'fulfilled') setAccessRequests(requestResult.value.data.filter((request) => request.project_id === application.project_id &&
+	  request.subject.type === 'workload_application' && request.subject.workload_application_id === application.id));
     else { setAccessRequests([]); setRequestError('Request 暂时不可用；不会清空 Grant 或凭据事实。'); }
-    if (grantResult.status === 'fulfilled') setGrants(grantResult.value.data);
+    if (grantResult.status === 'fulfilled') setGrants(grantResult.value.data.filter((grant) => grantBelongsToApplication(grant, application)));
     else { setGrants([]); setGrantError('Grant 暂时不可用；不会把它解释成“未授权”。'); }
     setCredentialError('');
 	if (!application.can_read_credentials) {
@@ -323,7 +343,7 @@ export default function ApplicationsV2Page() {
   const rotateCredential = async (family: AccessCredentialFamily) => {
 	const application = selectedApplication;
 	const scope = application && applicationScope(application);
-	const familyGrant = grants.find((grant) => grant.grant_ref === family.grant_ref);
+	const familyGrant = application && visibleGrants.find((grant) => grant.grant_ref === family.grant_ref && grantBelongsToApplication(grant, application));
 	if (!application || !scope || !isCurrentScope(scope) || !familyGrant || !isGrantCurrentlyActive(familyGrant)) {
 		Toast.warning('此凭据的 exact Grant 当前不可轮换；请刷新后重试。');
 		return;
@@ -354,7 +374,8 @@ export default function ApplicationsV2Page() {
   const revokeCredential = (family: AccessCredentialFamily) => {
 	const application = selectedApplication;
 	const scope = application && applicationScope(application);
-	if (!application || !scope || !isCurrentScope(scope) || !family.grant_ref) {
+	const familyGrant = application && visibleGrants.find((grant) => grant.grant_ref === family.grant_ref && grantBelongsToApplication(grant, application));
+	if (!application || !scope || !isCurrentScope(scope) || !family.grant_ref || !familyGrant) {
 		Toast.warning('凭据 family 的 exact Grant 身份缺失；未执行撤销。');
 		return;
 	}
@@ -447,8 +468,9 @@ export default function ApplicationsV2Page() {
     { title: '关联凭据', render: (_: unknown, row: LegacyAccessClassification) => <Space wrap>{(row.linked_credentials || []).map((key) => <Tag key={key.key_id}>{key.key_prefix}</Tag>)}{!row.linked_credentials?.length && <Text type="tertiary">0</Text>}</Space> },
   ], []);
 
-  const profileOptions = (contract?.client_profiles || []).map((profile) => ({ value: profile.profile_id, label: `${profile.display_name} · ${profile.runtime_state}` }));
-	const exactGrantForCredential = (family: AccessCredentialFamily) => grants.find((grant) => grant.grant_ref === family.grant_ref);
+	const profileOptions = (contract?.client_profiles || []).map((profile) => ({ value: profile.profile_id, label: `${profile.display_name} · ${profile.runtime_state}` }));
+	const exactGrantForCredential = (family: AccessCredentialFamily) => selectedApplication && visibleGrants.find((grant) =>
+		grant.grant_ref === family.grant_ref && grantBelongsToApplication(grant, selectedApplication));
 	const canRotateCredential = (family: AccessCredentialFamily) => {
 		const exactGrant = exactGrantForCredential(family);
 		return family.effective_status === 'active' && !!exactGrant && isGrantCurrentlyActive(exactGrant);
@@ -473,13 +495,13 @@ export default function ApplicationsV2Page() {
             </Surface>
             <Surface title="Request / Grant" description="仅由 workload_application_id 服务端过滤，不从全局 cursor 页推断。">
               <Space vertical align="start" style={{ width: '100%' }}>
-                {requestError ? <Text type="warning">{requestError}</Text> : <Text>请求：{accessRequests.length ? accessRequests.map((request) => `${request.request_ref} (${request.status})`).join('；') : '无'}</Text>}
-                {grantError ? <Text type="warning">{grantError}</Text> : <Text>Grant：{grants.length ? grants.map((grant) => `${grant.grant_ref} (${effectiveGrantStatus(grant)})`).join('；') : '无'}</Text>}
-                {(requestError || grantError) && <Button size="small" onClick={loadApplicationAccess}>重试访问事实</Button>}
+                {visibleRequestError ? <Text type="warning">{visibleRequestError}</Text> : <Text>请求：{visibleAccessRequests.length ? visibleAccessRequests.map((request) => `${request.request_ref} (${request.status})`).join('；') : '无'}</Text>}
+                {visibleGrantError ? <Text type="warning">{visibleGrantError}</Text> : <Text>Grant：{visibleGrants.length ? visibleGrants.map((grant) => `${grant.grant_ref} (${effectiveGrantStatus(grant)})`).join('；') : '无'}</Text>}
+                {(visibleRequestError || visibleGrantError) && <Button size="small" onClick={loadApplicationAccess}>重试访问事实</Button>}
               </Space>
             </Surface>
             <Surface title="逻辑凭据" description="Secret-free family/version 清单；sponsor 可读元数据不代表可签发或撤销。" actions={selectedApplication.can_manage && activeGrant ? <Button type="primary" icon={<IconKeyStroked />} onClick={() => openApplicationDrawer('credential', selectedApplication)}>签发 Workload 凭据</Button> : undefined}>
-              {!selectedApplication.can_read_credentials ? <EmptyState title="当前账号无权读取凭据清单" description="Application 聚合计数仍为安全可读事实。" /> : credentialError ? <EmptyState title="凭据清单暂时不可用" description={credentialError} actions={<Button onClick={loadApplicationAccess}>重试</Button>} /> : <><Table columns={[{ title: 'Credential', render: (_: unknown, row: AccessCredentialFamily) => <>{row.name} · {row.credential_ref}<br /><Text type="tertiary">{row.grant_ref || 'exact Grant identity unavailable'}</Text></> }, { title: '状态', dataIndex: 'effective_status' }, { title: 'Versions', render: (_: unknown, row: AccessCredentialFamily) => <>{row.versions.map((version) => `${version.key_prefix} (${version.status})`).join('；')}{row.versions_truncated && <Text type="tertiary">；仅显示最近版本</Text>}</> }, { title: '操作', render: (_: unknown, row: AccessCredentialFamily) => selectedApplication.can_manage ? <Space><Button size="small" disabled={mutating || !canRotateCredential(row)} onClick={() => rotateCredential(row)}>原子轮换</Button><Button size="small" type="danger" disabled={mutating || row.status !== 'active' || !row.grant_ref || !credentialLocator(row)} onClick={() => revokeCredential(row)}>撤销</Button></Space> : <Text type="tertiary">只读</Text> }]} dataSource={credentials} rowKey="id" pagination={false} empty={<EmptyState title="尚未签发 Grant-backed Workload 凭据" />} />{credentialHasMore && <Text type="warning">当前只展示前 100 个逻辑凭据；请收窄管理范围后继续查看。</Text>}</>}
+              {!selectedApplication.can_read_credentials ? <EmptyState title="当前账号无权读取凭据清单" description="Application 聚合计数仍为安全可读事实。" /> : visibleCredentialError ? <EmptyState title="凭据清单暂时不可用" description={visibleCredentialError} actions={<Button onClick={loadApplicationAccess}>重试</Button>} /> : <><Table key={selectedApplication.id} columns={[{ title: 'Credential', render: (_: unknown, row: AccessCredentialFamily) => <>{row.name} · {row.credential_ref}<br /><Text type="tertiary">{row.grant_ref || 'exact Grant identity unavailable'}</Text></> }, { title: '状态', dataIndex: 'effective_status' }, { title: 'Versions', render: (_: unknown, row: AccessCredentialFamily) => <>{row.versions.map((version) => `${version.key_prefix} (${version.status})`).join('；')}{row.versions_truncated && <Text type="tertiary">；仅显示最近版本</Text>}</> }, { title: '操作', render: (_: unknown, row: AccessCredentialFamily) => selectedApplication.can_manage ? <Space><Button size="small" disabled={mutating || !canRotateCredential(row)} onClick={() => rotateCredential(row)}>原子轮换</Button><Button size="small" type="danger" disabled={mutating || row.status !== 'active' || !row.grant_ref || !exactGrantForCredential(row) || !credentialLocator(row)} onClick={() => revokeCredential(row)}>撤销</Button></Space> : <Text type="tertiary">只读</Text> }]} dataSource={visibleCredentials} rowKey="id" pagination={false} empty={<EmptyState title="尚未签发 Grant-backed Workload 凭据" />} />{visibleCredentialHasMore && <Text type="warning">当前只展示前 100 个逻辑凭据；请收窄管理范围后继续查看。</Text>}</>}
             </Surface>
           </>}
         </TabPane>

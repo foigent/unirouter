@@ -10,6 +10,7 @@ for (const name of ['provider', 'feed', 'upstream']) {
 }
 assert.ok(fixture.egress_targets?.provider, 'PR4_BROWSER_FIXTURE.egress_targets.provider is required');
 assert.ok(fixture.egress_targets?.feed, 'PR4_BROWSER_FIXTURE.egress_targets.feed is required');
+assert.equal(fixture.canonical_feed_path, '/api/v1/integrations/xinsight/completed-executions', 'PR4_BROWSER_FIXTURE.canonical_feed_path must match the repository route');
 
 const browser = await chromium.launch({ headless: true });
 const journeys = [];
@@ -25,7 +26,7 @@ async function installCausalEgressGuard(context, baseURL, trapURLs) {
     if (requestURL.origin === providerOrigin) {
       trafficClass = 'provider';
     } else if (requestURL.origin === feedOrigin ||
-      (requestURL.origin === applicationOrigin && requestURL.pathname === '/api/v1/completed-executions')) {
+      (requestURL.origin === applicationOrigin && requestURL.pathname === fixture.canonical_feed_path)) {
       trafficClass = 'feed';
     } else if (requestURL.origin !== applicationOrigin) {
       trafficClass = 'upstream';
@@ -54,13 +55,14 @@ async function proveBrowserEgressGuard() {
   for (const target of [
     `${fixture.egress_targets.provider}/v1/chat/completions`,
     `${fixture.egress_targets.feed}/v1/completed-executions`,
+    `${fixture.base_url}${fixture.canonical_feed_path}`,
     'https://unclassified-upstream.pr4.invalid/probe',
   ]) {
     const response = await page.goto(target, { waitUntil: 'domcontentloaded' });
     assert.equal(response.status(), 502, `external request was not intercepted: ${target}`);
   }
   await context.close();
-  console.log('PR4_BROWSER_CAUSAL_EGRESS_CONTROL provider=observed feed=observed upstream=observed');
+  console.log('PR4_BROWSER_CAUSAL_EGRESS_CONTROL provider=observed feed_external=observed feed_same_origin_canonical=observed upstream=observed');
 }
 
 async function visible(locator, message) {

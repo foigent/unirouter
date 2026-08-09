@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Modal } from '@douyinfe/semi-ui';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,8 +38,9 @@ function ProjectSwitch() {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((complete) => { resolve = complete; });
-  return { promise, resolve };
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((complete, fail) => { resolve = complete; reject = fail; });
+  return { promise, resolve, reject };
 }
 
 describe('AccessReviewPage', () => {
@@ -114,5 +115,57 @@ describe('AccessReviewPage', () => {
     fireEvent.click(modalButtons[modalButtons.length - 1]);
 
     await waitFor(() => expect(mocks.decideRequest).not.toHaveBeenCalled());
+  });
+
+  it('keeps the current project queue stable when a prior-project decision later conflicts', async () => {
+    const projectADecision = deferred<unknown>();
+    let projectBReads = 0;
+    mocks.getProjects.mockResolvedValue({
+      data: [
+        { id: 11, org_id: 1, name: 'Core', status: 'active', current_user_membership_role: 'project_admin' },
+        { id: 12, org_id: 1, name: 'Next', status: 'active', current_user_membership_role: 'project_admin' },
+      ],
+      total: 2,
+    });
+    mocks.listProjectRequests.mockImplementation((projectID: number) => {
+      if (projectID === 11) {
+        return Promise.resolve({ data: [queueRequest(20, 'request-project-a', true, 11)], pagination: { limit: 25, has_more: false }, scope: 'project' });
+      }
+      projectBReads += 1;
+      return Promise.resolve({
+        data: [queueRequest(30 + projectBReads, projectBReads === 1 ? 'request-project-b' : 'request-project-b-refreshed', true, 12)],
+        pagination: { limit: 25, has_more: false },
+        scope: 'project',
+      });
+    });
+    mocks.decideRequest.mockReturnValue(projectADecision.promise);
+
+    render(<MemoryRouter initialEntries={['/access-review?project_id=11']}><AccessReviewPage /><ProjectSwitch /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: '批准' }));
+    await waitFor(() => expect(screen.getAllByText('批准访问请求').length).toBeGreaterThan(0));
+    const confirmButtons = screen.getAllByRole('button', { name: 'confirm' });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+    await waitFor(() => expect(mocks.decideRequest).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'switch-project' }));
+    expect(await screen.findByText('request-project-b')).toBeTruthy();
+
+    await act(async () => {
+      projectADecision.reject(new ApiError('conflict', 409, {}));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('request-project-b')).toBeTruthy();
+    expect(screen.queryByText('request-project-a')).toBeNull();
+    expect(screen.queryByText('审核队列暂时不可用')).toBeNull();
+    expect(mocks.listProjectRequests.mock.calls.filter(([projectID]) => projectID === 11)).toHaveLength(1);
+
+    await act(async () => {
+      Modal.destroyAll();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /刷新/ }));
+    expect(await screen.findByText('request-project-b-refreshed')).toBeTruthy();
+    expect(mocks.listProjectRequests.mock.calls.filter(([projectID]) => projectID === 12)).toHaveLength(2);
   });
 });

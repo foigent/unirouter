@@ -1,7 +1,8 @@
+import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Modal, Toast } from '@douyinfe/semi-ui';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import WorkloadApplicationsPage from '../WorkloadApplicationsPage';
 import { useAuthStore } from '../../store/auth';
 
@@ -91,6 +92,21 @@ function ScopeSwitches() {
     <button onClick={() => navigate('/applications?project_id=11&application_ref=app_project_b_agent')}>show-app-b-same-project</button>
     <button onClick={() => navigate('/applications?project_id=12&application_ref=app_project_b_agent')}>show-app-b</button>
   </>;
+}
+
+function ApplicationTransitionProbe({ onApplicationBLayout }: { onApplicationBLayout: (snapshot: { text: string; credentialActions: string[] }) => void }) {
+  const location = useLocation();
+  useLayoutEffect(() => {
+    const search = new URLSearchParams(location.search);
+    if (search.get('application_ref') !== applicationSameProjectB.application_ref) return;
+    onApplicationBLayout({
+      text: document.body.textContent || '',
+      credentialActions: Array.from(document.querySelectorAll('button'))
+        .map((button) => button.textContent?.trim() || '')
+        .filter((label) => ['签发 Workload 凭据', '原子轮换', '撤销'].includes(label)),
+    });
+  }, [location.search, onApplicationBLayout]);
+  return null;
 }
 
 function deferred<T>() {
@@ -319,6 +335,45 @@ describe('ApplicationsV2Page', () => {
 
     await waitFor(() => expect(accessMocks.revokeCredential).toHaveBeenCalledWith('grant-project-b', 291, expect.any(String)));
     expect(accessMocks.revokeCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
+  }, 30_000);
+
+  it('hides committed Application A access state during the same-project transition to Application B', async () => {
+    const projectBRequests = deferred<any>();
+    const projectBGrants = deferred<any>();
+    const projectBCredentials = deferred<any>();
+    const transitionSnapshots: Array<{ text: string; credentialActions: string[] }> = [];
+    const recordTransition = vi.fn((snapshot: { text: string; credentialActions: string[] }) => transitionSnapshots.push(snapshot));
+
+    clientMocks.getApplications.mockResolvedValue({ data: [application, applicationSameProjectB], total: 2 });
+    accessMocks.listProjectRequests.mockImplementation((_projectID: number, filters: { workload_application_id: number }) => filters.workload_application_id === application.id
+      ? Promise.resolve({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' })
+      : projectBRequests.promise);
+    accessMocks.listProjectGrants.mockImplementation((_projectID: number, filters: { workload_application_id: number }) => filters.workload_application_id === application.id
+      ? Promise.resolve({ data: [grantFor(application.id, 11, 'grant-project-a')], pagination: { limit: 50, has_more: false }, scope: 'project' })
+      : projectBGrants.promise);
+    clientMocks.getCredentials.mockImplementation((applicationRef: string) => applicationRef === application.application_ref
+      ? Promise.resolve({ data: [credentialFor('cred-project-a', 'grant-project-a', 191)], has_more: false })
+      : projectBCredentials.promise);
+
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /><ApplicationTransitionProbe onApplicationBLayout={recordTransition} /></MemoryRouter>);
+    expect(await screen.findByText('Grant：grant-project-a (active)')).toBeTruthy();
+    expect(await screen.findByText('cred-project-a runtime · cred-project-a')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'show-app-b-same-project' }));
+    expect(recordTransition).toHaveBeenCalledTimes(1);
+    expect(transitionSnapshots[0].text).not.toContain('Grant：grant-project-a (active)');
+    expect(transitionSnapshots[0].text).not.toContain('cred-project-a runtime · cred-project-a');
+    expect(transitionSnapshots[0].credentialActions).toEqual([]);
+    expect(accessMocks.issueCredential).not.toHaveBeenCalled();
+    expect(accessMocks.rotateCredential).not.toHaveBeenCalled();
+    expect(accessMocks.revokeCredential).not.toHaveBeenCalled();
+
+    projectBRequests.resolve({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
+    projectBGrants.resolve({ data: [grantFor(applicationSameProjectB.id, 11, 'grant-project-b')], pagination: { limit: 50, has_more: false }, scope: 'project' });
+    await waitFor(() => expect(clientMocks.getCredentials).toHaveBeenCalledWith(applicationSameProjectB.application_ref, 1, 1, 100));
+    projectBCredentials.resolve({ data: [credentialFor('cred-project-b', 'grant-project-b', 291)], has_more: false });
+    expect(await screen.findByText('Grant：grant-project-b (active)')).toBeTruthy();
+    expect(await screen.findByText('cred-project-b runtime · cred-project-b')).toBeTruthy();
   }, 30_000);
 
   it('ignores a late prior-project Application list before update, archive, or access sinks become reachable', async () => {
