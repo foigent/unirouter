@@ -3620,18 +3620,19 @@ func newP6F10GuardrailService(t *testing.T, policy guardrail.Policy) *guardrail.
 			*dest[1].(**int64) = policy.OrgID
 			*dest[2].(**int64) = policy.ProjectID
 			*dest[3].(**int64) = policy.APIKeyID
-			*dest[4].(*string) = policy.Name
-			*dest[5].(*string) = policy.Model
-			*dest[6].(*string) = policy.Stage
-			*dest[7].(*string) = policy.DetectorRef
-			*dest[8].(*string) = policy.Action
-			*dest[9].(*string) = policy.Mode
-			*dest[10].(*string) = policy.FailureMode
-			*dest[11].(*bool) = policy.Mandatory
-			*dest[12].(*json.RawMessage) = append(json.RawMessage(nil), policy.Config...)
-			*dest[13].(*int64) = policy.Version
-			*dest[14].(*time.Time) = time.Now().UTC()
+			*dest[4].(**int64) = policy.AccessCredentialID
+			*dest[5].(*string) = policy.Name
+			*dest[6].(*string) = policy.Model
+			*dest[7].(*string) = policy.Stage
+			*dest[8].(*string) = policy.DetectorRef
+			*dest[9].(*string) = policy.Action
+			*dest[10].(*string) = policy.Mode
+			*dest[11].(*string) = policy.FailureMode
+			*dest[12].(*bool) = policy.Mandatory
+			*dest[13].(*json.RawMessage) = append(json.RawMessage(nil), policy.Config...)
+			*dest[14].(*int64) = policy.Version
 			*dest[15].(*time.Time) = time.Now().UTC()
+			*dest[16].(*time.Time) = time.Now().UTC()
 			return nil
 		}}}, nil
 	}}

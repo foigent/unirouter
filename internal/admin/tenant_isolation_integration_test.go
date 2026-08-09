@@ -165,7 +165,31 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 	})
 
 	t.Run("tenant create omission binds resources to actor organization", func(t *testing.T) {
-		key := serve(t, http.MethodPost, "/api/v1/keys", fmt.Sprintf(`{"project_id":%d,"name":"implicit-own-key"}`, fx.projectA), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
+		delegated := serve(t, http.MethodPost, "/api/v1/keys", fmt.Sprintf(`{"project_id":%d,"owner_user_id":%d,"name":"implicit-delegated-key"}`, fx.projectA, fx.developerA), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
+		assertStatus(t, delegated, http.StatusAccepted)
+		var delegatedResponse struct {
+			AccessGrantID   int64  `json:"access_grant_id"`
+			RequestRef      string `json:"request_ref"`
+			OwnerUserID     int64  `json:"owner_user_id"`
+			SecretAvailable bool   `json:"secret_available"`
+			Reason          string `json:"reason"`
+		}
+		require.NoError(t, json.Unmarshal(delegated.Body.Bytes(), &delegatedResponse))
+		require.Positive(t, delegatedResponse.AccessGrantID)
+		require.NotEmpty(t, delegatedResponse.RequestRef)
+		require.Equal(t, fx.developerA, delegatedResponse.OwnerUserID)
+		require.False(t, delegatedResponse.SecretAvailable)
+		require.Equal(t, "credential_self_service_required", delegatedResponse.Reason)
+		var requestOrgID, grantOrgID int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT org_id FROM access_requests WHERE request_ref=$1`, delegatedResponse.RequestRef).Scan(&requestOrgID))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT org_id FROM access_grants WHERE id=$1`, delegatedResponse.AccessGrantID).Scan(&grantOrgID))
+		require.Equal(t, fx.orgA, requestOrgID)
+		require.Equal(t, fx.orgA, grantOrgID)
+		var delegatedKeyCount int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM api_keys WHERE name='implicit-delegated-key'`).Scan(&delegatedKeyCount))
+		require.Zero(t, delegatedKeyCount)
+
+		key := serve(t, http.MethodPost, "/api/v1/keys", fmt.Sprintf(`{"project_id":%d,"name":"implicit-own-key"}`, fx.projectA), fx.developerA, fx.orgA, auth.RoleDeveloper)
 		assertStatus(t, key, http.StatusCreated)
 		keyID := responseID(t, key.Body.Bytes())
 		var keyOrgID int64
@@ -244,7 +268,7 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 	})
 
 	t.Run("same-tenant key create read and disable succeeds", func(t *testing.T) {
-		rec := serve(t, http.MethodPost, "/api/v1/keys", fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"same-tenant-key"}`, fx.orgA, fx.projectA), fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin)
+		rec := serve(t, http.MethodPost, "/api/v1/keys", fmt.Sprintf(`{"org_id":%d,"project_id":%d,"owner_user_id":%d,"name":"same-tenant-key"}`, fx.orgA, fx.projectA, fx.developerA), fx.developerA, fx.orgA, auth.RoleDeveloper)
 		assertStatus(t, rec, http.StatusCreated)
 		keyID := responseID(t, rec.Body.Bytes())
 		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/keys/%d", keyID), "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusOK)
@@ -294,7 +318,16 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 			fx.orgA, fx.projectA, fx.normalA, strings.Repeat("d", 64),
 		).Scan(&otherKeyID))
 
-		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", ownedKeyID), `{"name":"developer-owned-key-updated"}`, fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusOK)
+		rename := serve(t, http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", ownedKeyID), `{"name":"developer-owned-key-updated"}`, fx.developerA, fx.orgA, auth.RoleDeveloper)
+		assertStatus(t, rename, http.StatusConflict)
+		var renameResponse struct {
+			Reason string `json:"reason"`
+		}
+		require.NoError(t, json.Unmarshal(rename.Body.Bytes(), &renameResponse))
+		require.Equal(t, "grant_credential_identity_immutable", renameResponse.Reason)
+		var ownedName string
+		require.NoError(t, pool.QueryRow(ctx, `SELECT name FROM api_keys WHERE id=$1`, ownedKeyID).Scan(&ownedName))
+		require.Equal(t, "developer-owned-key", ownedName)
 		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", otherKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusNotFound)
 		assertStatus(t, serve(t, http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", ownedKeyID), "", fx.developerA, fx.orgA, auth.RoleDeveloper), http.StatusOK)
 
@@ -357,9 +390,20 @@ func TestP6F16TenantIsolationIntegration(t *testing.T) {
 		userID := responseID(t, rec.Body.Bytes())
 		assertStatus(t, serve(t, http.MethodPut, fmt.Sprintf("/api/v1/users/%d", userID), `{"status":"disabled"}`, fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusOK)
 		assertStatus(t, serve(t, http.MethodDelete, fmt.Sprintf("/api/v1/users/%d", userID), "", fx.orgAdminA, fx.orgA, auth.RoleOrgAdmin), http.StatusOK)
-		var count int
-		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE id = $1`, userID).Scan(&count))
-		require.Zero(t, count)
+		var count, membershipCount int
+		var status string
+		var offboarded bool
+		var offboardedBy int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT status,offboarded_at IS NOT NULL,offboarded_by FROM users WHERE id=$1`, userID,
+		).Scan(&status, &offboarded, &offboardedBy))
+		require.Equal(t, "disabled", status)
+		require.True(t, offboarded)
+		require.Equal(t, fx.orgAdminA, offboardedBy)
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM users WHERE id=$1`, userID).Scan(&count))
+		require.Equal(t, 1, count, "offboard preserves the durable enterprise audit principal")
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM project_members WHERE user_id=$1`, userID).Scan(&membershipCount))
+		require.Zero(t, membershipCount)
 	})
 
 	t.Run("org admin project and model-set operations stay in its org", func(t *testing.T) {
@@ -556,6 +600,14 @@ func seedP6F16Fixture(t *testing.T, pool *pgxpool.Pool) p6f16Fixture {
 		`INSERT INTO projects (org_id, name, slug, description, status, created_by) VALUES ($1, 'Project B', 'project-b', 'project-b', 'active', $2) RETURNING id`,
 		fx.orgB, fx.orgAdminB,
 	).Scan(&fx.projectB))
+	_, err := pool.Exec(ctx, `
+		INSERT INTO project_members (project_id,user_id,role) VALUES
+		($1,$2,'project_admin'),($1,$3,'project_user'),($1,$4,'project_viewer'),
+		($5,$6,'project_viewer')`,
+		fx.projectA, fx.projectAdminA, fx.developerA, fx.normalA,
+		fx.projectB, fx.normalB,
+	)
+	require.NoError(t, err)
 
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit)
@@ -576,7 +628,7 @@ func seedP6F16Fixture(t *testing.T, pool *pgxpool.Pool) p6f16Fixture {
 		`INSERT INTO model_sets (org_id, name, slug, description, status) VALUES ($1, 'Set B', 'set-b', 'set-b', 'active') RETURNING id`,
 		fx.orgB,
 	).Scan(&fx.modelSetB))
-	_, err := pool.Exec(ctx,
+	_, err = pool.Exec(ctx,
 		`INSERT INTO model_set_items (model_set_id, item_type, item_name) VALUES ($1, 'model', 'foreign-model')`,
 		fx.modelSetB,
 	)

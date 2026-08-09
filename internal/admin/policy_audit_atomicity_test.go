@@ -228,6 +228,9 @@ func authenticatedPolicyAuditRequest(method, target, body string) *http.Request 
 	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(7))
 	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
 	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RolePlatformAdmin)
+	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, []byte("0123456789abcdef0123456789abcdef"))
 	ctx = context.WithValue(ctx, middleware.CtxRequestID, "policy-audit-atomicity-test")
 	return req.WithContext(ctx)
 }
@@ -260,6 +263,18 @@ func newPolicyAuditAtomicityHandler(state *policyAuditTransactionState) *Handler
 	tx := &testutil.MockTx{
 		QueryRowFn: func(_ context.Context, query string, _ ...any) pgx.Row {
 			switch {
+			case strings.Contains(query, "FROM users u"):
+				return committingPolicyActorRow()
+			case strings.Contains(query, "FROM admin_sessions"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = 91
+					return nil
+				}}
+			case strings.Contains(query, "SELECT status FROM orgs"):
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*string) = "active"
+					return nil
+				}}
 			case strings.Contains(query, "INSERT INTO guardrail_policies"):
 				state.mutatedInTx = true
 				return policyMutationReturningRow(41)
@@ -286,6 +301,8 @@ func newPolicyAuditAtomicityHandler(state *policyAuditTransactionState) *Handler
 		},
 		ExecFn: func(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 			switch {
+			case strings.Contains(query, "pg_advisory_xact_lock"):
+				return pgconn.NewCommandTag("SELECT 1"), nil
 			case strings.Contains(query, "unirouter.guardrail_org_active_policy_limit"):
 				return pgconn.NewCommandTag("SELECT 1"), nil
 			case strings.Contains(query, "INSERT INTO audit_logs"):
@@ -380,32 +397,47 @@ func policyMutationReturningRow(id int64) pgx.Row {
 	}}
 }
 
+func committingPolicyActorRow() pgx.Row {
+	return &testutil.MockRow{ScanFn: func(dest ...any) error {
+		*dest[0].(*int64) = 1
+		*dest[1].(*string) = auth.RolePlatformAdmin
+		*dest[2].(*string) = auth.RolePlatformAdmin
+		*dest[3].(*string) = "active"
+		*dest[4].(*int64) = 0
+		*dest[5].(*string) = "active"
+		return nil
+	}}
+}
+
 func guardrailPolicyAtomicityRow(version int64) pgx.Row {
 	return &testutil.MockRow{ScanFn: func(dest ...any) error {
 		*dest[0].(*int64) = 41
 		*dest[1].(**int64) = nil
 		*dest[2].(**int64) = nil
 		*dest[3].(**int64) = nil
-		*dest[4].(*string) = "guardrail-update"
-		*dest[5].(*string) = ""
-		*dest[6].(*string) = guardrail.StageInput
-		*dest[7].(*string) = guardrail.DetectorPII
-		*dest[8].(*string) = guardrail.ActionRedact
+		*dest[4].(**int64) = nil
+		*dest[5].(*string) = "guardrail-update"
+		*dest[6].(*string) = ""
+		*dest[7].(*string) = guardrail.StageInput
+		*dest[8].(*string) = guardrail.DetectorPII
+		*dest[9].(*string) = guardrail.ActionRedact
 		if version == 1 {
-			*dest[9].(*string) = guardrail.ModeShadow
+			*dest[10].(*string) = guardrail.ModeShadow
 		} else {
-			*dest[9].(*string) = guardrail.ModeEnforce
+			*dest[10].(*string) = guardrail.ModeEnforce
 		}
-		*dest[10].(*string) = guardrail.FailureDegradedAllow
-		*dest[11].(*bool) = false
-		*dest[12].(*json.RawMessage) = json.RawMessage(`{}`)
-		*dest[13].(*int64) = version
-		*dest[14].(*time.Time) = time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
-		*dest[15].(*time.Time) = time.Date(2026, 7, 17, 9, 0, 0, 0, time.UTC)
-		*dest[16].(*string) = ""
+		*dest[11].(*string) = guardrail.FailureDegradedAllow
+		*dest[12].(*bool) = false
+		*dest[13].(*json.RawMessage) = json.RawMessage(`{}`)
+		*dest[14].(*int64) = version
+		*dest[15].(*time.Time) = time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
+		*dest[16].(*time.Time) = time.Date(2026, 7, 17, 9, 0, 0, 0, time.UTC)
 		*dest[17].(*string) = ""
 		*dest[18].(*string) = ""
 		*dest[19].(*string) = ""
+		*dest[20].(*string) = ""
+		*dest[21].(*string) = ""
+		*dest[22].(*string) = ""
 		return nil
 	}}
 }
@@ -420,26 +452,29 @@ func limitPolicyAtomicityRow(version int64) pgx.Row {
 		*dest[1].(*sql.NullInt64) = sql.NullInt64{}
 		*dest[2].(*sql.NullInt64) = sql.NullInt64{}
 		*dest[3].(*sql.NullInt64) = sql.NullInt64{}
-		*dest[4].(*string) = "limit-update"
-		*dest[5].(*string) = ""
+		*dest[4].(*sql.NullInt64) = sql.NullInt64{}
+		*dest[5].(*string) = "limit-update"
 		*dest[6].(*string) = ""
+		*dest[7].(*string) = ""
 		if version == 1 {
-			*dest[7].(*string) = limitPolicyModeShadow
+			*dest[8].(*string) = limitPolicyModeShadow
 		} else {
-			*dest[7].(*string) = limitPolicyModeEnforce
+			*dest[8].(*string) = limitPolicyModeEnforce
 		}
-		*dest[8].(*string) = limitPolicyFailClosed
-		*dest[9].(*sql.NullInt64) = sql.NullInt64{}
-		*dest[10].(*sql.NullInt64) = sql.NullInt64{Int64: rpmLimit, Valid: true}
-		*dest[11].(*sql.NullInt64) = sql.NullInt64{}
+		*dest[9].(*string) = limitPolicyFailClosed
+		*dest[10].(*sql.NullInt64) = sql.NullInt64{}
+		*dest[11].(*sql.NullInt64) = sql.NullInt64{Int64: rpmLimit, Valid: true}
 		*dest[12].(*sql.NullInt64) = sql.NullInt64{}
-		*dest[13].(*int64) = version
-		*dest[14].(*time.Time) = time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
-		*dest[15].(*time.Time) = time.Date(2026, 7, 17, 9, 0, 0, 0, time.UTC)
-		*dest[16].(*string) = ""
+		*dest[13].(*sql.NullInt64) = sql.NullInt64{}
+		*dest[14].(*int64) = version
+		*dest[15].(*time.Time) = time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
+		*dest[16].(*time.Time) = time.Date(2026, 7, 17, 9, 0, 0, 0, time.UTC)
 		*dest[17].(*string) = ""
 		*dest[18].(*string) = ""
 		*dest[19].(*string) = ""
+		*dest[20].(*string) = ""
+		*dest[21].(*string) = ""
+		*dest[22].(*string) = ""
 		return nil
 	}}
 }

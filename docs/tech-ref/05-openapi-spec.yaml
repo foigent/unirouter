@@ -2765,6 +2765,311 @@ paths:
         "410":
           $ref: "#/components/responses/Error"
 
+  /api/v1/access-provisioning/legacy-preview:
+    get:
+      tags: [Admin]
+      summary: Preview legacy Credential and WorkloadApplication migration classifications
+      description: |
+        Read-only organization migration inventory. It emits both `credential` and `workload_application` records, including zero-key legacy applications. Application classification is grouped across sanitized linked key metadata so a personal-development owner or a nonhuman workload is never guessed from one key row. `interactive_client`, ambiguous owners/scopes, and unsupported legacy identities remain `review_required`; purpose credentials remain `connector_separate`. `automatic_migration` is always false in PR3 and this route performs no backfill.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+      responses:
+        "200":
+          description: Read-only typed legacy migration preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegacyAccessPreviewResponse" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin]
+
+  /api/v1/access-requests:
+    get:
+      tags: [Admin]
+      summary: List actor-owned or project access requests with a bounded keyset page
+      description: |
+        `scope=my` returns only requests submitted by, targeting, or sponsored by the authenticated actor and does not require an existing project membership. This keeps a first-project applicant's pending request reachable without exposing the project inventory. `scope=project` (the default) requires `project_id` and live project-read authority; platform/org/project administrators see the authorized project inventory. Project users and viewers never gain project-wide access-request visibility.
+
+        Results are ordered by stable `id DESC`. `after_id` is exclusive and must be copied from `pagination.next_after_id`. The server returns at most `limit` rows and never performs an unbounded list or a total-count query.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: scope
+          in: query
+          schema: { type: string, enum: [my, project], default: project }
+        - $ref: "#/components/parameters/OrgId"
+        - name: project_id
+          in: query
+          description: Required for project scope and forbidden for my scope.
+          schema: { type: integer, format: int64, minimum: 1 }
+        - $ref: "#/components/parameters/AccessPageLimit"
+        - $ref: "#/components/parameters/AccessAfterId"
+      responses:
+        "200":
+          description: Bounded access-request page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRequestPage" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Admin]
+      summary: Submit one project-bound access request through deterministic policy
+      description: |
+        Public callers may submit only `self`, `delegated`, or `direct_grant`. Migration, bootstrap, and recovery are trusted internal adapter modes and are rejected on this public route. A first-cross-project self request creates review evidence only; membership, Grant, and credential are created only after an authorized approval. `X-UniRouter-Client-Request-ID` is required and scoped to the submitting actor; semantic retries are idempotent and conflicting intent returns 409.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequiredClientRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccessProvisionInput" }
+      responses:
+        "200":
+          description: Idempotent replay
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccessProvisionResult" } } }
+        "201":
+          description: New request and optional auto/direct Grant
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccessProvisionResult" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin, project_user]
+      post: [platform_admin, org_admin, project_admin, project_user, member]
+
+  /api/v1/access-requests/{ref}:
+    get:
+      tags: [Admin]
+      summary: Read one actor-scoped access request and its approved Grant snapshot
+      description: Inaccessible and absent request references are byte-equivalent 404 responses. Project users see only their own subject, sponsored workload, or submitted requests; project-wide inventory is reserved for platform, organization, and live project administrators.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccessRequestRef"
+      responses:
+        "200":
+          description: Access request detail
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccessRequestDetail" } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin, project_user]
+
+  /api/v1/access-requests/{ref}/decision:
+    post:
+      tags: [Admin]
+      summary: Approve or reject one needs-review request with optimistic revision control
+      description: |
+        Decision authority is reason-scoped. Project administrators can decide only the accepted ordinary non-production cases; role elevation, special scope, production, migration ambiguity and mixed exceptions require organization/platform authority. `needs_review` requires an explicit audited decision but does not impose a hard-coded second-person workflow: an authorized submitter may also decide, with `submitted_by` and `decided_by` preserved as evidence. The required client request ID makes a committed decision replayable after response loss.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccessRequestRef"
+        - $ref: "#/components/parameters/RequiredClientRequestId"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AccessDecisionInput" } } }
+      responses:
+        "200":
+          description: Durable decision result or semantic replay
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccessProvisionResult" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin, project_admin]
+
+  /api/v1/access-requests/{ref}/cancel:
+    post:
+      tags: [Admin]
+      summary: Cancel one still-pending access request
+      description: |
+        Only a `needs_review` request may be cancelled. The live submitter, or the live sponsor of a workload request, supplies the expected revision and a client request ID. Cancellation creates immutable requester-cancelled evidence but never creates or revokes membership, Grant, or Credential state. A concurrent decision and cancellation serialize on the same request row and exactly one wins. Hidden and absent references are indistinguishable.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccessRequestRef"
+        - $ref: "#/components/parameters/RequiredClientRequestId"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AccessRequestCancelInput" } } }
+      responses:
+        "200":
+          description: Durable cancellation result or semantic replay
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccessRequestCancelResult" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin, project_admin, project_user, member]
+
+  /api/v1/access-grants:
+    get:
+      tags: [Admin]
+      summary: List visible Grants with a bounded keyset page
+      description: Results are ordered by stable `id DESC`. Project users see only their own human Grant or sponsored workload Grant. Project viewers, organization viewers and billing administrators do not receive project-wide access inventory.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AccessPageLimit"
+        - $ref: "#/components/parameters/AccessAfterId"
+      responses:
+        "200":
+          description: Bounded Grant page
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccessGrantPage" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin, project_user]
+
+  /api/v1/access-grants/{ref}:
+    get:
+      tags: [Admin]
+      summary: Read one actor-scoped Grant
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccessGrantRef"
+      responses:
+        "200":
+          description: Grant snapshot
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccessGrant" } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin, project_user]
+
+  /api/v1/access-grants/{ref}/suspend:
+    post: &access_grant_lifecycle_operation
+      tags: [Admin]
+      summary: Suspend one Grant
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccessGrantRef"
+        - $ref: "#/components/parameters/RequiredClientRequestId"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AccessGrantLifecycleInput" } } }
+      responses:
+        "200": { description: "Updated Grant", content: { application/json: { schema: { $ref: "#/components/schemas/AccessGrant" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac: { post: [platform_admin, org_admin, project_admin] }
+
+  /api/v1/access-grants/{ref}/resume:
+    post:
+      <<: *access_grant_lifecycle_operation
+      summary: Resume one suspended Grant after live-subject revalidation
+    x-unirouter-rbac: { post: [platform_admin, org_admin, project_admin] }
+
+  /api/v1/access-grants/{ref}/revoke:
+    post:
+      <<: *access_grant_lifecycle_operation
+      summary: Permanently revoke one Grant and all logical Credential families
+    x-unirouter-rbac: { post: [platform_admin, org_admin, project_admin] }
+
+  /api/v1/access-grants/{ref}/credentials:
+    get:
+      tags: [Admin]
+      summary: List logical Access Credentials and nested secret versions
+      description: The bounded page is keyed by logical Credential family id, so atomic replacement history never consumes separate page slots. It returns no secret. Platform/org/project administrators can inspect project credentials; a project user can inspect only their own human Grant, and the exact live sponsor of a Workload Grant may inspect that Grant's secret-free Credential family/version metadata for accountability. Sponsor visibility never grants issue, rotate, revoke, or secret access. Viewers and billing administrators cannot inspect credential inventory.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccessGrantRef"
+        - $ref: "#/components/parameters/AccessPageLimit"
+        - $ref: "#/components/parameters/AccessAfterId"
+      responses:
+        "200":
+          description: Bounded logical Credential family page
+          content: { application/json: { schema: { $ref: "#/components/schemas/AccessCredentialPage" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Admin]
+      summary: Issue a new logical Credential and its first one-time secret version
+      description: Human personal secrets may be issued only by the exact human subject. Workload secrets are managed by authorized project/org/platform administrators. The requested scope can only narrow the live Grant. A replay returns the same metadata with `secret_available=false`; raw secret material is never persisted for replay.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccessGrantRef"
+        - $ref: "#/components/parameters/RequiredClientRequestId"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AccessCredentialIssueInput" } } }
+      responses:
+        "200": { description: "Secret-free idempotent replay", content: { application/json: { schema: { $ref: "#/components/schemas/AccessCredentialIssueResult" } } } }
+        "201": { description: "New Credential with one-time secret", content: { application/json: { schema: { $ref: "#/components/schemas/AccessCredentialIssueResult" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, project_admin, project_user]
+      post: [platform_admin, org_admin, project_admin, project_user]
+
+  /api/v1/access-grants/{ref}/credentials/{key_id}/rotate:
+    post:
+      tags: [Admin]
+      summary: Rotate one physical secret version within its immutable logical Credential family
+      description: Rotation has no caller-editable scope. Name, IPs, models, endpoints and limits are read from the locked family. The successor is created and the exact predecessor is disabled atomically; after commit the old secret fails immediately and the successor is the sole active version. A lost-response replay returns secret-free successor metadata, and recovery uses a new request ID to rotate that successor again.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccessGrantRef"
+        - $ref: "#/components/parameters/AccessCredentialVersionId"
+        - $ref: "#/components/parameters/RequiredClientRequestId"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AccessCredentialRotateInput" } } }
+      responses:
+        "200": { description: "Secret-free idempotent replay", content: { application/json: { schema: { $ref: "#/components/schemas/AccessCredentialRotationResult" } } } }
+        "201": { description: "Atomically replaced successor secret version and disabled predecessor metadata", content: { application/json: { schema: { $ref: "#/components/schemas/AccessCredentialRotationResult" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac: { post: [platform_admin, org_admin, project_admin, project_user] }
+
+  /api/v1/access-grants/{ref}/credentials/{key_id}/revoke:
+    post:
+      tags: [Admin]
+      summary: Permanently revoke a logical Credential family located by one secret version
+      description: Revocation disables every active version in the family and returns no secret. Human subjects and project/org/platform administrators may contain a visible family; inaccessible Feed-purpose, foreign and absent locators remain indistinguishable.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccessGrantRef"
+        - $ref: "#/components/parameters/AccessCredentialVersionId"
+        - $ref: "#/components/parameters/RequiredClientRequestId"
+      responses:
+        "200":
+          description: Logical Credential family revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties: { status: { type: string, enum: [revoked] } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac: { post: [platform_admin, org_admin, project_admin, project_user] }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2889,6 +3194,58 @@ components:
         type: integer
         format: int64
         minimum: 1
+    AccessPageLimit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum rows in this descending-id keyset page. The server fetches one extra row only to compute has_more; it never silently truncates an unpageable list.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    AccessAfterId:
+      name: after_id
+      in: query
+      required: false
+      description: Exclusive stable database id cursor copied from pagination.next_after_id. Results remain ordered by id descending.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    AccessRequestRef:
+      name: ref
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^req_[a-z0-9][a-z0-9_-]{7,67}$'
+    AccessGrantRef:
+      name: ref
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^grant_[a-z0-9][a-z0-9_-]{7,65}$'
+    AccessCredentialVersionId:
+      name: key_id
+      in: path
+      required: true
+      description: Physical one-time secret version locator. Authorization, scope and quota identity remain bound to its logical Access Credential family.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    RequiredClientRequestId:
+      name: X-UniRouter-Client-Request-ID
+      in: header
+      required: true
+      description: Actor-scoped durable operation key. Identical business intent replays the committed secret-free result; different intent under the same value returns 409.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
 
   headers:
     OperationId:
@@ -2969,6 +3326,427 @@ components:
             $ref: "#/components/schemas/CompletedExecutionFeedError"
 
   schemas:
+    OrganizationRole:
+      type: string
+      enum: [platform_admin, org_admin, billing_admin, org_viewer, member]
+      description: Canonical organization authority. It is independent from live project membership; compatibility users.role/JWT aliases are not project authority.
+    ProjectMembershipRole:
+      type: string
+      enum: [project_admin, project_user, project_viewer]
+      description: Canonical live project_members role. project_user may call and manage their own personal Credential; project_viewer is read-only and cannot call.
+    LegacyCredentialSummary:
+      type: object
+      additionalProperties: false
+      required: [key_id, key_prefix, key_type]
+      properties:
+        key_id: { type: integer, format: int64, minimum: 1 }
+        key_prefix: { type: string, description: Sanitized prefix only; no secret or hash is returned. }
+        key_type: { type: string, enum: [shared, personal, service] }
+        purpose: { type: string, enum: [xinsight.feed.read] }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        owner_user_id: { type: integer, format: int64, minimum: 1 }
+    LegacyAccessClassification:
+      type: object
+      additionalProperties: false
+      required: [object_type, object_id, object_ref, classification, reason_code, migration_status, automatic_migration]
+      properties:
+        object_type: { type: string, enum: [credential, workload_application] }
+        object_id: { type: integer, format: int64, minimum: 1 }
+        object_ref: { type: string }
+        classification:
+          type: string
+          enum: [human_personal_candidate, workload_candidate, review_required, connector_separate, grant_bound, linked_to_workload_application, legacy_unbound]
+        reason_code:
+          type: string
+          enum:
+            - unambiguous_personal_development_owner_project
+            - unambiguous_nonhuman_workload
+            - interactive_client_requires_review
+            - legacy_application_not_active
+            - legacy_project_not_active
+            - mixed_current_and_legacy_credentials
+            - legacy_key_project_mismatch
+            - personal_development_missing_owner
+            - personal_development_multiple_owners
+            - personal_owner_not_active_or_calling
+            - nonhuman_workload_owner_not_active_or_calling
+            - nonhuman_workload_mixed_key_ownership
+            - unsupported_legacy_identity
+            - purpose_credential_excluded
+            - current_access_grant
+            - classified_at_workload_application
+            - unbound_current_or_foreign_workload
+            - personal_key_missing_project
+            - personal_key_missing_owner
+            - personal_key_owner_not_active
+            - personal_key_owner_not_calling
+            - unambiguous_single_owner_project
+            - ordinary_key_without_grant
+            - unbound_service_subject_ambiguous
+        migration_status: { type: string, enum: [candidate, review_required, excluded, current, linked, legacy_unbound] }
+        automatic_migration: { type: boolean, enum: [false] }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        owner_user_id: { type: integer, format: int64, minimum: 1 }
+        workload_application_id: { type: integer, format: int64, minimum: 1 }
+        application_ref: { type: string }
+        kind: { type: string }
+        identity_mode: { type: string, enum: [service_credential, personal_development] }
+        environment: { type: string }
+        status: { type: string, enum: [active, disabled, archived] }
+        client_profiles: { type: array, uniqueItems: true, items: { type: string } }
+        linked_credential_count: { type: integer, minimum: 0 }
+        linked_credentials: { type: array, items: { $ref: "#/components/schemas/LegacyCredentialSummary" } }
+        key_id: { type: integer, format: int64, minimum: 1 }
+        key_prefix: { type: string }
+    LegacyAccessPreviewResponse:
+      type: object
+      additionalProperties: false
+      required: [mutation, data, total]
+      properties:
+        mutation: { type: boolean, enum: [false] }
+        data: { type: array, items: { $ref: "#/components/schemas/LegacyAccessClassification" } }
+        total: { type: integer, minimum: 0 }
+    AccessSubject:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, enum: [user, workload_application] }
+        user_id: { type: integer, format: int64, minimum: 1 }
+        workload_application_id: { type: integer, format: int64, minimum: 1 }
+      description: Exactly one matching subject id is required. A workload is bound to the exact project and immutable environment recorded by its v2 identity.
+    AccessEnvelope:
+      type: object
+      additionalProperties: false
+      required: [project_role, scope_mode, models, endpoints]
+      properties:
+        project_role: { $ref: "#/components/schemas/ProjectMembershipRole" }
+        scope_mode:
+          type: string
+          enum: [project_default, explicit]
+          description: project_default resolves the current approved project catalog and the fixed execution endpoint set; empty arrays never mean every route. explicit requires non-empty reviewed scope.
+        models:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200, pattern: '^[^,]+$' }
+        endpoints:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [/v1/chat/completions, /v1/embeddings, /v1/models, /v1/media/jobs]
+        rpm_limit: { type: integer, minimum: 0, maximum: 2147483647, nullable: true }
+        rps_limit: { type: integer, minimum: 0, maximum: 2147483647, nullable: true }
+        concurrency_limit: { type: integer, minimum: 0, maximum: 2147483647, nullable: true }
+    AccessPolicyReasonCode:
+      type: string
+      enum:
+        - auto_approved_current_project_default
+        - auto_approved_workload_project_default
+        - project_default_scope
+        - first_cross_project
+        - role_elevation
+        - special_model
+        - special_endpoint
+        - scope_expansion
+        - extra_rate_or_concurrency
+        - validity_extension
+        - production_workload
+        - ambiguous_migration
+        - workload_requires_review
+        - read_only_subject_cannot_invoke
+      description: Immutable deterministic-policy evidence. Manual input cannot add, remove or forge these codes.
+    AccessDecisionReasonCode:
+      type: string
+      enum:
+        - manual_approved
+        - manual_rejected
+        - direct_grant_authorized_nonproduction
+        - bootstrap_authorized
+        - recovery_authorized
+        - requester_cancelled
+      description: Stable decision-source evidence, separate from immutable policy reasons. Free-form text is not accepted as a reason code.
+    AccessProvisionInput:
+      type: object
+      additionalProperties: false
+      required: [org_id, project_id, subject, request_kind, requested_scope, environment, production_use, submission_mode]
+      properties:
+        org_id: { type: integer, format: int64, minimum: 1 }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        subject: { $ref: "#/components/schemas/AccessSubject" }
+        request_kind: { type: string, enum: [human_personal, workload_service] }
+        requested_scope: { $ref: "#/components/schemas/AccessEnvelope" }
+        environment: { type: string, pattern: '^[a-z][a-z0-9_-]{0,31}$' }
+        production_use: { type: boolean }
+        valid_until:
+          type: string
+          format: date-time
+          description: Optional future UTC expiry. Extending a finite Grant or removing expiry is scope widening and requires the corresponding policy decision.
+        submission_mode: { type: string, enum: [self, delegated, direct_grant] }
+        sponsor_user_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Required only for workload_service. Human requests must omit sponsor; actor evidence is submitted_by.
+    AccessRequest:
+      type: object
+      additionalProperties: false
+      required: [id, request_ref, client_request_id, semantic_hash, semantic_revision, org_id, project_id, subject, request_kind, requested_scope, environment, production_use, submission_mode, status, decision_mode, policy_reason_codes, decision_reason_codes, policy_version, submitted_by, submitted_at, revision]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        request_ref: { type: string, pattern: '^req_[a-z0-9][a-z0-9_-]{7,67}$' }
+        client_request_id: { type: string, maxLength: 128 }
+        semantic_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        semantic_revision: { type: integer, format: int64, minimum: 1 }
+        org_id: { type: integer, format: int64, minimum: 1 }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        subject: { $ref: "#/components/schemas/AccessSubject" }
+        request_kind: { type: string, enum: [human_personal, workload_service] }
+        requested_scope: { $ref: "#/components/schemas/AccessEnvelope" }
+        environment: { type: string }
+        production_use: { type: boolean }
+        requested_valid_until: { type: string, format: date-time }
+        submission_mode: { type: string, enum: [self, delegated, direct_grant, migration, bootstrap, recovery] }
+        sponsor_user_id: { type: integer, format: int64, minimum: 1 }
+        target_access_grant_id: { type: integer, format: int64, minimum: 1 }
+        expected_grant_revision: { type: integer, format: int64, minimum: 1 }
+        status: { type: string, enum: [approved, needs_review, rejected, cancelled] }
+        decision_mode: { type: string, enum: [auto_policy, manual, direct, pending, policy_rejection, requester] }
+        policy_reason_codes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/AccessPolicyReasonCode" }
+        decision_reason_codes:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/AccessDecisionReasonCode" }
+        policy_version: { type: string, enum: [unirouter.enterprise-access-policy.v1] }
+        submitted_by: { type: integer, format: int64, minimum: 1 }
+        decided_by: { type: integer, format: int64, minimum: 1 }
+        cancelled_by: { type: integer, format: int64, minimum: 1 }
+        submitted_at: { type: string, format: date-time }
+        decided_at: { type: string, format: date-time }
+        cancelled_at: { type: string, format: date-time }
+        revision: { type: integer, format: int64, minimum: 1 }
+    AccessGrant:
+      type: object
+      additionalProperties: false
+      required: [id, grant_ref, access_request_id, org_id, project_id, subject, scope, environment, production_use, status, revision, valid_from, decision_mode, policy_reason_codes, decision_reason_codes, policy_version, semantic_hash, created_by, updated_by, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        grant_ref: { type: string, pattern: '^grant_[a-z0-9][a-z0-9_-]{7,65}$' }
+        access_request_id: { type: integer, format: int64, minimum: 1 }
+        org_id: { type: integer, format: int64, minimum: 1 }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        subject: { $ref: "#/components/schemas/AccessSubject" }
+        scope: { $ref: "#/components/schemas/AccessEnvelope" }
+        environment: { type: string }
+        production_use: { type: boolean }
+        sponsor_user_id: { type: integer, format: int64, minimum: 1 }
+        status: { type: string, enum: [active, suspended, revoked] }
+        revision: { type: integer, format: int64, minimum: 1 }
+        valid_from: { type: string, format: date-time }
+        valid_until: { type: string, format: date-time }
+        decision_mode: { type: string, enum: [auto_policy, manual, direct] }
+        policy_reason_codes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/AccessPolicyReasonCode" }
+        decision_reason_codes:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/AccessDecisionReasonCode" }
+        policy_version: { type: string, enum: [unirouter.enterprise-access-policy.v1] }
+        semantic_hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        created_by: { type: integer, format: int64, minimum: 1 }
+        updated_by: { type: integer, format: int64, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AccessProvisionResult:
+      type: object
+      additionalProperties: false
+      required: [request, idempotent]
+      properties:
+        request: { $ref: "#/components/schemas/AccessRequest" }
+        grant: { $ref: "#/components/schemas/AccessGrant" }
+        idempotent: { type: boolean }
+    AccessRequestDetail:
+      type: object
+      additionalProperties: false
+      required: [request, grant]
+      properties:
+        request: { $ref: "#/components/schemas/AccessRequest" }
+        grant:
+          allOf: [{ $ref: "#/components/schemas/AccessGrant" }]
+          nullable: true
+    AccessDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, decision]
+      properties:
+        expected_revision: { type: integer, format: int64, minimum: 1 }
+        decision: { type: string, enum: [approve, reject] }
+        reason_codes:
+          type: array
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/AccessDecisionReasonCode" }
+    AccessRequestCancelInput:
+      type: object
+      additionalProperties: false
+      required: [expected_revision]
+      properties:
+        expected_revision: { type: integer, format: int64, minimum: 1 }
+    AccessRequestCancelResult:
+      type: object
+      additionalProperties: false
+      required: [request, idempotent]
+      properties:
+        request: { $ref: "#/components/schemas/AccessRequest" }
+        idempotent: { type: boolean }
+    AccessGrantLifecycleInput:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, reason]
+      properties:
+        expected_revision: { type: integer, format: int64, minimum: 1 }
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: '^[^\u0000\r\n]+$'
+          description: Trimmed explanatory text only. The server owns the constrained lifecycle reason code.
+    AccessPageInfo:
+      type: object
+      additionalProperties: false
+      required: [limit, has_more]
+      properties:
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        has_more: { type: boolean }
+        next_after_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Present only when has_more=true. Supply it unchanged as the next request's exclusive after_id.
+    AccessRequestPage:
+      type: object
+      additionalProperties: false
+      required: [data, pagination, scope]
+      properties:
+        data: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AccessRequest" } }
+        pagination: { $ref: "#/components/schemas/AccessPageInfo" }
+        scope: { type: string, enum: [my, project] }
+    AccessGrantPage:
+      type: object
+      additionalProperties: false
+      required: [data, pagination]
+      properties:
+        data: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AccessGrant" } }
+        pagination: { $ref: "#/components/schemas/AccessPageInfo" }
+    AccessCredentialIssueInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        allowed_ips:
+          type: string
+          maxLength: 4096
+          description: Comma-separated canonical IP/CIDR allowlist. Values are parsed, normalized, deduplicated and proven to narrow the Grant before persistence.
+        allowed_models:
+          type: array
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200, pattern: '^[^,]+$' }
+        allowed_endpoints:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [/v1/chat/completions, /v1/embeddings, /v1/models, /v1/media/jobs] }
+        rpm_limit: { type: integer, minimum: 0, maximum: 2147483647 }
+        rps_limit: { type: integer, minimum: 0, maximum: 2147483647 }
+        concurrency_limit: { type: integer, minimum: 0, maximum: 2147483647 }
+    AccessCredentialIssueResult:
+      type: object
+      additionalProperties: false
+      required: [id, credential_ref, key_prefix, name, grant_ref, status, allowed_ips, allowed_models, allowed_endpoints, rpm_limit, rps_limit, created_at, classification, idempotent, secret_available]
+      properties:
+        id: { type: integer, format: int64, minimum: 1, description: Physical secret-version id. }
+        credential_ref: { type: string, pattern: '^cred_[a-z0-9][a-z0-9_-]{7,66}$', description: Stable logical Credential family reference. }
+        key: { type: string, writeOnly: true, description: "One-time bearer secret, present only on the first successful issue/rotation response." }
+        key_prefix: { type: string }
+        name: { type: string }
+        grant_ref: { type: string }
+        status: { type: string, enum: [active] }
+        allowed_ips: { type: string }
+        allowed_models: { type: array, items: { type: string } }
+        allowed_endpoints: { type: array, items: { type: string } }
+        rpm_limit: { type: integer, minimum: 0, maximum: 2147483647 }
+        rps_limit: { type: integer, minimum: 0, maximum: 2147483647 }
+        concurrency_limit: { type: integer, minimum: 0, maximum: 2147483647 }
+        created_at: { type: string, format: date-time }
+        classification: { type: string, enum: [grant_bound] }
+        idempotent: { type: boolean }
+        secret_available: { type: boolean }
+        recovery_action: { type: string, enum: [rotate_if_first_reveal_was_lost, rotate_again_if_successor_secret_was_not_saved] }
+    AccessCredentialVersion:
+      type: object
+      additionalProperties: false
+      required: [id, key_prefix, status, effective_status, created_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        key_prefix: { type: string }
+        status: { type: string, enum: [active, disabled] }
+        effective_status: { type: string, enum: [active, disabled, disabled_by_grant, subject_blocked, revoked] }
+        created_at: { type: string, format: date-time }
+        rotated_from_key_id: { type: integer, format: int64, minimum: 1 }
+    AccessCredential:
+      type: object
+      additionalProperties: false
+      required: [id, credential_ref, name, status, effective_status, allowed_ips, allowed_models, allowed_endpoints, rpm_limit, rps_limit, created_at, version_count, versions]
+      properties:
+        id: { type: integer, format: int64, minimum: 1, description: Logical Credential family id and pagination key. }
+        credential_ref: { type: string, pattern: '^cred_[a-z0-9][a-z0-9_-]{7,66}$' }
+        name: { type: string }
+        status: { type: string, enum: [active, revoked] }
+        effective_status: { type: string, enum: [active, revoked, disabled_by_grant, subject_blocked, no_active_version] }
+        allowed_ips: { type: string }
+        allowed_models: { type: array, items: { type: string } }
+        allowed_endpoints: { type: array, items: { type: string } }
+        rpm_limit: { type: integer, minimum: 0, maximum: 2147483647 }
+        rps_limit: { type: integer, minimum: 0, maximum: 2147483647 }
+        concurrency_limit: { type: integer, minimum: 0, maximum: 2147483647 }
+        created_at: { type: string, format: date-time }
+        version_count: { type: integer, minimum: 0 }
+        versions: { type: array, items: { $ref: "#/components/schemas/AccessCredentialVersion" } }
+    AccessCredentialPage:
+      type: object
+      additionalProperties: false
+      required: [data, pagination]
+      properties:
+        data: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AccessCredential" } }
+        pagination: { $ref: "#/components/schemas/AccessPageInfo" }
+    AccessCredentialRotateInput:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+      description: Empty body. The path-bound predecessor and locked logical family are the complete rotation intent.
+    AccessCredentialRotationResult:
+      type: object
+      additionalProperties: false
+      required: [credential, predecessor, idempotent]
+      properties:
+        credential: { $ref: "#/components/schemas/AccessCredentialIssueResult" }
+        predecessor:
+          type: object
+          additionalProperties: false
+          required: [id, credential_ref, key_prefix, name, status]
+          properties:
+            id: { type: integer, format: int64, minimum: 1 }
+            credential_ref: { type: string }
+            key_prefix: { type: string }
+            name: { type: string }
+            status: { type: string, enum: [disabled] }
+        idempotent: { type: boolean }
     MediaJobSubmitRequest:
       type: object
       additionalProperties: false
@@ -3732,6 +4510,7 @@ components:
           type: array
           minItems: 1
           uniqueItems: true
+          description: Agent capability v1 is limited to synchronous model-gateway endpoints. Async media jobs require durable workflow/Agent attribution and lifecycle semantics and are therefore not attenuable by this capability contract.
           items:
             type: string
             enum: [/v1/chat/completions, /v1/embeddings, /v1/models]

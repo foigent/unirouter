@@ -17,10 +17,11 @@ import (
 const (
 	ContractVersion = "unirouter.model-call-authorization.v1"
 
-	SubjectAPIKey  = "api_key"
-	SubjectProject = "project"
-	SubjectUser    = "user"
-	SubjectAgent   = "agent"
+	SubjectAPIKey           = "api_key"
+	SubjectAccessCredential = "access_credential"
+	SubjectProject          = "project"
+	SubjectUser             = "user"
+	SubjectAgent            = "agent"
 
 	EffectAllow = "allow"
 	EffectDeny  = "deny"
@@ -84,16 +85,17 @@ type Draft struct {
 }
 
 type Input struct {
-	OrgID          int64
-	APIKeyID       int64
-	ProjectID      int64
-	OwnerUserID    int64
-	AgentID        string
-	Environment    string
-	Endpoint       string
-	RequestedModel string
-	ResolvedModel  string
-	Now            time.Time
+	OrgID              int64
+	APIKeyID           int64
+	AccessCredentialID int64
+	ProjectID          int64
+	OwnerUserID        int64
+	AgentID            string
+	Environment        string
+	Endpoint           string
+	RequestedModel     string
+	ResolvedModel      string
+	Now                time.Time
 }
 
 type Decision struct {
@@ -124,7 +126,7 @@ func NormalizeDraft(draft Draft) (Draft, error) {
 		return Draft{}, fmt.Errorf("%w: authorization_ref", ErrInvalid)
 	}
 	switch draft.SubjectType {
-	case SubjectAPIKey, SubjectProject, SubjectUser:
+	case SubjectAPIKey, SubjectAccessCredential, SubjectProject, SubjectUser:
 		value, err := strconv.ParseInt(draft.SubjectRef, 10, 64)
 		if err != nil || value <= 0 || strconv.FormatInt(value, 10) != draft.SubjectRef {
 			return Draft{}, fmt.Errorf("%w: subject_ref", ErrInvalid)

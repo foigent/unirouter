@@ -29,6 +29,16 @@ type commercialResource struct {
 	table string
 }
 
+const activeAPIKeySeatCountSQL = `SELECT COUNT(*) FROM (
+	SELECT ac.id::TEXT AS seat
+	FROM access_credentials ac
+	WHERE ac.status='active'
+	UNION ALL
+	SELECT ('legacy:' || legacy_key.id)::TEXT
+	FROM api_keys legacy_key
+	WHERE legacy_key.status='active' AND legacy_key.access_credential_id IS NULL
+) commercial_api_key_seats`
+
 var commercialResources = []commercialResource{
 	{name: licensing.LimitActiveAPIKeys, table: "api_keys"},
 	{name: licensing.LimitActiveChannels, table: "channels"},
@@ -56,9 +66,8 @@ func replaceCommercialEntitlements(ctx context.Context, tx pgx.Tx, status licens
 		if !constrained {
 			continue
 		}
-		var current int64
-		query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE status = 'active'", resource.table)
-		if err := tx.QueryRow(ctx, query).Scan(&current); err != nil {
+		current, err := countCommercialResourceUsage(ctx, tx, resource)
+		if err != nil {
 			return fmt.Errorf("count %s: %w", resource.name, err)
 		}
 		if current > limit {
@@ -104,6 +113,18 @@ func replaceCommercialEntitlements(ctx context.Context, tx pgx.Tx, status licens
 		return fmt.Errorf("persist commercial entitlements: %w", err)
 	}
 	return nil
+}
+
+func countCommercialResourceUsage(ctx context.Context, tx pgx.Tx, resource commercialResource) (int64, error) {
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE status = 'active'", resource.table)
+	if resource.name == licensing.LimitActiveAPIKeys {
+		query = activeAPIKeySeatCountSQL
+	}
+	var current int64
+	if err := tx.QueryRow(ctx, query).Scan(&current); err != nil {
+		return 0, err
+	}
+	return current, nil
 }
 
 func nullableCommercialLimit(limits map[string]int64, name string) interface{} {

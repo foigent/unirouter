@@ -28,18 +28,20 @@ type Axis struct {
 }
 
 type ReadinessInput struct {
-	ApplicationStatus       string
-	ClientProfile           ClientProfile
-	Endpoint                string
-	Model                   string
-	ProjectActive           bool
-	ActiveCredentialCount   int
-	CredentialAllowsModel   bool
-	AuthorizationState      string
-	LimitState              string
-	ModelGovernanceState    string
-	RoutingCandidateCount   int
-	RoutingPreviewAvailable bool
+	ApplicationStatus              string
+	ClientProfile                  ClientProfile
+	ClientProfileOptional          bool
+	ClientProfileSelectionRequired bool
+	Endpoint                       string
+	Model                          string
+	ProjectActive                  bool
+	ActiveCredentialCount          int
+	CredentialAllowsModel          bool
+	AuthorizationState             string
+	LimitState                     string
+	ModelGovernanceState           string
+	RoutingCandidateCount          int
+	RoutingPreviewAvailable        bool
 }
 
 type ReadinessResult struct {
@@ -66,7 +68,7 @@ func ResolveReadiness(input ReadinessInput) ReadinessResult {
 	}
 	result.Axes = append(result.Axes, applicationAxis(input.ApplicationStatus))
 	result.Axes = append(result.Axes, projectAxis(input.ProjectActive))
-	result.Axes = append(result.Axes, profileAxis(input.ClientProfile, input.Endpoint))
+	result.Axes = append(result.Axes, profileAxis(input.ClientProfile, input.Endpoint, input.ClientProfileOptional, input.ClientProfileSelectionRequired))
 	result.Axes = append(result.Axes, credentialAxis(input.ActiveCredentialCount, input.Model, input.CredentialAllowsModel))
 	result.Axes = append(result.Axes, stateAxis("model_authorization", input.AuthorizationState, input.Model,
 		"模型调用授权允许该请求。", "模型调用授权阻止该请求。", "/agent-trust"))
@@ -103,8 +105,16 @@ func projectAxis(active bool) Axis {
 	return axis("project", AxisBlocked, "project_inactive", "所属项目不存在或未启用。", "/organization-members?section=projects", "projects.status")
 }
 
-func profileAxis(profile ClientProfile, endpoint string) Axis {
+func profileAxis(profile ClientProfile, endpoint string, optional, selectionRequired bool) Axis {
 	if profile.ProfileID == "" {
+		if optional && selectionRequired {
+			return axis("client_profile", AxisContextRequired, "client_profile_selection_optional",
+				"已配置多个可选客户端 Profile；需要选择上下文后才能检查兼容性。", "", "workload_application_client_profiles")
+		}
+		if optional {
+			return axis("client_profile", AxisNotApplicable, "client_profile_not_configured_optional",
+				"客户端 Profile 是可选兼容性信息，未配置不会扩大权限或阻断运行。", "", "workload_applications.identity_contract_version")
+		}
 		return axis("client_profile", AxisBlocked, "client_profile_unknown", "客户端 Profile 不存在。", "/docs", "client_profile.registry")
 	}
 	if !slices.Contains(profile.SupportedEndpoints, endpoint) {

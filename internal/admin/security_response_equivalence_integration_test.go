@@ -60,10 +60,14 @@ func TestSecurityObjectLookupsAreAuthorizationScopedIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	handler := NewHandler(pool, "security-scope-secret", []byte("0123456789abcdef01234567"), nil)
+	requestSequence := 0
 	serveProjectActor := func(method, target, body string, userID int64, pathValues map[string]string, invoke func(http.ResponseWriter, *http.Request)) *httptest.ResponseRecorder {
 		t.Helper()
+		requestSequence++
 		request := httptest.NewRequest(method, target, bytes.NewBufferString(body))
 		request.Header.Set("Content-Type", "application/json")
+		request = request.WithContext(context.WithValue(request.Context(), middleware.CtxRequestID,
+			fmt.Sprintf("security-object-lookup-%d", requestSequence)))
 		request = withIntegrationCommittingActor(t, pool, request, userID)
 		for key, value := range pathValues {
 			request.SetPathValue(key, value)

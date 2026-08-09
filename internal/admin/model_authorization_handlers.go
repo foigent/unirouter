@@ -23,7 +23,7 @@ func (h *Handler) GetModelAuthorizationContract(w http.ResponseWriter, _ *http.R
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"contract_version":      modelauthz.ContractVersion,
 		"environment":           environment,
-		"subjects":              []string{modelauthz.SubjectAPIKey, modelauthz.SubjectProject, modelauthz.SubjectUser, modelauthz.SubjectAgent},
+		"subjects":              []string{modelauthz.SubjectAPIKey, modelauthz.SubjectAccessCredential, modelauthz.SubjectProject, modelauthz.SubjectUser, modelauthz.SubjectAgent},
 		"effects":               []string{modelauthz.EffectAllow, modelauthz.EffectDeny},
 		"endpoints":             modelauthz.SupportedEndpoints(),
 		"precedence":            "explicit_deny_then_allow_subject_intersection_then_legacy_authority",
@@ -93,13 +93,22 @@ func (h *Handler) CreateModelAuthorization(w http.ResponseWriter, r *http.Reques
 		writeModelAuthorizationError(w, err)
 		return
 	}
+	draft.SubjectType, draft.SubjectRef, err = canonicalizeAuthorizationSubject(r.Context(), h.db, orgID, draft.SubjectType, draft.SubjectRef)
+	if err != nil {
+		writeModelAuthorizationError(w, err)
+		return
+	}
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model authorization store unavailable"})
 		return
 	}
 	defer tx.Rollback(r.Context())
-	if err := validateAuthorizationSubject(r.Context(), tx, orgID, draft.SubjectType, draft.SubjectRef); err != nil {
+	if err := h.reauthorizePolicySelectorMutationTx(r.Context(), tx, policySelector{OrgID: int64Pointer(orgID)}); err != nil {
+		writeModelAuthorizationCommitError(w, err)
+		return
+	}
+	if err := lockAuthorizationSubjectTx(r.Context(), tx, orgID, draft.SubjectType, draft.SubjectRef); err != nil {
 		writeModelAuthorizationError(w, err)
 		return
 	}
@@ -170,6 +179,10 @@ func (h *Handler) transitionModelAuthorization(w http.ResponseWriter, r *http.Re
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizePolicySelectorMutationTx(r.Context(), tx, policySelector{OrgID: int64Pointer(orgID)}); err != nil {
+		writeModelAuthorizationCommitError(w, err)
+		return
+	}
 	ref := strings.TrimSpace(strings.ToLower(r.PathValue("ref")))
 	before, err := getModelAuthorization(r.Context(), tx, orgID, ref, true)
 	if err != nil {
@@ -181,7 +194,7 @@ func (h *Handler) transitionModelAuthorization(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if to == modelauthz.StatusActive {
-		if err := validateAuthorizationSubject(r.Context(), tx, orgID, before.SubjectType, before.SubjectRef); err != nil {
+		if err := lockAuthorizationSubjectTx(r.Context(), tx, orgID, before.SubjectType, before.SubjectRef); err != nil {
 			writeModelAuthorizationError(w, err)
 			return
 		}
@@ -221,6 +234,42 @@ func (h *Handler) transitionModelAuthorization(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, item)
 }
 
+func lockAuthorizationSubjectTx(ctx context.Context, tx pgx.Tx, orgID int64, subjectType, subjectRef string) error {
+	if subjectType == modelauthz.SubjectAgent {
+		return nil
+	}
+	id, err := strconv.ParseInt(subjectRef, 10, 64)
+	if err != nil || id <= 0 {
+		return modelauthz.ErrInvalid
+	}
+	var found int64
+	switch subjectType {
+	case modelauthz.SubjectAPIKey:
+		err = tx.QueryRow(ctx, `SELECT id FROM api_keys WHERE id=$1 AND org_id=$2 AND access_credential_id IS NULL FOR SHARE`, id, orgID).Scan(&found)
+	case modelauthz.SubjectAccessCredential:
+		err = tx.QueryRow(ctx, `
+			SELECT credential.id
+			FROM access_credentials credential
+			JOIN projects project ON project.id=credential.project_id AND project.org_id=credential.org_id
+			WHERE credential.id=$1 AND credential.org_id=$2
+			  AND credential.status='active' AND project.status='active'
+			FOR SHARE OF credential,project`, id, orgID).Scan(&found)
+	case modelauthz.SubjectProject:
+		err = tx.QueryRow(ctx, `SELECT id FROM projects WHERE id=$1 AND org_id=$2 FOR SHARE`, id, orgID).Scan(&found)
+	case modelauthz.SubjectUser:
+		err = tx.QueryRow(ctx, `SELECT id FROM users WHERE id=$1 AND org_id=$2 FOR SHARE`, id, orgID).Scan(&found)
+	default:
+		return modelauthz.ErrInvalid
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("model authorization subject is outside organization")
+	}
+	if err != nil {
+		return fmt.Errorf("%w: subject lookup", modelauthz.ErrUnavailable)
+	}
+	return nil
+}
+
 func resolveModelAuthorizationOrg(r *http.Request, requested int64) (int64, error) {
 	role := actorOrganizationRole(r.Context())
 	contextOrg := middleware.GetOrgIDFromContext(r.Context())
@@ -250,6 +299,8 @@ func validateAuthorizationSubject(ctx context.Context, rower interface {
 	switch subjectType {
 	case modelauthz.SubjectAPIKey:
 		err = rower.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM api_keys WHERE id=$1 AND org_id=$2)`, id, orgID).Scan(&exists)
+	case modelauthz.SubjectAccessCredential:
+		err = rower.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM access_credentials WHERE id=$1 AND org_id=$2)`, id, orgID).Scan(&exists)
 	case modelauthz.SubjectProject:
 		err = rower.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM projects WHERE id=$1 AND org_id=$2)`, id, orgID).Scan(&exists)
 	case modelauthz.SubjectUser:
@@ -264,6 +315,29 @@ func validateAuthorizationSubject(ctx context.Context, rower interface {
 		return errors.New("model authorization subject is outside organization")
 	}
 	return nil
+}
+
+func canonicalizeAuthorizationSubject(ctx context.Context, rower interface {
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}, orgID int64, subjectType, subjectRef string) (string, string, error) {
+	if subjectType != modelauthz.SubjectAPIKey {
+		return subjectType, subjectRef, validateAuthorizationSubject(ctx, rower, orgID, subjectType, subjectRef)
+	}
+	keyID, err := strconv.ParseInt(subjectRef, 10, 64)
+	if err != nil || keyID <= 0 {
+		return "", "", modelauthz.ErrInvalid
+	}
+	var accessCredentialID *int64
+	if err := rower.QueryRow(ctx, `SELECT access_credential_id FROM api_keys WHERE id=$1 AND org_id=$2`, keyID, orgID).Scan(&accessCredentialID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", "", errors.New("model authorization subject is outside organization")
+		}
+		return "", "", fmt.Errorf("%w: subject lookup", modelauthz.ErrUnavailable)
+	}
+	if accessCredentialID != nil && *accessCredentialID > 0 {
+		return modelauthz.SubjectAccessCredential, strconv.FormatInt(*accessCredentialID, 10), nil
+	}
+	return modelauthz.SubjectAPIKey, subjectRef, nil
 }
 
 func getModelAuthorization(ctx context.Context, rower interface {
@@ -314,4 +388,16 @@ func writeModelAuthorizationError(w http.ResponseWriter, err error) {
 	default:
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Model authorization scope forbidden"})
 	}
+}
+
+func writeModelAuthorizationCommitError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errPolicySelectorNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Model authorization scope not found"})
+		return
+	}
+	if errors.Is(err, errLimitPolicyForbidden) {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Model authorization scope forbidden"})
+		return
+	}
+	writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model authorization store unavailable"})
 }

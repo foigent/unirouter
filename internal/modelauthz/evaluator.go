@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/db"
 )
 
@@ -48,7 +49,21 @@ func (e *Evaluator) Evaluate(ctx context.Context, input Input) (Decision, error)
 	if input.Now.IsZero() {
 		input.Now = e.now().UTC()
 	}
-	policies, err := e.loadActive(ctx, input)
+	return e.EvaluateWithQuerier(ctx, e.db, input)
+}
+
+// EvaluateWithQuerier repeats the same policy evaluation in a caller-owned
+// transaction. Durable dispatch uses it after locking the current logical
+// credential/Grant boundary and before recording the Provider execution fence.
+func (e *Evaluator) EvaluateWithQuerier(ctx context.Context, q db.DBQuerier, input Input) (Decision, error) {
+	if e == nil || q == nil || input.OrgID <= 0 || strings.TrimSpace(input.Endpoint) == "" || strings.TrimSpace(input.RequestedModel) == "" {
+		return Decision{}, fmt.Errorf("%w: evaluation_input", ErrInvalid)
+	}
+	input.Environment = e.environment
+	if input.Now.IsZero() {
+		input.Now = e.now().UTC()
+	}
+	policies, err := e.loadActiveWithQuerier(ctx, q, input)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -81,7 +96,11 @@ func (e *Evaluator) FilterModels(ctx context.Context, input Input, candidates []
 }
 
 func (e *Evaluator) loadActive(ctx context.Context, input Input) ([]Policy, error) {
-	rows, err := e.db.Query(ctx, `
+	return e.loadActiveWithQuerier(ctx, e.db, input)
+}
+
+func (e *Evaluator) loadActiveWithQuerier(ctx context.Context, q db.DBQuerier, input Input) ([]Policy, error) {
+	rows, err := q.Query(ctx, `
 SELECT id, org_id, authorization_ref, subject_type, subject_ref, environment,
        effect, allowed_models, allowed_endpoints, not_before, expires_at,
        status, revision, reason, created_by, activated_by, revoked_by,
@@ -93,14 +112,16 @@ SELECT id, org_id, authorization_ref, subject_type, subject_ref, environment,
    AND (not_before IS NULL OR not_before <= $3)
    AND (expires_at IS NULL OR expires_at > $3)
    AND ((subject_type = 'api_key' AND subject_ref = $4)
-     OR (subject_type = 'project' AND subject_ref = $5)
-     OR (subject_type = 'user' AND subject_ref = $6)
-     OR (subject_type = 'agent' AND subject_ref = $7))
+     OR (subject_type = 'access_credential' AND subject_ref = $5)
+     OR (subject_type = 'project' AND subject_ref = $6)
+     OR (subject_type = 'user' AND subject_ref = $7)
+     OR (subject_type = 'agent' AND subject_ref = $8))
  ORDER BY subject_type, subject_ref, authorization_ref`,
 		input.OrgID,
 		e.environment,
 		input.Now.UTC(),
 		positiveRef(input.APIKeyID),
+		positiveRef(input.AccessCredentialID),
 		positiveRef(input.ProjectID),
 		positiveRef(input.OwnerUserID),
 		strings.TrimSpace(input.AgentID),
@@ -136,6 +157,7 @@ SELECT id, org_id, authorization_ref, subject_type, subject_ref, environment,
 }
 
 func EvaluatePolicies(input Input, policies []Policy) Decision {
+	input.Endpoint = accessscope.CanonicalExecutionEndpoint(input.Endpoint)
 	decision := Decision{
 		ContractVersion: ContractVersion,
 		Allowed:         true,

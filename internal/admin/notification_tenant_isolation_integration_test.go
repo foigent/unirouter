@@ -31,13 +31,6 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 		 VALUES ($1, 'Project A Other', 'project-a-other', 'same-org non-member project', 'active', $2) RETURNING id`,
 		fx.orgA, fx.orgAdminA,
 	).Scan(&projectAOther))
-	_, err := pool.Exec(ctx,
-		`INSERT INTO project_members (project_id, user_id, role)
-		 VALUES ($1, $2, 'project_admin')`,
-		fx.projectA, projectAdminA,
-	)
-	require.NoError(t, err)
-
 	var eventA, eventB int64
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO notification_events
@@ -63,7 +56,7 @@ func TestP6F33NotificationTenantIsolationIntegration(t *testing.T) {
 		 VALUES ($1, $2, 'webhook-b', 'https://b.example.test/hook', '["tenant.test"]', FALSE, TRUE, 1) RETURNING id`,
 		fx.orgB, fx.projectB,
 	).Scan(&webhookB))
-	_, err = pool.Exec(ctx,
+	_, err := pool.Exec(ctx,
 		`INSERT INTO notification_deliveries (event_id, webhook_id, status, attempts)
 		 VALUES ($1, $2, 'delivered', 1), ($3, $4, 'failed', 1)`,
 		eventA, webhookA, eventB, webhookB,

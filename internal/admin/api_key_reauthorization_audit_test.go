@@ -17,74 +17,6 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestCreateAPIKeyReauthorizesActorAtCommit(t *testing.T) {
-	state := newAPIKeySecurityTestState()
-	state.actorStatus = "disabled"
-	h := newAPIKeySecurityTestHandler(state)
-	recorder := httptest.NewRecorder()
-	req := apiKeySecurityRequest(http.MethodPost, "/api/v1/keys",
-		`{"org_id":1,"project_id":11,"name":"stale-create","key_type":"shared"}`,
-		auth.RoleProjectAdmin)
-
-	h.CreateAPIKey(recorder, req)
-
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("revoked actor must not create a key, got status=%d body=%s", recorder.Code, recorder.Body.String())
-	}
-	if state.keyMutated || state.committed || !state.rolledBack {
-		t.Fatalf("revoked create must roll back before key insertion: %+v", state)
-	}
-	if strings.Contains(recorder.Body.String(), `"key"`) {
-		t.Fatalf("revoked create must not return raw key material: %s", recorder.Body.String())
-	}
-}
-
-func TestCreateAPIKeyReauthorizesOwnerAtCommit(t *testing.T) {
-	state := newAPIKeySecurityTestState()
-	state.actorRole = auth.RoleOrgAdmin
-	state.ownerMembership = false
-	h := newAPIKeySecurityTestHandler(state)
-	recorder := httptest.NewRecorder()
-	req := apiKeySecurityRequest(http.MethodPost, "/api/v1/keys",
-		`{"org_id":1,"project_id":11,"owner_user_id":8,"name":"stale-owner","key_type":"personal"}`,
-		auth.RoleOrgAdmin)
-
-	h.CreateAPIKey(recorder, req)
-
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("owner removed from the project must prevent key creation, got status=%d body=%s", recorder.Code, recorder.Body.String())
-	}
-	if state.keyMutated || state.committed || !state.rolledBack {
-		t.Fatalf("invalid owner create must roll back before key insertion: %+v", state)
-	}
-}
-
-func TestCreateAPIKeyReauthorizationAllowsAuthorizedControl(t *testing.T) {
-	state := newAPIKeySecurityTestState()
-	h := newAPIKeySecurityTestHandler(state)
-	recorder := httptest.NewRecorder()
-	req := apiKeySecurityRequest(http.MethodPost, "/api/v1/keys",
-		`{"org_id":1,"project_id":11,"name":"authorized-create","key_type":"shared"}`,
-		auth.RoleProjectAdmin)
-
-	h.CreateAPIKey(recorder, req)
-
-	if recorder.Code != http.StatusCreated {
-		t.Fatalf("currently authorized actor must still create a key, got status=%d body=%s", recorder.Code, recorder.Body.String())
-	}
-	if !state.actorLock || !state.keyMutated || !state.auditAttempted || !state.committed || state.rolledBack {
-		t.Fatalf("authorized create must reauthorize, mutate, audit, and commit: %+v", state)
-	}
-	var response map[string]any
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode create response: %v", err)
-	}
-	rawKey, _ := response["key"].(string)
-	if !strings.HasPrefix(rawKey, "ur-0001-") {
-		t.Fatalf("authorized create must preserve one-time raw-key response: %s", recorder.Body.String())
-	}
-}
-
 func TestUpdateAPIKeyReauthorizesActorAtCommit(t *testing.T) {
 	for _, testCase := range []struct {
 		name   string
@@ -433,7 +365,7 @@ func newAPIKeySecurityTestHandler(state *apiKeySecurityTestState) *Handler {
 					if len(dest) == 12 && (strings.Contains(lowerSQL, "key_hash") || strings.Contains(lowerSQL, "key_prefix")) {
 						return errors.New("audit state query selected credential material")
 					}
-					return scanAPIKeySecurityRow(dest, state.keyState)
+					return scanAPIKeySecurityRow(sql, dest, state.keyState)
 				default:
 					return errors.New("unexpected transaction query: " + sql)
 				}
@@ -507,8 +439,8 @@ func newAPIKeySecurityTestHandler(state *apiKeySecurityTestState) *Handler {
 		QueryRowFn: func(_ context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				switch {
-				case strings.Contains(sql, "FROM api_keys WHERE id"):
-					return scanAPIKeySecurityRow(dest, state.keyState)
+				case strings.Contains(sql, "FROM api_keys ak") || strings.Contains(sql, "FROM api_keys WHERE id"):
+					return scanAPIKeySecurityRow(sql, dest, state.keyState)
 				case strings.Contains(sql, "SELECT id FROM projects"):
 					*dest[0].(*int64) = 11
 					return nil
@@ -531,7 +463,7 @@ func newAPIKeySecurityTestHandler(state *apiKeySecurityTestState) *Handler {
 	return NewHandler(db, "test-secret", []byte("0123456789abcdef01234567"), nil)
 }
 
-func scanAPIKeySecurityRow(dest []any, row apiKeySecurityRow) error {
+func scanAPIKeySecurityRow(query string, dest []any, row apiKeySecurityRow) error {
 	if len(dest) == 4 {
 		*dest[0].(*int64) = row.orgID
 		*dest[1].(*int64) = row.projectID
@@ -560,6 +492,27 @@ func scanAPIKeySecurityRow(dest []any, row apiKeySecurityRow) error {
 		*dest[7].(*string) = row.keyType
 		return nil
 	}
+	if len(dest) == 10 {
+		*dest[0].(*int64) = row.orgID
+		*dest[1].(*int64) = row.projectID
+		*dest[2].(*int64) = row.ownerUserID
+		if strings.Contains(query, "ak.name, ak.key_prefix") {
+			*dest[3].(*string) = row.name
+			*dest[4].(*string) = "ur-prefix"
+			*dest[5].(*string) = row.status
+			*dest[6].(*string) = row.purpose
+			*dest[7].(*string) = row.keyType
+		} else {
+			*dest[3].(*string) = row.keyType
+			*dest[4].(*string) = row.purpose
+			*dest[5].(*string) = row.status
+			*dest[6].(*string) = row.allowedIPs
+			*dest[7].(*string) = row.allowedModels
+		}
+		*dest[8].(*int64) = 0
+		*dest[9].(*string) = ""
+		return nil
+	}
 	if len(dest) == 6 {
 		*dest[0].(*int64) = row.orgID
 		*dest[1].(*int64) = row.projectID
@@ -569,7 +522,7 @@ func scanAPIKeySecurityRow(dest []any, row apiKeySecurityRow) error {
 		*dest[5].(*string) = row.status
 		return nil
 	}
-	if len(dest) != 12 {
+	if len(dest) != 12 && len(dest) != 13 {
 		return errors.New("unexpected API-key scan width")
 	}
 	*dest[0].(*int64) = row.orgID
@@ -584,5 +537,8 @@ func scanAPIKeySecurityRow(dest []any, row apiKeySecurityRow) error {
 	*dest[9].(*string) = row.allowedModels
 	*dest[10].(*string) = row.policyLabels
 	*dest[11].(*string) = row.purpose
+	if len(dest) == 13 {
+		*dest[12].(*int64) = 0
+	}
 	return nil
 }

@@ -134,6 +134,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "agent_capability.conflict", "The workflow or child Agent is already registered")
 	case errors.Is(err, agentcap.ErrLimitExceeded):
 		writeError(w, http.StatusForbidden, "agent_capability.limit_exceeded", "Requested child authority exceeds a root or ancestor limit")
+	case errors.Is(err, agentcap.ErrManagementForbidden):
+		writeError(w, http.StatusForbidden, "agent_capability.management_forbidden", "This identity cannot manage Agent capabilities")
 	case errors.Is(err, agentcap.ErrRevoked), errors.Is(err, agentcap.ErrSuperseded), errors.Is(err, agentcap.ErrAuthorityChanged), errors.Is(err, agentcap.ErrInactiveRoot), errors.Is(err, agentcap.ErrInvalidToken):
 		writeError(w, http.StatusUnauthorized, "agent_capability.revoked", "The capability is expired, superseded, revoked, or its root authority changed")
 	default:

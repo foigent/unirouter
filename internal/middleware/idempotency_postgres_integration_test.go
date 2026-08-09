@@ -35,7 +35,7 @@ func TestP6F17PostgresIdempotencyScopeReplayMismatchAndConcurrency(t *testing.T)
 	require.NoError(t, err)
 	require.True(t, claim.Claimed)
 	require.Equal(t, first.OperationID, claim.Record.OperationID)
-	require.NoError(t, store.Complete(ctx, first.OrgID, first.APIKeyID, first.KeyHash, first.OperationID, IdempotencyStateCompleted, 200))
+	require.NoError(t, store.Complete(ctx, first.OrgID, first.APIKeyID, first.AccessCredentialID, first.KeyHash, first.OperationID, IdempotencyStateCompleted, 200))
 	_, err = pool.Exec(ctx, `
 		UPDATE request_idempotency
 		SET usage_authority='provider_reported', usage_purpose='customer_charge',

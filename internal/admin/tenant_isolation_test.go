@@ -141,7 +141,7 @@ func TestP6F16UpdateAPIKeyMasksForeignOrgBeforeMutation(t *testing.T) {
 	execCalled := false
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			if !strings.Contains(sql, "api_keys.org_id = $2") || len(args) < 2 || args[1] != int64(7) {
+			if !strings.Contains(sql, "ak.org_id = $2") || len(args) < 2 || args[1] != int64(7) {
 				t.Fatalf("foreign-key lookup must be actor scoped: sql=%s args=%#v", sql, args)
 			}
 			return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}

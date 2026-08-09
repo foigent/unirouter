@@ -47,7 +47,7 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 	if first.Summary.ReviewRequiredCount != 0 || first.Summary.ProtectedCount != len(protectedTables) {
 		t.Fatalf("unexpected classification summary: %+v", first.Summary)
 	}
-	if first.Summary.TableCount != 88 || first.Summary.ResetCandidateCount != 80 ||
+	if first.Summary.TableCount != 95 || first.Summary.ResetCandidateCount != 87 ||
 		first.Summary.ProtectedCount != 6 || first.Summary.ProtectedPartialCount != 1 ||
 		first.Summary.SchemaLedgerCount != 1 {
 		t.Fatalf("reset classification cardinality drifted: %+v", first.Summary)
@@ -80,20 +80,20 @@ func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T)
 	}
 }
 
-func TestBuildSupportsExactSchema58AndRejectsPreviousOrFutureMax(t *testing.T) {
+func TestBuildSupportsExactSchema59AndRejectsPreviousOrFutureMax(t *testing.T) {
 	current := completeSnapshot()
 	plan, err := Build(current, testTarget(), "source-a", "source-b", time.Unix(0, 0))
 	if err != nil {
-		t.Fatalf("Build schema 58: %v", err)
+		t.Fatalf("Build schema 59: %v", err)
 	}
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
 		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
-	if plan.Summary.TableCount != 88 || plan.Summary.ResetCandidateCount != 80 || plan.Summary.ReviewRequiredCount != 0 {
-		t.Fatalf("schema 58 changed reviewed table classification: %+v", plan.Summary)
+	if plan.Summary.TableCount != 95 || plan.Summary.ResetCandidateCount != 87 || plan.Summary.ReviewRequiredCount != 0 {
+		t.Fatalf("schema 59 changed reviewed table classification: %+v", plan.Summary)
 	}
-	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+2 {
-		t.Fatalf("schema 58 compatibility trigger missing from reset contract: %+v", plan.Schema)
+	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+4 {
+		t.Fatalf("schema 59 compatibility trigger missing from reset contract: %+v", plan.Schema)
 	}
 	if plan.SelectedAdmin.OrganizationRole != "platform_admin" || plan.SelectedAdmin.Role != "platform_admin" {
 		t.Fatalf("selected admin identity axes drifted: %+v", plan.SelectedAdmin)
@@ -106,7 +106,7 @@ func TestBuildSupportsExactSchema58AndRejectsPreviousOrFutureMax(t *testing.T) {
 	}
 
 	future := completeSnapshot()
-	future.MigrationVersions = append(future.MigrationVersions, "000059_future_contract")
+	future.MigrationVersions = append(future.MigrationVersions, "000060_future_contract")
 	if _, err := Build(future, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
 		t.Fatalf("future migration error = %v", err)
 	}
@@ -223,7 +223,7 @@ func completeSnapshot() Snapshot {
 		count := int64(0)
 		switch name {
 		case "schema_migrations":
-			count = 58
+			count = 59
 		case "settings":
 			count = 3
 		case "users", "orgs", "micro_ledger_runtime_state", "release_state":
@@ -258,6 +258,20 @@ func completeSnapshot() Snapshot {
 		Enabled: "O",
 	})
 	triggers = append(triggers, TriggerState{
+		Table: workloadEnvironmentImmutableTrigger.Table,
+		Name:  workloadEnvironmentImmutableTrigger.Name,
+		Definition: "CREATE TRIGGER " + workloadEnvironmentImmutableTrigger.Name +
+			" BEFORE UPDATE ON public.workload_applications EXECUTE FUNCTION " + workloadEnvironmentImmutableFunction + "()",
+		Enabled: "O",
+	})
+	triggers = append(triggers, TriggerState{
+		Table: workloadClientProfileCompatibilityTrigger.Table,
+		Name:  workloadClientProfileCompatibilityTrigger.Name,
+		Definition: "CREATE TRIGGER " + workloadClientProfileCompatibilityTrigger.Name +
+			" AFTER INSERT OR UPDATE ON public.workload_applications EXECUTE FUNCTION " + workloadClientProfileCompatibilityFunction + "()",
+		Enabled: "O",
+	})
+	triggers = append(triggers, TriggerState{
 		Table: projectMemberRoleCompatibilityTrigger.Table,
 		Name:  projectMemberRoleCompatibilityTrigger.Name,
 		Definition: "CREATE TRIGGER " + projectMemberRoleCompatibilityTrigger.Name +
@@ -289,6 +303,7 @@ func completeSnapshot() Snapshot {
 			IncrementBy: 1, LastValue: 10, IsCalled: true, NextValue: 11, MaxObservedValue: 1,
 		}},
 		ForeignKeys: []ForeignKey{
+			{Name: "access_requests_target_grant_scope_fk", ChildTable: "access_requests", ParentTable: "access_grants", DeleteAction: "NO ACTION", Deferrable: true},
 			{Name: "billing_provider_attempts_reservation_fk", ChildTable: "billing_provider_attempts", ParentTable: "freeze_idempotency", DeleteAction: "NO ACTION", Deferrable: true},
 			{Name: "freeze_idempotency_delivery_attempt_provider_fk", ChildTable: "freeze_idempotency", ParentTable: "billing_provider_attempts", DeleteAction: "NO ACTION", Deferrable: true},
 		},

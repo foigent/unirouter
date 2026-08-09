@@ -58,12 +58,14 @@ type policySnapshot struct {
 }
 
 type policyIndex struct {
-	globals   []Policy
-	byOrg     map[int64][]Policy
-	byProject map[int64][]Policy
-	byAPIKey  map[int64][]Policy
-	byModel   map[string][]Policy
-	byLabel   map[string][]Policy
+	globals            []Policy
+	byOrg              map[int64][]Policy
+	byProject          map[int64][]Policy
+	byAPIKey           map[int64][]Policy
+	byAccessCredential map[int64][]Policy
+	byAccessGrant      map[int64][]Policy
+	byModel            map[string][]Policy
+	byLabel            map[string][]Policy
 }
 
 type fallbackLease struct {
@@ -137,7 +139,7 @@ func (s *Service) Refresh(ctx context.Context) error {
 		return nil
 	}
 	rows, err := s.db.Query(ctx, `
-		SELECT id, org_id, project_id, api_key_id, name, model, policy_label,
+		SELECT id, org_id, project_id, api_key_id, access_credential_id, name, model, policy_label,
 		       mode, failure_mode, rps_limit, rpm_limit, tpm_limit,
 		       concurrency_limit, version, updated_at
 		FROM distributed_limit_policies
@@ -150,10 +152,10 @@ func (s *Service) Refresh(ctx context.Context) error {
 	policies := make([]Policy, 0)
 	for rows.Next() {
 		var policy Policy
-		var orgID, projectID, apiKeyID sql.NullInt64
+		var orgID, projectID, apiKeyID, accessCredentialID sql.NullInt64
 		var rps, rpm, tpm, concurrency sql.NullInt64
 		if err := rows.Scan(
-			&policy.ID, &orgID, &projectID, &apiKeyID, &policy.Name, &policy.Model,
+			&policy.ID, &orgID, &projectID, &apiKeyID, &accessCredentialID, &policy.Name, &policy.Model,
 			&policy.PolicyLabel, &policy.Mode, &policy.FailureMode, &rps, &rpm,
 			&tpm, &concurrency, &policy.Version, &policy.UpdatedAt,
 		); err != nil {
@@ -163,6 +165,7 @@ func (s *Service) Refresh(ctx context.Context) error {
 		policy.OrgID = nullableInt64(orgID)
 		policy.ProjectID = nullableInt64(projectID)
 		policy.APIKeyID = nullableInt64(apiKeyID)
+		policy.AccessCredentialID = nullableInt64(accessCredentialID)
 		policy.RPSLimit = nullValue(rps)
 		policy.RPMLimit = nullValue(rpm)
 		policy.TPMLimit = nullValue(tpm)
@@ -263,11 +266,45 @@ func (s *Service) BuiltinLimits() map[string]int64 {
 }
 
 func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reservation, error) {
+	request.Phase = normalizedAdmissionPhase(request.Phase)
 	if s == nil || s.rdb == nil || request.OperationID == "" || len(request.OperationID) > 64 ||
 		request.Subject.OrgID <= 0 || request.Subject.APIKeyID <= 0 || request.Subject.Model == "" ||
 		request.EstimatedInput < 0 || request.ReservedOutput < 0 ||
-		request.EstimatedInput+request.ReservedOutput <= 0 {
+		request.Phase == "" ||
+		(request.Phase == AdmissionPhaseFull && request.EstimatedInput+request.ReservedOutput <= 0) ||
+		(request.Phase != AdmissionPhaseFull && request.EstimatedInput+request.ReservedOutput != 0) {
 		return nil, ErrInvalidRequest
+	}
+	if !validOptionalLimit(request.Subject.GrantRPSLimit) ||
+		!validOptionalLimit(request.Subject.GrantRPMLimit) ||
+		!validOptionalLimit(request.Subject.GrantConcurrencyLimit) ||
+		!validOptionalLimit(request.Subject.CredentialConcurrencyLimit) ||
+		(request.Subject.AccessCredentialID > 0 && strings.TrimSpace(request.Subject.CredentialRef) == "") ||
+		(request.Subject.AccessCredentialID == 0 && strings.TrimSpace(request.Subject.CredentialRef) != "") ||
+		(request.Subject.AccessGrantID <= 0 && (request.Subject.GrantRPSLimit != nil || request.Subject.GrantRPMLimit != nil || request.Subject.GrantConcurrencyLimit != nil)) {
+		return nil, ErrInvalidRequest
+	}
+	// A configured zero is an exact deny, not an omitted limit. Positive grant
+	// limits are enforced by the shared grant bucket below.
+	if request.Phase != AdmissionPhaseExecution && request.Subject.GrantRPSLimit != nil && *request.Subject.GrantRPSLimit == 0 {
+		return nil, ErrRPSExceeded
+	}
+	if request.Phase != AdmissionPhaseExecution && request.Subject.GrantRPMLimit != nil && *request.Subject.GrantRPMLimit == 0 {
+		return nil, ErrRPMExceeded
+	}
+	if request.Phase != AdmissionPhaseRate && request.Subject.GrantConcurrencyLimit != nil && *request.Subject.GrantConcurrencyLimit == 0 {
+		return nil, ErrConcurrencyExceeded
+	}
+	if request.Subject.AccessCredentialID > 0 {
+		if request.Phase != AdmissionPhaseExecution && request.Subject.BaseRPSLimit == 0 {
+			return nil, ErrRPSExceeded
+		}
+		if request.Phase != AdmissionPhaseExecution && request.Subject.BaseRPMLimit == 0 {
+			return nil, ErrRPMExceeded
+		}
+		if request.Phase != AdmissionPhaseRate && request.Subject.CredentialConcurrencyLimit != nil && *request.Subject.CredentialConcurrencyLimit == 0 {
+			return nil, ErrConcurrencyExceeded
+		}
 	}
 	if request.LeaseTTL <= 0 {
 		request.LeaseTTL = 5 * time.Minute
@@ -288,12 +325,16 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 			return nil, ErrStateUnavailable
 		}
 	}
-	request.Subject = s.authoritativeSubject(request.Subject)
+	authoritativeSubject, authorityErr := s.authoritativeSubject(ctx, request.Subject)
+	if authorityErr != nil {
+		return nil, ErrStateUnavailable
+	}
+	request.Subject = authoritativeSubject
 	if request.WorkloadClass == "" {
 		request.WorkloadClass = workloadadmission.ClassInteractive
 	}
 
-	policies := s.matchingPolicies(request.Subject)
+	policies := projectPoliciesForAdmission(s.matchingPolicies(request.Subject), request.Phase)
 	version := runtimePolicySetVersion(policies, s.workload.Version())
 	if len(policies)+1 > s.options.MaxMatchingPolicies {
 		decision := Decision{
@@ -326,6 +367,7 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 					ReservedTokens: request.EstimatedInput + request.ReservedOutput,
 					TPMLimit:       policy.TPMLimit,
 					Fallback:       true, Mode: policy.Mode,
+					Tokenless: request.Phase != AdmissionPhaseFull,
 				})
 				continue
 			}
@@ -360,7 +402,11 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 			ReservedTokens: request.EstimatedInput + request.ReservedOutput,
 			TPMLimit:       policy.TPMLimit,
 			Fallback:       false, Mode: policy.Mode,
+			Tokenless: request.Phase != AdmissionPhaseFull,
 		})
+	}
+	if request.Phase == AdmissionPhaseRate {
+		return reservation, nil
 	}
 	workloadReservation, workloadDecision, workloadErr := s.workload.Reserve(ctx, workloadadmission.Request{
 		OperationID: request.OperationID, OrgID: request.Subject.OrgID,
@@ -399,7 +445,11 @@ func (s *Service) Finalize(ctx context.Context, reservation *Reservation, actual
 			recordTerminalMetric("settled", "last_known_safe")
 			continue
 		}
-		overrun, err := s.terminalStore(ctx, item, "settled", actualTokens, item.TPMLimit)
+		terminalTokens := actualTokens
+		if item.Tokenless {
+			terminalTokens = 0
+		}
+		overrun, err := s.terminalStore(ctx, item, "settled", terminalTokens, item.TPMLimit)
 		if err != nil {
 			recordTerminalMetric("settled", "retained")
 			terminalErrors = append(terminalErrors, err)
@@ -435,6 +485,9 @@ func (s *Service) Extend(ctx context.Context, reservation *Reservation, sequence
 		return ErrConflict
 	}
 	for _, item := range reservation.Items {
+		if item.Tokenless {
+			return ErrInvalidRequest
+		}
 		if item.Fallback {
 			continue
 		}
@@ -469,7 +522,7 @@ func (s *Service) cancel(ctx context.Context, reservation *Reservation, beforeDi
 			continue
 		}
 		terminalTokens := item.InputTokens
-		if beforeDispatch {
+		if beforeDispatch || item.Tokenless {
 			terminalTokens = 0
 		}
 		if _, err := s.terminalStore(ctx, item, "cancelled", terminalTokens, item.TPMLimit); err != nil {
@@ -542,18 +595,55 @@ func (s *Service) matchingPolicies(subject Subject) []Policy {
 	if baseRPM <= 0 {
 		baseRPM = 60
 	}
-	keyID := subject.APIKeyID
-	apiKeyRate := Policy{
-		Ref: fmt.Sprintf("builtin:api-key-rate:rps-%d:rpm-%d", baseRPS, baseRPM), Name: "Built-in API-key rate", Version: 1,
-		APIKeyID: &keyID, Mode: ModeEnforce, FailureMode: FailureLastKnownSafe,
-		RPSLimit: baseRPS, RPMLimit: baseRPM, Builtin: true,
-		RuntimeBucket: fmt.Sprintf("builtin:api-key-rate:%d", subject.APIKeyID),
-	}
 	// Count every authenticated model-call attempt against its API-key window
 	// before a shared-capacity or more-specific policy can reject it. This both
 	// preserves the historical middleware contract and prevents rejected-work
 	// amplification from bypassing the caller's own rate boundary.
-	policies := []Policy{apiKeyRate}
+	policies := make([]Policy, 0, 3)
+	orgID := subject.OrgID
+	if subject.AccessCredentialID > 0 {
+		credentialID := subject.AccessCredentialID
+		credentialPolicy := Policy{
+			Ref: fmt.Sprintf("builtin:access-credential-rate:%d:rps-%d:rpm-%d:concurrency-%s",
+				credentialID, baseRPS, baseRPM, optionalInt64(subject.CredentialConcurrencyLimit)),
+			Name: "Built-in logical credential aggregate limit", Version: 1,
+			OrgID: &orgID, AccessCredentialID: &credentialID, Mode: ModeEnforce, FailureMode: FailureFailClosed,
+			RPSLimit: baseRPS, RPMLimit: baseRPM,
+			ConcurrencyLimit: optionalLimitValue(subject.CredentialConcurrencyLimit), Builtin: true,
+			RuntimeBucket: "builtin:access-credential:" + subject.CredentialRef,
+		}
+		policies = append(policies, credentialPolicy)
+	} else {
+		keyID := subject.APIKeyID
+		apiKeyRate := Policy{
+			Ref: fmt.Sprintf("builtin:api-key-rate:rps-%d:rpm-%d", baseRPS, baseRPM), Name: "Built-in API-key rate", Version: 1,
+			OrgID: &orgID, APIKeyID: &keyID, Mode: ModeEnforce, FailureMode: FailureLastKnownSafe,
+			RPSLimit: baseRPS, RPMLimit: baseRPM, Builtin: true,
+			RuntimeBucket: fmt.Sprintf("builtin:api-key-rate:%d", subject.APIKeyID),
+		}
+		policies = append(policies, apiKeyRate)
+	}
+	if subject.AccessGrantID > 0 {
+		grantID := subject.AccessGrantID
+		grantPolicy := Policy{
+			Ref: fmt.Sprintf(
+				"builtin:access-grant-rate:%d:rps-%s:rpm-%s:concurrency-%s",
+				grantID,
+				optionalInt64(subject.GrantRPSLimit),
+				optionalInt64(subject.GrantRPMLimit),
+				optionalInt64(subject.GrantConcurrencyLimit),
+			),
+			Name: "Built-in access-grant aggregate limit", Version: 1,
+			OrgID: &orgID, AccessGrantID: &grantID, Mode: ModeEnforce, FailureMode: FailureFailClosed,
+			RPSLimit:         optionalLimitValue(subject.GrantRPSLimit),
+			RPMLimit:         optionalLimitValue(subject.GrantRPMLimit),
+			ConcurrencyLimit: optionalLimitValue(subject.GrantConcurrencyLimit),
+			Builtin:          true, RuntimeBucket: fmt.Sprintf("builtin:access-grant:%d", grantID),
+		}
+		if grantPolicy.RPSLimit > 0 || grantPolicy.RPMLimit > 0 || grantPolicy.ConcurrencyLimit > 0 {
+			policies = append(policies, grantPolicy)
+		}
+	}
 	if snapshot == nil {
 		return policies
 	}
@@ -569,25 +659,71 @@ func (s *Service) matchingPolicies(subject Subject) []Policy {
 	return policies
 }
 
-func (s *Service) authoritativeSubject(subject Subject) Subject {
+func projectPoliciesForAdmission(policies []Policy, phase string) []Policy {
+	if phase == AdmissionPhaseFull {
+		return policies
+	}
+	projected := make([]Policy, 0, len(policies))
+	for _, policy := range policies {
+		switch phase {
+		case AdmissionPhaseRate:
+			policy.TPMLimit = 0
+			policy.ConcurrencyLimit = 0
+		case AdmissionPhaseExecution:
+			policy.RPSLimit = 0
+			policy.RPMLimit = 0
+			policy.TPMLimit = 0
+		}
+		if policy.RPSLimit == 0 && policy.RPMLimit == 0 && policy.TPMLimit == 0 && policy.ConcurrencyLimit == 0 {
+			continue
+		}
+		projected = append(projected, policy)
+	}
+	return projected
+}
+
+func (s *Service) authoritativeSubject(ctx context.Context, subject Subject) (Subject, error) {
+	if s != nil && s.db != nil && subject.AccessCredentialID > 0 {
+		var raw string
+		if err := s.db.QueryRow(ctx, `
+			SELECT policy_labels
+			  FROM access_credentials
+			 WHERE id=$1 AND org_id=$2 AND project_id=$3 AND status='active'`,
+			subject.AccessCredentialID, subject.OrgID, subject.ProjectID,
+		).Scan(&raw); err != nil {
+			return Subject{}, err
+		}
+		labels, err := parseStoredLabels(raw)
+		if err != nil {
+			return Subject{}, err
+		}
+		subject.PolicyLabels = labels
+		return subject, nil
+	}
 	snapshot := s.snapshot.Load()
 	if snapshot != nil && snapshot.labelsAuthoritative {
 		subject.PolicyLabels = append([]string(nil), snapshot.labels[subject.APIKeyID]...)
 	} else {
 		subject.PolicyLabels = append([]string(nil), subject.PolicyLabels...)
 	}
-	return subject
+	return subject, nil
 }
 
 func buildPolicySnapshot(policies []Policy, labels map[int64][]string, authoritative bool, loadedAt time.Time) *policySnapshot {
 	index := policyIndex{
 		byOrg: make(map[int64][]Policy), byProject: make(map[int64][]Policy),
-		byAPIKey: make(map[int64][]Policy), byModel: make(map[string][]Policy), byLabel: make(map[string][]Policy),
+		byAPIKey: make(map[int64][]Policy), byAccessCredential: make(map[int64][]Policy),
+		byAccessGrant: make(map[int64][]Policy),
+		byModel:       make(map[string][]Policy), byLabel: make(map[string][]Policy),
 	}
 	for _, policy := range policies {
 		switch {
 		case policy.APIKeyID != nil:
 			index.byAPIKey[*policy.APIKeyID] = append(index.byAPIKey[*policy.APIKeyID], policy)
+		case policy.AccessCredentialID != nil:
+			index.byAccessCredential[*policy.AccessCredentialID] = append(index.byAccessCredential[*policy.AccessCredentialID], policy)
+		case policy.AccessGrantID != nil:
+			index.byAccessGrant[*policy.AccessGrantID] = append(index.byAccessGrant[*policy.AccessGrantID], policy)
 		case policy.ProjectID != nil:
 			index.byProject[*policy.ProjectID] = append(index.byProject[*policy.ProjectID], policy)
 		case policy.OrgID != nil:
@@ -610,7 +746,8 @@ func (index policyIndex) candidates(subject Subject) []Policy {
 	if index.byOrg == nil {
 		return nil
 	}
-	count := len(index.globals) + len(index.byAPIKey[subject.APIKeyID]) + len(index.byProject[subject.ProjectID]) +
+	count := len(index.globals) + len(index.byAPIKey[subject.APIKeyID]) + len(index.byAccessCredential[subject.AccessCredentialID]) +
+		len(index.byAccessGrant[subject.AccessGrantID]) + len(index.byProject[subject.ProjectID]) +
 		len(index.byOrg[subject.OrgID]) + len(index.byModel[subject.Model])
 	for _, label := range subject.PolicyLabels {
 		count += len(index.byLabel[label])
@@ -618,6 +755,8 @@ func (index policyIndex) candidates(subject Subject) []Policy {
 	result := make([]Policy, 0, count)
 	result = append(result, index.globals...)
 	result = append(result, index.byAPIKey[subject.APIKeyID]...)
+	result = append(result, index.byAccessCredential[subject.AccessCredentialID]...)
+	result = append(result, index.byAccessGrant[subject.AccessGrantID]...)
 	result = append(result, index.byProject[subject.ProjectID]...)
 	result = append(result, index.byOrg[subject.OrgID]...)
 	result = append(result, index.byModel[subject.Model]...)
@@ -625,6 +764,17 @@ func (index policyIndex) candidates(subject Subject) []Policy {
 		result = append(result, index.byLabel[label]...)
 	}
 	return result
+}
+
+func validOptionalLimit(value *int64) bool {
+	return value == nil || *value >= 0
+}
+
+func optionalLimitValue(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func policyRuntimeBucket(policy Policy) string {
@@ -826,7 +976,9 @@ func validReservation(reservation *Reservation) bool {
 	}
 	for _, item := range reservation.Items {
 		if item.OperationID != reservation.OperationID || item.PolicyRef == "" || item.RuntimeRef == "" ||
-			item.Fingerprint == "" || item.InputTokens < 0 || item.ReservedTokens <= 0 || item.TPMLimit < 0 {
+			item.Fingerprint == "" || item.InputTokens < 0 || item.ReservedTokens < 0 || item.TPMLimit < 0 ||
+			(item.Tokenless && (item.InputTokens != 0 || item.ReservedTokens != 0)) ||
+			(!item.Tokenless && item.ReservedTokens == 0) {
 			return false
 		}
 	}

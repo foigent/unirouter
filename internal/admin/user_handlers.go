@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/accessgrantlifecycle"
+	"github.com/uniroute/unirouter/internal/accessrequestlifecycle"
+	"github.com/uniroute/unirouter/internal/accesssponsor"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"golang.org/x/crypto/bcrypt"
@@ -375,6 +379,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	var targetOrgID int64
 	var targetOrganizationRole, targetRole, targetStatus string
+	var targetOffboardedAt sql.NullTime
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
@@ -395,13 +400,13 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := tx.QueryRow(r.Context(),
-		`SELECT org_id, organization_role, role, status
+		`SELECT org_id, organization_role, role, status, offboarded_at
 		   FROM users
 		  WHERE id = $1
 		    AND ($2::boolean OR org_id = $3)
 		  FOR UPDATE`, id, actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin,
 		middleware.GetOrgIDFromContext(r.Context()),
-	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus); err != nil {
+	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus, &targetOffboardedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		} else {
@@ -415,6 +420,12 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, constrained := actorOrgConstraint(r.Context()); constrained && auth.IsPlatformAdmin(targetOrganizationRole) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if targetOffboardedAt.Valid {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error": "Offboarded accounts cannot be reactivated or modified", "code": "account_offboarded",
+		})
 		return
 	}
 
@@ -434,6 +445,17 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Status != nil {
 		nextStatus = *req.Status
+	}
+	if nextOrganizationRole != targetOrganizationRole || nextStatus != targetStatus {
+		if err := accesssponsor.ValidatePostTransition(r.Context(), tx, accesssponsor.PostTransitionState{
+			UserID: id, OrgID: targetOrgID, Status: nextStatus, OrganizationRole: nextOrganizationRole,
+		}); err != nil {
+			if writeSponsorTransitionConflict(w, err) {
+				return
+			}
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Sponsor transition validation failed"})
+			return
+		}
 	}
 	existingProjectIDs, err := listUserProjectIDsTx(r.Context(), tx, id, targetOrgID)
 	if err != nil {
@@ -581,20 +603,22 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-	} else if err := lockProjectMembershipMutation(r.Context(), tx, id); err != nil {
+	}
+	if err := lockProjectMembershipMutation(r.Context(), tx, id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return
 	}
 	var targetOrgID int64
 	var targetOrganizationRole, targetRole, targetStatus string
+	var existingOffboardedAt sql.NullTime
 	if err := tx.QueryRow(r.Context(),
-		`SELECT org_id, organization_role, role, status
+		`SELECT org_id, organization_role, role, status, offboarded_at
 		   FROM users
 		  WHERE id = $1
 		    AND ($2::boolean OR org_id = $3 OR $3::bigint = 0)
 		  FOR UPDATE`, id, actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin,
 		middleware.GetOrgIDFromContext(r.Context()),
-	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus); err != nil {
+	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus, &existingOffboardedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		} else {
@@ -634,32 +658,88 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := tx.Exec(r.Context(),
-		`UPDATE api_keys
-		 SET status = 'disabled', updated_at = NOW()
-		 WHERE owner_user_id = $1 AND org_id = $2 AND key_type = 'personal'`, id, targetOrgID,
-	); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
+	actorUserID := middleware.GetUserIDFromContext(r.Context())
+	now := time.Now().UTC()
+	if err := accesssponsor.ValidatePostTransition(r.Context(), tx, accesssponsor.PostTransitionState{
+		UserID: id, OrgID: targetOrgID, Status: "disabled", OrganizationRole: targetOrganizationRole,
+	}); err != nil {
+		if writeSponsorTransitionConflict(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Sponsor transition validation failed"})
 		return
 	}
-	tag, err := tx.Exec(r.Context(), `DELETE FROM users WHERE id = $1 AND org_id = $2`, id, targetOrgID)
+	requestLifecycle, err := accessrequestlifecycle.CancelForUser(
+		r.Context(), tx, targetOrgID, id, actorUserID,
+		middleware.GetRequestIDFromContext(r.Context()), middleware.GetClientRequestIDFromContext(r.Context()), now,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Pending access request closure failed"})
+		return
+	}
+	credentialContainment, err := accessgrantlifecycle.RevokeUser(
+		r.Context(), tx, targetOrgID, 0, id, actorUserID,
+		accessgrantlifecycle.ReasonUserOffboard, now,
+	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return
 	}
-	if tag.RowsAffected() == 0 {
+	membershipTag, err := tx.Exec(r.Context(), `DELETE FROM project_members WHERE user_id=$1`, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
+		return
+	}
+	userTag, err := tx.Exec(r.Context(), `
+		UPDATE users
+		SET status='disabled',auth_epoch=auth_epoch+CASE WHEN offboarded_at IS NULL OR status<>'disabled' THEN 1 ELSE 0 END,
+		    offboarded_at=COALESCE(offboarded_at,$3),offboarded_by=COALESCE(offboarded_by,$4),updated_at=$3
+		WHERE id=$1 AND org_id=$2`, id, targetOrgID, now, actorUserID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
+		return
+	}
+	if userTag.RowsAffected() == 0 {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		return
 	}
+	sessionTag, err := tx.Exec(r.Context(), `
+		UPDATE admin_sessions
+		SET revoked_at=COALESCE(revoked_at,$2)
+		WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>NOW()`, id, now)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
+		return
+	}
+	compatibilityTransition, err := syncUserCompatibilityRoleTx(r.Context(), tx, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
+		return
+	}
+	disposition := "offboarded"
+	if existingOffboardedAt.Valid {
+		disposition = "already_offboarded"
+	}
 	if !isUnauthenticatedUnitContext(r.Context()) {
-		if err := insertAuditEntry(r.Context(), tx, "user.delete", "user", idStr, map[string]interface{}{
+		if err := insertAuditEntry(r.Context(), tx, "user.offboard", "user", idStr, map[string]interface{}{
 			"before": map[string]interface{}{
 				"org_id":             targetOrgID,
 				"organization_role":  targetOrganizationRole,
 				"compatibility_role": targetRole,
 				"status":             targetStatus,
 			},
-			"after": map[string]interface{}{"deleted": true, "personal_keys_disabled": true},
+			"after": map[string]interface{}{
+				"disposition":                 disposition,
+				"status":                      "disabled",
+				"access_grants_revoked":       len(credentialContainment.Grants),
+				"credential_families_revoked": credentialContainment.CredentialFamilies,
+				"secret_versions_disabled":    credentialContainment.SecretVersions,
+				"legacy_keys_disabled":        credentialContainment.LegacyKeys,
+				"pending_requests_cancelled":  requestLifecycle.RequestsCancelled,
+				"project_memberships_removed": membershipTag.RowsAffected(),
+				"live_sessions_revoked":       sessionTag.RowsAffected() + compatibilityTransition.RevokedSessions,
+				"compatibility_role":          compatibilityTransition.AfterRole,
+			},
 		}, requestAuditMeta(r, targetOrgID, 0)); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
 			return
@@ -669,5 +749,7 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Delete failed"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true, "disposition": disposition, "status": "disabled",
+	})
 }

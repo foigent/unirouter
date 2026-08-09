@@ -42,6 +42,10 @@ func TestPolicyMutationAuditAtomicityIntegration(t *testing.T) {
 		INSERT INTO users (id, org_id, username, password_hash, role, status)
 		VALUES (7, 1, 'policy-audit-test-admin', 'test-hash', 'platform_admin', 'active')`)
 	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO admin_sessions (user_id,sid_hash,issued_at,expires_at)
+		VALUES (7,$1,NOW()-INTERVAL '1 minute',NOW()+INTERVAL '1 hour')`, []byte("0123456789abcdef0123456789abcdef"))
+	require.NoError(t, err)
 
 	var guardrailID, limitID int64
 	require.NoError(t, pool.QueryRow(ctx, `

@@ -26,6 +26,10 @@ type FreezeRequest struct {
 	RequestID                string
 	OrgID                    int64
 	ProjectID                int64
+	APIKeyID                 int64
+	AccessCredentialID       int64
+	CredentialRef            string
+	AccessGrantID            int64
 	Model                    string
 	EstimatedTokens          int
 	EstimatedInputTokens     int
@@ -115,6 +119,10 @@ type priceQuote struct {
 type reservationRecord struct {
 	Model                                       string
 	ProjectID                                   int64
+	APIKeyID                                    sql.NullInt64
+	AccessCredentialID                          sql.NullInt64
+	CredentialRef                               sql.NullString
+	AccessGrantID                               sql.NullInt64
 	FrozenAmountMicros                          int64
 	ReservedBalanceMicros                       int64
 	ReservedGrantedMicros                       int64
@@ -396,13 +404,21 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	// Check the durable reservation receipt, regardless of terminal state. A
 	// server operation ID cannot be silently reused after settlement/cancel.
 	var existing reservationRecord
+	var existingAPIKeyID, existingAccessCredentialID, existingAccessGrantID sql.NullInt64
+	var existingCredentialRef sql.NullString
 	err = tx.QueryRow(ctx,
-		`SELECT frozen_amount_micros, status, pricing_version
+		`SELECT frozen_amount_micros, status, pricing_version, api_key_id,
+		        access_credential_id,credential_ref,access_grant_id
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
 		req.RequestID, req.OrgID,
-	).Scan(&existing.FrozenAmountMicros, &existing.Status, &existing.PricingVersion)
+	).Scan(&existing.FrozenAmountMicros, &existing.Status, &existing.PricingVersion, &existingAPIKeyID,
+		&existingAccessCredentialID, &existingCredentialRef, &existingAccessGrantID)
 	if err == nil {
+		if nullableID(existingAPIKeyID) != req.APIKeyID || nullableID(existingAccessCredentialID) != req.AccessCredentialID ||
+			nullableString(existingCredentialRef) != req.CredentialRef || nullableID(existingAccessGrantID) != req.AccessGrantID {
+			return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "billing access identity changed"}, nil
+		}
 		if existing.Status == "frozen" {
 			return &FreezeResult{
 				AmountMicros:   existing.FrozenAmountMicros,
@@ -419,7 +435,6 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("check reservation: %w", err)
 	}
-
 	// Get current balance
 	var balance, grantedBalance, frozen int64
 	err = tx.QueryRow(ctx,
@@ -487,7 +502,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	_, err = tx.Exec(ctx,
 		`INSERT INTO freeze_idempotency (
 			request_id, org_id, frozen_amount_micros, status,
-			project_id,
+			project_id, api_key_id, access_credential_id, credential_ref, access_grant_id,
 			reserved_balance_micros, reserved_granted_micros,
 			model_name, estimated_tokens, reserved_completion_tokens,
 			safety_factor, min_freeze_micros,
@@ -497,12 +512,12 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 			price_multiplier, pricing_version, updated_at
 		 ) VALUES (
 			$1, $2, $3, 'frozen',
-			$4,
-			$5, $6, $7, $8, $9, $10, $11,
-			$12, $13, $14, $15, $16, $17, $18, $19, NOW()
+			$4, NULLIF($5,0), NULLIF($6,0), NULLIF($7,''), NULLIF($8,0),
+			$9, $10, $11, $12, $13, $14, $15,
+			$16, $17, $18, $19, $20, $21, $22, $23, NOW()
 		 )`,
 		req.RequestID, req.OrgID, freezeAmount,
-		req.ProjectID,
+		req.ProjectID, req.APIKeyID, req.AccessCredentialID, req.CredentialRef, req.AccessGrantID,
 		reservedBalance, reservedGranted,
 		req.Model, req.EstimatedTokens, req.ReservedCompletionTokens,
 		req.SafetyFactor, minFreezeMicros,
@@ -548,6 +563,20 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 		PricingVersion:   quote.Version,
 		Success:          true,
 	}, nil
+}
+
+func nullableID(value sql.NullInt64) int64 {
+	if !value.Valid {
+		return 0
+	}
+	return value.Int64
+}
+
+func nullableString(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }
 
 type grantReservationAllocation struct {
@@ -1300,7 +1329,7 @@ func settleResultFromRecord(record reservationRecord) *SettleResult {
 func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgID int64) (reservationRecord, error) {
 	var record reservationRecord
 	err := tx.QueryRow(ctx,
-		`SELECT model_name, project_id,
+		`SELECT model_name, project_id, api_key_id,access_credential_id,credential_ref,access_grant_id,
 		        frozen_amount_micros, reserved_balance_micros, reserved_granted_micros,
 		        effective_input_price_micros_per_million,
 		        effective_cache_read_price_micros_per_million,
@@ -1327,6 +1356,10 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 	).Scan(
 		&record.Model,
 		&record.ProjectID,
+		&record.APIKeyID,
+		&record.AccessCredentialID,
+		&record.CredentialRef,
+		&record.AccessGrantID,
 		&record.FrozenAmountMicros,
 		&record.ReservedBalanceMicros,
 		&record.ReservedGrantedMicros,

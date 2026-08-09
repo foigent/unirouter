@@ -58,7 +58,9 @@ var (
 		"release_state":                   "installed release and rollback state remains intact",
 	}
 	resetCandidateTables = stringSet(
+		"access_credentials", "access_grant_revisions", "access_grants", "access_operations", "access_requests",
 		"admin_sessions", "api_keys", "async_media_charge_facts", "async_media_jobs",
+		"async_media_limit_reservations",
 		"audit_logs", "billing_provider_attempts", "billing_reservation_extensions",
 		"billing_reservation_grant_allocations", "call_logs", "channel_keys", "channels",
 		"completed_execution_feed_connections", "completed_execution_feed_items",
@@ -87,15 +89,18 @@ var (
 		"response_cache_delivery_receipts", "runtime_change_events", "runtime_change_releases",
 		"runtime_change_slots", "runtime_terminal_hooks", "stream_delivery_checkpoints",
 		"stream_delivery_leases", "transactions", "usage_finalization_journal", "users",
-		"wallets", "workload_applications",
+		"wallets", "workload_application_client_profiles", "workload_applications",
 	)
 	protectedSettingKeys     = []string{"ledger.amount_scale", "ledger.version", "license.offline"}
 	platformBaselineSettings = []string{"sensitive_words"}
 	deferredCycleConstraints = []string{
+		"access_requests_target_grant_scope_fk",
 		"billing_provider_attempts_reservation_fk",
 		"freeze_idempotency_delivery_attempt_provider_fk",
 	}
 	resetDeleteTriggers = []TriggerRef{
+		{Table: "access_grant_revisions", Name: "access_grant_revisions_append_only"},
+		{Table: "access_operations", Name: "access_operations_append_only"},
 		{Table: "billing_provider_attempts", Name: "billing_provider_attempts_micro_ledger_evidence"},
 		{Table: "billing_reservation_extensions", Name: "billing_reservation_extension_append_only"},
 		{Table: "billing_reservation_extensions", Name: "billing_reservation_extensions_micro_ledger_evidence"},
@@ -122,7 +127,15 @@ var (
 		Table: "project_members", Name: "project_members_legacy_role_compatibility",
 	}
 	projectMemberRoleCompatibilityFunction = "normalize_project_members_role_from_legacy_write"
-	redisKeyPrefixes                       = []string{
+	workloadEnvironmentImmutableTrigger    = TriggerRef{
+		Table: "workload_applications", Name: "workload_applications_identity_tuple_immutable",
+	}
+	workloadEnvironmentImmutableFunction      = "preserve_workload_identity_tuple"
+	workloadClientProfileCompatibilityTrigger = TriggerRef{
+		Table: "workload_applications", Name: "workload_applications_legacy_client_profile_compatibility",
+	}
+	workloadClientProfileCompatibilityFunction = "sync_workload_primary_client_profile_from_legacy_write"
+	redisKeyPrefixes                           = []string{
 		"limit:{",
 		"rl:",
 		"uniroute:response-cache:v2:",
@@ -432,6 +445,9 @@ func Build(snapshot Snapshot, target TargetIdentity, currentSourceInstance, next
 		return Plan{}, err
 	}
 	if err := validateProjectMemberRoleCompatibilityTrigger(snapshot.Triggers); err != nil {
+		return Plan{}, err
+	}
+	if err := validateWorkloadIdentityTriggers(snapshot.Triggers); err != nil {
 		return Plan{}, err
 	}
 	order, err := buildDeleteOrder(tableByName, snapshot.ForeignKeys)
@@ -916,6 +932,28 @@ func validateProjectMemberRoleCompatibilityTrigger(triggers []TriggerState) erro
 		break
 	}
 	return fmt.Errorf("%w: project_member_role_compatibility_trigger", ErrInvalid)
+}
+
+func validateWorkloadIdentityTriggers(triggers []TriggerState) error {
+	required := []struct {
+		ref      TriggerRef
+		function string
+	}{
+		{workloadEnvironmentImmutableTrigger, workloadEnvironmentImmutableFunction},
+		{workloadClientProfileCompatibilityTrigger, workloadClientProfileCompatibilityFunction},
+	}
+	byIdentity := make(map[string]TriggerState, len(triggers))
+	for _, trigger := range triggers {
+		byIdentity[trigger.Table+"."+trigger.Name] = trigger
+	}
+	for _, item := range required {
+		trigger, ok := byIdentity[item.ref.Table+"."+item.ref.Name]
+		if !ok || trigger.Enabled != "O" ||
+			!strings.Contains(strings.ToLower(trigger.Definition), strings.ToLower(item.function)) {
+			return fmt.Errorf("%w: workload_identity_trigger_%s", ErrInvalid, item.ref.Name)
+		}
+	}
+	return nil
 }
 
 func canonicalProtected(protected ProtectedState) ProtectedState {

@@ -147,24 +147,38 @@ type ChannelKey struct {
 
 // ApiKey represents the api_keys table.
 type ApiKey struct {
-	ID            int64     `json:"id" db:"id"`
-	OrgID         int64     `json:"org_id" db:"org_id"`
-	ProjectID     *int64    `json:"project_id" db:"project_id"`
-	OwnerUserID   *int64    `json:"owner_user_id" db:"owner_user_id"`
-	KeyType       string    `json:"key_type" db:"key_type"`
-	Purpose       string    `json:"purpose" db:"purpose"`
-	Name          string    `json:"name" db:"name"`
-	KeyPrefix     string    `json:"key_prefix" db:"key_prefix"`
-	KeyHash       string    `json:"-" db:"key_hash"`
-	IPWhitelist   string    `json:"allowed_ips" db:"allowed_ips"`
-	AllowedModels string    `json:"allowed_models" db:"allowed_models"`
-	RPMLimit      int       `json:"rpm_limit" db:"rpm_limit"`
-	QPSLimit      int       `json:"qps_limit" db:"qps_limit"`
-	BudgetLimit   *int      `json:"budget_limit" db:"budget_limit"`
-	AuthEpoch     int64     `json:"auth_epoch" db:"auth_epoch"`
-	Status        string    `json:"status" db:"status"`
-	CreatedAt     time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
+	ID                         int64     `json:"id" db:"id"`
+	OrgID                      int64     `json:"org_id" db:"org_id"`
+	ProjectID                  *int64    `json:"project_id" db:"project_id"`
+	OwnerUserID                *int64    `json:"owner_user_id" db:"owner_user_id"`
+	WorkloadApplicationID      *int64    `json:"workload_application_id,omitempty" db:"workload_application_id"`
+	KeyType                    string    `json:"key_type" db:"key_type"`
+	Purpose                    string    `json:"purpose" db:"purpose"`
+	Name                       string    `json:"name" db:"name"`
+	KeyPrefix                  string    `json:"key_prefix" db:"key_prefix"`
+	KeyHash                    string    `json:"-" db:"key_hash"`
+	IPWhitelist                string    `json:"allowed_ips" db:"allowed_ips"`
+	AllowedModels              string    `json:"allowed_models" db:"allowed_models"`
+	AllowedEndpoints           string    `json:"allowed_endpoints" db:"allowed_endpoints"`
+	PolicyLabels               string    `json:"policy_labels" db:"policy_labels"`
+	RPMLimit                   int       `json:"rpm_limit" db:"rpm_limit"`
+	QPSLimit                   int       `json:"qps_limit" db:"qps_limit"`
+	BudgetLimit                *int      `json:"budget_limit" db:"budget_limit"`
+	AuthEpoch                  int64     `json:"auth_epoch" db:"auth_epoch"`
+	AccessGrantID              *int64    `json:"access_grant_id,omitempty" db:"access_grant_id"`
+	AccessCredentialID         *int64    `json:"access_credential_id,omitempty" db:"access_credential_id"`
+	CredentialRef              string    `json:"credential_ref,omitempty" db:"credential_ref"`
+	CredentialConcurrencyLimit *int      `json:"credential_concurrency_limit,omitempty" db:"concurrency_limit"`
+	GrantBound                 bool      `json:"grant_bound" db:"-"`
+	GrantScopeMode             string    `json:"grant_scope_mode,omitempty" db:"-"`
+	GrantRPMLimit              *int      `json:"grant_rpm_limit,omitempty" db:"-"`
+	GrantRPSLimit              *int      `json:"grant_rps_limit,omitempty" db:"-"`
+	GrantConcurrencyLimit      *int      `json:"grant_concurrency_limit,omitempty" db:"-"`
+	ModelScopeDenied           bool      `json:"-" db:"-"`
+	EndpointDenied             bool      `json:"-" db:"-"`
+	Status                     string    `json:"status" db:"status"`
+	CreatedAt                  time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt                  time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // ModelPrice represents the model_prices table.

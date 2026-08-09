@@ -294,8 +294,10 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 
 		assertStatus(t, serve(t, http.MethodGet, "/api/v1/model-catalog", "",
 			fx.normalA, fx.orgA, auth.RoleViewer, ""), http.StatusForbidden)
-		assertStatus(t, serve(t, http.MethodGet, fmt.Sprintf("/api/v1/model-catalog?project_id=%d", fx.projectA), "",
-			fx.normalA, fx.orgA, auth.RoleViewer, ""), http.StatusForbidden)
+		projectViewerCatalog := serve(t, http.MethodGet, fmt.Sprintf("/api/v1/model-catalog?project_id=%d", fx.projectA), "",
+			fx.normalA, fx.orgA, auth.RoleViewer, "")
+		assertStatus(t, projectViewerCatalog, http.StatusOK)
+		assertResponseOrgIDs(t, projectViewerCatalog.Body.Bytes(), fx.orgA)
 
 		assertStatus(t, serve(t, http.MethodGet, "/api/v1/model-sets", "",
 			projectAdminA, fx.orgA, auth.RoleProjectAdmin, ""), http.StatusForbidden)

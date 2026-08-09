@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -26,42 +27,46 @@ const (
 )
 
 type limitPolicyRecord struct {
-	ID               int64
-	OrgID            *int64
-	ProjectID        *int64
-	APIKeyID         *int64
-	Name             string
-	Model            string
-	PolicyLabel      string
-	Mode             string
-	FailureMode      string
-	RPSLimit         *int64
-	RPMLimit         *int64
-	TPMLimit         *int64
-	ConcurrencyLimit *int64
-	Version          int64
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	OrgName          string
-	ProjectName      string
-	APIKeyName       string
-	APIKeyPrefix     string
+	ID                   int64
+	OrgID                *int64
+	ProjectID            *int64
+	APIKeyID             *int64
+	AccessCredentialID   *int64
+	Name                 string
+	Model                string
+	PolicyLabel          string
+	Mode                 string
+	FailureMode          string
+	RPSLimit             *int64
+	RPMLimit             *int64
+	TPMLimit             *int64
+	ConcurrencyLimit     *int64
+	Version              int64
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	OrgName              string
+	ProjectName          string
+	APIKeyName           string
+	APIKeyPrefix         string
+	AccessCredentialName string
+	AccessCredentialRef  string
 }
 
 type limitPolicyMutation struct {
-	Version          *int64  `json:"version"`
-	OrgID            *int64  `json:"org_id"`
-	ProjectID        *int64  `json:"project_id"`
-	APIKeyID         *int64  `json:"api_key_id"`
-	Name             *string `json:"name"`
-	Model            *string `json:"model"`
-	PolicyLabel      *string `json:"policy_label"`
-	Mode             *string `json:"mode"`
-	FailureMode      *string `json:"failure_mode"`
-	RPSLimit         *int64  `json:"rps_limit"`
-	RPMLimit         *int64  `json:"rpm_limit"`
-	TPMLimit         *int64  `json:"tpm_limit"`
-	ConcurrencyLimit *int64  `json:"concurrency_limit"`
+	Version            *int64  `json:"version"`
+	OrgID              *int64  `json:"org_id"`
+	ProjectID          *int64  `json:"project_id"`
+	APIKeyID           *int64  `json:"api_key_id"`
+	AccessCredentialID *int64  `json:"access_credential_id"`
+	Name               *string `json:"name"`
+	Model              *string `json:"model"`
+	PolicyLabel        *string `json:"policy_label"`
+	Mode               *string `json:"mode"`
+	FailureMode        *string `json:"failure_mode"`
+	RPSLimit           *int64  `json:"rps_limit"`
+	RPMLimit           *int64  `json:"rpm_limit"`
+	TPMLimit           *int64  `json:"tpm_limit"`
+	ConcurrencyLimit   *int64  `json:"concurrency_limit"`
 }
 
 func (h *Handler) ListLimitPolicies(w http.ResponseWriter, r *http.Request) {
@@ -109,15 +114,17 @@ func (h *Handler) ListLimitPolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := fmt.Sprintf(`
-		SELECT p.id, p.org_id, p.project_id, p.api_key_id, p.name, p.model, p.policy_label,
+		SELECT p.id, p.org_id, p.project_id, p.api_key_id, p.access_credential_id, p.name, p.model, p.policy_label,
 		       p.mode, p.failure_mode, p.rps_limit, p.rpm_limit, p.tpm_limit,
 		       p.concurrency_limit, p.version, p.created_at, p.updated_at,
 		       COALESCE(o.name, ''), COALESCE(project.name, ''),
-		       COALESCE(key.name, ''), COALESCE(key.key_prefix, '')
+		       COALESCE(key.name, ''), COALESCE(key.key_prefix, ''),
+		       COALESCE(credential.name,''),COALESCE(credential.credential_ref,'')
 		FROM distributed_limit_policies p
 		LEFT JOIN orgs o ON o.id = p.org_id
 		LEFT JOIN projects project ON project.id = p.project_id AND project.org_id = p.org_id
 		LEFT JOIN api_keys key ON key.id = p.api_key_id AND key.org_id = p.org_id
+		LEFT JOIN access_credentials credential ON credential.id=p.access_credential_id AND credential.org_id=p.org_id
 		%s
 		ORDER BY p.id ASC
 		LIMIT $%d OFFSET $%d`, where, argIndex, argIndex+1)
@@ -155,9 +162,14 @@ func (h *Handler) CreateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
+	if err := validatePolicySelectorMutation(mutation.APIKeyID, mutation.AccessCredentialID); err != nil {
+		writeLimitPolicyError(w, err)
+		return
+	}
 	record := limitPolicyRecord{
 		OrgID: positiveOrNil(mutation.OrgID), ProjectID: positiveOrNil(mutation.ProjectID), APIKeyID: positiveOrNil(mutation.APIKeyID),
-		Name: stringValue(mutation.Name), Model: stringValue(mutation.Model),
+		AccessCredentialID: positiveOrNil(mutation.AccessCredentialID),
+		Name:               stringValue(mutation.Name), Model: stringValue(mutation.Model),
 		PolicyLabel: stringValue(mutation.PolicyLabel), Mode: stringValue(mutation.Mode),
 		FailureMode: stringValue(mutation.FailureMode), RPSLimit: mutation.RPSLimit,
 		RPMLimit: mutation.RPMLimit, TPMLimit: mutation.TPMLimit,
@@ -179,17 +191,24 @@ func (h *Handler) CreateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizePolicySelectorMutationTx(r.Context(), tx, policySelector{
+		OrgID: record.OrgID, ProjectID: record.ProjectID, APIKeyID: record.APIKeyID,
+		AccessCredentialID: record.AccessCredentialID,
+	}); err != nil {
+		writeLimitPolicyError(w, err)
+		return
+	}
 
 	var id int64
 	var createdAt, updatedAt time.Time
 	err = tx.QueryRow(r.Context(), `
 		INSERT INTO distributed_limit_policies (
-			org_id, project_id, api_key_id, name, model, policy_label, mode, failure_mode,
+			org_id, project_id, api_key_id, access_credential_id, name, model, policy_label, mode, failure_mode,
 			rps_limit, rpm_limit, tpm_limit, concurrency_limit, version, created_by, updated_by,
 			created_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,1,$13,$13,NOW(),NOW())
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,1,$14,$14,NOW(),NOW())
 		RETURNING id, created_at, updated_at`,
-		nullablePolicyID(record.OrgID), nullablePolicyID(record.ProjectID), nullablePolicyID(record.APIKeyID),
+		nullablePolicyID(record.OrgID), nullablePolicyID(record.ProjectID), nullablePolicyID(record.APIKeyID), nullablePolicyID(record.AccessCredentialID),
 		record.Name, record.Model, record.PolicyLabel, record.Mode, record.FailureMode,
 		nullablePolicyID(record.RPSLimit), nullablePolicyID(record.RPMLimit), nullablePolicyID(record.TPMLimit),
 		nullablePolicyID(record.ConcurrencyLimit), nullablePositiveUserID(middleware.GetUserIDFromContext(r.Context())),
@@ -201,6 +220,11 @@ func (h *Handler) CreateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 	record.ID = id
 	record.CreatedAt = createdAt
 	record.UpdatedAt = updatedAt
+	record, err = readLimitPolicyFrom(r.Context(), tx, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read created policy"})
+		return
+	}
 	if err := insertAuditEntry(r.Context(), tx, "limit_policy.create", "distributed_limit_policy", strconv.FormatInt(record.ID, 10),
 		map[string]interface{}{"after": limitPolicyPayload(record)}, limitPolicyAuditMeta(r, record)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
@@ -242,6 +266,10 @@ func (h *Handler) UpdateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
+	if err := validatePolicySelectorMutation(mutation.APIKeyID, mutation.AccessCredentialID); err != nil {
+		writeLimitPolicyError(w, err)
+		return
+	}
 	if mutation.Version == nil || *mutation.Version <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "version is required and must be positive"})
 		return
@@ -258,13 +286,20 @@ func (h *Handler) UpdateLimitPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizePolicySelectorMutationTx(r.Context(), tx, policySelector{
+		OrgID: current.OrgID, ProjectID: current.ProjectID, APIKeyID: current.APIKeyID,
+		AccessCredentialID: current.AccessCredentialID,
+	}); err != nil {
+		writeLimitPolicyError(w, err)
+		return
+	}
 	tag, err := tx.Exec(r.Context(), `
 		UPDATE distributed_limit_policies SET
-			org_id=$1, project_id=$2, api_key_id=$3, name=$4, model=$5, policy_label=$6,
-			mode=$7, failure_mode=$8, rps_limit=$9, rpm_limit=$10, tpm_limit=$11,
-			concurrency_limit=$12, version=version+1, updated_by=$13, updated_at=NOW()
-		WHERE id=$14 AND version=$15`,
-		nullablePolicyID(current.OrgID), nullablePolicyID(current.ProjectID), nullablePolicyID(current.APIKeyID),
+			org_id=$1, project_id=$2, api_key_id=$3, access_credential_id=$4, name=$5, model=$6, policy_label=$7,
+			mode=$8, failure_mode=$9, rps_limit=$10, rpm_limit=$11, tpm_limit=$12,
+			concurrency_limit=$13, version=version+1, updated_by=$14, updated_at=NOW()
+		WHERE id=$15 AND version=$16`,
+		nullablePolicyID(current.OrgID), nullablePolicyID(current.ProjectID), nullablePolicyID(current.APIKeyID), nullablePolicyID(current.AccessCredentialID),
 		current.Name, current.Model, current.PolicyLabel, current.Mode, current.FailureMode,
 		nullablePolicyID(current.RPSLimit), nullablePolicyID(current.RPMLimit), nullablePolicyID(current.TPMLimit),
 		nullablePolicyID(current.ConcurrencyLimit), nullablePositiveUserID(middleware.GetUserIDFromContext(r.Context())), id, expectedVersion)
@@ -313,15 +348,17 @@ type limitPolicyQueryRower interface {
 
 func readLimitPolicyFrom(ctx context.Context, queryer limitPolicyQueryRower, id int64) (limitPolicyRecord, error) {
 	row := queryer.QueryRow(ctx, `
-		SELECT p.id, p.org_id, p.project_id, p.api_key_id, p.name, p.model, p.policy_label,
+		SELECT p.id, p.org_id, p.project_id, p.api_key_id, p.access_credential_id, p.name, p.model, p.policy_label,
 		       p.mode, p.failure_mode, p.rps_limit, p.rpm_limit, p.tpm_limit,
 		       p.concurrency_limit, p.version, p.created_at, p.updated_at,
 		       COALESCE(o.name, ''), COALESCE(project.name, ''),
-		       COALESCE(key.name, ''), COALESCE(key.key_prefix, '')
+		       COALESCE(key.name, ''), COALESCE(key.key_prefix, ''),
+		       COALESCE(credential.name,''),COALESCE(credential.credential_ref,'')
 		FROM distributed_limit_policies p
 		LEFT JOIN orgs o ON o.id = p.org_id
 		LEFT JOIN projects project ON project.id = p.project_id AND project.org_id = p.org_id
 		LEFT JOIN api_keys key ON key.id = p.api_key_id AND key.org_id = p.org_id
+		LEFT JOIN access_credentials credential ON credential.id=p.access_credential_id AND credential.org_id=p.org_id
 		WHERE p.id = $1`, id)
 	return scanLimitPolicy(row)
 }
@@ -332,17 +369,18 @@ type limitPolicyScanner interface {
 
 func scanLimitPolicy(scanner limitPolicyScanner) (limitPolicyRecord, error) {
 	var record limitPolicyRecord
-	var orgID, projectID, apiKeyID sql.NullInt64
+	var orgID, projectID, apiKeyID, accessCredentialID sql.NullInt64
 	var rps, rpm, tpm, concurrency sql.NullInt64
 	err := scanner.Scan(
-		&record.ID, &orgID, &projectID, &apiKeyID, &record.Name, &record.Model, &record.PolicyLabel,
+		&record.ID, &orgID, &projectID, &apiKeyID, &accessCredentialID, &record.Name, &record.Model, &record.PolicyLabel,
 		&record.Mode, &record.FailureMode, &rps, &rpm, &tpm, &concurrency, &record.Version,
 		&record.CreatedAt, &record.UpdatedAt, &record.OrgName, &record.ProjectName,
-		&record.APIKeyName, &record.APIKeyPrefix,
+		&record.APIKeyName, &record.APIKeyPrefix, &record.AccessCredentialName, &record.AccessCredentialRef,
 	)
 	record.OrgID = nullIntPointer(orgID)
 	record.ProjectID = nullIntPointer(projectID)
 	record.APIKeyID = nullIntPointer(apiKeyID)
+	record.AccessCredentialID = nullIntPointer(accessCredentialID)
 	record.RPSLimit = nullIntPointer(rps)
 	record.RPMLimit = nullIntPointer(rpm)
 	record.TPMLimit = nullIntPointer(tpm)
@@ -389,12 +427,6 @@ func (h *Handler) normalizeAndAuthorizeLimitPolicy(ctx context.Context, record *
 		if record.OrgID == nil {
 			record.OrgID = &actorOrgID
 		}
-		if *record.OrgID != actorOrgID {
-			return errLimitPolicyForbidden
-		}
-	}
-	if record.OrgID != nil && !actorCanAccessOrg(ctx, *record.OrgID) {
-		return errLimitPolicyForbidden
 	}
 	return h.validateLimitPolicySelectorOwnership(ctx, record)
 }
@@ -402,40 +434,15 @@ func (h *Handler) normalizeAndAuthorizeLimitPolicy(ctx context.Context, record *
 var errLimitPolicyForbidden = fmt.Errorf("forbidden")
 
 func (h *Handler) validateLimitPolicySelectorOwnership(ctx context.Context, record *limitPolicyRecord) error {
-	var projectOrgID int64
-	if record.ProjectID != nil {
-		if *record.ProjectID <= 0 {
-			return fmt.Errorf("project_id must be positive")
-		}
-		if err := h.db.QueryRow(ctx, `SELECT org_id FROM projects WHERE id=$1`, *record.ProjectID).Scan(&projectOrgID); err != nil {
-			return fmt.Errorf("project_id does not exist")
-		}
-		if record.OrgID == nil {
-			record.OrgID = &projectOrgID
-		} else if *record.OrgID != projectOrgID {
-			return fmt.Errorf("project_id does not belong to org_id")
-		}
+	selector := policySelector{
+		OrgID: record.OrgID, ProjectID: record.ProjectID, APIKeyID: record.APIKeyID,
+		AccessCredentialID: record.AccessCredentialID,
 	}
-	if record.APIKeyID != nil {
-		if *record.APIKeyID <= 0 {
-			return fmt.Errorf("api_key_id must be positive")
-		}
-		var keyOrgID, keyProjectID int64
-		if err := h.db.QueryRow(ctx, `SELECT org_id, COALESCE(project_id,0) FROM api_keys WHERE id=$1`, *record.APIKeyID).Scan(&keyOrgID, &keyProjectID); err != nil {
-			return fmt.Errorf("api_key_id does not exist")
-		}
-		if record.OrgID == nil {
-			record.OrgID = &keyOrgID
-		} else if *record.OrgID != keyOrgID {
-			return fmt.Errorf("api_key_id does not belong to org_id")
-		}
-		if record.ProjectID != nil && *record.ProjectID != keyProjectID {
-			return fmt.Errorf("api_key_id does not belong to project_id")
-		}
+	if err := h.canonicalizePolicySelector(ctx, &selector); err != nil {
+		return err
 	}
-	if record.OrgID != nil && !actorCanAccessOrg(ctx, *record.OrgID) {
-		return errLimitPolicyForbidden
-	}
+	record.OrgID, record.ProjectID = selector.OrgID, selector.ProjectID
+	record.APIKeyID, record.AccessCredentialID = selector.APIKeyID, selector.AccessCredentialID
 	return nil
 }
 
@@ -475,6 +482,11 @@ func applyLimitPolicyMutation(record *limitPolicyRecord, mutation limitPolicyMut
 	}
 	if mutation.APIKeyID != nil {
 		record.APIKeyID = positiveOrNil(mutation.APIKeyID)
+		record.AccessCredentialID = nil
+	}
+	if mutation.AccessCredentialID != nil {
+		record.AccessCredentialID = positiveOrNil(mutation.AccessCredentialID)
+		record.APIKeyID = nil
 	}
 	if mutation.Name != nil {
 		record.Name = *mutation.Name
@@ -520,6 +532,8 @@ func limitPolicyPayload(record limitPolicyRecord) map[string]interface{} {
 		"project_id": nullablePolicyID(record.ProjectID), "project_name": record.ProjectName,
 		"api_key_id": nullablePolicyID(record.APIKeyID), "api_key_name": record.APIKeyName,
 		"api_key_prefix": record.APIKeyPrefix, "model": record.Model, "policy_label": record.PolicyLabel,
+		"access_credential_id":   nullablePolicyID(record.AccessCredentialID),
+		"access_credential_name": record.AccessCredentialName, "access_credential_ref": record.AccessCredentialRef,
 		"mode": record.Mode, "failure_mode": record.FailureMode,
 		"rps_limit": nullablePolicyID(record.RPSLimit), "rpm_limit": nullablePolicyID(record.RPMLimit),
 		"tpm_limit": nullablePolicyID(record.TPMLimit), "concurrency_limit": nullablePolicyID(record.ConcurrencyLimit),
@@ -554,6 +568,10 @@ func (h *Handler) refreshLimitPolicySnapshot(ctx context.Context) bool {
 }
 
 func writeLimitPolicyError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errPolicySelectorNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Policy selector not found"})
+		return
+	}
 	if err == errLimitPolicyForbidden {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return

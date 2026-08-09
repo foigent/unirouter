@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/uniroute/unirouter/internal/accessgrantboundary"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/models"
 )
@@ -26,25 +27,12 @@ type authoritySnapshot struct {
 	OwnerStatus    string
 	OwnerRole      string
 	MembershipRole string
+	Boundary       accessgrantboundary.Snapshot
 	Version        string
 }
 
 func (a authoritySnapshot) active() bool {
-	if a.APIKey.ID <= 0 || a.APIKey.Status != "active" || a.OrgStatus != "active" {
-		return false
-	}
-	if a.APIKey.ProjectID != nil && a.ProjectStatus != "active" {
-		return false
-	}
-	if a.APIKey.OwnerUserID != nil {
-		if a.OwnerStatus != "active" {
-			return false
-		}
-		if a.APIKey.ProjectID != nil && a.MembershipRole == "" {
-			return false
-		}
-	}
-	return true
+	return a.APIKey.ID > 0
 }
 
 type authorityCacheEntry struct {
@@ -112,12 +100,12 @@ func (c *authorityCache) put(key int64, snapshot authoritySnapshot, now time.Tim
 
 func (s *Service) loadAuthority(ctx context.Context, keyID int64) (authoritySnapshot, error) {
 	now := s.now()
-	if cached, ok := s.authorities.get(keyID, now); ok {
+	if cached, ok := s.authorities.get(keyID, now); ok && !cached.APIKey.GrantBound {
 		return cached, nil
 	}
 
 	value, err, _ := s.authorities.group.Do(fmt.Sprintf("%d", keyID), func() (interface{}, error) {
-		if cached, ok := s.authorities.get(keyID, s.now()); ok {
+		if cached, ok := s.authorities.get(keyID, s.now()); ok && !cached.APIKey.GrantBound {
 			return cached, nil
 		}
 		snapshot, err := queryAuthority(ctx, s.db, keyID)
@@ -134,66 +122,22 @@ func (s *Service) loadAuthority(ctx context.Context, keyID int64) (authoritySnap
 }
 
 func mapAuthorityError(err error) error {
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, accessgrantboundary.ErrInactive) {
 		return ErrInactiveRoot
 	}
 	return fmt.Errorf("%w: load root authority: %v", ErrUnavailable, err)
 }
 
 func queryAuthority(ctx context.Context, q db.DBQuerier, keyID int64) (authoritySnapshot, error) {
-	var snapshot authoritySnapshot
-	var projectID, ownerUserID int64
-	var budgetLimit int
-	err := q.QueryRow(ctx, `
-		SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), COALESCE(ak.owner_user_id, 0),
-		       COALESCE(NULLIF(ak.key_type, ''), 'shared'), ak.name, ak.key_prefix,
-		       ak.status, COALESCE(ak.allowed_ips, ''), COALESCE(ak.allowed_models, ''),
-		       COALESCE(ak.purpose, ''), ak.auth_epoch,
-		       ak.rpm_limit, ak.qps_limit, COALESCE(ak.budget_limit, -1),
-		       o.status,
-		       COALESCE(p.status, ''), COALESCE(u.status, ''), COALESCE(u.role, ''),
-		       COALESCE(pm.role, '')
-		FROM api_keys ak
-		JOIN orgs o ON o.id = ak.org_id
-		LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
-		LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
-		LEFT JOIN project_members pm ON pm.project_id = ak.project_id AND pm.user_id = ak.owner_user_id
-		LEFT JOIN workload_applications app
-		  ON app.id = ak.workload_application_id AND app.org_id = ak.org_id
-		WHERE ak.id = $1
-		  AND (ak.workload_application_id IS NULL OR app.status = 'active')`, keyID).Scan(
-		&snapshot.APIKey.ID,
-		&snapshot.APIKey.OrgID,
-		&projectID,
-		&ownerUserID,
-		&snapshot.APIKey.KeyType,
-		&snapshot.APIKey.Name,
-		&snapshot.APIKey.KeyPrefix,
-		&snapshot.APIKey.Status,
-		&snapshot.APIKey.IPWhitelist,
-		&snapshot.APIKey.AllowedModels,
-		&snapshot.APIKey.Purpose,
-		&snapshot.APIKey.AuthEpoch,
-		&snapshot.APIKey.RPMLimit,
-		&snapshot.APIKey.QPSLimit,
-		&budgetLimit,
-		&snapshot.OrgStatus,
-		&snapshot.ProjectStatus,
-		&snapshot.OwnerStatus,
-		&snapshot.OwnerRole,
-		&snapshot.MembershipRole,
-	)
+	boundary, err := accessgrantboundary.Resolve(ctx, q, keyID)
 	if err != nil {
 		return authoritySnapshot{}, err
 	}
-	if projectID > 0 {
-		snapshot.APIKey.ProjectID = &projectID
-	}
-	if ownerUserID > 0 {
-		snapshot.APIKey.OwnerUserID = &ownerUserID
-	}
-	if budgetLimit >= 0 {
-		snapshot.APIKey.BudgetLimit = &budgetLimit
+	snapshot := authoritySnapshot{
+		APIKey: boundary.APIKey, OrgStatus: boundary.OrgStatus,
+		ProjectStatus: boundary.ProjectStatus, OwnerStatus: boundary.OwnerStatus,
+		OwnerRole: boundary.OwnerRole, MembershipRole: boundary.MembershipRole,
+		Boundary: boundary,
 	}
 	snapshot.Version = authorityVersion(snapshot)
 	return snapshot, nil
@@ -201,42 +145,85 @@ func queryAuthority(ctx context.Context, q db.DBQuerier, keyID int64) (authority
 
 func authorityVersion(snapshot authoritySnapshot) string {
 	type versionInput struct {
-		KeyID          int64  `json:"key_id"`
-		OrgID          int64  `json:"org_id"`
-		ProjectID      int64  `json:"project_id"`
-		OwnerUserID    int64  `json:"owner_user_id"`
-		KeyType        string `json:"key_type"`
-		KeyStatus      string `json:"key_status"`
-		AuthEpoch      int64  `json:"auth_epoch"`
-		Purpose        string `json:"purpose"`
-		OrgStatus      string `json:"org_status"`
-		ProjectStatus  string `json:"project_status"`
-		OwnerStatus    string `json:"owner_status"`
-		OwnerRole      string `json:"owner_role"`
-		MembershipRole string `json:"membership_role"`
-		AllowedIPs     string `json:"allowed_ips"`
-		AllowedModels  string `json:"allowed_models"`
-		RPMLimit       int    `json:"rpm_limit"`
-		RPSLimit       int    `json:"rps_limit"`
-		BudgetLimit    int    `json:"budget_limit"`
+		KeyID                   int64  `json:"key_id"`
+		OrgID                   int64  `json:"org_id"`
+		ProjectID               int64  `json:"project_id"`
+		OwnerUserID             int64  `json:"owner_user_id"`
+		KeyType                 string `json:"key_type"`
+		KeyStatus               string `json:"key_status"`
+		AuthEpoch               int64  `json:"auth_epoch"`
+		Purpose                 string `json:"purpose"`
+		OrgStatus               string `json:"org_status"`
+		ProjectStatus           string `json:"project_status"`
+		OwnerStatus             string `json:"owner_status"`
+		OwnerRole               string `json:"owner_role"`
+		MembershipRole          string `json:"membership_role"`
+		AllowedIPs              string `json:"allowed_ips"`
+		AllowedModels           string `json:"allowed_models"`
+		RPMLimit                int    `json:"rpm_limit"`
+		RPSLimit                int    `json:"rps_limit"`
+		BudgetLimit             int    `json:"budget_limit"`
+		AllowedEndpoints        string `json:"allowed_endpoints"`
+		AccessGrantID           int64  `json:"access_grant_id"`
+		GrantRevision           int64  `json:"grant_revision"`
+		GrantScopeMode          string `json:"grant_scope_mode"`
+		GrantSubjectType        string `json:"grant_subject_type"`
+		GrantSubjectUserID      int64  `json:"grant_subject_user_id"`
+		GrantSubjectWorkloadID  int64  `json:"grant_subject_workload_id"`
+		GrantSponsorUserID      int64  `json:"grant_sponsor_user_id"`
+		SponsorOrgID            int64  `json:"sponsor_org_id"`
+		SponsorStatus           string `json:"sponsor_status"`
+		SponsorOrganizationRole string `json:"sponsor_organization_role"`
+		SponsorMembershipRole   string `json:"sponsor_membership_role"`
+		GrantProjectRole        string `json:"grant_project_role"`
+		GrantEnvironment        string `json:"grant_environment"`
+		GrantProductionUse      bool   `json:"grant_production_use"`
+		GrantRPMLimit           int    `json:"grant_rpm_limit"`
+		GrantRPSLimit           int    `json:"grant_rps_limit"`
+		GrantConcurrencyLimit   int    `json:"grant_concurrency_limit"`
+		WorkloadApplicationID   int64  `json:"workload_application_id"`
+		WorkloadStatus          string `json:"workload_status"`
+		WorkloadKind            string `json:"workload_kind"`
+		WorkloadIdentity        string `json:"workload_identity"`
+		WorkloadEnvironment     string `json:"workload_environment"`
+		WorkloadProductionUse   bool   `json:"workload_production_use"`
 	}
 	input := versionInput{
-		KeyID:          snapshot.APIKey.ID,
-		OrgID:          snapshot.APIKey.OrgID,
-		KeyType:        snapshot.APIKey.KeyType,
-		KeyStatus:      snapshot.APIKey.Status,
-		AuthEpoch:      snapshot.APIKey.AuthEpoch,
-		Purpose:        snapshot.APIKey.Purpose,
-		OrgStatus:      snapshot.OrgStatus,
-		ProjectStatus:  snapshot.ProjectStatus,
-		OwnerStatus:    snapshot.OwnerStatus,
-		OwnerRole:      snapshot.OwnerRole,
-		MembershipRole: snapshot.MembershipRole,
-		AllowedIPs:     strings.TrimSpace(snapshot.APIKey.IPWhitelist),
-		AllowedModels:  strings.Join(normalizedSet(strings.Split(snapshot.APIKey.AllowedModels, ",")), ","),
-		RPMLimit:       effectiveRPM(snapshot.APIKey.RPMLimit),
-		RPSLimit:       effectiveRPS(snapshot.APIKey.QPSLimit),
-		BudgetLimit:    -1,
+		KeyID:                   snapshot.APIKey.ID,
+		OrgID:                   snapshot.APIKey.OrgID,
+		KeyType:                 snapshot.APIKey.KeyType,
+		KeyStatus:               snapshot.APIKey.Status,
+		AuthEpoch:               snapshot.APIKey.AuthEpoch,
+		Purpose:                 snapshot.APIKey.Purpose,
+		OrgStatus:               snapshot.OrgStatus,
+		ProjectStatus:           snapshot.ProjectStatus,
+		OwnerStatus:             snapshot.OwnerStatus,
+		OwnerRole:               snapshot.OwnerRole,
+		MembershipRole:          snapshot.MembershipRole,
+		AllowedIPs:              strings.TrimSpace(snapshot.APIKey.IPWhitelist),
+		AllowedModels:           strings.Join(normalizedSet(strings.Split(snapshot.APIKey.AllowedModels, ",")), ","),
+		AllowedEndpoints:        strings.Join(normalizedSet(strings.Split(snapshot.APIKey.AllowedEndpoints, ",")), ","),
+		RPMLimit:                effectiveRPM(snapshot.APIKey.RPMLimit),
+		RPSLimit:                effectiveRPS(snapshot.APIKey.QPSLimit),
+		BudgetLimit:             -1,
+		GrantRevision:           snapshot.Boundary.GrantRevision,
+		GrantScopeMode:          snapshot.APIKey.GrantScopeMode,
+		GrantSubjectType:        snapshot.Boundary.GrantSubjectType,
+		GrantSubjectUserID:      snapshot.Boundary.GrantSubjectUserID,
+		GrantSubjectWorkloadID:  snapshot.Boundary.GrantSubjectWorkloadID,
+		GrantSponsorUserID:      snapshot.Boundary.GrantSponsorUserID,
+		SponsorOrgID:            snapshot.Boundary.SponsorOrgID,
+		SponsorStatus:           snapshot.Boundary.SponsorStatus,
+		SponsorOrganizationRole: snapshot.Boundary.SponsorOrganizationRole,
+		SponsorMembershipRole:   snapshot.Boundary.SponsorMembershipRole,
+		GrantProjectRole:        snapshot.Boundary.GrantProjectRole,
+		GrantEnvironment:        snapshot.Boundary.GrantEnvironment,
+		GrantProductionUse:      snapshot.Boundary.GrantProductionUse,
+		WorkloadStatus:          snapshot.Boundary.WorkloadStatus,
+		WorkloadKind:            snapshot.Boundary.WorkloadKind,
+		WorkloadIdentity:        snapshot.Boundary.WorkloadIdentity,
+		WorkloadEnvironment:     snapshot.Boundary.WorkloadEnvironment,
+		WorkloadProductionUse:   snapshot.Boundary.WorkloadProductionUse,
 	}
 	if snapshot.APIKey.ProjectID != nil {
 		input.ProjectID = *snapshot.APIKey.ProjectID
@@ -246,6 +233,21 @@ func authorityVersion(snapshot authoritySnapshot) string {
 	}
 	if snapshot.APIKey.BudgetLimit != nil {
 		input.BudgetLimit = *snapshot.APIKey.BudgetLimit
+	}
+	if snapshot.APIKey.AccessGrantID != nil {
+		input.AccessGrantID = *snapshot.APIKey.AccessGrantID
+	}
+	if snapshot.APIKey.WorkloadApplicationID != nil {
+		input.WorkloadApplicationID = *snapshot.APIKey.WorkloadApplicationID
+	}
+	if snapshot.APIKey.GrantRPMLimit != nil {
+		input.GrantRPMLimit = *snapshot.APIKey.GrantRPMLimit
+	}
+	if snapshot.APIKey.GrantRPSLimit != nil {
+		input.GrantRPSLimit = *snapshot.APIKey.GrantRPSLimit
+	}
+	if snapshot.APIKey.GrantConcurrencyLimit != nil {
+		input.GrantConcurrencyLimit = *snapshot.APIKey.GrantConcurrencyLimit
 	}
 	encoded, _ := json.Marshal(input)
 	digest := sha256.Sum256(encoded)

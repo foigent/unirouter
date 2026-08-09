@@ -93,30 +93,19 @@ func newTestService(t *testing.T, fixture *authorityFixture, clock *testClock) (
 			if len(args) != 1 || args[0] != fixture.keyID {
 				return fmt.Errorf("unexpected key lookup: %v", args)
 			}
-			if len(dest) != 20 {
-				return fmt.Errorf("unexpected authority scan width: %d", len(dest))
-			}
-			*dest[0].(*int64) = fixture.keyID
-			*dest[1].(*int64) = fixture.orgID
-			*dest[2].(*int64) = fixture.projectID
-			*dest[3].(*int64) = fixture.ownerUserID
-			*dest[4].(*string) = fixture.keyType
-			*dest[5].(*string) = "root-key"
-			*dest[6].(*string) = "ur-0007-root"
-			*dest[7].(*string) = fixture.keyStatus
-			*dest[8].(*string) = fixture.allowedIPs
-			*dest[9].(*string) = fixture.allowedModels
-			*dest[10].(*string) = ""
-			*dest[11].(*int64) = 1
-			*dest[12].(*int) = fixture.rpmLimit
-			*dest[13].(*int) = fixture.rpsLimit
-			*dest[14].(*int) = fixture.budgetLimit
-			*dest[15].(*string) = fixture.orgStatus
-			*dest[16].(*string) = fixture.projectStatus
-			*dest[17].(*string) = fixture.ownerStatus
-			*dest[18].(*string) = fixture.ownerRole
-			*dest[19].(*string) = fixture.membershipRole
-			return nil
+			projectID, ownerUserID := fixture.projectID, fixture.ownerUserID
+			budget := int64(fixture.budgetLimit)
+			return (testutil.AccessGrantBoundaryFixture{
+				KeyID: fixture.keyID, OrgID: fixture.orgID,
+				ProjectID: &projectID, OwnerUserID: &ownerUserID,
+				KeyType: fixture.keyType, Name: "root-key", Prefix: "ur-0007-root",
+				KeyStatus: fixture.keyStatus, AllowedIPs: fixture.allowedIPs,
+				AllowedModels: fixture.allowedModels, RPMLimit: fixture.rpmLimit,
+				RPSLimit: fixture.rpsLimit, KeyBudgetCents: &budget, AuthEpoch: 1,
+				OrgStatus: fixture.orgStatus, ProjectStatus: fixture.projectStatus,
+				OwnerStatus: fixture.ownerStatus, OwnerRole: fixture.ownerRole,
+				MembershipRole: fixture.membershipRole,
+			}).Scan(dest...)
 		}}
 	}}
 	service, err := NewServiceWithOptions(database, rdb, "agent-capability-test-root-secret", ServiceOptions{
@@ -213,6 +202,41 @@ func TestExchangeAuthenticateAndTamperResistance(t *testing.T) {
 	tampered := string(tamperedBytes)
 	if _, err := service.Authenticate(context.Background(), tampered); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("tampered token error = %v, want ErrInvalidToken", err)
+	}
+}
+
+func TestAgentCapabilityV1RejectsAsyncMediaEndpointAcrossLifecycle(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	service, _, _ := newTestService(t, fixture, newTestClock(base))
+
+	mediaLimits := rootLimits(4, 20, 100)
+	mediaLimits.AllowedEndpoints = []string{"/v1/media/jobs"}
+	if _, err := service.Exchange(context.Background(), rootKey(fixture), ExchangeRequest{
+		RootAgentID:        "agent:media-root",
+		WorkflowTTLSeconds: 3600,
+		Limits:             mediaLimits,
+	}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("media exchange error = %v, want ErrInvalidRequest", err)
+	}
+
+	root := exchangeRoot(t, service, fixture, rootLimits(4, 20, 100))
+	authenticated, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Delegate(context.Background(), authenticated.Claims, DelegateRequest{
+		ChildAgentID: "agent:media-child",
+		Limits:       mediaLimits,
+	}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("media delegation error = %v, want ErrInvalidRequest", err)
+	}
+
+	invalidRefresh := *authenticated.Claims
+	invalidRefresh.Limits = authenticated.Claims.Limits
+	invalidRefresh.Limits.AllowedEndpoints = []string{"/v1/media/jobs"}
+	if _, err := service.Refresh(context.Background(), &invalidRefresh); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("media refresh error = %v, want ErrInvalidToken", err)
 	}
 }
 

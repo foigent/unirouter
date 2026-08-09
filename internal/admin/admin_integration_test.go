@@ -213,16 +213,23 @@ func TestLogin_InvalidJSON_Integration(t *testing.T) {
 func TestCreateAPIKey_Success_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	var defaultProjectID int64
+	var defaultProjectID, actorID int64
 	require.NoError(t, pool.QueryRow(t.Context(),
 		`INSERT INTO projects (org_id, name, slug, status) VALUES ($1, 'Default Project', 'default', 'active') RETURNING id`, orgID,
 	).Scan(&defaultProjectID))
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'create-key-user','hash','member','developer','active') RETURNING id`, orgID,
+	).Scan(&actorID))
+	_, err := pool.Exec(t.Context(), `INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_user')`, defaultProjectID, actorID)
+	require.NoError(t, err)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
-	body := fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"test-key","rpm_limit":100,"qps_limit":20}`, orgID, defaultProjectID)
+	body := fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"test-key","rpm_limit":60,"qps_limit":10}`, orgID, defaultProjectID)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	req = withIntegrationCommittingActor(t, pool, req, actorID)
 	rec := httptest.NewRecorder()
 
 	h.CreateAPIKey(rec, req)
@@ -230,7 +237,7 @@ func TestCreateAPIKey_Success_Integration(t *testing.T) {
 	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
 
 	var resp map[string]interface{}
-	err := json.Unmarshal(rec.Body.Bytes(), &resp)
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	require.NotEmpty(t, resp["key"], "should return raw key")
 	require.NotEmpty(t, resp["key_prefix"], "should return key prefix")
@@ -272,10 +279,16 @@ func TestCreateAPIKey_NoName_Integration(t *testing.T) {
 func TestCreateAPIKey_DefaultLimits_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
-	var defaultProjectID int64
+	var defaultProjectID, actorID int64
 	require.NoError(t, pool.QueryRow(t.Context(),
 		`INSERT INTO projects (org_id, name, slug, status) VALUES ($1, 'Default Project', 'default', 'active') RETURNING id`, orgID,
 	).Scan(&defaultProjectID))
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'default-limit-user','hash','member','developer','active') RETURNING id`, orgID,
+	).Scan(&actorID))
+	_, err := pool.Exec(t.Context(), `INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_user')`, defaultProjectID, actorID)
+	require.NoError(t, err)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
@@ -283,6 +296,7 @@ func TestCreateAPIKey_DefaultLimits_Integration(t *testing.T) {
 	body := fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"default-limits-key"}`, orgID, defaultProjectID)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	req = withIntegrationCommittingActor(t, pool, req, actorID)
 	rec := httptest.NewRecorder()
 
 	h.CreateAPIKey(rec, req)
@@ -295,7 +309,7 @@ func TestCreateAPIKey_DefaultLimits_Integration(t *testing.T) {
 
 	// Verify default limits in DB
 	var rpm, qps int
-	err := pool.QueryRow(t.Context(),
+	err = pool.QueryRow(t.Context(),
 		`SELECT rpm_limit, qps_limit FROM api_keys WHERE id = $1`, keyID,
 	).Scan(&rpm, &qps)
 	require.NoError(t, err)
@@ -934,26 +948,36 @@ func TestDeleteUser_Success_Integration(t *testing.T) {
 	orgID := testutil.NewTestOrg(t, pool)
 
 	// Create user directly in DB
-	var userID int64
+	var userID, actorID int64
 	err := pool.QueryRow(t.Context(),
 		`INSERT INTO users (org_id, username, password_hash, role) VALUES ($1, 'todelete', 'hash', 'org_viewer') RETURNING id`,
 		orgID).Scan(&userID)
 	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'delete-actor','hash','platform_admin','platform_admin','active') RETURNING id`, orgID,
+	).Scan(&actorID))
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/users/%d", userID), nil)
 	req.SetPathValue("id", fmt.Sprintf("%d", userID))
+	req = withIntegrationCommittingActor(t, pool, req, actorID)
 	rec := httptest.NewRecorder()
 
 	h.DeleteUser(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	// Verify deleted
-	var count int
-	pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM users WHERE id = $1`, userID).Scan(&count)
-	require.Equal(t, 0, count)
+	// DELETE is a durable offboard operation so immutable enterprise evidence
+	// keeps a stable subject identity.
+	var status string
+	var offboardedBy int64
+	require.NoError(t, pool.QueryRow(t.Context(),
+		`SELECT status,offboarded_by FROM users WHERE id=$1`, userID,
+	).Scan(&status, &offboardedBy))
+	require.Equal(t, "disabled", status)
+	require.Equal(t, actorID, offboardedBy)
 }
 
 func TestDeleteUser_NotFound_Integration(t *testing.T) {
@@ -1207,11 +1231,13 @@ func TestListAPIKeys_Success_Integration(t *testing.T) {
 		INSERT INTO users (org_id, username, password_hash, organization_role, role, status)
 		VALUES ($1, 'list-key-admin', 'hash', 'org_admin', 'org_admin', 'active') RETURNING id`, orgID,
 	).Scan(&adminID))
+	_, err := pool.Exec(t.Context(), `INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_admin')`, defaultProjectID, adminID)
+	require.NoError(t, err)
 
 	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
 
 	// Create a key via handler
-	body := fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"list-test-key"}`, orgID, defaultProjectID)
+	body := fmt.Sprintf(`{"org_id":%d,"project_id":%d,"owner_user_id":%d,"key_type":"personal","name":"list-test-key"}`, orgID, defaultProjectID, adminID)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	req = withIntegrationCommittingActor(t, pool, req, adminID)
@@ -1227,7 +1253,7 @@ func TestListAPIKeys_Success_Integration(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec2.Code, "body: %s", rec2.Body.String())
 	var resp map[string]interface{}
-	err := json.Unmarshal(rec2.Body.Bytes(), &resp)
+	err = json.Unmarshal(rec2.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	data := resp["data"].([]interface{})
 	require.GreaterOrEqual(t, len(data), 1, "should have at least 1 key")

@@ -50,24 +50,25 @@ var (
 )
 
 type Policy struct {
-	ID          int64           `json:"id"`
-	Ref         string          `json:"ref"`
-	Name        string          `json:"name"`
-	Version     int64           `json:"version"`
-	OrgID       *int64          `json:"org_id,omitempty"`
-	ProjectID   *int64          `json:"project_id,omitempty"`
-	APIKeyID    *int64          `json:"api_key_id,omitempty"`
-	Model       string          `json:"model,omitempty"`
-	Stage       string          `json:"stage"`
-	DetectorRef string          `json:"detector_ref"`
-	Action      string          `json:"action"`
-	Mode        string          `json:"mode"`
-	FailureMode string          `json:"failure_mode"`
-	Mandatory   bool            `json:"mandatory"`
-	Config      json.RawMessage `json:"config,omitempty"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
-	Builtin     bool            `json:"builtin"`
+	ID                 int64           `json:"id"`
+	Ref                string          `json:"ref"`
+	Name               string          `json:"name"`
+	Version            int64           `json:"version"`
+	OrgID              *int64          `json:"org_id,omitempty"`
+	ProjectID          *int64          `json:"project_id,omitempty"`
+	APIKeyID           *int64          `json:"api_key_id,omitempty"`
+	AccessCredentialID *int64          `json:"access_credential_id,omitempty"`
+	Model              string          `json:"model,omitempty"`
+	Stage              string          `json:"stage"`
+	DetectorRef        string          `json:"detector_ref"`
+	Action             string          `json:"action"`
+	Mode               string          `json:"mode"`
+	FailureMode        string          `json:"failure_mode"`
+	Mandatory          bool            `json:"mandatory"`
+	Config             json.RawMessage `json:"config,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
+	Builtin            bool            `json:"builtin"`
 }
 
 func (p Policy) Validate() error {
@@ -101,7 +102,10 @@ func (p Policy) Validate() error {
 			return fmt.Errorf("%w: detector credentials belong to the platform registry, not policy config", ErrInvalidPolicy)
 		}
 	}
-	if (p.ProjectID != nil || p.APIKeyID != nil) && p.OrgID == nil {
+	if (p.ProjectID != nil || p.APIKeyID != nil || p.AccessCredentialID != nil) && p.OrgID == nil {
+		return ErrInvalidPolicy
+	}
+	if p.APIKeyID != nil && p.AccessCredentialID != nil {
 		return ErrInvalidPolicy
 	}
 	if p.Mandatory {
@@ -142,11 +146,12 @@ func configContainsCredentialKey(value interface{}) bool {
 }
 
 type Subject struct {
-	OrgID     int64
-	ProjectID int64
-	APIKeyID  int64
-	Model     string
-	Endpoint  string
+	OrgID              int64
+	ProjectID          int64
+	APIKeyID           int64
+	AccessCredentialID int64
+	Model              string
+	Endpoint           string
 }
 
 type PolicyIdentity struct {
@@ -165,6 +170,9 @@ func (p Policy) Matches(subject Subject) bool {
 		return false
 	}
 	if p.APIKeyID != nil && *p.APIKeyID != subject.APIKeyID {
+		return false
+	}
+	if p.AccessCredentialID != nil && *p.AccessCredentialID != subject.AccessCredentialID {
 		return false
 	}
 	return p.Model == "" || p.Model == subject.Model

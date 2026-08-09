@@ -17,6 +17,7 @@ func TestInvocationOptimizationMigrationSafetyAndRollbackGuards(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	rollbackEmptyMigrations(t, pool, []string{
+		"000059_enterprise_access_provisioning.down.sql",
 		"000058_enterprise_project_role_separation.down.sql",
 		"000057_second_integration_reset_support.down.sql",
 	})

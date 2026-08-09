@@ -41,11 +41,15 @@ func (h *HTTPHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.service.Submit(r.Context(), SubmitInput{
 		Scope: scope, APIKeyID: apiKey.ID,
-		RequestID:       middleware.GetRequestIDFromContext(r.Context()),
-		ClientRequestID: middleware.GetClientRequestIDFromContext(r.Context()),
-		IdempotencyKey:  r.Header.Get("Idempotency-Key"),
-		AllowedModels:   apiKey.AllowedModels,
-		Body:            body,
+		AccessGrantID:      nullableIDValue(apiKey.AccessGrantID),
+		AccessCredentialID: nullableIDValue(apiKey.AccessCredentialID),
+		CredentialRef:      apiKey.CredentialRef,
+		RequestID:          middleware.GetRequestIDFromContext(r.Context()),
+		ClientRequestID:    middleware.GetClientRequestIDFromContext(r.Context()),
+		IdempotencyKey:     r.Header.Get("Idempotency-Key"),
+		AllowedModels:      apiKey.AllowedModels,
+		LimitSubject:       mediaLimitSubject(*apiKey, scope.OrgID, scope.ProjectID, ""),
+		Body:               body,
 	})
 	if err != nil {
 		writeMediaError(w, err)
@@ -57,6 +61,13 @@ func (h *HTTPHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Location", "/v1/media/jobs/"+result.Job.JobID)
 	writeMediaJSON(w, status, result)
+}
+
+func nullableIDValue(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func (h *HTTPHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -319,6 +330,11 @@ func writeMediaError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrOutputExpired):
 		status = http.StatusGone
 		code = "output_expired"
+	case errors.Is(err, ErrRateLimited):
+		status = http.StatusTooManyRequests
+		if code == "internal_error" {
+			code = "rate_limit_exceeded"
+		}
 	case errors.Is(err, ErrUnavailable):
 		status = http.StatusServiceUnavailable
 		if code == "internal_error" {
@@ -345,6 +361,8 @@ func mediaErrorMessage(status int) string {
 		return "The media job state conflicts with this operation"
 	case http.StatusGone:
 		return "The media output has expired"
+	case http.StatusTooManyRequests:
+		return "The media execution rate limit was exceeded"
 	case http.StatusServiceUnavailable:
 		return "The media job service is temporarily unavailable"
 	default:

@@ -85,6 +85,151 @@ func admission(operation string, tokens int64) AdmissionRequest {
 	}
 }
 
+func TestBuiltinAccessGrantPolicyBindsOrganizationAndGrant(t *testing.T) {
+	service := &Service{}
+	rps, rpm, concurrency := int64(3), int64(30), int64(2)
+	subject := Subject{
+		OrgID: 7, ProjectID: 11, APIKeyID: 13, AccessGrantID: 17,
+		BaseRPSLimit: 100, BaseRPMLimit: 1000,
+		GrantRPSLimit: &rps, GrantRPMLimit: &rpm, GrantConcurrencyLimit: &concurrency,
+	}
+	policies := service.matchingPolicies(subject)
+	if len(policies) != 2 {
+		t.Fatalf("expected API-key and access-grant policies, got %d", len(policies))
+	}
+	grantPolicy := policies[1]
+	if err := grantPolicy.Validate(); err != nil {
+		t.Fatalf("built-in access-grant policy must satisfy the persisted policy contract: %v", err)
+	}
+	if grantPolicy.OrgID == nil || *grantPolicy.OrgID != subject.OrgID ||
+		grantPolicy.AccessGrantID == nil || *grantPolicy.AccessGrantID != subject.AccessGrantID {
+		t.Fatalf("unexpected access-grant selector: org=%v grant=%v", grantPolicy.OrgID, grantPolicy.AccessGrantID)
+	}
+	if !grantPolicy.Matches(subject) {
+		t.Fatal("access-grant policy must match its exact organization and grant")
+	}
+	foreignOrganization := subject
+	foreignOrganization.OrgID++
+	if grantPolicy.Matches(foreignOrganization) {
+		t.Fatal("access-grant policy must not match the same grant selector in another organization")
+	}
+	if got, want := grantPolicy.RuntimeBucket, "builtin:access-grant:17"; got != want {
+		t.Fatalf("runtime bucket must remain fixed to the globally unique grant identity: got %q want %q", got, want)
+	}
+	foreignOrgID := foreignOrganization.OrgID
+	foreignSelector := grantPolicy
+	foreignSelector.OrgID = &foreignOrgID
+	if grantPolicy.selectorHash() == foreignSelector.selectorHash() {
+		t.Fatal("selector hash must bind the organization as well as the grant")
+	}
+}
+
+func TestMediaAndModelCallsShareLogicalCredentialAndGrantBuckets(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions())
+	credentialConcurrency := int64(2)
+	grantRPS, grantRPM, grantConcurrency := int64(2), int64(100), int64(1)
+	subject := Subject{
+		OrgID: 7, ProjectID: 11, APIKeyID: 13,
+		AccessCredentialID: 17, CredentialRef: "credential-shared-runtime",
+		AccessGrantID: 19, Model: "company-image",
+		BaseRPSLimit: 2, BaseRPMLimit: 100,
+		CredentialConcurrencyLimit: &credentialConcurrency,
+		GrantRPSLimit:              &grantRPS, GrantRPMLimit: &grantRPM,
+		GrantConcurrencyLimit: &grantConcurrency,
+	}
+
+	mediaRate := AdmissionRequest{
+		OperationID: "media-rate-first", Subject: subject,
+		LeaseTTL: time.Minute, Phase: AdmissionPhaseRate,
+	}
+	mediaReservation, err := service.Reserve(context.Background(), mediaRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Finalize(context.Background(), mediaReservation, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	chat := AdmissionRequest{
+		OperationID: "chat-full-second", Subject: subject,
+		EstimatedInput: 1, ReservedOutput: 1, LeaseTTL: time.Minute,
+		Phase: AdmissionPhaseFull,
+	}
+	chatReservation, err := service.Reserve(context.Background(), chat)
+	if err != nil {
+		t.Fatalf("chat did not share the same available rate lane: %v", err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), chatReservation); err != nil {
+		t.Fatal(err)
+	}
+
+	rotatedMedia := mediaRate
+	rotatedMedia.OperationID = "media-rate-rotated-version"
+	rotatedMedia.Subject.APIKeyID = 99
+	if _, err := service.Reserve(context.Background(), rotatedMedia); !errors.Is(err, ErrRPSExceeded) {
+		t.Fatalf("physical-key rotation escaped logical family rate bucket: %v", err)
+	}
+
+	otherFamily := subject
+	otherFamily.APIKeyID = 21
+	otherFamily.AccessCredentialID = 23
+	otherFamily.CredentialRef = "credential-other-family"
+	otherFamily.BaseRPSLimit = 100
+	otherFamilyRate := mediaRate
+	otherFamilyRate.OperationID = "media-rate-other-family"
+	otherFamilyRate.Subject = otherFamily
+	if _, err := service.Reserve(context.Background(), otherFamilyRate); !errors.Is(err, ErrRPSExceeded) {
+		t.Fatalf("second family escaped shared Grant rate bucket: %v", err)
+	}
+}
+
+func TestMediaExecutionAndModelCallsShareGrantConcurrency(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions())
+	credentialConcurrency := int64(1)
+	grantConcurrency := int64(1)
+	firstSubject := Subject{
+		OrgID: 7, ProjectID: 11, APIKeyID: 13,
+		AccessCredentialID: 17, CredentialRef: "credential-concurrency-one",
+		AccessGrantID: 19, Model: "company-image",
+		BaseRPSLimit: 100, BaseRPMLimit: 1_000,
+		CredentialConcurrencyLimit: &credentialConcurrency,
+		GrantConcurrencyLimit:      &grantConcurrency,
+	}
+	chat := AdmissionRequest{
+		OperationID: "chat-concurrency-holder", Subject: firstSubject,
+		EstimatedInput: 1, ReservedOutput: 1, LeaseTTL: time.Minute,
+		Phase: AdmissionPhaseFull,
+	}
+	chatReservation, err := service.Reserve(context.Background(), chat)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondSubject := firstSubject
+	secondSubject.APIKeyID = 21
+	secondSubject.AccessCredentialID = 23
+	secondSubject.CredentialRef = "credential-concurrency-two"
+	mediaExecution := AdmissionRequest{
+		OperationID: "media-execution-blocked", Subject: secondSubject,
+		LeaseTTL: time.Minute, WorkloadClass: workloadadmission.ClassInteractive,
+		Phase: AdmissionPhaseExecution,
+	}
+	if _, err := service.Reserve(context.Background(), mediaExecution); !errors.Is(err, ErrConcurrencyExceeded) {
+		t.Fatalf("media execution escaped the synchronous Grant concurrency lane: %v", err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), chatReservation); err != nil {
+		t.Fatal(err)
+	}
+	mediaExecution.OperationID = "media-execution-after-release"
+	mediaReservation, err := service.Reserve(context.Background(), mediaExecution)
+	if err != nil {
+		t.Fatalf("media execution remained blocked after terminal release: %v", err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), mediaReservation); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSharedConcurrencyIsReplicaInvariant(t *testing.T) {
 	options := testOptions()
 	policy := Policy{ID: 1, Ref: "policy:concurrency", Name: "shared", Version: 1, Mode: ModeEnforce, FailureMode: FailureFailClosed, ConcurrencyLimit: 3}

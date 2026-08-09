@@ -44,13 +44,17 @@ func (s *memoryIdempotencyStore) Claim(_ context.Context, in IdempotencyClaimInp
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.claims = append(s.claims, in)
-	key := fmt.Sprintf("%d/%d/%s", in.OrgID, in.APIKeyID, in.KeyHash)
+	subjectType, subjectID := idempotencySubject(in.APIKeyID, in.AccessCredentialID)
+	key := fmt.Sprintf("%d/%s/%d/%s", in.OrgID, subjectType, subjectID, in.KeyHash)
 	if existing, ok := s.records[key]; ok && existing.ExpiresAt.After(in.CreatedAt) {
 		return IdempotencyClaimResult{Record: existing}, nil
 	}
 	record := IdempotencyRecord{
 		OrgID:              in.OrgID,
 		APIKeyID:           in.APIKeyID,
+		AccessCredentialID: in.AccessCredentialID,
+		SubjectType:        subjectType,
+		SubjectID:          subjectID,
 		KeyHash:            in.KeyHash,
 		RequestFingerprint: in.RequestFingerprint,
 		OperationID:        in.OperationID,
@@ -64,10 +68,11 @@ func (s *memoryIdempotencyStore) Claim(_ context.Context, in IdempotencyClaimInp
 	return IdempotencyClaimResult{Claimed: true, Record: record}, nil
 }
 
-func (s *memoryIdempotencyStore) Complete(_ context.Context, orgID, apiKeyID int64, keyHash, operationID, state string, httpStatus int) error {
+func (s *memoryIdempotencyStore) Complete(_ context.Context, orgID, apiKeyID, accessCredentialID int64, keyHash, operationID, state string, httpStatus int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	key := fmt.Sprintf("%d/%d/%s", orgID, apiKeyID, keyHash)
+	subjectType, subjectID := idempotencySubject(apiKeyID, accessCredentialID)
+	key := fmt.Sprintf("%d/%s/%d/%s", orgID, subjectType, subjectID, keyHash)
 	record, ok := s.records[key]
 	if !ok || record.OperationID != operationID || record.State != IdempotencyStateInProgress {
 		return fmt.Errorf("claim ownership lost")
@@ -92,6 +97,10 @@ func scopedIdempotencyHandler(store IdempotencyStore, next http.Handler) http.Ha
 		}
 		ctx := context.WithValue(r.Context(), CtxOrgID, orgID)
 		ctx = context.WithValue(ctx, CtxKeyID, keyID)
+		credentialID, _ := strconv.ParseInt(r.Header.Get("X-Test-Credential"), 10, 64)
+		if credentialID > 0 {
+			ctx = context.WithValue(ctx, CtxAccessCredentialID, credentialID)
+		}
 		guarded.ServeHTTP(w, r.WithContext(ctx))
 	})
 	return OperationIdentityWithSecret(idempotencyTestSecret)(scoped)

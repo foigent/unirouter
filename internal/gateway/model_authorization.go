@@ -18,6 +18,9 @@ func (relay *Relay) EvaluateModelAuthorization(ctx context.Context, endpoint, re
 	if apiKey != nil {
 		input.OrgID = apiKey.OrgID
 		input.APIKeyID = apiKey.ID
+		if apiKey.AccessCredentialID != nil {
+			input.AccessCredentialID = *apiKey.AccessCredentialID
+		}
 		if apiKey.ProjectID != nil {
 			input.ProjectID = *apiKey.ProjectID
 		}

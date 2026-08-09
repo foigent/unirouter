@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/accessgrantlifecycle"
+	"github.com/uniroute/unirouter/internal/accesssponsor"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
@@ -270,6 +272,23 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !hasExistingMembership || canonicalProjectMembershipRole(existingMembershipRole) != membershipRole {
+		var targetOrganizationRole string
+		if err := tx.QueryRow(r.Context(), `SELECT organization_role FROM users WHERE id=$1 AND org_id=$2`, userID, orgID).Scan(&targetOrganizationRole); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Sponsor transition validation failed"})
+			return
+		}
+		if err := accesssponsor.ValidatePostTransition(r.Context(), tx, accesssponsor.PostTransitionState{
+			UserID: userID, OrgID: orgID, Status: targetStatus, OrganizationRole: targetOrganizationRole,
+			MembershipOverride: &accesssponsor.MembershipOverride{ProjectID: projectID, Role: membershipRole, Present: true},
+		}); err != nil {
+			if writeSponsorTransitionConflict(w, err) {
+				return
+			}
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Sponsor transition validation failed"})
+			return
+		}
+	}
 
 	_, err = tx.Exec(r.Context(),
 		`INSERT INTO project_members (project_id, user_id, role, created_at, updated_at)
@@ -284,7 +303,10 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 	}
 	disabledPersonalCredentials := int64(0)
 	if membershipRole == projectMemberViewer {
-		disabledPersonalCredentials, err = disablePersonalCredentialsForMembershipTx(r.Context(), tx, userID, orgID, projectID)
+		disabledPersonalCredentials, err = disablePersonalCredentialsForMembershipTx(
+			r.Context(), tx, userID, orgID, projectID, middleware.GetUserIDFromContext(r.Context()),
+			accessgrantlifecycle.ReasonMembershipNonCallingDowngrade,
+		)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to enforce non-calling membership"})
 			return
@@ -389,6 +411,16 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err := accesssponsor.ValidatePostTransition(r.Context(), tx, accesssponsor.PostTransitionState{
+		UserID: userID, OrgID: orgID, Status: targetStatus, OrganizationRole: targetOrganizationRole,
+		MembershipOverride: &accesssponsor.MembershipOverride{ProjectID: projectID, Present: false},
+	}); err != nil {
+		if writeSponsorTransitionConflict(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Sponsor transition validation failed"})
+		return
+	}
 	tag, err := tx.Exec(r.Context(),
 		`DELETE FROM project_members pm
 		 USING projects p, users u
@@ -405,7 +437,10 @@ func (h *Handler) DeleteProjectMember(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Project membership not found"})
 		return
 	}
-	disabledPersonalCredentials, err := disablePersonalCredentialsForMembershipTx(r.Context(), tx, userID, orgID, projectID)
+	disabledPersonalCredentials, err := disablePersonalCredentialsForMembershipTx(
+		r.Context(), tx, userID, orgID, projectID, middleware.GetUserIDFromContext(r.Context()),
+		accessgrantlifecycle.ReasonMembershipRemoved,
+	)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to revoke project calling credentials"})
 		return

@@ -13,8 +13,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/auth"
-	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
@@ -56,10 +54,7 @@ func TestPRD8ModelAuthorizationLifecycleTenantIsolationAndEvaluation(t *testing.
 	requestFor := func(tenant tenant, method, target, body string) *http.Request {
 		t.Helper()
 		request := httptest.NewRequest(method, target, strings.NewReader(body))
-		requestContext := context.WithValue(request.Context(), middleware.CtxUserID, tenant.userID)
-		requestContext = context.WithValue(requestContext, middleware.CtxOrgID, tenant.orgID)
-		requestContext = context.WithValue(requestContext, middleware.CtxUserRole, auth.RoleOrgAdmin)
-		return request.WithContext(requestContext)
+		return withIntegrationCommittingActor(t, pool, request, tenant.userID)
 	}
 	create := func(tenant tenant, ref, subjectType string, subjectID int64, effect string, models, endpoints []string) modelauthz.Policy {
 		t.Helper()

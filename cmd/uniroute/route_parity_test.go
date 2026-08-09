@@ -343,6 +343,34 @@ func TestMainRegistersCommercialFeatureGates(t *testing.T) {
 	}
 }
 
+func TestPublicMediaRoutesOnlySubmitExecutionWork(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	mainSource := string(src)
+	for _, registration := range []string{
+		`mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Submit))))`,
+		`mux.Handle("GET /v1/media/jobs/{id}", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Get))))`,
+		`mux.Handle("POST /v1/media/jobs/{id}/cancel", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Cancel))))`,
+		`mux.Handle("GET /v1/media/jobs/{id}/content", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Content))))`,
+	} {
+		if !strings.Contains(mainSource, registration) {
+			t.Fatalf("public media route wiring missing %q", registration)
+		}
+	}
+	for _, forbidden := range []string{
+		`rateLimiter(http.HandlerFunc(mediaHandler.Submit))`,
+		`rateLimiter(http.HandlerFunc(mediaHandler.Get))`,
+		`rateLimiter(http.HandlerFunc(mediaHandler.Cancel))`,
+		`rateLimiter(http.HandlerFunc(mediaHandler.Content))`,
+	} {
+		if strings.Contains(mainSource, forbidden) {
+			t.Fatalf("media route must not use the legacy physical-key limiter: %s", forbidden)
+		}
+	}
+}
+
 func TestOpenAPISpecCoversRegisteredRoutes(t *testing.T) {
 	routes := registeredMuxRoutes(t)
 	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")

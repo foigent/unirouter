@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/principallock"
 )
 
 var (
@@ -28,10 +28,12 @@ type committingActorProjectRequirement struct {
 // one exact project. Additional user IDs participate only in the deterministic
 // user-mutation lock order; they never grant authority.
 type committingActorRequirement struct {
-	TargetOrgID              int64
-	AllowedOrganizationRoles []string
-	Project                  *committingActorProjectRequirement
-	AdditionalUserIDs        []int64
+	TargetOrgID                             int64
+	AllowedOrganizationRoles                []string
+	Project                                 *committingActorProjectRequirement
+	AllowSelfRequestWithoutMembershipUserID int64
+	AdditionalUserIDs                       []int64
+	AdditionalWorkloadIDs                   []int64
 }
 
 type committingActorState struct {
@@ -58,17 +60,11 @@ func (h *Handler) reauthorizeCommittingActorTx(
 ) (committingActorState, error) {
 	var state committingActorState
 	if isUnauthenticatedUnitContext(ctx) {
-		lockUserIDs := append([]int64(nil), requirement.AdditionalUserIDs...)
-		sort.Slice(lockUserIDs, func(i, j int) bool { return lockUserIDs[i] < lockUserIDs[j] })
-		lastUserID := int64(0)
-		for _, userID := range lockUserIDs {
-			if userID <= 0 || userID == lastUserID {
-				continue
-			}
-			if err := lockProjectMembershipMutation(ctx, tx, userID); err != nil {
-				return state, err
-			}
-			lastUserID = userID
+		if err := principallock.LockUsers(ctx, tx, requirement.AdditionalUserIDs...); err != nil {
+			return state, err
+		}
+		if err := principallock.LockWorkloads(ctx, tx, requirement.AdditionalWorkloadIDs...); err != nil {
+			return state, err
 		}
 		state.TargetOrgID = requirement.TargetOrgID
 		if requirement.Project != nil && state.TargetOrgID <= 0 {
@@ -95,16 +91,11 @@ func (h *Handler) reauthorizeCommittingActorTx(
 	state.UserID = actorUserID
 
 	lockUserIDs := append([]int64{actorUserID}, requirement.AdditionalUserIDs...)
-	sort.Slice(lockUserIDs, func(i, j int) bool { return lockUserIDs[i] < lockUserIDs[j] })
-	lastUserID := int64(0)
-	for _, userID := range lockUserIDs {
-		if userID <= 0 || userID == lastUserID {
-			continue
-		}
-		if err := lockProjectMembershipMutation(ctx, tx, userID); err != nil {
-			return state, fmt.Errorf("lock committing authorization user %d: %w", userID, err)
-		}
-		lastUserID = userID
+	if err := principallock.LockUsers(ctx, tx, lockUserIDs...); err != nil {
+		return state, fmt.Errorf("lock committing authorization users: %w", err)
+	}
+	if err := principallock.LockWorkloads(ctx, tx, requirement.AdditionalWorkloadIDs...); err != nil {
+		return state, fmt.Errorf("lock committing authorization workloads: %w", err)
 	}
 
 	var userStatus, organizationStatus string
@@ -190,6 +181,50 @@ func (h *Handler) reauthorizeCommittingActorTx(
 			return state, errCommittingActorScopeNotFound
 		}
 		return state, nil
+	}
+
+	// A human access request must be able to begin before calling membership
+	// exists. This exception authorizes only submission of the actor's own
+	// request for one exact active project in the same organization. No
+	// membership produces first_cross_project; a live viewer membership is
+	// returned to policy evaluation so promotion produces role_elevation. An
+	// existing caller falls through to the ordinary live-membership gate.
+	if requirement.AllowSelfRequestWithoutMembershipUserID == actorUserID &&
+		state.OrganizationRole == auth.RoleMember {
+		var projectStatus string
+		err := tx.QueryRow(ctx, `
+			SELECT p.org_id,p.status
+			  FROM projects p
+			  JOIN orgs o ON o.id=p.org_id AND o.status='active'
+			 WHERE p.id=$1 AND p.org_id=$2
+			   AND ($3::bigint=0 OR p.org_id=$3)
+			 FOR UPDATE OF p FOR SHARE OF o`, projectRequirement.ProjectID, state.OrgID,
+			requirement.TargetOrgID).Scan(&state.TargetOrgID, &projectStatus)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return state, errCommittingActorScopeNotFound
+		}
+		if err != nil {
+			return state, fmt.Errorf("read self-request project scope: %w", err)
+		}
+		if projectRequirement.MustBeActive && projectStatus != "active" {
+			return state, errCommittingActorScopeNotFound
+		}
+		var storedRole string
+		err = tx.QueryRow(ctx, `
+			SELECT role FROM project_members
+			 WHERE project_id=$1 AND user_id=$2
+			 FOR SHARE`, projectRequirement.ProjectID, actorUserID).Scan(&storedRole)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return state, nil
+		}
+		if err != nil {
+			return state, fmt.Errorf("read self-request membership: %w", err)
+		}
+		canonicalRole, ok := auth.NormalizeProjectMembershipRole(storedRole)
+		if ok && canonicalRole == auth.ProjectRoleViewer {
+			state.ProjectRole = canonicalRole
+			return state, nil
+		}
 	}
 
 	if len(projectRequirement.AllowedRoles) == 0 {
