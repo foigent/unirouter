@@ -46,7 +46,13 @@ function context(
   projectMembershipRole: ProjectMembershipRole | '' = '',
   projectMembershipKnown = true,
 ): AuthzContext {
-  return { organizationRole, projectMembershipRole, projectMembershipKnown };
+	return {
+		organizationRole, projectMembershipRole, projectMembershipKnown,
+		hasLiveProjectMembership: projectMembershipRole !== '',
+		hasProjectAdminMembership: projectMembershipRole === 'project_admin',
+		canDiscoverAccessReview: organizationRole === 'platform_admin' || organizationRole === 'org_admin' || projectMembershipRole === 'project_admin',
+		canDiscoverWorkloads: organizationRole === 'platform_admin' || organizationRole === 'org_admin' || projectMembershipRole === 'project_admin',
+	};
 }
 
 function routeKeys(authz: AuthzContext): string[] {
@@ -60,8 +66,8 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   platform: {
     authz: context('platform_admin'),
     routes: [
-      '/developer', '/', '/channels', '/channel-keys', '/model-governance', '/test',
-      '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
+		'/access', '/developer', '/', '/channels', '/channel-keys', '/model-governance', '/model-readiness', '/test',
+		'/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
       '/wallet', '/model-prices', '/cost-optimization', '/reconciliation',
       '/deployment', '/integrations', '/docs', '/license',
@@ -70,34 +76,34 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   organizationAdmin: {
     authz: context('org_admin'),
     routes: [
-      '/developer', '/', '/model-governance', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
+		'/access', '/developer', '/', '/model-governance', '/model-readiness', '/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
       '/model-prices', '/cost-optimization', '/docs',
     ],
   },
   billing: {
     authz: context('billing_admin'),
-    routes: ['/developer', '/', '/usage-analytics', '/wallet', '/model-prices', '/cost-optimization', '/reconciliation', '/docs'],
+	routes: ['/access', '/developer', '/', '/usage-analytics', '/wallet', '/model-prices', '/cost-optimization', '/reconciliation', '/docs'],
   },
   organizationViewer: {
     authz: context('org_viewer'),
-    routes: ['/developer', '/', '/model-governance', '/organization-members', '/docs'],
+	routes: ['/access', '/developer', '/', '/model-governance', '/model-readiness', '/organization-members', '/docs'],
   },
   projectAdmin: {
     authz: context('member', 'project_admin'),
-    routes: ['/developer', '/organization-members', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/access-review', '/applications', '/model-readiness', '/organization-members', '/media-jobs', '/docs'],
   },
   projectUser: {
     authz: context('member', 'project_user'),
-    routes: ['/developer', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/model-readiness', '/media-jobs', '/docs'],
   },
   projectViewer: {
     authz: context('member', 'project_viewer'),
-    routes: ['/developer', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/model-readiness', '/media-jobs', '/docs'],
   },
   memberWithoutMembership: {
     authz: context('member'),
-    routes: ['/developer', '/docs'],
+	routes: ['/access', '/developer', '/docs'],
   },
   unknownLegacyIdentity: {
     authz: context(''),
@@ -151,18 +157,37 @@ describe('two-axis navigation boundaries', () => {
 
   it('uses one task taxonomy and explicit authz context for shared sections', () => {
     expect(getNavItemsForAuthz(context('platform_admin')).map(item => item.text)).toEqual([
-      '项目工作台', '平台总览', '模型接入', '访问与安全', '监控与用量', '成本与财务', '系统与集成',
+		'我的访问', '项目工作台', '平台总览', '模型接入', '访问与安全', '监控与用量', '成本与财务', '系统与集成',
     ]);
-    expect(getNavItemsForAuthz(context('org_admin')).map(item => item.text).slice(0, 2)).toEqual(['项目工作台', '组织总览']);
-    expect(getNavItemsForAuthz(context('org_viewer')).map(item => item.text).slice(0, 2)).toEqual(['项目工作台', '组织总览']);
-    expect(getNavItemsForAuthz(context('billing_admin')).map(item => item.text).slice(0, 2)).toEqual(['项目工作台', '财务与用量总览']);
-    expect(getNavItemsForAuthz(context('member', 'project_admin'))[0]?.text).toBe('项目工作台');
+	expect(getNavItemsForAuthz(context('org_admin')).map(item => item.text).slice(0, 3)).toEqual(['我的访问', '项目工作台', '组织总览']);
+	expect(getNavItemsForAuthz(context('org_viewer')).map(item => item.text).slice(0, 3)).toEqual(['我的访问', '项目工作台', '组织总览']);
+	expect(getNavItemsForAuthz(context('billing_admin')).map(item => item.text).slice(0, 3)).toEqual(['我的访问', '项目工作台', '财务与用量总览']);
+	expect(getNavItemsForAuthz(context('member', 'project_admin'))[0]?.text).toBe('我的访问');
 
     expect(getOpenKeysForPath('/notifications', context('platform_admin'))).toEqual(['g-observability']);
     expect(getOpenKeysForPath('/notifications', context('member', 'project_admin'))).toEqual([]);
     expect(getOpenKeysForPath('/docs', context('platform_admin'))).toEqual(['g-system-integration']);
     expect(getOpenKeysForPath('/model-governance', context('org_admin'))).toEqual(['g-model-access']);
   });
+
+	it('uses shell discovery capabilities without granting selected-project actions', () => {
+		const capabilities = {
+			has_live_project_membership: true,
+			has_project_admin_membership: true,
+			can_discover_access_review: true,
+			can_discover_workloads: true,
+		};
+		const mixed = authzContextForUser({
+			organization_role: 'member', role: 'member',
+			navigation_capabilities: capabilities,
+		});
+		expect(routeKeys(mixed)).toEqual(expect.arrayContaining(['/access', '/access-review', '/applications', '/model-readiness']));
+		expect(canCreateProjectKey(mixed)).toBe(false);
+		const selectedViewer = authzContextForUser({ organization_role: 'member', navigation_capabilities: capabilities }, 'project_viewer', true);
+		expect(canCreateProjectKey(selectedViewer)).toBe(false);
+		const selectedAdmin = authzContextForUser({ organization_role: 'member', navigation_capabilities: capabilities }, 'project_admin', true);
+		expect(canCreateProjectKey(selectedAdmin)).toBe(true);
+	});
 
   it('keeps account settings avatar-only while allowing every authenticated identity to open it', () => {
     Object.values(scenarios).forEach(({ authz }) => {

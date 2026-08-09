@@ -16,10 +16,16 @@ export interface UserProfile {
   // rolling-upgrade backend returned no capability projection, so the client
   // must not treat that response as positive entitlement evidence.
   license_access?: LicenseAccess | null;
+	navigation_capabilities?: {
+		has_live_project_membership: boolean;
+		has_project_admin_membership: boolean;
+		can_discover_access_review: boolean;
+		can_discover_workloads: boolean;
+	} | null;
 }
 
 export function profileNeedsRefresh(user: UserProfile | null) {
-  return !user?.role || user.license_access === undefined;
+	return !user?.role || user.license_access === undefined || user.navigation_capabilities === undefined;
 }
 
 interface AuthState {
@@ -56,6 +62,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         email: data.email,
         auth_provider: data.auth_provider,
         license_access: data.license_access ?? undefined,
+		navigation_capabilities: data.navigation_capabilities ?? undefined,
       };
       localStorage.setItem('token', data.token);
       set({ token: data.token, isAuthenticated: true, user, profileError: null });
@@ -103,6 +110,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         email: data.email,
         auth_provider: data.auth_provider,
         license_access: data.license_access ?? null,
+		navigation_capabilities: data.navigation_capabilities ?? null,
       };
       set({ user, isAuthenticated: true, profileLoading: false, profileError: null });
       return user;

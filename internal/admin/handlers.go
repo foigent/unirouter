@@ -181,11 +181,21 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 	var orgID int64
 	var orgName string
 	var createdAt time.Time
+	var hasLiveProjectMembership, hasProjectAdminMembership bool
 	err := h.db.QueryRow(r.Context(),
 		`SELECT u.username, u.organization_role, u.role, u.status, u.org_id, u.created_at, COALESCE(o.name, '') as org_name,
-		        COALESCE(u.email, ''), COALESCE(NULLIF(u.auth_provider, ''), 'local')
+		        COALESCE(u.email, ''), COALESCE(NULLIF(u.auth_provider, ''), 'local'),
+		        EXISTS (
+		          SELECT 1 FROM project_members pm JOIN projects p ON p.id=pm.project_id
+		          WHERE pm.user_id=u.id AND p.org_id=u.org_id AND p.status='active'
+		        ),
+		        EXISTS (
+		          SELECT 1 FROM project_members pm JOIN projects p ON p.id=pm.project_id
+		          WHERE pm.user_id=u.id AND p.org_id=u.org_id AND p.status='active' AND pm.role='project_admin'
+		        )
 		 FROM users u LEFT JOIN orgs o ON o.id = u.org_id
-		 WHERE u.id = $1`, userID).Scan(&username, &organizationRole, &role, &status, &orgID, &createdAt, &orgName, &email, &authProvider)
+		 WHERE u.id = $1`, userID).Scan(&username, &organizationRole, &role, &status, &orgID, &createdAt, &orgName, &email, &authProvider,
+		&hasLiveProjectMembership, &hasProjectAdminMembership)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		return
@@ -220,5 +230,11 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 		"auth_provider":     authProvider,
 		"created_at":        createdAt,
 		"license_access":    licenseAccess,
+		"navigation_capabilities": map[string]interface{}{
+			"has_live_project_membership":  hasLiveProjectMembership,
+			"has_project_admin_membership": hasProjectAdminMembership,
+			"can_discover_access_review":   organizationRole == "platform_admin" || organizationRole == "org_admin" || hasProjectAdminMembership,
+			"can_discover_workloads":       organizationRole == "platform_admin" || organizationRole == "org_admin" || hasProjectAdminMembership,
+		},
 	})
 }

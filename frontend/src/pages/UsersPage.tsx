@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography, Tabs, TabPane } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
@@ -39,14 +39,15 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const [showDrawer, setShowDrawer] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
+	const [providerScope, setProviderScope] = useState<'local' | 'enterprise'>('local');
 
-  const load = (p = page, size = pageSize) => {
+  const load = (p = page, size = pageSize, provider: 'local' | 'enterprise' = providerScope) => {
     const version = ++requestVersion.current;
     setLoading(true);
     setLoadError('');
     setUsers([]);
     setTotal(0);
-    api.getUsers(p, size)
+    api.getUsers(p, size, provider)
       .then((d: any) => {
         if (version !== requestVersion.current) return;
         setUsers(d.data || []);
@@ -60,7 +61,10 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       });
   };
 
-  useEffect(() => { load(1, pageSize); }, []);
+	useEffect(() => {
+		setPage(1);
+		load(1, pageSize, providerScope);
+	}, [providerScope]);
   useEffect(() => {
     const fallback = currentUser?.org_id
       ? [{ id: currentUser.org_id, name: currentUser.org_name || `组织 #${currentUser.org_id}` }]
@@ -109,7 +113,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         Toast.success('用户创建成功');
       }
       closeDrawer();
-      load(editUser ? page : 1);
+      load(editUser ? page : 1, pageSize, providerScope);
     } catch (error) {
       const code = error instanceof ApiError ? apiErrorCode(error) : '';
       if (!editUser && code === 'local_login_id_conflict') {
@@ -131,12 +135,12 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       return;
     }
     Modal.confirm({
-      title: '确认删除',
-      content: `确定要删除用户 ${u.username} 吗？`,
+      title: '确认账号离场',
+      content: `确定要让 ${u.username} 离场吗？UniRouter 将停用账号并收口会话、项目调用授权与凭据，同时保留审计身份和历史证据。`,
       onOk: async () => {
         try {
           await api.deleteUser(u.id);
-          Toast.success('已删除');
+          Toast.success('账号已离场');
           load();
         } catch { Toast.error('删除失败'); }
       },
@@ -144,6 +148,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   };
 
   const openCreate = () => {
+		if (providerScope !== 'local') return;
     setEditUser(null);
     setShowDrawer(true);
   };
@@ -215,7 +220,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
               onClick={() => openEdit(record)}
             />
             <Button
-              aria-label={`删除用户 ${record.username}`}
+              aria-label={`离场用户 ${record.username}`}
               icon={<IconDelete />}
               size="small"
               type="danger"
@@ -236,16 +241,25 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
             <Typography.Title heading={4} style={{ margin: 0 }}>账号与身份</Typography.Title>
             <Typography.Text type="tertiary">创建登录账号并设置组织角色；项目角色在“项目与成员”中按项目独立维护。</Typography.Text>
           </div>
-          <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>
+			{providerScope === 'local' && <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
         </div>
       ) : <PageHeader
         eyebrow="访问与安全"
         title="用户管理"
         description="管理本地账号及企业 OIDC 映射账号的组织角色与状态；项目角色在项目入口独立维护。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
+		actions={providerScope === 'local' ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button> : undefined}
       />}
 
       <Surface>
+		<Tabs activeKey={providerScope} onChange={(key) => setProviderScope(key as 'local' | 'enterprise')}>
+			<TabPane itemKey="local" tab="本地账号 / Local User" />
+			<TabPane itemKey="enterprise" tab="企业身份 / OIDC" />
+		</Tabs>
+		<Typography.Text type="tertiary">
+			{providerScope === 'local'
+				? '本页服务端只查询 auth_provider=local；可创建本地账号并管理本地生命周期。'
+				: '本页服务端只查询企业身份。OIDC / 企业目录拥有登录来源与外部身份属性；UniRouter 管理已映射账号的组织角色、启停与离场，项目成员关系仍在“项目与成员”中管理。'}
+		</Typography.Text>
         <div className="ur-table-shell">
           <Table
             columns={columns}
@@ -258,20 +272,23 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
             pagination={{
               currentPage: page, pageSize, total,
               pageSizeOpts: [20, 50, 100], showSizeChanger: true,
-              onPageChange: (p: number) => { setPage(p); load(p, pageSize); },
-              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s); },
+              onPageChange: (p: number) => { setPage(p); load(p, pageSize, providerScope); },
+              onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s, providerScope); },
             }}
           />
         </div>
       </Surface>
 
       <SideSheet
-        title={editUser ? '编辑用户权限' : '新增本地用户'}
+        title={editUser ? '编辑 UniRouter 权限与状态' : '新增本地用户'}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
+          {editUser?.auth_provider !== 'local' && <Typography.Paragraph type="tertiary">
+            登录来源、外部 subject、用户名与邮箱由 OIDC / 企业目录提供；下面的组织角色与账号状态是 UniRouter 本地治理事实。
+          </Typography.Paragraph>}
           <Form.Select
             field="org_id"
             label="所属组织"

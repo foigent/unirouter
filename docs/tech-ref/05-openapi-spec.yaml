@@ -2073,48 +2073,92 @@ paths:
 
   /api/v1/workload-applications/contract:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
+      get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
     description: Returns the product-local WorkloadApplication, ClientProfile and readiness contract. It grants no Tool or MCP authority and explicitly marks contract-only or adapter-required clients.
-    get: *operation_get
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Typed v2 identity and compatibility contract.
+          content: { application/json: { schema: { $ref: "#/components/schemas/WorkloadApplicationContract" } } }
 
   /api/v1/workload-applications:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
-      post: [platform_admin, org_admin]
-    description: Lists tenant-scoped applications or creates one inside an active same-tenant project. An application is the governed caller identity; an API Key is only one credential proof.
-    get: *operation_list
-    post: *operation_create
+      get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
+      post: [platform_admin, org_admin, project_admin]
+    description: Lists actor-scoped v2 applications or creates one inside an active same-tenant project. New identities use an explicit logical_ref, immutable project/environment/production classification, a service_credential identity and optional multiple client profiles.
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OrgId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, disabled, archived] }
+      responses:
+        "200":
+          description: Bounded actor-scoped Workload Application list with safe action projections.
+          content: { application/json: { schema: { $ref: "#/components/schemas/WorkloadApplicationListResponse" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkloadApplicationCreateInput" } } }
+      responses:
+        "201":
+          description: Native v2 Workload identity.
+          content: { application/json: { schema: { $ref: "#/components/schemas/WorkloadApplication" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/workload-applications/{ref}:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
-      put: [platform_admin, org_admin]
+      get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
+      put: [platform_admin, org_admin, project_admin]
     description: Reads or updates non-identity application metadata with optimistic revision control. Organization, project, application_ref, kind and identity mode remain immutable.
-    get: *operation_get
-    put: *operation_create
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: "Actor-scoped Workload identity", content: { application/json: { schema: { $ref: "#/components/schemas/WorkloadApplication" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/WorkloadApplicationUpdateInput" } } } }
+      responses:
+        "200": { description: "Updated non-identity metadata", content: { application/json: { schema: { $ref: "#/components/schemas/WorkloadApplication" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/v1/workload-applications/{ref}/archive:
     x-unirouter-rbac:
-      post: [platform_admin, org_admin]
+      post: [platform_admin, org_admin, project_admin]
     description: Terminally archives an application and atomically disables its active model credentials without deleting request, ledger, audit, Receipt or Source evidence.
     post: *operation_create
 
   /api/v1/workload-applications/{ref}/credentials:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
-    description: Lists credential metadata bound to one tenant-scoped application. Full credential material is never returned.
+      get: [platform_admin, org_admin, project_admin, project_user]
+    description: Lists secret-free logical credential families with strict page/page_size bounds (page 1..1000, page_size 1..100, defaults 1/20). Each family returns at most the 20 newest physical versions; versions_truncated=true is explicit when older history exists. An exact live project_user sponsor may read only the sponsored Workload metadata and cannot issue, rotate or revoke from this route; legacy-unbound credentials remain admin-only.
     get: *operation_list
 
   /api/v1/workload-applications/{ref}/credentials/{key_id}/bind:
     x-unirouter-rbac:
-      post: [platform_admin, org_admin]
+      post: [platform_admin, org_admin, project_admin]
     description: Binds one unbound same-tenant, same-project, non-Feed API Key to an application with identity-mode checks and optimistic application revision control. Historical keys cannot be rebound to another application.
     post: *operation_create
 
   /api/v1/workload-applications/{ref}/readiness:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
-    description: Resolves application, credential, client, endpoint, model authorization, limit, governance, channel and Provider credential axes through authoritative backend state. Missing model context is explicit and no mutation occurs.
+      get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
+    description: Resolves application, credential, client, endpoint, model authorization, limit, governance, channel and Provider credential axes through authoritative backend state. Active credential candidates are hard-bounded and model authorization is evaluated from one set-oriented policy read. Missing model context is explicit and no mutation occurs.
     get: *operation_get
 
   /api/v1/deployment/contract:
@@ -2319,6 +2363,10 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - name: auth_provider
+          in: query
+          description: Strict server-side identity partition. `local` returns password-managed accounts; `enterprise` returns non-local/OIDC identities. Count and page rows use the same tenant-bound predicate.
+          schema: { type: string, enum: [local, enterprise] }
       responses:
         "200": { $ref: "#/components/responses/JSON" }
         "403": { $ref: "#/components/responses/Error" }
@@ -2352,7 +2400,7 @@ paths:
     put:
       tags: [Admin]
       summary: Update a user's organization role or account status
-      description: Project membership is a separate axis and is never added, removed, or rewritten by this endpoint. project_ids and project roles are rejected. An actor cannot change their own organization role or disable the current account.
+      description: Applies to both local and mapped enterprise/OIDC accounts. UniRouter owns the stored organization role and account status; this endpoint never changes the login provider, external subject, username, email, or other IdP-owned source attributes. Project membership is a separate axis and is never added, removed, or rewritten here. project_ids and project roles are rejected. An actor cannot change their own organization role or disable the current account.
       security:
         - bearerAuth: []
       parameters:
@@ -2425,6 +2473,14 @@ paths:
           in: query
           required: false
           description: Required for membership-scoped callers; omitted only where the organization role has organization-wide event authority
+          schema: { type: integer, format: int64, minimum: 1 }
+        - name: status
+          in: query
+          description: Project-scope server-side queue filter applied before the keyset limit. Forbidden with scope=my.
+          schema: { type: string, enum: [approved, needs_review, rejected, cancelled] }
+        - name: workload_application_id
+          in: query
+          description: Optional exact Workload subject filter for an authorized project queue. Forbidden with scope=my.
           schema: { type: integer, format: int64, minimum: 1 }
       responses:
         "200":
@@ -2804,6 +2860,14 @@ paths:
           in: query
           description: Required for project scope and forbidden for my scope.
           schema: { type: integer, format: int64, minimum: 1 }
+        - name: status
+          in: query
+          description: Optional project-scope server filter applied before the keyset limit. Forbidden for scope=my.
+          schema: { type: string, enum: [approved, needs_review, rejected, cancelled] }
+        - name: workload_application_id
+          in: query
+          description: Optional exact Workload subject filter for an authorized project queue. Forbidden for scope=my.
+          schema: { type: integer, format: int64, minimum: 1 }
         - $ref: "#/components/parameters/AccessPageLimit"
         - $ref: "#/components/parameters/AccessAfterId"
       responses:
@@ -2918,8 +2982,16 @@ paths:
       description: Results are ordered by stable `id DESC`. Project users see only their own human Grant or sponsored workload Grant. Project viewers, organization viewers and billing administrators do not receive project-wide access inventory.
       security: [{ bearerAuth: [] }]
       parameters:
+        - name: scope
+          in: query
+          schema: { type: string, enum: [my, project], default: project }
+          description: my returns only human Grants whose subject is the authenticated actor and requires no project enumeration. project requires project_id and live project-read authority.
         - $ref: "#/components/parameters/OrgId"
         - $ref: "#/components/parameters/ProjectId"
+        - name: workload_application_id
+          in: query
+          description: Optional exact Workload subject filter for an authorized project list. Forbidden with scope=my.
+          schema: { type: integer, format: int64, minimum: 1 }
         - $ref: "#/components/parameters/AccessPageLimit"
         - $ref: "#/components/parameters/AccessAfterId"
       responses:
@@ -3069,6 +3141,41 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
     x-unirouter-rbac: { post: [platform_admin, org_admin, project_admin, project_user] }
+
+  /api/v1/model-readiness:
+    get:
+      tags: [Admin]
+      summary: Explain platform-model and current-project caller readiness without runtime mutation or external traffic
+      description: |
+        Returns four independent facts: registered, catalog visible, routable, and callable by the selected current caller. It reuses model governance, pure routing preview, the live AccessGrant boundary, model authorization and distributed-limit selector materialization. It never claims a half-open route lease and sends no Provider, Feed, health-check or upstream request. Unavailable evidence remains `unavailable` rather than being reported as a business blocker. Non-platform responses contain only safe aggregates.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: model
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 160 }
+        - name: endpoint
+          in: query
+          required: true
+          schema: { type: string, enum: [/v1/chat/completions, /v1/embeddings, /v1/models, /v1/media/jobs] }
+        - name: caller
+          in: query
+          required: true
+          schema: { type: string, enum: [self, workload_application] }
+        - name: application_ref
+          in: query
+          description: Required only for caller=workload_application and scoped to the selected project.
+          schema: { type: string, minLength: 1, maxLength: 64 }
+      responses:
+        "200":
+          description: Read-only readiness evidence
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelReadinessResponse" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
 
 components:
   securitySchemes:
@@ -3406,6 +3513,113 @@ components:
         mutation: { type: boolean, enum: [false] }
         data: { type: array, items: { $ref: "#/components/schemas/LegacyAccessClassification" } }
         total: { type: integer, minimum: 0 }
+    WorkloadApplicationCreateInput:
+      type: object
+      additionalProperties: false
+      required: [org_id, project_id, application_ref, logical_ref, display_name, kind, environment, production_use, identity_mode, client_profiles, owner_team, description, status]
+      properties:
+        org_id: { type: integer, format: int64, minimum: 1 }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        application_ref: { type: string, pattern: '^app_[a-z0-9][a-z0-9._-]{2,59}$' }
+        logical_ref: { type: string, pattern: '^workload_[a-z0-9][a-z0-9._-]{2,54}$' }
+        display_name: { type: string, minLength: 1, maxLength: 160 }
+        kind: { type: string, enum: [service, agent, workflow, integration_adapter] }
+        environment: { type: string, pattern: '^[a-z][a-z0-9_-]{0,31}$' }
+        production_use: { type: boolean, description: Immutable risk classification; it is independent from the environment label. }
+        identity_mode: { type: string, enum: [service_credential] }
+        client_profiles:
+          type: array
+          uniqueItems: true
+          description: Optional, non-authoritative compatibility profiles. An empty array is valid.
+          items: { type: string }
+        primary_client_profile: { type: string, description: Optional compatibility shadow; when present it must also appear in client_profiles. }
+        owner_team: { type: string, maxLength: 160 }
+        description: { type: string, maxLength: 1000 }
+        status: { type: string, enum: [active, disabled] }
+    WorkloadApplicationUpdateInput:
+      type: object
+      additionalProperties: false
+      required: [org_id, expected_revision, display_name, client_profiles, owner_team, description, status]
+      properties:
+        org_id: { type: integer, format: int64, minimum: 1 }
+        expected_revision: { type: integer, format: int64, minimum: 1 }
+        display_name: { type: string, minLength: 1, maxLength: 160 }
+        environment: { type: string, description: Optional immutable echo; a changed value returns 409. }
+        client_profiles: { type: array, uniqueItems: true, items: { type: string } }
+        primary_client_profile: { type: string }
+        owner_team: { type: string, maxLength: 160 }
+        description: { type: string, maxLength: 1000 }
+        status: { type: string, enum: [active, disabled] }
+    WorkloadApplication:
+      type: object
+      additionalProperties: false
+      required: [id, org_id, project_id, application_ref, contract_version, identity_contract_version, display_name, kind, environment, production_use, identity_mode, client_profiles, owner_team, description, status, revision, created_by, updated_by, created_at, updated_at, project_name, project_status, credential_count, active_credential_count, identity_classification, can_manage, can_request_access, can_read_credentials]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        org_id: { type: integer, format: int64, minimum: 1 }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        application_ref: { type: string }
+        contract_version: { type: string, enum: [unirouter.workload-application.v1, unirouter.workload-application.v2] }
+        identity_contract_version: { type: string, enum: [unirouter.workload-identity.v1, unirouter.workload-identity.v2] }
+        logical_ref: { type: string }
+        display_name: { type: string }
+        kind: { type: string, enum: [service, agent, workflow, integration_adapter, interactive_client] }
+        environment: { type: string }
+        production_use: { type: boolean }
+        identity_mode: { type: string, enum: [service_credential, personal_development] }
+        client_profile: { type: string, deprecated: true }
+        client_profiles: { type: array, uniqueItems: true, items: { type: string } }
+        owner_team: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, disabled, archived] }
+        revision: { type: integer, format: int64, minimum: 1 }
+        created_by: { type: integer, format: int64, minimum: 1 }
+        updated_by: { type: integer, format: int64, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        archived_at: { type: string, format: date-time }
+        project_name: { type: string }
+        project_status: { type: string }
+        credential_count: { type: integer, minimum: 0, description: Logical credential families; each legacy-unbound key counts as one compatibility seat. }
+        active_credential_count: { type: integer, minimum: 0, description: "Runtime-effective logical families, not physical secret-version rows." }
+        identity_classification: { type: string, enum: [v2, legacy_v1] }
+        compatibility_evidence: { type: string }
+        can_manage: { type: boolean }
+        can_request_access: { type: boolean }
+        can_read_credentials: { type: boolean }
+    WorkloadApplicationListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, total]
+      properties:
+        data: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/WorkloadApplication" } }
+        total: { type: integer, minimum: 0, maximum: 200 }
+    WorkloadClientProfile:
+      type: object
+      additionalProperties: false
+      required: [profile_id, display_name, client_family, api_style, supported_endpoints, runtime_state, evidence_level, recommended_for_poc, configuration_note]
+      properties:
+        profile_id: { type: string }
+        display_name: { type: string }
+        client_family: { type: string }
+        api_style: { type: string }
+        supported_endpoints: { type: array, items: { type: string } }
+        runtime_state: { type: string, enum: [runtime_supported, protocol_compatible, contract_only, adapter_required] }
+        evidence_level: { type: string, enum: [verified, protocol_compatible, unsupported] }
+        recommended_for_poc: { type: boolean }
+        configuration_note: { type: string }
+    WorkloadApplicationContract:
+      type: object
+      additionalProperties: false
+      required: [contract_version, readiness_version, client_profiles, identity_authority, tool_or_mcp_authority, legacy_credentials, runtime_mutation]
+      properties:
+        contract_version: { type: string, enum: [unirouter.workload-application.v2] }
+        readiness_version: { type: string }
+        client_profiles: { type: array, items: { $ref: "#/components/schemas/WorkloadClientProfile" } }
+        identity_authority: { type: string, enum: [product_local_model_execution_only] }
+        tool_or_mcp_authority: { type: string, enum: [none] }
+        legacy_credentials: { type: string, enum: [legacy_unbound_compatible] }
+        runtime_mutation: { type: string, enum: [none] }
     AccessSubject:
       type: object
       additionalProperties: false
@@ -3529,6 +3743,19 @@ components:
         decided_at: { type: string, format: date-time }
         cancelled_at: { type: string, format: date-time }
         revision: { type: integer, format: int64, minimum: 1 }
+        actions:
+          allOf: [{ $ref: "#/components/schemas/AccessRequestActions" }]
+          description: Present on request detail and list projections. Mutation responses may omit it; callers should refresh the authoritative read model.
+    AccessRequestActions:
+      type: object
+      additionalProperties: false
+      required: [can_approve, can_reject, can_cancel, reason_code]
+      description: Advisory projection derived from the same reason-scoped rules as mutation. Every action still performs commit-time reauthorization and revision validation.
+      properties:
+        can_approve: { type: boolean }
+        can_reject: { type: boolean }
+        can_cancel: { type: boolean }
+        reason_code: { type: string, enum: [request_terminal, organization_admin_actionable, project_admin_actionable, requester_actionable, organization_admin_required, not_authorized] }
     AccessGrant:
       type: object
       additionalProperties: false
@@ -3640,10 +3867,91 @@ components:
     AccessGrantPage:
       type: object
       additionalProperties: false
-      required: [data, pagination]
+      required: [data, pagination, scope]
       properties:
         data: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AccessGrant" } }
         pagination: { $ref: "#/components/schemas/AccessPageInfo" }
+        scope: { type: string, enum: [my, project] }
+    ModelReadinessAxis:
+      type: object
+      additionalProperties: false
+      required: [state, reason_code, safe_evidence]
+      properties:
+        state: { type: string, enum: [ready, blocked, warning, not_applicable, unavailable] }
+        reason_code: { type: string }
+        safe_evidence: { type: object, additionalProperties: true }
+        fix_route: { type: string, description: Present only when the actor can open the exact repair surface. }
+        fix_owner: { type: string }
+    ModelReadinessFact:
+      type: object
+      additionalProperties: false
+      required: [state, reason_code]
+      properties:
+        value: { type: boolean, description: Omitted when state=unavailable. }
+        state: { type: string, enum: [ready, blocked, unavailable] }
+        reason_code: { type: string }
+    ModelReadinessScope:
+      type: object
+      additionalProperties: false
+      required: [org_id, project_id, requested_model, resolved_model, endpoint, caller]
+      properties:
+        org_id: { type: integer, format: int64, minimum: 1 }
+        project_id: { type: integer, format: int64, minimum: 1 }
+        requested_model: { type: string }
+        resolved_model: { type: string }
+        endpoint: { type: string }
+        caller: { type: string, enum: [self, workload_application] }
+        application_ref: { type: string, description: Present only for a Workload caller. }
+    ModelReadinessSummary:
+      type: object
+      additionalProperties: false
+      required: [registered, catalog_visible, routable, current_project_caller_callable]
+      properties:
+        registered: { $ref: "#/components/schemas/ModelReadinessFact" }
+        catalog_visible: { $ref: "#/components/schemas/ModelReadinessFact" }
+        routable: { $ref: "#/components/schemas/ModelReadinessFact" }
+        current_project_caller_callable: { $ref: "#/components/schemas/ModelReadinessFact" }
+    ModelReadinessPlatformModel:
+      type: object
+      additionalProperties: false
+      required: [registration, lifecycle, catalog, price_authority, channel, provider_credential, base_route, runtime_slot]
+      properties:
+        registration: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        lifecycle: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        catalog: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        price_authority: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        channel: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        provider_credential: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        base_route: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        runtime_slot: { $ref: "#/components/schemas/ModelReadinessAxis" }
+    ModelReadinessProjectCaller:
+      type: object
+      additionalProperties: false
+      required: [project, alias, model_set, wallet, project_budget, application, grant, credential, model_authorization, limit_policy]
+      properties:
+        project: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        alias: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        model_set: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        wallet: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        project_budget: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        application: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        grant: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        credential: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        model_authorization: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        limit_policy: { $ref: "#/components/schemas/ModelReadinessAxis" }
+    ModelReadinessResponse:
+      type: object
+      additionalProperties: false
+      required: [contract_version, scope, summary, platform_model, project_caller, runtime_mutation, external_requests, as_of]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-readiness.v1] }
+        scope: { $ref: "#/components/schemas/ModelReadinessScope" }
+        summary: { $ref: "#/components/schemas/ModelReadinessSummary" }
+        platform_model: { $ref: "#/components/schemas/ModelReadinessPlatformModel" }
+        project_caller: { $ref: "#/components/schemas/ModelReadinessProjectCaller" }
+        runtime_mutation: { type: string, enum: [none] }
+        external_requests: { type: string, enum: [none] }
+        as_of: { type: string, format: date-time }
     AccessCredentialIssueInput:
       type: object
       additionalProperties: false
@@ -4130,7 +4438,7 @@ components:
     CurrentUserProfile:
       type: object
       additionalProperties: false
-      required: [id, username, organization_role, role, status, org_id, org_name, email, auth_provider, created_at, license_access]
+      required: [id, username, organization_role, role, status, org_id, org_name, email, auth_provider, created_at, navigation_capabilities, license_access]
       properties:
         id: { type: integer, format: int64 }
         username: { type: string }
@@ -4145,7 +4453,18 @@ components:
         email: { type: string }
         auth_provider: { type: string, description: "`local` for password-managed users; otherwise the configured external identity provider." }
         created_at: { type: string, format: date-time }
+        navigation_capabilities: { $ref: "#/components/schemas/NavigationCapabilities" }
         license_access: { $ref: "#/components/schemas/LicenseCapabilityProjection" }
+    NavigationCapabilities:
+      type: object
+      additionalProperties: false
+      required: [has_live_project_membership, has_project_admin_membership, can_discover_access_review, can_discover_workloads]
+      description: Shell-only capability projection. It enables discoverability but never replaces endpoint authorization or a live project membership check.
+      properties:
+        has_live_project_membership: { type: boolean }
+        has_project_admin_membership: { type: boolean }
+        can_discover_access_review: { type: boolean }
+        can_discover_workloads: { type: boolean }
     OrganizationRole:
       type: string
       enum: [platform_admin, org_admin, billing_admin, org_viewer, member]

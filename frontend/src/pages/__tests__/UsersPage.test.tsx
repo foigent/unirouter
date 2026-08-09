@@ -41,8 +41,8 @@ describe('UsersPage enterprise identity presentation', () => {
     });
     mocks.getOrganizations.mockResolvedValue({ data: [{ id: 1, name: '总部' }, { id: 2, name: '分部' }] });
     mocks.getProjects.mockResolvedValue({ data: [{ id: 31, org_id: 1, name: '核心项目', status: 'active' }], total: 1 });
-    mocks.getUsers.mockResolvedValue({
-      data: [{
+	mocks.getUsers.mockImplementation((_page: number, _size: number, provider: 'local' | 'enterprise') => Promise.resolve({
+		data: [provider === 'enterprise' ? {
         id: 9,
         org_id: 1,
         org_name: '总部',
@@ -54,41 +54,51 @@ describe('UsersPage enterprise identity presentation', () => {
         status: 'active',
         project_ids: [31],
         project_names: '核心项目',
-        created_at: '2026-07-15T00:00:00Z',
-      }],
+			created_at: '2026-07-15T00:00:00Z',
+		} : {
+			id: 8, org_id: 1, org_name: '总部', username: 'local-user', email: 'local@example.com',
+			auth_provider: 'local', organization_role: 'member', role: 'member', status: 'active',
+			project_ids: [], project_names: '', created_at: '2026-07-15T00:00:00Z',
+		}],
       total: 1,
-    });
+	}));
     mocks.updateUser.mockResolvedValue({ success: true });
   });
 
-  it('shows OIDC identity fields and does not offer a fake password update', async () => {
+  it('keeps OIDC source fields read-only while allowing UniRouter-owned role, status, and offboarding controls', async () => {
     render(<UsersPage />);
 
-    expect(await screen.findByText('oidc-user')).toBeTruthy();
-    expect(mocks.getUsers).toHaveBeenCalledWith(1, 20);
+	expect(await screen.findByText('local-user')).toBeTruthy();
+	expect(mocks.getUsers).toHaveBeenCalledWith(1, 20, 'local');
+	fireEvent.click(screen.getByText('企业身份 / OIDC'));
+	expect(await screen.findByText('oidc-user')).toBeTruthy();
+	expect(mocks.getUsers).toHaveBeenCalledWith(1, 20, 'enterprise');
     expect(mocks.getOrganizations).toHaveBeenCalledWith(1, 100);
     expect(screen.getByText('总部 (#1)')).toBeTruthy();
     expect(screen.getByText('user@example.com')).toBeTruthy();
     expect(screen.getByText('企业 OIDC')).toBeTruthy();
     expect(screen.getByText('启用')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: '编辑用户 oidc-user' }));
-    expect(await screen.findByText('编辑用户权限')).toBeTruthy();
-    expect(screen.queryByText(/新密码/)).toBeNull();
-    expect(screen.queryByText('初始密码')).toBeNull();
+	expect((screen.getByRole('button', { name: '编辑用户 oidc-user' }) as HTMLButtonElement).disabled).toBe(false);
+	expect((screen.getByRole('button', { name: '离场用户 oidc-user' }) as HTMLButtonElement).disabled).toBe(false);
+	expect(screen.queryByText('新增本地用户')).toBeNull();
+	expect(screen.queryByText(/新密码/)).toBeNull();
+	expect(screen.getByText(/OIDC \/ 企业目录拥有登录来源与外部身份属性；UniRouter 管理已映射账号的组织角色、启停与离场/)).toBeTruthy();
 
-    fireEvent.click(screen.getByText('更新'));
-    await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith(9, expect.objectContaining({
-      organization_role: 'member',
-      status: 'active',
-    })));
+	fireEvent.click(screen.getByRole('button', { name: '编辑用户 oidc-user' }));
+	expect(await screen.findByText('编辑 UniRouter 权限与状态')).toBeTruthy();
+	expect(screen.getByText(/登录来源、外部 subject、用户名与邮箱由 OIDC \/ 企业目录提供/)).toBeTruthy();
+	expect((screen.getByLabelText('用户名') as HTMLInputElement).disabled).toBe(true);
+	expect(screen.queryByLabelText('初始密码')).toBeNull();
+	fireEvent.click(screen.getByText('更新'));
+	await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith(9, { organization_role: 'member', status: 'active' }));
   });
 
   it('creates a local user with an explicit organization', async () => {
     mocks.createUser.mockResolvedValue({ id: 10 });
     render(<UsersPage />);
 
-    await screen.findByText('oidc-user');
+	await screen.findByText('local-user');
     fireEvent.click(screen.getByText('新增本地用户'));
 
     expect(await screen.findByText('本地登录名在当前部署中全局唯一，忽略大小写和首尾空白。')).toBeTruthy();
@@ -113,7 +123,7 @@ describe('UsersPage enterprise identity presentation', () => {
     }));
     render(<UsersPage />);
 
-    await screen.findByText('oidc-user');
+	await screen.findByText('local-user');
     fireEvent.click(screen.getByText('新增本地用户'));
     fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'Taken-User' } });
     fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'secret-password-123' } });
@@ -131,7 +141,7 @@ describe('UsersPage enterprise identity presentation', () => {
     }));
     render(<UsersPage />);
 
-    await screen.findByText('oidc-user');
+	await screen.findByText('local-user');
     fireEvent.click(screen.getByText('新增本地用户'));
     fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'new-user' } });
     fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'secret-password-123' } });
@@ -145,7 +155,7 @@ describe('UsersPage enterprise identity presentation', () => {
     mocks.createUser.mockResolvedValue({ id: 10 });
     render(<UsersPage />);
 
-    await screen.findByText('oidc-user');
+	await screen.findByText('local-user');
     fireEvent.click(screen.getByText('新增本地用户'));
     fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'unicode-user' } });
     fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: '😀'.repeat(12) } });
@@ -160,7 +170,7 @@ describe('UsersPage enterprise identity presentation', () => {
   it('rejects fewer than 12 Unicode code points even when UTF-16 has 22 code units', async () => {
     render(<UsersPage />);
 
-    await screen.findByText('oidc-user');
+	await screen.findByText('local-user');
     fireEvent.click(screen.getByText('新增本地用户'));
     fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'short-unicode-user' } });
     fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: '😀'.repeat(11) } });
@@ -174,7 +184,7 @@ describe('UsersPage enterprise identity presentation', () => {
     mocks.createUser.mockResolvedValue({ id: 10 });
     const { unmount } = render(<UsersPage />);
 
-    await screen.findByText('oidc-user');
+	await screen.findByText('local-user');
     fireEvent.click(screen.getByText('新增本地用户'));
     fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'byte-boundary-user' } });
     fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: '界'.repeat(24) } });
@@ -206,7 +216,7 @@ describe('UsersPage enterprise identity presentation', () => {
     mocks.createUser.mockResolvedValue({ id: 10 });
     render(<UsersPage />);
 
-    await screen.findByText('oidc-user');
+	await screen.findByText('local-user');
     fireEvent.click(screen.getByText('新增本地用户'));
 
     fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'disabled-user' } });
@@ -243,7 +253,7 @@ describe('UsersPage enterprise identity presentation', () => {
 
     expect(await screen.findByText('当前账号')).toBeTruthy();
     expect((screen.getByRole('button', { name: '编辑用户 admin' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '删除用户 admin' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '离场用户 admin' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('keeps platform-admin rows read-only for an organization admin', async () => {
@@ -268,7 +278,7 @@ describe('UsersPage enterprise identity presentation', () => {
 
     await screen.findByText('platform-admin');
     expect((screen.getByRole('button', { name: '编辑用户 platform-admin' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '删除用户 platform-admin' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '离场用户 platform-admin' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('does not present a failed user request as an empty directory', async () => {

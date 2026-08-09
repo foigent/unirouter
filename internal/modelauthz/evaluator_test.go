@@ -1,8 +1,14 @@
 package modelauthz
 
 import (
+	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 func TestNormalizeDraftRejectsWideningOrAmbiguousShapes(t *testing.T) {
@@ -87,6 +93,55 @@ func TestEvaluatePoliciesOnlyAppliesEndpointSpecificRules(t *testing.T) {
 	}})
 	if !decision.Allowed || len(decision.PolicyRefs) != 0 {
 		t.Fatalf("unrelated endpoint changed authority: %#v", decision)
+	}
+}
+
+func TestEvaluateAnyUsesOnePolicyQueryForBoundedCredentialAlternatives(t *testing.T) {
+	var queryCount atomic.Int64
+	database := &testutil.MockDB{QueryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
+		queryCount.Add(1)
+		return &testutil.MockRows{Rows: []func(...any) error{func(dest ...any) error {
+			*dest[0].(*int64) = 1
+			*dest[1].(*int64) = 7
+			*dest[2].(*string) = "mca_first_key_deny"
+			*dest[3].(*string) = SubjectAPIKey
+			*dest[4].(*string) = "11"
+			*dest[5].(*string) = "development"
+			*dest[6].(*string) = EffectDeny
+			*dest[7].(*[]byte) = []byte(`["company-chat"]`)
+			*dest[8].(*[]byte) = []byte(`["/v1/chat/completions"]`)
+			*dest[11].(*string) = StatusActive
+			*dest[12].(*int64) = 1
+			*dest[13].(*string) = "first physical key denied"
+			*dest[14].(*int64) = 9
+			now := time.Date(2026, 8, 10, 1, 0, 0, 0, time.UTC)
+			*dest[17].(*time.Time) = now
+			*dest[20].(*time.Time) = now
+			return nil
+		}}}, nil
+	}}
+	evaluator, err := NewEvaluator(database, "development")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := []Input{
+		{OrgID: 7, ProjectID: 22, APIKeyID: 11, Endpoint: "/v1/chat/completions", RequestedModel: "company-chat", ResolvedModel: "company-chat"},
+		{OrgID: 7, ProjectID: 22, APIKeyID: 12, Endpoint: "/v1/chat/completions", RequestedModel: "company-chat", ResolvedModel: "company-chat"},
+	}
+	decision, err := evaluator.EvaluateAny(context.Background(), inputs)
+	if err != nil || !decision.Allowed || queryCount.Load() != 1 {
+		t.Fatalf("decision=%#v err=%v query_count=%d", decision, err, queryCount.Load())
+	}
+
+	overLimit := make([]Input, maxBatchEvaluationInputs+1)
+	for index := range overLimit {
+		overLimit[index] = inputs[0]
+	}
+	if _, err := evaluator.EvaluateAny(context.Background(), overLimit); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("over-limit batch error=%v, want ErrInvalid", err)
+	}
+	if queryCount.Load() != 1 {
+		t.Fatalf("over-limit batch reached database: query_count=%d", queryCount.Load())
 	}
 }
 

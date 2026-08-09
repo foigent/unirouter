@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -397,6 +398,65 @@ func TestWorkloadReadinessCountsOnlyRuntimeEffectiveCredentials(t *testing.T) {
 	require.NotNil(t, legacy)
 	require.Equal(t, 1, legacy.VersionCount)
 	require.Len(t, legacy.Versions, 1)
+
+	invalidPageRequest := httptest.NewRequest(http.MethodGet,
+		"/api/v1/workload-applications/app_readiness_grant/credentials?page_size=101", nil)
+	invalidPageRequest.SetPathValue("ref", "app_readiness_grant")
+	invalidPageRequest = withIntegrationCommittingActor(t, pool, invalidPageRequest, actorID)
+	invalidPageResponse := httptest.NewRecorder()
+	handler.ListWorkloadApplicationCredentials(invalidPageResponse, invalidPageRequest)
+	require.Equal(t, http.StatusBadRequest, invalidPageResponse.Code, invalidPageResponse.Body.String())
+
+	type credentialPage struct {
+		Data     []workloadCredentialRecord `json:"data"`
+		Page     int                        `json:"page"`
+		PageSize int                        `json:"page_size"`
+		HasMore  bool                       `json:"has_more"`
+	}
+	readCredentialPage := func(t *testing.T, page int) credentialPage {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, fmt.Sprintf(
+			"/api/v1/workload-applications/app_readiness_grant/credentials?page=%d&page_size=1", page), nil)
+		request.SetPathValue("ref", "app_readiness_grant")
+		request = withIntegrationCommittingActor(t, pool, request, actorID)
+		response := httptest.NewRecorder()
+		handler.ListWorkloadApplicationCredentials(response, request)
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		var result credentialPage
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
+		return result
+	}
+	firstPage := readCredentialPage(t, 1)
+	secondPage := readCredentialPage(t, 2)
+	require.Len(t, firstPage.Data, 1)
+	require.Len(t, secondPage.Data, 1)
+	require.True(t, firstPage.HasMore)
+	require.NotEqual(t, firstPage.Data[0].Classification+strconv.FormatInt(firstPage.Data[0].ID, 10),
+		secondPage.Data[0].Classification+strconv.FormatInt(secondPage.Data[0].ID, 10))
+
+	for index := 0; index < maxWorkloadCredentialVersionsPerFamily+5; index++ {
+		insertKey(t, fmt.Sprintf("ur-hist-%02d", index), grantID, logicalCredentialID, 0, "disabled")
+	}
+	boundedRequest := httptest.NewRequest(http.MethodGet,
+		"/api/v1/workload-applications/app_readiness_grant/credentials?page=1&page_size=100", nil)
+	boundedRequest.SetPathValue("ref", "app_readiness_grant")
+	boundedRequest = withIntegrationCommittingActor(t, pool, boundedRequest, actorID)
+	boundedResponse := httptest.NewRecorder()
+	handler.ListWorkloadApplicationCredentials(boundedResponse, boundedRequest)
+	require.Equal(t, http.StatusOK, boundedResponse.Code, boundedResponse.Body.String())
+	var bounded credentialPage
+	require.NoError(t, json.Unmarshal(boundedResponse.Body.Bytes(), &bounded))
+	foundBoundedFamily := false
+	for _, item := range bounded.Data {
+		if item.Classification != "grant_bound" {
+			continue
+		}
+		foundBoundedFamily = true
+		require.Len(t, item.Versions, maxWorkloadCredentialVersionsPerFamily)
+		require.Equal(t, maxWorkloadCredentialVersionsPerFamily, item.VersionCount)
+		require.True(t, item.VersionsTruncated)
+	}
+	require.True(t, foundBoundedFamily)
 	updateGrantBindingForCorruptionTest := func(t *testing.T, statement string, args ...any) {
 		t.Helper()
 		_, disableErr := pool.Exec(ctx, `ALTER TABLE access_grants DISABLE TRIGGER access_grants_request_binding_exact`)

@@ -61,8 +61,81 @@ func newPolicyTestServiceWithClient(t *testing.T, options Options, boundedClient
 			policies[index].Name = policies[index].Ref
 		}
 	}
-	service.snapshot.Store(&policySnapshot{policies: policies})
+	service.snapshot.Store(buildPolicySnapshot(policies, nil, false, time.Now()))
 	return service, mr
+}
+
+func TestReadinessMirrorsFailClosedAdmissionPreconditions(t *testing.T) {
+	zero := int64(0)
+	tests := []struct {
+		name   string
+		mutate func(*Subject)
+		reason string
+	}{
+		{"credential rps", func(subject *Subject) {
+			subject.AccessCredentialID = 17
+			subject.CredentialRef = "credential_17"
+			subject.BaseRPSLimit = 0
+		}, ReasonRPSExceeded},
+		{"credential rpm", func(subject *Subject) {
+			subject.AccessCredentialID = 17
+			subject.CredentialRef = "credential_17"
+			subject.BaseRPMLimit = 0
+		}, ReasonRPMExceeded},
+		{"credential concurrency", func(subject *Subject) {
+			subject.AccessCredentialID = 17
+			subject.CredentialRef = "credential_17"
+			subject.CredentialConcurrencyLimit = &zero
+		}, ReasonConcurrency},
+		{"grant rps", func(subject *Subject) { subject.AccessGrantID = 19; subject.GrantRPSLimit = &zero }, ReasonRPSExceeded},
+		{"grant rpm", func(subject *Subject) { subject.AccessGrantID = 19; subject.GrantRPMLimit = &zero }, ReasonRPMExceeded},
+		{"grant concurrency", func(subject *Subject) { subject.AccessGrantID = 19; subject.GrantConcurrencyLimit = &zero }, ReasonConcurrency},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service, _ := newPolicyTestService(t, testOptions())
+			subject := admission("readiness-zero", 1).Subject
+			test.mutate(&subject)
+			projection, err := service.Readiness(context.Background(), subject)
+			if err != nil || projection.State != ReadinessBlocked || projection.Reason != test.reason {
+				t.Fatalf("readiness = %#v, %v; want blocked %s", projection, err, test.reason)
+			}
+		})
+	}
+
+	t.Run("stale snapshot", func(t *testing.T) {
+		options := testOptions()
+		options.SnapshotMaxAge = 10 * time.Millisecond
+		service, _ := newPolicyTestService(t, options)
+		service.db = &testutil.MockDB{}
+		service.snapshot.Store(buildPolicySnapshot(nil, nil, true, time.Now().Add(-time.Second)))
+		projection, err := service.Readiness(context.Background(), admission("readiness-stale", 1).Subject)
+		if err != nil || projection.State != ReadinessUnavailable || projection.Reason != ReasonSnapshotStale {
+			t.Fatalf("readiness = %#v, %v; want unavailable stale snapshot", projection, err)
+		}
+	})
+
+	t.Run("policy chain", func(t *testing.T) {
+		options := testOptions()
+		options.MaxMatchingPolicies = 3
+		service, _ := newPolicyTestService(t, options,
+			Policy{ID: 31, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPMLimit: 10},
+			Policy{ID: 32, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPMLimit: 10},
+		)
+		projection, err := service.Readiness(context.Background(), admission("readiness-chain", 1).Subject)
+		if err != nil || projection.State != ReadinessUnavailable || projection.Reason != ReasonPolicyChainLarge {
+			t.Fatalf("readiness = %#v, %v; want unavailable policy chain", projection, err)
+		}
+	})
+
+	t.Run("redis unavailable", func(t *testing.T) {
+		service, server := newPolicyTestService(t, testOptions())
+		server.Close()
+		projection, err := service.Readiness(context.Background(), admission("readiness-redis", 1).Subject)
+		if err != nil || projection.State != ReadinessUnavailable || projection.Reason != ReasonStateUnavailable {
+			t.Fatalf("readiness = %#v, %v; want unavailable Redis state", projection, err)
+		}
+	})
 }
 
 func testOptions() Options {
@@ -122,6 +195,30 @@ func TestBuiltinAccessGrantPolicyBindsOrganizationAndGrant(t *testing.T) {
 	foreignSelector.OrgID = &foreignOrgID
 	if grantPolicy.selectorHash() == foreignSelector.selectorHash() {
 		t.Fatal("selector hash must bind the organization as well as the grant")
+	}
+}
+
+func TestReadinessProjectsAuthoritativePoliciesWithoutRedisMutation(t *testing.T) {
+	orgID, projectID := int64(7), int64(11)
+	service, redisServer := newPolicyTestService(t, testOptions(), Policy{
+		ID: 91, Ref: "policy:91", Name: "Project readiness", Version: 1,
+		OrgID: &orgID, ProjectID: &projectID, Mode: ModeEnforce,
+		FailureMode: FailureFailClosed, RPMLimit: 30,
+	})
+	before := redisServer.Keys()
+	projection, err := service.Readiness(context.Background(), Subject{
+		OrgID: orgID, ProjectID: projectID, APIKeyID: 13,
+		Model: "company-chat", BaseRPSLimit: 10, BaseRPMLimit: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.MatchingPolicyCount != 2 || projection.EnforcedPolicyCount != 2 {
+		t.Fatalf("unexpected safe projection: %#v", projection)
+	}
+	after := redisServer.Keys()
+	if len(before) != len(after) {
+		t.Fatalf("readiness mutated Redis: before=%v after=%v", before, after)
 	}
 }
 

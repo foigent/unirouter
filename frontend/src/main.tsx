@@ -13,7 +13,9 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const DeveloperConsolePage = lazy(() => import('./pages/DeveloperConsolePage'))
 const ChannelsPage = lazy(() => import('./pages/ChannelsPage'))
 const KeysPage = lazy(() => import('./pages/KeysPage'))
-const WorkloadApplicationsPage = lazy(() => import('./pages/WorkloadApplicationsPage'))
+const ApplicationsV2Page = lazy(() => import('./pages/ApplicationsV2Page'))
+const AccessReviewPage = lazy(() => import('./pages/AccessReviewPage'))
+const ModelReadinessPage = lazy(() => import('./pages/ModelReadinessPage'))
 const WalletPage = lazy(() => import('./pages/WalletPage'))
 const ChannelKeysPage = lazy(() => import('./pages/ChannelKeysPage'))
 const LogsPage = lazy(() => import('./pages/LogsPage'))
@@ -119,7 +121,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="channels" element={<RoleRoute><ChannelsPage /></RoleRoute>} />
               <Route path="governance-simulation" element={<RoleRoute><GovernanceSimulationPage /></RoleRoute>} />
               <Route path="keys" element={<RoleRoute><KeysPage /></RoleRoute>} />
-              <Route path="applications" element={<RoleRoute><WorkloadApplicationsPage /></RoleRoute>} />
+				<Route path="applications" element={<RoleRoute><ApplicationsV2Page /></RoleRoute>} />
+				<Route path="access-review" element={<RoleRoute><AccessReviewPage /></RoleRoute>} />
+				<Route path="model-readiness" element={<RoleRoute><ModelReadinessPage /></RoleRoute>} />
               <Route path="limit-policies" element={<RoleRoute><LimitPoliciesPage /></RoleRoute>} />
               <Route path="guardrail-policies" element={<RoleRoute><GuardrailPoliciesPage /></RoleRoute>} />
               <Route path="wallet" element={<RoleRoute><WalletPage /></RoleRoute>} />

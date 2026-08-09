@@ -194,8 +194,12 @@ export const api = {
     request(`/workload-applications/${encodeURIComponent(applicationRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
   archiveWorkloadApplication: (applicationRef: string, data: { org_id?: number; expected_revision: number }) =>
     request(`/workload-applications/${encodeURIComponent(applicationRef)}/archive`, { method: 'POST', body: JSON.stringify(data) }),
-  getWorkloadApplicationCredentials: (applicationRef: string, orgId?: number) =>
-    request(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}/credentials`, { org_id: orgId })),
+  getWorkloadApplicationCredentials: (applicationRef: string, orgId?: number, page = 1, pageSize = 20) =>
+    request(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}/credentials`, {
+      org_id: orgId,
+      page,
+      page_size: pageSize,
+    })),
   bindWorkloadApplicationCredential: (applicationRef: string, keyId: number, data: { org_id?: number; expected_revision: number }) =>
     request(`/workload-applications/${encodeURIComponent(applicationRef)}/credentials/${keyId}/bind`, { method: 'POST', body: JSON.stringify(data) }),
   getWorkloadApplicationReadiness: (applicationRef: string, filters?: { org_id?: number; model?: string; endpoint?: string }) =>
@@ -625,8 +629,8 @@ export const api = {
     })),
   getEnterpriseDirectoryIAMActions: (limit = 100, orgId?: number) =>
     request(appendParams('/enterprise-directory/iam-actions', { limit, org_id: orgId })),
-  getUsers: (page = 1, pageSize = 20) =>
-    request(`/users?page=${page}&page_size=${pageSize}`),
+  getUsers: (page = 1, pageSize = 20, authProvider?: 'local' | 'enterprise') =>
+    request(appendParams('/users', { page, page_size: pageSize, auth_provider: authProvider })),
   createUser: (data: any) =>
     request('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id: number, data: any) =>

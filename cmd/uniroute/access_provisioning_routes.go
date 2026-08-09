@@ -29,4 +29,5 @@ func registerAccessProvisioningRoutes(
 	mux.Handle("POST /api/v1/access-grants/{ref}/credentials/{key_id}/revoke", authenticated(handler.RevokeAccessGrantCredential))
 
 	mux.Handle("GET /api/v1/access-provisioning/legacy-preview", organizationAdmin(handler.PreviewLegacyAccessClassification))
+	mux.Handle("GET /api/v1/model-readiness", authenticated(handler.GetModelReadiness))
 }

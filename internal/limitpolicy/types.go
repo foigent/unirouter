@@ -40,6 +40,10 @@ const (
 	AdmissionPhaseFull      = "full"
 	AdmissionPhaseRate      = "rate"
 	AdmissionPhaseExecution = "execution"
+
+	ReadinessReady       = "ready"
+	ReadinessBlocked     = "blocked"
+	ReadinessUnavailable = "unavailable"
 )
 
 var (
@@ -123,6 +127,17 @@ type Limits struct {
 	RPM         int64 `json:"rpm,omitempty"`
 	TPM         int64 `json:"tpm,omitempty"`
 	Concurrency int64 `json:"concurrency,omitempty"`
+}
+
+// Readiness is a safe, read-only projection of the exact authoritative
+// subject and policy population used by admission. It contains no Redis key,
+// policy selector value, secret, or mutation handle.
+type Readiness struct {
+	MatchingPolicyCount int       `json:"matching_policy_count"`
+	EnforcedPolicyCount int       `json:"enforced_policy_count"`
+	SnapshotLoadedAt    time.Time `json:"snapshot_loaded_at"`
+	State               string    `json:"state"`
+	Reason              string    `json:"reason"`
 }
 
 type Decision struct {

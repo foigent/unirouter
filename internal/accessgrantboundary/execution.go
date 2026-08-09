@@ -70,14 +70,24 @@ func ResolveExecution(ctx context.Context, q db.DBQuerier, binding ExecutionBind
 	} else if snapshot.APIKey.GrantBound || snapshot.APIKey.ID != binding.AdmissionAPIKeyID {
 		return Snapshot{}, ErrInactive
 	}
-	endpoint := "/v1/media/jobs"
-	if snapshot.APIKey.EndpointDenied || !commaScopeAllows(snapshot.APIKey.AllowedEndpoints, endpoint) ||
-		snapshot.APIKey.ModelScopeDenied ||
-		(!commaScopeAllows(snapshot.APIKey.AllowedModels, binding.RequestedModel) &&
-			!commaScopeAllows(snapshot.APIKey.AllowedModels, binding.RoutingModel)) {
+	if !snapshot.AllowsExecution(binding.RequestedModel, binding.RoutingModel, "/v1/media/jobs") {
 		return Snapshot{}, ErrInactive
 	}
 	return snapshot, nil
+}
+
+// AllowsExecution applies the exact live model and endpoint intersection that
+// Gateway and durable media dispatch use after Resolve has materialized the
+// current Grant into the physical key snapshot. It is pure and is therefore
+// also safe for read-only readiness projection.
+func (s Snapshot) AllowsExecution(requestedModel, resolvedModel, endpoint string) bool {
+	endpoint = accessscope.CanonicalExecutionEndpoint(strings.TrimSpace(endpoint))
+	if !accessscope.IsSupportedEndpoint(endpoint) || s.APIKey.EndpointDenied ||
+		!commaScopeAllows(s.APIKey.AllowedEndpoints, endpoint) || s.APIKey.ModelScopeDenied {
+		return false
+	}
+	return commaScopeAllows(s.APIKey.AllowedModels, requestedModel) ||
+		commaScopeAllows(s.APIKey.AllowedModels, resolvedModel)
 }
 
 func validMediaDispatchEndpoint(endpoint string) bool {

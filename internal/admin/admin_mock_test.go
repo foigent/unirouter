@@ -611,6 +611,8 @@ func TestGetMe_IncludesIdentityProviderAndEmail(t *testing.T) {
 			*dest[6].(*string) = "Acme"
 			*dest[7].(*string) = "alice@example.com"
 			*dest[8].(*string) = "oidc"
+			*dest[9].(*bool) = true
+			*dest[10].(*bool) = true
 			return nil
 		}}
 	}}
@@ -630,6 +632,10 @@ func TestGetMe_IncludesIdentityProviderAndEmail(t *testing.T) {
 	}
 	if body["auth_provider"] != "oidc" || body["email"] != "alice@example.com" {
 		t.Fatalf("unexpected identity fields: %#v", body)
+	}
+	capabilities, ok := body["navigation_capabilities"].(map[string]interface{})
+	if !ok || capabilities["has_live_project_membership"] != true || capabilities["can_discover_access_review"] != true {
+		t.Fatalf("unexpected navigation capability projection: %#v", body["navigation_capabilities"])
 	}
 	licenseAccess, ok := body["license_access"].(map[string]interface{})
 	if !ok || licenseAccess["status"] != licensing.StatusInvalid || licenseAccess["enforceable"] != false {

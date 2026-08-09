@@ -77,7 +77,7 @@ func resolveOrganizationRolePointers(organizationRole, legacyRole *string) (stri
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
-	whereClause := ""
+	whereParts := make([]string, 0, 2)
 	args := []interface{}{}
 	argIdx := 1
 	if actorOrgID, constrained := actorOrgConstraint(r.Context()); constrained {
@@ -85,9 +85,24 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 			return
 		}
-		whereClause = " WHERE u.org_id = $1"
+		whereParts = append(whereParts, fmt.Sprintf("u.org_id = $%d", argIdx))
 		args = append(args, actorOrgID)
 		argIdx++
+	}
+	providerScope := strings.TrimSpace(r.URL.Query().Get("auth_provider"))
+	switch providerScope {
+	case "":
+	case "local":
+		whereParts = append(whereParts, "COALESCE(NULLIF(u.auth_provider,''),'local') = 'local'")
+	case "enterprise":
+		whereParts = append(whereParts, "COALESCE(NULLIF(u.auth_provider,''),'local') <> 'local'")
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid auth_provider filter"})
+		return
+	}
+	whereClause := ""
+	if len(whereParts) > 0 {
+		whereClause = " WHERE " + strings.Join(whereParts, " AND ")
 	}
 
 	var total int
