@@ -290,7 +290,7 @@ func TestUpdateLicense_RejectsLimitBelowCurrentUsage(t *testing.T) {
 	committed := false
 	tx := &testutil.MockTx{
 		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
-			if strings.Contains(sql, "COUNT(*) FROM api_keys") {
+			if strings.Contains(sql, "commercial_api_key_seats") {
 				return &testutil.MockRow{ScanFn: func(dest ...any) error { *dest[0].(*int64) = 2; return nil }}
 			}
 			return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}

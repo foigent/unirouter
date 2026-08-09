@@ -176,7 +176,43 @@ func main() {
 		log.Fatalf("Failed to initialize runtime change control: %v", err)
 	}
 	router.SetRuntimeResolver(runtimeChangeManager)
-	mediaStore, err := mediajob.NewPostgresStore(postgres.Pool)
+	mediaExecutionAuthorizer := mediajob.ExecutionModelAuthorizerFunc(func(
+		ctx context.Context,
+		q db.DBQuerier,
+		input mediajob.ExecutionAuthorization,
+	) error {
+		access, accessErr := modelgov.CheckAccess(
+			ctx, q, input.Scope.OrgID, input.Scope.ProjectID, input.RequestedModel,
+		)
+		if accessErr != nil {
+			if errors.Is(accessErr, modelgov.ErrModelRetired) || errors.Is(accessErr, modelgov.ErrModelDenied) ||
+				errors.Is(accessErr, modelgov.ErrModelRequired) {
+				return mediajob.ErrForbidden
+			}
+			return mediajob.ErrUnavailable
+		}
+		routingModel := strings.TrimSpace(access.ResolvedModel)
+		if routingModel == "" {
+			routingModel = input.RequestedModel
+		}
+		if routingModel != input.RoutingModel {
+			return mediajob.ErrForbidden
+		}
+		decision, decisionErr := modelAuthorizationEvaluator.EvaluateWithQuerier(ctx, q, modelauthz.Input{
+			OrgID: input.Scope.OrgID, ProjectID: input.Scope.ProjectID,
+			APIKeyID: input.APIKeyID, AccessCredentialID: input.AccessCredentialID,
+			OwnerUserID: input.OwnerUserID, Endpoint: "/v1/media/jobs",
+			RequestedModel: input.RequestedModel, ResolvedModel: routingModel,
+		})
+		if decisionErr != nil {
+			return mediajob.ErrUnavailable
+		}
+		if !decision.Allowed {
+			return mediajob.ErrForbidden
+		}
+		return nil
+	})
+	mediaStore, err := mediajob.NewPostgresStore(postgres.Pool, mediaExecutionAuthorizer)
 	if err != nil {
 		log.Fatalf("Failed to initialize async-media store: %v", err)
 	}
@@ -225,6 +261,9 @@ func main() {
 				OrgID: scope.OrgID, ProjectID: scope.ProjectID, APIKeyID: apiKey.ID,
 				Endpoint: "/v1/media/jobs", RequestedModel: requestedModel, ResolvedModel: routingModel,
 			}
+			if apiKey.AccessCredentialID != nil {
+				input.AccessCredentialID = *apiKey.AccessCredentialID
+			}
 			if apiKey.OwnerUserID != nil {
 				input.OwnerUserID = *apiKey.OwnerUserID
 			}
@@ -246,6 +285,7 @@ func main() {
 			MaxAttempts:      cfg.AsyncMediaMaxAttempts,
 			RuntimeEnabled:   cfg.AsyncMediaEnabled,
 			AdmissionEnabled: cfg.AsyncMediaAdmissionEnabled,
+			LimitPolicy:      limitPolicyService,
 		},
 	)
 	if err != nil {
@@ -278,6 +318,7 @@ func main() {
 				OnError: func(workerErr error) {
 					log.Printf("Async-media worker operation failed: %v", workerErr)
 				},
+				LimitPolicy: limitPolicyService,
 			},
 		)
 		if workerErr != nil {
@@ -597,14 +638,18 @@ func main() {
 	embeddingsHandler := newGatewayEmbeddingsHandler(postgres.Pool, relay, outboxSvc)
 	chatPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext)
 	embeddingsPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileEmbeddingsRequest, middleware.GetOrgIDFromContext)
+	mediaPayloadGuard := payloadpolicy.RequestMiddlewareWithMax(payloadBudget, mediajob.MaxRequestBytes, middleware.GetOrgIDFromContext)
 
-	mux.Handle("POST /v1/chat/completions", gatewayLicenseGate(gatewayAuth(chatPayloadGuard(idempotencyGuard(chatHandler)))))
-	mux.Handle("POST /v1/embeddings", gatewayLicenseGate(gatewayAuth(embeddingsPayloadGuard(idempotencyGuard(embeddingsHandler)))))
+	// Repeat live authentication after the complete body is retained. A slow
+	// upload cannot carry a pre-revocation Grant, Credential, membership,
+	// capability, endpoint, or provider-liability snapshot into paid admission.
+	mux.Handle("POST /v1/chat/completions", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(idempotencyGuard(chatHandler))))
+	mux.Handle("POST /v1/embeddings", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(idempotencyGuard(embeddingsHandler))))
 	mux.Handle("GET /v1/models", gatewayLicenseGate(gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
-	mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(mediaAuth(rateLimiter(http.HandlerFunc(mediaHandler.Submit)))))
-	mux.Handle("GET /v1/media/jobs/{id}", gatewayLicenseGate(mediaAuth(rateLimiter(http.HandlerFunc(mediaHandler.Get)))))
-	mux.Handle("POST /v1/media/jobs/{id}/cancel", gatewayLicenseGate(mediaAuth(rateLimiter(http.HandlerFunc(mediaHandler.Cancel)))))
-	mux.Handle("GET /v1/media/jobs/{id}/content", gatewayLicenseGate(mediaAuth(rateLimiter(http.HandlerFunc(mediaHandler.Content)))))
+	mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(http.HandlerFunc(mediaHandler.Submit))))
+	mux.Handle("GET /v1/media/jobs/{id}", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Get))))
+	mux.Handle("POST /v1/media/jobs/{id}/cancel", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Cancel))))
+	mux.Handle("GET /v1/media/jobs/{id}/content", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Content))))
 	mux.Handle(
 		"GET /api/v1/integrations/xinsight/completed-executions",
 		completedFeedAuth(completedFeedSvc.Handler()),
@@ -962,7 +1007,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	registerGovernanceSimulationRoutes(mux, adminHandler, platformRoute)
 	registerRuntimeChangeRoutes(mux, adminHandler, platformRoute)
 	registerModelAuthorizationRoutes(mux, adminHandler, orgAdminRoute)
-	registerWorkloadApplicationRoutes(mux, adminHandler, orgAdminRoute)
+	registerWorkloadApplicationRoutes(mux, adminHandler, adminRoute)
+	registerAccessProvisioningRoutes(mux, adminHandler, adminRoute, orgAdminRoute)
 	registerDeploymentNetworkRoutes(mux, adminHandler, deploymentNetworkRouteGuards{read: orgAdminRoute, write: platformRoute})
 	registerMemberLifecycleRoutes(mux, adminHandler, orgAdminRoute)
 	registerEnterpriseDirectoryRoutes(mux, adminHandler, orgAdminRoute)

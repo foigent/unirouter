@@ -246,14 +246,14 @@ func (s *Service) Refresh(ctx context.Context) error {
 	}
 	rows, err := s.db.Query(ctx, `
 		WITH active AS (
-			SELECT id, org_id, project_id, api_key_id, name, model, stage,
+			SELECT id, org_id, project_id, api_key_id, access_credential_id, name, model, stage,
 			       detector_ref, action, mode, failure_mode, mandatory, config,
 			       version, created_at, updated_at,
 			       COUNT(*) OVER (PARTITION BY org_id) AS scope_count
 			FROM guardrail_policies
 			WHERE mode <> 'disabled'
 		)
-		SELECT id, org_id, project_id, api_key_id, name, model, stage,
+		SELECT id, org_id, project_id, api_key_id, access_credential_id, name, model, stage,
 		       detector_ref, action, mode, failure_mode, mandatory, config,
 		       version, created_at, updated_at
 		FROM active
@@ -267,7 +267,7 @@ func (s *Service) Refresh(ctx context.Context) error {
 	policies := make([]Policy, 0)
 	for rows.Next() {
 		var policy Policy
-		if err := rows.Scan(&policy.ID, &policy.OrgID, &policy.ProjectID, &policy.APIKeyID, &policy.Name, &policy.Model,
+		if err := rows.Scan(&policy.ID, &policy.OrgID, &policy.ProjectID, &policy.APIKeyID, &policy.AccessCredentialID, &policy.Name, &policy.Model,
 			&policy.Stage, &policy.DetectorRef, &policy.Action, &policy.Mode, &policy.FailureMode,
 			&policy.Mandatory, &policy.Config, &policy.Version, &policy.CreatedAt, &policy.UpdatedAt); err != nil {
 			return fmt.Errorf("scan guardrail policy: %w", err)
@@ -432,6 +432,7 @@ func cloneSnapshotPolicy(policy Policy) Policy {
 	clone.OrgID = cloneInt64Pointer(policy.OrgID)
 	clone.ProjectID = cloneInt64Pointer(policy.ProjectID)
 	clone.APIKeyID = cloneInt64Pointer(policy.APIKeyID)
+	clone.AccessCredentialID = cloneInt64Pointer(policy.AccessCredentialID)
 	clone.Config = append(json.RawMessage(nil), policy.Config...)
 	return clone
 }

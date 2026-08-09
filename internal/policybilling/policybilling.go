@@ -110,12 +110,24 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 	if apiKey == nil {
 		return rejectedResult(limitpolicy.ErrInvalidRequest), nil
 	}
+	req.APIKeyID = apiKey.ID
+	if apiKey.AccessCredentialID != nil {
+		req.AccessCredentialID = *apiKey.AccessCredentialID
+		req.CredentialRef = apiKey.CredentialRef
+	}
+	if apiKey.AccessGrantID != nil {
+		req.AccessGrantID = *apiKey.AccessGrantID
+	}
 	reservation, reserveErr := b.runtime.Reserve(ctx, limitpolicy.AdmissionRequest{
 		OperationID: req.RequestID,
 		Subject: limitpolicy.Subject{
 			OrgID: middleware.GetOrgIDFromContext(ctx), ProjectID: middleware.GetProjectIDFromContext(ctx),
-			APIKeyID: middleware.GetKeyIDFromContext(ctx), Model: req.Model,
+			APIKeyID: middleware.GetKeyIDFromContext(ctx), AccessCredentialID: req.AccessCredentialID,
+			CredentialRef: req.CredentialRef, AccessGrantID: req.AccessGrantID, Model: req.Model,
 			BaseRPSLimit: int64(apiKey.QPSLimit), BaseRPMLimit: int64(apiKey.RPMLimit),
+			CredentialConcurrencyLimit: intPointer64(apiKey.CredentialConcurrencyLimit),
+			GrantRPSLimit:              intPointer64(apiKey.GrantRPSLimit), GrantRPMLimit: intPointer64(apiKey.GrantRPMLimit),
+			GrantConcurrencyLimit: intPointer64(apiKey.GrantConcurrencyLimit),
 		},
 		EstimatedInput: int64(inputTokens), ReservedOutput: int64(reservedOutput),
 		LeaseTTL: agentcap.InvocationLeaseTTLFromContext(ctx), WorkloadClass: workloadadmission.ClassFromContext(ctx),
@@ -179,6 +191,14 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 		}
 	}
 	return result, nil
+}
+
+func intPointer64(value *int) *int64 {
+	if value == nil {
+		return nil
+	}
+	result := int64(*value)
+	return &result
 }
 
 func (b *Billing) BeginProviderAttempt(ctx context.Context, req billing.ProviderAttemptStart) error {

@@ -690,11 +690,10 @@ func disableLocalUser(ctx context.Context, tx pgx.Tx, orgID, userID int64) (resu
 		WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>NOW()`, userID); err != nil {
 		return "", "", "", false, fmt.Errorf("revoke local sessions from directory evidence: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE api_keys SET status='disabled', updated_at=NOW()
-		WHERE owner_user_id=$1 AND org_id=$2 AND key_type='personal'`, userID, orgID); err != nil {
-		return "", "", "", false, fmt.Errorf("disable personal keys from directory evidence: %w", err)
-	}
+	// Account disable is reversible. Keep credential families and secret
+	// versions intact; runtime authorization and effective-status read models
+	// fail closed on the disabled subject. Permanent containment happens only
+	// on account deletion, membership loss, workload archive, or grant revoke.
 	return IAMResultApplied, status, "disabled", true, nil
 }
 

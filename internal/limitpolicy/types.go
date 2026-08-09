@@ -36,6 +36,10 @@ const (
 	DecisionAllow     = "allow"
 	DecisionDeny      = "deny"
 	DecisionWouldDeny = "would_deny"
+
+	AdmissionPhaseFull      = "full"
+	AdmissionPhaseRate      = "rate"
+	AdmissionPhaseExecution = "execution"
 )
 
 var (
@@ -54,34 +58,43 @@ var (
 // Policy is one versioned, monotonic constraint. Every matching policy is
 // applied; a more-specific selector never overrides or widens another limit.
 type Policy struct {
-	ID               int64     `json:"id"`
-	Ref              string    `json:"ref"`
-	Name             string    `json:"name"`
-	Version          int64     `json:"version"`
-	OrgID            *int64    `json:"org_id,omitempty"`
-	ProjectID        *int64    `json:"project_id,omitempty"`
-	APIKeyID         *int64    `json:"api_key_id,omitempty"`
-	Model            string    `json:"model,omitempty"`
-	PolicyLabel      string    `json:"policy_label,omitempty"`
-	Mode             string    `json:"mode"`
-	FailureMode      string    `json:"failure_mode"`
-	RPSLimit         int64     `json:"rps_limit,omitempty"`
-	RPMLimit         int64     `json:"rpm_limit,omitempty"`
-	TPMLimit         int64     `json:"tpm_limit,omitempty"`
-	ConcurrencyLimit int64     `json:"concurrency_limit,omitempty"`
-	UpdatedAt        time.Time `json:"updated_at"`
-	Builtin          bool      `json:"builtin"`
-	RuntimeBucket    string    `json:"-"`
+	ID                 int64     `json:"id"`
+	Ref                string    `json:"ref"`
+	Name               string    `json:"name"`
+	Version            int64     `json:"version"`
+	OrgID              *int64    `json:"org_id,omitempty"`
+	ProjectID          *int64    `json:"project_id,omitempty"`
+	APIKeyID           *int64    `json:"api_key_id,omitempty"`
+	AccessCredentialID *int64    `json:"access_credential_id,omitempty"`
+	AccessGrantID      *int64    `json:"access_grant_id,omitempty"`
+	Model              string    `json:"model,omitempty"`
+	PolicyLabel        string    `json:"policy_label,omitempty"`
+	Mode               string    `json:"mode"`
+	FailureMode        string    `json:"failure_mode"`
+	RPSLimit           int64     `json:"rps_limit,omitempty"`
+	RPMLimit           int64     `json:"rpm_limit,omitempty"`
+	TPMLimit           int64     `json:"tpm_limit,omitempty"`
+	ConcurrencyLimit   int64     `json:"concurrency_limit,omitempty"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	Builtin            bool      `json:"builtin"`
+	RuntimeBucket      string    `json:"-"`
 }
 
 type Subject struct {
-	OrgID        int64
-	ProjectID    int64
-	APIKeyID     int64
-	Model        string
-	PolicyLabels []string
-	BaseRPSLimit int64
-	BaseRPMLimit int64
+	OrgID                      int64
+	ProjectID                  int64
+	APIKeyID                   int64
+	AccessCredentialID         int64
+	CredentialRef              string
+	AccessGrantID              int64
+	Model                      string
+	PolicyLabels               []string
+	BaseRPSLimit               int64
+	BaseRPMLimit               int64
+	CredentialConcurrencyLimit *int64
+	GrantRPSLimit              *int64
+	GrantRPMLimit              *int64
+	GrantConcurrencyLimit      *int64
 }
 
 type AdmissionRequest struct {
@@ -91,6 +104,11 @@ type AdmissionRequest struct {
 	ReservedOutput int64
 	LeaseTTL       time.Duration
 	WorkloadClass  string
+	// Phase projects the same policy population and runtime buckets onto one
+	// execution boundary. Empty is the historical full model-call admission.
+	// Media submission uses rate; the worker uses execution immediately before
+	// Provider dispatch so queued durable work does not occupy concurrency.
+	Phase string
 }
 
 type Usage struct {
@@ -136,6 +154,7 @@ type policyReservation struct {
 	TPMLimit       int64
 	Fallback       bool
 	Mode           string
+	Tokenless      bool
 }
 
 // Reservation is a server-owned terminal handle. It is not a bearer token and
@@ -165,7 +184,8 @@ func (p Policy) Validate() error {
 	if p.RPSLimit == 0 && p.RPMLimit == 0 && p.TPMLimit == 0 && p.ConcurrencyLimit == 0 {
 		return ErrInvalidPolicy
 	}
-	if p.ProjectID != nil && p.OrgID == nil || p.APIKeyID != nil && p.OrgID == nil {
+	if p.ProjectID != nil && p.OrgID == nil || p.APIKeyID != nil && p.OrgID == nil ||
+		p.AccessCredentialID != nil && p.OrgID == nil || p.AccessGrantID != nil && p.OrgID == nil {
 		return ErrInvalidPolicy
 	}
 	return nil
@@ -184,6 +204,12 @@ func (p Policy) Matches(subject Subject) bool {
 	if p.APIKeyID != nil && *p.APIKeyID != subject.APIKeyID {
 		return false
 	}
+	if p.AccessCredentialID != nil && *p.AccessCredentialID != subject.AccessCredentialID {
+		return false
+	}
+	if p.AccessGrantID != nil && *p.AccessGrantID != subject.AccessGrantID {
+		return false
+	}
 	if p.Model != "" && p.Model != subject.Model {
 		return false
 	}
@@ -194,8 +220,9 @@ func (p Policy) Matches(subject Subject) bool {
 }
 
 func (p Policy) selectorHash() string {
-	canonical := fmt.Sprintf("org=%s|project=%s|key=%s|model=%s|label=%s",
-		optionalID(p.OrgID), optionalID(p.ProjectID), optionalID(p.APIKeyID), p.Model, p.PolicyLabel)
+	canonical := fmt.Sprintf("org=%s|project=%s|key=%s|credential=%s|grant=%s|model=%s|label=%s",
+		optionalID(p.OrgID), optionalID(p.ProjectID), optionalID(p.APIKeyID), optionalID(p.AccessCredentialID),
+		optionalID(p.AccessGrantID), p.Model, p.PolicyLabel)
 	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:8])
 }
@@ -228,12 +255,36 @@ func runtimePolicySetVersion(policies []Policy, workloadVersion string) string {
 func operationFingerprint(request AdmissionRequest, runtimeRef string) string {
 	labels := append([]string(nil), request.Subject.PolicyLabels...)
 	sort.Strings(labels)
-	canonical := fmt.Sprintf("%s|%s|%d|%d|%d|%s|%s|%d|%d",
-		request.OperationID, runtimeRef, request.Subject.OrgID, request.Subject.ProjectID,
-		request.Subject.APIKeyID, request.Subject.Model, strings.Join(labels, ","),
-		request.EstimatedInput, request.ReservedOutput)
+	canonical := fmt.Sprintf("%s|%s|%s|%d|%d|%d|%d|%s|%d|%s|%s|%d|%d|%s|%s|%s|%s",
+		request.OperationID, runtimeRef, normalizedAdmissionPhase(request.Phase), request.Subject.OrgID, request.Subject.ProjectID,
+		request.Subject.APIKeyID, request.Subject.AccessCredentialID, request.Subject.CredentialRef,
+		request.Subject.AccessGrantID, request.Subject.Model, strings.Join(labels, ","),
+		request.EstimatedInput, request.ReservedOutput,
+		optionalInt64(request.Subject.CredentialConcurrencyLimit),
+		optionalInt64(request.Subject.GrantRPSLimit), optionalInt64(request.Subject.GrantRPMLimit),
+		optionalInt64(request.Subject.GrantConcurrencyLimit))
 	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:])
+}
+
+func normalizedAdmissionPhase(phase string) string {
+	switch strings.TrimSpace(phase) {
+	case "", AdmissionPhaseFull:
+		return AdmissionPhaseFull
+	case AdmissionPhaseRate:
+		return AdmissionPhaseRate
+	case AdmissionPhaseExecution:
+		return AdmissionPhaseExecution
+	default:
+		return ""
+	}
+}
+
+func optionalInt64(value *int64) string {
+	if value == nil {
+		return "-"
+	}
+	return fmt.Sprint(*value)
 }
 
 func optionalID(value *int64) string {

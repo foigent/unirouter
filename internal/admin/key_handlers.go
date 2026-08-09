@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +17,33 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/uniroute/unirouter/internal/accessprovisioning"
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/workloadapp"
 )
 
 const apiKeyPrefixInsertMaxAttempts = 4
+
+type createAPIKeyRequest struct {
+	OrgID            int64    `json:"org_id"`
+	ProjectID        int64    `json:"project_id"`
+	OwnerUserID      *int64   `json:"owner_user_id"`
+	KeyType          string   `json:"key_type"`
+	Name             string   `json:"name"`
+	RPMLimit         int      `json:"rpm_limit"`
+	RPSLimit         *int     `json:"rps_limit"`
+	QPSLimit         int      `json:"qps_limit"`
+	BudgetLimitCents *int64   `json:"budget_limit_cents"`
+	AllowedIPs       string   `json:"allowed_ips"`
+	AllowedModels    string   `json:"allowed_models"`
+	PolicyLabels     []string `json:"policy_labels"`
+	Purpose          string   `json:"purpose"`
+	ApplicationRef   string   `json:"workload_application_ref"`
+	Environment      string   `json:"environment"`
+	ProductionUse    bool     `json:"production_use"`
+}
 
 var errAPIKeyAuthorizationChanged = errors.New("API-key authorization changed")
 
@@ -65,6 +87,7 @@ type apiKeyAuditState struct {
 	AllowedIPs    string
 	AllowedModels string
 	PolicyLabels  string
+	AccessGrantID int64
 }
 
 func writeAPIKeyNotFound(w http.ResponseWriter) {
@@ -340,7 +363,7 @@ func loadAPIKeyAuditStateTx(ctx context.Context, tx pgx.Tx, id int64, forUpdate 
 	query := `SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0),
 	                COALESCE(NULLIF(key_type, ''), 'shared'), name, status, rpm_limit, qps_limit,
 	                COALESCE(allowed_ips, ''), COALESCE(allowed_models, ''), COALESCE(policy_labels, ''),
-	                COALESCE(purpose, '')
+	                COALESCE(purpose, ''), COALESCE(access_grant_id,0)
 	         FROM api_keys WHERE id = $1`
 	if forUpdate {
 		query += " FOR UPDATE"
@@ -349,7 +372,7 @@ func loadAPIKeyAuditStateTx(ctx context.Context, tx pgx.Tx, id int64, forUpdate 
 	err := tx.QueryRow(ctx, query, id).Scan(
 		&state.OrgID, &state.ProjectID, &state.OwnerUserID, &state.KeyType,
 		&state.Name, &state.Status, &state.RPMLimit, &state.QPSLimit,
-		&state.AllowedIPs, &state.AllowedModels, &state.PolicyLabels, &state.Purpose,
+		&state.AllowedIPs, &state.AllowedModels, &state.PolicyLabels, &state.Purpose, &state.AccessGrantID,
 	)
 	return state, err
 }
@@ -448,12 +471,14 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		        o.name as org_name, COALESCE(p.name, '') as project_name,
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'), COALESCE(u.username, ''),
 		        COALESCE(ak.policy_labels, ''), COALESCE(ak.purpose, ''),
-		        COALESCE(ak.workload_application_id, 0), COALESCE(wa.application_ref, ''), COALESCE(wa.display_name, '')
+		        COALESCE(ak.workload_application_id, 0), COALESCE(wa.application_ref, ''), COALESCE(wa.display_name, ''),
+		        COALESCE(ak.access_grant_id, 0), COALESCE(ag.grant_ref, '')
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
 		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
 		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
 		 LEFT JOIN workload_applications wa ON wa.id = ak.workload_application_id AND wa.org_id = ak.org_id
+		 LEFT JOIN access_grants ag ON ag.id = ak.access_grant_id AND ag.org_id = ak.org_id AND ag.project_id = ak.project_id
 		 %s
 		 ORDER BY ak.id ASC LIMIT $%d OFFSET $%d`, whereClause, argIdx, argIdx+1),
 		append(args, pageSize, offset)...,
@@ -466,13 +491,13 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 	keys := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var id, orgID, projectID, ownerUserID, workloadApplicationID int64
+		var id, orgID, projectID, ownerUserID, workloadApplicationID, accessGrantID int64
 		var name, keyPrefix, status, orgName, projectName, keyType, ownerUsername string
-		var workloadApplicationRef, workloadApplicationName string
+		var workloadApplicationRef, workloadApplicationName, grantRef string
 		var rpmLimit, qpsLimit, budgetLimit int
 		var allowedIPs, allowedModels, policyLabels, purpose string
 		var createdAt time.Time
-		if err := rows.Scan(&id, &orgID, &projectID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName, &projectName, &ownerUserID, &keyType, &ownerUsername, &policyLabels, &purpose, &workloadApplicationID, &workloadApplicationRef, &workloadApplicationName); err != nil {
+		if err := rows.Scan(&id, &orgID, &projectID, &name, &keyPrefix, &status, &rpmLimit, &qpsLimit, &budgetLimit, &allowedIPs, &allowedModels, &createdAt, &orgName, &projectName, &ownerUserID, &keyType, &ownerUsername, &policyLabels, &purpose, &workloadApplicationID, &workloadApplicationRef, &workloadApplicationName, &accessGrantID, &grantRef); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -492,6 +517,9 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 			"workload_application_id":   nullableWorkloadApplicationID(workloadApplicationID),
 			"workload_application_ref":  workloadApplicationRef,
 			"workload_application_name": workloadApplicationName,
+			"access_grant_id":           nullableAccessGrantID(accessGrantID),
+			"grant_ref":                 grantRef,
+			"classification":            apiKeyClassification(accessGrantID, purpose),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -503,21 +531,7 @@ func (h *Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		OrgID          int64    `json:"org_id"`
-		ProjectID      int64    `json:"project_id"`
-		OwnerUserID    *int64   `json:"owner_user_id"`
-		KeyType        string   `json:"key_type"`
-		Name           string   `json:"name"`
-		RPMLimit       int      `json:"rpm_limit"`
-		RPSLimit       *int     `json:"rps_limit"`
-		QPSLimit       int      `json:"qps_limit"`
-		AllowedIPs     string   `json:"allowed_ips"`
-		AllowedModels  string   `json:"allowed_models"`
-		PolicyLabels   []string `json:"policy_labels"`
-		Purpose        string   `json:"purpose"`
-		ApplicationRef string   `json:"workload_application_ref"`
-	}
+	var req createAPIKeyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
@@ -603,22 +617,6 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}
-	existingRows, err := h.db.Query(r.Context(),
-		`SELECT 1 FROM api_keys WHERE org_id = $1 AND project_id = $2 AND name = $3 LIMIT 1`,
-		req.OrgID, projectID, req.Name)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to check duplicate key name"})
-		return
-	}
-	defer existingRows.Close()
-	if existingRows.Next() {
-		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "API key name already exists"})
-		return
-	}
-	if err := existingRows.Err(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to check duplicate key name"})
-		return
-	}
 	ownerUserID, keyType, err := h.resolveCreateAPIKeyOwnership(r.Context(), req.OrgID, projectID, req.OwnerUserID, req.KeyType)
 	if err != nil {
 		writeAPIKeyOwnershipError(w, err)
@@ -635,140 +633,265 @@ func (h *Handler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeWorkloadCredentialBindingError(w, err)
 		return
 	}
-	keyStatus := "active"
-	if purpose == middleware.APIKeyPurposeXInsightFeedRead {
-		// A purpose-active status is deliberately unknown to older binaries,
-		// so a binary rollback cannot reinterpret this credential as a normal
-		// gateway key.
-		keyStatus = middleware.APIKeyStatusFeedActive
+	if keyType == "shared" {
+		writeLegacyKeyMigrationRequired(w, "shared credentials require the access workflow")
+		return
 	}
-
-	auditDetail := map[string]interface{}{
-		"org_id":     req.OrgID,
-		"project_id": projectID,
-		"key_type":   keyType,
-		"name":       req.Name,
-		"after": map[string]interface{}{
-			"org_id":                   req.OrgID,
-			"project_id":               projectID,
-			"owner_user_id":            nullableOwnerUserID(ownerUserID),
-			"key_type":                 keyType,
-			"name":                     req.Name,
-			"status":                   keyStatus,
-			"rpm_limit":                req.RPMLimit,
-			"rps_limit":                req.QPSLimit,
-			"qps_limit":                req.QPSLimit,
-			"allowed_ips":              req.AllowedIPs,
-			"allowed_models":           req.AllowedModels,
-			"policy_labels":            splitPolicyLabelCSV(policyLabels),
-			"purpose":                  purpose,
-			"workload_application_id":  nullableWorkloadApplicationID(workloadApplicationID),
-			"workload_application_ref": workloadApplicationRef,
-		},
+	if keyType == "service" && workloadApplicationID == 0 {
+		writeLegacyKeyMigrationRequired(w, "service credentials require an exact v2 workload identity")
+		return
 	}
-
-	atomicAudit := !isUnauthenticatedUnitContext(r.Context())
-	var rawKey, keyPrefix string
-	var id int64
-	for attempt := 0; attempt < apiKeyPrefixInsertMaxAttempts; attempt++ {
-		rawKey, keyPrefix, err = auth.GenerateAPIKey(req.OrgID)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to generate key"})
-			return
-		}
-
-		keyHash := auth.HashAPIKey(rawKey, h.apiKeyHashSecret)
-		if !atomicAudit {
-			err = h.db.QueryRow(r.Context(),
-				`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, purpose, workload_application_id, created_at, updated_at)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
-				 RETURNING id`,
-				req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, keyStatus, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels, purpose, nullableWorkloadApplicationID(workloadApplicationID),
-			).Scan(&id)
-			if err == nil || !isAPIKeyPrefixCollision(err) {
-				break
-			}
-			continue
-		}
-
-		tx, beginErr := h.db.Begin(r.Context())
-		if beginErr != nil {
-			err = beginErr
-			break
-		}
-		if err = h.reauthorizeAPIKeyMutationTx(r.Context(), tx, apiKeyAuthorizationIntent{
-			operation:               apiKeyMutationCreate,
-			targetOrgID:             req.OrgID,
-			targetProjectID:         projectID,
-			targetProjectMustActive: true,
-			ownerUserID:             ownerUserID,
-			keyType:                 keyType,
-			validateOwnership:       true,
-			workloadApplicationID:   workloadApplicationID,
-		}); err != nil {
-			_ = tx.Rollback(r.Context())
-			break
-		}
-		err = tx.QueryRow(r.Context(),
-			`INSERT INTO api_keys (org_id, project_id, owner_user_id, key_type, name, key_hash, key_prefix, status, rpm_limit, qps_limit, allowed_ips, allowed_models, policy_labels, purpose, workload_application_id, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
-			 RETURNING id`,
-			req.OrgID, projectID, nullableOwnerUserID(ownerUserID), keyType, req.Name, keyHash, keyPrefix, keyStatus, req.RPMLimit, req.QPSLimit, req.AllowedIPs, req.AllowedModels, policyLabels, purpose, nullableWorkloadApplicationID(workloadApplicationID),
-		).Scan(&id)
-		if err != nil {
-			_ = tx.Rollback(r.Context())
-			if isAPIKeyPrefixCollision(err) {
-				continue
-			}
-			break
-		}
-		if err = insertAuditEntry(r.Context(), tx, "apikey.create", "apikey", strconv.FormatInt(id, 10), auditDetail,
-			requestAuditMeta(r, req.OrgID, projectID)); err != nil {
-			_ = tx.Rollback(r.Context())
-			break
-		}
-		if err = tx.Commit(r.Context()); err != nil {
-			_ = tx.Rollback(r.Context())
-			break
-		}
-		break
+	if keyType == "personal" && workloadApplicationID != 0 {
+		writeLegacyKeyMigrationRequired(w, "personal credentials cannot bind a workload identity")
+		return
 	}
-	if err != nil {
-		if errors.Is(err, errAPIKeyAuthorizationChanged) {
-			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
-			return
-		}
-		if writeCommercialLimitViolation(w, err) {
-			return
-		}
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create key"})
+	h.createProvisionedAPIKey(w, r, req, projectID, ownerUserID, keyType,
+		workloadApplicationID, workloadApplicationRef, splitPolicyLabelCSV(policyLabels))
+}
+
+func writeLegacyKeyMigrationRequired(w http.ResponseWriter, message string) {
+	writeJSON(w, http.StatusConflict, map[string]interface{}{
+		"error": message, "reason": "migration_required",
+	})
+}
+
+func (h *Handler) createProvisionedAPIKey(
+	w http.ResponseWriter,
+	r *http.Request,
+	req createAPIKeyRequest,
+	projectID, ownerUserID int64,
+	keyType string,
+	workloadApplicationID int64,
+	workloadApplicationRef string,
+	policyLabels []string,
+) {
+	actorUserID := middleware.GetUserIDFromContext(r.Context())
+	if actorUserID <= 0 {
+		writeAccessProvisioningError(w, accessprovisioning.ErrForbidden)
 		return
 	}
 
-	if !atomicAudit {
-		h.recordAuditForOrgProjectFromRequest(r, req.OrgID, projectID, "apikey.create", "apikey", strconv.FormatInt(id, 10), auditDetail)
+	provision := accessprovisioning.ProvisionInput{
+		OrgID: req.OrgID, ProjectID: projectID,
+		Envelope: accessprovisioning.Envelope{
+			ProjectRole: auth.ProjectRoleUser,
+			ScopeMode:   accessscope.ModeProjectDefault,
+		},
+		Environment:   strings.ToLower(strings.TrimSpace(req.Environment)),
+		ProductionUse: req.ProductionUse,
 	}
 
+	switch keyType {
+	case "personal":
+		if provision.Environment != "" && provision.Environment != accessprovisioning.PersonalEnvironment {
+			writeLegacyKeyMigrationRequired(w, "human personal access uses the canonical personal environment")
+			return
+		}
+		if provision.ProductionUse {
+			writeLegacyKeyMigrationRequired(w, "production or unattended access requires a v2 workload identity")
+			return
+		}
+		provision.Environment = accessprovisioning.PersonalEnvironment
+		provision.ProductionUse = false
+		var userStatus, storedMembershipRole string
+		if err := h.db.QueryRow(r.Context(), `
+			SELECT u.status,pm.role
+			FROM users u
+			JOIN project_members pm ON pm.user_id=u.id AND pm.project_id=$3
+			WHERE u.id=$1 AND u.org_id=$2`, ownerUserID, req.OrgID, projectID).Scan(
+			&userStatus, &storedMembershipRole,
+		); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeLegacyKeyMigrationRequired(w, "personal credentials require an active calling membership in the exact project")
+			} else {
+				writeAccessProvisioningUnavailable(w)
+			}
+			return
+		}
+		projectRole, ok := auth.NormalizeProjectMembershipRole(storedMembershipRole)
+		if userStatus != "active" || !ok || projectRole == auth.ProjectRoleViewer {
+			writeLegacyKeyMigrationRequired(w, "personal credentials require an active calling membership in the exact project")
+			return
+		}
+		provision.Subject = accessprovisioning.Subject{Type: accessprovisioning.SubjectUser, UserID: ownerUserID}
+		provision.RequestKind = accessprovisioning.RequestKindHumanPersonal
+		provision.Envelope.ProjectRole = projectRole
+		switch {
+		case ownerUserID == actorUserID:
+			provision.SubmissionMode = accessprovisioning.SubmissionSelf
+		case auth.IsOrgAdmin(actorOrganizationRole(r.Context())):
+			provision.SubmissionMode = accessprovisioning.SubmissionDirectGrant
+		default:
+			provision.SubmissionMode = accessprovisioning.SubmissionDelegated
+		}
+	case "service":
+		var contractVersion, identityVersion, environment, identityMode, workloadStatus string
+		var productionUse bool
+		var sponsorUserID int64
+		if err := h.db.QueryRow(r.Context(), `
+			SELECT contract_version,identity_contract_version,environment,production_use,identity_mode,status,created_by
+			FROM workload_applications
+			WHERE id=$1 AND org_id=$2 AND project_id=$3 AND application_ref=$4`,
+			workloadApplicationID, req.OrgID, projectID, workloadApplicationRef,
+		).Scan(&contractVersion, &identityVersion, &environment, &productionUse, &identityMode, &workloadStatus, &sponsorUserID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeLegacyKeyMigrationRequired(w, "service credentials require an exact v2 workload identity")
+			} else {
+				writeAccessProvisioningUnavailable(w)
+			}
+			return
+		}
+		if contractVersion != workloadapp.ContractVersion || identityVersion != workloadapp.IdentityContractVersion ||
+			identityMode != workloadapp.IdentityServiceCredential || workloadStatus != workloadapp.StatusActive {
+			writeLegacyKeyMigrationRequired(w, "service credentials require an active v2 workload identity")
+			return
+		}
+		if requestedEnvironment := strings.ToLower(strings.TrimSpace(req.Environment)); requestedEnvironment != "" && requestedEnvironment != environment {
+			writeLegacyKeyMigrationRequired(w, "service credential environment must match the immutable workload environment")
+			return
+		}
+		if req.ProductionUse != productionUse {
+			writeLegacyKeyMigrationRequired(w, "service credential production classification must match the immutable workload identity")
+			return
+		}
+		provision.Environment = environment
+		provision.ProductionUse = productionUse
+		provision.Subject = accessprovisioning.Subject{
+			Type: accessprovisioning.SubjectWorkloadApplication, WorkloadApplicationID: workloadApplicationID,
+		}
+		provision.RequestKind = accessprovisioning.RequestKindWorkloadService
+		provision.SponsorUserID = sponsorUserID
+		if auth.IsOrgAdmin(actorOrganizationRole(r.Context())) {
+			provision.SubmissionMode = accessprovisioning.SubmissionDirectGrant
+		} else {
+			provision.SubmissionMode = accessprovisioning.SubmissionDelegated
+		}
+	default:
+		writeLegacyKeyMigrationRequired(w, "ordinary credentials require an explicit personal or v2 workload identity")
+		return
+	}
+
+	requestID := middleware.GetRequestIDFromContext(r.Context())
+	clientRequestID := middleware.GetClientRequestIDFromContext(r.Context())
+	if clientRequestID == "" {
+		semantic := fmt.Sprintf("%s\x00%d\x00%d\x00%d\x00%s\x00%s\x00%s",
+			requestID, actorUserID, req.OrgID, projectID, keyType, req.Name, workloadApplicationRef)
+		digest := sha256.Sum256([]byte(semantic))
+		clientRequestID = fmt.Sprintf("legacy-key-create-%x", digest[:12])
+	}
+	provision.ClientRequestID = clientRequestID
+	provision.RequestID = requestID
+	rpmLimit, rpsLimit := req.RPMLimit, req.QPSLimit
+	if rpmLimit > accessscope.ProjectDefaultRPMLimit {
+		provision.Envelope.RPMLimit = &rpmLimit
+	}
+	if rpsLimit > accessscope.ProjectDefaultRPSLimit {
+		provision.Envelope.RPSLimit = &rpsLimit
+	}
+	credential := accessprovisioning.CredentialInput{
+		Name: req.Name, AllowedIPs: req.AllowedIPs, AllowedModels: splitCSV(req.AllowedModels),
+		AllowedEndpoints: accessscope.ProjectDefaultEndpoints(),
+		RPMLimit:         &rpmLimit, RPSLimit: &rpsLimit,
+		LegacyPolicyLabels: policyLabels, LegacyBudgetLimitCents: req.BudgetLimitCents,
+		RequestID: requestID, ClientRequestID: clientRequestID,
+	}
+	service, err := h.accessProvisioningService()
+	if err != nil {
+		writeAccessProvisioningUnavailable(w)
+		return
+	}
+	if keyType == "personal" && ownerUserID != actorUserID {
+		result, err := service.Provision(r.Context(), provision)
+		if err != nil {
+			writeAccessProvisioningError(w, err)
+			return
+		}
+		if result.Request.Status == accessprovisioning.RequestRejected {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{
+				"error": "Access request was rejected", "reason": "access_rejected",
+				"request_ref": result.Request.RequestRef, "request_status": result.Request.Status,
+			})
+			return
+		}
+		response := map[string]interface{}{
+			"status": "credential_self_service_required", "reason": "credential_self_service_required",
+			"request_ref": result.Request.RequestRef, "request_status": result.Request.Status,
+			"project_id": projectID, "owner_user_id": ownerUserID,
+			"secret_available": false, "idempotent": result.Idempotent,
+		}
+		if result.Grant != nil {
+			response["access_grant_id"] = result.Grant.ID
+			response["grant_ref"] = result.Grant.GrantRef
+		}
+		writeJSON(w, http.StatusAccepted, response)
+		return
+	}
+	result, err := service.ProvisionAndIssueCredential(r.Context(), accessActorScope(r.Context()), provision, credential)
+	if err != nil {
+		writeLegacyCredentialCreationError(w, err)
+		return
+	}
+	if result.Credential == nil || result.Grant == nil {
+		status := http.StatusConflict
+		reason := "access_review_required"
+		if result.Request.Status == accessprovisioning.RequestRejected {
+			status = http.StatusForbidden
+			reason = "access_rejected"
+		}
+		writeJSON(w, status, map[string]interface{}{
+			"error": "Access approval is required before credential issuance", "reason": reason,
+			"request_ref": result.Request.RequestRef, "request_status": result.Request.Status,
+		})
+		return
+	}
+
+	issued := result.Credential
+	budgetLimit := 0
+	if req.BudgetLimitCents != nil {
+		budgetLimit = int(*req.BudgetLimitCents)
+	}
 	response := map[string]interface{}{
-		"id":                       id,
-		"key":                      rawKey,
-		"key_prefix":               keyPrefix,
-		"project_id":               projectID,
-		"owner_user_id":            nullableOwnerUserID(ownerUserID),
-		"key_type":                 keyType,
-		"rpm_limit":                req.RPMLimit,
-		"rps_limit":                req.QPSLimit,
-		"qps_limit":                req.QPSLimit,
-		"policy_labels":            splitPolicyLabelCSV(policyLabels),
-		"purpose":                  purpose,
+		"id": issued.ID, "key": issued.Key, "key_prefix": issued.KeyPrefix, "name": issued.Name,
+		"credential_ref": issued.CredentialRef,
+		"project_id":     projectID, "owner_user_id": nullableOwnerUserID(ownerUserID), "key_type": keyType,
+		"status": issued.Status, "rpm_limit": issued.RPMLimit, "rps_limit": issued.RPSLimit, "qps_limit": issued.RPSLimit,
+		"budget_limit": budgetLimit, "budget_limit_cents": req.BudgetLimitCents,
+		"allowed_ips": issued.AllowedIPs, "allowed_models": strings.Join(issued.AllowedModels, ","),
+		"allowed_endpoints": issued.AllowedEndpoints, "policy_labels": policyLabels, "purpose": "",
 		"workload_application_id":  nullableWorkloadApplicationID(workloadApplicationID),
 		"workload_application_ref": workloadApplicationRef,
-		"quota":                    apiKeyQuotaPayload(req.RPMLimit, req.QPSLimit, 0),
+		"quota":                    apiKeyQuotaPayload(issued.RPMLimit, issued.RPSLimit, budgetLimit),
+		"access_grant_id":          result.Grant.ID, "grant_ref": result.Grant.GrantRef,
+		"classification": issued.Classification, "secret_available": issued.SecretAvailable,
+		"request_ref": result.Request.RequestRef,
 	}
-	if policyLabels != "" {
+	if issued.RecoveryAction != "" {
+		response["recovery_action"] = issued.RecoveryAction
+	}
+	if len(policyLabels) > 0 {
 		response["runtime_snapshot_applied"] = h.refreshLimitPolicySnapshot(r.Context())
 	}
-	writeJSON(w, http.StatusCreated, response)
+	status := http.StatusCreated
+	if result.Idempotent || issued.Idempotent {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, response)
+}
+
+// writeLegacyCredentialCreationError preserves the established /api/v1/keys
+// response contract while applying the same ordered database error mapping as
+// the canonical access-grant credential endpoints. Commercial License errors
+// must be inspected before generic access provisioning classification because
+// the provisioning service deliberately wraps the original PostgreSQL error.
+func writeLegacyCredentialCreationError(w http.ResponseWriter, err error) {
+	if writeCommercialLimitViolation(w, err) {
+		return
+	}
+	if errors.Is(err, accessprovisioning.ErrCredentialNameConflict) {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "API key name already exists"})
+		return
+	}
+	writeAccessProvisioningError(w, err)
 }
 
 func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -803,28 +926,34 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var currentOrgID, currentProjectID, currentOwnerUserID int64
-	var currentKeyType, currentPurpose, currentAllowedIPs, currentAllowedModels string
+	var currentOrgID, currentProjectID, currentOwnerUserID, currentAccessGrantID int64
+	var currentKeyType, currentPurpose, currentStatus, currentAllowedIPs, currentAllowedModels, currentGrantRef string
 	if !isUnauthenticatedUnitContext(r.Context()) {
-		lookupClause, lookupArgs, ok := actorScopedAPIKeyLookupClause(r.Context(), apiKeyObjectWrite, "api_keys", 2)
+		lookupClause, lookupArgs, ok := actorScopedAPIKeyLookupClause(r.Context(), apiKeyObjectWrite, "ak", 2)
 		if !ok {
 			writeAPIKeyNotFound(w)
 			return
 		}
 		queryArgs := append([]interface{}{id}, lookupArgs...)
 		if err := h.db.QueryRow(r.Context(), fmt.Sprintf(
-			`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0),
-			        COALESCE(NULLIF(key_type, ''), 'shared'), COALESCE(purpose, ''),
-			        COALESCE(allowed_ips, ''), COALESCE(allowed_models, '')
-			 FROM api_keys WHERE id = $1%s`, lookupClause), queryArgs...,
+			`SELECT ak.org_id, COALESCE(ak.project_id, 0), COALESCE(ak.owner_user_id, 0),
+			        COALESCE(NULLIF(ak.key_type, ''), 'shared'), COALESCE(ak.purpose, ''), ak.status,
+			        COALESCE(ak.allowed_ips, ''), COALESCE(ak.allowed_models, ''),
+			        COALESCE(ak.access_grant_id,0),COALESCE(ag.grant_ref,'')
+			 FROM api_keys ak
+			 LEFT JOIN access_grants ag ON ag.id=ak.access_grant_id AND ag.org_id=ak.org_id AND ag.project_id=ak.project_id
+			 WHERE ak.id = $1%s`, lookupClause), queryArgs...,
 		).Scan(
 			&currentOrgID,
 			&currentProjectID,
 			&currentOwnerUserID,
 			&currentKeyType,
 			&currentPurpose,
+			&currentStatus,
 			&currentAllowedIPs,
 			&currentAllowedModels,
+			&currentAccessGrantID,
+			&currentGrantRef,
 		); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeAPIKeyNotFound(w)
@@ -849,6 +978,40 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if currentPurpose == middleware.APIKeyPurposeXInsightFeedRead {
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Feed credentials are managed only from X-Insight Data Exchange control"})
+		return
+	}
+	if currentAccessGrantID > 0 && req.Status != nil {
+		status := strings.ToLower(strings.TrimSpace(*req.Status))
+		if status != "active" && status != "disabled" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid status"})
+			return
+		}
+		if status == "active" {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "Revoked grant-bound credentials cannot be reactivated", "reason": "grant_credential_reactivation_forbidden",
+				"grant_ref": currentGrantRef,
+			})
+			return
+		}
+		if req.Name != nil || req.AllowedIPs != nil || req.AllowedModels != nil || req.ProjectID != nil ||
+			req.OwnerUserID != nil || req.KeyType != nil || req.RPMLimit != nil || req.RPSLimit != nil ||
+			req.QPSLimit != nil || req.PolicyLabels != nil {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error":  "Grant-bound credential revocation cannot be combined with other changes",
+				"reason": "use_grant_credential_rotation", "grant_ref": currentGrantRef,
+			})
+			return
+		}
+		h.revokeGrantBoundAPIKeyCompatibility(w, r, id, currentAccessGrantID, currentGrantRef)
+		return
+	}
+	if currentAccessGrantID > 0 && (req.Name != nil || req.AllowedIPs != nil || req.AllowedModels != nil ||
+		req.ProjectID != nil || req.OwnerUserID != nil || req.KeyType != nil || req.RPMLimit != nil ||
+		req.RPSLimit != nil || req.QPSLimit != nil || req.PolicyLabels != nil) {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":  "Grant-bound credential identity and scope are immutable; rotate or revoke the credential",
+			"reason": "grant_credential_identity_immutable", "grant_ref": currentGrantRef,
+		})
 		return
 	}
 
@@ -1027,9 +1190,27 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 		if beforeAuditState.OrgID != currentOrgID || beforeAuditState.ProjectID != currentProjectID ||
 			beforeAuditState.OwnerUserID != currentOwnerUserID || beforeAuditState.KeyType != currentKeyType ||
-			beforeAuditState.Purpose != currentPurpose {
+			beforeAuditState.Purpose != currentPurpose || beforeAuditState.AccessGrantID != currentAccessGrantID {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Key changed; retry the update"})
 			return
+		}
+		if req.Name != nil && *req.Name != beforeAuditState.Name {
+			lockIdentity := fmt.Sprintf("access-credential-name:%d:%d:%s", currentOrgID, currentProjectID, *req.Name)
+			if _, err := tx.Exec(r.Context(), `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, lockIdentity); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update key"})
+				return
+			}
+			var duplicateName bool
+			if err := tx.QueryRow(r.Context(), `SELECT EXISTS (
+				SELECT 1 FROM api_keys WHERE org_id=$1 AND project_id=$2 AND name=$3 AND id<>$4
+			)`, currentOrgID, currentProjectID, *req.Name, id).Scan(&duplicateName); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to update key"})
+				return
+			}
+			if duplicateName {
+				writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "API key name already exists"})
+				return
+			}
 		}
 		// The organization is immutable, but constraining the write to the
 		// authorized snapshot prevents a stale pre-read from mutating another row.
@@ -1113,7 +1294,10 @@ func (h *Handler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		h.recordAudit(r.Context(), "apikey.update", "apikey", idStr, auditDetail, r.RemoteAddr)
 	}
 
-	response := map[string]interface{}{"message": "Key updated"}
+	response := map[string]interface{}{
+		"message": "Key updated", "access_grant_id": nullableAccessGrantID(currentAccessGrantID),
+		"grant_ref": currentGrantRef, "classification": apiKeyClassification(currentAccessGrantID, currentPurpose),
+	}
 	if req.PolicyLabels != nil {
 		response["runtime_snapshot_applied"] = h.refreshLimitPolicySnapshot(r.Context())
 	}
@@ -1149,20 +1333,23 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var eventOrgID, eventProjectID, eventOwnerUserID int64
-	var eventName, eventKeyPrefix, currentStatus, currentPurpose, currentKeyType string
-	lookupClause, lookupArgs, ok := actorScopedAPIKeyLookupClause(r.Context(), apiKeyObjectWrite, "api_keys", 2)
+	var eventOrgID, eventProjectID, eventOwnerUserID, currentAccessGrantID int64
+	var eventName, eventKeyPrefix, currentStatus, currentPurpose, currentKeyType, currentGrantRef string
+	lookupClause, lookupArgs, ok := actorScopedAPIKeyLookupClause(r.Context(), apiKeyObjectWrite, "ak", 2)
 	if !ok {
 		writeAPIKeyNotFound(w)
 		return
 	}
 	queryArgs := append([]interface{}{id}, lookupArgs...)
 	if err := h.db.QueryRow(r.Context(), fmt.Sprintf(
-		`SELECT org_id, COALESCE(project_id, 0), COALESCE(owner_user_id, 0), name, key_prefix, status,
-		        COALESCE(purpose, ''), COALESCE(NULLIF(key_type, ''), 'shared')
-		 FROM api_keys WHERE id = $1%s`, lookupClause),
+		`SELECT ak.org_id, COALESCE(ak.project_id, 0), COALESCE(ak.owner_user_id, 0), ak.name, ak.key_prefix, ak.status,
+		        COALESCE(ak.purpose, ''), COALESCE(NULLIF(ak.key_type, ''), 'shared'),
+		        COALESCE(ak.access_grant_id,0),COALESCE(ag.grant_ref,'')
+		 FROM api_keys ak
+		 LEFT JOIN access_grants ag ON ag.id=ak.access_grant_id AND ag.org_id=ak.org_id AND ag.project_id=ak.project_id
+		 WHERE ak.id = $1%s`, lookupClause),
 		queryArgs...,
-	).Scan(&eventOrgID, &eventProjectID, &eventOwnerUserID, &eventName, &eventKeyPrefix, &currentStatus, &currentPurpose, &currentKeyType); err != nil {
+	).Scan(&eventOrgID, &eventProjectID, &eventOwnerUserID, &eventName, &eventKeyPrefix, &currentStatus, &currentPurpose, &currentKeyType, &currentAccessGrantID, &currentGrantRef); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeAPIKeyNotFound(w)
 		} else {
@@ -1182,6 +1369,10 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 	)
 	if !canAdministerKey && !canManageOwnPersonalKey {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
+	if currentAccessGrantID > 0 {
+		h.revokeGrantBoundAPIKeyCompatibility(w, r, id, currentAccessGrantID, currentGrantRef)
 		return
 	}
 
@@ -1282,6 +1473,34 @@ func (h *Handler) DisableAPIKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Key disabled"})
 }
 
+func (h *Handler) revokeGrantBoundAPIKeyCompatibility(
+	w http.ResponseWriter,
+	r *http.Request,
+	keyID, accessGrantID int64,
+	grantRef string,
+) {
+	requestID := middleware.GetRequestIDFromContext(r.Context())
+	clientRequestID := middleware.GetClientRequestIDFromContext(r.Context())
+	if clientRequestID == "" {
+		actorUserID := middleware.GetUserIDFromContext(r.Context())
+		digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d\x00%d", requestID, actorUserID, keyID)))
+		clientRequestID = fmt.Sprintf("legacy-key-disable-%x", digest[:12])
+	}
+	service, err := h.accessProvisioningService()
+	if err != nil {
+		writeAccessProvisioningUnavailable(w)
+		return
+	}
+	if err := service.RevokeCredential(r.Context(), accessActorScope(r.Context()), grantRef, keyID, requestID, clientRequestID); err != nil {
+		writeAccessProvisioningError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Key disabled", "classification": "grant_bound",
+		"access_grant_id": accessGrantID, "grant_ref": grantRef,
+	})
+}
+
 func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -1291,13 +1510,14 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	var k struct {
 		ID, OrgID, ProjectID, OwnerUserID int64
+		AccessGrantID                     int64
 		Name, KeyPrefix                   string
 		KeyType, OwnerUsername            string
 		Status                            string
 		RPMLimit, QPSLimit, BudgetLimit   int
 		AllowedIPs, AllowedModels         string
 		PolicyLabels                      string
-		Purpose                           string
+		Purpose, GrantRef                 string
 		OrgName, ProjectName              string
 		CreatedAt                         time.Time
 	}
@@ -1311,13 +1531,15 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.name, ak.key_prefix, ak.status, ak.rpm_limit, ak.qps_limit,
 		        COALESCE(ak.budget_limit, 0), ak.allowed_ips, ak.allowed_models, ak.created_at, o.name, COALESCE(p.name, ''),
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'), COALESCE(u.username, ''),
-		        COALESCE(ak.policy_labels, ''), COALESCE(ak.purpose, '')
+		        COALESCE(ak.policy_labels, ''), COALESCE(ak.purpose, ''),
+		        COALESCE(ak.access_grant_id,0),COALESCE(ag.grant_ref,'')
 		 FROM api_keys ak JOIN orgs o ON o.id = ak.org_id
 		 LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
 		 LEFT JOIN users u ON u.id = ak.owner_user_id AND u.org_id = ak.org_id
+		 LEFT JOIN access_grants ag ON ag.id=ak.access_grant_id AND ag.org_id=ak.org_id AND ag.project_id=ak.project_id
 		 WHERE ak.id = $1%s`, lookupClause), queryArgs...).Scan(
 		&k.ID, &k.OrgID, &k.ProjectID, &k.Name, &k.KeyPrefix, &k.Status, &k.RPMLimit, &k.QPSLimit,
-		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName, &k.ProjectName, &k.OwnerUserID, &k.KeyType, &k.OwnerUsername, &k.PolicyLabels, &k.Purpose)
+		&k.BudgetLimit, &k.AllowedIPs, &k.AllowedModels, &k.CreatedAt, &k.OrgName, &k.ProjectName, &k.OwnerUserID, &k.KeyType, &k.OwnerUsername, &k.PolicyLabels, &k.Purpose, &k.AccessGrantID, &k.GrantRef)
 	if err != nil {
 		writeAPIKeyNotFound(w)
 		return
@@ -1334,7 +1556,9 @@ func (h *Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
 		"purpose":       k.Purpose,
 		"created_at":    k.CreatedAt, "org_name": k.OrgName, "project_name": k.ProjectName,
 		"owner_user_id": owner, "owner_username": k.OwnerUsername, "key_type": k.KeyType,
-		"quota": apiKeyQuotaPayload(k.RPMLimit, k.QPSLimit, k.BudgetLimit),
+		"quota":           apiKeyQuotaPayload(k.RPMLimit, k.QPSLimit, k.BudgetLimit),
+		"access_grant_id": nullableAccessGrantID(k.AccessGrantID), "grant_ref": k.GrantRef,
+		"classification": apiKeyClassification(k.AccessGrantID, k.Purpose),
 	})
 }
 
@@ -1522,6 +1746,23 @@ func nullableWorkloadApplicationID(applicationID int64) interface{} {
 	return nil
 }
 
+func nullableAccessGrantID(grantID int64) interface{} {
+	if grantID > 0 {
+		return grantID
+	}
+	return nil
+}
+
+func apiKeyClassification(grantID int64, purpose string) string {
+	if strings.TrimSpace(purpose) != "" {
+		return "purpose_scoped"
+	}
+	if grantID > 0 {
+		return "grant_bound"
+	}
+	return "legacy_unbound"
+}
+
 func resolveWorkloadApplicationForCredential(
 	ctx context.Context,
 	rower interface {
@@ -1600,17 +1841,17 @@ func (h *Handler) resolveCreateAPIKeyOwnership(ctx context.Context, orgID, proje
 
 	keyType := strings.TrimSpace(keyTypeReq)
 	if keyType == "" {
-		switch {
-		case actorOrganizationRole(ctx) != auth.RolePlatformAdmin && actorOrganizationRole(ctx) != auth.RoleOrgAdmin && actorID > 0:
-			keyType = "personal"
-			if ownerReq == nil || ownerUserID == 0 {
-				ownerUserID = actorID
-			}
-		case ownerUserID > 0:
-			keyType = "personal"
-		default:
-			keyType = "shared"
+		keyType = "personal"
+		if ownerReq == nil || ownerUserID == 0 {
+			ownerUserID = actorID
 		}
+	}
+	if keyType == "service" && !isUnauthenticatedUnitContext(ctx) &&
+		actorOrganizationRole(ctx) != auth.RolePlatformAdmin && actorOrganizationRole(ctx) != auth.RoleOrgAdmin {
+		if ownerUserID > 0 || !h.hasProjectMembership(ctx, projectID, projectMemberAdmin) {
+			return 0, "", fmt.Errorf("Forbidden")
+		}
+		return 0, keyType, nil
 	}
 	return h.resolveAPIKeyOwnership(ctx, orgID, projectID, ownerUserID, keyType, ownerReq != nil)
 }

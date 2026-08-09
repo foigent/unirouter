@@ -36,14 +36,14 @@ func TestP6F40CAffectedKeyPaidAdmissionBlockClearsOnlyAfterResolution(t *testing
 		Endpoint: "/v1/chat/completions", Provider: "test", Channel: "test",
 	}
 	require.NoError(t, b.BeginProviderAttempt(ctx, attempt))
-	blocked, err := providerCostAdmissionBlocked(ctx, pool, orgID, apiKeyID)
+	blocked, err := providerCostAdmissionBlocked(ctx, pool, orgID, apiKeyID, 0)
 	require.NoError(t, err)
 	require.False(t, blocked, "an ordinary in-flight dispatch must not serialize the entire API key")
 	require.NoError(t, b.CompleteProviderAttempt(ctx, billing.ProviderAttemptCompletion{
 		RequestID: requestID, AttemptID: attempt.AttemptID, OrgID: orgID,
 		Outcome: billing.ProviderAttemptOutcomeUnknown, FailureKind: "transport",
 	}))
-	blocked, err = providerCostAdmissionBlocked(ctx, pool, orgID, apiKeyID)
+	blocked, err = providerCostAdmissionBlocked(ctx, pool, orgID, apiKeyID, 0)
 	require.NoError(t, err)
 	require.True(t, blocked)
 	_, err = b.ReconcileProviderAttempt(ctx, billing.ProviderReconciliationRequest{
@@ -52,7 +52,7 @@ func TestP6F40CAffectedKeyPaidAdmissionBlockClearsOnlyAfterResolution(t *testing
 		Reason: "provider confirmed no customer delivery", EvidenceRef: "case://refund-auth",
 	})
 	require.NoError(t, err)
-	blocked, err = providerCostAdmissionBlocked(ctx, pool, orgID, apiKeyID)
+	blocked, err = providerCostAdmissionBlocked(ctx, pool, orgID, apiKeyID, 0)
 	require.NoError(t, err)
 	require.False(t, blocked)
 }

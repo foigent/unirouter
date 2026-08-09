@@ -32,6 +32,7 @@ const (
 type IdempotencyClaimInput struct {
 	OrgID              int64
 	APIKeyID           int64
+	AccessCredentialID int64
 	KeyHash            string
 	RequestFingerprint string
 	OperationID        string
@@ -43,6 +44,9 @@ type IdempotencyClaimInput struct {
 type IdempotencyRecord struct {
 	OrgID                int64
 	APIKeyID             int64
+	AccessCredentialID   int64
+	SubjectType          string
+	SubjectID            int64
 	KeyHash              string
 	RequestFingerprint   string
 	OperationID          string
@@ -71,7 +75,7 @@ type IdempotencyClaimResult struct {
 
 type IdempotencyStore interface {
 	Claim(context.Context, IdempotencyClaimInput) (IdempotencyClaimResult, error)
-	Complete(ctx context.Context, orgID, apiKeyID int64, keyHash, operationID, state string, httpStatus int) error
+	Complete(ctx context.Context, orgID, apiKeyID, accessCredentialID int64, keyHash, operationID, state string, httpStatus int) error
 }
 
 type PostgresIdempotencyStore struct {
@@ -92,19 +96,24 @@ func (s *PostgresIdempotencyStore) Claim(ctx context.Context, in IdempotencyClai
 
 	const insertQuery = `
 		INSERT INTO request_idempotency (
-			org_id, api_key_id, key_hash, request_fingerprint, operation_id,
+			org_id, api_key_id, access_credential_id, idempotency_subject_type,
+			idempotency_subject_id, key_hash, request_fingerprint, operation_id,
 			client_request_id, state, created_at, updated_at, expires_at
-		) VALUES ($1, $2, $3, $4, $5, $6, 'in_progress', $7, $7, $8)
-		ON CONFLICT (org_id, api_key_id, key_hash) DO NOTHING
-		RETURNING org_id, api_key_id, key_hash, request_fingerprint, operation_id,
+		) VALUES ($1, $2, NULLIF($3,0), $4, $5, $6, $7, $8, $9, 'in_progress', $10, $10, $11)
+		ON CONFLICT (org_id, idempotency_subject_type, idempotency_subject_id, key_hash) DO NOTHING
+		RETURNING org_id, api_key_id, COALESCE(access_credential_id,0),
+		          idempotency_subject_type,idempotency_subject_id,
+		          key_hash, request_fingerprint, operation_id,
 		          COALESCE(client_request_id, ''), state, original_http_status,
 		          usage_authority, usage_purpose, usage_finality,
 		          usage_contract_version, usage_estimate_version,
 		          delivery_mode, delivery_outcome, delivered_bytes, delivered_chunks, delivery_updated_at,
 		          created_at, updated_at, expires_at`
 
+	subjectType, subjectID := idempotencySubject(in.APIKeyID, in.AccessCredentialID)
 	record, err := scanIdempotencyRecord(s.db.QueryRow(ctx, insertQuery,
-		in.OrgID, in.APIKeyID, in.KeyHash, in.RequestFingerprint, in.OperationID,
+		in.OrgID, in.APIKeyID, in.AccessCredentialID, subjectType, subjectID,
+		in.KeyHash, in.RequestFingerprint, in.OperationID,
 		nullableIdentity(in.ClientRequestID), in.CreatedAt, in.ExpiresAt,
 	))
 	if err == nil {
@@ -114,7 +123,7 @@ func (s *PostgresIdempotencyStore) Claim(ctx context.Context, in IdempotencyClai
 		return IdempotencyClaimResult{}, fmt.Errorf("insert idempotency claim: %w", err)
 	}
 
-	existing, err := s.lookup(ctx, in.OrgID, in.APIKeyID, in.KeyHash)
+	existing, err := s.lookup(ctx, in.OrgID, in.APIKeyID, in.AccessCredentialID, in.KeyHash)
 	if err != nil {
 		return IdempotencyClaimResult{}, fmt.Errorf("lookup idempotency claim: %w", err)
 	}
@@ -124,9 +133,11 @@ func (s *PostgresIdempotencyStore) Claim(ctx context.Context, in IdempotencyClai
 
 	const replaceExpiredQuery = `
 		UPDATE request_idempotency
-		SET request_fingerprint = $4,
-		    operation_id = $5,
-		    client_request_id = $6,
+		SET api_key_id = $2,
+		    access_credential_id = NULLIF($3,0),
+		    request_fingerprint = $7,
+		    operation_id = $8,
+		    client_request_id = $9,
 		    state = 'in_progress',
 		    original_http_status = NULL,
 		    usage_authority = 'none',
@@ -139,19 +150,23 @@ func (s *PostgresIdempotencyStore) Claim(ctx context.Context, in IdempotencyClai
 		    delivered_bytes = 0,
 		    delivered_chunks = 0,
 		    delivery_updated_at = NULL,
-		    created_at = $7,
-		    updated_at = $7,
-		    expires_at = $8
-		WHERE org_id = $1 AND api_key_id = $2 AND key_hash = $3
-		  AND expires_at <= $7
-		RETURNING org_id, api_key_id, key_hash, request_fingerprint, operation_id,
+		    created_at = $10,
+		    updated_at = $10,
+		    expires_at = $11
+		WHERE org_id = $1 AND idempotency_subject_type = $4
+		  AND idempotency_subject_id = $5 AND key_hash = $6
+		  AND expires_at <= $10
+		RETURNING org_id, api_key_id, COALESCE(access_credential_id,0),
+		          idempotency_subject_type,idempotency_subject_id,
+		          key_hash, request_fingerprint, operation_id,
 		          COALESCE(client_request_id, ''), state, original_http_status,
 		          usage_authority, usage_purpose, usage_finality,
 		          usage_contract_version, usage_estimate_version,
 		          delivery_mode, delivery_outcome, delivered_bytes, delivered_chunks, delivery_updated_at,
 		          created_at, updated_at, expires_at`
 	record, err = scanIdempotencyRecord(s.db.QueryRow(ctx, replaceExpiredQuery,
-		in.OrgID, in.APIKeyID, in.KeyHash, in.RequestFingerprint, in.OperationID,
+		in.OrgID, in.APIKeyID, in.AccessCredentialID, subjectType, subjectID,
+		in.KeyHash, in.RequestFingerprint, in.OperationID,
 		nullableIdentity(in.ClientRequestID), in.CreatedAt, in.ExpiresAt,
 	))
 	if err == nil {
@@ -163,46 +178,52 @@ func (s *PostgresIdempotencyStore) Claim(ctx context.Context, in IdempotencyClai
 
 	// A concurrent request replaced the expired record first. Read back the
 	// winner from a new statement snapshot and return it as the original claim.
-	existing, err = s.lookup(ctx, in.OrgID, in.APIKeyID, in.KeyHash)
+	existing, err = s.lookup(ctx, in.OrgID, in.APIKeyID, in.AccessCredentialID, in.KeyHash)
 	if err != nil {
 		return IdempotencyClaimResult{}, fmt.Errorf("read winning idempotency claim: %w", err)
 	}
 	return IdempotencyClaimResult{Record: existing}, nil
 }
 
-func (s *PostgresIdempotencyStore) lookup(ctx context.Context, orgID, apiKeyID int64, keyHash string) (IdempotencyRecord, error) {
+func (s *PostgresIdempotencyStore) lookup(ctx context.Context, orgID, apiKeyID, accessCredentialID int64, keyHash string) (IdempotencyRecord, error) {
+	subjectType, subjectID := idempotencySubject(apiKeyID, accessCredentialID)
 	const query = `
-		SELECT org_id, api_key_id, key_hash, request_fingerprint, operation_id,
+		SELECT org_id, api_key_id, COALESCE(access_credential_id,0),
+		       idempotency_subject_type,idempotency_subject_id,
+		       key_hash, request_fingerprint, operation_id,
 		       COALESCE(client_request_id, ''), state, original_http_status,
 		       usage_authority, usage_purpose, usage_finality,
 		       usage_contract_version, usage_estimate_version,
 		       delivery_mode, delivery_outcome, delivered_bytes, delivered_chunks, delivery_updated_at,
 		       created_at, updated_at, expires_at
 		FROM request_idempotency
-		WHERE org_id = $1 AND api_key_id = $2 AND key_hash = $3`
-	return scanIdempotencyRecord(s.db.QueryRow(ctx, query, orgID, apiKeyID, keyHash))
+		WHERE org_id = $1 AND idempotency_subject_type = $2
+		  AND idempotency_subject_id = $3 AND key_hash = $4`
+	return scanIdempotencyRecord(s.db.QueryRow(ctx, query, orgID, subjectType, subjectID, keyHash))
 }
 
-func (s *PostgresIdempotencyStore) Complete(ctx context.Context, orgID, apiKeyID int64, keyHash, operationID, state string, httpStatus int) error {
+func (s *PostgresIdempotencyStore) Complete(ctx context.Context, orgID, apiKeyID, accessCredentialID int64, keyHash, operationID, state string, httpStatus int) error {
 	if s == nil || s.db == nil {
 		return errors.New("idempotency store is not configured")
 	}
 	if state != IdempotencyStateCompleted && state != IdempotencyStateFailed {
 		return fmt.Errorf("invalid terminal idempotency state %q", state)
 	}
-	if orgID <= 0 || apiKeyID <= 0 || len(keyHash) != 64 || strings.TrimSpace(operationID) == "" {
+	if orgID <= 0 || apiKeyID <= 0 || accessCredentialID < 0 || len(keyHash) != 64 || strings.TrimSpace(operationID) == "" {
 		return errors.New("invalid idempotency completion identity")
 	}
 	if httpStatus < 100 || httpStatus > 599 {
 		return fmt.Errorf("invalid idempotency completion HTTP status %d", httpStatus)
 	}
 
+	subjectType, subjectID := idempotencySubject(apiKeyID, accessCredentialID)
 	tag, err := s.db.Exec(ctx, `
 		UPDATE request_idempotency
-		SET state = $5, original_http_status = $6, updated_at = NOW()
-		WHERE org_id = $1 AND api_key_id = $2 AND key_hash = $3
-		  AND operation_id = $4 AND state = 'in_progress'`,
-		orgID, apiKeyID, keyHash, operationID, state, httpStatus,
+		SET state = $6, original_http_status = $7, updated_at = NOW()
+		WHERE org_id = $1 AND idempotency_subject_type = $2
+		  AND idempotency_subject_id = $3 AND key_hash = $4
+		  AND operation_id = $5 AND state = 'in_progress'`,
+		orgID, subjectType, subjectID, keyHash, operationID, state, httpStatus,
 	)
 	if err != nil {
 		return fmt.Errorf("complete idempotency claim: %w", err)
@@ -220,7 +241,8 @@ type rowScanner interface {
 func scanIdempotencyRecord(row rowScanner) (IdempotencyRecord, error) {
 	var record IdempotencyRecord
 	err := row.Scan(
-		&record.OrgID, &record.APIKeyID, &record.KeyHash, &record.RequestFingerprint,
+		&record.OrgID, &record.APIKeyID, &record.AccessCredentialID,
+		&record.SubjectType, &record.SubjectID, &record.KeyHash, &record.RequestFingerprint,
 		&record.OperationID, &record.ClientRequestID, &record.State,
 		&record.OriginalHTTPStatus,
 		&record.UsageAuthority, &record.UsagePurpose, &record.UsageFinality,
@@ -233,7 +255,7 @@ func scanIdempotencyRecord(row rowScanner) (IdempotencyRecord, error) {
 }
 
 func validateIdempotencyClaim(in IdempotencyClaimInput) error {
-	if in.OrgID <= 0 || in.APIKeyID <= 0 {
+	if in.OrgID <= 0 || in.APIKeyID <= 0 || in.AccessCredentialID < 0 {
 		return errors.New("idempotency claim requires tenant and API-key identity")
 	}
 	if len(in.KeyHash) != 64 || len(in.RequestFingerprint) != 64 {
@@ -249,6 +271,13 @@ func validateIdempotencyClaim(in IdempotencyClaimInput) error {
 		return errors.New("idempotency claim requires a future expiry")
 	}
 	return nil
+}
+
+func idempotencySubject(apiKeyID, accessCredentialID int64) (string, int64) {
+	if accessCredentialID > 0 {
+		return "access_credential", accessCredentialID
+	}
+	return "api_key", apiKeyID
 }
 
 func nullableIdentity(value string) any {
@@ -272,6 +301,7 @@ func IdempotencyGuard(store IdempotencyStore, fingerprintSecret string, next htt
 
 		orgID := GetOrgIDFromContext(r.Context())
 		apiKeyID := GetKeyIDFromContext(r.Context())
+		accessCredentialID := GetAccessCredentialIDFromContext(r.Context())
 		if orgID <= 0 || apiKeyID <= 0 {
 			writeRequestIdentityError(w, http.StatusInternalServerError, "server_error.internal_error", "Authenticated idempotency scope is unavailable")
 			return
@@ -286,6 +316,7 @@ func IdempotencyGuard(store IdempotencyStore, fingerprintSecret string, next htt
 		claim, err := store.Claim(r.Context(), IdempotencyClaimInput{
 			OrgID:              orgID,
 			APIKeyID:           apiKeyID,
+			AccessCredentialID: accessCredentialID,
 			KeyHash:            identity.IdempotencyKeyHash,
 			RequestFingerprint: fingerprint,
 			OperationID:        identity.OperationID,
@@ -316,7 +347,7 @@ func IdempotencyGuard(store IdempotencyStore, fingerprintSecret string, next htt
 			}
 			finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Second)
 			defer cancel()
-			if err := store.Complete(finalizeCtx, orgID, apiKeyID, identity.IdempotencyKeyHash, identity.OperationID, state, status); err != nil {
+			if err := store.Complete(finalizeCtx, orgID, apiKeyID, accessCredentialID, identity.IdempotencyKeyHash, identity.OperationID, state, status); err != nil {
 				log.Printf("[idempotency] operation=%s finalization failed: %v", identity.OperationID, err)
 			}
 		}()

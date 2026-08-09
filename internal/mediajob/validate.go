@@ -127,6 +127,41 @@ func IdempotencyHash(secret []byte, scope Scope, apiKeyID int64, value string) (
 	return "hmac-sha256:" + hex.EncodeToString(mac.Sum(nil)), nil
 }
 
+// AccessIdempotencyHash preserves the legacy physical-key HMAC byte contract
+// exactly. Only Grant-bound credentials use the new stable logical-family
+// domain, so rotation cannot change their idempotency lane.
+func AccessIdempotencyHash(
+	secret []byte,
+	scope Scope,
+	apiKeyID int64,
+	accessCredentialID int64,
+	value string,
+) (string, error) {
+	if accessCredentialID <= 0 {
+		return IdempotencyHash(secret, scope, apiKeyID, value)
+	}
+	if len(secret) < 32 || !scope.Valid() {
+		return "", domainError(ErrUnavailable, "idempotency_authority_unavailable")
+	}
+	if err := ValidateIdempotencyKey(value); err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte("unirouter.async-media.access-credential-idempotency.v1\x00"))
+	for _, part := range [][]byte{
+		int64Bytes(scope.OrgID),
+		int64Bytes(scope.ProjectID),
+		int64Bytes(accessCredentialID),
+		[]byte(value),
+	} {
+		var length [4]byte
+		binary.BigEndian.PutUint32(length[:], uint32(len(part)))
+		_, _ = mac.Write(length[:])
+		_, _ = mac.Write(part)
+	}
+	return "hmac-sha256:" + hex.EncodeToString(mac.Sum(nil)), nil
+}
+
 func NewJobID() (string, error) {
 	var value [16]byte
 	if _, err := rand.Read(value[:]); err != nil {

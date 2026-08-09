@@ -152,6 +152,12 @@ func TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRoll
 	require.Equal(t, "completed_execution_feed_projects_scope_key", itemIndex)
 	require.Equal(t, itemIndex, stateIndex)
 
+	// Roll back every migration newer than the completed-execution Feed before
+	// exercising the guardrail rollback. Schema 59 legitimately inspects and
+	// reverses guardrail selectors, so dropping guardrails underneath it would
+	// create an impossible rollback order rather than test index ownership.
+	rollbackXInsightFeedControl(t, pool)
+
 	guardrailDown, err := os.ReadFile(filepath.Join(
 		migrationsDir,
 		"000033_prd6_guardrail_kernel.down.sql",
@@ -183,7 +189,6 @@ func TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRoll
 	require.Zero(t, guardrailIndex)
 	require.Equal(t, 2, feedTables)
 
-	rollbackXInsightFeedControl(t, pool)
 	feedDown, err := os.ReadFile(filepath.Join(
 		migrationsDir,
 		"000043_v1_completed_execution_feed.down.sql",

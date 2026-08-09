@@ -13,9 +13,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/accessgrantlifecycle"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/principallock"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -446,6 +450,766 @@ func TestPostgresStoreProjectAdmissionCapacityPreservesIdempotentReplay(t *testi
 	require.Equal(t, "async_media_admission_disabled", contractErr.Code)
 }
 
+func TestPostgresStoreIdempotencyUsesLogicalCredentialAcrossAtomicRotationIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	store, err := NewPostgresStore(pool)
+	require.NoError(t, err)
+
+	var orgID, projectID, subjectID, adminID, requestID, grantID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO orgs (name,status,org_type)
+		VALUES ('async-media-family-idempotency','active','customer') RETURNING id`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'async-media-family-admin','hash','org_admin','org_admin','active') RETURNING id`, orgID).Scan(&adminID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'async-media-family-user','hash','member','developer','active') RETURNING id`, orgID).Scan(&subjectID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO projects (org_id,name,slug,status,budget_period)
+		VALUES ($1,'Async Media Family','async-media-family-idempotency','active','none') RETURNING id`, orgID).Scan(&projectID))
+	_, err = pool.Exec(ctx, `INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_user')`, projectID, subjectID)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO access_requests (
+		  request_ref,client_request_id,semantic_hash,org_id,project_id,subject_type,
+		  subject_user_id,request_kind,requested_project_role,requested_scope_mode,
+		  requested_models,requested_endpoints,environment,submission_mode,status,
+		  decision_mode,policy_reason_codes,decision_reason_codes,policy_version,
+		  submitted_by,decided_by,decided_at
+		) VALUES (
+		  'req_async_media_family_0001','async-media-family',repeat('a',64),$1,$2,'user',$3,
+		  'human_personal','project_user','explicit','["company-image"]','["/v1/media/jobs"]',
+		  'personal','direct_grant','approved','direct',ARRAY['special_endpoint'],
+		  ARRAY['direct_grant_authorized_nonproduction'],'unirouter.enterprise-access-policy.v1',
+		  $4,$4,$5
+		) RETURNING id`, orgID, projectID, subjectID, adminID, now).Scan(&requestID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO access_grants (
+		  grant_ref,access_request_id,org_id,project_id,subject_type,subject_user_id,
+		  project_role_snapshot,scope_mode,allowed_models,allowed_endpoints,environment,
+		  status,valid_from,decision_mode,policy_reason_codes,decision_reason_codes,
+		  policy_version,semantic_hash,created_by,updated_by
+		) VALUES (
+		  'grant_async_media_family_0001',$1,$2,$3,'user',$4,'project_user','explicit',
+		  '["company-image"]','["/v1/media/jobs"]','personal','active',$5,'direct',
+		  ARRAY['special_endpoint'],ARRAY['direct_grant_authorized_nonproduction'],
+		  'unirouter.enterprise-access-policy.v1',repeat('a',64),$6,$6
+		) RETURNING id`, requestID, orgID, projectID, subjectID, now, adminID).Scan(&grantID))
+
+	insertFamily := func(name, credentialRef, hashChar, prefix string) (int64, int64) {
+		t.Helper()
+		var credentialID, keyID int64
+		require.NoError(t, pool.QueryRow(ctx, `
+			INSERT INTO access_credentials (
+			  credential_ref,access_grant_id,org_id,project_id,name,allowed_ips,
+			  allowed_models,allowed_endpoints,rpm_limit,rps_limit,created_by
+			) VALUES ($1,$2,$3,$4,$5,'','company-image','/v1/media/jobs',60,10,$6)
+			RETURNING id`, credentialRef, grantID, orgID, projectID, name, subjectID).Scan(&credentialID))
+		require.NoError(t, pool.QueryRow(ctx, `
+			INSERT INTO api_keys (
+			  org_id,project_id,owner_user_id,key_type,name,key_hash,key_prefix,status,
+			  allowed_ips,allowed_models,allowed_endpoints,rpm_limit,qps_limit,purpose,
+			  access_grant_id,access_credential_id,credential_ref
+			) VALUES ($1,$2,$3,'personal',$4,$5,$6,'active','','company-image',
+			  '/v1/media/jobs',60,10,'',$7,$8,$9) RETURNING id`,
+			orgID, projectID, subjectID, name, strings.Repeat(hashChar, 64), prefix,
+			grantID, credentialID, credentialRef).Scan(&keyID))
+		return credentialID, keyID
+	}
+
+	credentialOneID, predecessorID := insertFamily(
+		"media family one", "cred_async_media_family_one", "1", "ur-media-family-1",
+	)
+	credentialTwoID, otherFamilyKeyID := insertFamily(
+		"media family two", "cred_async_media_family_two", "2", "ur-media-family-2",
+	)
+
+	scope := Scope{OrgID: orgID, ProjectID: projectID}
+	secret := []byte(strings.Repeat("m", 32))
+	firstHash, err := AccessIdempotencyHash(secret, scope, predecessorID, credentialOneID, "media-operation")
+	require.NoError(t, err)
+	firstRecord := mediaCreateRecord(scope, predecessorID, "a", now, 3)
+	bindMediaRecordToGrant(&firstRecord, grantID, credentialOneID, "cred_async_media_family_one", nil, nil)
+	firstRecord.Job.IdempotencyHash = firstHash
+	first, reused, err := store.CreateOrGet(ctx, firstRecord)
+	require.NoError(t, err)
+	require.False(t, reused)
+	require.Equal(t, predecessorID, first.APIKeyID)
+
+	_, err = pool.Exec(ctx, `UPDATE api_keys SET status='disabled',auth_epoch=auth_epoch+1,updated_at=$2 WHERE id=$1`, predecessorID, now.Add(time.Second))
+	require.NoError(t, err)
+	var successorID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO api_keys (
+		  org_id,project_id,owner_user_id,key_type,name,key_hash,key_prefix,status,
+		  allowed_ips,allowed_models,allowed_endpoints,rpm_limit,qps_limit,purpose,
+		  access_grant_id,access_credential_id,credential_ref,rotated_from_key_id
+		) VALUES ($1,$2,$3,'personal','media family one',$4,'ur-media-family-1b','active',
+		  '','company-image','/v1/media/jobs',60,10,'',$5,$6,
+		  'cred_async_media_family_one',$7) RETURNING id`,
+		orgID, projectID, subjectID, strings.Repeat("3", 64), grantID, credentialOneID, predecessorID).Scan(&successorID))
+	successorHash, err := AccessIdempotencyHash(secret, scope, successorID, credentialOneID, "media-operation")
+	require.NoError(t, err)
+	require.Equal(t, firstHash, successorHash)
+	successorRecord := mediaCreateRecord(scope, successorID, "b", now.Add(time.Second), 3)
+	bindMediaRecordToGrant(&successorRecord, grantID, credentialOneID, "cred_async_media_family_one", nil, nil)
+	successorRecord.Job.IdempotencyHash = successorHash
+	successorRecord.Job.RequestSHA256 = firstRecord.Job.RequestSHA256
+	replayed, reused, err := store.CreateOrGet(ctx, successorRecord)
+	require.NoError(t, err)
+	require.True(t, reused)
+	require.Equal(t, first.JobID, replayed.JobID)
+	require.Equal(t, predecessorID, replayed.APIKeyID, "the original physical admission evidence must be retained")
+	require.Equal(t, credentialOneID, *replayed.AccessCredentialID)
+
+	otherFamilyHash, err := AccessIdempotencyHash(secret, scope, otherFamilyKeyID, credentialTwoID, "media-operation")
+	require.NoError(t, err)
+	require.NotEqual(t, firstHash, otherFamilyHash)
+	otherFamilyRecord := mediaCreateRecord(scope, otherFamilyKeyID, "c", now.Add(2*time.Second), 3)
+	bindMediaRecordToGrant(&otherFamilyRecord, grantID, credentialTwoID, "cred_async_media_family_two", nil, nil)
+	otherFamilyRecord.Job.IdempotencyHash = otherFamilyHash
+	_, reused, err = store.CreateOrGet(ctx, otherFamilyRecord)
+	require.NoError(t, err)
+	require.False(t, reused)
+
+	insertLegacyKey := func(hashChar, prefix string) int64 {
+		t.Helper()
+		var keyID int64
+		require.NoError(t, pool.QueryRow(ctx, `
+			INSERT INTO api_keys (
+			  org_id,project_id,owner_user_id,key_type,name,key_hash,key_prefix,status,
+			  allowed_models,rpm_limit,qps_limit,purpose
+			) VALUES ($1,$2,$3,'personal',$4,$5,$6,'active','company-image',60,10,'')
+			RETURNING id`, orgID, projectID, subjectID, "legacy "+prefix,
+			strings.Repeat(hashChar, 64), prefix).Scan(&keyID))
+		return keyID
+	}
+	legacyOneID := insertLegacyKey("4", "ur-media-legacy-1")
+	legacyTwoID := insertLegacyKey("5", "ur-media-legacy-2")
+	legacyOneHash, err := IdempotencyHash(secret, scope, legacyOneID, "legacy-operation")
+	require.NoError(t, err)
+	legacyFirstRecord := mediaCreateRecord(scope, legacyOneID, "d", now.Add(3*time.Second), 3)
+	legacyFirstRecord.Job.IdempotencyHash = legacyOneHash
+	legacyFirst, reused, err := store.CreateOrGet(ctx, legacyFirstRecord)
+	require.NoError(t, err)
+	require.False(t, reused)
+	legacyReplayRecord := mediaCreateRecord(scope, legacyOneID, "e", now.Add(4*time.Second), 3)
+	legacyReplayRecord.Job.IdempotencyHash = legacyOneHash
+	legacyReplayRecord.Job.RequestSHA256 = legacyFirstRecord.Job.RequestSHA256
+	legacyReplay, reused, err := store.CreateOrGet(ctx, legacyReplayRecord)
+	require.NoError(t, err)
+	require.True(t, reused)
+	require.Equal(t, legacyFirst.JobID, legacyReplay.JobID)
+
+	legacyTwoHash, err := IdempotencyHash(secret, scope, legacyTwoID, "legacy-operation")
+	require.NoError(t, err)
+	require.NotEqual(t, legacyOneHash, legacyTwoHash)
+	legacyTwoRecord := mediaCreateRecord(scope, legacyTwoID, "f", now.Add(5*time.Second), 3)
+	legacyTwoRecord.Job.IdempotencyHash = legacyTwoHash
+	_, reused, err = store.CreateOrGet(ctx, legacyTwoRecord)
+	require.NoError(t, err)
+	require.False(t, reused)
+
+	var jobCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM async_media_jobs WHERE org_id=$1`, orgID).Scan(&jobCount))
+	require.Equal(t, 4, jobCount)
+}
+
+func TestPostgresStoreCommitReauthorizationSerializesGrantAndSponsorInvalidationIntegration(t *testing.T) {
+	tests := []struct {
+		name       string
+		transition func(context.Context, *testing.T, *pgxpool.Pool, mediaCommitFixture)
+	}{
+		{
+			name: "grant revoke",
+			transition: func(ctx context.Context, t *testing.T, pool *pgxpool.Pool, fixture mediaCommitFixture) {
+				tx, err := pool.Begin(ctx)
+				require.NoError(t, err)
+				defer tx.Rollback(ctx) //nolint:errcheck
+				require.NoError(t, principallock.LockUsers(ctx, tx, fixture.adminID, fixture.sponsorID))
+				require.NoError(t, principallock.LockWorkloads(ctx, tx, fixture.workloadID))
+				_, err = accessgrantlifecycle.Change(ctx, tx, fixture.grantID, 1, fixture.adminID,
+					accessgrantlifecycle.ActionRevoke, accessgrantlifecycle.ReasonManualRevoke, fixture.now)
+				require.NoError(t, err)
+				runBlockedMediaAdmission(t, ctx, pool, fixture, func() { require.NoError(t, tx.Commit(ctx)) })
+			},
+		},
+		{
+			name: "sponsor disabled corruption backstop",
+			transition: func(ctx context.Context, t *testing.T, pool *pgxpool.Pool, fixture mediaCommitFixture) {
+				tx, err := pool.Begin(ctx)
+				require.NoError(t, err)
+				defer tx.Rollback(ctx) //nolint:errcheck
+				require.NoError(t, principallock.LockUser(ctx, tx, fixture.sponsorID))
+				_, err = tx.Exec(ctx, `UPDATE users SET status='disabled' WHERE id=$1`, fixture.sponsorID)
+				require.NoError(t, err)
+				runBlockedMediaAdmission(t, ctx, pool, fixture, func() { require.NoError(t, tx.Commit(ctx)) })
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pool := testutil.SetupMigratedTestDB(t)
+			fixture := seedMediaCommitFixture(t, pool)
+			test.transition(context.Background(), t, pool, fixture)
+		})
+	}
+}
+
+func TestPostgresStoreRejectsReservedRateSubjectAfterGrantNarrowingIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	fixture := seedMediaCommitFixture(t, pool)
+	store, err := NewPostgresStore(pool)
+	require.NoError(t, err)
+	record := mediaCreateRecord(
+		Scope{OrgID: fixture.orgID, ProjectID: fixture.projectID},
+		fixture.apiKeyID, "r", fixture.now, 3,
+	)
+	credentialConcurrency, grantConcurrency := int64(1), int64(1)
+	bindMediaRecordToGrant(
+		&record, fixture.grantID, fixture.credentialID, fixture.credentialRef,
+		&credentialConcurrency, &grantConcurrency,
+	)
+
+	// The rate reservation was admitted under the materialized 60/10 Grant
+	// subject above. A supported scope revision narrows the same stable Grant
+	// before the durable job transaction starts.
+	var revisionRequestID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO access_requests (
+		  request_ref,client_request_id,semantic_hash,org_id,project_id,subject_type,
+		  subject_workload_application_id,request_kind,requested_project_role,requested_scope_mode,
+		  requested_models,requested_endpoints,requested_rpm_limit,requested_rps_limit,
+		  requested_concurrency_limit,environment,production_use,submission_mode,sponsor_user_id,
+		  target_access_grant_id,expected_grant_revision,status,decision_mode,policy_reason_codes,
+		  decision_reason_codes,policy_version,submitted_by,decided_by,decided_at
+		) VALUES (
+		  'req_media_commit_rate_narrowing','media-commit-rate-narrowing',repeat('d',64),$1,$2,
+		  'workload_application',$3,'workload_service','project_user','explicit',
+		  '["company-image"]','["/v1/media/jobs"]',30,5,1,'development',FALSE,
+		  'direct_grant',$4,$5,1,'approved','direct',ARRAY['special_endpoint'],
+		  ARRAY['direct_grant_authorized_nonproduction'],'unirouter.enterprise-access-policy.v1',
+		  $6,$6,$7
+		) RETURNING id`, fixture.orgID, fixture.projectID, fixture.workloadID,
+		fixture.sponsorID, fixture.grantID, fixture.adminID, fixture.now.Add(time.Second),
+	).Scan(&revisionRequestID))
+	command, err := pool.Exec(ctx, `
+		UPDATE access_grants
+		SET access_request_id=$1,rpm_limit=30,rps_limit=5,revision=2,
+		    semantic_hash=repeat('d',64),updated_by=$2,updated_at=$3
+		WHERE id=$4 AND revision=1`, revisionRequestID, fixture.adminID,
+		fixture.now.Add(time.Second), fixture.grantID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, command.RowsAffected())
+
+	_, _, err = store.CreateOrGet(ctx, record)
+	require.ErrorIs(t, err, ErrConflict)
+	var contractErr *Error
+	require.ErrorAs(t, err, &contractErr)
+	require.Equal(t, "submission_authority_revision_changed", contractErr.Code)
+	var jobCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM async_media_jobs WHERE org_id=$1`, fixture.orgID).Scan(&jobCount))
+	require.Zero(t, jobCount)
+}
+
+func TestQueuedExecutionFollowsLogicalCredentialAndReauthorizesBeforeDispatchIntegration(t *testing.T) {
+	t.Run("atomic secret replacement keeps the accepted family executable", func(t *testing.T) {
+		pool := testutil.SetupMigratedTestDB(t)
+		ctx := context.Background()
+		fixture := seedMediaCommitFixture(t, pool)
+		store, err := NewPostgresStore(pool, ExecutionModelAuthorizerFunc(
+			func(context.Context, db.DBQuerier, ExecutionAuthorization) error { return nil },
+		))
+		require.NoError(t, err)
+		job, lease, expected := createClaimedMediaExecution(t, ctx, store, fixture, "a")
+
+		_, err = pool.Exec(ctx, `
+			UPDATE api_keys
+			   SET status='disabled',auth_epoch=auth_epoch+1,updated_at=$2
+			 WHERE id=$1 AND status='active'`, fixture.apiKeyID, fixture.now.Add(time.Second))
+		require.NoError(t, err)
+		var successorID int64
+		require.NoError(t, pool.QueryRow(ctx, `
+			INSERT INTO api_keys (
+			  org_id,project_id,workload_application_id,key_type,name,key_hash,key_prefix,status,
+			  allowed_models,allowed_endpoints,rpm_limit,qps_limit,concurrency_limit,purpose,
+			  access_grant_id,access_credential_id,credential_ref,rotated_from_key_id
+			) VALUES ($1,$2,$3,'service','media commit credential',repeat('d',64),'ur-media-rotated','active',
+			  'company-image','/v1/media/jobs',60,10,1,'',$4,$5,$6,$7)
+			RETURNING id`,
+			fixture.orgID, fixture.projectID, fixture.workloadID, fixture.grantID,
+			fixture.credentialID, fixture.credentialRef, fixture.apiKeyID,
+		).Scan(&successorID))
+
+		operationID := "media-execution-family-rotation"
+		attached, reused, err := store.AttachExecutionReservation(
+			ctx, lease, expected, &limitpolicy.DurableReservation{OperationID: operationID},
+			operationID, fixture.now.Add(time.Hour), fixture.now.Add(2*time.Second),
+		)
+		require.NoError(t, err)
+		require.False(t, reused)
+		require.Equal(t, 1, attached.ProviderAttempt)
+		require.NotEqual(t, fixture.apiKeyID, successorID)
+		persisted, err := store.Get(ctx, job.Scope, job.JobID)
+		require.NoError(t, err)
+		require.Equal(t, fixture.apiKeyID, persisted.APIKeyID, "physical admission evidence remains frozen")
+		require.Equal(t, 1, persisted.Attempt)
+	})
+
+	transitions := []struct {
+		name       string
+		transition func(context.Context, *testing.T, *pgxpool.Pool, mediaCommitFixture) func()
+	}{
+		{
+			name: "grant revoke",
+			transition: func(ctx context.Context, t *testing.T, pool *pgxpool.Pool, fixture mediaCommitFixture) func() {
+				tx, err := pool.Begin(ctx)
+				require.NoError(t, err)
+				require.NoError(t, principallock.LockUsers(ctx, tx, fixture.adminID, fixture.sponsorID))
+				require.NoError(t, principallock.LockWorkloads(ctx, tx, fixture.workloadID))
+				_, err = accessgrantlifecycle.Change(ctx, tx, fixture.grantID, 1, fixture.adminID,
+					accessgrantlifecycle.ActionRevoke, accessgrantlifecycle.ReasonManualRevoke, fixture.now)
+				require.NoError(t, err)
+				return func() { require.NoError(t, tx.Commit(ctx)) }
+			},
+		},
+		{
+			name: "sponsor disabled",
+			transition: func(ctx context.Context, t *testing.T, pool *pgxpool.Pool, fixture mediaCommitFixture) func() {
+				tx, err := pool.Begin(ctx)
+				require.NoError(t, err)
+				require.NoError(t, principallock.LockUser(ctx, tx, fixture.sponsorID))
+				_, err = tx.Exec(ctx, `UPDATE users SET status='disabled' WHERE id=$1`, fixture.sponsorID)
+				require.NoError(t, err)
+				return func() { require.NoError(t, tx.Commit(ctx)) }
+			},
+		},
+	}
+	for _, transition := range transitions {
+		t.Run(transition.name, func(t *testing.T) {
+			pool := testutil.SetupMigratedTestDB(t)
+			ctx := context.Background()
+			fixture := seedMediaCommitFixture(t, pool)
+			store, err := NewPostgresStore(pool, ExecutionModelAuthorizerFunc(
+				func(context.Context, db.DBQuerier, ExecutionAuthorization) error { return nil },
+			))
+			require.NoError(t, err)
+			job, lease, expected := createClaimedMediaExecution(t, ctx, store, fixture, "b")
+			commit := transition.transition(ctx, t, pool, fixture)
+
+			result := make(chan error, 1)
+			go func() {
+				operationID := "media-execution-blocked-" + strings.ReplaceAll(transition.name, " ", "-")
+				_, _, attachErr := store.AttachExecutionReservation(
+					ctx, lease, expected, &limitpolicy.DurableReservation{OperationID: operationID},
+					operationID, fixture.now.Add(time.Hour), fixture.now.Add(time.Second),
+				)
+				result <- attachErr
+			}()
+			select {
+			case attachErr := <-result:
+				t.Fatalf("execution dispatch escaped the transition lock before commit: %v", attachErr)
+			case <-time.After(150 * time.Millisecond):
+			}
+			commit()
+			select {
+			case attachErr := <-result:
+				require.ErrorIs(t, attachErr, ErrForbidden)
+			case <-time.After(5 * time.Second):
+				t.Fatal("execution dispatch remained blocked after transition commit")
+			}
+			var reservations int
+			require.NoError(t, pool.QueryRow(ctx, `
+				SELECT COUNT(*) FROM async_media_limit_reservations WHERE job_id=$1`, job.JobID,
+			).Scan(&reservations))
+			require.Zero(t, reservations)
+			persisted, err := store.Get(ctx, job.Scope, job.JobID)
+			require.NoError(t, err)
+			require.Zero(t, persisted.Attempt)
+			require.Equal(t, ExecutionPending, persisted.Lifecycle.Execution)
+		})
+	}
+
+	t.Run("live model policy denial prevents the dispatch fence", func(t *testing.T) {
+		pool := testutil.SetupMigratedTestDB(t)
+		ctx := context.Background()
+		fixture := seedMediaCommitFixture(t, pool)
+		deny := false
+		store, err := NewPostgresStore(pool, ExecutionModelAuthorizerFunc(
+			func(context.Context, db.DBQuerier, ExecutionAuthorization) error {
+				if deny {
+					return ErrForbidden
+				}
+				return nil
+			},
+		))
+		require.NoError(t, err)
+		job, lease, expected := createClaimedMediaExecution(t, ctx, store, fixture, "c")
+		deny = true
+		operationID := "media-execution-model-denied"
+		_, _, err = store.AttachExecutionReservation(
+			ctx, lease, expected, &limitpolicy.DurableReservation{OperationID: operationID},
+			operationID, fixture.now.Add(time.Hour), fixture.now.Add(time.Second),
+		)
+		require.ErrorIs(t, err, ErrForbidden)
+		var reservations int
+		require.NoError(t, pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM async_media_limit_reservations WHERE job_id=$1`, job.JobID,
+		).Scan(&reservations))
+		require.Zero(t, reservations)
+		persisted, err := store.Get(ctx, job.Scope, job.JobID)
+		require.NoError(t, err)
+		require.Zero(t, persisted.Attempt)
+	})
+}
+
+func createClaimedMediaExecution(
+	t *testing.T,
+	ctx context.Context,
+	store *PostgresStore,
+	fixture mediaCommitFixture,
+	suffix string,
+) (Job, Lease, limitpolicy.Subject) {
+	t.Helper()
+	record := mediaCreateRecord(
+		Scope{OrgID: fixture.orgID, ProjectID: fixture.projectID}, fixture.apiKeyID,
+		suffix[:1], fixture.now, 3,
+	)
+	credentialConcurrency, grantConcurrency := int64(1), int64(1)
+	bindMediaRecordToGrant(&record, fixture.grantID, fixture.credentialID, fixture.credentialRef, &credentialConcurrency, &grantConcurrency)
+	job, reused, err := store.CreateOrGet(ctx, record)
+	require.NoError(t, err)
+	require.False(t, reused)
+	claimed, err := store.Claim(ctx, "execution-"+suffix, fixture.now.Add(time.Second), time.Hour)
+	require.NoError(t, err)
+	require.NotNil(t, claimed)
+	require.Equal(t, job.JobID, claimed.JobID)
+	lease := leaseFromClaimed(*claimed)
+	expected, err := store.ExecutionLimitSubject(ctx, lease)
+	require.NoError(t, err)
+	return job, lease, expected
+}
+
+func TestProviderAttemptStartsOnlyAfterExecutionAdmissionIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	fixture := seedMediaCommitFixture(t, pool)
+	store, err := NewPostgresStore(pool, ExecutionModelAuthorizerFunc(
+		func(context.Context, db.DBQuerier, ExecutionAuthorization) error { return nil },
+	))
+	require.NoError(t, err)
+	scope := Scope{OrgID: fixture.orgID, ProjectID: fixture.projectID}
+	now := fixture.now.Add(time.Minute)
+
+	createBound := func(suffix string, createdAt time.Time) Job {
+		t.Helper()
+		record := mediaCreateRecord(scope, fixture.apiKeyID, suffix, createdAt, 3)
+		credentialConcurrency, grantConcurrency := int64(1), int64(1)
+		bindMediaRecordToGrant(&record, fixture.grantID, fixture.credentialID, fixture.credentialRef, &credentialConcurrency, &grantConcurrency)
+		job, reused, createErr := store.CreateOrGet(ctx, record)
+		require.NoError(t, createErr)
+		require.False(t, reused)
+		return job
+	}
+	attach := func(job Job, at time.Time) (Lease, ExecutionReservation) {
+		t.Helper()
+		lease := leaseFromClaimed(job)
+		subject, subjectErr := store.ExecutionLimitSubject(ctx, lease)
+		require.NoError(t, subjectErr)
+		operationID := fmt.Sprintf("media-execution-%s-%d", job.JobID[len(job.JobID)-4:], job.LeaseFence)
+		attached, reused, attachErr := store.AttachExecutionReservation(
+			ctx, lease, subject,
+			&limitpolicy.DurableReservation{OperationID: operationID},
+			operationID, at.Add(30*time.Minute), at,
+		)
+		require.NoError(t, attachErr)
+		require.False(t, reused)
+		return lease, attached
+	}
+
+	first := createBound("a", now)
+	second := createBound("b", now.Add(time.Second))
+	claimedFirst, err := store.Claim(ctx, "attempt-worker-1", now.Add(2*time.Second), time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, first.JobID, claimedFirst.JobID)
+	require.Zero(t, claimedFirst.Attempt, "queue claim must not consume a Provider attempt")
+	firstLease, firstExecution := attach(*claimedFirst, now.Add(3*time.Second))
+	require.Equal(t, 1, firstExecution.ProviderAttempt)
+
+	// The first execution holds the configured concurrency=1 lane. Model the
+	// second job's pre-dispatch capacity waits by repeatedly returning its lease
+	// to the queue. More waits than max_attempts must remain legal because none
+	// reached the Provider dispatch fence.
+	for wait := 0; wait < second.MaxAttempts+2; wait++ {
+		at := now.Add(time.Duration(4+wait*2) * time.Second)
+		claimed, claimErr := store.Claim(ctx, fmt.Sprintf("attempt-wait-%d", wait), at, time.Hour)
+		require.NoError(t, claimErr)
+		require.NotNil(t, claimed)
+		require.Equal(t, second.JobID, claimed.JobID)
+		require.Zero(t, claimed.Attempt)
+		requeued, requeueErr := store.Requeue(
+			ctx, leaseFromClaimed(*claimed), "limit_policy.concurrency_exceeded", at.Add(time.Second), at.Add(2*time.Second),
+		)
+		require.NoError(t, requeueErr)
+		require.Zero(t, requeued.Attempt)
+		require.Equal(t, ExecutionPending, requeued.Lifecycle.Execution)
+	}
+
+	_, err = store.CompleteFailure(ctx, firstLease, "fixture_execution_complete", now.Add(30*time.Second))
+	require.NoError(t, err)
+	claimedSecond, err := store.Claim(ctx, "attempt-worker-2", now.Add(31*time.Second), time.Hour)
+	require.NoError(t, err)
+	require.NotNil(t, claimedSecond)
+	require.Equal(t, second.JobID, claimedSecond.JobID)
+	require.Zero(t, claimedSecond.Attempt)
+	secondLease, secondExecution := attach(*claimedSecond, now.Add(32*time.Second))
+	require.Equal(t, 1, secondExecution.ProviderAttempt, "first real dispatch after capacity release must be attempt 1")
+
+	// Only a retryable failure after the dispatch fence consumes the attempt.
+	retried, err := store.Requeue(
+		ctx, Lease{
+			JobID: secondLease.JobID, Scope: secondLease.Scope, Owner: secondLease.Owner,
+			Fence: secondLease.Fence, Attempt: secondExecution.ProviderAttempt,
+			Job: secondLease.Job,
+		},
+		"provider_http_503_channel_failure", now.Add(33*time.Second), now.Add(34*time.Second),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, retried.Attempt)
+	claimedRetry, err := store.Claim(ctx, "attempt-worker-3", now.Add(35*time.Second), time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, 1, claimedRetry.Attempt)
+	_, retryExecution := attach(*claimedRetry, now.Add(36*time.Second))
+	require.Equal(t, 2, retryExecution.ProviderAttempt)
+
+	// Cancellation and live-authority loss before Attach never create a
+	// Provider attempt.
+	_, err = store.CompleteFailure(ctx, leaseFromClaimed(*claimedRetry), "fixture_done", now.Add(37*time.Second))
+	require.NoError(t, err)
+	cancelJob := createBound("c", now.Add(38*time.Second))
+	claimedCancel, err := store.Claim(ctx, "attempt-worker-cancel", now.Add(39*time.Second), time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, cancelJob.JobID, claimedCancel.JobID)
+	cancelSubject, err := store.ExecutionLimitSubject(ctx, leaseFromClaimed(*claimedCancel))
+	require.NoError(t, err)
+	_, err = store.RequestCancellation(ctx, scope, cancelJob.JobID, now.Add(40*time.Second))
+	require.NoError(t, err)
+	cancelOperationID := "media-execution-cancel-before-dispatch"
+	_, _, err = store.AttachExecutionReservation(
+		ctx, leaseFromClaimed(*claimedCancel), cancelSubject,
+		&limitpolicy.DurableReservation{OperationID: cancelOperationID},
+		cancelOperationID, now.Add(time.Hour), now.Add(41*time.Second),
+	)
+	require.ErrorIs(t, err, ErrCancelled)
+	cancelled, err := store.Get(ctx, scope, cancelJob.JobID)
+	require.NoError(t, err)
+	require.Zero(t, cancelled.Attempt)
+
+	authorityJob := createBound("d", now.Add(42*time.Second))
+	claimedAuthority, err := store.Claim(ctx, "attempt-worker-authority", now.Add(43*time.Second), time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, authorityJob.JobID, claimedAuthority.JobID)
+	_, err = pool.Exec(ctx, `UPDATE users SET status='disabled' WHERE id=$1`, fixture.sponsorID)
+	require.NoError(t, err)
+	_, err = store.ExecutionLimitSubject(ctx, leaseFromClaimed(*claimedAuthority))
+	require.ErrorIs(t, err, ErrForbidden)
+	authorityChanged, err := store.Get(ctx, scope, authorityJob.JobID)
+	require.NoError(t, err)
+	require.Zero(t, authorityChanged.Attempt)
+}
+
+func TestExecutionTerminalClaimIsFencedAndExpiresDeterministicallyIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	fixture := seedMediaCommitFixture(t, pool)
+	store, err := NewPostgresStore(pool, ExecutionModelAuthorizerFunc(
+		func(context.Context, db.DBQuerier, ExecutionAuthorization) error { return nil },
+	))
+	require.NoError(t, err)
+	scope := Scope{OrgID: fixture.orgID, ProjectID: fixture.projectID}
+	now := fixture.now.Add(2 * time.Minute)
+
+	createAndTerminalize := func(suffix, operationID string, expiresAt time.Time) (Job, int64) {
+		t.Helper()
+		record := mediaCreateRecord(scope, fixture.apiKeyID, suffix, now, 3)
+		credentialConcurrency, grantConcurrency := int64(1), int64(1)
+		bindMediaRecordToGrant(&record, fixture.grantID, fixture.credentialID, fixture.credentialRef, &credentialConcurrency, &grantConcurrency)
+		job, reused, createErr := store.CreateOrGet(ctx, record)
+		require.NoError(t, createErr)
+		require.False(t, reused)
+		claimed, claimErr := store.Claim(ctx, "terminal-claim-"+suffix, now.Add(time.Second), time.Hour)
+		require.NoError(t, claimErr)
+		require.Equal(t, job.JobID, claimed.JobID)
+		lease := leaseFromClaimed(*claimed)
+		subject, subjectErr := store.ExecutionLimitSubject(ctx, lease)
+		require.NoError(t, subjectErr)
+		attached, _, attachErr := store.AttachExecutionReservation(
+			ctx, lease, subject, &limitpolicy.DurableReservation{OperationID: operationID},
+			operationID, expiresAt, now.Add(2*time.Second),
+		)
+		require.NoError(t, attachErr)
+		lease.Attempt = attached.ProviderAttempt
+		lease.Job.Attempt = attached.ProviderAttempt
+		_, completeErr := store.CompleteFailure(ctx, lease, "fixture_terminal", now.Add(3*time.Second))
+		require.NoError(t, completeErr)
+		return job, lease.Fence
+	}
+
+	job, fence := createAndTerminalize("e", "media-terminal-fenced", now.Add(time.Hour))
+	firstClaim, err := store.PendingExecutionTerminal(
+		ctx, job.JobID, fence, "terminal-owner-one", now.Add(4*time.Second), 15*time.Second,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, firstClaim)
+	secondClaim, err := store.PendingExecutionTerminal(
+		ctx, job.JobID, fence, "terminal-owner-two", now.Add(5*time.Second), 15*time.Second,
+	)
+	require.NoError(t, err)
+	require.Nil(t, secondClaim, "an unexpired terminal claim must have one consumer")
+	stale := *firstClaim
+	stale.TerminalFence--
+	require.ErrorIs(t, store.MarkExecutionTerminalized(ctx, stale, now.Add(6*time.Second), "cancelled"), ErrLeaseLost)
+	require.NoError(t, store.ReleaseExecutionTerminalClaim(ctx, *firstClaim, now.Add(7*time.Second), "redis unavailable"))
+	secondClaim, err = store.PendingExecutionTerminal(
+		ctx, job.JobID, fence, "terminal-owner-two", now.Add(8*time.Second), 15*time.Second,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, secondClaim)
+	require.Greater(t, secondClaim.TerminalFence, firstClaim.TerminalFence)
+	require.NoError(t, store.MarkExecutionTerminalized(ctx, *secondClaim, now.Add(9*time.Second), "cancelled"))
+	require.ErrorIs(t, store.MarkExecutionTerminalized(ctx, *secondClaim, now.Add(10*time.Second), "cancelled"), ErrLeaseLost)
+
+	expiredJob, expiredFence := createAndTerminalize("f", "media-terminal-expired", now.Add(5*time.Second))
+	worker := &Worker{
+		store: store, limits: &mediaLimitRuntimeFixture{}, owner: "terminal-expiry-worker",
+		now: func() time.Time { return now.Add(6 * time.Second) },
+	}
+	reconciled, err := worker.reconcileExecutionTerminal(ctx, expiredJob.JobID, expiredFence)
+	require.NoError(t, err)
+	require.True(t, reconciled)
+	var outcome, lastError string
+	var terminalizedAt *time.Time
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT terminal_outcome,last_error,terminalized_at
+		FROM async_media_limit_reservations WHERE job_id=$1 AND lease_fence=$2`,
+		expiredJob.JobID, expiredFence,
+	).Scan(&outcome, &lastError, &terminalizedAt))
+	require.Equal(t, "operation_state_expired", outcome)
+	require.Equal(t, "operation_state_expired", lastError)
+	require.NotNil(t, terminalizedAt)
+}
+
+type mediaCommitFixture struct {
+	now                                         time.Time
+	orgID, projectID, adminID, sponsorID        int64
+	workloadID, grantID, credentialID, apiKeyID int64
+	credentialRef                               string
+}
+
+func seedMediaCommitFixture(t *testing.T, pool *pgxpool.Pool) mediaCommitFixture {
+	t.Helper()
+	ctx := context.Background()
+	fixture := mediaCommitFixture{now: time.Now().UTC().Truncate(time.Microsecond), credentialRef: "cred_media_commit_boundary"}
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO orgs (name,status,org_type) VALUES ('media-commit-boundary','active','customer') RETURNING id`).Scan(&fixture.orgID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO projects (org_id,name,slug,status,budget_period)
+		VALUES ($1,'Media Commit Boundary','media-commit-boundary','active','none') RETURNING id`, fixture.orgID).Scan(&fixture.projectID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'media-commit-admin','hash','org_admin','org_admin','active') RETURNING id`, fixture.orgID).Scan(&fixture.adminID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'media-commit-sponsor','hash','member','developer','active') RETURNING id`, fixture.orgID).Scan(&fixture.sponsorID))
+	_, err := pool.Exec(ctx, `INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_user')`, fixture.projectID, fixture.sponsorID)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO workload_applications (
+		  contract_version,identity_contract_version,org_id,project_id,application_ref,logical_ref,
+		  display_name,kind,environment,production_use,identity_mode,owner_team,status,
+		  environment_locked_at,created_by,updated_by
+		) VALUES (
+		  'unirouter.workload-application.v2','unirouter.workload-identity.v2',$1,$2,
+		  'app_media_commit_boundary','workload_media_commit_boundary','Media commit workload',
+		  'service','development',FALSE,'service_credential','platform','active',NOW(),$3,$3
+		) RETURNING id`, fixture.orgID, fixture.projectID, fixture.adminID).Scan(&fixture.workloadID))
+	var requestID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO access_requests (
+		  request_ref,client_request_id,semantic_hash,org_id,project_id,subject_type,
+		  subject_workload_application_id,request_kind,requested_project_role,requested_scope_mode,
+		  requested_models,requested_endpoints,requested_concurrency_limit,environment,submission_mode,sponsor_user_id,status,
+		  decision_mode,policy_reason_codes,decision_reason_codes,policy_version,submitted_by,decided_by,decided_at
+		) VALUES (
+		  'req_media_commit_boundary','media-commit-boundary',repeat('b',64),$1,$2,'workload_application',$3,
+		  'workload_service','project_user','explicit','["company-image"]','["/v1/media/jobs"]',1,
+		  'development','direct_grant',$4,'approved','direct',ARRAY['special_endpoint'],
+		  ARRAY['direct_grant_authorized_nonproduction'],'unirouter.enterprise-access-policy.v1',$5,$5,$6
+		) RETURNING id`, fixture.orgID, fixture.projectID, fixture.workloadID, fixture.sponsorID, fixture.adminID, fixture.now).Scan(&requestID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO access_grants (
+		  grant_ref,access_request_id,org_id,project_id,subject_type,subject_workload_application_id,
+		  sponsor_user_id,project_role_snapshot,scope_mode,allowed_models,allowed_endpoints,
+		  concurrency_limit,environment,production_use,status,valid_from,decision_mode,policy_reason_codes,
+		  decision_reason_codes,policy_version,semantic_hash,created_by,updated_by
+		) VALUES (
+		  'grant_media_commit_boundary',$1,$2,$3,'workload_application',$4,$5,'project_user','explicit',
+		  '["company-image"]','["/v1/media/jobs"]',1,'development',FALSE,'active',$6,'direct',
+		  ARRAY['special_endpoint'],ARRAY['direct_grant_authorized_nonproduction'],
+		  'unirouter.enterprise-access-policy.v1',repeat('b',64),$7,$7
+		) RETURNING id`, requestID, fixture.orgID, fixture.projectID, fixture.workloadID,
+		fixture.sponsorID, fixture.now, fixture.adminID).Scan(&fixture.grantID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO access_credentials (
+		  credential_ref,access_grant_id,org_id,project_id,name,allowed_ips,allowed_models,
+		  allowed_endpoints,rpm_limit,rps_limit,concurrency_limit,created_by
+		) VALUES ($1,$2,$3,$4,'media commit credential','','company-image','/v1/media/jobs',60,10,1,$5)
+		RETURNING id`, fixture.credentialRef, fixture.grantID, fixture.orgID, fixture.projectID, fixture.adminID).Scan(&fixture.credentialID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO api_keys (
+		  org_id,project_id,workload_application_id,key_type,name,key_hash,key_prefix,status,
+		  allowed_models,allowed_endpoints,rpm_limit,qps_limit,concurrency_limit,purpose,access_grant_id,
+		  access_credential_id,credential_ref
+		) VALUES ($1,$2,$3,'service','media commit credential',repeat('c',64),'ur-media-commit','active',
+		  'company-image','/v1/media/jobs',60,10,1,'',$4,$5,$6) RETURNING id`,
+		fixture.orgID, fixture.projectID, fixture.workloadID, fixture.grantID,
+		fixture.credentialID, fixture.credentialRef).Scan(&fixture.apiKeyID))
+	return fixture
+}
+
+func runBlockedMediaAdmission(t *testing.T, ctx context.Context, pool *pgxpool.Pool, fixture mediaCommitFixture, commit func()) {
+	t.Helper()
+	store, err := NewPostgresStore(pool)
+	require.NoError(t, err)
+	record := mediaCreateRecord(Scope{OrgID: fixture.orgID, ProjectID: fixture.projectID}, fixture.apiKeyID, "commit", fixture.now, 3)
+	credentialConcurrency, grantConcurrency := int64(1), int64(1)
+	bindMediaRecordToGrant(&record, fixture.grantID, fixture.credentialID, fixture.credentialRef, &credentialConcurrency, &grantConcurrency)
+	result := make(chan error, 1)
+	go func() {
+		_, _, createErr := store.CreateOrGet(ctx, record)
+		result <- createErr
+	}()
+	select {
+	case err := <-result:
+		t.Fatalf("media admission escaped transition lock before commit: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+	commit()
+	select {
+	case err := <-result:
+		require.ErrorIs(t, err, ErrForbidden)
+	case <-time.After(5 * time.Second):
+		t.Fatal("media admission remained blocked after transition commit")
+	}
+	var jobs int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM async_media_jobs WHERE org_id=$1`, fixture.orgID).Scan(&jobs))
+	require.Zero(t, jobs)
+}
+
 func seedMediaScope(
 	t *testing.T,
 	pool *pgxpool.Pool,
@@ -482,8 +1246,13 @@ func mediaCreateRecord(
 	now time.Time,
 	maxAttempts int,
 ) CreateRecord {
+	defaultRPS, defaultRPM := int64(10), int64(60)
 	return CreateRecord{
 		AllowCreate: true,
+		ExpectedLimitSubject: limitpolicy.Subject{
+			OrgID: scope.OrgID, ProjectID: scope.ProjectID, APIKeyID: keyID,
+			Model: "company-image", BaseRPSLimit: defaultRPS, BaseRPMLimit: defaultRPM,
+		},
 		Job: Job{
 			ContractVersion: ContractVersion,
 			JobID:           "mediajob_" + strings.Repeat(suffix, 32),
@@ -505,6 +1274,25 @@ func mediaCreateRecord(
 			CreatedAt: now, UpdatedAt: now,
 		},
 	}
+}
+
+func bindMediaRecordToGrant(
+	record *CreateRecord,
+	grantID, credentialID int64,
+	credentialRef string,
+	credentialConcurrency, grantConcurrency *int64,
+) {
+	record.Job.AccessGrantID = positiveInt64Pointer(grantID)
+	record.Job.AccessCredentialID = positiveInt64Pointer(credentialID)
+	record.Job.CredentialRef = credentialRef
+	record.ExpectedLimitSubject.AccessGrantID = grantID
+	record.ExpectedLimitSubject.AccessCredentialID = credentialID
+	record.ExpectedLimitSubject.CredentialRef = credentialRef
+	record.ExpectedLimitSubject.CredentialConcurrencyLimit = credentialConcurrency
+	defaultRPS, defaultRPM := int64(10), int64(60)
+	record.ExpectedLimitSubject.GrantRPSLimit = &defaultRPS
+	record.ExpectedLimitSubject.GrantRPMLimit = &defaultRPM
+	record.ExpectedLimitSubject.GrantConcurrencyLimit = grantConcurrency
 }
 
 func leaseFromClaimed(job Job) Lease {

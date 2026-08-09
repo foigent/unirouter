@@ -24,7 +24,10 @@ func TestSecondIntegrationResetSupportMigrationUpDownAndRollForward(t *testing.T
 	// This test owns the 000057 lifecycle. Reverse the later empty role-axis
 	// migration first so 000057's own rollback guard remains the evidence under
 	// test rather than being masked by the current binary's schema head.
-	rollbackEmptyMigrations(t, pool, []string{"000058_enterprise_project_role_separation.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{
+		"000059_enterprise_access_provisioning.down.sql",
+		"000058_enterprise_project_role_separation.down.sql",
+	})
 
 	var orgID int64
 	require.NoError(t, pool.QueryRow(ctx, `

@@ -4,7 +4,6 @@ package migrate_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,8 +14,6 @@ import (
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
-
-const enterpriseRoleFutureMigrationBlockerID int64 = 86420517831702492
 
 func TestEnterpriseProjectRoleSeparationMigrationCanonicalizesBothAxes(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
@@ -278,6 +275,7 @@ func TestEnterpriseProjectRoleSeparationDownFailsClosedForNonMemberMembership(t 
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	rollbackEmptyMigrations(t, pool, []string{"000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectID, userID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type) VALUES ('role-down-org','active','standard') RETURNING id`).Scan(&orgID))
@@ -300,6 +298,7 @@ func TestEnterpriseProjectRoleSeparationDownFailsClosedForHeterogeneousMemberRol
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	rollbackEmptyMigrations(t, pool, []string{"000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectA, projectB, userID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type) VALUES ('role-down-heterogeneous','active','standard') RETURNING id`).Scan(&orgID))
@@ -324,6 +323,7 @@ func TestEnterpriseProjectRoleSeparationDownRestoresRepresentableLegacyState(t *
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	rollbackEmptyMigrations(t, pool, []string{"000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectID, userID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type) VALUES ('role-down-safe','active','standard') RETURNING id`).Scan(&orgID))
@@ -350,6 +350,7 @@ func TestEnterpriseProjectRoleSeparationDownWaitsForConcurrentWriterThenFailsClo
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	rollbackEmptyMigrations(t, pool, []string{"000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectA, projectB, userID int64
 	require.NoError(t, pool.QueryRow(ctx,
@@ -430,26 +431,24 @@ func TestEnterpriseProjectRoleSeparationFutureMigrationFirstSerializesDownAndPre
 	require.NoError(t, err)
 	var holderPID int
 	require.NoError(t, holder.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&holderPID))
-	_, err = holder.Exec(ctx, `SELECT pg_advisory_lock($1)`, enterpriseRoleFutureMigrationBlockerID)
+	_, err = holder.Exec(ctx, `BEGIN; LOCK TABLE users IN ACCESS EXCLUSIVE MODE`)
 	require.NoError(t, err)
-	holderLocked := true
+	holderOpen := true
 	t.Cleanup(func() {
-		if holderLocked {
-			var unlocked bool
-			_ = holder.QueryRow(context.Background(), `SELECT pg_advisory_unlock($1)`, enterpriseRoleFutureMigrationBlockerID).Scan(&unlocked)
+		if holderOpen {
+			_, _ = holder.Exec(context.Background(), `ROLLBACK`)
 		}
 		holder.Release()
 	})
 
 	runnerApplicationName := "enterprise-role-future-first"
 	runnerPool := enterpriseRoleRunnerPool(t, ctx, pool, runnerApplicationName)
-	futureMigrationDir := enterpriseRoleFutureMigrationDir(t)
 	runnerResult := make(chan error, 1)
 	go func() {
-		runnerResult <- migrate.Run(ctx, runnerPool, futureMigrationDir)
+		runnerResult <- migrate.Run(ctx, runnerPool, testutil.MigrationsDir(t))
 	}()
 	runnerPID := waitForApplicationBlockedBy(t, pool, runnerApplicationName, holderPID)
-	require.True(t, backendHoldsMigrationAdvisoryLock(t, pool, runnerPID), "future migrator must hold the lifecycle lock while its migration is blocked")
+	require.True(t, backendHoldsMigrationAdvisoryLock(t, pool, runnerPID), "production 000059 migrator must hold the lifecycle lock before its table locks")
 
 	downConn, err := pool.Acquire(ctx)
 	require.NoError(t, err)
@@ -464,12 +463,9 @@ func TestEnterpriseProjectRoleSeparationFutureMigrationFirstSerializesDownAndPre
 	}()
 	waitForBackendBlockedBy(t, pool, downPID, runnerPID)
 
-	var unlocked bool
-	require.NoError(t, holder.QueryRow(ctx,
-		`SELECT pg_advisory_unlock($1)`, enterpriseRoleFutureMigrationBlockerID,
-	).Scan(&unlocked))
-	require.True(t, unlocked)
-	holderLocked = false
+	_, err = holder.Exec(ctx, `ROLLBACK`)
+	require.NoError(t, err)
+	holderOpen = false
 
 	select {
 	case runnerErr := <-runnerResult:
@@ -484,7 +480,7 @@ func TestEnterpriseProjectRoleSeparationFutureMigrationFirstSerializesDownAndPre
 		t.Fatal("down migration did not recheck the ledger after the future migration released the lifecycle lock")
 	}
 
-	assertEnterpriseRoleFutureState(t, pool)
+	assertEnterpriseAccessProvisioningState(t, pool)
 	assertOrganizationRoleColumn(t, pool, true)
 }
 
@@ -539,10 +535,9 @@ func TestEnterpriseProjectRoleSeparationDownFirstSerializesFutureMigrationAndFor
 
 	runnerApplicationName := "enterprise-role-down-first"
 	runnerPool := enterpriseRoleRunnerPool(t, ctx, pool, runnerApplicationName)
-	futureMigrationDir := enterpriseRoleFutureMigrationDir(t)
 	runnerResult := make(chan error, 1)
 	go func() {
-		runnerResult <- migrate.Run(ctx, runnerPool, futureMigrationDir)
+		runnerResult <- migrate.Run(ctx, runnerPool, testutil.MigrationsDir(t))
 	}()
 	waitForApplicationBlockedBy(t, pool, runnerApplicationName, downPID)
 
@@ -561,7 +556,7 @@ func TestEnterpriseProjectRoleSeparationDownFirstSerializesFutureMigrationAndFor
 		t.Fatal("future migrator did not rediscover and rebuild migration 000058 after down completed")
 	}
 
-	assertEnterpriseRoleFutureState(t, pool)
+	assertEnterpriseAccessProvisioningState(t, pool)
 	assertOrganizationRoleColumn(t, pool, true)
 	var organizationRole, compatibilityRole, membershipRole string
 	require.NoError(t, pool.QueryRow(ctx,
@@ -573,24 +568,6 @@ func TestEnterpriseProjectRoleSeparationDownFirstSerializesFutureMigrationAndFor
 		`SELECT role FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, userID,
 	).Scan(&membershipRole))
 	require.Equal(t, "project_user", membershipRole)
-}
-
-func enterpriseRoleFutureMigrationDir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	upName := "000058_enterprise_project_role_separation.up.sql"
-	upBody, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), upName))
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, upName), upBody, 0o600))
-	futureSQL := fmt.Sprintf(`BEGIN;
-SELECT pg_advisory_xact_lock(%d);
-CREATE TABLE enterprise_role_future_probe (id INTEGER PRIMARY KEY);
-COMMIT;
-`, enterpriseRoleFutureMigrationBlockerID)
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "000059_enterprise_role_future_probe.up.sql"), []byte(futureSQL), 0o600,
-	))
-	return dir
 }
 
 func enterpriseRoleRunnerPool(t *testing.T, ctx context.Context, source *pgxpool.Pool, applicationName string) *pgxpool.Pool {
@@ -652,7 +629,7 @@ func backendHoldsMigrationAdvisoryLock(t *testing.T, pool *pgxpool.Pool, backend
 	return holds
 }
 
-func assertEnterpriseRoleFutureState(t *testing.T, pool *pgxpool.Pool) {
+func assertEnterpriseAccessProvisioningState(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	var migrationCount int
 	require.NoError(t, pool.QueryRow(context.Background(), `
@@ -660,15 +637,15 @@ func assertEnterpriseRoleFutureState(t *testing.T, pool *pgxpool.Pool) {
 		  FROM schema_migrations
 		 WHERE version IN (
 			'000058_enterprise_project_role_separation',
-			'000059_enterprise_role_future_probe'
+			'000059_enterprise_access_provisioning'
 		)`,
 	).Scan(&migrationCount))
 	require.Equal(t, 2, migrationCount)
-	var futureTable string
+	var accessRequestsTable string
 	require.NoError(t, pool.QueryRow(context.Background(),
-		`SELECT COALESCE(to_regclass('enterprise_role_future_probe')::text, '')`,
-	).Scan(&futureTable))
-	require.Equal(t, "enterprise_role_future_probe", futureTable)
+		`SELECT COALESCE(to_regclass('access_requests')::text, '')`,
+	).Scan(&accessRequestsTable))
+	require.Equal(t, "access_requests", accessRequestsTable)
 }
 
 func readEnterpriseRoleDownMigration(t *testing.T) string {

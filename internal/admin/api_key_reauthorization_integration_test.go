@@ -268,6 +268,10 @@ func TestCreateAPIKeyRequiresExistingDefaultProjectIntegration(t *testing.T) {
 		`INSERT INTO projects (org_id, name, slug, description, status)
 		 VALUES ($1, 'Default Project', 'default', 'Default project', 'active') RETURNING id`, orgID,
 	).Scan(&defaultProjectID))
+	_, err := pool.Exec(ctx,
+		`INSERT INTO project_members (project_id,user_id,role) VALUES ($1,$2,'project_admin')`, defaultProjectID, actorID,
+	)
+	require.NoError(t, err)
 	success := httptest.NewRecorder()
 	h.CreateAPIKey(success, apiKeyIntegrationRequest(t, pool, http.MethodPost, "/api/v1/keys",
 		`{"name":"existing-default-project"}`, actorID, orgID, auth.RoleOrgAdmin, "api-key-existing-default"))
@@ -277,16 +281,18 @@ func TestCreateAPIKeyRequiresExistingDefaultProjectIntegration(t *testing.T) {
 		`SELECT project_id FROM api_keys WHERE org_id = $1 AND name = 'existing-default-project'`, orgID,
 	).Scan(&storedProjectID))
 	require.Equal(t, defaultProjectID, storedProjectID)
-	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM audit_logs WHERE request_id = 'api-key-existing-default' AND action = 'apikey.create'`,
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM audit_logs
+		WHERE request_id = 'api-key-existing-default'
+		  AND action IN ('access_request.provision','access_grant.credential.issue')`,
 	).Scan(&auditCount))
-	require.Equal(t, 1, auditCount)
+	require.Equal(t, 2, auditCount)
 }
 
 func TestOrganizationRoleAccountsUseLiveMembershipForPersonalCredentialsIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	var orgID, projectA, projectB, orgViewerID, billingID int64
+	var orgID, projectA, projectB, orgViewerID, billingCallerID, billingViewerID int64
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO orgs (name,status,org_type) VALUES ('orthogonal-key-org','active','standard') RETURNING id`,
 	).Scan(&orgID))
@@ -302,18 +308,29 @@ func TestOrganizationRoleAccountsUseLiveMembershipForPersonalCredentialsIntegrat
 	).Scan(&orgViewerID))
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
-		 VALUES ($1,'orthogonal-billing','hash','billing_admin','billing_admin','active') RETURNING id`, orgID,
-	).Scan(&billingID))
+		 VALUES ($1,'orthogonal-billing-caller','hash','billing_admin','billing_admin','active') RETURNING id`, orgID,
+	).Scan(&billingCallerID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		 VALUES ($1,'orthogonal-billing-viewer','hash','billing_admin','billing_admin','active') RETURNING id`, orgID,
+	).Scan(&billingViewerID))
 	_, err := pool.Exec(ctx,
 		`INSERT INTO project_members (project_id,user_id,role) VALUES
-		 ($1,$2,'project_user'),($1,$3,'project_viewer')`, projectA, orgViewerID, billingID)
+		 ($1,$2,'project_user'),($1,$3,'project_user'),($1,$4,'project_viewer')`,
+		projectA, orgViewerID, billingCallerID, billingViewerID)
 	require.NoError(t, err)
 
 	h := NewHandler(pool, "orthogonal-key-secret", []byte("0123456789abcdef01234567"), nil)
+	orgViewerCannotCall := httptest.NewRecorder()
+	h.CreateAPIKey(orgViewerCannotCall, apiKeyIntegrationRequest(t, pool, http.MethodPost, "/api/v1/keys",
+		fmt.Sprintf(`{"name":"org-viewer-forbidden","project_id":%d}`, projectA),
+		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-org-viewer-forbidden"))
+	require.Equal(t, http.StatusForbidden, orgViewerCannotCall.Code, orgViewerCannotCall.Body.String())
+
 	create := httptest.NewRecorder()
 	h.CreateAPIKey(create, apiKeyIntegrationRequest(t, pool, http.MethodPost, "/api/v1/keys",
 		fmt.Sprintf(`{"name":"orthogonal-personal","project_id":%d}`, projectA),
-		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-create"))
+		billingCallerID, orgID, auth.RoleBillingAdmin, "orthogonal-key-create"))
 	require.Equal(t, http.StatusCreated, create.Code, create.Body.String())
 
 	var keyID, ownerUserID, storedProjectID int64
@@ -321,28 +338,28 @@ func TestOrganizationRoleAccountsUseLiveMembershipForPersonalCredentialsIntegrat
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT id,owner_user_id,project_id,key_type,status FROM api_keys WHERE org_id=$1 AND name='orthogonal-personal'`, orgID,
 	).Scan(&keyID, &ownerUserID, &storedProjectID, &keyType, &status))
-	require.Equal(t, orgViewerID, ownerUserID)
+	require.Equal(t, billingCallerID, ownerUserID)
 	require.Equal(t, projectA, storedProjectID)
 	require.Equal(t, "personal", keyType)
 	require.Equal(t, "active", status)
 
 	get := httptest.NewRecorder()
 	getRequest := apiKeyIntegrationRequest(t, pool, http.MethodGet, "/api/v1/keys/target", "",
-		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-get")
+		billingCallerID, orgID, auth.RoleBillingAdmin, "orthogonal-key-get")
 	getRequest.SetPathValue("id", stringInt64(keyID))
 	h.GetAPIKey(get, getRequest)
 	require.Equal(t, http.StatusOK, get.Code, get.Body.String())
 
 	update := httptest.NewRecorder()
 	updateRequest := apiKeyIntegrationRequest(t, pool, http.MethodPut, "/api/v1/keys/target", `{"name":"orthogonal-personal-renamed"}`,
-		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-update")
+		billingCallerID, orgID, auth.RoleBillingAdmin, "orthogonal-key-update")
 	updateRequest.SetPathValue("id", stringInt64(keyID))
 	h.UpdateAPIKey(update, updateRequest)
-	require.Equal(t, http.StatusOK, update.Code, update.Body.String())
+	require.Equal(t, http.StatusConflict, update.Code, update.Body.String())
 
 	disable := httptest.NewRecorder()
 	disableRequest := apiKeyIntegrationRequest(t, pool, http.MethodPost, "/api/v1/keys/target/disable", "",
-		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-disable")
+		billingCallerID, orgID, auth.RoleBillingAdmin, "orthogonal-key-disable")
 	disableRequest.SetPathValue("id", stringInt64(keyID))
 	h.DisableAPIKey(disable, disableRequest)
 	require.Equal(t, http.StatusOK, disable.Code, disable.Body.String())
@@ -352,13 +369,13 @@ func TestOrganizationRoleAccountsUseLiveMembershipForPersonalCredentialsIntegrat
 	outsideMembership := httptest.NewRecorder()
 	h.CreateAPIKey(outsideMembership, apiKeyIntegrationRequest(t, pool, http.MethodPost, "/api/v1/keys",
 		fmt.Sprintf(`{"name":"orthogonal-forbidden","project_id":%d}`, projectB),
-		orgViewerID, orgID, auth.RoleOrgViewer, "orthogonal-key-forbidden"))
+		billingCallerID, orgID, auth.RoleBillingAdmin, "orthogonal-key-forbidden"))
 	require.Equal(t, http.StatusForbidden, outsideMembership.Code, outsideMembership.Body.String())
 
 	viewerCannotCall := httptest.NewRecorder()
 	h.CreateAPIKey(viewerCannotCall, apiKeyIntegrationRequest(t, pool, http.MethodPost, "/api/v1/keys",
 		fmt.Sprintf(`{"name":"billing-viewer-forbidden","project_id":%d}`, projectA),
-		billingID, orgID, auth.RoleBillingAdmin, "orthogonal-billing-forbidden"))
+		billingViewerID, orgID, auth.RoleBillingAdmin, "orthogonal-billing-forbidden"))
 	require.Equal(t, http.StatusForbidden, viewerCannotCall.Code, viewerCannotCall.Body.String())
 }
 

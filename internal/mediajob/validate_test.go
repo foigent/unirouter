@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDecodeSubmitRequestStrictImageV1(t *testing.T) {
@@ -63,6 +65,27 @@ func TestIdentityBindsTenantKeyAndPayload(t *testing.T) {
 	if err != nil || !strings.HasPrefix(digest, "sha256:") || !json.Valid(body) {
 		t.Fatalf("request digest = %s body=%s err=%v", digest, body, err)
 	}
+}
+
+func TestAccessIdempotencyHashPreservesLegacyAndBindsGrantFamily(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	scope := Scope{OrgID: 4, ProjectID: 9}
+
+	legacy, err := IdempotencyHash(secret, scope, 12, "client-op-1")
+	require.NoError(t, err)
+	legacyViaAccess, err := AccessIdempotencyHash(secret, scope, 12, 0, "client-op-1")
+	require.NoError(t, err)
+	require.Equal(t, legacy, legacyViaAccess, "legacy physical-key HMAC bytes must not change")
+
+	familyFirst, err := AccessIdempotencyHash(secret, scope, 12, 41, "client-op-1")
+	require.NoError(t, err)
+	familySuccessor, err := AccessIdempotencyHash(secret, scope, 13, 41, "client-op-1")
+	require.NoError(t, err)
+	otherFamily, err := AccessIdempotencyHash(secret, scope, 13, 42, "client-op-1")
+	require.NoError(t, err)
+	require.Equal(t, familyFirst, familySuccessor)
+	require.NotEqual(t, familyFirst, otherFamily)
+	require.NotEqual(t, familyFirst, legacy)
 }
 
 func TestJobAndCursorIdentityValidation(t *testing.T) {

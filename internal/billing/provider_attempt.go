@@ -40,17 +40,20 @@ var ErrProviderAttemptUnresolved = errors.New("provider attempt has unresolved f
 // network call that may create provider liability. It deliberately excludes
 // credentials, prompts, response bodies, and full provider URLs.
 type ProviderAttemptStart struct {
-	RequestID     string
-	AttemptID     string
-	OrgID         int64
-	APIKeyID      int64
-	ChannelID     int64
-	ChannelKeyID  int64
-	RouteSequence int
-	RouteTotal    int
-	Endpoint      string
-	Provider      string
-	Channel       string
+	RequestID          string
+	AttemptID          string
+	OrgID              int64
+	APIKeyID           int64
+	AccessCredentialID int64
+	CredentialRef      string
+	AccessGrantID      int64
+	ChannelID          int64
+	ChannelKeyID       int64
+	RouteSequence      int
+	RouteTotal         int
+	Endpoint           string
+	Provider           string
+	Channel            string
 }
 
 // ProviderAttemptCompletion records what UniRouter knows after dispatch. A
@@ -68,6 +71,9 @@ type ProviderAttemptCompletion struct {
 
 type providerAttemptRecord struct {
 	APIKeyID              int64
+	AccessCredentialID    sql.NullInt64
+	CredentialRef         sql.NullString
+	AccessGrantID         sql.NullInt64
 	ChannelID             int64
 	ChannelKeyID          int64
 	RouteSequence         int
@@ -176,6 +182,12 @@ func (b *Billing) BeginProviderAttempt(ctx context.Context, request ProviderAtte
 	if record.Status != "frozen" {
 		return fmt.Errorf("begin provider attempt: reservation is %s", record.Status)
 	}
+	if record.APIKeyID.Valid && record.APIKeyID.Int64 != req.APIKeyID {
+		return ErrProviderAttemptConflict
+	}
+	req.AccessCredentialID = nullableID(record.AccessCredentialID)
+	req.CredentialRef = nullableString(record.CredentialRef)
+	req.AccessGrantID = nullableID(record.AccessGrantID)
 
 	existing, err := providerAttemptForUpdate(ctx, tx, req.OrgID, req.RequestID, req.AttemptID)
 	if err == nil {
@@ -208,11 +220,16 @@ func (b *Billing) BeginProviderAttempt(ctx context.Context, request ProviderAtte
 
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO billing_provider_attempts (
-		    org_id, request_id, attempt_id, api_key_id, channel_id, channel_key_id,
+		    org_id, request_id, attempt_id, api_key_id,
+		    project_id,access_credential_id,credential_ref,access_grant_id,
+		    channel_id, channel_key_id,
 		    route_sequence, route_total, endpoint, provider, channel_name
-		 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		req.OrgID, req.RequestID, req.AttemptID, req.APIKeyID, req.ChannelID, req.ChannelKeyID,
-		req.RouteSequence, req.RouteTotal, req.Endpoint, req.Provider, req.Channel,
+		 ) VALUES ($1,$2,$3,$4,NULLIF($5,0),NULLIF($6,0),NULLIF($7,''),NULLIF($8,0),
+		           $9,$10,$11,$12,$13,$14,$15)`,
+		req.OrgID, req.RequestID, req.AttemptID, req.APIKeyID,
+		record.ProjectID, req.AccessCredentialID, req.CredentialRef, req.AccessGrantID,
+		req.ChannelID, req.ChannelKeyID, req.RouteSequence, req.RouteTotal,
+		req.Endpoint, req.Provider, req.Channel,
 	); err != nil {
 		return fmt.Errorf("insert provider attempt: %w", err)
 	}
@@ -304,7 +321,8 @@ func (b *Billing) CompleteProviderAttempt(ctx context.Context, request ProviderA
 func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, requestID, attemptID string) (providerAttemptRecord, error) {
 	var record providerAttemptRecord
 	err := tx.QueryRow(ctx,
-		`SELECT api_key_id, channel_id, channel_key_id, route_sequence, route_total,
+		`SELECT api_key_id,access_credential_id,credential_ref,access_grant_id,
+		        channel_id, channel_key_id, route_sequence, route_total,
 		        endpoint, provider, channel_name, state, outcome_certainty, retry_authorized,
 		        http_status, failure_kind, upstream_request_id, calculated_cost_micros, charged_cost_micros,
 		        terminal_transaction_id
@@ -312,7 +330,8 @@ func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, reque
 		 WHERE org_id = $1 AND request_id = $2 AND attempt_id = $3
 		 FOR UPDATE`, orgID, requestID, attemptID,
 	).Scan(
-		&record.APIKeyID, &record.ChannelID, &record.ChannelKeyID, &record.RouteSequence, &record.RouteTotal,
+		&record.APIKeyID, &record.AccessCredentialID, &record.CredentialRef, &record.AccessGrantID,
+		&record.ChannelID, &record.ChannelKeyID, &record.RouteSequence, &record.RouteTotal,
 		&record.Endpoint, &record.Provider, &record.Channel, &record.State, &record.OutcomeCertainty,
 		&record.RetryAuthorized, &record.HTTPStatus, &record.FailureKind,
 		&record.UpstreamRequestID, &record.CalculatedCostMicros, &record.ChargedCostMicros,
@@ -322,7 +341,9 @@ func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, reque
 }
 
 func providerAttemptStartMatches(record providerAttemptRecord, req ProviderAttemptStart) bool {
-	return record.APIKeyID == req.APIKeyID && record.ChannelID == req.ChannelID && record.ChannelKeyID == req.ChannelKeyID &&
+	return record.APIKeyID == req.APIKeyID && nullableID(record.AccessCredentialID) == req.AccessCredentialID &&
+		nullableString(record.CredentialRef) == req.CredentialRef && nullableID(record.AccessGrantID) == req.AccessGrantID &&
+		record.ChannelID == req.ChannelID && record.ChannelKeyID == req.ChannelKeyID &&
 		record.RouteSequence == req.RouteSequence && record.RouteTotal == req.RouteTotal &&
 		record.Endpoint == req.Endpoint && record.Provider == req.Provider && record.Channel == req.Channel
 }

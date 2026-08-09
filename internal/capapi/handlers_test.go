@@ -96,30 +96,13 @@ func capabilityHandlerDB(t *testing.T) *testutil.MockDB {
 			if len(args) != 1 || args[0] != int64(9) {
 				t.Fatalf("unexpected authority lookup: %v", args)
 			}
-			if len(dest) != 20 {
-				t.Fatalf("unexpected authority scan width: %d", len(dest))
-			}
-			*dest[0].(*int64) = 9
-			*dest[1].(*int64) = 4
-			*dest[2].(*int64) = 0
-			*dest[3].(*int64) = 0
-			*dest[4].(*string) = "service"
-			*dest[5].(*string) = "root"
-			*dest[6].(*string) = "ur-0004-root"
-			*dest[7].(*string) = "active"
-			*dest[8].(*string) = ""
-			*dest[9].(*string) = "gpt-4o"
-			*dest[10].(*string) = ""
-			*dest[11].(*int64) = 1
-			*dest[12].(*int) = 60
-			*dest[13].(*int) = 10
-			*dest[14].(*int) = -1
-			*dest[15].(*string) = "active"
-			*dest[16].(*string) = ""
-			*dest[17].(*string) = ""
-			*dest[18].(*string) = ""
-			*dest[19].(*string) = ""
-			return nil
+			budget := int64(-1)
+			return (testutil.AccessGrantBoundaryFixture{
+				KeyID: 9, OrgID: 4, KeyType: "service", Name: "root",
+				Prefix: "ur-0004-root", KeyStatus: "active", AllowedModels: "gpt-4o",
+				RPMLimit: 60, RPSLimit: 10, KeyBudgetCents: &budget, AuthEpoch: 1,
+				OrgStatus: "active",
+			}).Scan(dest...)
 		}}
 	}}
 }

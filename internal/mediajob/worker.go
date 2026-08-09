@@ -7,13 +7,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/limitpolicy"
+	"github.com/uniroute/unirouter/internal/workloadadmission"
 )
 
 type Worker struct {
-	store         Store
+	store         WorkerStore
 	objects       ObjectStore
 	provider      Provider
 	cipher        PayloadCipher
+	limits        LimitPolicyRuntime
 	owner         string
 	leaseDuration time.Duration
 	purgeLease    time.Duration
@@ -31,17 +35,18 @@ type WorkerOptions struct {
 	PollInterval       time.Duration
 	Now                func() time.Time
 	OnError            func(error)
+	LimitPolicy        LimitPolicyRuntime
 }
 
 func NewWorker(
-	store Store,
+	store WorkerStore,
 	objects ObjectStore,
 	provider Provider,
 	cipher PayloadCipher,
 	options WorkerOptions,
 ) (*Worker, error) {
 	options.Owner = strings.TrimSpace(options.Owner)
-	if store == nil || objects == nil || provider == nil || cipher == nil ||
+	if store == nil || objects == nil || provider == nil || cipher == nil || options.LimitPolicy == nil ||
 		options.Owner == "" || len(options.Owner) > 128 {
 		return nil, domainError(ErrUnavailable, "worker_dependency_invalid")
 	}
@@ -64,7 +69,7 @@ func NewWorker(
 		options.Now = time.Now
 	}
 	return &Worker{
-		store: store, objects: objects, provider: provider, cipher: cipher,
+		store: store, objects: objects, provider: provider, cipher: cipher, limits: options.LimitPolicy,
 		owner: options.Owner, leaseDuration: options.LeaseDuration,
 		purgeLease:   options.PurgeLeaseDuration,
 		pollInterval: options.PollInterval,
@@ -133,6 +138,9 @@ func (w *Worker) runPurgeLoop(ctx context.Context) {
 }
 
 func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
+	if reconciled, err := w.reconcileExecutionTerminal(ctx, "", 0); reconciled || err != nil {
+		return reconciled, err
+	}
 	now := w.now().UTC()
 	job, err := w.store.Claim(ctx, w.owner, now, w.leaseDuration)
 	if err != nil || job == nil {
@@ -182,26 +190,88 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return true, err
 	}
 	lease.Request = request
-	if err := w.store.MarkRunning(ctx, lease, w.now().UTC()); err != nil {
-		if errors.Is(err, ErrCancelled) || errors.Is(err, ErrLeaseLost) {
-			return true, nil
+	limitSubject, err := w.store.ExecutionLimitSubject(ctx, lease)
+	if err != nil {
+		code := "execution_authority_unavailable"
+		if errors.Is(err, ErrForbidden) {
+			code = "execution_authority_changed"
 		}
-		return true, err
+		_, completeErr := w.store.CompleteFailure(ctx, lease, code, w.now().UTC())
+		if errors.Is(completeErr, ErrLeaseLost) {
+			completeErr = nil
+		}
+		return true, errors.Join(err, completeErr)
 	}
-	providerResult, err := w.provider.Generate(ctx, *job, request)
+	now = w.now().UTC()
+	leaseTTL := lease.ExpiresAt.Sub(now)
+	if leaseTTL <= 0 {
+		return true, ErrLeaseLost
+	}
+	operationID := mediaLimitOperationID("execution", fmt.Sprintf("%s:%d", lease.JobID, lease.Fence))
+	reservation, err := w.limits.Reserve(ctx, limitpolicy.AdmissionRequest{
+		OperationID:   operationID,
+		Subject:       limitSubject,
+		LeaseTTL:      leaseTTL,
+		WorkloadClass: workloadadmission.ClassInteractive,
+		Phase:         limitpolicy.AdmissionPhaseExecution,
+	})
+	if err != nil {
+		return true, w.retryOrFail(ctx, lease, executionLimitErrorCode(err), true)
+	}
+	expiresAt := now.Add(w.limits.TerminalStateTTL(leaseTTL))
+	attached, _, err := w.store.AttachExecutionReservation(
+		ctx, lease, limitSubject, reservation.Durable(), operationID, expiresAt, now,
+	)
+	if err != nil {
+		cleanupErr := w.cancelExecutionBeforeDispatch(ctx, reservation)
+		switch {
+		case errors.Is(err, ErrCancelled):
+			_, reconcileErr := w.reconcileExecutionTerminal(ctx, lease.JobID, lease.Fence)
+			return true, errors.Join(cleanupErr, reconcileErr)
+		case errors.Is(err, ErrLeaseLost):
+			return true, cleanupErr
+		case errors.Is(err, ErrForbidden), errors.Is(err, ErrConflict), errors.Is(err, ErrUnavailable):
+			code := "execution_authority_changed"
+			if errors.Is(err, ErrUnavailable) {
+				code = "execution_authority_unavailable"
+			}
+			_, completeErr := w.store.CompleteFailure(
+				ctx, lease, code, w.now().UTC(),
+			)
+			if errors.Is(completeErr, ErrLeaseLost) {
+				completeErr = nil
+			}
+			return true, errors.Join(err, cleanupErr, completeErr)
+		default:
+			transitionErr := w.retryOrFail(ctx, lease, "execution_admission_persist_failed", true)
+			return true, errors.Join(err, cleanupErr, transitionErr)
+		}
+	}
+	lease.Attempt = attached.ProviderAttempt
+	lease.Job.Attempt = attached.ProviderAttempt
+	dispatchCtx, cancelDispatch := context.WithDeadline(ctx, lease.ExpiresAt)
+	// AttachExecutionReservation is the provider-dispatch fence: it is the
+	// first transition that consumes a provider attempt. Pass that exact
+	// persisted attempt to the route/provider so queue leasing and admission
+	// contention never masquerade as provider work.
+	providerResult, err := w.provider.Generate(dispatchCtx, lease.Job, request)
+	cancelDispatch()
 	if err != nil {
 		code, retryable, outcomeUnknown := providerFailure(err)
 		if outcomeUnknown {
 			_, completeErr := w.store.CompleteUnknown(
 				ctx, lease, code, w.now().UTC(),
 			)
-			return true, completeErr
+			return true, w.finishExecutionTransition(ctx, lease, completeErr)
 		}
-		return true, w.retryOrFail(ctx, lease, code, retryable)
+		return true, w.finishExecutionTransition(ctx, lease, w.retryOrFail(ctx, lease, code, retryable))
 	}
 	if err := w.markProviderSucceeded(
 		ctx, lease, providerResult.MappedModel,
 	); err != nil {
+		return true, err
+	}
+	if err := w.finishExecutionTransition(ctx, lease, nil); err != nil {
 		return true, err
 	}
 	lease.Job.Lifecycle.Outcome = OutcomeSucceeded
@@ -231,6 +301,73 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	return true, err
+}
+
+func executionLimitErrorCode(err error) string {
+	switch {
+	case errors.Is(err, limitpolicy.ErrConcurrencyExceeded):
+		return "limit_policy.concurrency_exceeded"
+	case errors.Is(err, limitpolicy.ErrWorkloadCapacity):
+		return "workload_admission.capacity_exceeded"
+	case errors.Is(err, limitpolicy.ErrWorkloadConfig):
+		return "workload_admission.configuration_conflict"
+	case errors.Is(err, limitpolicy.ErrConflict):
+		return "limit_policy.operation_conflict"
+	default:
+		return "limit_policy.state_unavailable"
+	}
+}
+
+func (w *Worker) cancelExecutionBeforeDispatch(ctx context.Context, reservation *limitpolicy.Reservation) error {
+	if reservation == nil {
+		return nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	return w.limits.CancelBeforeDispatch(cleanupCtx, reservation)
+}
+
+func (w *Worker) finishExecutionTransition(ctx context.Context, lease Lease, transitionErr error) error {
+	if transitionErr != nil {
+		if errors.Is(transitionErr, ErrLeaseLost) {
+			return nil
+		}
+		return transitionErr
+	}
+	_, err := w.reconcileExecutionTerminal(ctx, lease.JobID, lease.Fence)
+	return err
+}
+
+func (w *Worker) reconcileExecutionTerminal(ctx context.Context, jobID string, leaseFence int64) (bool, error) {
+	now := w.now().UTC()
+	item, err := w.store.PendingExecutionTerminal(
+		ctx, jobID, leaseFence, w.owner+"-limit-terminal", now, 15*time.Second,
+	)
+	if err != nil || item == nil {
+		return false, err
+	}
+	if !now.Before(item.ExpiresAt) {
+		return true, w.store.MarkExecutionTerminalized(ctx, *item, now, "operation_state_expired")
+	}
+	reservation, err := limitpolicy.RestoreDurableReservation(&item.Reservation)
+	if err == nil {
+		terminalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		if item.TerminalKind == "settled" {
+			err = w.limits.Finalize(terminalCtx, reservation, 0)
+		} else {
+			err = w.limits.Cancel(terminalCtx, reservation)
+		}
+		cancel()
+	}
+	if err != nil {
+		now = w.now().UTC()
+		if !now.Before(item.ExpiresAt) {
+			return true, w.store.MarkExecutionTerminalized(ctx, *item, now, "operation_state_expired")
+		}
+		releaseErr := w.store.ReleaseExecutionTerminalClaim(ctx, *item, now, err.Error())
+		return true, errors.Join(err, releaseErr)
+	}
+	return true, w.store.MarkExecutionTerminalized(ctx, *item, w.now().UTC(), item.TerminalKind)
 }
 
 func (w *Worker) markProviderSucceeded(

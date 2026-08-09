@@ -22,42 +22,46 @@ import (
 )
 
 type guardrailPolicyRecord struct {
-	ID           int64
-	OrgID        *int64
-	ProjectID    *int64
-	APIKeyID     *int64
-	Name         string
-	Model        string
-	Stage        string
-	DetectorRef  string
-	Action       string
-	Mode         string
-	FailureMode  string
-	Mandatory    bool
-	Config       json.RawMessage
-	Version      int64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	OrgName      string
-	ProjectName  string
-	APIKeyName   string
-	APIKeyPrefix string
+	ID                   int64
+	OrgID                *int64
+	ProjectID            *int64
+	APIKeyID             *int64
+	AccessCredentialID   *int64
+	Name                 string
+	Model                string
+	Stage                string
+	DetectorRef          string
+	Action               string
+	Mode                 string
+	FailureMode          string
+	Mandatory            bool
+	Config               json.RawMessage
+	Version              int64
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	OrgName              string
+	ProjectName          string
+	APIKeyName           string
+	APIKeyPrefix         string
+	AccessCredentialName string
+	AccessCredentialRef  string
 }
 
 type guardrailPolicyMutation struct {
-	Version     *int64           `json:"version"`
-	OrgID       *int64           `json:"org_id"`
-	ProjectID   *int64           `json:"project_id"`
-	APIKeyID    *int64           `json:"api_key_id"`
-	Name        *string          `json:"name"`
-	Model       *string          `json:"model"`
-	Stage       *string          `json:"stage"`
-	DetectorRef *string          `json:"detector_ref"`
-	Action      *string          `json:"action"`
-	Mode        *string          `json:"mode"`
-	FailureMode *string          `json:"failure_mode"`
-	Mandatory   *bool            `json:"mandatory"`
-	Config      *json.RawMessage `json:"config"`
+	Version            *int64           `json:"version"`
+	OrgID              *int64           `json:"org_id"`
+	ProjectID          *int64           `json:"project_id"`
+	APIKeyID           *int64           `json:"api_key_id"`
+	AccessCredentialID *int64           `json:"access_credential_id"`
+	Name               *string          `json:"name"`
+	Model              *string          `json:"model"`
+	Stage              *string          `json:"stage"`
+	DetectorRef        *string          `json:"detector_ref"`
+	Action             *string          `json:"action"`
+	Mode               *string          `json:"mode"`
+	FailureMode        *string          `json:"failure_mode"`
+	Mandatory          *bool            `json:"mandatory"`
+	Config             *json.RawMessage `json:"config"`
 }
 
 func (h *Handler) ListGuardrailPolicies(w http.ResponseWriter, r *http.Request) {
@@ -94,15 +98,17 @@ func (h *Handler) ListGuardrailPolicies(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	query := fmt.Sprintf(`
-		SELECT p.id,p.org_id,p.project_id,p.api_key_id,p.name,p.model,p.stage,
+		SELECT p.id,p.org_id,p.project_id,p.api_key_id,p.access_credential_id,p.name,p.model,p.stage,
 		       p.detector_ref,p.action,p.mode,p.failure_mode,p.mandatory,p.config,
 		       p.version,p.created_at,p.updated_at,
 		       COALESCE(o.name,''),COALESCE(project.name,''),
-		       COALESCE(key.name,''),COALESCE(key.key_prefix,'')
+		       COALESCE(key.name,''),COALESCE(key.key_prefix,''),
+		       COALESCE(credential.name,''),COALESCE(credential.credential_ref,'')
 		FROM guardrail_policies p
 		LEFT JOIN orgs o ON o.id=p.org_id
 		LEFT JOIN projects project ON project.id=p.project_id AND project.org_id=p.org_id
 		LEFT JOIN api_keys key ON key.id=p.api_key_id AND key.org_id=p.org_id
+		LEFT JOIN access_credentials credential ON credential.id=p.access_credential_id AND credential.org_id=p.org_id
 		%s ORDER BY p.mandatory DESC,p.id ASC LIMIT $%d OFFSET $%d`, where, argIndex, argIndex+1)
 	args = append(args, pageSize, offset)
 	rows, err := h.db.Query(r.Context(), query, args...)
@@ -171,9 +177,14 @@ func (h *Handler) CreateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
 		return
 	}
+	if err := validatePolicySelectorMutation(mutation.APIKeyID, mutation.AccessCredentialID); err != nil {
+		writeGuardrailPolicyError(w, err)
+		return
+	}
 	record := guardrailPolicyRecord{
 		OrgID: positiveOrNil(mutation.OrgID), ProjectID: positiveOrNil(mutation.ProjectID), APIKeyID: positiveOrNil(mutation.APIKeyID),
-		Name: stringValue(mutation.Name), Model: stringValue(mutation.Model), Stage: stringValue(mutation.Stage),
+		AccessCredentialID: positiveOrNil(mutation.AccessCredentialID),
+		Name:               stringValue(mutation.Name), Model: stringValue(mutation.Model), Stage: stringValue(mutation.Stage),
 		DetectorRef: stringValue(mutation.DetectorRef), Action: stringValue(mutation.Action),
 		Mode: guardrail.ModeShadow, FailureMode: guardrail.FailureDegradedAllow, Config: json.RawMessage(`{}`), Version: 1,
 	}
@@ -188,6 +199,13 @@ func (h *Handler) CreateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizePolicySelectorMutationTx(r.Context(), tx, policySelector{
+		OrgID: record.OrgID, ProjectID: record.ProjectID, APIKeyID: record.APIKeyID,
+		AccessCredentialID: record.AccessCredentialID,
+	}); err != nil {
+		writeGuardrailPolicyError(w, err)
+		return
+	}
 	if err := h.configureGuardrailPolicyQuota(r.Context(), tx); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to configure policy quota"})
 		return
@@ -196,11 +214,11 @@ func (h *Handler) CreateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 	var createdAt, updatedAt time.Time
 	err = tx.QueryRow(r.Context(), `
 		INSERT INTO guardrail_policies (
-		 org_id,project_id,api_key_id,name,model,stage,detector_ref,action,mode,
+		 org_id,project_id,api_key_id,access_credential_id,name,model,stage,detector_ref,action,mode,
 		 failure_mode,mandatory,config,version,created_by,updated_by,created_at,updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,1,$13,$13,NOW(),NOW())
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,1,$14,$14,NOW(),NOW())
 		RETURNING id,created_at,updated_at`,
-		nullablePolicyID(record.OrgID), nullablePolicyID(record.ProjectID), nullablePolicyID(record.APIKeyID),
+		nullablePolicyID(record.OrgID), nullablePolicyID(record.ProjectID), nullablePolicyID(record.APIKeyID), nullablePolicyID(record.AccessCredentialID),
 		record.Name, record.Model, record.Stage, record.DetectorRef, record.Action, record.Mode,
 		record.FailureMode, record.Mandatory, string(record.Config), nullablePositiveUserID(middleware.GetUserIDFromContext(r.Context())),
 	).Scan(&id, &createdAt, &updatedAt)
@@ -213,6 +231,11 @@ func (h *Handler) CreateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	record.ID, record.CreatedAt, record.UpdatedAt = id, createdAt, updatedAt
+	record, err = readGuardrailPolicyFrom(r.Context(), tx, id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read created policy"})
+		return
+	}
 	if err := insertAuditEntry(r.Context(), tx, "guardrail_policy.create", "guardrail_policy", strconv.FormatInt(record.ID, 10),
 		map[string]interface{}{"after": guardrailPolicyAuditPayload(record)}, guardrailPolicyAuditMeta(r, record)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Audit failed"})
@@ -256,6 +279,10 @@ func (h *Handler) UpdateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, status, map[string]interface{}{"error": "A current matching version is required"})
 		return
 	}
+	if err := validatePolicySelectorMutation(mutation.APIKeyID, mutation.AccessCredentialID); err != nil {
+		writeGuardrailPolicyError(w, err)
+		return
+	}
 	before := guardrailPolicyAuditPayload(current)
 	applyGuardrailPolicyMutation(&current, mutation)
 	if err := h.normalizeAndAuthorizeGuardrailPolicy(r.Context(), &current); err != nil {
@@ -268,16 +295,23 @@ func (h *Handler) UpdateGuardrailPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if err := h.reauthorizePolicySelectorMutationTx(r.Context(), tx, policySelector{
+		OrgID: current.OrgID, ProjectID: current.ProjectID, APIKeyID: current.APIKeyID,
+		AccessCredentialID: current.AccessCredentialID,
+	}); err != nil {
+		writeGuardrailPolicyError(w, err)
+		return
+	}
 	if err := h.configureGuardrailPolicyQuota(r.Context(), tx); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to configure policy quota"})
 		return
 	}
 	result, err := tx.Exec(r.Context(), `
-		UPDATE guardrail_policies SET org_id=$2,project_id=$3,api_key_id=$4,name=$5,
-		 model=$6,stage=$7,detector_ref=$8,action=$9,mode=$10,failure_mode=$11,
-		 mandatory=$12,config=$13::jsonb,version=version+1,updated_by=$14,updated_at=NOW()
-		WHERE id=$1 AND version=$15`,
-		id, nullablePolicyID(current.OrgID), nullablePolicyID(current.ProjectID), nullablePolicyID(current.APIKeyID),
+		UPDATE guardrail_policies SET org_id=$2,project_id=$3,api_key_id=$4,access_credential_id=$5,name=$6,
+		 model=$7,stage=$8,detector_ref=$9,action=$10,mode=$11,failure_mode=$12,
+		 mandatory=$13,config=$14::jsonb,version=version+1,updated_by=$15,updated_at=NOW()
+		WHERE id=$1 AND version=$16`,
+		id, nullablePolicyID(current.OrgID), nullablePolicyID(current.ProjectID), nullablePolicyID(current.APIKeyID), nullablePolicyID(current.AccessCredentialID),
 		current.Name, current.Model, current.Stage, current.DetectorRef, current.Action, current.Mode,
 		current.FailureMode, current.Mandatory, string(current.Config), nullablePositiveUserID(middleware.GetUserIDFromContext(r.Context())), *mutation.Version)
 	if err != nil {
@@ -328,10 +362,11 @@ type guardrailPolicyScanner interface{ Scan(...any) error }
 
 func scanGuardrailPolicy(scanner guardrailPolicyScanner) (guardrailPolicyRecord, error) {
 	var record guardrailPolicyRecord
-	err := scanner.Scan(&record.ID, &record.OrgID, &record.ProjectID, &record.APIKeyID, &record.Name, &record.Model,
+	err := scanner.Scan(&record.ID, &record.OrgID, &record.ProjectID, &record.APIKeyID, &record.AccessCredentialID, &record.Name, &record.Model,
 		&record.Stage, &record.DetectorRef, &record.Action, &record.Mode, &record.FailureMode, &record.Mandatory,
 		&record.Config, &record.Version, &record.CreatedAt, &record.UpdatedAt,
-		&record.OrgName, &record.ProjectName, &record.APIKeyName, &record.APIKeyPrefix)
+		&record.OrgName, &record.ProjectName, &record.APIKeyName, &record.APIKeyPrefix,
+		&record.AccessCredentialName, &record.AccessCredentialRef)
 	return record, err
 }
 
@@ -345,14 +380,16 @@ type guardrailPolicyQueryRower interface {
 
 func readGuardrailPolicyFrom(ctx context.Context, queryer guardrailPolicyQueryRower, id int64) (guardrailPolicyRecord, error) {
 	row := queryer.QueryRow(ctx, `
-		SELECT p.id,p.org_id,p.project_id,p.api_key_id,p.name,p.model,p.stage,
+		SELECT p.id,p.org_id,p.project_id,p.api_key_id,p.access_credential_id,p.name,p.model,p.stage,
 		       p.detector_ref,p.action,p.mode,p.failure_mode,p.mandatory,p.config,
 		       p.version,p.created_at,p.updated_at,
-		       COALESCE(o.name,''),COALESCE(project.name,''),COALESCE(key.name,''),COALESCE(key.key_prefix,'')
+		       COALESCE(o.name,''),COALESCE(project.name,''),COALESCE(key.name,''),COALESCE(key.key_prefix,''),
+		       COALESCE(credential.name,''),COALESCE(credential.credential_ref,'')
 		FROM guardrail_policies p
 		LEFT JOIN orgs o ON o.id=p.org_id
 		LEFT JOIN projects project ON project.id=p.project_id AND project.org_id=p.org_id
 		LEFT JOIN api_keys key ON key.id=p.api_key_id AND key.org_id=p.org_id
+		LEFT JOIN access_credentials credential ON credential.id=p.access_credential_id AND credential.org_id=p.org_id
 		WHERE p.id=$1`, id)
 	return scanGuardrailPolicy(row)
 }
@@ -376,22 +413,24 @@ func (h *Handler) normalizeAndAuthorizeGuardrailPolicy(ctx context.Context, reco
 		if record.OrgID == nil {
 			record.OrgID = &actorOrgID
 		}
-		if *record.OrgID != actorOrgID {
-			return errGuardrailPolicyForbidden
-		}
 	}
-	selector := limitPolicyRecord{OrgID: record.OrgID, ProjectID: record.ProjectID, APIKeyID: record.APIKeyID}
-	if err := h.validateLimitPolicySelectorOwnership(ctx, &selector); err != nil {
+	selector := policySelector{
+		OrgID: record.OrgID, ProjectID: record.ProjectID, APIKeyID: record.APIKeyID,
+		AccessCredentialID: record.AccessCredentialID,
+	}
+	if err := h.canonicalizePolicySelector(ctx, &selector); err != nil {
 		if err == errLimitPolicyForbidden {
 			return errGuardrailPolicyForbidden
 		}
 		return err
 	}
-	record.OrgID = selector.OrgID
+	record.OrgID, record.ProjectID = selector.OrgID, selector.ProjectID
+	record.APIKeyID, record.AccessCredentialID = selector.APIKeyID, selector.AccessCredentialID
 	policy := guardrail.Policy{
 		ID: record.ID, Ref: fmt.Sprintf("guardrail:%d", maxInt64(record.ID, 1)), Name: record.Name,
 		Version: maxInt64(record.Version, 1), OrgID: record.OrgID, ProjectID: record.ProjectID, APIKeyID: record.APIKeyID,
-		Model: record.Model, Stage: record.Stage, DetectorRef: record.DetectorRef, Action: record.Action,
+		AccessCredentialID: record.AccessCredentialID,
+		Model:              record.Model, Stage: record.Stage, DetectorRef: record.DetectorRef, Action: record.Action,
 		Mode: record.Mode, FailureMode: record.FailureMode, Mandatory: record.Mandatory, Config: record.Config,
 	}
 	if h.guardrailController == nil {
@@ -412,6 +451,11 @@ func applyGuardrailPolicyMutation(record *guardrailPolicyRecord, mutation guardr
 	}
 	if mutation.APIKeyID != nil {
 		record.APIKeyID = positiveOrNil(mutation.APIKeyID)
+		record.AccessCredentialID = nil
+	}
+	if mutation.AccessCredentialID != nil {
+		record.AccessCredentialID = positiveOrNil(mutation.AccessCredentialID)
+		record.APIKeyID = nil
 	}
 	if mutation.Name != nil {
 		record.Name = *mutation.Name
@@ -454,6 +498,8 @@ func guardrailPolicyPayload(record guardrailPolicyRecord) map[string]interface{}
 		"org_id": nullablePolicyID(record.OrgID), "org_name": record.OrgName,
 		"project_id": nullablePolicyID(record.ProjectID), "project_name": record.ProjectName,
 		"api_key_id": nullablePolicyID(record.APIKeyID), "api_key_name": record.APIKeyName, "api_key_prefix": record.APIKeyPrefix,
+		"access_credential_id":   nullablePolicyID(record.AccessCredentialID),
+		"access_credential_name": record.AccessCredentialName, "access_credential_ref": record.AccessCredentialRef,
 		"model": record.Model, "stage": record.Stage, "detector_ref": record.DetectorRef,
 		"action": record.Action, "mode": record.Mode, "failure_mode": record.FailureMode,
 		"mandatory": record.Mandatory, "config": config,
@@ -539,7 +585,11 @@ func isGuardrailPolicyQuotaError(err error) bool {
 var errGuardrailPolicyForbidden = errors.New("forbidden")
 
 func writeGuardrailPolicyError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errGuardrailPolicyForbidden) {
+	if errors.Is(err, errPolicySelectorNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Policy selector not found"})
+		return
+	}
+	if errors.Is(err, errGuardrailPolicyForbidden) || errors.Is(err, errLimitPolicyForbidden) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
 		return
 	}

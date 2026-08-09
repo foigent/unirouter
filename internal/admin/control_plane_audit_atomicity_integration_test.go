@@ -47,15 +47,13 @@ func TestControlPlaneAuditTargetAttributionIntegration(t *testing.T) {
 		`{"description":"audit-target-project-updated"}`, "audit-target-project-update")
 	require.Equal(t, http.StatusOK, projectUpdate.Code, projectUpdate.Body.String())
 
-	keyCreate := serve(http.MethodPost, "/api/v1/keys",
-		fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"audit-target-key","key_type":"shared"}`, fx.orgB, fx.projectB),
-		"audit-target-key-create")
-	require.Equal(t, http.StatusCreated, keyCreate.Code, keyCreate.Body.String())
-	keyID := responseID(t, keyCreate.Body.Bytes())
-	keyUpdate := serve(http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", keyID),
+	// PR3 no longer creates new shared/legacy-unbound credentials. Exercise the
+	// legacy compatibility mutation path with the existing target-org key; the
+	// canonical AccessCredential issue path has its own atomicity coverage.
+	keyUpdate := serve(http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", fx.keyB),
 		`{"name":"audit-target-key-updated"}`, "audit-target-key-update")
 	require.Equal(t, http.StatusOK, keyUpdate.Code, keyUpdate.Body.String())
-	keyDisable := serve(http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", keyID), "", "audit-target-key-disable")
+	keyDisable := serve(http.MethodPost, fmt.Sprintf("/api/v1/keys/%d/disable", fx.keyB), "", "audit-target-key-disable")
 	require.Equal(t, http.StatusOK, keyDisable.Code, keyDisable.Body.String())
 
 	topUp := serve(http.MethodPost, "/api/v1/wallet/topup",
@@ -97,10 +95,9 @@ func TestControlPlaneAuditTargetAttributionIntegration(t *testing.T) {
 	}{
 		{"audit-target-user-create", "user.create", 0},
 		{"audit-target-user-update", "user.update", 0},
-		{"audit-target-user-delete", "user.delete", 0},
+		{"audit-target-user-delete", "user.offboard", 0},
 		{"audit-target-project-create", "project.create", createdProjectID},
 		{"audit-target-project-update", "project.update", fx.projectB},
-		{"audit-target-key-create", "apikey.create", fx.projectB},
 		{"audit-target-key-update", "apikey.update", fx.projectB},
 		{"audit-target-key-disable", "apikey.disable", fx.projectB},
 		{"audit-target-wallet-topup", "wallet.topup", 0},
@@ -152,9 +149,11 @@ func TestControlPlaneMutationRollsBackWhenAuditInsertFailsIntegration(t *testing
 		`{"description":"audit-rollback-project-mutated"}`, "audit-reject-project-update"))
 	assertStringColumn(t, pool, `SELECT description FROM projects WHERE id = $1`, fx.projectB, "project-b")
 
-	assertAuditFailure(serve(http.MethodPost, "/api/v1/keys",
+	sharedCreate := serve(http.MethodPost, "/api/v1/keys",
 		fmt.Sprintf(`{"org_id":%d,"project_id":%d,"name":"audit-rollback-created-key","key_type":"shared"}`, fx.orgB, fx.projectB),
-		"audit-reject-key-create"))
+		"audit-reject-key-create")
+	require.Equal(t, http.StatusConflict, sharedCreate.Code, sharedCreate.Body.String())
+	require.Contains(t, sharedCreate.Body.String(), "migration_required")
 	assertCount(t, pool, `SELECT COUNT(*) FROM api_keys WHERE name = 'audit-rollback-created-key'`, 0)
 
 	assertAuditFailure(serve(http.MethodPut, fmt.Sprintf("/api/v1/keys/%d", fx.keyB),

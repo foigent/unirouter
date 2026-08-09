@@ -16,6 +16,7 @@ type DurablePolicyReservation struct {
 	TPMLimit       int64  `json:"tpm_limit"`
 	Fallback       bool   `json:"fallback"`
 	Mode           string `json:"mode"`
+	Tokenless      bool   `json:"tokenless,omitempty"`
 }
 
 // DurableReservation is a terminal-only snapshot. It cannot be exchanged for
@@ -40,6 +41,7 @@ func (r *Reservation) Durable() *DurableReservation {
 			RuntimeRef: item.RuntimeRef, Fingerprint: item.Fingerprint,
 			InputTokens: item.InputTokens, ReservedTokens: item.ReservedTokens,
 			TPMLimit: item.TPMLimit, Fallback: item.Fallback, Mode: item.Mode,
+			Tokenless: item.Tokenless,
 		})
 	}
 	return &DurableReservation{
@@ -63,6 +65,7 @@ func RestoreDurableReservation(snapshot *DurableReservation) (*Reservation, erro
 			RuntimeRef: item.RuntimeRef, Fingerprint: item.Fingerprint,
 			InputTokens: item.InputTokens, ReservedTokens: item.ReservedTokens,
 			TPMLimit: item.TPMLimit, Fallback: item.Fallback, Mode: item.Mode,
+			Tokenless: item.Tokenless,
 		})
 	}
 	workload, err := workloadadmission.RestoreDurableReservation(snapshot.Workload)

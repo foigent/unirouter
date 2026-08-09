@@ -16,6 +16,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/models"
 )
@@ -132,7 +133,10 @@ func (s *Service) Exchange(ctx context.Context, rootKey *models.ApiKey, request 
 	if !authority.active() || authority.APIKey.OrgID != rootKey.OrgID {
 		return TokenResponse{}, ErrInactiveRoot
 	}
-	if err := validateRootLimits(limits, authority.APIKey); err != nil {
+	if !authority.Boundary.CapabilityManagementAllowed() {
+		return TokenResponse{}, ErrManagementForbidden
+	}
+	if err := validateRootLimits(limits, authority); err != nil {
 		return TokenResponse{}, err
 	}
 
@@ -256,6 +260,13 @@ func (s *Service) Refresh(ctx context.Context, current *Claims) (TokenResponse, 
 func (s *Service) Revoke(ctx context.Context, rootKey *models.ApiKey, workflowID string) (RevokeResponse, error) {
 	if rootKey == nil || rootKey.ID <= 0 || !validWorkflowID(workflowID) {
 		return RevokeResponse{}, ErrInvalidRequest
+	}
+	authority, err := queryAuthority(ctx, s.db, rootKey.ID)
+	if err != nil {
+		return RevokeResponse{}, mapAuthorityError(err)
+	}
+	if authority.APIKey.OrgID != rootKey.OrgID || !authority.Boundary.CapabilityManagementAllowed() {
+		return RevokeResponse{}, ErrManagementForbidden
 	}
 	revokedAt := s.now().UTC()
 	newGeneration, err := randomID("gen_", 16)
@@ -417,16 +428,42 @@ func (s *Service) refreshJitterFor(jti string) time.Duration {
 	return time.Duration(binary.BigEndian.Uint64(random[:8])%span) - s.refreshJitter
 }
 
-func validateRootLimits(limits Limits, root models.ApiKey) error {
-	if limits.RPMLimit > effectiveRPM(root.RPMLimit) || limits.RPSLimit > effectiveRPS(root.QPSLimit) {
+func validateRootLimits(limits Limits, authority authoritySnapshot) error {
+	root := authority.APIKey
+	rpmLimit := effectiveRPM(root.RPMLimit)
+	rpsLimit := effectiveRPS(root.QPSLimit)
+	if root.GrantBound {
+		grantRPM := accessscope.ProjectDefaultRPMLimit
+		if root.GrantRPMLimit != nil {
+			grantRPM = *root.GrantRPMLimit
+		}
+		grantRPS := accessscope.ProjectDefaultRPSLimit
+		if root.GrantRPSLimit != nil {
+			grantRPS = *root.GrantRPSLimit
+		}
+		if grantRPM < rpmLimit {
+			rpmLimit = grantRPM
+		}
+		if grantRPS < rpsLimit {
+			rpsLimit = grantRPS
+		}
+	}
+	if limits.RPMLimit > rpmLimit || limits.RPSLimit > rpsLimit {
 		return fmt.Errorf("%w: capability rate limits exceed the root API key", ErrLimitExceeded)
+	}
+	if root.GrantConcurrencyLimit != nil && limits.ConcurrencyLimit > *root.GrantConcurrencyLimit {
+		return fmt.Errorf("%w: capability concurrency exceeds the live access grant", ErrLimitExceeded)
 	}
 	if root.BudgetLimit != nil && *root.BudgetLimit > 0 && limits.CostBudgetCents > int64(*root.BudgetLimit) {
 		return fmt.Errorf("%w: capability cost budget exceeds the root API key", ErrLimitExceeded)
 	}
 	rootModels := normalizedSet(strings.Split(root.AllowedModels, ","))
-	if len(rootModels) > 0 && !setSubset(limits.AllowedModels, rootModels) {
+	if root.ModelScopeDenied || (len(rootModels) > 0 && !setSubset(limits.AllowedModels, rootModels)) {
 		return fmt.Errorf("%w: capability models exceed the root API key", ErrLimitExceeded)
+	}
+	rootEndpoints := normalizedSet(strings.Split(root.AllowedEndpoints, ","))
+	if root.GrantBound && (root.EndpointDenied || !setSubset(limits.AllowedEndpoints, rootEndpoints)) {
+		return fmt.Errorf("%w: capability endpoints exceed the live access grant", ErrLimitExceeded)
 	}
 	return nil
 }

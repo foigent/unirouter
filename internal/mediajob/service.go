@@ -2,16 +2,19 @@ package mediajob
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/limitpolicy"
 )
 
 type Service struct {
-	store            Store
+	store            ServiceStore
 	objects          ObjectStore
 	cipher           PayloadCipher
 	authorizer       ModelAuthorizer
@@ -21,6 +24,7 @@ type Service struct {
 	now              func() time.Time
 	runtimeEnabled   bool
 	admissionEnabled bool
+	limits           LimitPolicyRuntime
 }
 
 type ServiceOptions struct {
@@ -29,20 +33,25 @@ type ServiceOptions struct {
 	Now              func() time.Time
 	RuntimeEnabled   bool
 	AdmissionEnabled bool
+	LimitPolicy      LimitPolicyRuntime
 }
 
 type SubmitInput struct {
-	Scope           Scope
-	APIKeyID        int64
-	RequestID       string
-	ClientRequestID string
-	IdempotencyKey  string
-	AllowedModels   string
-	Body            []byte
+	Scope              Scope
+	APIKeyID           int64
+	AccessGrantID      int64
+	AccessCredentialID int64
+	CredentialRef      string
+	RequestID          string
+	ClientRequestID    string
+	IdempotencyKey     string
+	AllowedModels      string
+	LimitSubject       limitpolicy.Subject
+	Body               []byte
 }
 
 func NewService(
-	store Store,
+	store ServiceStore,
 	objects ObjectStore,
 	cipher PayloadCipher,
 	authorizer ModelAuthorizer,
@@ -68,6 +77,9 @@ func NewService(
 	if options.AdmissionEnabled && !options.RuntimeEnabled {
 		return nil, domainError(ErrInvalid, "admission_requires_runtime")
 	}
+	if options.AdmissionEnabled && options.LimitPolicy == nil {
+		return nil, domainError(ErrUnavailable, "limit_policy_unavailable")
+	}
 	if options.Now == nil {
 		options.Now = time.Now
 	}
@@ -76,7 +88,7 @@ func NewService(
 		idempotencyKey: append([]byte(nil), idempotencyKey...),
 		retention:      options.Retention, maxAttempts: options.MaxAttempts,
 		now: options.Now, runtimeEnabled: options.RuntimeEnabled,
-		admissionEnabled: options.AdmissionEnabled,
+		admissionEnabled: options.AdmissionEnabled, limits: options.LimitPolicy,
 	}, nil
 }
 
@@ -88,9 +100,41 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 		strings.TrimSpace(input.RequestID) == "" {
 		return CreateResult{}, domainError(ErrInvalid, "submission_identity_invalid")
 	}
+	input.CredentialRef = strings.TrimSpace(input.CredentialRef)
+	bound := input.AccessGrantID > 0 || input.AccessCredentialID > 0 || input.CredentialRef != ""
+	if bound && (input.AccessGrantID <= 0 || input.AccessCredentialID <= 0 || input.CredentialRef == "") {
+		return CreateResult{}, domainError(ErrInvalid, "submission_access_binding_invalid")
+	}
 	request, err := DecodeSubmitRequest(input.Body)
 	if err != nil {
 		return CreateResult{}, err
+	}
+	requestHash, normalizedBody, err := RequestSHA256(request)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	idempotencyHash, err := AccessIdempotencyHash(
+		s.idempotencyKey,
+		input.Scope,
+		input.APIKeyID,
+		input.AccessCredentialID,
+		input.IdempotencyKey,
+	)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	subjectType, subjectID := mediaIdempotencySubject(input.APIKeyID, input.AccessCredentialID)
+	existing, existingErr := s.store.FindByIdempotency(ctx, IdempotencyLookup{
+		Scope: input.Scope, SubjectType: subjectType, SubjectID: subjectID, Hash: idempotencyHash,
+	})
+	if existingErr == nil {
+		if existing.RequestSHA256 != requestHash {
+			return CreateResult{}, domainError(ErrConflict, "idempotency_payload_conflict")
+		}
+		return CreateResult{Job: existing, Reused: true}, nil
+	}
+	if !errors.Is(existingErr, ErrNotFound) {
+		return CreateResult{}, existingErr
 	}
 	authorization, err := s.authorizer.AuthorizeModel(ctx, input.Scope, request.Model)
 	if err != nil {
@@ -114,42 +158,56 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 	) {
 		return CreateResult{}, domainError(ErrForbidden, "model_not_allowed_for_api_key")
 	}
-	requestHash, normalizedBody, err := RequestSHA256(request)
-	if err != nil {
-		return CreateResult{}, err
-	}
-	idempotencyHash, err := IdempotencyHash(
-		s.idempotencyKey,
-		input.Scope,
-		input.APIKeyID,
-		input.IdempotencyKey,
-	)
-	if err != nil {
-		return CreateResult{}, err
+	limitSubject := input.LimitSubject
+	limitSubject.OrgID = input.Scope.OrgID
+	limitSubject.ProjectID = input.Scope.ProjectID
+	limitSubject.APIKeyID = input.APIKeyID
+	limitSubject.AccessCredentialID = input.AccessCredentialID
+	limitSubject.CredentialRef = input.CredentialRef
+	limitSubject.AccessGrantID = input.AccessGrantID
+	limitSubject.Model = authorization.RoutingModel
+	var rateReservation *limitpolicy.Reservation
+	if s.admissionEnabled {
+		rateReservation, err = s.limits.Reserve(ctx, limitpolicy.AdmissionRequest{
+			OperationID: mediaLimitOperationID("rate", idempotencyHash),
+			Subject:     limitSubject, LeaseTTL: 2 * time.Minute,
+			Phase: limitpolicy.AdmissionPhaseRate,
+		})
+		if err != nil {
+			return CreateResult{}, mediaRateLimitError(err)
+		}
 	}
 	ciphertext, err := s.cipher.Seal(normalizedBody)
 	if err != nil {
+		s.cancelRateReservation(ctx, rateReservation)
 		return CreateResult{}, err
 	}
 	jobID, err := NewJobID()
 	if err != nil {
+		s.cancelRateReservation(ctx, rateReservation)
 		return CreateResult{}, err
 	}
 	now := s.now().UTC()
 	record := CreateRecord{
-		AllowCreate: s.admissionEnabled,
+		AllowCreate:          s.admissionEnabled,
+		ExpectedLimitSubject: limitSubject,
 		Job: Job{
 			ContractVersion: ContractVersion,
 			JobID:           jobID, Scope: input.Scope, APIKeyID: input.APIKeyID,
-			RequestID:         input.RequestID,
-			ClientRequestID:   strings.TrimSpace(input.ClientRequestID),
-			Operation:         OperationTextToImage,
-			ProfileID:         endpointprotocol.ProfileOpenAIImageGPT,
-			RequestedModel:    request.Model,
-			RoutingModel:      authorization.RoutingModel,
-			RequestSHA256:     requestHash,
-			IdempotencyHash:   idempotencyHash,
-			RequestCiphertext: ciphertext,
+			AccessGrantID:          positiveInt64Pointer(input.AccessGrantID),
+			AccessCredentialID:     positiveInt64Pointer(input.AccessCredentialID),
+			CredentialRef:          input.CredentialRef,
+			RequestID:              input.RequestID,
+			ClientRequestID:        strings.TrimSpace(input.ClientRequestID),
+			Operation:              OperationTextToImage,
+			ProfileID:              endpointprotocol.ProfileOpenAIImageGPT,
+			RequestedModel:         request.Model,
+			RoutingModel:           authorization.RoutingModel,
+			RequestSHA256:          requestHash,
+			IdempotencyHash:        idempotencyHash,
+			IdempotencySubjectType: subjectType,
+			IdempotencySubjectID:   subjectID,
+			RequestCiphertext:      ciphertext,
 			Lifecycle: Lifecycle{
 				Admission: AdmissionAccepted,
 				Queue:     QueueQueued, Lease: LeaseUnleased,
@@ -164,12 +222,59 @@ func (s *Service) Submit(ctx context.Context, input SubmitInput) (CreateResult, 
 	}
 	job, reused, err := s.store.CreateOrGet(ctx, record)
 	if err != nil {
+		s.cancelRateReservation(ctx, rateReservation)
 		return CreateResult{}, err
 	}
 	if reused && job.RequestSHA256 != requestHash {
 		return CreateResult{}, domainError(ErrConflict, "idempotency_payload_conflict")
 	}
+	if rateReservation != nil {
+		// Rate attempts remain in their exact RPS/RPM windows. Finalization only
+		// closes the idempotent operation handle; there is no concurrency or TPM
+		// reservation in this phase.
+		_ = s.limits.Finalize(context.WithoutCancel(ctx), rateReservation, 0)
+	}
 	return CreateResult{Job: job, Reused: reused}, nil
+}
+
+func mediaIdempotencySubject(apiKeyID, credentialID int64) (string, int64) {
+	if credentialID > 0 {
+		return "access_credential", credentialID
+	}
+	return "api_key", apiKeyID
+}
+
+func mediaLimitOperationID(phase, identity string) string {
+	digest := sha256.Sum256([]byte("unirouter.async-media.limit." + phase + "\x00" + identity))
+	return "media-" + phase + "-" + hex.EncodeToString(digest[:20])
+}
+
+func mediaRateLimitError(err error) error {
+	switch {
+	case errors.Is(err, limitpolicy.ErrRPSExceeded):
+		return domainError(ErrRateLimited, "limit_policy.rps_exceeded")
+	case errors.Is(err, limitpolicy.ErrRPMExceeded):
+		return domainError(ErrRateLimited, "limit_policy.rpm_exceeded")
+	case errors.Is(err, limitpolicy.ErrConflict):
+		return domainError(ErrConflict, "idempotency_payload_conflict")
+	default:
+		return domainError(ErrUnavailable, "limit_policy_state_unavailable")
+	}
+}
+
+func (s *Service) cancelRateReservation(ctx context.Context, reservation *limitpolicy.Reservation) {
+	if s == nil || s.limits == nil || reservation == nil || reservation.Idempotent {
+		return
+	}
+	_ = s.limits.CancelBeforeDispatch(context.WithoutCancel(ctx), reservation)
+}
+
+func positiveInt64Pointer(value int64) *int64 {
+	if value <= 0 {
+		return nil
+	}
+	copy := value
+	return &copy
 }
 
 func (s *Service) RuntimeEnabled() bool {

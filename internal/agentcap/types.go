@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -45,6 +46,7 @@ var (
 	ErrSuperseded          = errors.New("agent capability token superseded")
 	ErrConflict            = errors.New("agent capability conflict")
 	ErrLimitExceeded       = errors.New("agent capability limit exceeded")
+	ErrManagementForbidden = errors.New("agent capability management is not allowed for this root")
 	ErrRefreshTooEarly     = errors.New("agent capability refresh requested too early")
 	ErrUnavailable         = errors.New("agent capability state unavailable")
 	ErrCostBudgetExceeded  = errors.New("agent capability cost budget exceeded")
@@ -143,16 +145,11 @@ func (c *Claims) AllowsEndpoint(path string) bool {
 	if c == nil {
 		return false
 	}
-	return slices.Contains(c.Limits.AllowedEndpoints, path)
+	return slices.Contains(c.Limits.AllowedEndpoints, accessscope.CanonicalExecutionEndpoint(path))
 }
 
 func IsControlEndpoint(path string) bool {
-	switch path {
-	case "/v1/agent-capabilities/delegate", "/v1/agent-capabilities/refresh":
-		return true
-	default:
-		return false
-	}
+	return accessscope.IsCapabilityManagementEndpoint(path)
 }
 
 func (l Limits) ValidateShape() error {

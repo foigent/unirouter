@@ -53,7 +53,6 @@ func (b *Billing) ExtendReservation(ctx context.Context, request ExtendReservati
 		return nil, fmt.Errorf("begin reservation extension: %w", err)
 	}
 	defer tx.Rollback(ctx)
-
 	var frozenAmount, reservedBalance, reservedGranted int64
 	var reservedCompletion, currentSequence int
 	var balance, grantedBalance, outputPrice int64

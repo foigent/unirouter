@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000058_enterprise_project_role_separation"
+const LatestSupportedMigration = "000059_enterprise_access_provisioning"

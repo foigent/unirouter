@@ -91,7 +91,7 @@ func TestP6F07LimitPolicyControlPlaneIntegration(t *testing.T) {
 	crossKey := serve(t, http.MethodPost, "/api/v1/limit-policies", fmt.Sprintf(`{
 		"org_id":%d,"api_key_id":%d,"name":"cross-key","mode":"enforce","rpm_limit":10
 	}`, fx.orgA, fx.keyB), fx.platformA, fx.orgA, auth.RolePlatformAdmin)
-	assertStatus(t, crossKey, http.StatusBadRequest)
+	assertStatus(t, crossKey, http.StatusNotFound)
 
 	globalCreate := serve(t, http.MethodPost, "/api/v1/limit-policies", `{
 		"name":"platform-global-rps","mode":"enforce","failure_mode":"fail_closed","rps_limit":500

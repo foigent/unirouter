@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -189,7 +190,7 @@ func completedFeedAuthMockDB(t *testing.T, fixture completedFeedAuthFixture) *te
 	return &testutil.MockDB{
 		QueryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				if len(dest) != 15 && len(dest) != 16 {
+				if len(dest) != 15 && len(dest) != 16 && len(dest) != 18 && len(dest) != 19 {
 					t.Fatalf("unexpected API-key scan width: %d", len(dest))
 				}
 				*dest[0].(*int64) = 42
@@ -206,11 +207,15 @@ func completedFeedAuthMockDB(t *testing.T, fixture completedFeedAuthFixture) *te
 				*dest[11].(*int64) = 0
 				*dest[12].(*string) = fixture.keyType
 				*dest[13].(*string) = fixture.purpose
-				if len(dest) == 16 {
+				if len(dest) == 16 || len(dest) == 18 || len(dest) == 19 {
 					*dest[14].(*int64) = 1
 					*dest[15].(*string) = fixture.orgStatus
 				} else {
 					*dest[14].(*string) = fixture.orgStatus
+				}
+				if len(dest) == 18 {
+					*dest[16].(*string) = ""
+					*dest[17].(*sql.NullInt64) = sql.NullInt64{}
 				}
 				return nil
 			}}

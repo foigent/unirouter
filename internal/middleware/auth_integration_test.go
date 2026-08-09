@@ -219,6 +219,16 @@ func TestGatewayAuth_PersonalProjectAuthorityRevocation_Integration(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, serve().Code)
 
+	_, err = pool.Exec(t.Context(), `UPDATE project_members SET role='project_viewer' WHERE project_id=$1 AND user_id=$2`, projectID, userID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusUnauthorized, serve().Code, "legacy personal keys must stop calling after viewer downgrade")
+	_, err = pool.Exec(t.Context(), `UPDATE project_members SET role='project_user' WHERE project_id=$1 AND user_id=$2`, projectID, userID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, serve().Code)
+	_, err = pool.Exec(t.Context(), `UPDATE project_members SET role='project_admin' WHERE project_id=$1 AND user_id=$2`, projectID, userID)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, serve().Code)
+
 	_, err = pool.Exec(t.Context(), `DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`, projectID, userID)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusUnauthorized, serve().Code)

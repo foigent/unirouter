@@ -72,6 +72,26 @@ const endpointGroups = [
     ],
   },
   {
+    area: 'Access Provisioning',
+    endpoints: [
+      ['POST', '/api/v1/access-requests', '提交本人、受托或管理员直接授权请求；迁移、Bootstrap 与恢复模式不接受公共客户端自报'],
+      ['GET', '/api/v1/access-requests', '分页读取本人请求，或在 live 项目管理权限下读取项目审核队列'],
+      ['GET', '/api/v1/access-requests/{ref}', '读取一个 actor-scoped 请求；不可见对象与不存在对象同为 404'],
+      ['POST', '/api/v1/access-requests/{ref}/decision', '按 expected revision 审批或拒绝 needs_review 请求'],
+      ['POST', '/api/v1/access-requests/{ref}/cancel', '提交者或 Workload sponsor 幂等取消尚未决策的请求'],
+      ['GET', '/api/v1/access-grants', '分页读取当前账号可见的项目访问授权'],
+      ['GET', '/api/v1/access-grants/{ref}', '读取一个 actor-scoped Access Grant'],
+      ['POST', '/api/v1/access-grants/{ref}/suspend', '管理员暂停 Access Grant'],
+      ['POST', '/api/v1/access-grants/{ref}/resume', '管理员在 live subject 复核后恢复 Access Grant'],
+      ['POST', '/api/v1/access-grants/{ref}/revoke', '管理员永久撤销 Grant 及其逻辑 Credential families'],
+      ['GET', '/api/v1/access-grants/{ref}/credentials', '分页读取无 secret 的逻辑 Credential family 与版本元数据'],
+      ['POST', '/api/v1/access-grants/{ref}/credentials', '为有权主体签发一次性可见的 Credential secret'],
+      ['POST', '/api/v1/access-grants/{ref}/credentials/{key_id}/rotate', '原子替换指定 secret version；旧 secret 在提交后立即失效'],
+      ['POST', '/api/v1/access-grants/{ref}/credentials/{key_id}/revoke', '撤销指定逻辑 Credential family 及全部版本'],
+      ['GET', '/api/v1/access-provisioning/legacy-preview', '组织管理员只读预览 legacy Key 与 Workload 分类，不执行回填'],
+    ],
+  },
+  {
     area: '项目工作台',
     endpoints: [
       ['GET', '/api/v1/projects', '当前账号可访问项目'],
@@ -343,6 +363,17 @@ function endpointVisibleForAuthz(area: string, method: string, path: string, aut
     return method === 'GET' ? hasProjectRead : hasProjectWrite;
   }
   if (isPlatformAdminRole(organizationRole)) return true;
+
+  if (area === 'Access Provisioning') {
+    if (path.endsWith('/legacy-preview')) return isOrgAdminRole(organizationRole);
+    if (path.includes('/credentials')) {
+      return isOrgAdminRole(organizationRole) || hasProjectAdmin || membershipRole === 'project_user';
+    }
+    if (path.endsWith('/decision') || path.endsWith('/suspend') || path.endsWith('/resume') || path.endsWith('/revoke')) {
+      return isOrgAdminRole(organizationRole) || hasProjectAdmin;
+    }
+    return Boolean(organizationRole);
+  }
 
   if (area === '项目工作台') {
     const isMemberPath = path.includes('/members');

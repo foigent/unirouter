@@ -4,6 +4,8 @@
 package workloadapp
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -11,7 +13,12 @@ import (
 	"strings"
 )
 
-const ContractVersion = "unirouter.workload-application.v1"
+const (
+	ContractVersion         = "unirouter.workload-application.v2"
+	LegacyContractVersion   = "unirouter.workload-application.v1"
+	IdentityContractVersion = "unirouter.workload-identity.v2"
+	LegacyIdentityVersion   = "unirouter.workload-identity.v1"
+)
 
 const (
 	KindService            = "service"
@@ -54,6 +61,20 @@ type Draft struct {
 	OwnerTeam      string `json:"owner_team"`
 	Description    string `json:"description"`
 	Status         string `json:"status"`
+}
+
+type V2Draft struct {
+	ApplicationRef       string   `json:"application_ref"`
+	LogicalRef           string   `json:"logical_ref"`
+	DisplayName          string   `json:"display_name"`
+	Kind                 string   `json:"kind"`
+	Environment          string   `json:"environment"`
+	ProductionUse        bool     `json:"production_use"`
+	ClientProfiles       []string `json:"client_profiles"`
+	PrimaryClientProfile string   `json:"primary_client_profile,omitempty"`
+	OwnerTeam            string   `json:"owner_team"`
+	Description          string   `json:"description"`
+	Status               string   `json:"status"`
 }
 
 type ClientProfile struct {
@@ -175,6 +196,85 @@ func NormalizeDraft(input Draft) (Draft, error) {
 		return Draft{}, fmt.Errorf("%w: status", ErrInvalid)
 	}
 	return input, nil
+}
+
+func NormalizeV2Draft(input V2Draft) (V2Draft, error) {
+	input.ApplicationRef = strings.ToLower(strings.TrimSpace(input.ApplicationRef))
+	input.LogicalRef = strings.ToLower(strings.TrimSpace(input.LogicalRef))
+	input.DisplayName = strings.TrimSpace(input.DisplayName)
+	input.Kind = strings.ToLower(strings.TrimSpace(input.Kind))
+	input.Environment = strings.ToLower(strings.TrimSpace(input.Environment))
+	input.PrimaryClientProfile = strings.ToLower(strings.TrimSpace(input.PrimaryClientProfile))
+	input.OwnerTeam = strings.TrimSpace(input.OwnerTeam)
+	input.Description = strings.TrimSpace(input.Description)
+	input.Status = strings.ToLower(strings.TrimSpace(input.Status))
+	if input.Status == "" {
+		input.Status = StatusActive
+	}
+	if !applicationRefPattern.MatchString(input.ApplicationRef) ||
+		!regexp.MustCompile(`^workload_[a-z0-9][a-z0-9._-]{2,54}$`).MatchString(input.LogicalRef) {
+		return V2Draft{}, fmt.Errorf("%w: identity_ref", ErrInvalid)
+	}
+	if input.DisplayName == "" || len(input.DisplayName) > 160 ||
+		!slices.Contains([]string{KindService, KindAgent, KindWorkflow, KindIntegrationAdapter}, input.Kind) ||
+		!environmentPattern.MatchString(input.Environment) || len(input.OwnerTeam) > 160 || len(input.Description) > 1000 ||
+		!slices.Contains([]string{StatusActive, StatusDisabled}, input.Status) {
+		return V2Draft{}, fmt.Errorf("%w: metadata", ErrInvalid)
+	}
+	profiles := make([]string, 0, len(input.ClientProfiles))
+	seen := make(map[string]struct{}, len(input.ClientProfiles))
+	for _, raw := range input.ClientProfiles {
+		profile := strings.ToLower(strings.TrimSpace(raw))
+		if _, ok := LookupClientProfile(profile); !ok {
+			return V2Draft{}, fmt.Errorf("%w: client_profiles", ErrInvalid)
+		}
+		if _, ok := seen[profile]; !ok {
+			seen[profile] = struct{}{}
+			profiles = append(profiles, profile)
+		}
+	}
+	slices.Sort(profiles)
+	input.ClientProfiles = profiles
+	if input.PrimaryClientProfile != "" {
+		if _, ok := seen[input.PrimaryClientProfile]; !ok {
+			return V2Draft{}, fmt.Errorf("%w: primary_client_profile", ErrInvalid)
+		}
+	}
+	return input, nil
+}
+
+// NormalizeCompatibleV2Kind accepts the canonical v2 vocabulary plus the
+// three unambiguous legacy service-kind spellings supported for one endpoint
+// compatibility window. It never maps interactive or personal identities.
+func NormalizeCompatibleV2Kind(raw string) (kind string, adapted bool, err error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case KindService, KindAgent, KindWorkflow, KindIntegrationAdapter:
+		return strings.ToLower(strings.TrimSpace(raw)), false, nil
+	case "batch_job":
+		return KindWorkflow, true, nil
+	case "agent_runtime":
+		return KindAgent, true, nil
+	case "service_integration", "integration":
+		return KindIntegrationAdapter, true, nil
+	default:
+		return "", false, fmt.Errorf("%w: kind", ErrInvalid)
+	}
+}
+
+// DeriveV2LogicalRef deterministically adapts an unambiguous legacy
+// application_ref. Long refs retain a readable prefix plus a stable digest;
+// no database lookup or actor-controlled randomness participates.
+func DeriveV2LogicalRef(applicationRef string) (string, error) {
+	applicationRef = strings.ToLower(strings.TrimSpace(applicationRef))
+	if !applicationRefPattern.MatchString(applicationRef) {
+		return "", fmt.Errorf("%w: application_ref", ErrInvalid)
+	}
+	suffix := strings.TrimPrefix(applicationRef, "app_")
+	if len(suffix) > 55 {
+		digest := sha256.Sum256([]byte(applicationRef))
+		suffix = suffix[:38] + "_" + hex.EncodeToString(digest[:8])
+	}
+	return "workload_" + suffix, nil
 }
 
 func ClientProfiles() []ClientProfile {

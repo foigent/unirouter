@@ -35,7 +35,8 @@ func (relay *Relay) pinGuardrail(ctx context.Context, model, endpoint string) *g
 	}
 	return relay.guardrail.Pin(guardrail.Subject{
 		OrgID: middleware.GetOrgIDFromContext(ctx), ProjectID: middleware.GetProjectIDFromContext(ctx),
-		APIKeyID: middleware.GetKeyIDFromContext(ctx), Model: model, Endpoint: endpoint,
+		APIKeyID: middleware.GetKeyIDFromContext(ctx), AccessCredentialID: middleware.GetAccessCredentialIDFromContext(ctx),
+		Model: model, Endpoint: endpoint,
 	})
 }
 

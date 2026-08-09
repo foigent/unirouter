@@ -57,19 +57,24 @@ func TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration(t *testing.T) {
 	createBody := []byte(`{"org_id":` + jsonNumber(orgID) + `,"project_id":` + jsonNumber(projectID) + `,"name":"developer-project-key","allowed_models":"company-chat","rpm_limit":60,"qps_limit":10}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
-	createReq = createReq.WithContext(projectActorContext(createReq.Context(), orgID, userID, auth.RoleDeveloper, "batch9-create-key"))
+	createReq.Header.Set("Authorization", "Bearer "+mustJWT(t, pool, userID, orgID, auth.RoleDeveloper))
+	createReq.Header.Set("X-Request-ID", "batch9-create-key")
 	createRec := httptest.NewRecorder()
 
-	h.CreateAPIKey(createRec, createReq)
+	middleware.AdminAuth(pool, prd2E2EJWTSecret)(http.HandlerFunc(h.CreateAPIKey)).ServeHTTP(createRec, createReq)
 
 	require.Equal(t, http.StatusCreated, createRec.Code, "body: %s", createRec.Body.String())
 	var createResp struct {
-		ID        int64  `json:"id"`
-		Key       string `json:"key"`
-		ProjectID int64  `json:"project_id"`
+		ID            int64  `json:"id"`
+		Key           string `json:"key"`
+		Name          string `json:"name"`
+		ProjectID     int64  `json:"project_id"`
+		CredentialRef string `json:"credential_ref"`
 	}
 	require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &createResp))
 	require.NotEmpty(t, createResp.Key)
+	require.Equal(t, "developer-project-key", createResp.Name)
+	require.NotEmpty(t, createResp.CredentialRef)
 	require.Equal(t, projectID, createResp.ProjectID)
 
 	relay := gateway.NewRelay(pool, nil, gateway.NewRouter(pool), billing.NewBilling(pool, nil), filter.NewDFAFilter(nil), prd2E2EEncryptionKey)
@@ -178,17 +183,19 @@ func TestPRD2P0DeveloperProjectKeyGatewayE2E_Integration(t *testing.T) {
 	require.Equal(t, "settled", idemStatus)
 
 	var auditProjectID, auditUserID int64
-	var auditSource, auditName string
+	var auditSource, auditCredentialRef string
 	err = pool.QueryRow(ctx,
-		`SELECT project_id, user_id, source, after_state->>'name'
-		 FROM audit_logs WHERE action = 'apikey.create' AND resource_id = $1`,
+		`SELECT project_id, user_id, source, after_state->>'credential_ref'
+		 FROM audit_logs
+		 WHERE action = 'access_grant.credential.issue'
+		   AND resource = 'api_key' AND resource_id = $1`,
 		jsonNumber(createResp.ID),
-	).Scan(&auditProjectID, &auditUserID, &auditSource, &auditName)
+	).Scan(&auditProjectID, &auditUserID, &auditSource, &auditCredentialRef)
 	require.NoError(t, err)
 	require.Equal(t, projectID, auditProjectID)
 	require.Equal(t, userID, auditUserID)
-	require.Equal(t, "developer_console", auditSource)
-	require.Equal(t, "developer-project-key", auditName)
+	require.Equal(t, "admin_console", auditSource)
+	require.Equal(t, createResp.CredentialRef, auditCredentialRef)
 
 	assertGatewayModelDenied(t, chatHandler, createResp.Key, "batch9-p0-e2e-denied", "gpt-4o-mini", "project_model_not_allowed")
 	assertGatewayModelDenied(t, chatHandler, createResp.Key, "batch9-p0-e2e-retired", "legacy-model", "model_retired")
@@ -213,10 +220,11 @@ func TestGatewayUnregisteredModelAllowedButAudited_Integration(t *testing.T) {
 	createBody := []byte(`{"org_id":` + jsonNumber(orgID) + `,"project_id":` + jsonNumber(projectID) + `,"name":"unregistered-key","allowed_models":"unregistered-chat","rpm_limit":60,"qps_limit":10}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/keys", bytes.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
-	createReq = createReq.WithContext(projectActorContext(createReq.Context(), orgID, userID, auth.RoleDeveloper, "batch20-create-key"))
+	createReq.Header.Set("Authorization", "Bearer "+mustJWT(t, pool, userID, orgID, auth.RoleDeveloper))
+	createReq.Header.Set("X-Request-ID", "batch20-create-key")
 	createRec := httptest.NewRecorder()
 
-	h.CreateAPIKey(createRec, createReq)
+	middleware.AdminAuth(pool, prd2E2EJWTSecret)(http.HandlerFunc(h.CreateAPIKey)).ServeHTTP(createRec, createReq)
 
 	require.Equal(t, http.StatusCreated, createRec.Code, "body: %s", createRec.Body.String())
 	var createResp struct {

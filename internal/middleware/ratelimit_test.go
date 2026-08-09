@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -327,6 +328,153 @@ func TestRateLimit_DefaultLimits(t *testing.T) {
 		t.Fatalf("expected 200 with default limits, got %d", rec.Code)
 	}
 	_ = mr
+}
+
+func TestRateLimitGrantBoundUsesCurrentGrantCeilingAndHardZero(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	credentialID := int64(91)
+	grantID := int64(92)
+	grantRPM, grantRPS := 2, 1
+	apiKey := &models.ApiKey{
+		ID: 90, AccessCredentialID: &credentialID, AccessGrantID: &grantID, GrantBound: true,
+		RPMLimit: 30, QPSLimit: 5, GrantRPMLimit: &grantRPM, GrantRPSLimit: &grantRPS,
+	}
+	handlerCalls := 0
+	handler := RateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		handlerCalls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	invoke := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/v1/media/jobs", nil)
+		req = req.WithContext(context.WithValue(req.Context(), CtxAPIKey, apiKey))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	if first := invoke(); first.Code != http.StatusOK {
+		t.Fatalf("first media admission = %d %s", first.Code, first.Body.String())
+	}
+	if second := invoke(); second.Code != http.StatusTooManyRequests ||
+		!strings.Contains(second.Body.String(), "limit_policy.rps_exceeded") {
+		t.Fatalf("second media admission = %d %s", second.Code, second.Body.String())
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("downstream calls = %d, want 1", handlerCalls)
+	}
+
+	zero := 0
+	apiKey.GrantRPSLimit = &zero
+	if denied := invoke(); denied.Code != http.StatusTooManyRequests ||
+		!strings.Contains(denied.Body.String(), "limit_policy.zero_limit") {
+		t.Fatalf("zero Grant RPS admission = %d %s", denied.Code, denied.Body.String())
+	}
+}
+
+func TestRateLimitGrantBoundAtomicallyAggregatesCredentialAndGrant(t *testing.T) {
+	mr, rdb := setupMiniredis(t)
+	grantID := int64(700)
+	grantRPM, grantRPS := 100, 2
+	credentialOne, credentialTwo, credentialThree := int64(701), int64(702), int64(703)
+	key := func(keyID, credentialID int64, targetGrantID *int64, credentialRPS int) *models.ApiKey {
+		return &models.ApiKey{
+			ID: keyID, AccessCredentialID: &credentialID, AccessGrantID: targetGrantID, GrantBound: true,
+			RPMLimit: 100, QPSLimit: credentialRPS, GrantRPMLimit: &grantRPM, GrantRPSLimit: &grantRPS,
+		}
+	}
+	first := key(710, credentialOne, &grantID, 5)
+	second := key(711, credentialTwo, &grantID, 5)
+	rejectedFamily := key(712, credentialThree, &grantID, 5)
+	var downstream atomic.Int64
+	handler := RateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		downstream.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	invoke := func(apiKey *models.ApiKey) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/v1/media/jobs", nil)
+		req = req.WithContext(context.WithValue(req.Context(), CtxAPIKey, apiKey))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	requireStatus := func(rec *httptest.ResponseRecorder, status int) {
+		t.Helper()
+		if rec.Code != status {
+			t.Fatalf("admission = %d %s, want %d", rec.Code, rec.Body.String(), status)
+		}
+	}
+	requireStatus(invoke(first), http.StatusOK)
+	requireStatus(invoke(second), http.StatusOK)
+	requireStatus(invoke(rejectedFamily), http.StatusTooManyRequests)
+	if got := rdb.ZCard(context.Background(), "rl:credential:qps:"+fmt.Sprint(credentialThree)).Val(); got != 0 {
+		t.Fatalf("Grant-rejected request consumed %d credential slots", got)
+	}
+
+	otherGrantID := int64(800)
+	requireStatus(invoke(key(713, credentialThree, &otherGrantID, 5)), http.StatusOK)
+
+	mr.FlushAll()
+	narrowCredential := key(714, credentialOne, &grantID, 1)
+	requireStatus(invoke(narrowCredential), http.StatusOK)
+	requireStatus(invoke(narrowCredential), http.StatusTooManyRequests)
+	if got := rdb.ZCard(context.Background(), "rl:grant:qps:"+fmt.Sprint(grantID)).Val(); got != 1 {
+		t.Fatalf("credential-rejected request consumed Grant slot; got %d", got)
+	}
+
+	// Physical replacement keeps the same logical family bucket.
+	mr.FlushAll()
+	predecessor := key(715, credentialOne, &grantID, 1)
+	successor := key(716, credentialOne, &grantID, 1)
+	requireStatus(invoke(predecessor), http.StatusOK)
+	requireStatus(invoke(successor), http.StatusTooManyRequests)
+
+	if got := downstream.Load(); got != 5 {
+		t.Fatalf("downstream calls = %d, want 5", got)
+	}
+}
+
+func TestRateLimitGrantAggregateConcurrentRequestsDoNotExceedLimit(t *testing.T) {
+	_, rdb := setupMiniredis(t)
+	grantID := int64(900)
+	grantRPM, grantRPS := 100, 10
+	credentialOne, credentialTwo := int64(901), int64(902)
+	keys := []*models.ApiKey{
+		{ID: 910, AccessCredentialID: &credentialOne, AccessGrantID: &grantID, GrantBound: true,
+			RPMLimit: 100, QPSLimit: 100, GrantRPMLimit: &grantRPM, GrantRPSLimit: &grantRPS},
+		{ID: 911, AccessCredentialID: &credentialTwo, AccessGrantID: &grantID, GrantBound: true,
+			RPMLimit: 100, QPSLimit: 100, GrantRPMLimit: &grantRPM, GrantRPSLimit: &grantRPS},
+	}
+	handler := RateLimit(rdb)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	const requestCount = 40
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var allowed, rejected atomic.Int64
+	for index := 0; index < requestCount; index++ {
+		apiKey := keys[index%len(keys)]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			req := httptest.NewRequest(http.MethodPost, "/v1/media/jobs", nil)
+			req = req.WithContext(context.WithValue(req.Context(), CtxAPIKey, apiKey))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			switch rec.Code {
+			case http.StatusOK:
+				allowed.Add(1)
+			case http.StatusTooManyRequests:
+				rejected.Add(1)
+			default:
+				t.Errorf("unexpected status %d: %s", rec.Code, rec.Body.String())
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if allowed.Load() != int64(grantRPS) || rejected.Load() != requestCount-int64(grantRPS) {
+		t.Fatalf("allowed=%d rejected=%d, want %d/%d", allowed.Load(), rejected.Load(), grantRPS, requestCount-grantRPS)
+	}
 }
 
 func TestRateLimit_NegativeLimits_UseDefaults(t *testing.T) {

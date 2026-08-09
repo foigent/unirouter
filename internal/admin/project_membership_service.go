@@ -3,12 +3,13 @@ package admin
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/accessgrantlifecycle"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/principallock"
 )
-
-const projectMembershipMutationLockBase int64 = 4120000000000000000
 
 var (
 	errProjectMembershipUpdate = errors.New("failed to update project memberships")
@@ -25,11 +26,10 @@ type compatibilityRoleTransition struct {
 // so an active project user cannot pass a last-membership check in two
 // concurrent requests and commit with no projects.
 func lockProjectMembershipMutation(ctx context.Context, tx pgx.Tx, userID int64) error {
-	if userID <= 0 || userID > (1<<63-1)-projectMembershipMutationLockBase {
+	if err := principallock.LockUser(ctx, tx, userID); err != nil {
 		return errProjectMembershipUpdate
 	}
-	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, projectMembershipMutationLockBase+userID)
-	return err
+	return nil
 }
 
 // syncUserCompatibilityRoleTx keeps users.role usable by version-2 JWTs and
@@ -102,21 +102,15 @@ func projectCompatibilityRoleTx(ctx context.Context, tx pgx.Tx, userID int64) (s
 	return conservativeRole, err
 }
 
-func disablePersonalCredentialsForMembershipTx(ctx context.Context, tx pgx.Tx, userID, orgID, projectID int64) (int64, error) {
-	tag, err := tx.Exec(ctx,
-		`UPDATE api_keys
-		 SET status = 'disabled', updated_at = NOW()
-		 WHERE owner_user_id = $1
-		   AND org_id = $2
-		   AND project_id = $3
-		   AND key_type = 'personal'
-		   AND status <> 'disabled'`,
-		userID, orgID, projectID,
+func disablePersonalCredentialsForMembershipTx(ctx context.Context, tx pgx.Tx, userID, orgID, projectID, actorUserID int64, lifecycleReason string) (int64, error) {
+	result, err := accessgrantlifecycle.RevokeUser(
+		ctx, tx, orgID, projectID, userID, actorUserID,
+		lifecycleReason, time.Now().UTC(),
 	)
 	if err != nil {
 		return 0, err
 	}
-	return tag.RowsAffected(), nil
+	return result.CredentialFamilies + result.SecretVersions + result.LegacyKeys, nil
 }
 
 func listUserProjectIDsTx(ctx context.Context, tx pgx.Tx, userID, orgID int64) ([]int64, error) {

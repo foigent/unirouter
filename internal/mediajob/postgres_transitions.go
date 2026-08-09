@@ -256,7 +256,7 @@ func (s *PostgresStore) Claim(
 		   SET queue_state='leased', lease_state='leased',
 		       execution_state='pending', lease_owner=$1,
 		       lease_fence=lease_fence+1, lease_expires_at=$2,
-		       attempt=attempt+1, updated_at=$3
+		       updated_at=$3
 		 WHERE job_id=$4 AND execution_state <> 'terminal'`,
 		owner, expiresAt, now, jobID,
 	)
@@ -285,11 +285,12 @@ func (s *PostgresStore) MarkRunning(
 	tag, err := s.db.Exec(ctx, `
 		UPDATE async_media_jobs
 		   SET execution_state='running', started_at=COALESCE(started_at,$1),
-		       updated_at=$1
+		       attempt=attempt+1,updated_at=$1
 		 WHERE job_id=$2 AND org_id=$3 AND project_id=$4
 		   AND lease_owner=$5 AND lease_fence=$6
 		   AND lease_expires_at > $1 AND queue_state='leased'
 		   AND execution_state='pending'
+		   AND attempt<max_attempts
 		   AND provider_outcome='pending'
 		   AND cancellation_state='not_requested'`,
 		now, lease.JobID, lease.Scope.OrgID, lease.Scope.ProjectID,

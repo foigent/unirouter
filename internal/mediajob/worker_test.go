@@ -7,25 +7,32 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/limitpolicy"
 )
 
 type workerStoreFixture struct {
-	job               *Job
-	observedJob       *Job
-	markRunningErr    error
-	markProviderErr   error
-	markProviderCalls int
-	providerMarked    bool
-	successes         int
-	failures          int
-	outputFailures    int
-	unknowns          int
-	requeues          int
-	recoverQueues     int
-	lastPersisted     PersistedResult
-	purgeLease        *PurgeLease
-	purgeRetries      int
-	purged            int
+	job                 *Job
+	observedJob         *Job
+	markRunningErr      error
+	executionSubjectErr error
+	markProviderErr     error
+	markProviderCalls   int
+	providerMarked      bool
+	attachCalls         int
+	attachAttempts      []int
+	successes           int
+	failures            int
+	failureAttempts     []int
+	outputFailures      int
+	unknowns            int
+	requeues            int
+	requeueAttempts     []int
+	recoverQueues       int
+	lastPersisted       PersistedResult
+	purgeLease          *PurgeLease
+	purgeRetries        int
+	purged              int
 }
 
 func (s *workerStoreFixture) CreateOrGet(context.Context, CreateRecord) (Job, bool, error) {
@@ -77,9 +84,10 @@ func (s *workerStoreFixture) CompleteSuccess(
 	return Job{}, nil
 }
 func (s *workerStoreFixture) CompleteFailure(
-	context.Context, Lease, string, time.Time,
+	_ context.Context, lease Lease, _ string, _ time.Time,
 ) (Job, error) {
 	s.failures++
+	s.failureAttempts = append(s.failureAttempts, lease.Attempt)
 	return Job{}, nil
 }
 func (s *workerStoreFixture) CompleteUnknown(
@@ -95,9 +103,10 @@ func (s *workerStoreFixture) CompleteOutputFailure(
 	return Job{}, nil
 }
 func (s *workerStoreFixture) Requeue(
-	context.Context, Lease, string, time.Time, time.Time,
+	_ context.Context, lease Lease, _ string, _ time.Time, _ time.Time,
 ) (Job, error) {
 	s.requeues++
+	s.requeueAttempts = append(s.requeueAttempts, lease.Attempt)
 	return Job{}, nil
 }
 func (s *workerStoreFixture) RequeueRecovery(
@@ -127,6 +136,52 @@ func (s *workerStoreFixture) MarkPurged(
 ) (Job, error) {
 	s.purged++
 	return Job{}, nil
+}
+
+func (s *workerStoreFixture) ExecutionLimitSubject(_ context.Context, lease Lease) (limitpolicy.Subject, error) {
+	if s.executionSubjectErr != nil {
+		return limitpolicy.Subject{}, s.executionSubjectErr
+	}
+	return limitpolicy.Subject{
+		OrgID: lease.Scope.OrgID, ProjectID: lease.Scope.ProjectID,
+		APIKeyID: 1, Model: lease.Job.RoutingModel,
+		BaseRPSLimit: 10, BaseRPMLimit: 60,
+	}, nil
+}
+
+func (s *workerStoreFixture) AttachExecutionReservation(
+	_ context.Context,
+	lease Lease,
+	_ limitpolicy.Subject,
+	_ *limitpolicy.DurableReservation,
+	_ string,
+	_ time.Time,
+	_ time.Time,
+) (ExecutionReservation, bool, error) {
+	s.attachCalls++
+	s.attachAttempts = append(s.attachAttempts, lease.Attempt)
+	if s.markRunningErr != nil {
+		return ExecutionReservation{}, false, s.markRunningErr
+	}
+	return ExecutionReservation{ProviderAttempt: lease.Attempt + 1}, false, nil
+}
+
+func (*workerStoreFixture) PendingExecutionTerminal(
+	context.Context, string, int64, string, time.Time, time.Duration,
+) (*ExecutionReservation, error) {
+	return nil, nil
+}
+
+func (*workerStoreFixture) MarkExecutionTerminalized(
+	context.Context, ExecutionReservation, time.Time, string,
+) error {
+	return nil
+}
+
+func (*workerStoreFixture) ReleaseExecutionTerminalClaim(
+	context.Context, ExecutionReservation, time.Time, string,
+) error {
+	return nil
 }
 
 type workerObjectFixture struct {
@@ -173,6 +228,7 @@ type workerProviderFixture struct {
 	result ProviderResult
 	err    error
 	calls  int
+	jobs   []Job
 }
 
 type blockingWorkerProvider struct {
@@ -191,9 +247,10 @@ func (p *blockingWorkerProvider) Generate(
 }
 
 func (p *workerProviderFixture) Generate(
-	context.Context, Job, NormalizedRequest,
+	_ context.Context, job Job, _ NormalizedRequest,
 ) (ProviderResult, error) {
 	p.calls++
+	p.jobs = append(p.jobs, job)
 	return p.result, p.err
 }
 
@@ -227,6 +284,9 @@ func TestWorkerCancellationAndRetryBoundaries(t *testing.T) {
 		if err != nil || !claimed || provider.calls != 0 || objects.persistCalls != 0 {
 			t.Fatalf("claimed=%t err=%v provider=%d persist=%d", claimed, err, provider.calls, objects.persistCalls)
 		}
+		if len(store.attachAttempts) != 1 || store.attachAttempts[0] != 0 {
+			t.Fatalf("pre-dispatch cancellation consumed provider attempt: %v", store.attachAttempts)
+		}
 	})
 	t.Run("retryable provider failure", func(t *testing.T) {
 		job, cipher := leasedWorkerJob(t, now)
@@ -240,10 +300,14 @@ func TestWorkerCancellationAndRetryBoundaries(t *testing.T) {
 		if err != nil || store.requeues != 1 || store.failures != 0 {
 			t.Fatalf("err=%v requeues=%d failures=%d", err, store.requeues, store.failures)
 		}
+		if len(provider.jobs) != 1 || provider.jobs[0].Attempt != 1 ||
+			len(store.requeueAttempts) != 1 || store.requeueAttempts[0] != 1 {
+			t.Fatalf("provider retry attempt evidence provider=%v requeue=%v", provider.jobs, store.requeueAttempts)
+		}
 	})
 	t.Run("attempt exhaustion", func(t *testing.T) {
 		job, cipher := leasedWorkerJob(t, now)
-		job.Attempt = job.MaxAttempts
+		job.Attempt = job.MaxAttempts - 1
 		store := &workerStoreFixture{job: &job}
 		objects := &workerObjectFixture{}
 		provider := &workerProviderFixture{
@@ -253,6 +317,23 @@ func TestWorkerCancellationAndRetryBoundaries(t *testing.T) {
 		_, err := worker.RunOnce(context.Background())
 		if err != nil || store.requeues != 0 || store.failures != 1 {
 			t.Fatalf("err=%v requeues=%d failures=%d", err, store.requeues, store.failures)
+		}
+		if len(provider.jobs) != 1 || provider.jobs[0].Attempt != job.MaxAttempts ||
+			len(store.failureAttempts) != 1 || store.failureAttempts[0] != job.MaxAttempts {
+			t.Fatalf("exhaustion did not use persisted provider attempt provider=%v failures=%v", provider.jobs, store.failureAttempts)
+		}
+	})
+	t.Run("authority change before dispatch consumes no provider attempt", func(t *testing.T) {
+		job, cipher := leasedWorkerJob(t, now)
+		store := &workerStoreFixture{job: &job, executionSubjectErr: domainError(ErrForbidden, "execution_authority_changed")}
+		provider := &workerProviderFixture{}
+		worker := newWorkerFixture(t, store, &workerObjectFixture{}, provider, cipher, now)
+		claimed, err := worker.RunOnce(context.Background())
+		if !claimed || !errors.Is(err, ErrForbidden) || provider.calls != 0 || store.attachCalls != 0 {
+			t.Fatalf("claimed=%t err=%v provider=%d attach=%d", claimed, err, provider.calls, store.attachCalls)
+		}
+		if len(store.failureAttempts) != 1 || store.failureAttempts[0] != 0 {
+			t.Fatalf("authority failure consumed provider attempt: %v", store.failureAttempts)
 		}
 	})
 	t.Run("ambiguous provider outcome is terminal and never retried", func(t *testing.T) {
@@ -292,6 +373,59 @@ func TestWorkerCancellationAndRetryBoundaries(t *testing.T) {
 			)
 		}
 	})
+}
+
+func TestWorkerExecutionAdmissionContentionDoesNotConsumeProviderAttempts(t *testing.T) {
+	now := time.Date(2026, 8, 9, 9, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "concurrency capacity", err: limitpolicy.ErrConcurrencyExceeded},
+		{name: "workload capacity", err: limitpolicy.ErrWorkloadCapacity},
+		{name: "workload state unavailable", err: limitpolicy.ErrStateUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			job, cipher := leasedWorkerJob(t, now)
+			store := &workerStoreFixture{}
+			objects := &workerObjectFixture{}
+			provider := &workerProviderFixture{result: ProviderResult{
+				MappedModel: "gpt-image-1", Bytes: fixturePNG(),
+				MediaType: "image/png", Outcome: imageOutcome(),
+			}}
+			limits := &mediaLimitRuntimeFixture{reserveErr: test.err}
+			worker := newWorkerFixtureWithLimits(t, store, objects, provider, cipher, now, limits)
+
+			for claim := 1; claim <= job.MaxAttempts+1; claim++ {
+				job.LeaseFence = int64(claim)
+				store.job = &job
+				claimed, err := worker.RunOnce(context.Background())
+				if !claimed || err != nil {
+					t.Fatalf("contention claim %d: claimed=%t err=%v", claim, claimed, err)
+				}
+			}
+			if provider.calls != 0 || store.attachCalls != 0 || len(store.requeueAttempts) != job.MaxAttempts+1 {
+				t.Fatalf("contention dispatched provider=%d attach=%d requeues=%v", provider.calls, store.attachCalls, store.requeueAttempts)
+			}
+			for index, attempt := range store.requeueAttempts {
+				if attempt != 0 {
+					t.Fatalf("contention %d consumed provider attempt %d", index, attempt)
+				}
+			}
+
+			limits.reserveErr = nil
+			job.LeaseFence++
+			store.job = &job
+			claimed, err := worker.RunOnce(context.Background())
+			if !claimed || err != nil {
+				t.Fatalf("first dispatch after capacity release: claimed=%t err=%v", claimed, err)
+			}
+			if provider.calls != 1 || len(provider.jobs) != 1 || provider.jobs[0].Attempt != 1 {
+				t.Fatalf("first provider dispatch attempt=%v calls=%d", provider.jobs, provider.calls)
+			}
+		})
+	}
 }
 
 func TestWorkerPersistsBeforeSuccessAndRetriesPurge(t *testing.T) {
@@ -438,6 +572,7 @@ func TestWorkerPurgeLoopIsNotBlockedByProviderExecution(t *testing.T) {
 			PurgeLeaseDuration: time.Minute,
 			PollInterval:       50 * time.Millisecond,
 			Now:                func() time.Time { return now },
+			LimitPolicy:        &mediaLimitRuntimeFixture{},
 		},
 	)
 	if err != nil {
@@ -497,7 +632,7 @@ func leasedWorkerJob(t *testing.T, now time.Time) (Job, PayloadCipher) {
 			Execution: ExecutionPending, Outcome: OutcomePending,
 			Cancellation: CancellationNotRequested, Object: ObjectPending,
 		},
-		Attempt: 1, MaxAttempts: 3,
+		Attempt: 0, MaxAttempts: 3,
 		LeaseOwner: "worker", LeaseFence: 1, LeaseExpiresAt: &expires,
 	}, cipher
 }
@@ -513,11 +648,26 @@ func persistedFixture(now time.Time) PersistedResult {
 
 func newWorkerFixture(
 	t *testing.T,
-	store Store,
+	store WorkerStore,
 	objects ObjectStore,
 	provider Provider,
 	cipher PayloadCipher,
 	now time.Time,
+) *Worker {
+	t.Helper()
+	return newWorkerFixtureWithLimits(
+		t, store, objects, provider, cipher, now, &mediaLimitRuntimeFixture{},
+	)
+}
+
+func newWorkerFixtureWithLimits(
+	t *testing.T,
+	store WorkerStore,
+	objects ObjectStore,
+	provider Provider,
+	cipher PayloadCipher,
+	now time.Time,
+	limits LimitPolicyRuntime,
 ) *Worker {
 	t.Helper()
 	worker, err := NewWorker(
@@ -525,7 +675,8 @@ func newWorkerFixture(
 		WorkerOptions{
 			Owner: "worker", LeaseDuration: 5 * time.Minute,
 			PurgeLeaseDuration: time.Minute, PollInterval: time.Second,
-			Now: func() time.Time { return now },
+			Now:         func() time.Time { return now },
+			LimitPolicy: limits,
 		},
 	)
 	if err != nil {

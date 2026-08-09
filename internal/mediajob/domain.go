@@ -9,7 +9,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
+	"github.com/uniroute/unirouter/internal/limitpolicy"
 )
 
 const (
@@ -62,6 +64,7 @@ var (
 	ErrNotFound      = errors.New("mediajob: not found")
 	ErrConflict      = errors.New("mediajob: conflict")
 	ErrForbidden     = errors.New("mediajob: forbidden")
+	ErrRateLimited   = errors.New("mediajob: rate limited")
 	ErrUnavailable   = errors.New("mediajob: unavailable")
 	ErrLeaseLost     = errors.New("mediajob: lease lost")
 	ErrCancelled     = errors.New("mediajob: cancellation accepted")
@@ -152,18 +155,23 @@ type ChargeFact struct {
 }
 
 type Job struct {
-	ContractVersion string `json:"contract_version"`
-	JobID           string `json:"job_id"`
-	Scope           Scope  `json:"scope"`
-	APIKeyID        int64  `json:"-"`
-	RequestID       string `json:"request_id"`
-	ClientRequestID string `json:"client_request_id,omitempty"`
-	Operation       string `json:"operation"`
-	ProfileID       string `json:"profile_id"`
-	RequestedModel  string `json:"requested_model"`
-	RoutingModel    string `json:"routing_model"`
-	MappedModel     string `json:"mapped_model,omitempty"`
-	RequestSHA256   string `json:"request_sha256"`
+	ContractVersion        string `json:"contract_version"`
+	JobID                  string `json:"job_id"`
+	Scope                  Scope  `json:"scope"`
+	APIKeyID               int64  `json:"-"`
+	AccessGrantID          *int64 `json:"-"`
+	AccessCredentialID     *int64 `json:"-"`
+	CredentialRef          string `json:"-"`
+	IdempotencySubjectType string `json:"-"`
+	IdempotencySubjectID   int64  `json:"-"`
+	RequestID              string `json:"request_id"`
+	ClientRequestID        string `json:"client_request_id,omitempty"`
+	Operation              string `json:"operation"`
+	ProfileID              string `json:"profile_id"`
+	RequestedModel         string `json:"requested_model"`
+	RoutingModel           string `json:"routing_model"`
+	MappedModel            string `json:"mapped_model,omitempty"`
+	RequestSHA256          string `json:"request_sha256"`
 
 	IdempotencyHash   string     `json:"-"`
 	RequestCiphertext string     `json:"-"`
@@ -205,8 +213,38 @@ func (j Job) ContentReadable(now time.Time) bool {
 }
 
 type CreateRecord struct {
-	Job         Job
-	AllowCreate bool
+	Job                  Job
+	AllowCreate          bool
+	ExpectedLimitSubject limitpolicy.Subject
+}
+
+type IdempotencyLookup struct {
+	Scope       Scope
+	SubjectType string
+	SubjectID   int64
+	Hash        string
+}
+
+type ExecutionReservation struct {
+	JobID           string
+	Scope           Scope
+	LeaseFence      int64
+	OperationID     string
+	Reservation     limitpolicy.DurableReservation
+	ExpiresAt       time.Time
+	TerminalKind    string
+	TerminalizedAt  *time.Time
+	TerminalOwner   string
+	TerminalFence   int64
+	ProviderAttempt int
+}
+
+type LimitPolicyRuntime interface {
+	Reserve(context.Context, limitpolicy.AdmissionRequest) (*limitpolicy.Reservation, error)
+	Finalize(context.Context, *limitpolicy.Reservation, int64) error
+	Cancel(context.Context, *limitpolicy.Reservation) error
+	CancelBeforeDispatch(context.Context, *limitpolicy.Reservation) error
+	TerminalStateTTL(time.Duration) time.Duration
 }
 
 type CreateResult struct {
@@ -279,6 +317,32 @@ type ModelAuthorizer interface {
 	AuthorizeModel(context.Context, Scope, string) (ModelAuthorization, error)
 }
 
+type ExecutionAuthorization struct {
+	Scope              Scope
+	APIKeyID           int64
+	AccessCredentialID int64
+	OwnerUserID        int64
+	RequestedModel     string
+	RoutingModel       string
+}
+
+// ExecutionModelAuthorizer is the explicit-identity counterpart of the HTTP
+// submit authorizer. The supplied querier is the caller's current pool or
+// commit transaction, so worker dispatch never depends on middleware context.
+type ExecutionModelAuthorizer interface {
+	AuthorizeExecution(context.Context, db.DBQuerier, ExecutionAuthorization) error
+}
+
+type ExecutionModelAuthorizerFunc func(context.Context, db.DBQuerier, ExecutionAuthorization) error
+
+func (f ExecutionModelAuthorizerFunc) AuthorizeExecution(
+	ctx context.Context,
+	q db.DBQuerier,
+	input ExecutionAuthorization,
+) error {
+	return f(ctx, q, input)
+}
+
 type ModelAuthorizerFunc func(context.Context, Scope, string) (ModelAuthorization, error)
 
 func (f ModelAuthorizerFunc) AuthorizeModel(
@@ -289,11 +353,16 @@ func (f ModelAuthorizerFunc) AuthorizeModel(
 	return f(ctx, scope, requestedModel)
 }
 
-type Store interface {
+type ServiceStore interface {
+	FindByIdempotency(context.Context, IdempotencyLookup) (Job, error)
 	CreateOrGet(context.Context, CreateRecord) (Job, bool, error)
 	Get(context.Context, Scope, string) (Job, error)
 	List(context.Context, ListFilter) (ListResult, error)
 	RequestCancellation(context.Context, Scope, string, time.Time) (CancellationResult, error)
+}
+
+type WorkerStore interface {
+	Get(context.Context, Scope, string) (Job, error)
 	Claim(context.Context, string, time.Time, time.Duration) (*Job, error)
 	MarkRunning(context.Context, Lease, time.Time) error
 	MarkProviderSucceeded(context.Context, Lease, string, time.Time) error
@@ -306,6 +375,16 @@ type Store interface {
 	ClaimExpired(context.Context, string, time.Time, time.Duration) (*PurgeLease, error)
 	MarkPurgeRetry(context.Context, PurgeLease, string, time.Time, time.Time) error
 	MarkPurged(context.Context, PurgeLease, time.Time) (Job, error)
+	ExecutionLimitSubject(context.Context, Lease) (limitpolicy.Subject, error)
+	AttachExecutionReservation(context.Context, Lease, limitpolicy.Subject, *limitpolicy.DurableReservation, string, time.Time, time.Time) (ExecutionReservation, bool, error)
+	PendingExecutionTerminal(context.Context, string, int64, string, time.Time, time.Duration) (*ExecutionReservation, error)
+	MarkExecutionTerminalized(context.Context, ExecutionReservation, time.Time, string) error
+	ReleaseExecutionTerminalClaim(context.Context, ExecutionReservation, time.Time, string) error
+}
+
+type Store interface {
+	ServiceStore
+	WorkerStore
 }
 
 type ObjectStore interface {
@@ -368,6 +447,11 @@ func cloneJob(job Job) Job {
 	var clone Job
 	_ = json.Unmarshal(body, &clone)
 	clone.APIKeyID = job.APIKeyID
+	clone.AccessGrantID = job.AccessGrantID
+	clone.AccessCredentialID = job.AccessCredentialID
+	clone.CredentialRef = job.CredentialRef
+	clone.IdempotencySubjectType = job.IdempotencySubjectType
+	clone.IdempotencySubjectID = job.IdempotencySubjectID
 	clone.IdempotencyHash = job.IdempotencyHash
 	clone.RequestCiphertext = job.RequestCiphertext
 	clone.ObjectKey = job.ObjectKey

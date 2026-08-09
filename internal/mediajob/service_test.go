@@ -12,6 +12,7 @@ import (
 type serviceStoreFixture struct {
 	mu         sync.Mutex
 	byIdentity map[string]Job
+	createErr  error
 }
 
 func newServiceStoreFixture() *serviceStoreFixture {
@@ -24,6 +25,9 @@ func (s *serviceStoreFixture) CreateOrGet(
 ) (Job, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.createErr != nil {
+		return Job{}, false, s.createErr
+	}
 	key := record.Job.IdempotencyHash
 	if existing, ok := s.byIdentity[key]; ok {
 		return cloneJob(existing), true, nil
@@ -33,6 +37,20 @@ func (s *serviceStoreFixture) CreateOrGet(
 	}
 	s.byIdentity[key] = cloneJob(record.Job)
 	return cloneJob(record.Job), false, nil
+}
+
+func (s *serviceStoreFixture) FindByIdempotency(
+	_ context.Context,
+	lookup IdempotencyLookup,
+) (Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.byIdentity[lookup.Hash]
+	if !ok || job.Scope != lookup.Scope || job.IdempotencySubjectType != lookup.SubjectType ||
+		job.IdempotencySubjectID != lookup.SubjectID {
+		return Job{}, ErrNotFound
+	}
+	return cloneJob(job), nil
 }
 
 func (s *serviceStoreFixture) Get(context.Context, Scope, string) (Job, error) {
@@ -103,6 +121,44 @@ func (s *serviceStoreFixture) MarkPurged(
 	return Job{}, nil
 }
 
+func TestServiceCancelsRateReservationWhenCommitAuthorityDrifts(t *testing.T) {
+	store := newServiceStoreFixture()
+	store.createErr = domainError(ErrConflict, "submission_authority_revision_changed")
+	limits := &mediaLimitRuntimeFixture{}
+	cipher, err := NewApplicationCipher([]byte(strings.Repeat("c", 32)))
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	service, err := NewService(
+		store, UnavailableObjectStore{}, cipher,
+		ModelAuthorizerFunc(func(context.Context, Scope, string) (ModelAuthorization, error) {
+			return ModelAuthorization{RoutingModel: "company-image"}, nil
+		}),
+		[]byte(strings.Repeat("i", 32)),
+		ServiceOptions{RuntimeEnabled: true, AdmissionEnabled: true, LimitPolicy: limits},
+	)
+	if err != nil {
+		t.Fatalf("service: %v", err)
+	}
+	_, err = service.Submit(context.Background(), SubmitInput{
+		Scope: Scope{OrgID: 1, ProjectID: 2}, APIKeyID: 3,
+		RequestID: "authority-drift", IdempotencyKey: "authority-drift",
+		AllowedModels: "company-image",
+		Body:          []byte(`{"model":"company-image","prompt":"p"}`),
+	})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("submit error = %v, want conflict", err)
+	}
+	limits.mu.Lock()
+	defer limits.mu.Unlock()
+	if len(limits.reserveCalls) != 1 || limits.preCancelCalls != 1 || limits.finalizeCalls != 0 {
+		t.Fatalf("limit lifecycle reserve=%d pre-cancel=%d finalize=%d", len(limits.reserveCalls), limits.preCancelCalls, limits.finalizeCalls)
+	}
+	if len(store.byIdentity) != 0 {
+		t.Fatalf("authority drift persisted %d media jobs", len(store.byIdentity))
+	}
+}
+
 func TestServiceSubmissionEncryptsPromptAndEnforcesIdempotencyConflict(t *testing.T) {
 	store := newServiceStoreFixture()
 	key := []byte(strings.Repeat("c", 32))
@@ -123,6 +179,7 @@ func TestServiceSubmissionEncryptsPromptAndEnforcesIdempotencyConflict(t *testin
 		ServiceOptions{
 			RuntimeEnabled:   true,
 			AdmissionEnabled: true,
+			LimitPolicy:      &mediaLimitRuntimeFixture{},
 			Now: func() time.Time {
 				return time.Date(2026, 7, 31, 10, 0, 0, 0, time.UTC)
 			},
@@ -226,7 +283,7 @@ func TestServiceDisabledAndAPIKeyModelScopeFailClosed(t *testing.T) {
 	enabled, _ := NewService(
 		store, UnavailableObjectStore{}, cipher, authorizer,
 		[]byte(strings.Repeat("i", 32)),
-		ServiceOptions{RuntimeEnabled: true, AdmissionEnabled: true},
+		ServiceOptions{RuntimeEnabled: true, AdmissionEnabled: true, LimitPolicy: &mediaLimitRuntimeFixture{}},
 	)
 	created, err := enabled.Submit(context.Background(), input)
 	if err != nil || created.Reused {
@@ -237,6 +294,11 @@ func TestServiceDisabledAndAPIKeyModelScopeFailClosed(t *testing.T) {
 		t.Fatalf("maintenance replay = %+v err=%v", replayed, err)
 	}
 	input.AllowedModels = "text-only"
+	replayed, err = enabled.Submit(context.Background(), input)
+	if err != nil || !replayed.Reused || replayed.Job.JobID != created.Job.JobID {
+		t.Fatalf("accepted idempotent replay was re-adjudicated: %+v err=%v", replayed, err)
+	}
+	input.IdempotencyKey = "i-new"
 	if _, err := enabled.Submit(context.Background(), input); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("model scope error = %v", err)
 	}
@@ -284,7 +346,7 @@ func TestServiceClassifiesModelAuthorityErrorsWithoutLeakingInternals(t *testing
 					return ModelAuthorization{}, testCase.authorityError
 				}),
 				[]byte(strings.Repeat("i", 32)),
-				ServiceOptions{RuntimeEnabled: true, AdmissionEnabled: true},
+				ServiceOptions{RuntimeEnabled: true, AdmissionEnabled: true, LimitPolicy: &mediaLimitRuntimeFixture{}},
 			)
 			if err != nil {
 				t.Fatalf("service: %v", err)
@@ -319,7 +381,7 @@ func TestServiceAllowsAPIKeyResolvedModelWhilePreservingRequestedAlias(t *testin
 			return ModelAuthorization{RoutingModel: "gpt-image-prod"}, nil
 		}),
 		[]byte(strings.Repeat("i", 32)),
-		ServiceOptions{RuntimeEnabled: true, AdmissionEnabled: true},
+		ServiceOptions{RuntimeEnabled: true, AdmissionEnabled: true, LimitPolicy: &mediaLimitRuntimeFixture{}},
 	)
 	if err != nil {
 		t.Fatalf("service: %v", err)

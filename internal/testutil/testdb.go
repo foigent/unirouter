@@ -180,6 +180,14 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 	}
 
 	tables := []string{
+		"async_media_limit_reservations",
+		"api_keys",
+		"access_operations",
+		"access_credentials",
+		"access_grant_revisions",
+		"access_grants",
+		"access_requests",
+		"workload_application_client_profiles",
 		"response_cache_commercial_receipts",
 		"response_cache_delivery_receipts",
 		"invocation_optimization_receipts",
@@ -228,7 +236,6 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 		"audit_logs",
 		"grants",
 		"wallets",
-		"api_keys",
 		"project_model_sets",
 		"model_set_items",
 		"model_aliases",

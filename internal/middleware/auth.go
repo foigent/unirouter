@@ -4,18 +4,21 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/accessgrantboundary"
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/errdocs"
+	"github.com/uniroute/unirouter/internal/ipallowlist"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
@@ -63,19 +66,20 @@ func validateKeyAndOrgStatus(apiKey *models.ApiKey, orgStatus string) error {
 type contextKey string
 
 const (
-	CtxAPIKey           contextKey = "api_key"
-	CtxOrgID            contextKey = "org_id"
-	CtxProjectID        contextKey = "project_id"
-	CtxKeyID            contextKey = "key_id"
-	CtxRequestID        contextKey = "request_id"
-	CtxUserID           contextKey = "user_id"
-	CtxUserRole         contextKey = "user_role"
-	CtxOrganizationRole contextKey = "organization_role"
-	CtxAuthEpoch        contextKey = "auth_epoch"
-	CtxAdminSessionHash contextKey = "admin_session_hash"
-	CtxModelAlias       contextKey = "model_alias"
-	CtxAuthKind         contextKey = "auth_kind"
-	CtxAgentCapability  contextKey = "agent_capability"
+	CtxAPIKey             contextKey = "api_key"
+	CtxOrgID              contextKey = "org_id"
+	CtxProjectID          contextKey = "project_id"
+	CtxKeyID              contextKey = "key_id"
+	CtxAccessCredentialID contextKey = "access_credential_id"
+	CtxRequestID          contextKey = "request_id"
+	CtxUserID             contextKey = "user_id"
+	CtxUserRole           contextKey = "user_role"
+	CtxOrganizationRole   contextKey = "organization_role"
+	CtxAuthEpoch          contextKey = "auth_epoch"
+	CtxAdminSessionHash   contextKey = "admin_session_hash"
+	CtxModelAlias         contextKey = "model_alias"
+	CtxAuthKind           contextKey = "auth_kind"
+	CtxAgentCapability    contextKey = "agent_capability"
 )
 
 const (
@@ -110,6 +114,13 @@ func GetProjectIDFromContext(ctx context.Context) int64 {
 // GetKeyIDFromContext retrieves the key ID from context.
 func GetKeyIDFromContext(ctx context.Context) int64 {
 	v, _ := ctx.Value(CtxKeyID).(int64)
+	return v
+}
+
+// GetAccessCredentialIDFromContext returns the stable logical credential
+// identity. It is zero for legacy-unbound and purpose-scoped API keys.
+func GetAccessCredentialIDFromContext(ctx context.Context) int64 {
+	v, _ := ctx.Value(CtxAccessCredentialID).(int64)
 	return v
 }
 
@@ -166,32 +177,7 @@ func GetAgentCapabilityFromContext(ctx context.Context) *agentcap.Claims {
 // checkIPWhitelist checks if the client IP is allowed by the whitelist.
 // Empty whitelist means all IPs are allowed.
 func checkIPWhitelist(clientIP, whitelist string) bool {
-	if whitelist == "" {
-		return true // no restriction
-	}
-	for _, entry := range strings.Split(whitelist, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		// Support CIDR notation
-		if strings.Contains(entry, "/") {
-			_, cidr, err := net.ParseCIDR(entry)
-			if err != nil {
-				continue
-			}
-			ip := net.ParseIP(clientIP)
-			if ip != nil && cidr.Contains(ip) {
-				return true
-			}
-		} else {
-			// Exact IP match
-			if entry == clientIP {
-				return true
-			}
-		}
-	}
-	return false
+	return ipallowlist.Matches(clientIP, whitelist)
 }
 
 // resolveAPIKey looks up and validates an API key + org status from the database.
@@ -201,12 +187,14 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 	var orgStatus string
 	var projectID int64
 	var ownerUserID int64
+	var accessGrantID sql.NullInt64
 	err := q.QueryRow(ctx,
 		`SELECT ak.id, ak.org_id, COALESCE(ak.project_id, 0), ak.status, ak.allowed_ips, ak.allowed_models,
 		        ak.rpm_limit, ak.qps_limit, ak.budget_limit, ak.key_prefix, ak.name,
 		        COALESCE(ak.owner_user_id, 0), COALESCE(NULLIF(ak.key_type, ''), 'shared'),
 		        COALESCE(ak.purpose, ''), ak.auth_epoch,
-		        o.status
+		        o.status,
+		        COALESCE(ak.allowed_endpoints,''),ak.access_grant_id
 		 FROM api_keys ak
 		 JOIN orgs o ON o.id = ak.org_id
 		  LEFT JOIN projects p ON p.id = ak.project_id AND p.org_id = ak.org_id
@@ -214,6 +202,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		  LEFT JOIN project_members pm ON pm.project_id = ak.project_id AND pm.user_id = ak.owner_user_id
 		  LEFT JOIN workload_applications app
 		    ON app.id = ak.workload_application_id AND app.org_id = ak.org_id
+		   AND (ak.project_id IS NULL OR app.project_id=ak.project_id)
 		  WHERE ak.key_hash = $1
 		    AND ak.verifier_scheme = $2
 		    AND (ak.project_id IS NULL OR p.status = 'active')
@@ -222,7 +211,8 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		       COALESCE(NULLIF(ak.key_type, ''), 'shared') <> 'personal'
 		       OR (
 		           u.status = 'active'
-		           AND (ak.project_id IS NULL OR pm.user_id IS NOT NULL)
+		           AND u.organization_role <> 'org_viewer'
+		           AND (ak.project_id IS NULL OR pm.role IN ('project_admin','project_user','project_developer','developer'))
 		       )
 		   )`,
 		keyHash,
@@ -231,6 +221,7 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 		&apiKey.ID, &apiKey.OrgID, &projectID, &apiKey.Status, &apiKey.IPWhitelist,
 		&apiKey.AllowedModels, &apiKey.RPMLimit, &apiKey.QPSLimit,
 		&apiKey.BudgetLimit, &apiKey.KeyPrefix, &apiKey.Name, &ownerUserID, &apiKey.KeyType, &apiKey.Purpose, &apiKey.AuthEpoch, &orgStatus,
+		&apiKey.AllowedEndpoints, &accessGrantID,
 	)
 	if err != nil {
 		return nil, "", err
@@ -241,7 +232,25 @@ func resolveAPIKey(ctx context.Context, q db.DBQuerier, keyHash string) (*models
 	if ownerUserID > 0 {
 		apiKey.OwnerUserID = &ownerUserID
 	}
+	if accessGrantID.Valid {
+		apiKey.GrantBound = true
+		value := accessGrantID.Int64
+		apiKey.AccessGrantID = &value
+		if err := applyLiveAccessGrantBoundary(ctx, q, &apiKey); err != nil {
+			return nil, "", err
+		}
+	}
 	return &apiKey, orgStatus, nil
+}
+
+func splitScope(raw string) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, value := range strings.Split(raw, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			result[value] = struct{}{}
+		}
+	}
+	return result
 }
 
 func isPaidGatewayEndpoint(path string) bool {
@@ -250,19 +259,46 @@ func isPaidGatewayEndpoint(path string) bool {
 		path == "/v1/media/jobs"
 }
 
-func providerCostAdmissionBlocked(ctx context.Context, q db.DBQuerier, orgID, apiKeyID int64) (bool, error) {
+func providerCostAdmissionBlocked(ctx context.Context, q db.DBQuerier, orgID, apiKeyID, accessCredentialID int64) (bool, error) {
 	var blocked bool
-	err := q.QueryRow(ctx,
-		`SELECT EXISTS (
-		    SELECT 1 FROM billing_provider_attempts
-		    WHERE org_id = $1 AND api_key_id = $2
-		      AND state IN (
-		          'outcome_unknown', 'response_unusable', 'funding_pending',
-		          'delivery_pending', 'delivery_failed', 'output_withheld'
-		      )
-		)`, orgID, apiKeyID,
-	).Scan(&blocked)
+	selector := "access_credential_id = $2"
+	selectorID := accessCredentialID
+	if accessCredentialID <= 0 {
+		selector = "access_credential_id IS NULL AND api_key_id = $2"
+		selectorID = apiKeyID
+	}
+	err := q.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM billing_provider_attempts
+		WHERE org_id = $1 AND `+selector+`
+		  AND state IN (
+		      'outcome_unknown','response_unusable','funding_pending',
+		      'delivery_pending','delivery_failed','output_withheld'
+		  )
+	)`, orgID, selectorID).Scan(&blocked)
 	return blocked, err
+}
+
+func endpointAllowedForGrant(apiKey *models.ApiKey, path string) bool {
+	if apiKey == nil || !apiKey.GrantBound {
+		return true
+	}
+	if apiKey.EndpointDenied || strings.TrimSpace(apiKey.AllowedEndpoints) == "" {
+		return false
+	}
+	_, allowed := splitScope(apiKey.AllowedEndpoints)[accessscope.CanonicalExecutionEndpoint(path)]
+	return allowed
+}
+
+func applyLiveAccessGrantBoundary(ctx context.Context, q db.DBQuerier, apiKey *models.ApiKey) error {
+	if apiKey == nil || apiKey.ID <= 0 {
+		return errors.New("missing root key")
+	}
+	snapshot, err := accessgrantboundary.Resolve(ctx, q, apiKey.ID)
+	if err != nil {
+		return err
+	}
+	*apiKey = snapshot.APIKey
+	return nil
 }
 
 // GatewayAuth returns middleware that authenticates API requests via API Key.
@@ -283,6 +319,26 @@ func GatewayAuthWithAPIKeyHashSecret(q db.DBQuerier, apiKeyHashSecret string) fu
 // number of child Agents.
 func GatewayAuthWithAgentCapabilities(q db.DBQuerier, apiKeyHashSecret string, capabilities *agentcap.Service) func(http.Handler) http.Handler {
 	return GatewayAuthWithAgentCapabilitiesAndClientIP(q, apiKeyHashSecret, capabilities, ClientIPResolver{})
+}
+
+// GatewayAuthAcrossBufferedBody composes one authentication pass before body
+// retention and the same live authentication pass immediately after it. The
+// first pass supplies the trusted tenant used for byte accounting; the second
+// replaces the request context with current authority before paid admission.
+// Callers must pass the exact same authenticator on both sides so API keys and
+// Agent capabilities retain identical attenuation semantics.
+func GatewayAuthAcrossBufferedBody(
+	authenticate func(http.Handler) http.Handler,
+	retainBody func(http.Handler) http.Handler,
+) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		if authenticate == nil || retainBody == nil {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				writeGatewayAuthError(w, http.StatusInternalServerError, "server_error.internal_error", "Gateway authorization is unavailable")
+			})
+		}
+		return authenticate(retainBody(authenticate(next)))
+	}
 }
 
 // GatewayAuthWithAgentCapabilitiesAndClientIP applies the same explicit
@@ -316,6 +372,9 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 				apiKey = authentication.APIKey
 				capabilityClaims = authentication.Claims
 				authKind = AuthKindAgentCapability
+				// Authenticate already resolves the root key and live grant once for
+				// this request. Reusing that exact snapshot avoids a second query
+				// whose later read could disagree inside one admission decision.
 				if !agentcap.IsControlEndpoint(r.URL.Path) && !capabilityClaims.AllowsEndpoint(r.URL.Path) {
 					writeGatewayAuthError(w, http.StatusForbidden, "auth_error.agent_capability_endpoint_not_allowed", "Agent capability does not allow this model-gateway endpoint")
 					return
@@ -347,9 +406,17 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 				writeGatewayAuthError(w, http.StatusForbidden, "auth_error.api_key_purpose_not_allowed", "API key purpose does not allow this model-gateway endpoint")
 				return
 			}
+			if !accessscope.IsCapabilityManagementEndpoint(r.URL.Path) && !endpointAllowedForGrant(apiKey, r.URL.Path) {
+				writeGatewayAuthError(w, http.StatusForbidden, "auth_error.access_grant_endpoint_not_allowed", "Access grant does not allow this endpoint")
+				return
+			}
 
 			if isPaidGatewayEndpoint(r.URL.Path) {
-				blocked, blockErr := providerCostAdmissionBlocked(r.Context(), q, apiKey.OrgID, apiKey.ID)
+				accessCredentialID := int64(0)
+				if apiKey.AccessCredentialID != nil {
+					accessCredentialID = *apiKey.AccessCredentialID
+				}
+				blocked, blockErr := providerCostAdmissionBlocked(r.Context(), q, apiKey.OrgID, apiKey.ID, accessCredentialID)
 				if blockErr != nil {
 					writeGatewayAuthError(w, http.StatusServiceUnavailable, "billing_error.provider_cost_state_unavailable", "Provider cost admission state is temporarily unavailable")
 					return
@@ -380,6 +447,9 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 				ctx = context.WithValue(ctx, CtxProjectID, *apiKey.ProjectID)
 			}
 			ctx = context.WithValue(ctx, CtxKeyID, apiKey.ID)
+			if apiKey.AccessCredentialID != nil {
+				ctx = context.WithValue(ctx, CtxAccessCredentialID, *apiKey.AccessCredentialID)
+			}
 			ctx = context.WithValue(ctx, CtxAuthKind, authKind)
 			if capabilityClaims != nil {
 				ctx = context.WithValue(ctx, CtxAgentCapability, capabilityClaims)

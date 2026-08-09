@@ -64,7 +64,9 @@ func TestProjectionStoreIDPTerminalStateRevokesLocalAccessWithoutRestoringIt(t *
 	require.NoError(t, pool.QueryRow(ctx, `SELECT revoked_at FROM admin_sessions WHERE user_id=$1`, userID).Scan(&revokedAt))
 	require.NotNil(t, revokedAt)
 	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM api_keys WHERE owner_user_id=$1 AND key_type='personal'`, userID).Scan(&keyStatus))
-	require.Equal(t, "disabled", keyStatus)
+	// Account disable is a reversible subject block. The credential remains
+	// active as evidence, while live authentication rejects the disabled owner.
+	require.Equal(t, "active", keyStatus)
 
 	replay, err := store.ApplyProjectionSnapshot(ctx, disabled)
 	require.NoError(t, err)

@@ -23,6 +23,36 @@ func TestClientProfilesAreStableAndDefensivelyCopied(t *testing.T) {
 	}
 }
 
+func TestLegacyWorkloadIdentityAdapterIsDeterministicAndRejectsAmbiguity(t *testing.T) {
+	short, err := DeriveV2LogicalRef("app_customer_service_agent")
+	if err != nil || short != "workload_customer_service_agent" {
+		t.Fatalf("short derived ref=%q err=%v", short, err)
+	}
+	longRef := "app_" + strings.Repeat("a", 60)
+	first, err := DeriveV2LogicalRef(longRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := DeriveV2LogicalRef(longRef)
+	if err != nil || first != second || len(first) > 64 {
+		t.Fatalf("long derived refs=%q %q err=%v", first, second, err)
+	}
+	for input, want := range map[string]string{
+		"batch_job": KindWorkflow, "agent_runtime": KindAgent,
+		"service_integration": KindIntegrationAdapter,
+	} {
+		got, adapted, err := NormalizeCompatibleV2Kind(input)
+		if err != nil || !adapted || got != want {
+			t.Fatalf("kind %q => %q adapted=%v err=%v", input, got, adapted, err)
+		}
+	}
+	for _, input := range []string{KindInteractiveClient, IdentityPersonalDevelopment, "unknown"} {
+		if _, _, err := NormalizeCompatibleV2Kind(input); err == nil {
+			t.Fatalf("ambiguous legacy kind %q accepted", input)
+		}
+	}
+}
+
 func TestNormalizeDraft(t *testing.T) {
 	draft, err := NormalizeDraft(Draft{
 		ApplicationRef: " APP_CLAIMS_AGENT ", DisplayName: " Claims Agent ", Kind: KindAgent,
@@ -109,6 +139,32 @@ func TestResolveReadinessBlocksContractOnlyResponses(t *testing.T) {
 	axis := findAxis(t, result, "client_profile")
 	if result.Overall != OverallBlocked || axis.ReasonCode != "endpoint_contract_only" {
 		t.Fatalf("Responses runtime was overclaimed: %+v", result)
+	}
+}
+
+func TestResolveReadinessTreatsMissingV2ClientProfileAsOptionalContext(t *testing.T) {
+	optional := ResolveReadiness(ReadinessInput{
+		ApplicationStatus: StatusActive, ClientProfileOptional: true,
+		ProjectActive: true, ActiveCredentialCount: 1,
+	})
+	axis := findAxis(t, optional, "client_profile")
+	if axis.State != AxisNotApplicable || axis.ReasonCode != "client_profile_not_configured_optional" {
+		t.Fatalf("optional profile axis=%+v", axis)
+	}
+
+	selection := ResolveReadiness(ReadinessInput{
+		ApplicationStatus: StatusActive, ClientProfileOptional: true, ClientProfileSelectionRequired: true,
+		ProjectActive: true, ActiveCredentialCount: 1,
+	})
+	axis = findAxis(t, selection, "client_profile")
+	if axis.State != AxisContextRequired || axis.ReasonCode != "client_profile_selection_optional" {
+		t.Fatalf("multi-profile context axis=%+v", axis)
+	}
+
+	legacy := ResolveReadiness(ReadinessInput{ApplicationStatus: StatusActive, ProjectActive: true})
+	axis = findAxis(t, legacy, "client_profile")
+	if axis.State != AxisBlocked || axis.ReasonCode != "client_profile_unknown" {
+		t.Fatalf("legacy missing profile axis=%+v", axis)
 	}
 }
 

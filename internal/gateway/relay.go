@@ -755,7 +755,13 @@ type Message struct {
 }
 
 func modelAllowedForAPIKey(apiKey *models.ApiKey, model, requestedModel string) bool {
-	if apiKey == nil || apiKey.AllowedModels == "" {
+	if apiKey == nil {
+		return true
+	}
+	if apiKey.ModelScopeDenied {
+		return false
+	}
+	if apiKey.AllowedModels == "" {
 		return true
 	}
 	for _, allowedModel := range strings.Split(apiKey.AllowedModels, ",") {
@@ -3337,6 +3343,10 @@ func (relay *Relay) HandleModels(w http.ResponseWriter, r *http.Request) {
 	orgID := middleware.GetOrgIDFromContext(r.Context())
 	keyID := middleware.GetKeyIDFromContext(r.Context())
 	if apiKey := middleware.GetAPIKeyFromContext(r.Context()); apiKey != nil {
+		if apiKey.ModelScopeDenied {
+			relay.writeAuthorizedModelList(w, r, nil)
+			return
+		}
 		if modelListContainsWildcard(apiKey.AllowedModels) {
 			relay.handleModelsFallback(w, r)
 			return
@@ -3437,6 +3447,9 @@ func (relay *Relay) writeAuthorizedModelList(w http.ResponseWriter, r *http.Requ
 		input := modelauthz.Input{OrgID: orgID, ProjectID: projectID, Endpoint: "/v1/models"}
 		if apiKey != nil {
 			input.APIKeyID = apiKey.ID
+			if apiKey.AccessCredentialID != nil {
+				input.AccessCredentialID = *apiKey.AccessCredentialID
+			}
 			if apiKey.OwnerUserID != nil {
 				input.OwnerUserID = *apiKey.OwnerUserID
 			}
