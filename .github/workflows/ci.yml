@@ -4,26 +4,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      pr4_gate_route:
-        description: Controlled route for manual CI gate validation
-        required: false
-        default: normal
-        type: choice
-        options:
-          - normal
-          - backend_only
-          - frontend
-          - docker_only
-      pr4_browser_outcome:
-        description: Controlled PR4 Browser E2E outcome for manual gate validation
-        required: false
-        default: normal
-        type: choice
-        options:
-          - normal
-          - failure
-          - skip
 
 permissions:
   contents: read
@@ -50,7 +30,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR4_GATE_ROUTE: ${{ inputs.pr4_gate_route || 'normal' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -60,27 +39,9 @@ jobs:
           docker=false
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            case "$PR4_GATE_ROUTE" in
-              normal)
-                backend=true
-                frontend=true
-                docker=true
-                ;;
-              backend_only)
-                backend=true
-                ;;
-              frontend)
-                frontend=true
-                docker=true
-                ;;
-              docker_only)
-                docker=true
-                ;;
-              *)
-                echo "Unsupported PR4 gate route: $PR4_GATE_ROUTE" >&2
-                exit 1
-                ;;
-            esac
+            backend=true
+            frontend=true
+            docker=true
           else
             if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
               echo "Unable to resolve pull-request base/head commits" >&2
@@ -472,9 +433,7 @@ jobs:
       always() &&
       (needs.changes.result != 'success' ||
        needs.changes.outputs.backend == 'true' ||
-       needs.changes.outputs.frontend == 'true') &&
-      !(github.event_name == 'workflow_dispatch' &&
-        inputs.pr4_browser_outcome == 'skip')
+       needs.changes.outputs.frontend == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     concurrency:
@@ -516,12 +475,6 @@ jobs:
     steps:
       - name: Validate change routing
         if: needs.changes.result != 'success'
-        run: exit 1
-
-      - name: Controlled Browser gate failure
-        if: >-
-          github.event_name == 'workflow_dispatch' &&
-          inputs.pr4_browser_outcome == 'failure'
         run: exit 1
 
       - name: Checkout code
