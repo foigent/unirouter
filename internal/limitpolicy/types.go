@@ -40,6 +40,10 @@ const (
 	AdmissionPhaseFull      = "full"
 	AdmissionPhaseRate      = "rate"
 	AdmissionPhaseExecution = "execution"
+
+	ReadinessReady       = "ready"
+	ReadinessBlocked     = "blocked"
+	ReadinessUnavailable = "unavailable"
 )
 
 var (
@@ -132,6 +136,8 @@ type Readiness struct {
 	MatchingPolicyCount int       `json:"matching_policy_count"`
 	EnforcedPolicyCount int       `json:"enforced_policy_count"`
 	SnapshotLoadedAt    time.Time `json:"snapshot_loaded_at"`
+	State               string    `json:"state"`
+	Reason              string    `json:"reason"`
 }
 
 type Decision struct {

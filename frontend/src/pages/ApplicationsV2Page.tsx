@@ -13,6 +13,7 @@ import { loadAllPages } from '../utils/loadAllPages';
 const { Text } = Typography;
 
 type Project = { id: number; org_id: number; name: string; status: string; current_user_membership_role?: string };
+type ApplicationScope = { projectID: number; applicationID?: number; applicationRef?: string };
 
 export default function ApplicationsV2Page() {
   const user = useAuthStore((state) => state.user);
@@ -35,6 +36,7 @@ export default function ApplicationsV2Page() {
   const [requestError, setRequestError] = useState('');
   const [grantError, setGrantError] = useState('');
   const [credentialError, setCredentialError] = useState('');
+	const [credentialHasMore, setCredentialHasMore] = useState(false);
   const [legacy, setLegacy] = useState<LegacyAccessClassification[]>([]);
   const [legacyLoading, setLegacyLoading] = useState(false);
   const [legacyError, setLegacyError] = useState('');
@@ -42,13 +44,26 @@ export default function ApplicationsV2Page() {
   const [formApi, setFormApi] = useState<any>(null);
   const [mutating, setMutating] = useState(false);
   const [secret, setSecret] = useState<IssuedCredential | null>(null);
+	const [drawerScope, setDrawerScope] = useState<ApplicationScope | null>(null);
+	const currentProjectID = useRef<number | undefined>(selectedProjectID);
+	const currentApplicationRef = useRef(selectedApplicationRef);
+	const applicationsGeneration = useRef(0);
+	const accessGeneration = useRef(0);
+	currentProjectID.current = selectedProjectID;
+	currentApplicationRef.current = selectedApplicationRef;
 
-  const selectedApplication = applications.find((item) => item.application_ref === selectedApplicationRef);
+  const selectedApplication = applications.find((item) => item.application_ref === selectedApplicationRef && item.project_id === selectedProjectID);
   const selectedProject = projects.find((item) => item.id === selectedProjectID);
   const canManageSelectedProject = isOrgAdminRole(organizationRole) ||
     canonicalProjectMembershipRole(selectedProject?.current_user_membership_role) === 'project_admin';
   const activeGrant = grants.find((grant) => isGrantCurrentlyActive(grant));
   const maySeeLegacy = isOrgAdminRole(organizationRole);
+	const isCurrentScope = useCallback((scope: ApplicationScope) => currentProjectID.current === scope.projectID &&
+		(scope.applicationRef === undefined || (currentApplicationRef.current === scope.applicationRef &&
+			applications.some((item) => item.project_id === scope.projectID && item.id === scope.applicationID && item.application_ref === scope.applicationRef))), [applications]);
+	const applicationScope = useCallback((application: WorkloadApplication): ApplicationScope => ({
+		projectID: application.project_id, applicationID: application.id, applicationRef: application.application_ref,
+	}), []);
 
   const updateSearch = useCallback((values: Record<string, string | number | undefined>) => {
     const next = new URLSearchParams(search);
@@ -78,53 +93,68 @@ export default function ApplicationsV2Page() {
   }, [organizationRole, selectedProjectID, updateSearch]);
 
   const loadApplications = useCallback(async () => {
-    if (!selectedProjectID) { setApplications([]); return; }
+	const projectID = selectedProjectID;
+	const generation = ++applicationsGeneration.current;
+	accessGeneration.current++;
+	setApplications([]);
+	setAccessRequests([]); setGrants([]); setCredentials([]); setCredentialHasMore(false);
+	if (!projectID) { setApplicationsLoading(false); return; }
     setApplicationsLoading(true);
     setApplicationsError('');
     try {
-      const result = await api.getWorkloadApplications({ project_id: selectedProjectID }) as { data?: WorkloadApplication[] };
-      const items = result.data || [];
+	  const result = await api.getWorkloadApplications({ project_id: projectID }) as { data?: WorkloadApplication[] };
+	  if (currentProjectID.current !== projectID || applicationsGeneration.current !== generation) return;
+	  const items = (result.data || []).filter((item) => item.project_id === projectID);
       setApplications(items);
       if (selectedApplicationRef && !items.some((item) => item.application_ref === selectedApplicationRef)) {
         updateSearch({ application_ref: undefined });
       }
     } catch {
+	  if (currentProjectID.current !== projectID || applicationsGeneration.current !== generation) return;
       setApplications([]);
       setApplicationsError('无法读取当前项目的 Workload Application。');
     } finally {
-      setApplicationsLoading(false);
+	  if (currentProjectID.current === projectID && applicationsGeneration.current === generation) setApplicationsLoading(false);
     }
   }, [selectedApplicationRef, selectedProjectID, updateSearch]);
 
   const loadApplicationAccess = useCallback(async () => {
-    if (!selectedApplication) {
+	const application = selectedApplication;
+	const generation = ++accessGeneration.current;
+	setAccessRequests([]); setGrants([]); setCredentials([]); setCredentialHasMore(false);
+	if (!application) {
       setAccessRequests([]); setGrants([]); setCredentials([]); setRequestError(''); setGrantError(''); setCredentialError('');
       return;
     }
+	const scope = applicationScope(application);
     setRequestError('');
     setGrantError('');
     const [requestResult, grantResult] = await Promise.allSettled([
-      accessApi.listProjectRequests(selectedApplication.project_id, { workload_application_id: selectedApplication.id, limit: 50 }),
-      accessApi.listProjectGrants(selectedApplication.project_id, { workload_application_id: selectedApplication.id, limit: 50 }),
+	  accessApi.listProjectRequests(application.project_id, { workload_application_id: application.id, limit: 50 }),
+	  accessApi.listProjectGrants(application.project_id, { workload_application_id: application.id, limit: 50 }),
     ]);
+	if (!isCurrentScope(scope) || accessGeneration.current !== generation) return;
     if (requestResult.status === 'fulfilled') setAccessRequests(requestResult.value.data);
     else { setAccessRequests([]); setRequestError('Request 暂时不可用；不会清空 Grant 或凭据事实。'); }
     if (grantResult.status === 'fulfilled') setGrants(grantResult.value.data);
     else { setGrants([]); setGrantError('Grant 暂时不可用；不会把它解释成“未授权”。'); }
     setCredentialError('');
-    if (!selectedApplication.can_read_credentials) {
+	if (!application.can_read_credentials) {
       setCredentials([]);
       return;
     }
     try {
-      const result = await api.getWorkloadApplicationCredentials(selectedApplication.application_ref,
-        organizationRole === 'platform_admin' ? selectedApplication.org_id : undefined) as { data?: AccessCredentialFamily[] };
+	  const result = await api.getWorkloadApplicationCredentials(application.application_ref,
+		organizationRole === 'platform_admin' ? application.org_id : undefined, 1, 100) as { data?: AccessCredentialFamily[]; has_more?: boolean };
+	  if (!isCurrentScope(scope) || accessGeneration.current !== generation) return;
       setCredentials(result.data || []);
+	  setCredentialHasMore(!!result.has_more);
     } catch {
+	  if (!isCurrentScope(scope) || accessGeneration.current !== generation) return;
       setCredentials([]);
       setCredentialError('凭据元数据暂时不可用；不会把错误显示成“未配置”。');
     }
-  }, [organizationRole, selectedApplication]);
+	}, [applicationScope, isCurrentScope, organizationRole, selectedApplication]);
 
   const loadLegacy = useCallback(async () => {
     if (!maySeeLegacy) return;
@@ -163,22 +193,43 @@ export default function ApplicationsV2Page() {
     }
   }, [drawer, formApi, selectedApplication]);
 
+	const openCreateDrawer = () => {
+		if (!selectedProjectID) return;
+		setDrawerScope({ projectID: selectedProjectID });
+		setDrawer('create');
+	};
+	const openApplicationDrawer = (kind: 'edit' | 'request' | 'credential', application: WorkloadApplication) => {
+		const scope = applicationScope(application);
+		if (!isCurrentScope(scope)) {
+			Toast.warning('Application 范围已切换，请重新选择。');
+			return;
+		}
+		setDrawerScope(scope);
+		setDrawer(kind);
+	};
+	const closeDrawer = () => { setDrawer(null); setDrawerScope(null); };
+
   const submitApplication = async (values: Record<string, any>) => {
     const project = projects.find((item) => item.id === selectedProjectID);
-    if (!project) return;
+	const application = selectedApplication;
+	const scope = drawerScope;
+	if (!project || !scope || !isCurrentScope(scope) || (drawer === 'edit' && (!application || application.id !== scope.applicationID))) {
+		Toast.warning('Application 范围已切换；未提交旧范围修改。');
+		return;
+	}
     setMutating(true);
     try {
-      if (drawer === 'edit' && selectedApplication) {
-        await api.updateWorkloadApplication(selectedApplication.application_ref, {
-          org_id: selectedApplication.org_id,
-          expected_revision: selectedApplication.revision,
-          display_name: values.display_name,
-          environment: selectedApplication.environment,
+	  if (drawer === 'edit' && application) {
+		await api.updateWorkloadApplication(application.application_ref, {
+		  org_id: application.org_id,
+		  expected_revision: application.revision,
+		  display_name: values.display_name,
+		  environment: application.environment,
           client_profiles: values.client_profiles || [],
           primary_client_profile: values.primary_client_profile || '',
           owner_team: values.owner_team || '', description: values.description || '', status: values.status,
         });
-        Toast.success('Application 元数据已更新');
+		if (isCurrentScope(scope)) Toast.success('Application 元数据已更新');
       } else {
         const created = await api.createWorkloadApplication({
           org_id: project.org_id, project_id: project.id,
@@ -189,125 +240,191 @@ export default function ApplicationsV2Page() {
           primary_client_profile: values.primary_client_profile || '',
           owner_team: values.owner_team || '', description: values.description || '', status: 'active',
         }) as WorkloadApplication;
-        updateSearch({ application_ref: created.application_ref });
-        Toast.success('Workload v2 identity 已创建');
+		if (isCurrentScope(scope)) {
+			updateSearch({ application_ref: created.application_ref });
+			Toast.success('Workload v2 identity 已创建');
+		}
       }
-      setDrawer(null);
-      await loadApplications();
+	  if (isCurrentScope(scope)) {
+		closeDrawer();
+		await loadApplications();
+	  }
     } catch (error) {
-      Toast.error(error instanceof ApiError && error.status === 409 ? 'Application 已变化，请刷新后重试。' : 'Application 保存失败');
-      if (error instanceof ApiError && error.status === 409) await loadApplications();
+	  if (isCurrentScope(scope)) {
+		Toast.error(error instanceof ApiError && error.status === 409 ? 'Application 已变化，请刷新后重试。' : 'Application 保存失败');
+		if (error instanceof ApiError && error.status === 409) await loadApplications();
+	  }
     } finally {
       setMutating(false);
     }
   };
 
   const requestAccess = async () => {
-    if (!selectedApplication || !user) return;
-    const intent = `workload-request:${selectedApplication.id}:${selectedApplication.revision}`;
+	const application = selectedApplication;
+	if (!application || !user) return;
+	const scope = applicationScope(application);
+	if (!isCurrentScope(scope)) {
+		Toast.warning('Application 范围已切换；未提交旧范围请求。');
+		return;
+	}
+	const intent = `workload-request:${application.id}:${application.revision}`;
     setMutating(true);
     try {
       const result = await accessApi.createRequest({
-        org_id: selectedApplication.org_id, project_id: selectedApplication.project_id,
-        subject: { type: 'workload_application', workload_application_id: selectedApplication.id },
+		org_id: application.org_id, project_id: application.project_id,
+		subject: { type: 'workload_application', workload_application_id: application.id },
         request_kind: 'workload_service',
         requested_scope: { project_role: 'project_user', scope_mode: 'project_default', models: [], endpoints: [] },
-        environment: selectedApplication.environment, production_use: selectedApplication.production_use,
+		environment: application.environment, production_use: application.production_use,
         submission_mode: 'delegated', sponsor_user_id: user.id,
       }, intents.get(intent));
       intents.complete(intent);
-      Toast.success(result.request.status === 'approved' ? 'Workload Grant 已批准' : 'Workload 访问已进入审核');
-      await loadApplicationAccess();
+	  if (isCurrentScope(scope)) {
+		Toast.success(result.request.status === 'approved' ? 'Workload Grant 已批准' : 'Workload 访问已进入审核');
+		await loadApplicationAccess();
+	  }
     } catch (error) {
       intents.settleError(intent, error);
-      Toast.error(error instanceof ApiError && error.status === 409 ? 'Workload 访问状态已变化，已刷新。' : '无法提交 Workload 访问请求');
-      if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
-    } finally { setMutating(false); setDrawer(null); }
+	  if (isCurrentScope(scope)) {
+		Toast.error(error instanceof ApiError && error.status === 409 ? 'Workload 访问状态已变化，已刷新。' : '无法提交 Workload 访问请求');
+		if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+	  }
+	} finally { setMutating(false); if (isCurrentScope(scope)) closeDrawer(); }
   };
 
   const issueCredential = async (values: { name: string; allowed_ips?: string }) => {
-    if (!activeGrant) return;
-    const intent = `workload-issue:${activeGrant.grant_ref}:${values.name.trim()}:${(values.allowed_ips || '').trim()}`;
+	const application = selectedApplication;
+	const grant = activeGrant;
+	const scope = drawerScope;
+	if (!application || !grant || !scope || !isCurrentScope(scope) || application.id !== scope.applicationID) {
+		Toast.warning('Application 或 active Grant 已切换；未签发凭据。');
+		return;
+	}
+	const intent = `workload-issue:${grant.grant_ref}:${values.name.trim()}:${(values.allowed_ips || '').trim()}`;
     setMutating(true);
     try {
-      const issued = await accessApi.issueCredential(activeGrant.grant_ref, {
+	  const issued = await accessApi.issueCredential(grant.grant_ref, {
         name: values.name.trim(), allowed_ips: (values.allowed_ips || '').trim(), allowed_models: [], allowed_endpoints: [],
       }, intents.get(intent));
       intents.complete(intent);
-      setSecret(issued); setDrawer(null);
-      await loadApplicationAccess();
+	  if (isCurrentScope(scope)) {
+		setSecret(issued); closeDrawer();
+		await loadApplicationAccess();
+	  }
     } catch (error) {
       intents.settleError(intent, error);
-      Toast.error(error instanceof ApiError && error.status === 409 ? '凭据状态已变化，请刷新。' : 'Workload 凭据签发失败');
-      if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+	  if (isCurrentScope(scope)) {
+		Toast.error(error instanceof ApiError && error.status === 409 ? '凭据状态已变化，请刷新。' : 'Workload 凭据签发失败');
+		if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+	  }
     } finally { setMutating(false); }
   };
 
   const rotateCredential = async (family: AccessCredentialFamily) => {
-    if (!activeGrant) return;
+	const application = selectedApplication;
+	const scope = application && applicationScope(application);
+	const familyGrant = grants.find((grant) => grant.grant_ref === family.grant_ref);
+	if (!application || !scope || !isCurrentScope(scope) || !familyGrant || !isGrantCurrentlyActive(familyGrant)) {
+		Toast.warning('此凭据的 exact Grant 当前不可轮换；请刷新后重试。');
+		return;
+	}
     const predecessor = family.versions.find((version) => version.status === 'active');
     if (!predecessor) {
       Toast.error('当前逻辑凭据没有可轮换的 active secret version');
       return;
     }
-    const intent = `workload-rotate:${activeGrant.grant_ref}:${family.credential_ref}:${predecessor.id}`;
+	const intent = `workload-rotate:${familyGrant.grant_ref}:${family.credential_ref}:${predecessor.id}`;
     setMutating(true);
     try {
-      const result = await accessApi.rotateCredential(activeGrant.grant_ref, predecessor.id, intents.get(intent));
+	  const result = await accessApi.rotateCredential(familyGrant.grant_ref, predecessor.id, intents.get(intent));
       intents.complete(intent);
-      setSecret(result.credential);
-      await loadApplicationAccess();
+	  if (isCurrentScope(scope)) {
+		setSecret(result.credential);
+		await loadApplicationAccess();
+	  }
     } catch (error) {
       intents.settleError(intent, error);
-      Toast.error(error instanceof ApiError && error.status === 409 ? '凭据版本已变化，已刷新。' : 'Workload 凭据轮换失败');
-      if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+	  if (isCurrentScope(scope)) {
+		Toast.error(error instanceof ApiError && error.status === 409 ? '凭据版本已变化，已刷新。' : 'Workload 凭据轮换失败');
+		if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+	  }
     } finally { setMutating(false); }
   };
 
   const revokeCredential = (family: AccessCredentialFamily) => {
-    if (!activeGrant) return;
+	const application = selectedApplication;
+	const scope = application && applicationScope(application);
+	if (!application || !scope || !isCurrentScope(scope) || !family.grant_ref) {
+		Toast.warning('凭据 family 的 exact Grant 身份缺失；未执行撤销。');
+		return;
+	}
     const locator = family.versions.find((version) => version.status === 'active') || family.versions[0];
-    if (!locator) return;
+	if (!locator) {
+		Toast.warning('凭据 family 缺少可定位的 secret version；未执行撤销。');
+		return;
+	}
     Modal.confirm({
       title: '撤销整个逻辑凭据？',
       content: `${family.name} 的全部 secret version 将失效，不能通过此操作恢复。`,
       okType: 'danger',
       onOk: async () => {
-        const intent = `workload-revoke:${activeGrant.grant_ref}:${family.credential_ref}`;
+		if (!isCurrentScope(scope)) {
+			Toast.warning('Application 范围已切换；未撤销旧范围凭据。');
+			return;
+		}
+		const intent = `workload-revoke:${family.grant_ref}:${family.credential_ref}`;
         setMutating(true);
         try {
-          await accessApi.revokeCredential(activeGrant.grant_ref, locator.id, intents.get(intent));
+		  await accessApi.revokeCredential(family.grant_ref, locator.id, intents.get(intent));
           intents.complete(intent);
-          Toast.success('逻辑凭据已撤销');
-          await loadApplicationAccess();
+		  if (isCurrentScope(scope)) {
+			Toast.success('逻辑凭据已撤销');
+			await loadApplicationAccess();
+		  }
         } catch (error) {
           intents.settleError(intent, error);
-          Toast.error(error instanceof ApiError && error.status === 409 ? '凭据状态已变化，已刷新。' : '撤销 Workload 凭据失败');
-          if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+		  if (isCurrentScope(scope)) {
+			Toast.error(error instanceof ApiError && error.status === 409 ? '凭据状态已变化，已刷新。' : '撤销 Workload 凭据失败');
+			if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+		  }
         } finally { setMutating(false); }
       },
     });
   };
 
   const archiveApplication = () => {
-    if (!selectedApplication?.can_manage) return;
+	const application = selectedApplication;
+	if (!application?.can_manage) return;
+	const scope = applicationScope(application);
+	if (!isCurrentScope(scope)) {
+		Toast.warning('Application 范围已切换；未执行归档。');
+		return;
+	}
     Modal.confirm({
       title: '归档 Workload Application？',
       content: '归档是终态操作：现有 Grant/逻辑凭据会收口，历史 Request、审计与执行证据保留。',
       okType: 'danger',
       onOk: async () => {
+		if (!isCurrentScope(scope)) {
+			Toast.warning('Application 范围已切换；未执行归档。');
+			return;
+		}
         setMutating(true);
         try {
-          await api.archiveWorkloadApplication(selectedApplication.application_ref, {
-            org_id: organizationRole === 'platform_admin' ? selectedApplication.org_id : undefined,
-            expected_revision: selectedApplication.revision,
+		  await api.archiveWorkloadApplication(application.application_ref, {
+			org_id: organizationRole === 'platform_admin' ? application.org_id : undefined,
+			expected_revision: application.revision,
           });
-          Toast.success('Application 已归档');
-          updateSearch({ application_ref: undefined });
-          await loadApplications();
+		  if (isCurrentScope(scope)) {
+			Toast.success('Application 已归档');
+			updateSearch({ application_ref: undefined });
+			await loadApplications();
+		  }
         } catch (error) {
-          Toast.error(error instanceof ApiError && error.status === 409 ? 'Application 已变化，请刷新后重试。' : 'Application 归档失败');
-          if (error instanceof ApiError && error.status === 409) await loadApplications();
+		  if (isCurrentScope(scope)) {
+			Toast.error(error instanceof ApiError && error.status === 409 ? 'Application 已变化，请刷新后重试。' : 'Application 归档失败');
+			if (error instanceof ApiError && error.status === 409) await loadApplications();
+		  }
         } finally { setMutating(false); }
       },
     });
@@ -331,6 +448,12 @@ export default function ApplicationsV2Page() {
   ], []);
 
   const profileOptions = (contract?.client_profiles || []).map((profile) => ({ value: profile.profile_id, label: `${profile.display_name} · ${profile.runtime_state}` }));
+	const exactGrantForCredential = (family: AccessCredentialFamily) => grants.find((grant) => grant.grant_ref === family.grant_ref);
+	const canRotateCredential = (family: AccessCredentialFamily) => {
+		const exactGrant = exactGrantForCredential(family);
+		return family.effective_status === 'active' && !!exactGrant && isGrantCurrentlyActive(exactGrant);
+	};
+	const credentialLocator = (family: AccessCredentialFamily) => family.versions.find((version) => version.status === 'active') || family.versions[0];
 
   return (
     <div className="ur-page">
@@ -338,14 +461,14 @@ export default function ApplicationsV2Page() {
       <Tabs activeKey={activeTab} onChange={(tab) => updateSearch({ tab })}>
         <TabPane tab="应用与 Agent v2" itemKey="applications">
           <Surface title="项目范围" description="Project admin 能力按当前所选项目实时变化。">
-            {projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjectsAndContract}>重试</Button>} /> : <Space><Select value={selectedProjectID} style={{ width: 300 }} optionList={projects.map((project) => ({ value: project.id, label: `${project.name} (#${project.id})` }))} placeholder="选择项目" onChange={(value) => updateSearch({ project_id: Number(value), application_ref: undefined })} /><Button type="primary" icon={<IconPlus />} disabled={!selectedProjectID || !canManageSelectedProject} onClick={() => setDrawer('create')}>新建 v2 Application</Button></Space>}
+            {projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjectsAndContract}>重试</Button>} /> : <Space><Select value={selectedProjectID} style={{ width: 300 }} optionList={projects.map((project) => ({ value: project.id, label: `${project.name} (#${project.id})` }))} placeholder="选择项目" onChange={(value) => updateSearch({ project_id: Number(value), application_ref: undefined })} /><Button type="primary" icon={<IconPlus />} disabled={!selectedProjectID || !canManageSelectedProject} onClick={openCreateDrawer}>新建 v2 Application</Button></Space>}
             {selectedProjectID && !canManageSelectedProject && <Text type="tertiary">当前所选项目只有读取/使用权限；创建或维护 Workload identity 需要该项目的实时 project_admin 权限。</Text>}
           </Surface>
           <Surface title="Workload identities" description="Kind、project、logical_ref、environment、production_use 是 v2 安全身份；环境与用途创建后不可变。">
             {applicationsError ? <EmptyState title="Application 列表暂时不可用" description={applicationsError} actions={<Button onClick={loadApplications}>重试</Button>} /> : <Table columns={applicationColumns} dataSource={applications} rowKey="id" pagination={false} loading={applicationsLoading} empty={<EmptyState title="当前项目暂无 v2 Application" />} />}
           </Surface>
           {selectedApplication && <>
-            <Surface title={selectedApplication.display_name} description={`${selectedApplication.logical_ref} · ${selectedApplication.identity_contract_version}`} actions={<Space><Button disabled={!selectedApplication.can_manage} onClick={() => setDrawer('edit')}>编辑元数据</Button><Button disabled={!selectedApplication.can_request_access || mutating} onClick={requestAccess}>申请默认执行访问</Button><Button type="danger" disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived' || mutating} onClick={archiveApplication}>归档</Button></Space>}>
+            <Surface title={selectedApplication.display_name} description={`${selectedApplication.logical_ref} · ${selectedApplication.identity_contract_version}`} actions={<Space><Button disabled={!selectedApplication.can_manage} onClick={() => openApplicationDrawer('edit', selectedApplication)}>编辑元数据</Button><Button disabled={!selectedApplication.can_request_access || mutating} onClick={requestAccess}>申请默认执行访问</Button><Button type="danger" disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived' || mutating} onClick={archiveApplication}>归档</Button></Space>}>
               <Space wrap><Tag>{selectedApplication.kind}</Tag><Tag>{selectedApplication.environment}</Tag>{selectedApplication.production_use && <Tag color="red">production</Tag>}<Tag color={selectedApplication.can_manage ? 'green' : 'grey'}>can_manage={String(selectedApplication.can_manage)}</Tag><Tag color={selectedApplication.can_read_credentials ? 'green' : 'grey'}>can_read_credentials={String(selectedApplication.can_read_credentials)}</Tag></Space>
             </Surface>
             <Surface title="Request / Grant" description="仅由 workload_application_id 服务端过滤，不从全局 cursor 页推断。">
@@ -355,8 +478,8 @@ export default function ApplicationsV2Page() {
                 {(requestError || grantError) && <Button size="small" onClick={loadApplicationAccess}>重试访问事实</Button>}
               </Space>
             </Surface>
-            <Surface title="逻辑凭据" description="Secret-free family/version 清单；sponsor 可读元数据不代表可签发或撤销。" actions={selectedApplication.can_manage && activeGrant ? <Button type="primary" icon={<IconKeyStroked />} onClick={() => setDrawer('credential')}>签发 Workload 凭据</Button> : undefined}>
-              {!selectedApplication.can_read_credentials ? <EmptyState title="当前账号无权读取凭据清单" description="Application 聚合计数仍为安全可读事实。" /> : credentialError ? <EmptyState title="凭据清单暂时不可用" description={credentialError} actions={<Button onClick={loadApplicationAccess}>重试</Button>} /> : <Table columns={[{ title: 'Credential', render: (_: unknown, row: AccessCredentialFamily) => `${row.name} · ${row.credential_ref}` }, { title: '状态', dataIndex: 'effective_status' }, { title: 'Versions', render: (_: unknown, row: AccessCredentialFamily) => row.versions.map((version) => `${version.key_prefix} (${version.status})`).join('；') }, { title: '操作', render: (_: unknown, row: AccessCredentialFamily) => selectedApplication.can_manage ? <Space><Button size="small" disabled={mutating || row.effective_status !== 'active' || !activeGrant} onClick={() => rotateCredential(row)}>原子轮换</Button><Button size="small" type="danger" disabled={mutating || row.status !== 'active'} onClick={() => revokeCredential(row)}>撤销</Button></Space> : <Text type="tertiary">只读</Text> }]} dataSource={credentials} rowKey="id" pagination={false} empty={<EmptyState title="尚未签发 Grant-backed Workload 凭据" />} />}
+            <Surface title="逻辑凭据" description="Secret-free family/version 清单；sponsor 可读元数据不代表可签发或撤销。" actions={selectedApplication.can_manage && activeGrant ? <Button type="primary" icon={<IconKeyStroked />} onClick={() => openApplicationDrawer('credential', selectedApplication)}>签发 Workload 凭据</Button> : undefined}>
+              {!selectedApplication.can_read_credentials ? <EmptyState title="当前账号无权读取凭据清单" description="Application 聚合计数仍为安全可读事实。" /> : credentialError ? <EmptyState title="凭据清单暂时不可用" description={credentialError} actions={<Button onClick={loadApplicationAccess}>重试</Button>} /> : <><Table columns={[{ title: 'Credential', render: (_: unknown, row: AccessCredentialFamily) => <>{row.name} · {row.credential_ref}<br /><Text type="tertiary">{row.grant_ref || 'exact Grant identity unavailable'}</Text></> }, { title: '状态', dataIndex: 'effective_status' }, { title: 'Versions', render: (_: unknown, row: AccessCredentialFamily) => <>{row.versions.map((version) => `${version.key_prefix} (${version.status})`).join('；')}{row.versions_truncated && <Text type="tertiary">；仅显示最近版本</Text>}</> }, { title: '操作', render: (_: unknown, row: AccessCredentialFamily) => selectedApplication.can_manage ? <Space><Button size="small" disabled={mutating || !canRotateCredential(row)} onClick={() => rotateCredential(row)}>原子轮换</Button><Button size="small" type="danger" disabled={mutating || row.status !== 'active' || !row.grant_ref || !credentialLocator(row)} onClick={() => revokeCredential(row)}>撤销</Button></Space> : <Text type="tertiary">只读</Text> }]} dataSource={credentials} rowKey="id" pagination={false} empty={<EmptyState title="尚未签发 Grant-backed Workload 凭据" />} />{credentialHasMore && <Text type="warning">当前只展示前 100 个逻辑凭据；请收窄管理范围后继续查看。</Text>}</>}
             </Surface>
           </>}
         </TabPane>
@@ -367,7 +490,7 @@ export default function ApplicationsV2Page() {
         </TabPane>
       </Tabs>
 
-      <SideSheet title={drawer === 'edit' ? '编辑 v2 Application' : '新建 v2 Application'} visible={drawer === 'create' || drawer === 'edit'} onCancel={() => setDrawer(null)} width={540}>
+      <SideSheet title={drawer === 'edit' ? '编辑 v2 Application' : '新建 v2 Application'} visible={drawer === 'create' || drawer === 'edit'} onCancel={closeDrawer} width={540}>
         <Form getFormApi={setFormApi} onSubmit={submitApplication}>
           {drawer === 'create' && <><Form.Input field="application_ref" label="Application ref" placeholder="app_example_service" rules={[{ required: true, message: '必填' }]} /><Form.Input field="logical_ref" label="Logical ref" placeholder="workload_example_service" rules={[{ required: true, message: '必填' }]} /><Form.Select field="kind" label="Kind" initValue="service" optionList={['service', 'agent', 'workflow', 'integration_adapter'].map((value) => ({ value, label: value }))} rules={[{ required: true, message: '必填' }]} style={{ width: '100%' }} /></>}
           <Form.Input field="display_name" label="显示名称" rules={[{ required: true, message: '必填' }]} />
@@ -378,12 +501,12 @@ export default function ApplicationsV2Page() {
           <Form.Input field="owner_team" label="Owner team（描述信息）" />
           <Form.TextArea field="description" label="说明" />
           {drawer === 'edit' && <Form.Select field="status" label="状态" optionList={[{ value: 'active', label: 'active' }, { value: 'disabled', label: 'disabled' }]} rules={[{ required: true, message: '必填' }]} style={{ width: '100%' }} />}
-          <div style={{ textAlign: 'right', marginTop: 20 }}><Button onClick={() => setDrawer(null)}>取消</Button><Button type="primary" htmlType="submit" loading={mutating} style={{ marginLeft: 8 }}>保存</Button></div>
+          <div style={{ textAlign: 'right', marginTop: 20 }}><Button onClick={closeDrawer}>取消</Button><Button type="primary" htmlType="submit" loading={mutating} style={{ marginLeft: 8 }}>保存</Button></div>
         </Form>
       </SideSheet>
 
-      <Modal title="签发 Workload 逻辑凭据" visible={drawer === 'credential'} onCancel={() => setDrawer(null)} footer={null}>
-        <Form getFormApi={setFormApi} onSubmit={issueCredential}><Form.Input field="name" label="凭据名称" rules={[{ required: true, message: '必填' }]} /><Form.Input field="allowed_ips" label="IP / CIDR（可选）" /><div style={{ textAlign: 'right' }}><Button onClick={() => setDrawer(null)}>取消</Button><Button htmlType="submit" type="primary" loading={mutating} style={{ marginLeft: 8 }}>签发</Button></div></Form>
+      <Modal title="签发 Workload 逻辑凭据" visible={drawer === 'credential'} onCancel={closeDrawer} footer={null}>
+        <Form getFormApi={setFormApi} onSubmit={issueCredential}><Form.Input field="name" label="凭据名称" rules={[{ required: true, message: '必填' }]} /><Form.Input field="allowed_ips" label="IP / CIDR（可选）" /><div style={{ textAlign: 'right' }}><Button onClick={closeDrawer}>取消</Button><Button htmlType="submit" type="primary" loading={mutating} style={{ marginLeft: 8 }}>签发</Button></div></Form>
       </Modal>
 
       <Modal title="一次性 Workload Secret" visible={!!secret} onOk={() => setSecret(null)} onCancel={() => setSecret(null)} okText="我已安全保存" cancelButtonProps={{ style: { display: 'none' } }} maskClosable={false} closeOnEsc={false}>

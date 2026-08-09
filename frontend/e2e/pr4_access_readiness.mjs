@@ -4,10 +4,64 @@ import { chromium } from 'playwright';
 const fixture = JSON.parse(process.env.PR4_BROWSER_FIXTURE || '{}');
 assert.ok(fixture.base_url, 'PR4_BROWSER_FIXTURE.base_url is required');
 assert.ok(fixture.unavailable_base_url, 'PR4_BROWSER_FIXTURE.unavailable_base_url is required');
+for (const name of ['provider', 'feed', 'upstream']) {
+  assert.ok(fixture.trap_urls?.[name], `PR4_BROWSER_FIXTURE.trap_urls.${name} is required`);
+  assert.ok(fixture.control_trap_urls?.[name], `PR4_BROWSER_FIXTURE.control_trap_urls.${name} is required`);
+}
+assert.ok(fixture.egress_targets?.provider, 'PR4_BROWSER_FIXTURE.egress_targets.provider is required');
+assert.ok(fixture.egress_targets?.feed, 'PR4_BROWSER_FIXTURE.egress_targets.feed is required');
 
 const browser = await chromium.launch({ headless: true });
 const journeys = [];
 const browserErrors = [];
+
+async function installCausalEgressGuard(context, baseURL, trapURLs) {
+  const applicationOrigin = new URL(baseURL).origin;
+  const providerOrigin = new URL(fixture.egress_targets.provider).origin;
+  const feedOrigin = new URL(fixture.egress_targets.feed).origin;
+  await context.route('**/*', async (route) => {
+    const requestURL = new URL(route.request().url());
+    let trafficClass = '';
+    if (requestURL.origin === providerOrigin) {
+      trafficClass = 'provider';
+    } else if (requestURL.origin === feedOrigin ||
+      (requestURL.origin === applicationOrigin && requestURL.pathname === '/api/v1/completed-executions')) {
+      trafficClass = 'feed';
+    } else if (requestURL.origin !== applicationOrigin) {
+      trafficClass = 'upstream';
+    }
+    if (!trafficClass) {
+      await route.continue();
+      return;
+    }
+
+    const trapURL = new URL('/observed', trapURLs[trafficClass]);
+    trapURL.searchParams.set('original_origin', requestURL.origin);
+    const observed = await context.request.get(trapURL.toString());
+    assert.equal(observed.status(), 418, `${trafficClass} egress trap must reject traffic`);
+    await route.fulfill({
+      status: 502,
+      contentType: 'text/plain; charset=utf-8',
+      body: `${trafficClass} egress blocked by PR4 browser acceptance`,
+    });
+  });
+}
+
+async function proveBrowserEgressGuard() {
+  const context = await browser.newContext({ baseURL: fixture.base_url, serviceWorkers: 'block' });
+  await installCausalEgressGuard(context, fixture.base_url, fixture.control_trap_urls);
+  const page = await context.newPage();
+  for (const target of [
+    `${fixture.egress_targets.provider}/v1/chat/completions`,
+    `${fixture.egress_targets.feed}/v1/completed-executions`,
+    'https://unclassified-upstream.pr4.invalid/probe',
+  ]) {
+    const response = await page.goto(target, { waitUntil: 'domcontentloaded' });
+    assert.equal(response.status(), 502, `external request was not intercepted: ${target}`);
+  }
+  await context.close();
+  console.log('PR4_BROWSER_CAUSAL_EGRESS_CONTROL provider=observed feed=observed upstream=observed');
+}
 
 async function visible(locator, message) {
   await locator.waitFor({ state: 'visible', timeout: 15_000 });
@@ -16,7 +70,8 @@ async function visible(locator, message) {
 }
 
 async function login(role, baseURL = fixture.base_url) {
-  const context = await browser.newContext({ baseURL });
+  const context = await browser.newContext({ baseURL, serviceWorkers: 'block' });
+  await installCausalEgressGuard(context, baseURL, fixture.trap_urls);
   const page = await context.newPage();
   page.on('pageerror', (error) => browserErrors.push(`${role}: ${error.stack || error.message}`));
   page.on('console', (message) => {
@@ -128,6 +183,8 @@ async function preparePendingRequest(role) {
 }
 
 try {
+  await proveBrowserEgressGuard();
+
   const alice = await login('alice');
   try {
     await gotoHeading(alice.page, `/access?project_id=${fixture.project_a}`, '我的访问');

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -57,26 +56,38 @@ type workloadApplicationRecord struct {
 }
 
 type workloadCredentialRecord struct {
-	ID               int64                             `json:"id"`
-	CredentialRef    string                            `json:"credential_ref,omitempty"`
-	Name             string                            `json:"name"`
-	KeyPrefix        string                            `json:"key_prefix,omitempty"`
-	Status           string                            `json:"status"`
-	EffectiveStatus  string                            `json:"effective_status"`
-	KeyType          string                            `json:"key_type"`
-	AllowedIPs       string                            `json:"allowed_ips"`
-	AllowedModels    string                            `json:"allowed_models"`
-	AllowedEndpoints string                            `json:"allowed_endpoints"`
-	PolicyLabels     string                            `json:"policy_labels,omitempty"`
-	RPMLimit         int                               `json:"rpm_limit"`
-	RPSLimit         int                               `json:"rps_limit"`
-	ConcurrencyLimit *int                              `json:"concurrency_limit,omitempty"`
-	BudgetLimitCents *int64                            `json:"budget_limit_cents,omitempty"`
-	GrantRef         string                            `json:"grant_ref,omitempty"`
-	Classification   string                            `json:"classification"`
-	VersionCount     int                               `json:"version_count"`
-	Versions         []workloadCredentialVersionRecord `json:"versions"`
-	CreatedAt        time.Time                         `json:"created_at"`
+	ID                int64                             `json:"id"`
+	CredentialRef     string                            `json:"credential_ref,omitempty"`
+	Name              string                            `json:"name"`
+	KeyPrefix         string                            `json:"key_prefix,omitempty"`
+	Status            string                            `json:"status"`
+	EffectiveStatus   string                            `json:"effective_status"`
+	KeyType           string                            `json:"key_type"`
+	AllowedIPs        string                            `json:"allowed_ips"`
+	AllowedModels     string                            `json:"allowed_models"`
+	AllowedEndpoints  string                            `json:"allowed_endpoints"`
+	PolicyLabels      string                            `json:"policy_labels,omitempty"`
+	RPMLimit          int                               `json:"rpm_limit"`
+	RPSLimit          int                               `json:"rps_limit"`
+	ConcurrencyLimit  *int                              `json:"concurrency_limit,omitempty"`
+	BudgetLimitCents  *int64                            `json:"budget_limit_cents,omitempty"`
+	GrantRef          string                            `json:"grant_ref,omitempty"`
+	Classification    string                            `json:"classification"`
+	VersionCount      int                               `json:"version_count"`
+	VersionsTruncated bool                              `json:"versions_truncated"`
+	Versions          []workloadCredentialVersionRecord `json:"versions"`
+	CreatedAt         time.Time                         `json:"created_at"`
+}
+
+const (
+	maxWorkloadCredentialPage              = 1000
+	maxWorkloadCredentialVersionsPerFamily = 20
+	maxWorkloadReadinessCredentials        = 100
+)
+
+type workloadCredentialPageItem struct {
+	Classification string
+	ID             int64
 }
 
 type workloadCredentialVersionRecord struct {
@@ -564,6 +575,11 @@ UPDATE workload_applications
 }
 
 func (h *Handler) ListWorkloadApplicationCredentials(w http.ResponseWriter, r *http.Request) {
+	page, pageSize, err := parseBoundedWorkloadCredentialPagination(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid credential pagination"})
+		return
+	}
 	orgID, err := workloadApplicationRequestOrg(r)
 	if err != nil {
 		writeWorkloadApplicationError(w, err)
@@ -602,18 +618,71 @@ func (h *Handler) ListWorkloadApplicationCredentials(w http.ResponseWriter, r *h
 			return
 		}
 	}
-	rows, err := h.db.Query(r.Context(), fmt.Sprintf(`
+	selectorRows, err := h.db.Query(r.Context(), `
+WITH credential_candidates AS (
+	SELECT 'grant_bound'::text AS classification,ac.id,ac.created_at
+	  FROM access_credentials ac
+	  JOIN access_grants g
+	    ON g.id=ac.access_grant_id AND g.org_id=ac.org_id AND g.project_id=ac.project_id
+	   AND g.subject_type='workload_application' AND g.subject_workload_application_id=$2
+	 WHERE ac.org_id=$1 AND ac.project_id=$3
+	   AND ($4::boolean OR g.sponsor_user_id=$5)
+	UNION ALL
+	SELECT 'legacy_unbound'::text,k.id,k.created_at
+	  FROM api_keys k
+	 WHERE $4::boolean AND k.org_id=$1 AND k.project_id=$3 AND k.workload_application_id=$2
+	   AND k.access_credential_id IS NULL AND COALESCE(k.purpose,'')=''
+)
+SELECT classification,id
+  FROM credential_candidates
+ ORDER BY created_at DESC,id DESC,classification
+ LIMIT $6 OFFSET $7`, orgID, application.ID, application.ProjectID, canManage, actorUserID,
+		pageSize+1, paginationOffset(page, pageSize))
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
+		return
+	}
+	selectors := make([]workloadCredentialPageItem, 0, pageSize+1)
+	for selectorRows.Next() {
+		var selector workloadCredentialPageItem
+		if err := selectorRows.Scan(&selector.Classification, &selector.ID); err != nil {
+			selectorRows.Close()
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
+			return
+		}
+		selectors = append(selectors, selector)
+	}
+	if err := selectorRows.Err(); err != nil {
+		selectorRows.Close()
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
+		return
+	}
+	selectorRows.Close()
+	hasMore := len(selectors) > pageSize
+	if hasMore {
+		selectors = selectors[:pageSize]
+	}
+	familyIDs := make([]int64, 0, len(selectors))
+	legacyIDs := make([]int64, 0, len(selectors))
+	for _, selector := range selectors {
+		if selector.Classification == "grant_bound" {
+			familyIDs = append(familyIDs, selector.ID)
+		} else {
+			legacyIDs = append(legacyIDs, selector.ID)
+		}
+	}
+	families := make(map[int64]workloadCredentialRecord, len(familyIDs))
+	now := time.Now().UTC()
+	if len(familyIDs) > 0 {
+		rows, queryErr := h.db.Query(r.Context(), fmt.Sprintf(`
 	SELECT ac.id,ac.credential_ref,ac.name,ac.status,ac.allowed_ips,ac.allowed_models,
 	       ac.allowed_endpoints,ac.policy_labels,ac.rpm_limit,ac.rps_limit,
-	       ac.concurrency_limit,ac.created_at,
-	       g.grant_ref,g.status,g.valid_from,g.valid_until,
+	       ac.concurrency_limit,ac.created_at,g.grant_ref,g.status,g.valid_from,g.valid_until,
 	       EXISTS (
 	         SELECT 1 FROM users live_sponsor
 	         WHERE live_sponsor.id=g.sponsor_user_id AND live_sponsor.org_id=g.org_id
-	           AND live_sponsor.status='active'
-	           AND (
-	             live_sponsor.organization_role IN ('platform_admin','org_admin')
-	             OR EXISTS (
+	           AND live_sponsor.status='active' AND (
+	             live_sponsor.organization_role IN ('platform_admin','org_admin') OR EXISTS (
 	               SELECT 1 FROM project_members live_sponsor_pm
 	               WHERE live_sponsor_pm.project_id=g.project_id AND live_sponsor_pm.user_id=live_sponsor.id
 	                 AND live_sponsor_pm.role IN ('project_admin','project_user','project_developer','developer')
@@ -623,169 +692,195 @@ func (h *Handler) ListWorkloadApplicationCredentials(w http.ResponseWriter, r *h
 	       %s AS runtime_effective,
 	       EXISTS (
 	         SELECT 1 FROM api_keys active_version
-	         WHERE active_version.access_credential_id=ac.id
-	           AND active_version.credential_ref=ac.credential_ref
+	         WHERE active_version.access_credential_id=ac.id AND active_version.credential_ref=ac.credential_ref
 	           AND active_version.access_grant_id=ac.access_grant_id
 	           AND active_version.org_id=ac.org_id AND active_version.project_id=ac.project_id
 	           AND active_version.workload_application_id=a.id
 	           AND COALESCE(active_version.purpose,'')='' AND active_version.status='active'
 	       ) AS has_active_version,
 	       k.id,k.key_prefix,k.status,k.created_at,k.rotated_from_key_id
-  FROM access_credentials ac
-  JOIN access_grants g
-    ON g.id=ac.access_grant_id AND g.org_id=ac.org_id AND g.project_id=ac.project_id
-	   AND g.subject_type='workload_application'
-	   AND g.subject_workload_application_id=$2
+	  FROM access_credentials ac
+	  JOIN access_grants g
+	    ON g.id=ac.access_grant_id AND g.org_id=ac.org_id AND g.project_id=ac.project_id
+	   AND g.subject_type='workload_application' AND g.subject_workload_application_id=$2
 	  JOIN workload_applications a
 	    ON a.id=g.subject_workload_application_id AND a.org_id=g.org_id AND a.project_id=g.project_id
 	  JOIN projects p ON p.id=a.project_id AND p.org_id=a.org_id
-  LEFT JOIN api_keys k
-    ON k.access_credential_id=ac.id AND k.credential_ref=ac.credential_ref
-   AND k.access_grant_id=ac.access_grant_id AND k.org_id=ac.org_id AND k.project_id=ac.project_id
-   AND k.workload_application_id=$2 AND COALESCE(k.purpose,'')=''
- WHERE ac.org_id=$1 AND ac.project_id=$3
-	   AND ($4::boolean OR g.sponsor_user_id=$5)
-	 ORDER BY ac.created_at DESC,ac.id DESC,k.id`,
-		workloadRuntimeEffectiveCredentialFamilySQL("a", "p", "ac", "g")),
-		orgID, application.ID, application.ProjectID, canManage, actorUserID)
-	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
-		return
-	}
-	defer rows.Close()
-	items := make([]workloadCredentialRecord, 0)
-	itemByID := make(map[int64]int)
-	now := time.Now().UTC()
-	for rows.Next() {
-		var familyID int64
-		var credentialRef, name, familyStatus, allowedIPs, allowedModels, allowedEndpoints, policyLabels string
-		var rpmLimit, rpsLimit int
-		var concurrencyLimit sql.NullInt64
-		var familyCreatedAt, grantValidFrom time.Time
-		var grantRef, grantStatus string
-		var sponsorLive, runtimeEffective, hasActiveVersion bool
-		var grantValidUntil sql.NullTime
-		var keyID, rotatedFrom sql.NullInt64
-		var keyPrefix, keyStatus sql.NullString
-		var keyCreatedAt sql.NullTime
-		if err := rows.Scan(&familyID, &credentialRef, &name, &familyStatus, &allowedIPs, &allowedModels,
-			&allowedEndpoints, &policyLabels, &rpmLimit, &rpsLimit, &concurrencyLimit,
-			&familyCreatedAt, &grantRef, &grantStatus, &grantValidFrom, &grantValidUntil, &sponsorLive,
-			&runtimeEffective, &hasActiveVersion,
-			&keyID, &keyPrefix, &keyStatus, &keyCreatedAt, &rotatedFrom); err != nil {
+	  LEFT JOIN LATERAL (
+	    SELECT version.id,version.key_prefix,version.status,version.created_at,version.rotated_from_key_id
+	      FROM api_keys version
+	     WHERE version.access_credential_id=ac.id AND version.credential_ref=ac.credential_ref
+	       AND version.access_grant_id=ac.access_grant_id AND version.org_id=ac.org_id
+	       AND version.project_id=ac.project_id AND version.workload_application_id=$2
+	       AND COALESCE(version.purpose,'')=''
+	     ORDER BY version.id DESC
+	     LIMIT %d
+	  ) k ON TRUE
+	 WHERE ac.org_id=$1 AND ac.project_id=$3 AND ac.id=ANY($4::bigint[])
+	 ORDER BY ac.id,k.id DESC`, workloadRuntimeEffectiveCredentialFamilySQL("a", "p", "ac", "g"),
+			maxWorkloadCredentialVersionsPerFamily+1), orgID, application.ID, application.ProjectID, familyIDs)
+		if queryErr != nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
 			return
 		}
-		index, exists := itemByID[familyID]
-		if !exists {
-			item := workloadCredentialRecord{
-				ID: familyID, CredentialRef: credentialRef, Name: name, Status: familyStatus,
-				KeyType: "service", AllowedIPs: allowedIPs, AllowedModels: allowedModels,
-				AllowedEndpoints: allowedEndpoints, PolicyLabels: policyLabels,
-				RPMLimit: rpmLimit, RPSLimit: rpsLimit, GrantRef: grantRef,
-				Classification: "grant_bound", Versions: make([]workloadCredentialVersionRecord, 0),
-				CreatedAt: familyCreatedAt,
+		for rows.Next() {
+			var familyID int64
+			var credentialRef, name, familyStatus, allowedIPs, allowedModels, allowedEndpoints, policyLabels string
+			var rpmLimit, rpsLimit int
+			var concurrencyLimit sql.NullInt64
+			var familyCreatedAt, grantValidFrom time.Time
+			var grantRef, grantStatus string
+			var sponsorLive, runtimeEffective, hasActiveVersion bool
+			var grantValidUntil sql.NullTime
+			var keyID, rotatedFrom sql.NullInt64
+			var keyPrefix, keyStatus sql.NullString
+			var keyCreatedAt sql.NullTime
+			if err := rows.Scan(&familyID, &credentialRef, &name, &familyStatus, &allowedIPs, &allowedModels,
+				&allowedEndpoints, &policyLabels, &rpmLimit, &rpsLimit, &concurrencyLimit,
+				&familyCreatedAt, &grantRef, &grantStatus, &grantValidFrom, &grantValidUntil, &sponsorLive,
+				&runtimeEffective, &hasActiveVersion, &keyID, &keyPrefix, &keyStatus, &keyCreatedAt, &rotatedFrom); err != nil {
+				rows.Close()
+				writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
+				return
 			}
-			if concurrencyLimit.Valid {
-				value := int(concurrencyLimit.Int64)
-				item.ConcurrencyLimit = &value
+			item, exists := families[familyID]
+			if !exists {
+				item = workloadCredentialRecord{
+					ID: familyID, CredentialRef: credentialRef, Name: name, Status: familyStatus,
+					KeyType: "service", AllowedIPs: allowedIPs, AllowedModels: allowedModels,
+					AllowedEndpoints: allowedEndpoints, PolicyLabels: policyLabels,
+					RPMLimit: rpmLimit, RPSLimit: rpsLimit, GrantRef: grantRef,
+					Classification: "grant_bound", Versions: make([]workloadCredentialVersionRecord, 0), CreatedAt: familyCreatedAt,
+				}
+				if concurrencyLimit.Valid {
+					value := int(concurrencyLimit.Int64)
+					item.ConcurrencyLimit = &value
+				}
+				item.EffectiveStatus = effectiveWorkloadFamilyStatus(application.Status, application.ProjectStatus,
+					familyStatus, grantStatus, grantValidFrom, nullTimePointer(grantValidUntil), sponsorLive,
+					runtimeEffective, hasActiveVersion, now)
 			}
-			item.EffectiveStatus = effectiveWorkloadFamilyStatus(
-				application.Status, application.ProjectStatus, familyStatus, grantStatus,
-				grantValidFrom, nullTimePointer(grantValidUntil), sponsorLive,
-				runtimeEffective, hasActiveVersion, now,
-			)
-			items = append(items, item)
-			index = len(items) - 1
-			itemByID[familyID] = index
+			if keyID.Valid {
+				if len(item.Versions) >= maxWorkloadCredentialVersionsPerFamily {
+					item.VersionsTruncated = true
+				} else {
+					version := workloadCredentialVersionRecord{ID: keyID.Int64, KeyPrefix: keyPrefix.String,
+						Status: keyStatus.String, CreatedAt: keyCreatedAt.Time}
+					if rotatedFrom.Valid {
+						value := rotatedFrom.Int64
+						version.RotatedFromKeyID = &value
+					}
+					version.EffectiveStatus = effectiveWorkloadCredentialVersionStatus(application.Status,
+						application.ProjectStatus, familyStatus, grantStatus, grantValidFrom,
+						nullTimePointer(grantValidUntil), sponsorLive, runtimeEffective, version.Status, now)
+					item.Versions = append(item.Versions, version)
+					item.VersionCount = len(item.Versions)
+					if item.KeyPrefix == "" {
+						item.KeyPrefix = version.KeyPrefix
+					}
+					if version.EffectiveStatus == "active" {
+						item.EffectiveStatus = "active"
+					}
+				}
+			}
+			families[familyID] = item
 		}
-		if keyID.Valid {
-			version := workloadCredentialVersionRecord{
-				ID: keyID.Int64, KeyPrefix: keyPrefix.String, Status: keyStatus.String,
-				CreatedAt: keyCreatedAt.Time,
-			}
-			if rotatedFrom.Valid {
-				value := rotatedFrom.Int64
-				version.RotatedFromKeyID = &value
-			}
-			version.EffectiveStatus = effectiveWorkloadCredentialVersionStatus(
-				application.Status, application.ProjectStatus, familyStatus, grantStatus,
-				grantValidFrom, nullTimePointer(grantValidUntil), sponsorLive,
-				runtimeEffective, version.Status, now,
-			)
-			items[index].Versions = append(items[index].Versions, version)
-			items[index].VersionCount++
-			items[index].KeyPrefix = version.KeyPrefix
-			if version.EffectiveStatus == "active" {
-				items[index].EffectiveStatus = "active"
-			}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
+			return
 		}
+		rows.Close()
 	}
-	if rows.Err() != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
-		return
-	}
-	if !canManage {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": len(items)})
-		return
-	}
-	legacyRows, err := h.db.Query(r.Context(), `
+	legacyItems := make(map[int64]workloadCredentialRecord, len(legacyIDs))
+	if len(legacyIDs) > 0 {
+		legacyRows, queryErr := h.db.Query(r.Context(), `
 	SELECT k.id,k.name,k.key_prefix,k.status,COALESCE(NULLIF(k.key_type,''),'shared'),
        COALESCE(k.allowed_ips,''),COALESCE(k.allowed_models,''),COALESCE(k.allowed_endpoints,''),
 	       COALESCE(k.policy_labels,''),k.rpm_limit,k.qps_limit,k.concurrency_limit,k.budget_limit,
 	       k.created_at,k.rotated_from_key_id
   FROM api_keys k
  WHERE k.org_id=$1 AND k.project_id=$2 AND k.workload_application_id=$3
-   AND k.access_credential_id IS NULL AND COALESCE(k.purpose,'')=''
- ORDER BY k.created_at DESC,k.id DESC`, orgID, application.ProjectID, application.ID)
-	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
-		return
-	}
-	defer legacyRows.Close()
-	for legacyRows.Next() {
-		var item workloadCredentialRecord
-		var concurrencyLimit, budgetLimit, rotatedFrom sql.NullInt64
-		if err := legacyRows.Scan(&item.ID, &item.Name, &item.KeyPrefix, &item.Status, &item.KeyType,
-			&item.AllowedIPs, &item.AllowedModels, &item.AllowedEndpoints, &item.PolicyLabels,
-			&item.RPMLimit, &item.RPSLimit, &concurrencyLimit, &budgetLimit, &item.CreatedAt,
-			&rotatedFrom); err != nil {
+	   AND k.access_credential_id IS NULL AND COALESCE(k.purpose,'')='' AND k.id=ANY($4::bigint[])
+	 ORDER BY k.id DESC`, orgID, application.ProjectID, application.ID, legacyIDs)
+		if queryErr != nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
 			return
 		}
-		if concurrencyLimit.Valid {
-			value := int(concurrencyLimit.Int64)
-			item.ConcurrencyLimit = &value
+		for legacyRows.Next() {
+			var item workloadCredentialRecord
+			var concurrencyLimit, budgetLimit, rotatedFrom sql.NullInt64
+			if err := legacyRows.Scan(&item.ID, &item.Name, &item.KeyPrefix, &item.Status, &item.KeyType,
+				&item.AllowedIPs, &item.AllowedModels, &item.AllowedEndpoints, &item.PolicyLabels,
+				&item.RPMLimit, &item.RPSLimit, &concurrencyLimit, &budgetLimit, &item.CreatedAt,
+				&rotatedFrom); err != nil {
+				legacyRows.Close()
+				writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
+				return
+			}
+			if concurrencyLimit.Valid {
+				value := int(concurrencyLimit.Int64)
+				item.ConcurrencyLimit = &value
+			}
+			if budgetLimit.Valid {
+				value := budgetLimit.Int64
+				item.BudgetLimitCents = &value
+			}
+			item.Classification = "legacy_unbound"
+			item.EffectiveStatus = effectiveLegacyWorkloadCredentialStatus(application.Status, application.ProjectStatus, item.Status)
+			version := workloadCredentialVersionRecord{ID: item.ID, KeyPrefix: item.KeyPrefix, Status: item.Status,
+				EffectiveStatus: item.EffectiveStatus, CreatedAt: item.CreatedAt}
+			if rotatedFrom.Valid {
+				value := rotatedFrom.Int64
+				version.RotatedFromKeyID = &value
+			}
+			item.VersionCount = 1
+			item.Versions = []workloadCredentialVersionRecord{version}
+			legacyItems[item.ID] = item
 		}
-		if budgetLimit.Valid {
-			value := budgetLimit.Int64
-			item.BudgetLimitCents = &value
+		if err := legacyRows.Err(); err != nil {
+			legacyRows.Close()
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
+			return
 		}
-		item.Classification = "legacy_unbound"
-		item.EffectiveStatus = effectiveLegacyWorkloadCredentialStatus(application.Status, application.ProjectStatus, item.Status)
-		version := workloadCredentialVersionRecord{
-			ID: item.ID, KeyPrefix: item.KeyPrefix, Status: item.Status,
-			EffectiveStatus: item.EffectiveStatus, CreatedAt: item.CreatedAt,
-		}
-		if rotatedFrom.Valid {
-			value := rotatedFrom.Int64
-			version.RotatedFromKeyID = &value
-		}
-		item.VersionCount = 1
-		item.Versions = []workloadCredentialVersionRecord{version}
-		items = append(items, item)
+		legacyRows.Close()
 	}
-	if legacyRows.Err() != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application credential store unavailable"})
-		return
-	}
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].CreatedAt.Equal(items[j].CreatedAt) {
-			return items[i].ID > items[j].ID
+	items := make([]workloadCredentialRecord, 0, len(selectors))
+	for _, selector := range selectors {
+		var item workloadCredentialRecord
+		var exists bool
+		if selector.Classification == "grant_bound" {
+			item, exists = families[selector.ID]
+		} else {
+			item, exists = legacyItems[selector.ID]
 		}
-		return items[i].CreatedAt.After(items[j].CreatedAt)
+		if exists {
+			items = append(items, item)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": items, "total": len(items), "page": page, "page_size": pageSize, "has_more": hasMore,
 	})
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": len(items)})
+}
+
+func parseBoundedWorkloadCredentialPagination(r *http.Request) (int, int, error) {
+	page := 1
+	pageSize := defaultPageSize
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > maxWorkloadCredentialPage {
+			return 0, 0, errors.New("invalid page")
+		}
+		page = value
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("page_size")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > maxPageSize {
+			return 0, 0, errors.New("invalid page size")
+		}
+		pageSize = value
+	}
+	return page, pageSize, nil
 }
 
 func (h *Handler) BindWorkloadApplicationCredential(w http.ResponseWriter, r *http.Request) {
@@ -1021,28 +1116,26 @@ func (h *Handler) GetWorkloadApplicationReadiness(w http.ResponseWriter, r *http
 	authorizationState := "legacy_authority"
 	if model != "" && len(eligibleCredentials) == 0 {
 		authorizationState = "credential_required"
+	} else if model != "" && len(credentials) > maxWorkloadReadinessCredentials {
+		authorizationState = "model_authorization_unavailable"
 	} else if model != "" && h.modelAuthorizationEvaluator != nil {
-		authorizationState = "model_authorization_denied"
+		inputs := make([]modelauthz.Input, 0, len(eligibleCredentials))
 		for _, credential := range eligibleCredentials {
-			input := modelauthz.Input{
+			inputs = append(inputs, modelauthz.Input{
 				OrgID: orgID, ProjectID: application.ProjectID, APIKeyID: credential.ID,
 				OwnerUserID: credential.OwnerUserID, Endpoint: endpoint,
 				RequestedModel: model, ResolvedModel: resolvedModel,
-			}
-			input.AccessCredentialID = credential.AccessCredentialID
-			decision, evaluateErr := h.modelAuthorizationEvaluator.Evaluate(r.Context(), input)
-			if evaluateErr != nil {
-				authorizationState = "model_authorization_unavailable"
-				break
-			}
-			if decision.Allowed {
-				authorizationState = decision.Reason
-				if authorizationState == "legacy_authority_unchanged" {
-					authorizationState = "legacy_authority"
-				}
-				break
-			}
+				AccessCredentialID: credential.AccessCredentialID,
+			})
+		}
+		decision, evaluateErr := h.modelAuthorizationEvaluator.EvaluateAny(r.Context(), inputs)
+		if evaluateErr != nil {
+			authorizationState = "model_authorization_unavailable"
+		} else {
 			authorizationState = decision.Reason
+			if authorizationState == "legacy_authority_unchanged" {
+				authorizationState = "legacy_authority"
+			}
 		}
 	}
 
@@ -1088,17 +1181,19 @@ func readActiveWorkloadCredentials(ctx context.Context, rower interface {
 	Query(context.Context, string, ...interface{}) (pgx.Rows, error)
 }, orgID, applicationID int64) ([]workloadReadinessCredential, error) {
 	rows, err := rower.Query(ctx, fmt.Sprintf(`
-SELECT k.id,0,COALESCE(k.owner_user_id,0),COALESCE(k.allowed_models,'')
+(SELECT k.id,0,COALESCE(k.owner_user_id,0),COALESCE(k.allowed_models,'')
   FROM api_keys k
   JOIN workload_applications a
     ON a.id=k.workload_application_id AND a.org_id=k.org_id AND a.project_id=k.project_id
   JOIN projects p ON p.id=a.project_id AND p.org_id=a.org_id
- WHERE k.org_id=$1 AND k.workload_application_id=$2
-   AND k.access_credential_id IS NULL AND COALESCE(k.purpose,'')=''
-   AND a.status='active' AND p.status='active'
+	 WHERE k.org_id=$1 AND k.workload_application_id=$2
+	   AND k.access_credential_id IS NULL AND COALESCE(k.purpose,'')=''
+	   AND a.status='active' AND p.status='active'
 	   AND k.status='active'
+ ORDER BY k.id DESC
+ LIMIT %d)
 UNION ALL
-SELECT 0,ac.id,0,ac.allowed_models
+(SELECT 0,ac.id,0,ac.allowed_models
   FROM access_credentials ac
   JOIN access_grants g
     ON g.id=ac.access_grant_id AND g.org_id=ac.org_id AND g.project_id=ac.project_id
@@ -1108,7 +1203,11 @@ SELECT 0,ac.id,0,ac.allowed_models
   JOIN projects p ON p.id=a.project_id AND p.org_id=a.org_id
  WHERE ac.org_id=$1
 	AND %s
-ORDER BY 1`, workloadRuntimeEffectiveCredentialFamilySQL("a", "p", "ac", "g")), orgID, applicationID)
+ ORDER BY ac.id DESC
+ LIMIT %d)
+LIMIT %d`, maxWorkloadReadinessCredentials+1,
+		workloadRuntimeEffectiveCredentialFamilySQL("a", "p", "ac", "g"),
+		maxWorkloadReadinessCredentials+1, maxWorkloadReadinessCredentials+1), orgID, applicationID)
 	if err != nil {
 		return nil, err
 	}

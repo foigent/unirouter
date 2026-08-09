@@ -242,11 +242,27 @@ func (s *Service) Policies() []Policy {
 	return append([]Policy(nil), snapshot.policies...)
 }
 
-// Readiness reuses the exact authoritative-subject reload and selector
-// matching used by admission, but performs no Redis reservation or mutation.
+// Readiness reuses the fail-closed preconditions, authoritative-subject reload,
+// selector matching, and Redis state dependency used by admission. It performs
+// no reservation or other mutation.
 func (s *Service) Readiness(ctx context.Context, subject Subject) (Readiness, error) {
-	if s == nil {
+	if s == nil || s.rdb == nil {
 		return Readiness{}, ErrStateUnavailable
+	}
+	subject = materializeGrantRateDefaults(subject)
+	projection := Readiness{State: ReadinessReady, Reason: ReasonAllowed}
+	if snapshot := s.snapshot.Load(); snapshot != nil {
+		projection.SnapshotLoadedAt = snapshot.loadedAt
+	}
+	if reason := readinessZeroLimitReason(subject); reason != "" {
+		projection.State = ReadinessBlocked
+		projection.Reason = reason
+		return projection, nil
+	}
+	if s.db != nil && (projection.SnapshotLoadedAt.IsZero() || time.Since(projection.SnapshotLoadedAt) > s.options.SnapshotMaxAge) {
+		projection.State = ReadinessUnavailable
+		projection.Reason = ReasonSnapshotStale
+		return projection, nil
 	}
 	authoritative, err := s.authoritativeSubject(ctx, subject)
 	if err != nil {
@@ -254,16 +270,48 @@ func (s *Service) Readiness(ctx context.Context, subject Subject) (Readiness, er
 	}
 	authoritative = materializeGrantRateDefaults(authoritative)
 	policies := s.matchingPolicies(authoritative)
-	projection := Readiness{MatchingPolicyCount: len(policies)}
+	projection.MatchingPolicyCount = len(policies)
 	for _, policy := range policies {
 		if policy.Mode == ModeEnforce {
 			projection.EnforcedPolicyCount++
 		}
 	}
-	if snapshot := s.snapshot.Load(); snapshot != nil {
-		projection.SnapshotLoadedAt = snapshot.loadedAt
+	if len(policies)+1 > s.options.MaxMatchingPolicies {
+		projection.State = ReadinessUnavailable
+		projection.Reason = ReasonPolicyChainLarge
+		return projection, nil
+	}
+	if err := s.rdb.Ping(ctx).Err(); err != nil {
+		projection.State = ReadinessUnavailable
+		projection.Reason = ReasonStateUnavailable
 	}
 	return projection, nil
+}
+
+func readinessZeroLimitReason(subject Subject) string {
+	if subject.AccessGrantID > 0 {
+		if subject.GrantRPSLimit != nil && *subject.GrantRPSLimit == 0 {
+			return ReasonRPSExceeded
+		}
+		if subject.GrantRPMLimit != nil && *subject.GrantRPMLimit == 0 {
+			return ReasonRPMExceeded
+		}
+		if subject.GrantConcurrencyLimit != nil && *subject.GrantConcurrencyLimit == 0 {
+			return ReasonConcurrency
+		}
+	}
+	if subject.AccessCredentialID > 0 {
+		if subject.BaseRPSLimit == 0 {
+			return ReasonRPSExceeded
+		}
+		if subject.BaseRPMLimit == 0 {
+			return ReasonRPMExceeded
+		}
+		if subject.CredentialConcurrencyLimit != nil && *subject.CredentialConcurrencyLimit == 0 {
+			return ReasonConcurrency
+		}
+	}
+	return ""
 }
 
 func (s *Service) BuiltinLimits() map[string]int64 {

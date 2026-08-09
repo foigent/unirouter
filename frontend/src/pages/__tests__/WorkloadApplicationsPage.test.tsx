@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { Modal, Toast } from '@douyinfe/semi-ui';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import WorkloadApplicationsPage from '../WorkloadApplicationsPage';
 import { useAuthStore } from '../../store/auth';
 
@@ -50,7 +51,84 @@ const application = {
   identity_classification: 'v2', can_manage: true, can_request_access: true, can_read_credentials: true,
 };
 
+const applicationB = {
+  ...application,
+  id: 32,
+  project_id: 12,
+  project_name: 'Project B',
+  application_ref: 'app_project_b_agent',
+  logical_ref: 'workload_project_b_agent',
+  display_name: 'Project B Agent',
+};
+
+const applicationSameProjectB = {
+  ...applicationB,
+  project_id: 11,
+  project_name: '理赔 POC',
+};
+
+const grantFor = (applicationID: number, projectID: number, grantRef: string, status: 'active' | 'suspended' | 'revoked' = 'active') => ({
+  id: applicationID + 40, grant_ref: grantRef, access_request_id: applicationID + 30, org_id: 1, project_id: projectID,
+  subject: { type: 'workload_application', workload_application_id: applicationID },
+  scope: { project_role: 'project_user', scope_mode: 'project_default', models: [], endpoints: [] },
+  environment: 'poc', production_use: false, sponsor_user_id: 1, status, revision: 1,
+  valid_from: '2026-08-09T00:00:00Z', policy_reason_codes: ['workload_project_default_auto'], decision_reason_codes: [],
+  created_at: '2026-08-09T00:00:00Z', updated_at: '2026-08-09T00:00:00Z',
+});
+
+const credentialFor = (credentialRef: string, grantRef: string, keyID: number, effectiveStatus = 'active') => ({
+  id: keyID - 10, credential_ref: credentialRef, grant_ref: grantRef, name: `${credentialRef} runtime`,
+  status: 'active', effective_status: effectiveStatus, allowed_ips: '', allowed_models: [],
+  allowed_endpoints: ['/v1/chat/completions'], rpm_limit: 60, rps_limit: 10,
+  created_at: '2026-08-09T00:00:00Z', version_count: 1,
+  versions: [{ id: keyID, key_prefix: `sk-${credentialRef}`, status: 'active', effective_status: effectiveStatus, created_at: '2026-08-09T00:00:00Z' }],
+});
+
+function ScopeSwitches() {
+  const navigate = useNavigate();
+  return <>
+    <button onClick={() => navigate('/applications?project_id=11&application_ref=app_claims_agent')}>show-app-a</button>
+    <button onClick={() => navigate('/applications?project_id=11&application_ref=app_project_b_agent')}>show-app-b-same-project</button>
+    <button onClick={() => navigate('/applications?project_id=12&application_ref=app_project_b_agent')}>show-app-b</button>
+  </>;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
+async function renderApplicationBAfterAdverseAccessOrdering() {
+  const aRequests = deferred<any>();
+  const aGrants = deferred<any>();
+  clientMocks.getApplications.mockResolvedValue({ data: [application, applicationSameProjectB], total: 2 });
+  accessMocks.listProjectRequests.mockImplementation((_projectID: number, filters: { workload_application_id: number }) => filters.workload_application_id === application.id
+    ? aRequests.promise
+    : Promise.resolve({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' }));
+  accessMocks.listProjectGrants.mockImplementation((_projectID: number, filters: { workload_application_id: number }) => filters.workload_application_id === application.id
+    ? aGrants.promise
+    : Promise.resolve({ data: [grantFor(applicationSameProjectB.id, 11, 'grant-project-b')], pagination: { limit: 50, has_more: false }, scope: 'project' }));
+  clientMocks.getCredentials.mockImplementation((applicationRef: string) => Promise.resolve({
+    data: applicationRef === application.application_ref
+      ? [credentialFor('cred-project-a', 'grant-project-a', 191)]
+      : [credentialFor('cred-project-b', 'grant-project-b', 291)],
+    has_more: false,
+  }));
+
+  render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /></MemoryRouter>);
+  await waitFor(() => expect(accessMocks.listProjectGrants).toHaveBeenCalledWith(11, expect.objectContaining({ workload_application_id: application.id })));
+  fireEvent.click(screen.getByRole('button', { name: 'show-app-b-same-project' }));
+  expect(await screen.findByText('cred-project-b runtime · cred-project-b')).toBeTruthy();
+
+  aRequests.resolve({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
+  aGrants.resolve({ data: [grantFor(application.id, 11, 'grant-project-a')], pagination: { limit: 50, has_more: false }, scope: 'project' });
+  await waitFor(() => expect(screen.queryByText('cred-project-a runtime · cred-project-a')).toBeNull());
+}
+
 describe('ApplicationsV2Page', () => {
+  afterEach(() => { Modal.destroyAll(); Toast.destroyAll(); });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({ token: 'token', isAuthenticated: true, profileLoading: false, user: { id: 1, username: 'admin', organization_role: 'platform_admin', role: 'platform_admin', org_id: 1, org_name: '总部' } });
@@ -61,11 +139,11 @@ describe('ApplicationsV2Page', () => {
     clientMocks.getProjects.mockResolvedValue({ data: [{ id: 11, org_id: 1, name: '理赔 POC', status: 'active', current_user_membership_role: 'project_admin' }], total: 1 });
     clientMocks.getApplications.mockResolvedValue({ data: [application], total: 1 });
     clientMocks.getCredentials.mockResolvedValue({ data: [{
-      id: 81, credential_ref: 'cred_claims_agent', name: 'Claims runtime', status: 'active', effective_status: 'active',
+      id: 81, credential_ref: 'cred_claims_agent', grant_ref: 'grant_claims_agent', name: 'Claims runtime', status: 'active', effective_status: 'active',
       allowed_ips: '', allowed_models: [], allowed_endpoints: ['/v1/chat/completions'], rpm_limit: 60, rps_limit: 10,
       created_at: '2026-08-09T00:00:00Z', version_count: 1,
       versions: [{ id: 91, key_prefix: 'sk-agent', status: 'active', effective_status: 'active', created_at: '2026-08-09T00:00:00Z' }],
-    }] });
+    }], has_more: false });
     accessMocks.listProjectRequests.mockResolvedValue({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
     accessMocks.listProjectGrants.mockResolvedValue({ data: [{
       id: 71, grant_ref: 'grant_claims_agent', access_request_id: 61, org_id: 1, project_id: 11,
@@ -74,6 +152,9 @@ describe('ApplicationsV2Page', () => {
       valid_from: '2026-08-09T00:00:00Z', policy_reason_codes: ['workload_project_default_auto'], decision_reason_codes: [], created_at: '2026-08-09T00:00:00Z', updated_at: '2026-08-09T00:00:00Z',
     }], pagination: { limit: 50, has_more: false }, scope: 'project' });
     accessMocks.previewLegacy.mockResolvedValue({ mutation: false, data: [{ object_type: 'workload_application', object_id: 44, object_ref: 'app_legacy', classification: 'review_required', reason_code: 'interactive_client_requires_review', migration_status: 'review_required', automatic_migration: false, client_profiles: [] }], total: 1 });
+    accessMocks.issueCredential.mockResolvedValue({ secret_available: false, recovery_action: 'rotate again' });
+    accessMocks.rotateCredential.mockResolvedValue({ credential: { secret_available: false, recovery_action: 'rotate again' } });
+    accessMocks.revokeCredential.mockResolvedValue({ status: 'revoked' });
   });
 
   it('renders native v2 identity, optional profiles, access evidence and logical credential versions', async () => {
@@ -157,11 +238,11 @@ describe('ApplicationsV2Page', () => {
       pagination: { limit: 50, has_more: false }, scope: 'project',
     });
     clientMocks.getCredentials.mockResolvedValue({ data: [{
-      id: 81, credential_ref: 'cred_claims_agent', name: 'Claims runtime', status: 'active', effective_status: 'grant_expired',
+      id: 81, credential_ref: 'cred_claims_agent', grant_ref: 'grant_claims_agent', name: 'Claims runtime', status: 'active', effective_status: 'grant_expired',
       allowed_ips: '', allowed_models: [], allowed_endpoints: ['/v1/chat/completions'], rpm_limit: 60, rps_limit: 10,
       created_at: '2026-08-09T00:00:00Z', version_count: 1,
       versions: [{ id: 91, key_prefix: 'sk-agent', status: 'active', effective_status: 'grant_expired', created_at: '2026-08-09T00:00:00Z' }],
-    }] });
+    }], has_more: false });
 
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
 
@@ -170,5 +251,135 @@ describe('ApplicationsV2Page', () => {
     const rotate = await screen.findByRole('button', { name: '原子轮换' }) as HTMLButtonElement;
     expect(rotate.disabled).toBe(true);
     expect((screen.getByRole('button', { name: '撤销' }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    await waitFor(() => expect(screen.getAllByText('撤销整个逻辑凭据？').length).toBeGreaterThan(0));
+    const confirmButtons = screen.getAllByRole('button', { name: 'confirm' });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+    await waitFor(() => expect(accessMocks.revokeCredential).toHaveBeenCalledWith('grant_claims_agent', 91, expect.any(String)));
   });
+
+  it('uses each credential family exact Grant for suspended containment in a multiple-Grant response', async () => {
+    accessMocks.listProjectGrants.mockResolvedValue({
+      data: [grantFor(31, 11, 'grant-suspended-family', 'suspended'), grantFor(99, 11, 'grant-unrelated-active')],
+      pagination: { limit: 50, has_more: false }, scope: 'project',
+    });
+    clientMocks.getCredentials.mockResolvedValue({ data: [credentialFor('cred-suspended', 'grant-suspended-family', 191, 'grant_suspended')], has_more: false });
+    accessMocks.revokeCredential.mockResolvedValue({ status: 'revoked' });
+
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    expect(await screen.findByText('cred-suspended runtime · cred-suspended')).toBeTruthy();
+    expect((screen.getByRole('button', { name: '原子轮换' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    await waitFor(() => expect(screen.getAllByText('撤销整个逻辑凭据？').length).toBeGreaterThan(0));
+    const confirmButtons = screen.getAllByRole('button', { name: 'confirm' });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => expect(accessMocks.revokeCredential).toHaveBeenCalledWith('grant-suspended-family', 191, expect.any(String)));
+    expect(accessMocks.revokeCredential).not.toHaveBeenCalledWith('grant-unrelated-active', expect.anything(), expect.anything());
+  });
+
+  it('disables destructive credential controls when the exact family identity is unavailable', async () => {
+    clientMocks.getCredentials.mockResolvedValue({ data: [{ ...credentialFor('cred-missing-grant', '', 291), grant_ref: '' }], has_more: false });
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    expect(await screen.findByText('exact Grant identity unavailable')).toBeTruthy();
+    expect((screen.getByRole('button', { name: '原子轮换' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '撤销' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(accessMocks.rotateCredential).not.toHaveBeenCalled();
+    expect(accessMocks.revokeCredential).not.toHaveBeenCalled();
+  });
+
+  it('binds credential issue to the currently displayed Application after adverse access-response ordering', async () => {
+    await renderApplicationBAfterAdverseAccessOrdering();
+
+    fireEvent.click(screen.getByRole('button', { name: /签发 Workload 凭据/ }));
+    fireEvent.change(await screen.findByLabelText('凭据名称'), { target: { value: 'project-b-runtime' } });
+    fireEvent.click(screen.getByRole('button', { name: '签发' }));
+
+    await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalledWith('grant-project-b', expect.objectContaining({ name: 'project-b-runtime' }), expect.any(String)));
+    expect(accessMocks.issueCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
+  }, 30_000);
+
+  it('binds credential rotation to the currently displayed exact Grant after adverse response ordering', async () => {
+    await renderApplicationBAfterAdverseAccessOrdering();
+
+    fireEvent.click(screen.getByRole('button', { name: '原子轮换' }));
+    await waitFor(() => expect(accessMocks.rotateCredential).toHaveBeenCalledWith('grant-project-b', 291, expect.any(String)));
+    expect(accessMocks.rotateCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
+  }, 30_000);
+
+  it('binds credential revocation to the currently displayed exact Grant after adverse response ordering', async () => {
+    await renderApplicationBAfterAdverseAccessOrdering();
+
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    await waitFor(() => expect(screen.getAllByText('撤销整个逻辑凭据？').length).toBeGreaterThan(0));
+    const confirmButtons = screen.getAllByRole('button', { name: 'confirm' });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => expect(accessMocks.revokeCredential).toHaveBeenCalledWith('grant-project-b', 291, expect.any(String)));
+    expect(accessMocks.revokeCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
+  }, 30_000);
+
+  it('ignores a late prior-project Application list before update, archive, or access sinks become reachable', async () => {
+    const projectA = deferred<{ data: typeof application[]; total: number }>();
+    clientMocks.getProjects.mockResolvedValue({
+      data: [
+        { id: 11, org_id: 1, name: 'Project A', status: 'active', current_user_membership_role: 'project_admin' },
+        { id: 12, org_id: 1, name: 'Project B', status: 'active', current_user_membership_role: 'project_admin' },
+      ], total: 2,
+    });
+    clientMocks.getApplications.mockImplementation(({ project_id }: { project_id: number }) => project_id === 11
+      ? projectA.promise
+      : Promise.resolve({ data: [applicationB], total: 1 }));
+    accessMocks.listProjectRequests.mockResolvedValue({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
+    accessMocks.listProjectGrants.mockResolvedValue({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
+    clientMocks.getCredentials.mockResolvedValue({ data: [], has_more: false });
+
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /></MemoryRouter>);
+    await waitFor(() => expect(clientMocks.getApplications).toHaveBeenCalledWith({ project_id: 11 }));
+    fireEvent.click(screen.getByRole('button', { name: 'show-app-b' }));
+    expect((await screen.findAllByText('Project B Agent')).length).toBeGreaterThan(0);
+
+    projectA.resolve({ data: [application], total: 1 });
+    await waitFor(() => expect(screen.queryByText('workload_claims_agent · unirouter.workload-identity.v2')).toBeNull());
+    expect(screen.getByText('workload_project_b_agent · unirouter.workload-identity.v2')).toBeTruthy();
+    expect(clientMocks.updateApplication).not.toHaveBeenCalled();
+    expect(clientMocks.archiveApplication).not.toHaveBeenCalled();
+    expect(accessMocks.createRequest).not.toHaveBeenCalled();
+  }, 30_000);
+
+  it('invalidates an open edit action when the project/Application scope changes', async () => {
+    clientMocks.getProjects.mockResolvedValue({ data: [
+      { id: 11, org_id: 1, name: 'Project A', status: 'active', current_user_membership_role: 'project_admin' },
+      { id: 12, org_id: 1, name: 'Project B', status: 'active', current_user_membership_role: 'project_admin' },
+    ], total: 2 });
+    clientMocks.getApplications.mockImplementation(({ project_id }: { project_id: number }) => Promise.resolve({ data: [project_id === 11 ? application : applicationB], total: 1 }));
+
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑元数据' }));
+    fireEvent.click(screen.getByRole('button', { name: 'show-app-b' }));
+    expect((await screen.findAllByText('Project B Agent')).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(clientMocks.updateApplication).not.toHaveBeenCalled());
+  }, 30_000);
+
+  it('invalidates an archive confirmation when the project/Application scope changes', async () => {
+    clientMocks.getProjects.mockResolvedValue({ data: [
+      { id: 11, org_id: 1, name: 'Project A', status: 'active', current_user_membership_role: 'project_admin' },
+      { id: 12, org_id: 1, name: 'Project B', status: 'active', current_user_membership_role: 'project_admin' },
+    ], total: 2 });
+    clientMocks.getApplications.mockImplementation(({ project_id }: { project_id: number }) => Promise.resolve({ data: [project_id === 11 ? application : applicationB], total: 1 }));
+
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: '归档' }));
+    await screen.findByText('归档 Workload Application？');
+    fireEvent.click(screen.getByRole('button', { name: 'show-app-b' }));
+    expect((await screen.findAllByText('Project B Agent')).length).toBeGreaterThan(0);
+    const modalButtons = screen.getAllByRole('button');
+    fireEvent.click(modalButtons[modalButtons.length - 1]);
+
+    await waitFor(() => expect(clientMocks.archiveApplication).not.toHaveBeenCalled());
+  }, 30_000);
 });

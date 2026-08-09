@@ -468,14 +468,38 @@ func (h *Handler) readinessPolicyAxes(r *http.Request, response *modelreadiness.
 		response.ProjectCaller.LimitPolicy = modelreadiness.Unavailable("limit_policy_unavailable")
 		return
 	}
+	var blocked *limitpolicy.Readiness
+	unavailableReason := ""
 	for _, snapshot := range limitSnapshots {
 		subject := readinessLimitPolicySubject(response, snapshot, actorUserID)
 		projection, err := provider.Readiness(r.Context(), subject)
 		if err != nil {
+			unavailableReason = "limit_policy_unavailable"
 			continue
 		}
-		response.ProjectCaller.LimitPolicy = modelreadiness.Ready("limit_policy_evaluated", modelreadiness.Evidence(
-			"matching_policy_count", projection.MatchingPolicyCount, "enforced_policy_count", projection.EnforcedPolicyCount))
+		switch projection.State {
+		case limitpolicy.ReadinessReady:
+			response.ProjectCaller.LimitPolicy = modelreadiness.Ready("limit_policy_evaluated", modelreadiness.Evidence(
+				"matching_policy_count", projection.MatchingPolicyCount, "enforced_policy_count", projection.EnforcedPolicyCount))
+			return
+		case limitpolicy.ReadinessBlocked:
+			if blocked == nil {
+				copy := projection
+				blocked = &copy
+			}
+		case limitpolicy.ReadinessUnavailable:
+			unavailableReason = projection.Reason
+		default:
+			unavailableReason = "limit_policy_unavailable"
+		}
+	}
+	if unavailableReason != "" {
+		response.ProjectCaller.LimitPolicy = modelreadiness.Unavailable(unavailableReason)
+		return
+	}
+	if blocked != nil {
+		response.ProjectCaller.LimitPolicy = modelreadiness.Blocked(blocked.Reason, modelreadiness.Evidence(
+			"matching_policy_count", blocked.MatchingPolicyCount, "enforced_policy_count", blocked.EnforcedPolicyCount), "", "project_admin")
 		return
 	}
 	response.ProjectCaller.LimitPolicy = modelreadiness.Unavailable("limit_policy_unavailable")
@@ -509,7 +533,21 @@ func readinessLimitPolicySubject(response *modelreadiness.Response, snapshot acc
 	if snapshot.APIKey.AccessCredentialID != nil {
 		subject.CredentialRef = snapshot.APIKey.CredentialRef
 	}
+	subject.BaseRPMLimit = int64(snapshot.APIKey.RPMLimit)
+	subject.BaseRPSLimit = int64(snapshot.APIKey.QPSLimit)
+	subject.CredentialConcurrencyLimit = readinessInt64Pointer(snapshot.APIKey.CredentialConcurrencyLimit)
+	subject.GrantRPMLimit = readinessInt64Pointer(snapshot.APIKey.GrantRPMLimit)
+	subject.GrantRPSLimit = readinessInt64Pointer(snapshot.APIKey.GrantRPSLimit)
+	subject.GrantConcurrencyLimit = readinessInt64Pointer(snapshot.APIKey.GrantConcurrencyLimit)
 	return subject
+}
+
+func readinessInt64Pointer(value *int) *int64 {
+	if value == nil {
+		return nil
+	}
+	result := int64(*value)
+	return &result
 }
 
 func (h *Handler) readinessFixRoute(r *http.Request, route string, allowed bool) string {

@@ -1,15 +1,29 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/uniroute/unirouter/internal/accessgrantboundary"
 	"github.com/uniroute/unirouter/internal/accessscope"
+	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/modelreadiness"
 )
+
+type readinessProjectionReloader struct {
+	projection limitpolicy.Readiness
+	err        error
+}
+
+func (r readinessProjectionReloader) Refresh(context.Context) error { return nil }
+
+func (r readinessProjectionReloader) Readiness(context.Context, limitpolicy.Subject) (limitpolicy.Readiness, error) {
+	return r.projection, r.err
+}
 
 func TestModelReadinessRejectsNonCanonicalOrUnboundedQueriesBeforeLookup(t *testing.T) {
 	tests := []struct {
@@ -81,6 +95,33 @@ func TestReadinessGrantScopeUsesCanonicalProjectDefaultAndExplicitIntersection(t
 		t.Run(test.name, func(t *testing.T) {
 			if got := readinessGrantScopeAllows(test.grant, test.requested, test.resolved, test.endpoint); got != test.allowed {
 				t.Fatalf("allowed=%v want=%v", got, test.allowed)
+			}
+		})
+	}
+}
+
+func TestReadinessPolicyAxisPreservesRuntimeFailClosedState(t *testing.T) {
+	tests := []struct {
+		name       string
+		projection limitpolicy.Readiness
+		state      modelreadiness.State
+		reason     string
+	}{
+		{"explicit zero", limitpolicy.Readiness{State: limitpolicy.ReadinessBlocked, Reason: limitpolicy.ReasonRPSExceeded}, modelreadiness.StateBlocked, limitpolicy.ReasonRPSExceeded},
+		{"stale snapshot", limitpolicy.Readiness{State: limitpolicy.ReadinessUnavailable, Reason: limitpolicy.ReasonSnapshotStale}, modelreadiness.StateUnavailable, limitpolicy.ReasonSnapshotStale},
+		{"over-cap chain", limitpolicy.Readiness{State: limitpolicy.ReadinessUnavailable, Reason: limitpolicy.ReasonPolicyChainLarge}, modelreadiness.StateUnavailable, limitpolicy.ReasonPolicyChainLarge},
+		{"redis unavailable", limitpolicy.Readiness{State: limitpolicy.ReadinessUnavailable, Reason: limitpolicy.ReasonStateUnavailable}, modelreadiness.StateUnavailable, limitpolicy.ReasonStateUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := &Handler{limitPolicyReloader: readinessProjectionReloader{projection: test.projection}}
+			response := &modelreadiness.Response{Scope: modelreadiness.Scope{
+				OrgID: 1, ProjectID: 2, RequestedModel: "model", ResolvedModel: "model", Endpoint: "/v1/chat/completions", Caller: "self",
+			}}
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
+			handler.readinessPolicyAxes(request, response, []accessgrantboundary.Snapshot{{}}, 3)
+			if response.ProjectCaller.LimitPolicy.State != test.state || response.ProjectCaller.LimitPolicy.ReasonCode != test.reason {
+				t.Fatalf("axis=%#v, want state=%s reason=%s", response.ProjectCaller.LimitPolicy, test.state, test.reason)
 			}
 		})
 	}

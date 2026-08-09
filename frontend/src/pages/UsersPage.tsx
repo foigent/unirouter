@@ -85,9 +85,6 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const closeDrawer = () => { setShowDrawer(false); setEditUser(null); };
 
   const mutationRestriction = (user: any) => {
-		if (providerScope === 'enterprise' || user.auth_provider !== 'local') {
-			return '企业身份由 OIDC / 企业目录管理，此处只读';
-		}
     if (Number(user.id) === Number(currentUser?.id)) {
       return '当前登录账号不能在这里修改角色、停用或删除';
     }
@@ -138,12 +135,12 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       return;
     }
     Modal.confirm({
-      title: '确认删除',
-      content: `确定要删除用户 ${u.username} 吗？`,
+      title: '确认账号离场',
+      content: `确定要让 ${u.username} 离场吗？UniRouter 将停用账号并收口会话、项目调用授权与凭据，同时保留审计身份和历史证据。`,
       onOk: async () => {
         try {
           await api.deleteUser(u.id);
-          Toast.success('已删除');
+          Toast.success('账号已离场');
           load();
         } catch { Toast.error('删除失败'); }
       },
@@ -223,7 +220,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
               onClick={() => openEdit(record)}
             />
             <Button
-              aria-label={`删除用户 ${record.username}`}
+              aria-label={`离场用户 ${record.username}`}
               icon={<IconDelete />}
               size="small"
               type="danger"
@@ -261,7 +258,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 		<Typography.Text type="tertiary">
 			{providerScope === 'local'
 				? '本页服务端只查询 auth_provider=local；可创建本地账号并管理本地生命周期。'
-				: '本页服务端只查询企业身份；身份来源与登录属性只读，项目角色仍在“项目与成员”中分配。'}
+				: '本页服务端只查询企业身份。OIDC / 企业目录拥有登录来源与外部身份属性；UniRouter 管理已映射账号的组织角色、启停与离场，项目成员关系仍在“项目与成员”中管理。'}
 		</Typography.Text>
         <div className="ur-table-shell">
           <Table
@@ -283,12 +280,15 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       </Surface>
 
       <SideSheet
-        title={editUser ? '编辑用户权限' : '新增本地用户'}
+        title={editUser ? '编辑 UniRouter 权限与状态' : '新增本地用户'}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
+          {editUser?.auth_provider !== 'local' && <Typography.Paragraph type="tertiary">
+            登录来源、外部 subject、用户名与邮箱由 OIDC / 企业目录提供；下面的组织角色与账号状态是 UniRouter 本地治理事实。
+          </Typography.Paragraph>}
           <Form.Select
             field="org_id"
             label="所属组织"

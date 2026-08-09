@@ -29,6 +29,9 @@ export default function AccessReviewPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mutatingRef, setMutatingRef] = useState('');
+	const currentProjectID = useRef<number | undefined>(selectedProjectID);
+	const queueGeneration = useRef(0);
+	currentProjectID.current = selectedProjectID;
 
   const replaceProject = useCallback((projectID?: number) => {
     const next = new URLSearchParams(search);
@@ -55,36 +58,54 @@ export default function AccessReviewPage() {
   }, [organizationRole, replaceProject, selectedProjectID]);
 
   const loadQueue = useCallback(async (append = false) => {
-    if (!selectedProjectID) {
+	const projectID = selectedProjectID;
+	const generation = ++queueGeneration.current;
+	if (!projectID) {
       setRequests([]);
       setCursor(undefined);
+	  setLoading(false);
       return;
     }
+	if (!append) {
+		setRequests([]);
+		setCursor(undefined);
+	}
     setLoading(true);
     setError('');
     try {
-      const page = await accessApi.listProjectRequests(selectedProjectID, {
+		const page = await accessApi.listProjectRequests(projectID, {
         status: 'needs_review', limit: 25, after_id: append ? cursor : undefined,
       });
+		if (currentProjectID.current !== projectID || queueGeneration.current !== generation) return;
       setRequests((current) => append ? [...current, ...page.data] : page.data);
       setCursor(page.pagination.has_more ? page.pagination.next_after_id : undefined);
     } catch {
+		if (currentProjectID.current !== projectID || queueGeneration.current !== generation) return;
       if (!append) setRequests([]);
       setError('无法读取此项目的审核队列。');
     } finally {
-      setLoading(false);
+		if (currentProjectID.current === projectID && queueGeneration.current === generation) setLoading(false);
     }
   }, [cursor, selectedProjectID]);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { loadQueue(); }, [selectedProjectID]);
 
-  const decide = (request: AccessRequest, decision: 'approve' | 'reject') => {
+	const decide = useCallback((request: AccessRequest, decision: 'approve' | 'reject') => {
+		const projectID = currentProjectID.current;
+		if (!projectID || request.project_id !== projectID) {
+			Toast.warning('审核范围已切换；未提交旧项目请求。');
+			return;
+		}
     const verb = decision === 'approve' ? '批准' : '拒绝';
     Modal.confirm({
       title: `${verb}访问请求`,
       content: `将按请求 revision ${request.revision} 提交${verb}，后端会再次校验当前角色、项目、主体与策略原因。`,
       onOk: async () => {
+		if (currentProjectID.current !== projectID || request.project_id !== projectID) {
+			Toast.warning('审核范围已切换；未提交旧项目请求。');
+			return;
+		}
         const intent = `decision:${request.request_ref}:${request.revision}:${decision}`;
         setMutatingRef(request.request_ref);
         try {
@@ -94,7 +115,7 @@ export default function AccessReviewPage() {
           }, intents.get(intent));
           intents.complete(intent);
           Toast.success(`请求已${verb}`);
-          await loadQueue();
+			if (currentProjectID.current === projectID) await loadQueue();
         } catch (decisionError) {
           intents.settleError(intent, decisionError);
           if (decisionError instanceof ApiError && decisionError.status === 409) {
@@ -108,7 +129,7 @@ export default function AccessReviewPage() {
         }
       },
     });
-  };
+	}, [intents, loadQueue]);
 
   const columns = useMemo(() => [
     { title: '请求', dataIndex: 'request_ref', render: (value: string) => <Text code>{value}</Text> },
@@ -126,7 +147,7 @@ export default function AccessReviewPage() {
         </Space>
       ) : <Text type="tertiary">{row.actions?.reason_code || '当前角色不可操作'}</Text>,
     },
-  ], [mutatingRef]);
+	], [decide, mutatingRef]);
 
   return (
     <div className="ur-page">

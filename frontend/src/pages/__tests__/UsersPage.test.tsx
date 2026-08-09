@@ -65,7 +65,7 @@ describe('UsersPage enterprise identity presentation', () => {
     mocks.updateUser.mockResolvedValue({ success: true });
   });
 
-  it('shows OIDC identity fields and does not offer a fake password update', async () => {
+  it('keeps OIDC source fields read-only while allowing UniRouter-owned role, status, and offboarding controls', async () => {
     render(<UsersPage />);
 
 	expect(await screen.findByText('local-user')).toBeTruthy();
@@ -79,9 +79,19 @@ describe('UsersPage enterprise identity presentation', () => {
     expect(screen.getByText('企业 OIDC')).toBeTruthy();
     expect(screen.getByText('启用')).toBeTruthy();
 
-	expect((screen.getByRole('button', { name: '编辑用户 oidc-user' }) as HTMLButtonElement).disabled).toBe(true);
+	expect((screen.getByRole('button', { name: '编辑用户 oidc-user' }) as HTMLButtonElement).disabled).toBe(false);
+	expect((screen.getByRole('button', { name: '离场用户 oidc-user' }) as HTMLButtonElement).disabled).toBe(false);
 	expect(screen.queryByText('新增本地用户')).toBeNull();
 	expect(screen.queryByText(/新密码/)).toBeNull();
+	expect(screen.getByText(/OIDC \/ 企业目录拥有登录来源与外部身份属性；UniRouter 管理已映射账号的组织角色、启停与离场/)).toBeTruthy();
+
+	fireEvent.click(screen.getByRole('button', { name: '编辑用户 oidc-user' }));
+	expect(await screen.findByText('编辑 UniRouter 权限与状态')).toBeTruthy();
+	expect(screen.getByText(/登录来源、外部 subject、用户名与邮箱由 OIDC \/ 企业目录提供/)).toBeTruthy();
+	expect((screen.getByLabelText('用户名') as HTMLInputElement).disabled).toBe(true);
+	expect(screen.queryByLabelText('初始密码')).toBeNull();
+	fireEvent.click(screen.getByText('更新'));
+	await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith(9, { organization_role: 'member', status: 'active' }));
   });
 
   it('creates a local user with an explicit organization', async () => {
@@ -243,7 +253,7 @@ describe('UsersPage enterprise identity presentation', () => {
 
     expect(await screen.findByText('当前账号')).toBeTruthy();
     expect((screen.getByRole('button', { name: '编辑用户 admin' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '删除用户 admin' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '离场用户 admin' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('keeps platform-admin rows read-only for an organization admin', async () => {
@@ -268,7 +278,7 @@ describe('UsersPage enterprise identity presentation', () => {
 
     await screen.findByText('platform-admin');
     expect((screen.getByRole('button', { name: '编辑用户 platform-admin' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '删除用户 platform-admin' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '离场用户 platform-admin' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('does not present a failed user request as an empty directory', async () => {

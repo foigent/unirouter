@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form, Space, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -55,8 +55,10 @@ export default function ModelReadinessPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsError, setProjectsError] = useState('');
   const [readiness, setReadiness] = useState<ModelReadiness | null>(null);
+  const [readinessScopeKey, setReadinessScopeKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const readinessGeneration = useRef(0);
 
   const query = useMemo(() => ({
     project_id: Number(search.get('project_id') || 0),
@@ -65,6 +67,13 @@ export default function ModelReadinessPage() {
     caller: (search.get('caller') || 'self') as 'self' | 'workload_application',
     application_ref: search.get('application_ref') || undefined,
   }), [search]);
+  const queryScopeKey = useMemo(() => JSON.stringify(query), [query]);
+
+  const responseMatchesQuery = useCallback((result: ModelReadiness) => result.scope.project_id === query.project_id &&
+    result.scope.requested_model === query.model &&
+    result.scope.endpoint === query.endpoint &&
+    result.scope.caller === query.caller &&
+    (result.scope.application_ref || undefined) === query.application_ref, [query]);
 
   const loadProjects = useCallback(async () => {
     setProjectsError('');
@@ -77,23 +86,30 @@ export default function ModelReadinessPage() {
   }, []);
 
   const loadReadiness = useCallback(async () => {
+    const generation = ++readinessGeneration.current;
+    const scopeKey = queryScopeKey;
+    setReadiness(null);
+    setReadinessScopeKey('');
+    setError('');
     if (!query.project_id || !query.model || !query.endpoint || (query.caller === 'workload_application' && !query.application_ref)) {
-      setReadiness(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
-    setError('');
     try {
-      setReadiness(await accessApi.modelReadiness(query));
+      const result = await accessApi.modelReadiness(query);
+      if (readinessGeneration.current !== generation || queryScopeKey !== scopeKey || !responseMatchesQuery(result)) return;
+      setReadiness(result);
+      setReadinessScopeKey(scopeKey);
     } catch (readinessError) {
-      setReadiness(null);
+      if (readinessGeneration.current !== generation || queryScopeKey !== scopeKey) return;
       setError(readinessError instanceof ApiError && readinessError.status === 503
         ? 'Readiness 证据源暂时不可用，当前状态是“暂时无法判断”，不是“未配置”或“受阻”。'
         : '无法读取此项目与调用主体的 readiness。');
     } finally {
-      setLoading(false);
+      if (readinessGeneration.current === generation && queryScopeKey === scopeKey) setLoading(false);
     }
-  }, [query]);
+  }, [query, queryScopeKey, responseMatchesQuery]);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { loadReadiness(); }, [loadReadiness]);
@@ -112,8 +128,9 @@ export default function ModelReadinessPage() {
     setSearch(next);
   };
 
-  const platformAxes = readiness ? Object.entries(readiness.platform_model) : [];
-  const projectAxes = readiness ? Object.entries(readiness.project_caller) : [];
+  const scopedReadiness = readinessScopeKey === queryScopeKey ? readiness : null;
+  const platformAxes = scopedReadiness ? Object.entries(scopedReadiness.platform_model) : [];
+  const projectAxes = scopedReadiness ? Object.entries(scopedReadiness.project_caller) : [];
 
   return (
     <div className="ur-page">
@@ -130,13 +147,13 @@ export default function ModelReadinessPage() {
         </Form>
       </Surface>
 
-      {error ? <Surface><EmptyState title="暂时无法判断" description={error} actions={<Button onClick={loadReadiness}>重试</Button>} /></Surface> : !readiness ? <Surface><EmptyState title="选择项目、模型与调用主体后检查" /></Surface> : <>
-        <Surface title="四个独立事实" description={`resolved_model=${readiness.scope.resolved_model} · runtime_mutation=${readiness.runtime_mutation} · external_requests=${readiness.external_requests}`}>
+      {error ? <Surface><EmptyState title="暂时无法判断" description={error} actions={<Button onClick={loadReadiness}>重试</Button>} /></Surface> : !scopedReadiness ? <Surface><EmptyState title="选择项目、模型与调用主体后检查" /></Surface> : <>
+        <Surface title="四个独立事实" description={`resolved_model=${scopedReadiness.scope.resolved_model} · runtime_mutation=${scopedReadiness.runtime_mutation} · external_requests=${scopedReadiness.external_requests}`}>
           <div className="ur-metric-grid">
-            <MetricTile label="已录入" value={factText(readiness.summary.registered)} />
-            <MetricTile label="目录可见" value={factText(readiness.summary.catalog_visible)} />
-            <MetricTile label="可路由" value={factText(readiness.summary.routable)} />
-            <MetricTile label="当前项目调用主体可调用" value={factText(readiness.summary.current_project_caller_callable)} />
+            <MetricTile label="已录入" value={factText(scopedReadiness.summary.registered)} />
+            <MetricTile label="目录可见" value={factText(scopedReadiness.summary.catalog_visible)} />
+            <MetricTile label="可路由" value={factText(scopedReadiness.summary.routable)} />
+            <MetricTile label="当前项目调用主体可调用" value={factText(scopedReadiness.summary.current_project_caller_callable)} />
           </div>
         </Surface>
         <Surface title="平台 / 模型层" description="注册、生命周期、目录、价格和纯读 route preview 各自保真。">
@@ -146,7 +163,7 @@ export default function ModelReadinessPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{projectAxes.map(([key, axis]) => <AxisCard key={key} label={projectLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
         </Surface>
         <Surface>
-          <Space vertical align="start"><Title heading={6}>证据边界</Title><Text type="tertiary">as_of: {readiness.as_of}</Text><Text type="tertiary">页面只展示 safe_evidence；不包含 provider/key ID、base URL、密文、hash、token 或 secret。</Text></Space>
+          <Space vertical align="start"><Title heading={6}>证据边界</Title><Text type="tertiary">as_of: {scopedReadiness.as_of}</Text><Text type="tertiary">页面只展示 safe_evidence；不包含 provider/key ID、base URL、密文、hash、token 或 secret。</Text></Space>
         </Surface>
       </>}
     </div>

@@ -2146,7 +2146,7 @@ paths:
   /api/v1/workload-applications/{ref}/credentials:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, project_admin, project_user]
-    description: Lists secret-free logical credential families and nested physical-version metadata. An exact live project_user sponsor may read only the sponsored Workload metadata and cannot issue, rotate or revoke from this route; legacy-unbound credentials remain admin-only.
+    description: Lists secret-free logical credential families with strict page/page_size bounds (page 1..1000, page_size 1..100, defaults 1/20). Each family returns at most the 20 newest physical versions; versions_truncated=true is explicit when older history exists. An exact live project_user sponsor may read only the sponsored Workload metadata and cannot issue, rotate or revoke from this route; legacy-unbound credentials remain admin-only.
     get: *operation_list
 
   /api/v1/workload-applications/{ref}/credentials/{key_id}/bind:
@@ -2158,7 +2158,7 @@ paths:
   /api/v1/workload-applications/{ref}/readiness:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
-    description: Resolves application, credential, client, endpoint, model authorization, limit, governance, channel and Provider credential axes through authoritative backend state. Missing model context is explicit and no mutation occurs.
+    description: Resolves application, credential, client, endpoint, model authorization, limit, governance, channel and Provider credential axes through authoritative backend state. Active credential candidates are hard-bounded and model authorization is evaluated from one set-oriented policy read. Missing model context is explicit and no mutation occurs.
     get: *operation_get
 
   /api/v1/deployment/contract:
@@ -2400,7 +2400,7 @@ paths:
     put:
       tags: [Admin]
       summary: Update a user's organization role or account status
-      description: Project membership is a separate axis and is never added, removed, or rewritten by this endpoint. project_ids and project roles are rejected. An actor cannot change their own organization role or disable the current account.
+      description: Applies to both local and mapped enterprise/OIDC accounts. UniRouter owns the stored organization role and account status; this endpoint never changes the login provider, external subject, username, email, or other IdP-owned source attributes. Project membership is a separate axis and is never added, removed, or rewritten here. project_ids and project roles are rejected. An actor cannot change their own organization role or disable the current account.
       security:
         - bearerAuth: []
       parameters:

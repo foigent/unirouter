@@ -104,6 +104,7 @@ export type CredentialVersion = {
 export type AccessCredentialFamily = {
   id: number;
   credential_ref: string;
+  grant_ref: string;
   name: string;
   status: string;
   effective_status: string;
@@ -116,6 +117,7 @@ export type AccessCredentialFamily = {
   created_at: string;
   version_count: number;
   versions: CredentialVersion[];
+  versions_truncated?: boolean;
 };
 
 export type IssuedCredential = {

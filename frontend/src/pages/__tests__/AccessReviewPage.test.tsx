@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Modal } from '@douyinfe/semi-ui';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AccessReviewPage from '../AccessReviewPage';
 import { useAuthStore } from '../../store/auth';
 import { ApiError } from '../../api/client';
@@ -22,15 +23,28 @@ vi.mock('../../api/access', () => ({
   },
 }));
 
-const queueRequest = (id: number, ref: string, actionable: boolean) => ({
-  id, request_ref: ref, org_id: 1, project_id: 11, subject: { type: 'user', user_id: 9 }, request_kind: 'human_personal',
+const queueRequest = (id: number, ref: string, actionable: boolean, projectID = 11) => ({
+  id, request_ref: ref, org_id: 1, project_id: projectID, subject: { type: 'user', user_id: 9 }, request_kind: 'human_personal',
   requested_scope: { project_role: 'project_user', scope_mode: 'project_default', models: [], endpoints: [] },
   environment: 'personal', production_use: false, submission_mode: 'self', status: 'needs_review', decision_mode: 'policy',
   policy_reason_codes: ['first_cross_project'], decision_reason_codes: [], submitted_by: 9, submitted_at: '2026-08-09T00:00:00Z', revision: 2,
   actions: { can_approve: actionable, can_reject: actionable, can_cancel: false, reason_code: actionable ? 'project_admin_can_decide' : 'decision_requires_org_admin' },
 });
 
+function ProjectSwitch() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate('/access-review?project_id=12')}>switch-project</button>;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
 describe('AccessReviewPage', () => {
+  afterEach(() => { Modal.destroyAll(); });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({
@@ -67,5 +81,38 @@ describe('AccessReviewPage', () => {
       expected_revision: 2, decision: 'approve', reason_codes: ['manual_approved'],
     }, expect.any(String)));
     await waitFor(() => expect(mocks.listProjectRequests).toHaveBeenCalledTimes(2));
+  });
+
+  it('never renders a slower prior-project queue response under the current project', async () => {
+    const projectA = deferred<{ data: ReturnType<typeof queueRequest>[]; pagination: { limit: number; has_more: boolean }; scope: string }>();
+    mocks.listProjectRequests.mockImplementation((projectID: number) => projectID === 11
+      ? projectA.promise
+      : Promise.resolve({ data: [queueRequest(30, 'request-project-b', true, 12)], pagination: { limit: 25, has_more: false }, scope: 'project' }));
+
+    render(<MemoryRouter initialEntries={['/access-review?project_id=11']}><AccessReviewPage /><ProjectSwitch /></MemoryRouter>);
+    await waitFor(() => expect(mocks.listProjectRequests).toHaveBeenCalledWith(11, expect.any(Object)));
+    fireEvent.click(screen.getByRole('button', { name: 'switch-project' }));
+    expect(await screen.findByText('request-project-b')).toBeTruthy();
+
+    projectA.resolve({ data: [queueRequest(20, 'request-project-a', true)], pagination: { limit: 25, has_more: false }, scope: 'project' });
+    await waitFor(() => expect(screen.queryByText('request-project-a')).toBeNull());
+    expect(screen.getByText('request-project-b')).toBeTruthy();
+  });
+
+  it('binds a decision confirmation to the project that rendered the request', async () => {
+    mocks.listProjectRequests.mockImplementation((projectID: number) => Promise.resolve({
+      data: [queueRequest(projectID, `request-project-${projectID}`, true, projectID)],
+      pagination: { limit: 25, has_more: false }, scope: 'project',
+    }));
+    render(<MemoryRouter initialEntries={['/access-review?project_id=11']}><AccessReviewPage /><ProjectSwitch /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole('button', { name: '批准' }));
+    await waitFor(() => expect(screen.getAllByText('批准访问请求').length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole('button', { name: 'switch-project' }));
+    expect(await screen.findByText('request-project-12')).toBeTruthy();
+    const modalButtons = screen.getAllByRole('button');
+    fireEvent.click(modalButtons[modalButtons.length - 1]);
+
+    await waitFor(() => expect(mocks.decideRequest).not.toHaveBeenCalled());
   });
 });

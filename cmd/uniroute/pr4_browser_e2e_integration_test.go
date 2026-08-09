@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,35 +21,25 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/admin"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
-	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	pr4BrowserJWTSecret     = "pr4-browser-jwt-secret-32-bytes"
-	pr4BrowserAPIKeySecret  = "pr4-browser-api-key-secret-32-bytes"
-	pr4BrowserPassword      = "PR4-browser-password-2026"
-	pr4BrowserReadyModel    = "pr4-browser-ready-model"
-	pr4BrowserRuntimeModel  = "pr4-browser-runtime-only"
-	pr4BrowserEncryptionKey = "0123456789abcdef01234567"
+	pr4BrowserJWTSecret      = "pr4-browser-jwt-secret-32-bytes"
+	pr4BrowserAPIKeySecret   = "pr4-browser-api-key-secret-32-bytes"
+	pr4BrowserPassword       = "PR4-browser-password-2026"
+	pr4BrowserReadyModel     = "pr4-browser-ready-model"
+	pr4BrowserRuntimeModel   = "pr4-browser-runtime-only"
+	pr4BrowserEncryptionKey  = "0123456789abcdef01234567"
+	pr4BrowserProviderTarget = "https://provider.pr4.invalid"
+	pr4BrowserFeedTarget     = "https://feed.pr4.invalid"
 )
-
-type pr4BrowserRoutingPreview struct {
-	previews map[string]routingpolicy.Preview
-}
-
-func (p *pr4BrowserRoutingPreview) Preview(_ context.Context, model string) (routingpolicy.Preview, error) {
-	preview := p.previews[model]
-	preview.Model = model
-	return preview, nil
-}
-
-func (*pr4BrowserRoutingPreview) Invalidate() {}
 
 type pr4BrowserTrafficTrap struct {
 	name   string
@@ -67,6 +58,87 @@ func newPR4BrowserTrafficTrap(t *testing.T, name string) *pr4BrowserTrafficTrap 
 	return trap
 }
 
+type pr4BrowserEgressTransport struct {
+	delegate       http.RoundTripper
+	providerOrigin string
+	feedOrigin     string
+	providerTrap   *url.URL
+	feedTrap       *url.URL
+	upstreamTrap   *url.URL
+}
+
+func newPR4BrowserEgressTransport(
+	t *testing.T,
+	providerTrap, feedTrap, upstreamTrap *pr4BrowserTrafficTrap,
+) *pr4BrowserEgressTransport {
+	t.Helper()
+	parse := func(raw string) *url.URL {
+		t.Helper()
+		parsed, err := url.Parse(raw)
+		require.NoError(t, err)
+		return parsed
+	}
+	delegate := http.DefaultTransport
+	if transport, ok := http.DefaultTransport.(*http.Transport); ok {
+		clone := transport.Clone()
+		clone.Proxy = nil
+		delegate = clone
+	}
+	return &pr4BrowserEgressTransport{
+		delegate:       delegate,
+		providerOrigin: pr4BrowserProviderTarget,
+		feedOrigin:     pr4BrowserFeedTarget,
+		providerTrap:   parse(providerTrap.server.URL),
+		feedTrap:       parse(feedTrap.server.URL),
+		upstreamTrap:   parse(upstreamTrap.server.URL),
+	}
+}
+
+func (transport *pr4BrowserEgressTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	target := transport.upstreamTrap
+	origin := request.URL.Scheme + "://" + request.URL.Host
+	switch origin {
+	case transport.providerOrigin:
+		target = transport.providerTrap
+	case transport.feedOrigin:
+		target = transport.feedTrap
+	}
+	if request.URL.IsAbs() && request.URL.Hostname() != "127.0.0.1" && request.URL.Hostname() != "localhost" {
+		clone := request.Clone(request.Context())
+		clone.URL = &url.URL{
+			Scheme:   target.Scheme,
+			Host:     target.Host,
+			Path:     "/observed",
+			RawQuery: "class=" + url.QueryEscape(origin),
+		}
+		clone.Host = target.Host
+		return transport.delegate.RoundTrip(clone)
+	}
+	return transport.delegate.RoundTrip(request)
+}
+
+func provePR4BrowserBackendEgressGuard(
+	t *testing.T,
+	transport http.RoundTripper,
+	providerTrap, feedTrap, upstreamTrap *pr4BrowserTrafficTrap,
+) {
+	t.Helper()
+	client := &http.Client{Transport: transport}
+	for _, target := range []string{
+		pr4BrowserProviderTarget + "/v1/chat/completions",
+		pr4BrowserFeedTarget + "/v1/completed-executions",
+		"https://unclassified-upstream.pr4.invalid/probe",
+	} {
+		response, err := client.Get(target)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusTeapot, response.StatusCode)
+		require.NoError(t, response.Body.Close())
+	}
+	require.Equal(t, int64(1), providerTrap.count.Load())
+	require.Equal(t, int64(1), feedTrap.count.Load())
+	require.Equal(t, int64(1), upstreamTrap.count.Load())
+}
+
 type pr4BrowserFixture struct {
 	BaseURL            string            `json:"base_url"`
 	UnavailableBaseURL string            `json:"unavailable_base_url"`
@@ -80,6 +152,8 @@ type pr4BrowserFixture struct {
 	Users              map[string]int64  `json:"users"`
 	Usernames          map[string]string `json:"usernames"`
 	TrapURLs           map[string]string `json:"trap_urls"`
+	ControlTrapURLs    map[string]string `json:"control_trap_urls"`
+	EgressTargets      map[string]string `json:"egress_targets"`
 }
 
 func TestPR4AccessUXModelReadinessBrowserE2E(t *testing.T) {
@@ -103,28 +177,37 @@ func TestPR4AccessUXModelReadinessBrowserE2E(t *testing.T) {
 	providerTrap := newPR4BrowserTrafficTrap(t, "provider")
 	feedTrap := newPR4BrowserTrafficTrap(t, "feed")
 	upstreamTrap := newPR4BrowserTrafficTrap(t, "upstream")
+	controlProviderTrap := newPR4BrowserTrafficTrap(t, "control-provider")
+	controlFeedTrap := newPR4BrowserTrafficTrap(t, "control-feed")
+	controlUpstreamTrap := newPR4BrowserTrafficTrap(t, "control-upstream")
 
-	fixture := seedPR4BrowserFixture(t, pool)
+	backendEgressGuard := newPR4BrowserEgressTransport(t, providerTrap, feedTrap, upstreamTrap)
+	previousDefaultTransport := http.DefaultTransport
+	http.DefaultTransport = backendEgressGuard
+	t.Cleanup(func() { http.DefaultTransport = previousDefaultTransport })
+	controlBackendEgressGuard := newPR4BrowserEgressTransport(
+		t, controlProviderTrap, controlFeedTrap, controlUpstreamTrap,
+	)
+	provePR4BrowserBackendEgressGuard(
+		t, controlBackendEgressGuard, controlProviderTrap, controlFeedTrap, controlUpstreamTrap,
+	)
+
+	fixture := seedPR4BrowserFixture(t, pool, pr4BrowserProviderTarget)
 	fixture.TrapURLs = map[string]string{
 		"provider": providerTrap.server.URL,
 		"feed":     feedTrap.server.URL,
 		"upstream": upstreamTrap.server.URL,
 	}
-
-	routing := &pr4BrowserRoutingPreview{previews: map[string]routingpolicy.Preview{
-		pr4BrowserReadyModel: {
-			PolicyVersion: "unirouter.routing-policy.v1",
-			Candidates: []routingpolicy.PreviewCandidate{{
-				ChannelID: 1, ChannelName: "pr4-browser-safe-aggregate", EligibleKeyCount: 1,
-			}},
-		},
-		pr4BrowserRuntimeModel: {
-			PolicyVersion: "unirouter.routing-policy.v1",
-			Candidates: []routingpolicy.PreviewCandidate{{
-				ChannelID: 1, ChannelName: "pr4-browser-safe-aggregate", EligibleKeyCount: 1,
-			}},
-		},
-	}}
+	fixture.ControlTrapURLs = map[string]string{
+		"provider": controlProviderTrap.server.URL,
+		"feed":     controlFeedTrap.server.URL,
+		"upstream": controlUpstreamTrap.server.URL,
+	}
+	fixture.EgressTargets = map[string]string{
+		"provider": pr4BrowserProviderTarget,
+		"feed":     pr4BrowserFeedTarget,
+	}
+	routing := gateway.NewRouter(pool)
 
 	evaluator, err := modelauthz.NewEvaluator(pool, "development")
 	require.NoError(t, err)
@@ -152,6 +235,10 @@ func TestPR4AccessUXModelReadinessBrowserE2E(t *testing.T) {
 		t.Fatalf("PR4 browser E2E failed: %v\n%s", err, output)
 	}
 	t.Logf("PR4 browser output:\n%s", output)
+	require.Equal(t, int64(2), controlProviderTrap.count.Load(), "backend and browser provider controls must both be observed")
+	require.Equal(t, int64(2), controlFeedTrap.count.Load(), "backend and browser Feed controls must both be observed")
+	require.Equal(t, int64(2), controlUpstreamTrap.count.Load(), "backend and browser upstream controls must both be observed")
+	t.Log("PR4_CAUSAL_EGRESS_CONTROLS backend=observed browser=observed provider=2 feed=2 upstream=2")
 
 	for _, trap := range []*pr4BrowserTrafficTrap{providerTrap, feedTrap, upstreamTrap} {
 		require.Zero(t, trap.count.Load(), "%s traffic must remain zero", trap.name)
@@ -159,7 +246,7 @@ func TestPR4AccessUXModelReadinessBrowserE2E(t *testing.T) {
 	t.Log("PR4_EXTERNAL_TRAFFIC provider=0 feed=0 upstream=0")
 }
 
-func seedPR4BrowserFixture(t *testing.T, pool *pgxpool.Pool) pr4BrowserFixture {
+func seedPR4BrowserFixture(t *testing.T, pool *pgxpool.Pool, providerTarget string) pr4BrowserFixture {
 	t.Helper()
 	ctx := context.Background()
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(pr4BrowserPassword), bcrypt.MinCost)
@@ -236,6 +323,16 @@ func seedPR4BrowserFixture(t *testing.T, pool *pgxpool.Pool) pr4BrowserFixture {
 		INSERT INTO wallets (org_id,balance_micros,granted_balance_micros,frozen_micros,total_spent_micros)
 		VALUES ($1,1000000,0,0,0)`, orgID)
 	require.NoError(t, err)
+	var channelID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channels (name,provider,base_url,models,status,circuit_state)
+		VALUES ('pr4-browser-safe-aggregate','test',$1,$2,'active','healthy') RETURNING id`,
+		providerTarget, pr4BrowserReadyModel+","+pr4BrowserRuntimeModel).Scan(&channelID))
+	_, err = pool.Exec(ctx, `
+		INSERT INTO channel_keys (channel_id,key_enc,status,allowed_models)
+		VALUES ($1,'pr4-browser-never-decrypted','active',$2)`,
+		channelID, pr4BrowserReadyModel+","+pr4BrowserRuntimeModel)
+	require.NoError(t, err)
 
 	const legacyRef = "app_pr4_browser_legacy"
 	_, err = pool.Exec(ctx, `
@@ -268,7 +365,7 @@ func newPR4BrowserApplicationServer(
 	redisClient *redis.Client,
 	evaluator *modelauthz.Evaluator,
 	policyService *limitpolicy.Service,
-	routing *pr4BrowserRoutingPreview,
+	routing *gateway.Router,
 ) string {
 	t.Helper()
 	handler := admin.NewHandlerWithAPIKeyHashSecret(
