@@ -147,7 +147,78 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
+      - name: Mint read-only Neutral N1 installation token
+        id: integration-control-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ secrets.INTEGRATION_CONTROL_APP_ID }}
+          private-key: ${{ secrets.INTEGRATION_CONTROL_APP_PRIVATE_KEY }}
+          owner: foigent
+          repositories: integration-control
+          permission-contents: read
+
+      - name: Checkout exact Neutral D1 qualifier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: foigent/integration-control
+          ref: db10730d64a9302887ad59c53921e98c757927e7
+          token: ${{ steps.integration-control-token.outputs.token }}
+          persist-credentials: false
+          path: .integration-control-n1-d1
+
+      - name: Qualify and materialize exact Neutral N1 release
+        env:
+          GH_TOKEN: ${{ steps.integration-control-token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          readonly repository="foigent/integration-control"
+          readonly qualifier_commit="db10730d64a9302887ad59c53921e98c757927e7"
+          readonly qualifier_tree="1d91cdecc5ea6c587b6bd03706f0f873657c12e3"
+          readonly qualifier_root="$GITHUB_WORKSPACE/.integration-control-n1-d1"
+          readonly asset_dir="$RUNNER_TEMP/integration-control-n1-assets"
+          readonly consumer_dir="$RUNNER_TEMP/integration-control-n1-consumer"
+          readonly release_metadata="$RUNNER_TEMP/integration-control-n1-release.json"
+
+          fail() {
+            echo "Neutral N1 orchestration failed: $*" >&2
+            exit 1
+          }
+
+          [[ -n "$GH_TOKEN" ]] || fail "read-only installation token is unavailable"
+          [[ "$(git -C "$qualifier_root" rev-parse HEAD)" == "$qualifier_commit" ]] || fail "qualifier commit drift"
+          [[ "$(git -C "$qualifier_root" rev-parse HEAD^{tree})" == "$qualifier_tree" ]] || fail "qualifier tree drift"
+          # The exact Neutral-owned library is the authority for release assets,
+          # hashes, archive layout and the qualifier's verification semantics.
+          . "$qualifier_root/scripts/n1-distribution-lib.sh"
+
+          [[ ! -e "$asset_dir" && ! -L "$asset_dir" ]] || fail "asset directory already exists"
+          [[ ! -e "$consumer_dir" && ! -L "$consumer_dir" ]] || fail "consumer directory already exists"
+          [[ ! -e "$release_metadata" && ! -L "$release_metadata" ]] || fail "release metadata path already exists"
+          mkdir "$asset_dir"
+
+          tag_identity="$(gh api "repos/$repository/git/ref/tags/$N1_TAG" --jq '[.object.type,.object.sha] | join(" ")')"
+          [[ "$tag_identity" == "commit $N1_RELEASE_COMMIT" ]] || fail "release tag target drift"
+          gh api "repos/$repository/releases/tags/$N1_TAG" >"$release_metadata"
+          jq -e --arg tag "$N1_TAG" --arg release "$N1_RELEASE_COMMIT" \
+            '.tag_name == $tag and .target_commitish == $release and .draft == false and .prerelease == false' \
+            "$release_metadata" >/dev/null || fail "release coordinate drift"
+          gh release download "$N1_TAG" --repo "$repository" --dir "$asset_dir"
+          "$qualifier_root/scripts/qualify-n1-release.sh" "$asset_dir" "$consumer_dir"
+
+          readonly n1_root="$consumer_dir/source/$N1_ARCHIVE_ROOT"
+          [[ "$(uname -s):$(uname -m)" == "Linux:x86_64" ]] || fail "backend runner platform drift"
+          [[ -d "$n1_root" && ! -L "$n1_root" ]] || fail "qualified source root is unavailable"
+          mkdir -p "$n1_root/dist" "$n1_root/releases/$N1_VERSION"
+          install -m 0500 "$consumer_dir/bin/foigent-integration-control" "$n1_root/dist/$N1_LINUX_ASSET"
+          install -m 0400 "$asset_dir/$N1_MANIFEST_ASSET" "$n1_root/releases/$N1_VERSION/$N1_MANIFEST_ASSET"
+          install -m 0400 "$asset_dir/$N1_SUMS_ASSET" "$n1_root/releases/$N1_VERSION/$N1_SUMS_ASSET"
+          echo "UNIROUTE_INTEGRATION_CONTROL_N1_ROOT=$n1_root" >>"$GITHUB_ENV"
+          echo "Neutral N1 qualified by exact D1 commit $qualifier_commit"
+          echo "Neutral N1 release manifest SHA-256: $N1_MANIFEST_SHA256"
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -174,6 +245,17 @@ jobs:
       - name: Run tests
         # Includes the untagged 000039 tenant-isolation migration regression.
         run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Run exact Neutral N1 conformance tests
+        run: >-
+          go test -race ./internal/sourceevidence
+          -run '^(TestPinnedN1ExactReleaseAndWholeCompatibility|TestProductCompatibleConformanceFixturesCloseNeutralAndPackageChain)$'
+          -count=1
+
+      - name: Run Source-evidence PostgreSQL 16 integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: go test -tags=integration -race ./internal/sourceevidence -count=1 -timeout=20m
 
       - name: Run X-Insight snapshot producer contract tests
         run: go test scripts/prd5_xinsight_snapshot.go scripts/prd5_xinsight_snapshot_test.go -count=1
