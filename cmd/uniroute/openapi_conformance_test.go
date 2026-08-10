@@ -84,3 +84,26 @@ func TestOpenAPIModelCatalogRBACPreservesStableArrayShape(t *testing.T) {
 		t.Fatalf("model-catalog x-unirouter-rbac.get must remain the canonical string-array contract: got=%v want=%v", got, want)
 	}
 }
+
+func TestOpenAPIWalletRepresentsUnprovisionedStateWithoutMutationAuthority(t *testing.T) {
+	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
+	if err != nil {
+		t.Fatalf("read OpenAPI spec: %v", err)
+	}
+	spec := string(specBytes)
+	for _, fragment := range []string{
+		"summary: Read the organization wallet or its explicit unprovisioned state in canonical micro-CNY",
+		"When `exists=false`, all monetary facts are exact zero strings and wallet-specific mutations remain unavailable; this read never creates a wallet.",
+		"required: [id, org_id, org_name, exists, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros, threshold_micros, currency, amount_scale, auto_freeze, low_balance_threshold_cents, is_admin, can_top_up, can_adjust, can_export_transactions, can_select_org, created_at, updated_at]",
+		"exists: { type: boolean, description: False only when the organization exists but no runtime settlement-wallet row has been provisioned. }",
+		"can_top_up: { type: boolean, description: True only when the actor is authorized and the wallet exists. }",
+		"can_adjust: { type: boolean, description: True only when the actor is authorized and the wallet exists. }",
+		"can_export_transactions: { type: boolean, description: Read-only export authority; an unprovisioned wallet yields an empty transaction history rather than disabling this read. }",
+		"created_at: { type: string, format: date-time, nullable: true }",
+		"updated_at: { type: string, format: date-time, nullable: true }",
+	} {
+		if !strings.Contains(spec, fragment) {
+			t.Fatalf("OpenAPI wallet unprovisioned-state contract missing %q", fragment)
+		}
+	}
+}

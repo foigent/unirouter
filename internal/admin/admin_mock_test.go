@@ -756,15 +756,16 @@ func TestGetWallet_Success(t *testing.T) {
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1           // org_id
 						*dest[1].(*string) = "Default"  // org_name
-						*dest[2].(*int64) = 100_000_000 // balance_micros
-						*dest[3].(*int64) = 50_000_000  // granted_balance_micros
-						*dest[4].(*int64) = 0           // frozen_micros
-						*dest[5].(*int64) = 25_000_000  // total_spent_micros
-						*dest[6].(*string) = "USD"      // currency
-						*dest[7].(*bool) = true         // auto_freeze
-						*dest[8].(*int64) = 1000        // low_balance_threshold_cents
-						*dest[9].(*time.Time) = now     // created_at
-						*dest[10].(*time.Time) = now    // updated_at
+						*dest[2].(*bool) = true         // exists
+						*dest[3].(*int64) = 100_000_000 // balance_micros
+						*dest[4].(*int64) = 50_000_000  // granted_balance_micros
+						*dest[5].(*int64) = 0           // frozen_micros
+						*dest[6].(*int64) = 25_000_000  // total_spent_micros
+						*dest[7].(*string) = "USD"      // currency
+						*dest[8].(*bool) = true         // auto_freeze
+						*dest[9].(*int64) = 1000        // low_balance_threshold_cents
+						*dest[10].(*time.Time) = now    // created_at
+						*dest[11].(*time.Time) = now    // updated_at
 						return nil
 					},
 				},
@@ -796,6 +797,9 @@ func TestGetWallet_Success(t *testing.T) {
 	if resp["threshold_micros"] != "10000000" {
 		t.Fatalf("expected threshold_micros=10000000, got %v", resp["threshold_micros"])
 	}
+	if resp["exists"] != true {
+		t.Fatalf("expected exists=true, got %v", resp["exists"])
+	}
 	if resp["is_admin"].(bool) {
 		t.Fatalf("expected is_admin=false without admin role context")
 	}
@@ -810,15 +814,16 @@ func TestGetWallet_AdminRole(t *testing.T) {
 					func(dest ...any) error {
 						*dest[0].(*int64) = 1
 						*dest[1].(*string) = "Default"
-						*dest[2].(*int64) = 100_000_000
-						*dest[3].(*int64) = 50_000_000
-						*dest[4].(*int64) = 0
-						*dest[5].(*int64) = 25_000_000
-						*dest[6].(*string) = "USD"
-						*dest[7].(*bool) = true
-						*dest[8].(*int64) = 1000
-						*dest[9].(*time.Time) = now
+						*dest[2].(*bool) = true
+						*dest[3].(*int64) = 100_000_000
+						*dest[4].(*int64) = 50_000_000
+						*dest[5].(*int64) = 0
+						*dest[6].(*int64) = 25_000_000
+						*dest[7].(*string) = "USD"
+						*dest[8].(*bool) = true
+						*dest[9].(*int64) = 1000
 						*dest[10].(*time.Time) = now
+						*dest[11].(*time.Time) = now
 						return nil
 					},
 				},
@@ -840,6 +845,71 @@ func TestGetWallet_AdminRole(t *testing.T) {
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	if !resp["is_admin"].(bool) {
 		t.Fatal("expected is_admin=true for admin role")
+	}
+	if resp["can_top_up"] != true || resp["can_adjust"] != true {
+		t.Fatalf("expected existing-wallet mutation capabilities, got %#v", resp)
+	}
+}
+
+func TestGetWallet_Unprovisioned(t *testing.T) {
+	epoch := time.Unix(0, 0).UTC()
+	db := &testutil.MockDB{
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{
+				Rows: []func(dest ...any) error{
+					func(dest ...any) error {
+						*dest[0].(*int64) = 7
+						*dest[1].(*string) = "Unprovisioned"
+						*dest[2].(*bool) = false
+						*dest[3].(*int64) = 0
+						*dest[4].(*int64) = 0
+						*dest[5].(*int64) = 0
+						*dest[6].(*int64) = 0
+						*dest[7].(*string) = "CNY"
+						*dest[8].(*bool) = false
+						*dest[9].(*int64) = 0
+						*dest[10].(*time.Time) = epoch
+						*dest[11].(*time.Time) = epoch
+						return nil
+					},
+				},
+			}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	for _, tc := range []struct {
+		name         string
+		role         string
+		canSelectOrg bool
+	}{
+		{name: "billing administrator", role: auth.RoleBillingAdmin},
+		{name: "platform administrator", role: auth.RolePlatformAdmin, canSelectOrg: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/wallet", nil)
+			req = withTestActor(req, 1, 7, tc.role)
+			rec := httptest.NewRecorder()
+
+			h.GetWallet(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			var resp map[string]interface{}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp["exists"] != false || resp["balance_micros"] != "0" || resp["granted_balance_micros"] != "0" || resp["frozen_micros"] != "0" || resp["total_spent_micros"] != "0" || resp["threshold_micros"] != "0" {
+				t.Fatalf("expected explicit zero unprovisioned wallet, got %#v", resp)
+			}
+			if resp["is_admin"] != true || resp["can_top_up"] != false || resp["can_adjust"] != false || resp["can_export_transactions"] != true || resp["can_select_org"] != tc.canSelectOrg {
+				t.Fatalf("expected role evidence with read-only export but without wallet mutations, got %#v", resp)
+			}
+			if resp["created_at"] != nil || resp["updated_at"] != nil {
+				t.Fatalf("unprovisioned wallet must not invent lifecycle timestamps: %#v", resp)
+			}
+		})
 	}
 }
 

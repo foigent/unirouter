@@ -321,14 +321,14 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
 	if (authz.hasLiveProjectMembership || isOrgAdminRole(organizationRole) || isOrgViewerRole(organizationRole)) allowedRoutes.add('/model-readiness');
 
   let items = filterTaskNavigation(allowedRoutes);
-  // The shell has no selected-project membership and must not hide the only
-  // discovery path for an orthogonal membership. The page loads the actor's
-  // project list and applies live per-project authority before exposing data or
-  // actions, so showing this entry grants nothing by itself.
-  const exposeProjectWorkbench = Boolean(organizationRole);
+  // End-user project navigation follows the live aggregate membership
+  // projection from /me. Pure organization-management identities keep the
+  // management taxonomy only; direct-route and backend authority are unchanged.
+  const exposeProjectWorkbench = authz.hasLiveProjectMembership;
   if (exposeProjectWorkbench) items = [projectOverviewItem, ...items];
   if (organizationRole && organizationRole !== 'member') items = labelOverviewForRole(items, organizationRole);
-	items = [accessStateItem, ...items];
+	const exposeAccessState = !organizationRole || organizationRole === 'member' || authz.hasLiveProjectMembership;
+	if (exposeAccessState) items = [accessStateItem, ...items];
   return applyLicenseState(items, licenseAccess);
 }
 

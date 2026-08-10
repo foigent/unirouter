@@ -27,7 +27,7 @@ function LocationProbe() {
 
 function renderApp(
   role = 'platform_admin',
-  options: { initialEntry?: string; licenseAccess?: LicenseAccess | null } = {},
+  options: { initialEntry?: string; licenseAccess?: LicenseAccess | null; hasLiveProjectMembership?: boolean } = {},
 ) {
   useAuthStore.setState({
     token: 'token',
@@ -39,6 +39,12 @@ function renderApp(
       org_id: 1,
       org_name: '示例组织',
       license_access: options.licenseAccess,
+	  navigation_capabilities: options.hasLiveProjectMembership === undefined ? undefined : {
+		has_live_project_membership: options.hasLiveProjectMembership,
+		has_project_admin_membership: false,
+		can_discover_access_review: role === 'platform_admin' || role === 'org_admin',
+		can_discover_workloads: role === 'platform_admin' || role === 'org_admin',
+	  },
     },
     profileLoading: false,
   });
@@ -111,6 +117,28 @@ describe('App shell', () => {
     expect(toolbar).toContainElement(screen.getByPlaceholderText('搜索请求日志：请求、模型、供应商、错误或证据标识'));
     expect(toolbar).toContainElement(screen.getByRole('button', { name: '打开我的账号' }));
   });
+
+	it('hides end-user entries from a pure management identity', () => {
+		renderApp('platform_admin', { hasLiveProjectMembership: false });
+
+		expect(screen.queryByText('我的访问')).toBeNull();
+		expect(screen.queryByText('项目工作台')).toBeNull();
+		expect(screen.getByText('平台总览')).toBeTruthy();
+	});
+
+	it('shows end-user entries when a management identity has live project membership', () => {
+		renderApp('platform_admin', { hasLiveProjectMembership: true });
+
+		expect(screen.getByText('我的访问')).toBeTruthy();
+		expect(screen.getByText('项目工作台')).toBeTruthy();
+	});
+
+	it('keeps My Access but hides the project workbench for a member awaiting first membership', () => {
+		renderApp('member', { hasLiveProjectMembership: false });
+
+		expect(screen.getByText('我的访问')).toBeTruthy();
+		expect(screen.queryByText('项目工作台')).toBeNull();
+	});
 
   it('routes empty topbar search to the logs overview', async () => {
     renderApp();

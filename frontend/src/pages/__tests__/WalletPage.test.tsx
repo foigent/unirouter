@@ -35,7 +35,9 @@ vi.mock('../../api/client', () => ({
 }));
 
 const BILLING_WALLET = {
+  exists: true,
   org_id: 22,
+  org_name: '财务组织',
   balance_micros: '1000000000',
   granted_balance_micros: '200000000',
   frozen_micros: '50000000',
@@ -44,6 +46,9 @@ const BILLING_WALLET = {
   currency: 'CNY',
   amount_scale: 1_000_000,
   is_admin: true,
+  can_top_up: true,
+  can_adjust: true,
+  can_export_transactions: true,
 };
 
 describe('WalletPage', () => {
@@ -103,6 +108,38 @@ describe('WalletPage', () => {
     expect(mockGetEnterpriseBudgets).toHaveBeenCalledWith(22);
   });
 
+  it('renders a missing wallet as an explicit zero state without wallet mutations and keeps enterprise finance readable', async () => {
+    mockGetWallet.mockResolvedValue({
+      ...BILLING_WALLET,
+      exists: false,
+      balance_micros: '0',
+      granted_balance_micros: '0',
+      frozen_micros: '0',
+      threshold_micros: '0',
+      total_spent_micros: '0',
+      can_top_up: false,
+      can_adjust: false,
+      can_export_transactions: true,
+    });
+
+    render(<WalletPage />);
+
+    expect(await screen.findByText(/当前组织尚未建立运行时结算钱包/)).toBeTruthy();
+    expect(screen.queryByText('无法加载预算与成本中心数据')).toBeNull();
+    expect(screen.queryByRole('button', { name: '现金入账' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '现金调整' })).toBeNull();
+    expect(mockTopUp).not.toHaveBeenCalled();
+    expect(mockAdjustWallet).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('结算流水'));
+    await waitFor(() => expect(mockGetWalletTransactions).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('导出 CSV')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('企业预算控制'));
+    expect((await screen.findAllByText('财务期间')).length).toBeGreaterThan(0);
+    expect(mockGetEnterpriseBudgets).toHaveBeenCalledWith(22);
+  });
+
   it('does not duplicate the billing-only budget panel for a platform administrator', async () => {
     useAuthStore.setState({
       user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1, license_access: null },
@@ -111,6 +148,34 @@ describe('WalletPage', () => {
 
     await waitFor(() => expect(mockGetWallet).toHaveBeenCalledTimes(1));
     expect(screen.queryByText('项目预算')).toBeNull();
+  });
+
+  it('keeps platform enterprise finance readable for an unprovisioned organization without exposing wallet mutations', async () => {
+    useAuthStore.setState({
+      user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1, license_access: null },
+    });
+    mockGetWallet.mockResolvedValue({
+      ...BILLING_WALLET,
+      exists: false,
+      balance_micros: '0',
+      granted_balance_micros: '0',
+      frozen_micros: '0',
+      threshold_micros: '0',
+      total_spent_micros: '0',
+      can_top_up: false,
+      can_adjust: false,
+      can_export_transactions: true,
+      can_select_org: true,
+    });
+
+    render(<WalletPage />);
+
+    expect(await screen.findByText(/当前组织尚未建立运行时结算钱包/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '现金入账' })).toBeNull();
+    expect(screen.queryByText('项目预算')).toBeNull();
+    fireEvent.click(screen.getByText('企业预算控制'));
+    expect((await screen.findAllByText('财务期间')).length).toBeGreaterThan(0);
+    expect(mockGetEnterpriseBudgets).toHaveBeenCalledWith(22);
   });
 
   it('does not subtract frozen funds twice from the spendable wallet buckets', async () => {
