@@ -71,6 +71,17 @@ async function visible(locator, message) {
   return locator;
 }
 
+async function waitForEnabledState(locator, expected, message) {
+  await visible(locator);
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if ((await locator.isEnabled()) === expected) return locator;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal(await locator.isEnabled(), expected, message);
+  return locator;
+}
+
 async function login(role, baseURL = fixture.base_url) {
   const context = await browser.newContext({ baseURL, serviceWorkers: 'block' });
   await installCausalEgressGuard(context, baseURL, fixture.trap_urls);
@@ -319,14 +330,41 @@ try {
 
   const hybrid = await login('hybrid');
   try {
+    let releaseProjectList;
+    const projectListGate = new Promise((resolve) => {
+      releaseProjectList = resolve;
+    });
+    await hybrid.page.route(/\/api\/v1\/projects(?:\?.*)?$/, async (route) => {
+      await projectListGate;
+      await route.continue();
+    }, { times: 1 });
+    const projectListResponsePromise = hybrid.page.waitForResponse((response) =>
+      new URL(response.url()).pathname === '/api/v1/projects' &&
+      response.request().method() === 'GET');
+
     await gotoHeading(hybrid.page, `/applications?project_id=${fixture.project_a}`, '应用与 Agent');
     const createButton = hybrid.page.locator('button').filter({ hasText: '新建 v2 Application' }).first();
-    assert.equal(await createButton.isEnabled(), true);
+    await visible(createButton);
+    assert.equal(await createButton.isDisabled(), true,
+      'create must remain disabled until the selected project authority is loaded');
+    releaseProjectList();
+    const projectListResponse = await projectListResponsePromise;
+    assert.equal(projectListResponse.status(), 200);
+    const projectList = await projectListResponse.json();
+    assert.equal(projectList.data.find((project) => project.id === fixture.project_a)?.current_user_membership_role,
+      'project_admin');
+    assert.equal(projectList.data.find((project) => project.id === fixture.project_b)?.current_user_membership_role,
+      'project_user');
+    await waitForEnabledState(createButton, true,
+      'project A create must enable after project_admin authority is loaded');
     await chooseProject(hybrid.page, 'PR4 Beta', fixture.project_b);
-    assert.equal(await createButton.isDisabled(), true);
+    await waitForEnabledState(createButton, false,
+      'project B project_user must not create applications');
     await visible(hybrid.page.getByText('当前所选项目只有读取/使用权限', { exact: false }));
     await chooseProject(hybrid.page, 'PR4 Alpha', fixture.project_a);
-    assert.equal(await createButton.isEnabled(), true);
+    await waitForEnabledState(createButton, true,
+      'returning to project A must restore project_admin create authority');
+    console.log('PR4_BROWSER_PROJECT_AUTHORITY delayed_response=held project_a=project_admin project_b=project_user beta_create=disabled return_alpha_create=enabled');
 
     await createButton.click();
     const sheet = await visible(hybrid.page.locator('.semi-sidesheet:visible').filter({ hasText: '新建 v2 Application' }).last());
