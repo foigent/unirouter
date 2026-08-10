@@ -82,12 +82,17 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 	var balanceMicros, grantedMicros, frozenMicros, totalSpentMicros int64
 	var lowThresholdCents int64
 	var currency, orgName string
-	var autoFreeze bool
+	var walletExists, autoFreeze bool
 	var createdAt, updatedAt time.Time
 	rows, err := h.db.Query(r.Context(),
-		`SELECT w.org_id, o.name, w.balance_micros, w.granted_balance_micros, w.frozen_micros, w.total_spent_micros,
-		        w.currency, w.auto_freeze, w.low_balance_threshold_cents, w.created_at, w.updated_at
-		 FROM wallets w JOIN orgs o ON o.id = w.org_id WHERE w.org_id = $1`, orgID)
+		`SELECT o.id, o.name, w.org_id IS NOT NULL,
+		        COALESCE(w.balance_micros, 0), COALESCE(w.granted_balance_micros, 0),
+		        COALESCE(w.frozen_micros, 0), COALESCE(w.total_spent_micros, 0),
+		        COALESCE(w.currency, 'CNY'), COALESCE(w.auto_freeze, false),
+		        COALESCE(w.low_balance_threshold_cents, 0),
+		        COALESCE(w.created_at, TIMESTAMPTZ '1970-01-01 00:00:00+00'),
+		        COALESCE(w.updated_at, TIMESTAMPTZ '1970-01-01 00:00:00+00')
+		 FROM orgs o LEFT JOIN wallets w ON w.org_id = o.id WHERE o.id = $1`, orgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
 		return
@@ -98,26 +103,33 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rows failed"})
 			return
 		}
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Wallet not found"})
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Organization not found"})
 		return
 	}
-	if err := rows.Scan(&orgID, &orgName, &balanceMicros, &grantedMicros, &frozenMicros, &totalSpentMicros, &currency, &autoFreeze, &lowThresholdCents, &createdAt, &updatedAt); err != nil {
+	if err := rows.Scan(&orgID, &orgName, &walletExists, &balanceMicros, &grantedMicros, &frozenMicros, &totalSpentMicros, &currency, &autoFreeze, &lowThresholdCents, &createdAt, &updatedAt); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 		return
 	}
 
 	role := actorOrganizationRole(r.Context())
 	canManage := role == auth.RolePlatformAdmin || role == auth.RoleBillingAdmin
+	canMutateWallet := canManage && walletExists
 
 	thresholdMicros, err := money.CentsToMicros(lowThresholdCents)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Wallet threshold is out of range"})
 		return
 	}
+	var createdAtValue, updatedAtValue interface{}
+	if walletExists {
+		createdAtValue = createdAt
+		updatedAtValue = updatedAt
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id":                          orgID,
 		"org_id":                      orgID,
 		"org_name":                    orgName,
+		"exists":                      walletExists,
 		"balance_micros":              strconv.FormatInt(balanceMicros, 10),
 		"granted_balance_micros":      strconv.FormatInt(grantedMicros, 10),
 		"frozen_micros":               strconv.FormatInt(frozenMicros, 10),
@@ -128,12 +140,12 @@ func (h *Handler) GetWallet(w http.ResponseWriter, r *http.Request) {
 		"low_balance_threshold_cents": lowThresholdCents,
 		"total_spent_micros":          strconv.FormatInt(totalSpentMicros, 10),
 		"is_admin":                    canManage,
-		"can_top_up":                  canManage,
-		"can_adjust":                  canManage,
+		"can_top_up":                  canMutateWallet,
+		"can_adjust":                  canMutateWallet,
 		"can_export_transactions":     canManage,
 		"can_select_org":              role == auth.RolePlatformAdmin,
-		"created_at":                  createdAt,
-		"updated_at":                  updatedAt,
+		"created_at":                  createdAtValue,
+		"updated_at":                  updatedAtValue,
 	})
 }
 

@@ -724,9 +724,11 @@ func TestGetWallet_Success_Integration(t *testing.T) {
 	err := json.Unmarshal(rec.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	require.Equal(t, "50000000", resp["balance_micros"])
+	require.Equal(t, true, resp["exists"])
+	require.Equal(t, true, resp["can_top_up"])
 }
 
-func TestGetWallet_NotFound_Integration(t *testing.T) {
+func TestGetWallet_Unprovisioned_Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	orgID := testutil.NewTestOrg(t, pool)
 	// No wallet created
@@ -739,7 +741,29 @@ func TestGetWallet_NotFound_Integration(t *testing.T) {
 
 	h.GetWallet(rec, req)
 
-	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, false, resp["exists"])
+	require.Equal(t, "0", resp["balance_micros"])
+	require.Equal(t, "0", resp["granted_balance_micros"])
+	require.Equal(t, "0", resp["frozen_micros"])
+	require.Equal(t, "0", resp["total_spent_micros"])
+	require.Equal(t, "0", resp["threshold_micros"])
+	require.Equal(t, true, resp["is_admin"])
+	require.Equal(t, false, resp["can_top_up"])
+	require.Equal(t, false, resp["can_adjust"])
+	require.Equal(t, true, resp["can_export_transactions"])
+
+	var walletCount, transactionCount, auditCount, outboxCount int
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM wallets WHERE org_id=$1`, orgID).Scan(&walletCount))
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions WHERE org_id=$1`, orgID).Scan(&transactionCount))
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM audit_logs WHERE org_id=$1`, orgID).Scan(&auditCount))
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM internal_outbox_events WHERE org_id=$1`, orgID).Scan(&outboxCount))
+	require.Zero(t, walletCount)
+	require.Zero(t, transactionCount)
+	require.Zero(t, auditCount)
+	require.Zero(t, outboxCount)
 }
 
 // --- BalanceAdjust handler tests ---

@@ -16,16 +16,19 @@ const { Text } = Typography;
 const { TabPane } = Tabs;
 
 interface WalletInfo {
-	org_id: number;
-	balance_micros: string;
-	granted_balance_micros: string;
-	frozen_micros: string;
-	threshold_micros: string;
-	total_spent_micros: string;
-	currency: 'CNY';
-	amount_scale: 1000000;
+  exists: boolean;
+  org_id: number;
+  balance_micros: string;
+  granted_balance_micros: string;
+  frozen_micros: string;
+  threshold_micros: string;
+  total_spent_micros: string;
+  currency: 'CNY';
+  amount_scale: 1000000;
   low_balance_threshold_cents?: number;
   is_admin: boolean;
+  can_top_up?: boolean;
+  can_adjust?: boolean;
   can_select_org?: boolean;
   can_export_transactions?: boolean;
   org_name: string;
@@ -146,7 +149,7 @@ export default function WalletPage() {
   const user = useAuthStore(state => state.user);
   const organizationRole = organizationRoleForUser(user);
   const canManageProjectBudgets = isBillingRole(organizationRole);
-	const canManageEnterpriseFinance = isBillingRole(organizationRole) || isPlatformAdminRole(organizationRole);
+  const canManageEnterpriseFinance = isBillingRole(organizationRole) || isPlatformAdminRole(organizationRole);
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -175,7 +178,13 @@ export default function WalletPage() {
     try {
       const data = await api.getWallet(orgID) as WalletInfo;
       if (version !== requestVersion.current) return;
-      const nextWallet = { ...data, is_admin: Boolean(data.is_admin) };
+      const nextWallet = {
+        ...data,
+        exists: data.exists === true,
+        is_admin: Boolean(data.is_admin),
+        can_top_up: data.can_top_up === true,
+        can_adjust: data.can_adjust === true,
+      };
       setWallet(nextWallet);
       if (nextWallet.can_select_org && organizations.length === 0) {
         try {
@@ -336,11 +345,18 @@ export default function WalletPage() {
 
       <div className="ur-org-line" style={{ marginBottom: 12 }}>
         <Text>当前范围: <Tag color="blue">{displayedOrgName || `组织 #${displayedOrgID}`}</Tag></Text>
-        <Text>权限: <Tag color={wallet.is_admin ? 'red' : 'grey' as any}>{wallet.is_admin ? '可管理资金' : '只读'}</Tag></Text>
+        <Text>权限: <Tag color={wallet.is_admin ? 'red' : 'grey' as any}>{wallet.is_admin ? (wallet.exists ? '可管理资金' : '财务管理（钱包未初始化）') : '只读'}</Tag></Text>
       </div>
 
       <Tabs activeKey={activeTab} onChange={changeTab}>
         <TabPane tab="结算账户" itemKey="summary">
+          {!wallet.exists ? (
+            <Banner
+              type="warning"
+              description="当前组织尚未建立运行时结算钱包。零金额是未初始化事实，不会自动创建钱包；企业预算控制等独立财务读模型仍可查看。"
+              style={{ marginBottom: 16 }}
+            />
+          ) : null}
           <div className="ur-kpi-grid">
             <MetricTile label="结算现金余额" value={<MoneyText micros={wallet.balance_micros} strong tone="income" />} tone="blue" icon={<IconCoinMoney />} />
             <MetricTile label="兼容赠送额度" value={<MoneyText micros={wallet.granted_balance_micros} strong tone="income" />} tone="green" icon={<IconGift />} />
@@ -358,14 +374,14 @@ export default function WalletPage() {
             </div>
           </Surface>
 
-          {wallet.is_admin && (
+          {wallet.exists && wallet.is_admin && (wallet.can_top_up || wallet.can_adjust) && (
             <Surface
               title="兼容结算操作"
               description="这些操作只变更 UniRouter 结算账本：现金入账只允许正数；现金调整允许正负数，服务端会基于最新余额原子校验并记录审计。它们不是银行收款或总账过账。"
               actions={(
                 <Space>
-                  <Button type="primary" onClick={() => openWalletModal('recharge')}>现金入账</Button>
-                  <Button type="tertiary" onClick={() => openWalletModal('adjust')}>现金调整</Button>
+                  {wallet.can_top_up ? <Button type="primary" onClick={() => openWalletModal('recharge')}>现金入账</Button> : null}
+                  {wallet.can_adjust ? <Button type="tertiary" onClick={() => openWalletModal('adjust')}>现金调整</Button> : null}
                 </Space>
               )}
             >
@@ -377,7 +393,7 @@ export default function WalletPage() {
           {activeTab === 'transactions' ? <WalletTransactionsPanel orgId={selectedOrgID} canExport={Boolean(wallet.can_export_transactions)} /> : null}
         </TabPane>
         <TabPane tab="兼容额度" itemKey="grants">
-          {activeTab === 'grants' ? <GrantCreditsPanel orgId={selectedOrgID} canCreate={wallet.is_admin} onChanged={() => load(selectedOrgID)} /> : null}
+          {activeTab === 'grants' ? <GrantCreditsPanel orgId={selectedOrgID} canCreate={wallet.exists && wallet.is_admin} onChanged={() => load(selectedOrgID)} /> : null}
         </TabPane>
         {canManageProjectBudgets ? (
           <TabPane tab="项目预算" itemKey="budgets">

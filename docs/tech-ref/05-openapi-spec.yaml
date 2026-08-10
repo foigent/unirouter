@@ -1156,12 +1156,12 @@ paths:
   /api/v1/wallet:
     get:
       tags: [Admin]
-      summary: Read the organization wallet in canonical micro-CNY
+      summary: Read the organization wallet or its explicit unprovisioned state in canonical micro-CNY
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Exact wallet state; every `*_micros` amount is canonical decimal string text.
+          description: Exact wallet state. When `exists=false`, all monetary facts are exact zero strings and wallet-specific mutations remain unavailable; this read never creates a wallet.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/WalletResponse" }
@@ -4691,10 +4691,12 @@ components:
           multipleOf: 0.001
     WalletResponse:
       type: object
-      required: [id, org_id, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros, threshold_micros, currency, amount_scale]
+      required: [id, org_id, org_name, exists, balance_micros, granted_balance_micros, frozen_micros, total_spent_micros, threshold_micros, currency, amount_scale, auto_freeze, low_balance_threshold_cents, is_admin, can_top_up, can_adjust, can_export_transactions, can_select_org, created_at, updated_at]
       properties:
         id: { type: integer, format: int64 }
         org_id: { type: integer, format: int64 }
+        org_name: { type: string }
+        exists: { type: boolean, description: False only when the organization exists but no runtime settlement-wallet row has been provisioned. }
         balance_micros: { $ref: "#/components/schemas/CanonicalMicros" }
         granted_balance_micros: { $ref: "#/components/schemas/CanonicalMicros" }
         frozen_micros: { $ref: "#/components/schemas/CanonicalMicros" }
@@ -4702,6 +4704,15 @@ components:
         threshold_micros: { $ref: "#/components/schemas/CanonicalMicros" }
         currency: { type: string, enum: [CNY] }
         amount_scale: { type: integer, format: int64, enum: [1000000] }
+        auto_freeze: { type: boolean }
+        low_balance_threshold_cents: { type: integer, format: int64, minimum: 0 }
+        is_admin: { type: boolean, description: Actor has a wallet-management organization role; this does not imply that a wallet exists. }
+        can_top_up: { type: boolean, description: True only when the actor is authorized and the wallet exists. }
+        can_adjust: { type: boolean, description: True only when the actor is authorized and the wallet exists. }
+        can_export_transactions: { type: boolean, description: Read-only export authority; an unprovisioned wallet yields an empty transaction history rather than disabling this read. }
+        can_select_org: { type: boolean }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
       additionalProperties: true
     WalletMutationResponse:
       type: object
