@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/unirouter.source-evidence.trust-set.v1.schema.json",
+  "title": "UniRouter Source evidence trust set V1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "unirouter.source-evidence.trust-set.v1" },
+    "purpose": { "const": "source_evidence" },
+    "domain": { "const": "unirouter.source-evidence.component.v1" },
+    "keys": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "signing_key_ref": { "type": "string", "pattern": "^source-evidence-[A-Za-z0-9._-]{1,48}$", "maxLength": 64 },
+          "signer_public_key_id": { "type": "string", "pattern": "^ed25519:sha256:[0-9a-f]{64}$" },
+          "algorithm": { "const": "ed25519" },
+          "public_key": { "type": "string", "minLength": 44, "maxLength": 44 }
+        },
+        "required": ["signing_key_ref", "signer_public_key_id", "algorithm", "public_key"]
+      }
+    }
+  },
+  "required": ["schema_version", "purpose", "domain", "keys"]
+}

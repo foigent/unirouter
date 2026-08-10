@@ -1,0 +1,18 @@
+{
+  "schema_version": "unirouter.source-evidence.request-set.v1",
+  "campaign_id": "joint-poc-20260810",
+  "source_instance": "unirouter-development-seq8",
+  "frozen_at": "2026-08-10T12:00:00Z",
+  "requests": [
+    {
+      "scenario_id": "chat-success",
+      "request_id": "req-poc-chat-001",
+      "org_id": 7,
+      "project_id": 11
+    }
+  ],
+  "limits": {
+    "max_requests": 20,
+    "max_facts": 200
+  }
+}

@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/unirouter.poc-source-facts.v1.schema.json",
+  "title": "UniRouter bounded POC Source facts V1",
+  "description": "Payload-neutral facts read in one read-only repeatable-read PostgreSQL snapshot. The outer completeness claim is limited to the frozen request set; Cursor/high-watermark and runtime close-marker completeness are explicitly excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "generated_at", "request_set_sha256", "source_binding_sha256", "campaign_id", "source",
+    "release", "protocol", "snapshot", "requests", "feed_range", "counts",
+    "completeness", "safety"
+  ],
+  "properties": {
+    "schema_version": { "const": "unirouter.poc-source-facts.v1" },
+    "generated_at": { "$ref": "#/$defs/utc_time" },
+    "request_set_sha256": { "$ref": "#/$defs/hash_ref" },
+    "source_binding_sha256": { "$ref": "#/$defs/hash_ref" },
+    "campaign_id": { "$ref": "#/$defs/portable_id" },
+    "source": { "$ref": "#/$defs/source" },
+    "release": { "$ref": "#/$defs/release" },
+    "protocol": { "$ref": "#/$defs/protocol" },
+    "snapshot": { "$ref": "#/$defs/snapshot" },
+    "requests": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/request_facts" }
+    },
+    "feed_range": { "$ref": "#/$defs/feed_range" },
+    "counts": { "$ref": "#/$defs/counts" },
+    "completeness": { "$ref": "#/$defs/completeness" },
+    "safety": { "$ref": "#/$defs/safety" }
+  },
+  "$defs": {
+    "portable_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "hash_ref": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "git_object": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" },
+    "unsigned_decimal": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "utc_time": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product", "instance", "identity_authority", "runtime_observation", "feed_snapshot_schema"],
+      "properties": {
+        "product": { "const": "unirouter" },
+        "instance": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+        "identity_authority": { "const": "neutral_campaign_authorization" },
+        "runtime_observation": { "const": "not_claimed" },
+        "feed_snapshot_schema": { "const": "unirouter.completed-execution.v1" }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_sequence", "version", "commit", "package_sha256", "trusted_key_id", "recorded_schema", "current_schema", "recorded_at"],
+      "properties": {
+        "release_sequence": { "type": "integer", "minimum": 1 },
+        "version": { "$ref": "#/$defs/portable_id" },
+        "commit": { "$ref": "#/$defs/git_object" },
+        "package_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "trusted_key_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$" },
+        "recorded_schema": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "current_schema": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "recorded_at": { "$ref": "#/$defs/utc_time" }
+      }
+    },
+    "protocol_component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sha256"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,79}$" },
+        "sha256": { "$ref": "#/$defs/hash_ref" }
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pin_version", "protocol_version", "release_digest", "pin_sha256", "components"],
+      "properties": {
+        "pin_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "protocol_version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "release_digest": { "$ref": "#/$defs/hash_ref" },
+        "pin_sha256": { "$ref": "#/$defs/hash_ref" },
+        "components": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/protocol_component" } }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["isolation", "read_only", "transaction_observed_at", "transaction_id_assigned", "selection_mode"],
+      "properties": {
+        "isolation": { "const": "repeatable read" },
+        "read_only": { "const": true },
+        "transaction_observed_at": { "$ref": "#/$defs/utc_time" },
+        "transaction_id_assigned": { "const": false },
+        "selection_mode": { "const": "bounded_tenant_request_set" }
+      }
+    },
+    "call_log": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_sha256", "source_ref", "id", "model", "requested_model", "provider", "channel",
+        "prompt_tokens", "completion_tokens", "total_tokens", "cost_micros", "currency",
+        "amount_scale", "usage_source", "usage_authority", "usage_finality", "status_code",
+        "latency_ms", "payload_capture_mode", "upstream_error_was_present",
+        "ip_address_was_present", "created_at"
+      ],
+      "properties": {
+        "fact_sha256": { "$ref": "#/$defs/hash_ref" },
+        "source_ref": { "$ref": "#/$defs/portable_id", "maxLength": 512 },
+        "id": { "type": "integer", "minimum": 1 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "requested_model": { "type": "string", "maxLength": 200 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "channel": { "type": "string", "maxLength": 255 },
+        "prompt_tokens": { "type": "integer", "minimum": 0 },
+        "completion_tokens": { "type": "integer", "minimum": 0 },
+        "total_tokens": { "type": "integer", "minimum": 0 },
+        "cost_micros": { "$ref": "#/$defs/unsigned_decimal" },
+        "currency": { "const": "CNY" },
+        "amount_scale": { "const": 1000000 },
+        "usage_source": { "type": "string", "maxLength": 80 },
+        "usage_authority": { "type": "string", "maxLength": 80 },
+        "usage_finality": { "type": "string", "maxLength": 80 },
+        "status_code": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "upstream_status_code": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "latency_ms": { "type": "integer", "minimum": 0 },
+        "trace_id": { "type": "string", "maxLength": 128 },
+        "attempt_id": { "type": "string", "maxLength": 128 },
+        "actor_type": { "enum": ["human", "agent", "service", "api_key", "unknown"] },
+        "payload_capture_mode": { "const": "metadata_only" },
+        "upstream_error_was_present": { "type": "boolean" },
+        "ip_address_was_present": { "type": "boolean" },
+        "created_at": { "$ref": "#/$defs/utc_time" }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_sha256", "source_ref", "id", "event_type", "stage", "compatibility_stage", "severity", "latency_ms", "metadata_keys", "payload_capture_mode", "created_at"],
+      "properties": {
+        "fact_sha256": { "$ref": "#/$defs/hash_ref" },
+        "source_ref": { "$ref": "#/$defs/portable_id", "maxLength": 512 },
+        "id": { "type": "integer", "minimum": 1 },
+        "event_type": { "$ref": "#/$defs/portable_id", "maxLength": 120 },
+        "stage": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,79}$" },
+        "compatibility_stage": { "enum": ["identity", "routing", "provider", "retry_fallback", "billing", "usage", "logging"] },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "model": { "type": "string", "maxLength": 200 },
+        "requested_model": { "type": "string", "maxLength": 200 },
+        "provider": { "type": "string", "maxLength": 120 },
+        "channel": { "type": "string", "maxLength": 255 },
+        "status_code": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "latency_ms": { "type": "integer", "minimum": 0 },
+        "trace_id": { "type": "string", "maxLength": 128 },
+        "span_id": { "type": "string", "maxLength": 128 },
+        "parent_span_id": { "type": "string", "maxLength": 128 },
+        "attempt_id": { "type": "string", "maxLength": 128 },
+        "actor_type": { "enum": ["human", "agent", "service", "api_key", "unknown"] },
+        "decision_kind": { "type": "string", "maxLength": 120 },
+        "decision_result": { "type": "string", "maxLength": 120 },
+        "decision_reason": { "type": "string", "maxLength": 256 },
+        "capture_gap": { "type": "string", "maxLength": 256 },
+        "metadata_keys": { "type": "array", "maxItems": 64, "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$" } },
+        "payload_capture_mode": { "const": "metadata_only" },
+        "created_at": { "$ref": "#/$defs/utc_time" }
+      }
+    },
+    "provider_attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_sha256", "source_ref", "attempt_id", "access_binding_type", "route_sequence", "route_total", "endpoint", "provider", "state", "outcome_certainty", "retry_authorized", "started_at", "updated_at"],
+      "properties": {
+        "fact_sha256": { "$ref": "#/$defs/hash_ref" },
+        "source_ref": { "$ref": "#/$defs/portable_id", "maxLength": 512 },
+        "attempt_id": { "$ref": "#/$defs/portable_id", "maxLength": 64 },
+        "access_binding_type": { "enum": ["logical_access_credential", "legacy_api_key"] },
+        "logical_credential_correlation_sha256": { "$ref": "#/$defs/hash_ref" },
+        "route_sequence": { "type": "integer", "minimum": 1 },
+        "route_total": { "type": "integer", "minimum": 1 },
+        "endpoint": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "state": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "outcome_certainty": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "retry_authorized": { "type": "boolean" },
+        "http_status": { "type": "integer", "minimum": 0, "maximum": 999 },
+        "failure_kind": { "type": "string", "enum": ["auth", "channel_failure", "client_request", "configuration", "delivery_failure", "payload_capacity", "rate_limit", "request_build", "response_parse", "response_read", "response_too_large", "transport", "unclassified", "unknown"] },
+        "calculated_cost_micros": { "$ref": "#/$defs/unsigned_decimal" },
+        "charged_cost_micros": { "$ref": "#/$defs/unsigned_decimal" },
+        "started_at": { "$ref": "#/$defs/utc_time" },
+        "response_received_at": { "$ref": "#/$defs/utc_time" },
+        "financial_resolved_at": { "$ref": "#/$defs/utc_time" },
+        "updated_at": { "$ref": "#/$defs/utc_time" }
+      }
+    },
+    "feed_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "prompt_tokens", "completion_tokens", "usage_authority", "usage_finality", "calculated_cost_micros", "charged_cost_micros", "pricing_version"],
+      "properties": {
+        "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "prompt_tokens": { "type": "integer", "minimum": 0 },
+        "completion_tokens": { "type": "integer", "minimum": 0 },
+        "usage_authority": { "type": "string", "maxLength": 80 },
+        "usage_finality": { "type": "string", "maxLength": 80 },
+        "calculated_cost_micros": { "$ref": "#/$defs/unsigned_decimal" },
+        "charged_cost_micros": { "$ref": "#/$defs/unsigned_decimal" },
+        "pricing_version": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "completed_feed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_sha256", "source_ref", "sequence_id", "terminal_status", "terminal_available_at", "revision", "snapshot_sha256", "content_summary"],
+      "properties": {
+        "fact_sha256": { "$ref": "#/$defs/hash_ref" },
+        "source_ref": { "$ref": "#/$defs/portable_id", "maxLength": 512 },
+        "sequence_id": { "type": "integer", "minimum": 1 },
+        "terminal_status": { "enum": ["settled", "cancelled"] },
+        "terminal_available_at": { "$ref": "#/$defs/utc_time" },
+        "revision": { "const": "1" },
+        "snapshot_sha256": { "$ref": "#/$defs/hash_ref" },
+        "content_summary": { "$ref": "#/$defs/feed_summary" }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "source", "reason"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,79}$" },
+        "source": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,79}$" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "request_facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario_id", "request_id", "org_id", "project_id", "call_log", "trace_events", "provider_attempts", "completed_feed", "capture_gaps"],
+      "properties": {
+        "scenario_id": { "$ref": "#/$defs/portable_id", "maxLength": 120 },
+        "request_id": { "$ref": "#/$defs/portable_id", "maxLength": 64 },
+        "org_id": { "type": "integer", "minimum": 1 },
+        "project_id": { "type": "integer", "minimum": 1 },
+        "call_log": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/call_log" }] },
+        "trace_events": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/trace" } },
+        "provider_attempts": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/provider_attempt" } },
+        "completed_feed": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/completed_feed" }] },
+        "capture_gaps": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/gap" } }
+      }
+    },
+    "feed_range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selection", "selected_items", "cursor_claim", "high_watermark_claim"],
+      "properties": {
+        "selection": { "const": "bounded_request_set" },
+        "selected_items": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "min_sequence_id": { "type": "integer", "minimum": 1 },
+        "max_sequence_id": { "type": "integer", "minimum": 1 },
+        "cursor_claim": { "const": "not_part_of_source_facts" },
+        "high_watermark_claim": { "const": "not_part_of_source_facts" }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested_requests", "call_logs", "trace_events", "provider_attempts", "completed_feed_items", "capture_gaps", "total_facts"],
+      "properties": {
+        "requested_requests": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "call_logs": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "trace_events": { "type": "integer", "minimum": 0, "maximum": 200 },
+        "provider_attempts": { "type": "integer", "minimum": 0, "maximum": 200 },
+        "completed_feed_items": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "capture_gaps": { "type": "integer", "minimum": 0, "maximum": 200 },
+        "total_facts": { "type": "integer", "minimum": 0, "maximum": 200 }
+      }
+    },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_scope", "state", "bounded_request_set_complete", "execution_evidence_v2_projection", "runtime_close_marker_available"],
+      "properties": {
+        "claim_scope": { "const": "unirouter.poc-source-facts.v1" },
+        "state": { "const": "complete" },
+        "bounded_request_set_complete": { "const": true },
+        "execution_evidence_v2_projection": { "const": "partial" },
+        "runtime_close_marker_available": { "const": false }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["database_mutation", "additional_gateway_calls", "provider_calls", "feed_calls", "upstream_calls", "raw_prompts_included", "raw_responses_included", "secrets_included", "raw_ips_included", "raw_errors_included"],
+      "properties": {
+        "database_mutation": { "const": "none" },
+        "additional_gateway_calls": { "const": 0 },
+        "provider_calls": { "const": 0 },
+        "feed_calls": { "const": 0 },
+        "upstream_calls": { "const": 0 },
+        "raw_prompts_included": { "const": false },
+        "raw_responses_included": { "const": false },
+        "secrets_included": { "const": false },
+        "raw_ips_included": { "const": false },
+        "raw_errors_included": { "const": false }
+      }
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/contracts/unirouter.source-evidence.component-verification-receipt.v1.schema.json",
+  "title": "UniRouter Source-evidence component verification receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product", "campaign_id", "status", "campaign_manifest_sha256", "component_contract", "installed_release", "component_scope_receipt", "verifier_release", "request_set_sha256", "source_binding_sha256", "source_evidence_signing", "integration_control_pin_sha256", "integration_control_release_sha256", "integration_control_binary_sha256", "checks", "verified_at", "effects"],
+  "properties": {
+    "schema_version": { "const": "unirouter.source-evidence.component-verification-receipt.v1" },
+    "product": { "const": "unirouter" },
+    "campaign_id": { "$ref": "#/$defs/id" },
+    "status": { "const": "accepted" },
+    "campaign_manifest_sha256": { "$ref": "#/$defs/sha256" },
+    "component_contract": { "$ref": "#/$defs/contract_ref" },
+    "installed_release": { "$ref": "#/$defs/artifact_ref" },
+    "component_scope_receipt": { "$ref": "#/$defs/artifact_ref" },
+    "verifier_release": { "$ref": "#/$defs/contract_ref" },
+    "request_set_sha256": { "$ref": "#/$defs/sha256" },
+    "source_binding_sha256": { "$ref": "#/$defs/sha256" },
+    "source_evidence_signing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["purpose", "domain", "signing_key_ref", "signer_public_key_id", "trust_set_sha256"],
+      "properties": {
+        "purpose": { "const": "source_evidence" },
+        "domain": { "const": "unirouter.source-evidence.component.v1" },
+        "signing_key_ref": { "type": "string", "pattern": "^source-evidence-[A-Za-z0-9._-]{1,48}$", "maxLength": 64 },
+        "signer_public_key_id": { "type": "string", "pattern": "^ed25519:sha256:[0-9a-f]{64}$" },
+        "trust_set_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "integration_control_pin_sha256": { "$ref": "#/$defs/sha256" },
+    "integration_control_release_sha256": { "$ref": "#/$defs/sha256" },
+    "integration_control_binary_sha256": { "$ref": "#/$defs/sha256" },
+    "checks": {
+      "const": ["campaign_manifest_n1_verified", "component_contract_exact", "installed_release_exact", "request_set_exact", "source_binding_exact", "source_evidence_signer_exact", "source_scope_receipt_exact", "verifier_release_exact"]
+    },
+    "verified_at": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "effects": { "$ref": "#/$defs/effects" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$", "maxLength": 128 },
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "sha256"],
+      "properties": {
+        "schema_version": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "contract_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sha256"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "effects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["database_mutation", "additional_gateway_calls", "provider_calls", "feed_calls", "upstream_calls"],
+      "properties": {
+        "database_mutation": { "const": "none" },
+        "additional_gateway_calls": { "const": 0 },
+        "provider_calls": { "const": 0 },
+        "feed_calls": { "const": 0 },
+        "upstream_calls": { "const": 0 }
+      }
+    }
+  }
+}

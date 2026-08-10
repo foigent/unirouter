@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/unirouter.source-evidence.source-scope.v1.schema.json",
+  "title": "UniRouter authorized Source scope V1",
+  "description": "Product-local projection of the Source identity authorized by the neutral campaign. Runtime configuration observation is explicitly not claimed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product", "source_instance", "identity_authority", "runtime_observation", "feed_snapshot_schema"],
+  "properties": {
+    "schema_version": { "const": "unirouter.source-evidence.source-scope.v1" },
+    "product": { "const": "unirouter" },
+    "source_instance": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "identity_authority": { "const": "neutral_campaign_authorization" },
+    "runtime_observation": { "const": "not_claimed" },
+    "feed_snapshot_schema": { "const": "unirouter.completed-execution.v1" }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/unirouter.source-evidence.component-manifest.v1.schema.json",
+  "title": "UniRouter signed Source evidence component manifest V1",
+  "description": "The signed component claim is complete only for unirouter.poc-source-facts.v1. Nested execution-evidence-v2 members remain partial.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "contract_id", "product", "purpose", "domain", "signing_key_ref", "signer_public_key_id", "trust_set_sha256",
+    "signature_algorithm", "created_at", "claim_scope", "claim_state",
+    "nested_execution_evidence_v2", "request_set_sha256", "authorization_manifest_sha256",
+    "authorization_statement_sha256", "authorization_signature_sha256", "source_binding_sha256", "source_facts_sha256",
+    "compatibility_profile_id", "compatibility_profile_sha256",
+    "compatibility_schema_sha256", "artifacts"
+  ],
+  "properties": {
+    "schema_version": { "const": "unirouter.source-evidence.component-manifest.v1" },
+    "contract_id": { "const": "unirouter.source-evidence.component-package.v1" },
+    "product": { "const": "unirouter" },
+    "purpose": { "const": "source_evidence" },
+    "domain": { "const": "unirouter.source-evidence.component.v1" },
+    "signing_key_ref": { "type": "string", "pattern": "^source-evidence-[A-Za-z0-9._-]{1,48}$", "maxLength": 64 },
+    "signer_public_key_id": { "type": "string", "pattern": "^ed25519:sha256:[0-9a-f]{64}$" },
+    "trust_set_sha256": { "$ref": "#/$defs/hash_ref" },
+    "signature_algorithm": { "const": "ed25519" },
+    "created_at": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "claim_scope": { "const": "unirouter.poc-source-facts.v1" },
+    "claim_state": { "const": "complete" },
+    "nested_execution_evidence_v2": { "const": "partial" },
+    "request_set_sha256": { "$ref": "#/$defs/hash_ref" },
+    "authorization_manifest_sha256": { "$ref": "#/$defs/hash_ref" },
+    "authorization_statement_sha256": { "$ref": "#/$defs/hash_ref" },
+    "authorization_signature_sha256": { "$ref": "#/$defs/hash_ref" },
+    "source_binding_sha256": { "$ref": "#/$defs/hash_ref" },
+    "source_facts_sha256": { "$ref": "#/$defs/hash_ref" },
+    "compatibility_profile_id": { "const": "unirouter.execution-evidence.v2" },
+    "compatibility_profile_sha256": { "$ref": "#/$defs/hash_ref" },
+    "compatibility_schema_sha256": { "$ref": "#/$defs/hash_ref" },
+    "artifacts": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 23,
+      "items": { "$ref": "#/$defs/artifact" }
+    }
+  },
+  "$defs": {
+    "hash_ref": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size", "sha256", "media_type"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^payload/[A-Za-z0-9._/-]{1,232}$" },
+        "size": { "type": "integer", "minimum": 1, "maximum": 8388608 },
+        "sha256": { "$ref": "#/$defs/hash_ref" },
+        "media_type": {
+          "enum": [
+            "application/vnd.unirouter.source-evidence.request-set.v1+json",
+            "application/vnd.unirouter.source-evidence.source-scope.v1+json",
+            "application/vnd.unirouter.poc-source-facts.v1+json",
+            "application/vnd.unirouter.execution-evidence.bundle.v2+json; completeness=partial"
+          ]
+        }
+      }
+    }
+  }
+}

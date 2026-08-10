@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/contracts/unirouter.source-evidence-scope-receipt.v1.schema.json",
+  "title": "UniRouter Source-evidence preauthorization scope receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product", "campaign_id", "status", "source_binding_sha256", "request_set_sha256", "release_identity_sha256", "protocol_pin_sha256", "source_instance", "identity_authority", "runtime_observation", "request_count", "max_requests", "max_facts", "observed_at", "database_isolation", "database_read_only", "transaction_id_assigned", "effects"],
+  "properties": {
+    "schema_version": { "const": "unirouter.source-evidence-scope-receipt.v1" },
+    "product": { "const": "unirouter" },
+    "campaign_id": { "$ref": "#/$defs/id" },
+    "status": { "const": "accepted" },
+    "source_binding_sha256": { "$ref": "#/$defs/sha256" },
+    "request_set_sha256": { "$ref": "#/$defs/sha256" },
+    "release_identity_sha256": { "$ref": "#/$defs/sha256" },
+    "protocol_pin_sha256": { "$ref": "#/$defs/sha256" },
+    "source_instance": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "identity_authority": { "const": "neutral_campaign_authorization" },
+    "runtime_observation": { "const": "not_claimed" },
+    "request_count": { "type": "integer", "minimum": 1, "maximum": 20 },
+    "max_requests": { "const": 20 },
+    "max_facts": { "const": 200 },
+    "observed_at": { "$ref": "#/$defs/time" },
+    "database_isolation": { "const": "repeatable read" },
+    "database_read_only": { "const": true },
+    "transaction_id_assigned": { "const": false },
+    "effects": { "$ref": "#/$defs/effects" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$", "maxLength": 128 },
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "time": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "effects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["database_mutation", "additional_gateway_calls", "provider_calls", "feed_calls", "upstream_calls"],
+      "properties": {
+        "database_mutation": { "const": "none" },
+        "additional_gateway_calls": { "const": 0 },
+        "provider_calls": { "const": 0 },
+        "feed_calls": { "const": 0 },
+        "upstream_calls": { "const": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": "unirouter.execution-evidence.bundle.v2",
+  "profile": {
+    "id": "unirouter.execution-evidence.v2",
+    "manifest_version": "2.0.0",
+    "manifest_sha256": "sha256:834bbaae05936af76abc4608ab16547581656e415c7d73f79d5d55ef6eca9547",
+    "bundle_schema_sha256": "sha256:e47c5e074e3b7de8c16be9615c5ea073348017c58e07b9ba0566e2a66185f33a"
+  },
+  "source_instance": "unirouter-development-seq8",
+  "request_id": "req-poc-chat-001",
+  "org_id": 7,
+  "project_id": 11,
+  "closed_at": "2026-08-10T12:01:00Z",
+  "completeness": {
+    "state": "partial",
+    "source_profile_complete": false,
+    "expected_trace_event_hashes": [],
+    "expected_call_log_hashes": [],
+    "observed_trace_event_hashes": [],
+    "observed_call_log_hashes": [],
+    "missing_event_hashes": []
+  },
+  "stage_coverage": [
+    { "stage": "identity", "status": "gap", "source_event_hashes": [] },
+    { "stage": "routing", "status": "gap", "source_event_hashes": [] },
+    { "stage": "provider", "status": "gap", "source_event_hashes": [] },
+    { "stage": "retry_fallback", "status": "gap", "source_event_hashes": [] },
+    { "stage": "billing", "status": "gap", "source_event_hashes": [] },
+    { "stage": "usage", "status": "gap", "source_event_hashes": [] },
+    { "stage": "logging", "status": "gap", "source_event_hashes": [] }
+  ],
+  "trace_events": [],
+  "call_logs": [],
+  "capture_gaps": [
+    {
+      "code": "runtime_close_marker_unavailable",
+      "stage": "source",
+      "reason": "runtime close marker is unavailable; closed_at is the snapshot cutoff, not a runtime closure claim; expected hashes are limited to persisted facts visible in the frozen repeatable-read snapshot"
+    }
+  ]
+}

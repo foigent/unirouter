@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/contracts/unirouter.source-evidence.component-verifier-release.v1.schema.json",
+  "title": "UniRouter Source-evidence component verifier release",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "verifier_id", "producer_contract_id", "producer_contract_sha256", "source_commit", "source_tree", "binary_sha256", "integration_control_pin_sha256", "built_at"],
+  "properties": {
+    "schema_version": { "const": "unirouter.source-evidence.component-verifier-release.v1" },
+    "verifier_id": { "const": "unirouter.source-evidence.component-verifier.v1" },
+    "producer_contract_id": { "const": "unirouter.source-evidence.component-package.v1" },
+    "producer_contract_sha256": { "$ref": "#/$defs/sha256" },
+    "source_commit": { "$ref": "#/$defs/git_object" },
+    "source_tree": { "$ref": "#/$defs/git_object" },
+    "binary_sha256": { "$ref": "#/$defs/sha256" },
+    "integration_control_pin_sha256": { "$ref": "#/$defs/sha256" },
+    "built_at": { "type": "string", "format": "date-time", "pattern": "Z$" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "git_object": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+  }
+}

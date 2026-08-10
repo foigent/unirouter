@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/unirouter.source-evidence.request-set.v1.schema.json",
+  "title": "UniRouter bounded POC Source evidence request set V1",
+  "description": "A frozen, tenant/project-scoped request selection. Semantic validation additionally enforces unique scenario and tenant-request identities plus the fixed 20-request/200-fact limits.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "campaign_id", "source_instance", "frozen_at", "requests", "limits"],
+  "properties": {
+    "schema_version": { "const": "unirouter.source-evidence.request-set.v1" },
+    "campaign_id": { "$ref": "#/$defs/portable_id" },
+    "source_instance": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "frozen_at": { "$ref": "#/$defs/utc_time" },
+    "requests": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/request" }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_requests", "max_facts"],
+      "properties": {
+        "max_requests": { "const": 20 },
+        "max_facts": { "const": 200 }
+      }
+    }
+  },
+  "$defs": {
+    "portable_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "utc_time": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenario_id", "request_id", "org_id", "project_id"],
+      "properties": {
+        "scenario_id": { "$ref": "#/$defs/portable_id", "maxLength": 120 },
+        "request_id": { "$ref": "#/$defs/portable_id", "maxLength": 64 },
+        "org_id": { "type": "integer", "minimum": 1 },
+        "project_id": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
