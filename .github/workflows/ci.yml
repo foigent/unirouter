@@ -267,6 +267,15 @@ jobs:
         # 10-minute package timeout on a slower hosted runner.
         run: go test -tags=integration -race ./internal/admin -count=1 -timeout=20m
 
+      - name: Run X-Insight Connector PostgreSQL 16 integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: >-
+          go test -tags=integration -race
+          ./internal/xinsightconnector ./internal/migrate
+          -run '^Test(ConnectorManager|ConnectorRedeem|PostgresPhaseJournal|XInsightConnector(CP1|CP2A|RedeemLifecycle)).*$'
+          -count=1 -timeout=20m
+
       - name: Run second-integration reset and bootstrap gates
         env:
           REQUIRE_TEST_DATABASE: "1"
