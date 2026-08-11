@@ -169,6 +169,7 @@ type PackageVerification struct {
 	SourceFacts          SourceFacts           `json:"source_facts"`
 	CompatibilityMembers []CompatibilityBundle `json:"compatibility_members"`
 	manifestBody         []byte
+	verificationSeal     [32]byte
 }
 
 type packageContent struct {
@@ -483,7 +484,7 @@ func Verify(reader io.Reader, publicKeys map[string]ed25519.PublicKey) (PackageV
 	if !bytes.Equal(canonicalPackage.Bytes(), packageBody) {
 		return PackageVerification{}, errors.New("source evidence package is not the single canonical container representation")
 	}
-	return PackageVerification{
+	verification := PackageVerification{
 		PackageSHA256:        hashBytes(packageBody),
 		PackageBytes:         int64(len(packageBody)),
 		ManifestSHA256:       hashBytes(entries[manifestPath]),
@@ -493,7 +494,18 @@ func Verify(reader io.Reader, publicKeys map[string]ed25519.PublicKey) (PackageV
 		SourceFacts:          sourceFacts,
 		CompatibilityMembers: members,
 		manifestBody:         append([]byte(nil), entries[manifestPath]...),
-	}, nil
+	}
+	seal, err := verificationProvenanceSeal(packageVerificationSealDomain, verification)
+	if err != nil {
+		return PackageVerification{}, err
+	}
+	verification.verificationSeal = seal
+	return verification, nil
+}
+
+func packageVerificationVerified(value PackageVerification) bool {
+	seal, err := verificationProvenanceSeal(packageVerificationSealDomain, value)
+	return err == nil && seal == value.verificationSeal
 }
 
 func validatePackageBindings(requestSet RequestSet, sourceScope SourceScope, sourceFacts SourceFacts, members []CompatibilityBundle) error {

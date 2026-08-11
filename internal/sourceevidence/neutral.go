@@ -100,6 +100,7 @@ type NeutralWholeVerification struct {
 	AuthorizationTrustSetSHA256  string            `json:"authorization_trust_set_sha256"`
 	SourceEvidenceTrustSetSHA256 string            `json:"source_evidence_trust_set_sha256"`
 	CapabilityBoundary           string            `json:"capability_boundary"`
+	verificationSeal             [32]byte
 }
 
 type neutralManifestProjection struct {
@@ -181,11 +182,12 @@ type ProductManifestVerification struct {
 }
 
 type ProductAcknowledgementArtifacts struct {
-	Verification ProductManifestVerification
-	Receipt      ComponentVerificationReceipt
-	ReceiptBody  []byte
-	Ack          ComponentAcknowledgement
-	AckBody      []byte
+	Verification     ProductManifestVerification
+	Receipt          ComponentVerificationReceipt
+	ReceiptBody      []byte
+	Ack              ComponentAcknowledgement
+	AckBody          []byte
+	verificationSeal [32]byte
 }
 
 type NeutralPreauthorizationInputs struct {
@@ -332,6 +334,11 @@ func (verifier *PinnedNeutralVerifier) VerifyWhole(ctx context.Context, inputs N
 	if !report.Valid || report.CampaignManifestSHA256 != ContentSHA256(inputs.ManifestBody) || report.AuthorizationSHA256 != ContentSHA256(inputs.AuthorizationBody) || report.AuthorizationSignatureSHA256 != ContentSHA256(inputs.AuthorizationSignature) || report.AuthorizationTrustSetSHA256 != ContentSHA256(inputs.AuthorizationTrustSet) || report.AcknowledgementSHA256["unirouter"] != expectedAck["unirouter"] || report.AcknowledgementSHA256["xinsight"] != expectedAck["xinsight"] || len(report.AcknowledgementSHA256) != 2 || report.CapabilityBoundary != NeutralCapabilityBoundary {
 		return NeutralWholeVerification{}, errors.New("integration-control whole-verification report identity is invalid")
 	}
+	seal, err := verificationProvenanceSeal(neutralVerificationSealDomain, report)
+	if err != nil {
+		return NeutralWholeVerification{}, err
+	}
+	report.verificationSeal = seal
 	return report, nil
 }
 
@@ -471,7 +478,33 @@ func (verifier *PinnedNeutralVerifier) buildProductAcknowledgement(ctx context.C
 	if _, err := verifier.VerifyAcknowledgement(ctx, inputs.ManifestBody, ackBody); err != nil {
 		return ProductAcknowledgementArtifacts{}, err
 	}
-	return ProductAcknowledgementArtifacts{Verification: verification, Receipt: receipt, ReceiptBody: receiptBody, Ack: ack, AckBody: ackBody}, nil
+	artifacts := ProductAcknowledgementArtifacts{Verification: verification, Receipt: receipt, ReceiptBody: receiptBody, Ack: ack, AckBody: ackBody}
+	if err := sealProductAcknowledgementArtifacts(&artifacts); err != nil {
+		return ProductAcknowledgementArtifacts{}, err
+	}
+	return artifacts, nil
+}
+
+func sealProductAcknowledgementArtifacts(value *ProductAcknowledgementArtifacts) error {
+	if value == nil {
+		return errors.New("product acknowledgement artifacts are required")
+	}
+	seal, err := verificationProvenanceSeal(productAcknowledgementSealDomain, *value)
+	if err != nil {
+		return err
+	}
+	value.verificationSeal = seal
+	return nil
+}
+
+func productAcknowledgementArtifactsVerified(value ProductAcknowledgementArtifacts) bool {
+	seal, err := verificationProvenanceSeal(productAcknowledgementSealDomain, value)
+	return err == nil && seal == value.verificationSeal
+}
+
+func neutralWholeVerificationVerified(value NeutralWholeVerification) bool {
+	seal, err := verificationProvenanceSeal(neutralVerificationSealDomain, value)
+	return err == nil && seal == value.verificationSeal
 }
 
 func (verifier *PinnedNeutralVerifier) VerifyProductAcknowledgement(ctx context.Context, inputs ProductManifestInputs, receiptBody, acknowledgementBody []byte) (ProductAcknowledgementArtifacts, error) {

@@ -2,6 +2,7 @@ package sourceevidence
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 )
@@ -9,6 +10,9 @@ import (
 const (
 	ConformanceProjectionSchemaVersion = "unirouter.source-evidence.conformance-projection.v1"
 	ConformanceFixtureAuthority        = "synthetic_conformance_only"
+	neutralVerificationSealDomain      = "unirouter.source-evidence.neutral-whole-verification.v1"
+	packageVerificationSealDomain      = "unirouter.source-evidence.package-verification.v1"
+	productAcknowledgementSealDomain   = "unirouter.source-evidence.product-acknowledgement-verification.v1"
 )
 
 type ConformanceProjectionProductAuthority struct {
@@ -75,6 +79,15 @@ type ConformanceProjectionInputs struct {
 }
 
 func BuildConformanceProjection(inputs ConformanceProjectionInputs) (ConformanceProjection, []byte, error) {
+	if !productAcknowledgementArtifactsVerified(inputs.ProductAcknowledgement) {
+		return ConformanceProjection{}, nil, errors.New("conformance projection product acknowledgement is not an unmodified verifier output")
+	}
+	if !neutralWholeVerificationVerified(inputs.NeutralVerification) {
+		return ConformanceProjection{}, nil, errors.New("conformance projection neutral authority is not an unmodified pinned-verifier output")
+	}
+	if !packageVerificationVerified(inputs.PackageVerification) {
+		return ConformanceProjection{}, nil, errors.New("conformance projection package identity is not an unmodified package-verifier output")
+	}
 	contract, err := DecodeComponentContractIndex(inputs.ComponentContractBody)
 	if err != nil {
 		return ConformanceProjection{}, nil, err
@@ -173,6 +186,18 @@ func BuildConformanceProjection(inputs ConformanceProjectionInputs) (Conformance
 		return ConformanceProjection{}, nil, err
 	}
 	return value, body, nil
+}
+
+func verificationProvenanceSeal(domain string, value any) ([sha256.Size]byte, error) {
+	body, err := CanonicalJSON(value)
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	input := make([]byte, 0, len(domain)+1+len(body))
+	input = append(input, domain...)
+	input = append(input, 0)
+	input = append(input, body...)
+	return sha256.Sum256(input), nil
 }
 
 func DecodeConformanceProjection(body []byte) (ConformanceProjection, error) {

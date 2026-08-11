@@ -267,6 +267,7 @@ func TestProductCompatibleConformanceFixturesCloseNeutralAndPackageChain(t *test
 		Ack:          canonicalAck,
 		AckBody:      canonicalAckBody,
 	}
+	require.NoError(t, sealProductAcknowledgementArtifacts(&canonicalProductAcknowledgement))
 	projectionInputs := ConformanceProjectionInputs{
 		ComponentContractBody:  productInputs.ComponentContractBody,
 		ProductAcknowledgement: canonicalProductAcknowledgement,
@@ -295,6 +296,35 @@ func TestProductCompatibleConformanceFixturesCloseNeutralAndPackageChain(t *test
 	verifiedProjection, err := VerifyConformanceProjection(projectionBody, projectionInputs)
 	require.NoError(t, err)
 	require.Equal(t, projection, verifiedProjection)
+	t.Run("verification outputs reject caller mutation", func(t *testing.T) {
+		mutated := projectionInputs
+		mutated.NeutralVerification.AuthorizationSHA256 = "sha256:" + strings.Repeat("0", 64)
+		_, _, mutationErr := BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified pinned-verifier output")
+
+		mutated = projectionInputs
+		mutated.NeutralVerification.AcknowledgementSHA256 = map[string]string{
+			"unirouter": projectionInputs.NeutralVerification.AcknowledgementSHA256["unirouter"],
+			"xinsight":  "sha256:" + strings.Repeat("0", 64),
+		}
+		_, _, mutationErr = BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified pinned-verifier output")
+
+		mutated = projectionInputs
+		mutated.PackageVerification.PackageSHA256 = "sha256:" + strings.Repeat("0", 64)
+		_, _, mutationErr = BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified package-verifier output")
+
+		mutated = projectionInputs
+		mutated.PackageVerification.PackageBytes++
+		_, _, mutationErr = BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified package-verifier output")
+
+		mutated = projectionInputs
+		mutated.ProductAcknowledgement.Receipt.SourceBindingSHA256 = "sha256:" + strings.Repeat("0", 64)
+		_, _, mutationErr = BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified verifier output")
+	})
 	_, err = DecodeConformanceProjection(append(append([]byte(nil), projectionBody...), '\n'))
 	require.ErrorContains(t, err, "not canonical")
 	for _, name := range []string{
