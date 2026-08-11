@@ -162,11 +162,13 @@ type PackageOptions struct {
 type PackageVerification struct {
 	PackageSHA256        string                `json:"package_sha256"`
 	PackageBytes         int64                 `json:"package_bytes"`
+	ManifestSHA256       string                `json:"manifest_sha256"`
 	Manifest             PackageManifest       `json:"manifest"`
 	RequestSet           RequestSet            `json:"request_set"`
 	SourceScope          SourceScope           `json:"source_scope"`
 	SourceFacts          SourceFacts           `json:"source_facts"`
 	CompatibilityMembers []CompatibilityBundle `json:"compatibility_members"`
+	manifestBody         []byte
 }
 
 type packageContent struct {
@@ -484,11 +486,13 @@ func Verify(reader io.Reader, publicKeys map[string]ed25519.PublicKey) (PackageV
 	return PackageVerification{
 		PackageSHA256:        hashBytes(packageBody),
 		PackageBytes:         int64(len(packageBody)),
+		ManifestSHA256:       hashBytes(entries[manifestPath]),
 		Manifest:             manifest,
 		RequestSet:           requestSet,
 		SourceScope:          sourceScope,
 		SourceFacts:          sourceFacts,
 		CompatibilityMembers: members,
+		manifestBody:         append([]byte(nil), entries[manifestPath]...),
 	}, nil
 }
 
