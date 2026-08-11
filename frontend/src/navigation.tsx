@@ -251,6 +251,7 @@ const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(chil
 const compatibilityRoutes = new Set([
   '/governance-simulation', '/risk-control', '/member-lifecycle', '/users', '/project-management',
   '/provenance-passport', '/org-model-prices', '/grants', '/agent-trust-evidence', '/keys', '/data-exchange',
+	'/connectors',
 ]);
 const orgAdminRoutes = new Set([
 	'/', '/model-governance', '/model-readiness', '/risk-control', '/access-review', '/applications', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
@@ -351,6 +352,7 @@ const routeLicenseFeatures: Partial<Record<string, LicenseFeature>> = {
   '/guardrail-policies': 'guardrails',
   '/notifications': 'notifications',
   '/media-jobs': 'gateway',
+	'/connectors': 'data_exchange',
 };
 
 export function getRequiredLicenseFeatureForRoute(path: string): LicenseFeature | undefined {

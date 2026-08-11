@@ -359,6 +359,11 @@ export const api = {
     request(`/data-exchange/exchanges/${id}/artifact-delete`, { method: 'POST' }),
   getXInsightFeedConnection: (projectId: number) =>
     request(`/data-exchange/xinsight/connections/${projectId}`),
+  installXInsightConnector: (projectId: number, data: { invitation: unknown }) =>
+    request(`/data-exchange/xinsight/connections/${projectId}/install`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   pauseXInsightFeedConnection: (projectId: number) =>
     request(`/data-exchange/xinsight/connections/${projectId}/pause`, { method: 'POST' }),
   resumeXInsightFeedConnection: (projectId: number) =>

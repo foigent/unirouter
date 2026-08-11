@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import DataExchangePage, { receiptPayload } from '../DataExchangePage';
-import { parseReceiverRegistrationBundle } from '../XInsightLiveConnection';
+import { parseFrozenConnectorInvitation, parseReceiverRegistrationBundle } from '../XInsightLiveConnection';
 import { useAuthStore } from '../../store/auth';
 
 const getItems = vi.fn();
@@ -14,6 +14,7 @@ const resumeConnection = vi.fn();
 const prepareRotation = vi.fn();
 const activateRotation = vi.fn();
 const createFeedCredential = vi.fn();
+const installConnector = vi.fn();
 
 const licensedAccess = {
   status: 'active',
@@ -36,6 +37,7 @@ vi.mock('../../api/client', () => ({
     getDataExchangeActivity: (...args: any[]) => getActivity(...args),
     getProjects: (...args: any[]) => getProjects(...args),
     getXInsightFeedConnection: (...args: any[]) => getFeedConnection(...args),
+    installXInsightConnector: (...args: any[]) => installConnector(...args),
     pauseXInsightFeedConnection: (...args: any[]) => pauseConnection(...args),
     resumeXInsightFeedConnection: (...args: any[]) => resumeConnection(...args),
     prepareXInsightFeedRotation: (...args: any[]) => prepareRotation(...args),
@@ -56,6 +58,7 @@ vi.mock('../../api/client', () => ({
 describe('DataExchangePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState(null, '', '/');
     useAuthStore.setState({
       user: {
         id: 1,
@@ -180,6 +183,7 @@ describe('DataExchangePage', () => {
       verifier_scheme: 'receiver_sha256_v1',
       operation_id: 'b'.repeat(32),
     });
+    installConnector.mockResolvedValue({ connector_product_status: 'connecting' });
   });
 
   it('defaults to the product live connection and labels receiver acknowledgement truthfully', async () => {
@@ -251,6 +255,48 @@ describe('DataExchangePage', () => {
     expect(() => parseReceiverRegistrationBundle(
       valid.replace(/}$/, ',"unknown":true}'),
     )).toThrow('字段必须与 Frozen Registration Bundle V1 完全一致');
+  });
+
+  it('strictly parses the complete frozen Connector invitation and rejects fragment drift', () => {
+    const now = new Date('2030-01-01T00:00:00Z');
+    const invitation = frozenConnectorInvitation('2030-01-01T00:15:00Z');
+    expect(parseFrozenConnectorInvitation(JSON.stringify(invitation), now).installation_id)
+      .toBe('xci_AAAAAAAAAAAAAAAAAAAAAA');
+    expect(() => parseFrozenConnectorInvitation(
+      JSON.stringify({ ...invitation, extension: true }),
+      now,
+    )).toThrow('字段必须与 frozen Connector invitation 完全一致');
+    expect(() => parseFrozenConnectorInvitation(
+      JSON.stringify(invitation),
+      now,
+      '#invitation=xiiv1_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB&xinsight_origin=https%3A%2F%2Fxinsight.example',
+    )).toThrow('install_url 不符合 frozen Connector invitation');
+  });
+
+  it('requires explicit project consent and posts only the complete invitation package', async () => {
+    getFeedConnection.mockResolvedValueOnce({
+      project_id: 22,
+      project_name: 'Development',
+      project_status: 'active',
+      global_configured: true,
+      global_enabled: true,
+      source_instance: 'unirouter-dev-149a8220bf1e',
+      connection_status: 'paused',
+      active_credential: null,
+      staged_credential: null,
+      pending_item_count: 0,
+      connector_product_status: 'not_connected',
+      connector_installation: null,
+    });
+    const invitation = frozenConnectorInvitation(new Date(Date.now() + 10 * 60 * 1000).toISOString());
+    render(<DataExchangePage />);
+    const input = await screen.findByLabelText('Frozen X-Insight Connector invitation');
+    fireEvent.change(input, { target: { value: JSON.stringify(invitation) } });
+    fireEvent.click(screen.getByRole('button', { name: '确认项目范围并登记 invitation' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确定' }));
+
+    await waitFor(() => expect(installConnector).toHaveBeenCalledWith(22, { invitation }));
+    expect((input as HTMLTextAreaElement).value).toBe('');
   });
 
   it('keeps the manual approval flow in a clearly historical tab', async () => {
@@ -416,3 +462,17 @@ describe('DataExchangePage', () => {
     expect(screen.getByRole('button', { name: '取消轮换' }).hasAttribute('disabled')).toBe(false);
   });
 });
+
+function frozenConnectorInvitation(expiresAt: string) {
+  return {
+    schema_version: 'xinsight.connector-installation-invitation.v1',
+    invitation_id: 'xii_AAAAAAAAAAAAAAAAAAAAAA',
+    installation_id: 'xci_AAAAAAAAAAAAAAAAAAAAAA',
+    deployment_id: 'xid_AAAAAAAAAAAAAAAAAAAAAA',
+    audience: 'unirouter',
+    xinsight_origin: 'https://xinsight.example',
+    requested_event_scope: ['model.request.completed'],
+    expires_at: expiresAt,
+    install_url: 'https://unirouter.example/connectors/x-insight/install#invitation=xiiv1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&xinsight_origin=https%3A%2F%2Fxinsight.example',
+  };
+}

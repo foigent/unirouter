@@ -191,6 +191,7 @@ const endpointGroups = [
       ['POST', '/api/v1/data-exchange/exchanges/{id}/receipts', '登记 X-Insight 回执'],
       ['POST', '/api/v1/data-exchange/exchanges/{id}/artifact-delete', '标记制品已删除'],
       ['GET', '/api/v1/data-exchange/xinsight/connections/{project_id}', '读取项目级 X-Insight 实时连接状态'],
+      ['POST', '/api/v1/data-exchange/xinsight/connections/{project_id}/install', '校验完整 frozen invitation，并幂等登记 Connector installation 与加密 invitation'],
       ['POST', '/api/v1/data-exchange/xinsight/connections/{project_id}/pause', '暂停实时连接但不禁用凭证'],
       ['POST', '/api/v1/data-exchange/xinsight/connections/{project_id}/resume', '恢复实时连接'],
       ['POST', '/api/v1/data-exchange/xinsight/connections/{project_id}/credentials', '登记 receiver-generated 初始 staged feed-only 凭证（不接收或返回明文 token）'],

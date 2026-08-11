@@ -1333,6 +1333,33 @@ paths:
               schema: { $ref: "#/components/schemas/XInsightFeedConnection" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/v1/data-exchange/xinsight/connections/{project_id}/install:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    parameters:
+      - { name: project_id, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+    post:
+      tags: [Admin]
+      summary: Consent to and stage one frozen X-Insight Connector invitation
+      description: Requires an active project, current Data Exchange entitlement, the stable deployment role, an enabled exact completed-feed source instance, and a locally pinned X-Insight HTTPS origin. The complete frozen invitation is validated without extensions; its bearer is accepted only from the canonical install_url fragment, purpose-encrypted, and never returned. Exact replay is a no-op. This action does not enable the Connector agent or send traffic.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/XInsightConnectorInstallRequest" }
+      responses:
+        "200":
+          description: Idempotent local installation and queued connect-operation state; no invitation material is returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/XInsightConnectorInstallResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
   /api/v1/data-exchange/xinsight/connections/{project_id}/pause:
     x-unirouter-rbac:
       post: [platform_admin]
@@ -4228,6 +4255,44 @@ components:
         connector_product_status: { type: string, enum: [not_connected, connecting, connected, paused, abnormal] }
         connector_installation: { $ref: "#/components/schemas/XInsightConnectorInstallationSummary", nullable: true }
         connector_latest_operation: { $ref: "#/components/schemas/XInsightConnectorOperationSummary", nullable: true }
+    XInsightConnectorInvitationV1:
+      type: object
+      additionalProperties: false
+      description: Consumer view of the X-Insight-owned frozen invitation. UniRouter validates but does not extend this contract.
+      required: [schema_version, invitation_id, installation_id, deployment_id, audience, xinsight_origin, requested_event_scope, expires_at, install_url]
+      properties:
+        schema_version: { type: string, enum: [xinsight.connector-installation-invitation.v1] }
+        invitation_id: { type: string, pattern: '^xii_[A-Za-z0-9_-]{22}$' }
+        installation_id: { type: string, pattern: '^xci_[A-Za-z0-9_-]{22}$' }
+        deployment_id: { type: string, pattern: '^xid_[A-Za-z0-9_-]{22}$' }
+        audience: { type: string, enum: [unirouter] }
+        xinsight_origin: { type: string, format: uri, pattern: '^https://[^/?#]+$' }
+        requested_event_scope:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [model.request.completed] }
+        expires_at: { type: string, format: date-time }
+        install_url:
+          type: string
+          format: uri
+          writeOnly: true
+          description: Canonical HTTPS /connectors/x-insight/install URL whose fragment contains only invitation and xinsight_origin
+    XInsightConnectorInstallRequest:
+      type: object
+      additionalProperties: false
+      required: [invitation]
+      properties:
+        invitation: { $ref: "#/components/schemas/XInsightConnectorInvitationV1" }
+    XInsightConnectorInstallResponse:
+      type: object
+      additionalProperties: false
+      required: [connector_product_status, connector_installation, connector_latest_operation]
+      properties:
+        connector_product_status: { type: string, enum: [connecting] }
+        connector_installation: { $ref: "#/components/schemas/XInsightConnectorInstallationSummary" }
+        connector_latest_operation: { $ref: "#/components/schemas/XInsightConnectorOperationSummary" }
     XInsightConnectorInstallationSummary:
       type: object
       additionalProperties: false

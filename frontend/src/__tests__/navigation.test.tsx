@@ -253,6 +253,8 @@ describe('two-axis navigation boundaries', () => {
     expect(isRouteAllowedForAuthz('/license', context('org_admin'))).toBe(false);
     expect(isRouteAllowedForAuthz('/deployment', context('org_admin'))).toBe(false);
     expect(isRouteAllowedForAuthz('/data-exchange', context('org_admin'))).toBe(false);
+    expect(isRouteAllowedForAuthz('/connectors/x-insight/install', context('platform_admin'))).toBe(true);
+    expect(isRouteAllowedForAuthz('/connectors/x-insight/install', context('org_admin'))).toBe(false);
     expect(isRouteAllowedForAuthz('/risk-control', context('billing_admin'))).toBe(false);
   });
 
@@ -277,6 +279,7 @@ describe('two-axis navigation boundaries', () => {
     expect(platformChildren.find(item => item.itemKey === '/integrations')?.licenseLocked).toBeUndefined();
     expect(isRouteLicensed('/guardrail-policies', partial)).toBe(false);
     expect(isRouteLicensed('/notifications?project_id=7', partial)).toBe(true);
+    expect(isRouteLicensed('/connectors/x-insight/install', partial)).toBe(false);
   });
 
   it('treats wildcard projection as all capabilities and fail-closes missing or expired projections', () => {

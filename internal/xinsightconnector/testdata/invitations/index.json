@@ -1,0 +1,10 @@
+{
+  "valid": [
+    "valid/01-frozen-invitation.json"
+  ],
+  "invalid": [
+    "invalid/01-unknown-field.json",
+    "invalid/02-event-scope-drift.json",
+    "invalid/03-install-url-origin-drift.json"
+  ]
+}

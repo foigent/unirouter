@@ -471,6 +471,20 @@ func main() {
 		log.Fatalf("Failed to initialize X-Insight Connector state manager: %v", err)
 	}
 	adminHandler.SetXInsightConnectorManager(xInsightConnectorManager)
+	xInsightConnectorJournal, err := xinsightconnector.NewPostgresPhaseJournal(postgres.Pool, encKey)
+	if err != nil {
+		log.Fatalf("Failed to initialize X-Insight Connector invitation journal: %v", err)
+	}
+	xInsightConnectorIntake, err := xinsightconnector.NewInvitationIntake(
+		xInsightConnectorManager,
+		xInsightConnectorJournal,
+		cfg.XInsightConnectorControlOrigin,
+		cfg.RuntimeDeploymentRole,
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize X-Insight Connector invitation intake: %v", err)
+	}
+	adminHandler.SetXInsightConnectorInvitationIntake(xInsightConnectorIntake)
 	xInsightConnectorRuntime, err := newProductionXInsightConnectorRuntimeSupervisor(
 		cfg, postgres.Pool, encKey, adminHandler, log.Printf,
 	)
