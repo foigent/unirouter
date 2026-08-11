@@ -133,12 +133,15 @@ func (counterpart *HTTPControlCounterpart) Poll(
 		return nil, false, err
 	}
 	canonical, err := operation.CanonicalJSON()
-	if err != nil || !bytes.Equal(canonical, body) ||
+	if err != nil ||
 		operation.InstallationID != counterpart.installation.InstallationID ||
 		operation.ProjectID != counterpart.installation.ControlProjectID {
 		return nil, false, ErrConflict
 	}
-	return bytes.Clone(body), true, nil
+	// X writes HTTP JSON with json.Encoder, so transport framing and struct
+	// field order are not product authority. The Agent consumes only the exact
+	// canonical v2 projection derived from the strictly decoded operation.
+	return canonical, true, nil
 }
 
 func (counterpart *HTTPControlCounterpart) Acknowledge(

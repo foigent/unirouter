@@ -5,6 +5,7 @@ package xinsightconnector
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -29,6 +30,9 @@ func TestConnectorRedeemAndFixedOriginTransportAreCrashSafeIntegration(t *testin
 	prepared, err := journal.PrepareRedeem(ctx, cp2aInstallationID)
 	require.NoError(t, err)
 	require.Equal(t, cp2aControlProject, prepared.ControlProjectID)
+	redeemRequest, err := decodeRedeemRequest(prepared.CanonicalRequest)
+	require.NoError(t, err)
+	require.Equal(t, []string{EventScopeModelCompleted}, redeemRequest.FinalEventScope)
 	require.Contains(t, string(prepared.CanonicalRequest), cp2aInvitation)
 	require.Contains(t, string(prepared.CanonicalRequest), cp2aControlToken)
 	requireRedeemBindingState(t, pool, "redeem_pending", prepared.RequestSHA256, "")
@@ -50,6 +54,13 @@ func TestConnectorRedeemAndFixedOriginTransportAreCrashSafeIntegration(t *testin
 	require.Equal(t, prepared.ControlTokenExpiresAt, replayed.ControlTokenExpiresAt)
 
 	result := cp2aRegistrationResult(t, prepared, cp2aControlProject)
+	canonicalResult, err := canonicalizeRegistrationResult(result, Installation{
+		InstallationID: prepared.InstallationID,
+		XDeploymentID:  prepared.XDeploymentID,
+		EventScope:     EventScopeModelCompleted,
+	}, cp2aControlProject)
+	require.NoError(t, err)
+	require.NotEqual(t, result, canonicalResult, "X Encoder framing must not become product authority")
 	descriptor := RuntimeInstallationDescriptor{
 		InstallationID: cp2aInstallationID,
 		XDeploymentID:  "xid_ZZZZZZZZZZZZZZZZZZZZZZ",
@@ -63,6 +74,9 @@ func TestConnectorRedeemAndFixedOriginTransportAreCrashSafeIntegration(t *testin
 		require.Empty(t, request.Header.Get("Cookie"))
 		body, readErr := io.ReadAll(request.Body)
 		require.NoError(t, readErr)
+		requestWire, decodeErr := decodeRedeemRequest(body)
+		require.NoError(t, decodeErr)
+		require.Equal(t, []string{EventScopeModelCompleted}, requestWire.FinalEventScope)
 		sentBodies = append(sentBodies, body)
 		return nil, responseLost
 	})}
@@ -87,7 +101,7 @@ func TestConnectorRedeemAndFixedOriginTransportAreCrashSafeIntegration(t *testin
 	require.Len(t, sentBodies, 2)
 	require.Equal(t, sentBodies[0], sentBodies[1], "send/response loss must replay exact request bytes")
 	require.Equal(t, prepared.CanonicalRequest, sentBodies[1])
-	requireRedeemBindingState(t, pool, "control_active", prepared.RequestSHA256, hashBytes(result))
+	requireRedeemBindingState(t, pool, "control_active", prepared.RequestSHA256, hashBytes(canonicalResult))
 
 	runnable, err := restarted.ListRunnableInstallations(ctx, 16)
 	require.NoError(t, err)
@@ -99,6 +113,10 @@ func TestConnectorRedeemAndFixedOriginTransportAreCrashSafeIntegration(t *testin
 	)
 	operationBytes, err := operation.CanonicalJSON()
 	require.NoError(t, err)
+	var operationResponse bytes.Buffer
+	require.NoError(t, json.NewEncoder(&operationResponse).Encode(operation))
+	require.True(t, bytes.HasSuffix(operationResponse.Bytes(), []byte("\n")))
+	require.NotEqual(t, operationBytes, operationResponse.Bytes())
 	resultV2 := mustDecodeControlV2Result(
 		t, "testdata/control-v2/valid/02-prepare-paused-source-result.json",
 	)
@@ -114,7 +132,7 @@ func TestConnectorRedeemAndFixedOriginTransportAreCrashSafeIntegration(t *testin
 			require.Equal(t, http.MethodGet, request.Method)
 			require.Equal(t, connectorOperationsPath, request.URL.Path)
 			require.Equal(t, cp2aInstallationID, request.URL.Query().Get("installation_id"))
-			return connectorHTTPResponse(request, http.StatusOK, "application/json", operationBytes), nil
+			return connectorHTTPResponse(request, http.StatusOK, "application/json", operationResponse.Bytes()), nil
 		case 2:
 			require.Equal(t, http.MethodPost, request.Method)
 			require.Equal(t, connectorOperationsPath+"/"+resultV2.OperationID, request.URL.Path)
@@ -182,6 +200,17 @@ WHERE installation_id=$1`, cp2aInstallationID, prepared.RequestSHA256)
 	drifted := cp2aRegistrationResult(t, prepared, "project.other")
 	require.ErrorIs(t, journal.FinalizeRedeem(ctx, prepared, drifted), ErrConflict)
 	requireRedeemBindingState(t, pool, "redeem_pending", prepared.RequestSHA256, "")
+	legacyIdentity := bytes.ReplaceAll(
+		cp2aRegistrationResult(t, prepared, cp2aControlProject),
+		[]byte(`"deployment_id"`), []byte(`"x_deployment_id"`),
+	)
+	require.ErrorIs(t, journal.FinalizeRedeem(ctx, prepared, legacyIdentity), ErrConflict)
+	scalarScope := bytes.ReplaceAll(
+		cp2aRegistrationResult(t, prepared, cp2aControlProject),
+		[]byte(`"final_event_scope":["`+EventScopeModelCompleted+`"]`),
+		[]byte(`"final_event_scope":"`+EventScopeModelCompleted+`"`),
+	)
+	require.Error(t, journal.FinalizeRedeem(ctx, prepared, scalarScope))
 
 	invalidPrepared := prepared
 	invalidPrepared.CanonicalRequest = append(bytes.Clone(prepared.CanonicalRequest), ' ')

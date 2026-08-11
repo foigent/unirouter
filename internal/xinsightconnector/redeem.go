@@ -26,13 +26,13 @@ type PreparedInvitationRedeem struct {
 }
 
 type redeemInvitationRequest struct {
-	InvitationToken       string `json:"invitation_token"`
-	ProjectID             string `json:"project_id"`
-	FinalEventScope       string `json:"final_event_scope"`
-	ConsentSHA256         string `json:"consent_sha256"`
-	ConfirmedAt           string `json:"confirmed_at"`
-	ControlToken          string `json:"control_token"`
-	ControlTokenExpiresAt string `json:"control_token_expires_at"`
+	InvitationToken       string   `json:"invitation_token"`
+	ProjectID             string   `json:"project_id"`
+	FinalEventScope       []string `json:"final_event_scope"`
+	ConsentSHA256         string   `json:"consent_sha256"`
+	ConfirmedAt           string   `json:"confirmed_at"`
+	ControlToken          string   `json:"control_token"`
+	ControlTokenExpiresAt string   `json:"control_token_expires_at"`
 }
 
 type registrationResultWire struct {
@@ -196,6 +196,12 @@ func (journal *PostgresPhaseJournal) FinalizeRedeem(
 	if err != nil {
 		return err
 	}
+	canonicalResult, err = canonicalizeRegistrationResult(
+		canonicalResult, installation, binding.controlProjectID,
+	)
+	if err != nil {
+		return err
+	}
 	resultSHA := hashBytes(canonicalResult)
 	if binding.invitationTokenEnc == "" {
 		if binding.redeemRequestSHA256 != prepared.RequestSHA256 ||
@@ -227,9 +233,6 @@ func (journal *PostgresPhaseJournal) FinalizeRedeem(
 	if bytes.Contains(canonicalResult, []byte(request.InvitationToken)) ||
 		bytes.Contains(canonicalResult, []byte(request.ControlToken)) {
 		return ErrConflict
-	}
-	if err := validateRegistrationResult(canonicalResult, installation, binding.controlProjectID); err != nil {
-		return err
 	}
 	now := journal.now().UTC().Truncate(time.Microsecond)
 	tag, err := tx.Exec(ctx, `
@@ -293,7 +296,7 @@ func buildRedeemRequest(
 	request := redeemInvitationRequest{
 		InvitationToken:       invitation,
 		ProjectID:             controlProjectID,
-		FinalEventScope:       installation.EventScope,
+		FinalEventScope:       []string{installation.EventScope},
 		ConsentSHA256:         installation.SourceBindingSHA256,
 		ConfirmedAt:           installation.ConsentedAt.UTC().Format(time.RFC3339Nano),
 		ControlToken:          controlToken,
@@ -301,7 +304,7 @@ func buildRedeemRequest(
 	}
 	if !validConnectorSecret(request.InvitationToken) ||
 		!validControlText(request.ProjectID, 128) ||
-		request.FinalEventScope != EventScopeModelCompleted ||
+		len(request.FinalEventScope) != 1 || request.FinalEventScope[0] != EventScopeModelCompleted ||
 		!hashPattern.MatchString(request.ConsentSHA256) ||
 		!validControlObservedAt(request.ConfirmedAt) ||
 		!validConnectorControlBearer(request.ControlToken) ||
@@ -330,93 +333,104 @@ func decodeRedeemRequest(raw []byte) (redeemInvitationRequest, error) {
 	return request, nil
 }
 
-func validateRegistrationResult(
+func canonicalizeRegistrationResult(
 	raw []byte,
 	installation Installation,
 	controlProjectID string,
-) error {
+) ([]byte, error) {
 	if err := rejectDuplicateControlV2Fields(raw); err != nil {
-		return err
+		return nil, err
 	}
 	var result registrationResultWire
 	if err := decodeStrictControlV2(raw, &result); err != nil {
-		return err
+		return nil, err
 	}
 	if len(result.Installation) == 0 || len(result.Operation) == 0 {
-		return ErrInvalid
+		return nil, ErrInvalid
 	}
-	identity, err := decodeRegistrationInstallationIdentity(result.Installation)
+	identity, canonicalInstallation, err := decodeRegistrationInstallationIdentity(result.Installation)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if identity.InstallationID != installation.InstallationID ||
-		identity.XDeploymentID != installation.XDeploymentID ||
+		identity.DeploymentID != installation.XDeploymentID ||
 		identity.ProjectID != controlProjectID ||
-		len(identity.EventScope) != 1 || identity.EventScope[0] != installation.EventScope {
-		return ErrConflict
+		len(identity.FinalEventScope) != 1 || identity.FinalEventScope[0] != installation.EventScope {
+		return nil, ErrConflict
 	}
 	operation, err := DecodeControlOperationV2(result.Operation)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	canonicalOperation, err := operation.CanonicalJSON()
-	if err != nil || !bytes.Equal(canonicalOperation, result.Operation) ||
+	if err != nil ||
 		operation.InstallationID != installation.InstallationID ||
 		operation.ProjectID != controlProjectID ||
 		operation.Phase != ControlPhasePreparePaused ||
 		len(operation.EventScope) != 1 || operation.EventScope[0] != installation.EventScope {
-		return ErrConflict
+		return nil, ErrConflict
 	}
-	canonical, err := json.Marshal(result)
-	if err != nil || !bytes.Equal(canonical, raw) {
-		return ErrInvalid
+	canonical, err := json.Marshal(registrationResultWire{
+		Installation: canonicalInstallation,
+		Operation:    canonicalOperation,
+	})
+	if err != nil {
+		return nil, ErrInvalid
 	}
-	return nil
+	return canonical, nil
 }
 
 type registrationInstallationIdentity struct {
-	InstallationID string   `json:"installation_id"`
-	XDeploymentID  string   `json:"x_deployment_id"`
-	ProjectID      string   `json:"project_id"`
-	EventScope     []string `json:"event_scope"`
+	InstallationID  string   `json:"installation_id"`
+	DeploymentID    string   `json:"deployment_id"`
+	ProjectID       string   `json:"project_id"`
+	FinalEventScope []string `json:"final_event_scope"`
 }
 
-func decodeRegistrationInstallationIdentity(raw []byte) (registrationInstallationIdentity, error) {
+func decodeRegistrationInstallationIdentity(
+	raw []byte,
+) (registrationInstallationIdentity, []byte, error) {
 	if err := rejectDuplicateControlV2Fields(raw); err != nil {
-		return registrationInstallationIdentity{}, err
+		return registrationInstallationIdentity{}, nil, err
 	}
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil {
-		return registrationInstallationIdentity{}, ErrInvalid
+		return registrationInstallationIdentity{}, nil, ErrInvalid
+	}
+	if _, legacy := object["x_deployment_id"]; legacy {
+		return registrationInstallationIdentity{}, nil, ErrConflict
+	}
+	if _, legacy := object["event_scope"]; legacy {
+		return registrationInstallationIdentity{}, nil, ErrConflict
 	}
 	for field := range object {
 		lower := strings.ToLower(field)
 		if strings.Contains(lower, "token") || strings.Contains(lower, "bearer") ||
 			strings.Contains(lower, "secret") || strings.Contains(lower, "credential") {
-			return registrationInstallationIdentity{}, ErrConflict
+			return registrationInstallationIdentity{}, nil, ErrConflict
 		}
 	}
 	var identity registrationInstallationIdentity
 	if err := unmarshalRequiredRegistrationField(object, "installation_id", &identity.InstallationID); err != nil {
-		return registrationInstallationIdentity{}, err
+		return registrationInstallationIdentity{}, nil, err
 	}
-	if err := unmarshalRequiredRegistrationField(object, "x_deployment_id", &identity.XDeploymentID); err != nil {
-		return registrationInstallationIdentity{}, err
+	if err := unmarshalRequiredRegistrationField(object, "deployment_id", &identity.DeploymentID); err != nil {
+		return registrationInstallationIdentity{}, nil, err
 	}
 	if err := unmarshalRequiredRegistrationField(object, "project_id", &identity.ProjectID); err != nil {
-		return registrationInstallationIdentity{}, err
+		return registrationInstallationIdentity{}, nil, err
 	}
-	if err := unmarshalRequiredRegistrationField(object, "event_scope", &identity.EventScope); err != nil {
-		return registrationInstallationIdentity{}, err
+	if err := unmarshalRequiredRegistrationField(object, "final_event_scope", &identity.FinalEventScope); err != nil {
+		return registrationInstallationIdentity{}, nil, err
 	}
 	canonical, err := json.Marshal(object)
-	if err != nil || !bytes.Equal(canonical, raw) ||
+	if err != nil ||
 		!validExactExternalIdentity(identity.InstallationID) ||
-		!validExactDeploymentIdentity(identity.XDeploymentID) ||
+		!validExactDeploymentIdentity(identity.DeploymentID) ||
 		!validControlText(identity.ProjectID, 128) {
-		return registrationInstallationIdentity{}, ErrInvalid
+		return registrationInstallationIdentity{}, nil, ErrInvalid
 	}
-	return identity, nil
+	return identity, canonical, nil
 }
 
 func unmarshalRequiredRegistrationField(

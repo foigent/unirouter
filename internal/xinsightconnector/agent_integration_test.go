@@ -3,6 +3,7 @@
 package xinsightconnector
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -418,19 +419,22 @@ func cp2aRegistrationResult(
 	operation.ProjectID = projectID
 	operationBytes, err := operation.CanonicalJSON()
 	require.NoError(t, err)
-	installationBytes, err := json.Marshal(map[string]any{
-		"event_scope":     []string{EventScopeModelCompleted},
-		"installation_id": prepared.InstallationID,
-		"project_id":      projectID,
-		"x_deployment_id": prepared.XDeploymentID,
-	})
-	require.NoError(t, err)
-	resultBytes, err := json.Marshal(registrationResultWire{
-		Installation: installationBytes,
-		Operation:    operationBytes,
-	})
-	require.NoError(t, err)
-	return resultBytes
+	installation := struct {
+		InstallationID  string   `json:"installation_id"`
+		DeploymentID    string   `json:"deployment_id"`
+		ProjectID       string   `json:"project_id"`
+		FinalEventScope []string `json:"final_event_scope"`
+	}{
+		InstallationID: prepared.InstallationID, DeploymentID: prepared.XDeploymentID,
+		ProjectID: projectID, FinalEventScope: []string{EventScopeModelCompleted},
+	}
+	var encoded bytes.Buffer
+	require.NoError(t, json.NewEncoder(&encoded).Encode(struct {
+		Installation any             `json:"installation"`
+		Operation    json.RawMessage `json:"operation"`
+	}{Installation: installation, Operation: operationBytes}))
+	require.True(t, bytes.HasSuffix(encoded.Bytes(), []byte("\n")))
+	return encoded.Bytes()
 }
 
 func phaseTokenSequence(t *testing.T, values ...string) func() (string, error) {
