@@ -471,6 +471,12 @@ func main() {
 		log.Fatalf("Failed to initialize X-Insight Connector state manager: %v", err)
 	}
 	adminHandler.SetXInsightConnectorManager(xInsightConnectorManager)
+	xInsightConnectorRuntime, err := newProductionXInsightConnectorRuntimeSupervisor(
+		cfg, postgres.Pool, encKey, adminHandler, log.Printf,
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize X-Insight Connector runtime: %v", err)
+	}
 	adminHandler.SetRoutingController(router)
 	adminHandler.SetRuntimeChangeManager(runtimeChangeManager)
 	adminHandler.SetModelAuthorizationEvaluator(modelAuthorizationEvaluator)
@@ -547,6 +553,10 @@ func main() {
 		defer close(completedFeedRetentionDone)
 		completedFeedSvc.RunRetention(completedFeedRetentionCtx)
 	}()
+	xInsightConnectorRuntimeCtx, stopXInsightConnectorRuntime := context.WithCancel(context.Background())
+	xInsightConnectorRuntimeDone := startXInsightConnectorRuntime(
+		xInsightConnectorRuntimeCtx, xInsightConnectorRuntime,
+	)
 	oidcService, err := oidc.NewService(oidc.Config{
 		Enabled:            cfg.OIDCEnabled,
 		IssuerURL:          cfg.OIDCIssuerURL,
@@ -1130,11 +1140,17 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("Shutting down server...")
+	stopXInsightConnectorRuntime()
 	stopSettlementRecovery()
 	stopCompletedFeedRetention()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.ShutdownTimeoutSecs)*time.Second)
 	defer cancel()
+	select {
+	case <-xInsightConnectorRuntimeDone:
+	case <-ctx.Done():
+		log.Printf("X-Insight Connector runtime did not stop before shutdown timeout")
+	}
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)

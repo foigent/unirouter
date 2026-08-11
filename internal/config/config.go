@@ -1,8 +1,11 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"regexp"
@@ -81,13 +84,21 @@ type Config struct {
 	CompletedExecutionFeedEnabled        bool
 	CompletedExecutionFeedSourceInstance string
 	CompletedExecutionFeedReferenceMode  string
-	OTelExportEnabled                    bool
-	OTelExportEndpoint                   string
-	OTelExportQueueSize                  int
-	OTelExportBatchSize                  int
-	OTelExportFlushIntervalMS            int
-	OTelExportTimeoutMS                  int
-	OTelExportMaxRetries                 int
+	// The Connector agent is an optional product-local control-plane client.
+	// Its receiver bindings are public network authority, never bearer or
+	// Connector-control secret material.
+	XInsightConnectorAgentEnabled               bool
+	XInsightConnectorControlOrigin              string
+	XInsightConnectorPollMilliseconds           int
+	XInsightConnectorRequestTimeoutMilliseconds int
+	XInsightConnectorReceiverBindings           []XInsightConnectorReceiverBinding
+	OTelExportEnabled                           bool
+	OTelExportEndpoint                          string
+	OTelExportQueueSize                         int
+	OTelExportBatchSize                         int
+	OTelExportFlushIntervalMS                   int
+	OTelExportTimeoutMS                         int
+	OTelExportMaxRetries                        int
 
 	// Isolated asynchronous image job plane. Credentials are resolved by the
 	// AWS SDK default provider chain and existing encrypted provider channels;
@@ -203,6 +214,17 @@ type Config struct {
 
 	// Canary
 	SkipMigration bool
+}
+
+// XInsightConnectorReceiverBinding pins one X-owned installation and
+// deployment identity plus its public network-binding digest to one exact
+// receiver address. Management identities remain exact-byte, case-sensitive
+// values; callers must not normalize them before resolution.
+type XInsightConnectorReceiverBinding struct {
+	InstallationID       string `json:"installation_id"`
+	XDeploymentID        string `json:"x_deployment_id"`
+	NetworkBindingSHA256 string `json:"network_binding_sha256"`
+	AllowedIP            string `json:"allowed_ip"`
 }
 
 // ValidateReleaseSecrets applies the stronger symmetric-secret floor required
@@ -464,6 +486,9 @@ func (c *Config) Validate() error {
 			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE must be legacy, shadow, or neutral_canary",
 		)
 	}
+	if err := c.validateXInsightConnector(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -471,14 +496,148 @@ const (
 	CompletedExecutionFeedReferenceModeLegacy        = "legacy"
 	CompletedExecutionFeedReferenceModeShadow        = "shadow"
 	CompletedExecutionFeedReferenceModeNeutralCanary = "neutral_canary"
+
+	XInsightConnectorDefaultPollMilliseconds           = 1000
+	XInsightConnectorDefaultRequestTimeoutMilliseconds = 5000
+	xInsightConnectorMinPollMilliseconds               = 250
+	xInsightConnectorMaxPollMilliseconds               = 60000
+	xInsightConnectorMinRequestTimeoutMilliseconds     = 250
+	xInsightConnectorMaxRequestTimeoutMilliseconds     = 30000
 )
 
-var completedExecutionSourceInstancePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+var (
+	completedExecutionSourceInstancePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+	xInsightConnectorInstallationPattern    = regexp.MustCompile(`^xci_[A-Za-z0-9_-]{22}$`)
+	xInsightConnectorDeploymentPattern      = regexp.MustCompile(`^xid_[A-Za-z0-9_-]{22}$`)
+	xInsightConnectorDigestPattern          = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+)
+
+func (c *Config) validateXInsightConnector() error {
+	configured := c.XInsightConnectorAgentEnabled || c.XInsightConnectorControlOrigin != "" ||
+		c.XInsightConnectorPollMilliseconds != 0 || c.XInsightConnectorRequestTimeoutMilliseconds != 0 ||
+		len(c.XInsightConnectorReceiverBindings) != 0
+	if !configured {
+		return nil
+	}
+	if c.XInsightConnectorPollMilliseconds < xInsightConnectorMinPollMilliseconds ||
+		c.XInsightConnectorPollMilliseconds > xInsightConnectorMaxPollMilliseconds {
+		return fmt.Errorf(
+			"XINSIGHT_CONNECTOR_POLL_MILLISECONDS must be between %d and %d",
+			xInsightConnectorMinPollMilliseconds, xInsightConnectorMaxPollMilliseconds,
+		)
+	}
+	if c.XInsightConnectorRequestTimeoutMilliseconds < xInsightConnectorMinRequestTimeoutMilliseconds ||
+		c.XInsightConnectorRequestTimeoutMilliseconds > xInsightConnectorMaxRequestTimeoutMilliseconds {
+		return fmt.Errorf(
+			"XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS must be between %d and %d",
+			xInsightConnectorMinRequestTimeoutMilliseconds, xInsightConnectorMaxRequestTimeoutMilliseconds,
+		)
+	}
+	if c.XInsightConnectorControlOrigin != "" {
+		if err := validateXInsightConnectorControlOrigin(c.XInsightConnectorControlOrigin); err != nil {
+			return err
+		}
+	}
+	seen := make(map[string]struct{}, len(c.XInsightConnectorReceiverBindings))
+	for index, binding := range c.XInsightConnectorReceiverBindings {
+		if !xInsightConnectorInstallationPattern.MatchString(binding.InstallationID) {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON[%d].installation_id is invalid", index)
+		}
+		if !xInsightConnectorDeploymentPattern.MatchString(binding.XDeploymentID) {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON[%d].x_deployment_id is invalid", index)
+		}
+		if !xInsightConnectorDigestPattern.MatchString(binding.NetworkBindingSHA256) {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON[%d].network_binding_sha256 is invalid", index)
+		}
+		if binding.AllowedIP != strings.TrimSpace(binding.AllowedIP) {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON[%d].allowed_ip must be exact", index)
+		}
+		prefix, err := netip.ParsePrefix(binding.AllowedIP)
+		if err != nil || prefix.Bits() != prefix.Addr().BitLen() || prefix.String() != binding.AllowedIP {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON[%d].allowed_ip must be one exact IPv4 /32 or IPv6 /128", index)
+		}
+		key := binding.InstallationID + "\x00" + binding.XDeploymentID + "\x00" + binding.NetworkBindingSHA256
+		if _, duplicate := seen[key]; duplicate {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON[%d] duplicates an exact binding", index)
+		}
+		seen[key] = struct{}{}
+	}
+	if c.XInsightConnectorAgentEnabled {
+		if c.RuntimeDeploymentRole != "stable" {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_AGENT_ENABLED requires RUNTIME_DEPLOYMENT_ROLE=stable")
+		}
+		if !c.CompletedExecutionFeedEnabled {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_AGENT_ENABLED requires COMPLETED_EXECUTION_FEED_ENABLED=true")
+		}
+		if c.XInsightConnectorControlOrigin == "" {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_CONTROL_ORIGIN is required when Connector agent is enabled")
+		}
+		if len(c.XInsightConnectorReceiverBindings) == 0 {
+			return fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON requires at least one binding when Connector agent is enabled")
+		}
+	}
+	return nil
+}
+
+func validateXInsightConnectorControlOrigin(raw string) error {
+	if raw != strings.TrimSpace(raw) {
+		return fmt.Errorf("XINSIGHT_CONNECTOR_CONTROL_ORIGIN must be one exact HTTPS origin")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil ||
+		parsed.Opaque != "" || parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("XINSIGHT_CONNECTOR_CONTROL_ORIGIN must be one exact HTTPS origin without userinfo, path, query, or fragment")
+	}
+	if raw != "https://"+parsed.Host {
+		return fmt.Errorf("XINSIGHT_CONNECTOR_CONTROL_ORIGIN must use its canonical HTTPS origin form")
+	}
+	return nil
+}
+
+// ResolveXInsightConnectorReceiverBinding returns the single configured public
+// receiver address for an exact, case-sensitive management identity tuple.
+// The bool is false for every tuple not explicitly pinned by configuration.
+func (c *Config) ResolveXInsightConnectorReceiverBinding(
+	installationID, xDeploymentID, networkBindingSHA256 string,
+) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	for _, binding := range c.XInsightConnectorReceiverBindings {
+		if binding.InstallationID == installationID && binding.XDeploymentID == xDeploymentID &&
+			binding.NetworkBindingSHA256 == networkBindingSHA256 {
+			return binding.AllowedIP, true
+		}
+	}
+	return "", false
+}
 
 func Load() (*Config, error) {
 	jwtSecret := getEnvStr("JWT_SECRET", "")
 	logRetentionDays := getEnvInt("LOG_RETENTION_DAYS", 30)
 	asyncMediaEnabled := getEnvBool("ASYNC_MEDIA_ENABLED", false)
+	xInsightConnectorAgentEnabled, err := getEnvBoolStrict("XINSIGHT_CONNECTOR_AGENT_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	xInsightConnectorPollMilliseconds, err := getEnvIntStrict(
+		"XINSIGHT_CONNECTOR_POLL_MILLISECONDS", XInsightConnectorDefaultPollMilliseconds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	xInsightConnectorRequestTimeoutMilliseconds, err := getEnvIntStrict(
+		"XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS", XInsightConnectorDefaultRequestTimeoutMilliseconds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	xInsightConnectorReceiverBindings, err := parseXInsightConnectorReceiverBindings(
+		getEnvStr("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON", ""),
+	)
+	if err != nil {
+		return nil, err
+	}
 	cfg := &Config{
 		ListenPort:          getEnvInt("LISTEN_PORT", 8080),
 		LogLevel:            getEnvStr("LOG_LEVEL", "info"),
@@ -529,13 +688,18 @@ func Load() (*Config, error) {
 			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
 			CompletedExecutionFeedReferenceModeLegacy,
 		),
-		OTelExportEnabled:         getEnvBool("UNIROUTE_OTEL_EXPORT_ENABLED", false),
-		OTelExportEndpoint:        strings.TrimSpace(getEnvStr("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")),
-		OTelExportQueueSize:       getEnvInt("UNIROUTE_OTEL_EXPORT_QUEUE_SIZE", 256),
-		OTelExportBatchSize:       getEnvInt("UNIROUTE_OTEL_EXPORT_BATCH_SIZE", 32),
-		OTelExportFlushIntervalMS: getEnvInt("UNIROUTE_OTEL_EXPORT_FLUSH_INTERVAL_MS", 500),
-		OTelExportTimeoutMS:       getEnvInt("UNIROUTE_OTEL_EXPORT_TIMEOUT_MS", 2000),
-		OTelExportMaxRetries:      getEnvInt("UNIROUTE_OTEL_EXPORT_MAX_RETRIES", 2),
+		XInsightConnectorAgentEnabled:               xInsightConnectorAgentEnabled,
+		XInsightConnectorControlOrigin:              getEnvStr("XINSIGHT_CONNECTOR_CONTROL_ORIGIN", ""),
+		XInsightConnectorPollMilliseconds:           xInsightConnectorPollMilliseconds,
+		XInsightConnectorRequestTimeoutMilliseconds: xInsightConnectorRequestTimeoutMilliseconds,
+		XInsightConnectorReceiverBindings:           xInsightConnectorReceiverBindings,
+		OTelExportEnabled:                           getEnvBool("UNIROUTE_OTEL_EXPORT_ENABLED", false),
+		OTelExportEndpoint:                          strings.TrimSpace(getEnvStr("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")),
+		OTelExportQueueSize:                         getEnvInt("UNIROUTE_OTEL_EXPORT_QUEUE_SIZE", 256),
+		OTelExportBatchSize:                         getEnvInt("UNIROUTE_OTEL_EXPORT_BATCH_SIZE", 32),
+		OTelExportFlushIntervalMS:                   getEnvInt("UNIROUTE_OTEL_EXPORT_FLUSH_INTERVAL_MS", 500),
+		OTelExportTimeoutMS:                         getEnvInt("UNIROUTE_OTEL_EXPORT_TIMEOUT_MS", 2000),
+		OTelExportMaxRetries:                        getEnvInt("UNIROUTE_OTEL_EXPORT_MAX_RETRIES", 2),
 
 		AsyncMediaEnabled:             asyncMediaEnabled,
 		AsyncMediaAdmissionEnabled:    getEnvBool("ASYNC_MEDIA_ADMISSION_ENABLED", false),
@@ -854,6 +1018,56 @@ func getEnvStr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvIntStrict(key string, fallback int) (int, error) {
+	raw, present := os.LookupEnv(key)
+	if !present || raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer", key)
+	}
+	return value, nil
+}
+
+func getEnvBoolStrict(key string, fallback bool) (bool, error) {
+	raw, present := os.LookupEnv(key)
+	if !present || raw == "" {
+		return fallback, nil
+	}
+	switch raw {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s must be exact true or false", key)
+	}
+}
+
+func parseXInsightConnectorReceiverBindings(raw string) ([]XInsightConnectorReceiverBinding, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	if raw != strings.TrimSpace(raw) {
+		return nil, fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON must be exact JSON without surrounding whitespace")
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var bindings []XInsightConnectorReceiverBinding
+	if err := decoder.Decode(&bindings); err != nil {
+		return nil, fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON must be a strict JSON array: %w", err)
+	}
+	if bindings == nil {
+		return nil, fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON must be a JSON array, not null")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON must contain one JSON value")
+	}
+	return bindings, nil
 }
 
 func getEnvInt(key string, fallback int) int {

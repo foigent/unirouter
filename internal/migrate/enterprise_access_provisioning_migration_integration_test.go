@@ -162,7 +162,7 @@ func TestEnterpriseAccessProvisioningFamilyPolicySelectorsRequireExactProjectSco
 func TestEnterpriseAccessProvisioningDownGuardAndEmptyRollback(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	rollbackEmptyMigrations(t, pool, []string{"000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
 	var ownedIndexDefinition string
 	require.NoError(t, pool.QueryRow(ctx, `
 		SELECT pg_get_indexdef('users_id_org_unique_idx'::regclass)`).Scan(&ownedIndexDefinition))
@@ -518,7 +518,7 @@ func TestEnterpriseAccessProvisioningSponsorEvidenceMatchesSubjectType(t *testin
 func TestEnterpriseAccessProvisioningDownRejectsNonemptyEvidenceWithoutChangingSchemaDataOrLedger(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	rollbackEmptyMigrations(t, pool, []string{"000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
 	var orgID, projectID, userID, requestID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type) VALUES ('access-down-guard','active','customer') RETURNING id`).Scan(&orgID))
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO projects (org_id,name,slug,status) VALUES ($1,'Down Guard','access-down-guard','active') RETURNING id`, orgID).Scan(&projectID))
@@ -552,7 +552,7 @@ func TestEnterpriseAccessProvisioningDownRejectsNonemptyEvidenceWithoutChangingS
 func TestEnterpriseAccessProvisioningDownRejectsAsyncMediaExecutionReservationEvidence(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	rollbackEmptyMigrations(t, pool, []string{"000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
 	var orgID, projectID, keyID int64
 	require.NoError(t, pool.QueryRow(ctx, `
 		INSERT INTO orgs (name,status,org_type)
@@ -607,7 +607,7 @@ func TestEnterpriseAccessProvisioningFutureFirstSerializesDownAndPreservesLaterL
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	rollbackEmptyMigrations(t, pool, []string{"000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
 
 	holder, err := pool.Acquire(ctx)
 	require.NoError(t, err)
@@ -666,7 +666,7 @@ func TestEnterpriseAccessProvisioningDownFirstSerializesFutureRunnerAndForcesRed
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	rollbackEmptyMigrations(t, pool, []string{"000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql"})
 
 	holder, err := pool.Acquire(ctx)
 	require.NoError(t, err)

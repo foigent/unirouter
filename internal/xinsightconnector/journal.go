@@ -46,11 +46,12 @@ type PhaseTxExecutor interface {
 // this store adds tenant binding, installation-first serialization and exact
 // terminal replay without publishing another wire contract.
 type PostgresPhaseJournal struct {
-	db       db.DBQuerier
-	cipher   *connectorSecretCipher
-	now      func() time.Time
-	token    func() (string, error)
-	claimTTL time.Duration
+	db            db.DBQuerier
+	cipher        *connectorSecretCipher
+	now           func() time.Time
+	token         func() (string, error)
+	controlBearer func() (string, error)
+	claimTTL      time.Duration
 }
 
 func NewPostgresPhaseJournal(database db.DBQuerier, encryptionRoot []byte) (*PostgresPhaseJournal, error) {
@@ -63,7 +64,8 @@ func NewPostgresPhaseJournal(database db.DBQuerier, encryptionRoot []byte) (*Pos
 	}
 	return &PostgresPhaseJournal{
 		db: database, cipher: cipher, now: time.Now,
-		token: randomLeaseToken, claimTTL: 2 * time.Minute,
+		token: randomLeaseToken, controlBearer: randomConnectorControlBearer,
+		claimTTL: 2 * time.Minute,
 	}, nil
 }
 
@@ -123,84 +125,22 @@ VALUES ($1,$2,$3,$4,$5,$5)`,
 	return commitConnectorTx(ctx, tx, "stage invitation")
 }
 
-// PromoteControlToken atomically clears the invitation ciphertext and stores a
-// separately-derived control ciphertext. Exact lost-response replay succeeds;
-// a receiver bearer is not accepted by this API.
-func (journal *PostgresPhaseJournal) PromoteControlToken(
-	ctx context.Context,
-	installationID, invitationToken, controlToken, controlProjectID string,
-) error {
-	if journal == nil || journal.db == nil || journal.cipher == nil ||
-		!validExactExternalIdentity(installationID) || !validConnectorSecret(invitationToken) ||
-		!validConnectorSecret(controlToken) || !validControlText(controlProjectID, 128) ||
-		exactSecretEqual(invitationToken, controlToken) {
-		return ErrInvalid
-	}
-	sealedControl, err := journal.cipher.seal(connectorControlSecret, installationID, controlToken)
-	if err != nil {
-		return err
-	}
-	tx, err := journal.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("%w: begin control-token promotion: %v", ErrUnavailable, err)
-	}
-	defer tx.Rollback(ctx)
-	installation, err := readInstallationByIdentity(ctx, tx, installationID, true)
-	if err != nil {
-		return err
-	}
-	if installation.InvitationSHA256 != hashBytes([]byte(invitationToken)) ||
-		installation.ObservedState == ObservedDisconnected {
-		return ErrConflict
-	}
-	binding, err := readControlBinding(ctx, tx, installationID, true)
-	if err != nil {
-		return err
-	}
-	if binding.controlTokenEnc != "" {
-		if binding.controlProjectID != controlProjectID {
-			return ErrConflict
-		}
-		plaintext, openErr := journal.cipher.open(
-			connectorControlSecret, installationID, binding.controlTokenEnc,
-		)
-		if openErr != nil || !exactSecretEqual(plaintext, controlToken) ||
-			binding.controlTokenSHA256 != hashBytes([]byte(plaintext)) {
-			return ErrConflict
-		}
-		return commitConnectorTx(ctx, tx, "control-token replay")
-	}
-	plaintext, err := journal.cipher.open(
-		connectorInvitationSecret, installationID, binding.invitationTokenEnc,
-	)
-	if err != nil || !exactSecretEqual(plaintext, invitationToken) {
-		return ErrConflict
-	}
-	now := journal.now().UTC().Truncate(time.Microsecond)
-	tag, err := tx.Exec(ctx, `
-UPDATE xinsight_connector_control_bindings
-SET invitation_token_enc=NULL, control_token_enc=$2, control_token_sha256=$3,
-    control_project_id=$4, updated_at=$5
-WHERE installation_id=$1 AND invitation_token_enc IS NOT NULL AND control_token_enc IS NULL`,
-		installationID, sealedControl, hashBytes([]byte(controlToken)), controlProjectID, now,
-	)
-	if err != nil || tag.RowsAffected() != 1 {
-		return fmt.Errorf("%w: promote control token", ErrConflict)
-	}
-	return commitConnectorTx(ctx, tx, "promote control token")
-}
-
 // controlToken is package-private so plaintext authority can only be wired by
-// the future fixed-origin, installation-bound counterpart transport.
+// the fixed-origin, installation-bound counterpart transport.
 func (journal *PostgresPhaseJournal) controlToken(ctx context.Context, installationID string) (string, error) {
-	if journal == nil || journal.db == nil || journal.cipher == nil || !validExactExternalIdentity(installationID) {
+	if journal == nil || journal.db == nil || journal.cipher == nil || journal.now == nil ||
+		!validExactExternalIdentity(installationID) {
 		return "", ErrInvalid
 	}
 	binding, err := readControlBinding(ctx, journal.db, installationID, false)
 	if err != nil {
 		return "", err
 	}
-	if binding.controlTokenEnc == "" {
+	if binding.invitationTokenEnc != "" || binding.controlTokenEnc == "" ||
+		!binding.controlTokenExpiresAt.Valid ||
+		!binding.controlTokenExpiresAt.Time.After(journal.now().UTC()) ||
+		!hashPattern.MatchString(binding.redeemRequestSHA256) ||
+		!hashPattern.MatchString(binding.redeemResultSHA256) {
 		return "", ErrConflict
 	}
 	plaintext, err := journal.cipher.open(
@@ -809,10 +749,13 @@ func (journal *PostgresPhaseJournal) readAndValidatePredecessorState(
 }
 
 type controlBindingRecord struct {
-	invitationTokenEnc string
-	controlTokenEnc    string
-	controlTokenSHA256 string
-	controlProjectID   string
+	invitationTokenEnc    string
+	controlTokenEnc       string
+	controlTokenSHA256    string
+	controlProjectID      string
+	controlTokenExpiresAt sql.NullTime
+	redeemRequestSHA256   string
+	redeemResultSHA256    string
 }
 
 func readControlBinding(ctx context.Context, q interface {
@@ -823,11 +766,15 @@ func readControlBinding(ctx context.Context, q interface {
 		lock = " FOR UPDATE"
 	}
 	var invitation, control, controlSHA, controlProject sql.NullString
+	var requestSHA, resultSHA sql.NullString
+	var record controlBindingRecord
 	err := q.QueryRow(ctx, `
-SELECT invitation_token_enc,control_token_enc,control_token_sha256,control_project_id
+SELECT invitation_token_enc,control_token_enc,control_token_sha256,control_project_id,
+       control_token_expires_at,redeem_request_sha256,redeem_result_sha256
 FROM xinsight_connector_control_bindings
 WHERE installation_id=$1`+lock, installationID).Scan(
 		&invitation, &control, &controlSHA, &controlProject,
+		&record.controlTokenExpiresAt, &requestSHA, &resultSHA,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return controlBindingRecord{}, ErrNotFound
@@ -835,10 +782,13 @@ WHERE installation_id=$1`+lock, installationID).Scan(
 	if err != nil {
 		return controlBindingRecord{}, fmt.Errorf("%w: read control binding: %v", ErrUnavailable, err)
 	}
-	return controlBindingRecord{
-		invitationTokenEnc: invitation.String, controlTokenEnc: control.String,
-		controlTokenSHA256: controlSHA.String, controlProjectID: controlProject.String,
-	}, nil
+	record.invitationTokenEnc = invitation.String
+	record.controlTokenEnc = control.String
+	record.controlTokenSHA256 = controlSHA.String
+	record.controlProjectID = controlProject.String
+	record.redeemRequestSHA256 = requestSHA.String
+	record.redeemResultSHA256 = resultSHA.String
+	return record, nil
 }
 
 type phaseRecord struct {
@@ -925,6 +875,11 @@ func (journal *PostgresPhaseJournal) validatePhaseExecutionAuthority(
 		installation.EventScope != EventScopeModelCompleted ||
 		binding.controlTokenEnc == "" ||
 		!hashPattern.MatchString(binding.controlTokenSHA256) ||
+		binding.invitationTokenEnc != "" ||
+		!binding.controlTokenExpiresAt.Valid ||
+		!binding.controlTokenExpiresAt.Time.After(journal.now().UTC()) ||
+		!hashPattern.MatchString(binding.redeemRequestSHA256) ||
+		!hashPattern.MatchString(binding.redeemResultSHA256) ||
 		binding.controlProjectID != operation.ProjectID {
 		return ErrConflict
 	}

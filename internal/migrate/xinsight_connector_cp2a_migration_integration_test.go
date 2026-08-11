@@ -16,6 +16,10 @@ import (
 func TestXInsightConnectorCP2APhaseContractMigrationUpDownAndEvidenceGuard(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
+	redeemDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(redeemDown))
+	require.NoError(t, err)
 
 	var ledger, tables int
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -30,7 +34,7 @@ WHERE table_schema='public'
 
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000061_xinsight_connector_cp2a_phase_contract.down.sql"))
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES ('000062_cp2a_future_fixture')`)
+	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES ('000063_cp2a_future_fixture')`)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "later migrations must be reversed first")
@@ -39,7 +43,7 @@ SELECT COUNT(*) FROM information_schema.tables
 WHERE table_schema='public'
   AND table_name IN ('xinsight_connector_control_bindings','xinsight_connector_phase_operations')`).Scan(&tables))
 	require.Equal(t, 2, tables, "a refused rollback must preserve both CP2A tables")
-	_, err = pool.Exec(ctx, `DELETE FROM schema_migrations WHERE version='000062_cp2a_future_fixture'`)
+	_, err = pool.Exec(ctx, `DELETE FROM schema_migrations WHERE version='000063_cp2a_future_fixture'`)
 	require.NoError(t, err)
 
 	var forbiddenSecretColumns int

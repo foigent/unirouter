@@ -82,6 +82,34 @@ require_release_secret API_KEY_HASH_SECRET
 require_release_secret UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET
 require_exact_bytes ENCRYPTION_KEY 32
 
+load_effective_value XINSIGHT_CONNECTOR_AGENT_ENABLED true
+connector_agent_enabled="${effective_value:-false}"
+case "${connector_agent_enabled}" in
+  false) ;;
+  true)
+    load_effective_value COMPLETED_EXECUTION_FEED_ENABLED true
+    if [[ "${effective_value}" != "true" ]]; then
+      echo "customer preflight: enabled Connector agent requires COMPLETED_EXECUTION_FEED_ENABLED=true" >&2
+      exit 1
+    fi
+    for connector_key in \
+      XINSIGHT_CONNECTOR_CONTROL_ORIGIN \
+      XINSIGHT_CONNECTOR_POLL_MILLISECONDS \
+      XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS \
+      XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON; do
+      load_effective_value "${connector_key}" true
+      if [[ -z "${effective_value}" || ( "${connector_key}" == "XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON" && "${effective_value}" == "[]" ) ]]; then
+        echo "customer preflight: ${connector_key} is required when Connector agent is enabled" >&2
+        exit 1
+      fi
+    done
+    ;;
+  *)
+    echo "customer preflight: XINSIGHT_CONNECTOR_AGENT_ENABLED must be true or false" >&2
+    exit 1
+    ;;
+esac
+
 load_effective_value RESPONSE_CACHE_INDEX_KEY true
 response_cache_index_key="${effective_value}"
 load_effective_value RESPONSE_CACHE_ENCRYPTION_KEY true
@@ -182,6 +210,8 @@ unset response_cache_encryption_key
 unset response_cache_key_version
 unset response_cache_index_bytes
 unset response_cache_encryption_bytes
+unset connector_agent_enabled
+unset connector_key
 
 if grep -Eq '^[[:space:]]*build:' <<<"${rendered}"; then
   echo "customer preflight: customer Compose must not contain build contexts" >&2

@@ -26,6 +26,10 @@ SELECT COUNT(*) FROM information_schema.tables
 WHERE table_schema='public'
   AND table_name IN ('xinsight_connector_installations','xinsight_connector_operations')`).Scan(&tables))
 	require.Equal(t, 2, tables)
+	redeemDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(redeemDown))
+	require.NoError(t, err)
 	cp2Down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000061_xinsight_connector_cp2a_phase_contract.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(cp2Down))

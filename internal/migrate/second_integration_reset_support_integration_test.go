@@ -25,6 +25,7 @@ func TestSecondIntegrationResetSupportMigrationUpDownAndRollForward(t *testing.T
 	// migration first so 000057's own rollback guard remains the evidence under
 	// test rather than being masked by the current binary's schema head.
 	rollbackEmptyMigrations(t, pool, []string{
+		"000062_xinsight_connector_redeem_lifecycle.down.sql",
 		"000061_xinsight_connector_cp2a_phase_contract.down.sql",
 		"000060_xinsight_connector_cp1.down.sql",
 		"000059_enterprise_access_provisioning.down.sql",

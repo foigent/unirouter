@@ -80,20 +80,20 @@ func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T)
 	}
 }
 
-func TestBuildSupportsExactSchema61AndRejectsPreviousOrFutureMax(t *testing.T) {
+func TestBuildSupportsExactSchema62AndRejectsPreviousOrFutureMax(t *testing.T) {
 	current := completeSnapshot()
 	plan, err := Build(current, testTarget(), "source-a", "source-b", time.Unix(0, 0))
 	if err != nil {
-		t.Fatalf("Build schema 61: %v", err)
+		t.Fatalf("Build schema 62: %v", err)
 	}
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
 		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
 	if plan.Summary.TableCount != 99 || plan.Summary.ResetCandidateCount != 91 || plan.Summary.ReviewRequiredCount != 0 {
-		t.Fatalf("schema 61 changed reviewed table classification: %+v", plan.Summary)
+		t.Fatalf("schema 62 changed reviewed table classification: %+v", plan.Summary)
 	}
 	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+4 {
-		t.Fatalf("schema 61 compatibility trigger missing from reset contract: %+v", plan.Schema)
+		t.Fatalf("schema 62 compatibility trigger missing from reset contract: %+v", plan.Schema)
 	}
 	if plan.SelectedAdmin.OrganizationRole != "platform_admin" || plan.SelectedAdmin.Role != "platform_admin" {
 		t.Fatalf("selected admin identity axes drifted: %+v", plan.SelectedAdmin)
@@ -106,7 +106,7 @@ func TestBuildSupportsExactSchema61AndRejectsPreviousOrFutureMax(t *testing.T) {
 	}
 
 	future := completeSnapshot()
-	future.MigrationVersions = append(future.MigrationVersions, "000062_future_contract")
+	future.MigrationVersions = append(future.MigrationVersions, "000063_future_contract")
 	if _, err := Build(future, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
 		t.Fatalf("future migration error = %v", err)
 	}
@@ -223,7 +223,7 @@ func completeSnapshot() Snapshot {
 		count := int64(0)
 		switch name {
 		case "schema_migrations":
-			count = 61
+			count = 62
 		case "settings":
 			count = 3
 		case "users", "orgs", "micro_ledger_runtime_state", "release_state":

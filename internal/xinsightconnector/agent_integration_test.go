@@ -5,6 +5,7 @@ package xinsightconnector
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -19,7 +20,7 @@ const (
 	cp2aInstallationID = "xci_AAAAAAAAAAAAAAAAAAAAAA"
 	cp2aControlProject = "project.second-integration"
 	cp2aInvitation     = "xiiv1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	cp2aControlToken   = "xib_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+	cp2aControlToken   = "xib_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 )
 
 func TestPostgresPhaseJournalRunsDurableFakeLifecycleWithoutSecretPersistence(t *testing.T) {
@@ -367,7 +368,7 @@ INSERT INTO users (org_id,username,password_hash,role,status)
 VALUES ($1,'connector-cp2a-agent','hash','platform_admin','active') RETURNING id`, orgID).Scan(&actorID))
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO projects (org_id,name,slug,status,created_by)
-VALUES ($1,'Connector CP2A agent','connector-cp2a-agent','active',$2) RETURNING id`,
+VALUES ($1,'Connector CP2A agent','second-integration','active',$2) RETURNING id`,
 		orgID, actorID).Scan(&projectID))
 
 	manager, err := NewManager(
@@ -391,18 +392,45 @@ VALUES ($1,'Connector CP2A agent','connector-cp2a-agent','active',$2) RETURNING 
 	journal, err := NewPostgresPhaseJournal(pool, []byte("0123456789abcdef0123456789abcdef"))
 	require.NoError(t, err)
 	journal.now = func() time.Time { return clock }
+	journal.controlBearer = func() (string, error) { return cp2aControlToken, nil }
 	require.NoError(t, journal.StageInvitation(ctx, cp2aInstallationID, cp2aInvitation))
 	require.NoError(t, journal.StageInvitation(ctx, cp2aInstallationID, cp2aInvitation))
-	require.NoError(t, journal.PromoteControlToken(
-		ctx, cp2aInstallationID, cp2aInvitation, cp2aControlToken, cp2aControlProject,
-	))
-	require.ErrorIs(t, journal.PromoteControlToken(
-		ctx, cp2aInstallationID, cp2aInvitation, cp2aControlToken, "project.not-authorized",
-	), ErrConflict)
-	require.NoError(t, journal.PromoteControlToken(
-		ctx, cp2aInstallationID, cp2aInvitation, cp2aControlToken, cp2aControlProject,
-	))
+	prepared, err := journal.PrepareRedeem(ctx, cp2aInstallationID)
+	require.NoError(t, err)
+	require.Equal(t, cp2aControlProject, prepared.ControlProjectID)
+	result := cp2aRegistrationResult(t, prepared, cp2aControlProject)
+	drifted := cp2aRegistrationResult(t, prepared, "project.not-authorized")
+	require.ErrorIs(t, journal.FinalizeRedeem(ctx, prepared, drifted), ErrConflict)
+	require.NoError(t, journal.FinalizeRedeem(ctx, prepared, result))
+	require.NoError(t, journal.FinalizeRedeem(ctx, prepared, result))
 	return journal, &clock
+}
+
+func cp2aRegistrationResult(
+	t *testing.T,
+	prepared PreparedInvitationRedeem,
+	projectID string,
+) []byte {
+	t.Helper()
+	operation := mustDecodeControlV2Operation(
+		t, "testdata/control-v2/valid/01-prepare-paused-source-operation.json",
+	)
+	operation.ProjectID = projectID
+	operationBytes, err := operation.CanonicalJSON()
+	require.NoError(t, err)
+	installationBytes, err := json.Marshal(map[string]any{
+		"event_scope":     []string{EventScopeModelCompleted},
+		"installation_id": prepared.InstallationID,
+		"project_id":      projectID,
+		"x_deployment_id": prepared.XDeploymentID,
+	})
+	require.NoError(t, err)
+	resultBytes, err := json.Marshal(registrationResultWire{
+		Installation: installationBytes,
+		Operation:    operationBytes,
+	})
+	require.NoError(t, err)
+	return resultBytes
 }
 
 func phaseTokenSequence(t *testing.T, values ...string) func() (string, error) {

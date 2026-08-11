@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,7 +27,6 @@ const (
 	cp2bDeploymentID   = "xid_ZZZZZZZZZZZZZZZZZZZZZZ"
 	cp2bProjectRef     = "project.second-integration"
 	cp2bInvitation     = "xiiv1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	cp2bControlToken   = "xib_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
 	cp2bSource         = "ecs.second-integration.v2"
 	cp2bBindingSHA     = "sha256:4444444444444444444444444444444444444444444444444444444444444444"
 	cp2bAllowedIP      = "198.51.100.8/32"
@@ -36,7 +36,7 @@ func TestXInsightConnectorActivationExecutorAtomicLifecycleIntegration(t *testin
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 
-	journal, executor, counterpart, projectID := setupCP2BActivation(t, pool)
+	journal, executor, counterpart, projectID, controlToken := setupCP2BActivation(t, pool)
 	agent, err := xinsightconnector.NewTransactionalAgent(
 		cp2bInstallationID, counterpart, journal, executor,
 	)
@@ -135,7 +135,9 @@ FROM xinsight_connector_phase_operations
 WHERE installation_id=$1`, cp2bInstallationID).Scan(&terminalCount, &acknowledgedCount))
 	require.Equal(t, 3, terminalCount)
 	require.Equal(t, 3, acknowledgedCount)
-	requireCP2BSecretAndTrafficBoundary(t, pool, projectID, rawBearer, registration.VerifierSHA256)
+	requireCP2BSecretAndTrafficBoundary(
+		t, pool, projectID, rawBearer, controlToken, registration.VerifierSHA256,
+	)
 
 }
 
@@ -188,7 +190,7 @@ func (counterpart *cp2bCounterpart) Acknowledge(_ context.Context, result []byte
 func setupCP2BActivation(
 	t *testing.T,
 	pool *pgxpool.Pool,
-) (*xinsightconnector.PostgresPhaseJournal, *XInsightConnectorActivationExecutor, *cp2bCounterpart, int64) {
+) (*xinsightconnector.PostgresPhaseJournal, *XInsightConnectorActivationExecutor, *cp2bCounterpart, int64, string) {
 	t.Helper()
 	ctx := context.Background()
 	var orgID, projectID, actorID int64
@@ -200,7 +202,7 @@ INSERT INTO users (org_id,username,password_hash,role,status)
 VALUES ($1,'connector-cp2b-owner','hash','platform_admin','active') RETURNING id`, orgID).Scan(&actorID))
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO projects (org_id,name,slug,status,created_by)
-VALUES ($1,'Connector CP2B activation','connector-cp2b-activation','active',$2) RETURNING id`,
+VALUES ($1,'Connector CP2B activation','second-integration','active',$2) RETURNING id`,
 		orgID, actorID).Scan(&projectID))
 
 	manager, err := xinsightconnector.NewManager(
@@ -231,9 +233,29 @@ RETURNING retained_after_id`, orgID, projectID).Scan(new(int64)))
 	)
 	require.NoError(t, err)
 	require.NoError(t, journal.StageInvitation(ctx, cp2bInstallationID, cp2bInvitation))
-	require.NoError(t, journal.PromoteControlToken(
-		ctx, cp2bInstallationID, cp2bInvitation, cp2bControlToken, cp2bProjectRef,
-	))
+	prepared, err := journal.PrepareRedeem(ctx, cp2bInstallationID)
+	require.NoError(t, err)
+	require.Equal(t, cp2bProjectRef, prepared.ControlProjectID)
+	var redeemRequest struct {
+		ControlToken string `json:"control_token"`
+	}
+	require.NoError(t, json.Unmarshal(prepared.CanonicalRequest, &redeemRequest))
+	require.NotEmpty(t, redeemRequest.ControlToken)
+	installationBytes, err := json.Marshal(map[string]any{
+		"event_scope":     []string{xinsightconnector.EventScopeModelCompleted},
+		"installation_id": cp2bInstallationID,
+		"project_id":      cp2bProjectRef,
+		"x_deployment_id": cp2bDeploymentID,
+	})
+	require.NoError(t, err)
+	operationBytes, err := cp2bPrepareOperation().CanonicalJSON()
+	require.NoError(t, err)
+	registrationResult, err := json.Marshal(map[string]json.RawMessage{
+		"installation": installationBytes,
+		"operation":    operationBytes,
+	})
+	require.NoError(t, err)
+	require.NoError(t, journal.FinalizeRedeem(ctx, prepared, registrationResult))
 
 	handler := NewHandlerWithAPIKeyHashSecret(
 		pool, "cp2b-jwt-secret", "cp2b-api-key-hmac",
@@ -242,7 +264,7 @@ RETURNING retained_after_id`, orgID, projectID).Scan(new(int64)))
 	handler.SetCompletedFeedController(cp2bFeedController{})
 	executor, err := NewXInsightConnectorActivationExecutor(handler, cp2bBindingResolver{})
 	require.NoError(t, err)
-	return journal, executor, &cp2bCounterpart{}, projectID
+	return journal, executor, &cp2bCounterpart{}, projectID, redeemRequest.ControlToken
 }
 
 func canonicalCP2BOperation(t *testing.T, operation xinsightconnector.ControlOperationV2) []byte {
@@ -480,7 +502,7 @@ func requireCP2BSecretAndTrafficBoundary(
 	t *testing.T,
 	pool *pgxpool.Pool,
 	projectID int64,
-	rawBearer, publicVerifier string,
+	rawBearer, controlToken, publicVerifier string,
 ) {
 	t.Helper()
 	ctx := context.Background()
@@ -504,7 +526,7 @@ FROM api_keys WHERE project_id=$1`, projectID).Scan(&keyText))
 	for _, durable := range []string{phaseText, auditText, keyText} {
 		require.NotContains(t, durable, rawBearer)
 		require.NotContains(t, durable, cp2bInvitation)
-		require.NotContains(t, durable, cp2bControlToken)
+		require.NotContains(t, durable, controlToken)
 	}
 	require.Contains(t, phaseText, publicVerifier, "public registration authority belongs in the request")
 	require.NotContains(t, auditText, publicVerifier)
