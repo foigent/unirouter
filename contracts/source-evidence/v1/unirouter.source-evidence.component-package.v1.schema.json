@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/contracts/unirouter.source-evidence.component-package.v1.schema.json",
+  "title": "UniRouter Source-evidence component contract index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product", "profile", "signature_purpose", "signature_domain", "claim_scope", "runtime_observation", "integration_control", "artifacts"],
+  "properties": {
+    "schema_version": { "const": "unirouter.source-evidence.component-package.v1" },
+    "product": { "const": "unirouter" },
+    "profile": { "const": "poc_source_evidence" },
+    "signature_purpose": { "const": "source_evidence" },
+    "signature_domain": { "const": "unirouter.source-evidence.component.v1" },
+    "claim_scope": { "const": "unirouter.poc-source-facts.v1" },
+    "runtime_observation": { "const": "not_claimed" },
+    "integration_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pin_schema_version", "pin_sha256"],
+      "properties": {
+        "pin_schema_version": { "const": "unirouter.integration-control.n1-pin.v1" },
+        "pin_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schema_version", "path", "sha256"],
+        "properties": {
+          "schema_version": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "path": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$", "maxLength": 240 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

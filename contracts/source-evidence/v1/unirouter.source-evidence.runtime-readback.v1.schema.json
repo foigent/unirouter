@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/unirouter.source-evidence.runtime-readback.v1.schema.json",
+  "title": "Retired operator-supplied runtime readback V1",
+  "description": "Retired: UniRouter does not accept operator-supplied runtime configuration as product evidence. All instances fail validation.",
+  "deprecated": true,
+  "not": {}
+}

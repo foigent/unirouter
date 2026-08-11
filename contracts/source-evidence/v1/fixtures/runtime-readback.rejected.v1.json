@@ -1,0 +1,21 @@
+{
+  "schema_version": "unirouter.source-evidence.runtime-readback.v1",
+  "readback_id": "operator-assertion-is-not-product-evidence",
+  "observed_at": "2026-08-10T11:59:30Z",
+  "release": {
+    "release_sequence": 8,
+    "version": "1.1.8-source-evidence",
+    "commit": "1111111111111111111111111111111111111111",
+    "tree": "2222222222222222222222222222222222222222",
+    "package_sha256": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "trusted_key_id": "test-upgrade-key",
+    "recorded_schema": "000059_enterprise_access_provisioning"
+  },
+  "source": {
+    "product": "unirouter",
+    "instance": "unirouter-development-seq8",
+    "reference_mode": "neutral_canary",
+    "config_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "feed_snapshot_schema": "unirouter.completed-execution.v1"
+  }
+}

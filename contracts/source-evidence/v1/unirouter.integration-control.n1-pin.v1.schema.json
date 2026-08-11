@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/contracts/unirouter.integration-control.n1-pin.v1.schema.json",
+  "title": "UniRouter immutable integration-control N1 pin",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "neutral_release_schema_version",
+    "source_commit",
+    "source_tree",
+    "release_commit",
+    "release_tree",
+    "release_manifest_sha256",
+    "contracts_sha256",
+    "valid_fixtures_sha256",
+    "invalid_fixtures_sha256",
+    "capability_boundary",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": { "const": "unirouter.integration-control.n1-pin.v1" },
+    "neutral_release_schema_version": { "const": "foigent.integration-control.release.v1" },
+    "source_commit": { "$ref": "#/$defs/git_object" },
+    "source_tree": { "$ref": "#/$defs/git_object" },
+    "release_commit": { "$ref": "#/$defs/git_object" },
+    "release_tree": { "$ref": "#/$defs/git_object" },
+    "release_manifest_sha256": { "$ref": "#/$defs/sha256" },
+    "contracts_sha256": { "$ref": "#/$defs/sha256" },
+    "valid_fixtures_sha256": { "$ref": "#/$defs/sha256" },
+    "invalid_fixtures_sha256": { "$ref": "#/$defs/sha256" },
+    "capability_boundary": { "const": "offline_files_only" },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["os", "architecture", "size_bytes", "sha256"],
+        "properties": {
+          "os": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "architecture": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "size_bytes": { "type": "integer", "minimum": 1, "maximum": 8388608 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "git_object": { "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" }
+  }
+}

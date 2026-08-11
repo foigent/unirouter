@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/schemas/unirouter.source-evidence.detached-signature.v1.schema.json",
+  "title": "UniRouter Source evidence detached signature envelope V1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "unirouter.source-evidence.detached-signature.v1" },
+    "purpose": { "const": "source_evidence" },
+    "domain": { "const": "unirouter.source-evidence.component.v1" },
+    "signing_key_ref": { "type": "string", "pattern": "^source-evidence-[A-Za-z0-9._-]{1,48}$", "maxLength": 64 },
+    "signer_public_key_id": { "type": "string", "pattern": "^ed25519:sha256:[0-9a-f]{64}$" },
+    "trust_set_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "algorithm": { "const": "ed25519" },
+    "value": { "type": "string", "minLength": 88, "maxLength": 88 }
+  },
+  "required": [
+    "schema_version",
+    "purpose",
+    "domain",
+    "signing_key_ref",
+    "signer_public_key_id",
+    "trust_set_sha256",
+    "algorithm",
+    "value"
+  ]
+}
