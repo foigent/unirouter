@@ -48,6 +48,7 @@ import (
 	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/telemetryexport"
+	"github.com/uniroute/unirouter/internal/xinsightconnector"
 )
 
 // buildVersion and buildCommit are set by release builds through -ldflags.
@@ -461,6 +462,15 @@ func main() {
 	adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
 	adminHandler.SetOutbox(outboxSvc)
 	adminHandler.SetCompletedFeedController(completedFeedSvc)
+	xInsightConnectorManager, err := xinsightconnector.NewManager(
+		postgres.Pool,
+		xinsightconnector.CommitAuthorizerFunc(adminHandler.AuthorizeXInsightConnectorControl),
+		completedFeedSvc,
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize X-Insight Connector state manager: %v", err)
+	}
+	adminHandler.SetXInsightConnectorManager(xInsightConnectorManager)
 	adminHandler.SetRoutingController(router)
 	adminHandler.SetRuntimeChangeManager(runtimeChangeManager)
 	adminHandler.SetModelAuthorizationEvaluator(modelAuthorizationEvaluator)

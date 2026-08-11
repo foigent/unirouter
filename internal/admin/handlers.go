@@ -19,6 +19,7 @@ import (
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
+	"github.com/uniroute/unirouter/internal/xinsightconnector"
 )
 
 type routingController interface {
@@ -68,6 +69,7 @@ type Handler struct {
 	providerCostReconciler       providerCostReconciler
 	guardrailController          guardrailController
 	completedFeedController      completedFeedController
+	xInsightConnectorManager     *xinsightconnector.Manager
 	modelAuthorizationEvaluator  *modelauthz.Evaluator
 	runtimeChangeManager         *runtimechange.Manager
 	invocationOptimization       *invocationopt.Manager
@@ -111,6 +113,12 @@ func (h *Handler) SetGuardrailController(controller guardrailController) {
 
 func (h *Handler) SetCompletedFeedController(controller completedFeedController) {
 	h.completedFeedController = controller
+}
+
+func (h *Handler) SetXInsightConnectorManager(manager *xinsightconnector.Manager) {
+	if h != nil {
+		h.xInsightConnectorManager = manager
+	}
 }
 
 func (h *Handler) invalidateRoutingSnapshots() {

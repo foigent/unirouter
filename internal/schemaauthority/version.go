@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000059_enterprise_access_provisioning"
+const LatestSupportedMigration = "000060_xinsight_connector_cp1"

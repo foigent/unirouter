@@ -180,6 +180,8 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 	}
 
 	tables := []string{
+		"xinsight_connector_operations",
+		"xinsight_connector_installations",
 		"async_media_limit_reservations",
 		"api_keys",
 		"access_operations",
