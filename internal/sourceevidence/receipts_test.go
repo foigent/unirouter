@@ -258,48 +258,94 @@ func TestProductCompatibleConformanceFixturesCloseNeutralAndPackageChain(t *test
 	require.Equal(t, whole.AuthorizationSignatureSHA256, packageVerification.Manifest.AuthorizationSignatureSHA256)
 	require.Equal(t, "complete", packageVerification.Manifest.ClaimState)
 	require.Equal(t, "partial", packageVerification.Manifest.NestedExecutionEvidenceV2)
+	require.Equal(t, "sha256:52f87dc3d666a28662888541225a09440d7a767e443d5432b917084afd69fa81", packageVerification.ManifestSHA256)
 
-	var expected struct {
-		SchemaVersion                  string `json:"schema_version"`
-		ProducerContractID             string `json:"producer_contract_id"`
-		ProducerContractSHA256         string `json:"producer_contract_sha256"`
-		SignatureDomain                string `json:"signature_domain"`
-		IntegrationControlPinSHA256    string `json:"integration_control_pin_sha256"`
-		CampaignManifestSHA256         string `json:"campaign_manifest_sha256"`
-		UniRouterAcknowledgementSHA256 string `json:"unirouter_acknowledgement_sha256"`
-		XInsightAcknowledgementSHA256  string `json:"xinsight_acknowledgement_sha256"`
-		AuthorizationSHA256            string `json:"authorization_sha256"`
-		AuthorizationSignatureSHA256   string `json:"authorization_signature_sha256"`
-		AuthorizationTrustSetSHA256    string `json:"authorization_trust_set_sha256"`
-		SourceEvidenceTrustSetSHA256   string `json:"source_evidence_trust_set_sha256"`
-		PackageSHA256                  string `json:"package_sha256"`
-		PackageBytes                   int64  `json:"package_bytes"`
-		ClaimScope                     string `json:"claim_scope"`
-		PackageScopeState              string `json:"package_scope_state"`
-		NestedExecutionEvidenceV2      string `json:"nested_execution_evidence_v2"`
-		RuntimeCloseMarkerAvailable    bool   `json:"runtime_close_marker_available"`
-		CapabilityBoundary             string `json:"capability_boundary"`
+	canonicalProductAcknowledgement := ProductAcknowledgementArtifacts{
+		Verification: acknowledgement.Verification,
+		Receipt:      canonicalReceipt,
+		ReceiptBody:  canonicalReceiptBody,
+		Ack:          canonicalAck,
+		AckBody:      canonicalAckBody,
 	}
-	require.NoError(t, decodeStrict(validFixture("expected-verification.json"), &expected))
-	require.Equal(t, "unirouter.source-evidence.conformance-projection.v1", expected.SchemaVersion)
-	require.Equal(t, ProducerContractID, expected.ProducerContractID)
-	require.Equal(t, ContentSHA256(productInputs.ComponentContractBody), expected.ProducerContractSHA256)
-	require.Equal(t, SignatureDomain, expected.SignatureDomain)
-	require.Equal(t, verifier.Identity().PinSHA256, expected.IntegrationControlPinSHA256)
-	require.Equal(t, whole.CampaignManifestSHA256, expected.CampaignManifestSHA256)
-	require.Equal(t, whole.AcknowledgementSHA256["unirouter"], expected.UniRouterAcknowledgementSHA256)
-	require.Equal(t, whole.AcknowledgementSHA256["xinsight"], expected.XInsightAcknowledgementSHA256)
-	require.Equal(t, whole.AuthorizationSHA256, expected.AuthorizationSHA256)
-	require.Equal(t, whole.AuthorizationSignatureSHA256, expected.AuthorizationSignatureSHA256)
-	require.Equal(t, whole.AuthorizationTrustSetSHA256, expected.AuthorizationTrustSetSHA256)
-	require.Equal(t, whole.SourceEvidenceTrustSetSHA256, expected.SourceEvidenceTrustSetSHA256)
-	require.Equal(t, packageVerification.PackageSHA256, expected.PackageSHA256)
-	require.Equal(t, packageVerification.PackageBytes, expected.PackageBytes)
-	require.Equal(t, packageVerification.Manifest.ClaimScope, expected.ClaimScope)
-	require.Equal(t, packageVerification.Manifest.ClaimState, expected.PackageScopeState)
-	require.Equal(t, packageVerification.Manifest.NestedExecutionEvidenceV2, expected.NestedExecutionEvidenceV2)
-	require.False(t, expected.RuntimeCloseMarkerAvailable)
-	require.Equal(t, NeutralCapabilityBoundary, expected.CapabilityBoundary)
+	require.NoError(t, sealProductAcknowledgementArtifacts(&canonicalProductAcknowledgement))
+	projectionInputs := ConformanceProjectionInputs{
+		ComponentContractBody:  productInputs.ComponentContractBody,
+		ProductAcknowledgement: canonicalProductAcknowledgement,
+		NeutralInputs:          preauthorization,
+		NeutralVerification:    whole,
+		PackageVerification:    packageVerification,
+	}
+	projection, projectionBody, err := BuildConformanceProjection(projectionInputs)
+	require.NoError(t, err)
+	require.Equal(t, validFixture("expected-verification.json"), projectionBody)
+	require.Equal(t, ConformanceProjectionSchemaVersion, projection.SchemaVersion)
+	require.Equal(t, ProducerContractID, projection.ComponentContract.ID)
+	require.Equal(t, ContentSHA256(productInputs.ComponentContractBody), projection.ComponentContract.SHA256)
+	require.Equal(t, verifier.Identity().PinSHA256, projection.ProductAuthority.IntegrationControlPinSHA256)
+	require.Equal(t, whole.CampaignManifestSHA256, projection.NeutralChain.CampaignManifestSHA256)
+	require.Equal(t, whole.AcknowledgementSHA256["unirouter"], projection.NeutralChain.UniRouterAcknowledgementSHA256)
+	require.Equal(t, whole.AcknowledgementSHA256["xinsight"], projection.NeutralChain.XInsightAcknowledgementSHA256)
+	require.Equal(t, whole.SourceEvidenceTrustSetSHA256, projection.SourceAuthority.Signer.TrustSetSHA256)
+	require.Equal(t, packageVerification.ManifestSHA256, projection.Package.Manifest.SHA256)
+	require.Equal(t, packageVerification.Manifest.CreatedAt, projection.Package.Manifest.CreatedAt)
+	require.False(t, projection.Package.Claim.RuntimeCloseMarkerAvailable)
+	require.Equal(t, NeutralCapabilityBoundary, projection.CapabilityBoundary)
+	decodedProjection, err := DecodeConformanceProjection(projectionBody)
+	require.NoError(t, err)
+	require.Equal(t, projection, decodedProjection)
+	verifiedProjection, err := VerifyConformanceProjection(projectionBody, projectionInputs)
+	require.NoError(t, err)
+	require.Equal(t, projection, verifiedProjection)
+	t.Run("verification outputs reject caller mutation", func(t *testing.T) {
+		mutated := projectionInputs
+		mutated.NeutralVerification.AuthorizationSHA256 = "sha256:" + strings.Repeat("0", 64)
+		_, _, mutationErr := BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified pinned-verifier output")
+
+		mutated = projectionInputs
+		mutated.NeutralVerification.AcknowledgementSHA256 = map[string]string{
+			"unirouter": projectionInputs.NeutralVerification.AcknowledgementSHA256["unirouter"],
+			"xinsight":  "sha256:" + strings.Repeat("0", 64),
+		}
+		_, _, mutationErr = BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified pinned-verifier output")
+
+		mutated = projectionInputs
+		mutated.PackageVerification.PackageSHA256 = "sha256:" + strings.Repeat("0", 64)
+		_, _, mutationErr = BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified package-verifier output")
+
+		mutated = projectionInputs
+		mutated.PackageVerification.PackageBytes++
+		_, _, mutationErr = BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified package-verifier output")
+
+		mutated = projectionInputs
+		mutated.ProductAcknowledgement.Receipt.SourceBindingSHA256 = "sha256:" + strings.Repeat("0", 64)
+		_, _, mutationErr = BuildConformanceProjection(mutated)
+		require.ErrorContains(t, mutationErr, "not an unmodified verifier output")
+	})
+	_, err = DecodeConformanceProjection(append(append([]byte(nil), projectionBody...), '\n'))
+	require.ErrorContains(t, err, "not canonical")
+	for _, name := range []string{
+		"conformance-projection.authority-drift.json",
+		"conformance-projection.neutral-drift.json",
+		"conformance-projection.package-manifest-drift.json",
+		"conformance-projection.signer-drift.json",
+	} {
+		driftedBody := invalidFixture(name)
+		_, err = DecodeConformanceProjection(driftedBody)
+		require.NoError(t, err, name)
+		_, err = VerifyConformanceProjection(driftedBody, projectionInputs)
+		require.ErrorContains(t, err, "does not match exact verified product lifecycle inputs", name)
+	}
+	_, err = DecodeConformanceProjection(invalidFixture("conformance-projection.false-complete.json"))
+	require.ErrorContains(t, err, "package claim is invalid")
+
+	_, err = ValidateCaptureAuthorization(whole, preauthorization, acknowledgement.Verification, time.Date(2030, 1, 1, 0, 2, 0, 0, time.UTC))
+	require.NoError(t, err, "authorization not_before is inclusive")
+	_, err = ValidateCaptureAuthorization(whole, preauthorization, acknowledgement.Verification, time.Date(2030, 1, 1, 1, 0, 0, 0, time.UTC))
+	require.ErrorContains(t, err, "outside the verified neutral authorization window", "authorization not_after is exclusive")
 
 	wrongManifest := productInputs
 	wrongManifest.ManifestBody = invalidFixture("manifest.wrong-source-binding.json")
@@ -343,7 +389,12 @@ func TestConformanceIndexBindsEveryPortableFixture(t *testing.T) {
 		SchemaVersion  string `json:"schema_version"`
 		ContractID     string `json:"producer_contract_id"`
 		ContractSHA256 string `json:"producer_contract_sha256"`
-		Fixtures       []struct {
+		Projection     struct {
+			SchemaVersion string `json:"schema_version"`
+			SchemaSHA256  string `json:"schema_sha256"`
+		} `json:"projection_contract"`
+		FixtureAuthority string `json:"fixture_authority"`
+		Fixtures         []struct {
 			Path     string `json:"path"`
 			SHA256   string `json:"sha256"`
 			Expected string `json:"expected"`
@@ -355,6 +406,11 @@ func TestConformanceIndexBindsEveryPortableFixture(t *testing.T) {
 	contractBody, err := os.ReadFile(filepath.Join(repositoryRoot(t), "contracts", "source-evidence", "v1", "unirouter.source-evidence.component-package.v1.json"))
 	require.NoError(t, err)
 	require.Equal(t, ContentSHA256(contractBody), index.ContractSHA256)
+	projectionSchemaBody, err := os.ReadFile(filepath.Join(repositoryRoot(t), "contracts", "source-evidence", "v1", "unirouter.source-evidence.conformance-projection.v1.schema.json"))
+	require.NoError(t, err)
+	require.Equal(t, ConformanceProjectionSchemaVersion, index.Projection.SchemaVersion)
+	require.Equal(t, ContentSHA256(projectionSchemaBody), index.Projection.SchemaSHA256)
+	require.Equal(t, ConformanceFixtureAuthority, index.FixtureAuthority)
 	require.NotEmpty(t, index.Fixtures)
 	last := ""
 	for _, fixture := range index.Fixtures {

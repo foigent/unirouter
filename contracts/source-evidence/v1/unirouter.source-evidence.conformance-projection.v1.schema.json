@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unirouter.local/contracts/unirouter.source-evidence.conformance-projection.v1.schema.json",
+  "title": "UniRouter Source-evidence terminal conformance projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product",
+    "component_contract",
+    "product_authority",
+    "neutral_chain",
+    "source_authority",
+    "package",
+    "capability_boundary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "unirouter.source-evidence.conformance-projection.v1"
+    },
+    "product": {
+      "const": "unirouter"
+    },
+    "component_contract": {
+      "$ref": "#/$defs/component_contract"
+    },
+    "product_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component_verification_receipt",
+        "installed_release",
+        "verifier_release",
+        "integration_control_pin_sha256"
+      ],
+      "properties": {
+        "component_verification_receipt": {
+          "$ref": "#/$defs/component_receipt"
+        },
+        "installed_release": {
+          "$ref": "#/$defs/installed_release"
+        },
+        "verifier_release": {
+          "$ref": "#/$defs/verifier_release"
+        },
+        "integration_control_pin_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "neutral_chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "campaign_manifest_sha256",
+        "unirouter_acknowledgement_sha256",
+        "xinsight_acknowledgement_sha256",
+        "authorization_sha256",
+        "authorization_signature_sha256",
+        "authorization_trust_set_sha256"
+      ],
+      "properties": {
+        "campaign_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "unirouter_acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "xinsight_acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_signature_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_trust_set_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "source_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_binding_sha256",
+        "signer"
+      ],
+      "properties": {
+        "source_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "signer": {
+          "$ref": "#/$defs/source_signer"
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "bytes",
+        "manifest",
+        "claim"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 33554432
+        },
+        "manifest": {
+          "$ref": "#/$defs/package_manifest"
+        },
+        "claim": {
+          "$ref": "#/$defs/package_claim"
+        }
+      }
+    },
+    "capability_boundary": {
+      "const": "offline_files_only"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "component_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "const": "unirouter.source-evidence.component-package.v1"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "component_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "sha256"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "unirouter.source-evidence.component-verification-receipt.v1"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "installed_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "sha256"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "unirouter.release-state-identity.v1"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "verifier_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "const": "unirouter.source-evidence.component-verifier.v1"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "source_signer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose",
+        "domain",
+        "signing_key_ref",
+        "signer_public_key_id",
+        "trust_set_sha256"
+      ],
+      "properties": {
+        "purpose": {
+          "const": "source_evidence"
+        },
+        "domain": {
+          "const": "unirouter.source-evidence.component.v1"
+        },
+        "signing_key_ref": {
+          "type": "string",
+          "pattern": "^source-evidence-[A-Za-z0-9._-]{1,48}$",
+          "maxLength": 64
+        },
+        "signer_public_key_id": {
+          "type": "string",
+          "pattern": "^ed25519:sha256:[0-9a-f]{64}$"
+        },
+        "trust_set_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "package_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "sha256",
+        "created_at"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "unirouter.source-evidence.component-manifest.v1"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        }
+      }
+    },
+    "package_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "state",
+        "nested_execution_evidence_v2",
+        "runtime_close_marker_available"
+      ],
+      "properties": {
+        "scope": {
+          "const": "unirouter.poc-source-facts.v1"
+        },
+        "state": {
+          "const": "complete"
+        },
+        "nested_execution_evidence_v2": {
+          "const": "partial"
+        },
+        "runtime_close_marker_available": {
+          "const": false
+        }
+      }
+    }
+  }
+}

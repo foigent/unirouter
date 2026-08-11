@@ -496,6 +496,7 @@ func TestContractArtifactsAreStrictJSONAndIdentityBound(t *testing.T) {
 		"unirouter.poc-source-facts.v1.schema.json",
 		"unirouter.source-evidence.component-manifest.v1.schema.json",
 		"unirouter.source-evidence.component-package.v1.schema.json",
+		"unirouter.source-evidence.conformance-projection.v1.schema.json",
 		"unirouter.source-evidence.component-verification-receipt.v1.schema.json",
 		"unirouter.source-evidence.component-verifier-release.v1.schema.json",
 		"unirouter.source-evidence.detached-signature.v1.schema.json",

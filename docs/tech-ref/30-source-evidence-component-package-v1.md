@@ -122,6 +122,19 @@ concatenated gzip members, bytes after the tar end, trailing bytes, duplicate
 or unsafe paths, and noncanonical archive metadata. A content-addressed
 package SHA-256 identifies the resulting bytes.
 
+`unirouter.source-evidence.conformance-projection.v1` is the normative,
+payload-neutral terminal view derived from that verified lifecycle. Its builder
+accepts only the exact product component receipt and acknowledgement, the
+pinned N1 whole-verification result and inputs, the independently verified P
+package, and the exact producer contract. It exposes the installed product and
+verifier-release links, M/acknowledgement/A/signature/trust links, Source
+binding and three-part Source signer identity, exact P/package-manifest
+identity, package claim/completeness, and the `offline_files_only` boundary.
+The package `created_at` must be inside the N1 authorization interval
+`[not_before, not_after)`; the terminal campaign result may be produced later.
+The projection contains no member payloads, actor locators, Target facts, or
+X-Insight receipt substance, and it does not change the signed P wire.
+
 ## Tooling
 
 `uniroute-source-evidence` exposes five operations:
@@ -149,9 +162,11 @@ package SHA-256 identifies the resulting bytes.
   the caller separately supplies the neutral artifacts to the accepted capture
   lifecycle.
 
-The committed conformance material contains a product-compatible canonical M,
+The committed conformance material is explicitly
+`synthetic_conformance_only`. It contains a product-compatible canonical M,
 both acknowledgements, A/signature/trust, all product receipts, one signed
-package, the expected verification projection, and bounded wrong-purpose,
+package, the normative terminal projection, and bounded authority/Neutral/
+signer/package/completeness drift, wrong-purpose,
 wrong-key, wrong-binding, member tamper/missing/extra/duplicate/path-unsafe,
 and trailing-container negatives. Its test-only keys were generated
 ephemerally; no private key or seed is retained. Neutral N1's own synthetic
