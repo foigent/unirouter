@@ -60,9 +60,12 @@ var (
 	ErrUnauthorized = errors.New("x-insight connector authority changed")
 	ErrUnavailable  = errors.New("x-insight connector state is unavailable")
 
-	identityPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._:-]{0,127}$`)
-	hashPattern     = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-	tokenPattern    = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+	localIdentityPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._:-]{0,127}$`)
+	remoteInstallationID = regexp.MustCompile(`^xci_[A-Za-z0-9_-]{22}$`)
+	remoteDeploymentID   = regexp.MustCompile(`^xid_[A-Za-z0-9_-]{22}$`)
+	remoteOperationID    = regexp.MustCompile(`^xco_[A-Za-z0-9_-]{22}$`)
+	hashPattern          = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	tokenPattern         = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 )
 
 type SourceBinding struct {
@@ -176,18 +179,16 @@ type OperationOutcome struct {
 }
 
 func normalizeConsent(input Consent, sourceInstance string) (Consent, SourceBinding, string, error) {
-	input.InstallationID = strings.TrimSpace(strings.ToLower(input.InstallationID))
-	input.XDeploymentID = strings.TrimSpace(strings.ToLower(input.XDeploymentID))
 	input.InvitationSHA256 = strings.TrimSpace(strings.ToLower(input.InvitationSHA256))
 	input.EventScope = strings.TrimSpace(input.EventScope)
 	input.IdempotencyKey = strings.TrimSpace(strings.ToLower(input.IdempotencyKey))
-	if !identityPattern.MatchString(input.InstallationID) ||
-		!identityPattern.MatchString(input.XDeploymentID) ||
+	if !validExactExternalIdentity(input.InstallationID) ||
+		!validExactDeploymentIdentity(input.XDeploymentID) ||
 		!hashPattern.MatchString(input.InvitationSHA256) ||
 		input.OrgID <= 0 || input.ProjectID <= 0 || input.ConsentedByUserID <= 0 ||
 		input.EventScope != EventScopeModelCompleted ||
 		!validSourceInstance(sourceInstance) ||
-		!identityPattern.MatchString(input.IdempotencyKey) {
+		!localIdentityPattern.MatchString(input.IdempotencyKey) {
 		return Consent{}, SourceBinding{}, "", ErrInvalid
 	}
 	binding := SourceBinding{
@@ -219,12 +220,19 @@ func validSourceInstance(value string) bool {
 	return true
 }
 
+func validExactExternalIdentity(value string) bool {
+	return remoteInstallationID.MatchString(value)
+}
+
+func validExactDeploymentIdentity(value string) bool {
+	return remoteDeploymentID.MatchString(value)
+}
+
 func validateOperationRequest(input OperationRequest) (OperationRequest, string, error) {
-	input.InstallationID = strings.TrimSpace(strings.ToLower(input.InstallationID))
 	input.Action = strings.TrimSpace(strings.ToLower(input.Action))
 	input.IdempotencyKey = strings.TrimSpace(strings.ToLower(input.IdempotencyKey))
-	if !identityPattern.MatchString(input.InstallationID) || input.OrgID <= 0 || input.ProjectID <= 0 ||
-		input.RequestedByUserID <= 0 || !identityPattern.MatchString(input.IdempotencyKey) {
+	if !validExactExternalIdentity(input.InstallationID) || input.OrgID <= 0 || input.ProjectID <= 0 ||
+		input.RequestedByUserID <= 0 || !localIdentityPattern.MatchString(input.IdempotencyKey) {
 		return OperationRequest{}, "", ErrInvalid
 	}
 	var desired string

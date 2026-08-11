@@ -275,7 +275,7 @@ func TestEnterpriseProjectRoleSeparationDownFailsClosedForNonMemberMembership(t 
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
-	rollbackEmptyMigrations(t, pool, []string{"000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{"000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectID, userID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type) VALUES ('role-down-org','active','standard') RETURNING id`).Scan(&orgID))
@@ -298,7 +298,7 @@ func TestEnterpriseProjectRoleSeparationDownFailsClosedForHeterogeneousMemberRol
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
-	rollbackEmptyMigrations(t, pool, []string{"000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{"000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectA, projectB, userID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type) VALUES ('role-down-heterogeneous','active','standard') RETURNING id`).Scan(&orgID))
@@ -323,7 +323,7 @@ func TestEnterpriseProjectRoleSeparationDownRestoresRepresentableLegacyState(t *
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
-	rollbackEmptyMigrations(t, pool, []string{"000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{"000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectID, userID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type) VALUES ('role-down-safe','active','standard') RETURNING id`).Scan(&orgID))
@@ -350,7 +350,7 @@ func TestEnterpriseProjectRoleSeparationDownWaitsForConcurrentWriterThenFailsClo
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
-	rollbackEmptyMigrations(t, pool, []string{"000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{"000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectA, projectB, userID int64
 	require.NoError(t, pool.QueryRow(ctx,

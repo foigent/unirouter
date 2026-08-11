@@ -241,7 +241,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,'queued',$8,$9,0,$10,$11,$10,$10)`,
 // the Connector agent. Tests may call it with a fake counterpart.
 func (m *Manager) ClaimNext(ctx context.Context, owner string, leaseDuration time.Duration) (Operation, bool, error) {
 	owner = strings.TrimSpace(strings.ToLower(owner))
-	if !identityPattern.MatchString(owner) || leaseDuration < time.Second || leaseDuration > 10*time.Minute {
+	if !localIdentityPattern.MatchString(owner) || leaseDuration < time.Second || leaseDuration > 10*time.Minute {
 		return Operation{}, false, ErrInvalid
 	}
 	now := m.now().UTC().Truncate(time.Microsecond)
@@ -329,7 +329,7 @@ func (m *Manager) CompleteOperation(
 	operationRefValue = strings.TrimSpace(strings.ToLower(operationRefValue))
 	leaseOwner = strings.TrimSpace(strings.ToLower(leaseOwner))
 	leaseToken = strings.TrimSpace(strings.ToLower(leaseToken))
-	if !regexpOperationRef(operationRefValue) || !identityPattern.MatchString(leaseOwner) || len(leaseToken) != 32 {
+	if !regexpOperationRef(operationRefValue) || !localIdentityPattern.MatchString(leaseOwner) || len(leaseToken) != 32 {
 		return Installation{}, Operation{}, ErrInvalid
 	}
 	now := m.now().UTC().Truncate(time.Microsecond)
@@ -403,7 +403,7 @@ func (m *Manager) RetryOperation(
 	leaseOwner = strings.TrimSpace(strings.ToLower(leaseOwner))
 	leaseToken = strings.TrimSpace(strings.ToLower(leaseToken))
 	errorCode = strings.TrimSpace(strings.ToLower(errorCode))
-	if !regexpOperationRef(operationRefValue) || !identityPattern.MatchString(leaseOwner) || len(leaseToken) != 32 ||
+	if !regexpOperationRef(operationRefValue) || !localIdentityPattern.MatchString(leaseOwner) || len(leaseToken) != 32 ||
 		!validMachineToken(errorCode) || delay < time.Second || delay > time.Hour {
 		return Operation{}, ErrInvalid
 	}

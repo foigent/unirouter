@@ -61,7 +61,7 @@ func TestConnectorManagerDurableLifecycleFencingAndBoundedHealthIntegration(t *t
 	manager.now = func() time.Time { return clock }
 	manager.token = func() (string, error) { return "11111111111111111111111111111111", nil }
 	consent := Consent{
-		InstallationID: "installation-cp1", XDeploymentID: "x-deployment-cp1",
+		InstallationID: "xci_AbCdEfGhIjKlMnOpQrStUv", XDeploymentID: "xid_ZyXwVuTsRqPoNmLkJiHgFe",
 		InvitationSHA256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		OrgID:            orgID, ProjectID: projectID, EventScope: EventScopeModelCompleted,
 		IdempotencyKey: "connect-cp1", ConsentedByUserID: actorID,
@@ -90,7 +90,7 @@ func TestConnectorManagerDurableLifecycleFencingAndBoundedHealthIntegration(t *t
 		orgID, actorID,
 	).Scan(&secondProjectID))
 	_, _, err = manager.CreateInstallation(ctx, Consent{
-		InstallationID: "installation-invitation-replay", XDeploymentID: "x-deployment-replay",
+		InstallationID: "xci_0123456789AbCdEfGhIjKl", XDeploymentID: "xid_0123456789AbCdEfGhIjKl",
 		InvitationSHA256: consent.InvitationSHA256, OrgID: orgID, ProjectID: secondProjectID,
 		EventScope: EventScopeModelCompleted, IdempotencyKey: "connect-replayed-invitation",
 		ConsentedByUserID: actorID,
@@ -110,7 +110,7 @@ func TestConnectorManagerDurableLifecycleFencingAndBoundedHealthIntegration(t *t
 		otherOrgID, otherActorID,
 	).Scan(&otherProjectID))
 	_, _, err = manager.CreateInstallation(ctx, Consent{
-		InstallationID: "installation-cross-org", XDeploymentID: consent.XDeploymentID,
+		InstallationID: "xci_QrStUvWxYz0123456789Ab", XDeploymentID: consent.XDeploymentID,
 		InvitationSHA256: "sha256:abababababababababababababababababababababababababababababababab",
 		OrgID:            otherOrgID, ProjectID: otherProjectID, EventScope: EventScopeModelCompleted,
 		IdempotencyKey: "connect-cross-org", ConsentedByUserID: otherActorID,
@@ -290,7 +290,7 @@ func TestConnectorManagerCommitAuthorizationDenialHasNoMutationIntegration(t *te
 	manager, err := NewManager(pool, &recordingAuthorizer{err: ErrUnauthorized}, sourceAuthorityFixture{enabled: true, instance: "source.denied"})
 	require.NoError(t, err)
 	_, _, err = manager.CreateInstallation(ctx, Consent{
-		InstallationID: "installation-denied", XDeploymentID: "x-deployment-denied",
+		InstallationID: "xci_DeniedAbCdEfGhIjKlMnOp", XDeploymentID: "xid_DeniedAbCdEfGhIjKlMnOp",
 		InvitationSHA256: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
 		OrgID:            orgID, ProjectID: projectID, EventScope: EventScopeModelCompleted,
 		IdempotencyKey: "connect-denied", ConsentedByUserID: actorID,

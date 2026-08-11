@@ -26,6 +26,10 @@ SELECT COUNT(*) FROM information_schema.tables
 WHERE table_schema='public'
   AND table_name IN ('xinsight_connector_installations','xinsight_connector_operations')`).Scan(&tables))
 	require.Equal(t, 2, tables)
+	cp2Down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000061_xinsight_connector_cp2a_phase_contract.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(cp2Down))
+	require.NoError(t, err)
 
 	var orgID, projectID int64
 	require.NoError(t, pool.QueryRow(ctx,
@@ -35,7 +39,7 @@ WHERE table_schema='public'
 		`INSERT INTO projects (org_id,name,slug,status) VALUES ($1,'Connector migration','connector-migration','active') RETURNING id`,
 		orgID,
 	).Scan(&projectID))
-	_, err := pool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 INSERT INTO xinsight_connector_installations (
     installation_id,org_id,project_id,x_deployment_id,invitation_sha256,
     event_scope,source_instance,source_binding_sha256,desired_state,observed_state)

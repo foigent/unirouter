@@ -90,7 +90,8 @@ var (
 		"runtime_change_slots", "runtime_terminal_hooks", "stream_delivery_checkpoints",
 		"stream_delivery_leases", "transactions", "usage_finalization_journal", "users",
 		"wallets", "workload_application_client_profiles", "workload_applications",
-		"xinsight_connector_installations", "xinsight_connector_operations",
+		"xinsight_connector_control_bindings", "xinsight_connector_installations",
+		"xinsight_connector_operations", "xinsight_connector_phase_operations",
 	)
 	protectedSettingKeys     = []string{"ledger.amount_scale", "ledger.version", "license.offline"}
 	platformBaselineSettings = []string{"sensitive_words"}

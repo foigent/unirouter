@@ -16,7 +16,7 @@ func TestXInsightConnectorOperationSummaryNeverExposesLeaseOrIdempotencyAuthorit
 	now := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	summary := summarizeXInsightConnectorOperation(xinsightconnector.Operation{
 		SchemaVersion: xinsightconnector.OperationSchemaVersion,
-		OperationRef:  "xcop_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", InstallationID: "installation-a",
+		OperationRef:  "xcop_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", InstallationID: "xci_AbCdEfGhIjKlMnOpQrStUv",
 		Action: xinsightconnector.ActionConnect, DesiredState: xinsightconnector.DesiredActive,
 		State: xinsightconnector.OperationClaimed, RequestedRevision: 1, ControlFence: 1,
 		AttemptCount: 1, IdempotencyKey: "private-correlation",
@@ -36,7 +36,7 @@ func TestXInsightConnectorInstallationSummaryOmitsInvitationAndDuplicateTenantAu
 	invitation := "sha256:" + strings.Repeat("a", 64)
 	summary := summarizeXInsightConnectorInstallation(xinsightconnector.Installation{
 		SchemaVersion:  xinsightconnector.InstallationSchemaVersion,
-		InstallationID: "installation-a", XDeploymentID: "x-deployment-a",
+		InstallationID: "xci_AbCdEfGhIjKlMnOpQrStUv", XDeploymentID: "xid_ZyXwVuTsRqPoNmLkJiHgFe",
 		InvitationSHA256: invitation, OrgID: 7, ProjectID: 11,
 		EventScope: xinsightconnector.EventScopeModelCompleted, SourceInstance: "source-a",
 		SourceBindingSHA256: "sha256:" + strings.Repeat("b", 64),
@@ -49,7 +49,7 @@ func TestXInsightConnectorInstallationSummaryOmitsInvitationAndDuplicateTenantAu
 	require.NotContains(t, string(wire), invitation)
 	require.NotContains(t, string(wire), "org_id")
 	require.NotContains(t, string(wire), "project_id")
-	require.Contains(t, string(wire), `"installation_id":"installation-a"`)
+	require.Contains(t, string(wire), `"installation_id":"xci_AbCdEfGhIjKlMnOpQrStUv"`)
 }
 
 func TestAuthorizeXInsightConnectorControlRejectsCallerSuppliedActorEvidence(t *testing.T) {

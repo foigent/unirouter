@@ -10,8 +10,8 @@ import (
 
 func TestNormalizeConsentBuildsStableProjectSourceScope(t *testing.T) {
 	input := Consent{
-		InstallationID:   "INSTALLATION.A",
-		XDeploymentID:    "X-DEPLOYMENT.A",
+		InstallationID:   "xci_AbCdEfGhIjKlMnOpQrStUv",
+		XDeploymentID:    "xid_ZyXwVuTsRqPoNmLkJiHgFe",
 		InvitationSHA256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		OrgID:            7, ProjectID: 11,
 		EventScope:        EventScopeModelCompleted,
@@ -20,21 +20,27 @@ func TestNormalizeConsentBuildsStableProjectSourceScope(t *testing.T) {
 	}
 	normalized, binding, digest, err := normalizeConsent(input, "source.instance.v1")
 	require.NoError(t, err)
-	require.Equal(t, "installation.a", normalized.InstallationID)
-	require.Equal(t, "x-deployment.a", normalized.XDeploymentID)
+	require.Equal(t, input.InstallationID, normalized.InstallationID)
+	require.Equal(t, input.XDeploymentID, normalized.XDeploymentID)
 	require.Equal(t, "source.instance.v1", binding.SourceInstance)
 	require.Equal(t, SourceBindingSchemaVersion, binding.SchemaVersion)
 	require.Equal(t, CompletedFeedSchemaVersion, binding.FeedSchema)
-	require.Equal(t, "sha256:a65994a631d60e05ba865ff61eacdde2fda7e3e5829b6240c0e4061abb56e9a5", digest)
+	require.Equal(t, "sha256:e0c733b7c2a239b68edbbf12886ef223435e1913786995e8b78f0a6d0701a66a", digest)
 
 	_, _, repeated, err := normalizeConsent(normalized, "source.instance.v1")
 	require.NoError(t, err)
 	require.Equal(t, digest, repeated)
+
+	caseAlias := input
+	caseAlias.InstallationID = "xci_abcdefghijklmnopqrstuv"
+	_, _, caseAliasDigest, err := normalizeConsent(caseAlias, "source.instance.v1")
+	require.NoError(t, err)
+	require.NotEqual(t, digest, caseAliasDigest, "X management identities are exact bytes, not case aliases")
 }
 
 func TestConsentAndOperationContractsFailClosed(t *testing.T) {
 	base := Consent{
-		InstallationID: "installation-a", XDeploymentID: "deployment-a",
+		InstallationID: "xci_AbCdEfGhIjKlMnOpQrStUv", XDeploymentID: "xid_ZyXwVuTsRqPoNmLkJiHgFe",
 		InvitationSHA256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		OrgID:            1, ProjectID: 2, EventScope: EventScopeModelCompleted,
 		IdempotencyKey: "connect-a", ConsentedByUserID: 3,
@@ -46,7 +52,7 @@ func TestConsentAndOperationContractsFailClosed(t *testing.T) {
 		{"unknown event scope", func(value *Consent) { value.EventScope = "billing.execution.settled" }},
 		{"unbound project", func(value *Consent) { value.ProjectID = 0 }},
 		{"invalid invitation hash", func(value *Consent) { value.InvitationSHA256 = "operator-assertion" }},
-		{"invalid installation identity", func(value *Consent) { value.InstallationID = "../../installation" }},
+		{"normalized installation identity", func(value *Consent) { value.InstallationID = " " + value.InstallationID }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -62,7 +68,7 @@ func TestConsentAndOperationContractsFailClosed(t *testing.T) {
 	}
 
 	_, _, err := validateOperationRequest(OperationRequest{
-		InstallationID: "installation-a", OrgID: 1, ProjectID: 2,
+		InstallationID: "xci_AbCdEfGhIjKlMnOpQrStUv", OrgID: 1, ProjectID: 2,
 		Action: "reset", IdempotencyKey: "reset-a", RequestedByUserID: 3,
 	})
 	require.ErrorIs(t, err, ErrInvalid)

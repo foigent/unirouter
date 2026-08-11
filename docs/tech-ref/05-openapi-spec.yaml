@@ -4234,8 +4234,8 @@ components:
       required: [schema_version, installation_id, x_deployment_id, event_scope, source_instance, source_binding_sha256, desired_state, observed_state, state_revision, control_fence, consented_at, updated_at]
       properties:
         schema_version: { type: string, enum: [unirouter.xinsight.connector-installation.v1] }
-        installation_id: { type: string, pattern: '^[a-z0-9][a-z0-9._:-]{0,127}$' }
-        x_deployment_id: { type: string, pattern: '^[a-z0-9][a-z0-9._:-]{0,127}$' }
+        installation_id: { type: string, pattern: '^xci_[A-Za-z0-9_-]{22}$' }
+        x_deployment_id: { type: string, pattern: '^xid_[A-Za-z0-9_-]{22}$' }
         event_scope: { type: string, enum: [model.request.completed] }
         source_instance: { type: string, minLength: 1, maxLength: 128 }
         source_binding_sha256: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
@@ -4256,7 +4256,7 @@ components:
       properties:
         schema_version: { type: string, enum: [unirouter.xinsight.connector-operation.v1] }
         operation_ref: { type: string, pattern: '^xcop_[a-f0-9]{32}$' }
-        installation_id: { type: string, pattern: '^[a-z0-9][a-z0-9._:-]{0,127}$' }
+        installation_id: { type: string, pattern: '^xci_[A-Za-z0-9_-]{22}$' }
         action: { type: string, enum: [connect, pause, resume, rotate, replay] }
         desired_state: { type: string, enum: [active, paused] }
         state: { type: string, enum: [queued, claimed, retry_wait, succeeded, failed, cancelled] }
