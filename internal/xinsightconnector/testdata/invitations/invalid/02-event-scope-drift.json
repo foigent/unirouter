@@ -1,0 +1,11 @@
+{
+  "schema_version": "xinsight.connector-installation-invitation.v1",
+  "invitation_id": "xii_AAAAAAAAAAAAAAAAAAAAAA",
+  "installation_id": "xci_AAAAAAAAAAAAAAAAAAAAAA",
+  "deployment_id": "xid_AAAAAAAAAAAAAAAAAAAAAA",
+  "audience": "unirouter",
+  "xinsight_origin": "https://xinsight.example",
+  "requested_event_scope": ["provider.request"],
+  "expires_at": "2030-01-01T00:15:00Z",
+  "install_url": "https://unirouter.example/connectors/x-insight/install#invitation=xiiv1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&xinsight_origin=https%3A%2F%2Fxinsight.example"
+}

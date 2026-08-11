@@ -28,6 +28,7 @@ func TestXInsightFeedControlRoutesKeepSafetyActionsAvailableWithoutEntitlement(t
 		{name: "pause", method: http.MethodPost, target: "/api/v1/data-exchange/xinsight/connections/11/pause"},
 		{name: "revoke", method: http.MethodPost, target: "/api/v1/data-exchange/xinsight/connections/11/credentials/17/revoke"},
 		{name: "cancel", method: http.MethodPost, target: "/api/v1/data-exchange/xinsight/connections/11/rotation/cancel"},
+		{name: "connector install", method: http.MethodPost, target: "/api/v1/data-exchange/xinsight/connections/11/install", expansion: true},
 		{name: "resume", method: http.MethodPost, target: "/api/v1/data-exchange/xinsight/connections/11/resume", expansion: true},
 		{name: "initial create", method: http.MethodPost, target: "/api/v1/data-exchange/xinsight/connections/11/credentials", expansion: true},
 		{name: "initial activate", method: http.MethodPost, target: "/api/v1/data-exchange/xinsight/connections/11/credentials/activate", expansion: true},
@@ -113,6 +114,8 @@ func TestXInsightFeedControlOpenAPIDocumentsProjectAndSafetyBoundaries(t *testin
 		"Available for existing active, disabled or archived projects independent of the current Data Exchange entitlement.",
 		"Authority-reducing safety action available for existing inactive projects and without the current Data Exchange entitlement.",
 		"Requires an active project, current Data Exchange entitlement",
+		"The complete frozen invitation is validated without extensions",
+		"  /api/v1/data-exchange/xinsight/connections/{project_id}/install:\n    x-unirouter-rbac:\n      post: [platform_admin]",
 		"  /api/v1/data-exchange/xinsight/connections/{project_id}/rotation/cancel:\n    x-unirouter-rbac:\n      post: [platform_admin]",
 	} {
 		require.Contains(t, spec, fragment)
@@ -158,6 +161,10 @@ func (h *recordingXInsightFeedControlHandler) respond(w http.ResponseWriter) {
 }
 
 func (h *recordingXInsightFeedControlHandler) GetXInsightFeedConnection(w http.ResponseWriter, _ *http.Request) {
+	h.respond(w)
+}
+
+func (h *recordingXInsightFeedControlHandler) InstallXInsightConnector(w http.ResponseWriter, _ *http.Request) {
 	h.respond(w)
 }
 

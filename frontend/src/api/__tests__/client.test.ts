@@ -402,26 +402,35 @@ describe('API Client', () => {
       await api.getXInsightFeedConnection(22)
       expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/data-exchange/xinsight/connections/22')
 
+      const invitation = { schema_version: 'xinsight.connector-installation-invitation.v1' }
+      mockJsonResponse({ connector_product_status: 'connecting' })
+      await api.installXInsightConnector(22, { invitation })
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/data-exchange/xinsight/connections/22/install')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ invitation }),
+      }))
+
       mockJsonResponse({ id: 42, lifecycle: 'staged' })
       await api.createXInsightFeedCredential(22, { allowed_ip: '10.0.0.8/32', registration })
-      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/data-exchange/xinsight/connections/22/credentials')
-      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({
+      expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/data-exchange/xinsight/connections/22/credentials')
+      expect(mockFetch.mock.calls[2][1]).toEqual(expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ allowed_ip: '10.0.0.8/32', registration }),
       }))
 
       mockJsonResponse({ id: 43, lifecycle: 'staged' })
       await api.prepareXInsightFeedRotation(22, { registration })
-      expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/data-exchange/xinsight/connections/22/rotation/prepare')
-      expect(mockFetch.mock.calls[2][1]).toEqual(expect.objectContaining({
+      expect(mockFetch.mock.calls[3][0]).toBe('/api/v1/data-exchange/xinsight/connections/22/rotation/prepare')
+      expect(mockFetch.mock.calls[3][1]).toEqual(expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ registration }),
       }))
 
       mockJsonResponse({ id: 43, lifecycle: 'active' })
       await api.activateXInsightFeedRotation(22, 43)
-      expect(mockFetch.mock.calls[3][0]).toBe('/api/v1/data-exchange/xinsight/connections/22/rotation/activate')
-      expect(mockFetch.mock.calls[3][1]).toEqual(expect.objectContaining({
+      expect(mockFetch.mock.calls[4][0]).toBe('/api/v1/data-exchange/xinsight/connections/22/rotation/activate')
+      expect(mockFetch.mock.calls[4][1]).toEqual(expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ staged_credential_id: 43 }),
       }))

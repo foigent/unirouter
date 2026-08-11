@@ -130,6 +130,7 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"POST /api/v1/data-exchange/exchanges/{id}/receipts",
 		"POST /api/v1/data-exchange/exchanges/{id}/artifact-delete",
 		"GET /api/v1/data-exchange/xinsight/connections/{project_id}",
+		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/install",
 		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/pause",
 		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/resume",
 		"POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials",

@@ -91,6 +91,18 @@ export interface ReceiverFeedCredentialRegistrationV1 {
   operation_id: string;
 }
 
+export interface FrozenConnectorInvitationV1 {
+  schema_version: 'xinsight.connector-installation-invitation.v1';
+  invitation_id: string;
+  installation_id: string;
+  deployment_id: string;
+  audience: 'unirouter';
+  xinsight_origin: string;
+  requested_event_scope: ['model.request.completed'];
+  expires_at: string;
+  install_url: string;
+}
+
 interface RegisteredCredential {
   id: number;
   key_prefix: string;
@@ -109,6 +121,18 @@ const registrationKeys = [
   'key_prefix',
   'verifier_sha256',
   'operation_id',
+] as const;
+
+const invitationKeys = [
+  'schema_version',
+  'invitation_id',
+  'installation_id',
+  'deployment_id',
+  'audience',
+  'xinsight_origin',
+  'requested_event_scope',
+  'expires_at',
+  'install_url',
 ] as const;
 
 export function parseReceiverRegistrationBundle(raw: string): ReceiverFeedCredentialRegistrationV1 {
@@ -133,6 +157,65 @@ export function parseReceiverRegistrationBundle(raw: string): ReceiverFeedCreden
     throw new Error('registration 不符合 Frozen Registration Bundle V1');
   }
   return parsed as unknown as ReceiverFeedCredentialRegistrationV1;
+}
+
+export function parseFrozenConnectorInvitation(
+  raw: string,
+  now = new Date(),
+  expectedFragment = '',
+): FrozenConnectorInvitationV1 {
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('invitation 必须是 JSON object');
+  }
+  const keys = Object.keys(parsed).sort();
+  if (keys.length !== invitationKeys.length ||
+      keys.some((key, index) => key !== [...invitationKeys].sort()[index])) {
+    throw new Error('invitation 字段必须与 frozen Connector invitation 完全一致');
+  }
+  if (parsed.schema_version !== 'xinsight.connector-installation-invitation.v1' ||
+      typeof parsed.invitation_id !== 'string' || !/^xii_[A-Za-z0-9_-]{22}$/.test(parsed.invitation_id) ||
+      typeof parsed.installation_id !== 'string' || !/^xci_[A-Za-z0-9_-]{22}$/.test(parsed.installation_id) ||
+      typeof parsed.deployment_id !== 'string' || !/^xid_[A-Za-z0-9_-]{22}$/.test(parsed.deployment_id) ||
+      parsed.audience !== 'unirouter' ||
+      typeof parsed.xinsight_origin !== 'string' || !isCanonicalHTTPSOrigin(parsed.xinsight_origin) ||
+      !Array.isArray(parsed.requested_event_scope) || parsed.requested_event_scope.length !== 1 ||
+      parsed.requested_event_scope[0] !== 'model.request.completed' ||
+      typeof parsed.expires_at !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(parsed.expires_at) ||
+      typeof parsed.install_url !== 'string') {
+    throw new Error('invitation 不符合 frozen Connector invitation');
+  }
+  const expiresAt = Date.parse(parsed.expires_at);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime() || expiresAt > now.getTime() + 30 * 60 * 1000) {
+    throw new Error('invitation 已过期或超过 frozen 30 分钟有效期');
+  }
+  const installURL = new URL(parsed.install_url);
+  const fragment = new URLSearchParams(installURL.hash.slice(1));
+  const fragmentKeys = [...fragment.keys()];
+  const token = fragment.get('invitation') || '';
+  const xInsightOrigin = fragment.get('xinsight_origin') || '';
+  if (installURL.protocol !== 'https:' || installURL.username || installURL.password ||
+      installURL.pathname !== '/connectors/x-insight/install' || installURL.search ||
+      fragmentKeys.length !== 2 || fragment.getAll('invitation').length !== 1 ||
+      fragment.getAll('xinsight_origin').length !== 1 ||
+      !/^xiiv1_[A-Za-z0-9_-]{43}$/.test(token) ||
+      xInsightOrigin !== parsed.xinsight_origin ||
+      parsed.install_url !== `${installURL.origin}/connectors/x-insight/install#${fragment.toString()}` ||
+      (expectedFragment !== '' && installURL.hash !== expectedFragment)) {
+    throw new Error('install_url 不符合 frozen Connector invitation');
+  }
+  return parsed as unknown as FrozenConnectorInvitationV1;
+}
+
+function isCanonicalHTTPSOrigin(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password &&
+      parsed.origin === value && parsed.pathname === '/' && !parsed.search && !parsed.hash;
+  } catch {
+    return false;
+  }
 }
 
 function credentialLabel(credential?: FeedCredential | null) {
@@ -170,6 +253,7 @@ export default function XInsightLiveConnection({
   const [loading, setLoading] = useState(false);
   const [allowedIP, setAllowedIP] = useState('');
   const [registrationJSON, setRegistrationJSON] = useState('');
+  const [invitationJSON, setInvitationJSON] = useState('');
 
   const loadProjects = useCallback(async () => {
     try {
@@ -248,6 +332,29 @@ export default function XInsightLiveConnection({
     }
   };
 
+  const installConnector = async () => {
+    if (!projectID) return;
+    setLoading(true);
+    try {
+      const invitation = parseFrozenConnectorInvitation(
+        invitationJSON,
+        new Date(),
+        window.location.hash,
+      );
+      await api.installXInsightConnector(projectID, { invitation });
+      setInvitationJSON('');
+      if (window.location.hash) {
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+      }
+      Toast.success('Connector invitation 已登记；agent 仍保持禁用，未发送任何流量');
+      await loadStatus();
+    } catch (error: any) {
+      Toast.error(`Connector invitation 登记失败${error?.message ? `：${error.message}` : ''}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const projectOptions = useMemo(() => projects.map(project => ({
     value: project.id,
     label: `${project.name}${project.org_name ? ` · ${project.org_name}` : ''}${
@@ -269,6 +376,15 @@ export default function XInsightLiveConnection({
       return false;
     }
   }, [registrationJSON]);
+  const linkedInvitationFragment = typeof window === 'undefined' ? '' : window.location.hash;
+  const parsedInvitation = useMemo(() => {
+    try {
+      return parseFrozenConnectorInvitation(invitationJSON, new Date(), linkedInvitationFragment);
+    } catch {
+      return null;
+    }
+  }, [invitationJSON, linkedInvitationFragment]);
+  const connectorIntakeEnabled = expansionEnabled && Boolean(status?.global_enabled && status?.source_instance);
 
   if (!projectID && projects.length === 0) {
     return <Spin tip="正在读取可用项目…" />;
@@ -296,6 +412,49 @@ export default function XInsightLiveConnection({
         <Tag>不向 X-Insight 提供管理员凭证</Tag>
         <Tag color="purple">receiver-generated credential</Tag>
       </div>
+
+      {status && !status.connector_installation && (
+        <div style={{ padding: 14, border: '1px solid var(--semi-color-border)', borderRadius: 8, display: 'grid', gap: 10 }}>
+          <Title heading={6} style={{ margin: 0 }}>接受 Connector invitation</Title>
+          <Text type="tertiary">
+            粘贴 X-Insight 返回的完整 frozen invitation JSON。UniRouter 会校验全部字段、固定 HTTPS origin、唯一 scope、有效期和 install_url fragment；token 仅做用途隔离加密持久化，响应不会返回。
+          </Text>
+          {linkedInvitationFragment && (
+            <Tag color="blue">已从 invitation link 进入；完整 package 必须与当前 fragment 精确一致</Tag>
+          )}
+          <TextArea
+            aria-label="Frozen X-Insight Connector invitation"
+            placeholder='{"schema_version":"xinsight.connector-installation-invitation.v1",...}'
+            value={invitationJSON}
+            onChange={setInvitationJSON}
+            rows={9}
+            disabled={!connectorIntakeEnabled}
+          />
+          {parsedInvitation && (
+            <Descriptions
+              row
+              data={[
+                { key: 'Installation', value: parsedInvitation.installation_id },
+                { key: 'Deployment', value: parsedInvitation.deployment_id },
+                { key: 'X-Insight origin', value: parsedInvitation.xinsight_origin },
+                { key: '固定 scope', value: parsedInvitation.requested_event_scope[0] },
+                { key: '到期', value: formatDateTime(parsedInvitation.expires_at) },
+              ]}
+            />
+          )}
+          <Popconfirm
+            title="确认将该 X-Insight installation 绑定到当前 UniRouter 项目。此步只登记 installation 与加密 invitation，不启用 agent、不发送流量。"
+            onConfirm={installConnector}
+          >
+            <Button type="primary" disabled={!parsedInvitation || !connectorIntakeEnabled || loading}>
+              确认项目范围并登记 invitation
+            </Button>
+          </Popconfirm>
+          {!status.global_enabled || !status.source_instance ? (
+            <Text type="warning">需要先启用并固定 completed-execution Source instance；不会生成默认来源身份。</Text>
+          ) : null}
+        </div>
+      )}
 
       <div style={{ padding: 14, border: '1px solid var(--semi-color-border)', borderRadius: 8 }}>
         <Title heading={6} style={{ marginTop: 0 }}>Connector 状态</Title>

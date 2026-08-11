@@ -108,6 +108,11 @@ function UnknownRoute() {
   return <Navigate to={getDefaultPathForAuthz(authzContextForUser(user))} replace />
 }
 
+function XInsightConnectorInstallRoute() {
+  const location = useLocation()
+  return <Navigate to={`/integrations?tab=xinsight${location.hash}`} replace />
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
@@ -146,6 +151,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="data-exchange" element={<RoleRoute><Navigate to="/integrations?tab=xinsight" replace /></RoleRoute>} />
               <Route path="deployment" element={<RoleRoute><DeploymentNetworkPage /></RoleRoute>} />
               <Route path="integrations" element={<RoleRoute><IntegrationsPage /></RoleRoute>} />
+              <Route path="connectors/x-insight/install" element={<RoleRoute><XInsightConnectorInstallRoute /></RoleRoute>} />
               <Route path="reconciliation" element={<RoleRoute><ReconciliationPage /></RoleRoute>} />
               <Route path="usage-analytics" element={<RoleRoute><UsageAnalyticsPage /></RoleRoute>} />
               <Route path="cost-optimization" element={<RoleRoute><CostOptimizationPage /></RoleRoute>} />

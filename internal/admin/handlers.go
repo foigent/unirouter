@@ -70,6 +70,7 @@ type Handler struct {
 	guardrailController          guardrailController
 	completedFeedController      completedFeedController
 	xInsightConnectorManager     *xinsightconnector.Manager
+	xInsightConnectorIntake      xInsightConnectorInvitationIntake
 	modelAuthorizationEvaluator  *modelauthz.Evaluator
 	runtimeChangeManager         *runtimechange.Manager
 	invocationOptimization       *invocationopt.Manager
@@ -118,6 +119,12 @@ func (h *Handler) SetCompletedFeedController(controller completedFeedController)
 func (h *Handler) SetXInsightConnectorManager(manager *xinsightconnector.Manager) {
 	if h != nil {
 		h.xInsightConnectorManager = manager
+	}
+}
+
+func (h *Handler) SetXInsightConnectorInvitationIntake(intake xInsightConnectorInvitationIntake) {
+	if h != nil {
+		h.xInsightConnectorIntake = intake
 	}
 }
 

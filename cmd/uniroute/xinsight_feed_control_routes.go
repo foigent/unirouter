@@ -8,6 +8,7 @@ import (
 
 type xInsightFeedControlHandler interface {
 	GetXInsightFeedConnection(http.ResponseWriter, *http.Request)
+	InstallXInsightConnector(http.ResponseWriter, *http.Request)
 	PauseXInsightFeedConnection(http.ResponseWriter, *http.Request)
 	ResumeXInsightFeedConnection(http.ResponseWriter, *http.Request)
 	CreateXInsightFeedCredential(http.ResponseWriter, *http.Request)
@@ -29,6 +30,7 @@ func registerXInsightFeedControlRoutes(
 	guards xInsightFeedControlRouteGuards,
 ) {
 	mux.Handle("GET /api/v1/data-exchange/xinsight/connections/{project_id}", guards.safety(handler.GetXInsightFeedConnection))
+	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/install", guards.expansion(handler.InstallXInsightConnector))
 	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/pause", guards.safety(handler.PauseXInsightFeedConnection))
 	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/resume", guards.expansion(handler.ResumeXInsightFeedConnection))
 	mux.Handle("POST /api/v1/data-exchange/xinsight/connections/{project_id}/credentials", guards.expansion(handler.CreateXInsightFeedCredential))

@@ -36,6 +36,10 @@ var (
 	xInsightFeedOperationPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 )
 
+type xInsightConnectorInvitationIntake interface {
+	Accept(context.Context, xinsightconnector.InvitationIntakeInput) (xinsightconnector.InvitationIntakeResult, error)
+}
+
 type xInsightFeedCredential struct {
 	ID             int64      `json:"id"`
 	KeyPrefix      string     `json:"key_prefix"`
@@ -119,6 +123,16 @@ type prepareXInsightFeedRotationRequest struct {
 	Registration xInsightFeedCredentialRegistrationV1 `json:"registration"`
 }
 
+type installXInsightConnectorRequest struct {
+	Invitation xinsightconnector.FrozenInvitationV1 `json:"invitation"`
+}
+
+type installXInsightConnectorResponse struct {
+	ConnectorProductStatus string                                `json:"connector_product_status"`
+	Installation           *xInsightConnectorInstallationSummary `json:"connector_installation"`
+	Operation              *xInsightConnectorOperationSummary    `json:"connector_latest_operation"`
+}
+
 type xInsightFeedCredentialRegistrationV1 struct {
 	SchemaVersion  string `json:"schema_version"`
 	TokenFormat    string `json:"token_format"`
@@ -167,6 +181,46 @@ func (h *Handler) PauseXInsightFeedConnection(w http.ResponseWriter, r *http.Req
 
 func (h *Handler) ResumeXInsightFeedConnection(w http.ResponseWriter, r *http.Request) {
 	h.setXInsightFeedConnectionState(w, r, xInsightFeedConnectionActive)
+}
+
+func (h *Handler) InstallXInsightConnector(w http.ResponseWriter, r *http.Request) {
+	var request installXInsightConnectorRequest
+	if !decodeXInsightFeedControlJSON(w, r, &request) {
+		return
+	}
+	projectID, err := xInsightFeedProjectID(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid project ID"})
+		return
+	}
+	orgID, err := h.xInsightFeedExistingProjectOrg(r.Context(), projectID)
+	if err != nil {
+		writeXInsightFeedControlError(w, err)
+		return
+	}
+	actorID := middleware.GetUserIDFromContext(r.Context())
+	if actorID <= 0 {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "Forbidden"})
+		return
+	}
+	if h.xInsightConnectorIntake == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "X-Insight Connector invitation intake is unavailable"})
+		return
+	}
+	result, err := h.xInsightConnectorIntake.Accept(r.Context(), xinsightconnector.InvitationIntakeInput{
+		Invitation: request.Invitation, OrgID: orgID, ProjectID: projectID,
+		ConsentedByUserID: actorID,
+	})
+	if err != nil {
+		writeXInsightConnectorInvitationError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, installXInsightConnectorResponse{
+		ConnectorProductStatus: xinsightconnector.ProductConnecting,
+		Installation:           summarizeXInsightConnectorInstallation(result.Installation),
+		Operation:              summarizeXInsightConnectorOperation(result.Operation),
+	})
 }
 
 func (h *Handler) setXInsightFeedConnectionState(w http.ResponseWriter, r *http.Request, target string) {
@@ -1112,5 +1166,20 @@ func writeXInsightFeedControlError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "X-Insight feed control operation failed"})
+	}
+}
+
+func writeXInsightConnectorInvitationError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, xinsightconnector.ErrInvalid):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid frozen X-Insight Connector invitation"})
+	case errors.Is(err, xinsightconnector.ErrUnauthorized):
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "Forbidden"})
+	case errors.Is(err, xinsightconnector.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "X-Insight Connector installation not found"})
+	case errors.Is(err, xinsightconnector.ErrConflict):
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "X-Insight Connector invitation conflicts with existing state"})
+	default:
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "X-Insight Connector invitation intake is unavailable"})
 	}
 }
