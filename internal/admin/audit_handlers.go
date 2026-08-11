@@ -263,6 +263,20 @@ type auditExecer interface {
 }
 
 func insertAuditEntry(ctx context.Context, execer auditExecer, action, resource, resourceID string, detail map[string]interface{}, meta auditMeta) error {
+	return insertAuditEntryForActor(
+		ctx, execer, middleware.GetUserIDFromContext(ctx),
+		action, resource, resourceID, detail, meta,
+	)
+}
+
+func insertAuditEntryForActor(
+	ctx context.Context,
+	execer auditExecer,
+	userID int64,
+	action, resource, resourceID string,
+	detail map[string]interface{},
+	meta auditMeta,
+) error {
 	detailJSON := marshalAuditJSON(detail)
 	beforeJSON := "{}"
 	afterJSON := "{}"
@@ -274,7 +288,6 @@ func insertAuditEntry(ctx context.Context, execer auditExecer, action, resource,
 			afterJSON = marshalAuditJSON(after)
 		}
 	}
-	userID := middleware.GetUserIDFromContext(ctx)
 	var projectIDArg interface{}
 	if meta.ProjectID > 0 {
 		projectIDArg = meta.ProjectID

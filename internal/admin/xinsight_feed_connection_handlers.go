@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/xinsightconnector"
 )
 
 const (
@@ -46,24 +47,67 @@ type xInsightFeedCredential struct {
 	Status         string     `json:"-"`
 }
 
+type xInsightConnectorInstallationSummary struct {
+	SchemaVersion          string     `json:"schema_version"`
+	InstallationID         string     `json:"installation_id"`
+	XDeploymentID          string     `json:"x_deployment_id"`
+	EventScope             string     `json:"event_scope"`
+	SourceInstance         string     `json:"source_instance"`
+	SourceBindingSHA256    string     `json:"source_binding_sha256"`
+	DesiredState           string     `json:"desired_state"`
+	ObservedState          string     `json:"observed_state"`
+	StateRevision          int64      `json:"state_revision"`
+	ControlFence           int64      `json:"control_fence"`
+	BootstrapReceiptSHA256 string     `json:"bootstrap_receipt_sha256,omitempty"`
+	LastSuccessfulSyncAt   *time.Time `json:"last_successful_sync_at,omitempty"`
+	LastErrorCode          string     `json:"last_error_code,omitempty"`
+	LastErrorAt            *time.Time `json:"last_error_at,omitempty"`
+	ConsentedAt            time.Time  `json:"consented_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+}
+
+type xInsightConnectorOperationSummary struct {
+	SchemaVersion     string     `json:"schema_version"`
+	OperationRef      string     `json:"operation_ref"`
+	InstallationID    string     `json:"installation_id"`
+	Action            string     `json:"action"`
+	DesiredState      string     `json:"desired_state"`
+	State             string     `json:"state"`
+	RequestedRevision int64      `json:"requested_revision"`
+	ControlFence      int64      `json:"control_fence"`
+	AttemptCount      int        `json:"attempt_count"`
+	ResultCode        string     `json:"result_code,omitempty"`
+	ResultSHA256      string     `json:"result_sha256,omitempty"`
+	ErrorCode         string     `json:"error_code,omitempty"`
+	CompletedAt       *time.Time `json:"completed_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
 type xInsightFeedConnectionStatus struct {
-	ProjectID                   int64                   `json:"project_id"`
-	ProjectName                 string                  `json:"project_name"`
-	ProjectStatus               string                  `json:"project_status"`
-	GlobalConfigured            bool                    `json:"global_configured"`
-	GlobalEnabled               bool                    `json:"global_enabled"`
-	SourceInstance              string                  `json:"source_instance"`
-	ConnectionStatus            string                  `json:"connection_status"`
-	ActiveCredential            *xInsightFeedCredential `json:"active_credential"`
-	StagedCredential            *xInsightFeedCredential `json:"staged_credential"`
-	LastRevokedCredential       *xInsightFeedCredential `json:"last_revoked_credential"`
-	LastAuthenticatedPullAt     *time.Time              `json:"last_authenticated_pull_at"`
-	LastAuthenticatedCredential *xInsightFeedCredential `json:"last_authenticated_credential"`
-	SourceHighWatermark         string                  `json:"source_high_watermark"`
-	ReceiverAcknowledgedCursor  string                  `json:"receiver_acknowledged_cursor"`
-	ReceiverAcknowledgement     string                  `json:"receiver_acknowledgement_semantics"`
-	PendingItemCount            int64                   `json:"pending_item_count"`
-	CursorOutsideRetention      bool                    `json:"cursor_outside_retention"`
+	ProjectID                   int64                                 `json:"project_id"`
+	ProjectName                 string                                `json:"project_name"`
+	ProjectStatus               string                                `json:"project_status"`
+	GlobalConfigured            bool                                  `json:"global_configured"`
+	GlobalEnabled               bool                                  `json:"global_enabled"`
+	SourceInstance              string                                `json:"source_instance"`
+	ConnectionStatus            string                                `json:"connection_status"`
+	ActiveCredential            *xInsightFeedCredential               `json:"active_credential"`
+	StagedCredential            *xInsightFeedCredential               `json:"staged_credential"`
+	LastRevokedCredential       *xInsightFeedCredential               `json:"last_revoked_credential"`
+	LastAuthenticatedPullAt     *time.Time                            `json:"last_authenticated_pull_at"`
+	LastAuthenticatedCredential *xInsightFeedCredential               `json:"last_authenticated_credential"`
+	SourceHighWatermark         string                                `json:"source_high_watermark"`
+	ReceiverAcknowledgedCursor  string                                `json:"receiver_acknowledged_cursor"`
+	ReceiverAcknowledgement     string                                `json:"receiver_acknowledgement_semantics"`
+	PendingItemCount            int64                                 `json:"pending_item_count"`
+	PendingItemCountCapped      bool                                  `json:"pending_item_count_capped"`
+	OldestPendingAt             *time.Time                            `json:"oldest_pending_at,omitempty"`
+	OldestPendingAgeSeconds     int64                                 `json:"oldest_pending_age_seconds"`
+	CursorOutsideRetention      bool                                  `json:"cursor_outside_retention"`
+	ConnectorProductStatus      string                                `json:"connector_product_status"`
+	ConnectorInstallation       *xInsightConnectorInstallationSummary `json:"connector_installation,omitempty"`
+	ConnectorLatestOperation    *xInsightConnectorOperationSummary    `json:"connector_latest_operation,omitempty"`
 }
 
 type createXInsightFeedCredentialRequest struct {
@@ -758,7 +802,27 @@ func (h *Handler) readXInsightFeedConnectionStatus(ctx context.Context, projectI
 	}
 
 	var highWatermark, retainedAfter int64
-	if err := h.db.QueryRow(ctx,
+	if h.xInsightConnectorManager != nil {
+		connectorState, connectorErr := h.xInsightConnectorManager.ReadProjectState(ctx, orgID, projectID)
+		if connectorErr != nil {
+			return xInsightFeedConnectionStatus{}, connectorErr
+		}
+		if connectorState.Installation != nil {
+			result.ConnectorInstallation = summarizeXInsightConnectorInstallation(*connectorState.Installation)
+		}
+		if connectorState.LatestOperation != nil {
+			result.ConnectorLatestOperation = summarizeXInsightConnectorOperation(*connectorState.LatestOperation)
+		}
+		result.ConnectorProductStatus = connectorState.Health.ProductStatus
+		result.PendingItemCount = connectorState.Health.PendingItemCount
+		result.PendingItemCountCapped = connectorState.Health.PendingItemCountCapped
+		result.OldestPendingAt = connectorState.Health.OldestPendingAt
+		result.OldestPendingAgeSeconds = connectorState.Health.OldestPendingAgeSeconds
+		result.CursorOutsideRetention = connectorState.Health.CursorOutsideRetention
+		highWatermark = connectorState.HighWatermark
+		retainedAfter = connectorState.RetainedAfter
+		acknowledgedSequence = connectorState.AcknowledgedSequence
+	} else if err := h.db.QueryRow(ctx,
 		`SELECT COALESCE(MAX(item.id), 0),
 		        COALESCE(state.retained_after_id, 0),
 		        COUNT(item.id) FILTER (WHERE item.id > $3)
@@ -771,11 +835,13 @@ func (h *Handler) readXInsightFeedConnectionStatus(ctx context.Context, projectI
 		orgID, projectID, acknowledgedSequence,
 	).Scan(&highWatermark, &retainedAfter, &result.PendingItemCount); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return xInsightFeedConnectionStatus{}, err
+	} else {
+		result.ConnectorProductStatus = xinsightconnector.ProductNotConnected
+		result.CursorOutsideRetention = connectionStatus.Valid && acknowledgedSequence < retainedAfter
 	}
 	if highWatermark < retainedAfter {
 		highWatermark = retainedAfter
 	}
-	result.CursorOutsideRetention = connectionStatus.Valid && acknowledgedSequence < retainedAfter
 	if result.GlobalConfigured && h.completedFeedController != nil {
 		if cursor, err := h.completedFeedController.EncodeSequence(projectID, highWatermark); err == nil {
 			result.SourceHighWatermark = cursor
@@ -791,6 +857,71 @@ func (h *Handler) readXInsightFeedConnectionStatus(ctx context.Context, projectI
 		}
 	}
 	return result, nil
+}
+
+func summarizeXInsightConnectorInstallation(
+	value xinsightconnector.Installation,
+) *xInsightConnectorInstallationSummary {
+	return &xInsightConnectorInstallationSummary{
+		SchemaVersion: value.SchemaVersion, InstallationID: value.InstallationID,
+		XDeploymentID: value.XDeploymentID, EventScope: value.EventScope,
+		SourceInstance: value.SourceInstance, SourceBindingSHA256: value.SourceBindingSHA256,
+		DesiredState: value.DesiredState, ObservedState: value.ObservedState,
+		StateRevision: value.StateRevision, ControlFence: value.ControlFence,
+		BootstrapReceiptSHA256: value.BootstrapReceiptSHA256,
+		LastSuccessfulSyncAt:   value.LastSuccessfulSyncAt, LastErrorCode: value.LastErrorCode,
+		LastErrorAt: value.LastErrorAt, ConsentedAt: value.ConsentedAt, UpdatedAt: value.UpdatedAt,
+	}
+}
+
+func summarizeXInsightConnectorOperation(
+	value xinsightconnector.Operation,
+) *xInsightConnectorOperationSummary {
+	return &xInsightConnectorOperationSummary{
+		SchemaVersion: value.SchemaVersion, OperationRef: value.OperationRef,
+		InstallationID: value.InstallationID, Action: value.Action,
+		DesiredState: value.DesiredState, State: value.State,
+		RequestedRevision: value.RequestedRevision, ControlFence: value.ControlFence,
+		AttemptCount: value.AttemptCount, ResultCode: value.ResultCode,
+		ResultSHA256: value.ResultSHA256, ErrorCode: value.ErrorCode,
+		CompletedAt: value.CompletedAt, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
+	}
+}
+
+// AuthorizeXInsightConnectorControl is the product-local commit-time seam used
+// by the durable Connector manager. It delegates to the existing feed/API-key
+// authorization policy; it does not grant the Connector agent new authority.
+func (h *Handler) AuthorizeXInsightConnectorControl(
+	ctx context.Context,
+	tx pgx.Tx,
+	actorUserID, orgID, projectID int64,
+	action string,
+) error {
+	if actorUserID <= 0 || middleware.GetUserIDFromContext(ctx) != actorUserID {
+		return xinsightconnector.ErrUnauthorized
+	}
+	operation := apiKeyMutationUpdate
+	targetProjectMustActive := action != xinsightconnector.ActionPause
+	if action == xinsightconnector.ActionConnect {
+		operation = apiKeyMutationCreate
+	}
+	if action != xinsightconnector.ActionConnect &&
+		action != xinsightconnector.ActionPause &&
+		action != xinsightconnector.ActionResume &&
+		action != xinsightconnector.ActionRotate &&
+		action != xinsightconnector.ActionReplay {
+		return xinsightconnector.ErrInvalid
+	}
+	err := h.reauthorizeXInsightFeedControlTx(
+		ctx, tx, orgID, projectID, operation, targetProjectMustActive,
+	)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, errAPIKeyAuthorizationChanged) {
+		return xinsightconnector.ErrUnauthorized
+	}
+	return fmt.Errorf("%w: connector commit authorization: %v", xinsightconnector.ErrUnavailable, err)
 }
 
 func (h *Handler) readXInsightFeedCredential(

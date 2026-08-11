@@ -4203,7 +4203,7 @@ components:
     XInsightFeedConnection:
       type: object
       additionalProperties: false
-      required: [project_id, project_name, project_status, global_configured, global_enabled, source_instance, connection_status, source_high_watermark, receiver_acknowledged_cursor, receiver_acknowledgement_semantics, pending_item_count, cursor_outside_retention]
+      required: [project_id, project_name, project_status, global_configured, global_enabled, source_instance, connection_status, source_high_watermark, receiver_acknowledged_cursor, receiver_acknowledgement_semantics, pending_item_count, pending_item_count_capped, oldest_pending_age_seconds, cursor_outside_retention, connector_product_status]
       properties:
         project_id: { type: integer, format: int64, minimum: 1 }
         project_name: { type: string }
@@ -4221,7 +4221,54 @@ components:
         receiver_acknowledged_cursor: { type: string, maxLength: 512 }
         receiver_acknowledgement_semantics: { type: string, enum: [next_requested_cursor_after_receiver_persistence] }
         pending_item_count: { type: integer, format: int64, minimum: 0 }
+        pending_item_count_capped: { type: boolean, description: True when pending_item_count is the bounded 10000-item display ceiling rather than an exact total }
+        oldest_pending_at: { type: string, format: date-time, nullable: true }
+        oldest_pending_age_seconds: { type: integer, format: int64, minimum: 0 }
         cursor_outside_retention: { type: boolean }
+        connector_product_status: { type: string, enum: [not_connected, connecting, connected, paused, abnormal] }
+        connector_installation: { $ref: "#/components/schemas/XInsightConnectorInstallationSummary", nullable: true }
+        connector_latest_operation: { $ref: "#/components/schemas/XInsightConnectorOperationSummary", nullable: true }
+    XInsightConnectorInstallationSummary:
+      type: object
+      additionalProperties: false
+      required: [schema_version, installation_id, x_deployment_id, event_scope, source_instance, source_binding_sha256, desired_state, observed_state, state_revision, control_fence, consented_at, updated_at]
+      properties:
+        schema_version: { type: string, enum: [unirouter.xinsight.connector-installation.v1] }
+        installation_id: { type: string, pattern: '^xci_[A-Za-z0-9_-]{22}$' }
+        x_deployment_id: { type: string, pattern: '^xid_[A-Za-z0-9_-]{22}$' }
+        event_scope: { type: string, enum: [model.request.completed] }
+        source_instance: { type: string, minLength: 1, maxLength: 128 }
+        source_binding_sha256: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
+        desired_state: { type: string, enum: [active, paused, disconnected] }
+        observed_state: { type: string, enum: [provisioning, connected, paused, abnormal, disconnected] }
+        state_revision: { type: integer, format: int64, minimum: 1 }
+        control_fence: { type: integer, format: int64, minimum: 1 }
+        bootstrap_receipt_sha256: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
+        last_successful_sync_at: { type: string, format: date-time }
+        last_error_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        last_error_at: { type: string, format: date-time }
+        consented_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    XInsightConnectorOperationSummary:
+      type: object
+      additionalProperties: false
+      required: [schema_version, operation_ref, installation_id, action, desired_state, state, requested_revision, control_fence, attempt_count, created_at, updated_at]
+      properties:
+        schema_version: { type: string, enum: [unirouter.xinsight.connector-operation.v1] }
+        operation_ref: { type: string, pattern: '^xcop_[a-f0-9]{32}$' }
+        installation_id: { type: string, pattern: '^xci_[A-Za-z0-9_-]{22}$' }
+        action: { type: string, enum: [connect, pause, resume, rotate, replay] }
+        desired_state: { type: string, enum: [active, paused] }
+        state: { type: string, enum: [queued, claimed, retry_wait, succeeded, failed, cancelled] }
+        requested_revision: { type: integer, format: int64, minimum: 1 }
+        control_fence: { type: integer, format: int64, minimum: 1 }
+        attempt_count: { type: integer, minimum: 0 }
+        result_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        result_sha256: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
+        error_code: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        completed_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     XInsightStagedFeedCredential:
       type: object
       additionalProperties: false

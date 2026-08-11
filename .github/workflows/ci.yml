@@ -244,7 +244,7 @@ jobs:
       
       - name: Run tests
         # Includes the untagged 000039 tenant-isolation migration regression.
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out -timeout=20m ./...
 
       - name: Run exact Neutral N1 conformance tests
         run: >-
@@ -266,6 +266,15 @@ jobs:
         # The race-enabled real-PostgreSQL suite can exceed Go's default
         # 10-minute package timeout on a slower hosted runner.
         run: go test -tags=integration -race ./internal/admin -count=1 -timeout=20m
+
+      - name: Run X-Insight Connector PostgreSQL 16 integration tests
+        env:
+          REQUIRE_TEST_DATABASE: "1"
+        run: >-
+          go test -tags=integration -race
+          ./internal/xinsightconnector ./internal/migrate
+          -run '^Test(ConnectorManager|ConnectorRedeem|PostgresPhaseJournal|XInsightConnector(CP1|CP2A|RedeemLifecycle)).*$'
+          -count=1 -timeout=20m
 
       - name: Run second-integration reset and bootstrap gates
         env:

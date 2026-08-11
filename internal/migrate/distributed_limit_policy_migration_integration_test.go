@@ -38,7 +38,12 @@ func TestP6F07DistributedLimitPolicyMigrationUpDownGuardAndRollForward(t *testin
 
 	// Schema 59 owns family-stable policy selectors that depend on the legacy
 	// policy_labels column. Exercise the migration in valid reverse order.
-	rollbackEmptyMigrations(t, pool, []string{"000059_enterprise_access_provisioning.down.sql"})
+	rollbackEmptyMigrations(t, pool, []string{
+		"000062_xinsight_connector_redeem_lifecycle.down.sql",
+		"000061_xinsight_connector_cp2a_phase_contract.down.sql",
+		"000060_xinsight_connector_cp1.down.sql",
+		"000059_enterprise_access_provisioning.down.sql",
+	})
 	downSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000024_prd6_distributed_limit_policy.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))

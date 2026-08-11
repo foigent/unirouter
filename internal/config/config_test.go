@@ -982,6 +982,204 @@ func TestLoadCompletedExecutionFeedReferenceMode(t *testing.T) {
 	}
 }
 
+func TestLoadXInsightConnectorAgentConfiguration(t *testing.T) {
+	const (
+		installationID = "xci_AbCdEfGhIjKlMnOpQrStUv"
+		deploymentID   = "xid_ZyXwVuTsRqPoNmLkJiHgFe"
+		bindingSHA     = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	)
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("COMPLETED_EXECUTION_FEED_ENABLED", "true")
+	t.Setenv("COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "dev.unirouter:stable-1")
+	t.Setenv("XINSIGHT_CONNECTOR_AGENT_ENABLED", "true")
+	t.Setenv("XINSIGHT_CONNECTOR_CONTROL_ORIGIN", "https://control.example.test:8443")
+	t.Setenv("XINSIGHT_CONNECTOR_POLL_MILLISECONDS", "750")
+	t.Setenv("XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS", "3000")
+	t.Setenv("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON", `[{"installation_id":"`+installationID+`","x_deployment_id":"`+deploymentID+`","network_binding_sha256":"`+bindingSHA+`","allowed_ip":"203.0.113.7/32"}]`)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load Connector agent config: %v", err)
+	}
+	if !cfg.XInsightConnectorAgentEnabled || cfg.XInsightConnectorControlOrigin != "https://control.example.test:8443" ||
+		cfg.XInsightConnectorPollMilliseconds != 750 || cfg.XInsightConnectorRequestTimeoutMilliseconds != 3000 {
+		t.Fatalf("unexpected Connector agent config: %#v", cfg)
+	}
+	allowedIP, ok := cfg.ResolveXInsightConnectorReceiverBinding(installationID, deploymentID, bindingSHA)
+	if !ok || allowedIP != "203.0.113.7/32" {
+		t.Fatalf("resolve exact receiver binding=(%q,%t)", allowedIP, ok)
+	}
+	if _, ok := cfg.ResolveXInsightConnectorReceiverBinding(strings.ToLower(installationID), deploymentID, bindingSHA); ok {
+		t.Fatal("case-normalized management identity must not resolve")
+	}
+}
+
+func TestLoadXInsightConnectorDefaultsDisabledAndInert(t *testing.T) {
+	t.Setenv("JWT_SECRET", "jwt-secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("XINSIGHT_CONNECTOR_AGENT_ENABLED", "")
+	t.Setenv("XINSIGHT_CONNECTOR_CONTROL_ORIGIN", "")
+	t.Setenv("XINSIGHT_CONNECTOR_POLL_MILLISECONDS", "")
+	t.Setenv("XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS", "")
+	t.Setenv("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load disabled Connector defaults: %v", err)
+	}
+	if cfg.XInsightConnectorAgentEnabled || cfg.XInsightConnectorControlOrigin != "" ||
+		cfg.XInsightConnectorPollMilliseconds != XInsightConnectorDefaultPollMilliseconds ||
+		cfg.XInsightConnectorRequestTimeoutMilliseconds != XInsightConnectorDefaultRequestTimeoutMilliseconds ||
+		len(cfg.XInsightConnectorReceiverBindings) != 0 {
+		t.Fatalf("unexpected disabled Connector defaults: %#v", cfg)
+	}
+}
+
+func TestValidateXInsightConnectorFailsClosed(t *testing.T) {
+	validBinding := XInsightConnectorReceiverBinding{
+		InstallationID:       "xci_AbCdEfGhIjKlMnOpQrStUv",
+		XDeploymentID:        "xid_ZyXwVuTsRqPoNmLkJiHgFe",
+		NetworkBindingSHA256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		AllowedIP:            "2001:db8::7/128",
+	}
+	base := func() Config {
+		return Config{
+			JWTSecret:                                   "jwt-secret",
+			APIKeyHashSecret:                            "api-key-secret",
+			EncryptionKey:                               "0123456789abcdef0123456789abcdef",
+			RuntimeDeploymentRole:                       "stable",
+			CompletedExecutionFeedEnabled:               true,
+			CompletedExecutionFeedSourceInstance:        "dev.unirouter:stable-1",
+			CompletedExecutionFeedReferenceMode:         CompletedExecutionFeedReferenceModeLegacy,
+			XInsightConnectorAgentEnabled:               true,
+			XInsightConnectorControlOrigin:              "https://control.example.test",
+			XInsightConnectorPollMilliseconds:           XInsightConnectorDefaultPollMilliseconds,
+			XInsightConnectorRequestTimeoutMilliseconds: XInsightConnectorDefaultRequestTimeoutMilliseconds,
+			XInsightConnectorReceiverBindings:           []XInsightConnectorReceiverBinding{validBinding},
+		}
+	}
+	valid := base()
+	if err := valid.validateXInsightConnector(); err != nil {
+		t.Fatalf("valid Connector config: %v", err)
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*Config)
+	}{
+		{name: "feed disabled", mutate: func(cfg *Config) { cfg.CompletedExecutionFeedEnabled = false }},
+		{name: "canary writer", mutate: func(cfg *Config) { cfg.RuntimeDeploymentRole = "canary" }},
+		{name: "origin missing", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "" }},
+		{name: "binding missing", mutate: func(cfg *Config) { cfg.XInsightConnectorReceiverBindings = nil }},
+		{name: "http origin", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "http://control.example.test" }},
+		{name: "origin path", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "https://control.example.test/api" }},
+		{name: "origin trailing slash", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "https://control.example.test/" }},
+		{name: "origin userinfo", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "https://user@control.example.test" }},
+		{name: "origin query", mutate: func(cfg *Config) { cfg.XInsightConnectorControlOrigin = "https://control.example.test?next=evil" }},
+		{name: "poll too small", mutate: func(cfg *Config) { cfg.XInsightConnectorPollMilliseconds = 249 }},
+		{name: "timeout too large", mutate: func(cfg *Config) { cfg.XInsightConnectorRequestTimeoutMilliseconds = 30001 }},
+		{name: "unscoped network", mutate: func(cfg *Config) { cfg.XInsightConnectorReceiverBindings[0].AllowedIP = "203.0.113.0/24" }},
+		{name: "bare address", mutate: func(cfg *Config) { cfg.XInsightConnectorReceiverBindings[0].AllowedIP = "203.0.113.7" }},
+		{name: "uppercase digest", mutate: func(cfg *Config) {
+			cfg.XInsightConnectorReceiverBindings[0].NetworkBindingSHA256 = "sha256:" + strings.Repeat("A", 64)
+		}},
+		{name: "duplicate tuple", mutate: func(cfg *Config) {
+			cfg.XInsightConnectorReceiverBindings = append(cfg.XInsightConnectorReceiverBindings, cfg.XInsightConnectorReceiverBindings[0])
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg := base()
+			testCase.mutate(&cfg)
+			if err := cfg.validateXInsightConnector(); err == nil {
+				t.Fatal("expected Connector configuration to fail closed")
+			}
+		})
+	}
+}
+
+func TestXInsightConnectorReleaseConfigurationSurfaces(t *testing.T) {
+	for _, testCase := range []struct {
+		path         string
+		enabledValue string
+	}{
+		{path: "../../docker-compose.yml", enabledValue: "XINSIGHT_CONNECTOR_AGENT_ENABLED: ${XINSIGHT_CONNECTOR_AGENT_ENABLED:-false}"},
+		{path: "../../docker-compose.canary.yml", enabledValue: `XINSIGHT_CONNECTOR_AGENT_ENABLED: "false"`},
+		{path: "../../deploy/customer/docker-compose.yml", enabledValue: "XINSIGHT_CONNECTOR_AGENT_ENABLED: ${XINSIGHT_CONNECTOR_AGENT_ENABLED:-false}"},
+	} {
+		raw, err := os.ReadFile(testCase.path)
+		if err != nil {
+			t.Fatalf("read %s: %v", testCase.path, err)
+		}
+		text := string(raw)
+		for _, required := range []string{
+			testCase.enabledValue,
+			"XINSIGHT_CONNECTOR_CONTROL_ORIGIN: ${XINSIGHT_CONNECTOR_CONTROL_ORIGIN:-}",
+			"XINSIGHT_CONNECTOR_POLL_MILLISECONDS: ${XINSIGHT_CONNECTOR_POLL_MILLISECONDS:-1000}",
+			"XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS: ${XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS:-5000}",
+			"XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON: '${XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON:-[]}'",
+		} {
+			if !strings.Contains(text, required) {
+				t.Fatalf("%s missing Connector release binding %q", testCase.path, required)
+			}
+		}
+		if strings.Contains(testCase.path, "canary") && strings.Contains(text, "XINSIGHT_CONNECTOR_AGENT_ENABLED: ${") {
+			t.Fatal("canary must not inherit the stable Connector writer enablement")
+		}
+	}
+
+	for _, path := range []string{"../../.env.example", "../../deploy/customer/.env.example"} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		text := string(raw)
+		for _, required := range []string{
+			"XINSIGHT_CONNECTOR_AGENT_ENABLED=false",
+			"XINSIGHT_CONNECTOR_CONTROL_ORIGIN=",
+			"XINSIGHT_CONNECTOR_POLL_MILLISECONDS=1000",
+			"XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS=5000",
+			"XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON=[]",
+		} {
+			if !strings.Contains(text, required) {
+				t.Fatalf("%s missing Connector environment contract %q", path, required)
+			}
+		}
+	}
+}
+
+func TestLoadXInsightConnectorRejectsMalformedTypedEnvironment(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "invalid enabled boolean", key: "XINSIGHT_CONNECTOR_AGENT_ENABLED", value: "sometimes"},
+		{name: "noncanonical enabled boolean", key: "XINSIGHT_CONNECTOR_AGENT_ENABLED", value: "TRUE"},
+		{name: "invalid poll integer", key: "XINSIGHT_CONNECTOR_POLL_MILLISECONDS", value: "fast"},
+		{name: "invalid timeout integer", key: "XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS", value: "slow"},
+		{name: "null bindings", key: "XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON", value: "null"},
+		{name: "unknown secret field", key: "XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON", value: `[{"installation_id":"xci_AbCdEfGhIjKlMnOpQrStUv","x_deployment_id":"xid_ZyXwVuTsRqPoNmLkJiHgFe","network_binding_sha256":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","allowed_ip":"203.0.113.7/32","token":"forbidden"}]`},
+		{name: "trailing object", key: "XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON", value: `[] {}`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("JWT_SECRET", "jwt-secret")
+			t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+			t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+			t.Setenv("XINSIGHT_CONNECTOR_AGENT_ENABLED", "")
+			t.Setenv("XINSIGHT_CONNECTOR_POLL_MILLISECONDS", "")
+			t.Setenv("XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS", "")
+			t.Setenv("XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON", "")
+			t.Setenv(testCase.key, testCase.value)
+			if _, err := Load(); err == nil {
+				t.Fatal("expected malformed Connector environment to fail startup")
+			}
+		})
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	// Clear all env vars to test defaults
 	envVars := []string{
@@ -998,6 +1196,8 @@ func TestLoad_Defaults(t *testing.T) {
 		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE", "TRUSTED_PROXY_CIDRS",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
 		"COMPLETED_EXECUTION_FEED_ENABLED", "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
+		"XINSIGHT_CONNECTOR_AGENT_ENABLED", "XINSIGHT_CONNECTOR_CONTROL_ORIGIN", "XINSIGHT_CONNECTOR_POLL_MILLISECONDS",
+		"XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS", "XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON",
 		"LICENSE_PUBLIC_KEY", "LICENSE_PUBLIC_KEYS", "LICENSE_DEPLOYMENT_ID", "LICENSE_EXPIRY_WARNING_DAYS", "LICENSE_REFRESH_SECONDS", "UPGRADE_PUBLIC_KEYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
 	for _, v := range envVars {
@@ -1031,6 +1231,8 @@ func TestLoad_Defaults(t *testing.T) {
 			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
 			CompletedExecutionFeedReferenceModeLegacy,
 		),
+		XInsightConnectorPollMilliseconds:           XInsightConnectorDefaultPollMilliseconds,
+		XInsightConnectorRequestTimeoutMilliseconds: XInsightConnectorDefaultRequestTimeoutMilliseconds,
 		MinFreezeCents:                     int64(getEnvInt("MIN_FREEZE_AMOUNT", 10)),
 		FreezeSafetyFactor:                 getEnvStr("FREEZE_SAFETY_FACTOR", "1.5"),
 		DefaultKeyRPM:                      getEnvInt("DEFAULT_KEY_RPM", 60),
@@ -1116,6 +1318,12 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.CompletedExecutionFeedReferenceMode != CompletedExecutionFeedReferenceModeLegacy {
 		t.Fatalf("unexpected completed-execution Reference mode default: %q", cfg.CompletedExecutionFeedReferenceMode)
+	}
+	if cfg.XInsightConnectorAgentEnabled || cfg.XInsightConnectorControlOrigin != "" ||
+		cfg.XInsightConnectorPollMilliseconds != XInsightConnectorDefaultPollMilliseconds ||
+		cfg.XInsightConnectorRequestTimeoutMilliseconds != XInsightConnectorDefaultRequestTimeoutMilliseconds ||
+		len(cfg.XInsightConnectorReceiverBindings) != 0 {
+		t.Fatalf("unexpected Connector defaults: %#v", cfg)
 	}
 }
 

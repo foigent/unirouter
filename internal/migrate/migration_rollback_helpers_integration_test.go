@@ -20,6 +20,9 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000062_xinsight_connector_redeem_lifecycle.down.sql",
+	"000061_xinsight_connector_cp2a_phase_contract.down.sql",
+	"000060_xinsight_connector_cp1.down.sql",
 	"000059_enterprise_access_provisioning.down.sql",
 	"000058_enterprise_project_role_separation.down.sql",
 	"000057_second_integration_reset_support.down.sql",

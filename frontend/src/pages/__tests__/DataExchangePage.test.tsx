@@ -126,7 +126,39 @@ describe('DataExchangePage', () => {
       receiver_acknowledged_cursor: 'cursor-ack',
       receiver_acknowledgement_semantics: 'next_requested_cursor_after_receiver_persistence',
       pending_item_count: 2,
+      pending_item_count_capped: false,
+      oldest_pending_at: '2026-07-25T08:08:00Z',
+      oldest_pending_age_seconds: 120,
       cursor_outside_retention: false,
+      connector_product_status: 'connected',
+      connector_installation: {
+        schema_version: 'unirouter.xinsight.connector-installation.v1',
+        installation_id: 'installation-development',
+        x_deployment_id: 'x-development',
+        event_scope: 'model.request.completed',
+        source_instance: 'unirouter-dev-149a8220bf1e',
+        source_binding_sha256: `sha256:${'c'.repeat(64)}`,
+        desired_state: 'active',
+        observed_state: 'connected',
+        state_revision: 2,
+        control_fence: 1,
+        last_successful_sync_at: '2026-07-25T08:10:00Z',
+        consented_at: '2026-07-25T08:00:00Z',
+        updated_at: '2026-07-25T08:10:00Z',
+      },
+      connector_latest_operation: {
+        schema_version: 'unirouter.xinsight.connector-operation.v1',
+        operation_ref: `xcop_${'d'.repeat(32)}`,
+        installation_id: 'installation-development',
+        action: 'connect',
+        desired_state: 'active',
+        state: 'succeeded',
+        requested_revision: 1,
+        control_fence: 1,
+        attempt_count: 1,
+        created_at: '2026-07-25T08:00:00Z',
+        updated_at: '2026-07-25T08:10:00Z',
+      },
     });
     createFeedCredential.mockResolvedValue({
       id: 42,
@@ -160,6 +192,11 @@ describe('DataExchangePage', () => {
     expect(container.textContent).toContain('不代表搜索、API 或 UI 已可见');
     expect(container.textContent).toContain('systemctl restart（不可 reload）');
     expect(container.textContent).toContain('receiver-generated credential');
+    expect(container.textContent).toContain('Connector 状态');
+    expect(container.textContent).toContain('已连接');
+    expect(container.textContent).toContain('最旧待同步延迟');
+    expect(container.textContent).toContain('connect · succeeded');
+    expect(container.textContent).toContain('高级 Source / 凭证诊断');
   });
 
   it('registers only the strict non-secret receiver bundle and never renders a plaintext key surface', async () => {

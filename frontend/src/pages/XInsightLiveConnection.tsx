@@ -42,7 +42,44 @@ interface FeedConnectionStatus {
   receiver_acknowledged_cursor: string;
   receiver_acknowledgement_semantics: string;
   pending_item_count: number;
+  pending_item_count_capped: boolean;
+  oldest_pending_at?: string | null;
+  oldest_pending_age_seconds: number;
   cursor_outside_retention: boolean;
+  connector_product_status: 'not_connected' | 'connecting' | 'connected' | 'paused' | 'abnormal';
+  connector_installation?: {
+    schema_version: 'unirouter.xinsight.connector-installation.v1';
+    installation_id: string;
+    x_deployment_id: string;
+    event_scope: 'model.request.completed';
+    source_instance: string;
+    source_binding_sha256: string;
+    desired_state: 'active' | 'paused' | 'disconnected';
+    observed_state: 'provisioning' | 'connected' | 'paused' | 'abnormal' | 'disconnected';
+    state_revision: number;
+    control_fence: number;
+    last_successful_sync_at?: string;
+    last_error_code?: string;
+    last_error_at?: string;
+    consented_at: string;
+    updated_at: string;
+  } | null;
+  connector_latest_operation?: {
+    schema_version: 'unirouter.xinsight.connector-operation.v1';
+    operation_ref: string;
+    installation_id: string;
+    action: 'connect' | 'pause' | 'resume' | 'rotate' | 'replay';
+    desired_state: 'active' | 'paused';
+    state: 'queued' | 'claimed' | 'retry_wait' | 'succeeded' | 'failed' | 'cancelled';
+    requested_revision: number;
+    control_fence: number;
+    attempt_count: number;
+    result_code?: string;
+    error_code?: string;
+    completed_at?: string;
+    created_at: string;
+    updated_at: string;
+  } | null;
 }
 
 export interface ReceiverFeedCredentialRegistrationV1 {
@@ -101,6 +138,21 @@ export function parseReceiverRegistrationBundle(raw: string): ReceiverFeedCreden
 function credentialLabel(credential?: FeedCredential | null) {
   if (!credential) return '-';
   return `#${credential.id} · ${credential.key_prefix} · ${credential.lifecycle}`;
+}
+
+function connectorProductLabel(status?: FeedConnectionStatus['connector_product_status']) {
+  switch (status) {
+    case 'connected': return '已连接';
+    case 'abnormal': return '异常';
+    case 'paused': return '已暂停';
+    case 'connecting': return '连接中';
+    default: return '未连接';
+  }
+}
+
+function boundedBacklogLabel(status: FeedConnectionStatus | null) {
+  if (!status) return '0';
+  return `${status.pending_item_count}${status.pending_item_count_capped ? '+' : ''}`;
 }
 
 interface XInsightLiveConnectionProps {
@@ -245,6 +297,46 @@ export default function XInsightLiveConnection({
         <Tag color="purple">receiver-generated credential</Tag>
       </div>
 
+      <div style={{ padding: 14, border: '1px solid var(--semi-color-border)', borderRadius: 8 }}>
+        <Title heading={6} style={{ marginTop: 0 }}>Connector 状态</Title>
+        <Descriptions
+          row
+          data={[
+            {
+              key: '状态',
+              value: <StatusTag status={status?.connector_product_status || 'not_connected'}>
+                {connectorProductLabel(status?.connector_product_status)}
+              </StatusTag>,
+            },
+            {
+              key: '最近同步',
+              value: status?.connector_installation?.last_successful_sync_at
+                ? formatDateTime(status.connector_installation.last_successful_sync_at)
+                : status?.last_authenticated_pull_at ? formatDateTime(status.last_authenticated_pull_at) : '-',
+            },
+            { key: '待同步 backlog', value: boundedBacklogLabel(status) },
+            {
+              key: '最旧待同步延迟',
+              value: status?.oldest_pending_at
+                ? `${status.oldest_pending_age_seconds} 秒 · ${formatDateTime(status.oldest_pending_at)}`
+                : '-',
+            },
+            {
+              key: '最近控制动作',
+              value: status?.connector_latest_operation
+                ? `${status.connector_latest_operation.action} · ${status.connector_latest_operation.state}`
+                : '-',
+            },
+          ]}
+        />
+        {status?.connector_installation?.last_error_code && (
+          <div style={{ marginTop: 8 }}>
+            <Tag color="red">{status.connector_installation.last_error_code}</Tag>
+          </div>
+        )}
+      </div>
+
+      <Title heading={6} style={{ marginBottom: -8 }}>高级 Source / 凭证诊断</Title>
       <Descriptions
         row
         data={[
@@ -259,7 +351,7 @@ export default function XInsightLiveConnection({
           { key: '最近认证凭证', value: credentialLabel(status?.last_authenticated_credential) },
           { key: 'UniRouter 来源高水位', value: status?.source_high_watermark || '-' },
           { key: '接收端提交确认 cursor', value: status?.receiver_acknowledged_cursor || '-' },
-          { key: '待拉取项', value: String(status?.pending_item_count ?? 0) },
+          { key: '待拉取项', value: boundedBacklogLabel(status) },
         ]}
       />
 

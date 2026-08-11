@@ -27,7 +27,12 @@ Before first start:
    tickets/evidence, and retain the exact signed image references. Keep the
    dedicated internal network as an IPv4 `/24`; its fixed frontend proxy IP
    must be a usable non-gateway address and its exact `/32` must remain in
-   `TRUSTED_PROXY_CIDRS`;
+   `TRUSTED_PROXY_CIDRS`. Keep `XINSIGHT_CONNECTOR_AGENT_ENABLED=false` until
+   the product-owned installation exists. Enabling it requires the completed
+   feed, one fixed HTTPS control origin, bounded poll/request timeouts and at
+   least one exact-case installation/deployment/binding-digest to `/32` or
+   `/128` map. That map is public authority only: control tokens and the
+   X-owned receiver bearer must never enter Compose or `.env`;
 3. include the signed `config/` tree beside this Compose file;
 4. load or pull only the digest-pinned image identities declared by the signed
    release (including PostgreSQL, Redis, Prometheus and Grafana);
