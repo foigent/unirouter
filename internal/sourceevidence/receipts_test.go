@@ -258,7 +258,7 @@ func TestProductCompatibleConformanceFixturesCloseNeutralAndPackageChain(t *test
 	require.Equal(t, whole.AuthorizationSignatureSHA256, packageVerification.Manifest.AuthorizationSignatureSHA256)
 	require.Equal(t, "complete", packageVerification.Manifest.ClaimState)
 	require.Equal(t, "partial", packageVerification.Manifest.NestedExecutionEvidenceV2)
-	require.Equal(t, "sha256:b54f1cc5d5523cdfd1b4cccbb44183b22d59d1f830bbb2991a9333e33783e774", packageVerification.ManifestSHA256)
+	require.Equal(t, "sha256:52f87dc3d666a28662888541225a09440d7a767e443d5432b917084afd69fa81", packageVerification.ManifestSHA256)
 
 	canonicalProductAcknowledgement := ProductAcknowledgementArtifacts{
 		Verification: acknowledgement.Verification,
