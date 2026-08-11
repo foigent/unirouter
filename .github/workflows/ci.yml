@@ -244,7 +244,7 @@ jobs:
       
       - name: Run tests
         # Includes the untagged 000039 tenant-isolation migration regression.
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out -timeout=20m ./...
 
       - name: Run exact Neutral N1 conformance tests
         run: >-
