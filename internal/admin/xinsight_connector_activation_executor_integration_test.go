@@ -242,10 +242,10 @@ RETURNING retained_after_id`, orgID, projectID).Scan(new(int64)))
 	require.NoError(t, json.Unmarshal(prepared.CanonicalRequest, &redeemRequest))
 	require.NotEmpty(t, redeemRequest.ControlToken)
 	installationBytes, err := json.Marshal(map[string]any{
-		"event_scope":     []string{xinsightconnector.EventScopeModelCompleted},
-		"installation_id": cp2bInstallationID,
-		"project_id":      cp2bProjectRef,
-		"x_deployment_id": cp2bDeploymentID,
+		"final_event_scope": []string{xinsightconnector.EventScopeModelCompleted},
+		"installation_id":   cp2bInstallationID,
+		"project_id":        cp2bProjectRef,
+		"deployment_id":     cp2bDeploymentID,
 	})
 	require.NoError(t, err)
 	operationBytes, err := cp2bPrepareOperation().CanonicalJSON()
