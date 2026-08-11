@@ -114,6 +114,13 @@ func TestControlV2ThreePhaseChainAndBindings(t *testing.T) {
 	require.NotContains(t, string(registrationBytes), `"token":`)
 	require.NotContains(t, string(registrationBytes), "bearer")
 	require.Equal(t, "sha256:dd6a7e9ae56b499bbbebae83ff178749ebd402e428841a0167b3b499187b13db", hashBytes(registrationBytes))
+	registrationSHA, err := ReceiverRegistrationSHA256(registerRequest.ReceiverRegistration)
+	require.NoError(t, err)
+	require.Equal(t, hashBytes(registrationBytes), registrationSHA)
+	invalidRegistration := registerRequest.ReceiverRegistration
+	invalidRegistration.KeyPrefix = ""
+	_, err = ReceiverRegistrationSHA256(invalidRegistration)
+	require.Equal(t, "phase_payload_invalid", ControlV2ErrorCode(err))
 
 	crossInstallation := registerOperation
 	crossInstallation.InstallationID = "xci_ZZZZZZZZZZZZZZZZZZZZZZ"

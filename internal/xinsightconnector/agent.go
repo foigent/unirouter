@@ -54,10 +54,12 @@ type PhaseJournal interface {
 // state is committed before acknowledgement, so an acknowledgement loss replays
 // the same canonical result without executing the product phase twice.
 type Agent struct {
-	installationID string
-	counterpart    ControlCounterpart
-	journal        PhaseJournal
-	executor       PhaseExecutor
+	installationID        string
+	counterpart           ControlCounterpart
+	journal               PhaseJournal
+	executor              PhaseExecutor
+	transactionalJournal  *PostgresPhaseJournal
+	transactionalExecutor PhaseTxExecutor
 }
 
 func NewAgent(
@@ -76,12 +78,41 @@ func NewAgent(
 	}, nil
 }
 
+// NewTransactionalAgent wires the same polling/acknowledgement loop to the
+// production-safe execution seam: each product effect and its immutable
+// terminal result commit in one PostgreSQL transaction. NewAgent remains the
+// fake/idempotent seam used by CP2A contract tests.
+func NewTransactionalAgent(
+	installationID string,
+	counterpart ControlCounterpart,
+	journal *PostgresPhaseJournal,
+	executor PhaseTxExecutor,
+) (*Agent, error) {
+	if !validControlExternalIdentity(installationID, "xci_") ||
+		counterpart == nil || journal == nil || executor == nil {
+		return nil, fmt.Errorf("%w: transactional connector agent dependencies are required", ErrInvalid)
+	}
+	return &Agent{
+		installationID:        installationID,
+		counterpart:           counterpart,
+		journal:               journal,
+		transactionalJournal:  journal,
+		transactionalExecutor: executor,
+	}, nil
+}
+
 // RunOnce polls and processes at most one operation. processed reports whether
 // the counterpart returned an operation, including when validation or
 // acknowledgement failed.
 func (agent *Agent) RunOnce(ctx context.Context) (processed bool, err error) {
+	legacyExecution := agent != nil && agent.executor != nil &&
+		agent.transactionalJournal == nil && agent.transactionalExecutor == nil
+	transactionalExecution := agent != nil && agent.executor == nil &&
+		agent.transactionalJournal != nil && agent.transactionalExecutor != nil &&
+		agent.journal == agent.transactionalJournal
 	if agent == nil || !validControlExternalIdentity(agent.installationID, "xci_") ||
-		agent.counterpart == nil || agent.journal == nil || agent.executor == nil {
+		agent.counterpart == nil || agent.journal == nil ||
+		(!legacyExecution && !transactionalExecution) {
 		return false, fmt.Errorf("%w: connector agent is unavailable", ErrUnavailable)
 	}
 	rawOperation, found, err := agent.counterpart.Poll(ctx)
@@ -135,6 +166,23 @@ func (agent *Agent) RunOnce(ctx context.Context) (processed bool, err error) {
 	}
 	if acquisition.ClaimToken == "" {
 		return true, fmt.Errorf("%w: phase journal returned neither a claim nor terminal replay", ErrUnavailable)
+	}
+	if transactionalExecution {
+		canonicalResult, resultSHA256, err := agent.transactionalJournal.ExecuteClaimedPhase(
+			ctx, operation, requestSHA256, acquisition.ClaimToken, agent.transactionalExecutor,
+		)
+		if err != nil {
+			return true, err
+		}
+		result, err := decodeAgentCanonicalResult(canonicalResult)
+		if err != nil {
+			return true, err
+		}
+		if err := ValidateControlResultForOperationV2(operation, result); err != nil ||
+			resultSHA256 != hashBytes(canonicalResult) {
+			return true, fmt.Errorf("%w: transactional phase result is invalid", ErrUnavailable)
+		}
+		return true, agent.acknowledge(ctx, operation, requestSHA256, canonicalResult, resultSHA256)
 	}
 
 	executionOperation := operation

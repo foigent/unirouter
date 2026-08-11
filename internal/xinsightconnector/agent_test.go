@@ -182,6 +182,23 @@ func (executor *agentTestExecutor) Execute(
 	return executor.results[operation.Phase], nil
 }
 
+func (executor *agentTestExecutor) ExecutePhaseTx(
+	ctx context.Context,
+	_ PhaseProductTx,
+	input PhaseExecutionInput,
+) (ControlResultV2, error) {
+	if input.Operation.PredecessorOperationID == "" {
+		if input.PredecessorOperation != nil || input.PredecessorResult != nil {
+			return ControlResultV2{}, fmt.Errorf("unexpected phase predecessor")
+		}
+	} else if input.PredecessorOperation == nil || input.PredecessorResult == nil ||
+		input.PredecessorOperation.OperationID != input.Operation.PredecessorOperationID ||
+		input.PredecessorResult.OperationID != input.Operation.PredecessorOperationID {
+		return ControlResultV2{}, fmt.Errorf("transactional predecessor authority mismatch")
+	}
+	return executor.Execute(ctx, input.Operation, input.PredecessorResult)
+}
+
 func TestAgentRunsFrozenThreePhaseFakeLifecycle(t *testing.T) {
 	counterpart := &agentTestCounterpart{operations: agentTestThreePhaseOperations(t)}
 	journal := newAgentTestJournal()

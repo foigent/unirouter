@@ -38,7 +38,7 @@ func TestPostgresPhaseJournalRunsDurableFakeLifecycleWithoutSecretPersistence(t 
 		ackErrors:  []error{ackLost, nil, nil, nil},
 	}
 	executor := newAgentTestExecutor(t)
-	agent, err := NewAgent(cp2aInstallationID, counterpart, journal, executor)
+	agent, err := NewTransactionalAgent(cp2aInstallationID, counterpart, journal, executor)
 	require.NoError(t, err)
 
 	for attempt := 0; attempt < 4; attempt++ {
@@ -110,6 +110,113 @@ WHERE installation_id=$1`, cp2aInstallationID)
 	require.NoError(t, err)
 	_, err = journal.controlToken(ctx, cp2aInstallationID)
 	require.ErrorIs(t, err, ErrConflict, "ciphertext and durable token identity must remain installation-bound")
+}
+
+type phaseTxExecutorFunc func(
+	context.Context,
+	PhaseProductTx,
+	PhaseExecutionInput,
+) (ControlResultV2, error)
+
+func (execute phaseTxExecutorFunc) ExecutePhaseTx(
+	ctx context.Context,
+	tx PhaseProductTx,
+	input PhaseExecutionInput,
+) (ControlResultV2, error) {
+	return execute(ctx, tx, input)
+}
+
+func TestPostgresPhaseJournalExecutesProductEffectAndTerminalResultAtomically(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	journal, _ := setupCP2APhaseJournal(t, pool)
+	journal.token = phaseTokenSequence(t, "44444444444444444444444444444444")
+	operation := mustDecodeControlV2Operation(t,
+		"testdata/control-v2/valid/01-prepare-paused-source-operation.json")
+	requestSHA, err := operation.CanonicalSHA256()
+	require.NoError(t, err)
+	claim, err := journal.Acquire(context.Background(), operation, requestSHA)
+	require.NoError(t, err)
+
+	syntheticFailure := errors.New("synthetic product effect failure")
+	_, _, err = journal.ExecuteClaimedPhase(
+		context.Background(), operation, requestSHA, claim.ClaimToken,
+		phaseTxExecutorFunc(func(
+			ctx context.Context,
+			tx PhaseProductTx,
+			input PhaseExecutionInput,
+		) (ControlResultV2, error) {
+			tag, updateErr := tx.Exec(ctx, `
+UPDATE xinsight_connector_installations
+SET last_error_code='must_rollback',last_error_at=$2,updated_at=$2
+WHERE installation_id=$1`, input.Installation.InstallationID, input.ObservedAt)
+			if updateErr != nil || tag.RowsAffected() != 1 {
+				return ControlResultV2{}, fmt.Errorf("write synthetic product effect: %w", updateErr)
+			}
+			return ControlResultV2{}, syntheticFailure
+		}),
+	)
+	require.ErrorIs(t, err, syntheticFailure)
+
+	var lastErrorCode sql.NullString
+	var resultSHA, durableClaim sql.NullString
+	require.NoError(t, pool.QueryRow(context.Background(), `
+SELECT i.last_error_code,p.result_sha256,p.claim_token
+FROM xinsight_connector_installations i
+JOIN xinsight_connector_phase_operations p USING (installation_id)
+WHERE p.operation_id=$1`, operation.OperationID).Scan(
+		&lastErrorCode, &resultSHA, &durableClaim,
+	))
+	require.False(t, lastErrorCode.Valid, "failed executor product writes must roll back")
+	require.False(t, resultSHA.Valid, "failed executor must not publish a terminal result")
+	require.Equal(t, claim.ClaimToken, durableClaim.String)
+
+	expectedResult := mustDecodeControlV2Result(t,
+		"testdata/control-v2/valid/02-prepare-paused-source-result.json")
+	canonicalResult, resultDigest, err := journal.ExecuteClaimedPhase(
+		context.Background(), operation, requestSHA, claim.ClaimToken,
+		phaseTxExecutorFunc(func(
+			ctx context.Context,
+			tx PhaseProductTx,
+			input PhaseExecutionInput,
+		) (ControlResultV2, error) {
+			tag, updateErr := tx.Exec(ctx, `
+UPDATE xinsight_connector_installations
+SET last_error_code='transaction_committed',last_error_at=$2,updated_at=$2
+WHERE installation_id=$1`, input.Installation.InstallationID, input.ObservedAt)
+			if updateErr != nil || tag.RowsAffected() != 1 {
+				return ControlResultV2{}, fmt.Errorf("write committed product effect: %w", updateErr)
+			}
+			return expectedResult, nil
+		}),
+	)
+	require.NoError(t, err)
+	require.Equal(t, hashBytes(canonicalResult), resultDigest)
+
+	var committedError, committedResultSHA sql.NullString
+	require.NoError(t, pool.QueryRow(context.Background(), `
+SELECT i.last_error_code,p.result_sha256
+FROM xinsight_connector_installations i
+JOIN xinsight_connector_phase_operations p USING (installation_id)
+WHERE p.operation_id=$1`, operation.OperationID).Scan(
+		&committedError, &committedResultSHA,
+	))
+	require.Equal(t, "transaction_committed", committedError.String)
+	require.Equal(t, resultDigest, committedResultSHA.String)
+
+	replayExecutions := 0
+	replayed, replaySHA, err := journal.ExecuteClaimedPhase(
+		context.Background(), operation, requestSHA, claim.ClaimToken,
+		phaseTxExecutorFunc(func(
+			context.Context, PhaseProductTx, PhaseExecutionInput,
+		) (ControlResultV2, error) {
+			replayExecutions++
+			return ControlResultV2{}, errors.New("terminal replay must not execute")
+		}),
+	)
+	require.NoError(t, err)
+	require.Zero(t, replayExecutions)
+	require.Equal(t, canonicalResult, replayed)
+	require.Equal(t, resultDigest, replaySHA)
 }
 
 func TestPostgresPhaseJournalFencesConcurrentAndStaleClaims(t *testing.T) {

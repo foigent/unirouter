@@ -10,8 +10,36 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/db"
 )
+
+// PhaseProductTx is the deliberately narrow transaction surface available to
+// a product phase executor. Product mutations and the terminal journal result
+// are committed by ExecuteClaimedPhase in the same PostgreSQL transaction.
+type PhaseProductTx interface {
+	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}
+
+// PhaseExecutionInput contains only authority that ExecuteClaimedPhase has
+// re-read and validated while holding the installation and operation locks.
+// A predecessor, when present, is the exact terminal operation/result from the
+// same installation control fence.
+type PhaseExecutionInput struct {
+	Installation         Installation
+	Operation            ControlOperationV2
+	PredecessorOperation *ControlOperationV2
+	PredecessorResult    *ControlResultV2
+	ObservedAt           time.Time
+}
+
+// PhaseTxExecutor applies a UniRouter-owned product phase using the journal's
+// PostgreSQL transaction. Returning an error rolls back both the product
+// effect and terminalization.
+type PhaseTxExecutor interface {
+	ExecutePhaseTx(context.Context, PhaseProductTx, PhaseExecutionInput) (ControlResultV2, error)
+}
 
 // PostgresPhaseJournal stores X-owned operation/result bytes opaquely. The
 // typed v2 consumer validates phase semantics before any durable mutation;
@@ -314,14 +342,10 @@ func (journal *PostgresPhaseJournal) Complete(
 	if journal == nil || journal.db == nil || journal.now == nil {
 		return ErrInvalid
 	}
-	canonicalOperation, err := operation.CanonicalJSON()
-	if err != nil || requestSHA256 != hashBytes(canonicalOperation) ||
-		!validPhaseClaimToken(claimToken) ||
-		resultSHA256 != hashBytes(canonicalResult) {
-		return ErrInvalid
-	}
-	result, err := decodeAgentCanonicalResult(canonicalResult)
-	if err != nil || ValidateControlResultForOperationV2(operation, result) != nil {
+	canonicalOperation, err := validatePhaseCompletionInput(
+		operation, requestSHA256, claimToken, canonicalResult, resultSHA256,
+	)
+	if err != nil {
 		return ErrInvalid
 	}
 	tx, err := journal.db.Begin(ctx)
@@ -337,13 +361,15 @@ func (journal *PostgresPhaseJournal) Complete(
 	if err != nil {
 		return err
 	}
-	if record.installationID != operation.InstallationID || record.requestSHA256 != requestSHA256 ||
-		!bytes.Equal(record.requestCanonical, canonicalOperation) {
+	if !phaseRecordMatchesOperation(record, operation, requestSHA256, canonicalOperation) {
 		return ErrConflict
 	}
 	if len(record.resultCanonical) != 0 {
-		if record.resultSHA256 != resultSHA256 || record.resultSHA256 != hashBytes(record.resultCanonical) ||
-			!bytes.Equal(record.resultCanonical, canonicalResult) {
+		storedCanonical, storedSHA, err := validateStoredTerminalResult(operation, record)
+		if err != nil {
+			return err
+		}
+		if storedSHA != resultSHA256 || !bytes.Equal(storedCanonical, canonicalResult) {
 			return ErrConflict
 		}
 		return commitConnectorTx(ctx, tx, "phase completion replay")
@@ -356,9 +382,243 @@ func (journal *PostgresPhaseJournal) Complete(
 		return err
 	}
 	now := journal.now().UTC().Truncate(time.Microsecond)
+	if err := completePendingPhaseTx(
+		ctx, tx, installation, record, operation, claimToken,
+		canonicalResult, resultSHA256, now,
+	); err != nil {
+		return err
+	}
+	return commitConnectorTx(ctx, tx, "complete phase")
+}
+
+// ExecuteClaimedPhase is the production execution seam. It revalidates the
+// claimed operation and current control authority, executes the product effect
+// and writes the immutable terminal result in one PostgreSQL transaction. A
+// caller retry after an ambiguous commit returns the already-stored terminal
+// result without re-running the executor.
+func (journal *PostgresPhaseJournal) ExecuteClaimedPhase(
+	ctx context.Context,
+	operation ControlOperationV2,
+	requestSHA256, claimToken string,
+	executor PhaseTxExecutor,
+) ([]byte, string, error) {
+	if journal == nil || journal.db == nil || journal.cipher == nil || journal.now == nil ||
+		executor == nil || !validPhaseClaimToken(claimToken) {
+		return nil, "", ErrInvalid
+	}
+	canonicalOperation, err := operation.CanonicalJSON()
+	if err != nil || requestSHA256 != hashBytes(canonicalOperation) {
+		return nil, "", ErrInvalid
+	}
+	tx, err := journal.db.Begin(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: begin transactional phase execution: %v", ErrUnavailable, err)
+	}
+	defer tx.Rollback(ctx)
+	initialRecord, err := readPhaseRecord(ctx, tx, operation.OperationID, false)
+	if err != nil {
+		return nil, "", err
+	}
+	if !phaseRecordMatchesOperation(initialRecord, operation, requestSHA256, canonicalOperation) {
+		return nil, "", ErrConflict
+	}
+	if len(initialRecord.resultCanonical) != 0 {
+		storedCanonical, storedSHA, err := validateStoredTerminalResult(operation, initialRecord)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := commitConnectorTx(ctx, tx, "transactional phase replay"); err != nil {
+			return nil, "", err
+		}
+		return storedCanonical, storedSHA, nil
+	}
+	scopeInstallation, err := readInstallationByIdentity(ctx, tx, operation.InstallationID, false)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := lockPhaseProductScope(ctx, tx, scopeInstallation); err != nil {
+		return nil, "", err
+	}
+	installation, err := readInstallationByIdentity(ctx, tx, operation.InstallationID, true)
+	if err != nil {
+		return nil, "", err
+	}
+	if installation.OrgID != scopeInstallation.OrgID ||
+		installation.ProjectID != scopeInstallation.ProjectID {
+		return nil, "", ErrConflict
+	}
+	record, err := readPhaseRecord(ctx, tx, operation.OperationID, true)
+	if err != nil {
+		return nil, "", err
+	}
+	if !phaseRecordMatchesOperation(record, operation, requestSHA256, canonicalOperation) {
+		return nil, "", ErrConflict
+	}
+	if len(record.resultCanonical) != 0 {
+		storedCanonical, storedSHA, err := validateStoredTerminalResult(operation, record)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := commitConnectorTx(ctx, tx, "transactional phase replay"); err != nil {
+			return nil, "", err
+		}
+		return storedCanonical, storedSHA, nil
+	}
+	binding, err := readControlBinding(ctx, tx, operation.InstallationID, true)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := journal.validatePhaseExecutionAuthority(installation, binding, operation); err != nil {
+		return nil, "", err
+	}
+	startedAt := journal.now().UTC().Truncate(time.Microsecond)
+	if err := validatePendingPhaseClaim(installation, record, claimToken, startedAt); err != nil {
+		return nil, "", err
+	}
+	predecessorOperation, predecessorResult, _, err := journal.readAndValidatePredecessorState(
+		ctx, tx, operation, installation.ControlFence,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	executionOperation := operation
+	executionOperation.EventScope = append([]string(nil), operation.EventScope...)
+	result, err := executor.ExecutePhaseTx(ctx, tx, PhaseExecutionInput{
+		Installation:         clonePhaseExecutionInstallation(installation),
+		Operation:            executionOperation,
+		PredecessorOperation: predecessorOperation,
+		PredecessorResult:    predecessorResult,
+		ObservedAt:           startedAt,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	canonicalResult, resultSHA256, err := canonicalPhaseResultForOperation(operation, result)
+	if err != nil {
+		return nil, "", err
+	}
+	completedAt := journal.now().UTC().Truncate(time.Microsecond)
+	if err := completePendingPhaseTx(
+		ctx, tx, installation, record, operation, claimToken,
+		canonicalResult, resultSHA256, completedAt,
+	); err != nil {
+		return nil, "", err
+	}
+	if err := commitConnectorTx(ctx, tx, "transactional phase execution"); err != nil {
+		return nil, "", err
+	}
+	return bytes.Clone(canonicalResult), resultSHA256, nil
+}
+
+func lockPhaseProductScope(
+	ctx context.Context,
+	tx pgx.Tx,
+	installation Installation,
+) error {
+	var organizationStatus, projectStatus string
+	if err := tx.QueryRow(ctx, `
+SELECT organization.status,project.status
+FROM orgs AS organization
+JOIN projects AS project ON project.org_id=organization.id
+WHERE organization.id=$1 AND project.id=$2
+FOR SHARE OF organization,project`, installation.OrgID, installation.ProjectID).Scan(
+		&organizationStatus, &projectStatus,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrConflict
+		}
+		return fmt.Errorf("%w: lock connector product scope: %v", ErrUnavailable, err)
+	}
+	if organizationStatus != "active" || projectStatus != "active" {
+		return ErrConflict
+	}
+	return nil
+}
+
+func validatePhaseCompletionInput(
+	operation ControlOperationV2,
+	requestSHA256, claimToken string,
+	canonicalResult []byte,
+	resultSHA256 string,
+) ([]byte, error) {
+	canonicalOperation, err := operation.CanonicalJSON()
+	if err != nil || requestSHA256 != hashBytes(canonicalOperation) ||
+		!validPhaseClaimToken(claimToken) || resultSHA256 != hashBytes(canonicalResult) {
+		return nil, ErrInvalid
+	}
+	result, err := decodeAgentCanonicalResult(canonicalResult)
+	if err != nil || ValidateControlResultForOperationV2(operation, result) != nil {
+		return nil, ErrInvalid
+	}
+	return canonicalOperation, nil
+}
+
+func canonicalPhaseResultForOperation(
+	operation ControlOperationV2,
+	result ControlResultV2,
+) ([]byte, string, error) {
+	if err := ValidateControlResultForOperationV2(operation, result); err != nil {
+		return nil, "", ErrInvalid
+	}
+	canonical, err := result.CanonicalJSON()
+	if err != nil {
+		return nil, "", ErrInvalid
+	}
+	return canonical, hashBytes(canonical), nil
+}
+
+func phaseRecordMatchesOperation(
+	record phaseRecord,
+	operation ControlOperationV2,
+	requestSHA256 string,
+	canonicalOperation []byte,
+) bool {
+	return record.installationID == operation.InstallationID &&
+		record.requestSHA256 == requestSHA256 &&
+		bytes.Equal(record.requestCanonical, canonicalOperation)
+}
+
+func validateStoredTerminalResult(
+	operation ControlOperationV2,
+	record phaseRecord,
+) ([]byte, string, error) {
+	if len(record.resultCanonical) == 0 ||
+		record.resultSHA256 != hashBytes(record.resultCanonical) {
+		return nil, "", fmt.Errorf("%w: stored terminal result digest mismatch", ErrUnavailable)
+	}
+	result, err := decodeAgentCanonicalResult(record.resultCanonical)
+	if err != nil || ValidateControlResultForOperationV2(operation, result) != nil {
+		return nil, "", fmt.Errorf("%w: stored terminal result is invalid", ErrUnavailable)
+	}
+	return bytes.Clone(record.resultCanonical), record.resultSHA256, nil
+}
+
+func validatePendingPhaseClaim(
+	installation Installation,
+	record phaseRecord,
+	claimToken string,
+	now time.Time,
+) error {
 	if record.controlFence != installation.ControlFence || record.claimToken != claimToken ||
 		!record.claimExpiresAt.Valid || !record.claimExpiresAt.Time.After(now) {
 		return ErrConflict
+	}
+	return nil
+}
+
+func completePendingPhaseTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	installation Installation,
+	record phaseRecord,
+	operation ControlOperationV2,
+	claimToken string,
+	canonicalResult []byte,
+	resultSHA256 string,
+	now time.Time,
+) error {
+	if err := validatePendingPhaseClaim(installation, record, claimToken, now); err != nil {
+		return err
 	}
 	tag, err := tx.Exec(ctx, `
 UPDATE xinsight_connector_phase_operations
@@ -371,7 +631,19 @@ WHERE operation_id=$1 AND result_sha256 IS NULL AND result_canonical IS NULL
 	if err != nil || tag.RowsAffected() != 1 {
 		return fmt.Errorf("%w: complete phase", ErrConflict)
 	}
-	return commitConnectorTx(ctx, tx, "complete phase")
+	return nil
+}
+
+func clonePhaseExecutionInstallation(installation Installation) Installation {
+	if installation.LastSuccessfulSyncAt != nil {
+		value := *installation.LastSuccessfulSyncAt
+		installation.LastSuccessfulSyncAt = &value
+	}
+	if installation.LastErrorAt != nil {
+		value := *installation.LastErrorAt
+		installation.LastErrorAt = &value
+	}
+	return installation
 }
 
 func (journal *PostgresPhaseJournal) MarkAcknowledged(
@@ -489,25 +761,51 @@ func (journal *PostgresPhaseJournal) readAndValidatePredecessor(
 	operation ControlOperationV2,
 	controlFence int64,
 ) ([]byte, error) {
+	_, _, canonicalResult, err := journal.readAndValidatePredecessorState(
+		ctx, tx, operation, controlFence,
+	)
+	return canonicalResult, err
+}
+
+func (journal *PostgresPhaseJournal) readAndValidatePredecessorState(
+	ctx context.Context,
+	tx pgx.Tx,
+	operation ControlOperationV2,
+	controlFence int64,
+) (*ControlOperationV2, *ControlResultV2, []byte, error) {
 	if operation.PredecessorOperationID == "" {
-		return nil, nil
+		return nil, nil, nil, nil
 	}
 	record, err := readPhaseRecord(ctx, tx, operation.PredecessorOperationID, true)
 	if err != nil || record.installationID != operation.InstallationID ||
 		record.controlFence != controlFence || len(record.resultCanonical) == 0 {
-		return nil, ErrConflict
+		return nil, nil, nil, ErrConflict
+	}
+	predecessorOperation, err := DecodeControlOperationV2(record.requestCanonical)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%w: stored predecessor request is invalid", ErrUnavailable)
+	}
+	canonicalOperation, err := predecessorOperation.CanonicalJSON()
+	if err != nil || !bytes.Equal(canonicalOperation, record.requestCanonical) ||
+		record.requestSHA256 != hashBytes(record.requestCanonical) ||
+		predecessorOperation.OperationID != operation.PredecessorOperationID {
+		return nil, nil, nil, fmt.Errorf("%w: stored predecessor request identity mismatch", ErrUnavailable)
 	}
 	if record.resultSHA256 != hashBytes(record.resultCanonical) {
-		return nil, fmt.Errorf("%w: stored predecessor digest mismatch", ErrUnavailable)
+		return nil, nil, nil, fmt.Errorf("%w: stored predecessor digest mismatch", ErrUnavailable)
 	}
 	predecessor, err := decodeAgentCanonicalResult(record.resultCanonical)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
+	}
+	if err := ValidateControlResultForOperationV2(predecessorOperation, predecessor); err != nil {
+		return nil, nil, nil, fmt.Errorf("%w: stored predecessor result is invalid", ErrUnavailable)
 	}
 	if err := ValidateControlOperationPredecessorV2(operation, &predecessor); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	return bytes.Clone(record.resultCanonical), nil
+	predecessorOperation.EventScope = append([]string(nil), predecessorOperation.EventScope...)
+	return &predecessorOperation, &predecessor, bytes.Clone(record.resultCanonical), nil
 }
 
 type controlBindingRecord struct {

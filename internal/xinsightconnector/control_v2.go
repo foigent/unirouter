@@ -519,6 +519,13 @@ func receiverRegistrationDigest(registration ReceiverRegistrationV1) (string, er
 	return hashBytes(canonical), nil
 }
 
+// ReceiverRegistrationSHA256 returns the canonical identity already used by
+// the frozen control-v2 result binding. Product phase executors use this
+// wrapper instead of reimplementing JSON canonicalization.
+func ReceiverRegistrationSHA256(registration ReceiverRegistrationV1) (string, error) {
+	return receiverRegistrationDigest(registration)
+}
+
 func validControlText(value string, maximum int) bool {
 	if value == "" || len(value) > maximum || !utf8.ValidString(value) || strings.TrimSpace(value) != value {
 		return false
