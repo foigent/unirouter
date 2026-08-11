@@ -165,11 +165,16 @@ func TestProductCompatibleConformanceFixturesCloseNeutralAndPackageChain(t *test
 	}
 	pinBody, err := os.ReadFile(filepath.Join(contractRoot, "unirouter.integration-control.n1-pin.v1.json"))
 	require.NoError(t, err)
+	pin, err := DecodeIntegrationControlN1Pin(pinBody)
+	require.NoError(t, err)
 	releaseBody, err := os.ReadFile(filepath.Join(root, "releases", "v0.1.0-candidate.1", "foigent.integration-control.release.v1.json"))
 	require.NoError(t, err)
 	binaryName := "foigent-integration-control-v0.1.0-candidate.1-" + runtime.GOOS + "-" + runtime.GOARCH
 	verifier, err := NewPinnedNeutralVerifier(context.Background(), pinBody, releaseBody, filepath.Join(root, "dist", binaryName))
 	require.NoError(t, err)
+	runtimeArtifact, ok := selectedN1Artifact(pin, runtime.GOOS, runtime.GOARCH)
+	require.True(t, ok)
+	require.Equal(t, runtimeArtifact.SHA256, verifier.Identity().BinarySHA256)
 	verifierRelease, err := DecodeVerifierRelease(validFixture("verifier-release.json"))
 	require.NoError(t, err)
 	productInputs := ProductManifestInputs{
@@ -187,17 +192,54 @@ func TestProductCompatibleConformanceFixturesCloseNeutralAndPackageChain(t *test
 	prepared := PreparedComponentInputs{SourceScope: preparedSource, InstalledRelease: preparedRelease, ScopeReceipt: preparedScope}
 	built, err := verifier.BuildProductAcknowledgement(context.Background(), productInputs, prepared, time.Date(2030, 1, 1, 0, 1, 0, 0, time.UTC))
 	require.NoError(t, err)
-	require.Equal(t, validFixture("component-verification-receipt.json"), built.ReceiptBody)
-	require.Equal(t, validFixture("unirouter-ack.json"), built.AckBody)
+	require.Equal(t, runtimeArtifact.SHA256, built.Receipt.IntegrationControlBinarySHA256)
+	require.Equal(t, ContentSHA256(built.ReceiptBody), built.Ack.ProductVerificationReceipt.SHA256)
+	acknowledgement, err := verifier.VerifyProductAcknowledgement(context.Background(), productInputs, built.ReceiptBody, built.AckBody)
+	require.NoError(t, err)
+	require.Equal(t, SourceRuntimeObservation, acknowledgement.Verification.SourceScope.RuntimeObservation)
+
+	otherBinarySHA := ""
+	for _, artifact := range pin.Artifacts {
+		if artifact.SHA256 != runtimeArtifact.SHA256 {
+			otherBinarySHA = artifact.SHA256
+			break
+		}
+	}
+	require.NotEmpty(t, otherBinarySHA)
+	wrongBinaryReceipt := built.Receipt
+	wrongBinaryReceipt.IntegrationControlBinarySHA256 = otherBinarySHA
+	wrongBinaryReceiptBody, err := CanonicalJSON(wrongBinaryReceipt)
+	require.NoError(t, err)
+	_, err = verifier.VerifyProductAcknowledgement(context.Background(), productInputs, wrongBinaryReceiptBody, built.AckBody)
+	require.ErrorContains(t, err, "does not match exact product evidence")
+	wrongReceiptAck := built.Ack
+	wrongReceiptAck.ProductVerificationReceipt.SHA256 = otherBinarySHA
+	wrongReceiptAckBody, err := CanonicalJSON(wrongReceiptAck)
+	require.NoError(t, err)
+	_, err = verifier.VerifyProductAcknowledgement(context.Background(), productInputs, built.ReceiptBody, wrongReceiptAckBody)
+	require.ErrorContains(t, err, "does not match exact product evidence")
+
+	canonicalReceiptBody := validFixture("component-verification-receipt.json")
+	canonicalReceipt, err := DecodeComponentVerificationReceipt(canonicalReceiptBody)
+	require.NoError(t, err)
+	canonicalAckBody := validFixture("unirouter-ack.json")
+	var canonicalAck ComponentAcknowledgement
+	require.NoError(t, decodeStrict(canonicalAckBody, &canonicalAck))
+	require.Equal(t, ContentSHA256(canonicalReceiptBody), canonicalAck.ProductVerificationReceipt.SHA256)
+	canonicalBinaryIsPinned := false
+	for _, artifact := range pin.Artifacts {
+		if artifact.SHA256 == canonicalReceipt.IntegrationControlBinarySHA256 {
+			canonicalBinaryIsPinned = true
+			break
+		}
+	}
+	require.True(t, canonicalBinaryIsPinned)
 	drifted := prepared
 	drifted.InstalledRelease.ReleaseSequence++
 	_, err = verifier.BuildProductAcknowledgement(context.Background(), productInputs, drifted, time.Date(2030, 1, 1, 0, 1, 0, 0, time.UTC))
 	require.ErrorContains(t, err, "current read-only product preparation")
-	acknowledgement, err := verifier.VerifyProductAcknowledgement(context.Background(), productInputs, validFixture("component-verification-receipt.json"), validFixture("unirouter-ack.json"))
-	require.NoError(t, err)
-	require.Equal(t, SourceRuntimeObservation, acknowledgement.Verification.SourceScope.RuntimeObservation)
 	preauthorization := NeutralPreauthorizationInputs{
-		ManifestBody: productInputs.ManifestBody, UniRouterAckBody: validFixture("unirouter-ack.json"), XInsightAckBody: validFixture("xinsight-ack.json"),
+		ManifestBody: productInputs.ManifestBody, UniRouterAckBody: canonicalAckBody, XInsightAckBody: validFixture("xinsight-ack.json"),
 		AuthorizationBody: validFixture("authorization.json"), AuthorizationSignature: validFixture("authorization-signature.json"), AuthorizationTrustSet: validFixture("authorization-trust-set.json"),
 	}
 	whole, err := verifier.VerifyWhole(context.Background(), preauthorization)
@@ -263,7 +305,7 @@ func TestProductCompatibleConformanceFixturesCloseNeutralAndPackageChain(t *test
 	wrongManifest.ManifestBody = invalidFixture("manifest.wrong-source-binding.json")
 	_, err = verifier.VerifyProductManifest(context.Background(), wrongManifest)
 	require.Error(t, err)
-	_, err = verifier.VerifyProductAcknowledgement(context.Background(), productInputs, validFixture("component-verification-receipt.json"), invalidFixture("unirouter-ack.wrong-contract.json"))
+	_, err = verifier.VerifyAcknowledgement(context.Background(), productInputs.ManifestBody, invalidFixture("unirouter-ack.wrong-contract.json"))
 	require.Error(t, err)
 	wrongAuthorization := preauthorization
 	wrongAuthorization.AuthorizationSignature = invalidFixture("authorization-signature.wrong-purpose.json")
