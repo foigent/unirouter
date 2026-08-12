@@ -109,6 +109,25 @@ func TestApplyDeterministicResetPreservesExactAdminPlatformStateAndSequences(t *
 	require.Equal(t, "NO ACTION", deleteAction)
 	require.True(t, deferrable)
 	require.False(t, initiallyDeferred)
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT t.tgenabled::text
+		FROM pg_trigger t
+		WHERE t.tgrelid='billing_observation_receipts'::regclass
+		  AND t.tgname='billing_observation_receipt_append_only'`).Scan(&triggerEnabled))
+	require.Equal(t, "O", triggerEnabled)
+	for _, constraint := range []string{
+		"billing_observation_receipt_reservation_fk",
+		"freeze_idempotency_observation_receipt_fk",
+	} {
+		require.NoError(t, pool.QueryRow(ctx, `
+			SELECT CASE confdeltype WHEN 'a' THEN 'NO ACTION' ELSE 'OTHER' END,
+			       condeferrable,condeferred
+			FROM pg_constraint WHERE conname=$1`, constraint).Scan(
+			&deleteAction, &deferrable, &initiallyDeferred))
+		require.Equal(t, "NO ACTION", deleteAction)
+		require.True(t, deferrable)
+		require.False(t, initiallyDeferred)
+	}
 }
 
 func TestApplyStopsBeforeRedisMutationWhenSemanticScopeDrifts(t *testing.T) {
@@ -134,7 +153,7 @@ func TestApplyStopsBeforeRedisMutationWhenSemanticScopeDrifts(t *testing.T) {
 	require.Equal(t, "fixture", redisClient.Get(ctx, "wallet:v2:must-remain").Val())
 }
 
-func TestSchema59ResetContractFailsClosedOnAccessTriggerOrFKDriftIntegration(t *testing.T) {
+func TestSchema64ResetContractFailsClosedOnAccessTriggerOrFKDriftIntegration(t *testing.T) {
 	t.Run("append-only trigger", func(t *testing.T) {
 		pool := testutil.SetupMigratedTestDB(t)
 		seedResetIntegrationFixture(t, pool)
@@ -258,6 +277,38 @@ func seedResetIntegrationFixture(t *testing.T, pool *pgxpool.Pool) (int64, int64
 	_, err = pool.Exec(ctx, `
 		UPDATE freeze_idempotency SET delivery_attempt_id=$1
 		WHERE org_id=$2 AND request_id=$3`, cycleAttemptID, oldOrgID, cycleRequestID)
+	require.NoError(t, err)
+	const observationRequestID = "reset-observation-request"
+	_, err = pool.Exec(ctx, `
+		INSERT INTO freeze_idempotency (
+			request_id, org_id, status, pricing_version, billing_mode,
+			admission_calculated_cost_micros
+		) VALUES ($1, $2, 'frozen', 'reset-observation-price', 'cost_observation', 42000)`,
+		observationRequestID, oldOrgID)
+	require.NoError(t, err)
+	var observationReceiptID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO billing_observation_receipts (
+			org_id, request_id, terminal_status, calculated_cost_micros,
+			charged_cost_micros, pricing_version
+		) VALUES ($1, $2, 'settled', 42000, 0, 'reset-observation-price')
+		RETURNING id`, oldOrgID, observationRequestID).Scan(&observationReceiptID))
+	_, err = pool.Exec(ctx, `
+		UPDATE freeze_idempotency
+		SET status='settled', terminal_observation_receipt_id=$1
+		WHERE org_id=$2 AND request_id=$3`, observationReceiptID, oldOrgID, observationRequestID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO enterprise_finance_rate_source_evidence (
+			org_id, evidence_ref, source_kind, source_url, source_revision,
+			fetched_at, payload_sha256, transform_version, currency,
+			unit_contract, last_success_at, stale_after, imported_by
+		) VALUES (
+			$1, 'reset-rate-source', 'official_import',
+			'https://example.invalid/pricing', 'fixture-v1', NOW(),
+			'sha256:' || repeat('a', 64), 'reset-fixture-v1', 'CNY',
+			'tokens', NOW(), NOW() + INTERVAL '1 day', 'reset-fixture'
+		)`, oldOrgID)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `
 		INSERT INTO channels (name, provider, base_url, status)

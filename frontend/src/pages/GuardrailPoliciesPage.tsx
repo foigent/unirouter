@@ -4,7 +4,8 @@ import { IconEdit, IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isBillingRole, isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { PageHeader, Surface } from '../ui';
+import { EmptyState, PageHeader, Surface } from '../ui';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text, Paragraph } = Typography;
@@ -47,12 +48,13 @@ interface StreamDetectorCapability {
 }
 
 function selectorText(policy: GuardrailPolicy) {
-  const parts: string[] = [];
-  if (policy.org_id) parts.push(policy.org_name || `组织 #${policy.org_id}`);
+  const parts: string[] = [policy.org_id
+    ? (policy.org_name || `客户组织 #${policy.org_id}`)
+    : '部署全局（当前部署全部请求）'];
   if (policy.project_id) parts.push(policy.project_name || `项目 #${policy.project_id}`);
   if (policy.api_key_id) parts.push(policy.api_key_name ? `凭证 ${policy.api_key_name}` : `凭证 #${policy.api_key_id}`);
   if (policy.model) parts.push(`模型 ${policy.model}`);
-  return parts.length ? parts.join(' · ') : '平台全局（所有租户）';
+  return parts.join(' · ');
 }
 
 function modeTag(mode: GuardrailPolicy['mode']) {
@@ -83,13 +85,14 @@ const stageLabels: Record<GuardrailPolicy['stage'], string> = {
 export default function GuardrailPoliciesPage() {
   const user = useAuthStore((state) => state.user);
   const organizationRole = organizationRoleForUser(user);
-  const userOrgId = useAuthStore((state) => state.user?.org_id);
+  const customerContext = resolveCustomerContext(user);
+  const customerOrgID = effectiveCustomerOrgID(user);
+  const customerContextReady = customerContext.state === 'ready' && Boolean(customerOrgID);
   const canManage = isOrgAdminRole(organizationRole) && !isBillingRole(organizationRole);
   const platform = isPlatformAdminRole(organizationRole);
   const [policies, setPolicies] = useState<GuardrailPolicy[]>([]);
   const [keys, setKeys] = useState<KeyOption[]>([]);
   const [models, setModels] = useState<string[]>([]);
-  const [organizations, setOrganizations] = useState<Array<{ value: number; label: string }>>([]);
   const [projects, setProjects] = useState<Array<{ value: number; label: string }>>([]);
   const [detectors, setDetectors] = useState<string[]>(['builtin:sensitive_words', 'builtin:pii_secrets']);
   const [streamCapabilities, setStreamCapabilities] = useState<Record<string, StreamDetectorCapability>>({
@@ -108,6 +111,7 @@ export default function GuardrailPoliciesPage() {
   const [total, setTotal] = useState(0);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [editing, setEditing] = useState<GuardrailPolicy | null>(null);
+  const [policyScope, setPolicyScope] = useState<'customer' | 'deployment_global'>('customer');
   const [formApi, setFormApi] = useState<any>(null);
   const [sensitiveWordsText, setSensitiveWordsText] = useState('');
   const [sensitiveWordsLoaded, setSensitiveWordsLoaded] = useState(false);
@@ -116,6 +120,7 @@ export default function GuardrailPoliciesPage() {
   const [sensitiveWordsError, setSensitiveWordsError] = useState('');
 
   const load = (nextPage = page, nextSize = pageSize) => {
+    if (!customerContextReady) return;
     setLoading(true);
     api.getGuardrailPolicies(nextPage, nextSize)
       .then((data: any) => {
@@ -137,7 +142,9 @@ export default function GuardrailPoliciesPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(1, pageSize); }, []);
+  useEffect(() => {
+    if (customerContextReady) load(1, pageSize);
+  }, [customerContextReady, customerOrgID]);
   const loadSensitiveWords = async () => {
     setSensitiveWordsLoading(true);
     setSensitiveWordsLoaded(false);
@@ -157,32 +164,29 @@ export default function GuardrailPoliciesPage() {
   };
 
   useEffect(() => {
-    if (platform) void loadSensitiveWords();
-  }, [platform]);
+    if (platform && customerContextReady) void loadSensitiveWords();
+  }, [customerContextReady, platform]);
 
   useEffect(() => {
+    if (!customerContextReady || !customerOrgID) return;
     void (async () => {
       try {
-        const [keyData, orgData, modelData] = await Promise.all([
+        const [keyData, projectData, modelData] = await Promise.all([
           loadAllPages<KeyOption>((page, size) => api.getKeys(page, size)),
-          loadAllPages<any>((page, size) => api.getOrganizations(page, size)),
+          loadAllPages<any>((page, size) => api.getProjects(page, size, { org_id: customerOrgID })),
           api.getModelNames(),
         ]);
-        const projectData = platform
-          ? (await Promise.all(orgData.map((org: any) =>
-              loadAllPages<any>((page, size) => api.getProjects(page, size, { org_id: org.id })),
-            ))).flat()
-          : await loadAllPages<any>((page, size) => api.getProjects(page, size));
-        setKeys(keyData || []);
-        setOrganizations(orgData.map((org: any) => ({ value: org.id, label: `${org.name}（ID ${org.id}）` })));
-        setProjects((projectData || []).map((project: any) => ({ value: project.id, label: `${project.name} · ${project.org_name || `组织 #${project.org_id}`}` })));
+        setKeys((keyData || []).filter((key) => key.org_id === customerOrgID));
+        setProjects((projectData || [])
+          .filter((project: any) => project.org_id === customerOrgID)
+          .map((project: any) => ({ value: project.id, label: project.name })));
         const source = Array.isArray(modelData?.data) ? modelData.data : modelData;
         setModels((Array.isArray(source) ? source : []).map((item: any) => typeof item === 'string' ? item : item.model).filter(Boolean));
       } catch {
         Toast.error('安全策略选项加载失败，请刷新后重试');
       }
     })();
-  }, [platform]);
+  }, [customerContextReady, customerOrgID]);
 
   const closeDrawer = () => {
     setDrawerVisible(false);
@@ -194,8 +198,11 @@ export default function GuardrailPoliciesPage() {
     if (!drawerVisible || !formApi) return;
     formApi.reset();
     if (editing) {
+      const nextScope = editing.org_id ? 'customer' : 'deployment_global';
+      setPolicyScope(nextScope);
       formApi.setValues({
         ...editing,
+        scope: nextScope,
         org_id: editing.org_id || undefined,
         project_id: editing.project_id || undefined,
         api_key_id: editing.api_key_id || undefined,
@@ -204,7 +211,9 @@ export default function GuardrailPoliciesPage() {
       });
       return;
     }
+    setPolicyScope('customer');
     formApi.setValues({
+      scope: 'customer',
       stage: 'input', detector_ref: 'builtin:pii_secrets', action: 'audit',
       mode: 'shadow', failure_mode: 'degraded_allow', mandatory: 'no',
       entities: ['email', 'phone', 'credit_card', 'secret'],
@@ -212,7 +221,12 @@ export default function GuardrailPoliciesPage() {
   }, [drawerVisible, editing, formApi]);
 
   const submit = async (values: Record<string, any>) => {
+    if (!customerContextReady || !customerOrgID) {
+      Toast.error('无法确认唯一客户组织，安全策略未保存');
+      return;
+    }
     const mandatory = platform && values.mandatory === 'yes';
+    const deploymentGlobal = platform && (mandatory || values.scope === 'deployment_global');
     const streamCapability = streamCapabilities[values.detector_ref];
     if (values.stage === 'stream_output' && (mandatory || values.mode === 'enforce') && values.action !== 'audit' && !streamCapability?.synchronous) {
       Toast.error('该检测器不能在流式输出写出前同步完成，只能先使用“影子观察”或“只审计”。');
@@ -221,9 +235,9 @@ export default function GuardrailPoliciesPage() {
     const payload: Record<string, any> = {
       name: values.name,
       ...(editing ? { version: editing.version } : {}),
-      org_id: mandatory ? 0 : (platform ? Number(values.org_id || 0) : userOrgId),
-      project_id: mandatory ? 0 : Number(values.project_id || 0),
-      api_key_id: mandatory ? 0 : Number(values.api_key_id || 0),
+      org_id: deploymentGlobal ? 0 : customerOrgID,
+      project_id: deploymentGlobal ? 0 : Number(values.project_id || 0),
+      api_key_id: deploymentGlobal ? 0 : Number(values.api_key_id || 0),
       model: values.model || '',
       stage: values.stage,
       detector_ref: values.detector_ref,
@@ -255,8 +269,8 @@ export default function GuardrailPoliciesPage() {
     Modal.confirm({
       title: clearingAll ? '确认清空全局输入阻断词库？' : '确认替换全局输入阻断词库？',
       content: clearingAll
-        ? '当前内容为空。继续后将清空全部部署级输入阻断词，所有组织、项目和访问凭证都会受到影响。'
-        : `将以当前 ${words.length} 个词完整替换部署级词库，并影响所有组织、项目和访问凭证；这不是追加操作。`,
+        ? '当前内容为空。继续后将清空全部部署级输入阻断词，当前部署的所有项目和访问凭证都会受到影响。'
+        : `将以当前 ${words.length} 个词完整替换部署级词库，并影响当前部署的所有项目和访问凭证；这不是追加操作。`,
       okText: clearingAll ? '确认清空' : '确认全局替换',
       cancelText: '取消',
       onOk: async () => {
@@ -287,11 +301,21 @@ export default function GuardrailPoliciesPage() {
     { title: '状态', dataIndex: 'mode', width: 100, render: (value: GuardrailPolicy['mode']) => modeTag(value) },
     { title: '检测器不可用时', dataIndex: 'failure_mode', width: 150, render: (value: string) => value === 'fail_closed' ? '安全拒绝（推荐强制规则）' : '留痕后继续' },
     ...(canManage ? [{ title: '操作', width: 100, render: (_: unknown, record: GuardrailPolicy) => (
-      platform || record.org_id === userOrgId
+      platform || record.org_id === customerOrgID
         ? <Button aria-label={`编辑安全策略 ${record.name}`} icon={<IconEdit />} size="small" onClick={() => { setEditing(record); setDrawerVisible(true); }} />
         : <Text type="tertiary" size="small">平台只读</Text>
     ) }] : []),
   ];
+
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state === 'ready' ? 'unavailable' : customerContext.state);
+    return (
+      <div className="ur-page">
+        <PageHeader eyebrow="访问与安全" title={blocker.title} description="内容安全策略必须绑定唯一客户；系统不会把部署技术组织当作客户组织。" />
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={260} /></Surface>
+      </div>
+    );
+  }
 
   return (
     <div className="ur-page">
@@ -319,7 +343,7 @@ export default function GuardrailPoliciesPage() {
         >
           <Paragraph>
             <Text strong>全局影响：</Text>
-            修改会影响所有组织、项目和访问凭证的请求输入；当前处理实例在提交后立即应用，其他实例通过周期刷新收敛。
+            修改会影响当前部署所有项目和访问凭证的请求输入；当前处理实例在提交后立即应用，其他实例通过周期刷新收敛。
           </Paragraph>
           {sensitiveWordsError ? <Paragraph><Text type="danger">{sensitiveWordsError}</Text></Paragraph> : null}
           {!sensitiveWordsLoaded ? (
@@ -354,7 +378,7 @@ export default function GuardrailPoliciesPage() {
 
       <Surface title="安全边界与使用说明">
         <Paragraph><Text strong>推荐从影子观察开始：</Text>检测器只报告发现，由 UniRouter 内核统一决定继续、脱敏或阻断；影子模式不会改变客户请求。</Paragraph>
-        <Paragraph>平台强制规则对所有租户生效，组织、项目和访问凭证策略只能继续收紧，不能关闭或放宽平台规则。外部检测器必须先由平台注册，不能填写任意网址。</Paragraph>
+        <Paragraph>部署强制规则对当前部署全部请求生效；唯一客户、项目和访问凭证策略只能继续收紧，不能关闭或放宽部署强制规则。外部检测器必须先由部署管理员登记，不能填写任意网址。</Paragraph>
         <Paragraph><Text strong>外部检测会传输内容：</Text>启用外部检测策略会把所选文本发送到平台预先登记的固定服务。只有在租户授权、数据驻留、保留与供应商条款均已确认后才能启用；当前默认未登记真实外部检测器。</Paragraph>
         <Paragraph><Text strong>故障规则：</Text>强制安全检测器不可用时拒绝请求；普通审计可选择“留痕后继续”。外部检测默认最多等待 1 秒且不自动重试，避免同一次请求被重复处理。</Paragraph>
         <Paragraph><Text strong>同步扫描边界：</Text>每次策略评估最多检查 {detectorMaxTexts} 个文本单元；本地 PII/密钥检测最多处理 {Math.round(localDetectorMaxBytes / 1024)} KiB，外部检测最多处理 {Math.round(externalDetectorMaxBytes / 1024)} KiB。超出时不会假装已检查，而是标记为“无法完整判断”，再按上面的故障规则安全拒绝或留痕后继续。</Paragraph>
@@ -367,9 +391,28 @@ export default function GuardrailPoliciesPage() {
       <SideSheet title={editing ? `编辑安全策略：${editing.name}` : '新增内容安全策略'} visible={drawerVisible} onCancel={closeDrawer} width={580}>
         <Form getFormApi={(instance: any) => setFormApi(instance)} onSubmit={submit}>
           <Form.Input field="name" label="策略名称" placeholder="customer-pii-redaction" rules={[{ required: true, message: '请输入策略名称' }]} />
-          {platform ? <Form.Select field="org_id" label="组织范围（可选）" placeholder="留空表示平台全局" optionList={organizations} showClear style={{ width: '100%' }} /> : <Text type="tertiary">组织范围：当前组织（{userOrgId || '由登录身份确定'}）</Text>}
-          <Form.Select field="project_id" label="项目（可选）" optionList={projects} showClear filter style={{ width: '100%' }} />
-          <Form.Select field="api_key_id" label="访问凭证（可选）" optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${key.org_name || `组织 #${key.org_id}`} · ${key.key_prefix}***` }))} showClear filter style={{ width: '100%' }} />
+          {platform ? (
+            <Form.Select
+              field="scope"
+              label="作用域"
+              optionList={[
+                { value: 'customer', label: `唯一客户（推荐）· ${customerContext.orgName || `组织 #${customerOrgID}`}` },
+                { value: 'deployment_global', label: '部署全局（当前部署全部请求）' },
+              ]}
+              onChange={(value: any) => {
+                const nextScope = value === 'deployment_global' ? 'deployment_global' : 'customer';
+                setPolicyScope(nextScope);
+                if (nextScope === 'deployment_global') {
+                  formApi?.setValue('project_id', undefined);
+                  formApi?.setValue('api_key_id', undefined);
+                }
+              }}
+              rules={[{ required: true }]}
+              style={{ width: '100%' }}
+            />
+          ) : <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${customerOrgID}`}</Text>}
+          <Form.Select field="project_id" label="项目（可选）" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
+          <Form.Select field="api_key_id" label="访问凭证（可选）" optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${key.project_name || `项目 #${key.project_id}`} · ${key.key_prefix}***` }))} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
           <Form.Select field="model" label="模型（可选）" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />
           <Form.Select field="stage" label="检查阶段" optionList={[{ value: 'input', label: '请求输入（发往上游前）' }, { value: 'nonstream_output', label: '非流式输出（完整结果交付前）' }, { value: 'stream_output', label: '流式输出（每个模型数据帧写出前）' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.Select field="detector_ref" label="检测器" optionList={detectors.map((value) => ({
@@ -383,7 +426,14 @@ export default function GuardrailPoliciesPage() {
           <Form.Select field="action" label="命中后动作" optionList={[{ value: 'audit', label: '只审计，不改变内容' }, { value: 'redact', label: '脱敏后继续（仅支持可定位的 PII）' }, { value: 'block', label: '阻断，不交付内容' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.Select field="mode" label="运行状态" optionList={[{ value: 'shadow', label: '影子观察（推荐先选）' }, { value: 'enforce', label: '正式执行' }, { value: 'disabled', label: '停用' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.Select field="failure_mode" label="检测器不可用时" optionList={[{ value: 'degraded_allow', label: '记录降级后继续（适合普通审计）' }, { value: 'fail_closed', label: '安全拒绝（适合强制规则）' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          {platform ? <Form.Select field="mandatory" label="是否为平台强制规则" optionList={[{ value: 'no', label: '否' }, { value: 'yes', label: '是（自动设为全局、正式执行、安全拒绝）' }]} rules={[{ required: true }]} style={{ width: '100%' }} /> : null}
+          {platform ? <Form.Select field="mandatory" label="是否为部署强制规则" optionList={[{ value: 'no', label: '否' }, { value: 'yes', label: '是（自动设为部署全局、正式执行、安全拒绝）' }]} onChange={(value: any) => {
+            if (value === 'yes') {
+              setPolicyScope('deployment_global');
+              formApi?.setValue('scope', 'deployment_global');
+              formApi?.setValue('project_id', undefined);
+              formApi?.setValue('api_key_id', undefined);
+            }
+          }} rules={[{ required: true }]} style={{ width: '100%' }} /> : null}
           <Space style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '保存并生成新版本' : '创建策略'}</Button>

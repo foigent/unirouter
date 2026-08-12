@@ -63,6 +63,10 @@ services:
       RUNTIME_ENVIRONMENT: ${RUNTIME_ENVIRONMENT:-production}
       RUNTIME_DEPLOYMENT_MODE: ${RUNTIME_DEPLOYMENT_MODE:-docker-compose}
       RUNTIME_DEPLOYMENT_ROLE: stable
+      BILLING_MODE: ${BILLING_MODE:-cost_observation}
+      # Upgrade compatibility only. After complete Rate Cards are reviewed,
+      # activated and preflighted, set rate_card; strict mode never falls back.
+      REQUEST_PRICING_AUTHORITY: ${REQUEST_PRICING_AUTHORITY:-legacy}
       PROMETHEUS_URL: http://prometheus:9090
       GRAFANA_URL: http://grafana:3000
       COMPLETED_EXECUTION_FEED_ENABLED: ${COMPLETED_EXECUTION_FEED_ENABLED:-false}

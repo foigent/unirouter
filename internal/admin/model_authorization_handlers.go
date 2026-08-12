@@ -271,6 +271,13 @@ func lockAuthorizationSubjectTx(ctx context.Context, tx pgx.Tx, orgID int64, sub
 }
 
 func resolveModelAuthorizationOrg(r *http.Request, requested int64) (int64, error) {
+	if _, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+		orgID, err := resolveActorOrganization(r.Context(), requested)
+		if err != nil {
+			return 0, errors.New("model authorization organization forbidden")
+		}
+		return orgID, nil
+	}
 	role := actorOrganizationRole(r.Context())
 	contextOrg := middleware.GetOrgIDFromContext(r.Context())
 	if role == auth.RolePlatformAdmin {

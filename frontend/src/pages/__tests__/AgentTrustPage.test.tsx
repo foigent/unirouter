@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import AgentTrustPage, { OfflineAgentTrustWorkspace } from '../AgentTrustPage';
+import { useAuthStore } from '../../store/auth';
 
 const mocks = vi.hoisted(() => ({
   getAgentTrustContract: vi.fn(),
@@ -107,6 +108,14 @@ const REPORT = {
 describe('AgentTrustPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuthStore.setState({
+      token: 'token',
+      isAuthenticated: true,
+      user: {
+        id: 1, username: 'platform', role: 'platform_admin', org_id: 99,
+        customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+      },
+    });
     mocks.getModelAuthorizationContract.mockResolvedValue({
       contract_version: 'unirouter.model-call-authorization.v1',
       environment: 'production',
@@ -165,7 +174,25 @@ describe('AgentTrustPage', () => {
     expect((await screen.findAllByText('mca_project_company_chat')).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole('complementary', { name: '模型调用授权检查器' })).toBeTruthy();
     expect(screen.getByText('显式拒绝优先，多个主体的允许范围取交集', { exact: false })).toBeTruthy();
+    expect(screen.getByText('客户范围：总部')).toBeTruthy();
+    expect(screen.queryByLabelText('授权目标组织')).toBeNull();
+    expect(mocks.getModelAuthorizations).toHaveBeenCalledWith(7, '');
     expect(mocks.getAgentTrustContract).not.toHaveBeenCalled();
+  });
+
+  it('fails closed and makes no authorization calls when the canonical customer is ambiguous', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 1, username: 'platform', role: 'platform_admin', org_id: 99,
+        customer_context: { state: 'ambiguous' },
+      },
+    });
+
+    render(<MemoryRouter><AgentTrustPage /></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: '客户组织上下文不唯一' })).toBeTruthy();
+    expect(mocks.getModelAuthorizationContract).not.toHaveBeenCalled();
+    expect(mocks.getModelAuthorizations).not.toHaveBeenCalled();
   });
 
   it('auto-runs the safe review and keeps the inspector present', async () => {

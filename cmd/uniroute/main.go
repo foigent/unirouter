@@ -343,7 +343,14 @@ func main() {
 	} else {
 		log.Printf("Async-media Image V1 runtime disabled; contract and existing metadata remain readable")
 	}
-	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client)
+	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client).
+		WithMode(cfg.BillingMode).
+		WithRequestPricingAuthority(cfg.RequestPricingAuthority)
+	log.Printf(
+		"Request pricing authority: mode=%s legacy_is_upgrade_compatibility=%t",
+		cfg.RequestPricingAuthority,
+		cfg.RequestPricingAuthority == billing.RequestPricingAuthorityLegacy,
+	)
 	completedFeedOptions := make([]completedfeed.ServiceOption, 0, 1)
 	if cfg.CompletedExecutionFeedReferenceMode != config.CompletedExecutionFeedReferenceModeLegacy {
 		completedFeedOptions = append(
@@ -521,6 +528,10 @@ func main() {
 		return licenseRuntime.Authorize(licensing.FeatureNotifications).Allowed
 	})
 	adminHandler.SetEventService(eventSvc)
+	if err := adminHandler.SetBillingMode(cfg.BillingMode); err != nil {
+		log.Fatalf("Invalid admin billing mode: %v", err)
+	}
+	adminHandler.SetRequestPricingAuthority(string(cfg.RequestPricingAuthority))
 	adminHandler.SetRedisClient(redisClient.Client)
 	adminHandler.SetRuntimeStatusOptions(admin.RuntimeStatusOptions{
 		Environment:     cfg.RuntimeEnvironment,
@@ -696,11 +707,12 @@ func main() {
 
 	// Admin auth middleware
 	adminAuth := middleware.AdminAuth(postgres.Pool, cfg.JWTSecret)
+	adminCustomerContext := middleware.CustomerContext(postgres.Pool)
 	adminRoute := func(h http.HandlerFunc) http.Handler {
-		return adminAuth(http.HandlerFunc(h))
+		return adminAuth(adminCustomerContext(http.HandlerFunc(h)))
 	}
 	organizationRoleRoute := func(h http.HandlerFunc, roles ...string) http.Handler {
-		return adminAuth(middleware.RequireOrganizationRoles(roles...)(http.HandlerFunc(h)))
+		return adminAuth(adminCustomerContext(middleware.RequireOrganizationRoles(roles...)(http.HandlerFunc(h))))
 	}
 	platformRoute := func(h http.HandlerFunc) http.Handler {
 		return organizationRoleRoute(h, auth.RolePlatformAdmin)
@@ -718,12 +730,12 @@ func main() {
 		return adminRoute(h)
 	}
 	dashboardRoute := func(h http.HandlerFunc) http.Handler {
-		return adminAuth(middleware.RequireOrganizationRoles(
+		return adminAuth(adminCustomerContext(middleware.RequireOrganizationRoles(
 			auth.RolePlatformAdmin,
 			auth.RoleOrgAdmin,
 			auth.RoleBillingAdmin,
 			auth.RoleOrgViewer,
-		)(http.HandlerFunc(h)))
+		)(http.HandlerFunc(h))))
 	}
 	notificationEventReadRoute := func(h http.HandlerFunc) http.Handler {
 		return adminRoute(h)

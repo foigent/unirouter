@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useAuthStore } from '../../store/auth';
 import MemberLifecyclePage from '../MemberLifecyclePage';
 
 const mocks = vi.hoisted(() => ({
@@ -62,6 +63,18 @@ const REPORT = {
 describe('MemberLifecyclePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'admin',
+        role: 'platform_admin',
+        organization_role: 'platform_admin',
+        org_id: 1,
+        license_access: null,
+        customer_context: { state: 'ready', org_id: 9, org_name: 'First Customer' },
+        identity_scope: 'deployment_operator',
+      },
+    });
     mocks.getMemberLifecycleContract.mockResolvedValue({
       contract_version: 'unirouter.member-lifecycle.v1',
       report_version: 'unirouter.member-lifecycle-report.v1',
@@ -87,12 +100,14 @@ describe('MemberLifecyclePage', () => {
 
     expect(screen.getByLabelText('成员生命周期检查器')).toBeTruthy();
     await waitFor(() => expect(mocks.getMemberLifecycleContract).toHaveBeenCalledTimes(1));
-		await waitFor(() => expect(mocks.getEnterpriseDirectoryIAMActions).toHaveBeenCalledWith(20, undefined));
+		await waitFor(() => expect(mocks.getEnterpriseDirectoryIAMActions).toHaveBeenCalledWith(20, 9));
     await waitFor(() => expect(mocks.previewMemberLifecycle).toHaveBeenCalledWith(JSON.stringify(EVENTS[0], null, 2)));
     expect(await screen.findByText('访问收敛证据')).toBeTruthy();
     expect(screen.getByText('replace_atomically')).toBeTruthy();
     expect(screen.getAllByText('否').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('none')).toBeTruthy();
+    expect(screen.getByText(/只统计当前离线示例校验结果/)).toBeTruthy();
+    expect(screen.getByText('示例保留项目关系')).toBeTruthy();
   });
 
 	it('shows durable local convergence evidence separately from offline fixtures', async () => {

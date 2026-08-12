@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import TestPage, { firstChannelModel, parseChannelModels, resolveChannelTestModel, summarizeBatchChannels } from '../TestPage';
 
 const mocks = vi.hoisted(() => ({
@@ -22,6 +22,12 @@ const CHANNELS = [
   { id: 7, name: 'mimo', provider: 'mimo', status: 'active', models: 'mimo-v2.5-pro' },
 ];
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => { resolve = next; });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getChannels.mockResolvedValue({ data: CHANNELS, total: CHANNELS.length });
@@ -36,11 +42,12 @@ beforeEach(() => {
 });
 
 describe('TestPage model selection helpers', () => {
-  it('parses configured channel models and trims blanks', () => {
-    expect(parseChannelModels('gpt-4o, claude-3-5-sonnet,  qwen-max  ')).toEqual([
+  it('parses all supported separators, trims blanks and removes duplicates', () => {
+    expect(parseChannelModels('gpt-4o， claude-3-5-sonnet; qwen-max；gpt-4o\n deepseek-chat ')).toEqual([
       'gpt-4o',
       'claude-3-5-sonnet',
       'qwen-max',
+      'deepseek-chat',
     ]);
   });
 
@@ -67,6 +74,42 @@ describe('TestPage model selection helpers', () => {
 
     expect(await screen.findByRole('button', { name: '批量检测 2 个生效通道' })).toBeTruthy();
     expect(screen.getByText(/只检测 2 个状态为“生效”的通道；排除 1 个（kimi（通道禁用））/)).toBeTruthy();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it('keeps selected-channel and batch loading indicators independent', async () => {
+    const request = deferred<any>();
+    mocks.request.mockReturnValueOnce(request.promise);
+    render(<TestPage />);
+
+    fireEvent.click(await screen.findByRole('combobox', { name: '选择通道' }));
+    fireEvent.click(await screen.findByText('deepseek (deepseek) · 通道生效'));
+    fireEvent.click(screen.getByRole('button', { name: '检测选中通道' }));
+
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: '检测选中通道' })).toHaveClass('semi-button-loading');
+    expect(screen.getByRole('button', { name: '批量检测 2 个生效通道' })).not.toHaveClass('semi-button-loading');
+
+    request.resolve({
+      success: true,
+      channel_id: 5,
+      latency_ms: 12,
+      status_code: 200,
+      model: 'DeepSeek-V4-Flash',
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: '检测选中通道' })).not.toHaveClass('semi-button-loading'));
+  });
+
+  it('disables batch execution and labels the empty active scope explicitly', async () => {
+    mocks.getChannels.mockResolvedValueOnce({
+      data: [CHANNELS[1]],
+      total: 1,
+    });
+
+    render(<TestPage />);
+
+    expect(await screen.findByRole('button', { name: '无生效通道可批量检测' })).toBeDisabled();
+    expect(screen.getByText(/只检测 0 个状态为“生效”的通道/)).toBeTruthy();
     expect(mocks.request).not.toHaveBeenCalled();
   });
 

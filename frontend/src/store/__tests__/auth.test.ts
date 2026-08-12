@@ -50,6 +50,8 @@ describe('auth store', () => {
         can_discover_access_review: true,
         can_discover_workloads: true,
       },
+      customer_context: { state: 'ready', org_id: 22, org_name: 'Acme' },
+      identity_scope: 'customer_identity',
     };
     vi.spyOn(api, 'login').mockResolvedValue({
       token: 'fresh-token',

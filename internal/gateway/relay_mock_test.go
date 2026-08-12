@@ -1582,6 +1582,7 @@ func TestModelAllowedForAPIKey(t *testing.T) {
 		{name: "wildcard", apiKey: &models.ApiKey{AllowedModels: "*"}, model: "resolved", requestedModel: "alias", want: true},
 		{name: "resolved model", apiKey: &models.ApiKey{AllowedModels: "other, resolved"}, model: "resolved", requestedModel: "alias", want: true},
 		{name: "requested alias", apiKey: &models.ApiKey{AllowedModels: "other, alias"}, model: "resolved", requestedModel: "alias", want: true},
+		{name: "historical separators", apiKey: &models.ApiKey{AllowedModels: "other;alias；company-chat"}, model: "resolved", requestedModel: "alias", want: true},
 		{name: "not allowed", apiKey: &models.ApiKey{AllowedModels: "other"}, model: "resolved", requestedModel: "alias", want: false},
 	}
 

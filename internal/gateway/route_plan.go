@@ -32,7 +32,11 @@ SELECT c.id, c.name, c.provider, c.base_url, c.models, c.model_mapping,
   FROM channels c
  CROSS JOIN route_clock
   LEFT JOIN channel_keys ck ON ck.channel_id = c.id
- WHERE (',' || REPLACE(c.models, ' ', '') || ',' LIKE '%,' || $1 || ',%')
+ WHERE EXISTS (
+       SELECT 1
+         FROM regexp_split_to_table(COALESCE(c.models, ''), '[,，;；\r\n]+') AS configured(model)
+        WHERE BTRIM(configured.model) = $1
+ )
  ORDER BY c.priority ASC, c.id ASC, ck.id ASC`
 
 type routeSnapshot struct {

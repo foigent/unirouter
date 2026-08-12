@@ -7,6 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/filter"
 	"github.com/uniroute/unirouter/internal/guardrail"
@@ -75,6 +76,8 @@ type Handler struct {
 	runtimeChangeManager         *runtimechange.Manager
 	invocationOptimization       *invocationopt.Manager
 	responseCacheRuntimeReady    bool
+	requestPricingAuthority      string
+	billingMode                  billing.BillingMode
 }
 
 func (h *Handler) SetInvocationOptimization(manager *invocationopt.Manager, responseCacheReady bool) {
@@ -82,6 +85,26 @@ func (h *Handler) SetInvocationOptimization(manager *invocationopt.Manager, resp
 		h.invocationOptimization = manager
 		h.responseCacheRuntimeReady = responseCacheReady
 	}
+}
+
+// SetBillingMode configures how billing participates in model-readiness
+// admission. New handlers default to prepaid enforcement so existing callers
+// that do not provide runtime configuration retain the historical behavior.
+func (h *Handler) SetBillingMode(mode billing.BillingMode) error {
+	if err := billing.ValidateBillingMode(mode); err != nil {
+		return err
+	}
+	if h != nil {
+		h.billingMode = mode
+	}
+	return nil
+}
+
+func (h *Handler) effectiveBillingMode() billing.BillingMode {
+	if h == nil || h.billingMode == "" {
+		return billing.BillingModePrepaidEnforced
+	}
+	return h.billingMode
 }
 
 func (h *Handler) SetModelAuthorizationEvaluator(evaluator *modelauthz.Evaluator) {
@@ -149,6 +172,7 @@ func NewHandlerWithAPIKeyHashSecret(db db.DBQuerier, jwtSecret, apiKeyHashSecret
 		db: db, jwtSecret: jwtSecret, apiKeyHashSecret: apiKeyHashSecret,
 		encKey: encKey, sensitiveFilter: sf, startedAt: time.Now(),
 		runtimeOptions: RuntimeStatusOptions{EffectiveConfig: runtimeconfig.Default()},
+		billingMode:    billing.BillingModePrepaidEnforced,
 	}
 }
 
@@ -232,6 +256,10 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 	if h.licenseRuntime != nil {
 		licenseAccess = h.licenseRuntime.Capabilities()
 	}
+	customer, present := middleware.GetCustomerContextFromContext(r.Context())
+	if !present {
+		customer = customercontext.Snapshot{State: customercontext.StateUnavailable}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id":                userID,
@@ -243,6 +271,8 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 		"org_name":          orgName,
 		"email":             email,
 		"auth_provider":     authProvider,
+		"identity_scope":    actorIdentityScope(r.Context(), organizationRole),
+		"customer_context":  customer,
 		"created_at":        createdAt,
 		"license_access":    licenseAccess,
 		"navigation_capabilities": map[string]interface{}{

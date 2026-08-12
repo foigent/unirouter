@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Form, Input, Select, SideSheet, Space, Table, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Form, Input, Select, SideSheet, Space, Table, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus, IconRefresh, IconServer, IconSetting } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, ExactTokenCountInput, PageHeader, parseExactTokenCount, StatusTag, Surface } from '../ui';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
 import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 import InvocationOptimizationWorkspace from './InvocationOptimizationWorkspace';
@@ -75,11 +76,6 @@ interface ModelSetItem {
   item_name: string;
 }
 
-interface Organization {
-  id: number;
-  name: string;
-}
-
 function compactNumber(value?: number) {
   const n = Number(value || 0);
   if (!n) return '-';
@@ -137,8 +133,7 @@ export function formatModelSetItems(items: ModelSetItem[]) {
 export default function ModelGovernancePage() {
   const user = useAuthStore((state) => state.user);
   const platform = isPlatformAdminRole(organizationRoleForUser(user));
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(user?.org_id);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const customerContext = resolveCustomerContext(user);
   const [activeTab, setActiveTab] = useState<TabKey>('registry');
 
   const [registry, setRegistry] = useState<ModelRegistryItem[]>([]);
@@ -196,7 +191,8 @@ export default function ModelGovernancePage() {
     { key: 'optimization' as const, label: '调用优化' },
     ...(platform ? [{ key: 'releases' as const, label: '运行时发布' }] : []),
   ];
-  const targetOrgID = platform ? selectedOrgID : undefined;
+  const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
+  const customerContextReady = !platform || customerContext.state === 'ready';
 
   const loadRegistry = useCallback(async (page = registryPage, pageSize = registryPageSize) => {
     const version = ++registryRequestVersion.current;
@@ -306,14 +302,6 @@ export default function ModelGovernancePage() {
     }
   }, [targetOrgID]);
 
-  useEffect(() => {
-    if (!platform) return;
-    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
-    loadAllPages<Organization>((page, size) => api.getOrganizations(page, size))
-      .then(setOrganizations)
-      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
-  }, [platform, user?.org_id]);
-
   const loadProjectAssignment = useCallback(async (projectId: number) => {
     const version = ++assignmentRequestVersion.current;
     setAssignmentLoading(true);
@@ -336,51 +324,18 @@ export default function ModelGovernancePage() {
   }, []);
 
   useEffect(() => {
+    if (!customerContextReady) return;
     if (activeTab === 'registry') loadRegistry();
     if (activeTab === 'aliases') loadAliases();
     if (activeTab === 'sets') loadModelSets();
     if (activeTab === 'assignments') loadAssignmentBase();
-  }, [activeTab, loadAliases, loadAssignmentBase, loadModelSets, loadRegistry]);
+  }, [activeTab, customerContextReady, loadAliases, loadAssignmentBase, loadModelSets, loadRegistry]);
 
   useEffect(() => {
     if (activeTab === 'assignments' && selectedProjectId) {
       loadProjectAssignment(selectedProjectId);
     }
   }, [activeTab, loadProjectAssignment, selectedProjectId]);
-
-  const changeOrganization = (value: unknown) => {
-    const orgID = Number(value);
-    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
-    setSelectedOrgID(orgID);
-    registryRequestVersion.current += 1;
-    aliasRequestVersion.current += 1;
-    modelSetRequestVersion.current += 1;
-    assignmentBaseRequestVersion.current += 1;
-    setRegistryPage(1);
-    setAliasPage(1);
-    setModelSetPage(1);
-    setRegistry([]);
-    setRegistryTotal(0);
-    setAliases([]);
-    setAliasTotal(0);
-    setModelSets([]);
-    setModelSetTotal(0);
-    setProjects([]);
-    setAssignmentModelSets([]);
-    setSelectedProjectId(undefined);
-    setAssignedIds([]);
-    setLoadedAssignmentProjectId(undefined);
-    assignmentRequestVersion.current += 1;
-    setRegistrySheet(null);
-    setAliasSheet(null);
-    setModelSetSheet(false);
-    setItemsSheet(null);
-    setRegistryLoadError('');
-    setAliasLoadError('');
-    setModelSetLoadError('');
-    setAssignmentBaseError('');
-    setAssignmentLoadError('');
-  };
 
   useEffect(() => {
     if (!registrySheet || !registryFormApi) return;
@@ -689,6 +644,22 @@ export default function ModelGovernancePage() {
     },
   ];
 
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
+    return (
+      <div className="ur-page ur-page-wide">
+        <PageHeader
+          eyebrow="模型接入"
+          title={blocker.title}
+          description="模型目录、别名、模型集和项目分配必须共享同一个可验证客户范围；系统不会把部署技术组织当作客户组织。"
+        />
+        <Surface>
+          <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
+        </Surface>
+      </div>
+    );
+  }
+
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
@@ -697,20 +668,7 @@ export default function ModelGovernancePage() {
         description="维护企业模型目录、别名、项目范围与调用优化策略；高影响变化统一经过验证、Shadow、证据门禁、Canary 和回滚。"
         actions={(
           <Space>
-            {platform && (
-              <Space spacing={6}>
-                <Text type="tertiary">目标组织</Text>
-                <Select
-                  aria-label="目标组织"
-                  placeholder="选择目标组织"
-                  value={selectedOrgID}
-                  optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
-                  onChange={changeOrganization}
-                  disabled={registryLoading || aliasLoading || modelSetLoading || assignmentLoading}
-                  style={{ width: 220 }}
-                />
-              </Space>
-            )}
+            {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
             {!['optimization', 'releases'].includes(activeTab) && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
           </Space>
         )}
@@ -914,6 +872,11 @@ export default function ModelGovernancePage() {
       {activeTab === 'optimization' && <InvocationOptimizationWorkspace orgId={targetOrgID} />}
 
       <SideSheet title={registrySheet?.mode === 'edit' ? '编辑模型' : '新增模型'} visible={!!registrySheet} onCancel={closeRegistrySheet} width={560}>
+        <Banner
+          type="warning"
+          description="UniRouter 不会根据模型名称自动猜测文本、多模态或其他能力。这里保存的是人工声明，不是已验证事实；请依据供应商官方能力说明或真实请求测试证据填写，未验证能力不要加入开发者目录。"
+          style={{ marginBottom: 16 }}
+        />
         <Form getFormApi={(apiRef: any) => setRegistryFormApi(apiRef)} onSubmit={handleRegistrySubmit}>
           <Form.Input field="model_name" label="模型名称" placeholder="gpt-4o" rules={[{ required: true, message: '请输入模型名称' }]} />
           <Form.Input field="display_name" label="显示名称" placeholder="Company Chat" />
@@ -928,7 +891,12 @@ export default function ModelGovernancePage() {
             />
             <Form.InputNumber field="output_limit" label="输出上限" min={0} style={{ width: '100%' }} />
           </div>
-          <Form.Input field="capability_tags" label="能力标签" placeholder="chat,vision,json" />
+          <Form.Input
+            field="capability_tags"
+            label="能力标签（声明）"
+            placeholder="chat,vision,json"
+            extraText="例如 vision 只有在官方能力说明或真实多模态请求验证后才能填写；标签本身不会执行能力检测。"
+          />
           <Form.Input field="data_residency" label="数据驻留" placeholder="us / eu / cn" />
           <Form.Input field="pricing_model_name" label="计价模型名" placeholder="默认使用模型名称" />
           <Form.Select field="approved_catalog" label="开发者目录可见" optionList={approvedOptions} />

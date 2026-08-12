@@ -43,8 +43,8 @@ describe('ChannelKeysPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '编辑供应商凭证 mimo' }));
 
     expect(await screen.findByLabelText('供应商 API Key')).toHaveAttribute('type', 'password');
-    const allowedModels = await screen.findByLabelText('允许模型（逗号分隔，留空=全部）');
-    fireEvent.change(allowedModels, { target: { value: 'mimo-v2.5-pro，mimo-v2.5,mimo-v2.5-pro' } });
+    const allowedModels = await screen.findByLabelText('允许模型（留空=全部）');
+    fireEvent.change(allowedModels, { target: { value: 'mimo-v2.5-pro；mimo-v2.5;mimo-v2.5-pro' } });
     fireEvent.click(screen.getByText('更新'));
 
     await waitFor(() => expect(mockUpdateChannelKey).toHaveBeenCalledWith(7, {

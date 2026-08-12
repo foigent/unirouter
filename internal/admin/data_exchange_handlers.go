@@ -697,6 +697,14 @@ func (h *Handler) CreateDataExchangeReceipt(w http.ResponseWriter, r *http.Reque
 }
 
 func dataExchangeOrgID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	if _, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+		orgID, err := resolveActorOrganization(r.Context(), 0)
+		if err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]any{"error": "Customer organization context is unavailable"})
+			return 0, false
+		}
+		return orgID, true
+	}
 	orgID := middleware.GetOrgIDFromContext(r.Context())
 	if orgID <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Organization context is required"})

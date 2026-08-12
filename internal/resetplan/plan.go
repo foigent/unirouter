@@ -62,6 +62,7 @@ var (
 		"admin_sessions", "api_keys", "async_media_charge_facts", "async_media_jobs",
 		"async_media_limit_reservations",
 		"audit_logs", "billing_provider_attempts", "billing_reservation_extensions",
+		"billing_observation_receipts",
 		"billing_reservation_grant_allocations", "call_logs", "channel_keys", "channels",
 		"completed_execution_feed_connections", "completed_execution_feed_items",
 		"completed_execution_feed_states", "delivery_attempt_quarantine",
@@ -74,6 +75,7 @@ var (
 		"enterprise_finance_fiscal_periods", "enterprise_finance_period_events",
 		"enterprise_finance_pricing_bindings", "enterprise_finance_pricing_snapshots",
 		"enterprise_finance_rate_card_versions", "enterprise_finance_rate_components",
+		"enterprise_finance_rate_source_evidence",
 		"freeze_idempotency", "grants", "guardrail_advisory_gap_batches",
 		"guardrail_advisory_gap_receipts", "guardrail_policies", "integration_exchange_deliveries",
 		"integration_exchange_items", "integration_exchange_members", "integration_exchange_receipts",
@@ -97,13 +99,16 @@ var (
 	platformBaselineSettings = []string{"sensitive_words"}
 	deferredCycleConstraints = []string{
 		"access_requests_target_grant_scope_fk",
+		"billing_observation_receipt_reservation_fk",
 		"billing_provider_attempts_reservation_fk",
 		"freeze_idempotency_delivery_attempt_provider_fk",
+		"freeze_idempotency_observation_receipt_fk",
 	}
 	resetDeleteTriggers = []TriggerRef{
 		{Table: "access_grant_revisions", Name: "access_grant_revisions_append_only"},
 		{Table: "access_operations", Name: "access_operations_append_only"},
 		{Table: "billing_provider_attempts", Name: "billing_provider_attempts_micro_ledger_evidence"},
+		{Table: "billing_observation_receipts", Name: "billing_observation_receipt_append_only"},
 		{Table: "billing_reservation_extensions", Name: "billing_reservation_extension_append_only"},
 		{Table: "billing_reservation_extensions", Name: "billing_reservation_extensions_micro_ledger_evidence"},
 		{Table: "billing_reservation_grant_allocations", Name: "billing_reservation_grants_micro_ledger_evidence"},

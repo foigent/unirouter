@@ -8,6 +8,7 @@ import { canonicalProjectMembershipRole, isOrgAdminRole, organizationRoleForUser
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { IntentRequestIDs } from '../utils/intentRequestId';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
@@ -23,6 +24,9 @@ function grantBelongsToApplication(grant: AccessGrant, application: WorkloadAppl
 export default function ApplicationsV2Page() {
   const user = useAuthStore((state) => state.user);
   const organizationRole = organizationRoleForUser(user);
+  const customerContext = resolveCustomerContext(user);
+  const customerOrgID = effectiveCustomerOrgID(user);
+  const customerContextReady = customerContext.state === 'ready' && Boolean(customerOrgID);
   const [search, setSearch] = useSearchParams();
   const intents = useRef(new IntentRequestIDs()).current;
   const selectedProjectID = Number(search.get('project_id') || 0) || undefined;
@@ -90,6 +94,11 @@ export default function ApplicationsV2Page() {
 
   const loadProjectsAndContract = useCallback(async () => {
     setProjectsError('');
+    if (!customerContextReady) {
+      setContract(null);
+      setProjects([]);
+      return;
+    }
     try {
       const [profileContract, allProjects] = await Promise.all([
         api.getWorkloadApplicationContract() as Promise<WorkloadContract>,
@@ -105,7 +114,7 @@ export default function ApplicationsV2Page() {
       setProjects([]);
       setProjectsError('无法读取应用合同或当前账号可管理的项目。');
     }
-  }, [organizationRole, selectedProjectID, updateSearch]);
+  }, [customerContextReady, organizationRole, selectedProjectID, updateSearch]);
 
   const loadApplications = useCallback(async () => {
 	const projectID = selectedProjectID;
@@ -114,7 +123,7 @@ export default function ApplicationsV2Page() {
 	setApplications([]);
 	setAccessStateScope(null);
 	setAccessRequests([]); setGrants([]); setCredentials([]); setCredentialHasMore(false);
-	if (!projectID) { setApplicationsLoading(false); return; }
+	if (!customerContextReady || !projectID) { setApplicationsLoading(false); return; }
     setApplicationsLoading(true);
     setApplicationsError('');
     try {
@@ -132,12 +141,12 @@ export default function ApplicationsV2Page() {
     } finally {
 	  if (currentProjectID.current === projectID && applicationsGeneration.current === generation) setApplicationsLoading(false);
     }
-  }, [selectedApplicationRef, selectedProjectID, updateSearch]);
+  }, [customerContextReady, selectedApplicationRef, selectedProjectID, updateSearch]);
 
   const loadApplicationAccess = useCallback(async () => {
 	const application = selectedApplication;
 	const generation = ++accessGeneration.current;
-	if (!application) {
+	if (!customerContextReady || !application) {
 	  setAccessStateScope(null);
       setAccessRequests([]); setGrants([]); setCredentials([]); setRequestError(''); setGrantError(''); setCredentialError('');
 	  setCredentialHasMore(false);
@@ -174,14 +183,14 @@ export default function ApplicationsV2Page() {
       setCredentials([]);
       setCredentialError('凭据元数据暂时不可用；不会把错误显示成“未配置”。');
     }
-	}, [applicationScope, isCurrentScope, organizationRole, selectedApplication]);
+	}, [applicationScope, customerContextReady, isCurrentScope, organizationRole, selectedApplication]);
 
   const loadLegacy = useCallback(async () => {
-    if (!maySeeLegacy) return;
+    if (!maySeeLegacy || !customerContextReady) return;
     setLegacyLoading(true);
     setLegacyError('');
     try {
-      const result = await accessApi.previewLegacy(organizationRole === 'platform_admin' ? user?.org_id : undefined);
+      const result = await accessApi.previewLegacy(organizationRole === 'platform_admin' ? customerOrgID : undefined);
       setLegacy(result.data);
     } catch {
       setLegacy([]);
@@ -189,7 +198,7 @@ export default function ApplicationsV2Page() {
     } finally {
       setLegacyLoading(false);
     }
-  }, [maySeeLegacy, organizationRole, user?.org_id]);
+  }, [customerContextReady, customerOrgID, maySeeLegacy, organizationRole]);
 
   useEffect(() => { loadProjectsAndContract(); }, [loadProjectsAndContract]);
   useEffect(() => { loadApplications(); }, [loadApplications]);
@@ -476,6 +485,16 @@ export default function ApplicationsV2Page() {
 		return family.effective_status === 'active' && !!exactGrant && isGrantCurrentlyActive(exactGrant);
 	};
 	const credentialLocator = (family: AccessCredentialFamily) => family.versions.find((version) => version.status === 'active') || family.versions[0];
+
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state === 'ready' ? 'unavailable' : customerContext.state);
+    return (
+      <div className="ur-page">
+        <PageHeader eyebrow="访问与安全" title="应用与 Agent" description="应用、Grant 和逻辑凭据必须绑定这套部署唯一的客户组织。" />
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={300} /></Surface>
+      </div>
+    );
+  }
 
   return (
     <div className="ur-page">

@@ -74,13 +74,27 @@ describe('UsageAnalyticsPage', () => {
     expect(screen.getAllByText('¥0.320000').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('adds the selected platform organization to analytics requests', async () => {
-    auth.user = { role: 'platform_admin', org_id: 7 };
+  it('adds the canonical customer to platform analytics requests without a selector', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+      identity_scope: 'deployment_operator',
+    };
     render(<UsageAnalyticsPage />);
 
-    expect(await screen.findByText('目标组织')).toBeTruthy();
+    expect(await screen.findByText('客户范围：总部')).toBeTruthy();
+    expect(screen.queryByLabelText('目标组织')).toBeNull();
     await waitFor(() => expect(mockGetUsageAnalytics).toHaveBeenCalledWith(expect.objectContaining({ org_id: 7 })));
-    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
+
+  it('does not query usage when a platform customer context is ambiguous', () => {
+    auth.user = { role: 'platform_admin', org_id: 99, customer_context: { state: 'ambiguous' } };
+    render(<UsageAnalyticsPage />);
+
+    expect(screen.getAllByText('客户组织上下文不唯一').length).toBeGreaterThanOrEqual(1);
+    expect(mockGetUsageAnalytics).not.toHaveBeenCalled();
   });
 
   it('keeps organization-scoped roles on their server-enforced JWT scope', async () => {

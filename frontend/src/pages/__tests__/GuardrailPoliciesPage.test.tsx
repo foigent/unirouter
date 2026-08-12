@@ -70,7 +70,7 @@ describe('GuardrailPoliciesPage', () => {
     expect(await screen.findByText('redact-email')).toBeTruthy();
     await waitFor(() => expect(mocks.getGuardrailPolicies).toHaveBeenCalledWith(1, 20));
     expect(screen.getByText(/推荐从影子观察开始/)).toBeTruthy();
-    expect(screen.getByText(/外部检测器必须先由平台注册/)).toBeTruthy();
+    expect(screen.getByText(/外部检测器必须先由部署管理员登记/)).toBeTruthy();
     expect(screen.getByText(/外部检测会传输内容/)).toBeTruthy();
     expect(screen.getByText(/最多等待 1 秒且不自动重试/)).toBeTruthy();
     expect(screen.getByText(/每次策略评估最多检查 256 个文本单元/)).toBeTruthy();
@@ -110,7 +110,10 @@ describe('GuardrailPoliciesPage', () => {
   });
 
   it('lets only a platform administrator replace the global input blocking words after confirmation', async () => {
-    useAuthStore.setState({ user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1 } });
+    useAuthStore.setState({ user: {
+      id: 1, username: 'platform', role: 'platform_admin', org_id: 1,
+      customer_context: { state: 'ready', org_id: 22, org_name: 'Acme' },
+    } });
     let confirmation: any;
     const confirmSpy = vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
       confirmation = config;
@@ -122,7 +125,9 @@ describe('GuardrailPoliciesPage', () => {
     const editor = await screen.findByRole('textbox', { name: '全局输入阻断词库' });
     expect(mocks.getSensitiveWords).toHaveBeenCalledTimes(1);
     expect((editor as HTMLTextAreaElement).value).toBe('blocked\nrestricted');
-    expect(screen.getByText(/修改会影响所有组织、项目和访问凭证/)).toBeTruthy();
+    expect(screen.getByText(/修改会影响当前部署所有项目和访问凭证/)).toBeTruthy();
+    expect(mocks.getOrganizations).not.toHaveBeenCalled();
+    expect(mocks.getProjects).toHaveBeenCalledWith(1, 100, { org_id: 22 });
 
     fireEvent.change(editor, { target: { value: ' blocked \nnew-word\nblocked\n' } });
     fireEvent.click(screen.getByRole('button', { name: '保存并替换全局词库' }));
@@ -136,7 +141,10 @@ describe('GuardrailPoliciesPage', () => {
   });
 
   it('shows a platform word-list load failure instead of an empty editable list', async () => {
-    useAuthStore.setState({ user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1 } });
+    useAuthStore.setState({ user: {
+      id: 1, username: 'platform', role: 'platform_admin', org_id: 1,
+      customer_context: { state: 'ready', org_id: 22, org_name: 'Acme' },
+    } });
     mocks.getSensitiveWords.mockRejectedValue(new Error('词库服务不可用'));
 
     render(<GuardrailPoliciesPage />);
@@ -147,7 +155,10 @@ describe('GuardrailPoliciesPage', () => {
   });
 
   it('keeps the edited words visible and reports a failed global replacement', async () => {
-    useAuthStore.setState({ user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1 } });
+    useAuthStore.setState({ user: {
+      id: 1, username: 'platform', role: 'platform_admin', org_id: 1,
+      customer_context: { state: 'ready', org_id: 22, org_name: 'Acme' },
+    } });
     mocks.replaceSensitiveWords.mockRejectedValue(new Error('词库保存被服务拒绝'));
     let confirmation: any;
     vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
@@ -164,5 +175,48 @@ describe('GuardrailPoliciesPage', () => {
 
     expect(await screen.findByText('词库保存被服务拒绝')).toBeTruthy();
     expect(screen.getByRole('textbox', { name: '全局输入阻断词库' })).toHaveValue('unsaved-word');
+  });
+
+  it('defaults platform creation to the canonical customer and preserves an existing deployment-global rule', async () => {
+    useAuthStore.setState({ user: {
+      id: 1, username: 'platform', role: 'platform_admin', org_id: 99,
+      customer_context: { state: 'ready', org_id: 22, org_name: 'Acme' },
+    } });
+    mocks.createGuardrailPolicy.mockResolvedValue({ id: 10, version: 1, runtime_snapshot_applied: true });
+    mocks.updateGuardrailPolicy.mockResolvedValue({ id: 9, version: 2, runtime_snapshot_applied: true });
+
+    render(<GuardrailPoliciesPage />);
+    await screen.findByText('redact-email');
+    expect(mocks.getOrganizations).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /新增策略/ }));
+    fireEvent.change(await screen.findByPlaceholderText('customer-pii-redaction'), { target: { value: 'customer-default' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建策略' }));
+    await waitFor(() => expect(mocks.createGuardrailPolicy).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'customer-default', org_id: 22, mandatory: false,
+    })));
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑安全策略 platform-mandatory' }));
+    fireEvent.click(await screen.findByRole('button', { name: '保存并生成新版本' }));
+    await waitFor(() => expect(mocks.updateGuardrailPolicy).toHaveBeenCalledWith(9, expect.objectContaining({
+      org_id: 0, project_id: 0, api_key_id: 0, mandatory: true,
+    })));
+  });
+
+  it('fails closed without making customer-domain calls when the canonical customer is ambiguous', async () => {
+    useAuthStore.setState({ user: {
+      id: 1, username: 'platform', role: 'platform_admin', org_id: 99,
+      customer_context: { state: 'ambiguous' },
+    } });
+
+    render(<GuardrailPoliciesPage />);
+
+    expect((await screen.findAllByRole('heading', { name: '客户组织上下文不唯一' })).length).toBeGreaterThan(0);
+    expect(mocks.getGuardrailPolicies).not.toHaveBeenCalled();
+    expect(mocks.getKeys).not.toHaveBeenCalled();
+    expect(mocks.getOrganizations).not.toHaveBeenCalled();
+    expect(mocks.getProjects).not.toHaveBeenCalled();
+    expect(mocks.getModelNames).not.toHaveBeenCalled();
+    expect(mocks.getSensitiveWords).not.toHaveBeenCalled();
   });
 });

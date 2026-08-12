@@ -8,10 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/accessgrantboundary"
 	"github.com/uniroute/unirouter/internal/accessscope"
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/modelreadiness"
+	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 type readinessProjectionReloader struct {
@@ -63,13 +66,110 @@ func TestReadinessProjectAndBudgetAxesPreserveIndependentSemantics(t *testing.T)
 	}{
 		{"active project", readinessProjectAxis("active", "/projects/1"), modelreadiness.StateReady, "project_active"},
 		{"inactive project", readinessProjectAxis("archived", "/projects/1"), modelreadiness.StateBlocked, "project_inactive"},
-		{"budget absent", readinessProjectBudgetAxis(sql.NullInt64{}, "", "/projects/1?tab=budget"), modelreadiness.StateNotApplicable, "project_budget_not_configured_monitoring_only"},
-		{"budget monitoring", readinessProjectBudgetAxis(sql.NullInt64{Int64: 100, Valid: true}, "monthly", "/projects/1?tab=budget"), modelreadiness.StateWarning, "project_budget_monitoring_only"},
+		{"budget absent", readinessProjectBudgetAxis(billing.BillingModePrepaidEnforced, sql.NullInt64{}, "", "/projects/1?tab=budget"), modelreadiness.StateNotApplicable, "project_budget_not_configured_monitoring_only"},
+		{"budget monitoring", readinessProjectBudgetAxis(billing.BillingModePrepaidEnforced, sql.NullInt64{Int64: 100, Valid: true}, "monthly", "/projects/1?tab=budget"), modelreadiness.StateWarning, "project_budget_monitoring_only"},
+		{"observation budget absent", readinessProjectBudgetAxis(billing.BillingModeCostObservation, sql.NullInt64{}, "", "/projects/1?tab=budget"), modelreadiness.StateNotApplicable, "project_budget_not_configured_or_enforced_under_cost_observation"},
+		{"observation budget configured", readinessProjectBudgetAxis(billing.BillingModeCostObservation, sql.NullInt64{Int64: 100, Valid: true}, "monthly", "/projects/1?tab=budget"), modelreadiness.StateWarning, "project_budget_configured_only_not_enforced_under_cost_observation"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			if test.axis.State != test.state || test.axis.ReasonCode != test.reason {
 				t.Fatalf("axis=%#v", test.axis)
+			}
+		})
+	}
+	observation := readinessProjectBudgetAxis(
+		billing.BillingModeCostObservation,
+		sql.NullInt64{Int64: 100, Valid: true},
+		"monthly",
+		"/projects/1?tab=budget",
+	)
+	if observation.SafeEvidence["project_budget_admission_required"] != false ||
+		observation.SafeEvidence["project_budget_enforced"] != false ||
+		observation.SafeEvidence["calculated_cost_budget_alerts_available"] != false {
+		t.Fatalf("observation budget evidence=%#v", observation.SafeEvidence)
+	}
+}
+
+func TestCostObservationReadinessDoesNotQueryOrBlockOnWallet(t *testing.T) {
+	handler := NewHandlerWithAPIKeyHashSecret(nil, "jwt", "api-key", []byte("0123456789abcdef01234567"), nil)
+	if err := handler.SetBillingMode(billing.BillingModeCostObservation); err != nil {
+		t.Fatalf("SetBillingMode: %v", err)
+	}
+	response := &modelreadiness.Response{}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
+	handler.readinessWalletAxis(request, 99, response)
+
+	wallet := response.ProjectCaller.Wallet
+	if wallet.State != modelreadiness.StateNotApplicable || wallet.ReasonCode != "wallet_not_used_for_cost_observation_admission" {
+		t.Fatalf("wallet axis=%#v", wallet)
+	}
+	if wallet.SafeEvidence["billing_mode"] != string(billing.BillingModeCostObservation) || wallet.SafeEvidence["wallet_admission_required"] != false {
+		t.Fatalf("wallet evidence=%#v", wallet.SafeEvidence)
+	}
+
+	ready := modelreadiness.Ready("ready", nil)
+	summary := modelreadiness.Summarize(
+		modelreadiness.PlatformModel{Lifecycle: ready, PriceAuthority: ready, BaseRoute: ready},
+		modelreadiness.ProjectCaller{
+			Project: ready, Alias: modelreadiness.Optional("direct", nil), ModelSet: modelreadiness.Optional("unrestricted", nil),
+			Wallet: wallet, Application: modelreadiness.Optional("self", nil), Grant: ready, Credential: ready,
+			ModelAuthorization: ready, LimitPolicy: ready,
+		},
+	)
+	if summary.CurrentProjectCallerCallable.Value == nil || !*summary.CurrentProjectCallerCallable.Value {
+		t.Fatalf("observation wallet blocked readiness: %#v", summary.CurrentProjectCallerCallable)
+	}
+}
+
+func TestLegacyReadinessPriceAuthorityUsesOnlyLegacyTable(t *testing.T) {
+	queries := 0
+	database := &testutil.MockDB{QueryRowFn: func(_ context.Context, query string, _ ...any) pgx.Row {
+		queries++
+		if !strings.Contains(query, "model_prices") {
+			t.Fatalf("legacy price authority issued unexpected query: %s", query)
+		}
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			*dest[0].(*bool) = true
+			return nil
+		}}
+	}}
+	handler := NewHandler(database, "jwt", []byte("0123456789abcdef01234567"), nil)
+	handler.SetRequestPricingAuthority("legacy")
+	axis := handler.readinessPriceAuthorityAxis(httptest.NewRequest(http.MethodGet, "/", nil), 7, "model-a")
+	if queries != 1 || axis.State != modelreadiness.StateReady || axis.ReasonCode != "model_price_configured" || axis.SafeEvidence["request_pricing_mode"] != "legacy" {
+		t.Fatalf("legacy price authority axis=%#v queries=%d", axis, queries)
+	}
+}
+
+func TestPrepaidReadinessStillBlocksMissingOrEmptyWallet(t *testing.T) {
+	tests := []struct {
+		name   string
+		scan   func(...any) error
+		reason string
+	}{
+		{name: "missing", scan: func(...any) error { return pgx.ErrNoRows }, reason: "wallet_missing"},
+		{name: "empty", scan: func(dest ...any) error {
+			*dest[0].(*int64) = 0
+			*dest[1].(*int64) = 0
+			*dest[2].(*int64) = 0
+			return nil
+		}, reason: "wallet_no_spendable_balance"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+				return &testutil.MockRow{ScanFn: test.scan}
+			}}
+			handler := NewHandlerWithAPIKeyHashSecret(database, "jwt", "api-key", []byte("0123456789abcdef01234567"), nil)
+			response := &modelreadiness.Response{}
+			handler.readinessWalletAxis(httptest.NewRequest(http.MethodGet, "/", nil), 99, response)
+			wallet := response.ProjectCaller.Wallet
+			if wallet.State != modelreadiness.StateBlocked || wallet.ReasonCode != test.reason {
+				t.Fatalf("wallet axis=%#v", wallet)
+			}
+			if wallet.SafeEvidence["billing_mode"] != string(billing.BillingModePrepaidEnforced) || wallet.SafeEvidence["wallet_admission_required"] != true {
+				t.Fatalf("wallet evidence=%#v", wallet.SafeEvidence)
 			}
 		})
 	}

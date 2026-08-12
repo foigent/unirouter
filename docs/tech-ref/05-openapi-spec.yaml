@@ -2298,8 +2298,26 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, billing_admin]
       post: [platform_admin, billing_admin]
-    description: Lists latest enterprise Rate Card versions or creates a draft with exact decimal quantities, economic-layer separation and component hashes. It does not change current request settlement.
+    description: Lists latest enterprise Rate Card versions and the current process request-pricing mode, or creates a draft with exact decimal quantities, economic-layer separation and component hashes. A card may include daily_price_bands, a complete, gap-free, non-overlapping UTC minute schedule whose every band explicitly prices all four request Token meters; an empty array preserves flat-price cards. Cross-midnight intervals must be split before submission and are otherwise rejected. In explicit rate_card mode, active supplier_contracted rates take precedence over provider_list and missing or provider-ambiguous model_ref pricing fails closed without a legacy fallback.
     get: *operation_list
+    post: *operation_create
+
+  /api/v1/enterprise-finance/rate-cards/import-official-draft:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Atomically records an HTTPS source URL, source revision, fetched-at time, payload SHA-256, deterministic transform version and bounded-freshness window, then creates a complete provider_list draft. The draft may carry the same explicit UTC daily_price_bands contract as a manually created card. It performs no network fetch and never approves or activates the draft.
+    post: *operation_create
+
+  /api/v1/enterprise-finance/rate-cards/bootstrap-legacy-drafts:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Explicitly converts legacy model_prices plus the canonical customer organization's multiplier into provenance-bound provider_list drafts. Rows without stable provider identity are reported as skipped; no draft is approved or activated, and this operation does not change the current process authority. After an explicit rate_card cutover, the request path never falls back to legacy tables.
+    post: *operation_create
+
+  /api/v1/enterprise-finance/rate-cards/preflight:
+    x-unirouter-rbac:
+      post: [platform_admin, billing_admin]
+    description: Resolves an explicit bounded set of routed model_ref values through the strict Rate Card selector and reports per-model ready, missing, incomplete or provider-ambiguous state. It performs no mutation and is the required check before setting REQUEST_PRICING_AUTHORITY=rate_card.
     post: *operation_create
 
   /api/v1/enterprise-finance/rate-cards/{rate_card_ref}/approve:
@@ -2311,7 +2329,7 @@ paths:
   /api/v1/enterprise-finance/rate-cards/{rate_card_ref}/activate:
     x-unirouter-rbac:
       post: [platform_admin, billing_admin]
-    description: Activates an approved Rate Card only when no exact provider/model/layer/meter effective-window collision exists. Activation does not wire it into the model request path.
+    description: Activates an approved supplier-cost Rate Card only when all four request meters are explicit CNY micro rates, every configured UTC daily band is fully priced with no overlap or gap, the candidate is effective now, and provider_list evidence is not stale. Request quotes select the unique band at priced_at and bind the complete schedule plus selected band into the pricing-version content hash. If one same-model/same-layer active card conflicts, callers must provide its exact supersedes_rate_card_ref and expected_superseded_version; the transaction appends a retired version for that ref and an active version for the candidate, rolling both back on any failure. A declaration is rejected when no replacement is necessary, and multiple conflicts fail closed. Historical active versions remain available to validate immutable request snapshots. Activation alone does not change process configuration.
     post: *operation_create
 
   /api/v1/enterprise-finance/pricing-snapshots/{request_ref}:

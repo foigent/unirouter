@@ -117,6 +117,9 @@ func (h *Handler) canonicalizePolicySelector(ctx context.Context, selector *poli
 	hasObjectSelector := selector.ProjectID != nil || selector.APIKeyID != nil || selector.AccessCredentialID != nil
 	role := actorOrganizationRole(ctx)
 	if auth.IsPlatformAdmin(role) {
+		if selector.OrgID != nil && !actorCanAccessOrg(ctx, *selector.OrgID) {
+			return errLimitPolicyForbidden
+		}
 		if hasObjectSelector && (selector.OrgID == nil || *selector.OrgID <= 0) {
 			return fmt.Errorf("org_id is required for an object selector")
 		}

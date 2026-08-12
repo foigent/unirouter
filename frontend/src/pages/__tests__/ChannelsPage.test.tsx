@@ -113,6 +113,9 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(mocks.getChannels).toHaveBeenCalledWith(1, 20);
     expect(screen.getByText('同级权重')).toBeTruthy();
     expect(screen.getByText(/新通道默认 staged/)).toBeTruthy();
+    expect(screen.getByText('新增模型的推荐顺序')).toBeTruthy();
+    expect(screen.getByText(/不需要手工编造发布标识/)).toBeTruthy();
+    expect(screen.getByText(/只有 Canary 才有真实流量/)).toBeTruthy();
     expect(screen.getByText(/真实请求仍以服务器请求 ID 进行稳定选择/)).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText('模型名称，例如 gpt-4o'), { target: { value: 'gpt-4o' } });
@@ -133,10 +136,10 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     render(<ChannelsPage />);
 
     expect(await screen.findByRole('complementary', { name: 'Provider 兼容性检查器' })).toBeTruthy();
-    expect((await screen.findAllByText('fixture verified')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('协议夹具（同名）')).length).toBeGreaterThan(0);
     expect(screen.getByText('not verified')).toBeTruthy();
     expect(screen.getByText('unirouter.openai.core@1.0.0')).toBeTruthy();
-    expect(screen.getByText(/不代表真实账号、网络、额度或账单/)).toBeTruthy();
+    expect(screen.getByText(/不代表真实账号、网络、额度、模型权限或账单/)).toBeTruthy();
     expect(new URLSearchParams(window.location.search).get('channel_id')).toBe('7');
   });
 
@@ -172,11 +175,12 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     });
 
     render(<ChannelsPage />);
-    expect((await screen.findAllByText('undeclared')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('协议夹具（参考）')).length).toBeGreaterThan(0);
     fireEvent.click(await screen.findByRole('button', { name: '编辑通道 kimi-cn' }));
 
-    expect(await screen.findByRole('combobox', { name: '供应商' })).toHaveTextContent('Kimi');
+    expect(await screen.findByRole('combobox', { name: '供应商身份' })).toHaveTextContent('Kimi');
     expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('禁用');
+    fireEvent.change(screen.getByLabelText('支持模型'), { target: { value: 'kimi-k2.7-code； kimi-k2.6;kimi-k2.7-code' } });
     fireEvent.click(screen.getByRole('combobox', { name: '状态' }));
     expect(screen.queryByText('启用')).toBeNull();
     fireEvent.click(await screen.findByText('待发布（staged）'));
@@ -184,9 +188,25 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 
     await waitFor(() => expect(mocks.updateChannel).toHaveBeenCalledWith(8, expect.objectContaining({
       provider: 'kimi',
+      models: 'kimi-k2.7-code,kimi-k2.6',
       status: 'staged',
       expected_routing_epoch: 4,
     })));
+  });
+
+  it('offers DeepSeek, Kimi and custom as supplier identities without treating protocol fixtures as live verification', async () => {
+    render(<ChannelsPage />);
+    await screen.findByText('上游通道');
+    fireEvent.click(screen.getByRole('button', { name: /新增通道/ }));
+    fireEvent.click(await screen.findByRole('combobox', { name: '供应商身份' }));
+
+    expect(await screen.findByText('DeepSeek（OpenAI-compatible）')).toBeTruthy();
+    expect(screen.getByText('Kimi / Moonshot（OpenAI-compatible）')).toBeTruthy();
+    expect(screen.getByText('自定义 OpenAI-compatible')).toBeTruthy();
+    fireEvent.click(screen.getByText('DeepSeek（OpenAI-compatible）'));
+    expect(screen.getByRole('combobox', { name: '请求协议（Adapter Type）' })).toHaveTextContent('OpenAI Compatible');
+    expect(screen.getByText(/不会因为选择 OpenAI-compatible 协议而把 DeepSeek、Kimi 或自定义服务改名为 OpenAI/)).toBeTruthy();
+    expect(screen.getByText(/离线协议夹具不等于真实供应商连通验证/)).toBeTruthy();
   });
 
   it('keeps the epoch conflict message and maps other backend failures to safe useful text', async () => {

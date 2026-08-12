@@ -404,7 +404,16 @@ func (h *Handler) CreateNotificationWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if req.OrgID == 0 {
-		req.OrgID = middleware.GetOrgIDFromContext(r.Context())
+		if _, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+			resolvedOrgID, resolveErr := resolveActorOrganization(r.Context(), 0)
+			if resolveErr != nil {
+				writeOrganizationScopeError(w, resolveErr)
+				return
+			}
+			req.OrgID = resolvedOrgID
+		} else {
+			req.OrgID = middleware.GetOrgIDFromContext(r.Context())
+		}
 	}
 	if req.OrgID <= 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "org_id is required"})
@@ -492,14 +501,20 @@ func (h *Handler) notificationWebhookForActorWithDB(ctx context.Context, querier
 			 FROM notification_webhooks webhook
 			 WHERE webhook.id = $1`
 	args := []interface{}{id}
-	if !isUnauthenticatedUnitContext(ctx) && actorOrganizationRole(ctx) != auth.RolePlatformAdmin {
-		actorOrgID := middleware.GetOrgIDFromContext(ctx)
-		if actorOrgID <= 0 {
-			return record, http.StatusNotFound
+	if !isUnauthenticatedUnitContext(ctx) {
+		actorOrgID, constrained := actorOrgConstraint(ctx)
+		if !constrained && actorOrganizationRole(ctx) != auth.RolePlatformAdmin {
+			actorOrgID, constrained = middleware.GetOrgIDFromContext(ctx), true
 		}
-		query += " AND webhook.org_id = $2"
-		args = append(args, actorOrgID)
-		if actorOrganizationRole(ctx) != auth.RoleOrgAdmin {
+		if constrained {
+			if actorOrgID <= 0 {
+				return record, http.StatusNotFound
+			}
+			query += " AND webhook.org_id = $2"
+			args = append(args, actorOrgID)
+		}
+		role := actorOrganizationRole(ctx)
+		if role != auth.RoleOrgAdmin && role != auth.RolePlatformAdmin {
 			actorUserID := middleware.GetUserIDFromContext(ctx)
 			if actorUserID <= 0 {
 				return record, http.StatusNotFound

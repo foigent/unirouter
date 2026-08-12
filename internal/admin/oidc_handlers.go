@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/oidc"
 )
@@ -186,7 +187,10 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	writeOIDCCallbackHTML(w, token, stored.Redirect)
 }
 
-var errOIDCProvisioningDisabled = errors.New("oidc provisioning disabled")
+var (
+	errOIDCProvisioningDisabled          = errors.New("oidc provisioning disabled")
+	errOIDCPlatformProvisioningForbidden = errors.New("oidc platform administrator auto provisioning is forbidden")
+)
 
 func (h *Handler) upsertOIDCUser(ctx context.Context, identity *oidc.Identity) (oidcUser, error) {
 	if identity == nil {
@@ -203,6 +207,12 @@ func (h *Handler) upsertOIDCUser(ctx context.Context, identity *oidc.Identity) (
 	cfg := h.oidcService.Config()
 	if !cfg.AutoProvision {
 		return oidcUser{}, errOIDCProvisioningDisabled
+	}
+	// An external identity provider may authenticate an existing deployment
+	// operator, but it must never mint a new deployment-wide administrator.
+	// Existing issuer/subject bindings return above and keep their stored role.
+	if auth.IsPlatformAdmin(identity.OrganizationRole) || auth.IsPlatformAdmin(identity.Role) {
+		return oidcUser{}, errOIDCPlatformProvisioningForbidden
 	}
 	if err := h.ensureOIDCOrg(ctx, identity.OrgID); err != nil {
 		return oidcUser{}, err
@@ -400,13 +410,15 @@ func oidcAuditReference(kind string, parts ...string) string {
 }
 
 func (h *Handler) ensureOIDCOrg(ctx context.Context, orgID int64) error {
-	var status string
-	err := h.db.QueryRow(ctx, `SELECT status FROM orgs WHERE id = $1`, orgID).Scan(&status)
+	customer, err := customercontext.Resolve(ctx, h.db)
 	if err != nil {
-		return fmt.Errorf("oidc org not found: %w", err)
+		return fmt.Errorf("resolve OIDC customer organization: %w", err)
 	}
-	if status != "active" {
-		return fmt.Errorf("oidc org is %s", status)
+	if !customer.Ready() {
+		return fmt.Errorf("oidc customer organization is %s", customer.State)
+	}
+	if orgID != customer.OrganizationID {
+		return fmt.Errorf("oidc organization does not match the deployment customer")
 	}
 	return nil
 }

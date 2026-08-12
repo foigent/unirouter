@@ -56,3 +56,13 @@ func TestEvaluateSelectionExplainsCredentialFreeExclusions(t *testing.T) {
 		t.Fatalf("unexpected reason summary: %q", result.ExclusionReasons)
 	}
 }
+
+func TestModelAllowedAcceptsHistoricalListSeparators(t *testing.T) {
+	allowed := "kimi-k3;kimi-k2.7-code；kimi-k2.6\ncompany-chat"
+	if !modelAllowed(allowed, "kimi-k2.7-code") {
+		t.Fatal("historical semicolon-delimited credential scope was rejected")
+	}
+	if modelAllowed(allowed, "kimi-k2.7") {
+		t.Fatal("partial model identifier matched credential scope")
+	}
+}

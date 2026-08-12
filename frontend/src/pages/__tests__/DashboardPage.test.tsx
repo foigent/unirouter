@@ -108,7 +108,11 @@ describe('DashboardPage', () => {
       isAuthenticated: true,
       profileLoading: false,
       profileError: null,
-      user: { id: 1, username: 'admin', role: 'platform_admin', org_id: 1, org_name: '北区组织' },
+      user: {
+        id: 1, username: 'admin', role: 'platform_admin', org_id: 99, org_name: '技术组织',
+        customer_context: { state: 'ready', org_id: 1, org_name: '北区组织' },
+        identity_scope: 'deployment_operator',
+      },
     });
   });
 
@@ -127,9 +131,9 @@ describe('DashboardPage', () => {
 
     const html = container.textContent || '';
     expect(html).toContain('概览');
-    expect(html).toContain('平台总览');
+    expect(html).toContain('客户运营总览');
     expect(html).toContain('数据范围：北区组织');
-    expect(html).toContain('统一观察请求量、成功率、延迟、成本和通道健康状态。');
+    expect(html).toContain('统一观察当前客户的请求量、成功率、延迟、成本和通道健康状态。');
     expect(html).not.toContain('Gateway overview');
     expect(html).not.toContain('AI Gateway 控制台');
   });
@@ -168,31 +172,39 @@ describe('DashboardPage', () => {
     expect(screen.queryByText('当前窗口正常')).toBeNull();
   });
 
-  it('uses the selected platform organization as the explicit dashboard scope', async () => {
+  it('uses the canonical customer as the explicit dashboard scope without an organization selector', async () => {
     renderDashboard();
 
-    expect(await screen.findByText('目标组织')).toBeTruthy();
     await waitFor(() => expect(mockGetDashboardStats).toHaveBeenCalledWith(expect.any(String), expect.any(String), 1));
-    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
-
-    fireEvent.click(screen.getByRole('combobox', { name: '目标组织' }));
-    fireEvent.click(await screen.findByText('南区组织（ID 2）'));
-
-    await waitFor(() => expect(mockGetDashboardStats).toHaveBeenCalledWith(expect.any(String), expect.any(String), 2));
-    expect(await screen.findByText(/数据范围：南区组织/)).toBeTruthy();
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
+    expect(screen.queryByText('目标组织')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: '目标组织' })).toBeNull();
+    expect(await screen.findByText(/数据范围：北区组织/)).toBeTruthy();
   });
 
-  it('keeps an empty recent-request table stable while the platform scope changes', async () => {
+  it('keeps an empty recent-request table stable in the canonical customer scope', async () => {
     mockGetDashboardStats.mockResolvedValue({ ...MOCK_STATS, recent_logs: [] });
     renderDashboard();
 
     expect(await screen.findByText('暂无请求记录')).toBeTruthy();
-    fireEvent.click(screen.getByRole('combobox', { name: '目标组织' }));
-    fireEvent.click(await screen.findByText('南区组织（ID 2）'));
-
-    await waitFor(() => expect(mockGetDashboardStats).toHaveBeenCalledWith(expect.any(String), expect.any(String), 2));
-    expect(await screen.findByText(/数据范围：南区组织/)).toBeTruthy();
+    await waitFor(() => expect(mockGetDashboardStats).toHaveBeenCalledWith(expect.any(String), expect.any(String), 1));
+    expect(await screen.findByText(/数据范围：北区组织/)).toBeTruthy();
     expect(screen.getByText('暂无请求记录')).toBeTruthy();
+  });
+
+  it('blocks dashboard reads when the deployment has no unique customer context', () => {
+    useAuthStore.setState({
+      user: {
+        id: 1, username: 'admin', role: 'platform_admin', org_id: 99,
+        customer_context: { state: 'ambiguous' }, identity_scope: 'deployment_operator',
+      },
+    });
+
+    renderDashboard();
+
+    expect(screen.getByRole('heading', { name: '客户组织上下文不唯一' })).toBeTruthy();
+    expect(mockGetDashboardStats).not.toHaveBeenCalled();
+    expect(mockGetInternalStatus).not.toHaveBeenCalled();
   });
 
   it('does not duplicate the sidebar task taxonomy inside the dashboard', async () => {

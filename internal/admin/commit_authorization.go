@@ -59,6 +59,11 @@ func (h *Handler) reauthorizeCommittingActorTx(
 	requirement committingActorRequirement,
 ) (committingActorState, error) {
 	var state committingActorState
+	constrainedRequirement, constraintErr := constrainProjectCommitRequirementToCustomer(ctx, requirement)
+	if constraintErr != nil {
+		return state, constraintErr
+	}
+	requirement = constrainedRequirement
 	if isUnauthenticatedUnitContext(ctx) {
 		if err := principallock.LockUsers(ctx, tx, requirement.AdditionalUserIDs...); err != nil {
 			return state, err
@@ -254,6 +259,29 @@ func (h *Handler) reauthorizeCommittingActorTx(
 		return state, errCommittingActorScopeNotFound
 	}
 	return state, nil
+}
+
+// constrainProjectCommitRequirementToCustomer turns the canonical customer
+// context into a transaction-time invariant for every project mutation. This
+// prevents a deployment operator from bypassing handler-level scoping by using
+// a globally unique project ID. Organization-only/deployment mutations are
+// deliberately left to their explicit target contracts.
+func constrainProjectCommitRequirementToCustomer(
+	ctx context.Context,
+	requirement committingActorRequirement,
+) (committingActorRequirement, error) {
+	if requirement.Project == nil {
+		return requirement, nil
+	}
+	customer, present := middleware.GetCustomerContextFromContext(ctx)
+	if !present {
+		return requirement, nil
+	}
+	if !customer.Ready() || (requirement.TargetOrgID > 0 && requirement.TargetOrgID != customer.OrganizationID) {
+		return committingActorRequirement{}, errCommittingActorScopeNotFound
+	}
+	requirement.TargetOrgID = customer.OrganizationID
+	return requirement, nil
 }
 
 func projectMembershipStorageValues(canonicalRoles []string) []string {

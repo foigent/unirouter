@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { organizationRoleLabel } from '../utils/displayLabels';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
 import {
   deleteLocalView,
@@ -36,11 +37,6 @@ interface Project {
   budget_period?: string;
   key_count?: number;
   current_user_membership_role?: string;
-}
-
-interface Organization {
-  id: number;
-  name: string;
 }
 
 interface ProjectMember {
@@ -150,15 +146,13 @@ function normalizeProjectSavedState(value: unknown): ProjectSavedState | null {
 }
 
 function syncProjectURL(state: {
-  platform: boolean;
-  orgID?: number;
   projectID?: number;
   tab: ProjectTab;
   page: number;
   pageSize: number;
 }) {
   replaceControlledQuery(projectQueryKeys, {
-    org_id: state.platform ? state.orgID : undefined,
+    org_id: undefined,
     project_id: state.projectID,
     project_tab: state.tab === 'overview' ? undefined : state.tab,
     project_page: state.page === 1 ? undefined : state.page,
@@ -180,14 +174,13 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   const role = currentUser?.role || '';
   const organizationRole = canonicalOrganizationRole(currentUser?.organization_role, role);
   const platform = isPlatformAdminRole(organizationRole);
+  const customerContext = resolveCustomerContext(currentUser);
+  const customerOrgID = effectiveCustomerOrgID(currentUser);
   const initialState = useRef(readInitialProjectState()).current;
   const canCreateProject = platform || organizationRole === 'org_admin';
   const licenseModelGovernance = currentUser?.license_access?.features?.model_governance === true;
 
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(
-    platform ? (initialState.orgID || currentUser?.org_id) : currentUser?.org_id,
-  );
+  const selectedOrgID = customerOrgID;
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectTotal, setProjectTotal] = useState(0);
   const [projectPage, setProjectPage] = useState(initialState.page);
@@ -239,18 +232,8 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     ? projectMembershipOptions
     : projectMembershipOptions.filter(option => option.value !== 'project_admin');
 
-  useEffect(() => {
-    if (!platform) return;
-    loadAllPages<Organization>((page, size) => api.getOrganizations(page, size))
-      .then(items => {
-        setOrganizations(items);
-        setSelectedOrgID(current => current || items[0]?.id);
-      })
-      .catch(() => setOrganizations([]));
-  }, [platform]);
-
   const loadProjects = useCallback((page: number, pageSize: number) => {
-    if (platform && !selectedOrgID) {
+    if (!customerOrgID || selectedOrgID !== customerOrgID) {
       setProjects([]);
       setProjectTotal(0);
       selectedProjectIDRef.current = undefined;
@@ -284,8 +267,6 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
         selectedProjectIDRef.current = preferred?.id;
         setSelectedProjectID(preferred?.id);
         syncProjectURL({
-          platform,
-          orgID: selectedOrgID,
           projectID: preferred?.id,
           tab: activeTabRef.current,
           page,
@@ -300,8 +281,6 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
         setSelectedProjectID(undefined);
         setProjectLoadError('无法加载当前组织与分页范围内的项目。');
         syncProjectURL({
-          platform,
-          orgID: selectedOrgID,
           tab: activeTabRef.current,
           page,
           pageSize,
@@ -311,7 +290,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
       .finally(() => {
         if (version === projectRequestVersion.current) setProjectLoading(false);
       });
-  }, [platform, selectedOrgID]);
+  }, [customerOrgID, platform, selectedOrgID]);
 
   useEffect(() => {
     void loadProjects(projectPage, projectPageSize);
@@ -407,45 +386,21 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     setSelectedMembershipRole('project_user');
     setCandidateQuery('');
     syncProjectURL({
-      platform,
-      orgID: selectedOrgID,
       projectID: project.id,
       tab: 'overview',
       page: projectPage,
       pageSize: projectPageSize,
     });
-  }, [platform, projectPage, projectPageSize, selectedOrgID]);
+  }, [projectPage, projectPageSize]);
 
   const changeActiveTab = (value: string) => {
     const nextTab = canManageMembers ? normalizeProjectTab(value) : 'overview';
     activeTabRef.current = nextTab;
     setActiveTab(nextTab);
     syncProjectURL({
-      platform,
-      orgID: selectedOrgID,
       projectID: selectedProjectIDRef.current,
       tab: nextTab,
       page: projectPage,
-      pageSize: projectPageSize,
-    });
-  };
-
-  const changeOrganization = (value: unknown) => {
-    const nextOrgID = Number(value);
-    if (!Number.isSafeInteger(nextOrgID) || nextOrgID <= 0 || nextOrgID === selectedOrgID) return;
-    selectedProjectIDRef.current = undefined;
-    setSelectedProjectID(undefined);
-    setProjects([]);
-    setProjectTotal(0);
-    setSelectedOrgID(nextOrgID);
-    setProjectPage(1);
-    activeTabRef.current = 'overview';
-    setActiveTab('overview');
-    syncProjectURL({
-      platform,
-      orgID: nextOrgID,
-      tab: 'overview',
-      page: 1,
       pageSize: projectPageSize,
     });
   };
@@ -455,8 +410,6 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     setSelectedProjectID(undefined);
     setProjectPage(nextPage);
     syncProjectURL({
-      platform,
-      orgID: selectedOrgID,
       tab: activeTabRef.current,
       page: nextPage,
       pageSize: projectPageSize,
@@ -469,8 +422,6 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     setProjectPageSize(nextPageSize);
     setProjectPage(1);
     syncProjectURL({
-      platform,
-      orgID: selectedOrgID,
       tab: activeTabRef.current,
       page: 1,
       pageSize: nextPageSize,
@@ -483,7 +434,6 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
       return;
     }
     const next = saveLocalView(projectSavedViewStorageKey, savedViews, savedViewName, {
-      org_id: platform ? selectedOrgID : undefined,
       project_id: selectedProjectIDRef.current,
       project_tab: activeTabRef.current,
       project_page: projectPage,
@@ -508,7 +458,6 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     modelRequestVersion.current += 1;
     setSelectedSavedView(name);
     setSavedViewName(name);
-    if (platform && view.state.org_id) setSelectedOrgID(view.state.org_id);
     selectedProjectIDRef.current = view.state.project_id;
     setSelectedProjectID(view.state.project_id);
     activeTabRef.current = nextTab;
@@ -516,8 +465,6 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     setProjectPage(view.state.project_page);
     setProjectPageSize(view.state.project_page_size);
     syncProjectURL({
-      platform,
-      orgID: platform ? view.state.org_id : selectedOrgID,
       projectID: view.state.project_id,
       tab: nextTab,
       page: view.state.project_page,
@@ -545,9 +492,13 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
       Toast.error(`预算金额需在 0 至 ${maxProjectBudgetYuan.toFixed(2)} 元之间`);
       return;
     }
+    if (!selectedOrgID) {
+      Toast.error('无法确认客户组织，未创建项目');
+      return;
+    }
     try {
       await api.createProject({
-        org_id: Number(values.org_id),
+        org_id: selectedOrgID,
         name: values.name,
         slug: values.slug,
         description: values.description || '',
@@ -714,6 +665,20 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     label: `${candidate.username} · ${organizationRoleLabel(candidate.organization_role || candidate.user_role)}${candidate.status === 'active' ? '' : '（已停用）'}`,
   })), [eligibleUsers]);
 
+  if (customerContext.state !== 'ready') {
+    const blocker = customerContextBlockerCopy(customerContext.state);
+    return (
+      <div className={embedded ? 'ur-embedded-page' : 'ur-page ur-page-wide'}>
+        {!embedded ? (
+          <PageHeader eyebrow="访问与安全" title="项目与成员" description="本页只管理当前部署唯一客户组织中的项目。" />
+        ) : null}
+        <Surface>
+          <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
+        </Surface>
+      </div>
+    );
+  }
+
   return (
     <div className={embedded ? 'ur-embedded-page' : 'ur-page ur-page-wide'}>
       {embedded ? (
@@ -737,20 +702,8 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
         </Space>}
       />}
 
-      <Surface title="工作区视图" description="组织、项目、分页和当前 Tab 会写入 URL；命名视图只保存在当前浏览器。">
+      <Surface title="工作区视图" description={`当前客户：${customerContext.orgName || `组织 #${selectedOrgID}`}。项目、分页和当前 Tab 会写入 URL；命名视图只保存在当前浏览器。`}>
         <div className="ur-project-view-bar">
-          {platform && (
-            <Space>
-            <Text strong>目标组织</Text>
-            <Select
-              aria-label="目标组织"
-              value={selectedOrgID}
-              optionList={organizations.map(org => ({ label: `${org.name} (#${org.id})`, value: org.id }))}
-              onChange={changeOrganization}
-              style={{ width: 280 }}
-            />
-          </Space>
-          )}
           <div className="ur-saved-view-bar">
             <div role="group" aria-label="已保存的项目工作区">
               <Select
@@ -948,15 +901,6 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
 
       <SideSheet title="新建项目" visible={createSheet} onCancel={() => setCreateSheet(false)} width={520}>
         <Form getFormApi={setCreateFormApi} onSubmit={submitCreate}>
-          <Form.Select
-            field="org_id"
-            label="所属组织"
-            initValue={selectedOrgID || currentUser?.org_id}
-            disabled={!platform}
-            optionList={(platform ? organizations : [{ id: currentUser?.org_id || 0, name: currentUser?.org_name || '当前组织' }]).map(org => ({ label: `${org.name} (#${org.id})`, value: org.id }))}
-            rules={[{ required: true, message: '请选择组织' }]}
-            style={{ width: '100%' }}
-          />
           <Form.Input field="name" label="项目名称" rules={[{ required: true, message: '必填' }]} />
           <Form.Input field="slug" label="项目标识（可留空自动生成）" />
           <Form.TextArea field="description" label="项目说明" />

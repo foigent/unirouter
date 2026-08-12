@@ -52,6 +52,7 @@ func (p *fakeProvider) ExtendReservation(_ context.Context, req billing.ExtendRe
 		AddedCompletionTokens:  req.AdditionalCompletionTokens,
 		TargetCompletionTokens: req.TargetCompletionTokens,
 		AmountMicros:           1,
+		CalculatedCostMicros:   1,
 	}, nil
 }
 
@@ -251,8 +252,57 @@ func capabilityContext(ttl time.Duration) context.Context {
 
 func successfulProvider() *fakeProvider {
 	return &fakeProvider{
-		freeze: &billing.FreezeResult{Success: true, AmountMicros: 25},
+		freeze: &billing.FreezeResult{Success: true, AmountMicros: 25, CalculatedCostMicros: 25},
 		settle: &billing.SettleResult{Success: true, ActualCostMicros: 17, ChargedCostMicros: 17},
+	}
+}
+
+func TestCostObservationUsesCalculatedCostForExplicitAgentCapabilityBudget(t *testing.T) {
+	provider := &fakeProvider{
+		freeze: &billing.FreezeResult{
+			Success: true, BillingMode: billing.BillingModeCostObservation,
+			AmountMicros: 0, CalculatedCostMicros: 25,
+		},
+		extend: &billing.ExtendReservationResult{
+			Success: true, BillingMode: billing.BillingModeCostObservation,
+			Sequence: 1, AddedCompletionTokens: 100, TargetCompletionTokens: 200,
+			AmountMicros: 0, CalculatedCostMicros: 7,
+		},
+		settle: &billing.SettleResult{
+			Success: true, BillingMode: billing.BillingModeCostObservation,
+			ActualCostMicros: 17, ChargedCostMicros: 0,
+		},
+	}
+	runtime := &fakeRuntime{}
+	service := New(provider, runtime)
+	const operationID = "req_observation_agent_budget"
+	result, err := service.Freeze(capabilityContext(time.Minute), billing.FreezeRequest{
+		RequestID: operationID, OrgID: 7, EstimatedTokens: 200,
+	})
+	if err != nil || result == nil || !result.Success || result.AmountMicros != 0 {
+		t.Fatalf("observation freeze = %#v / %v", result, err)
+	}
+	if runtime.reserveCalls != 1 || runtime.reservedCost != 25 {
+		t.Fatalf("calculated admission estimate did not reach Agent cost cap: %#v", runtime)
+	}
+	extended, err := service.ExtendReservation(t.Context(), billing.ExtendReservationRequest{
+		RequestID: operationID, OrgID: 7, Sequence: 1,
+		AdditionalCompletionTokens: 100, TargetCompletionTokens: 200,
+	})
+	if err != nil || extended == nil || !extended.Success || extended.AmountMicros != 0 {
+		t.Fatalf("observation extension = %#v / %v", extended, err)
+	}
+	if runtime.extendCalls != 1 || runtime.extendedCost != 7 {
+		t.Fatalf("calculated extension estimate did not reach Agent cost cap: %#v", runtime)
+	}
+	settled, err := service.Settle(t.Context(), billing.SettleRequest{
+		RequestID: operationID, OrgID: 7, PromptTokens: 10, CompletionTokens: 5,
+	})
+	if err != nil || settled == nil || !settled.Success || settled.ChargedCostMicros != 0 {
+		t.Fatalf("observation settle = %#v / %v", settled, err)
+	}
+	if runtime.finalizeCalls != 1 || runtime.finalizedCost != 17 {
+		t.Fatalf("calculated terminal cost did not finalize Agent cost cap: %#v", runtime)
 	}
 }
 

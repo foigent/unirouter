@@ -196,13 +196,27 @@ describe('LogsPage', () => {
     expect(pageSize).toBe(50);
   });
 
-  it('uses the platform JWT organization as the explicit request scope', async () => {
-    auth.user = { role: 'platform_admin', org_id: 7 };
+  it('uses the canonical customer as the explicit platform request scope', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+      identity_scope: 'deployment_operator',
+    };
     renderLogs();
 
-    expect(await screen.findByText('目标组织')).toBeTruthy();
+    expect(await screen.findByText('客户范围：总部')).toBeTruthy();
+    expect(screen.queryByLabelText('目标组织')).toBeNull();
     await waitFor(() => expect(mockGetLogs).toHaveBeenCalledWith(1, 50, expect.objectContaining({ org_id: 7 })));
-    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
+
+  it('does not query execution records when platform customer context is unavailable', () => {
+    auth.user = { role: 'platform_admin', org_id: 99, customer_context: { state: 'unavailable' } };
+    renderLogs();
+
+    expect(screen.getAllByText('无法确认客户组织上下文').length).toBeGreaterThanOrEqual(1);
+    expect(mockGetLogs).not.toHaveBeenCalled();
   });
 
   it('renders log data in DOM after fetch', async () => {

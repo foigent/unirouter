@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import UsersPage from './UsersPage';
 
 const MemberLifecyclePage = lazy(() => import('./MemberLifecyclePage'));
@@ -13,7 +14,8 @@ const ProjectManagementPage = lazy(() => import('./ProjectManagementPage'));
 const { TabPane } = Tabs;
 const { Paragraph, Text, Title } = Typography;
 
-type OrganizationSection = 'bootstrap' | 'directory' | 'people' | 'projects' | 'lifecycle';
+type OrganizationSection = 'people' | 'projects';
+type AdvancedSection = 'directory' | 'lifecycle';
 
 type DirectoryHealth = {
   connection: string;
@@ -45,11 +47,14 @@ function SectionLoading() {
   return <div className="ur-route-loading" role="status" aria-label="正在加载工作区"><Spin size="large" /></div>;
 }
 
-function normalizeSection(value: string | null, canManageOrganization: boolean, platformAdmin: boolean): OrganizationSection {
+function normalizeSection(value: string | null, canManageOrganization: boolean): OrganizationSection {
   if (!canManageOrganization) return 'projects';
-  if (value === 'bootstrap' && platformAdmin) return value;
-  if (value === 'directory' || value === 'people' || value === 'projects' || value === 'lifecycle') return value;
+  if (value === 'people' || value === 'projects') return value;
   return 'people';
+}
+
+function isAdvancedSection(value: string | null): value is AdvancedSection {
+  return value === 'directory' || value === 'lifecycle';
 }
 
 type BootstrapResult = {
@@ -76,6 +81,11 @@ function FirstCustomerBootstrap() {
       const payload = await api.bootstrapFirstCustomer(normalizedName, clientRequestId) as BootstrapResult;
       setResult(payload);
       Toast.success(payload.idempotent ? '已读回同一次初始化结果' : '首个客户组织与零余额钱包已创建');
+      try {
+        await useAuthStore.getState().loadProfile();
+      } catch {
+        Toast.warning('客户组织已创建，但当前会话刷新失败。请刷新页面后继续，不要重复初始化。');
+      }
     } catch (error: any) {
       Toast.error(`初始化失败${error?.message ? `：${error.message}` : ''}`);
     } finally {
@@ -87,9 +97,9 @@ function FirstCustomerBootstrap() {
     <div className="ur-embedded-page">
       <Banner
         type="warning"
-        description="仅在 DATA_RESET 空基线已验收、且收到独立 BOOTSTRAP baton 后使用。本操作只创建一个 active 客户组织和 CNY 零余额钱包；不会创建用户、项目、Provider/Feed 凭据、应用 Key 或测试流量。"
+        description="每套本地部署只服务一个客户。本操作会创建唯一的 active 客户组织和 CNY 零余额钱包；不会自动创建用户、项目、上游凭据、应用 Key 或测试流量。"
       />
-      <Surface title="首客户初始化" description="后端会在同一事务中重新验证唯一 admin、最小组织壳、登录后允许状态和所有 reset-owned 表的严格空基线。">
+      <Surface title="初始化客户组织" description="请输入这套 UniRouter 实际服务的客户企业名称。后端会在提交时复核当前部署仍满足首次初始化条件。">
         <div style={{ display: 'grid', gap: 12, maxWidth: 620 }}>
           <Input
             aria-label="首个客户组织名称"
@@ -113,7 +123,7 @@ function FirstCustomerBootstrap() {
           {result ? (
             <Banner
               type="success"
-              description={`已创建 ${result.organization_name}（ID ${result.organization_id}），钱包余额 ${result.wallet_balance_micros} micro-CNY。后续用户、项目与凭据仍需按 BOOTSTRAP 顺序单独创建。`}
+              description={`已创建 ${result.organization_name}（ID ${result.organization_id}），钱包余额 ${result.wallet_balance_micros} micro-CNY。页面会刷新到该客户上下文；下一步请创建客户管理员和首个项目，再配置上游连接与应用 Key。`}
             />
           ) : null}
         </div>
@@ -262,17 +272,43 @@ function DirectoryFoundation({ orgId }: { orgId?: number }) {
 export default function OrganizationMembersPage() {
   const user = useAuthStore(state => state.user);
   const organizationRole = organizationRoleForUser(user);
-  const orgId = useAuthStore(state => state.user?.org_id);
+  const customerContext = resolveCustomerContext(user);
+  const orgId = effectiveCustomerOrgID(user);
   const canManageOrganization = isOrgAdminRole(organizationRole);
   const platformAdmin = isPlatformAdminRole(organizationRole);
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeSection = normalizeSection(searchParams.get('section'), canManageOrganization, platformAdmin);
+  const requestedSection = searchParams.get('section');
+  const activeSection = normalizeSection(requestedSection, canManageOrganization);
+  const advancedSection: AdvancedSection = isAdvancedSection(requestedSection) ? requestedSection : 'directory';
+  const [advancedOpen, setAdvancedOpen] = useState(() => isAdvancedSection(requestedSection));
+
+  useEffect(() => {
+    if (isAdvancedSection(requestedSection)) setAdvancedOpen(true);
+  }, [requestedSection]);
 
   const changeSection = (next: string) => {
     const params = new URLSearchParams(searchParams);
     if (next === 'people') params.delete('section');
     else params.set('section', next);
+    setAdvancedOpen(false);
     setSearchParams(params, { replace: true });
+  };
+
+  const changeAdvancedSection = (next: string) => {
+    if (!isAdvancedSection(next)) return;
+    const params = new URLSearchParams(searchParams);
+    params.set('section', next);
+    setSearchParams(params, { replace: true });
+  };
+
+  const toggleAdvanced = () => {
+    const nextOpen = !advancedOpen;
+    setAdvancedOpen(nextOpen);
+    if (!nextOpen && isAdvancedSection(requestedSection)) {
+      const params = new URLSearchParams(searchParams);
+      params.delete('section');
+      setSearchParams(params, { replace: true });
+    }
   };
 
   if (!canManageOrganization) {
@@ -283,20 +319,35 @@ export default function OrganizationMembersPage() {
     );
   }
 
+  if (customerContext.state !== 'ready') {
+    const blocker = customerContextBlockerCopy(customerContext.state);
+    return (
+      <div className="ur-page ur-page-wide ur-organization-members-page">
+        <PageHeader
+          eyebrow="部署设置"
+          title={customerContext.state === 'not_initialized' ? '初始化客户组织' : blocker.title}
+          description="客户组织上下文是账号、项目、用量和成本归属的共同边界。确认唯一客户前，UniRouter 不会使用部署技术组织代替。"
+        />
+        {platformAdmin && customerContext.state === 'not_initialized' ? (
+          <FirstCustomerBootstrap />
+        ) : (
+          <Surface>
+            <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
+          </Surface>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="ur-page ur-page-wide ur-organization-members-page">
       <PageHeader
         eyebrow="访问与安全"
-        title="组织与成员"
-        description="现在可直接创建和管理本地账号、角色及项目成员；企业目录投影延后到客户 POC，正式组织真值届时仍由企业 HCM/目录拥有。"
+        title="人员与权限"
+        description="管理这套部署唯一客户的账号、客户角色和项目成员。企业目录接入与离线合同检查属于高级准备项，不代表已经连接真实 HCM、SCIM 或 IdP。"
       />
 
       <Tabs activeKey={activeSection} onChange={changeSection} type="line">
-        {platformAdmin ? (
-          <TabPane tab="首客户初始化" itemKey="bootstrap">
-            {activeSection === 'bootstrap' ? <FirstCustomerBootstrap /> : null}
-          </TabPane>
-        ) : null}
         <TabPane tab="账号与身份" itemKey="people">
           {activeSection === 'people' ? <UsersPage embedded /> : null}
         </TabPane>
@@ -307,17 +358,37 @@ export default function OrganizationMembersPage() {
             </Suspense>
           ) : null}
         </TabPane>
-        <TabPane tab="组织架构（POC）" itemKey="directory">
-          {activeSection === 'directory' ? <DirectoryFoundation orgId={orgId} /> : null}
-        </TabPane>
-        <TabPane tab="生命周期证据" itemKey="lifecycle">
-          {activeSection === 'lifecycle' ? (
-            <Suspense fallback={<SectionLoading />}>
-              <MemberLifecyclePage embedded />
-            </Suspense>
-          ) : null}
-        </TabPane>
       </Tabs>
+
+      <Surface
+        title="高级诊断与集成准备"
+        description="默认关闭。这里保存尚未连接真实目录时的来源边界和离线事件合同，不参与日常账号、项目或请求处理。"
+      >
+        <Button aria-expanded={advancedOpen} onClick={toggleAdvanced}>
+          {advancedOpen ? '收起高级诊断' : '展开高级诊断'}
+        </Button>
+        {advancedOpen ? (
+          <div style={{ marginTop: 16 }}>
+            <Banner
+              type="warning"
+              description="除非页面明确显示真实目录来源及同步版本，否则下方内容只是接入准备或离线校验，不能作为客户目录已连接、人员已同步或权限已实际撤销的证明。"
+              style={{ marginBottom: 12 }}
+            />
+            <Tabs activeKey={advancedSection} onChange={changeAdvancedSection} type="line">
+              <TabPane tab="目录接入准备" itemKey="directory">
+                {advancedSection === 'directory' ? <DirectoryFoundation orgId={orgId} /> : null}
+              </TabPane>
+              <TabPane tab="离线生命周期合同" itemKey="lifecycle">
+                {advancedSection === 'lifecycle' ? (
+                  <Suspense fallback={<SectionLoading />}>
+                    <MemberLifecyclePage embedded />
+                  </Suspense>
+                ) : null}
+              </TabPane>
+            </Tabs>
+          </div>
+        ) : null}
+      </Surface>
 
       <Paragraph type="tertiary" className="ur-org-members-footnote">
         人员、登录账号、工作负载身份和 API Key Owner 不等价；无法证明的个人归属必须保留为共享或未归属。

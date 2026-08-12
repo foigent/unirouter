@@ -176,3 +176,24 @@ func TestFindUsesProviderAndAdapterWithoutGuessingCompatibility(t *testing.T) {
 		t.Fatalf("unknown pack=%+v found=%t err=%v", pack, found, err)
 	}
 }
+
+func TestFindConformanceSeparatesSupplierIdentityFromProtocolFixture(t *testing.T) {
+	exact, scope, found, err := FindConformance("openai", adapters.TypeOpenAICompatible)
+	if err != nil || !found || scope != ConformanceMatchProvider || exact.Manifest.PackID != "unirouter.openai.core" {
+		t.Fatalf("exact match pack=%+v scope=%q found=%t err=%v", exact, scope, found, err)
+	}
+
+	for _, provider := range []string{"deepseek", "kimi", "custom"} {
+		pack, fallbackScope, fallbackFound, fallbackErr := FindConformance(provider, adapters.TypeOpenAICompatible)
+		if fallbackErr != nil || !fallbackFound || fallbackScope != ConformanceMatchProtocol || pack.Manifest.PackID != "unirouter.openai.core" {
+			t.Fatalf("provider=%s pack=%+v scope=%q found=%t err=%v", provider, pack, fallbackScope, fallbackFound, fallbackErr)
+		}
+		if pack.Manifest.NetworkVerified {
+			t.Fatalf("provider=%s protocol fixture must not become live network evidence", provider)
+		}
+	}
+
+	if pack, fallbackScope, fallbackFound, fallbackErr := FindConformance("vendor", "vendor_magic"); fallbackErr != nil || fallbackFound || fallbackScope != "" || pack.Manifest.PackID != "" {
+		t.Fatalf("unknown adapter pack=%+v scope=%q found=%t err=%v", pack, fallbackScope, fallbackFound, fallbackErr)
+	}
+}

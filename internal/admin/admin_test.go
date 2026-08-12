@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/uniroute/unirouter/internal/billing"
 )
 
 func TestNewHandler(t *testing.T) {
@@ -27,6 +29,18 @@ func TestNewHandlerWithAPIKeyHashSecret(t *testing.T) {
 	}
 	if h.apiKeyHashSecret != "api-key-secret" {
 		t.Fatalf("expected API key hash secret override, got %q", h.apiKeyHashSecret)
+	}
+	if h.effectiveBillingMode() != billing.BillingModePrepaidEnforced {
+		t.Fatalf("expected compatibility default prepaid billing mode, got %q", h.effectiveBillingMode())
+	}
+	if err := h.SetBillingMode(billing.BillingModeCostObservation); err != nil {
+		t.Fatalf("SetBillingMode: %v", err)
+	}
+	if h.effectiveBillingMode() != billing.BillingModeCostObservation {
+		t.Fatalf("expected observation billing mode, got %q", h.effectiveBillingMode())
+	}
+	if err := h.SetBillingMode(billing.BillingModeBudgetEnforced); err == nil {
+		t.Fatal("unsupported budget mode must fail closed")
 	}
 }
 

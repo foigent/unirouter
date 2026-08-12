@@ -31,6 +31,7 @@ import {
 import { EmptyState, MetricTile, MoneyText, PageHeader, parseMicros, StatusTag, Surface } from '../ui';
 import { roleLabel as formatRoleLabel } from '../utils/displayLabels';
 import { loadAllPages } from '../utils/loadAllPages';
+import { normalizeModelList, parseModelList } from '../utils/modelList';
 import { keyQuotaText } from '../utils/quota';
 import { buildChatCompletionsCurl } from '../utils/shell';
 
@@ -128,15 +129,7 @@ interface UsageAnalyticsSummary {
 }
 
 function splitCSV(value?: string | string[] | null) {
-  if (Array.isArray(value)) {
-    return value
-      .map(item => String(item).trim())
-      .filter(Boolean);
-  }
-  return String(value || '')
-    .split(',')
-    .map(item => item.trim())
-    .filter(Boolean);
+  return parseModelList(value);
 }
 
 function compactNumber(value: number) {
@@ -403,9 +396,7 @@ export default function DeveloperConsolePage() {
 
   const handleCreateKey = async (values: Record<string, any>) => {
     if (!selectedProject) return;
-    const allowedModels = Array.isArray(values.allowed_models)
-      ? values.allowed_models.join(',')
-      : values.allowed_models || '';
+    const allowedModels = normalizeModelList(values.allowed_models);
     try {
       const result = await api.createKey({
         org_id: selectedProject.org_id,

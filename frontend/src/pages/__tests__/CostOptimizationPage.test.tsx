@@ -142,12 +142,27 @@ describe('CostOptimizationPage', () => {
     expect(mockOrganizations).not.toHaveBeenCalled();
   });
 
-  it('gives platform administrators named organization and grouping controls', async () => {
-    auth.user = { role: 'platform_admin', org_id: 7 };
+  it('binds platform cost analysis to the canonical customer without a selector', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+      identity_scope: 'deployment_operator',
+    };
     render(<MemoryRouter><CostOptimizationPage /></MemoryRouter>);
 
-    expect(await screen.findByLabelText('目标组织')).toBeTruthy();
+    expect(await screen.findByText('客户范围：总部')).toBeTruthy();
+    expect(screen.queryByLabelText('目标组织')).toBeNull();
     expect(screen.getByLabelText('拆解维度')).toBeTruthy();
-    await waitFor(() => expect(mockOrganizations).toHaveBeenCalled());
+    await waitFor(() => expect(mockSummary).toHaveBeenCalledWith(expect.objectContaining({ org_id: 7 })));
+    expect(mockOrganizations).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a platform customer context is inactive', () => {
+    auth.user = { role: 'platform_admin', org_id: 99, customer_context: { state: 'inactive', org_id: 7 } };
+    render(<MemoryRouter><CostOptimizationPage /></MemoryRouter>);
+
+    expect(screen.getAllByText('客户组织当前未启用').length).toBeGreaterThanOrEqual(1);
+    expect(mockSummary).not.toHaveBeenCalled();
   });
 });

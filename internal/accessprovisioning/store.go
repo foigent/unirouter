@@ -145,7 +145,7 @@ func readRequestByRefScopedTx(ctx context.Context, tx pgx.Tx, requestRef string,
 	if !scope.valid() {
 		return Request{}, false, nil
 	}
-	predicate := requestAccessPredicate(mode)
+	predicate := requestAccessPredicate(mode, scope.EnforceOrgBoundary)
 	return readRequestRow(tx.QueryRow(ctx, requestSelect+`
 		WHERE ar.request_ref=$1 AND (`+predicate+`)
 		FOR UPDATE`, requestRef, scope.UserID, scope.OrgID, scope.OrganizationRole))
@@ -170,7 +170,7 @@ func readRequestByRefScopedMode(ctx context.Context, q interface {
 		return Request{}, false, nil
 	}
 	return readRequestRow(q.QueryRow(ctx, requestSelect+`
-		WHERE ar.request_ref=$1 AND (`+requestAccessPredicate(mode)+`)`,
+		WHERE ar.request_ref=$1 AND (`+requestAccessPredicate(mode, scope.EnforceOrgBoundary)+`)`,
 		requestRef, scope.UserID, scope.OrgID, scope.OrganizationRole))
 }
 
@@ -248,7 +248,7 @@ func readGrantByRefScopedTx(ctx context.Context, tx pgx.Tx, grantRef string, sco
 		return Grant{}, false, nil
 	}
 	return readGrantRow(tx.QueryRow(ctx, grantSelect+`
-		WHERE ag.grant_ref=$1 AND (`+grantAccessPredicate(mode)+`)
+		WHERE ag.grant_ref=$1 AND (`+grantAccessPredicate(mode, scope.EnforceOrgBoundary)+`)
 		FOR UPDATE`, grantRef, scope.UserID, scope.OrgID, scope.OrganizationRole))
 }
 
@@ -271,18 +271,22 @@ func readGrantByRefScopedMode(ctx context.Context, q interface {
 		return Grant{}, false, nil
 	}
 	return readGrantRow(q.QueryRow(ctx, grantSelect+`
-		WHERE ag.grant_ref=$1 AND (`+grantAccessPredicate(mode)+`)`,
+		WHERE ag.grant_ref=$1 AND (`+grantAccessPredicate(mode, scope.EnforceOrgBoundary)+`)`,
 		grantRef, scope.UserID, scope.OrgID, scope.OrganizationRole))
 }
 
-func requestAccessPredicate(mode objectAccessMode) string {
+func requestAccessPredicate(mode objectAccessMode, enforceOrgBoundary bool) string {
+	platformClause := "$4='platform_admin'"
+	if enforceOrgBoundary {
+		platformClause = "($4='platform_admin' AND ar.org_id=$3)"
+	}
 	projectRoles := "'project_admin'"
 	organizationRoles := "'org_admin'"
 	if mode == objectRead {
 		projectRoles = "'project_admin'"
 		organizationRoles = "'org_admin'"
 		return `
-		$4='platform_admin'
+		` + platformClause + `
 		OR (
 		  ar.org_id=$3
 		  AND (
@@ -300,7 +304,7 @@ func requestAccessPredicate(mode objectAccessMode) string {
 		)`
 	} else if mode == objectDecision {
 		return `
-		$4='platform_admin'
+		` + platformClause + `
 		OR (
 		  ar.org_id=$3
 		  AND (
@@ -314,15 +318,20 @@ func requestAccessPredicate(mode objectAccessMode) string {
 		  )
 		)`
 	} else if mode == objectCancel {
+		orgBoundary := ""
+		if enforceOrgBoundary {
+			orgBoundary = "AND ar.org_id=$3"
+		}
 		return `
 		$4 IN ('platform_admin','org_admin','billing_admin','org_viewer','member')
+		` + orgBoundary + `
 		AND (
 		  ar.submitted_by=$2
 		  OR (ar.org_id=$3 AND ar.subject_type='workload_application' AND ar.sponsor_user_id=$2)
 		)`
 	}
 	return `
-		$4='platform_admin'
+		` + platformClause + `
 		OR (
 		  ar.org_id=$3
 		  AND (
@@ -337,7 +346,11 @@ func requestAccessPredicate(mode objectAccessMode) string {
 		)`
 }
 
-func grantAccessPredicate(mode objectAccessMode) string {
+func grantAccessPredicate(mode objectAccessMode, enforceOrgBoundary bool) string {
+	platformClause := "$4='platform_admin'"
+	if enforceOrgBoundary {
+		platformClause = "($4='platform_admin' AND ag.org_id=$3)"
+	}
 	projectClause := `EXISTS (
 		SELECT 1 FROM project_members access_pm
 		WHERE access_pm.project_id=ag.project_id
@@ -405,7 +418,7 @@ func grantAccessPredicate(mode objectAccessMode) string {
 		)`
 	}
 	return `
-		$4='platform_admin'
+		` + platformClause + `
 		OR (
 		  ag.org_id=$3
 		  AND ($4 IN (` + organizationRoles + `) OR ` + projectClause + `)

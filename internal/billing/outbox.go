@@ -16,34 +16,35 @@ import (
 )
 
 type usageJournalPayload struct {
-	EventType            string    `json:"event_type"`
-	RequestID            string    `json:"request_id"`
-	OrgID                int64     `json:"org_id"`
-	ProjectID            int64     `json:"project_id"`
-	Model                string    `json:"model"`
-	PromptTokens         int       `json:"prompt_tokens"`
-	UncachedPromptTokens int       `json:"uncached_prompt_tokens"`
-	CacheReadTokens      int       `json:"cache_read_tokens"`
-	CacheCreationTokens  int       `json:"cache_creation_tokens"`
-	CompletionTokens     int       `json:"completion_tokens"`
-	UsageSource          string    `json:"usage_source"`
-	UsageAuthority       string    `json:"usage_authority"`
-	UsagePurpose         string    `json:"usage_purpose"`
-	UsageFinality        string    `json:"usage_finality"`
-	UsageContractVersion string    `json:"usage_contract_version"`
-	UsageEstimateVersion string    `json:"usage_estimate_version,omitempty"`
-	CacheUsageSchema     string    `json:"cache_usage_schema"`
-	CacheUsageStatus     string    `json:"cache_usage_status"`
-	MoneySchema          string    `json:"money_schema,omitempty"`
-	Currency             string    `json:"currency,omitempty"`
-	AmountScale          int64     `json:"amount_scale,omitempty"`
-	CalculatedCostMicros string    `json:"calculated_cost_micros,omitempty"`
-	ChargedCostMicros    string    `json:"charged_cost_micros,omitempty"`
-	CalculatedCostCents  *int64    `json:"calculated_cost,omitempty"`
-	ChargedCostCents     *int64    `json:"charged_cost,omitempty"`
-	PricingVersion       string    `json:"pricing_version"`
-	TerminalTransaction  int64     `json:"terminal_transaction_id,omitempty"`
-	OccurredAt           time.Time `json:"occurred_at"`
+	EventType            string      `json:"event_type"`
+	BillingMode          BillingMode `json:"billing_mode,omitempty"`
+	RequestID            string      `json:"request_id"`
+	OrgID                int64       `json:"org_id"`
+	ProjectID            int64       `json:"project_id"`
+	Model                string      `json:"model"`
+	PromptTokens         int         `json:"prompt_tokens"`
+	UncachedPromptTokens int         `json:"uncached_prompt_tokens"`
+	CacheReadTokens      int         `json:"cache_read_tokens"`
+	CacheCreationTokens  int         `json:"cache_creation_tokens"`
+	CompletionTokens     int         `json:"completion_tokens"`
+	UsageSource          string      `json:"usage_source"`
+	UsageAuthority       string      `json:"usage_authority"`
+	UsagePurpose         string      `json:"usage_purpose"`
+	UsageFinality        string      `json:"usage_finality"`
+	UsageContractVersion string      `json:"usage_contract_version"`
+	UsageEstimateVersion string      `json:"usage_estimate_version,omitempty"`
+	CacheUsageSchema     string      `json:"cache_usage_schema"`
+	CacheUsageStatus     string      `json:"cache_usage_status"`
+	MoneySchema          string      `json:"money_schema,omitempty"`
+	Currency             string      `json:"currency,omitempty"`
+	AmountScale          int64       `json:"amount_scale,omitempty"`
+	CalculatedCostMicros string      `json:"calculated_cost_micros,omitempty"`
+	ChargedCostMicros    string      `json:"charged_cost_micros,omitempty"`
+	CalculatedCostCents  *int64      `json:"calculated_cost,omitempty"`
+	ChargedCostCents     *int64      `json:"charged_cost,omitempty"`
+	PricingVersion       string      `json:"pricing_version"`
+	TerminalTransaction  int64       `json:"terminal_transaction_id,omitempty"`
+	OccurredAt           time.Time   `json:"occurred_at"`
 }
 
 type budgetEvaluationPayload struct {
@@ -63,6 +64,7 @@ func enqueueUsageJournalTx(ctx context.Context, tx pgx.Tx, service *outbox.Servi
 	}
 	payload := usageJournalPayload{
 		EventType:            journalType,
+		BillingMode:          record.BillingMode,
 		RequestID:            req.RequestID,
 		OrgID:                req.OrgID,
 		ProjectID:            record.ProjectID,
@@ -130,6 +132,12 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 	if payload.OrgID <= 0 || payload.RequestID == "" || payload.EventType == "" {
 		return fmt.Errorf("usage journal event identity is invalid")
 	}
+	if payload.BillingMode == "" {
+		payload.BillingMode = BillingModePrepaidEnforced
+	}
+	if err := validateReservationBillingMode(payload.BillingMode); err != nil {
+		return fmt.Errorf("usage journal: %w", err)
+	}
 	calculatedCostMicros, chargedCostMicros, err := decodeUsageJournalMoney(event.Type, payload)
 	if err != nil {
 		return err
@@ -149,12 +157,13 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 			usage_authority, usage_purpose, usage_finality,
 			usage_contract_version, usage_estimate_version,
 			cache_usage_schema, cache_usage_status, calculated_cost_micros,
-			charged_cost_micros, pricing_version, terminal_transaction_id, occurred_at
+			charged_cost_micros, pricing_version, billing_mode,
+			terminal_transaction_id, occurred_at
 		 ) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
 			$13, $14, $15, $16, $17,
-			$18, $19, $20, $21, $22, $23, $24
+			$18, $19, $20, $21, $22, $23, $24, $25
 		 ) ON CONFLICT (event_key) DO NOTHING`,
 		event.Key, payload.EventType, payload.RequestID, payload.OrgID,
 		payload.ProjectID, payload.Model, payload.PromptTokens,
@@ -163,7 +172,7 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 		payload.UsageSource, payload.UsageAuthority, payload.UsagePurpose,
 		payload.UsageFinality, payload.UsageContractVersion, payload.UsageEstimateVersion,
 		payload.CacheUsageSchema, payload.CacheUsageStatus,
-		calculatedCostMicros, chargedCostMicros, payload.PricingVersion,
+		calculatedCostMicros, chargedCostMicros, payload.PricingVersion, payload.BillingMode,
 		nullablePositiveInt64(payload.TerminalTransaction), payload.OccurredAt,
 	)
 	if err != nil {

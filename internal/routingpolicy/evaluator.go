@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/modellist"
 )
 
 // SelectionSnapshot is the credential-free, normalized input to the routing
@@ -189,12 +191,7 @@ func modelAllowed(allowedModels, modelName string) bool {
 	if allowedModels == "" {
 		return true
 	}
-	for _, allowed := range strings.Split(allowedModels, ",") {
-		if strings.TrimSpace(allowed) == modelName {
-			return true
-		}
-	}
-	return false
+	return modellist.Contains(allowedModels, modelName)
 }
 
 func eligibleKeyCount(channel SelectionChannel, modelName string, dbNow time.Time) int {

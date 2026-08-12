@@ -4,7 +4,8 @@ import { IconEdit, IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isBillingRole, isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { PageHeader, Surface } from '../ui';
+import { EmptyState, PageHeader, Surface } from '../ui';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text, Paragraph } = Typography;
@@ -57,13 +58,14 @@ interface BuiltinLimits {
 }
 
 function selectorText(policy: LimitPolicy) {
-  const parts: string[] = [];
-  if (policy.org_id) parts.push(policy.org_name || `组织 #${policy.org_id}`);
+  const parts: string[] = [policy.org_id
+    ? (policy.org_name || `客户组织 #${policy.org_id}`)
+    : '部署全局（当前部署全部请求）'];
   if (policy.project_id) parts.push(policy.project_name || `项目 #${policy.project_id}`);
   if (policy.api_key_id) parts.push(policy.api_key_name ? `凭证 ${policy.api_key_name}` : `凭证 #${policy.api_key_id}`);
   if (policy.model) parts.push(`模型 ${policy.model}`);
   if (policy.policy_label) parts.push(`标签 ${policy.policy_label}`);
-  return parts.length ? parts.join(' · ') : '平台全局（所有请求）';
+  return parts.join(' · ');
 }
 
 function limitsText(policy: LimitPolicy) {
@@ -84,13 +86,14 @@ function modeTag(mode: LimitPolicy['mode']) {
 export default function LimitPoliciesPage() {
   const user = useAuthStore((state) => state.user);
   const organizationRole = organizationRoleForUser(user);
-  const userOrgId = useAuthStore((state) => state.user?.org_id);
+  const customerContext = resolveCustomerContext(user);
+  const customerOrgID = effectiveCustomerOrgID(user);
+  const customerContextReady = customerContext.state === 'ready' && Boolean(customerOrgID);
   const canManage = isOrgAdminRole(organizationRole) && !isBillingRole(organizationRole);
   const platform = isPlatformAdminRole(organizationRole);
   const [policies, setPolicies] = useState<LimitPolicy[]>([]);
   const [keys, setKeys] = useState<KeyOption[]>([]);
   const [models, setModels] = useState<string[]>([]);
-  const [organizations, setOrganizations] = useState<Array<{ value: number; label: string }>>([]);
   const [projects, setProjects] = useState<Array<{ value: number; label: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -99,9 +102,11 @@ export default function LimitPoliciesPage() {
   const [builtinLimits, setBuiltinLimits] = useState<BuiltinLimits>({});
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [editing, setEditing] = useState<LimitPolicy | null>(null);
+  const [policyScope, setPolicyScope] = useState<'customer' | 'deployment_global'>('customer');
   const [formApi, setFormApi] = useState<any>(null);
 
   const load = (nextPage = page, nextSize = pageSize) => {
+    if (!customerContextReady) return;
     setLoading(true);
     api.getLimitPolicies(nextPage, nextSize)
       .then((data: any) => {
@@ -113,30 +118,29 @@ export default function LimitPoliciesPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(1, pageSize); }, []);
   useEffect(() => {
+    if (customerContextReady) load(1, pageSize);
+  }, [customerContextReady, customerOrgID]);
+  useEffect(() => {
+    if (!customerContextReady || !customerOrgID) return;
     void (async () => {
       try {
-        const [keyData, orgData, modelData] = await Promise.all([
+        const [keyData, projectData, modelData] = await Promise.all([
           loadAllPages<KeyOption>((page, size) => api.getKeys(page, size)),
-          loadAllPages<any>((page, size) => api.getOrganizations(page, size)),
+          loadAllPages<any>((page, size) => api.getProjects(page, size, { org_id: customerOrgID })),
           api.getModelNames(),
         ]);
-        const projectData = platform
-          ? (await Promise.all(orgData.map((org: any) =>
-              loadAllPages<any>((page, size) => api.getProjects(page, size, { org_id: org.id })),
-            ))).flat()
-          : await loadAllPages<any>((page, size) => api.getProjects(page, size));
-        setKeys(keyData || []);
-        setOrganizations(orgData.map((org: any) => ({ value: org.id, label: `${org.name}（ID ${org.id}）` })));
-        setProjects((projectData || []).map((project: any) => ({ value: project.id, label: `${project.name} · ${project.org_name || `组织 #${project.org_id}`}` })));
+        setKeys((keyData || []).filter((key) => key.org_id === customerOrgID));
+        setProjects((projectData || [])
+          .filter((project: any) => project.org_id === customerOrgID)
+          .map((project: any) => ({ value: project.id, label: project.name })));
         const source = Array.isArray(modelData?.data) ? modelData.data : modelData;
         setModels((Array.isArray(source) ? source : []).map((item: any) => typeof item === 'string' ? item : item.model).filter(Boolean));
       } catch {
         Toast.error('策略选项加载失败，请刷新后重试');
       }
     })();
-  }, [platform]);
+  }, [customerContextReady, customerOrgID]);
 
   const openCreate = () => {
     setEditing(null);
@@ -156,24 +160,33 @@ export default function LimitPoliciesPage() {
     if (!drawerVisible || !formApi) return;
     formApi.reset();
     if (editing) {
+      const nextScope = editing.org_id ? 'customer' : 'deployment_global';
+      setPolicyScope(nextScope);
       formApi.setValues({
         ...editing,
+        scope: nextScope,
         org_id: editing.org_id || undefined,
         project_id: editing.project_id || undefined,
         api_key_id: editing.api_key_id || undefined,
       });
       return;
     }
-    formApi.setValues({ mode: 'shadow', failure_mode: 'fail_closed' });
+    setPolicyScope('customer');
+    formApi.setValues({ scope: 'customer', mode: 'shadow', failure_mode: 'fail_closed' });
   }, [drawerVisible, editing, formApi]);
 
   const submit = async (values: Record<string, any>) => {
+    if (!customerContextReady || !customerOrgID) {
+      Toast.error('无法确认唯一客户组织，限额策略未保存');
+      return;
+    }
+    const deploymentGlobal = platform && values.scope === 'deployment_global';
     const payload: Record<string, any> = {
       name: values.name,
       ...(editing ? { version: editing.version } : {}),
-      org_id: platform ? Number(values.org_id || 0) : userOrgId,
-      project_id: Number(values.project_id || 0),
-      api_key_id: Number(values.api_key_id || 0),
+      org_id: deploymentGlobal ? 0 : customerOrgID,
+      project_id: deploymentGlobal ? 0 : Number(values.project_id || 0),
+      api_key_id: deploymentGlobal ? 0 : Number(values.api_key_id || 0),
       model: values.model || '',
       policy_label: (values.policy_label || '').trim(),
       mode: values.mode,
@@ -212,8 +225,22 @@ export default function LimitPoliciesPage() {
       title: 'Redis 不确定时', dataIndex: 'failure_mode', width: 160,
       render: (value: LimitPolicy['failure_mode']) => value === 'last_known_safe' ? '最多短暂放行 1 次' : '立即拒绝（503）',
     },
-    ...(canManage ? [{ title: '操作', width: 80, render: (_: unknown, record: LimitPolicy) => <Button aria-label={`编辑策略 ${record.name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} /> }] : []),
+    ...(canManage ? [{ title: '操作', width: 100, render: (_: unknown, record: LimitPolicy) => (
+      platform || record.org_id === customerOrgID
+        ? <Button aria-label={`编辑策略 ${record.name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
+        : <Text type="tertiary" size="small">部署全局只读</Text>
+    ) }] : []),
   ];
+
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state === 'ready' ? 'unavailable' : customerContext.state);
+    return (
+      <div className="ur-page">
+        <PageHeader eyebrow="访问与安全" title={blocker.title} description="共享限额策略必须绑定唯一客户；系统不会把部署技术组织当作客户组织。" />
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={260} /></Surface>
+      </div>
+    );
+  }
 
   return (
     <div className="ur-page">
@@ -243,8 +270,8 @@ export default function LimitPoliciesPage() {
       <Surface title="使用说明与故障策略">
         <Paragraph>RPS 是每秒请求数，RPM 是每分钟请求数，TPM 是每分钟可预留并最终按实际用量结算的 Token；并发是同一时刻正在执行的请求数。</Paragraph>
         <Paragraph><Text strong>推荐先用“影子观察”：</Text>只记录“本来会拦截”的结果，不影响业务；确认阈值后再切到“正式拦截”。所有匹配策略会叠加，较具体的策略只能进一步收紧。</Paragraph>
-        <Paragraph>每个访问凭证自身的 RPM/RPS 也是内置共享策略；表格中的组织、项目、模型和标签策略会在它之上继续收紧。</Paragraph>
-        <Paragraph><Text strong>当前内置加权容量：</Text>全平台 {builtinLimits.workload_global_capacity ?? builtinLimits.global_concurrency ?? '加载中'} 个容量单位，每个组织 {builtinLimits.workload_organization_capacity ?? builtinLimits.organization_concurrency ?? '加载中'} 个。普通对话和 Embeddings 每次占 {builtinLimits.workload_interactive_weight ?? 1} 个，流式对话占 {builtinLimits.workload_stream_weight ?? 4} 个；平台和组织分别至少为短请求保留 {builtinLimits.workload_global_short_reserve ?? 10} / {builtinLimits.workload_organization_short_reserve ?? 2} 个单位。</Paragraph>
+        <Paragraph>每个访问凭证自身的 RPM/RPS 也是内置共享策略；表格中的客户、项目、模型和标签策略会在它之上继续收紧。</Paragraph>
+        <Paragraph><Text strong>当前内置加权容量：</Text>当前部署 {builtinLimits.workload_global_capacity ?? builtinLimits.global_concurrency ?? '加载中'} 个容量单位，唯一客户 {builtinLimits.workload_organization_capacity ?? builtinLimits.organization_concurrency ?? '加载中'} 个。普通对话和 Embeddings 每次占 {builtinLimits.workload_interactive_weight ?? 1} 个，流式对话占 {builtinLimits.workload_stream_weight ?? 4} 个；部署和客户分别至少为短请求保留 {builtinLimits.workload_global_short_reserve ?? 10} / {builtinLimits.workload_organization_short_reserve ?? 2} 个单位。</Paragraph>
         <Paragraph><Text strong>公平等待：</Text>普通对话最多等待 {builtinLimits.workload_interactive_max_wait_ms ?? 50} 毫秒，Embeddings 最多等待 {builtinLimits.workload_embedding_max_wait_ms ?? 50} 毫秒，流式对话最多等待 {builtinLimits.workload_stream_max_wait_ms ?? 250} 毫秒。仍无容量时返回 429 和 Retry-After，客户端可以稍后重试；增加 UniRouter 副本不会把这些数字成倍放大。</Paragraph>
         <Paragraph>表格中的“并发”仍表示匹配策略允许的同时请求数，并且只能进一步收紧内置容量，不能把它放宽。</Paragraph>
         <Paragraph><Text strong>故障策略：</Text>默认在 Redis 无法确认额度时立即返回 503。选择“短暂安全许可”时，也只能使用健康期预先拿到、约 2 秒失效且每个副本最多 1 次的许可，不会无限放行。</Paragraph>
@@ -255,24 +282,34 @@ export default function LimitPoliciesPage() {
           <Form.Input field="name" label="策略名称" placeholder="production-chat" rules={[{ required: true, message: '请输入策略名称' }]} />
           {platform ? (
             <Form.Select
-              field="org_id"
-              label="组织范围（可选）"
-              placeholder="留空表示平台全局；优先选择组织名称"
-              optionList={organizations}
-              showClear
+              field="scope"
+              label="作用域"
+              optionList={[
+                { value: 'customer', label: `唯一客户（推荐）· ${customerContext.orgName || `组织 #${customerOrgID}`}` },
+                { value: 'deployment_global', label: '部署全局（当前部署全部请求）' },
+              ]}
+              onChange={(value: any) => {
+                const nextScope = value === 'deployment_global' ? 'deployment_global' : 'customer';
+                setPolicyScope(nextScope);
+                if (nextScope === 'deployment_global') {
+                  formApi?.setValue('project_id', undefined);
+                  formApi?.setValue('api_key_id', undefined);
+                }
+              }}
+              rules={[{ required: true }]}
               style={{ width: '100%' }}
             />
-          ) : <Text type="tertiary">组织范围：当前组织（{userOrgId || '由登录身份确定'}）</Text>}
-          <Form.Select field="project_id" label="项目（可选）" optionList={projects} showClear filter style={{ width: '100%' }} />
+          ) : <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${customerOrgID}`}</Text>}
+          <Form.Select field="project_id" label="项目（可选）" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
           <Form.Select
             field="api_key_id"
             label="访问凭证（可选）"
-            optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${key.org_name || `组织 #${key.org_id}`} · ${key.key_prefix}***` }))}
-            showClear filter style={{ width: '100%' }}
+            optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${key.project_name || `项目 #${key.project_id}`} · ${key.key_prefix}***` }))}
+            showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }}
           />
           <Form.Select field="model" label="模型（可选）" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />
           <Form.Input field="policy_label" label="策略标签（可选）" placeholder="production" />
-          <Text type="tertiary" size="small">已填写的组织、项目、凭证、模型和标签必须同时匹配；标签由管理员绑定到访问凭证，调用方不能通过请求头自行声明。</Text>
+          <Text type="tertiary" size="small">已填写的客户、项目、凭证、模型和标签必须同时匹配；标签由管理员绑定到访问凭证，调用方不能通过请求头自行声明。</Text>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
             <Form.InputNumber field="rps_limit" label="RPS（每秒请求）" min={0} style={{ width: '100%' }} />
             <Form.InputNumber field="rpm_limit" label="RPM（每分钟请求）" min={0} style={{ width: '100%' }} />

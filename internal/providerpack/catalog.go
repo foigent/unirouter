@@ -84,6 +84,17 @@ type Pack struct {
 	SchemaSHA256   string   `json:"schema_sha256"`
 }
 
+// ConformanceMatchScope describes what an embedded fixture can actually
+// establish for a configured channel. An exact provider match remains
+// distinct from an adapter-protocol reference match; neither is live network
+// evidence because V1 manifests require network_verified=false.
+type ConformanceMatchScope string
+
+const (
+	ConformanceMatchProvider ConformanceMatchScope = "provider_fixture"
+	ConformanceMatchProtocol ConformanceMatchScope = "adapter_protocol_fixture"
+)
+
 type ConformanceCase struct {
 	CaseID  string `json:"case_id"`
 	Passed  bool   `json:"passed"`
@@ -273,6 +284,28 @@ func Find(provider, adapterType string) (Pack, bool, error) {
 		}
 	}
 	return Pack{}, false, nil
+}
+
+// FindConformance first looks for an exact provider identity and then, for a
+// supported built-in adapter, returns that adapter's canonical offline
+// protocol fixture. The protocol fallback is not a claim that the configured
+// supplier, account, endpoint or network has been verified.
+func FindConformance(provider, adapterType string) (Pack, ConformanceMatchScope, bool, error) {
+	pack, found, err := Find(provider, adapterType)
+	if err != nil || found {
+		return pack, ConformanceMatchProvider, found, err
+	}
+	adapterType = adapters.NormalizeType(adapterType)
+	referenceProvider := map[string]string{
+		adapters.TypeOpenAICompatible: "openai",
+		adapters.TypeAnthropicNative:  "anthropic",
+		adapters.TypeAzureOpenAI:      "azure",
+	}[adapterType]
+	if referenceProvider == "" {
+		return Pack{}, "", false, nil
+	}
+	pack, found, err = Find(referenceProvider, adapterType)
+	return pack, ConformanceMatchProtocol, found, err
 }
 
 func RunOffline(ctx context.Context, registry *adapters.Registry) (ConformanceReport, error) {

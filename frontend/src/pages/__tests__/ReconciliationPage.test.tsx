@@ -78,7 +78,7 @@ const RECON_RESPONSE = {
 describe('ReconciliationPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    auth.user = null;
+    auth.user = { id: 4, username: 'billing', role: 'billing_admin', org_id: 7 };
     mockGetReconciliation.mockResolvedValue(RECON_RESPONSE);
     mockGetModelNames.mockResolvedValue({ data: ['company-chat'] });
     mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
@@ -165,13 +165,34 @@ describe('ReconciliationPage', () => {
     expect(mockGetEnterpriseAllocationSummary).toHaveBeenCalledWith('FY26-P08', undefined);
   });
 
-  it('scopes platform reconciliation to the JWT organization', async () => {
-    auth.user = { role: 'platform_admin', org_id: 7 };
+  it('scopes platform reconciliation to the canonical customer, never the technical organization', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+    };
     render(<ReconciliationPage />);
 
-    expect(await screen.findByText('目标组织')).toBeTruthy();
+    expect(await screen.findByText('客户范围：总部')).toBeTruthy();
+    expect(screen.queryByText('目标组织')).toBeNull();
     await waitFor(() => expect(mockGetReconciliation).toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 7 })));
-    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
+    expect(mockGetReconciliation).not.toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 99 }));
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before customer-domain reads when the canonical customer is ambiguous', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ambiguous' },
+    };
+    render(<ReconciliationPage />);
+
+    expect(await screen.findByRole('heading', { name: '客户组织上下文不唯一' })).toBeTruthy();
+    expect(mockGetReconciliation).not.toHaveBeenCalled();
+    expect(mockGetModelNames).not.toHaveBeenCalled();
+    expect(mockGetEnterpriseAllocationSummary).not.toHaveBeenCalled();
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
   });
 
   it('renders usage source filter', async () => {

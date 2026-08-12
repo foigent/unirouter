@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
@@ -146,10 +147,12 @@ type Config struct {
 	OIDCOrgIDClaim         string
 
 	// Billing
-	MinFreezeCents     int64
-	FreezeSafetyFactor string
-	FreezeTimeoutSecs  int
-	ExchangeRate       float64
+	BillingMode             billing.BillingMode
+	RequestPricingAuthority billing.RequestPricingAuthority
+	MinFreezeCents          int64
+	FreezeSafetyFactor      string
+	FreezeTimeoutSecs       int
+	ExchangeRate            float64
 
 	// Rate Limiting
 	DefaultKeyRPM int
@@ -411,6 +414,22 @@ func (c *Config) Validate() error {
 	}
 	if c.LogRetentionDays < 0 {
 		return fmt.Errorf("LOG_RETENTION_DAYS must be >= 0")
+	}
+	billingMode := c.BillingMode
+	if billingMode == "" {
+		// Preserve direct Config construction used by embedded callers while
+		// keeping the process-level Load default explicit and observable.
+		billingMode = billing.BillingModeCostObservation
+	}
+	if err := billing.ValidateBillingMode(billingMode); err != nil {
+		return fmt.Errorf("BILLING_MODE: %w", err)
+	}
+	requestPricingAuthority := c.RequestPricingAuthority
+	if requestPricingAuthority == "" {
+		requestPricingAuthority = billing.RequestPricingAuthorityLegacy
+	}
+	if err := billing.ValidateRequestPricingAuthority(requestPricingAuthority); err != nil {
+		return fmt.Errorf("REQUEST_PRICING_AUTHORITY: %w", err)
 	}
 	if c.MinFreezeCents < 0 {
 		return fmt.Errorf("MIN_FREEZE_AMOUNT must be >= 0 cents")
@@ -739,10 +758,12 @@ func Load() (*Config, error) {
 		OIDCRoleClaim:          getEnvStr("OIDC_ROLE_CLAIM", "uniroute_role"),
 		OIDCOrgIDClaim:         getEnvStr("OIDC_ORG_ID_CLAIM", "uniroute_org_id"),
 
-		MinFreezeCents:     int64(getEnvInt("MIN_FREEZE_AMOUNT", 10)),
-		FreezeSafetyFactor: getEnvStr("FREEZE_SAFETY_FACTOR", "1.5"),
-		FreezeTimeoutSecs:  getEnvInt("FREEZE_TIMEOUT_SECONDS", 300),
-		ExchangeRate:       getEnvFloat("EXCHANGE_RATE", 7.25),
+		BillingMode:             billing.BillingMode(getEnvStr("BILLING_MODE", string(billing.BillingModeCostObservation))),
+		RequestPricingAuthority: billing.RequestPricingAuthority(getEnvStr("REQUEST_PRICING_AUTHORITY", string(billing.RequestPricingAuthorityLegacy))),
+		MinFreezeCents:          int64(getEnvInt("MIN_FREEZE_AMOUNT", 10)),
+		FreezeSafetyFactor:      getEnvStr("FREEZE_SAFETY_FACTOR", "1.5"),
+		FreezeTimeoutSecs:       getEnvInt("FREEZE_TIMEOUT_SECONDS", 300),
+		ExchangeRate:            getEnvFloat("EXCHANGE_RATE", 7.25),
 
 		DefaultKeyRPM: getEnvInt("DEFAULT_KEY_RPM", 60),
 		DefaultKeyQPS: getEnvInt("DEFAULT_KEY_QPS", 10),

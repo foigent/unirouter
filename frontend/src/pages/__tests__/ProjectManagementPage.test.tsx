@@ -116,6 +116,31 @@ describe('ProjectManagementPage', () => {
     expect(screen.queryByText('新建项目')).toBeNull();
   });
 
+  it('binds a platform operator to the canonical customer and removes organization selection', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'admin',
+        organization_role: 'platform_admin',
+        role: 'platform_admin',
+        org_id: 99,
+        org_name: '技术组织',
+        customer_context: { state: 'ready', org_id: 7, org_name: '客户企业' },
+        identity_scope: 'deployment_operator',
+        license_access: null,
+      },
+    });
+    mocks.getProjects.mockResolvedValueOnce({ data: [], total: 0 });
+
+    render(<ProjectManagementPage />);
+
+    expect(await screen.findByText('当前范围暂无项目')).toBeTruthy();
+    expect(mocks.getProjects).toHaveBeenCalledWith(1, 20, { org_id: 7 });
+    expect(mocks.getOrganizations).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('目标组织')).toBeNull();
+    expect(screen.getByText(/当前客户：客户企业/)).toBeTruthy();
+  });
+
   it('does not misrepresent metadata-only project fields as zero or unlimited', async () => {
     useAuthStore.setState({
       user: {

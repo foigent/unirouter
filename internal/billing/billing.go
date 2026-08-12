@@ -40,13 +40,17 @@ type FreezeRequest struct {
 
 // FreezeResult contains the result of a freeze operation.
 type FreezeResult struct {
-	FreezeID         int64
-	AmountMicros     int64
-	NewBalanceMicros int64
-	PricingVersion   string
-	Success          bool
-	ErrorCode        string
-	ErrorDetail      string
+	FreezeID     int64
+	AmountMicros int64
+	// CalculatedCostMicros is the immutable conservative admission estimate.
+	// AmountMicros remains the financial hold, which is zero in observation mode.
+	CalculatedCostMicros int64
+	NewBalanceMicros     int64
+	PricingVersion       string
+	BillingMode          BillingMode
+	Success              bool
+	ErrorCode            string
+	ErrorDetail          string
 }
 
 // SettleRequest contains the parameters for a settlement.
@@ -84,6 +88,7 @@ type settlementRecoveryAuthority struct {
 // SettleResult contains the result of a settlement.
 type SettleResult struct {
 	SettleID                                    int64
+	ObservationReceiptID                        int64
 	ActualCostMicros                            int64
 	ChargedCostMicros                           int64
 	UncoveredCostMicros                         int64
@@ -101,6 +106,7 @@ type SettleResult struct {
 	CacheReadCostMicros                         int64
 	CacheCreationCostMicros                     int64
 	OutputCostMicros                            int64
+	BillingMode                                 BillingMode
 	Success                                     bool
 	ErrorCode                                   string
 }
@@ -117,6 +123,7 @@ type priceQuote struct {
 }
 
 type reservationRecord struct {
+	BillingMode                                 BillingMode
 	Model                                       string
 	ProjectID                                   int64
 	APIKeyID                                    sql.NullInt64
@@ -124,6 +131,7 @@ type reservationRecord struct {
 	CredentialRef                               sql.NullString
 	AccessGrantID                               sql.NullInt64
 	FrozenAmountMicros                          int64
+	AdmissionCalculatedCostMicros               int64
 	ReservedBalanceMicros                       int64
 	ReservedGrantedMicros                       int64
 	EffectiveInputPriceMicrosPerMillion         int64
@@ -164,6 +172,7 @@ type reservationRecord struct {
 	CacheCreationCostMicros                     int64
 	OutputCostMicros                            int64
 	TerminalTransactionID                       sql.NullInt64
+	TerminalObservationReceiptID                sql.NullInt64
 	BalanceAfter                                sql.NullInt64
 }
 
@@ -179,16 +188,33 @@ const (
 
 // Billing handles the freeze/settle/cancel state machine.
 type Billing struct {
-	db                   *pgxpool.Pool
-	rdb                  *redis.Client
-	prices               PriceProvider
-	outbox               *outbox.Service
-	terminalMaterializer TerminalMaterializer
+	db                      *pgxpool.Pool
+	rdb                     *redis.Client
+	mode                    BillingMode
+	requestPricingAuthority RequestPricingAuthority
+	prices                  PriceProvider
+	outbox                  *outbox.Service
+	terminalMaterializer    TerminalMaterializer
 }
 
 // NewBilling creates a new Billing instance.
 func NewBilling(db *pgxpool.Pool, rdb *redis.Client) *Billing {
-	return &Billing{db: db, rdb: rdb, prices: NewDBPriceProvider(db)}
+	return &Billing{
+		db: db, rdb: rdb, mode: BillingModePrepaidEnforced,
+		requestPricingAuthority: RequestPricingAuthorityLegacy,
+		prices:                  NewDBPriceProvider(db),
+	}
+}
+
+// WithMode configures the mode used only for new reservations. Every later
+// state transition reads the immutable mode snapshot from the reservation.
+// Invalid and not-yet-supported values remain installed so request admission
+// fails closed instead of silently changing financial semantics.
+func (b *Billing) WithMode(mode BillingMode) *Billing {
+	if b != nil {
+		b.mode = mode
+	}
+	return b
 }
 
 // SetOutbox enables the repository-local P6-F20 durable evidence path. The
@@ -217,9 +243,11 @@ func (b *Billing) QueryModelPriceMicrosForOrg(ctx context.Context, orgID int64, 
 }
 
 // queryPriceQuoteForOrg resolves pricing before a wallet transaction begins.
-// Production uses one database round trip for the base price, organization
-// multiplier and their versions. Tests may inject a PriceProvider; injected
-// prices are treated as already effective with multiplier 1.
+// Production uses exactly one explicitly configured authority: legacy tables
+// during the upgrade window, or active versioned Rate Cards after cutover.
+// Tests may inject a non-DB PriceProvider; injected prices are treated as
+// already effective with multiplier 1 and never participate in production
+// wiring.
 func (b *Billing) queryPriceQuoteForOrg(ctx context.Context, orgID int64, model string) (priceQuote, error) {
 	if _, ok := b.prices.(*DBPriceProvider); !ok {
 		inputCost, outputCost, err := b.prices.QueryModelPrice(ctx, model)
@@ -228,32 +256,45 @@ func (b *Billing) queryPriceQuoteForOrg(ctx context.Context, orgID int64, model 
 		}
 		return newPriceQuote(model, inputCost, outputCost, "1", "1", "1", time.Time{}, time.Time{}, "injected")
 	}
+	switch b.requestPricingAuthority {
+	case RequestPricingAuthorityLegacy:
+		return b.queryLegacyPriceQuote(ctx, orgID, model)
+	case RequestPricingAuthorityRateCard:
+		return b.queryRateCardPriceQuote(ctx, orgID, model, time.Now().UTC())
+	default:
+		return priceQuote{}, fmt.Errorf("invalid request pricing authority %q", b.requestPricingAuthority)
+	}
+}
 
+// queryLegacyPriceQuote is an explicit upgrade-compatibility authority, never
+// a fallback from strict Rate Card mode. Operators leave it only after the
+// Rate Card readiness preflight succeeds.
+func (b *Billing) queryLegacyPriceQuote(ctx context.Context, orgID int64, model string) (priceQuote, error) {
 	var baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier string
 	var baseUpdatedAt, orgUpdatedAt sql.NullTime
 	err := b.db.QueryRow(ctx, `
-		SELECT
-			mp.input_price_cents::text,
-			mp.output_price_cents::text,
-			COALESCE(mp.cache_read_ratio, 1)::text,
-			COALESCE(mp.cache_creation_ratio, 1)::text,
-			COALESCE(omp.multiplier, 1.0)::text,
-			mp.updated_at,
-			omp.updated_at
+		SELECT mp.input_price_cents::text,mp.output_price_cents::text,
+		       COALESCE(mp.cache_read_ratio,1)::text,COALESCE(mp.cache_creation_ratio,1)::text,
+		       COALESCE(omp.multiplier,1)::text,mp.updated_at,omp.updated_at
 		FROM model_prices mp
-		LEFT JOIN org_model_prices omp ON omp.org_id = $2 AND omp.model_name = $1
-		WHERE mp.model_name = $1
-	`, model, orgID).Scan(&baseInput, &baseOutput, &cacheReadRatio, &cacheCreationRatio, &multiplier, &baseUpdatedAt, &orgUpdatedAt)
+		LEFT JOIN org_model_prices omp ON omp.org_id=$2 AND omp.model_name=$1
+		WHERE mp.model_name=$1`, model, orgID).Scan(
+		&baseInput, &baseOutput, &cacheReadRatio, &cacheCreationRatio, &multiplier,
+		&baseUpdatedAt, &orgUpdatedAt,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return priceQuote{}, fmt.Errorf("%w: %s", ErrModelPriceNotConfigured, model)
 		}
-		return priceQuote{}, fmt.Errorf("query model price for org %d model %s: %w", orgID, model, err)
+		return priceQuote{}, fmt.Errorf("query model price from explicit legacy authority for org %d model %s: %w", orgID, model, err)
 	}
-	return newPriceQuote(model, baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier, nullableTime(baseUpdatedAt), nullableTime(orgUpdatedAt), "database")
+	return newPriceQuote(
+		model, baseInput, baseOutput, cacheReadRatio, cacheCreationRatio, multiplier,
+		nullablePricingTime(baseUpdatedAt), nullablePricingTime(orgUpdatedAt), "legacy_authority",
+	)
 }
 
-func nullableTime(value sql.NullTime) time.Time {
+func nullablePricingTime(value sql.NullTime) time.Time {
 	if !value.Valid {
 		return time.Time{}
 	}
@@ -369,6 +410,23 @@ func (b *Billing) EstimateFreezeMicros(ctx context.Context, model string, estima
 // Freeze deducts balance (prioritizing granted_balance) and creates a freeze record.
 // Wrapped in a single transaction for atomicity.
 func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult, error) {
+	if b == nil || b.db == nil {
+		return nil, fmt.Errorf("billing database is unavailable")
+	}
+	if err := ValidateBillingMode(b.mode); err != nil {
+		return nil, err
+	}
+	// An admitted operation is governed by its persisted mode and price
+	// snapshot. Resolve an existing receipt before consulting the current
+	// pricing authority so a restart or authority switch cannot break an
+	// otherwise idempotent retry. The transactional check below remains the
+	// concurrency authority when no committed receipt exists yet.
+	if replay, found, err := b.replayFreeze(ctx, req); err != nil {
+		return nil, err
+	} else if found {
+		return replay, nil
+	}
+	mode := b.mode
 	// Resolve the effective price before acquiring a transaction connection. A
 	// one-connection pool must not deadlock by trying to query through the pool
 	// while its only connection is already held by tx.
@@ -407,12 +465,14 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	var existingAPIKeyID, existingAccessCredentialID, existingAccessGrantID sql.NullInt64
 	var existingCredentialRef sql.NullString
 	err = tx.QueryRow(ctx,
-		`SELECT frozen_amount_micros, status, pricing_version, api_key_id,
+		`SELECT frozen_amount_micros, admission_calculated_cost_micros,
+		        status, pricing_version, billing_mode, api_key_id,
 		        access_credential_id,credential_ref,access_grant_id
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
 		req.RequestID, req.OrgID,
-	).Scan(&existing.FrozenAmountMicros, &existing.Status, &existing.PricingVersion, &existingAPIKeyID,
+	).Scan(&existing.FrozenAmountMicros, &existing.AdmissionCalculatedCostMicros,
+		&existing.Status, &existing.PricingVersion, &existing.BillingMode, &existingAPIKeyID,
 		&existingAccessCredentialID, &existingCredentialRef, &existingAccessGrantID)
 	if err == nil {
 		if nullableID(existingAPIKeyID) != req.APIKeyID || nullableID(existingAccessCredentialID) != req.AccessCredentialID ||
@@ -421,9 +481,11 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 		}
 		if existing.Status == "frozen" {
 			return &FreezeResult{
-				AmountMicros:   existing.FrozenAmountMicros,
-				PricingVersion: existing.PricingVersion,
-				Success:        true,
+				AmountMicros:         existing.FrozenAmountMicros,
+				CalculatedCostMicros: existing.AdmissionCalculatedCostMicros,
+				PricingVersion:       existing.PricingVersion,
+				BillingMode:          existing.BillingMode,
+				Success:              true,
 			}, nil
 		}
 		return &FreezeResult{
@@ -434,6 +496,31 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("check reservation: %w", err)
+	}
+	if mode == BillingModeCostObservation {
+		if err := insertFreezeReservationTx(
+			ctx, tx, req, quote, mode, minFreezeMicros, freezeAmount, 0, 0, 0,
+		); err != nil {
+			if isUniqueViolation(err) {
+				_ = tx.Rollback(ctx)
+				record, lookupErr := b.lookupReservation(ctx, req.RequestID, req.OrgID)
+				if lookupErr == nil && record.Status == "frozen" {
+					return &FreezeResult{
+						AmountMicros: 0, CalculatedCostMicros: record.AdmissionCalculatedCostMicros,
+						PricingVersion: record.PricingVersion,
+						BillingMode:    record.BillingMode, Success: true,
+					}, nil
+				}
+			}
+			return nil, fmt.Errorf("insert observation idempotency: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("commit observation reservation: %w", err)
+		}
+		return &FreezeResult{
+			AmountMicros: 0, CalculatedCostMicros: freezeAmount, NewBalanceMicros: 0,
+			PricingVersion: quote.Version, BillingMode: mode, Success: true,
+		}, nil
 	}
 	// Get current balance
 	var balance, grantedBalance, frozen int64
@@ -498,32 +585,10 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 		return nil, fmt.Errorf("record transaction: %w", err)
 	}
 
-	// Insert the self-contained reservation and its immutable price snapshot.
-	_, err = tx.Exec(ctx,
-		`INSERT INTO freeze_idempotency (
-			request_id, org_id, frozen_amount_micros, status,
-			project_id, api_key_id, access_credential_id, credential_ref, access_grant_id,
-			reserved_balance_micros, reserved_granted_micros,
-			model_name, estimated_tokens, reserved_completion_tokens,
-			safety_factor, min_freeze_micros,
-			effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
-			effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
-			cache_read_ratio, cache_creation_ratio,
-			price_multiplier, pricing_version, updated_at
-		 ) VALUES (
-			$1, $2, $3, 'frozen',
-			$4, NULLIF($5,0), NULLIF($6,0), NULLIF($7,''), NULLIF($8,0),
-			$9, $10, $11, $12, $13, $14, $15,
-			$16, $17, $18, $19, $20, $21, $22, $23, NOW()
-		 )`,
-		req.RequestID, req.OrgID, freezeAmount,
-		req.ProjectID, req.APIKeyID, req.AccessCredentialID, req.CredentialRef, req.AccessGrantID,
-		reservedBalance, reservedGranted,
-		req.Model, req.EstimatedTokens, req.ReservedCompletionTokens,
-		req.SafetyFactor, minFreezeMicros,
-		quote.InputPriceMicrosPerMillion, quote.CacheReadPriceMicrosPerMillion, quote.CacheCreationPriceMicrosPerMillion,
-		quote.OutputPriceMicrosPerMillion, quote.CacheReadRatio, quote.CacheCreationRatio,
-		quote.Multiplier, quote.Version,
+	// Insert the self-contained reservation and its immutable price/mode snapshot.
+	err = insertFreezeReservationTx(
+		ctx, tx, req, quote, mode, minFreezeMicros, freezeAmount,
+		freezeAmount, reservedBalance, reservedGranted,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -531,9 +596,11 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 			record, lookupErr := b.lookupReservation(ctx, req.RequestID, req.OrgID)
 			if lookupErr == nil && record.Status == "frozen" {
 				return &FreezeResult{
-					AmountMicros:   record.FrozenAmountMicros,
-					PricingVersion: record.PricingVersion,
-					Success:        true,
+					AmountMicros:         record.FrozenAmountMicros,
+					CalculatedCostMicros: record.AdmissionCalculatedCostMicros,
+					PricingVersion:       record.PricingVersion,
+					BillingMode:          record.BillingMode,
+					Success:              true,
 				}, nil
 			}
 		}
@@ -557,12 +624,92 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	}
 
 	return &FreezeResult{
-		FreezeID:         0,
-		AmountMicros:     freezeAmount,
-		NewBalanceMicros: newBalance,
-		PricingVersion:   quote.Version,
-		Success:          true,
+		FreezeID:             0,
+		AmountMicros:         freezeAmount,
+		CalculatedCostMicros: freezeAmount,
+		NewBalanceMicros:     newBalance,
+		PricingVersion:       quote.Version,
+		BillingMode:          mode,
+		Success:              true,
 	}, nil
+}
+
+func (b *Billing) replayFreeze(ctx context.Context, req FreezeRequest) (*FreezeResult, bool, error) {
+	var record reservationRecord
+	var apiKeyID, accessCredentialID, accessGrantID sql.NullInt64
+	var credentialRef sql.NullString
+	err := b.db.QueryRow(ctx,
+		`SELECT frozen_amount_micros, admission_calculated_cost_micros,
+		        status, pricing_version, billing_mode, api_key_id,
+		        access_credential_id,credential_ref,access_grant_id
+		 FROM freeze_idempotency
+		 WHERE request_id = $1 AND org_id = $2`,
+		req.RequestID, req.OrgID,
+	).Scan(&record.FrozenAmountMicros, &record.AdmissionCalculatedCostMicros,
+		&record.Status, &record.PricingVersion, &record.BillingMode, &apiKeyID,
+		&accessCredentialID, &credentialRef, &accessGrantID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("check committed reservation: %w", err)
+	}
+	if err := validateReservationBillingMode(record.BillingMode); err != nil {
+		return nil, true, err
+	}
+	if nullableID(apiKeyID) != req.APIKeyID || nullableID(accessCredentialID) != req.AccessCredentialID ||
+		nullableString(credentialRef) != req.CredentialRef || nullableID(accessGrantID) != req.AccessGrantID {
+		return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "billing access identity changed"}, true, nil
+	}
+	if record.Status == "frozen" {
+		return &FreezeResult{
+			AmountMicros: record.FrozenAmountMicros, CalculatedCostMicros: record.AdmissionCalculatedCostMicros,
+			PricingVersion: record.PricingVersion,
+			BillingMode:    record.BillingMode, Success: true,
+		}, true, nil
+	}
+	return &FreezeResult{
+		Success: false, ErrorCode: "request_terminal",
+		ErrorDetail: "the operation already reached state " + record.Status,
+	}, true, nil
+}
+
+func insertFreezeReservationTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	req FreezeRequest,
+	quote priceQuote,
+	mode BillingMode,
+	minFreezeMicros, admissionCalculatedCost, frozenAmount, reservedBalance, reservedGranted int64,
+) error {
+	_, err := tx.Exec(ctx,
+		`INSERT INTO freeze_idempotency (
+			request_id, org_id, frozen_amount_micros, status, billing_mode,
+			admission_calculated_cost_micros,
+			project_id, api_key_id, access_credential_id, credential_ref, access_grant_id,
+			reserved_balance_micros, reserved_granted_micros,
+			model_name, estimated_tokens, reserved_completion_tokens,
+			safety_factor, min_freeze_micros,
+			effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
+			effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
+			cache_read_ratio, cache_creation_ratio,
+			price_multiplier, pricing_version, updated_at
+		 ) VALUES (
+			$1, $2, $3, 'frozen', $4, $5,
+			$6, NULLIF($7,0), NULLIF($8,0), NULLIF($9,''), NULLIF($10,0),
+			$11, $12, $13, $14, $15, $16, $17,
+			$18, $19, $20, $21, $22, $23, $24, $25, NOW()
+		 )`,
+		req.RequestID, req.OrgID, frozenAmount, mode, admissionCalculatedCost,
+		req.ProjectID, req.APIKeyID, req.AccessCredentialID, req.CredentialRef, req.AccessGrantID,
+		reservedBalance, reservedGranted,
+		req.Model, req.EstimatedTokens, req.ReservedCompletionTokens,
+		req.SafetyFactor, minFreezeMicros,
+		quote.InputPriceMicrosPerMillion, quote.CacheReadPriceMicrosPerMillion, quote.CacheCreationPriceMicrosPerMillion,
+		quote.OutputPriceMicrosPerMillion, quote.CacheReadRatio, quote.CacheCreationRatio,
+		quote.Multiplier, quote.Version,
+	)
+	return err
 }
 
 func nullableID(value sql.NullInt64) int64 {
@@ -649,7 +796,8 @@ func minInt64(left, right int64) int64 {
 func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID int64) (reservationRecord, error) {
 	var record reservationRecord
 	err := b.db.QueryRow(ctx,
-		`SELECT frozen_amount_micros, reserved_balance_micros, reserved_granted_micros,
+		`SELECT billing_mode, frozen_amount_micros, admission_calculated_cost_micros,
+		        reserved_balance_micros, reserved_granted_micros,
 		        effective_input_price_micros_per_million,
 		        effective_cache_read_price_micros_per_million,
 		        effective_cache_creation_price_micros_per_million,
@@ -668,12 +816,14 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		        refund_amount_micros,
 		        uncached_input_cost_micros, cache_read_cost_micros,
 		        cache_creation_cost_micros, output_cost_micros,
-		        terminal_transaction_id, balance_after_micros
+		        terminal_transaction_id, terminal_observation_receipt_id, balance_after_micros
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
 		requestID, orgID,
 	).Scan(
+		&record.BillingMode,
 		&record.FrozenAmountMicros,
+		&record.AdmissionCalculatedCostMicros,
 		&record.ReservedBalanceMicros,
 		&record.ReservedGrantedMicros,
 		&record.EffectiveInputPriceMicrosPerMillion,
@@ -714,8 +864,12 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.CacheCreationCostMicros,
 		&record.OutputCostMicros,
 		&record.TerminalTransactionID,
+		&record.TerminalObservationReceiptID,
 		&record.BalanceAfter,
 	)
+	if err == nil {
+		err = validateReservationBillingMode(record.BillingMode)
+	}
 	return record, err
 }
 
@@ -944,6 +1098,9 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	if err != nil {
 		return nil, err
 	}
+	if record.BillingMode == BillingModeCostObservation {
+		return b.settleObservationTx(ctx, tx, record, req, calculatedCost, costBreakdown)
+	}
 	// A reservation is an admission hold, not a terminal charge ceiling. Use
 	// available prepaid cash for an atomic top-up; never close a known positive
 	// shortfall as an implicit platform subsidy.
@@ -984,6 +1141,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 			UncoveredCostMicros: additionalTopUpAmount,
 			TopUpAmountMicros:   0,
 			PricingVersion:      record.PricingVersion,
+			BillingMode:         record.BillingMode,
 			Success:             false,
 			ErrorCode:           "insufficient_topup",
 		}, nil
@@ -1167,8 +1325,174 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		CacheReadCostMicros:                         costBreakdown.CacheReadCostMicros,
 		CacheCreationCostMicros:                     costBreakdown.CacheCreationCostMicros,
 		OutputCostMicros:                            costBreakdown.OutputCostMicros,
+		BillingMode:                                 record.BillingMode,
 		Success:                                     true,
 	}, nil
+}
+
+func (b *Billing) settleObservationTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	record reservationRecord,
+	req SettleRequest,
+	calculatedCost int64,
+	costBreakdown reservationCostBreakdown,
+) (*SettleResult, error) {
+	receiptID, err := insertObservationReceiptTx(ctx, tx, record, req, "settled", calculatedCost)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tx.Exec(ctx,
+		`UPDATE freeze_idempotency
+		 SET status = 'settled',
+		     prompt_tokens = $3,
+		     uncached_prompt_tokens = $4,
+		     cache_read_tokens = $5,
+		     cache_creation_tokens = $6,
+		     completion_tokens = $7,
+		     usage_source = $8,
+		     usage_authority = $9,
+		     usage_purpose = $10,
+		     usage_finality = $11,
+		     usage_contract_version = $12,
+		     usage_estimate_version = $13,
+		     cache_usage_schema = $14,
+		     cache_usage_status = $15,
+		     calculated_cost_micros = $16,
+		     charged_cost_micros = 0,
+		     uncovered_cost_micros = 0,
+		     topup_amount_micros = 0,
+		     refund_amount_micros = 0,
+		     forfeited_grant_amount_micros = 0,
+		     uncached_input_cost_micros = $17,
+		     cache_read_cost_micros = $18,
+		     cache_creation_cost_micros = $19,
+		     output_cost_micros = $20,
+		     terminal_transaction_id = NULL,
+		     terminal_observation_receipt_id = $21,
+		     balance_after_micros = NULL,
+		     terminal_at = NOW(),
+		     provider_cost_pending_at = NULL,
+		     settlement_pending_reason = '',
+		     settlement_claimed_until = NULL,
+		     settlement_next_attempt_at = NULL,
+		     updated_at = NOW()
+		 WHERE request_id = $1 AND org_id = $2
+		   AND billing_mode = 'cost_observation'
+		   AND status IN ('frozen', 'settlement_pending')`,
+		req.RequestID, req.OrgID,
+		req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
+		req.CompletionTokens, req.UsageSource,
+		req.UsageAuthority, req.UsagePurpose, req.UsageFinality,
+		req.UsageContractVersion, req.UsageEstimateVersion,
+		req.CacheUsageSchema, req.CacheUsageStatus,
+		calculatedCost,
+		costBreakdown.UncachedInputCostMicros, costBreakdown.CacheReadCostMicros,
+		costBreakdown.CacheCreationCostMicros, costBreakdown.OutputCostMicros,
+		receiptID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("terminalize observation settlement: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return nil, fmt.Errorf("terminalize observation settlement: reservation state changed")
+	}
+	if err := markProviderAttemptSettledTx(ctx, tx, req, calculatedCost, 0, 0); err != nil {
+		return nil, err
+	}
+	if record.SettlementAttempts > 0 {
+		if _, err := tx.Exec(ctx,
+			`UPDATE call_logs
+			 SET prompt_tokens = $3,
+			     uncached_prompt_tokens = $4,
+			     cache_read_tokens = $5,
+			     cache_creation_tokens = $6,
+			     completion_tokens = $7,
+			     total_tokens = $3::integer + $7::integer,
+			     cost_micros = 0,
+			     usage_source = $8,
+			     usage_authority = $9,
+			     usage_purpose = $10,
+			     usage_finality = $11,
+			     usage_contract_version = $12,
+			     usage_estimate_version = $13,
+			     cache_usage_schema = $14,
+			     cache_usage_status = $15,
+			     pricing_version = $16,
+			     effective_input_price_micros_per_million = $17,
+			     effective_cache_read_price_micros_per_million = $18,
+			     effective_cache_creation_price_micros_per_million = $19,
+			     effective_output_price_micros_per_million = $20,
+			     cache_read_cost_micros = $21,
+			     cache_creation_cost_micros = $22
+			 WHERE request_id = $1 AND org_id = $2`,
+			req.RequestID, req.OrgID,
+			req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
+			req.CompletionTokens, req.UsageSource,
+			req.UsageAuthority, req.UsagePurpose, req.UsageFinality,
+			req.UsageContractVersion, req.UsageEstimateVersion,
+			req.CacheUsageSchema, req.CacheUsageStatus, record.PricingVersion,
+			record.EffectiveInputPriceMicrosPerMillion, record.EffectiveCacheReadPriceMicrosPerMillion,
+			record.EffectiveCacheCreationPriceMicrosPerMillion, record.EffectiveOutputPriceMicrosPerMillion,
+			costBreakdown.CacheReadCostMicros, costBreakdown.CacheCreationCostMicros,
+		); err != nil {
+			return nil, fmt.Errorf("converge recovered observation call log: %w", err)
+		}
+	}
+	if err := enqueueUsageJournalTx(
+		ctx, tx, b.outbox, outbox.EventBillingSettled, "settled",
+		record, req, calculatedCost, 0, 0,
+	); err != nil {
+		return nil, fmt.Errorf("enqueue observation usage journal: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit observation settlement: %w", err)
+	}
+	return &SettleResult{
+		ObservationReceiptID:                        receiptID,
+		ActualCostMicros:                            calculatedCost,
+		ChargedCostMicros:                           0,
+		PricingVersion:                              record.PricingVersion,
+		EffectiveInputPriceMicrosPerMillion:         record.EffectiveInputPriceMicrosPerMillion,
+		EffectiveCacheReadPriceMicrosPerMillion:     record.EffectiveCacheReadPriceMicrosPerMillion,
+		EffectiveCacheCreationPriceMicrosPerMillion: record.EffectiveCacheCreationPriceMicrosPerMillion,
+		EffectiveOutputPriceMicrosPerMillion:        record.EffectiveOutputPriceMicrosPerMillion,
+		CacheReadRatio:                              record.CacheReadRatio,
+		CacheCreationRatio:                          record.CacheCreationRatio,
+		UncachedInputCostMicros:                     costBreakdown.UncachedInputCostMicros,
+		CacheReadCostMicros:                         costBreakdown.CacheReadCostMicros,
+		CacheCreationCostMicros:                     costBreakdown.CacheCreationCostMicros,
+		OutputCostMicros:                            costBreakdown.OutputCostMicros,
+		BillingMode:                                 record.BillingMode,
+		Success:                                     true,
+	}, nil
+}
+
+func insertObservationReceiptTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	record reservationRecord,
+	req SettleRequest,
+	terminalStatus string,
+	calculatedCost int64,
+) (int64, error) {
+	var receiptID int64
+	err := tx.QueryRow(ctx,
+		`INSERT INTO billing_observation_receipts (
+			org_id, request_id, terminal_status, calculated_cost_micros,
+			charged_cost_micros, pricing_version, usage_authority,
+			usage_purpose, usage_finality, usage_contract_version,
+			usage_estimate_version, occurred_at
+		 ) VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,$9,$10,NOW())
+		 RETURNING id`,
+		req.OrgID, req.RequestID, terminalStatus, calculatedCost,
+		record.PricingVersion, req.UsageAuthority, req.UsagePurpose,
+		req.UsageFinality, req.UsageContractVersion, req.UsageEstimateVersion,
+	).Scan(&receiptID)
+	if err != nil {
+		return 0, fmt.Errorf("record observation terminal receipt: %w", err)
+	}
+	return receiptID, nil
 }
 
 func persistFundingPendingTx(
@@ -1276,7 +1600,7 @@ func calculateReservationCost(record reservationRecord, req SettleRequest) (int6
 	}
 	cacheReadPrice := record.EffectiveCacheReadPriceMicrosPerMillion
 	cacheCreationPrice := record.EffectiveCacheCreationPriceMicrosPerMillion
-	if !strings.HasPrefix(record.PricingVersion, "pv2_") && !strings.HasPrefix(record.PricingVersion, "pv3_") {
+	if !pricingVersionHasExplicitCacheRates(record.PricingVersion) {
 		cacheReadPrice = record.EffectiveInputPriceMicrosPerMillion
 		cacheCreationPrice = record.EffectiveInputPriceMicrosPerMillion
 	}
@@ -1297,6 +1621,11 @@ func calculateReservationCost(record reservationRecord, req SettleRequest) (int6
 	}, nil
 }
 
+func pricingVersionHasExplicitCacheRates(version string) bool {
+	return strings.HasPrefix(version, "pv2_") || strings.HasPrefix(version, "pv3_") ||
+		strings.HasPrefix(version, "rcq2_")
+}
+
 func settleResultFromRecord(record reservationRecord) *SettleResult {
 	result := &SettleResult{
 		ActualCostMicros:                            record.CalculatedCostMicros,
@@ -1315,6 +1644,7 @@ func settleResultFromRecord(record reservationRecord) *SettleResult {
 		CacheReadCostMicros:                         record.CacheReadCostMicros,
 		CacheCreationCostMicros:                     record.CacheCreationCostMicros,
 		OutputCostMicros:                            record.OutputCostMicros,
+		BillingMode:                                 record.BillingMode,
 		Success:                                     true,
 	}
 	if record.TerminalTransactionID.Valid {
@@ -1323,14 +1653,18 @@ func settleResultFromRecord(record reservationRecord) *SettleResult {
 	if record.BalanceAfter.Valid {
 		result.NewBalanceMicros = record.BalanceAfter.Int64
 	}
+	if record.TerminalObservationReceiptID.Valid {
+		result.ObservationReceiptID = record.TerminalObservationReceiptID.Int64
+	}
 	return result
 }
 
 func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgID int64) (reservationRecord, error) {
 	var record reservationRecord
 	err := tx.QueryRow(ctx,
-		`SELECT model_name, project_id, api_key_id,access_credential_id,credential_ref,access_grant_id,
-		        frozen_amount_micros, reserved_balance_micros, reserved_granted_micros,
+		`SELECT billing_mode, model_name, project_id, api_key_id,access_credential_id,credential_ref,access_grant_id,
+		        frozen_amount_micros, admission_calculated_cost_micros,
+		        reserved_balance_micros, reserved_granted_micros,
 		        effective_input_price_micros_per_million,
 		        effective_cache_read_price_micros_per_million,
 		        effective_cache_creation_price_micros_per_million,
@@ -1349,11 +1683,12 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		        refund_amount_micros,
 		        uncached_input_cost_micros, cache_read_cost_micros,
 		        cache_creation_cost_micros, output_cost_micros,
-		        terminal_transaction_id, balance_after_micros
+		        terminal_transaction_id, terminal_observation_receipt_id, balance_after_micros
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2
 		 FOR UPDATE`, requestID, orgID,
 	).Scan(
+		&record.BillingMode,
 		&record.Model,
 		&record.ProjectID,
 		&record.APIKeyID,
@@ -1361,6 +1696,7 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.CredentialRef,
 		&record.AccessGrantID,
 		&record.FrozenAmountMicros,
+		&record.AdmissionCalculatedCostMicros,
 		&record.ReservedBalanceMicros,
 		&record.ReservedGrantedMicros,
 		&record.EffectiveInputPriceMicrosPerMillion,
@@ -1401,9 +1737,20 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.CacheCreationCostMicros,
 		&record.OutputCostMicros,
 		&record.TerminalTransactionID,
+		&record.TerminalObservationReceiptID,
 		&record.BalanceAfter,
 	)
+	if err == nil {
+		err = validateReservationBillingMode(record.BillingMode)
+	}
 	return record, err
+}
+
+func validateReservationBillingMode(mode BillingMode) error {
+	if err := ValidateBillingMode(mode); err != nil {
+		return fmt.Errorf("reservation billing mode: %w", err)
+	}
+	return nil
 }
 
 func lockWalletForBilling(ctx context.Context, tx pgx.Tx, orgID int64) error {
@@ -1573,6 +1920,9 @@ func cancelReservation(ctx context.Context, database internaldb.DBQuerier, servi
 		}
 		return ErrProviderAttemptUnresolved
 	}
+	if record.BillingMode == BillingModeCostObservation {
+		return cancelObservationReservationTx(ctx, tx, service, record, requestID, orgID)
+	}
 	if err := lockWalletForBilling(ctx, tx, orgID); err != nil {
 		return err
 	}
@@ -1648,4 +1998,58 @@ func cancelReservation(ctx context.Context, database internaldb.DBQuerier, servi
 	}
 
 	return tx.Commit(ctx)
+}
+
+func cancelObservationReservationTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	service *outbox.Service,
+	record reservationRecord,
+	requestID string,
+	orgID int64,
+) error {
+	cancelReq := SettleRequest{
+		RequestID:            requestID,
+		OrgID:                orgID,
+		UsageSource:          metering.UsageSourceMissing,
+		UsageAuthority:       metering.UsageAuthorityNone,
+		UsagePurpose:         metering.UsagePurposeProviderEvidence,
+		UsageFinality:        metering.UsageFinalityMissing,
+		UsageContractVersion: metering.UsageContractVersion,
+		CacheUsageStatus:     cacheUsageStatusNotReported,
+	}
+	receiptID, err := insertObservationReceiptTx(ctx, tx, record, cancelReq, "cancelled", 0)
+	if err != nil {
+		return err
+	}
+	result, err := tx.Exec(ctx,
+		`UPDATE freeze_idempotency
+		 SET status = 'cancelled',
+		     refund_amount_micros = 0,
+		     forfeited_grant_amount_micros = 0,
+		     terminal_transaction_id = NULL,
+		     terminal_observation_receipt_id = $3,
+		     balance_after_micros = NULL,
+		     terminal_at = NOW(),
+		     updated_at = NOW()
+		 WHERE request_id = $1 AND org_id = $2
+		   AND billing_mode = 'cost_observation' AND status = 'frozen'`,
+		requestID, orgID, receiptID,
+	)
+	if err != nil {
+		return fmt.Errorf("terminalize observation cancellation: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return fmt.Errorf("terminalize observation cancellation: reservation state changed")
+	}
+	if err := enqueueUsageJournalTx(
+		ctx, tx, service, outbox.EventBillingCancelled, "cancelled",
+		record, cancelReq, 0, 0, 0,
+	); err != nil {
+		return fmt.Errorf("enqueue observation cancellation: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit observation cancellation: %w", err)
+	}
+	return nil
 }

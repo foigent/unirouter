@@ -87,7 +87,7 @@ func NormalizeDraft(request DraftRequest) (DraftRequest, error) {
 	request.ReleaseRef = strings.TrimSpace(strings.ToLower(request.ReleaseRef))
 	request.ModelName = strings.TrimSpace(request.ModelName)
 	request.Reason = strings.TrimSpace(request.Reason)
-	if !releaseRefPattern.MatchString(request.ReleaseRef) {
+	if request.ReleaseRef != "" && !releaseRefPattern.MatchString(request.ReleaseRef) {
 		return DraftRequest{}, fmt.Errorf("%w: release_ref", ErrInvalid)
 	}
 	if request.ModelName == "" || len(request.ModelName) > 160 || strings.ContainsAny(request.ModelName, "\x00\r\n") {

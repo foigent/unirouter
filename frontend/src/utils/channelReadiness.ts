@@ -1,3 +1,5 @@
+import { parseModelList } from './modelList';
+
 export interface ChannelReadinessChannel {
   id: number;
   name: string;
@@ -22,11 +24,7 @@ export type CredentialCombinationState =
   | 'unknown_channel';
 
 export function parseChannelModels(value?: string) {
-  return String(value || '')
-    .split(/[,，\n]/)
-    .map(model => model.trim())
-    .filter(Boolean)
-    .filter((model, index, models) => models.indexOf(model) === index);
+  return parseModelList(value);
 }
 
 export function channelStatusLabel(status?: string) {

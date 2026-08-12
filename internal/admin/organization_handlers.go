@@ -3,13 +3,34 @@ package admin
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/middleware"
 )
 
-// ListOrganizations returns the organization choices visible to the current
-// actor. Platform administrators can read all organizations; tenant-scoped
-// roles can only read the organization carried by their authenticated identity.
+// ListOrganizations returns the canonical customer choice. The deployment
+// operator organization is intentionally not part of this customer-domain API.
 func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
+	if customer, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+		platform := auth.IsPlatformAdmin(actorOrganizationRole(r.Context()))
+		if !platform && (!customer.Ready() || middleware.GetOrgIDFromContext(r.Context()) != customer.OrganizationID) {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+		organizations := make([]map[string]interface{}, 0, 1)
+		total := 0
+		if customer.Ready() {
+			total = 1
+			if page == 1 && pageSize > 0 {
+				organizations = append(organizations, map[string]interface{}{
+					"id": customer.OrganizationID, "name": customer.OrganizationName, "status": "active",
+				})
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{"data": organizations, "total": total})
+		return
+	}
 	offset := paginationOffset(page, pageSize)
 	whereClause := ""
 	args := make([]interface{}, 0, 3)
