@@ -306,6 +306,20 @@ func TestOpenAICompatibleTest(t *testing.T) {
 			if !strings.HasSuffix(req.URL.String(), "/v1/chat/completions") {
 				t.Fatalf("unexpected url: %s", req.URL.String())
 			}
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("read test request: %v", err)
+			}
+			var payload map[string]interface{}
+			if err := json.Unmarshal(body, &payload); err != nil {
+				t.Fatalf("decode test request: %v", err)
+			}
+			if _, exists := payload["temperature"]; exists {
+				t.Fatalf("connectivity test must not force an optional temperature: %s", body)
+			}
+			if payload["max_tokens"] != float64(16) {
+				t.Fatalf("unexpected max_tokens: %v", payload["max_tokens"])
+			}
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
