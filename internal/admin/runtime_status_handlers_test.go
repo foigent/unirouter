@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"github.com/uniroute/unirouter/internal/streampolicy"
@@ -189,6 +191,60 @@ func TestRuntimeStatus_ReturnsRuntimeHealthAndHostTelemetry(t *testing.T) {
 		if strings.Contains(node.ID, "127.0.0.1") || strings.Contains(node.ID, "localhost") {
 			t.Fatalf("topology must not expose host identifiers: %#v", resp.Topology)
 		}
+	}
+}
+
+func TestRuntimeStatus_DeploymentOperatorCanReadHealthWithoutCustomerScope(t *testing.T) {
+	for _, state := range []customercontext.State{
+		customercontext.StateNotInitialized,
+		customercontext.StateAmbiguous,
+		customercontext.StateInactive,
+		customercontext.StateUnavailable,
+	} {
+		t.Run(string(state), func(t *testing.T) {
+			trafficQueried := false
+			h := NewHandler(&testutil.MockDB{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					if strings.Contains(sql, "FROM call_logs") {
+						trafficQueried = true
+					}
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						if len(dest) == 1 {
+							*(dest[0].(*int)) = 1
+							return nil
+						}
+						return fmt.Errorf("unexpected query")
+					}}
+				},
+			}, "jwt-secret", []byte("0123456789abcdef01234567"), nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status", nil)
+			req = req.WithContext(customerActorContext(auth.RolePlatformAdmin, 1, customercontext.Snapshot{State: state}))
+			rec := httptest.NewRecorder()
+
+			h.RuntimeStatus(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+			}
+			var response runtimeStatusResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if response.CapacityHealth.Traffic.Status != "not_applicable" || response.CapacityHealth.Traffic.Reason != "customer_context_not_ready" {
+				t.Fatalf("unexpected traffic scope: %#v", response.CapacityHealth.Traffic)
+			}
+			if trafficQueried {
+				t.Fatal("customer traffic must not be queried without a canonical customer")
+			}
+
+			foreign := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/status?org_id=1", nil)
+			foreign = foreign.WithContext(customerActorContext(auth.RolePlatformAdmin, 1, customercontext.Snapshot{State: state}))
+			foreignRecorder := httptest.NewRecorder()
+			h.RuntimeStatus(foreignRecorder, foreign)
+			if foreignRecorder.Code != http.StatusForbidden {
+				t.Fatalf("technical org selection status = %d; want 403", foreignRecorder.Code)
+			}
+		})
 	}
 }
 

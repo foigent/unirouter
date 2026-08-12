@@ -6,7 +6,7 @@ import { api } from '../api/client';
 import { authzContextForUser, canReadRuntimeStatus, hasLicensedFeature, licenseRestrictionMessage } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
-import { resolveCustomerContext } from '../utils/customerContext';
+import { customerContextBlockerCopy, resolveCustomerContext } from '../utils/customerContext';
 
 const { Text } = Typography;
 
@@ -355,6 +355,9 @@ export default function InternalStatusPage() {
     ? licenseRestrictionMessage(user.license_access, 'notifications')
     : '当前商业授权信息尚未加载。';
   const targetOrgID = customerContext.state === 'ready' ? customerContext.orgID : undefined;
+  const notificationBlocker = customerContext.state === 'ready'
+    ? null
+    : customerContextBlockerCopy(customerContext.state);
   const prometheusIntegration = runtimeData?.observability_integrations.prometheus;
   const grafanaIntegration = runtimeData?.observability_integrations.grafana;
   const routingPolicy = runtimeData?.effective_configuration?.routing_policy;
@@ -367,7 +370,7 @@ export default function InternalStatusPage() {
   const load = () => {
     setLoading(true);
     const requests: Promise<void>[] = [];
-    if (notificationsLicensed) {
+    if (notificationsLicensed && customerContext.state === 'ready') {
       setData(null);
       setNotificationLoadState('loading');
       setNotificationLoadError('');
@@ -417,7 +420,7 @@ export default function InternalStatusPage() {
     Promise.allSettled(requests).finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [canViewRuntime, notificationsLicensed, projectID, targetOrgID]);
+  useEffect(() => { load(); }, [canViewRuntime, customerContext.state, notificationsLicensed, projectID, targetOrgID]);
 
   return (
     <div className="ur-page ur-page-wide">
@@ -432,7 +435,15 @@ export default function InternalStatusPage() {
         )}
       />
 
-			{notificationsLicensed ? notificationLoadState === 'loading' ? (
+			{notificationsLicensed ? notificationBlocker ? (
+				<Surface title="通知关注摘要" description="部署运行时观测仍可用；客户通知保持关闭，直到客户范围可验证。">
+					<EmptyState
+						title={notificationBlocker.title}
+						description={notificationBlocker.description}
+						minHeight={180}
+					/>
+				</Surface>
+			) : notificationLoadState === 'loading' ? (
 				<Surface title="通知关注摘要">
 					<EmptyState title="正在加载通知摘要..." minHeight={180} />
 				</Surface>
@@ -518,10 +529,12 @@ export default function InternalStatusPage() {
             />
             <MetricTile
               label="近 5 分钟请求"
-              value={runtimeData?.capacity_health.traffic.requests ?? '-'}
+              value={runtimeData?.capacity_health.traffic.status === 'available' ? runtimeData.capacity_health.traffic.requests : '-'}
               icon={<IconBell />}
               tone={(runtimeData?.capacity_health.traffic.error_rate || 0) >= 0.05 ? 'amber' : 'blue'}
-              meta={`错误率 ${formatPercent(runtimeData?.capacity_health.traffic.error_rate)} / tokens ${runtimeData?.capacity_health.traffic.total_tokens ?? '-'}`}
+              meta={runtimeData?.capacity_health.traffic.status === 'not_applicable'
+                ? '客户组织尚未就绪，未查询客户流量'
+                : `错误率 ${formatPercent(runtimeData?.capacity_health.traffic.error_rate)} / tokens ${runtimeData?.capacity_health.traffic.total_tokens ?? '-'}`}
             />
           </div>
           <div className="ur-kpi-grid" style={{ marginTop: 16 }}>

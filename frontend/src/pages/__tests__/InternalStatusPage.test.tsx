@@ -20,7 +20,11 @@ vi.mock('../../store/auth', () => ({
 describe('InternalStatusPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    auth.user = { role: 'platform_admin' };
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 1,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+    };
     window.history.replaceState({}, '', '/status');
     mockGetInternalStatus.mockResolvedValue({
       summary_kind: 'notification_events',
@@ -144,8 +148,8 @@ describe('InternalStatusPage', () => {
     render(<InternalStatusPage />);
 
     await waitFor(() => {
-      expect(mockGetInternalStatus).toHaveBeenCalledWith(undefined);
-      expect(mockGetRuntimeStatus).toHaveBeenCalled();
+      expect(mockGetInternalStatus).toHaveBeenCalledWith({ org_id: 7 });
+      expect(mockGetRuntimeStatus).toHaveBeenCalledWith(7);
     });
 
     expect(await screen.findByRole('heading', { name: '运行状态', level: 3 })).toBeTruthy();
@@ -238,7 +242,7 @@ describe('InternalStatusPage', () => {
     window.history.replaceState({}, '', '/status?project_id=9');
     render(<InternalStatusPage />);
 
-    await waitFor(() => expect(mockGetInternalStatus).toHaveBeenCalledWith({ project_id: 9 }));
+    await waitFor(() => expect(mockGetInternalStatus).toHaveBeenCalledWith({ org_id: 7, project_id: 9 }));
     expect((await screen.findByRole('link', { name: '打开通知中心' })).getAttribute('href')).toBe('/notifications?project_id=9');
   });
 
@@ -259,6 +263,35 @@ describe('InternalStatusPage', () => {
     expect(screen.getAllByText(/未包含「通知中心」/).length).toBeGreaterThan(0);
     expect(screen.getByText('运行时观测')).toBeTruthy();
     expect(screen.queryByRole('link', { name: '打开通知中心' })).toBeNull();
+  });
+
+  it('keeps deployment health visible but does not query customer notifications before initialization', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 1,
+      customer_context: { state: 'not_initialized' },
+    };
+    const defaultRuntime = await mockGetRuntimeStatus();
+    mockGetRuntimeStatus.mockClear();
+    mockGetRuntimeStatus.mockResolvedValueOnce({
+      ...defaultRuntime,
+      capacity_health: {
+        ...defaultRuntime.capacity_health,
+        traffic: {
+          ...defaultRuntime.capacity_health.traffic,
+          status: 'not_applicable',
+          reason: 'customer_context_not_ready',
+        },
+      },
+    });
+
+    render(<InternalStatusPage />);
+
+    await waitFor(() => expect(mockGetRuntimeStatus).toHaveBeenCalledWith());
+    expect(mockGetInternalStatus).not.toHaveBeenCalled();
+    expect(screen.getByText('尚未初始化客户组织')).toBeTruthy();
+    expect(screen.getByText('运行时观测')).toBeTruthy();
+    expect(screen.getByText('客户组织尚未就绪，未查询客户流量')).toBeTruthy();
   });
 
   it('replaces old status with explicit errors instead of healthy-looking defaults', async () => {
