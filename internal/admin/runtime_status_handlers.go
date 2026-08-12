@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
 	"golang.org/x/sync/singleflight"
@@ -351,7 +353,7 @@ func runtimeStatusResponseAt(entry cachedRuntimeStatus, now time.Time) runtimeSt
 }
 
 func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
-	orgID, err := resolveRequestOrganization(r)
+	orgID, err := resolveRuntimeStatusOrganization(r)
 	if err != nil {
 		writeOrganizationScopeError(w, err)
 		return
@@ -368,6 +370,24 @@ func (h *Handler) RuntimeStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+func resolveRuntimeStatusOrganization(r *http.Request) (int64, error) {
+	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
+	if err != nil {
+		return 0, err
+	}
+	customer, present := middleware.GetCustomerContextFromContext(r.Context())
+	if present && !customer.Ready() && auth.IsPlatformAdmin(actorOrganizationRole(r.Context())) {
+		if requestedOrgID > 0 {
+			return 0, errActorOrganizationForbidden
+		}
+		// Deployment health remains observable before (or while repairing) the
+		// customer context. A zero scope deliberately disables customer traffic
+		// aggregation instead of falling back to the operator's technical org.
+		return 0, nil
+	}
+	return resolveActorOrganization(r.Context(), requestedOrgID)
 }
 
 func (h *Handler) collectRuntimeStatus(ctx context.Context, orgID int64) (runtimeStatusResponse, error) {
@@ -659,6 +679,11 @@ func (h *Handler) runtimeRedisHealth(ctx context.Context) runtimeDependencyStatu
 
 func (h *Handler) runtimeTrafficStatus(ctx context.Context, orgID int64) runtimeTrafficStatus {
 	status := runtimeTrafficStatus{Status: "available", WindowMinutes: runtimeTrafficWindowMinutes, Currency: "CNY", AmountScale: money.MicrosPerCNY}
+	if orgID <= 0 {
+		status.Status = "not_applicable"
+		status.Reason = "customer_context_not_ready"
+		return status
+	}
 	if h.db == nil {
 		status.Status = "unavailable"
 		status.Reason = "database_not_configured"
