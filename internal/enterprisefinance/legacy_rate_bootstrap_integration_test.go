@@ -58,7 +58,7 @@ func TestLegacyRateBootstrapCreatesFreshIdempotentDraftsWithoutActivation(t *tes
 
 	approved, err := store.ApproveRateCard(ctx, orgID, records[0].Card.RateCardRef, records[0].Card.Version, "user:1002")
 	require.NoError(t, err)
-	active, err := store.ActivateRateCard(ctx, orgID, approved.Card.RateCardRef, approved.Card.Version, "user:1002", time.Now().UTC())
+	active, err := store.ActivateRateCard(ctx, orgID, approved.Card.RateCardRef, approved.Card.Version, "user:1002", time.Now().UTC().Truncate(time.Microsecond))
 	require.NoError(t, err, "bootstrap evidence freshness must be measured when the controlled read occurs, not from the historical row update")
 	require.Equal(t, RateActive, active.Card.State)
 }

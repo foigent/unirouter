@@ -151,7 +151,7 @@ func TestEnterpriseRateCardActivationAPIRequiresAndAppliesExactSupersede(t *test
 		return approved
 	}
 	oldApproved := createApproved("api-old-rate", 10)
-	oldActive, err := store.ActivateRateCard(ctx, orgID, oldApproved.Card.RateCardRef, oldApproved.Card.Version, "user:102", time.Now().UTC())
+	oldActive, err := store.ActivateRateCard(ctx, orgID, oldApproved.Card.RateCardRef, oldApproved.Card.Version, "user:102", time.Now().UTC().Truncate(time.Microsecond))
 	require.NoError(t, err)
 	candidate := createApproved("api-new-rate", 20)
 

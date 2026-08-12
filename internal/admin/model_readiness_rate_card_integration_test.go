@@ -48,7 +48,7 @@ func TestRateCardReadinessPriceAuthorityIgnoresLegacyRowsAndReflectsStrictResolv
 	require.NoError(t, err)
 	approved, err := store.ApproveRateCard(ctx, orgID, draft.Card.RateCardRef, draft.Card.Version, "user:202")
 	require.NoError(t, err)
-	active, err := store.ActivateRateCard(ctx, orgID, approved.Card.RateCardRef, approved.Card.Version, "user:202", time.Now().UTC())
+	active, err := store.ActivateRateCard(ctx, orgID, approved.Card.RateCardRef, approved.Card.Version, "user:202", time.Now().UTC().Truncate(time.Microsecond))
 	require.NoError(t, err)
 
 	ready := handler.readinessPriceAuthorityAxis(request, orgID, "strict-only-readiness")
