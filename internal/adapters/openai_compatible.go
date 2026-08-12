@@ -96,8 +96,7 @@ func (a *OpenAICompatible) Test(ctx context.Context, in TestInput) (*TestResult,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
-		"max_tokens":  16,
-		"temperature": 0,
+		"max_tokens": 16,
 	})
 	if err != nil {
 		return nil, err
