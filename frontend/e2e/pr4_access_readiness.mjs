@@ -311,7 +311,7 @@ try {
     assert.equal(rejectResponse.status(), 200);
     assert.equal((await rejectResponse.json()).request.status, 'rejected');
 
-    await gotoHeading(admin.page, '/organization-members', '组织与成员');
+    await gotoHeading(admin.page, '/organization-members', '人员与权限');
     await visible(admin.page.getByText('本地账号 / Local User', { exact: true }));
     await visible(admin.page.getByText(fixture.usernames.alice, { exact: true }));
     assert.equal(await admin.page.getByText(fixture.usernames.oidc, { exact: true }).count(), 0);
