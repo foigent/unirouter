@@ -1191,13 +1191,25 @@ func resolveModelGovernanceCreateOrganization(ctx context.Context, requestedOrgI
 	return resolveActorOrganization(ctx, *requestedOrgID)
 }
 
-// resolveModelGovernancePathScope binds tenant callers to their JWT
-// organization. Platform callers may add an explicit org_id; without it, the
-// globally unique path ID itself is treated as their explicit target.
+// resolveModelGovernancePathScope binds production requests to the canonical
+// customer context. The platform-only ID fallback is retained solely for
+// rolling-upgrade/direct-handler compatibility when CustomerContext is absent;
+// it must never let a deployment operator use a globally unique path ID to
+// escape the single-customer boundary.
 func resolveModelGovernancePathScope(r *http.Request) (modelGovernanceOrgScope, error) {
 	requestedOrgID, err := parseOptionalOrganizationID(r.URL.Query().Get("org_id"))
 	if err != nil {
 		return modelGovernanceOrgScope{}, err
+	}
+	if customer, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+		if !customer.Ready() {
+			return modelGovernanceOrgScope{}, errActorOrganizationForbidden
+		}
+		orgID, resolveErr := resolveActorOrganization(r.Context(), requestedOrgID)
+		if resolveErr != nil {
+			return modelGovernanceOrgScope{}, resolveErr
+		}
+		return modelGovernanceOrgScope{orgID: orgID, constrained: true}, nil
 	}
 	if auth.IsPlatformAdmin(actorOrganizationRole(r.Context())) {
 		return modelGovernanceOrgScope{orgID: requestedOrgID, constrained: requestedOrgID > 0}, nil

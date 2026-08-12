@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
@@ -57,6 +58,46 @@ func TestValidate_Exact32ByteKey(t *testing.T) {
 	err := cfg.Validate()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_BillingModeContract(t *testing.T) {
+	base := Config{
+		JWTSecret: "secret", APIKeyHashSecret: "api-key-secret",
+		EncryptionKey: "0123456789abcdef0123456789abcdef", FreezeSafetyFactor: "1",
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("empty direct-construction mode should retain the observation default: %v", err)
+	}
+	base.BillingMode = billing.BillingModePrepaidEnforced
+	if err := base.Validate(); err != nil {
+		t.Fatalf("prepaid mode should remain supported: %v", err)
+	}
+	base.BillingMode = billing.BillingModeBudgetEnforced
+	if err := base.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("budget mode must fail closed until budget admission is complete, got %v", err)
+	}
+	base.BillingMode = "Cost_Observation"
+	if err := base.Validate(); err == nil || !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("billing mode parsing must be exact, got %v", err)
+	}
+}
+
+func TestValidate_RequestPricingAuthorityMigrationGate(t *testing.T) {
+	base := Config{
+		JWTSecret: "secret", APIKeyHashSecret: "api-key-secret",
+		EncryptionKey: "0123456789abcdef0123456789abcdef", FreezeSafetyFactor: "1",
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("empty direct construction should retain explicit legacy compatibility: %v", err)
+	}
+	base.RequestPricingAuthority = billing.RequestPricingAuthorityRateCard
+	if err := base.Validate(); err != nil {
+		t.Fatalf("strict Rate Card authority should be supported: %v", err)
+	}
+	base.RequestPricingAuthority = "auto"
+	if err := base.Validate(); err == nil || !strings.Contains(err.Error(), "REQUEST_PRICING_AUTHORITY") {
+		t.Fatalf("unknown authority must fail startup validation, got %v", err)
 	}
 }
 
@@ -1198,7 +1239,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"COMPLETED_EXECUTION_FEED_ENABLED", "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
 		"XINSIGHT_CONNECTOR_AGENT_ENABLED", "XINSIGHT_CONNECTOR_CONTROL_ORIGIN", "XINSIGHT_CONNECTOR_POLL_MILLISECONDS",
 		"XINSIGHT_CONNECTOR_REQUEST_TIMEOUT_MILLISECONDS", "XINSIGHT_CONNECTOR_RECEIVER_BINDINGS_JSON",
-		"LICENSE_PUBLIC_KEY", "LICENSE_PUBLIC_KEYS", "LICENSE_DEPLOYMENT_ID", "LICENSE_EXPIRY_WARNING_DAYS", "LICENSE_REFRESH_SECONDS", "UPGRADE_PUBLIC_KEYS", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
+		"LICENSE_PUBLIC_KEY", "LICENSE_PUBLIC_KEYS", "LICENSE_DEPLOYMENT_ID", "LICENSE_EXPIRY_WARNING_DAYS", "LICENSE_REFRESH_SECONDS", "UPGRADE_PUBLIC_KEYS", "BILLING_MODE", "REQUEST_PRICING_AUTHORITY", "MIN_FREEZE_AMOUNT", "FREEZE_SAFETY_FACTOR", "DEFAULT_KEY_RPM", "DEFAULT_KEY_QPS",
 	}
 	for _, v := range envVars {
 		os.Unsetenv(v)
@@ -1233,6 +1274,8 @@ func TestLoad_Defaults(t *testing.T) {
 		),
 		XInsightConnectorPollMilliseconds:           XInsightConnectorDefaultPollMilliseconds,
 		XInsightConnectorRequestTimeoutMilliseconds: XInsightConnectorDefaultRequestTimeoutMilliseconds,
+		BillingMode:                        billing.BillingMode(getEnvStr("BILLING_MODE", string(billing.BillingModeCostObservation))),
+		RequestPricingAuthority:            billing.RequestPricingAuthority(getEnvStr("REQUEST_PRICING_AUTHORITY", string(billing.RequestPricingAuthorityLegacy))),
 		MinFreezeCents:                     int64(getEnvInt("MIN_FREEZE_AMOUNT", 10)),
 		FreezeSafetyFactor:                 getEnvStr("FREEZE_SAFETY_FACTOR", "1.5"),
 		DefaultKeyRPM:                      getEnvInt("DEFAULT_KEY_RPM", 60),
@@ -1274,6 +1317,12 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.MinFreezeCents != 10 {
 		t.Fatalf("expected 10 cent min freeze, got %d", cfg.MinFreezeCents)
+	}
+	if cfg.BillingMode != billing.BillingModeCostObservation {
+		t.Fatalf("expected cost-observation billing default, got %q", cfg.BillingMode)
+	}
+	if cfg.RequestPricingAuthority != billing.RequestPricingAuthorityLegacy {
+		t.Fatalf("expected legacy request-pricing upgrade default, got %q", cfg.RequestPricingAuthority)
 	}
 	if cfg.FreezeSafetyFactor != "1.5" {
 		t.Fatalf("expected exact 1.5 safety factor, got %q", cfg.FreezeSafetyFactor)

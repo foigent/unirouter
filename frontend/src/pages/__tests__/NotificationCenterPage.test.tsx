@@ -146,17 +146,39 @@ describe('NotificationCenterPage', () => {
     expect(mockGetNotificationWebhooks).not.toHaveBeenCalled();
   });
 
-  it('uses one explicit platform organization for events, deliveries, and webhooks', async () => {
-    auth.user = { role: 'platform_admin', org_id: 7 };
+  it('uses the canonical customer for every platform notification operation', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+    };
     render(<NotificationCenterPage />);
 
-    expect(await screen.findByText('目标组织')).toBeTruthy();
+    expect(await screen.findByText('客户范围：总部')).toBeTruthy();
+    expect(screen.queryByText('目标组织')).toBeNull();
     await waitFor(() => {
       expect(mockGetNotificationEvents).toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 7 }));
       expect(mockGetNotificationDeliveries).toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 7 }));
       expect(mockGetNotificationWebhooks).toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 7 }));
     });
-    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
+    expect(mockGetNotificationEvents).not.toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 99 }));
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before notification reads when the customer context is unavailable', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'unavailable' },
+    };
+    render(<NotificationCenterPage />);
+
+    expect(await screen.findByRole('heading', { name: '无法确认客户组织上下文' })).toBeTruthy();
+    expect(mockGetNotificationEvents).not.toHaveBeenCalled();
+    expect(mockGetNotificationDeliveries).not.toHaveBeenCalled();
+    expect(mockGetNotificationWebhooks).not.toHaveBeenCalled();
+    expect(mockGetProjects).not.toHaveBeenCalled();
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
   });
 
   it('shows quarantined historical webhooks and requires explicit scope confirmation', async () => {

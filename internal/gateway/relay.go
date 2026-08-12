@@ -32,6 +32,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/modelgov"
+	"github.com/uniroute/unirouter/internal/modellist"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
@@ -764,8 +765,7 @@ func modelAllowedForAPIKey(apiKey *models.ApiKey, model, requestedModel string) 
 	if apiKey.AllowedModels == "" {
 		return true
 	}
-	for _, allowedModel := range strings.Split(apiKey.AllowedModels, ",") {
-		allowedModel = strings.TrimSpace(allowedModel)
+	for _, allowedModel := range modellist.Parse(apiKey.AllowedModels) {
 		if allowedModel == "*" || allowedModel == model || allowedModel == requestedModel {
 			return true
 		}
@@ -3383,23 +3383,11 @@ func (relay *Relay) HandleModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func modelListContainsWildcard(allowedModels string) bool {
-	for _, model := range strings.Split(allowedModels, ",") {
-		if strings.TrimSpace(model) == "*" {
-			return true
-		}
-	}
-	return false
+	return modellist.Contains(allowedModels, "*")
 }
 
 func (relay *Relay) writeAllowedModelList(w http.ResponseWriter, r *http.Request, allowedModels string) {
-	candidates := make([]string, 0)
-	for _, model := range strings.Split(allowedModels, ",") {
-		model = strings.TrimSpace(model)
-		if model != "" {
-			candidates = append(candidates, model)
-		}
-	}
-	relay.writeAuthorizedModelList(w, r, candidates)
+	relay.writeAuthorizedModelList(w, r, modellist.Parse(allowedModels))
 }
 
 func (relay *Relay) handleModelsFallback(w http.ResponseWriter, r *http.Request) {

@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -72,9 +73,12 @@ func TestOIDCCallbackAutoProvisionsUserAndReturnsJWT(t *testing.T) {
 			switch {
 			case strings.Contains(sql, "FROM users") && strings.Contains(sql, "oidc_issuer"):
 				return &testutil.MockRow{ScanFn: func(dest ...any) error { return pgx.ErrNoRows }}
-			case strings.Contains(sql, "SELECT status FROM orgs"):
+			case strings.Contains(sql, "FROM orgs") && strings.Contains(sql, "org_type = 'customer'"):
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {
-					*dest[0].(*string) = "active"
+					*dest[0].(*int64) = 1
+					*dest[1].(*int64) = 7
+					*dest[2].(*string) = "Customer"
+					*dest[3].(*string) = "active"
 					return nil
 				}}
 			case strings.Contains(sql, "INSERT INTO users"):
@@ -246,6 +250,151 @@ func TestEnsureDefaultProjectMembershipSkipsOrganizationViewer(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOIDCAutoProvisionRejectsPlatformAdministratorClaimBeforeMutation(t *testing.T) {
+	beginCalled := false
+	db := &testutil.MockDB{
+		QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
+		},
+		BeginFn: func(context.Context) (pgx.Tx, error) {
+			beginCalled = true
+			return &testutil.MockTx{}, nil
+		},
+	}
+	h := newOIDCProvisioningUnitHandler(t, db)
+
+	_, err := h.upsertOIDCUser(context.Background(), &oidc.Identity{
+		Issuer:           "https://issuer.example.test",
+		Subject:          "new-platform-admin",
+		Username:         "new-platform-admin",
+		OrganizationRole: auth.RolePlatformAdmin,
+		Role:             auth.RoleLegacyAdmin,
+		OrgID:            7,
+	})
+
+	if !errors.Is(err, errOIDCPlatformProvisioningForbidden) {
+		t.Fatalf("expected platform provisioning rejection, got %v", err)
+	}
+	if beginCalled {
+		t.Fatal("platform administrator claim reached the user mutation transaction")
+	}
+}
+
+func TestEnsureOIDCOrgRequiresUniqueActiveRootCustomer(t *testing.T) {
+	tests := []struct {
+		name     string
+		count    int64
+		orgID    int64
+		status   string
+		targetID int64
+		wantErr  bool
+	}{
+		{name: "not initialized or partner only", count: 0, targetID: 1, wantErr: true},
+		{name: "ambiguous customer roots", count: 2, orgID: 8, status: "active", targetID: 8, wantErr: true},
+		{name: "inactive customer root", count: 1, orgID: 7, status: "disabled", targetID: 7, wantErr: true},
+		{name: "claim points outside canonical customer", count: 1, orgID: 7, status: "active", targetID: 1, wantErr: true},
+		{name: "unique active root customer", count: 1, orgID: 7, status: "active", targetID: 7},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := &testutil.MockDB{QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+				if !strings.Contains(sql, "parent_id IS NULL") || !strings.Contains(sql, "org_type = 'customer'") {
+					t.Fatalf("OIDC organization did not use canonical customer resolver: %s", sql)
+				}
+				return &testutil.MockRow{ScanFn: func(dest ...any) error {
+					*dest[0].(*int64) = test.count
+					*dest[1].(*int64) = test.orgID
+					*dest[2].(*string) = "Customer"
+					*dest[3].(*string) = test.status
+					return nil
+				}}
+			}}
+			h := newTestHandler(db)
+
+			err := h.ensureOIDCOrg(context.Background(), test.targetID)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("ensureOIDCOrg() err=%v, wantErr=%v", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestOIDCExistingLegacyPlatformAdministratorLoginRemainsAvailable(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if !strings.Contains(sql, "oidc_issuer") {
+				t.Fatalf("existing login unexpectedly queried provisioning scope: %s", sql)
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = 42
+				*dest[1].(*int64) = 1
+				*dest[2].(*string) = "legacy-platform-oidc"
+				*dest[3].(*string) = auth.RolePlatformAdmin
+				*dest[4].(*string) = auth.RoleLegacyAdmin
+				*dest[5].(*string) = "active"
+				*dest[6].(*int64) = 3
+				return nil
+			}}
+		},
+		BeginFn: func(context.Context) (pgx.Tx, error) {
+			return &testutil.MockTx{
+				QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+					if !strings.Contains(sql, "FROM users WHERE id") {
+						t.Fatalf("unexpected existing-user query: %s", sql)
+					}
+					return &testutil.MockRow{ScanFn: func(dest ...any) error {
+						*dest[0].(*int64) = 42
+						*dest[1].(*int64) = 1
+						*dest[2].(*string) = "legacy-platform-oidc"
+						*dest[3].(*string) = auth.RolePlatformAdmin
+						*dest[4].(*string) = auth.RoleLegacyAdmin
+						*dest[5].(*string) = "active"
+						*dest[6].(*int64) = 3
+						*dest[7].(*string) = "operator@example.test"
+						return nil
+					}}
+				},
+				ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+					return pgconn.NewCommandTag("SELECT 1"), nil
+				},
+			}, nil
+		},
+	}
+	h := newOIDCProvisioningUnitHandler(t, db)
+	identity := &oidc.Identity{
+		Issuer:           "https://issuer.example.test",
+		Subject:          "legacy-platform",
+		Email:            "operator@example.test",
+		OrganizationRole: auth.RolePlatformAdmin,
+		Role:             auth.RoleLegacyAdmin,
+		OrgID:            1,
+	}
+
+	user, err := h.upsertOIDCUser(context.Background(), identity)
+	if err != nil {
+		t.Fatalf("existing legacy platform OIDC login was rejected: %v", err)
+	}
+	if user.ID != 42 || user.OrganizationRole != auth.RolePlatformAdmin || user.OrgID != 1 {
+		t.Fatalf("unexpected existing platform identity: %#v", user)
+	}
+}
+
+func newOIDCProvisioningUnitHandler(t *testing.T, db *testutil.MockDB) *Handler {
+	t.Helper()
+	svc, err := oidc.NewService(oidc.Config{
+		AutoProvision: true,
+		DefaultOrgID:  7,
+		DefaultRole:   auth.RoleViewer,
+	})
+	if err != nil {
+		t.Fatalf("new oidc service: %v", err)
+	}
+	h := newTestHandler(db)
+	h.SetOIDCService(svc)
+	return h
 }
 
 func newOIDCTestHandler(t *testing.T, db *testutil.MockDB, issuer string) *Handler {

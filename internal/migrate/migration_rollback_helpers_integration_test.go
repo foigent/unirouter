@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,6 +21,8 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000064_rate_card_request_pricing_authority.down.sql",
+	"000063_onprem_billing_mode.down.sql",
 	"000062_xinsight_connector_redeem_lifecycle.down.sql",
 	"000061_xinsight_connector_cp2a_phase_contract.down.sql",
 	"000060_xinsight_connector_cp1.down.sql",
@@ -41,11 +44,45 @@ var enterpriseDirectoryDownMigrations = []string{
 func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 	t.Helper()
 	ctx := context.Background()
+	orderedNames := make([]string, 0, len(names)+2)
+	seen := make(map[string]struct{}, len(names)+2)
+	for _, name := range []string{
+		"000064_rate_card_request_pricing_authority.down.sql",
+		"000063_onprem_billing_mode.down.sql",
+	} {
+		version := strings.TrimSuffix(name, ".down.sql")
+		var applied bool
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version,
+		).Scan(&applied))
+		if applied {
+			orderedNames = append(orderedNames, name)
+			seen[name] = struct{}{}
+		}
+	}
 	for _, name := range names {
+		if _, duplicate := seen[name]; !duplicate {
+			orderedNames = append(orderedNames, name)
+			seen[name] = struct{}{}
+		}
+	}
+	for _, name := range orderedNames {
 		wire, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(wire))
-		require.NoError(t, err, name)
+		if err != nil {
+			rows, queryErr := pool.Query(ctx, `SELECT version FROM schema_migrations ORDER BY version`)
+			require.NoError(t, queryErr)
+			versions := make([]string, 0)
+			for rows.Next() {
+				var version string
+				require.NoError(t, rows.Scan(&version))
+				versions = append(versions, version)
+			}
+			rows.Close()
+			require.NoError(t, rows.Err())
+			t.Fatalf("%s: %v; applied migrations after failed rollback: %v", name, err, versions)
+		}
 	}
 }
 

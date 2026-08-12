@@ -37,7 +37,12 @@ describe('UsersPage enterprise identity presentation', () => {
       isAuthenticated: true,
       profileLoading: false,
       profileError: null,
-      user: { id: 1, username: 'admin', organization_role: 'platform_admin', role: 'platform_admin', org_id: 1, org_name: '总部' },
+      user: {
+        id: 1, username: 'admin', organization_role: 'platform_admin', role: 'platform_admin',
+        org_id: 99, org_name: '技术组织',
+        customer_context: { state: 'ready', org_id: 1, org_name: '总部' },
+        identity_scope: 'deployment_operator',
+      },
     });
     mocks.getOrganizations.mockResolvedValue({ data: [{ id: 1, name: '总部' }, { id: 2, name: '分部' }] });
     mocks.getProjects.mockResolvedValue({ data: [{ id: 31, org_id: 1, name: '核心项目', status: 'active' }], total: 1 });
@@ -73,7 +78,8 @@ describe('UsersPage enterprise identity presentation', () => {
 	fireEvent.click(screen.getByText('企业身份 / OIDC'));
 	expect(await screen.findByText('oidc-user')).toBeTruthy();
 	expect(mocks.getUsers).toHaveBeenCalledWith(1, 20, 'enterprise');
-    expect(mocks.getOrganizations).toHaveBeenCalledWith(1, 100);
+    expect(mocks.getOrganizations).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('所属组织')).toBeNull();
     expect(screen.getByText('总部 (#1)')).toBeTruthy();
     expect(screen.getByText('user@example.com')).toBeTruthy();
     expect(screen.getByText('企业 OIDC')).toBeTruthy();
@@ -288,5 +294,20 @@ describe('UsersPage enterprise identity presentation', () => {
 
     expect(await screen.findByRole('heading', { name: '用户列表加载失败' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新加载用户列表' })).toBeTruthy();
+  });
+
+  it('blocks customer user operations when a platform session has no canonical customer', () => {
+    useAuthStore.setState({
+      user: {
+        id: 1, username: 'admin', role: 'platform_admin', org_id: 99,
+        customer_context: { state: 'ambiguous' }, identity_scope: 'deployment_operator',
+      },
+    });
+
+    render(<UsersPage />);
+
+    expect(screen.getByRole('heading', { name: '客户组织上下文不唯一' })).toBeTruthy();
+    expect(mocks.getUsers).not.toHaveBeenCalled();
+    expect(mocks.getOrganizations).not.toHaveBeenCalled();
   });
 });

@@ -5,9 +5,9 @@ import { api, ApiError } from '../api/client';
 import { isBillingRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, formatMoney, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
 import { formatInteger, formatPercent, formatSignedInteger } from '../utils/formatNumber';
-import { loadAllPages } from '../utils/loadAllPages';
 import { EnterpriseAllocationWorkspace } from './EnterpriseFinanceWorkspaces';
 
 interface ReconRecord {
@@ -320,8 +320,8 @@ export default function ReconciliationPage() {
   const organizationRole = organizationRoleForUser(user);
   const platform = isPlatformAdminRole(organizationRole);
 	const canManageEnterpriseFinance = platform || isBillingRole(organizationRole);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
-  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
+  const customerContext = resolveCustomerContext(user);
+  const customerContextReady = customerContext.state === 'ready';
   const [records, setRecords] = useState<ReconRecord[]>([]);
   const [summary, setSummary] = useState<ReconSummary | null>(null);
   const [total, setTotal] = useState(0);
@@ -332,9 +332,10 @@ export default function ReconciliationPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [usageSourceFilter, setUsageSourceFilter] = useState('');
   const [modelNames, setModelNames] = useState<string[]>([]);
-  const targetOrgID = platform ? selectedOrgID : undefined;
+  const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
 
   const load = (p = page) => {
+    if (!customerContextReady) return;
     setLoading(true);
     api.getReconciliation(p, pageSize, {
       ...(targetOrgID ? { org_id: targetOrgID } : {}),
@@ -351,25 +352,11 @@ export default function ReconciliationPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [page, pageSize, modelFilter, statusFilter, usageSourceFilter, targetOrgID]);
-  useEffect(() => { api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {}); }, []);
+  useEffect(() => { load(); }, [customerContextReady, page, pageSize, modelFilter, statusFilter, usageSourceFilter, targetOrgID]);
   useEffect(() => {
-    if (!platform) return;
-    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
-    loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
-      .then(setOrganizations)
-      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
-  }, [platform, user?.org_id]);
-
-  const changeOrganization = (value: unknown) => {
-    const orgID = Number(value);
-    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
-    setSelectedOrgID(orgID);
-    setPage(1);
-    setRecords([]);
-    setSummary(null);
-    setTotal(0);
-  };
+    if (!customerContextReady) return;
+    api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {});
+  }, [customerContextReady]);
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
@@ -442,6 +429,16 @@ export default function ReconciliationPage() {
     { title: '时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
   ];
 
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
+    return (
+      <div className="ur-page">
+        <PageHeader eyebrow="成本与财务" title="分摊与对账" description="对账数据必须绑定当前部署唯一客户组织。" />
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={320} /></Surface>
+      </div>
+    );
+  }
+
   return (
     <div className="ur-page">
       <PageHeader
@@ -457,20 +454,7 @@ export default function ReconciliationPage() {
 	  <EnterpriseAllocationWorkspace orgId={targetOrgID} canManage={canManageEnterpriseFinance} />
       <Surface title="筛选条件">
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          {platform && (
-            <>
-              <span>目标组织</span>
-              <Select
-                aria-label="目标组织"
-                placeholder="选择目标组织"
-                value={selectedOrgID}
-                optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
-                onChange={changeOrganization}
-                disabled={loading}
-                style={{ width: 220 }}
-              />
-            </>
-          )}
+          {platform && <Typography.Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Typography.Text>}
           <Select
             placeholder="模型筛选"
             style={{ width: 200 }}

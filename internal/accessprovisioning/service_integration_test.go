@@ -381,9 +381,13 @@ func TestPlatformSubmitterCanCancelCrossOrganizationMigrationRequestIntegration(
 		UserID: platformUserID, OrgID: platformOrgID,
 		OrganizationRole: auth.RolePlatformAdmin,
 	}
-	platformScope := ActorScope{
+	identityScope := ActorScope{
 		UserID: platformUserID, OrgID: platformOrgID,
-		OrganizationRole: auth.RolePlatformAdmin,
+		OrganizationRole: auth.RolePlatformAdmin, EnforceOrgBoundary: true,
+	}
+	platformScope := ActorScope{
+		UserID: platformUserID, OrgID: fixture.orgID,
+		OrganizationRole: auth.RolePlatformAdmin, EnforceOrgBoundary: true,
 	}
 	pending, err := fixture.service.Provision(ctx, fixture.personalInput(
 		"platform-cross-org-migration", SubmissionMigration,
@@ -396,6 +400,12 @@ func TestPlatformSubmitterCanCancelCrossOrganizationMigrationRequestIntegration(
 	))
 	require.NoError(t, err)
 	require.Equal(t, RequestNeedsReview, secondPending.Request.Status)
+
+	identityPage, err := fixture.service.ListMyRequests(ctx, identityScope, PageInput{})
+	require.NoError(t, err)
+	require.Empty(t, identityPage.Data)
+	_, _, err = fixture.service.GetRequest(ctx, identityScope, pending.Request.RequestRef)
+	require.ErrorIs(t, err, ErrNotFound)
 
 	firstPage, err := fixture.service.ListMyRequests(ctx, platformScope, PageInput{Limit: 1})
 	require.NoError(t, err)
@@ -412,7 +422,7 @@ func TestPlatformSubmitterCanCancelCrossOrganizationMigrationRequestIntegration(
 	require.False(t, secondPage.Pagination.HasMore)
 
 	unrelatedPage, err := fixture.service.ListMyRequests(ctx, ActorScope{
-		UserID: unrelatedPlatformUserID, OrgID: platformOrgID, OrganizationRole: auth.RolePlatformAdmin,
+		UserID: unrelatedPlatformUserID, OrgID: fixture.orgID, OrganizationRole: auth.RolePlatformAdmin, EnforceOrgBoundary: true,
 	}, PageInput{})
 	require.NoError(t, err)
 	require.Empty(t, unrelatedPage.Data)
@@ -427,8 +437,8 @@ func TestPlatformSubmitterCanCancelCrossOrganizationMigrationRequestIntegration(
 		OrganizationRole: auth.RolePlatformAdmin,
 	}
 	_, err = fixture.service.CancelRequest(ctx, ActorScope{
-		UserID: unrelatedPlatformUserID, OrgID: platformOrgID,
-		OrganizationRole: auth.RolePlatformAdmin,
+		UserID: unrelatedPlatformUserID, OrgID: fixture.orgID,
+		OrganizationRole: auth.RolePlatformAdmin, EnforceOrgBoundary: true,
 	}, CancelRequestInput{
 		RequestRef: pending.Request.RequestRef, ExpectedRevision: pending.Request.Revision,
 		ClientRequestID: "unrelated-platform-cancel",

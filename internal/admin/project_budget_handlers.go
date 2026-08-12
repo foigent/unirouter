@@ -23,7 +23,7 @@ func (h *Handler) GetProjectBudget(w http.ResponseWriter, r *http.Request) {
 	allowed := false
 	switch organizationRole {
 	case auth.RolePlatformAdmin:
-		allowed = true
+		allowed = h.projectBelongsToActorOrg(r.Context(), projectID)
 	case auth.RoleOrgAdmin, auth.RoleBillingAdmin:
 		allowed = h.projectBelongsToActorOrg(r.Context(), projectID)
 	default:

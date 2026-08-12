@@ -8,6 +8,7 @@ const apiMocks = vi.hoisted(() => ({
   getEnterpriseDirectorySources: vi.fn(),
   getEnterpriseDirectoryTree: vi.fn(),
   bootstrapFirstCustomer: vi.fn(),
+  getMe: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({
@@ -43,6 +44,7 @@ describe('OrganizationMembersPage', () => {
     apiMocks.getEnterpriseDirectorySources.mockReset();
     apiMocks.getEnterpriseDirectoryTree.mockReset();
     apiMocks.bootstrapFirstCustomer.mockReset();
+    apiMocks.getMe.mockReset();
     apiMocks.getEnterpriseDirectorySources.mockResolvedValue({ data: [], total: 0 });
     apiMocks.getEnterpriseDirectoryTree.mockResolvedValue({ data: [], total: 0 });
     apiMocks.bootstrapFirstCustomer.mockResolvedValue({
@@ -50,6 +52,16 @@ describe('OrganizationMembersPage', () => {
       organization_name: 'First Customer',
       wallet_balance_micros: 0,
       idempotent: false,
+    });
+    apiMocks.getMe.mockResolvedValue({
+      id: 1,
+      username: 'admin',
+      role: 'platform_admin',
+      organization_role: 'platform_admin',
+      org_id: 1,
+      org_name: 'Platform Admin',
+      customer_context: { state: 'ready', org_id: 9, org_name: 'First Customer' },
+      identity_scope: 'deployment_operator',
     });
     useAuthStore.setState({
       user: { id: 1, username: 'org-admin', role: 'org_admin', org_id: 7, license_access: null },
@@ -62,36 +74,59 @@ describe('OrganizationMembersPage', () => {
     expect(screen.getByText('people:true')).toBeTruthy();
     expect(screen.getByText('账号与身份')).toBeTruthy();
     expect(screen.getByText('项目与成员')).toBeTruthy();
-    expect(screen.getByText('组织架构（POC）')).toBeTruthy();
-    expect(screen.getByText('生命周期证据')).toBeTruthy();
+    expect(screen.getByText('高级诊断与集成准备')).toBeTruthy();
+    expect(screen.queryByText('目录接入准备')).toBeNull();
+    expect(screen.queryByText('离线生命周期合同')).toBeNull();
+    expect(apiMocks.getEnterpriseDirectorySources).not.toHaveBeenCalled();
     expect(screen.queryByText('首客户初始化')).toBeNull();
   });
 
-  it('exposes the narrow first-customer bootstrap only to platform admins', async () => {
+  it('shows first-customer initialization only while the platform context is not initialized', async () => {
     useAuthStore.setState({
-      user: { id: 1, username: 'admin', role: 'platform_admin', org_id: 1, license_access: null },
+      user: {
+        id: 1, username: 'admin', role: 'platform_admin', org_id: 1, license_access: null,
+        customer_context: { state: 'not_initialized' }, identity_scope: 'deployment_operator',
+      },
     });
-    renderPage('/organization-members?section=bootstrap');
+    renderPage();
 
-    expect(screen.getByRole('tab', { name: '首客户初始化' })).toBeTruthy();
+    expect(screen.queryByRole('tab')).toBeNull();
+    expect(screen.getAllByRole('heading', { name: '初始化客户组织' })).toHaveLength(2);
     fireEvent.change(screen.getByLabelText('首个客户组织名称'), { target: { value: 'First Customer' } });
     fireEvent.click(screen.getByText('创建组织与零余额钱包'));
 
     await waitFor(() => expect(apiMocks.bootstrapFirstCustomer).toHaveBeenCalledTimes(1));
     expect(apiMocks.bootstrapFirstCustomer.mock.calls[0][0]).toBe('First Customer');
     expect(apiMocks.bootstrapFirstCustomer.mock.calls[0][1]).toMatch(/^first-customer-/);
-    expect(await screen.findByText(/钱包余额 0 micro-CNY/)).toBeTruthy();
+    expect(apiMocks.getMe).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('people:true')).toBeTruthy();
   });
 
-  it('keeps the POC directory boundary visible without fabricating directory data', async () => {
+  it('removes the initialization entry after the canonical customer is ready', () => {
+    useAuthStore.setState({
+      user: {
+        id: 1, username: 'admin', role: 'platform_admin', org_id: 1, license_access: null,
+        customer_context: { state: 'ready', org_id: 9, org_name: 'First Customer' },
+        identity_scope: 'deployment_operator',
+      },
+    });
+
     renderPage();
 
-    fireEvent.click(screen.getByText('组织架构（POC）'));
+    expect(screen.getByText('people:true')).toBeTruthy();
+    expect(screen.queryByText('首客户初始化')).toBeNull();
+  });
+
+  it('loads directory preparation only after advanced diagnostics are explicitly opened', async () => {
+    renderPage();
+
+    expect(apiMocks.getEnterpriseDirectorySources).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('展开高级诊断'));
     expect(screen.getByText('企业组织目录')).toBeTruthy();
     expect(screen.getByText(/真实目录接入延后到客户 POC/)).toBeTruthy();
     expect(await screen.findByText('尚未配置企业目录来源')).toBeTruthy();
     expect(apiMocks.getEnterpriseDirectorySources).toHaveBeenCalledWith(7);
-    expect(screen.getByTestId('location')).toHaveTextContent('/organization-members?section=directory');
+    expect(screen.getByTestId('location')).toHaveTextContent('/organization-members');
   });
 
   it('shows orthogonal source health and the local effective tree without exposing credentials', async () => {
@@ -125,14 +160,15 @@ describe('OrganizationMembersPage', () => {
     expect(screen.queryByText(/credential|password|token/i)).toBeNull();
   });
 
-  it('uses one canonical route with stable section deep links for the merged workspaces', async () => {
+  it('keeps stable deep links while hiding diagnostics from the daily tabs', async () => {
     renderPage();
 
     fireEvent.click(screen.getByText('项目与成员'));
     expect(await screen.findByText('projects:true')).toBeTruthy();
     expect(screen.getByTestId('location')).toHaveTextContent('/organization-members?section=projects');
 
-    fireEvent.click(screen.getByText('生命周期证据'));
+    fireEvent.click(screen.getByText('展开高级诊断'));
+    fireEvent.click(screen.getByText('离线生命周期合同'));
     expect(await screen.findByText('lifecycle:true')).toBeTruthy();
     expect(screen.getByTestId('location')).toHaveTextContent('/organization-members?section=lifecycle');
   });
@@ -145,7 +181,7 @@ describe('OrganizationMembersPage', () => {
     renderPage();
 
     expect(await screen.findByText('projects:false')).toBeTruthy();
-    expect(screen.queryByText('组织架构（POC）')).toBeNull();
+    expect(screen.queryByText('高级诊断与集成准备')).toBeNull();
     expect(screen.queryByText('账号与身份')).toBeNull();
   });
 });

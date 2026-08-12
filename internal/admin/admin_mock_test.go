@@ -2119,7 +2119,7 @@ func TestCreateAPIKey_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestTestChannel_Upstream401IsFailureAndUsesSelectedModel(t *testing.T) {
+func TestTestChannel_Upstream401IsFailureAndAppliesModelMapping(t *testing.T) {
 	var gotPath string
 	var gotMethod string
 	var gotModel string
@@ -2150,9 +2150,10 @@ func TestTestChannel_Upstream401IsFailureAndUsesSelectedModel(t *testing.T) {
 					switch queryCount {
 					case 1:
 						*dest[0].(*string) = upstream.URL
-						*dest[1].(*string) = "mimo-v2.5"
+						*dest[1].(*string) = "company-chat"
 						*dest[2].(*string) = "openai_compatible"
 						*dest[3].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[4].(*json.RawMessage) = json.RawMessage(`{"company-chat":"mimo-v2.5"}`)
 					case 2:
 						*dest[0].(*string) = keyEnc
 					default:
@@ -2165,7 +2166,7 @@ func TestTestChannel_Upstream401IsFailureAndUsesSelectedModel(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	body := `{"model":"mimo-v2.5","prompt":"ping"}`
+	body := `{"model":"company-chat","prompt":"ping"}`
 	req := httptest.NewRequest("POST", "/channels/1/test", strings.NewReader(body))
 	req.SetPathValue("id", "1")
 	rec := httptest.NewRecorder()
@@ -2189,7 +2190,10 @@ func TestTestChannel_Upstream401IsFailureAndUsesSelectedModel(t *testing.T) {
 		t.Fatalf("expected POST /v1/chat/completions, got %s %s", gotMethod, gotPath)
 	}
 	if gotModel != "mimo-v2.5" {
-		t.Fatalf("expected selected model mimo-v2.5, got %q", gotModel)
+		t.Fatalf("expected mapped upstream model mimo-v2.5, got %q", gotModel)
+	}
+	if resp["model"] != "company-chat" || resp["upstream_model"] != "mimo-v2.5" {
+		t.Fatalf("expected requested and upstream model identities, got %s", rec.Body.String())
 	}
 }
 
@@ -6320,6 +6324,7 @@ func TestNormalizeModels(t *testing.T) {
 		{"normal", "gpt-4o,gpt-4o-mini", "gpt-4o,gpt-4o-mini"},
 		{"full-width comma", "gpt-4o，gpt-4o-mini", "gpt-4o,gpt-4o-mini"},
 		{"mixed comma", "gpt-4o，gpt-4o-mini,claude-3", "gpt-4o,gpt-4o-mini,claude-3"},
+		{"semicolon and newline", "gpt-4o;gpt-4o-mini；claude-3\ndeepseek-chat", "gpt-4o,gpt-4o-mini,claude-3,deepseek-chat"},
 		{"spaces around", " gpt-4o , gpt-4o-mini ", "gpt-4o,gpt-4o-mini"},
 		{"duplicate removal", "gpt-4o,gpt-4o,gpt-4o-mini", "gpt-4o,gpt-4o-mini"},
 		{"empty parts", "gpt-4o,,gpt-4o-mini", "gpt-4o,gpt-4o-mini"},
@@ -6360,8 +6365,8 @@ func TestCreateChannel_NormalizesModels(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	// Full-width comma, spaces, duplicates
-	body := `{"name":"test","provider":"openai","base_url":"https://api.openai.com","models":" gpt-4o ， gpt-4o ，gpt-4o-mini "}`
+	// Mixed separators, spaces, and duplicates use one canonical storage form.
+	body := `{"name":"test","provider":"openai","base_url":"https://api.openai.com","models":" gpt-4o ； gpt-4o ; gpt-4o-mini\n gpt-4o-mini "}`
 	req := httptest.NewRequest("POST", "/channels", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

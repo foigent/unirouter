@@ -82,6 +82,33 @@ require_release_secret API_KEY_HASH_SECRET
 require_release_secret UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET
 require_exact_bytes ENCRYPTION_KEY 32
 
+load_effective_value BILLING_MODE true
+billing_mode="${effective_value:-cost_observation}"
+case "${billing_mode}" in
+  cost_observation|prepaid_enforced) ;;
+  budget_enforced)
+    echo "customer preflight: BILLING_MODE=budget_enforced is reserved but not yet supported" >&2
+    exit 1
+    ;;
+  *)
+    echo "customer preflight: BILLING_MODE must be cost_observation or prepaid_enforced" >&2
+    exit 1
+    ;;
+esac
+
+load_effective_value REQUEST_PRICING_AUTHORITY true
+request_pricing_authority="${effective_value:-legacy}"
+case "${request_pricing_authority}" in
+  legacy) ;;
+  rate_card)
+    echo "customer preflight: REQUEST_PRICING_AUTHORITY=rate_card selected; verify every routed model has one complete active supplier_contracted or provider_list Rate Card before restart" >&2
+    ;;
+  *)
+    echo "customer preflight: REQUEST_PRICING_AUTHORITY must be legacy or rate_card" >&2
+    exit 1
+    ;;
+esac
+
 load_effective_value XINSIGHT_CONNECTOR_AGENT_ENABLED true
 connector_agent_enabled="${effective_value:-false}"
 case "${connector_agent_enabled}" in
@@ -212,6 +239,8 @@ unset response_cache_index_bytes
 unset response_cache_encryption_bytes
 unset connector_agent_enabled
 unset connector_key
+unset billing_mode
+unset request_pricing_authority
 
 if grep -Eq '^[[:space:]]*build:' <<<"${rendered}"; then
   echo "customer preflight: customer Compose must not contain build contexts" >&2

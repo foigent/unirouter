@@ -12,6 +12,7 @@ import {
   type ChannelReadinessChannel,
   type CredentialCombinationState,
 } from '../utils/channelReadiness';
+import { normalizeModelList } from '../utils/modelList';
 
 interface ChannelKey {
   id: number;
@@ -46,15 +47,6 @@ const combinationLabel: Record<CredentialCombinationState, string> = {
   channel_disabled: '凭证保留·通道禁用',
   unknown_channel: '通道状态待确认',
 };
-
-function normalizeAllowedModels(value: unknown) {
-  return String(value || '')
-    .split(/[,，\n]/)
-    .map(model => model.trim())
-    .filter(Boolean)
-    .filter((model, index, models) => models.indexOf(model) === index)
-    .join(',');
-}
 
 export default function ChannelKeysPage() {
   const [keys, setKeys] = useState<ChannelKey[]>([]);
@@ -115,7 +107,7 @@ export default function ChannelKeysPage() {
         const activeParent = editing.channel_status === 'active';
         const payload: Record<string, any> = activeParent ? { status: values.status } : {
           channel_id: parseInt(values.channel_id),
-          allowed_models: normalizeAllowedModels(values.allowed_models),
+          allowed_models: normalizeModelList(values.allowed_models),
           status: values.status,
         };
         if (!activeParent && String(values.api_key || '').trim()) payload.key = String(values.api_key).trim();
@@ -125,7 +117,7 @@ export default function ChannelKeysPage() {
         await api.createChannelKey({
           channel_id: parseInt(values.channel_id),
           key: String(values.api_key || '').trim(),
-          allowed_models: normalizeAllowedModels(values.allowed_models),
+          allowed_models: normalizeModelList(values.allowed_models),
         });
         Toast.success('创建成功');
       }
@@ -311,9 +303,9 @@ export default function ChannelKeysPage() {
 			/>
           <Form.Input
             field="allowed_models"
-            label="允许模型（逗号分隔，留空=全部）"
+            label="允许模型（留空=全部）"
             placeholder="deepseek-chat,deepseek-reasoner"
-            extraText="必须使用模型定价/模型治理中的精确模型标识；中文逗号会在保存时规范为英文逗号。"
+            extraText="必须使用精确模型标识；可用中英文逗号、分号或换行分隔，保存时会去空格、去重并统一为英文逗号。"
 				disabled={editing?.channel_status === 'active'}
           />
           {editing && <Form.Select

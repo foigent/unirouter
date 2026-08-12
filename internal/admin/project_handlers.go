@@ -157,7 +157,16 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.OrgID == 0 {
-		req.OrgID = middleware.GetOrgIDFromContext(r.Context())
+		if _, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+			resolvedOrgID, resolveErr := resolveActorOrganization(r.Context(), 0)
+			if resolveErr != nil {
+				writeOrganizationScopeError(w, resolveErr)
+				return
+			}
+			req.OrgID = resolvedOrgID
+		} else {
+			req.OrgID = middleware.GetOrgIDFromContext(r.Context())
+		}
 	}
 	if req.OrgID == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "org_id is required"})

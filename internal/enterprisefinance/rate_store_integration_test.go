@@ -22,9 +22,15 @@ func TestEnterpriseRateCardsActivateWithoutChangingExistingSettlementAndBindImmu
 		Meter: "input_tokens", UnitQuantity: "1000000",
 		Amount: Amount{ValueMinor: "9007199254740993", Currency: "CNY", Scale: 1_000_000},
 	}
+	components := []RateComponent{
+		component,
+		{Meter: MeterOutputTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "9007199254740994", Currency: "CNY", Scale: 1_000_000}},
+		{Meter: MeterCacheReadTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "900719925474099", Currency: "CNY", Scale: 1_000_000}},
+		{Meter: MeterCacheCreationTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "9007199254740993", Currency: "CNY", Scale: 1_000_000}},
+	}
 	draft, err := store.CreateRateCardDraft(ctx, RateCard{
 		RateCardRef: "RATE-OPENAI-GPT", OrgID: orgID, ProviderRef: "openai", ModelRef: "gpt-enterprise",
-		Layer: RateSupplierContract, EffectiveFrom: effectiveFrom, Components: []RateComponent{component},
+		Layer: RateSupplierContract, EffectiveFrom: effectiveFrom, Components: components,
 	}, "user:401")
 	require.NoError(t, err)
 	require.Equal(t, RateDraft, draft.Card.State)
@@ -122,4 +128,66 @@ func TestEnterpriseRateCardActivationRejectsExactEconomicWindowCollision(t *test
 	// A different meter is not an economic collision and remains independently versioned.
 	other := createActive("RATE-C", "output_tokens")
 	require.Equal(t, RateActive, other.Card.State)
+}
+
+func TestOfficialRateDraftImportIsAtomicEvidenceBackedAndNeverActive(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	store, err := NewPostgresStore(pool)
+	require.NoError(t, err)
+	orgID := insertFinanceTestOrg(t, ctx, pool, "official-rate-import")
+	fetchedAt := time.Date(2026, 8, 13, 0, 0, 0, 0, time.UTC)
+	components := []RateComponent{
+		{Meter: MeterInputTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "10", Currency: "CNY", Scale: 1_000_000}},
+		{Meter: MeterOutputTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "20", Currency: "CNY", Scale: 1_000_000}},
+		{Meter: MeterCacheReadTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "2", Currency: "CNY", Scale: 1_000_000}},
+		{Meter: MeterCacheCreationTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "12", Currency: "CNY", Scale: 1_000_000}},
+	}
+	record, err := store.ImportOfficialRateCardDraft(ctx, OfficialRateDraftImport{
+		Card: RateCard{
+			RateCardRef: "official-rate", OrgID: orgID, ProviderRef: "provider-a", ModelRef: "model-a",
+			EffectiveFrom: fetchedAt, Components: components,
+		},
+		Evidence: RateSourceEvidence{
+			EvidenceRef: "official-source", SourceURL: "https://example.invalid/pricing",
+			SourceRevision: "revision-7", FetchedAt: fetchedAt,
+			PayloadSHA256:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			TransformVersion: "official-transform.v1", LastSuccessAt: fetchedAt,
+			StaleAfter: fetchedAt.Add(24 * time.Hour),
+		},
+	}, "user:701")
+	require.NoError(t, err)
+	require.Equal(t, RateDraft, record.Card.State)
+	require.Equal(t, RateProviderList, record.Card.Layer)
+	require.Empty(t, record.Card.ApprovedBy)
+	require.Nil(t, record.ActivatedAt)
+	require.NotNil(t, record.SourceEvidence)
+
+	listed, err := store.ListLatestRateCards(ctx, orgID)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.NotNil(t, listed[0].SourceEvidence)
+	require.Equal(t, "revision-7", listed[0].SourceEvidence.SourceRevision)
+
+	// A broken card causes the entire import to roll back, including evidence.
+	broken := OfficialRateDraftImport{
+		Card: RateCard{
+			RateCardRef: "broken-rate", OrgID: orgID, ProviderRef: "provider-a", ModelRef: "model-b",
+			EffectiveFrom: fetchedAt, Components: components[:2],
+		},
+		Evidence: RateSourceEvidence{
+			EvidenceRef: "broken-source", SourceURL: "https://example.invalid/pricing",
+			SourceRevision: "revision-8", FetchedAt: fetchedAt,
+			PayloadSHA256:    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			TransformVersion: "official-transform.v1", LastSuccessAt: fetchedAt,
+			StaleAfter: fetchedAt.Add(24 * time.Hour),
+		},
+	}
+	_, err = store.ImportOfficialRateCardDraft(ctx, broken, "user:702")
+	require.ErrorIs(t, err, ErrRequestPricingNotReady)
+	var brokenEvidence int
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM enterprise_finance_rate_source_evidence
+		WHERE org_id=$1 AND evidence_ref='broken-source'`, orgID).Scan(&brokenEvidence))
+	require.Zero(t, brokenEvidence)
 }

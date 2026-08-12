@@ -20,6 +20,9 @@ func TestOIDCMutationAuditAtomicityIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	orgID := testutil.NewTestOrg(t, pool)
+	require.NoError(t, pool.QueryRow(ctx,
+		`UPDATE orgs SET org_type = 'customer' WHERE id = $1 RETURNING id`, orgID,
+	).Scan(&orgID))
 	var projectID int64
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO projects (org_id, name, slug, status)

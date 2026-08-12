@@ -5,9 +5,9 @@ import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { LatencyText, microsRatio, MoneyText, PageHeader, StatusTag } from '../ui';
+import { EmptyState, LatencyText, microsRatio, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
-import { loadAllPages } from '../utils/loadAllPages';
 
 const { Title, Text } = Typography;
 
@@ -70,11 +70,6 @@ interface LogFilters {
   latency_min?: string;
   latency_max?: string;
   search?: string;
-}
-
-interface Organization {
-  id: number;
-  name: string;
 }
 
 interface TraceEvent {
@@ -324,8 +319,7 @@ function routeAttemptsFromTrace(events: TraceEvent[]): RouteAttempt[] {
 export default function LogsPage() {
   const user = useAuthStore((state) => state.user);
   const platform = isPlatformAdminRole(organizationRoleForUser(user));
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const customerContext = resolveCustomerContext(user);
   const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
   const [logsError, setLogsError] = useState<string | null>(null);
@@ -346,7 +340,8 @@ export default function LogsPage() {
   const [customTimeStart, setCustomTimeStart] = useState('');
   const [customTimeEnd, setCustomTimeEnd] = useState('');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
-  const targetOrgID = platform ? selectedOrgID : undefined;
+  const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
+  const customerContextReady = !platform || customerContext.state === 'ready';
 
   const loadTrace = useCallback((record: Log) => {
     const requestSequence = ++traceRequestRef.current;
@@ -411,7 +406,10 @@ export default function LogsPage() {
     }
   }, [page, pageSize, filters, targetOrgID, selectLog]);
 
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+  useEffect(() => {
+    if (!customerContextReady) return;
+    fetchLogs();
+  }, [customerContextReady, fetchLogs]);
 
   useEffect(() => {
     api.getModelNames().then((modelData: any) => {
@@ -422,14 +420,6 @@ export default function LogsPage() {
       setModelOptions(models);
     }).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (!platform) return;
-    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
-    loadAllPages<Organization>((page, size) => api.getOrganizations(page, size))
-      .then(setOrganizations)
-      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
-  }, [platform, user?.org_id]);
 
   useEffect(() => {
     const qs = filtersToParams(filters);
@@ -475,21 +465,6 @@ export default function LogsPage() {
   const clearFilters = () => {
     setFilters({});
     setPage(1);
-  };
-
-  const changeOrganization = (value: unknown) => {
-    const orgID = Number(value);
-    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
-    setSelectedOrgID(orgID);
-    setPage(1);
-    setLogs([]);
-    setTotal(0);
-    selectedLogIDRef.current = undefined;
-    traceRequestRef.current += 1;
-    setSelectedLog(null);
-    setTraceEvents([]);
-    setTraceLoading(false);
-    setTraceError(null);
   };
 
   const hasActiveFilters = Object.values(filters).some(v => v);
@@ -672,6 +647,16 @@ export default function LogsPage() {
     ? `${actorTypes[0] || 'unknown'}:${compactEvidenceValue(actorRefs[0], 20)}`
     : actorTypes[0] || '未捕获';
 
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
+    return (
+      <div className="ur-page ur-page-wide">
+        <PageHeader eyebrow="Operations" title={blocker.title} description="执行请求、成本与证据必须绑定唯一客户；系统不会查询部署技术组织作为替代。" />
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={260} /></Surface>
+      </div>
+    );
+  }
+
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
@@ -680,20 +665,7 @@ export default function LogsPage() {
         description="以执行决策凭证定位权限、路由、策略、安全、成本终态和证据缺口。"
         actions={(
           <>
-            {platform && (
-              <Space spacing={6}>
-                <Text type="tertiary">目标组织</Text>
-                <Select
-                  aria-label="目标组织"
-                  placeholder="选择目标组织"
-                  value={selectedOrgID}
-                  optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
-                  onChange={changeOrganization}
-                  disabled={loading}
-                  style={{ width: 220 }}
-                />
-              </Space>
-            )}
+            {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
             <Tag color="blue">{total} 条</Tag>
             <Tooltip content="刷新">
               <Button icon={<IconRefresh />} size="small" onClick={() => fetchLogs()} />

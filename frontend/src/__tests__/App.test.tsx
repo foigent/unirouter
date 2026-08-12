@@ -193,7 +193,7 @@ describe('App shell', () => {
     renderApp();
 
     expect(screen.getByText('上游通道')).toBeTruthy();
-    expect(screen.getByText('组织与成员')).toBeTruthy();
+    expect(screen.getByText('人员与权限')).toBeTruthy();
     expect(screen.getByText('请求日志')).toBeTruthy();
     expect(screen.getByText('预算与成本中心')).toBeTruthy();
     expect(screen.getByText('部署与网络')).toBeTruthy();

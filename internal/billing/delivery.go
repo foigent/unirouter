@@ -90,56 +90,62 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 	if err != nil {
 		return nil, err
 	}
-	grantConsumed := minInt64(calculatedCost, record.ReservedGrantedMicros)
-	cashNeeded := calculatedCost - grantConsumed
-	additionalTopUp := cashNeeded - record.ReservedBalanceMicros
-	if additionalTopUp < 0 {
-		additionalTopUp = 0
-	}
-	newFrozenAmount, err := money.Add(record.FrozenAmountMicros, additionalTopUp)
-	if err != nil {
-		return nil, fmt.Errorf("calculate delivery frozen amount: %w", err)
-	}
-	newReservedBalance, err := money.Add(record.ReservedBalanceMicros, additionalTopUp)
-	if err != nil {
-		return nil, fmt.Errorf("calculate delivery reserved balance: %w", err)
-	}
-	newTopUpAmount, err := money.Add(record.TopUpAmountMicros, additionalTopUp)
-	if err != nil {
-		return nil, fmt.Errorf("calculate delivery top-up receipt: %w", err)
-	}
-	availableCash, err := lockWalletCashForBilling(ctx, tx, req.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	if availableCash < additionalTopUp {
-		if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, additionalTopUp, breakdown); err != nil {
-			return nil, err
+	additionalTopUp := int64(0)
+	newFrozenAmount := record.FrozenAmountMicros
+	newReservedBalance := record.ReservedBalanceMicros
+	newTopUpAmount := record.TopUpAmountMicros
+	if record.BillingMode == BillingModePrepaidEnforced {
+		grantConsumed := minInt64(calculatedCost, record.ReservedGrantedMicros)
+		cashNeeded := calculatedCost - grantConsumed
+		additionalTopUp = cashNeeded - record.ReservedBalanceMicros
+		if additionalTopUp < 0 {
+			additionalTopUp = 0
 		}
-		if err := markProviderAttemptFundingPendingTx(ctx, tx, req, calculatedCost); err != nil {
-			return nil, err
-		}
-		if err := updateRequestIdempotencyUsageTx(ctx, tx, req); err != nil {
-			return nil, err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return nil, fmt.Errorf("commit unfunded delivery preparation: %w", err)
-		}
-		result := prepareDeliveryResult(record, calculatedCost, 0, false)
-		result.ErrorCode = "insufficient_topup"
-		return result, nil
-	}
-
-	if additionalTopUp > 0 {
-		result, err := tx.Exec(ctx, `
-			UPDATE wallets
-			SET balance_micros = balance_micros - $1, frozen_micros = frozen_micros + $1, updated_at = NOW()
-			WHERE org_id = $2 AND balance_micros >= $1`, additionalTopUp, req.OrgID)
+		newFrozenAmount, err = money.Add(record.FrozenAmountMicros, additionalTopUp)
 		if err != nil {
-			return nil, fmt.Errorf("reserve delivery top-up: %w", err)
+			return nil, fmt.Errorf("calculate delivery frozen amount: %w", err)
 		}
-		if result.RowsAffected() != 1 {
-			return nil, fmt.Errorf("reserve delivery top-up: wallet state changed")
+		newReservedBalance, err = money.Add(record.ReservedBalanceMicros, additionalTopUp)
+		if err != nil {
+			return nil, fmt.Errorf("calculate delivery reserved balance: %w", err)
+		}
+		newTopUpAmount, err = money.Add(record.TopUpAmountMicros, additionalTopUp)
+		if err != nil {
+			return nil, fmt.Errorf("calculate delivery top-up receipt: %w", err)
+		}
+		availableCash, lockErr := lockWalletCashForBilling(ctx, tx, req.OrgID)
+		if lockErr != nil {
+			return nil, lockErr
+		}
+		if availableCash < additionalTopUp {
+			if err := persistFundingPendingTx(ctx, tx, b.outbox, record, req, calculatedCost, additionalTopUp, breakdown); err != nil {
+				return nil, err
+			}
+			if err := markProviderAttemptFundingPendingTx(ctx, tx, req, calculatedCost); err != nil {
+				return nil, err
+			}
+			if err := updateRequestIdempotencyUsageTx(ctx, tx, req); err != nil {
+				return nil, err
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return nil, fmt.Errorf("commit unfunded delivery preparation: %w", err)
+			}
+			result := prepareDeliveryResult(record, calculatedCost, 0, false)
+			result.ErrorCode = "insufficient_topup"
+			return result, nil
+		}
+
+		if additionalTopUp > 0 {
+			result, err := tx.Exec(ctx, `
+				UPDATE wallets
+				SET balance_micros = balance_micros - $1, frozen_micros = frozen_micros + $1, updated_at = NOW()
+				WHERE org_id = $2 AND balance_micros >= $1`, additionalTopUp, req.OrgID)
+			if err != nil {
+				return nil, fmt.Errorf("reserve delivery top-up: %w", err)
+			}
+			if result.RowsAffected() != 1 {
+				return nil, fmt.Errorf("reserve delivery top-up: wallet state changed")
+			}
 		}
 	}
 
@@ -208,10 +214,14 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 }
 
 func prepareDeliveryResult(record reservationRecord, calculatedCost, topUp int64, funded bool) *PrepareDeliveryResult {
+	chargedCost := calculatedCost
+	if record.BillingMode == BillingModeCostObservation {
+		chargedCost = 0
+	}
 	return &PrepareDeliveryResult{
 		Funded: funded,
 		Preview: SettleResult{
-			ActualCostMicros: calculatedCost, ChargedCostMicros: calculatedCost, TopUpAmountMicros: topUp,
+			ActualCostMicros: calculatedCost, ChargedCostMicros: chargedCost, TopUpAmountMicros: topUp,
 			PricingVersion:                              record.PricingVersion,
 			EffectiveInputPriceMicrosPerMillion:         record.EffectiveInputPriceMicrosPerMillion,
 			EffectiveCacheReadPriceMicrosPerMillion:     record.EffectiveCacheReadPriceMicrosPerMillion,
@@ -222,6 +232,7 @@ func prepareDeliveryResult(record reservationRecord, calculatedCost, topUp int64
 			CacheReadCostMicros:     record.CacheReadCostMicros,
 			CacheCreationCostMicros: record.CacheCreationCostMicros,
 			OutputCostMicros:        record.OutputCostMicros,
+			BillingMode:             record.BillingMode,
 			Success:                 funded,
 		},
 	}

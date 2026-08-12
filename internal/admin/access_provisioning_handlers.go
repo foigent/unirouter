@@ -592,6 +592,16 @@ func (h *Handler) canReadAccessProject(ctx context.Context, orgID, projectID int
 }
 
 func resolveAccessProvisioningOrg(r *http.Request, requested int64) (int64, error) {
+	if _, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+		orgID, err := resolveActorOrganization(r.Context(), requested)
+		if err != nil {
+			if requested < 0 {
+				return 0, accessprovisioning.ErrInvalid
+			}
+			return 0, accessprovisioning.ErrNotFound
+		}
+		return orgID, nil
+	}
 	actorOrgID := middleware.GetOrgIDFromContext(r.Context())
 	if actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin {
 		if requested > 0 {
@@ -609,9 +619,19 @@ func resolveAccessProvisioningOrg(r *http.Request, requested int64) (int64, erro
 }
 
 func accessActorScope(ctx context.Context) accessprovisioning.ActorScope {
+	orgID := middleware.GetOrgIDFromContext(ctx)
+	_, enforceOrgBoundary := middleware.GetCustomerContextFromContext(ctx)
+	if enforceOrgBoundary {
+		resolved, err := resolveActorOrganization(ctx, 0)
+		if err != nil {
+			orgID = 0
+		} else {
+			orgID = resolved
+		}
+	}
 	return accessprovisioning.ActorScope{
-		UserID: middleware.GetUserIDFromContext(ctx), OrgID: middleware.GetOrgIDFromContext(ctx),
-		OrganizationRole: actorOrganizationRole(ctx),
+		UserID: middleware.GetUserIDFromContext(ctx), OrgID: orgID,
+		OrganizationRole: actorOrganizationRole(ctx), EnforceOrgBoundary: enforceOrgBoundary,
 	}
 }
 

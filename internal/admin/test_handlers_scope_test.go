@@ -14,7 +14,7 @@ import (
 )
 
 func TestChannelTestModelConfiguredUsesExactNormalizedMembership(t *testing.T) {
-	models := " moonshot-v1-8k,moonshot-v1-32k,moonshot-v1-128k "
+	models := " moonshot-v1-8k;moonshot-v1-32k；moonshot-v1-128k\nmoonshot-v1-auto "
 	if !channelTestModelConfigured(models, "moonshot-v1-32k") {
 		t.Fatal("expected configured model to match")
 	}
@@ -62,7 +62,7 @@ func TestTestChannelRequiresEligibleCredentialForSelectedModel(t *testing.T) {
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"status":"no_eligible_key"`) {
 		t.Fatalf("expected no_eligible_key 400, got %d: %s", rec.Code, rec.Body.String())
 	}
-	for _, required := range []string{"ck.status = 'active'", "ck.cooldown_until", "ck.allowed_models"} {
+	for _, required := range []string{"ck.status = 'active'", "ck.cooldown_until", "ck.allowed_models", "regexp_split_to_table"} {
 		if !strings.Contains(credentialQuery, required) {
 			t.Fatalf("credential query missing %q: %s", required, credentialQuery)
 		}

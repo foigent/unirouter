@@ -189,9 +189,9 @@ const taskNavItems: NavItem[] = [
     items: [
       { itemKey: '/channels', text: '上游通道', icon: <IconRoute /> },
       { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconLockStroked /> },
+      { itemKey: '/test', text: '上游检测', icon: <IconTestScore />, licenseFeature: 'gateway' },
       { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers />, licenseFeature: 'model_governance' },
 		{ itemKey: '/model-readiness', text: '模型 Readiness', icon: <IconPulse /> },
-      { itemKey: '/test', text: '上游检测', icon: <IconTestScore />, licenseFeature: 'gateway' },
     ],
   },
   {
@@ -201,7 +201,7 @@ const taskNavItems: NavItem[] = [
     items: [
 		{ itemKey: '/access-review', text: '访问审核', icon: <IconChecklistStroked /> },
 		{ itemKey: '/applications', text: '应用与 Agent', icon: <IconKeyStroked /> },
-      { itemKey: '/organization-members', text: '组织与成员', icon: <IconUserGroup /> },
+      { itemKey: '/organization-members', text: '人员与权限', icon: <IconUserGroup /> },
       { itemKey: '/agent-trust', text: '模型调用授权', icon: <IconShieldStroked /> },
       { itemKey: '/limit-policies', text: '共享限额', icon: <IconPulse /> },
       { itemKey: '/guardrail-policies', text: '内容安全', icon: <IconShieldStroked />, licenseFeature: 'guardrails' },

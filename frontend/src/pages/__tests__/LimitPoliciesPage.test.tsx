@@ -71,7 +71,7 @@ describe('LimitPoliciesPage', () => {
     expect(screen.getByText(/RPS 是每秒请求数/)).toBeTruthy();
     expect(screen.getByText(/推荐先用“影子观察”/)).toBeTruthy();
     expect(screen.getByText(/约 2 秒失效且每个副本最多 1 次/)).toBeTruthy();
-    expect(screen.getByText(/全平台 100 个容量单位，每个组织 10 个/)).toBeTruthy();
+    expect(screen.getByText(/当前部署 100 个容量单位，唯一客户 10 个/)).toBeTruthy();
     expect(screen.getByText(/流式对话占 4 个/)).toBeTruthy();
     expect(screen.getByText(/流式对话最多等待 250 毫秒/)).toBeTruthy();
     expect(screen.getByText(/返回 429 和 Retry-After/)).toBeTruthy();
@@ -81,6 +81,8 @@ describe('LimitPoliciesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /新增策略/ }));
     expect(await screen.findByText(/影子观察（推荐先选）/)).toBeTruthy();
     expect(screen.getByText(/调用方不能通过请求头自行声明/)).toBeTruthy();
+    expect(mocks.getOrganizations).not.toHaveBeenCalled();
+    expect(mocks.getProjects).toHaveBeenCalledWith(1, 100, { org_id: 22 });
   });
 
   it('keeps billing administrators read-only', async () => {
@@ -105,5 +107,56 @@ describe('LimitPoliciesPage', () => {
       7,
       expect.objectContaining({ version: 3, name: 'production-chat', mode: 'shadow' }),
     ));
+  });
+
+  it('defaults platform creation to the canonical customer and preserves an existing deployment-global policy', async () => {
+    useAuthStore.setState({ user: {
+      id: 1, username: 'platform', role: 'platform_admin', org_id: 99,
+      customer_context: { state: 'ready', org_id: 22, org_name: 'Acme' },
+    } });
+    mocks.getLimitPolicies.mockResolvedValue({
+      data: [{
+        id: 8, name: 'deployment-cap', version: 1, org_id: null,
+        mode: 'shadow', failure_mode: 'fail_closed', rpm_limit: 1200,
+      }],
+      total: 1,
+      builtin_limits: {},
+    });
+    mocks.createLimitPolicy.mockResolvedValue({ id: 9, version: 1, runtime_snapshot_applied: true });
+    mocks.updateLimitPolicy.mockResolvedValue({ id: 8, version: 2, runtime_snapshot_applied: true });
+
+    render(<LimitPoliciesPage />);
+    await screen.findByText('deployment-cap');
+    expect(screen.getByText('部署全局（当前部署全部请求）')).toBeTruthy();
+    expect(mocks.getOrganizations).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /新增策略/ }));
+    fireEvent.change(await screen.findByPlaceholderText('production-chat'), { target: { value: 'customer-default' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建策略' }));
+    await waitFor(() => expect(mocks.createLimitPolicy).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'customer-default', org_id: 22,
+    })));
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑策略 deployment-cap' }));
+    fireEvent.click(await screen.findByRole('button', { name: '保存并生成新版本' }));
+    await waitFor(() => expect(mocks.updateLimitPolicy).toHaveBeenCalledWith(8, expect.objectContaining({
+      org_id: 0, project_id: 0, api_key_id: 0,
+    })));
+  });
+
+  it('fails closed without customer-domain calls when the canonical customer is unavailable', async () => {
+    useAuthStore.setState({ user: {
+      id: 1, username: 'platform', role: 'platform_admin', org_id: 99,
+      customer_context: { state: 'unavailable' },
+    } });
+
+    render(<LimitPoliciesPage />);
+
+    expect((await screen.findAllByRole('heading', { name: '无法确认客户组织上下文' })).length).toBeGreaterThan(0);
+    expect(mocks.getLimitPolicies).not.toHaveBeenCalled();
+    expect(mocks.getKeys).not.toHaveBeenCalled();
+    expect(mocks.getOrganizations).not.toHaveBeenCalled();
+    expect(mocks.getProjects).not.toHaveBeenCalled();
+    expect(mocks.getModelNames).not.toHaveBeenCalled();
   });
 });

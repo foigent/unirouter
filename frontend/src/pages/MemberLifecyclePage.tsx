@@ -3,6 +3,7 @@ import { Banner, Button, Table, Tag, TextArea, Typography } from '@douyinfe/semi
 import { api, ApiError } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, PageHeader, Surface } from '../ui';
+import { effectiveCustomerOrgID } from '../utils/customerContext';
 import { formatInteger } from '../utils/formatNumber';
 
 interface ArtifactIdentity {
@@ -100,7 +101,8 @@ const statusNames: Record<string, string> = {
 };
 
 export default function MemberLifecyclePage({ embedded = false }: { embedded?: boolean }) {
-	const orgId = useAuthStore(state => state.user?.org_id);
+  const user = useAuthStore(state => state.user);
+  const orgId = effectiveCustomerOrgID(user);
   const [contract, setContract] = useState<LifecycleContract | null>(null);
   const [input, setInput] = useState('');
   const [report, setReport] = useState<LifecycleReport | null>(null);
@@ -195,8 +197,8 @@ export default function MemberLifecyclePage({ embedded = false }: { embedded?: b
       {embedded ? (
         <div className="ur-embedded-heading">
           <div>
-            <Typography.Title heading={4} style={{ margin: 0 }}>生命周期合同证据</Typography.Title>
-            <Typography.Text type="tertiary">验证 Joiner、Mover、Leaver 的本地访问收敛；这不是已经连接的企业目录。</Typography.Text>
+            <Typography.Title heading={4} style={{ margin: 0 }}>离线生命周期合同检查</Typography.Title>
+            <Typography.Text type="tertiary">高级诊断工具：验证示例事件格式和预期访问收敛，不代表已经连接企业目录。</Typography.Text>
           </div>
           <Tag color="blue">离线合同</Tag>
         </div>
@@ -207,7 +209,7 @@ export default function MemberLifecyclePage({ embedded = false }: { embedded?: b
       />}
       <Banner
         type="info"
-        description="页面中的 JSON 预演始终只读，不连接 SCIM / IdP、不接收凭据也不写数据库。下方另行展示已有本地投影产生的收敛证据；当前没有外部目录 Connector 或公开写入端点。"
+        description="页面中的示例 JSON 可编辑，但预演始终只读：不连接 SCIM / IdP、不接收凭据、不写数据库，也不会修改真实成员或权限。真实本地收敛记录会在独立区域明确标注。"
         style={{ marginBottom: 16 }}
       />
 
@@ -243,9 +245,9 @@ export default function MemberLifecyclePage({ embedded = false }: { embedded?: b
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>生命周期链与事件合同</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>离线示例链与事件格式</Typography.Title>
               <Typography.Text className="ur-panel-hint">
-                {contract ? `${contract.contract_version} · 目录供应商未选择` : '正在读取离线合同'}
+                {contract ? `${contract.contract_version} · 未连接真实目录供应商，仅校验事件格式` : '正在读取离线合同'}
               </Typography.Text>
             </div>
             <Tag color="blue">IdP-neutral</Tag>
@@ -268,7 +270,7 @@ export default function MemberLifecyclePage({ embedded = false }: { embedded?: b
             />
           </div>
 
-          <Typography.Title heading={6}>当前事件 JSON</Typography.Title>
+          <Typography.Title heading={6}>离线示例事件 JSON（可编辑，不会写入系统）</Typography.Title>
           <TextArea
             aria-label="成员生命周期事件 JSON"
             value={input}
@@ -294,12 +296,17 @@ export default function MemberLifecyclePage({ embedded = false }: { embedded?: b
           {error && <Banner type="danger" description={error} style={{ marginTop: 12 }} />}
 
           {report && (
-            <div className="ur-kpi-grid ur-governance-kpis">
-              <MetricTile label="有效项目" value={formatInteger(report.effective_memberships.length)} tone="blue" />
-              <MetricTile label="有效能力" value={formatInteger(report.effective_capabilities.length)} tone="green" />
-              <MetricTile label="撤销项" value={formatInteger(report.revocations.length)} tone={report.revocations.length ? 'amber' : 'blue'} />
-              <MetricTile label="运行时变更" value={report.runtime_mutation === 'none' ? '无' : report.runtime_mutation} tone="blue" />
-            </div>
+            <>
+              <Typography.Paragraph type="tertiary" style={{ marginTop: 16 }}>
+                以下数字只统计当前离线示例校验结果中的数组项，不是客户组织、真实项目或生产权限的统计。
+              </Typography.Paragraph>
+              <div className="ur-kpi-grid ur-governance-kpis">
+                <MetricTile label="示例保留项目关系" value={formatInteger(report.effective_memberships.length)} tone="blue" />
+                <MetricTile label="示例保留访问能力" value={formatInteger(report.effective_capabilities.length)} tone="green" />
+                <MetricTile label="示例需撤销访问项" value={formatInteger(report.revocations.length)} tone={report.revocations.length ? 'amber' : 'blue'} />
+                <MetricTile label="实际运行时写入" value={report.runtime_mutation === 'none' ? '无' : report.runtime_mutation} tone="blue" />
+              </div>
+            </>
           )}
         </main>
 

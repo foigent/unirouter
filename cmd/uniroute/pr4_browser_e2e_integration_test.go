@@ -385,11 +385,15 @@ func newPR4BrowserApplicationServer(
 	handler.SetLicenseRuntime(licenseRuntime)
 
 	adminAuth := middleware.AdminAuth(pool, pr4BrowserJWTSecret)
+	adminCustomerContext := middleware.CustomerContext(pool)
 	authenticated := func(next http.HandlerFunc) http.Handler {
-		return adminAuth(http.HandlerFunc(next))
+		return adminAuth(adminCustomerContext(http.HandlerFunc(next)))
 	}
 	organizationAdmin := func(next http.HandlerFunc) http.Handler {
-		return adminAuth(middleware.RequireOrganizationRoles(auth.RolePlatformAdmin, auth.RoleOrgAdmin)(http.HandlerFunc(next)))
+		return adminAuth(adminCustomerContext(middleware.RequireOrganizationRoles(
+			auth.RolePlatformAdmin,
+			auth.RoleOrgAdmin,
+		)(http.HandlerFunc(next))))
 	}
 
 	apiMux := http.NewServeMux()

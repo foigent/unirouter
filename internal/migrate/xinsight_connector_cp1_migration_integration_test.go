@@ -26,6 +26,10 @@ SELECT COUNT(*) FROM information_schema.tables
 WHERE table_schema='public'
   AND table_name IN ('xinsight_connector_installations','xinsight_connector_operations')`).Scan(&tables))
 	require.Equal(t, 2, tables)
+	rollbackEmptyMigrations(t, pool, []string{
+		"000064_rate_card_request_pricing_authority.down.sql",
+		"000063_onprem_billing_mode.down.sql",
+	})
 	redeemDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(redeemDown))

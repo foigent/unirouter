@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Button, Modal, Form, Toast, Space, SideSheet, Select } from '@douyinfe/semi-ui';
+import { Button, Modal, Form, Toast, Space, SideSheet, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { PagedTable, PageHeader, Surface } from '../ui';
+import { EmptyState, PagedTable, PageHeader, Surface } from '../ui';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { canonicalExactDecimal } from '../utils/exactDecimal';
-import { loadAllPages } from '../utils/loadAllPages';
 
 export function parseOrgModelPriceMultiplier(value: unknown) {
   return canonicalExactDecimal(value, {
@@ -25,6 +25,9 @@ function mutationError(prefix: string, error: unknown) {
 export default function OrgModelPricesPage({ embedded = false }: { embedded?: boolean }) {
   const user = useAuthStore((s) => s.user);
   const canMutate = isPlatformAdminRole(organizationRoleForUser(user));
+  const customerContext = resolveCustomerContext(user);
+  const selectedOrgID = canMutate ? effectiveCustomerOrgID(user) : undefined;
+  const customerContextReady = !canMutate || customerContext.state === 'ready';
   const [prices, setPrices] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -34,8 +37,6 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
   const [editPrice, setEditPrice] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
   const [modelNames, setModelNames] = useState<string[]>([]);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(canMutate ? user?.org_id : undefined);
-  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
 
   const load = (p = page, size = pageSize, orgID = selectedOrgID) => {
     setLoading(true);
@@ -46,19 +47,19 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
   };
 
   useEffect(() => {
+    if (!customerContextReady) return;
     load(1, pageSize, selectedOrgID);
     api.getModelNames().then((d: any) => setModelNames(d.data || [])).catch(() => {});
-    if (canMutate) {
-      loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
-        .then(setOrganizations)
-        .catch((error: any) => Toast.error(mutationError('组织列表加载失败', error)));
-    }
-  }, []);
+  }, [customerContextReady, selectedOrgID]);
 
   const closeDrawer = () => { setShowDrawer(false); setEditPrice(null); };
 
   const handleCreate = async (v: any) => {
-    const orgID = Number(v.org_id);
+    const orgID = Number(selectedOrgID);
+    if (!Number.isSafeInteger(orgID) || orgID <= 0) {
+      Toast.error('无法确认唯一客户组织，未创建倍率');
+      return;
+    }
     try {
       await api.createOrgModelPrice({
         org_id: orgID,
@@ -67,7 +68,6 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
       });
       Toast.success('创建成功');
       closeDrawer();
-      setSelectedOrgID(orgID);
       load(1, pageSize, orgID);
     } catch (error) { Toast.error(mutationError('创建失败', error)); }
   };
@@ -102,7 +102,6 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
     setEditPrice(null);
     setShowDrawer(true);
     formApi?.reset();
-    setTimeout(() => formApi?.setValue('org_id', selectedOrgID || user?.org_id), 0);
   };
 
   const openEdit = (r: any) => {
@@ -110,7 +109,6 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
     setShowDrawer(true);
     setTimeout(() => {
       formApi?.setValues({
-        org_id: r.org_id?.toString(),
         model_name: r.model_name,
 		multiplier: String(r.multiplier),
       });
@@ -139,13 +137,15 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
       ),
     });
 
-  const selectOrganization = (value: unknown) => {
-    const orgID = Number(value);
-    if (!Number.isInteger(orgID) || orgID <= 0) return;
-    setSelectedOrgID(orgID);
-    setPage(1);
-    load(1, pageSize, orgID);
-  };
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
+    return (
+      <div className={embedded ? undefined : 'ur-page'}>
+        {!embedded && <PageHeader eyebrow="成本与财务" title={blocker.title} description="客户倍率必须绑定唯一客户组织。" />}
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={240} /></Surface>
+      </div>
+    );
+  }
 
   return (
     <div className={embedded ? undefined : 'ur-page'}>
@@ -165,17 +165,7 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
           : '只读查看本组织适用的价格乘数。') : undefined}
         actions={embedded && canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增倍率</Button> : undefined}
       >
-        {canMutate && <Space style={{ marginBottom: 16 }}>
-          <span>目标组织</span>
-          <Select
-            placeholder="选择组织"
-            value={selectedOrgID}
-            onChange={selectOrganization}
-            optionList={organizations.map((org) => ({ value: org.id, label: `${org.name}（ID ${org.id}）` }))}
-            filter
-            style={{ width: 260 }}
-          />
-        </Space>}
+        {canMutate && <Typography.Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${selectedOrgID}`}</Typography.Text>}
         <PagedTable
           columns={columns}
           dataSource={prices}
@@ -196,15 +186,7 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={editPrice ? handleUpdate : handleCreate}>
-          <Form.Select
-            field="org_id"
-            label="组织"
-            rules={[{ required: true, message: '必填' }]}
-            optionList={organizations.map((org) => ({ value: org.id, label: `${org.name}（ID ${org.id}）` }))}
-            disabled={!!editPrice}
-            filter
-            style={{ width: '100%' }}
-          />
+          <Typography.Paragraph type="tertiary">客户范围：{customerContext.orgName || `组织 #${selectedOrgID}`}</Typography.Paragraph>
           <Form.Select field="model_name" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" disabled={!!editPrice} />
 		  <Form.Input field="multiplier" label="计费倍率" rules={[{ required: true, message: '必填' }]} placeholder="例如 1.2" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>

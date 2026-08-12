@@ -12,6 +12,15 @@ export interface UserProfile {
   status?: string;
   email?: string;
   auth_provider?: string;
+  // customer_context is the deployment's canonical customer binding. A
+  // platform administrator's org_id may point at the technical system org and
+  // must never be used as an implicit customer scope.
+  customer_context?: {
+    state: 'ready' | 'not_initialized' | 'ambiguous' | 'inactive' | 'unavailable';
+    org_id?: number;
+    org_name?: string;
+  } | null;
+  identity_scope?: 'deployment_operator' | 'customer_identity' | 'deployment_operator_and_customer' | null;
   // undefined means the current session has not loaded /me yet. null means a
   // rolling-upgrade backend returned no capability projection, so the client
   // must not treat that response as positive entitlement evidence.
@@ -25,7 +34,8 @@ export interface UserProfile {
 }
 
 export function profileNeedsRefresh(user: UserProfile | null) {
-	return !user?.role || user.license_access === undefined || user.navigation_capabilities === undefined;
+	return !user?.role || user.license_access === undefined || user.navigation_capabilities === undefined ||
+		user.customer_context === undefined || user.identity_scope === undefined;
 }
 
 interface AuthState {
@@ -61,6 +71,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         status: data.status,
         email: data.email,
         auth_provider: data.auth_provider,
+        customer_context: data.customer_context ?? undefined,
+        identity_scope: data.identity_scope ?? undefined,
         license_access: data.license_access ?? undefined,
 		navigation_capabilities: data.navigation_capabilities ?? undefined,
       };
@@ -109,6 +121,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         status: data.status,
         email: data.email,
         auth_provider: data.auth_provider,
+        customer_context: data.customer_context ?? null,
+        identity_scope: data.identity_scope ?? null,
         license_access: data.license_access ?? null,
 		navigation_capabilities: data.navigation_capabilities ?? null,
       };

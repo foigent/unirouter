@@ -9,6 +9,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/modellist"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -21,11 +22,12 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var baseURL, channelModels, adapterType string
-	var adapterConfig json.RawMessage
+	var adapterConfig, modelMapping json.RawMessage
 	err = h.db.QueryRow(r.Context(),
-		`SELECT base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb)
+		`SELECT base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
+		        COALESCE(model_mapping, '{}'::jsonb)
 		 FROM channels WHERE id = $1`, id,
-	).Scan(&baseURL, &channelModels, &adapterType, &adapterConfig)
+	).Scan(&baseURL, &channelModels, &adapterType, &adapterConfig, &modelMapping)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
 		return
@@ -37,11 +39,9 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&reqBody)
 	if strings.TrimSpace(reqBody.Model) == "" {
-		for _, m := range strings.Split(channelModels, ",") {
-			if model := strings.TrimSpace(m); model != "" {
-				reqBody.Model = model
-				break
-			}
+		configuredModels := modellist.Parse(channelModels)
+		if len(configuredModels) > 0 {
+			reqBody.Model = configuredModels[0]
 		}
 	}
 	if strings.TrimSpace(reqBody.Model) == "" {
@@ -49,6 +49,7 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reqBody.Model = strings.TrimSpace(reqBody.Model)
+	upstreamModel := resolveChannelTestModel(reqBody.Model, modelMapping)
 	if !channelTestModelConfigured(channelModels, reqBody.Model) {
 		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
 			"success": false,
@@ -80,7 +81,7 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		        BTRIM(COALESCE(ck.allowed_models, '')) = ''
 		        OR EXISTS (
 		            SELECT 1
-		              FROM unnest(string_to_array(COALESCE(ck.allowed_models, ''), ',')) AS allowed(model)
+		              FROM regexp_split_to_table(COALESCE(ck.allowed_models, ''), '[,，;；\r\n]+') AS allowed(model)
 		             WHERE BTRIM(allowed.model) = $2
 		        )
 		    )
@@ -132,55 +133,59 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 			ID:            id,
 			BaseURL:       baseURL,
 			Models:        channelModels,
+			ModelMapping:  modelMapping,
 			AdapterType:   adapters.NormalizeType(adapterType),
 			AdapterConfig: adapterConfig,
 		},
 		APIKey: apiKey,
-		Model:  reqBody.Model,
+		Model:  upstreamModel,
 		Prompt: reqBody.Prompt,
 	})
 	if err != nil {
 		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
-			"success": false,
-			"status":  "error",
-			"error":   auditErrorSummary(err.Error()),
+			"success":        false,
+			"status":         "error",
+			"upstream_model": upstreamModel,
+			"error":          auditErrorSummary(err.Error()),
 		})
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"status": "error", "error": err.Error(),
+			"status": "error", "error": err.Error(), "model": reqBody.Model, "upstream_model": upstreamModel,
 		})
 		return
 	}
 
 	// Build curl example
-	curlExample := fmt.Sprintf("curl %s -H \"Authorization: Bearer sk-***\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, reqBody.Model, reqBody.Prompt)
+	curlExample := fmt.Sprintf("curl %s -H \"Authorization: Bearer sk-***\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, upstreamModel, reqBody.Prompt)
 	if adapters.NormalizeType(adapterType) == adapters.TypeAnthropicNative {
-		curlExample = fmt.Sprintf("curl %s -H \"x-api-key: sk-***\" -H \"anthropic-version: 2023-06-01\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, reqBody.Model, reqBody.Prompt)
+		curlExample = fmt.Sprintf("curl %s -H \"x-api-key: sk-***\" -H \"anthropic-version: 2023-06-01\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, upstreamModel, reqBody.Prompt)
 	} else if adapters.NormalizeType(adapterType) == adapters.TypeAzureOpenAI {
 		curlExample = fmt.Sprintf("curl %s -H \"api-key: ***\" -H \"Content-Type: application/json\" -d '{\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}],\"max_tokens\":16}'", result.RequestURL, reqBody.Prompt)
 	}
 
 	h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
-		"success":     result.Success,
-		"status":      result.Status,
-		"status_code": result.StatusCode,
-		"latency_ms":  result.LatencyMs,
-		"tokens_used": result.TokensUsed,
-		"error":       auditErrorSummary(result.Error),
+		"success":        result.Success,
+		"status":         result.Status,
+		"status_code":    result.StatusCode,
+		"latency_ms":     result.LatencyMs,
+		"tokens_used":    result.TokensUsed,
+		"upstream_model": upstreamModel,
+		"error":          auditErrorSummary(result.Error),
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":      result.Success,
-		"status":       result.Status,
-		"channel_id":   id,
-		"adapter_type": adapters.NormalizeType(adapterType),
-		"status_code":  result.StatusCode,
-		"latency_ms":   result.LatencyMs,
-		"model":        reqBody.Model,
-		"tokens_used":  result.TokensUsed,
-		"models":       channelModels,
-		"error":        result.Error,
-		"response":     string(result.Body),
-		"curl_example": curlExample,
+		"success":        result.Success,
+		"status":         result.Status,
+		"channel_id":     id,
+		"adapter_type":   adapters.NormalizeType(adapterType),
+		"status_code":    result.StatusCode,
+		"latency_ms":     result.LatencyMs,
+		"model":          reqBody.Model,
+		"upstream_model": upstreamModel,
+		"tokens_used":    result.TokensUsed,
+		"models":         channelModels,
+		"error":          result.Error,
+		"response":       string(result.Body),
+		"curl_example":   curlExample,
 	})
 }
 
@@ -189,12 +194,24 @@ func channelTestModelConfigured(channelModels, selectedModel string) bool {
 	if selectedModel == "" {
 		return false
 	}
-	for _, configured := range strings.Split(channelModels, ",") {
-		if strings.TrimSpace(configured) == selectedModel {
-			return true
-		}
+	return modellist.Contains(channelModels, selectedModel)
+}
+
+// resolveChannelTestModel deliberately mirrors gateway routing semantics: an
+// invalid or absent mapping falls back to the requested model, while an exact
+// key match is sent upstream.
+func resolveChannelTestModel(requestedModel string, modelMapping json.RawMessage) string {
+	if len(modelMapping) == 0 || string(modelMapping) == "{}" || string(modelMapping) == "null" {
+		return requestedModel
 	}
-	return false
+	var mapping map[string]string
+	if err := json.Unmarshal(modelMapping, &mapping); err != nil {
+		return requestedModel
+	}
+	if mapped, ok := mapping[requestedModel]; ok {
+		return mapped
+	}
+	return requestedModel
 }
 
 func (h *Handler) recordChannelTestAudit(r *http.Request, channelID int64, model, adapterType string, result map[string]interface{}) {

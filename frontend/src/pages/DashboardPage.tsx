@@ -1,7 +1,7 @@
 import { formatDateTime } from '../utils/formatDate';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Typography, Table, Spin, Tag, Tooltip, Button, Progress, Checkbox, Select } from '@douyinfe/semi-ui';
+import { Typography, Table, Spin, Tag, Tooltip, Button, Progress, Checkbox } from '@douyinfe/semi-ui';
 import {
   IconActivity,
   IconAlertTriangle,
@@ -25,7 +25,7 @@ import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, 
 import { formatCompactNumber } from '../utils/formatNumber';
 import { useAuthStore } from '../store/auth';
 import { authzContextForUser, hasLicensedFeature, isBillingRole, isOrgViewerRole, isPlatformAdminRole, isRouteAllowedForAuthz } from '../navigation';
-import { loadAllPages } from '../utils/loadAllPages';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 
 const { Text } = Typography;
 
@@ -244,6 +244,8 @@ export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const authz = authzContextForUser(user);
   const organizationRole = authz.organizationRole;
+  const customerContext = resolveCustomerContext(user);
+  const selectedOrgID = effectiveCustomerOrgID(user);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -251,30 +253,20 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [visibleTrendMetrics, setVisibleTrendMetrics] = useState<TrendMetric[]>(['requests', 'cost_yuan']);
   const platform = isPlatformAdminRole(organizationRole);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
-  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
-  const [organizationsError, setOrganizationsError] = useState('');
   const [attention, setAttention] = useState<DashboardAttention | null>(null);
   const [attentionLoadState, setAttentionLoadState] = useState<AttentionLoadState>('idle');
   const requestVersion = useRef(0);
   const attentionRequestVersion = useRef(0);
   const notificationsLicensed = hasLicensedFeature(user?.license_access, 'notifications');
 
-  const loadOrganizations = useCallback(async () => {
-    if (!platform) return;
-    setOrganizationsError('');
-    try {
-      const items = await loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size));
-      setOrganizations(items);
-    } catch {
-      setOrganizationsError('组织列表加载失败；当前总览仍使用登录账号所属组织。');
-    }
-  }, [platform]);
-
-  useEffect(() => { void loadOrganizations(); }, [loadOrganizations]);
-
   const fetchData = useCallback(async () => {
     const version = ++requestVersion.current;
+    if (customerContext.state !== 'ready' || !selectedOrgID) {
+      setStats(null);
+      setLoading(false);
+      setLoadError('');
+      return;
+    }
     setLoading(true);
     setLoadError('');
     try {
@@ -291,10 +283,15 @@ export default function DashboardPage() {
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [platform, range, selectedOrgID]);
+  }, [customerContext.state, platform, range, selectedOrgID]);
 
   const fetchAttention = useCallback(async () => {
     const version = ++attentionRequestVersion.current;
+    if (customerContext.state !== 'ready' || !selectedOrgID) {
+      setAttention(null);
+      setAttentionLoadState('idle');
+      return;
+    }
     if (!platform) {
       setAttention(null);
       setAttentionLoadState('idle');
@@ -318,7 +315,7 @@ export default function DashboardPage() {
       setAttention(null);
       setAttentionLoadState('error');
     }
-  }, [notificationsLicensed, platform, selectedOrgID]);
+  }, [customerContext.state, notificationsLicensed, platform, selectedOrgID]);
 
   const refreshDashboard = useCallback(() => {
     void fetchData();
@@ -340,10 +337,7 @@ export default function DashboardPage() {
 	const walletAvailable = parseMicros(stats?.wallet_balance_micros || '0') + parseMicros(stats?.wallet_granted_micros || '0');
   const hasWalletThreshold = parseMicros(walletThreshold) > 0n;
   const lowBalance = hasWalletThreshold && walletAvailable <= parseMicros(walletThreshold);
-  const selectedOrganization = organizations.find(org => org.id === selectedOrgID);
-  const scopeLabel = platform
-    ? (selectedOrganization?.name || (selectedOrgID === user?.org_id ? user?.org_name : '') || (selectedOrgID ? `组织 #${selectedOrgID}` : '当前权限范围'))
-    : (user?.org_name || (user?.org_id ? `组织 #${user.org_id}` : '当前权限范围'));
+  const scopeLabel = customerContext.orgName || (selectedOrgID ? `组织 #${selectedOrgID}` : '未确认客户组织');
   const avgLatency = stats?.avg_latency_ms || 0;
   const p95Latency = stats?.p95_latency_ms ?? avgLatency;
   const p99Latency = stats?.p99_latency_ms ?? p95Latency;
@@ -362,14 +356,14 @@ export default function DashboardPage() {
   const canReadChannelHealth = platform;
   const canOpenRecentRequests = isRouteAllowedForAuthz('/logs', authz);
   const dashboardTitle = isPlatformAdminRole(organizationRole)
-    ? '平台总览'
+    ? '客户运营总览'
     : isBillingRole(organizationRole)
       ? '财务与用量总览'
       : isOrgViewerRole(organizationRole)
         ? '组织只读总览'
         : '组织运营总览';
   const dashboardDescription = isPlatformAdminRole(organizationRole)
-    ? '统一观察请求量、成功率、延迟、成本和通道健康状态。'
+    ? '统一观察当前客户的请求量、成功率、延迟、成本和通道健康状态。'
     : isBillingRole(organizationRole)
       ? '统一观察用量、费用、余额和近期请求状态。'
       : '统一观察当前组织的请求量、成功率、延迟和费用。';
@@ -431,6 +425,18 @@ export default function DashboardPage() {
     });
   };
 
+  if (customerContext.state !== 'ready') {
+    const blocker = customerContextBlockerCopy(customerContext.state);
+    return (
+      <div className="ur-page ur-page-wide">
+        <PageHeader eyebrow="概览" title="客户运营总览" description="本页只展示当前部署唯一客户组织的运行与用量数据。" />
+        <Surface>
+          <EmptyState title={blocker.title} description={blocker.description} minHeight={280} />
+        </Surface>
+      </div>
+    );
+  }
+
   const dashboardHeader = (
     <PageHeader
       eyebrow="概览"
@@ -438,31 +444,6 @@ export default function DashboardPage() {
       description={`数据范围：${scopeLabel}。${dashboardDescription}`}
       actions={(
         <>
-          {platform && (
-            <>
-              <Text id="dashboard-target-organization-label" type="tertiary">目标组织</Text>
-              <Select
-                aria-labelledby="dashboard-target-organization-label"
-                value={selectedOrgID}
-                optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
-                onChange={(value) => {
-                  const orgID = Number(value);
-                  if (!Number.isInteger(orgID) || orgID <= 0 || orgID === selectedOrgID) return;
-                  setStats(null);
-                  setLoadError('');
-                  setSelectedOrgID(orgID);
-                }}
-                disabled={loading}
-                filter
-                style={{ width: 220 }}
-              />
-              {organizationsError && (
-                <Tooltip content={organizationsError}>
-                  <Button size="small" onClick={() => void loadOrganizations()}>重试组织列表</Button>
-                </Tooltip>
-              )}
-            </>
-          )}
           <div className="ur-toolbar time-range-selector">
             {timeRanges.map(t => (
               <Button

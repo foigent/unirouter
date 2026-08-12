@@ -4,14 +4,12 @@ import InternalStatusPage from '../InternalStatusPage';
 
 const mockGetInternalStatus = vi.fn();
 const mockGetRuntimeStatus = vi.fn();
-const mockGetOrganizations = vi.fn();
 const auth = vi.hoisted(() => ({ user: { role: 'platform_admin' } as any }));
 
 vi.mock('../../api/client', () => ({
   api: {
     getInternalStatus: (...args: any[]) => mockGetInternalStatus(...args),
     getRuntimeStatus: (...args: any[]) => mockGetRuntimeStatus(...args),
-    getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
   },
 }));
 
@@ -30,7 +28,6 @@ describe('InternalStatusPage', () => {
       open_critical: 0,
       open_warning: 1,
     });
-    mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
     mockGetRuntimeStatus.mockResolvedValue({
       status: 'warning',
       generated_at: '2026-07-07T10:00:00Z',
@@ -154,6 +151,8 @@ describe('InternalStatusPage', () => {
     expect(await screen.findByRole('heading', { name: '运行状态', level: 3 })).toBeTruthy();
     expect(screen.getByText('运行时观测')).toBeTruthy();
     expect(screen.getByText('数据库')).toBeTruthy();
+    expect(screen.getByText(/本次健康探测往返耗时（状态快照最多缓存 5 秒）/)).toBeTruthy();
+    expect(screen.getByText(/数据生成于 .*当前约 0 秒前/)).toBeTruthy();
     expect(screen.getByText('Prometheus')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'http://prometheus:9090' })).toBeTruthy();
     expect(screen.getByText(/scrape up \/ 3 ms/)).toBeTruthy();
@@ -220,16 +219,19 @@ describe('InternalStatusPage', () => {
     expect(screen.queryByText('Provider channel failure')).toBeNull();
   });
 
-  it('loads both notification and runtime status for the platform JWT organization', async () => {
-    auth.user = { role: 'platform_admin', org_id: 7 };
+  it('binds platform reads to the canonical customer instead of the technical JWT organization', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 1,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+    };
     render(<InternalStatusPage />);
 
-    expect(await screen.findByText('目标组织')).toBeTruthy();
     await waitFor(() => {
       expect(mockGetInternalStatus).toHaveBeenCalledWith({ org_id: 7 });
       expect(mockGetRuntimeStatus).toHaveBeenCalledWith(7);
     });
-    expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
+    expect(screen.queryByText('目标组织')).toBeNull();
   });
 
   it('passes project context to the notification summary and link', async () => {

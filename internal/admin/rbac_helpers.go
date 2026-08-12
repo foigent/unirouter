@@ -41,11 +41,28 @@ func isUnauthenticatedUnitContext(ctx context.Context) bool {
 	return middleware.GetUserRoleFromContext(ctx) == ""
 }
 
-// actorOrgConstraint returns the organization that must constrain an
-// authenticated non-platform actor. The unconstrained return preserves legacy
-// direct-handler unit tests while production routes always pass AdminAuth.
+// actorOrgConstraint returns the customer organization that must constrain an
+// authenticated actor. In production, even platform administrators operate on
+// the canonical customer for customer-domain resources; their identity
+// organization remains independently available through CtxOrgID. The legacy
+// branch preserves direct-handler tests that do not install CustomerContext.
 func actorOrgConstraint(ctx context.Context) (int64, bool) {
-	if isUnauthenticatedUnitContext(ctx) || auth.IsPlatformAdmin(actorOrganizationRole(ctx)) {
+	if isUnauthenticatedUnitContext(ctx) {
+		return 0, false
+	}
+	if customer, present := middleware.GetCustomerContextFromContext(ctx); present {
+		if !customer.Ready() {
+			return 0, true
+		}
+		if auth.IsPlatformAdmin(actorOrganizationRole(ctx)) {
+			return customer.OrganizationID, true
+		}
+		if middleware.GetOrgIDFromContext(ctx) != customer.OrganizationID {
+			return 0, true
+		}
+		return customer.OrganizationID, true
+	}
+	if auth.IsPlatformAdmin(actorOrganizationRole(ctx)) {
 		return 0, false
 	}
 	return middleware.GetOrgIDFromContext(ctx), true
@@ -59,16 +76,40 @@ func actorCanAccessOrg(ctx context.Context, targetOrgID int64) bool {
 	return actorOrgID > 0 && targetOrgID > 0 && actorOrgID == targetOrgID
 }
 
+func actorCustomerScopeUnavailable(ctx context.Context) bool {
+	organizationID, constrained := actorOrgConstraint(ctx)
+	return constrained && organizationID <= 0
+}
+
 // resolveActorOrganization returns the organization an authenticated actor may
-// operate on. Platform administrators may explicitly select another
-// organization; without an explicit selection every role is bound to the
-// organization carried by its authenticated identity. This deliberately has no
-// database-order fallback.
+// operate on. Production requests are bound to the separately resolved
+// canonical customer: platform administrators default to it and cannot select
+// the deployment operator organization, while customer identities must belong
+// to it. This deliberately has no database-order fallback.
 func resolveActorOrganization(ctx context.Context, requestedOrgID int64) (int64, error) {
 	if requestedOrgID < 0 {
 		return 0, errInvalidOrganizationID
 	}
 	actorOrgID := middleware.GetOrgIDFromContext(ctx)
+	if customer, present := middleware.GetCustomerContextFromContext(ctx); present {
+		if !customer.Ready() {
+			return 0, errActorOrganizationForbidden
+		}
+		customerOrgID := customer.OrganizationID
+		if auth.IsPlatformAdmin(actorOrganizationRole(ctx)) {
+			if requestedOrgID > 0 && requestedOrgID != customerOrgID {
+				return 0, errActorOrganizationForbidden
+			}
+			return customerOrgID, nil
+		}
+		if actorOrgID != customerOrgID {
+			return 0, errActorOrganizationForbidden
+		}
+		if requestedOrgID > 0 && requestedOrgID != customerOrgID {
+			return 0, errActorOrganizationForbidden
+		}
+		return customerOrgID, nil
+	}
 	if auth.IsPlatformAdmin(actorOrganizationRole(ctx)) {
 		if requestedOrgID > 0 {
 			return requestedOrgID, nil
@@ -86,6 +127,21 @@ func resolveActorOrganization(ctx context.Context, requestedOrgID int64) (int64,
 		return 0, errActorOrganizationForbidden
 	}
 	return actorOrgID, nil
+}
+
+func actorIdentityScope(ctx context.Context, organizationRole string) string {
+	if !auth.IsPlatformAdmin(organizationRole) {
+		return "customer_identity"
+	}
+	// CtxOrgID is the authenticated identity organization, not an effective
+	// customer authority. Only an identity actually stored in the canonical
+	// customer can claim both scopes; a deployment operator that is merely
+	// authorized to administer that customer remains a deployment identity.
+	customer, present := middleware.GetCustomerContextFromContext(ctx)
+	if present && customer.Ready() && middleware.GetOrgIDFromContext(ctx) == customer.OrganizationID {
+		return "deployment_operator_and_customer"
+	}
+	return "deployment_operator"
 }
 
 func parseOptionalOrganizationID(raw string) (int64, error) {
@@ -145,9 +201,12 @@ func (h *Handler) canReadProject(ctx context.Context, projectID int64) bool {
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
+	if actorCustomerScopeUnavailable(ctx) {
+		return false
+	}
 	organizationRole := actorOrganizationRole(ctx)
 	if organizationRole == auth.RolePlatformAdmin {
-		return true
+		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
 	if projectID == 0 {
 		return false
@@ -164,9 +223,12 @@ func (h *Handler) canWriteProject(ctx context.Context, projectID int64) bool {
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
+	if actorCustomerScopeUnavailable(ctx) {
+		return false
+	}
 	organizationRole := actorOrganizationRole(ctx)
 	if organizationRole == auth.RolePlatformAdmin {
-		return true
+		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
 	if projectID == 0 {
 		return false
@@ -185,9 +247,12 @@ func (h *Handler) canManageProjectMembers(ctx context.Context, projectID int64) 
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
+	if actorCustomerScopeUnavailable(ctx) {
+		return false
+	}
 	organizationRole := actorOrganizationRole(ctx)
 	if organizationRole == auth.RolePlatformAdmin {
-		return true
+		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
 	if projectID <= 0 {
 		return false
@@ -202,9 +267,12 @@ func (h *Handler) canCreateProjectKey(ctx context.Context, projectID int64) bool
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
+	if actorCustomerScopeUnavailable(ctx) {
+		return false
+	}
 	organizationRole := actorOrganizationRole(ctx)
 	if organizationRole == auth.RolePlatformAdmin {
-		return true
+		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
 	if projectID == 0 {
 		return false
@@ -220,9 +288,12 @@ func (h *Handler) canReadProjectUsage(ctx context.Context, projectID int64) bool
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
+	if actorCustomerScopeUnavailable(ctx) {
+		return false
+	}
 	organizationRole := actorOrganizationRole(ctx)
 	if organizationRole == auth.RolePlatformAdmin {
-		return true
+		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
 	if projectID == 0 {
 		return false
@@ -249,7 +320,7 @@ func (h *Handler) canReadUsageRecord(ctx context.Context, orgID, projectID int64
 
 	organizationRole := actorOrganizationRole(ctx)
 	if organizationRole == auth.RolePlatformAdmin {
-		return true
+		return projectID == 0 || h.projectBelongsToOrg(ctx, projectID, orgID)
 	}
 	if organizationRole == auth.RoleOrgAdmin || organizationRole == auth.RoleBillingAdmin || organizationRole == auth.RoleOrgViewer {
 		return projectID == 0 || h.projectBelongsToOrg(ctx, projectID, orgID)
@@ -294,7 +365,7 @@ func (h *Handler) canReadAPIKey(ctx context.Context, orgID, projectID int64) boo
 	}
 	organizationRole := actorOrganizationRole(ctx)
 	if organizationRole == auth.RolePlatformAdmin {
-		return true
+		return projectID == 0 || h.projectBelongsToActorOrg(ctx, projectID)
 	}
 	if projectID == 0 {
 		return organizationRole == auth.RoleOrgAdmin
@@ -309,9 +380,12 @@ func (h *Handler) canReadProjectCredentialMetadata(ctx context.Context, projectI
 	if isUnauthenticatedUnitContext(ctx) {
 		return true
 	}
+	if actorCustomerScopeUnavailable(ctx) {
+		return false
+	}
 	organizationRole := actorOrganizationRole(ctx)
 	if organizationRole == auth.RolePlatformAdmin {
-		return true
+		return h.projectBelongsToActorOrg(ctx, projectID)
 	}
 	if organizationRole == auth.RoleOrgAdmin {
 		return h.projectBelongsToActorOrg(ctx, projectID)

@@ -122,23 +122,34 @@ type RateComponent struct {
 	Amount       Amount `json:"amount"`
 }
 
+// DailyPriceBand is one non-cross-midnight UTC segment in a complete daily
+// schedule. Minutes use the half-open interval [start_minute_utc,
+// end_minute_utc); a scheduled Rate Card must cover 00:00-24:00 exactly once.
+type DailyPriceBand struct {
+	BandRef        string          `json:"band_ref"`
+	StartMinuteUTC int             `json:"start_minute_utc"`
+	EndMinuteUTC   int             `json:"end_minute_utc"`
+	Components     []RateComponent `json:"components"`
+}
+
 // RateCard separates economic layers so a supplier list price cannot silently
 // become a contracted rate, internal showback rate or customer charge.
 type RateCard struct {
-	ContractVersion   string          `json:"contract_version"`
-	RateCardRef       string          `json:"rate_card_ref"`
-	OrgID             int64           `json:"org_id"`
-	ProviderRef       string          `json:"provider_ref"`
-	ModelRef          string          `json:"model_ref"`
-	Layer             string          `json:"layer"`
-	Version           int64           `json:"version"`
-	State             string          `json:"state"`
-	EffectiveFrom     time.Time       `json:"effective_from"`
-	EffectiveTo       *time.Time      `json:"effective_to,omitempty"`
-	Components        []RateComponent `json:"components"`
-	SourceEvidenceRef string          `json:"source_evidence_ref,omitempty"`
-	CreatedBy         string          `json:"created_by"`
-	ApprovedBy        string          `json:"approved_by,omitempty"`
+	ContractVersion   string           `json:"contract_version"`
+	RateCardRef       string           `json:"rate_card_ref"`
+	OrgID             int64            `json:"org_id"`
+	ProviderRef       string           `json:"provider_ref"`
+	ModelRef          string           `json:"model_ref"`
+	Layer             string           `json:"layer"`
+	Version           int64            `json:"version"`
+	State             string           `json:"state"`
+	EffectiveFrom     time.Time        `json:"effective_from"`
+	EffectiveTo       *time.Time       `json:"effective_to,omitempty"`
+	Components        []RateComponent  `json:"components"`
+	DailyPriceBands   []DailyPriceBand `json:"daily_price_bands,omitempty"`
+	SourceEvidenceRef string           `json:"source_evidence_ref,omitempty"`
+	CreatedBy         string           `json:"created_by"`
+	ApprovedBy        string           `json:"approved_by,omitempty"`
 }
 
 type PricingBinding struct {
@@ -300,6 +311,9 @@ func ValidateRateCard(card RateCard) error {
 			return invalid("duplicate_rate_meter")
 		}
 		seen[component.Meter] = struct{}{}
+	}
+	if err := ValidateDailyPriceBands(card.DailyPriceBands); err != nil {
+		return err
 	}
 	if card.State != RateDraft {
 		if blank(card.ApprovedBy) {

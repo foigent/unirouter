@@ -280,6 +280,12 @@ export const api = {
     request(appendParams('/enterprise-finance/rate-cards', { org_id: orgId })),
   createEnterpriseRateCardDraft: (data: any) =>
     request('/enterprise-finance/rate-cards', { method: 'POST', body: JSON.stringify(data) }),
+  importOfficialEnterpriseRateCardDraft: (data: any) =>
+    request('/enterprise-finance/rate-cards/import-official-draft', { method: 'POST', body: JSON.stringify(data) }),
+  bootstrapLegacyEnterpriseRateCardDrafts: (data: { org_id?: number }) =>
+    request('/enterprise-finance/rate-cards/bootstrap-legacy-drafts', { method: 'POST', body: JSON.stringify(data) }),
+  preflightEnterpriseRateCardAuthority: (data: { org_id?: number; models: Array<{ model_ref: string }> }) =>
+    request('/enterprise-finance/rate-cards/preflight', { method: 'POST', body: JSON.stringify(data) }),
   approveEnterpriseRateCard: (rateCardRef: string, data: any) =>
     request(`/enterprise-finance/rate-cards/${encodeURIComponent(rateCardRef)}/approve`, { method: 'POST', body: JSON.stringify(data) }),
   activateEnterpriseRateCard: (rateCardRef: string, data: any) =>

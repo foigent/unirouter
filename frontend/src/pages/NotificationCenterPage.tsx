@@ -4,6 +4,7 @@ import { IconBell, IconPlus, IconRefresh, IconSetting } from '@douyinfe/semi-ico
 import { api } from '../api/client';
 import { canonicalProjectMembershipRole, isBillingRole, isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { formatDateTime } from '../utils/formatDate';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
@@ -128,11 +129,11 @@ export default function NotificationCenterPage() {
   const platform = isPlatformAdminRole(organizationRole);
   const organizationAdmin = isOrgAdminRole(organizationRole);
   const billing = isBillingRole(organizationRole);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
-  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
+  const customerContext = resolveCustomerContext(user);
+  const customerContextReady = customerContext.state === 'ready';
   const [activeTab, setActiveTab] = useState<TabKey>('events');
   const projectID = projectIDFromLocation();
-  const targetOrgID = platform ? selectedOrgID : undefined;
+  const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
   const [projectMembershipRole, setProjectMembershipRole] = useState('');
   const [projectMembershipLoaded, setProjectMembershipLoaded] = useState(!projectID);
   const hasOrganizationNotificationScope = organizationAdmin || billing;
@@ -176,7 +177,7 @@ export default function NotificationCenterPage() {
   const webhookRequestVersion = useRef(0);
 
   const loadEvents = useCallback(async (page = eventPage, pageSize = eventPageSize) => {
-    if (!canReadNotifications) return;
+    if (!customerContextReady || !canReadNotifications) return;
     const version = ++eventRequestVersion.current;
     setEventLoading(true);
     setEventLoadError('');
@@ -201,10 +202,10 @@ export default function NotificationCenterPage() {
     } finally {
       if (version === eventRequestVersion.current) setEventLoading(false);
     }
-  }, [canReadNotifications, deliveryState, eventPage, eventPageSize, eventStatus, eventType, projectID, severity, targetOrgID]);
+  }, [canReadNotifications, customerContextReady, deliveryState, eventPage, eventPageSize, eventStatus, eventType, projectID, severity, targetOrgID]);
 
   const loadDeliveries = useCallback(async (page = deliveryPage, pageSize = deliveryPageSize) => {
-    if (!canReadNotifications) return;
+    if (!customerContextReady || !canReadNotifications) return;
     const version = ++deliveryRequestVersion.current;
     setDeliveryLoading(true);
     setDeliveryLoadError('');
@@ -227,10 +228,10 @@ export default function NotificationCenterPage() {
     } finally {
       if (version === deliveryRequestVersion.current) setDeliveryLoading(false);
     }
-  }, [canReadNotifications, deliveryEventID, deliveryPage, deliveryPageSize, deliveryStatus, projectID, targetOrgID]);
+  }, [canReadNotifications, customerContextReady, deliveryEventID, deliveryPage, deliveryPageSize, deliveryStatus, projectID, targetOrgID]);
 
   const loadWebhooks = useCallback(async (page = webhookPage, pageSize = webhookPageSize) => {
-    if (!canReadNotifications || billing) return;
+    if (!customerContextReady || !canReadNotifications || billing) return;
     const version = ++webhookRequestVersion.current;
     setWebhookLoading(true);
     setWebhookLoadError('');
@@ -251,7 +252,7 @@ export default function NotificationCenterPage() {
     } finally {
       if (version === webhookRequestVersion.current) setWebhookLoading(false);
     }
-  }, [billing, canReadNotifications, projectID, targetOrgID, webhookPage, webhookPageSize]);
+  }, [billing, canReadNotifications, customerContextReady, projectID, targetOrgID, webhookPage, webhookPageSize]);
 
   const invalidateEvents = () => {
     eventRequestVersion.current += 1;
@@ -274,6 +275,11 @@ export default function NotificationCenterPage() {
   }, [billing, loadWebhooks]);
 
   useEffect(() => {
+    if (!customerContextReady) {
+      setProjectMembershipRole('');
+      setProjectMembershipLoaded(false);
+      return;
+    }
     if (!projectID) {
       setProjectMembershipRole('');
       setProjectMembershipLoaded(true);
@@ -290,15 +296,7 @@ export default function NotificationCenterPage() {
       setProjectMembershipRole('');
       setProjectMembershipLoaded(true);
     });
-  }, [projectID]);
-
-  useEffect(() => {
-    if (!platform) return;
-    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
-    loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
-      .then(setOrganizations)
-      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
-  }, [platform, user?.org_id]);
+  }, [customerContextReady, projectID]);
 
   useEffect(() => {
     if (!webhookSheet || !webhookFormApi) return;
@@ -317,6 +315,10 @@ export default function NotificationCenterPage() {
   };
 
   const saveWebhook = async (values: any) => {
+    if (!customerContextReady) {
+      Toast.error('无法确认唯一客户组织，未保存 Webhook');
+      return;
+    }
     const enteredProjectID = String(values.project_id || '').trim();
     const selectedProjectID = projectID || (enteredProjectID ? Number(enteredProjectID) : 0);
     if (enteredProjectID && (!Number.isSafeInteger(selectedProjectID) || selectedProjectID <= 0)) {
@@ -349,6 +351,10 @@ export default function NotificationCenterPage() {
   };
 
   const updateEventStatus = async (record: NotificationEvent, action: 'acknowledge' | 'resolve') => {
+    if (!customerContextReady) {
+      Toast.error('无法确认唯一客户组织，未更新通知事件');
+      return;
+    }
     setEventActionID(record.id);
     try {
       if (action === 'acknowledge') {
@@ -375,35 +381,6 @@ export default function NotificationCenterPage() {
     setActiveTab('deliveries');
   };
 
-  const changeOrganization = (value: unknown) => {
-    const orgID = Number(value);
-    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
-    if (projectID) {
-      const params = new URLSearchParams(window.location.search);
-      params.delete('project_id');
-      const query = params.toString();
-      window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
-    }
-    setSelectedOrgID(orgID);
-    eventRequestVersion.current += 1;
-    deliveryRequestVersion.current += 1;
-    webhookRequestVersion.current += 1;
-    setEventPage(1);
-    setDeliveryPage(1);
-    setWebhookPage(1);
-    setEvents([]);
-    setEventTotal(0);
-    setDeliveries([]);
-    setDeliveryTotal(0);
-    setWebhooks([]);
-    setWebhookTotal(0);
-    setDeliveryEventID(undefined);
-    setWebhookSheet(null);
-    setEventLoadError('');
-    setDeliveryLoadError('');
-    setWebhookLoadError('');
-  };
-
   const confirmEventResolution = (record: NotificationEvent) => {
     Modal.confirm({
       title: '确认解决事件',
@@ -417,6 +394,10 @@ export default function NotificationCenterPage() {
   };
 
   const verifyWebhookScope = (record: NotificationWebhook) => {
+    if (!customerContextReady) {
+      Toast.error('无法确认唯一客户组织，未确认 Webhook 范围');
+      return;
+    }
     Modal.confirm({
       title: '确认 Webhook 路由范围',
       content: (
@@ -518,6 +499,16 @@ export default function NotificationCenterPage() {
     },
   ];
 
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
+    return (
+      <div className="ur-page ur-page-wide">
+        <PageHeader eyebrow={billing ? '成本与财务' : '监控与用量'} title={billing ? '财务提醒' : '通知中心'} description="通知数据和 Webhook 必须绑定当前部署唯一客户组织。" />
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={320} /></Surface>
+      </div>
+    );
+  }
+
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
@@ -528,20 +519,7 @@ export default function NotificationCenterPage() {
           : `查看并处理通知事件、核对投递结果和管理 Webhook 路由${projectID ? `；当前项目 #${projectID}` : ''}。“未配置”表示事件已记录但没有匹配的启用路由。`}
         actions={(
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {platform && (
-              <>
-                <Text type="tertiary">目标组织</Text>
-                <Select
-                  aria-label="目标组织"
-                  placeholder="选择目标组织"
-                  value={selectedOrgID}
-                  optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
-                  onChange={changeOrganization}
-                  disabled={eventLoading || deliveryLoading || (!billing && webhookLoading)}
-                  style={{ width: 220 }}
-                />
-              </>
-            )}
+            {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
             <Button icon={<IconRefresh />} onClick={() => {
               loadEvents();
               loadDeliveries();

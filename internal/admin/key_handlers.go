@@ -99,14 +99,19 @@ func writeAPIKeyNotFound(w http.ResponseWriter) {
 // and prevents handlers from interpreting purpose-specific metadata before the
 // caller has live access to the key's exact project.
 func actorScopedAPIKeyLookupClause(ctx context.Context, access apiKeyObjectAccess, relation string, firstArg int) (string, []interface{}, bool) {
-	if isUnauthenticatedUnitContext(ctx) || actorOrganizationRole(ctx) == auth.RolePlatformAdmin {
+	if isUnauthenticatedUnitContext(ctx) {
 		return "", nil, true
 	}
-	actorOrgID := middleware.GetOrgIDFromContext(ctx)
+	actorOrgID, constrained := actorOrgConstraint(ctx)
+	if !constrained && actorOrganizationRole(ctx) == auth.RolePlatformAdmin {
+		// Compatibility path for direct-handler tests and rolling upgrades that
+		// have not installed CustomerContext. Production admin routes always do.
+		return "", nil, true
+	}
 	if actorOrgID <= 0 {
 		return "", nil, false
 	}
-	if actorOrganizationRole(ctx) == auth.RoleOrgAdmin {
+	if actorOrganizationRole(ctx) == auth.RolePlatformAdmin || actorOrganizationRole(ctx) == auth.RoleOrgAdmin {
 		return fmt.Sprintf(" AND %s.org_id = $%d", relation, firstArg), []interface{}{actorOrgID}, true
 	}
 	actorUserID := middleware.GetUserIDFromContext(ctx)

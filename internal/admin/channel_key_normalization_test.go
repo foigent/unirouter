@@ -10,7 +10,7 @@ import (
 )
 
 func TestNormalizeChannelKeyAllowedModels(t *testing.T) {
-	got := normalizeChannelKeyAllowedModels(" mimo-v2.5-pro，mimo-v2.5\n mimo-v2.5-pro, deepseek-chat ")
+	got := normalizeChannelKeyAllowedModels(" mimo-v2.5-pro，mimo-v2.5；mimo-v2.5-pro; deepseek-chat\n ")
 	want := "mimo-v2.5-pro,mimo-v2.5,deepseek-chat"
 	if got != want {
 		t.Fatalf("normalizeChannelKeyAllowedModels() = %q, want %q", got, want)
@@ -18,7 +18,7 @@ func TestNormalizeChannelKeyAllowedModels(t *testing.T) {
 }
 
 func TestNormalizeChannelKeyAllowedModelsEmptyMeansAll(t *testing.T) {
-	if got := normalizeChannelKeyAllowedModels(" ，,\n "); got != "" {
+	if got := normalizeChannelKeyAllowedModels(" ，,；;\n "); got != "" {
 		t.Fatalf("normalizeChannelKeyAllowedModels() = %q, want empty", got)
 	}
 }

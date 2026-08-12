@@ -1,14 +1,14 @@
 import { useRef, useState, useEffect } from 'react';
-import { Banner, Typography, Tag, Progress, Button, Modal, Input, Select, Space, Tabs } from '@douyinfe/semi-ui';
+import { Banner, Typography, Tag, Progress, Button, Modal, Input, Space, Tabs } from '@douyinfe/semi-ui';
 import { Toast } from '@douyinfe/semi-ui';
 import { IconBell, IconCoinMoney, IconDownload, IconGift, IconLock, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { EmptyState, MetricTile, MoneyText, PagedTable, PageHeader, Surface, formatMoney, microsRatio, parseMicros } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
 import { GrantCreditsPanel } from './GrantsPage';
-import { loadAllPages } from '../utils/loadAllPages';
 import { isBillingRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import ProjectBudgetPanel from './ProjectBudgetPanel';
 import { EnterpriseBudgetWorkspace } from './EnterpriseFinanceWorkspaces';
 
@@ -32,11 +32,6 @@ interface WalletInfo {
   can_select_org?: boolean;
   can_export_transactions?: boolean;
   org_name: string;
-}
-
-interface OrganizationOption {
-  id: number;
-  name: string;
 }
 
 const transactionTypeLabels: Record<string, string> = {
@@ -148,13 +143,16 @@ function createWalletOperationID(type: 'recharge' | 'adjust') {
 export default function WalletPage() {
   const user = useAuthStore(state => state.user);
   const organizationRole = organizationRoleForUser(user);
+  const platform = isPlatformAdminRole(organizationRole);
+  const customerContext = resolveCustomerContext(user);
+  const customerContextReady = customerContext.state === 'ready';
+  const customerOrgID = effectiveCustomerOrgID(user);
+  const targetOrgID = platform ? customerOrgID : undefined;
   const canManageProjectBudgets = isBillingRole(organizationRole);
-  const canManageEnterpriseFinance = isBillingRole(organizationRole) || isPlatformAdminRole(organizationRole);
+  const canManageEnterpriseFinance = isBillingRole(organizationRole) || platform;
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>();
   const requestVersion = useRef(0);
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const allowedTabs = canManageProjectBudgets
@@ -170,14 +168,18 @@ export default function WalletPage() {
   const [clientRequestID, setClientRequestID] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const load = async (orgID = selectedOrgID) => {
+  const load = async () => {
+    if (!customerContextReady) return;
     const version = ++requestVersion.current;
     setLoading(true);
     setWallet(null);
     setLoadError('');
     try {
-      const data = await api.getWallet(orgID) as WalletInfo;
+      const data = await api.getWallet(targetOrgID) as WalletInfo;
       if (version !== requestVersion.current) return;
+      if (platform && data.org_id !== targetOrgID) {
+        throw new Error('钱包响应未绑定当前唯一客户组织');
+      }
       const nextWallet = {
         ...data,
         exists: data.exists === true,
@@ -186,16 +188,6 @@ export default function WalletPage() {
         can_adjust: data.can_adjust === true,
       };
       setWallet(nextWallet);
-      if (nextWallet.can_select_org && organizations.length === 0) {
-        try {
-          const items = await loadAllPages<OrganizationOption>((page, size) => api.getOrganizations(page, size));
-          if (version === requestVersion.current) setOrganizations(items);
-        } catch (error: any) {
-          if (version === requestVersion.current) {
-            Toast.error(`组织列表加载失败${error?.message ? `：${error.message}` : ''}`);
-          }
-        }
-      }
     } catch (error: any) {
       if (version !== requestVersion.current) return;
       const message = `预算与成本中心数据加载失败${error?.message ? `：${error.message}` : ''}`;
@@ -206,7 +198,7 @@ export default function WalletPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [customerContextReady, targetOrgID]);
 
   const changeTab = (key: string) => {
     setActiveTab(key);
@@ -214,13 +206,6 @@ export default function WalletPage() {
     if (key === 'summary') params.delete('tab'); else params.set('tab', key);
     const query = params.toString();
     window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
-  };
-
-  const changeOrganization = (value: unknown) => {
-    const orgID = Number(value);
-    if (!Number.isInteger(orgID) || orgID <= 0) return;
-    setSelectedOrgID(orgID);
-    load(orgID);
   };
 
   const openWalletModal = (type: 'recharge' | 'adjust') => {
@@ -256,14 +241,14 @@ export default function WalletPage() {
     try {
       if (modalType === 'recharge') {
         await api.topUp({
-          org_id: selectedOrgID,
+          org_id: targetOrgID,
           amount_cents: amountCents,
           description,
           client_request_id: operationID,
         });
       } else {
         await api.adjustWallet({
-          org_id: selectedOrgID,
+          org_id: targetOrgID,
           delta_cents: amountCents,
           description,
           client_request_id: operationID,
@@ -271,13 +256,23 @@ export default function WalletPage() {
       }
       Toast.success(modalType === 'recharge' ? '入账成功' : '调整成功');
       closeWalletModal();
-      load(selectedOrgID);
+      load();
     } catch (err: any) {
       Toast.error(err.message || '操作失败');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
+    return (
+      <div className="ur-page">
+        <PageHeader eyebrow="成本与财务" title="预算与成本中心" description="结算账户和企业预算必须绑定当前部署唯一客户组织。" />
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={360} /></Surface>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -293,7 +288,7 @@ export default function WalletPage() {
         <EmptyState
           title="无法加载预算与成本中心数据"
           description={loadError || '当前结算与预算数据不可用。'}
-          actions={<Button icon={<IconRefresh />} onClick={() => load(selectedOrgID)}>重试</Button>}
+          actions={<Button icon={<IconRefresh />} onClick={() => load()}>重试</Button>}
           minHeight={360}
         />
       </div>
@@ -308,8 +303,8 @@ export default function WalletPage() {
   const managedTotal = available + held;
   const usagePct = microsRatio(held, managedTotal) * 100;
   const barColor = usagePct >= 80 ? '#d92d20' : usagePct >= 50 ? '#b76e00' : '#0f8f5f';
-  const displayedOrgID = selectedOrgID || wallet.org_id;
-  const displayedOrgName = organizations.find((item) => item.id === displayedOrgID)?.name || wallet.org_name;
+  const displayedOrgID = customerOrgID || wallet.org_id;
+  const displayedOrgName = customerContext.orgName || wallet.org_name;
 
   return (
     <div className="ur-page">
@@ -319,20 +314,8 @@ export default function WalletPage() {
         description="统一查看请求级结算、项目预算和兼容额度；现有 wallet 是运行时结算内核，不代表企业银行账户、总账或 ERP 应付事实。"
         actions={(
           <Space>
-            {wallet.can_select_org && organizations.length > 0 ? (
-              <>
-                <Text id="wallet-organization-label" type="tertiary">查看组织</Text>
-                <Select
-                  aria-labelledby="wallet-organization-label"
-                  value={displayedOrgID}
-                  optionList={organizations.map((item) => ({ value: item.id, label: `${item.name}（ID ${item.id}）` }))}
-                  onChange={changeOrganization}
-                  filter
-                  style={{ width: 240 }}
-                />
-              </>
-            ) : null}
-            <Button icon={<IconRefresh />} size="small" onClick={() => load(selectedOrgID)}>刷新</Button>
+            {platform ? <Text type="tertiary">客户范围：{displayedOrgName || `组织 #${displayedOrgID}`}</Text> : null}
+            <Button icon={<IconRefresh />} size="small" onClick={() => load()}>刷新</Button>
           </Space>
         )}
       />
@@ -390,10 +373,10 @@ export default function WalletPage() {
           )}
         </TabPane>
         <TabPane tab="结算流水" itemKey="transactions">
-          {activeTab === 'transactions' ? <WalletTransactionsPanel orgId={selectedOrgID} canExport={Boolean(wallet.can_export_transactions)} /> : null}
+          {activeTab === 'transactions' ? <WalletTransactionsPanel orgId={targetOrgID} canExport={Boolean(wallet.can_export_transactions)} /> : null}
         </TabPane>
         <TabPane tab="兼容额度" itemKey="grants">
-          {activeTab === 'grants' ? <GrantCreditsPanel orgId={selectedOrgID} canCreate={wallet.exists && wallet.is_admin} onChanged={() => load(selectedOrgID)} /> : null}
+          {activeTab === 'grants' ? <GrantCreditsPanel orgId={targetOrgID} canCreate={wallet.exists && wallet.is_admin} onChanged={() => load()} /> : null}
         </TabPane>
         {canManageProjectBudgets ? (
           <TabPane tab="项目预算" itemKey="budgets">

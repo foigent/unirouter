@@ -48,6 +48,13 @@ func (h *Handler) ListPendingProviderCosts(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "A positive org_id is required"})
 		return
 	}
+	if _, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+		orgID, err = resolveActorOrganization(r.Context(), orgID)
+		if err != nil {
+			writeOrganizationScopeError(w, err)
+			return
+		}
+	}
 	rows, err := h.db.Query(r.Context(),
 		`SELECT org_id, request_id, attempt_id, api_key_id, provider, channel_name,
 		        state, outcome_certainty, calculated_cost_micros, charged_cost_micros,
@@ -111,6 +118,14 @@ func (h *Handler) ReconcileProviderCost(w http.ResponseWriter, r *http.Request) 
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Only one reconciliation object is allowed"})
 		return
+	}
+	if _, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+		orgID, scopeErr := resolveActorOrganization(r.Context(), mutation.OrgID)
+		if scopeErr != nil {
+			writeOrganizationScopeError(w, scopeErr)
+			return
+		}
+		mutation.OrgID = orgID
 	}
 	request := billing.ProviderReconciliationRequest{
 		OrgID: mutation.OrgID, RequestID: mutation.RequestID, AttemptID: mutation.AttemptID,

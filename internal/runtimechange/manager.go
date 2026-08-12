@@ -2,6 +2,7 @@ package runtimechange
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/governancesim"
+	"github.com/uniroute/unirouter/internal/modellist"
 	"github.com/uniroute/unirouter/internal/providerpack"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
@@ -43,6 +45,12 @@ func (m *Manager) CreateDraft(ctx context.Context, request DraftRequest, actorUs
 	}
 	if actorUserID <= 0 {
 		return Release{}, fmt.Errorf("%w: actor", ErrInvalid)
+	}
+	if request.ReleaseRef == "" {
+		request.ReleaseRef, err = automaticReleaseRef(request.ModelName, m.now())
+		if err != nil {
+			return Release{}, fmt.Errorf("%w: generate release_ref: %v", ErrUnavailable, err)
+		}
 	}
 	if err := m.validateChannelPins(ctx, m.db, request.ModelName, request.Overrides); err != nil {
 		return Release{}, err
@@ -249,12 +257,12 @@ SELECT provider, COALESCE(adapter_type,'openai_compatible'), models, routing_epo
 		if epoch != override.ExpectedRoutingEpoch || !modelInCSV(models, modelName) {
 			return fmt.Errorf("%w: channel %d identity changed", ErrConflict, override.ChannelID)
 		}
-		_, found, packErr := providerpack.Find(provider, adapterType)
+		_, _, found, packErr := providerpack.FindConformance(provider, adapterType)
 		if packErr != nil {
 			return fmt.Errorf("%w: provider pack catalog: %v", ErrUnavailable, packErr)
 		}
 		if !found {
-			return fmt.Errorf("%w: channel %d has no exact Provider Pack", ErrInvalid, override.ChannelID)
+			return fmt.Errorf("%w: channel %d has no offline adapter conformance fixture", ErrInvalid, override.ChannelID)
 		}
 	}
 	return nil
@@ -311,12 +319,40 @@ func scanRelease(row interface{ Scan(...interface{}) error }) (Release, error) {
 }
 
 func modelInCSV(models, wanted string) bool {
-	for _, model := range strings.Split(models, ",") {
-		if strings.TrimSpace(model) == wanted {
-			return true
+	return modellist.Contains(models, wanted)
+}
+
+func automaticReleaseRef(modelName string, now time.Time) (string, error) {
+	var entropy [12]byte
+	if _, err := cryptorand.Read(entropy[:]); err != nil {
+		return "", err
+	}
+	slug := releaseRefSlug(modelName)
+	return "rcr_" + slug + "_" + now.UTC().Format("20060102t150405") + "_" + hex.EncodeToString(entropy[:]), nil
+}
+
+func releaseRefSlug(value string) string {
+	var builder strings.Builder
+	previousSeparator := false
+	for _, character := range strings.ToLower(strings.TrimSpace(value)) {
+		if character >= 'a' && character <= 'z' || character >= '0' && character <= '9' {
+			builder.WriteRune(character)
+			previousSeparator = false
+			continue
+		}
+		if builder.Len() > 0 && !previousSeparator {
+			builder.WriteByte('_')
+			previousSeparator = true
 		}
 	}
-	return false
+	slug := strings.Trim(builder.String(), "_")
+	if slug == "" {
+		slug = "model"
+	}
+	if len(slug) > 18 {
+		slug = strings.TrimRight(slug[:18], "_")
+	}
+	return slug
 }
 
 func hashJSON(value any) string {

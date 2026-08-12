@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,20 +59,54 @@ type approveBudgetRequest struct {
 }
 
 type createRateCardRequest struct {
-	OrgID             int64                             `json:"org_id"`
-	RateCardRef       string                            `json:"rate_card_ref"`
-	ProviderRef       string                            `json:"provider_ref"`
-	ModelRef          string                            `json:"model_ref"`
-	Layer             string                            `json:"layer"`
-	EffectiveFrom     time.Time                         `json:"effective_from"`
-	EffectiveTo       *time.Time                        `json:"effective_to"`
-	Components        []enterprisefinance.RateComponent `json:"components"`
-	SourceEvidenceRef string                            `json:"source_evidence_ref"`
+	OrgID             int64                              `json:"org_id"`
+	RateCardRef       string                             `json:"rate_card_ref"`
+	ProviderRef       string                             `json:"provider_ref"`
+	ModelRef          string                             `json:"model_ref"`
+	Layer             string                             `json:"layer"`
+	EffectiveFrom     time.Time                          `json:"effective_from"`
+	EffectiveTo       *time.Time                         `json:"effective_to"`
+	Components        []enterprisefinance.RateComponent  `json:"components"`
+	DailyPriceBands   []enterprisefinance.DailyPriceBand `json:"daily_price_bands"`
+	SourceEvidenceRef string                             `json:"source_evidence_ref"`
+}
+
+type importOfficialRateCardRequest struct {
+	OrgID            int64                              `json:"org_id"`
+	RateCardRef      string                             `json:"rate_card_ref"`
+	ProviderRef      string                             `json:"provider_ref"`
+	ModelRef         string                             `json:"model_ref"`
+	EffectiveFrom    time.Time                          `json:"effective_from"`
+	EffectiveTo      *time.Time                         `json:"effective_to"`
+	Components       []enterprisefinance.RateComponent  `json:"components"`
+	DailyPriceBands  []enterprisefinance.DailyPriceBand `json:"daily_price_bands"`
+	EvidenceRef      string                             `json:"evidence_ref"`
+	SourceURL        string                             `json:"source_url"`
+	SourceRevision   string                             `json:"source_revision"`
+	FetchedAt        time.Time                          `json:"fetched_at"`
+	PayloadSHA256    string                             `json:"payload_sha256"`
+	TransformVersion string                             `json:"transform_version"`
+	StaleAfter       time.Time                          `json:"stale_after"`
+}
+
+type bootstrapLegacyRateCardsRequest struct {
+	OrgID int64 `json:"org_id"`
+}
+
+type requestPricingPreflightModel struct {
+	ModelRef string `json:"model_ref"`
+}
+
+type requestPricingPreflightRequest struct {
+	OrgID  int64                          `json:"org_id"`
+	Models []requestPricingPreflightModel `json:"models"`
 }
 
 type rateCardTransitionRequest struct {
-	OrgID           int64 `json:"org_id"`
-	ExpectedVersion int64 `json:"expected_version"`
+	OrgID                     int64  `json:"org_id"`
+	ExpectedVersion           int64  `json:"expected_version"`
+	SupersedesRateCardRef     string `json:"supersedes_rate_card_ref"`
+	ExpectedSupersededVersion int64  `json:"expected_superseded_version"`
 }
 
 type allocationResultRequest struct {
@@ -119,6 +155,19 @@ func enterpriseFinanceActorRef(r *http.Request) (string, error) {
 	return fmt.Sprintf("user:%d", userID), nil
 }
 
+func (h *Handler) SetRequestPricingAuthority(authority string) {
+	if h != nil {
+		h.requestPricingAuthority = strings.TrimSpace(authority)
+	}
+}
+
+func (h *Handler) effectiveRequestPricingAuthority() string {
+	if h == nil || strings.TrimSpace(h.requestPricingAuthority) == "" {
+		return "legacy"
+	}
+	return h.requestPricingAuthority
+}
+
 func decodeEnterpriseFinanceJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, enterpriseFinanceMutationMaxBytes))
 	decoder.DisallowUnknownFields()
@@ -145,7 +194,9 @@ func writeEnterpriseFinanceError(w http.ResponseWriter, err error) {
 		errors.Is(err, enterprisefinance.ErrOverlappingPeriod),
 		errors.Is(err, enterprisefinance.ErrMakerChecker),
 		errors.Is(err, enterprisefinance.ErrClosedPeriod),
-		errors.Is(err, enterprisefinance.ErrCloseNotReady):
+		errors.Is(err, enterprisefinance.ErrCloseNotReady),
+		errors.Is(err, enterprisefinance.ErrRequestPricingNotReady),
+		errors.Is(err, enterprisefinance.ErrRequestPricingAmbiguous):
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": err.Error()})
 	case errors.Is(err, enterprisefinance.ErrInvalid):
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
@@ -382,10 +433,17 @@ func (h *Handler) ListEnterpriseRateCards(w http.ResponseWriter, r *http.Request
 		writeEnterpriseFinanceError(w, err)
 		return
 	}
+	authority, err := store.RequestPricingAuthorityStatus(r.Context(), orgID, time.Now().UTC().Truncate(time.Microsecond))
+	if err != nil {
+		writeEnterpriseFinanceError(w, err)
+		return
+	}
+	authority.CurrentMode = h.effectiveRequestPricingAuthority()
+	authority.StrictActive = authority.CurrentMode == "rate_card"
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": items, "total": len(items), "org_id": orgID,
-		"request_pricing_integration":  "not_enabled",
-		"existing_settlement_mutation": "none",
+		"request_pricing_integration": "versioned_rate_card_authority",
+		"request_pricing_authority":   authority,
 	})
 }
 
@@ -404,18 +462,183 @@ func (h *Handler) CreateEnterpriseRateCardDraft(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "Authenticated finance actor required"})
 		return
 	}
+	if strings.TrimSpace(request.RateCardRef) == "" {
+		request.RateCardRef, err = newEnterpriseFinanceRef("rate")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rate Card reference generation failed"})
+			return
+		}
+	}
 	store, _ := enterpriseFinanceStore(h)
 	record, err := store.CreateRateCardDraft(r.Context(), enterprisefinance.RateCard{
 		ContractVersion: enterprisefinance.ContractVersion, RateCardRef: request.RateCardRef,
 		OrgID: orgID, ProviderRef: request.ProviderRef, ModelRef: request.ModelRef,
 		Layer: request.Layer, EffectiveFrom: request.EffectiveFrom, EffectiveTo: request.EffectiveTo,
-		Components: request.Components, SourceEvidenceRef: request.SourceEvidenceRef,
+		Components: request.Components, DailyPriceBands: request.DailyPriceBands,
+		SourceEvidenceRef: request.SourceEvidenceRef,
 	}, actorRef)
 	if err != nil {
 		writeEnterpriseFinanceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, record)
+}
+
+// ImportOfficialEnterpriseRateCardDraft accepts already-retrieved, hashed
+// source evidence. UniRouter performs no network fetch here and always writes a
+// provider_list draft that still requires independent approval and activation.
+func (h *Handler) ImportOfficialEnterpriseRateCardDraft(w http.ResponseWriter, r *http.Request) {
+	var request importOfficialRateCardRequest
+	if !decodeEnterpriseFinanceJSON(w, r, &request) {
+		return
+	}
+	orgID, err := resolveActorOrganization(r.Context(), request.OrgID)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
+	actorRef, err := enterpriseFinanceActorRef(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "Authenticated finance actor required"})
+		return
+	}
+	if strings.TrimSpace(request.RateCardRef) == "" {
+		request.RateCardRef, err = newEnterpriseFinanceRef("rate")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rate Card reference generation failed"})
+			return
+		}
+	}
+	if strings.TrimSpace(request.EvidenceRef) == "" {
+		request.EvidenceRef, err = newEnterpriseFinanceRef("rate_source")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Rate source reference generation failed"})
+			return
+		}
+	}
+	fetchedAt := request.FetchedAt.UTC().Truncate(time.Microsecond)
+	staleAfter := request.StaleAfter.UTC().Truncate(time.Microsecond)
+	store, _ := enterpriseFinanceStore(h)
+	record, err := store.ImportOfficialRateCardDraft(r.Context(), enterprisefinance.OfficialRateDraftImport{
+		Card: enterprisefinance.RateCard{
+			RateCardRef: request.RateCardRef, OrgID: orgID, ProviderRef: request.ProviderRef,
+			ModelRef: request.ModelRef, EffectiveFrom: request.EffectiveFrom.UTC().Truncate(time.Microsecond),
+			EffectiveTo: normalizeOptionalEnterpriseTime(request.EffectiveTo), Components: request.Components,
+			DailyPriceBands: request.DailyPriceBands,
+		},
+		Evidence: enterprisefinance.RateSourceEvidence{
+			EvidenceRef: request.EvidenceRef, SourceURL: request.SourceURL, SourceRevision: request.SourceRevision,
+			FetchedAt: fetchedAt, PayloadSHA256: request.PayloadSHA256, TransformVersion: request.TransformVersion,
+			LastSuccessAt: fetchedAt, StaleAfter: staleAfter,
+		},
+	}, actorRef)
+	if err != nil {
+		writeEnterpriseFinanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"record": record, "import_state": "draft", "automatic_activation": false,
+		"network_fetch_performed": false,
+	})
+}
+
+func (h *Handler) BootstrapLegacyEnterpriseRateCardDrafts(w http.ResponseWriter, r *http.Request) {
+	var request bootstrapLegacyRateCardsRequest
+	if !decodeEnterpriseFinanceJSON(w, r, &request) {
+		return
+	}
+	orgID, err := resolveActorOrganization(r.Context(), request.OrgID)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
+	actorRef, err := enterpriseFinanceActorRef(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "Authenticated finance actor required"})
+		return
+	}
+	store, _ := enterpriseFinanceStore(h)
+	result, err := store.BootstrapLegacyProviderListDrafts(r.Context(), orgID, actorRef)
+	if err != nil {
+		writeEnterpriseFinanceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
+func (h *Handler) PreflightEnterpriseRateCardAuthority(w http.ResponseWriter, r *http.Request) {
+	var request requestPricingPreflightRequest
+	if !decodeEnterpriseFinanceJSON(w, r, &request) {
+		return
+	}
+	orgID, err := resolveActorOrganization(r.Context(), request.OrgID)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
+	if len(request.Models) == 0 || len(request.Models) > 1000 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "models must contain 1 to 1000 explicit model_ref values"})
+		return
+	}
+	store, _ := enterpriseFinanceStore(h)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	type result struct {
+		ModelRef        string `json:"model_ref"`
+		State           string `json:"state"`
+		RateCardRef     string `json:"rate_card_ref,omitempty"`
+		RateCardVersion int64  `json:"rate_card_version,omitempty"`
+		Layer           string `json:"layer,omitempty"`
+		ProviderRef     string `json:"provider_ref,omitempty"`
+		PricingVersion  string `json:"pricing_version,omitempty"`
+		Error           string `json:"error,omitempty"`
+	}
+	items := make([]result, 0, len(request.Models))
+	seen := make(map[string]struct{}, len(request.Models))
+	ready := true
+	for _, model := range request.Models {
+		modelRef := strings.TrimSpace(model.ModelRef)
+		if modelRef == "" {
+			ready = false
+			items = append(items, result{State: "not_ready", Error: "model_ref is required"})
+			continue
+		}
+		if _, duplicate := seen[modelRef]; duplicate {
+			continue
+		}
+		seen[modelRef] = struct{}{}
+		quote, resolveErr := store.ResolveRequestPriceQuote(r.Context(), orgID, modelRef, now)
+		if resolveErr != nil {
+			ready = false
+			items = append(items, result{ModelRef: modelRef, State: "not_ready", Error: resolveErr.Error()})
+			continue
+		}
+		items = append(items, result{
+			ModelRef: modelRef, State: "ready", RateCardRef: quote.RateCardRef,
+			RateCardVersion: quote.RateCardVersion, Layer: quote.Layer, ProviderRef: quote.ProviderRef,
+			PricingVersion: quote.PricingVersion,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"authority": "versioned_rate_card", "org_id": orgID, "ready": ready,
+		"checked_at": now, "models": items,
+		"switch_instruction": "Set REQUEST_PRICING_AUTHORITY=rate_card only when ready=true, then restart UniRouter.",
+	})
+}
+
+func newEnterpriseFinanceRef(prefix string) (string, error) {
+	var entropy [12]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(prefix) + "_" + hex.EncodeToString(entropy[:]), nil
+}
+
+func normalizeOptionalEnterpriseTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	normalized := value.UTC().Truncate(time.Microsecond)
+	return &normalized
 }
 
 func (h *Handler) ApproveEnterpriseRateCard(w http.ResponseWriter, r *http.Request) {
@@ -460,8 +683,12 @@ func (h *Handler) ActivateEnterpriseRateCard(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	store, _ := enterpriseFinanceStore(h)
-	record, err := store.ActivateRateCard(
+	record, err := store.ActivateRateCardWithSupersede(
 		r.Context(), orgID, r.PathValue("rate_card_ref"), request.ExpectedVersion,
+		enterprisefinance.RateCardActivationOptions{
+			SupersedesRateCardRef:     request.SupersedesRateCardRef,
+			ExpectedSupersededVersion: request.ExpectedSupersededVersion,
+		},
 		actorRef, time.Now().UTC().Truncate(time.Microsecond),
 	)
 	if err != nil {

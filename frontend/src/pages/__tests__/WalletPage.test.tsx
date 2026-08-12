@@ -142,7 +142,10 @@ describe('WalletPage', () => {
 
   it('does not duplicate the billing-only budget panel for a platform administrator', async () => {
     useAuthStore.setState({
-      user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1, license_access: null },
+      user: {
+        id: 1, username: 'platform', role: 'platform_admin', org_id: 1, license_access: null,
+        customer_context: { state: 'ready', org_id: 22, org_name: '财务组织' },
+      },
     });
     render(<WalletPage />);
 
@@ -152,7 +155,10 @@ describe('WalletPage', () => {
 
   it('keeps platform enterprise finance readable for an unprovisioned organization without exposing wallet mutations', async () => {
     useAuthStore.setState({
-      user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1, license_access: null },
+      user: {
+        id: 1, username: 'platform', role: 'platform_admin', org_id: 1, license_access: null,
+        customer_context: { state: 'ready', org_id: 22, org_name: '财务组织' },
+      },
     });
     mockGetWallet.mockResolvedValue({
       ...BILLING_WALLET,
@@ -186,23 +192,37 @@ describe('WalletPage', () => {
     expect(screen.getByText(/冻结中: ¥50.00/)).toBeTruthy();
   });
 
-  it('clears the previous organization balance when the next scope fails to load', async () => {
+  it('binds a platform wallet to the canonical customer without an organization selector', async () => {
     useAuthStore.setState({
-      user: { id: 1, username: 'platform', role: 'platform_admin', org_id: 1, license_access: null },
+      user: {
+        id: 1, username: 'platform', role: 'platform_admin', org_id: 99, license_access: null,
+        customer_context: { state: 'ready', org_id: 22, org_name: '财务组织' },
+      },
     });
-    mockGetWallet
-      .mockResolvedValueOnce({ ...BILLING_WALLET, org_id: 1, org_name: '北区组织', can_select_org: true })
-      .mockRejectedValueOnce(new Error('temporarily unavailable'));
+    mockGetWallet.mockResolvedValueOnce({ ...BILLING_WALLET, can_select_org: true });
 
     render(<WalletPage />);
 
-    expect(await screen.findByText(/当前可用: ¥1200.00/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('combobox', { name: '查看组织' }));
-    fireEvent.click(await screen.findByText('南区组织（ID 2）'));
+    expect(await screen.findByText('客户范围：财务组织')).toBeTruthy();
+    await waitFor(() => expect(mockGetWallet).toHaveBeenCalledWith(22));
+    expect(mockGetWallet).not.toHaveBeenCalledWith(99);
+    expect(screen.queryByRole('combobox', { name: '查看组织' })).toBeNull();
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
 
-    expect(await screen.findByText('无法加载预算与成本中心数据')).toBeTruthy();
-    expect(screen.getAllByText(/temporarily unavailable/).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/当前可用: ¥1200.00/)).toBeNull();
+  it('fails closed before wallet reads when the canonical customer is ambiguous', async () => {
+    useAuthStore.setState({
+      user: {
+        id: 1, username: 'platform', role: 'platform_admin', org_id: 99, license_access: null,
+        customer_context: { state: 'ambiguous' },
+      },
+    });
+
+    render(<WalletPage />);
+
+    expect(await screen.findByRole('heading', { name: '客户组织上下文不唯一' })).toBeTruthy();
+    expect(mockGetWallet).not.toHaveBeenCalled();
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
   });
 
   it('submits an atomic delta with a stable idempotency identity and reason', async () => {

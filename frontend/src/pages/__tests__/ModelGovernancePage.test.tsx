@@ -139,24 +139,31 @@ describe('ModelGovernancePage', () => {
     expect(screen.getByText('Migrate to gpt-4.1-mini')).toBeTruthy();
   });
 
-  it('scopes platform administration to the JWT organization and loads every organization page', async () => {
-    auth.user = { role: 'platform_admin', org_id: 7 };
-    mockGetOrganizations.mockImplementation((page: number) => Promise.resolve(page === 1
-      ? { data: [{ id: 7, name: '总部' }], total: 101 }
-      : { data: [{ id: 8, name: '分部' }], total: 101 }));
+  it('binds platform model governance to the canonical customer without an organization selector', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+      identity_scope: 'deployment_operator',
+    };
 
     render(<ModelGovernancePage />);
 
-    expect(await screen.findByText('目标组织')).toBeTruthy();
+    expect(await screen.findByText('客户范围：总部')).toBeTruthy();
+    expect(screen.queryByLabelText('目标组织')).toBeNull();
     await waitFor(() => {
       expect(mockGetModelRegistry).toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 7 }));
-      expect(mockGetOrganizations).toHaveBeenCalledWith(1, 100);
-      expect(mockGetOrganizations).toHaveBeenCalledWith(2, 100);
     });
+    expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
 
-    fireEvent.click(await screen.findByText('总部（ID 7）'));
-    fireEvent.click(await screen.findByText('分部（ID 8）'));
-    await waitFor(() => expect(mockGetModelRegistry).toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 8 })));
+  it('fails closed for a platform operator without a verified customer context', () => {
+    auth.user = { role: 'platform_admin', org_id: 99, customer_context: { state: 'ambiguous' } };
+
+    render(<ModelGovernancePage />);
+
+    expect(screen.getAllByText('客户组织上下文不唯一').length).toBeGreaterThanOrEqual(1);
+    expect(mockGetModelRegistry).not.toHaveBeenCalled();
   });
 
   it('loads aliases when the alias tab is selected', async () => {
@@ -174,6 +181,8 @@ describe('ModelGovernancePage', () => {
     render(<ModelGovernancePage />);
 
     fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
+    expect(await screen.findByText(/不会根据模型名称自动猜测文本、多模态或其他能力/)).toBeTruthy();
+    expect(screen.getByText(/标签本身不会执行能力检测/)).toBeTruthy();
     fireEvent.change(await screen.findByPlaceholderText('gpt-4o'), { target: { value: 'exact-context-model' } });
     const contextInput = await screen.findByPlaceholderText('128K / 1M / 131072');
     fireEvent.change(contextInput, { target: { value: '128K' } });

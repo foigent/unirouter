@@ -107,6 +107,9 @@ func (b *Billing) collectProviderReconciliation(ctx context.Context, req Provide
 	if err != nil {
 		return nil, fmt.Errorf("lock collect reservation: %w", err)
 	}
+	if record.BillingMode == BillingModeCostObservation {
+		return nil, fmt.Errorf("%w: financial collection is unavailable in cost_observation mode", ErrProviderReconciliationUnsafe)
+	}
 	attempt, err := providerAttemptForUpdate(ctx, tx, req.OrgID, req.RequestID, req.AttemptID)
 	if err != nil {
 		return nil, fmt.Errorf("lock collect attempt: %w", err)
@@ -166,6 +169,9 @@ func (b *Billing) releaseProviderReconciliation(ctx context.Context, req Provide
 	record, err := reservationForUpdate(ctx, tx, req.RequestID, req.OrgID)
 	if err != nil {
 		return nil, fmt.Errorf("lock release reservation: %w", err)
+	}
+	if record.BillingMode == BillingModeCostObservation {
+		return nil, fmt.Errorf("%w: refund and subsidy actions are unavailable in cost_observation mode", ErrProviderReconciliationUnsafe)
 	}
 	attempt, err := providerAttemptForUpdate(ctx, tx, req.OrgID, req.RequestID, req.AttemptID)
 	if err != nil {

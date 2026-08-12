@@ -433,14 +433,20 @@ type Actor struct {
 	ProjectRole      string
 }
 
-// ActorScope is a non-authoritative snapshot from the admitted request. It is
-// used only to scope the first object lookup so hidden and absent references
-// are indistinguishable. Every mutation still performs CommitAuthorizer
-// reauthorization under transaction locks before writing.
+// ActorScope is a non-authoritative snapshot from the admitted request. OrgID
+// is the admitted customer scope, which can differ from a deployment
+// operator's identity organization. It is used only to scope the first object
+// lookup so hidden and absent references are indistinguishable. Every mutation
+// still performs CommitAuthorizer reauthorization under transaction locks
+// before writing.
 type ActorScope struct {
 	UserID           int64
 	OrgID            int64
 	OrganizationRole string
+	// EnforceOrgBoundary distinguishes production single-customer requests
+	// from legacy direct service callers. Non-platform roles are always
+	// organization-bound regardless of this flag.
+	EnforceOrgBoundary bool
 }
 
 func (scope ActorScope) valid() bool {

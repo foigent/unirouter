@@ -118,7 +118,7 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 		claims,
 		req.RequestID,
 		int64(req.EstimatedTokens),
-		result.AmountMicros,
+		result.CalculatedCostMicros,
 		agentcap.InvocationLeaseTTLFromContext(ctx),
 	)
 	if reserveErr != nil {
@@ -186,7 +186,7 @@ func (b *Billing) ExtendReservation(ctx context.Context, req billing.ExtendReser
 	}
 	if err := b.runtime.ExtendInvocation(
 		ctx, state.reservation, req.Sequence,
-		int64(req.AdditionalCompletionTokens), result.AmountMicros,
+		int64(req.AdditionalCompletionTokens), result.CalculatedCostMicros,
 	); err != nil {
 		result.Success = false
 		result.ErrorCode = runtimeErrorCode(err)

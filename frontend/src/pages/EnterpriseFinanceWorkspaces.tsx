@@ -7,6 +7,13 @@ import { formatDateTime } from '../utils/formatDate';
 
 type ExactAmount = { value_minor: string; currency: string; scale: number };
 type Scope = { kind: string; ref: string };
+type RateComponent = { meter: string; unit_quantity: string; amount: ExactAmount };
+type DailyPriceBand = {
+  band_ref: string;
+  start_minute_utc: number;
+  end_minute_utc: number;
+  components: RateComponent[];
+};
 
 type FiscalPeriod = {
   org_id: number;
@@ -68,8 +75,67 @@ type RateCardRecord = {
     source_evidence_ref?: string;
     created_by: string;
     approved_by?: string;
-    components: Array<{ meter: string; unit_quantity: string; amount: ExactAmount }>;
+    components: RateComponent[];
+    daily_price_bands?: DailyPriceBand[];
   };
+  source_evidence?: {
+    evidence_ref: string;
+    source_kind: string;
+    source_url: string;
+    source_revision: string;
+    fetched_at: string;
+    payload_sha256: string;
+    transform_version: string;
+    last_success_at: string;
+    stale_after: string;
+  };
+};
+
+type RequestPricingAuthority = {
+  authority: string;
+  selection_key: string;
+  contract_priority: string[];
+  state: string;
+  missing_behavior: string;
+  provider_ambiguity: string;
+  active_card_count: number;
+  draft_card_count: number;
+  source_evidence_count: number;
+  stale_source_count: number;
+  last_source_success_at?: string;
+  official_sync_mode: string;
+  active_on_import: boolean;
+  legacy_compatibility: string;
+  public_source_failure: string;
+  current_mode: 'legacy' | 'rate_card';
+  strict_active: boolean;
+};
+
+type LegacyBootstrapResult = {
+  created_draft_count: number;
+  existing_draft_count: number;
+  skipped_model_count: number;
+  skipped_models?: string[];
+  state: string;
+  approval_required: boolean;
+  activation_required: boolean;
+  legacy_runtime_fallback: boolean;
+};
+
+type RateCardPreflightResult = {
+  ready: boolean;
+  checked_at: string;
+  switch_instruction: string;
+  models: Array<{
+    model_ref: string;
+    state: 'ready' | 'not_ready';
+    rate_card_ref?: string;
+    rate_card_version?: number;
+    layer?: string;
+    provider_ref?: string;
+    pricing_version?: string;
+    error?: string;
+  }>;
 };
 
 type AllocationRun = {
@@ -139,6 +205,117 @@ const rateLayerLabels: Record<string, string> = {
   internal_showback: '内部展示价',
   internal_chargeback: '内部结算价',
 };
+
+const requestPriceMeters = [
+  { key: 'input_price_yuan', meter: 'input_tokens', label: '输入 Token' },
+  { key: 'output_price_yuan', meter: 'output_tokens', label: '输出 Token' },
+  { key: 'cache_read_price_yuan', meter: 'cache_read_tokens', label: '缓存读取 Token' },
+  { key: 'cache_creation_price_yuan', meter: 'cache_creation_tokens', label: '缓存写入 Token' },
+] as const;
+
+function buildRequestRateComponents(form: Record<string, string>, keyPrefix = ''): RateComponent[] | null {
+  const components = requestPriceMeters.map(item => ({ item, valueMinor: yuanToMicrosString(form[`${keyPrefix}${item.key}`] || '') }));
+  if (components.some(item => item.valueMinor === null)) return null;
+  return components.map(({ item, valueMinor }) => ({
+    meter: item.meter,
+    unit_quantity: '1000000',
+    amount: { value_minor: valueMinor as string, currency: 'CNY', scale: 1_000_000 },
+  }));
+}
+
+function parseUTCMinute(value: string) {
+  const match = /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.exec(value.trim());
+  if (!match) return null;
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function copyRateComponents(components: RateComponent[]): RateComponent[] {
+  return components.map(component => ({ ...component, amount: { ...component.amount } }));
+}
+
+export function buildUTCValleyPriceBands(
+  form: Record<string, string>,
+  baseComponents: RateComponent[],
+): DailyPriceBand[] | null {
+  if (form.price_schedule !== 'utc_valley') return [];
+  const start = parseUTCMinute(form.valley_start_utc || '');
+  const end = parseUTCMinute(form.valley_end_utc || '');
+  const valleyComponents = buildRequestRateComponents(form, 'valley_');
+  if (start === null || end === null || start >= end || !valleyComponents) return null;
+
+  const bands: DailyPriceBand[] = [];
+  if (start > 0) {
+    bands.push({ band_ref: 'base-before', start_minute_utc: 0, end_minute_utc: start, components: copyRateComponents(baseComponents) });
+  }
+  bands.push({ band_ref: 'valley', start_minute_utc: start, end_minute_utc: end, components: valleyComponents });
+  if (end < 24 * 60) {
+    bands.push({ band_ref: 'base-after', start_minute_utc: end, end_minute_utc: 24 * 60, components: copyRateComponents(baseComponents) });
+  }
+  return bands;
+}
+
+function rateWindowsOverlap(left: RateCardRecord, right: RateCardRecord) {
+  const leftStart = Date.parse(left.card.effective_from);
+  const rightStart = Date.parse(right.card.effective_from);
+  const leftEnd = left.card.effective_to ? Date.parse(left.card.effective_to) : Number.POSITIVE_INFINITY;
+  const rightEnd = right.card.effective_to ? Date.parse(right.card.effective_to) : Number.POSITIVE_INFINITY;
+  return leftStart < rightEnd && rightStart < leftEnd;
+}
+
+function rateCardIsCurrent(record: RateCardRecord) {
+  const now = Date.now();
+  const start = Date.parse(record.card.effective_from);
+  const end = record.card.effective_to ? Date.parse(record.card.effective_to) : Number.POSITIVE_INFINITY;
+  return start <= now && now < end;
+}
+
+function formatUTCMinute(value: number) {
+  if (value === 24 * 60) return '24:00';
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function RateCardReviewDetails({ record, label }: { record: RateCardRecord; label?: string }) {
+  return (
+    <Space vertical align="start" style={{ width: '100%' }}>
+      {label ? <Typography.Text strong>{label}</Typography.Text> : null}
+      <Typography.Text strong>模型与层级</Typography.Text>
+      <Typography.Text>{record.card.provider_ref} / {record.card.model_ref} / {rateLayerLabels[record.card.layer] || record.card.layer}</Typography.Text>
+      <Typography.Text strong>基础价格（CNY / 1,000,000 tokens）</Typography.Text>
+      {record.card.components.map(component => (
+        <Typography.Text key={`review-base-${record.card.rate_card_ref}-${component.meter}`}>
+          {component.meter}：{exactAmount(component.amount)} / {component.unit_quantity} tokens
+        </Typography.Text>
+      ))}
+      {record.card.daily_price_bands?.length ? (
+        <>
+          <Typography.Text strong>UTC 日内价带（半开区间）</Typography.Text>
+          {record.card.daily_price_bands.map(band => (
+            <div key={`review-band-${record.card.rate_card_ref}-${band.band_ref}`} style={{ width: '100%' }}>
+              <Typography.Text strong>{band.band_ref} · {formatUTCMinute(band.start_minute_utc)}–{formatUTCMinute(band.end_minute_utc)}</Typography.Text>
+              {band.components.map(component => (
+                <div key={`review-${record.card.rate_card_ref}-${band.band_ref}-${component.meter}`}>
+                  <Typography.Text>{component.meter}：{exactAmount(component.amount)} / {component.unit_quantity} tokens</Typography.Text>
+                </div>
+              ))}
+            </div>
+          ))}
+        </>
+      ) : <Typography.Text>UTC 00:00–24:00 全天使用基础价格。</Typography.Text>}
+      <Typography.Text strong>来源证据</Typography.Text>
+      {record.source_evidence ? (
+        <>
+          <Typography.Text>URL：{record.source_evidence.source_url}</Typography.Text>
+          <Typography.Text>修订：{record.source_evidence.source_revision}</Typography.Text>
+          <Typography.Text className="ur-mono-break">原始载荷：{record.source_evidence.payload_sha256}</Typography.Text>
+          <Typography.Text>获取：{formatDateTime(record.source_evidence.fetched_at)}；新鲜度截止：{formatDateTime(record.source_evidence.stale_after)}</Typography.Text>
+        </>
+      ) : <Typography.Text type="tertiary">未绑定导入来源证据；如为合同价，请在外部合同审批记录中核对其来源引用。</Typography.Text>}
+    </Space>
+  );
+}
 
 function exactAmount(amount?: ExactAmount) {
   if (!amount) return '—';
@@ -500,12 +677,22 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
 
 export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: number; canManage: boolean }) {
   const [cards, setCards] = useState<RateCardRecord[]>([]);
+  const [authority, setAuthority] = useState<RequestPricingAuthority | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [requestRef, setRequestRef] = useState('');
   const [snapshot, setSnapshot] = useState<any>(null);
   const [createVisible, setCreateVisible] = useState(false);
-  const [form, setForm] = useState<Record<string, string>>({ layer: 'supplier_contracted', unit_quantity: '1000000' });
+  const [importVisible, setImportVisible] = useState(false);
+  const [bootstrapConfirmVisible, setBootstrapConfirmVisible] = useState(false);
+  const [approvalTarget, setApprovalTarget] = useState<RateCardRecord | null>(null);
+  const [activationTarget, setActivationTarget] = useState<RateCardRecord | null>(null);
+  const [replacementTarget, setReplacementTarget] = useState<{ candidate: RateCardRecord; current: RateCardRecord } | null>(null);
+  const [form, setForm] = useState<Record<string, string>>({ layer: 'supplier_contracted' });
+  const [importForm, setImportForm] = useState<Record<string, string>>({ transform_version: 'official-rate-import.v1' });
+  const [bootstrapResult, setBootstrapResult] = useState<LegacyBootstrapResult | null>(null);
+  const [preflightModels, setPreflightModels] = useState('');
+  const [preflightResult, setPreflightResult] = useState<RateCardPreflightResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const load = async () => {
@@ -514,8 +701,10 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
     try {
       const response = await api.getEnterpriseRateCards(orgId) as any;
       setCards(response?.data || []);
+      setAuthority(response?.request_pricing_authority || null);
     } catch (loadError) {
       setCards([]);
+      setAuthority(null);
       setError(errorMessage('企业费率卡加载失败', loadError));
     } finally {
       setLoading(false);
@@ -524,16 +713,73 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
 
   useEffect(() => { load(); }, [orgId]);
 
-  const transition = async (record: RateCardRecord, action: 'approve' | 'activate') => {
+  const transition = async (
+    record: RateCardRecord,
+    action: 'approve' | 'activate',
+    superseded?: RateCardRecord,
+  ) => {
+    setSubmitting(true);
     try {
-      const payload = { org_id: orgId, expected_version: record.card.version };
+      const payload = {
+        org_id: orgId,
+        expected_version: record.card.version,
+        ...(superseded ? {
+          supersedes_rate_card_ref: superseded.card.rate_card_ref,
+          expected_superseded_version: superseded.card.version,
+        } : {}),
+      };
       if (action === 'approve') await api.approveEnterpriseRateCard(record.card.rate_card_ref, payload);
       else await api.activateEnterpriseRateCard(record.card.rate_card_ref, payload);
-      Toast.success(action === 'approve' ? '费率卡已追加批准版本' : '费率卡已激活');
+      Toast.success(action === 'approve' ? '费率卡已追加批准版本' : superseded ? '旧费率已原子退役，新费率已激活' : '费率卡已激活');
       await load();
+      return true;
     } catch (transitionError) {
       Toast.error(errorMessage(action === 'approve' ? '费率卡批准失败' : '费率卡激活失败', transitionError));
+      return false;
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const requestActivation = async (record: RateCardRecord) => {
+    if (!['supplier_contracted', 'provider_list'].includes(record.card.layer)) {
+      setActivationTarget(record);
+      return;
+    }
+    const conflicts = cards.filter(item =>
+      item.card.state === 'active' &&
+      item.card.rate_card_ref !== record.card.rate_card_ref &&
+      item.card.model_ref === record.card.model_ref &&
+      item.card.layer === record.card.layer &&
+      rateCardIsCurrent(item) &&
+      rateWindowsOverlap(item, record));
+    if (conflicts.length > 1) {
+      Toast.error('检测到多个同模型同层 active 费率，后端将失败关闭；请先修复歧义数据');
+      return;
+    }
+    if (conflicts.length === 1) {
+      setReplacementTarget({ candidate: record, current: conflicts[0] });
+      return;
+    }
+    setActivationTarget(record);
+  };
+
+  const confirmReplacement = async () => {
+    if (!replacementTarget) return;
+    const applied = await transition(replacementTarget.candidate, 'activate', replacementTarget.current);
+    if (applied) setReplacementTarget(null);
+  };
+
+  const confirmApproval = async () => {
+    if (!approvalTarget) return;
+    const applied = await transition(approvalTarget, 'approve');
+    if (applied) setApprovalTarget(null);
+  };
+
+  const confirmActivation = async () => {
+    if (!activationTarget) return;
+    const applied = await transition(activationTarget, 'activate');
+    if (applied) setActivationTarget(null);
   };
 
   const lookupSnapshot = async () => {
@@ -547,12 +793,13 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
   };
 
   const updateForm = (key: string, value: string) => setForm(current => ({ ...current, [key]: value }));
+  const updateImportForm = (key: string, value: string) => setImportForm(current => ({ ...current, [key]: value }));
 
   const createRateCard = async () => {
-    const valueMinor = yuanToMicrosString(form.amount_yuan || '');
-    if (!valueMinor || !form.rate_card_ref?.trim() || !form.provider_ref?.trim() || !form.model_ref?.trim() ||
-      !form.meter?.trim() || !/^[1-9][0-9]*$/.test(form.unit_quantity || '') || !/^\d{4}-\d{2}-\d{2}$/.test(form.effective_from || '')) {
-      Toast.error('请完整填写费率卡、模型、meter、正整数单位、金额和生效日期');
+    const components = buildRequestRateComponents(form);
+    const dailyPriceBands = components ? buildUTCValleyPriceBands(form, components) : null;
+    if (!components || dailyPriceBands === null || !form.provider_ref?.trim() || !form.model_ref?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.effective_from || '')) {
+      Toast.error('请完整填写供应商、模型、四类基础价格、生效日期；启用日内价时还须填写合法 UTC 谷段和四类谷段价格');
       return;
     }
     if (form.layer === 'supplier_billed_effective' && !form.source_evidence_ref?.trim()) {
@@ -563,19 +810,17 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
     try {
       await api.createEnterpriseRateCardDraft({
         org_id: orgId,
-        rate_card_ref: form.rate_card_ref.trim(), provider_ref: form.provider_ref.trim(),
+        provider_ref: form.provider_ref.trim(),
         model_ref: form.model_ref.trim(), layer: form.layer,
         effective_from: `${form.effective_from}T00:00:00.000000Z`,
         effective_to: form.effective_to ? `${form.effective_to}T00:00:00.000000Z` : null,
         source_evidence_ref: form.source_evidence_ref?.trim() || '',
-        components: [{
-          meter: form.meter.trim(), unit_quantity: form.unit_quantity,
-          amount: { value_minor: valueMinor, currency: 'CNY', scale: 1_000_000 },
-        }],
+        components,
+        daily_price_bands: dailyPriceBands,
       });
       Toast.success('企业 Rate Card 草稿已创建');
       setCreateVisible(false);
-      setForm({ layer: 'supplier_contracted', unit_quantity: '1000000' });
+      setForm({ layer: 'supplier_contracted' });
       await load();
     } catch (createError) {
       Toast.error(errorMessage('企业 Rate Card 创建失败', createError));
@@ -584,11 +829,105 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
     }
   };
 
+  const importOfficialDraft = async () => {
+    const components = buildRequestRateComponents(importForm);
+    const dailyPriceBands = components ? buildUTCValleyPriceBands(importForm, components) : null;
+    const isDate = (value?: string) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
+    if (!components || dailyPriceBands === null || !importForm.provider_ref?.trim() || !importForm.model_ref?.trim() ||
+      !importForm.source_url?.trim() || !importForm.source_revision?.trim() ||
+      !/^sha256:[a-f0-9]{64}$/.test(importForm.payload_sha256 || '') ||
+      !importForm.transform_version?.trim() || !isDate(importForm.effective_from) ||
+      !isDate(importForm.fetched_at) || !isDate(importForm.stale_after)) {
+      Toast.error('请完整填写模型、四类价格、来源修订、载荷 SHA-256、获取日期和新鲜度截止日期');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.importOfficialEnterpriseRateCardDraft({
+        org_id: orgId,
+        provider_ref: importForm.provider_ref.trim(), model_ref: importForm.model_ref.trim(),
+        effective_from: `${importForm.effective_from}T00:00:00.000000Z`, effective_to: null,
+        components, daily_price_bands: dailyPriceBands,
+        source_url: importForm.source_url.trim(), source_revision: importForm.source_revision.trim(),
+        fetched_at: `${importForm.fetched_at}T00:00:00.000000Z`,
+        payload_sha256: importForm.payload_sha256,
+        transform_version: importForm.transform_version.trim(),
+        stale_after: `${importForm.stale_after}T00:00:00.000000Z`,
+      });
+      Toast.success('官方来源证据与目录价草稿已导入；仍需独立复核和激活');
+      setImportVisible(false);
+      setImportForm({ transform_version: 'official-rate-import.v1' });
+      await load();
+    } catch (importError) {
+      Toast.error(errorMessage('官方价格草稿导入失败', importError));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const bootstrapLegacyDrafts = async () => {
+    setSubmitting(true);
+    try {
+      const result = await api.bootstrapLegacyEnterpriseRateCardDrafts({ org_id: orgId }) as LegacyBootstrapResult;
+      setBootstrapResult(result);
+      setBootstrapConfirmVisible(false);
+      Toast.success(`已生成 ${result.created_draft_count} 个草稿；跳过 ${result.skipped_model_count} 个模型`);
+      await load();
+    } catch (bootstrapError) {
+      Toast.error(errorMessage('旧价格草稿生成失败', bootstrapError));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const runRateCardPreflight = async () => {
+    const models = Array.from(new Set(preflightModels.split(/[,，;；\r\n]+/u).map(item => item.trim()).filter(Boolean)));
+    if (models.length === 0) {
+      Toast.error('请粘贴至少一个实际路由 model_ref');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await api.preflightEnterpriseRateCardAuthority({
+        org_id: orgId,
+        models: models.map(model_ref => ({ model_ref })),
+      }) as RateCardPreflightResult;
+      setPreflightResult(result);
+      if (result.ready) Toast.success('全部模型已通过 Rate Card 严格模式预检');
+      else Toast.warning('仍有模型未通过，不能切换严格模式');
+    } catch (preflightError) {
+      setPreflightResult(null);
+      Toast.error(errorMessage('Rate Card 预检失败', preflightError));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const preflightColumns = [
+    { title: 'model_ref', dataIndex: 'model_ref', key: 'model_ref' },
+    { title: '结果', render: (_: unknown, record: RateCardPreflightResult['models'][number]) => <StatusTag status={record.state === 'ready' ? 'success' : 'danger'}>{record.state}</StatusTag>, width: 110 },
+    { title: '权威费率', render: (_: unknown, record: RateCardPreflightResult['models'][number]) => record.state === 'ready' ? `${record.layer} · ${record.provider_ref} · v${record.rate_card_version}` : record.error || '未就绪' },
+  ];
+
   const columns = [
     { title: '费率卡', render: (_: unknown, record: RateCardRecord) => record.card.rate_card_ref, width: 180 },
     { title: '供应商 / 模型', render: (_: unknown, record: RateCardRecord) => `${record.card.provider_ref} / ${record.card.model_ref}` },
     { title: '经济层', render: (_: unknown, record: RateCardRecord) => rateLayerLabels[record.card.layer] || record.card.layer, width: 180 },
-    { title: '组件', render: (_: unknown, record: RateCardRecord) => record.card.components.map(item => item.meter).join('、'), width: 180 },
+    {
+      title: '组件 / UTC 日内价', width: 240,
+      render: (_: unknown, record: RateCardRecord) => (
+        <span>{record.card.components.map(item => item.meter).join('、')} · {record.card.daily_price_bands?.length ? `${record.card.daily_price_bands.length} 段/日` : '全天同价'}</span>
+      ),
+    },
+    {
+      title: '来源证据', width: 220,
+      render: (_: unknown, record: RateCardRecord) => record.source_evidence ? (
+        <div>
+          <Typography.Text size="small">{record.source_evidence.source_revision}</Typography.Text><br />
+          <Typography.Text type="tertiary" size="small">截至 {formatDateTime(record.source_evidence.last_success_at)} · {Date.parse(record.source_evidence.stale_after) <= Date.now() ? '已过新鲜度窗口' : '窗口内'}</Typography.Text>
+        </div>
+      ) : <Typography.Text type="tertiary">未绑定可验证导入证据</Typography.Text>,
+    },
     {
       title: '状态', render: (_: unknown, record: RateCardRecord) => (
         <StatusTag status={record.card.state === 'active' ? 'success' : record.card.state}>{record.card.state}</StatusTag>
@@ -599,8 +938,12 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       title: '操作', width: 180,
       render: (_: unknown, record: RateCardRecord) => canManage ? (
         <Space>
-          {record.card.state === 'draft' ? <Button size="small" onClick={() => transition(record, 'approve')}>复核</Button> : null}
-          {record.card.state === 'approved' ? <Button size="small" type="primary" onClick={() => transition(record, 'activate')}>激活</Button> : null}
+          {record.card.state === 'draft' ? <Button size="small" onClick={() => setApprovalTarget(record)}>复核</Button> : null}
+          {record.card.state === 'approved' ? (
+            <Button size="small" type="primary" onClick={() => requestActivation(record)}>
+              {cards.some(item => item.card.state === 'active' && item.card.rate_card_ref !== record.card.rate_card_ref && item.card.model_ref === record.card.model_ref && item.card.layer === record.card.layer && rateCardIsCurrent(item) && rateWindowsOverlap(item, record)) ? '替换当前费率' : '激活'}
+            </Button>
+          ) : null}
           {!['draft', 'approved'].includes(record.card.state) ? <Typography.Text type="tertiary">—</Typography.Text> : null}
         </Space>
       ) : <Typography.Text type="tertiary">只读</Typography.Text>,
@@ -610,8 +953,15 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
   return (
     <div>
       <Banner
+        type={authority?.strict_active ? 'success' : 'warning'}
+        description={authority?.strict_active
+          ? '当前已启用 Rate Card 严格模式：合同价优先于目录价；缺失或同优先级多供应商冲突时拒绝计价，绝不回退到旧 model_prices。账单有效价和内部费率不参与请求供应成本预测。'
+          : '当前仍是旧价格兼容模式，用于避免现有部署升级后停流。请先生成或导入草稿、独立复核并激活，再用逐模型预检确认完整性；随后由运维显式切换 REQUEST_PRICING_AUTHORITY=rate_card。'}
+        style={{ marginBottom: 16 }}
+      />
+      <Banner
         type="info"
-        description="企业费率卡将目录价、合同价、供应商账单有效价、内部展示价和内部结算价分层管理。当前只建立版本、审批、激活与快照证据，尚未接入现有请求结算路径，因此不会改变历史账单。"
+        description="所谓官方价格同步是受控导入：记录来源 URL、修订、获取时间、原始载荷哈希和转换版本，并且只生成草稿。UniRouter 不承诺网络实时性，也不会自动批准或激活；证据过期时拒绝激活，导入或替换失败不会改写当前 active 费率。日内价只接受 UTC 明示时段和四项显式价格，不推断时区或折扣。"
         style={{ marginBottom: 16 }}
       />
       {error ? <Banner type="danger" description={error} style={{ marginBottom: 16 }} /> : null}
@@ -619,17 +969,63 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
         <MetricTile label="企业费率卡" value={cards.length} tone="blue" />
         <MetricTile label="已激活" value={cards.filter(item => item.card.state === 'active').length} tone="green" />
         <MetricTile label="待复核" value={cards.filter(item => item.card.state === 'draft').length} tone="amber" />
-        <MetricTile label="请求结算接入" value="未启用" tone="slate" meta="保持现有计费兼容" />
+        <MetricTile
+          label="请求定价权威"
+          value={authority?.strict_active ? 'Rate Card 严格模式' : '旧价格兼容模式'}
+          tone={authority?.strict_active ? 'green' : 'amber'}
+          meta={authority?.strict_active ? '无 legacy 回退；逐模型失败关闭' : '升级过渡；完成逐模型预检后再切换'}
+        />
+        <MetricTile label="来源证据" value={authority?.source_evidence_count || 0} tone="violet" meta={`过期 ${authority?.stale_source_count || 0}`} />
       </div>
       <Surface title="版本化 Rate Card" actions={(
         <Space>
+          {canManage && !authority?.strict_active ? <Button size="small" onClick={() => setBootstrapConfirmVisible(true)}>从旧价格生成草稿</Button> : null}
+          {canManage ? <Button size="small" onClick={() => setImportVisible(true)}>导入官方价格草稿</Button> : null}
           {canManage ? <Button size="small" type="primary" onClick={() => setCreateVisible(true)}>新建 Rate Card</Button> : null}
           <Button size="small" icon={<IconRefresh />} onClick={load}>刷新</Button>
         </Space>
       )}>
         {loading || cards.length > 0
           ? <Table rowKey={(row?: RateCardRecord) => row ? `${row.card.rate_card_ref}:${row.card.version}` : 'missing'} columns={columns} dataSource={cards} loading={loading} pagination={false} scroll={{ x: 1050 }} />
-          : <EmptyState title="暂无企业 Rate Card" description="基础费率和组织倍率继续兼容；不把它们自动解释成企业合同价。" minHeight={200} />}
+          : <EmptyState
+              title="尚无版本化 Rate Card"
+              description={authority?.strict_active
+                ? '严格模式不会回退：请先恢复配置或切回已审计的升级流程。'
+                : '请导入可验证目录价草稿或创建完整合同价，经独立复核、激活和逐模型预检后再切换严格模式。'}
+              minHeight={200}
+            />}
+      </Surface>
+      {bootstrapResult ? (
+        <Banner
+          type={bootstrapResult.skipped_model_count > 0 ? 'warning' : 'success'}
+          description={`迁移草稿：新建 ${bootstrapResult.created_draft_count}，已存在 ${bootstrapResult.existing_draft_count}，跳过 ${bootstrapResult.skipped_model_count}。这些记录仍须独立复核和激活；运行时没有因此自动切换。${bootstrapResult.skipped_models?.length ? ` 跳过项：${bootstrapResult.skipped_models.join('、')}` : ''}`}
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
+      <Surface title="严格模式切换预检" description="粘贴实际会被路由的公开 model_ref；支持逗号、分号或换行。只有每个模型都唯一解析到完整 active Rate Card 才能切换。">
+        <Space vertical align="start" style={{ width: '100%' }}>
+          <Input
+            aria-label="Rate Card 预检模型列表"
+            value={preflightModels}
+            onChange={value => { setPreflightModels(value); setPreflightResult(null); }}
+            placeholder="例如 deepseek-v4-pro, kimi-k3"
+          />
+          <Button onClick={runRateCardPreflight} loading={submitting}>逐模型预检</Button>
+          {preflightResult ? (
+            <Table
+              rowKey={(row?: RateCardPreflightResult['models'][number]) => row?.model_ref || 'missing'}
+              columns={preflightColumns}
+              dataSource={preflightResult.models}
+              pagination={false}
+            />
+          ) : null}
+          {preflightResult?.ready ? (
+            <Banner
+              type="success"
+              description={<span>预检已全部通过。由运维设置 <Typography.Text code copyable={{ content: 'REQUEST_PRICING_AUTHORITY=rate_card' }}>REQUEST_PRICING_AUTHORITY=rate_card</Typography.Text> 并重启；此页面不会自动修改环境或服务。</span>}
+            />
+          ) : null}
+        </Space>
       </Surface>
       <Surface title="请求计价证据" description="按 request_ref 查询未来授权生产者持久化的不可变快照；此页面不能创建或重算快照。">
         <Space style={{ marginBottom: 16 }}>
@@ -646,31 +1042,180 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
         ) : <Typography.Text type="tertiary">尚未查询计价快照。</Typography.Text>}
       </Surface>
       <Modal
+        title="复核 Rate Card 完整证据"
+        visible={Boolean(approvalTarget)}
+        onCancel={() => setApprovalTarget(null)}
+        onOk={confirmApproval}
+        confirmLoading={submitting}
+        okText="确认批准此版本"
+      >
+        {approvalTarget ? (
+          <Space vertical align="start" style={{ width: '100%' }}>
+            <Banner type="warning" description={`你将以独立复核人批准 ${approvalTarget.card.rate_card_ref} v${approvalTarget.card.version}。请核对以下金额、单位、UTC 时段与来源证据；批准不会自动激活。`} />
+            <RateCardReviewDetails record={approvalTarget} />
+          </Space>
+        ) : null}
+      </Modal>
+      <Modal
+        title="确认激活 Rate Card"
+        visible={Boolean(activationTarget)}
+        onCancel={() => setActivationTarget(null)}
+        onOk={confirmActivation}
+        confirmLoading={submitting}
+        okText="确认激活此版本"
+      >
+        {activationTarget ? (
+          <Space vertical align="start" style={{ width: '100%' }}>
+            <Banner type="warning" description={`将使 ${activationTarget.card.rate_card_ref} v${activationTarget.card.version} 进入 active。请再次核对实际生效价格、UTC 时段和来源证据。`} />
+            <RateCardReviewDetails record={activationTarget} />
+          </Space>
+        ) : null}
+      </Modal>
+      <Modal
+        title="替换当前费率"
+        visible={Boolean(replacementTarget)}
+        onCancel={() => setReplacementTarget(null)}
+        onOk={confirmReplacement}
+        confirmLoading={submitting}
+        okText="确认原子替换"
+      >
+        {replacementTarget ? (
+          <Space vertical align="start" style={{ width: '100%' }}>
+            <Banner
+              type="warning"
+              description={`将精确替换 ${replacementTarget.current.card.rate_card_ref} v${replacementTarget.current.card.version}。后端会在同一事务中为旧 ref 追加 retired 版本，再激活 ${replacementTarget.candidate.card.rate_card_ref} v${replacementTarget.candidate.card.version}；任一步失败均全部回滚，已冻结请求仍绑定旧 active 版本。`}
+            />
+            <RateCardReviewDetails record={replacementTarget.current} label="当前生效价格" />
+            <RateCardReviewDetails record={replacementTarget.candidate} label="替换后价格" />
+          </Space>
+        ) : null}
+      </Modal>
+      <Modal
         title="新建企业 Rate Card 草稿"
         visible={createVisible}
-        onCancel={() => { setCreateVisible(false); setForm({ layer: 'supplier_contracted', unit_quantity: '1000000' }); }}
+        onCancel={() => { setCreateVisible(false); setForm({ layer: 'supplier_contracted' }); }}
         onOk={createRateCard}
         confirmLoading={submitting}
         okText="保存草稿"
       >
         <Space vertical align="start" style={{ width: '100%' }}>
-          <Input aria-label="Rate Card 标识" value={form.rate_card_ref || ''} onChange={value => updateForm('rate_card_ref', value)} placeholder="例如 RATE-PROVIDER-MODEL-2026" />
-          <Input aria-label="Rate Card 供应商" value={form.provider_ref || ''} onChange={value => updateForm('provider_ref', value)} placeholder="稳定 provider_ref" />
-          <Input aria-label="Rate Card 模型" value={form.model_ref || ''} onChange={value => updateForm('model_ref', value)} placeholder="稳定 model_ref" />
+          <Typography.Text type="tertiary">Rate Card 标识由服务端自动生成。第一阶段按稳定 model_ref 选价；在请求链携带稳定连接身份前，同一模型同优先级存在多个供应商会拒绝计价。</Typography.Text>
+          <Input aria-label="Rate Card 供应商" value={form.provider_ref || ''} onChange={value => updateForm('provider_ref', value)} placeholder="稳定 provider_ref（合同或供应商身份）" />
+          <Input aria-label="Rate Card 模型" value={form.model_ref || ''} onChange={value => updateForm('model_ref', value)} placeholder="与请求 model 完全一致的 model_ref" />
           <Select
             aria-label="Rate Card 经济层"
             value={form.layer || 'supplier_contracted'}
             onChange={value => updateForm('layer', String(value || ''))}
-            optionList={Object.entries(rateLayerLabels).map(([value, label]) => ({ value, label }))}
+            optionList={Object.entries(rateLayerLabels)
+              .filter(([value]) => value !== 'provider_list')
+              .map(([value, label]) => ({ value, label }))}
             style={{ width: '100%' }}
           />
-          <Input aria-label="Rate Card meter" value={form.meter || ''} onChange={value => updateForm('meter', value)} placeholder="例如 input_tokens" />
-          <Input aria-label="Rate Card 单位数量" value={form.unit_quantity || ''} onChange={value => updateForm('unit_quantity', value)} placeholder="例如 1000000" />
-          <Input aria-label="Rate Card 单位金额元" value={form.amount_yuan || ''} onChange={value => updateForm('amount_yuan', value)} placeholder="CNY，最多六位小数" />
+          {requestPriceMeters.map(item => (
+            <Input
+              key={item.key}
+              aria-label={`Rate Card ${item.label}每百万价格`}
+              value={form[item.key] || ''}
+              onChange={value => updateForm(item.key, value)}
+              placeholder={`${item.label}：CNY / 1,000,000 tokens，最多六位小数`}
+            />
+          ))}
+          <Select
+            aria-label="Rate Card 日内计价"
+            value={form.price_schedule || 'flat'}
+            onChange={value => updateForm('price_schedule', String(value || 'flat'))}
+            optionList={[
+              { value: 'flat', label: '全天同价（UTC）' },
+              { value: 'utc_valley', label: '基础价 + 一个 UTC 谷段' },
+            ]}
+            style={{ width: '100%' }}
+          />
+          {form.price_schedule === 'utc_valley' ? (
+            <>
+              <Input aria-label="Rate Card UTC 谷段开始" type="time" value={form.valley_start_utc || ''} onChange={value => updateForm('valley_start_utc', value)} />
+              <Input aria-label="Rate Card UTC 谷段结束" type="time" value={form.valley_end_utc || ''} onChange={value => updateForm('valley_end_utc', value)} />
+              {requestPriceMeters.map(item => (
+                <Input
+                  key={`valley-${item.key}`}
+                  aria-label={`Rate Card UTC 谷段 ${item.label}每百万价格`}
+                  value={form[`valley_${item.key}`] || ''}
+                  onChange={value => updateForm(`valley_${item.key}`, value)}
+                  placeholder={`${item.label}谷段：CNY / 1,000,000 tokens`}
+                />
+              ))}
+              <Typography.Text type="tertiary">谷段必须 start &lt; end，不能跨午夜。界面会把谷段外基础价显式拆成完整 24 小时 UTC 价带；不会猜测本地时区或折扣比例。</Typography.Text>
+            </>
+          ) : null}
           <Input aria-label="Rate Card 生效日期" type="date" value={form.effective_from || ''} onChange={value => updateForm('effective_from', value)} />
           <Input aria-label="Rate Card 失效日期" type="date" value={form.effective_to || ''} onChange={value => updateForm('effective_to', value)} />
-          <Input aria-label="Rate Card 来源证据" value={form.source_evidence_ref || ''} onChange={value => updateForm('source_evidence_ref', value)} placeholder="供应商账单有效价必填" />
-          <Typography.Text type="tertiary">首个 UI 草稿支持一个 meter；更多组件可用同一受控 API 提交。保存、复核、激活分为三个版本。</Typography.Text>
+          <Input aria-label="Rate Card 来源证据" value={form.source_evidence_ref || ''} onChange={value => updateForm('source_evidence_ref', value)} placeholder="合同号、签署证据或账单证据引用（按层级要求）" />
+          <Typography.Text type="tertiary">输入、输出、缓存读取、缓存写入四项必须显式定价，不自动猜测缓存折扣。目录价必须使用“导入官方价格草稿”绑定来源证据；保存、独立复核、激活分为三个版本。</Typography.Text>
+        </Space>
+      </Modal>
+      <Modal
+        title="从旧价格生成迁移草稿"
+        visible={bootstrapConfirmVisible}
+        onCancel={() => setBootstrapConfirmVisible(false)}
+        onOk={bootstrapLegacyDrafts}
+        confirmLoading={submitting}
+        okText="确认只生成草稿"
+      >
+        <Banner type="warning" description="将当前 model_prices 与本客户组织倍率转换成带来源哈希的 provider_list 草稿。不会批准、激活、切换请求定价权威或重启服务；缺少稳定 provider 的模型会明确跳过。" />
+      </Modal>
+      <Modal
+        title="导入可验证官方价格草稿"
+        visible={importVisible}
+        onCancel={() => { setImportVisible(false); setImportForm({ transform_version: 'official-rate-import.v1' }); }}
+        onOk={importOfficialDraft}
+        confirmLoading={submitting}
+        okText="导入草稿"
+      >
+        <Space vertical align="start" style={{ width: '100%' }}>
+          <Banner type="warning" description="此操作不联网抓取价格。请提交已获取的官方来源及原始载荷哈希；服务端只创建 provider_list 草稿，不会自动批准或激活。" />
+          <Input aria-label="官方价格供应商" value={importForm.provider_ref || ''} onChange={value => updateImportForm('provider_ref', value)} placeholder="稳定 provider_ref" />
+          <Input aria-label="官方价格模型" value={importForm.model_ref || ''} onChange={value => updateImportForm('model_ref', value)} placeholder="与请求 model 完全一致的 model_ref" />
+          {requestPriceMeters.map(item => (
+            <Input
+              key={item.key}
+              aria-label={`官方价格 ${item.label}每百万价格`}
+              value={importForm[item.key] || ''}
+              onChange={value => updateImportForm(item.key, value)}
+              placeholder={`${item.label}：CNY / 1,000,000 tokens`}
+            />
+          ))}
+          <Select
+            aria-label="官方价格日内计价"
+            value={importForm.price_schedule || 'flat'}
+            onChange={value => updateImportForm('price_schedule', String(value || 'flat'))}
+            optionList={[
+              { value: 'flat', label: '全天同价（UTC）' },
+              { value: 'utc_valley', label: '基础价 + 一个 UTC 谷段' },
+            ]}
+            style={{ width: '100%' }}
+          />
+          {importForm.price_schedule === 'utc_valley' ? (
+            <>
+              <Input aria-label="官方价格 UTC 谷段开始" type="time" value={importForm.valley_start_utc || ''} onChange={value => updateImportForm('valley_start_utc', value)} />
+              <Input aria-label="官方价格 UTC 谷段结束" type="time" value={importForm.valley_end_utc || ''} onChange={value => updateImportForm('valley_end_utc', value)} />
+              {requestPriceMeters.map(item => (
+                <Input
+                  key={`official-valley-${item.key}`}
+                  aria-label={`官方价格 UTC 谷段 ${item.label}每百万价格`}
+                  value={importForm[`valley_${item.key}`] || ''}
+                  onChange={value => updateImportForm(`valley_${item.key}`, value)}
+                  placeholder={`${item.label}谷段：CNY / 1,000,000 tokens`}
+                />
+              ))}
+              <Typography.Text type="tertiary">只接受不跨午夜的 UTC 谷段；谷段外继续使用上方四项基础价，并被显式写入完整日内 schedule。</Typography.Text>
+            </>
+          ) : null}
+          <Input aria-label="官方价格生效日期" type="date" value={importForm.effective_from || ''} onChange={value => updateImportForm('effective_from', value)} />
+          <Input aria-label="官方来源 URL" value={importForm.source_url || ''} onChange={value => updateImportForm('source_url', value)} placeholder="官方定价文档 URL" />
+          <Input aria-label="官方来源修订" value={importForm.source_revision || ''} onChange={value => updateImportForm('source_revision', value)} placeholder="文档版本、ETag 或明确修订号" />
+          <Input aria-label="官方原始载荷 SHA-256" value={importForm.payload_sha256 || ''} onChange={value => updateImportForm('payload_sha256', value)} placeholder="sha256: 后跟 64 位小写十六进制" />
+          <Input aria-label="官方价格转换版本" value={importForm.transform_version || ''} onChange={value => updateImportForm('transform_version', value)} placeholder="确定性转换器版本" />
+          <Input aria-label="官方价格获取日期" type="date" value={importForm.fetched_at || ''} onChange={value => updateImportForm('fetched_at', value)} />
+          <Input aria-label="官方价格新鲜度截止日期" type="date" value={importForm.stale_after || ''} onChange={value => updateImportForm('stale_after', value)} />
         </Space>
       </Modal>
     </div>

@@ -3,6 +3,7 @@ import { Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Inpu
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
+import { normalizeModelList } from '../utils/modelList';
 
 interface Channel {
   id: number;
@@ -61,6 +62,36 @@ interface ProviderPack {
   manifest: ProviderPackManifest;
   manifest_sha256: string;
   schema_sha256: string;
+}
+
+type ProviderPackMatch = {
+  pack: ProviderPack;
+  scope: 'provider_fixture' | 'adapter_protocol_fixture';
+};
+
+function adapterTypeForProvider(provider: unknown) {
+  if (provider === 'anthropic') return 'anthropic_native';
+  if (provider === 'azure') return 'azure_openai';
+  return 'openai_compatible';
+}
+
+function findProviderPackMatch(packs: ProviderPack[], channel?: Channel): ProviderPackMatch | undefined {
+  if (!channel) return undefined;
+  const adapterType = channel.adapter_type || 'openai_compatible';
+  const exact = packs.find(pack =>
+    pack.manifest.provider.toLowerCase() === channel.provider.toLowerCase() &&
+    pack.manifest.adapter_type === adapterType);
+  if (exact) return { pack: exact, scope: 'provider_fixture' };
+
+  const referenceProvider = ({
+    openai_compatible: 'openai',
+    anthropic_native: 'anthropic',
+    azure_openai: 'azure',
+  } as Record<string, string>)[adapterType];
+  const protocolFixture = referenceProvider
+    ? packs.find(pack => pack.manifest.provider === referenceProvider && pack.manifest.adapter_type === adapterType)
+    : undefined;
+  return protocolFixture ? { pack: protocolFixture, scope: 'adapter_protocol_fixture' } : undefined;
 }
 
 const channelStatusOptions = [
@@ -227,12 +258,11 @@ export default function ChannelsPage() {
     () => channels.find((channel) => channel.id === selectedChannelId),
     [channels, selectedChannelId],
   );
-  const selectedPack = useMemo(
-    () => providerPacks.find((pack) =>
-      pack.manifest.provider.toLowerCase() === selectedChannel?.provider.toLowerCase() &&
-      pack.manifest.adapter_type === (selectedChannel?.adapter_type || 'openai_compatible')),
+  const selectedPackMatch = useMemo(
+    () => findProviderPackMatch(providerPacks, selectedChannel),
     [providerPacks, selectedChannel],
   );
+  const selectedPack = selectedPackMatch?.pack;
   const selectedConfigFacts = useMemo(
     () => selectedChannel ? adapterConfigFacts(selectedChannel) : [],
     [selectedChannel],
@@ -274,6 +304,7 @@ export default function ChannelsPage() {
     }
     const payload = {
       ...values,
+      models: normalizeModelList(values.models),
       adapter_type: values.adapter_type || 'openai_compatible',
       adapter_config: adapterConfig,
       ...(editing ? { expected_routing_epoch: editing.routing_epoch } : {}),
@@ -367,15 +398,16 @@ export default function ChannelsPage() {
     { title: '供应商', dataIndex: 'provider', key: 'provider', width: 100 },
     { title: '协议适配', dataIndex: 'adapter_type', key: 'adapter_type', width: 160, render: (v: string) => v || 'openai_compatible' },
     {
-      title: '一致性',
+      title: '离线协议夹具',
       key: 'conformance',
       width: 110,
       render: (_: unknown, record: Channel) => {
         if (providerPackError) return <Tag color="orange">unavailable</Tag>;
-        const pack = providerPacks.find((item) =>
-          item.manifest.provider.toLowerCase() === record.provider.toLowerCase() &&
-          item.manifest.adapter_type === (record.adapter_type || 'openai_compatible'));
-        return pack ? <Tag color="green">fixture verified</Tag> : <Tag color="orange">undeclared</Tag>;
+        const match = findProviderPackMatch(providerPacks, record);
+        if (!match) return <Tag color="orange">无协议夹具</Tag>;
+        return <Tag color={match.scope === 'provider_fixture' ? 'green' : 'blue'}>
+          {match.scope === 'provider_fixture' ? '协议夹具（同名）' : '协议夹具（参考）'}
+        </Tag>;
       },
     },
     { title: '服务地址', dataIndex: 'base_url', key: 'base_url', width: 220, ellipsis: true },
@@ -420,9 +452,22 @@ export default function ChannelsPage() {
       <PageHeader
         eyebrow="模型接入"
         title="上游通道"
-        description="新通道默认 staged；配置凭证后必须到“模型治理 → 运行时发布”完成 Provider Pack 校验、影子、灰度和提升。紧急禁用始终立即生效。"
+        description="新通道默认 staged；供应商身份用于审计和运营，Adapter Type 表示请求线缆协议，两者不会互相改名。配置凭证后先做上游检测，再到运行时发布进入真实灰度。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增通道</Button>}
       />
+
+      <Surface
+        title="新增模型的推荐顺序"
+        description="主流程只需要沿同一条连接继续，不需要手工编造发布标识。底层通道、凭证、目录和发布记录仍分别保存，以保留密钥隔离、审计和回滚门禁。"
+      >
+        <ol className="ur-plain-list">
+          <li><strong>新增上游连接：</strong>选择真实供应商身份和请求协议，填写 Base URL 与供应商模型 ID；模型支持逗号、分号或换行分隔。</li>
+          <li><strong>绑定供应商凭证：</strong>在“供应商凭证”选择刚创建的 staged 通道；密钥加密保存且不会回显。</li>
+          <li><strong>做真实上游检测：</strong>在“上游检测”按通道和单个模型逐项验证网络、账号与模型权限；离线协议夹具不代替此步骤。</li>
+          <li><strong>确定客户可见范围：</strong>在“模型治理”维护对外模型名、能力、项目模型集和费率证据；未验证能力不得当作真实可用能力。</li>
+          <li><strong>发布并灰度：</strong>运行时发布会从通道模型列表选择目标并自动生成发布标识；“待灰度”是零流量，只有 Canary 才有真实流量。</li>
+        </ol>
+      </Surface>
 
       <div className="ur-provider-explorer">
         <main className="ur-explorer-panel">
@@ -508,7 +553,13 @@ export default function ChannelsPage() {
                 <div>
                   <Typography.Text type="tertiary" size="small">Conformance</Typography.Text>
                   <StatusTag status={providerPackError || !selectedPack ? 'warning' : 'success'}>
-                    {providerPackError ? 'unavailable' : selectedPack ? 'fixture verified' : 'undeclared'}
+                    {providerPackError
+                      ? 'unavailable'
+                      : selectedPackMatch?.scope === 'provider_fixture'
+                        ? '协议夹具（同名）'
+                        : selectedPackMatch?.scope === 'adapter_protocol_fixture'
+                          ? '协议夹具（参考）'
+                          : '无协议夹具'}
                   </StatusTag>
                 </div>
                 <div>
@@ -528,9 +579,9 @@ export default function ChannelsPage() {
                 </div>
               ) : !selectedPack ? (
                 <div className="ur-detail-card" role="status">
-                  <Typography.Text className="ur-detail-card-title">未声明的适配器</Typography.Text>
+                  <Typography.Text className="ur-detail-card-title">缺少离线协议夹具</Typography.Text>
                   <Typography.Text type="tertiary" size="small">
-                    当前适配器没有权威 Provider Pack；不会把“可配置”解释为“已兼容”。
+                    当前 Adapter 没有可复核的离线协议夹具；不会把“可配置”解释为“已兼容”。
                   </Typography.Text>
                 </div>
               ) : (
@@ -542,7 +593,9 @@ export default function ChannelsPage() {
                       size="small"
                       data={[
                         { key: 'Pack', value: `${selectedPack.manifest.pack_id}@${selectedPack.manifest.pack_version}` },
-                        { key: 'Provider', value: selectedPack.manifest.provider },
+                        { key: '实际供应商身份', value: selectedChannel.provider },
+                        { key: '夹具参考供应商', value: selectedPack.manifest.provider },
+                        { key: '证据范围', value: selectedPackMatch?.scope === 'provider_fixture' ? 'Pack provider 与供应商同名；仍仅为离线合成夹具' : '仅复用相同 Adapter 协议的参考夹具' },
                         { key: 'Manifest SHA-256', value: <Typography.Text code size="small">{selectedPack.manifest_sha256}</Typography.Text> },
                         { key: 'Schema SHA-256', value: <Typography.Text code size="small">{selectedPack.schema_sha256}</Typography.Text> },
                       ]}
@@ -555,7 +608,7 @@ export default function ChannelsPage() {
                       {selectedPack.manifest.modalities.map((modality) => <Tag key={modality} color="cyan">{modality}</Tag>)}
                     </div>
                     <Typography.Text type="tertiary" size="small">
-                      鉴权线缆：{selectedPack.manifest.auth_profiles.map((profile) => `${profile.type} → ${profile.wire_header}`).join('；')}
+                      鉴权线缆：{selectedPack.manifest.auth_profiles.map((profile) => `${profile.type} → ${profile.wire_header}`).join('；')}。这里只验证 UniRouter Adapter 对参考协议的离线请求/响应，不证明 {selectedChannel.provider} 的真实接口兼容。
                     </Typography.Text>
                   </div>
                 </>
@@ -573,7 +626,7 @@ export default function ChannelsPage() {
                   ]}
                 />
                 <Typography.Text type="tertiary" size="small">
-                  敏感配置值不在检查器中回显；fixture verified 仅证明离线合成合同，不代表真实账号、网络、额度或账单。
+                  敏感配置值不在检查器中回显；离线夹具不代表真实账号、网络、额度、模型权限或账单，真实状态以上游检测为准。
                 </Typography.Text>
               </div>
 
@@ -644,23 +697,33 @@ export default function ChannelsPage() {
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Input field="name" label="通道名称" rules={[{ required: true, message: '必填' }]} />
-          <Form.Select field="provider" label="供应商" rules={[{ required: true, message: '必填' }]}
+          <Form.Select field="provider" label="供应商身份" rules={[{ required: true, message: '必填' }]}
             optionList={[
               { label: 'OpenAI', value: 'openai' },
               { label: 'Anthropic', value: 'anthropic' },
               { label: 'Azure', value: 'azure' },
-              { label: 'Kimi', value: 'kimi' },
-              { label: '自定义', value: 'custom' },
+              { label: 'DeepSeek（OpenAI-compatible）', value: 'deepseek' },
+              { label: 'Kimi / Moonshot（OpenAI-compatible）', value: 'kimi' },
+              { label: '自定义 OpenAI-compatible', value: 'custom' },
             ]}
+            onChange={(value) => formApi?.setValue('adapter_type', adapterTypeForProvider(value))}
+            extraText="这里记录实际服务供应商，用于审计和运营；不会因为选择 OpenAI-compatible 协议而把 DeepSeek、Kimi 或自定义服务改名为 OpenAI。"
           />
           <Form.Input field="base_url" label="服务地址（Base URL）" rules={[{ required: true, message: '必填' }]} />
-          <Form.Input field="models" label="支持模型" placeholder="多个模型用英文逗号分隔，如 gpt-4o, gpt-4o-mini" rules={[{ required: true, message: '必填' }]} />
-          <Form.Select field="adapter_type" label="Adapter Type" initValue="openai_compatible"
+          <Form.Input
+            field="models"
+            label="支持模型"
+            placeholder="如 gpt-4o；gpt-4o-mini"
+            extraText="可用中英文逗号、分号或换行分隔；保存时会去空格、去重并统一为英文逗号。"
+            rules={[{ required: true, message: '必填' }]}
+          />
+          <Form.Select field="adapter_type" label="请求协议（Adapter Type）" initValue="openai_compatible"
             optionList={[
               { label: 'OpenAI Compatible', value: 'openai_compatible' },
               { label: 'Anthropic Native', value: 'anthropic_native' },
               { label: 'Azure OpenAI (deployment-scoped)', value: 'azure_openai' },
             ]}
+            extraText="Adapter 只决定 UniRouter 如何组装和解析请求；离线协议夹具不等于真实供应商连通验证。"
           />
           <Form.TextArea
             field="adapter_config"

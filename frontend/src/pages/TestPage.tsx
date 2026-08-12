@@ -53,7 +53,8 @@ export function summarizeBatchChannels(channels: Channel[]) {
 
 export default function TestPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [testing, setTesting] = useState(false);
+  const [selectedChannelTesting, setSelectedChannelTesting] = useState(false);
+  const [batchTesting, setBatchTesting] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
   const [selectedModel, setSelectedModel] = useState('');
@@ -152,20 +153,23 @@ export default function TestPage() {
       Toast.error({ content: '该通道没有已启用、未冷却且允许所选模型的供应商凭证，未发起真实请求' });
       return;
     }
-    setTesting(true);
-    const result = await runTest(
-      channelId,
-      channel.name,
-      model,
-      values.prompt || 'Hello, this is a test message.',
-    );
-    setResults(prev => [result, ...prev]);
-    if (result.success) {
-      Toast.success({ content: `检测成功 (${result.latency_ms}ms)` });
-    } else {
-      Toast.error({ content: `检测失败: ${result.error}` });
+    setSelectedChannelTesting(true);
+    try {
+      const result = await runTest(
+        channelId,
+        channel.name,
+        model,
+        values.prompt || 'Hello, this is a test message.',
+      );
+      setResults(prev => [result, ...prev]);
+      if (result.success) {
+        Toast.success({ content: `检测成功 (${result.latency_ms}ms)` });
+      } else {
+        Toast.error({ content: `检测失败: ${result.error}` });
+      }
+    } finally {
+      setSelectedChannelTesting(false);
     }
-    setTesting(false);
   };
 
   const executeBatchTest = async () => {
@@ -173,43 +177,46 @@ export default function TestPage() {
       Toast.error({ content: channelLoadError || '通道列表尚未加载，已阻止真实检测请求' });
       return;
     }
-    setTesting(true);
-    const activeChannels = channels.filter(c => c.status === 'active');
-    const batchResults: TestResult[] = [];
+    setBatchTesting(true);
+    try {
+      const activeChannels = batchScope.included;
+      const batchResults: TestResult[] = [];
 
-    for (const channel of activeChannels) {
-      const model = firstChannelModel(channel);
-      if (!model) {
-        batchResults.push(withResultKey({
-          success: false,
-          channel_id: channel.id,
-          channel_name: channel.name,
-          latency_ms: 0,
-          status_code: 0,
-          error: '通道未配置检测模型',
-        }));
-        continue;
+      for (const channel of activeChannels) {
+        const model = firstChannelModel(channel);
+        if (!model) {
+          batchResults.push(withResultKey({
+            success: false,
+            channel_id: channel.id,
+            channel_name: channel.name,
+            latency_ms: 0,
+            status_code: 0,
+            error: '通道未配置检测模型',
+          }));
+          continue;
+        }
+        if (eligibleCredentialsForModel(channel, channelKeys, model).length === 0) {
+          batchResults.push(withResultKey({
+            success: false,
+            channel_id: channel.id,
+            channel_name: channel.name,
+            latency_ms: 0,
+            status_code: 0,
+            model,
+            error: '没有已启用、未冷却且允许检测模型的供应商凭证；未发起真实请求',
+          }));
+          continue;
+        }
+        const result = await runTest(channel.id, channel.name, model, 'Hello, this is a test message.');
+        batchResults.push(result);
       }
-      if (eligibleCredentialsForModel(channel, channelKeys, model).length === 0) {
-        batchResults.push(withResultKey({
-          success: false,
-          channel_id: channel.id,
-          channel_name: channel.name,
-          latency_ms: 0,
-          status_code: 0,
-          model,
-          error: '没有已启用、未冷却且允许检测模型的供应商凭证；未发起真实请求',
-        }));
-        continue;
-      }
-      const result = await runTest(channel.id, channel.name, model, 'Hello, this is a test message.');
-      batchResults.push(result);
+
+      setResults(prev => [...batchResults, ...prev]);
+      const successCount = batchResults.filter(r => r.success).length;
+      Toast.info({ content: `批量检测完成: ${successCount}/${batchResults.length} 成功` });
+    } finally {
+      setBatchTesting(false);
     }
-
-    setResults(prev => [...batchResults, ...prev]);
-    const successCount = batchResults.filter(r => r.success).length;
-    Toast.info({ content: `批量检测完成: ${successCount}/${batchResults.length} 成功` });
-    setTesting(false);
   };
 
   const handleBatchTest = () => {
@@ -375,11 +382,19 @@ export default function TestPage() {
             style={{ width: 400 }}
           />
           <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
-            <Button type="primary" onClick={submitSelectedChannelTest} loading={testing} disabled={channelLoadState !== 'ready'}>
+            <Button type="primary" onClick={submitSelectedChannelTest} loading={selectedChannelTesting} disabled={channelLoadState !== 'ready' || batchTesting}>
               检测选中通道
             </Button>
-            <Button onClick={handleBatchTest} loading={testing} disabled={channelLoadState !== 'ready'}>
-              {channelLoadState === 'ready' ? `批量检测 ${batchScope.included.length} 个生效通道` : '批量检测（通道未就绪）'}
+            <Button
+              onClick={handleBatchTest}
+              loading={batchTesting}
+              disabled={channelLoadState !== 'ready' || batchScope.included.length === 0 || selectedChannelTesting}
+            >
+              {channelLoadState !== 'ready'
+                ? '批量检测（通道未就绪）'
+                : batchScope.included.length === 0
+                  ? '无生效通道可批量检测'
+                  : `批量检测 ${batchScope.included.length} 个生效通道`}
             </Button>
           </div>
         </Form>

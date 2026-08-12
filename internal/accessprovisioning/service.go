@@ -2045,7 +2045,7 @@ func (s *Service) ListGrantCredentials(ctx context.Context, scope ActorScope, gr
 		return GrantCredentialPage{}, ErrNotFound
 	}
 	grant, found, err := readGrantRow(s.db.QueryRow(ctx, grantSelect+`
-		WHERE ag.grant_ref=$1 AND (`+grantAccessPredicate(objectCredentialRead)+`)`,
+		WHERE ag.grant_ref=$1 AND (`+grantAccessPredicate(objectCredentialRead, scope.EnforceOrgBoundary)+`)`,
 		grantRef, scope.UserID, scope.OrgID, scope.OrganizationRole))
 	if err != nil {
 		return GrantCredentialPage{}, err
@@ -2253,7 +2253,7 @@ func (s *Service) ListRequestsFiltered(ctx context.Context, scope ActorScope, or
 	if !scope.valid() {
 		return RequestPage{Data: []Request{}, Pagination: PageInfo{Limit: pageInput.Limit}, Scope: "project"}, nil
 	}
-	rows, err := s.db.Query(ctx, requestSelect+` WHERE $1::text='' AND ar.org_id=$5 AND ar.project_id=$6 AND (`+requestAccessPredicate(objectRead)+`)
+	rows, err := s.db.Query(ctx, requestSelect+` WHERE $1::text='' AND ar.org_id=$5 AND ar.project_id=$6 AND (`+requestAccessPredicate(objectRead, scope.EnforceOrgBoundary)+`)
 		AND ($7::text='' OR ar.status=$7)
 		AND ($8::bigint=0 OR ar.subject_workload_application_id=$8)
 		AND ($9::bigint=0 OR ar.id<$9) ORDER BY ar.id DESC LIMIT $10`,
@@ -2283,9 +2283,8 @@ func (s *Service) ListRequestsFiltered(ctx context.Context, scope ActorScope, or
 // ListMyRequests is the actor-owned access view. It intentionally does not
 // require project membership so a first-project applicant can observe their
 // pending request, but it cannot enumerate a project or another actor's
-// objects. A submitter always sees their own submission, including a
-// platform-admin submission into another target organization. Subject and
-// sponsor ownership remain bound to the authenticated actor's organization.
+// objects. Submitter, subject, and sponsor ownership remain bounded by the
+// admitted customer organization in ActorScope.
 func (s *Service) ListMyRequests(ctx context.Context, scope ActorScope, pageInput PageInput) (RequestPage, error) {
 	pageInput, err := NormalizePageInput(pageInput)
 	if err != nil {
@@ -2294,8 +2293,13 @@ func (s *Service) ListMyRequests(ctx context.Context, scope ActorScope, pageInpu
 	if !scope.valid() {
 		return RequestPage{Data: []Request{}, Pagination: PageInfo{Limit: pageInput.Limit}, Scope: "my"}, nil
 	}
+	ownershipPredicate := `ar.org_id=$1
+		  AND (ar.submitted_by=$2 OR ar.subject_user_id=$2 OR ar.sponsor_user_id=$2)`
+	if scope.OrganizationRole == auth.RolePlatformAdmin && !scope.EnforceOrgBoundary {
+		ownershipPredicate = `(ar.submitted_by=$2 OR (ar.org_id=$1 AND (ar.subject_user_id=$2 OR ar.sponsor_user_id=$2)))`
+	}
 	rows, err := s.db.Query(ctx, requestSelect+`
-		WHERE (ar.submitted_by=$2 OR (ar.org_id=$1 AND (ar.subject_user_id=$2 OR ar.sponsor_user_id=$2)))
+		WHERE `+ownershipPredicate+`
 		  AND ($3::bigint=0 OR ar.id<$3)
 		ORDER BY ar.id DESC LIMIT $4`, scope.OrgID, scope.UserID, pageInput.AfterID, pageInput.Limit+1)
 	if err != nil {
@@ -2334,7 +2338,7 @@ func (s *Service) ListGrantsFiltered(ctx context.Context, scope ActorScope, orgI
 	if filter.SubjectWorkloadApplicationID < 0 {
 		return GrantPage{}, ErrInvalid
 	}
-	rows, err := s.db.Query(ctx, grantSelect+` WHERE $1::text='' AND ag.org_id=$5 AND ag.project_id=$6 AND (`+grantAccessPredicate(objectRead)+`)
+	rows, err := s.db.Query(ctx, grantSelect+` WHERE $1::text='' AND ag.org_id=$5 AND ag.project_id=$6 AND (`+grantAccessPredicate(objectRead, scope.EnforceOrgBoundary)+`)
 		AND ($7::bigint=0 OR ag.subject_workload_application_id=$7)
 		AND ($8::bigint=0 OR ag.id<$8) ORDER BY ag.id DESC LIMIT $9`,
 		"", scope.UserID, scope.OrgID, scope.OrganizationRole, orgID, projectID,
@@ -2376,10 +2380,12 @@ func (s *Service) ListMyGrants(ctx context.Context, scope ActorScope, pageInput 
 	if !scope.valid() {
 		return GrantPage{Data: []Grant{}, Pagination: PageInfo{Limit: pageInput.Limit}, Scope: "my"}, nil
 	}
+	enforceOrgBoundary := scope.EnforceOrgBoundary || scope.OrganizationRole != auth.RolePlatformAdmin
 	rows, err := s.db.Query(ctx, grantSelect+`
-		WHERE ag.subject_type='user' AND ag.subject_user_id=$1
-		  AND ($2::bigint=0 OR ag.id<$2)
-		ORDER BY ag.id DESC LIMIT $3`, scope.UserID, pageInput.AfterID, pageInput.Limit+1)
+		WHERE (NOT $1::boolean OR ag.org_id=$2)
+		  AND ag.subject_type='user' AND ag.subject_user_id=$3
+		  AND ($4::bigint=0 OR ag.id<$4)
+		ORDER BY ag.id DESC LIMIT $5`, enforceOrgBoundary, scope.OrgID, scope.UserID, pageInput.AfterID, pageInput.Limit+1)
 	if err != nil {
 		return GrantPage{}, err
 	}
@@ -2413,7 +2419,7 @@ func (s *Service) projectRequestActions(ctx context.Context, scope ActorScope, r
 	}
 	actions.CanCancel = request.SubmittedBy == scope.UserID ||
 		(request.Subject.Type == SubjectWorkloadApplication && request.SponsorUserID == scope.UserID)
-	if scope.OrganizationRole == auth.RolePlatformAdmin ||
+	if (scope.OrganizationRole == auth.RolePlatformAdmin && (!scope.EnforceOrgBoundary || scope.OrgID == request.OrgID)) ||
 		(scope.OrgID == request.OrgID && scope.OrganizationRole == auth.RoleOrgAdmin) {
 		actions.CanApprove = true
 		actions.CanReject = true

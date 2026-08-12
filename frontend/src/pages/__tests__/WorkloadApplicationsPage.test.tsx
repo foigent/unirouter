@@ -147,7 +147,7 @@ describe('ApplicationsV2Page', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    useAuthStore.setState({ token: 'token', isAuthenticated: true, profileLoading: false, user: { id: 1, username: 'admin', organization_role: 'platform_admin', role: 'platform_admin', org_id: 1, org_name: '总部' } });
+    useAuthStore.setState({ token: 'token', isAuthenticated: true, profileLoading: false, user: { id: 1, username: 'admin', organization_role: 'platform_admin', role: 'platform_admin', org_id: 99, org_name: '技术组织', customer_context: { state: 'ready', org_id: 1, org_name: '总部' } } });
     clientMocks.getContract.mockResolvedValue({
       contract_version: 'unirouter.workload-application.v2', readiness_version: 'unirouter.workload-readiness.v1',
       client_profiles: [{ profile_id: 'client.openai-sdk.chat.v1', display_name: 'OpenAI SDK', runtime_state: 'runtime_supported', supported_endpoints: ['/v1/chat/completions'], configuration_note: 'optional' }],
@@ -197,7 +197,23 @@ describe('ApplicationsV2Page', () => {
     expect(screen.getByText('interactive_client_requires_review')).toBeTruthy();
     expect(screen.getByText(/不自动迁移、不推断、不提供写操作/)).toBeTruthy();
     expect(accessMocks.previewLegacy).toHaveBeenCalledTimes(1);
+    expect(accessMocks.previewLegacy).toHaveBeenCalledWith(1);
     expect(clientMocks.createApplication).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without a canonical customer and makes no customer-domain calls', async () => {
+    useAuthStore.setState({
+      token: 'token', isAuthenticated: true, profileLoading: false,
+      user: { id: 1, username: 'admin', organization_role: 'platform_admin', role: 'platform_admin', org_id: 99, customer_context: { state: 'ambiguous' } },
+    });
+
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&tab=legacy']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    expect(await screen.findByText('客户组织上下文不唯一')).toBeTruthy();
+    expect(clientMocks.getContract).not.toHaveBeenCalled();
+    expect(clientMocks.getProjects).not.toHaveBeenCalled();
+    expect(clientMocks.getApplications).not.toHaveBeenCalled();
+    expect(accessMocks.previewLegacy).not.toHaveBeenCalled();
   });
 
   it('keeps Grant and credential facts when the independent Request source fails', async () => {

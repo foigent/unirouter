@@ -5,9 +5,9 @@ import { api } from '../api/client';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, MoneyText, PageHeader, StatusTag, Surface } from '../ui';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { keyTypeOptions, requestStatusOptions, usageAnalyticsGroupOptions, usageScopeOptions, usageSourceOptions } from '../utils/displayLabels';
 import { formatCompactNumber, formatLatencyMs, formatPercent } from '../utils/formatNumber';
-import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
 
@@ -51,8 +51,7 @@ function retentionLabel(value?: string) {
 export default function UsageAnalyticsPage() {
   const user = useAuthStore((state) => state.user);
   const platform = isPlatformAdminRole(organizationRoleForUser(user));
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
-  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
+  const customerContext = resolveCustomerContext(user);
   const [rows, setRows] = useState<AnalyticsRow[]>([]);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [groupBy, setGroupBy] = useState('overall');
@@ -72,7 +71,8 @@ export default function UsageAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const requestVersion = useRef(0);
-  const targetOrgID = platform ? selectedOrgID : undefined;
+  const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
+  const customerContextReady = !platform || customerContext.state === 'ready';
 
   const filters = {
     group_by: groupBy,
@@ -123,29 +123,10 @@ export default function UsageAnalyticsPage() {
   };
 
   useEffect(() => {
+    if (!customerContextReady) return;
     load();
     return () => { requestVersion.current += 1; };
-  }, [groupBy, projectId, keyId, ownerUserId, keyType, scope, status, usageSource, model, alias, provider, channel, startTime, endTime, targetOrgID]);
-
-  useEffect(() => {
-    if (!platform) return;
-    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
-    loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
-      .then(setOrganizations)
-      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
-  }, [platform, user?.org_id]);
-
-  const changeOrganization = (value: unknown) => {
-    const orgID = Number(value);
-    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
-    setSelectedOrgID(orgID);
-    requestVersion.current += 1;
-    setRows([]);
-    setSummary(null);
-    setProjectId('');
-    setKeyId('');
-    setOwnerUserId('');
-  };
+  }, [customerContextReady, groupBy, projectId, keyId, ownerUserId, keyType, scope, status, usageSource, model, alias, provider, channel, startTime, endTime, targetOrgID]);
 
   const downloadCSV = async () => {
     try {
@@ -172,6 +153,16 @@ export default function UsageAnalyticsPage() {
     { title: '估算占比', dataIndex: 'estimated_ratio', key: 'estimated_ratio', render: (value: number) => <StatusTag status={(value || 0) > 0.2 ? 'warning' : 'ok'}>{formatPercent(value)}</StatusTag> },
   ];
 
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
+    return (
+      <div className="ur-page ur-page-wide">
+        <PageHeader eyebrow="监控与用量" title={blocker.title} description="用量和费用必须归属于唯一客户；系统不会把部署技术组织的数据当作客户用量。" />
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={260} /></Surface>
+      </div>
+    );
+  }
+
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
@@ -191,20 +182,7 @@ export default function UsageAnalyticsPage() {
         description="未设置筛选表示当前权限范围内全部数据。供应商是 provider family 或 adapter 维度；上游通道是一个具体配置实例，包含 endpoint、凭证、权重/优先级和可用模型。"
       >
         <div className="ur-inline-controls">
-          {platform && (
-            <>
-              <Text type="tertiary">目标组织</Text>
-              <Select
-                aria-label="目标组织"
-                placeholder="选择目标组织"
-                value={selectedOrgID}
-                optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
-                onChange={changeOrganization}
-                disabled={loading}
-                style={{ width: 220 }}
-              />
-            </>
-          )}
+          {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
           <Select value={groupBy} optionList={usageAnalyticsGroupOptions} onChange={(value) => updateAnalyticsFilter(() => setGroupBy(String(value || 'overall')))} style={{ width: 190 }} />
           <Select
             value={scope || undefined}

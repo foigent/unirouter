@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography, Tabs, TabPane } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
@@ -7,18 +7,13 @@ import { organizationRoleLabel, roleTagColor, userManagementOrganizationRoleOpti
 import { EmptyState, PageHeader, PasswordField, StatusTag, Surface } from '../ui';
 import { useAuthStore } from '../store/auth';
 import { canonicalOrganizationRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
-import { loadAllPages } from '../utils/loadAllPages';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import {
   LOCAL_PASSWORD_MAX_UTF8_BYTES,
   LOCAL_PASSWORD_MIN_CODE_POINTS,
   localPasswordCodePointCount,
   localPasswordUTF8ByteCount,
 } from '../utils/passwordPolicy';
-
-interface Organization {
-  id: number;
-  name: string;
-}
 
 const apiErrorCode = (error: ApiError) => {
   if (!error.payload || typeof error.payload !== 'object') return '';
@@ -28,8 +23,9 @@ const apiErrorCode = (error: ApiError) => {
 
 export default function UsersPage({ embedded = false }: { embedded?: boolean }) {
   const currentUser = useAuthStore((state) => state.user);
+  const customerContext = resolveCustomerContext(currentUser);
+  const customerOrgID = effectiveCustomerOrgID(currentUser);
   const [users, setUsers] = useState<any[]>([]);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -43,6 +39,13 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 
   const load = (p = page, size = pageSize, provider: 'local' | 'enterprise' = providerScope) => {
     const version = ++requestVersion.current;
+    if (!customerOrgID) {
+      setUsers([]);
+      setTotal(0);
+      setLoading(false);
+      setLoadError('');
+      return;
+    }
     setLoading(true);
     setLoadError('');
     setUsers([]);
@@ -64,23 +67,8 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 	useEffect(() => {
 		setPage(1);
 		load(1, pageSize, providerScope);
-	}, [providerScope]);
-  useEffect(() => {
-    const fallback = currentUser?.org_id
-      ? [{ id: currentUser.org_id, name: currentUser.org_name || `组织 #${currentUser.org_id}` }]
-      : [];
-    loadAllPages<Organization>((page, size) => api.getOrganizations(page, size))
-      .then((items) => {
-        setOrganizations(items.length ? items : fallback);
-      })
-      .catch(() => setOrganizations(fallback));
-  }, [currentUser?.org_id, currentUser?.org_name]);
-  const roleOptions = useMemo(
-    () => isPlatformAdminRole(organizationRoleForUser(currentUser))
-      ? userManagementOrganizationRoleOptions
-      : userManagementOrganizationRoleOptions.filter(option => option.value !== 'platform_admin'),
-    [currentUser?.organization_role, currentUser?.role],
-  );
+	}, [customerOrgID, providerScope]);
+  const roleOptions = userManagementOrganizationRoleOptions.filter(option => option.value !== 'platform_admin');
 
   const closeDrawer = () => { setShowDrawer(false); setEditUser(null); };
 
@@ -103,8 +91,12 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         });
         Toast.success('更新成功');
       } else {
+        if (!customerOrgID) {
+          Toast.error('无法确认客户组织，未创建用户');
+          return;
+        }
         await api.createUser({
-          org_id: Number(v.org_id),
+          org_id: customerOrgID,
           username: v.username,
           password: v.password,
           organization_role: v.organization_role,
@@ -168,20 +160,31 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     formApi.reset();
     if (editUser) {
       formApi.setValues({
-        org_id: editUser.org_id,
         username: editUser.username,
         organization_role: editUser.organization_role || 'member',
         status: editUser.status,
       });
     } else {
-      const defaultOrgID = Number(currentUser?.org_id || organizations[0]?.id || 0) || undefined;
       formApi.setValues({
-        org_id: defaultOrgID,
         organization_role: 'member',
         status: 'active',
       });
     }
-  }, [currentUser?.org_id, editUser, formApi, organizations, showDrawer]);
+  }, [editUser, formApi, showDrawer]);
+
+  if (customerContext.state !== 'ready') {
+    const blocker = customerContextBlockerCopy(customerContext.state);
+    return (
+      <div className={embedded ? 'ur-embedded-page' : 'ur-page'}>
+        {!embedded ? (
+          <PageHeader eyebrow="访问与安全" title="用户管理" description="本页只管理当前部署唯一客户组织中的身份。" />
+        ) : null}
+        <Surface>
+          <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
+        </Surface>
+      </div>
+    );
+  }
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     {
@@ -239,7 +242,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         <div className="ur-embedded-heading">
           <div>
             <Typography.Title heading={4} style={{ margin: 0 }}>账号与身份</Typography.Title>
-            <Typography.Text type="tertiary">创建登录账号并设置组织角色；项目角色在“项目与成员”中按项目独立维护。</Typography.Text>
+            <Typography.Text type="tertiary">当前客户：{customerContext.orgName || `组织 #${customerOrgID}`}。创建登录账号并设置组织角色；项目角色在“项目与成员”中按项目独立维护。</Typography.Text>
           </div>
 			{providerScope === 'local' && <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
         </div>
@@ -289,14 +292,6 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           {editUser?.auth_provider !== 'local' && <Typography.Paragraph type="tertiary">
             登录来源、外部 subject、用户名与邮箱由 OIDC / 企业目录提供；下面的组织角色与账号状态是 UniRouter 本地治理事实。
           </Typography.Paragraph>}
-          <Form.Select
-            field="org_id"
-            label="所属组织"
-            disabled={!!editUser || (!isPlatformAdminRole(organizationRoleForUser(currentUser)) && organizations.length <= 1)}
-            optionList={organizations.map(org => ({ label: `${org.name} (#${org.id})`, value: org.id }))}
-            rules={[{ required: true, message: '请选择所属组织' }]}
-            style={{ width: '100%' }}
-          />
           <Form.Input
             field="username"
             label="用户名"

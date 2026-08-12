@@ -5,9 +5,8 @@ import { api } from '../api/client';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState } from '../ui';
-import { loadAllPages } from '../utils/loadAllPages';
-
-interface Organization { id: number; name: string }
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
+import { parseModelList } from '../utils/modelList';
 
 interface AuthorizationContract {
   contract_version: string;
@@ -47,7 +46,7 @@ const endpointLabels: Record<string, string> = {
 };
 
 function splitSet(value: unknown) {
-  return String(value || '').split(/[,，\n\r]+/).map(item => item.trim()).filter(Boolean);
+  return parseModelList(value);
 }
 
 function statusColor(status: string) {
@@ -59,8 +58,9 @@ function statusColor(status: string) {
 export default function ModelAuthorizationWorkspace() {
   const user = useAuthStore(state => state.user);
   const platform = isPlatformAdminRole(organizationRoleForUser(user));
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [orgID, setOrgID] = useState<number | undefined>(user?.org_id);
+  const customerContext = resolveCustomerContext(user);
+  const orgID = effectiveCustomerOrgID(user);
+  const customerContextReady = customerContext.state === 'ready' && Boolean(orgID);
   const [contract, setContract] = useState<AuthorizationContract | null>(null);
   const [policies, setPolicies] = useState<ModelAuthorization[]>([]);
   const [selectedRef, setSelectedRef] = useState('');
@@ -74,26 +74,17 @@ export default function ModelAuthorizationWorkspace() {
   const selected = policies.find(item => item.authorization_ref === selectedRef) || policies[0] || null;
 
   useEffect(() => {
+    if (!customerContextReady) return;
     api.getModelAuthorizationContract().then(setContract).catch((loadError: any) => setError(loadError?.message || '授权合同不可用'));
-  }, []);
-
-  useEffect(() => {
-    if (!platform) return;
-    loadAllPages<Organization>((page, size) => api.getOrganizations(page, size))
-      .then(items => {
-        setOrganizations(items);
-        setOrgID(current => current || items[0]?.id);
-      })
-      .catch((loadError: any) => setError(loadError?.message || '组织列表不可用'));
-  }, [platform]);
+  }, [customerContextReady]);
 
   const load = useCallback(async () => {
-    if (platform && !orgID) return;
+    if (!customerContextReady || !orgID) return;
     setLoading(true);
     setError('');
     try {
       const data = await api.getModelAuthorizations(platform ? orgID : undefined, status);
-      const next = (data?.data || []) as ModelAuthorization[];
+      const next = ((data?.data || []) as ModelAuthorization[]).filter(item => item.org_id === orgID);
       setPolicies(next);
       setSelectedRef(current => next.some(item => item.authorization_ref === current) ? current : next[0]?.authorization_ref || '');
     } catch (loadError: any) {
@@ -102,7 +93,7 @@ export default function ModelAuthorizationWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [orgID, platform, status]);
+  }, [customerContextReady, orgID, platform, status]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -113,8 +104,8 @@ export default function ModelAuthorizationWorkspace() {
   }), [policies]);
 
   const create = async (values: Record<string, any>) => {
-    if (platform && !orgID) {
-      Toast.error('请先选择目标组织');
+    if (!customerContextReady || !orgID) {
+      Toast.error('无法确认唯一客户组织');
       return;
     }
     const models = splitSet(values.allowed_models);
@@ -178,6 +169,11 @@ export default function ModelAuthorizationWorkspace() {
     { title: '修订', dataIndex: 'revision', width: 80, render: (value: number) => `r${value}` },
   ];
 
+  if (!customerContextReady || !orgID) {
+    const blocker = customerContextBlockerCopy(customerContext.state === 'ready' ? 'unavailable' : customerContext.state);
+    return <EmptyState title={blocker.title} description={blocker.description} minHeight={320} />;
+  }
+
   return (
     <>
       <Banner type="info" description="这是 UniRouter 的模型调用 PEP：显式拒绝优先，多个主体的允许范围取交集；它只能缩小现有访问凭证、项目、人员和 Agent 能力，不能授予 Tool 或 MCP 权限。" />
@@ -194,10 +190,10 @@ export default function ModelAuthorizationWorkspace() {
               <Typography.Text className="ur-panel-hint">{contract?.contract_version || '正在加载合同'} · 当前环境 {contract?.environment || '-'}</Typography.Text>
             </div>
             <Space>
-              {platform && <Select aria-label="授权目标组织" value={orgID} onChange={value => setOrgID(Number(value))} optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))} style={{ width: 210 }} />}
+              {platform && <Typography.Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${orgID}`}</Typography.Text>}
               <Select aria-label="授权状态筛选" value={status} onChange={value => setStatus(String(value || ''))} showClear placeholder="全部状态" optionList={[{ label: '草稿', value: 'draft' }, { label: '生效', value: 'active' }, { label: '已撤销', value: 'revoked' }]} style={{ width: 120 }} />
               <Button icon={<IconRefresh />} loading={loading} onClick={() => void load()}>刷新</Button>
-              <Button icon={<IconPlus />} type="primary" disabled={platform && !orgID} onClick={() => setSheetOpen(true)}>新增授权</Button>
+              <Button icon={<IconPlus />} type="primary" onClick={() => setSheetOpen(true)}>新增授权</Button>
             </Space>
           </div>
           {error ? <EmptyState title="授权策略加载失败" description={error} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} /> : (
@@ -210,7 +206,7 @@ export default function ModelAuthorizationWorkspace() {
           {selected ? <>
             <dl className="ur-financial-truth-detail">
               <dt>策略标识</dt><dd className="ur-mono-break">{selected.authorization_ref}</dd>
-              <dt>组织</dt><dd>#{selected.org_id}</dd>
+              <dt>客户范围</dt><dd>{customerContext.orgName || `组织 #${selected.org_id}`}</dd>
               <dt>主体</dt><dd>{subjectLabels[selected.subject_type] || selected.subject_type} · {selected.subject_ref}</dd>
               <dt>效果</dt><dd>{selected.effect === 'deny' ? '显式拒绝（最高优先级）' : '允许范围（与其他主体求交集）'}</dd>
               <dt>环境</dt><dd>{selected.environment}</dd>
@@ -223,8 +219,8 @@ export default function ModelAuthorizationWorkspace() {
               <dt>运行时变更</dt><dd>none（请求时只读判定）</dd>
             </dl>
             <div className="ur-governance-actions">
-              {selected.status === 'draft' && <Popconfirm title="激活该收窄策略？" content="激活后匹配请求将立即执行拒绝优先与允许范围交集。" onConfirm={() => void transition('授权策略已激活', () => api.activateModelAuthorization(selected.authorization_ref, selected.revision, platform ? selected.org_id : undefined))}><Button type="primary" loading={mutating}>激活</Button></Popconfirm>}
-              {selected.status === 'active' && <Popconfirm title="撤销该策略？" content="撤销只移除这一层收窄，不会扩大超过基础访问凭证、项目模型集或 Agent 能力。" onConfirm={() => void transition('授权策略已撤销', () => api.revokeModelAuthorization(selected.authorization_ref, selected.revision, platform ? selected.org_id : undefined))}><Button type="danger" loading={mutating}>撤销</Button></Popconfirm>}
+              {selected.status === 'draft' && <Popconfirm title="激活该收窄策略？" content="激活后匹配请求将立即执行拒绝优先与允许范围交集。" onConfirm={() => void transition('授权策略已激活', () => api.activateModelAuthorization(selected.authorization_ref, selected.revision, platform ? orgID : undefined))}><Button type="primary" loading={mutating}>激活</Button></Popconfirm>}
+              {selected.status === 'active' && <Popconfirm title="撤销该策略？" content="撤销只移除这一层收窄，不会扩大超过基础访问凭证、项目模型集或 Agent 能力。" onConfirm={() => void transition('授权策略已撤销', () => api.revokeModelAuthorization(selected.authorization_ref, selected.revision, platform ? orgID : undefined))}><Button type="danger" loading={mutating}>撤销</Button></Popconfirm>}
             </div>
           </> : <EmptyState title="选择一条授权策略" description="右侧固定显示主体、环境、模型、端点、理由与生命周期操作。" minHeight={300} />}
         </aside>

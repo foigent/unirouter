@@ -120,6 +120,10 @@ UPDATE xinsight_connector_control_bindings
 SET invitation_token_enc='opaque-revived-invitation'
 WHERE installation_id=$1`, redeemLifecycleInstallationID)
 	require.Error(t, err, "control_active must not regain invitation authority")
+	rollbackEmptyMigrations(t, pool, []string{
+		"000064_rate_card_request_pricing_authority.down.sql",
+		"000063_onprem_billing_mode.down.sql",
+	})
 
 	down, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
@@ -146,6 +150,10 @@ VALUES ($1,$2,$3,'opaque-encrypted-invitation')`,
 	)
 	require.NoError(t, err)
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	rollbackEmptyMigrations(t, pool, []string{
+		"000064_rate_card_request_pricing_authority.down.sql",
+		"000063_onprem_billing_mode.down.sql",
+	})
 
 	down, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),

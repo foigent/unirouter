@@ -74,7 +74,7 @@ describe('ApiDocsPage', () => {
       '部署级设置（仅平台管理员）',
       'License 状态（仅平台管理员）',
       '全局输入阻断词库（仅平台管理员）',
-      '本组织模型注册表；平台管理员可显式选择组织',
+      '唯一客户的模型注册表；部署管理员也自动绑定该客户上下文',
       '组织模型目录；org_viewer 可只读本组织，member 必须提供 project_id 并通过 live membership',
       '更新本组织别名；越权组织参数返回 403，越权或不存在的 ID 返回 404',
       '原子创建本组织模型集合及其全部初始条目',
@@ -135,7 +135,7 @@ describe('ApiDocsPage', () => {
     expect(screen.getByText('更新项目模型集合绑定')).toBeTruthy();
     expect(screen.getByText('查看项目成员与同组织可加入用户')).toBeTruthy();
     expect(screen.getByText('仅更新项目预算金额与周期并原子记录审计')).toBeTruthy();
-    expect(screen.getByText('本组织模型集合；项目管理员只读候选集合，平台管理员可显式选择组织')).toBeTruthy();
+    expect(screen.getByText('唯一客户的模型集合；项目管理员只读其有权项目的候选集合')).toBeTruthy();
     expect(screen.queryByText('内部状态与事件历史')).toBeNull();
     expect(screen.getByText('通知事件列表；项目管理员必须提供 project_id')).toBeTruthy();
     expect(screen.queryByText('在本组织创建模型注册记录；跨组织请求返回 403')).toBeNull();

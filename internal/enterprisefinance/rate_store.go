@@ -16,12 +16,13 @@ const (
 )
 
 type RateCardRecord struct {
-	ID                int64      `json:"id"`
-	Card              RateCard   `json:"card"`
-	ActivatedBy       string     `json:"activated_by,omitempty"`
-	SupersedesVersion *int64     `json:"supersedes_version,omitempty"`
-	ActivatedAt       *time.Time `json:"activated_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
+	ID                int64               `json:"id"`
+	Card              RateCard            `json:"card"`
+	SourceEvidence    *RateSourceEvidence `json:"source_evidence,omitempty"`
+	ActivatedBy       string              `json:"activated_by,omitempty"`
+	SupersedesVersion *int64              `json:"supersedes_version,omitempty"`
+	ActivatedAt       *time.Time          `json:"activated_at,omitempty"`
+	CreatedAt         time.Time           `json:"created_at"`
 }
 
 type PricingPersistResult struct {
@@ -31,6 +32,14 @@ type PricingPersistResult struct {
 	CreatedAt    time.Time       `json:"created_at"`
 }
 
+// RateCardActivationOptions makes replacement authority explicit. A caller
+// may name one exact current active card and version; activation never guesses
+// which card to retire.
+type RateCardActivationOptions struct {
+	SupersedesRateCardRef     string `json:"supersedes_rate_card_ref,omitempty"`
+	ExpectedSupersededVersion int64  `json:"expected_superseded_version,omitempty"`
+}
+
 func (s *PostgresStore) CreateRateCardDraft(ctx context.Context, card RateCard, actorRef string) (RateCardRecord, error) {
 	actorRef = strings.TrimSpace(actorRef)
 	card.ContractVersion = ContractVersion
@@ -38,6 +47,7 @@ func (s *PostgresStore) CreateRateCardDraft(ctx context.Context, card RateCard, 
 	card.Version = 1
 	card.CreatedBy = actorRef
 	card.ApprovedBy = ""
+	card.DailyPriceBands = canonicalDailyPriceBands(card.DailyPriceBands)
 	if actorRef == "" {
 		return RateCardRecord{}, invalid("rate_card_creator")
 	}
@@ -86,6 +96,9 @@ func (s *PostgresStore) ApproveRateCard(ctx context.Context, orgID int64, rateCa
 	if err := ValidateRateCard(next); err != nil {
 		return RateCardRecord{}, err
 	}
+	if err := ValidateRequestPricingRateCard(next); err != nil {
+		return RateCardRecord{}, err
+	}
 	record, err := insertRateCardVersion(ctx, tx, next, "", &current.Card.Version, nil)
 	if err != nil {
 		return RateCardRecord{}, err
@@ -97,10 +110,34 @@ func (s *PostgresStore) ApproveRateCard(ctx context.Context, orgID int64, rateCa
 }
 
 func (s *PostgresStore) ActivateRateCard(ctx context.Context, orgID int64, rateCardRef string, expectedVersion int64, actorRef string, activatedAt time.Time) (RateCardRecord, error) {
+	return s.ActivateRateCardWithSupersede(
+		ctx, orgID, rateCardRef, expectedVersion, RateCardActivationOptions{}, actorRef, activatedAt,
+	)
+}
+
+// ActivateRateCardWithSupersede atomically retires one exact conflicting
+// request-pricing card and activates its replacement. It rejects missing,
+// unnecessary or ambiguous replacement declarations and leaves both cards
+// unchanged on any failure.
+func (s *PostgresStore) ActivateRateCardWithSupersede(
+	ctx context.Context,
+	orgID int64,
+	rateCardRef string,
+	expectedVersion int64,
+	options RateCardActivationOptions,
+	actorRef string,
+	activatedAt time.Time,
+) (RateCardRecord, error) {
 	rateCardRef, actorRef = strings.TrimSpace(rateCardRef), strings.TrimSpace(actorRef)
+	options.SupersedesRateCardRef = strings.TrimSpace(options.SupersedesRateCardRef)
 	if orgID <= 0 || rateCardRef == "" || expectedVersion <= 0 || actorRef == "" || !validTime(activatedAt) {
 		return RateCardRecord{}, invalid("rate_card_activation")
 	}
+	if (options.SupersedesRateCardRef == "") != (options.ExpectedSupersededVersion == 0) ||
+		options.ExpectedSupersededVersion < 0 || options.SupersedesRateCardRef == rateCardRef {
+		return RateCardRecord{}, invalid("rate_card_supersede_identity")
+	}
+	activatedAt = activatedAt.UTC().Truncate(time.Microsecond)
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return RateCardRecord{}, fmt.Errorf("begin rate-card activation: %w", err)
@@ -115,6 +152,129 @@ func (s *PostgresStore) ActivateRateCard(ctx context.Context, orgID int64, rateC
 	}
 	if current.Card.Version != expectedVersion || current.Card.State != RateApproved {
 		return RateCardRecord{}, ErrConflict
+	}
+	if err := ValidateRequestPricingRateCard(current.Card); err != nil {
+		return RateCardRecord{}, err
+	}
+	if activatedAt.Before(current.Card.EffectiveFrom) ||
+		(current.Card.EffectiveTo != nil && !activatedAt.Before(*current.Card.EffectiveTo)) {
+		return RateCardRecord{}, fmt.Errorf("%w: candidate Rate Card is not effective at activation time", ErrRequestPricingNotReady)
+	}
+	if current.Card.Layer == RateProviderList {
+		var sourceKind, sourceURL, sourceRevision, payloadSHA256, transformVersion, currency, unitContract, importedBy string
+		var fetchedAt, lastSuccessAt, staleAfter time.Time
+		err := tx.QueryRow(ctx, `
+			SELECT source_kind,source_url,source_revision,fetched_at,payload_sha256,
+			       transform_version,currency,unit_contract,last_success_at,stale_after,imported_by
+			FROM enterprise_finance_rate_source_evidence
+			WHERE org_id=$1 AND evidence_ref=$2`, orgID, strings.TrimSpace(current.Card.SourceEvidenceRef),
+		).Scan(
+			&sourceKind, &sourceURL, &sourceRevision, &fetchedAt, &payloadSHA256,
+			&transformVersion, &currency, &unitContract, &lastSuccessAt, &staleAfter, &importedBy,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return RateCardRecord{}, fmt.Errorf("%w: provider-list source evidence is missing", ErrRequestPricingNotReady)
+		}
+		if err != nil {
+			return RateCardRecord{}, fmt.Errorf("load provider-list source evidence: %w", err)
+		}
+		if sourceKind != RateSourceOfficialImport && sourceKind != RateSourceLegacyModel {
+			return RateCardRecord{}, fmt.Errorf("%w: provider-list source evidence kind %s", ErrRequestPricingNotReady, sourceKind)
+		}
+		if err := ValidateRateSourceEvidence(RateSourceEvidence{
+			OrgID: orgID, EvidenceRef: current.Card.SourceEvidenceRef, SourceKind: sourceKind,
+			SourceURL: sourceURL, SourceRevision: sourceRevision, FetchedAt: fetchedAt.UTC(),
+			PayloadSHA256: payloadSHA256, TransformVersion: transformVersion, Currency: currency,
+			UnitContract: unitContract, LastSuccessAt: lastSuccessAt.UTC(), StaleAfter: staleAfter.UTC(),
+			ImportedBy: importedBy,
+		}); err != nil {
+			return RateCardRecord{}, fmt.Errorf("%w: invalid provider-list source evidence: %v", ErrRequestPricingNotReady, err)
+		}
+		if !activatedAt.Before(staleAfter.UTC()) {
+			return RateCardRecord{}, fmt.Errorf("%w: provider-list source evidence is stale at activation time", ErrRequestPricingNotReady)
+		}
+	}
+	if current.Card.Layer == RateSupplierContract || current.Card.Layer == RateProviderList {
+		rows, err := tx.Query(ctx, `
+			SELECT other.rate_card_ref,other.version,other.effective_from,other.effective_to
+			FROM enterprise_finance_rate_card_versions other
+			WHERE other.org_id=$1
+			  AND other.rate_card_ref<>$2
+			  AND other.model_ref=$3 AND other.layer=$4
+			  AND other.state='active'
+			  AND other.version=(
+			    SELECT MAX(latest.version) FROM enterprise_finance_rate_card_versions latest
+			    WHERE latest.org_id=other.org_id AND latest.rate_card_ref=other.rate_card_ref
+			  )
+			  AND other.effective_from < COALESCE($5,'infinity'::timestamptz)
+			  AND COALESCE(other.effective_to,'infinity'::timestamptz) > $6`,
+			orgID, rateCardRef, current.Card.ModelRef, current.Card.Layer,
+			current.Card.EffectiveTo, activatedAt,
+		)
+		if err != nil {
+			return RateCardRecord{}, fmt.Errorf("check request-pricing provider ambiguity: %w", err)
+		}
+		type activeCollision struct {
+			ref       string
+			version   int64
+			effective time.Time
+			expires   *time.Time
+		}
+		collisions := make([]activeCollision, 0, 2)
+		for rows.Next() {
+			var collision activeCollision
+			if err := rows.Scan(&collision.ref, &collision.version, &collision.effective, &collision.expires); err != nil {
+				rows.Close()
+				return RateCardRecord{}, fmt.Errorf("scan request-pricing provider ambiguity: %w", err)
+			}
+			collisions = append(collisions, collision)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return RateCardRecord{}, fmt.Errorf("iterate request-pricing provider ambiguity: %w", err)
+		}
+		rows.Close()
+
+		switch len(collisions) {
+		case 0:
+			if options.SupersedesRateCardRef != "" {
+				return RateCardRecord{}, fmt.Errorf("%w: supersedes declaration is unnecessary", ErrConflict)
+			}
+		case 1:
+			collision := collisions[0]
+			if options.SupersedesRateCardRef == "" {
+				return RateCardRecord{}, fmt.Errorf("%w: activation requires an explicit supersedes declaration", ErrRequestPricingAmbiguous)
+			}
+			if collision.ref != options.SupersedesRateCardRef || collision.version != options.ExpectedSupersededVersion {
+				return RateCardRecord{}, fmt.Errorf("%w: activation requires the exact conflicting active Rate Card", ErrConflict)
+			}
+			if activatedAt.Before(collision.effective) ||
+				(collision.expires != nil && !activatedAt.Before(*collision.expires)) {
+				return RateCardRecord{}, fmt.Errorf("%w: conflicting Rate Card is not current at activation time", ErrConflict)
+			}
+			superseded, err := loadLatestRateCard(ctx, tx, orgID, collision.ref, true)
+			if err != nil {
+				return RateCardRecord{}, err
+			}
+			if superseded.Card.Version != options.ExpectedSupersededVersion || superseded.Card.State != RateActive ||
+				superseded.Card.ModelRef != current.Card.ModelRef || superseded.Card.Layer != current.Card.Layer {
+				return RateCardRecord{}, ErrConflict
+			}
+			retired := superseded.Card
+			retired.Version++
+			retired.State = RateRetired
+			if err := ValidateRateCard(retired); err != nil {
+				return RateCardRecord{}, err
+			}
+			if _, err := insertRateCardVersion(ctx, tx, retired, actorRef, &superseded.Card.Version, &activatedAt); err != nil {
+				return RateCardRecord{}, err
+			}
+		default:
+			return RateCardRecord{}, fmt.Errorf("%w: model_ref %s has %d overlapping active cards at layer %s",
+				ErrRequestPricingAmbiguous, current.Card.ModelRef, len(collisions), current.Card.Layer)
+		}
+	} else if options.SupersedesRateCardRef != "" {
+		return RateCardRecord{}, invalid("rate_card_supersede_layer")
 	}
 	var collisions int
 	err = tx.QueryRow(ctx, `
@@ -165,7 +325,7 @@ func (s *PostgresStore) ListLatestRateCards(ctx context.Context, orgID int64) ([
 	rows, err := s.db.Query(ctx, `
 		SELECT DISTINCT ON (rate_card_ref)
 		  id,rate_card_ref,version,provider_ref,model_ref,layer,state,effective_from,effective_to,
-		  source_evidence_ref,created_by,approved_by,activated_by,supersedes_version,activated_at,created_at
+		  source_evidence_ref,daily_price_bands,created_by,approved_by,activated_by,supersedes_version,activated_at,created_at
 		FROM enterprise_finance_rate_card_versions
 		WHERE org_id=$1 ORDER BY rate_card_ref,version DESC`, orgID)
 	if err != nil {
@@ -174,17 +334,23 @@ func (s *PostgresStore) ListLatestRateCards(ctx context.Context, orgID int64) ([
 	metas := make([]RateCardRecord, 0)
 	for rows.Next() {
 		var record RateCardRecord
+		var dailyPriceBandsJSON []byte
 		record.Card.ContractVersion = ContractVersion
 		record.Card.OrgID = orgID
 		if err := rows.Scan(
 			&record.ID, &record.Card.RateCardRef, &record.Card.Version, &record.Card.ProviderRef,
 			&record.Card.ModelRef, &record.Card.Layer, &record.Card.State,
-			&record.Card.EffectiveFrom, &record.Card.EffectiveTo, &record.Card.SourceEvidenceRef,
+			&record.Card.EffectiveFrom, &record.Card.EffectiveTo, &record.Card.SourceEvidenceRef, &dailyPriceBandsJSON,
 			&record.Card.CreatedBy, &record.Card.ApprovedBy, &record.ActivatedBy,
 			&record.SupersedesVersion, &record.ActivatedAt, &record.CreatedAt,
 		); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("scan latest rate card: %w", err)
+		}
+		record.Card.DailyPriceBands, err = unmarshalDailyPriceBands(dailyPriceBandsJSON)
+		if err != nil {
+			rows.Close()
+			return nil, err
 		}
 		metas = append(metas, normalizeRateCardRecord(record))
 	}
@@ -199,6 +365,20 @@ func (s *PostgresStore) ListLatestRateCards(ctx context.Context, orgID int64) ([
 			return nil, err
 		}
 		metas[i].Card.Components = components
+	}
+	evidence, err := s.ListRateSourceEvidence(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	byRef := make(map[string]RateSourceEvidence, len(evidence))
+	for _, item := range evidence {
+		byRef[item.EvidenceRef] = item
+	}
+	for i := range metas {
+		if item, ok := byRef[metas[i].Card.SourceEvidenceRef]; ok {
+			value := item
+			metas[i].SourceEvidence = &value
+		}
 	}
 	return metas, nil
 }
@@ -244,21 +424,11 @@ func (s *PostgresStore) PersistPricingSnapshot(ctx context.Context, snapshot Pri
 		return PricingPersistResult{}, fmt.Errorf("check pricing snapshot replay: %w", err)
 	}
 	for _, binding := range snapshot.Bindings {
-		var matches int
-		if err := tx.QueryRow(ctx, `
-			SELECT COUNT(*)
-			FROM enterprise_finance_rate_card_versions card
-			JOIN enterprise_finance_rate_components component
-			  ON component.rate_card_version_id=card.id AND component.org_id=card.org_id
-			WHERE card.org_id=$1 AND card.rate_card_ref=$2 AND card.version=$3
-			  AND card.state='active' AND component.meter=$4 AND component.component_hash=$5
-			  AND card.effective_from <= $6 AND (card.effective_to IS NULL OR card.effective_to > $6)`,
-			snapshot.OrgID, binding.RateCardRef, binding.RateCardVersion,
-			binding.Meter, binding.RateComponentHash, snapshot.PricedAt,
-		).Scan(&matches); err != nil {
-			return PricingPersistResult{}, fmt.Errorf("validate pricing binding: %w", err)
+		matches, err := exactPricingBindingMatches(ctx, tx, snapshot, binding)
+		if err != nil {
+			return PricingPersistResult{}, err
 		}
-		if matches != 1 {
+		if !matches {
 			return PricingPersistResult{}, fmt.Errorf("%w: pricing binding is not an exact active component", ErrConflict)
 		}
 	}
@@ -294,6 +464,48 @@ func (s *PostgresStore) PersistPricingSnapshot(ctx context.Context, snapshot Pri
 		Result: PricingPersistApplied, Snapshot: snapshot,
 		BindingCount: len(snapshot.Bindings), CreatedAt: createdAt.UTC(),
 	}, nil
+}
+
+func exactPricingBindingMatches(ctx context.Context, tx pgx.Tx, snapshot PricingSnapshot, binding PricingBinding) (bool, error) {
+	var cardID int64
+	var dailyPriceBandsJSON []byte
+	err := tx.QueryRow(ctx, `
+		SELECT id,daily_price_bands
+		FROM enterprise_finance_rate_card_versions
+		WHERE org_id=$1 AND rate_card_ref=$2 AND version=$3 AND state='active'
+		  AND effective_from <= $4 AND (effective_to IS NULL OR effective_to > $4)`,
+		snapshot.OrgID, strings.TrimSpace(binding.RateCardRef), binding.RateCardVersion, snapshot.PricedAt,
+	).Scan(&cardID, &dailyPriceBandsJSON)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("load pricing binding authority: %w", err)
+	}
+	components, err := loadRateComponents(ctx, tx, cardID)
+	if err != nil {
+		return false, err
+	}
+	bands, err := unmarshalDailyPriceBands(dailyPriceBandsJSON)
+	if err != nil {
+		return false, err
+	}
+	if band, scheduled, selectErr := selectDailyPriceBand(bands, snapshot.PricedAt); selectErr != nil {
+		return false, fmt.Errorf("validate pricing binding UTC schedule: %w", selectErr)
+	} else if scheduled {
+		components = band.Components
+	}
+	for _, component := range components {
+		if component.Meter != binding.Meter {
+			continue
+		}
+		identity, identityErr := RateComponentIdentity(component)
+		if identityErr != nil {
+			return false, identityErr
+		}
+		return identity == binding.RateComponentHash, nil
+	}
+	return false, nil
 }
 
 func (s *PostgresStore) GetPricingSnapshot(ctx context.Context, orgID int64, requestRef string) (PricingPersistResult, error) {
@@ -355,15 +567,20 @@ func insertRateCardVersion(ctx context.Context, tx pgx.Tx, card RateCard, activa
 	record.ActivatedBy = strings.TrimSpace(activatedBy)
 	record.SupersedesVersion = supersedes
 	record.ActivatedAt = activatedAt
-	err := tx.QueryRow(ctx, `
+	dailyPriceBandsJSON, err := marshalDailyPriceBands(card.DailyPriceBands)
+	if err != nil {
+		return RateCardRecord{}, err
+	}
+	record.Card.DailyPriceBands = canonicalDailyPriceBands(card.DailyPriceBands)
+	err = tx.QueryRow(ctx, `
 		INSERT INTO enterprise_finance_rate_card_versions (
 		  org_id,rate_card_ref,version,provider_ref,model_ref,layer,state,effective_from,effective_to,
-		  source_evidence_ref,created_by,approved_by,activated_by,supersedes_version,activated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		  source_evidence_ref,daily_price_bands,created_by,approved_by,activated_by,supersedes_version,activated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16)
 		RETURNING id,created_at`,
 		card.OrgID, strings.TrimSpace(card.RateCardRef), card.Version,
 		strings.TrimSpace(card.ProviderRef), strings.TrimSpace(card.ModelRef), card.Layer, card.State,
-		card.EffectiveFrom, card.EffectiveTo, strings.TrimSpace(card.SourceEvidenceRef),
+		card.EffectiveFrom, card.EffectiveTo, strings.TrimSpace(card.SourceEvidenceRef), dailyPriceBandsJSON,
 		strings.TrimSpace(card.CreatedBy), strings.TrimSpace(card.ApprovedBy), record.ActivatedBy,
 		supersedes, activatedAt,
 	).Scan(&record.ID, &record.CreatedAt)
@@ -421,19 +638,20 @@ func loadRateComponents(ctx context.Context, queryer rateComponentQueryer, rateC
 func loadLatestRateCard(ctx context.Context, tx pgx.Tx, orgID int64, rateCardRef string, lock bool) (RateCardRecord, error) {
 	query := `
 		SELECT id,rate_card_ref,version,provider_ref,model_ref,layer,state,effective_from,effective_to,
-		       source_evidence_ref,created_by,approved_by,activated_by,supersedes_version,activated_at,created_at
+		       source_evidence_ref,daily_price_bands,created_by,approved_by,activated_by,supersedes_version,activated_at,created_at
 		FROM enterprise_finance_rate_card_versions
 		WHERE org_id=$1 AND rate_card_ref=$2 ORDER BY version DESC LIMIT 1`
 	if lock {
 		query += ` FOR UPDATE`
 	}
 	var record RateCardRecord
+	var dailyPriceBandsJSON []byte
 	record.Card.ContractVersion = ContractVersion
 	record.Card.OrgID = orgID
 	err := tx.QueryRow(ctx, query, orgID, rateCardRef).Scan(
 		&record.ID, &record.Card.RateCardRef, &record.Card.Version, &record.Card.ProviderRef,
 		&record.Card.ModelRef, &record.Card.Layer, &record.Card.State,
-		&record.Card.EffectiveFrom, &record.Card.EffectiveTo, &record.Card.SourceEvidenceRef,
+		&record.Card.EffectiveFrom, &record.Card.EffectiveTo, &record.Card.SourceEvidenceRef, &dailyPriceBandsJSON,
 		&record.Card.CreatedBy, &record.Card.ApprovedBy, &record.ActivatedBy,
 		&record.SupersedesVersion, &record.ActivatedAt, &record.CreatedAt,
 	)
@@ -442,6 +660,10 @@ func loadLatestRateCard(ctx context.Context, tx pgx.Tx, orgID int64, rateCardRef
 	}
 	if err != nil {
 		return RateCardRecord{}, fmt.Errorf("load latest rate card: %w", err)
+	}
+	record.Card.DailyPriceBands, err = unmarshalDailyPriceBands(dailyPriceBandsJSON)
+	if err != nil {
+		return RateCardRecord{}, err
 	}
 	record.Card.Components, err = loadRateComponents(ctx, tx, record.ID)
 	if err != nil {

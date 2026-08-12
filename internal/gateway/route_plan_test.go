@@ -33,6 +33,17 @@ type routePlanRow struct {
 	dbNow                time.Time
 }
 
+func TestChannelQueryUsesExactCanonicalModelMembership(t *testing.T) {
+	for _, required := range []string{"regexp_split_to_table", "[,，;；\\r\\n]+", "BTRIM(configured.model) = $1"} {
+		if !strings.Contains(channelQuery, required) {
+			t.Fatalf("channelQuery missing %q: %s", required, channelQuery)
+		}
+	}
+	if strings.Contains(channelQuery, " LIKE ") {
+		t.Fatalf("channelQuery must not interpret model identifiers as LIKE patterns: %s", channelQuery)
+	}
+}
+
 func (row routePlanRow) scan(dest ...any) error {
 	*dest[0].(*int64) = row.id
 	*dest[1].(*string) = row.name

@@ -16,6 +16,8 @@ import (
 	"github.com/uniroute/unirouter/internal/accessgrantboundary"
 	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/enterprisefinance"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
@@ -85,7 +87,7 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 	projectRoute := "/organization-members?section=projects&project_id=" + strconv.FormatInt(projectID, 10)
 	response.ProjectCaller.Project = readinessProjectAxis(projectStatus, h.readinessFixRoute(r, projectRoute, h.canWriteProject(r.Context(), projectID)))
-	response.ProjectCaller.ProjectBudget = readinessProjectBudgetAxis(budgetCents, budgetPeriod,
+	response.ProjectCaller.ProjectBudget = readinessProjectBudgetAxis(h.effectiveBillingMode(), budgetCents, budgetPeriod,
 		h.readinessFixRoute(r, projectRoute+"&tab=budget", h.canWriteProject(r.Context(), projectID)))
 
 	access, accessErr := modelgov.CheckAccess(r.Context(), h.db, orgID, projectID, requestedModel)
@@ -108,11 +110,31 @@ func readinessProjectAxis(status, fixRoute string) modelreadiness.Axis {
 	return modelreadiness.Blocked("project_inactive", modelreadiness.Evidence("status", status), fixRoute, "project_admin")
 }
 
-func readinessProjectBudgetAxis(budget sql.NullInt64, period, fixRoute string) modelreadiness.Axis {
-	if !budget.Valid {
-		return modelreadiness.Optional("project_budget_not_configured_monitoring_only", modelreadiness.Evidence("configured", false))
+func readinessProjectBudgetAxis(mode billing.BillingMode, budget sql.NullInt64, period, fixRoute string) modelreadiness.Axis {
+	if mode == billing.BillingModeCostObservation {
+		evidence := modelreadiness.Evidence(
+			"configured", budget.Valid,
+			"billing_mode", string(mode),
+			"project_budget_admission_required", false,
+			"project_budget_enforced", false,
+			"calculated_cost_budget_alerts_available", false,
+		)
+		if budget.Valid {
+			evidence["period"] = period
+			return modelreadiness.Warning("project_budget_configured_only_not_enforced_under_cost_observation", evidence, fixRoute, "project_admin")
+		}
+		return modelreadiness.Optional("project_budget_not_configured_or_enforced_under_cost_observation", evidence)
 	}
-	return modelreadiness.Warning("project_budget_monitoring_only", modelreadiness.Evidence("configured", true, "period", period), fixRoute, "project_admin")
+	evidence := modelreadiness.Evidence(
+		"configured", budget.Valid,
+		"billing_mode", string(mode),
+		"project_budget_admission_required", false,
+	)
+	if !budget.Valid {
+		return modelreadiness.Optional("project_budget_not_configured_monitoring_only", evidence)
+	}
+	evidence["period"] = period
+	return modelreadiness.Warning("project_budget_monitoring_only", evidence, fixRoute, "project_admin")
 }
 
 func (h *Handler) readinessGovernanceAxes(r *http.Request, orgID, projectID int64, access modelgov.AccessResult, accessErr error) (modelreadiness.Axis, modelreadiness.Axis) {
@@ -182,15 +204,7 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 		}
 	}
 
-	var priceExists bool
-	if err := h.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM model_prices WHERE model_name=$1)`, model).Scan(&priceExists); err != nil {
-		response.PlatformModel.PriceAuthority = modelreadiness.Unavailable("model_price_unavailable")
-	} else if priceExists {
-		response.PlatformModel.PriceAuthority = modelreadiness.Ready("model_price_configured", modelreadiness.Evidence("configured", true))
-	} else {
-		response.PlatformModel.PriceAuthority = modelreadiness.Blocked("model_price_missing", modelreadiness.Evidence("configured", false),
-			h.readinessFixRoute(r, "/model-prices?model="+url.QueryEscape(model), actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin), "platform_admin")
-	}
+	response.PlatformModel.PriceAuthority = h.readinessPriceAuthorityAxis(r, orgID, model)
 
 	if h.routingController == nil {
 		response.PlatformModel.Channel = modelreadiness.Unavailable("routing_preview_unavailable")
@@ -234,17 +248,94 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 	}
 }
 
+func (h *Handler) readinessPriceAuthorityAxis(r *http.Request, orgID int64, model string) modelreadiness.Axis {
+	mode := h.effectiveRequestPricingAuthority()
+	if mode == string(billing.RequestPricingAuthorityRateCard) {
+		store, err := enterprisefinance.NewPostgresStore(h.db)
+		if err != nil {
+			return modelreadiness.Unavailable("rate_card_authority_unavailable")
+		}
+		quote, err := store.ResolveRequestPriceQuote(r.Context(), orgID, model, time.Now().UTC().Truncate(time.Microsecond))
+		if err != nil {
+			evidence := modelreadiness.Evidence(
+				"configured", false,
+				"request_pricing_mode", mode,
+				"selection_key", enterprisefinance.RequestPricingKey,
+			)
+			if errors.Is(err, enterprisefinance.ErrRequestPricingNotReady) || errors.Is(err, enterprisefinance.ErrRequestPricingAmbiguous) {
+				return modelreadiness.Blocked("rate_card_authority_not_ready", evidence,
+					h.readinessFixRoute(r, "/enterprise-finance?section=rate-cards&model="+url.QueryEscape(model),
+						actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin || actorOrganizationRole(r.Context()) == auth.RoleBillingAdmin),
+					"billing_admin")
+			}
+			return modelreadiness.Unavailable("rate_card_authority_unavailable")
+		}
+		return modelreadiness.Ready("rate_card_authority_resolved", modelreadiness.Evidence(
+			"configured", true,
+			"request_pricing_mode", mode,
+			"selection_key", quote.SelectionKey,
+			"rate_card_ref", quote.RateCardRef,
+			"rate_card_version", quote.RateCardVersion,
+			"layer", quote.Layer,
+			"provider_ref", quote.ProviderRef,
+			"pricing_version", quote.PricingVersion,
+		))
+	}
+	if mode != string(billing.RequestPricingAuthorityLegacy) {
+		return modelreadiness.Unavailable("request_pricing_authority_invalid")
+	}
+	var priceExists bool
+	if err := h.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM model_prices WHERE model_name=$1)`, model).Scan(&priceExists); err != nil {
+		return modelreadiness.Unavailable("model_price_unavailable")
+	}
+	if priceExists {
+		return modelreadiness.Ready("model_price_configured", modelreadiness.Evidence(
+			"configured", true, "request_pricing_mode", mode,
+		))
+	}
+	return modelreadiness.Blocked("model_price_missing", modelreadiness.Evidence(
+		"configured", false, "request_pricing_mode", mode,
+	), h.readinessFixRoute(r, "/model-prices?model="+url.QueryEscape(model), actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin), "platform_admin")
+}
+
 func (h *Handler) readinessWalletAxis(r *http.Request, orgID int64, response *modelreadiness.Response) {
+	mode := h.effectiveBillingMode()
+	if mode == billing.BillingModeCostObservation {
+		response.ProjectCaller.Wallet = modelreadiness.Optional(
+			"wallet_not_used_for_cost_observation_admission",
+			modelreadiness.Evidence(
+				"billing_mode", string(mode),
+				"wallet_admission_required", false,
+			),
+		)
+		return
+	}
+	evidence := func(values ...any) map[string]any {
+		result := modelreadiness.Evidence(
+			"billing_mode", string(mode),
+			"wallet_admission_required", true,
+		)
+		for i := 0; i+1 < len(values); i += 2 {
+			if key, ok := values[i].(string); ok {
+				result[key] = values[i+1]
+			}
+		}
+		return result
+	}
 	var balance, granted, frozen int64
 	err := h.db.QueryRow(r.Context(), `SELECT balance_micros,granted_balance_micros,frozen_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&balance, &granted, &frozen)
 	if errors.Is(err, pgx.ErrNoRows) {
-		response.ProjectCaller.Wallet = modelreadiness.Blocked("wallet_missing", modelreadiness.Evidence("exists", false), "", "billing_admin")
+		response.ProjectCaller.Wallet = modelreadiness.Blocked("wallet_missing", evidence("exists", false), "", "billing_admin")
 	} else if err != nil {
-		response.ProjectCaller.Wallet = modelreadiness.Unavailable("wallet_unavailable")
+		response.ProjectCaller.Wallet = modelreadiness.Axis{
+			State:        modelreadiness.StateUnavailable,
+			ReasonCode:   "wallet_unavailable",
+			SafeEvidence: evidence(),
+		}
 	} else if balance+granted-frozen > 0 {
-		response.ProjectCaller.Wallet = modelreadiness.Ready("wallet_has_spendable_balance", modelreadiness.Evidence("exists", true, "has_spendable_balance", true))
+		response.ProjectCaller.Wallet = modelreadiness.Ready("wallet_has_spendable_balance", evidence("exists", true, "has_spendable_balance", true))
 	} else {
-		response.ProjectCaller.Wallet = modelreadiness.Blocked("wallet_no_spendable_balance", modelreadiness.Evidence("exists", true, "has_spendable_balance", false), "", "billing_admin")
+		response.ProjectCaller.Wallet = modelreadiness.Blocked("wallet_no_spendable_balance", evidence("exists", true, "has_spendable_balance", false), "", "billing_admin")
 	}
 }
 

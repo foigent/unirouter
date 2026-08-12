@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,21 @@ import (
 )
 
 const activePlatformAdminMutationLockID int64 = 8675309001
+
+func userMutationTargetScope(ctx context.Context) (orgID int64, platformUnconstrained bool, ok bool) {
+	if isUnauthenticatedUnitContext(ctx) {
+		return 0, false, true
+	}
+	orgID = middleware.GetOrgIDFromContext(ctx)
+	platformUnconstrained = actorOrganizationRole(ctx) == auth.RolePlatformAdmin
+	if actorOrgID, constrained := actorOrgConstraint(ctx); constrained {
+		if actorOrgID <= 0 {
+			return 0, false, false
+		}
+		return actorOrgID, false, true
+	}
+	return orgID, platformUnconstrained, orgID > 0
+}
 
 func resolveOrganizationRoleInput(organizationRole, legacyRole, defaultRole string) (string, error) {
 	var organizationRolePtr, legacyRolePtr *string
@@ -401,9 +417,14 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	targetScopeOrgID, platformUnconstrained, scopeOK := userMutationTargetScope(r.Context())
+	if !scopeOK {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
 
 	if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
-		TargetOrgID:              middleware.GetOrgIDFromContext(r.Context()),
+		TargetOrgID:              targetScopeOrgID,
 		AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
 		AdditionalUserIDs:        []int64{id},
 	}); err != nil {
@@ -419,8 +440,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		   FROM users
 		  WHERE id = $1
 		    AND ($2::boolean OR org_id = $3)
-		  FOR UPDATE`, id, actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin,
-		middleware.GetOrgIDFromContext(r.Context()),
+		  FOR UPDATE`, id, platformUnconstrained, targetScopeOrgID,
 	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus, &targetOffboardedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
@@ -605,9 +625,14 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	targetScopeOrgID, platformUnconstrained, scopeOK := userMutationTargetScope(r.Context())
+	if !scopeOK {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{"error": "Forbidden"})
+		return
+	}
 	if !isUnauthenticatedUnitContext(r.Context()) {
 		if _, err := h.reauthorizeCommittingActorTx(r.Context(), tx, committingActorRequirement{
-			TargetOrgID:              middleware.GetOrgIDFromContext(r.Context()),
+			TargetOrgID:              targetScopeOrgID,
 			AllowedOrganizationRoles: []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin},
 			AdditionalUserIDs:        []int64{id},
 		}); err != nil {
@@ -631,8 +656,7 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		   FROM users
 		  WHERE id = $1
 		    AND ($2::boolean OR org_id = $3 OR $3::bigint = 0)
-		  FOR UPDATE`, id, actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin,
-		middleware.GetOrgIDFromContext(r.Context()),
+		  FOR UPDATE`, id, platformUnconstrained, targetScopeOrgID,
 	).Scan(&targetOrgID, &targetOrganizationRole, &targetRole, &targetStatus, &existingOffboardedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})

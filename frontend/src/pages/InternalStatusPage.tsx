@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { Button, Select, Table, Toast, Typography } from '@douyinfe/semi-ui';
+import { Button, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconAlertTriangle, IconBell, IconRefresh, IconRoute, IconServer } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { authzContextForUser, canReadRuntimeStatus, hasLicensedFeature, isPlatformAdminRole, licenseRestrictionMessage } from '../navigation';
+import { authzContextForUser, canReadRuntimeStatus, hasLicensedFeature, licenseRestrictionMessage } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, PageHeader, StatusTag, Surface } from '../ui';
-import { loadAllPages } from '../utils/loadAllPages';
+import { resolveCustomerContext } from '../utils/customerContext';
 
 const { Text } = Typography;
 
@@ -241,7 +241,7 @@ function integrationMeta(integration?: RuntimeIntegration): ReactNode {
   const details = [
     integration.scrape_status ? `scrape ${integration.scrape_status}` : '',
     integration.version ? `v${integration.version}` : '',
-    integration.latency_ms ? `${integration.latency_ms} ms` : '',
+    integration.latency_ms !== undefined ? `${integration.latency_ms} ms` : '',
     integration.reason || '',
   ].filter(Boolean);
   if (!integration.url) return details.join(' / ') || '-';
@@ -251,6 +251,27 @@ function integrationMeta(integration?: RuntimeIntegration): ReactNode {
       {details.length > 0 ? ` / ${details.join(' / ')}` : ''}
     </span>
   );
+}
+
+function dependencyProbeMeta(dependency?: { latency_ms?: number; reason?: string }): ReactNode {
+  if (!dependency) return '-';
+  if (dependency.latency_ms !== undefined) {
+    return (
+      <span>
+        {dependency.latency_ms} ms
+        <br />
+        本次健康探测往返耗时（状态快照最多缓存 5 秒）
+      </span>
+    );
+  }
+  return dependency.reason || '-';
+}
+
+function formatRuntimeTimestamp(value?: string) {
+  if (!value) return '未知时间';
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return value;
+  return timestamp.toLocaleString('zh-CN', { hour12: false });
 }
 
 function formatBytes(value?: number) {
@@ -320,9 +341,7 @@ function projectIDFromLocation() {
 export default function InternalStatusPage() {
   const user = useAuthStore((state) => state.user);
   const authz = authzContextForUser(user);
-  const platform = isPlatformAdminRole(authz.organizationRole);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
-  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
+  const customerContext = resolveCustomerContext(user);
   const [data, setData] = useState<InternalStatus | null>(null);
   const [runtimeData, setRuntimeData] = useState<RuntimeStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -335,7 +354,7 @@ export default function InternalStatusPage() {
   const notificationsRestriction = user?.license_access
     ? licenseRestrictionMessage(user.license_access, 'notifications')
     : '当前商业授权信息尚未加载。';
-  const targetOrgID = platform ? selectedOrgID : undefined;
+  const targetOrgID = customerContext.state === 'ready' ? customerContext.orgID : undefined;
   const prometheusIntegration = runtimeData?.observability_integrations.prometheus;
   const grafanaIntegration = runtimeData?.observability_integrations.grafana;
   const routingPolicy = runtimeData?.effective_configuration?.routing_policy;
@@ -400,28 +419,6 @@ export default function InternalStatusPage() {
 
   useEffect(() => { load(); }, [canViewRuntime, notificationsLicensed, projectID, targetOrgID]);
 
-  useEffect(() => {
-    if (!platform) return;
-    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
-    loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
-      .then(setOrganizations)
-      .catch((err: any) => Toast.error(`组织列表加载失败${err?.message ? `：${err.message}` : ''}`));
-  }, [platform, user?.org_id]);
-
-  const changeOrganization = (value: unknown) => {
-    const orgID = Number(value);
-    if (!Number.isSafeInteger(orgID) || orgID <= 0) return;
-    if (projectID) {
-      const params = new URLSearchParams(window.location.search);
-      params.delete('project_id');
-      const query = params.toString();
-      window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
-    }
-    setSelectedOrgID(orgID);
-    setData(null);
-    setRuntimeData(null);
-  };
-
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
@@ -430,20 +427,6 @@ export default function InternalStatusPage() {
         description="服务健康以运行时观测为准；未确认通知仅提示需要人工关注的业务事件。"
         actions={(
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {platform && (
-              <>
-                <Text type="tertiary">目标组织</Text>
-                <Select
-                  aria-label="目标组织"
-                  placeholder="选择目标组织"
-                  value={selectedOrgID}
-                  optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
-                  onChange={changeOrganization}
-                  disabled={loading}
-                  style={{ width: 220 }}
-                />
-              </>
-            )}
             <Button icon={<IconRefresh />} onClick={load} loading={loading}>刷新</Button>
           </div>
         )}
@@ -501,7 +484,10 @@ export default function InternalStatusPage() {
 			)}
 
 			{canViewRuntime && runtimeLoadState === 'ready' && runtimeData && (
-				<Surface title="运行时观测" description="应用运行时、依赖健康、近 5 分钟流量和外部监控健康。">
+				<Surface
+          title="运行时观测"
+          description={`应用运行时、依赖健康、近 5 分钟流量和外部监控健康。数据生成于 ${formatRuntimeTimestamp(runtimeData.generated_at)}，当前约 ${Math.max(0, runtimeData.data_freshness_seconds)} 秒前。`}
+        >
           <div className="ur-kpi-grid">
             <MetricTile
               label="运行状态"
@@ -521,14 +507,14 @@ export default function InternalStatusPage() {
               value={<StatusTag status={runtimeData?.capacity_health.database.status || 'pending'}>{componentStatusLabel(runtimeData?.capacity_health.database.status)}</StatusTag>}
               icon={<IconServer />}
               tone={runtimeData?.capacity_health.database.status === 'connected' ? 'green' : 'red'}
-              meta={runtimeData?.capacity_health.database.latency_ms ? `${runtimeData.capacity_health.database.latency_ms} ms` : runtimeData?.capacity_health.database.reason || '-'}
+              meta={dependencyProbeMeta(runtimeData?.capacity_health.database)}
             />
             <MetricTile
               label="Redis"
               value={<StatusTag status={runtimeData?.capacity_health.redis.status || 'pending'}>{componentStatusLabel(runtimeData?.capacity_health.redis.status)}</StatusTag>}
               icon={<IconServer />}
               tone={runtimeData?.capacity_health.redis.status === 'connected' ? 'green' : 'amber'}
-              meta={runtimeData?.capacity_health.redis.latency_ms ? `${runtimeData.capacity_health.redis.latency_ms} ms` : runtimeData?.capacity_health.redis.reason || '-'}
+              meta={dependencyProbeMeta(runtimeData?.capacity_health.redis)}
             />
             <MetricTile
               label="近 5 分钟请求"

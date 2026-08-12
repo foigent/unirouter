@@ -284,23 +284,7 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func normalizeChannelKeyAllowedModels(value string) string {
-	parts := strings.FieldsFunc(value, func(r rune) bool {
-		return r == ',' || r == '，' || r == '\n' || r == '\r'
-	})
-	seen := make(map[string]struct{}, len(parts))
-	normalized := make([]string, 0, len(parts))
-	for _, part := range parts {
-		model := strings.TrimSpace(part)
-		if model == "" {
-			continue
-		}
-		if _, exists := seen[model]; exists {
-			continue
-		}
-		seen[model] = struct{}{}
-		normalized = append(normalized, model)
-	}
-	return strings.Join(normalized, ",")
+	return normalizeModels(value)
 }
 
 func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {

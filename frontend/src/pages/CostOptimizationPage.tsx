@@ -26,8 +26,8 @@ import { api } from '../api/client';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, MoneyText, PageHeader, StatusTag, Surface, microsToChartYuan } from '../ui';
+import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { formatCompactNumber, formatPercent } from '../utils/formatNumber';
-import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text, Title } = Typography;
 
@@ -173,8 +173,7 @@ export default function CostOptimizationPage() {
   const navigate = useNavigate();
   const user = useAuthStore(state => state.user);
   const platform = isPlatformAdminRole(organizationRoleForUser(user));
-  const [organizations, setOrganizations] = useState<Array<{ id: number; name: string }>>([]);
-  const [selectedOrgID, setSelectedOrgID] = useState<number | undefined>(platform ? user?.org_id : undefined);
+  const customerContext = resolveCustomerContext(user);
   const [groupBy, setGroupBy] = useState<GroupKey>('model');
   const [projectID, setProjectID] = useState('');
   const [model, setModel] = useState('');
@@ -191,7 +190,8 @@ export default function CostOptimizationPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const requestVersion = useRef(0);
-  const targetOrgID = platform ? selectedOrgID : undefined;
+  const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
+  const customerContextReady = !platform || customerContext.state === 'ready';
 
   const filters = useMemo(() => ({
     group_by: groupBy,
@@ -236,17 +236,10 @@ export default function CostOptimizationPage() {
   };
 
   useEffect(() => {
+    if (!customerContextReady) return;
     load();
     return () => { requestVersion.current += 1; };
-  }, []);
-
-  useEffect(() => {
-    if (!platform) return;
-    if (user?.org_id) setSelectedOrgID(current => current || user.org_id);
-    loadAllPages<{ id: number; name: string }>((page, size) => api.getOrganizations(page, size))
-      .then(setOrganizations)
-      .catch(() => Toast.error('组织列表加载失败'));
-  }, [platform, user?.org_id]);
+  }, [customerContextReady, targetOrgID]);
 
   const selected = breakdown.find(row => row.key === selectedKey) || breakdown[0] || null;
   const selectedOpportunities = opportunities.filter(item => item.group_key === selected?.key);
@@ -326,6 +319,16 @@ export default function CostOptimizationPage() {
     },
   ];
 
+  if (!customerContextReady) {
+    const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
+    return (
+      <div className="ur-page ur-page-wide">
+        <PageHeader eyebrow="成本与财务" title={blocker.title} description="成本证据必须属于唯一客户；系统不会把部署技术组织当作成本归属。" />
+        <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={260} /></Surface>
+      </div>
+    );
+  }
+
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
@@ -348,19 +351,7 @@ export default function CostOptimizationPage() {
 
       <Surface title="范围与归因" description="默认查看最近 30 天。缺失供应商缓存分区或计价证据的成功请求计入覆盖缺口，不按零节省处理。">
         <div className="ur-inline-controls">
-          {platform && (
-            <Select
-              aria-labelledby="cost-optimization-org-label"
-              insetLabel="目标组织"
-              insetLabelId="cost-optimization-org-label"
-              placeholder="选择目标组织"
-              value={selectedOrgID}
-              optionList={organizations.map(org => ({ label: `${org.name}（ID ${org.id}）`, value: org.id }))}
-              onChange={value => setSelectedOrgID(Number(value))}
-              style={{ width: 260 }}
-              disabled={loading}
-            />
-          )}
+          {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
           <Select
             aria-labelledby="cost-optimization-group-label"
             insetLabel="拆解维度"

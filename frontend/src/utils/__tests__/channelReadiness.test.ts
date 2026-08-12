@@ -22,8 +22,8 @@ const kimiCredential = {
 };
 
 describe('channel readiness', () => {
-  it('normalizes comma variants and removes duplicate model identifiers', () => {
-    expect(parseChannelModels('a， b\na,a')).toEqual(['a', 'b']);
+  it('normalizes comma, semicolon and newline variants and removes duplicate model identifiers', () => {
+    expect(parseChannelModels('a， b;c；d\na,a')).toEqual(['a', 'b', 'c', 'd']);
   });
 
   it('keeps credential, parent channel and model coverage as independent facts', () => {
