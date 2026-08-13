@@ -132,6 +132,109 @@ func NormalizeSlug(value string) string {
 	return strings.Trim(b.String(), "-")
 }
 
+// EnsureActivatedCatalogModel makes the exact public model identity used by a
+// stable runtime assignment available in the customer catalog. It records only
+// configured identity facts; capabilities remain empty until separately
+// verified. A retired model is never resurrected by routing activation.
+func EnsureActivatedCatalogModel(ctx context.Context, tx pgx.Tx, orgID int64, modelName, providerFamily string) error {
+	modelName = strings.TrimSpace(modelName)
+	providerFamily = strings.TrimSpace(providerFamily)
+	if orgID <= 0 || modelName == "" {
+		return fmt.Errorf("activated catalog model requires org_id and model_name")
+	}
+
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO model_registry (
+			org_id, model_name, display_name, provider_family, lifecycle,
+			context_length, output_limit, capability_tags, data_residency,
+			pricing_model_name, approved_catalog, migration_recommendation)
+		VALUES ($1,$2,$2,$3,'ga',0,0,'','',$2,TRUE,'')
+		ON CONFLICT (org_id, model_name) DO UPDATE
+		SET display_name = CASE
+				WHEN model_registry.display_name = '' THEN EXCLUDED.display_name
+				ELSE model_registry.display_name
+			END,
+			provider_family = CASE
+				WHEN model_registry.provider_family = '' THEN EXCLUDED.provider_family
+				ELSE model_registry.provider_family
+			END,
+			lifecycle = CASE
+				WHEN model_registry.lifecycle = 'staging' THEN 'ga'
+				ELSE model_registry.lifecycle
+			END,
+			pricing_model_name = CASE
+				WHEN model_registry.pricing_model_name = '' THEN EXCLUDED.pricing_model_name
+				ELSE model_registry.pricing_model_name
+			END,
+			approved_catalog = TRUE,
+			updated_at = NOW()
+		WHERE model_registry.lifecycle <> 'retired'`, orgID, modelName, providerFamily)
+	if err != nil {
+		return fmt.Errorf("ensure activated model catalog entry: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrModelRetired
+	}
+	return nil
+}
+
+// ReconcileActivatedCatalogModels upgrades older deployments whose stable
+// runtime assignments predate automatic catalog registration. It is
+// idempotent and preserves an explicit retired lifecycle.
+func ReconcileActivatedCatalogModels(ctx context.Context, tx pgx.Tx, orgID int64) error {
+	if orgID <= 0 {
+		return fmt.Errorf("activated catalog reconciliation requires org_id")
+	}
+
+	rows, err := tx.Query(ctx, `
+		SELECT s.model_name,
+		       COALESCE((
+		         SELECT CASE
+		                  WHEN COUNT(DISTINCT c.provider) = 0 THEN ''
+		                  WHEN COUNT(DISTINCT c.provider) = 1 THEN MIN(c.provider)
+		                  ELSE 'mixed'
+		                END
+		           FROM jsonb_array_elements(r.candidate->'overrides') AS override
+		           JOIN channels c ON c.id = (override->>'channel_id')::bigint
+		          WHERE override->>'admission' = 'allow'
+		       ), '') AS provider_family
+		  FROM runtime_change_slots s
+		  JOIN runtime_change_releases r ON r.id = s.stable_release_id
+		 WHERE r.stage = 'active'
+		 ORDER BY s.model_name`)
+	if err != nil {
+		return fmt.Errorf("list activated models for catalog reconciliation: %w", err)
+	}
+	type activatedModel struct {
+		name           string
+		providerFamily string
+	}
+	models := make([]activatedModel, 0)
+	for rows.Next() {
+		var item activatedModel
+		if err := rows.Scan(&item.name, &item.providerFamily); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan activated model for catalog reconciliation: %w", err)
+		}
+		models = append(models, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("read activated models for catalog reconciliation: %w", err)
+	}
+	rows.Close()
+
+	for _, item := range models {
+		if err := EnsureActivatedCatalogModel(ctx, tx, orgID, item.name, item.providerFamily); err != nil {
+			if errors.Is(err, ErrModelRetired) {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
 // CheckAccess resolves an optional enterprise alias and enforces lifecycle and project model set rules.
 // If no model governance rows or no project model sets are configured, it preserves PRD1 behavior.
 func CheckAccess(ctx context.Context, q db.DBQuerier, orgID, projectID int64, requestedModel string) (AccessResult, error) {

@@ -117,7 +117,13 @@ func (h *Handler) transitionRuntimeChange(w http.ResponseWriter, r *http.Request
 	case "shadow":
 		item, err = h.runtimeChangeManager.AdvanceShadow(r.Context(), ref, request.ExpectedVersion, actor)
 	case "activate_initial":
-		item, err = h.runtimeChangeManager.ActivateInitial(r.Context(), ref, request.ExpectedVersion, actor)
+		var customerOrgID int64
+		customerOrgID, err = resolveActorOrganization(r.Context(), 0)
+		if err != nil {
+			writeOrganizationScopeError(w, err)
+			return
+		}
+		item, err = h.runtimeChangeManager.ActivateInitial(r.Context(), ref, request.ExpectedVersion, actor, customerOrgID)
 	case "canary":
 		item, err = h.runtimeChangeManager.StartCanary(r.Context(), ref, request.ExpectedVersion, request.CanaryBasisPoints, actor)
 	case "promote":

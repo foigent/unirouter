@@ -213,7 +213,12 @@ func TestInitialActivationCreatesFirstStableRouteAndRejectsReplacementShortcut(t
 	}
 
 	first := createValidated("rcr_initial_route_first")
-	first, err = manager.ActivateInitial(ctx, first.ReleaseRef, first.Version, userID)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO model_registry (
+		  org_id,model_name,display_name,provider_family,lifecycle,approved_catalog)
+		VALUES ($1,'initial-route-model','','','staging',FALSE)`, orgID)
+	require.NoError(t, err)
+	first, err = manager.ActivateInitial(ctx, first.ReleaseRef, first.Version, userID, orgID)
 	require.NoError(t, err)
 	require.Equal(t, "active", first.Stage)
 	routes, err := router.RouteAllWithKey(ctx, "initial-route-model", "first-stable-request")
@@ -228,9 +233,22 @@ func TestInitialActivationCreatesFirstStableRouteAndRejectsReplacementShortcut(t
 		 WHERE release_id=$1 AND to_stage='active'`, first.ID).Scan(&action, &initialActivation))
 	require.Equal(t, "promote", action)
 	require.True(t, initialActivation)
+	var displayName, providerFamily, lifecycle, pricingModelName string
+	var approvedCatalog bool
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT display_name,provider_family,lifecycle,pricing_model_name,approved_catalog
+		  FROM model_registry
+		 WHERE org_id=$1 AND model_name='initial-route-model'`, orgID).Scan(
+		&displayName, &providerFamily, &lifecycle, &pricingModelName, &approvedCatalog,
+	))
+	require.Equal(t, "initial-route-model", displayName)
+	require.Equal(t, "openai", providerFamily)
+	require.Equal(t, "ga", lifecycle)
+	require.Equal(t, "initial-route-model", pricingModelName)
+	require.True(t, approvedCatalog)
 
 	replacement := createValidated("rcr_initial_route_replacement")
-	_, err = manager.ActivateInitial(ctx, replacement.ReleaseRef, replacement.Version, userID)
+	_, err = manager.ActivateInitial(ctx, replacement.ReleaseRef, replacement.Version, userID, orgID)
 	require.ErrorIs(t, err, runtimechange.ErrConflict)
 
 	first, err = manager.Rollback(ctx, first.ReleaseRef, first.Version, userID)
@@ -238,4 +256,64 @@ func TestInitialActivationCreatesFirstStableRouteAndRejectsReplacementShortcut(t
 	require.Equal(t, "rolled_back", first.Stage)
 	_, err = router.RouteAllWithKey(ctx, "initial-route-model", "after-initial-rollback")
 	require.Error(t, err)
+}
+
+func TestInitialActivationRejectsRetiredCatalogModelAtomically(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	orgID := testutil.NewTestOrg(t, pool)
+	var userID, channelID, routingEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'retired-route-admin','fixture','platform_admin','platform_admin','active') RETURNING id`, orgID).Scan(&userID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channels (
+		  name,provider,base_url,models,adapter_type,adapter_config,
+		  priority,routing_weight,degradation_threshold,status,circuit_state)
+		VALUES ('retired-initial-route','openai','https://provider.invalid','retired-initial-model',
+		  'openai_compatible','{}',100,100,10,'staged','healthy')
+		RETURNING id,routing_epoch`).Scan(&channelID, &routingEpoch))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channel_keys (channel_id,key_enc,allowed_models,status)
+		VALUES ($1,'fixture','retired-initial-model','active') RETURNING id`, channelID).Scan(new(int64)))
+	_, err := pool.Exec(ctx, `
+		INSERT INTO model_registry (
+		  org_id,model_name,display_name,provider_family,lifecycle,approved_catalog)
+		VALUES ($1,'retired-initial-model','Retired model','openai','retired',FALSE)`, orgID)
+	require.NoError(t, err)
+
+	policy := routingpolicy.Default()
+	router, err := gateway.NewRouterWithPolicy(pool, policy)
+	require.NoError(t, err)
+	manager, err := runtimechange.NewManager(pool, router, policy)
+	require.NoError(t, err)
+
+	release, err := manager.CreateDraft(ctx, runtimechange.DraftRequest{
+		ReleaseRef: "rcr_retired_initial_route", ModelName: "retired-initial-model", Reason: "retired model must stay unavailable",
+		Overrides: []routingpolicy.ChannelOverride{{
+			ChannelID: channelID, ExpectedRoutingEpoch: routingEpoch, Admission: routingpolicy.AdmissionAllow,
+		}},
+	}, userID)
+	require.NoError(t, err)
+	release, err = manager.Validate(ctx, release.ReleaseRef, release.Version, userID)
+	require.NoError(t, err)
+
+	_, err = manager.ActivateInitial(ctx, release.ReleaseRef, release.Version, userID, orgID)
+	require.ErrorIs(t, err, runtimechange.ErrConflict)
+	stored, err := manager.Get(ctx, release.ReleaseRef)
+	require.NoError(t, err)
+	require.Equal(t, "validated", stored.Stage)
+	slot, err := manager.Slot(ctx, "retired-initial-model")
+	require.NoError(t, err)
+	require.Empty(t, slot.StableReleaseRef)
+	require.Equal(t, "none", slot.RuntimeMutation)
+
+	var lifecycle string
+	var approved bool
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT lifecycle,approved_catalog
+		  FROM model_registry
+		 WHERE org_id=$1 AND model_name='retired-initial-model'`, orgID).Scan(&lifecycle, &approved))
+	require.Equal(t, "retired", lifecycle)
+	require.False(t, approved)
 }
