@@ -711,7 +711,15 @@ jobs:
             echo 'internal Target image overlay must remove every source build context' >&2
             exit 1
           fi
-          grep -F '127.0.0.1:8081:8080' <<< "$internal_target_compose"
+          internal_target_compose_json="$(docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.canary.yml \
+            -f deploy/internal-target-images.override.yml config --format json)"
+          test "$(jq '[.services["backend-canary"].ports[]? | select(
+            .host_ip == "127.0.0.1" and
+            (.published | tostring) == "8081" and
+            (.target | tostring) == "8080"
+          )] | length' <<< "$internal_target_compose_json")" -eq 1
 
           customer_compose="$(docker compose -f deploy/customer/docker-compose.yml config)"
           grep -F 'image: unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555' <<< "$customer_compose"
