@@ -2,6 +2,12 @@
 # 使用方式：docker compose -f docker-compose.yml -f docker-compose.canary.yml up -d
 # 前提：docker-compose.yml 中的服务必须先正常运行
 
+x-unirouter-json-logging: &unirouter-json-logging
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+    max-file: "${DOCKER_LOG_MAX_FILES:-3}"
+
 services:
   # --- 外层 Nginx：TLS 终止 + canary 路由 ---
   nginx:
@@ -25,6 +31,7 @@ services:
       default:
         ipv4_address: ${UNIROUTER_CANARY_PROXY_IP:-172.30.250.11}
     restart: unless-stopped
+    logging: *unirouter-json-logging
 
   # --- 遮蔽原有端口暴露（避免与 nginx 冲突） ---
   # 注意：docker compose override 不能直接"移除" ports，
@@ -36,9 +43,11 @@ services:
     # ports:
     #   - "3000:80"
     restart: unless-stopped
+    logging: *unirouter-json-logging
 
   backend:
     restart: unless-stopped
+    logging: *unirouter-json-logging
 
   # --- Canary 后端实例 ---
   backend-canary:
@@ -155,6 +164,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    logging: *unirouter-json-logging
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health/ready"]
       interval: 10s

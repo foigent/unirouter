@@ -699,8 +699,21 @@ jobs:
           export UNIROUTER_FRONTEND_PROXY_IP=172.30.250.10
           export TRUSTED_PROXY_CIDRS=172.30.250.10/32,172.30.250.1/32
 
-          bash -n scripts/docker-image-retention-report.sh
+          for lifecycle_script in \
+            scripts/internal-target-build-images.sh \
+            scripts/docker-image-retention-report.sh \
+            scripts/docker-image-retention-maintenance.sh \
+            scripts/docker-storage-preflight.sh \
+            scripts/test-docker-image-retention-report.sh; do
+            bash -n "${lifecycle_script}"
+          done
+          scripts/internal-target-build-images.sh --help >/dev/null
           scripts/docker-image-retention-report.sh --help >/dev/null
+          scripts/docker-image-retention-maintenance.sh --help >/dev/null
+          scripts/docker-storage-preflight.sh --help >/dev/null
+          scripts/test-docker-image-retention-report.sh
+          grep -F 'location = /favicon.ico' frontend/nginx.conf
+          grep -F 'return 204;' frontend/nginx.conf
           internal_target_compose="$(docker compose \
             -f docker-compose.yml \
             -f docker-compose.canary.yml \
@@ -715,6 +728,11 @@ jobs:
             -f docker-compose.yml \
             -f docker-compose.canary.yml \
             -f deploy/internal-target-images.override.yml config --format json)"
+          test "$(jq '[.services[] | select(
+            .logging.driver == "json-file" and
+            .logging.options["max-size"] == "20m" and
+            .logging.options["max-file"] == "3"
+          )] | length' <<< "$internal_target_compose_json")" -eq 8
           test "$(jq '[.services["backend-canary"].ports[]? | select(
             .host_ip == "127.0.0.1" and
             (.published | tostring) == "8081" and
@@ -722,6 +740,12 @@ jobs:
           )] | length' <<< "$internal_target_compose_json")" -eq 1
 
           customer_compose="$(docker compose -f deploy/customer/docker-compose.yml config)"
+          customer_compose_json="$(docker compose -f deploy/customer/docker-compose.yml config --format json)"
+          test "$(jq '[.services[] | select(
+            .logging.driver == "json-file" and
+            .logging.options["max-size"] == "20m" and
+            .logging.options["max-file"] == "3"
+          )] | length' <<< "$customer_compose_json")" -eq 6
           grep -F 'image: unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555' <<< "$customer_compose"
           grep -F 'image: unirouter/frontend@sha256:6666666666666666666666666666666666666666666666666666666666666666' <<< "$customer_compose"
           grep -F 'image: postgres@sha256:1111111111111111111111111111111111111111111111111111111111111111' <<< "$customer_compose"
@@ -748,6 +772,14 @@ jobs:
              RESPONSE_CACHE_KEY_VERSION=cache-key-v1 \
              deploy/customer/preflight.sh /dev/null; then
             echo 'customer preflight must reject an invalid response-cache encryption key' >&2
+            exit 1
+          fi
+          if DOCKER_LOG_MAX_SIZE=unbounded deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject an invalid Docker log size' >&2
+            exit 1
+          fi
+          if DOCKER_LOG_MAX_FILES=0 deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject an invalid Docker log file count' >&2
             exit 1
           fi
           if JWT_SECRET=short deploy/customer/preflight.sh /dev/null; then

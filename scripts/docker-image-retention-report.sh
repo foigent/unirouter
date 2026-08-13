@@ -8,11 +8,12 @@ Usage:
 
 Builds a read-only Docker image retention report. It never removes or untags
 images. FILE must contain one exact image reference per line for every retained
-rollback state; blank lines and lines beginning with # are ignored.
+rollback state, scheduled utility or build base; blank lines and lines
+beginning with # are ignored.
 
-The report automatically protects every image referenced by any running or
-stopped container. Only unused UniRouter-owned images older than N days are
-classified as deletion candidates. The default is 14 days.
+The report separately protects images referenced by running and stopped
+containers. Only unused UniRouter-owned images older than N days are classified
+as deletion candidates. The default is 14 days.
 EOF
 }
 
@@ -72,17 +73,29 @@ cleanup() {
 }
 trap cleanup EXIT
 
-container_ids_file="${report_dir}/container-image-ids"
+running_container_ids_file="${report_dir}/running-container-image-ids"
+stopped_container_ids_file="${report_dir}/stopped-container-image-ids"
 keep_ids_file="${report_dir}/keep-image-ids"
 all_ids_file="${report_dir}/all-image-ids"
-: >"${container_ids_file}"
+all_images_json_file="${report_dir}/all-images.json"
+: >"${running_container_ids_file}"
+: >"${stopped_container_ids_file}"
 : >"${keep_ids_file}"
 
 while IFS= read -r container_id; do
   [[ -n "${container_id}" ]] || continue
-  docker container inspect --format '{{.Image}}' "${container_id}" >>"${container_ids_file}"
+  docker container inspect --format '{{.Image}}' "${container_id}" >>"${running_container_ids_file}"
+done < <(docker container ls -q)
+sort -u -o "${running_container_ids_file}" "${running_container_ids_file}"
+
+while IFS= read -r container_id; do
+  [[ -n "${container_id}" ]] || continue
+  container_image_id="$(docker container inspect --format '{{.Image}}' "${container_id}")"
+  if ! grep -Fxq "${container_image_id}" "${running_container_ids_file}"; then
+    printf '%s\n' "${container_image_id}" >>"${stopped_container_ids_file}"
+  fi
 done < <(docker container ls -aq)
-sort -u -o "${container_ids_file}" "${container_ids_file}"
+sort -u -o "${stopped_container_ids_file}" "${stopped_container_ids_file}"
 
 keep_ref_count=0
 while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
@@ -101,42 +114,59 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
 done <"${keep_file}"
 
 if (( keep_ref_count == 0 )); then
-  echo "image retention report: keep file contains no rollback image references" >&2
+  echo "image retention report: keep file contains no protected image references" >&2
   exit 2
 fi
 sort -u -o "${keep_ids_file}" "${keep_ids_file}"
 docker image ls -aq --no-trunc | sort -u >"${all_ids_file}"
+mapfile -t all_image_ids <"${all_ids_file}"
+if (( ${#all_image_ids[@]} > 0 )); then
+  docker image inspect "${all_image_ids[@]}" >"${all_images_json_file}"
+else
+  printf '[]\n' >"${all_images_json_file}"
+fi
 
 now_epoch="$(date +%s)"
 minimum_age_seconds=$((min_age_days * 86400))
 candidate_count=0
 candidate_bytes=0
-protected_container_count=0
+protected_running_count=0
+protected_stopped_count=0
 protected_keep_count=0
 young_count=0
 unmanaged_count=0
 
-printf 'STATUS\tCREATED\tSIZE_MIB\tIMAGE_ID\tTAGS\n'
-while IFS= read -r image_id; do
-  [[ -n "${image_id}" ]] || continue
-  image_json="$(docker image inspect "${image_id}")"
-  created="$(jq -r '.[0].Created' <<<"${image_json}")"
+is_unirouter_owned() {
+  local tags_csv="$1" component="$2"
+  [[ "${component}" == "backend" || "${component}" == "frontend" ]] && return 0
+  [[ "${tags_csv}" =~ (^|,)([^,]*/)?uniroute(r)?[-/:] ]] && return 0
+  [[ "${tags_csv}" =~ (^|,)[0-9a-f]{7,40}-(backend|backend-canary|frontend): ]]
+}
+
+printf 'META\tgenerated_at=%s\tmin_age_days=%d\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${min_age_days}"
+printf 'STATUS\tCREATED\tAGE_DAYS\tVIRTUAL_SIZE_MIB\tIMAGE_ID\tTAGS\n'
+while IFS= read -r image_json; do
+  [[ -n "${image_json}" ]] || continue
+  image_id="$(jq -r '.Id' <<<"${image_json}")"
+  created="$(jq -r '.Created' <<<"${image_json}")"
   created_epoch="$(date -d "${created}" +%s)"
-  size_bytes="$(jq -r '.[0].Size' <<<"${image_json}")"
-  tags="$(jq -r '.[0].RepoTags // [] | join(",")' <<<"${image_json}")"
-  short_id="${image_id#sha256:}"
-  short_id="${short_id:0:12}"
+  size_bytes="$(jq -r '.Size' <<<"${image_json}")"
+  tags="$(jq -r '.RepoTags // [] | sort | join(",")' <<<"${image_json}")"
+  component="$(jq -r '.Config.Labels["io.unirouter.component"] // ""' <<<"${image_json}")"
   size_mib="$(awk -v bytes="${size_bytes}" 'BEGIN { printf "%.1f", bytes / 1048576 }')"
   age_seconds=$((now_epoch - created_epoch))
+  age_days=$((age_seconds / 86400))
 
-  if grep -Fxq "${image_id}" "${container_ids_file}"; then
-    status="protected-container"
-    protected_container_count=$((protected_container_count + 1))
+  if grep -Fxq "${image_id}" "${running_container_ids_file}"; then
+    status="protected-running-container"
+    protected_running_count=$((protected_running_count + 1))
+  elif grep -Fxq "${image_id}" "${stopped_container_ids_file}"; then
+    status="protected-stopped-container"
+    protected_stopped_count=$((protected_stopped_count + 1))
   elif grep -Fxq "${image_id}" "${keep_ids_file}"; then
-    status="protected-rollback"
+    status="protected-keep"
     protected_keep_count=$((protected_keep_count + 1))
-  elif [[ ! "${tags}" =~ (^|,)([^,]*/)?uniroute(r)?[-/:] ]] &&
-       [[ ! "${tags}" =~ (^|,)[0-9a-f]{7,40}-(backend|backend-canary|frontend): ]]; then
+  elif ! is_unirouter_owned "${tags}" "${component}"; then
     status="unmanaged"
     unmanaged_count=$((unmanaged_count + 1))
   elif (( age_seconds < minimum_age_seconds )); then
@@ -148,10 +178,13 @@ while IFS= read -r image_id; do
     candidate_bytes=$((candidate_bytes + size_bytes))
   fi
 
-  printf '%s\t%s\t%s\t%s\t%s\n' "${status}" "${created}" "${size_mib}" "${short_id}" "${tags:--}"
-done <"${all_ids_file}"
+  printf '%s\t%s\t%d\t%s\t%s\t%s\n' \
+    "${status}" "${created}" "${age_days}" "${size_mib}" "${image_id}" "${tags:--}"
+done < <(jq -c '.[]' "${all_images_json_file}")
 
 candidate_mib="$(awk -v bytes="${candidate_bytes}" 'BEGIN { printf "%.1f", bytes / 1048576 }')"
-printf '\nSUMMARY\tcontainer_protected=%d\trollback_protected=%d\tyoung=%d\tunmanaged=%d\tcandidates=%d\tcandidate_mib=%s\n' \
-  "${protected_container_count}" "${protected_keep_count}" "${young_count}" "${unmanaged_count}" "${candidate_count}" "${candidate_mib}"
+printf '\nSUMMARY\trunning_protected=%d\tstopped_protected=%d\tkeep_protected=%d\tyoung=%d\tunmanaged=%d\tcandidates=%d\tcandidate_virtual_mib=%s\n' \
+  "${protected_running_count}" "${protected_stopped_count}" "${protected_keep_count}" \
+  "${young_count}" "${unmanaged_count}" "${candidate_count}" "${candidate_mib}"
+echo "NOTE: virtual sizes share layers and must not be added as an exact reclaim estimate"
 echo "READ_ONLY: no image was removed or untagged"

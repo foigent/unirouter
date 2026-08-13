@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.18
+> **版本**：v1.19
 > **日期**：2026-08-13
 > **用途**：运维人员部署和维护 UniRouter 的操作手册
-> **变更记录**：v1.18 增加 development/test Target 单次构建复用、两代已验证回滚保留和只读镜像生命周期报告；v1.17 增加默认关闭的 Exact Response Cache 三段式密钥注入、客户 preflight all-or-none 校验、冷失效轮换边界和迁移 `000056` 运维约束；v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.19 增加 ECS 不可变标签构建复用、构建前磁盘 fail-closed、可注入 Go module proxy、全服务 Docker 日志轮转、N-1/N-2 schema 兼容门禁和需显式授权的按需镜像/BuildKit 清理；v1.18 增加 development/test Target 单次构建复用、两代已验证回滚保留和只读镜像生命周期报告；v1.17 增加默认关闭的 Exact Response Cache 三段式密钥注入、客户 preflight all-or-none 校验、冷失效轮换边界和迁移 `000056` 运维约束；v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -1452,27 +1452,27 @@ curl -fsS http://localhost:8080/health/ready
 
 ### 9.10 development/test Target 镜像生命周期
 
-同一 release 只构建一个 backend 镜像和一个 frontend 镜像。stable 与 canary
-必须引用同一个 backend image ID；不能因为副本角色不同重复构建。构建完成后用
-`deploy/internal-target-images.override.yml` 固定这两个不可变引用，并在启动时加
-`--no-build`，避免 Compose 隐式产生新镜像：
+同一 release 的每个发生变化的组件只构建一次。stable 与 canary 必须引用同一个
+backend image ID；不能因为副本角色不同重复构建。构建入口要求 clean Git checkout、
+`HEAD == RUNTIME_COMMIT`、磁盘门禁通过，并给镜像写入完整 commit/version/component
+标签。目标标签已存在时只能验证并复用，不能覆盖成另一份内容：
+
+历史上由 rsync 长期覆盖的 `/opt/unirouter` working tree 不是构建事实源；即使文件
+看起来最新，它的 Git HEAD 与工作树也可能不一致。以后必须从已 fetch 的精确 commit
+创建独立 clean detached worktree，在该 worktree 内运行下面的 helper。运行 Compose
+的目录可以继续保存目标配置，但不得兼任可变源码构建目录。
 
 ```bash
 : "${RUNTIME_VERSION:?Set the immutable development version}"
 : "${RUNTIME_COMMIT:?Set the complete Git commit}"
 
-release_tag="${RUNTIME_COMMIT:0:8}"
-export UNIROUTER_BACKEND_IMAGE="unirouter-release/backend:${release_tag}"
-export UNIROUTER_FRONTEND_IMAGE="unirouter-release/frontend:${release_tag}"
+# 仅在目标网络无法访问官方代理且已批准替代代理时设置。
+export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
+scripts/internal-target-build-images.sh
 
-docker build \
-  --build-arg "RUNTIME_VERSION=${RUNTIME_VERSION}" \
-  --build-arg "RUNTIME_COMMIT=${RUNTIME_COMMIT}" \
-  --build-arg UNIROUTER_RELEASE_TRUST_MODE=development \
-  --tag "${UNIROUTER_BACKEND_IMAGE}" .
-docker build \
-  --build-arg VITE_DEPLOY_ENV=development \
-  --tag "${UNIROUTER_FRONTEND_IMAGE}" ./frontend
+# 从脚本最后两行复制实际 SELECTED 引用；不要猜测或改用 latest。
+export UNIROUTER_BACKEND_IMAGE="unirouter-release/backend:<selected-tag>"
+export UNIROUTER_FRONTEND_IMAGE="unirouter-release/frontend:<selected-tag>"
 
 docker compose \
   -f docker-compose.yml \
@@ -1481,10 +1481,36 @@ docker compose \
   up -d --no-build
 ```
 
-每次 stable 验证通过后，运维必须维护一个部署机本地 keep file。它只列出最近
-两个**已经验证可回滚的完整部署状态**所引用的精确 backend/frontend 镜像；不能按
-“最新标签”猜测，也不能把失败构建当作回滚点。当前运行和已退出容器引用的镜像会
-由报告脚本自动保护，无需重复写入。示例：
+所有长期 Compose 服务默认使用 Docker `json-file` 日志轮转：单文件 20 MiB、最多
+3 个文件。可通过 `DOCKER_LOG_MAX_SIZE` 和 `DOCKER_LOG_MAX_FILES` 在部署环境调整，
+但不能留空或移除 `logging` 合同。日志参数只在容器创建时生效；修改后必须按
+canary → stable → frontend/基础服务顺序受控重建，并用 `docker inspect` 核对
+`HostConfig.LogConfig.Config`。不要把应用数据库中的请求日志保留期
+`LOG_RETENTION_DAYS` 与 Docker stdout/stderr 轮转混为一项。
+
+如果新 commit 的 `frontend/` 没有变化，可显式设置
+`UNIROUTER_FRONTEND_REUSE_FROM=unirouter-release/frontend:<verified-old-tag>`。
+脚本会读取旧镜像的完整 revision 标签并执行 Git diff；只有目录确实不变才直接返回
+旧引用，不创建新镜像或新标签。backend stable/canary 由 Compose overlay 强制复用；
+不得再创建 `backend-canary:<tag>`。Docker/BuildKit 仍会自动复用各组件相同的 layer，
+`docker system df` 的 virtual size 不能当作物理磁盘占用相加。
+
+同理，`docker builder du` 的 `Shared`、`Reclaimable` 和记录数量描述的是 build graph
+的逻辑引用；带 `*` 的共享记录会重复出现在多个 build result 中。清理判断必须先从
+`docker info` 确认 storage driver：使用 containerd snapshotter 时，实际 layer 位于
+`/var/lib/containerd`，不能只看 Docker root。随后同时核对相关目录的 `du` 和根盘
+`df`。被近期构建继续引用的旧 parent record 是有效复用缓存，不应为了降低记录数
+而无条件 prune。
+
+80% / 8 GiB 是 40 GiB development/test 系统盘的当前硬门槛，不是告警建议。
+任一门槛失败都应先运行受控 maintenance 或扩盘，不能通过继续构建来“完成后再清”。
+
+每次 stable 验证通过后，运维必须维护一个部署机本地 keep file。它列出最近两个
+**已经验证可回滚的完整部署状态**所引用的精确 backend/frontend 镜像，以及不由
+常驻容器引用、但由定时任务或下一次构建依赖的镜像。N-1/N-2 必须满足：commit
+线性前驱关系已确认、候选 migrations 最大版本不低于当前数据库版本、候选
+`migrate status` 对当前数据库无 pending、frontend source 在复用镜像时确实无
+变化。不能按“最新标签”猜测，也不能把失败构建当作回滚点。示例：
 
 ```text
 # /opt/unirouter/image-retention.keep
@@ -1492,25 +1518,60 @@ unirouter-release/backend:<previous-release>
 unirouter-release/frontend:<previous-release>
 unirouter-release/backend:<previous-previous-release>
 unirouter-release/frontend:<previous-previous-release>
+certbot/certbot:<renewal-version>
+golang:<current-builder-version>
+node:<current-builder-version>
+alpine:<current-runtime-base-version>
 ```
 
-随后只生成只读报告：
+当前运行容器会自动保护。已退出容器会单独标为
+`protected-stopped-container`，用于暴露尚未收口的一次性 migration/smoke
+容器；完成证据留存后应按精确容器名人工移除，避免永久锁住旧镜像。
+
+先运行 dry-run：
 
 ```bash
-scripts/docker-image-retention-report.sh \
+scripts/docker-image-retention-maintenance.sh \
   --keep-file /opt/unirouter/image-retention.keep \
-  --min-age-days 14 \
-  > /opt/unirouter/image-retention-report.tsv
+  --min-image-age-days 14 \
+  --cache-until 168h \
+  --report-out /opt/unirouter/image-retention-report.tsv
 ```
 
-脚本会把全部运行中或已退出容器引用的 image ID 标为 `protected-container`，keep
-file 引用标为 `protected-rollback`；只有未被容器使用、属于 UniRouter、超过保留
-期且不在回滚集合中的对象才标为 `candidate`。它不会删除或取消任何标签。
+报告使用完整 image ID 并冻结当时的创建时间和 tags。只有未被任何容器引用、属于
+UniRouter、超过 14 天且不在 keep 集合中的对象才标为 `candidate`。其中的
+`VIRTUAL_SIZE_MIB` 包含共享 layer，不能相加冒充精确物理回收量。
+
+复核 dry-run、记录精确候选集合并获得该次删除授权后才可执行：
+
+```bash
+scripts/docker-image-retention-maintenance.sh \
+  --apply \
+  --keep-file /opt/unirouter/image-retention.keep \
+  --min-image-age-days 14 \
+  --cache-until 168h \
+  --report-out /opt/unirouter/image-retention-report.tsv
+```
+
+apply 会在每个删除前重新核对完整 image ID、创建时间、全部 tags、容器引用和 keep
+集合；任何漂移立即停止。它只删除已确认的 UniRouter candidate，并调用 Docker
+原生 builder prune 清理超过 7 天的未使用 BuildKit cache。它不删除容器、volume、
+数据库、备份、release 目录或非 UniRouter 镜像。
+
+这些工具只按需安装和运行，不启用 systemd timer、cron 或其他自动删除：
+
+```bash
+install -d -m 0755 /usr/local/libexec/unirouter
+install -m 0755 scripts/docker-image-retention-report.sh \
+  scripts/docker-image-retention-maintenance.sh \
+  scripts/docker-storage-preflight.sh \
+  scripts/internal-target-build-images.sh \
+  /usr/local/libexec/unirouter/
+```
 
 禁止直接使用无范围的 `docker image prune -a`：它无法知道哪两个版本已经完成
-回滚验证。实际清理是独立的破坏性运维动作，必须先复核报告中的精确 image ID、
-所有 tags、预计释放空间与回滚集合，再获得授权并只删除已批准候选。基础镜像、
-数据库卷、备份、发布目录和 keep file 不属于镜像清理范围。
+回滚验证。禁止 `--volumes`。正式客户安装仍应使用签名、digest-pinned 制品；本节
+的 source build 和 local tag 只适用于内部 development/test Target。
 
 ---
 
