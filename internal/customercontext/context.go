@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/modelgov"
 )
 
 // State describes whether a deployment has one unambiguous customer context.
@@ -138,6 +139,10 @@ func EnsureBaseline(ctx context.Context, q db.DBQuerier) (Baseline, error) {
 		   AND u.organization_role IN ('platform_admin','org_admin')
 		ON CONFLICT (project_id, user_id) DO NOTHING`, projectID, snapshot.OrganizationID); err != nil {
 		return Baseline{Customer: snapshot}, fmt.Errorf("ensure default project administrators: %w", err)
+	}
+
+	if err := modelgov.ReconcileActivatedCatalogModels(ctx, tx, snapshot.OrganizationID); err != nil {
+		return Baseline{Customer: snapshot}, fmt.Errorf("reconcile activated customer models: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

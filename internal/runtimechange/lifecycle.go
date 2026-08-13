@@ -8,6 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/governancesim"
+	"github.com/uniroute/unirouter/internal/modelgov"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
 
 func (m *Manager) Validate(ctx context.Context, ref string, expectedVersion, actorUserID int64) (Release, error) {
@@ -62,7 +64,10 @@ func (m *Manager) AdvanceShadow(ctx context.Context, ref string, expectedVersion
 // ActivateInitial promotes a validated candidate directly to the first stable
 // assignment for a model. It is deliberately unavailable once any stable or
 // canary assignment exists; replacements continue to use shadow and canary.
-func (m *Manager) ActivateInitial(ctx context.Context, ref string, expectedVersion, actorUserID int64) (Release, error) {
+func (m *Manager) ActivateInitial(ctx context.Context, ref string, expectedVersion, actorUserID, customerOrgID int64) (Release, error) {
+	if customerOrgID <= 0 {
+		return Release{}, fmt.Errorf("%w: customer organization", ErrInvalid)
+	}
 	return m.runTransition(ctx, transition{
 		Ref: ref, ExpectedVersion: expectedVersion, ActorUserID: actorUserID,
 		From: "validated", To: "active", Action: "promote", InitialActivation: true,
@@ -91,7 +96,6 @@ ON CONFLICT (model_name) DO NOTHING`, release.ModelName, release.ID)
 				if tag.RowsAffected() != 1 {
 					return fmt.Errorf("%w: model assignment appeared concurrently", ErrConflict)
 				}
-				return nil
 			case err != nil:
 				return fmt.Errorf("%w: lock runtime slot: %v", ErrUnavailable, err)
 			case stableID != nil || canaryID != nil:
@@ -108,10 +112,50 @@ UPDATE runtime_change_slots
 				if tag.RowsAffected() != 1 {
 					return ErrConflict
 				}
-				return nil
 			}
+
+			providerFamily, providerErr := activatedProviderFamily(ctx, tx, release)
+			if providerErr != nil {
+				return providerErr
+			}
+			if catalogErr := modelgov.EnsureActivatedCatalogModel(
+				ctx, tx, customerOrgID, release.ModelName, providerFamily,
+			); catalogErr != nil {
+				if catalogErr == modelgov.ErrModelRetired {
+					return fmt.Errorf("%w: activated model is retired", ErrConflict)
+				}
+				return fmt.Errorf("%w: activated model catalog: %v", ErrUnavailable, catalogErr)
+			}
+			return nil
 		},
 	})
+}
+
+func activatedProviderFamily(ctx context.Context, tx pgx.Tx, release Release) (string, error) {
+	channelIDs := make([]int64, 0, len(release.Candidate.Overrides))
+	for _, override := range release.Candidate.Overrides {
+		if override.Admission == routingpolicy.AdmissionAllow {
+			channelIDs = append(channelIDs, override.ChannelID)
+		}
+	}
+	if len(channelIDs) == 0 {
+		return "", fmt.Errorf("%w: initial activation has no admitted channel", ErrInvalid)
+	}
+
+	var providerFamily string
+	if err := tx.QueryRow(ctx, `
+		SELECT CASE
+		         WHEN COUNT(DISTINCT provider) = 1 THEN MIN(provider)
+		         ELSE 'mixed'
+		       END
+		  FROM channels
+		 WHERE id = ANY($1::bigint[])`, channelIDs).Scan(&providerFamily); err != nil {
+		return "", fmt.Errorf("%w: read activated provider family: %v", ErrUnavailable, err)
+	}
+	if providerFamily == "" {
+		return "", fmt.Errorf("%w: activated provider family is unavailable", ErrUnavailable)
+	}
+	return providerFamily, nil
 }
 
 func (m *Manager) StartCanary(ctx context.Context, ref string, expectedVersion int64, basisPoints int, actorUserID int64) (Release, error) {
