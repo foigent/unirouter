@@ -63,6 +63,34 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	var channelID, activeReleaseID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channels (name,provider,base_url,models,status)
+		VALUES ('p6f36-runtime-channel','kimi','https://provider.invalid','p6f36-runtime-model','staged')
+		RETURNING id`).Scan(&channelID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO runtime_change_releases (
+		  release_ref,model_name,candidate_version,candidate_hash,baseline_hash,
+		  candidate,provider_pack_pins,simulation_report,overall_risk,stage,version,
+		  reason,created_by,validated_by,activated_by,validated_at,activated_at)
+		VALUES (
+		  'rcr_p6f36_runtime_model','p6f36-runtime-model','unirouter.runtime-change-candidate.v1',
+		  'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+		  'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+		  jsonb_build_object(
+		    'contract_version','unirouter.runtime-change-candidate.v1',
+		    'model_name','p6f36-runtime-model',
+		    'overrides',jsonb_build_array(jsonb_build_object(
+		      'channel_id',$2::bigint,'expected_routing_epoch',1,'admission','allow'))),
+		  '[]','{}','unchanged','active',3,
+		  'routable catalog fixture',$1,$1,$1,NOW(),NOW())
+		RETURNING id`, fx.platformA, channelID).Scan(&activeReleaseID))
+	_, err = pool.Exec(ctx, `
+		INSERT INTO runtime_change_slots (
+		  model_name,stable_release_id,canary_release_id,canary_basis_points,slot_version)
+		VALUES ('p6f36-runtime-model',$1,NULL,0,1)`, activeReleaseID)
+	require.NoError(t, err)
+
 	_, err = pool.Exec(ctx,
 		`INSERT INTO model_set_items (model_set_id, item_type, item_name) VALUES
 		 ($1, 'model', 'p6f36-model-a'),
@@ -258,6 +286,21 @@ func TestP6F36ModelGovernanceTenantIsolationIntegration(t *testing.T) {
 			"the malformed Project A to Org B set assignment must be ignored",
 		)
 		assertResponseOrgIDs(t, own.Body.Bytes(), fx.orgA)
+
+		routable := serve(t, http.MethodGet,
+			fmt.Sprintf("/api/v1/model-catalog?project_id=%d&routable_only=true", fx.projectA), "",
+			projectAdminA, fx.orgA, auth.RoleProjectAdmin, "")
+		assertStatus(t, routable, http.StatusOK)
+		require.Equal(t,
+			[]string{"p6f36-runtime-model"},
+			p6f36SortedDataStrings(t, routable.Body.Bytes(), "model_name"),
+			"project workbench must not offer approved catalog entries without a stable active route",
+		)
+		require.Equal(t,
+			[]string{"p6f36-runtime-alias"},
+			p6f36SortedDataStringSlices(t, routable.Body.Bytes(), "aliases"),
+			"explicit aliases for the stable model remain callable",
+		)
 
 		canonicalForeign := serve(t, http.MethodGet,
 			fmt.Sprintf("/api/v1/model-catalog?project_id=%d", fx.projectB), "",
@@ -573,6 +616,26 @@ func p6f36SortedDataStrings(t *testing.T, body []byte, field string) []string {
 		value, ok := item[field].(string)
 		require.True(t, ok, "missing string field %q in %#v", field, item)
 		values = append(values, value)
+	}
+	sort.Strings(values)
+	return values
+}
+
+func p6f36SortedDataStringSlices(t *testing.T, body []byte, field string) []string {
+	t.Helper()
+	var response struct {
+		Data []map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &response))
+	values := make([]string, 0)
+	for _, item := range response.Data {
+		rawValues, ok := item[field].([]any)
+		require.True(t, ok, "missing string-array field %q in %#v", field, item)
+		for _, rawValue := range rawValues {
+			value, ok := rawValue.(string)
+			require.True(t, ok, "non-string value in field %q: %#v", field, rawValue)
+			values = append(values, value)
+		}
 	}
 	sort.Strings(values)
 	return values
