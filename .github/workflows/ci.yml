@@ -699,6 +699,15 @@ jobs:
           export UNIROUTER_FRONTEND_PROXY_IP=172.30.250.10
           export TRUSTED_PROXY_CIDRS=172.30.250.10/32,172.30.250.1/32
 
+          bash -n scripts/docker-image-retention-report.sh
+          scripts/docker-image-retention-report.sh --help >/dev/null
+          internal_target_compose="$(docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.canary.yml \
+            -f deploy/internal-target-images.override.yml config)"
+          test "$(grep -Fc 'image: unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555' <<< "$internal_target_compose")" -eq 2
+          test "$(grep -Fc 'image: unirouter/frontend@sha256:6666666666666666666666666666666666666666666666666666666666666666' <<< "$internal_target_compose")" -eq 1
+
           customer_compose="$(docker compose -f deploy/customer/docker-compose.yml config)"
           grep -F 'image: unirouter/backend@sha256:5555555555555555555555555555555555555555555555555555555555555555' <<< "$customer_compose"
           grep -F 'image: unirouter/frontend@sha256:6666666666666666666666666666666666666666666666666666666666666666' <<< "$customer_compose"
