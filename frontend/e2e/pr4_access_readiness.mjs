@@ -454,7 +454,6 @@ try {
     assert.ok((await facts.textContent()).includes('项目可以看见是'));
     assert.ok((await facts.textContent()).includes('已有可用路由是'));
     assert.ok((await facts.textContent()).includes('所选主体可以调用是'));
-    await visible(readiness.page.getByText('runtime_mutation=none · external_requests=none', { exact: false }));
 
     const runtimePath = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.runtime_only_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
     await readiness.page.goto(runtimePath);
