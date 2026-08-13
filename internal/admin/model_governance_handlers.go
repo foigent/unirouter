@@ -494,6 +494,14 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 	conditions := []string{"mr.org_id = $1", "mr.approved_catalog = TRUE", "mr.lifecycle IN ('ga', 'deprecated')"}
 	args := []interface{}{orgID}
 	argIdx := 2
+	if routableOnly := r.URL.Query().Get("routable_only"); routableOnly == "true" || routableOnly == "1" {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1
+			FROM runtime_change_slots rcs
+			JOIN runtime_change_releases rcr ON rcr.id = rcs.stable_release_id AND rcr.stage = 'active'
+			WHERE rcs.model_name = mr.model_name
+		)`)
+	}
 	if projectID > 0 {
 		hasSets, err := h.projectHasAssignedModelSets(r.Context(), projectID, orgID)
 		if err != nil {

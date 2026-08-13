@@ -1870,6 +1870,8 @@ paths:
       the handler then authorizes the exact live project_members role
       (project_admin/project_user/project_viewer). When project_id is present, the
       project's organization is canonical and any explicit org_id mismatch is rejected.
+      routable_only=true restricts results to exact model IDs with a stable active
+      runtime release; only explicit aliases attached to those IDs are returned.
       Foreign organization selection returns 403; missing/zero tenant organization fails
       closed. users.role compatibility aliases are never an authorization source.
     get: *operation_list

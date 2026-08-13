@@ -230,10 +230,10 @@ export default function DeveloperConsolePage() {
     ? '创建项目凭证后即可从内部应用调用网关。'
     : '当前项目暂无可见凭证；如需调用权限，请联系项目管理员。';
   const workbenchDescription = projectReadOnly
-    ? '查看当前项目的个人用量、已批准模型和最近调用，并按 Request ID 排查请求。'
+    ? '查看当前项目的个人用量、已启用模型和最近调用，并按 Request ID 排查请求。'
     : isProjectAdminMembership(selectedProjectMembershipRole)
-      ? '创建和停用项目访问凭证、查看已批准模型、调试调用并排查当前项目请求。'
-      : '创建项目访问凭证、停用本人拥有的凭证、查看已批准模型、调试调用并排查当前项目请求。';
+      ? '创建和停用项目访问凭证、查看已启用模型、调试调用并排查当前项目请求。'
+      : '创建项目访问凭证、停用本人拥有的凭证、查看已启用模型、调试调用并排查当前项目请求。';
   const noProjectDescription = '请联系组织管理员或项目管理员把你的账号加入项目后，再使用项目工作台。';
 
   const modelOptions = useMemo(() => {
@@ -335,7 +335,10 @@ export default function DeveloperConsolePage() {
       const [keyItems, modelItems, logData, usageData] = await Promise.all([
         loadAllPages<ApiKey>((page, pageSize) => api.getKeys(page, pageSize, { project_id: projectId })),
         modelGovernanceLicensed
-          ? loadAllPages<CatalogModel>((page, pageSize) => api.getModelCatalog(page, pageSize, { project_id: projectId }))
+          ? loadAllPages<CatalogModel>((page, pageSize) => api.getModelCatalog(page, pageSize, {
+            project_id: projectId,
+            routable_only: true,
+          }))
           : Promise.resolve([] as CatalogModel[]),
         api.getLogs(1, 20, { project_id: projectId }),
         api.getUsageAnalytics({ project_id: projectId, scope: 'my', group_by: 'alias' }).catch((err: any) => {
@@ -750,7 +753,7 @@ export default function DeveloperConsolePage() {
         <a href="#project-usage">概览与用量</a>
         <a href="#project-access">凭证与接入</a>
         {mayRunPlayground && <a href="#project-debug">{gatewayLicensed ? '调试与排障' : '调试与排障（授权未包含）'}</a>}
-        <a href="#project-models">{modelGovernanceLicensed ? '已批准模型' : '已批准模型（授权未包含）'}</a>
+        <a href="#project-models">{modelGovernanceLicensed ? '已启用模型' : '已启用模型（授权未包含）'}</a>
       </div>
     </nav>
   );
@@ -956,7 +959,7 @@ export default function DeveloperConsolePage() {
       )}
 
       <div id="project-models" className="ur-dev-section-anchor">
-        <Surface title="已批准模型" description="只展示当前项目可用且已进入批准目录的正式或已弃用模型。">
+        <Surface title="已启用模型" description="只展示当前项目可直接调用的稳定模型 ID 和已明确配置的别名。">
           {modelGovernanceLicensed ? (
             <div className="ur-table-shell">
               <Table
@@ -974,7 +977,7 @@ export default function DeveloperConsolePage() {
                   onPageChange: (page: number) => setModelPage(page),
                   onPageSizeChange: (pageSize: number) => { setModelPageSize(pageSize); setModelPage(1); },
                 }}
-                empty={<EmptyState title="暂无已批准模型" description="请联系组织管理员把模型加入项目模型集或批准目录。" minHeight={180} />}
+                empty={<EmptyState title="暂无已启用模型" description="请先在“检测并启用”完成一个模型的真实检测和首次启用。" minHeight={180} />}
                 size="small"
               />
             </div>

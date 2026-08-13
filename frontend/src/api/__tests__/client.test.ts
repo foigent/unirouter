@@ -605,9 +605,9 @@ describe('API Client', () => {
     it('loads approved catalog by project_id', async () => {
       mockJsonResponse({ data: [], total: 0 })
 
-      await api.getModelCatalog(1, 100, { project_id: 7 })
+      await api.getModelCatalog(1, 100, { project_id: 7, routable_only: true })
       const url = mockFetch.mock.calls[0][0]
-      expect(url).toBe('/api/v1/model-catalog?page=1&page_size=100&project_id=7')
+      expect(url).toBe('/api/v1/model-catalog?page=1&page_size=100&project_id=7&routable_only=true')
     })
 
     it('loads and replaces project model sets', async () => {

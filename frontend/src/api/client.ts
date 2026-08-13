@@ -84,7 +84,7 @@ async function requestBlob(path: string) {
   return res.blob();
 }
 
-function appendParams(path: string, params: Record<string, string | number | undefined | null>) {
+function appendParams(path: string, params: Record<string, string | number | boolean | undefined | null>) {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
@@ -543,8 +543,14 @@ export const api = {
   getProjectModelSets: (id: number) => request(`/projects/${id}/model-sets`),
   replaceProjectModelSets: (id: number, modelSetIds: number[]) =>
     request(`/projects/${id}/model-sets`, { method: 'PUT', body: JSON.stringify({ model_set_ids: modelSetIds }) }),
-  getModelCatalog: (page = 1, pageSize = 20, filters?: { project_id?: number; org_id?: number }) =>
-    request(appendParams('/model-catalog', { page, page_size: pageSize, project_id: filters?.project_id, org_id: filters?.org_id })),
+  getModelCatalog: (page = 1, pageSize = 20, filters?: { project_id?: number; org_id?: number; routable_only?: boolean }) =>
+    request(appendParams('/model-catalog', {
+      page,
+      page_size: pageSize,
+      project_id: filters?.project_id,
+      org_id: filters?.org_id,
+      routable_only: filters?.routable_only,
+    })),
 
   // Product-local model-call authorization. These policies can only narrow
   // existing API-key/project/user/Agent authority and never grant Tool/MCP use.

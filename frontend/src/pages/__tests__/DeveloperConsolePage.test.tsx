@@ -157,7 +157,7 @@ describe('DeveloperConsolePage', () => {
 
     await waitFor(() => {
       expect(mockGetKeys).toHaveBeenCalledWith(1, 100, { project_id: 7 });
-      expect(mockGetModelCatalog).toHaveBeenCalledWith(1, 100, { project_id: 7 });
+      expect(mockGetModelCatalog).toHaveBeenCalledWith(1, 100, { project_id: 7, routable_only: true });
       expect(mockGetLogs).toHaveBeenCalledWith(1, 20, { project_id: 7 });
       expect(mockGetUsageAnalytics).toHaveBeenCalledWith({ project_id: 7, scope: 'my', group_by: 'alias' });
     });
@@ -174,12 +174,12 @@ describe('DeveloperConsolePage', () => {
     expect(screen.getByText('¥0.030000')).toBeTruthy();
     expect(screen.getByText('请求调试台')).toBeTruthy();
     expect(screen.getByPlaceholderText('粘贴项目访问凭证')).toBeTruthy();
-    expect(screen.getByText('创建项目访问凭证、停用本人拥有的凭证、查看已批准模型、调试调用并排查当前项目请求。')).toBeTruthy();
+    expect(screen.getByText('创建项目访问凭证、停用本人拥有的凭证、查看已启用模型、调试调用并排查当前项目请求。')).toBeTruthy();
     const taskNav = screen.getByRole('navigation', { name: '项目工作台任务入口' });
     expect(within(taskNav).getByRole('link', { name: '概览与用量' }).getAttribute('href')).toBe('#project-usage');
     expect(within(taskNav).getByRole('link', { name: '凭证与接入' }).getAttribute('href')).toBe('#project-access');
     expect(within(taskNav).getByRole('link', { name: '调试与排障' }).getAttribute('href')).toBe('#project-debug');
-    expect(within(taskNav).getByRole('link', { name: '已批准模型' }).getAttribute('href')).toBe('#project-models');
+    expect(within(taskNav).getByRole('link', { name: '已启用模型' }).getAttribute('href')).toBe('#project-models');
   });
 
   it('loads every server page and exposes later keys and models through client pagination', async () => {
@@ -212,7 +212,7 @@ describe('DeveloperConsolePage', () => {
     await waitFor(() => {
       expect(mockGetProjects).toHaveBeenCalledWith(2, 100, { status: 'active' });
       expect(mockGetKeys).toHaveBeenCalledWith(2, 100, { project_id: 7 });
-      expect(mockGetModelCatalog).toHaveBeenCalledWith(2, 100, { project_id: 7 });
+      expect(mockGetModelCatalog).toHaveBeenCalledWith(2, 100, { project_id: 7, routable_only: true });
     });
 
     const keySurface = screen.getByText('项目访问凭证').closest('section');
@@ -220,7 +220,7 @@ describe('DeveloperConsolePage', () => {
     fireEvent.click(within(keySurface as HTMLElement).getByLabelText('Page 6'));
     expect(await within(keySurface as HTMLElement).findByText('server-page-two-key')).toBeTruthy();
 
-    const modelSurface = screen.getByText('已批准模型', { selector: 'h5' }).closest('section');
+    const modelSurface = screen.getByText('已启用模型', { selector: 'h5' }).closest('section');
     expect(modelSurface).toBeTruthy();
     fireEvent.click(within(modelSurface as HTMLElement).getByLabelText('Page 6'));
     expect(await within(modelSurface as HTMLElement).findByText('Server Page Two Model')).toBeTruthy();
@@ -247,7 +247,7 @@ describe('DeveloperConsolePage', () => {
 
     await waitFor(() => {
       expect(mockGetKeys).toHaveBeenCalledWith(1, 100, { project_id: 7 });
-      expect(mockGetModelCatalog).toHaveBeenCalledWith(1, 100, { project_id: 7 });
+      expect(mockGetModelCatalog).toHaveBeenCalledWith(1, 100, { project_id: 7, routable_only: true });
       expect(mockGetLogs).toHaveBeenCalledWith(1, 20, { project_id: 7 });
       expect(mockGetUsageAnalytics).toHaveBeenCalledWith({ project_id: 7, scope: 'my', group_by: 'alias' });
     });
@@ -402,7 +402,7 @@ describe('DeveloperConsolePage', () => {
 
     expect(await screen.findByText('Core Project')).toBeTruthy();
     expect(screen.getByText('项目空间')).toBeTruthy();
-    expect(screen.getByText('查看当前项目的个人用量、已批准模型和最近调用，并按 Request ID 排查请求。')).toBeTruthy();
+    expect(screen.getByText('查看当前项目的个人用量、已启用模型和最近调用，并按 Request ID 排查请求。')).toBeTruthy();
     expect(screen.getByText('只读查看当前项目的凭证前缀和使用范围；创建或停用请联系项目管理员。')).toBeTruthy();
     expect(screen.queryByText('创建后只显示一次完整凭证；列表仅显示前缀。')).toBeNull();
     expect(screen.queryByText('请求调试台')).toBeNull();
@@ -412,7 +412,7 @@ describe('DeveloperConsolePage', () => {
     expect(within(taskNav).queryByRole('link', { name: '调试与排障' })).toBeNull();
     expect(within(taskNav).getByRole('link', { name: '概览与用量' })).toBeTruthy();
     expect(within(taskNav).getByRole('link', { name: '凭证与接入' })).toBeTruthy();
-    expect(within(taskNav).getByRole('link', { name: '已批准模型' })).toBeTruthy();
+    expect(within(taskNav).getByRole('link', { name: '已启用模型' })).toBeTruthy();
   });
 
   it('degrades only the model-governance section when a partial license omits it', async () => {

@@ -266,6 +266,45 @@ func TestListApprovedModelCatalog_FiltersApprovedLifecycle(t *testing.T) {
 	}
 }
 
+func TestListApprovedModelCatalog_RoutableOnlyRequiresStableActiveRelease(t *testing.T) {
+	const stableActiveFilter = "JOIN runtime_change_releases rcr ON rcr.id = rcs.stable_release_id AND rcr.stage = 'active'"
+	countChecked := false
+	listChecked := false
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			if !strings.Contains(sql, stableActiveFilter) || !strings.Contains(sql, "rcs.model_name = mr.model_name") {
+				t.Fatalf("routable catalog count query missing stable active exact-model filter: %s", sql)
+			}
+			countChecked = true
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			if !strings.Contains(sql, stableActiveFilter) || !strings.Contains(sql, "rcs.model_name = mr.model_name") {
+				t.Fatalf("routable catalog list query missing stable active exact-model filter: %s", sql)
+			}
+			listChecked = true
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+
+	req := httptest.NewRequest(http.MethodGet, "/model-catalog?org_id=1&routable_only=true", nil)
+	req = platformModelGovernanceRequest(req)
+	rec := httptest.NewRecorder()
+
+	h.ListApprovedModelCatalog(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !countChecked || !listChecked {
+		t.Fatalf("expected routable filter in both count and list queries: count=%v list=%v", countChecked, listChecked)
+	}
+}
+
 func TestReplaceProjectModelSets_DeveloperForbidden(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
 
