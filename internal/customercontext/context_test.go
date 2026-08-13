@@ -11,19 +11,22 @@ import (
 
 func TestResolveCustomerContextStates(t *testing.T) {
 	tests := []struct {
-		name        string
-		count       int64
-		orgID       int64
-		orgName     string
-		status      string
-		want        State
-		wantOrgID   int64
-		wantOrgName string
+		name          string
+		count         int64
+		selectedID    int64
+		selectedName  string
+		selectedState string
+		want          State
+		wantOrgID     int64
+		wantOrgName   string
 	}{
-		{name: "not initialized", count: 0, want: StateNotInitialized},
-		{name: "ambiguous", count: 2, orgID: 9, orgName: "ignored", status: "active", want: StateAmbiguous},
-		{name: "inactive", count: 1, orgID: 7, orgName: "Customer", status: "disabled", want: StateInactive, wantOrgID: 7, wantOrgName: "Customer"},
-		{name: "ready", count: 1, orgID: 8, orgName: "Customer", status: "active", want: StateReady, wantOrgID: 8, wantOrgName: "Customer"},
+		{name: "not initialized", want: StateNotInitialized},
+		{name: "ambiguous explicit customers", count: 2, selectedID: 9, selectedName: "ignored", selectedState: "active", want: StateAmbiguous},
+		{name: "ambiguous legacy roots", count: 2, selectedID: 9, selectedName: "ignored", selectedState: "active", want: StateAmbiguous},
+		{name: "inactive explicit customer", count: 1, selectedID: 7, selectedName: "Customer", selectedState: "disabled", want: StateInactive, wantOrgID: 7, wantOrgName: "Customer"},
+		{name: "ready explicit customer", count: 1, selectedID: 8, selectedName: "Customer", selectedState: "active", want: StateReady, wantOrgID: 8, wantOrgName: "Customer"},
+		{name: "ready sole legacy root", count: 1, selectedID: 1, selectedName: "Platform Admin", selectedState: "active", want: StateReady, wantOrgID: 1, wantOrgName: "Platform Admin"},
+		{name: "inactive sole legacy root", count: 1, selectedID: 1, selectedName: "Platform Admin", selectedState: "disabled", want: StateInactive, wantOrgID: 1, wantOrgName: "Platform Admin"},
 	}
 
 	for _, test := range tests {
@@ -31,9 +34,9 @@ func TestResolveCustomerContextStates(t *testing.T) {
 			database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {
 					*(dest[0].(*int64)) = test.count
-					*(dest[1].(*int64)) = test.orgID
-					*(dest[2].(*string)) = test.orgName
-					*(dest[3].(*string)) = test.status
+					*(dest[1].(*int64)) = test.selectedID
+					*(dest[2].(*string)) = test.selectedName
+					*(dest[3].(*string)) = test.selectedState
 					return nil
 				}}
 			}}

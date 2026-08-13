@@ -443,7 +443,7 @@ try {
   const readiness = await login('alice');
   try {
     const readyPath = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.ready_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
-    await gotoHeading(readiness.page, readyPath, '模型 Readiness');
+    await gotoHeading(readiness.page, readyPath, '模型调用条件诊断（Readiness）');
     await visible(readiness.page.getByText('direct_model_optional', { exact: true }));
     await visible(readiness.page.getByText('unrestricted_optional', { exact: true }));
     await visible(readiness.page.getByText('runtime_slot_not_configured_optional', { exact: true }));
@@ -470,7 +470,7 @@ try {
   const unavailable = await login('alice', fixture.unavailable_base_url);
   try {
     const path = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.ready_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
-    await gotoHeading(unavailable.page, path, '模型 Readiness');
+    await gotoHeading(unavailable.page, path, '模型调用条件诊断（Readiness）');
     await visible(unavailable.page.getByText('暂时无法判断', { exact: true }).first());
     await visible(unavailable.page.getByText('routing_preview_unavailable', { exact: true }).first());
     journeys.push('readiness_unavailable_not_blocked');

@@ -18,6 +18,8 @@ interface Channel {
   routing_epoch: number;
   degradation_threshold: number;
   status: string;
+  effective_status?: string;
+  published_models?: string;
   circuit_state: string;
   fail_count: number;
   created_at: string;
@@ -160,6 +162,15 @@ function syncSelectedChannelID(id?: number) {
   else params.delete('channel_id');
   const query = params.toString();
   window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+}
+
+function effectiveChannelStatus(channel: Channel) {
+  return channel.effective_status || channel.status;
+}
+
+function navigateWithinApp(path: string) {
+  window.history.pushState(null, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
 function adapterConfigFacts(channel: Channel) {
@@ -314,8 +325,12 @@ export default function ChannelsPage() {
         await api.updateChannel(editing.id, payload);
         Toast.success('通道更新成功');
       } else {
-        await api.createChannel(payload);
-        Toast.success('通道已创建为 staged；配置凭证后请在模型治理的运行时发布中验证和灰度');
+		const created = await api.createChannel(payload);
+		const firstModel = normalizeModelList(values.models).split(',')[0] || '';
+		Toast.success('模型连接和供应商凭证已保存，正在进入真实检测');
+		closeDrawer();
+		navigateWithinApp(`/test?channel_id=${created.id}${firstModel ? `&model=${encodeURIComponent(firstModel)}` : ''}`);
+		return;
       }
       closeDrawer();
       load();
@@ -420,12 +435,16 @@ export default function ChannelsPage() {
     { title: '降级阈值', dataIndex: 'degradation_threshold', key: 'degradation_threshold', width: 90 },
     {
       title: '状态',
-      dataIndex: 'status',
       key: 'status',
-      width: 80,
-      render: (v: string) => v === 'deprecated'
-        ? <Tooltip content="该通道已废弃，建议尽快迁移到新通道"><Tag color="yellow">deprecated ⚠</Tag></Tooltip>
-        : <StatusTag status={v}>{v === 'staged' ? '待发布' : v === 'active' ? '生效' : v === 'disabled' ? '禁用' : v}</StatusTag>,
+      width: 100,
+		render: (_: unknown, record: Channel) => {
+			const status = effectiveChannelStatus(record);
+			if (status === 'deprecated') return <Tooltip content="该通道已废弃，建议尽快迁移到新通道"><Tag color="yellow">deprecated ⚠</Tag></Tooltip>;
+			const label = status === 'active' ? '已启用' : status === 'staged' ? '待检测/启用' : status === 'disabled' ? '禁用' : status;
+			return record.status === 'staged' && status === 'active'
+				? <Tooltip content={`运行时已启用：${record.published_models || '已发布模型'}；底层配置仍保持可回滚的 staged 快照`}><StatusTag status="active">{label}</StatusTag></Tooltip>
+				: <StatusTag status={status}>{label}</StatusTag>;
+		},
     },
     {
       title: '熔断',
@@ -451,21 +470,19 @@ export default function ChannelsPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="模型接入"
-        title="上游通道"
-        description="新通道默认 staged；供应商身份用于审计和运营，Adapter Type 表示请求线缆协议，两者不会互相改名。配置凭证后先做上游检测，再到运行时发布进入真实灰度。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增通道</Button>}
+        title="模型连接"
+        description="填写供应商地址、模型和 Key，保存后做一次真实检测；首次检测成功即可启用。内部仍保留凭证加密、发布证据和回滚能力。"
+        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增模型连接</Button>}
       />
 
       <Surface
-        title="新增模型的推荐顺序"
-        description="主流程只需要沿同一条连接继续，不需要手工编造发布标识。底层通道、凭证、目录和发布记录仍分别保存，以保留密钥隔离、审计和回滚门禁。"
+        title="三步即可使用"
+        description="Readiness、Provider Pack、模型目录和发布记录都是高级诊断证据，不是新增模型的必填步骤。"
       >
         <ol className="ur-plain-list">
-          <li><strong>新增上游连接：</strong>选择真实供应商身份和请求协议，填写 Base URL 与供应商模型 ID；模型支持逗号、分号或换行分隔。</li>
-          <li><strong>绑定供应商凭证：</strong>在“供应商凭证”选择刚创建的 staged 通道；密钥加密保存且不会回显。</li>
-          <li><strong>做真实上游检测：</strong>在“上游检测”按通道和单个模型逐项验证网络、账号与模型权限；离线协议夹具不代替此步骤。</li>
-          <li><strong>确定客户可见范围：</strong>在“模型治理”维护对外模型名、能力、项目模型集和费率证据；未验证能力不得当作真实可用能力。</li>
-          <li><strong>发布并灰度：</strong>运行时发布会从通道模型列表选择目标并自动生成发布标识；“待灰度”是零流量，只有 Canary 才有真实流量。</li>
+		  <li><strong>连接：</strong>填写真实供应商、Base URL、模型 ID 和供应商 Key。</li>
+		  <li><strong>检测：</strong>系统向所选模型发起一次最小真实请求，验证网络、Key 和模型权限。</li>
+		  <li><strong>启用：</strong>首次路由可直接启用；以后替换已生效路由时才需要灰度。</li>
         </ol>
       </Surface>
 
@@ -542,7 +559,7 @@ export default function ChannelsPage() {
                   <div><Typography.Text strong>{selectedChannel.name}</Typography.Text></div>
                   <Typography.Text code size="small">channel:{selectedChannel.id}</Typography.Text>
                 </div>
-                <StatusTag status={selectedChannel.status}>{selectedChannel.status}</StatusTag>
+				<StatusTag status={effectiveChannelStatus(selectedChannel)}>{effectiveChannelStatus(selectedChannel) === 'active' ? '已启用' : '待检测/启用'}</StatusTag>
               </div>
 
               <div className="ur-receipt-summary" aria-label="Provider Pack 摘要">
@@ -630,8 +647,8 @@ export default function ChannelsPage() {
                 </Typography.Text>
               </div>
 
-              <Button icon={<IconEdit />} onClick={() => openEdit(selectedChannel)}>编辑当前通道</Button>
-							{selectedChannel.status === 'staged' && <Typography.Text type="tertiary" size="small">下一步：配置供应商凭证，再到模型治理的“运行时发布”生成确定性证据并灰度上线。</Typography.Text>}
+			  <Button icon={<IconEdit />} onClick={() => openEdit(selectedChannel)}>编辑当前连接</Button>
+			  <Button type={effectiveChannelStatus(selectedChannel) === 'active' ? 'tertiary' : 'primary'} onClick={() => navigateWithinApp(`/test?channel_id=${selectedChannel.id}&model=${encodeURIComponent(normalizeModelList(selectedChannel.models).split(',')[0] || '')}`)}>检测模型</Button>
             </div>
           )}
         </aside>
@@ -689,6 +706,14 @@ export default function ChannelsPage() {
         )}
       </Surface>
 
+	  <Surface title="高级管理" description="仅在轮换供应商凭证、维护客户目录能力、排查调用条件或替换已有路由时使用。">
+		<Space wrap>
+		  <Button onClick={() => navigateWithinApp('/channel-keys')}>供应商凭证</Button>
+		  <Button onClick={() => navigateWithinApp('/model-governance')}>模型目录与灰度发布</Button>
+		  <Button onClick={() => navigateWithinApp('/model-readiness')}>Readiness 诊断</Button>
+		</Space>
+	  </Surface>
+
       <SideSheet
         title={editing ? '编辑通道' : '新增通道'}
         visible={showDrawer}
@@ -717,6 +742,13 @@ export default function ChannelsPage() {
             extraText="可用中英文逗号、分号或换行分隔；保存时会去空格、去重并统一为英文逗号。"
             rules={[{ required: true, message: '必填' }]}
           />
+		  {!editing && <Form.Input
+			field="api_key"
+			label="供应商 API Key"
+			mode="password"
+			extraText="与连接一起加密保存，提交后不回显。"
+			rules={[{ required: true, message: '请输入供应商 API Key' }]}
+		  />}
           <Form.Select field="adapter_type" label="请求协议（Adapter Type）" initValue="openai_compatible"
             optionList={[
               { label: 'OpenAI Compatible', value: 'openai_compatible' },
@@ -739,7 +771,7 @@ export default function ChannelsPage() {
             : channelStatusOptions} extraText="staged/disabled 不能直接改回 active；请通过运行时发布提升。" />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
-            <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>
+			<Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '保存并检测'}</Button>
           </div>
         </Form>
       </SideSheet>

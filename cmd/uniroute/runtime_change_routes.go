@@ -12,6 +12,7 @@ func registerRuntimeChangeRoutes(mux *http.ServeMux, handler *admin.Handler, pla
 	mux.Handle("GET /api/v1/runtime-changes/slot", platformRoute(handler.GetRuntimeChangeSlot))
 	mux.Handle("GET /api/v1/runtime-changes/{ref}", platformRoute(handler.GetRuntimeChange))
 	mux.Handle("POST /api/v1/runtime-changes/{ref}/validate", platformRoute(handler.ValidateRuntimeChange))
+	mux.Handle("POST /api/v1/runtime-changes/{ref}/activate-initial", platformRoute(handler.ActivateInitialRuntimeChange))
 	mux.Handle("POST /api/v1/runtime-changes/{ref}/shadow", platformRoute(handler.AdvanceRuntimeChangeShadow))
 	mux.Handle("POST /api/v1/runtime-changes/{ref}/canary", platformRoute(handler.StartRuntimeChangeCanary))
 	mux.Handle("POST /api/v1/runtime-changes/{ref}/promote", platformRoute(handler.PromoteRuntimeChange))

@@ -140,8 +140,6 @@ func (a *AzureOpenAI) Test(ctx context.Context, in TestInput) (*TestResult, erro
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
-		"max_tokens":  16,
-		"temperature": 0,
 	})
 	if err != nil {
 		return nil, err

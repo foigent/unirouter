@@ -104,6 +104,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
       },
     });
     mocks.updateChannel.mockResolvedValue({ message: 'Channel updated' });
+	mocks.createChannel.mockResolvedValue({ id: 99, credential_configured: true });
   });
 
   it('explains weight semantics and renders safe candidate/exclusion preview', async () => {
@@ -112,10 +113,9 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect((await screen.findAllByText('primary-cn')).length).toBeGreaterThan(0);
     expect(mocks.getChannels).toHaveBeenCalledWith(1, 20);
     expect(screen.getByText('同级权重')).toBeTruthy();
-    expect(screen.getByText(/新通道默认 staged/)).toBeTruthy();
-    expect(screen.getByText('新增模型的推荐顺序')).toBeTruthy();
-    expect(screen.getByText(/不需要手工编造发布标识/)).toBeTruthy();
-    expect(screen.getByText(/只有 Canary 才有真实流量/)).toBeTruthy();
+	expect(screen.getByText(/填写供应商地址、模型和 Key/)).toBeTruthy();
+	expect(screen.getByText('三步即可使用')).toBeTruthy();
+	expect(screen.getByText(/首次路由可直接启用/)).toBeTruthy();
     expect(screen.getByText(/真实请求仍以服务器请求 ID 进行稳定选择/)).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText('模型名称，例如 gpt-4o'), { target: { value: 'gpt-4o' } });
@@ -196,8 +196,8 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 
   it('offers DeepSeek, Kimi and custom as supplier identities without treating protocol fixtures as live verification', async () => {
     render(<ChannelsPage />);
-    await screen.findByText('上游通道');
-    fireEvent.click(screen.getByRole('button', { name: /新增通道/ }));
+	await screen.findByText('模型连接');
+	fireEvent.click(screen.getByRole('button', { name: /新增模型连接/ }));
     fireEvent.click(await screen.findByRole('combobox', { name: '供应商身份' }));
 
     expect(await screen.findByText('DeepSeek（OpenAI-compatible）')).toBeTruthy();
@@ -208,6 +208,25 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(screen.getByText(/不会因为选择 OpenAI-compatible 协议而把 DeepSeek、Kimi 或自定义服务改名为 OpenAI/)).toBeTruthy();
     expect(screen.getByText(/离线协议夹具不等于真实供应商连通验证/)).toBeTruthy();
   });
+
+	it('saves the provider credential with a new connection and continues directly to its first model test', async () => {
+		render(<ChannelsPage />);
+		fireEvent.click(await screen.findByRole('button', { name: /新增模型连接/ }));
+		fireEvent.change(screen.getByLabelText('通道名称'), { target: { value: 'kimi-new' } });
+		fireEvent.click(screen.getByRole('combobox', { name: '供应商身份' }));
+		fireEvent.click(await screen.findByText('Kimi / Moonshot（OpenAI-compatible）'));
+		fireEvent.change(screen.getByLabelText('服务地址（Base URL）'), { target: { value: 'https://provider.invalid/v1' } });
+		fireEvent.change(screen.getByLabelText('支持模型'), { target: { value: 'kimi-k2.6；kimi-k3' } });
+		fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'provider-secret' } });
+		fireEvent.click(screen.getByRole('button', { name: '保存并检测' }));
+
+		await waitFor(() => expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({
+			name: 'kimi-new', provider: 'kimi', models: 'kimi-k2.6,kimi-k3', api_key: 'provider-secret',
+		})));
+		expect(window.location.pathname).toBe('/test');
+		expect(new URLSearchParams(window.location.search).get('channel_id')).toBe('99');
+		expect(new URLSearchParams(window.location.search).get('model')).toBe('kimi-k2.6');
+	});
 
   it('keeps the epoch conflict message and maps other backend failures to safe useful text', async () => {
     const { ApiError } = await import('../../api/client');

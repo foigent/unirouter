@@ -79,6 +79,10 @@ func (h *Handler) AdvanceRuntimeChangeShadow(w http.ResponseWriter, r *http.Requ
 	h.transitionRuntimeChange(w, r, "shadow")
 }
 
+func (h *Handler) ActivateInitialRuntimeChange(w http.ResponseWriter, r *http.Request) {
+	h.transitionRuntimeChange(w, r, "activate_initial")
+}
+
 func (h *Handler) StartRuntimeChangeCanary(w http.ResponseWriter, r *http.Request) {
 	h.transitionRuntimeChange(w, r, "canary")
 }
@@ -112,6 +116,8 @@ func (h *Handler) transitionRuntimeChange(w http.ResponseWriter, r *http.Request
 		item, err = h.runtimeChangeManager.Validate(r.Context(), ref, request.ExpectedVersion, actor)
 	case "shadow":
 		item, err = h.runtimeChangeManager.AdvanceShadow(r.Context(), ref, request.ExpectedVersion, actor)
+	case "activate_initial":
+		item, err = h.runtimeChangeManager.ActivateInitial(r.Context(), ref, request.ExpectedVersion, actor)
 	case "canary":
 		item, err = h.runtimeChangeManager.StartCanary(r.Context(), ref, request.ExpectedVersion, request.CanaryBasisPoints, actor)
 	case "promote":

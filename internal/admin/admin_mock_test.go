@@ -1380,10 +1380,13 @@ func TestListChannels_Success(t *testing.T) {
 						*dest[6].(*json.RawMessage) = json.RawMessage(`{}`)
 						*dest[7].(*int) = 100           // priority
 						*dest[8].(*int) = 5             // degradation_threshold
-						*dest[9].(*string) = "active"   // status
+						*dest[9].(*string) = "staged"   // stored status
 						*dest[10].(*string) = "healthy" // circuit_state
 						*dest[11].(*int) = 0            // fail_count
 						*dest[12].(*time.Time) = now    // created_at
+						*dest[13].(*int) = 100          // routing_weight
+						*dest[14].(*int64) = 7          // routing_epoch
+						*dest[15].(*string) = "gpt-4o"  // published_models
 						return nil
 					},
 				},
@@ -1410,6 +1413,9 @@ func TestListChannels_Success(t *testing.T) {
 	ch := data[0].(map[string]interface{})
 	if ch["name"] != "openai" {
 		t.Fatalf("expected name=openai, got %v", ch["name"])
+	}
+	if ch["status"] != "staged" || ch["effective_status"] != "active" || ch["published_models"] != "gpt-4o" {
+		t.Fatalf("expected staged storage with one active published model, got %#v", ch)
 	}
 }
 

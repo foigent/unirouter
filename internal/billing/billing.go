@@ -258,11 +258,27 @@ func (b *Billing) queryPriceQuoteForOrg(ctx context.Context, orgID int64, model 
 	}
 	switch b.requestPricingAuthority {
 	case RequestPricingAuthorityLegacy:
-		return b.queryLegacyPriceQuote(ctx, orgID, model)
+		quote, err := b.queryLegacyPriceQuote(ctx, orgID, model)
+		if err != nil && b.mode == BillingModeCostObservation && errors.Is(err, ErrModelPriceNotConfigured) {
+			return unpricedObservationQuote(model), nil
+		}
+		return quote, err
 	case RequestPricingAuthorityRateCard:
 		return b.queryRateCardPriceQuote(ctx, orgID, model, time.Now().UTC())
 	default:
 		return priceQuote{}, fmt.Errorf("invalid request pricing authority %q", b.requestPricingAuthority)
+	}
+}
+
+// unpricedObservationQuote keeps the default local observation mode usable
+// before an administrator configures authoritative prices. Zero here means
+// "cost unknown", not "the provider is free"; the distinct immutable version
+// is carried through reservations, receipts, journals, and diagnostics.
+func unpricedObservationQuote(model string) priceQuote {
+	digest := sha256.Sum256([]byte("unpriced-observation-v1\x00" + strings.TrimSpace(model)))
+	return priceQuote{
+		CacheReadRatio: 1, CacheCreationRatio: 1, Multiplier: "1",
+		Version: "uo1_" + hex.EncodeToString(digest[:]),
 	}
 }
 
@@ -354,6 +370,9 @@ func newPriceQuote(model, baseInput, baseOutput, cacheReadRatio, cacheCreationRa
 }
 
 func estimateFreezeAmountFromQuote(quote priceQuote, estimatedTokens int, safetyFactor string, minFreezeCents int64) (int64, error) {
+	if strings.HasPrefix(quote.Version, "uo1_") {
+		return 0, nil
+	}
 	reservationPrice := quote.InputPriceMicrosPerMillion
 	for _, candidate := range []int64{quote.OutputPriceMicrosPerMillion, quote.CacheReadPriceMicrosPerMillion, quote.CacheCreationPriceMicrosPerMillion} {
 		if candidate > reservationPrice {

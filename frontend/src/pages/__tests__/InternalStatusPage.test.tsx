@@ -289,7 +289,7 @@ describe('InternalStatusPage', () => {
 
     await waitFor(() => expect(mockGetRuntimeStatus).toHaveBeenCalledWith());
     expect(mockGetInternalStatus).not.toHaveBeenCalled();
-    expect(screen.getByText('尚未初始化客户组织')).toBeTruthy();
+    expect(screen.getByText('未找到部署组织')).toBeTruthy();
     expect(screen.getByText('运行时观测')).toBeTruthy();
     expect(screen.getByText('客户组织尚未就绪，未查询客户流量')).toBeTruthy();
   });

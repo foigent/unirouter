@@ -172,3 +172,70 @@ func TestPRD8RuntimeChangeLifecycleCanaryActivationAndEmergencyDisable(t *testin
 		WHERE r.release_ref=$1`, second.ReleaseRef).Scan(&secondEventCount))
 	require.Equal(t, 6, secondEventCount)
 }
+
+func TestInitialActivationCreatesFirstStableRouteAndRejectsReplacementShortcut(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	orgID := testutil.NewTestOrg(t, pool)
+	var userID, channelID, routingEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'initial-route-admin','fixture','platform_admin','platform_admin','active') RETURNING id`, orgID).Scan(&userID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channels (
+		  name,provider,base_url,models,adapter_type,adapter_config,
+		  priority,routing_weight,degradation_threshold,status,circuit_state)
+		VALUES ('initial-route','openai','https://provider.invalid','initial-route-model',
+		  'openai_compatible','{}',100,100,10,'staged','healthy')
+		RETURNING id,routing_epoch`).Scan(&channelID, &routingEpoch))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channel_keys (channel_id,key_enc,allowed_models,status)
+		VALUES ($1,'fixture','initial-route-model','active') RETURNING id`, channelID).Scan(new(int64)))
+
+	policy := routingpolicy.Default()
+	router, err := gateway.NewRouterWithPolicy(pool, policy)
+	require.NoError(t, err)
+	manager, err := runtimechange.NewManager(pool, router, policy)
+	require.NoError(t, err)
+	router.SetRuntimeResolver(manager)
+
+	createValidated := func(ref string) runtimechange.Release {
+		release, createErr := manager.CreateDraft(ctx, runtimechange.DraftRequest{
+			ReleaseRef: ref, ModelName: "initial-route-model", Reason: "verified initial model connection",
+			Overrides: []routingpolicy.ChannelOverride{{
+				ChannelID: channelID, ExpectedRoutingEpoch: routingEpoch, Admission: routingpolicy.AdmissionAllow,
+			}},
+		}, userID)
+		require.NoError(t, createErr)
+		release, createErr = manager.Validate(ctx, release.ReleaseRef, release.Version, userID)
+		require.NoError(t, createErr)
+		return release
+	}
+
+	first := createValidated("rcr_initial_route_first")
+	first, err = manager.ActivateInitial(ctx, first.ReleaseRef, first.Version, userID)
+	require.NoError(t, err)
+	require.Equal(t, "active", first.Stage)
+	routes, err := router.RouteAllWithKey(ctx, "initial-route-model", "first-stable-request")
+	require.NoError(t, err)
+	require.Equal(t, channelID, routes[0].Channel.ID)
+	require.Equal(t, first.ReleaseRef, routes[0].RuntimeReleaseRef)
+	var action string
+	var initialActivation bool
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT action, COALESCE((detail->>'initial_activation')::boolean, false)
+		  FROM runtime_change_events
+		 WHERE release_id=$1 AND to_stage='active'`, first.ID).Scan(&action, &initialActivation))
+	require.Equal(t, "promote", action)
+	require.True(t, initialActivation)
+
+	replacement := createValidated("rcr_initial_route_replacement")
+	_, err = manager.ActivateInitial(ctx, replacement.ReleaseRef, replacement.Version, userID)
+	require.ErrorIs(t, err, runtimechange.ErrConflict)
+
+	first, err = manager.Rollback(ctx, first.ReleaseRef, first.Version, userID)
+	require.NoError(t, err)
+	require.Equal(t, "rolled_back", first.Stage)
+	_, err = router.RouteAllWithKey(ctx, "initial-route-model", "after-initial-rollback")
+	require.Error(t, err)
+}

@@ -2048,6 +2048,12 @@ paths:
     description: Rebuilds same-clock snapshots, verifies channel epochs and exact Provider Packs, and blocks breaking candidates using optimistic revision control.
     post: *operation_create
 
+  /api/v1/runtime-changes/{ref}/activate-initial:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Promotes a validated candidate directly to the first stable route only when the model has no stable or canary assignment. Replacement routes must use shadow and canary.
+    post: *operation_create
+
   /api/v1/runtime-changes/{ref}/shadow:
     x-unirouter-rbac:
       post: [platform_admin]

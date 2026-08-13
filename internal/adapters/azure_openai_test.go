@@ -188,6 +188,50 @@ func TestAzureOpenAIParseResponsePreservesUsageAuthorityAndErrorClass(t *testing
 	}
 }
 
+func TestAzureOpenAIConnectivityTestOmitsOptionalTemperature(t *testing.T) {
+	adapter := NewAzureOpenAI()
+	result, err := adapter.Test(context.Background(), TestInput{
+		Channel: models.Channel{
+			BaseURL:       "https://contoso.openai.azure.com",
+			Provider:      "azure",
+			AdapterType:   TypeAzureOpenAI,
+			AdapterConfig: json.RawMessage(`{"api_version":"2024-10-21","deployment":"reasoning-prod"}`),
+		},
+		APIKey: "fixture-key",
+		Model:  "reasoning-model",
+		Client: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, readErr := io.ReadAll(req.Body)
+			if readErr != nil {
+				t.Fatalf("read test request: %v", readErr)
+			}
+			var payload map[string]interface{}
+			if err := json.Unmarshal(body, &payload); err != nil {
+				t.Fatalf("decode test request: %v", err)
+			}
+			if _, exists := payload["temperature"]; exists {
+				t.Fatalf("connectivity test must not force an optional temperature: %s", body)
+			}
+			if _, exists := payload["model"]; exists {
+				t.Fatalf("deployment-scoped connectivity test must not send model: %s", body)
+			}
+			if _, exists := payload["max_tokens"]; exists {
+				t.Fatalf("connectivity test must not force an optional token limit: %s", body)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)),
+			}, nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Test failed: %v", err)
+	}
+	if !result.Success || result.TokensUsed != 2 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
 func TestDefaultRegistryIncludesAzureOpenAI(t *testing.T) {
 	if !DefaultRegistry().Has(TypeAzureOpenAI) {
 		t.Fatal("default registry does not include azure_openai")

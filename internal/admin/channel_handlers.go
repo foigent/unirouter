@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
 
@@ -42,7 +44,16 @@ func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(),
 		`SELECT id, name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
 		        priority, degradation_threshold, status, circuit_state, fail_count, created_at,
-		        routing_weight, routing_epoch
+		        routing_weight, routing_epoch,
+		        COALESCE((
+		          SELECT string_agg(DISTINCT rcs.model_name, ',' ORDER BY rcs.model_name)
+		            FROM runtime_change_slots rcs
+		            JOIN runtime_change_releases stable
+		              ON stable.id=rcs.stable_release_id AND stable.stage='active'
+		            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(stable.candidate->'overrides','[]'::jsonb)) AS runtime_override
+		           WHERE (runtime_override->>'channel_id')::bigint=channels.id
+		             AND runtime_override->>'admission'='allow'
+		        ), '') AS published_models
 		 FROM channels ORDER BY priority ASC, id ASC LIMIT $1 OFFSET $2`, pageSize, offset,
 	)
 	if err != nil {
@@ -54,18 +65,23 @@ func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	channels := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id, routingEpoch int64
-		var name, provider, baseURL, models, adapterType, status, circuitState string
+		var name, provider, baseURL, models, adapterType, status, circuitState, publishedModels string
 		var adapterConfig json.RawMessage
 		var priority, failCount, degradationThreshold, routingWeight int
 		var createdAt time.Time
-		if err := rows.Scan(&id, &name, &provider, &baseURL, &models, &adapterType, &adapterConfig, &priority, &degradationThreshold, &status, &circuitState, &failCount, &createdAt, &routingWeight, &routingEpoch); err != nil {
+		if err := rows.Scan(&id, &name, &provider, &baseURL, &models, &adapterType, &adapterConfig, &priority, &degradationThreshold, &status, &circuitState, &failCount, &createdAt, &routingWeight, &routingEpoch, &publishedModels); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read channels"})
 			return
+		}
+		effectiveStatus := status
+		if status == "staged" && publishedModels != "" {
+			effectiveStatus = "active"
 		}
 		channels = append(channels, map[string]interface{}{
 			"id": id, "name": name, "provider": provider, "base_url": baseURL,
 			"models": models, "adapter_type": adapters.NormalizeType(adapterType), "adapter_config": adapterConfig,
 			"priority": priority, "degradation_threshold": degradationThreshold, "status": status,
+			"effective_status": effectiveStatus, "published_models": publishedModels,
 			"routing_weight": routingWeight, "routing_epoch": routingEpoch,
 			"circuit_state": circuitState, "fail_count": failCount, "created_at": createdAt,
 		})
@@ -89,6 +105,7 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		Priority             int             `json:"priority"`
 		RoutingWeight        int             `json:"routing_weight"`
 		DegradationThreshold int             `json:"degradation_threshold"`
+		APIKey               string          `json:"api_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid JSON"})
@@ -127,11 +144,21 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "priority must be 1-10000, routing_weight 1-1000, and degradation_threshold 1-100"})
 		return
 	}
+	req.APIKey = strings.TrimSpace(req.APIKey)
+	var keyEnc string
+	if req.APIKey != "" {
+		encrypted, encryptErr := auth.EncryptKey([]byte(req.APIKey), h.encKey)
+		if encryptErr != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to encrypt provider credential"})
+			return
+		}
+		keyEnc = encrypted
+	}
 
 	var (
-		id    int64
-		tx    pgx.Tx
-		store channelMutationStore = h.db
+		id, keyID int64
+		tx        pgx.Tx
+		store     channelMutationStore = h.db
 	)
 	if !isUnauthenticatedUnitContext(r.Context()) {
 		var err error
@@ -157,10 +184,21 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel"})
 		return
 	}
+	if keyEnc != "" {
+		err = store.QueryRow(r.Context(), `
+			INSERT INTO channel_keys (channel_id, key_enc, allowed_models, status, fail_count, created_at, updated_at)
+			VALUES ($1, $2, $3, 'active', 0, NOW(), NOW())
+			RETURNING id`, id, keyEnc, req.Models).Scan(&keyID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to save provider credential"})
+			return
+		}
+	}
 
 	after := channelAuditState(id, req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, req.Priority, req.DegradationThreshold, "staged", "healthy", 0)
 	after["routing_weight"] = req.RoutingWeight
 	after["routing_epoch"] = int64(1)
+	after["credential_configured"] = keyID > 0
 	detail := map[string]interface{}{"after": after}
 	if tx != nil {
 		if err := insertAuditEntry(r.Context(), tx, "channel.create", "channel", fmt.Sprintf("%d", id), detail,
@@ -168,16 +206,29 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel"})
 			return
 		}
+		if keyID > 0 {
+			if err := insertAuditEntry(r.Context(), tx, "channelkey.create", "channel_key", fmt.Sprintf("%d", keyID), map[string]interface{}{
+				"channel_id": id, "allowed_models": req.Models, "created_with_channel": true,
+			}, requestAuditMeta(r, middleware.GetOrgIDFromContext(r.Context()), middleware.GetProjectIDFromContext(r.Context()))); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel"})
+				return
+			}
+		}
 		if err := tx.Commit(r.Context()); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to create channel"})
 			return
 		}
 	} else {
 		h.recordAudit(r.Context(), "channel.create", "channel", fmt.Sprintf("%d", id), detail, r.RemoteAddr)
+		if keyID > 0 {
+			h.recordAudit(r.Context(), "channelkey.create", "channel_key", fmt.Sprintf("%d", keyID), map[string]interface{}{
+				"channel_id": id, "allowed_models": req.Models, "created_with_channel": true,
+			}, r.RemoteAddr)
+		}
 	}
 	h.invalidateRoutingSnapshots()
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id})
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "credential_configured": keyID > 0})
 }
 
 func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {

@@ -134,7 +134,7 @@ export default function ModelReadinessPage() {
 
   return (
     <div className="ur-page">
-      <PageHeader eyebrow="模型接入" title="模型 Readiness" description="独立呈现已录入、目录可见、可路由、当前项目调用主体可调用四个事实。纯读取，不发 Provider / Feed / upstream 请求。" actions={<Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>刷新事实</Button>} />
+	  <PageHeader eyebrow="高级诊断" title="模型调用条件诊断（Readiness）" description="Readiness 就是“调用条件是否齐全”的只读排查页，不是模型接入步骤。它不会发 Provider、Feed 或上游请求，也不会自动修改配置。" actions={<Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>刷新诊断</Button>} />
       <Surface title="检查范围" description="模型保留为 query value；Workload caller 必须精确绑定同一项目的 application_ref。">
         {projectsError && <Text type="warning">{projectsError}</Text>}
         <Form layout="horizontal" getFormApi={setFormApi} onSubmit={submit}>

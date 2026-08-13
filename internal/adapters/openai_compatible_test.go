@@ -317,8 +317,8 @@ func TestOpenAICompatibleTest(t *testing.T) {
 			if _, exists := payload["temperature"]; exists {
 				t.Fatalf("connectivity test must not force an optional temperature: %s", body)
 			}
-			if payload["max_tokens"] != float64(16) {
-				t.Fatalf("unexpected max_tokens: %v", payload["max_tokens"])
+			if _, exists := payload["max_tokens"]; exists {
+				t.Fatalf("connectivity test must not force an optional token limit: %s", body)
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,

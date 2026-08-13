@@ -153,6 +153,7 @@ const endpointGroups = [
       ['GET', '/api/v1/runtime-changes/slot', '读取一个模型的稳定与灰度发布槽'],
       ['GET', '/api/v1/runtime-changes/{ref}', '读取发布候选、Hash、Pack Pin、模拟报告和生命周期'],
       ['POST', '/api/v1/runtime-changes/{ref}/validate', '重建同钟快照并验证候选；breaking 直接阻断'],
+	  ['POST', '/api/v1/runtime-changes/{ref}/activate-initial', '仅当模型尚无稳定或灰度路由时，将已验证连接设为首个稳定路由'],
       ['POST', '/api/v1/runtime-changes/{ref}/shadow', '进入零流量影子阶段'],
       ['POST', '/api/v1/runtime-changes/{ref}/canary', '按服务端请求标识启动最高 50% 的确定性灰度'],
       ['POST', '/api/v1/runtime-changes/{ref}/promote', '将当前灰度原子提升为稳定发布'],

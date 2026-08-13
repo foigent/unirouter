@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Banner, Button, Input, Spin, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Spin, Tabs, Tag, Typography } from '@douyinfe/semi-ui';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import { isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
+import { isOrgAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
@@ -55,81 +55,6 @@ function normalizeSection(value: string | null, canManageOrganization: boolean):
 
 function isAdvancedSection(value: string | null): value is AdvancedSection {
   return value === 'directory' || value === 'lifecycle';
-}
-
-type BootstrapResult = {
-  organization_id: number;
-  organization_name: string;
-  wallet_balance_micros: number;
-  idempotent: boolean;
-};
-
-function FirstCustomerBootstrap() {
-  const [organizationName, setOrganizationName] = useState('');
-  const [clientRequestId] = useState(() => `first-customer-${globalThis.crypto.randomUUID()}`);
-  const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<BootstrapResult | null>(null);
-
-  const submit = async () => {
-    const normalizedName = organizationName.trim();
-    if (!normalizedName) {
-      Toast.warning('请输入首个客户组织名称');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const payload = await api.bootstrapFirstCustomer(normalizedName, clientRequestId) as BootstrapResult;
-      setResult(payload);
-      Toast.success(payload.idempotent ? '已读回同一次初始化结果' : '首个客户组织与零余额钱包已创建');
-      try {
-        await useAuthStore.getState().loadProfile();
-      } catch {
-        Toast.warning('客户组织已创建，但当前会话刷新失败。请刷新页面后继续，不要重复初始化。');
-      }
-    } catch (error: any) {
-      Toast.error(`初始化失败${error?.message ? `：${error.message}` : ''}`);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="ur-embedded-page">
-      <Banner
-        type="warning"
-        description="每套本地部署只服务一个客户。本操作会创建唯一的 active 客户组织和 CNY 零余额钱包；不会自动创建用户、项目、上游凭据、应用 Key 或测试流量。"
-      />
-      <Surface title="初始化客户组织" description="请输入这套 UniRouter 实际服务的客户企业名称。后端会在提交时复核当前部署仍满足首次初始化条件。">
-        <div style={{ display: 'grid', gap: 12, maxWidth: 620 }}>
-          <Input
-            aria-label="首个客户组织名称"
-            value={organizationName}
-            onChange={setOrganizationName}
-            maxLength={160}
-            disabled={Boolean(result)}
-            placeholder="输入真实客户组织名称"
-          />
-          <div>
-            <Button
-              theme="solid"
-              type="primary"
-              loading={submitting}
-              disabled={Boolean(result) || !organizationName.trim()}
-              onClick={submit}
-            >
-              创建组织与零余额钱包
-            </Button>
-          </div>
-          {result ? (
-            <Banner
-              type="success"
-              description={`已创建 ${result.organization_name}（ID ${result.organization_id}），钱包余额 ${result.wallet_balance_micros} micro-CNY。页面会刷新到该客户上下文；下一步请创建客户管理员和首个项目，再配置上游连接与应用 Key。`}
-            />
-          ) : null}
-        </div>
-      </Surface>
-    </div>
-  );
 }
 
 function healthColor(value: string) {
@@ -275,7 +200,6 @@ export default function OrganizationMembersPage() {
   const customerContext = resolveCustomerContext(user);
   const orgId = effectiveCustomerOrgID(user);
   const canManageOrganization = isOrgAdminRole(organizationRole);
-  const platformAdmin = isPlatformAdminRole(organizationRole);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSection = searchParams.get('section');
   const activeSection = normalizeSection(requestedSection, canManageOrganization);
@@ -325,16 +249,12 @@ export default function OrganizationMembersPage() {
       <div className="ur-page ur-page-wide ur-organization-members-page">
         <PageHeader
           eyebrow="部署设置"
-          title={customerContext.state === 'not_initialized' ? '初始化客户组织' : blocker.title}
-          description="客户组织上下文是账号、项目、用量和成本归属的共同边界。确认唯一客户前，UniRouter 不会使用部署技术组织代替。"
+		  title={blocker.title}
+		  description="正常的本地单客户部署会自动采用唯一根组织。这里出现阻断，表示数据库中没有根组织、存在多个无法判定的根组织，或组织已停用。"
         />
-        {platformAdmin && customerContext.state === 'not_initialized' ? (
-          <FirstCustomerBootstrap />
-        ) : (
-          <Surface>
-            <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
-          </Surface>
-        )}
+		<Surface>
+		  <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
+		</Surface>
       </div>
     );
   }

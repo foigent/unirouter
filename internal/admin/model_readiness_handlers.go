@@ -293,6 +293,15 @@ func (h *Handler) readinessPriceAuthorityAxis(r *http.Request, orgID int64, mode
 			"configured", true, "request_pricing_mode", mode,
 		))
 	}
+	if h.effectiveBillingMode() == billing.BillingModeCostObservation {
+		return modelreadiness.Optional("model_price_unconfigured_cost_observation", modelreadiness.Evidence(
+			"configured", false,
+			"request_pricing_mode", mode,
+			"billing_mode", string(billing.BillingModeCostObservation),
+			"traffic_admission_required", false,
+			"calculated_cost_available", false,
+		))
+	}
 	return modelreadiness.Blocked("model_price_missing", modelreadiness.Evidence(
 		"configured", false, "request_pricing_mode", mode,
 	), h.readinessFixRoute(r, "/model-prices?model="+url.QueryEscape(model), actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin), "platform_admin")

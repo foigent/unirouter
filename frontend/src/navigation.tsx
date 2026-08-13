@@ -10,7 +10,6 @@ import {
   IconHomeStroked,
   IconKeyStroked,
   IconBell,
-  IconLayers,
   IconLockStroked,
   IconMonitorStroked,
   IconPulse,
@@ -187,11 +186,8 @@ const taskNavItems: NavItem[] = [
     text: '模型接入',
     icon: <IconSendStroked />,
     items: [
-      { itemKey: '/channels', text: '上游通道', icon: <IconRoute /> },
-      { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconLockStroked /> },
-      { itemKey: '/test', text: '上游检测', icon: <IconTestScore />, licenseFeature: 'gateway' },
-      { itemKey: '/model-governance', text: '模型治理', icon: <IconLayers />, licenseFeature: 'model_governance' },
-		{ itemKey: '/model-readiness', text: '模型 Readiness', icon: <IconPulse /> },
+	  { itemKey: '/channels', text: '模型连接', icon: <IconRoute /> },
+	  { itemKey: '/test', text: '检测并启用', icon: <IconTestScore />, licenseFeature: 'gateway' },
     ],
   },
   {
@@ -251,7 +247,7 @@ const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(chil
 const compatibilityRoutes = new Set([
   '/governance-simulation', '/risk-control', '/member-lifecycle', '/users', '/project-management',
   '/provenance-passport', '/org-model-prices', '/grants', '/agent-trust-evidence', '/keys', '/data-exchange',
-	'/connectors',
+	'/connectors', '/channel-keys', '/model-governance',
 ]);
 const orgAdminRoutes = new Set([
 	'/', '/model-governance', '/model-readiness', '/risk-control', '/access-review', '/applications', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
