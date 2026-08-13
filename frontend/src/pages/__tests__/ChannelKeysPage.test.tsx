@@ -29,6 +29,7 @@ describe('ChannelKeysPage', () => {
         allowed_models: 'mimo-v2.5-pro，mimo-v2.5',
         status: 'active',
         created_at: '2026-07-01T00:00:00Z',
+		updated_at: '2026-08-14T01:59:49+08:00',
       }],
       total: 1,
     });
@@ -42,16 +43,47 @@ describe('ChannelKeysPage', () => {
     await screen.findByText('mimo-v2.5-pro，mimo-v2.5');
     fireEvent.click(screen.getByRole('button', { name: '编辑供应商凭证 mimo' }));
 
-    expect(await screen.findByLabelText('供应商 API Key')).toHaveAttribute('type', 'password');
+	expect(await screen.findByLabelText('新的供应商 API Key（可选）')).toHaveAttribute('type', 'password');
     const allowedModels = await screen.findByLabelText('允许模型（留空=全部）');
     fireEvent.change(allowedModels, { target: { value: 'mimo-v2.5-pro；mimo-v2.5;mimo-v2.5-pro' } });
-    fireEvent.click(screen.getByText('更新'));
+	fireEvent.click(screen.getByText('保存修改'));
 
     await waitFor(() => expect(mockUpdateChannelKey).toHaveBeenCalledWith(7, {
       channel_id: 3,
       allowed_models: 'mimo-v2.5-pro,mimo-v2.5',
       status: 'active',
     }));
+  });
+
+  it('submits a newly entered supplier API key when rotating a staged connection credential', async () => {
+    render(<ChannelKeysPage />);
+
+    await screen.findByText('mimo-v2.5-pro，mimo-v2.5');
+    fireEvent.click(screen.getByRole('button', { name: '编辑供应商凭证 mimo' }));
+
+	fireEvent.change(await screen.findByLabelText('新的供应商 API Key（可选）'), { target: { value: 'sk-rotated-test-key' } });
+	fireEvent.click(screen.getByText('保存修改'));
+
+    await waitFor(() => expect(mockUpdateChannelKey).toHaveBeenCalledWith(7, {
+      channel_id: 3,
+      key: 'sk-rotated-test-key',
+      allowed_models: 'mimo-v2.5-pro,mimo-v2.5',
+      status: 'active',
+    }));
+	expect(await screen.findByText(/mimo 的新供应商 API Key 已加密保存/)).toBeTruthy();
+  });
+
+  it('keeps a supplier credential save failure visible in the editor', async () => {
+	mockUpdateChannelKey.mockRejectedValueOnce(new Error('数据库暂不可用'));
+	render(<ChannelKeysPage />);
+
+	await screen.findByText('mimo-v2.5-pro，mimo-v2.5');
+	fireEvent.click(screen.getByRole('button', { name: '编辑供应商凭证 mimo' }));
+	fireEvent.change(await screen.findByLabelText('新的供应商 API Key（可选）'), { target: { value: 'sk-rejected-test-key' } });
+	fireEvent.click(screen.getByText('保存修改'));
+
+	expect((await screen.findAllByText('保存失败：数据库暂不可用')).length).toBeGreaterThan(0);
+	expect(screen.getByRole('heading', { name: /编辑供应商凭证/ })).toBeTruthy();
   });
 
   it('shows an explicit retry state when supplier credentials cannot be loaded', async () => {

@@ -66,7 +66,7 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   platform: {
 		authz: context('platform_admin'),
 		routes: [
-		'/', '/channels',
+		'/', '/channels', '/channel-keys', '/model-governance', '/model-readiness',
 		'/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
       '/wallet', '/model-prices', '/cost-optimization', '/reconciliation',
@@ -76,7 +76,7 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   organizationAdmin: {
 	authz: context('org_admin'),
 	routes: [
-		'/', '/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
+		'/', '/model-governance', '/model-readiness', '/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
       '/model-prices', '/cost-optimization', '/docs',
     ],
@@ -87,19 +87,19 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   },
   organizationViewer: {
     authz: context('org_viewer'),
-	routes: ['/', '/organization-members', '/docs'],
+	routes: ['/', '/model-governance', '/model-readiness', '/organization-members', '/docs'],
   },
   projectAdmin: {
     authz: context('member', 'project_admin'),
-	routes: ['/access', '/developer', '/access-review', '/applications', '/organization-members', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/model-readiness', '/access-review', '/applications', '/organization-members', '/media-jobs', '/docs'],
   },
   projectUser: {
     authz: context('member', 'project_user'),
-	routes: ['/access', '/developer', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/model-readiness', '/media-jobs', '/docs'],
   },
   projectViewer: {
     authz: context('member', 'project_viewer'),
-	routes: ['/access', '/developer', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/model-readiness', '/media-jobs', '/docs'],
   },
   memberWithoutMembership: {
     authz: context('member'),
@@ -128,10 +128,12 @@ describe('two-axis navigation boundaries', () => {
     const billingProjectViewer = context('billing_admin', 'project_viewer');
     expect(routeKeys(orgViewerWithoutMembership)).not.toContain('/developer');
     expect(routeKeys(orgViewerWithoutMembership)).not.toContain('/access');
-    expect(routeKeys(orgViewerProjectAdmin)).toEqual(expect.arrayContaining(['/access', '/developer']));
+	expect(routeKeys(orgViewerProjectAdmin)).not.toContain('/access');
+	expect(routeKeys(orgViewerProjectAdmin)).not.toContain('/developer');
     expect(routeKeys(billingWithoutMembership)).not.toContain('/developer');
     expect(routeKeys(billingWithoutMembership)).not.toContain('/access');
-    expect(routeKeys(billingProjectViewer)).toEqual(expect.arrayContaining(['/access', '/developer']));
+	expect(routeKeys(billingProjectViewer)).not.toContain('/access');
+	expect(routeKeys(billingProjectViewer)).not.toContain('/developer');
     expect(isRouteAllowedForAuthz('/project-management', orgViewerWithoutMembership)).toBe(true);
     expect(canCreateProjectKey(orgViewerWithoutMembership)).toBe(false);
     expect(canCreateProjectKey(orgViewerProjectAdmin)).toBe(true);
@@ -164,13 +166,13 @@ describe('two-axis navigation boundaries', () => {
 	expect(getNavItemsForAuthz(context('org_admin'))[0]?.text).toBe('组织总览');
 	expect(getNavItemsForAuthz(context('org_viewer'))[0]?.text).toBe('组织总览');
 	expect(getNavItemsForAuthz(context('billing_admin'))[0]?.text).toBe('财务与用量总览');
-	expect(getNavItemsForAuthz(context('org_admin', 'project_user')).map(item => item.text).slice(0, 3)).toEqual(['我的访问', '项目工作台', '组织总览']);
+	expect(getNavItemsForAuthz(context('org_admin', 'project_user')).map(item => item.text).slice(0, 2)).toEqual(['组织总览', '模型接入']);
 	expect(getNavItemsForAuthz(context('member', 'project_admin'))[0]?.text).toBe('我的访问');
 
     expect(getOpenKeysForPath('/notifications', context('platform_admin'))).toEqual(['g-observability']);
     expect(getOpenKeysForPath('/notifications', context('member', 'project_admin'))).toEqual([]);
     expect(getOpenKeysForPath('/docs', context('platform_admin'))).toEqual(['g-system-integration']);
-	expect(getOpenKeysForPath('/model-governance', context('org_admin'))).toEqual([]);
+	expect(getOpenKeysForPath('/model-governance', context('org_admin'))).toEqual(['g-model-access']);
   });
 
 	it('uses shell discovery capabilities without granting selected-project actions', () => {
@@ -193,7 +195,8 @@ describe('two-axis navigation boundaries', () => {
 			organization_role: 'platform_admin',
 			navigation_capabilities: capabilities,
 		});
-		expect(routeKeys(managementMember)).toEqual(expect.arrayContaining(['/access', '/developer']));
+		expect(routeKeys(managementMember)).not.toContain('/access');
+		expect(routeKeys(managementMember)).not.toContain('/developer');
 		const selectedViewer = authzContextForUser({ organization_role: 'member', navigation_capabilities: capabilities }, 'project_viewer', true);
 		expect(canCreateProjectKey(selectedViewer)).toBe(false);
 		const selectedAdmin = authzContextForUser({ organization_role: 'member', navigation_capabilities: capabilities }, 'project_admin', true);
@@ -205,9 +208,8 @@ describe('two-axis navigation boundaries', () => {
 		expect(getDefaultPathForAuthz(context('org_admin', 'project_user'))).toBe('/');
 		expect(getDefaultPathForAuthz(context('member'))).toBe('/access');
 		expect(getDefaultPathForAuthz(context('member', 'project_viewer'))).toBe('/developer');
-		// Entry discoverability does not alter existing direct-route authority.
-		expect(isRouteAllowedForAuthz('/access', context('platform_admin'))).toBe(true);
-		expect(isRouteAllowedForAuthz('/developer', context('platform_admin'))).toBe(true);
+		expect(isRouteAllowedForAuthz('/access', context('platform_admin'))).toBe(false);
+		expect(isRouteAllowedForAuthz('/developer', context('platform_admin'))).toBe(false);
 	});
 
   it('keeps account settings avatar-only while allowing every authenticated identity to open it', () => {
@@ -273,7 +275,7 @@ describe('two-axis navigation boundaries', () => {
     const platformChildren = platformItems.flatMap(item => item.items || []);
 
     expect(platformChildren.find(item => item.itemKey === '/test')?.licenseLocked).toBeUndefined();
-		expect(platformChildren.find(item => item.itemKey === '/model-governance')).toBeUndefined();
+	expect(platformChildren.find(item => item.itemKey === '/model-governance')?.licenseLocked).toBe(true);
     expect(platformChildren.find(item => item.itemKey === '/integrations')?.licenseLocked).toBeUndefined();
     expect(isRouteLicensed('/guardrail-policies', partial)).toBe(false);
     expect(isRouteLicensed('/notifications?project_id=7', partial)).toBe(true);
