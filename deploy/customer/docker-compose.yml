@@ -1,5 +1,11 @@
 name: unirouter
 
+x-unirouter-json-logging: &unirouter-json-logging
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+    max-file: "${DOCKER_LOG_MAX_FILES:-3}"
+
 # Customer runtime template. This file intentionally contains no build context,
 # source mount, or host migration mount. It is shipped inside a signed release
 # together with immutable prebuilt image artifacts.
@@ -18,6 +24,7 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    logging: *unirouter-json-logging
 
   redis:
     image: ${REDIS_IMAGE:?Set the approved Redis image digest reference}
@@ -32,6 +39,7 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    logging: *unirouter-json-logging
 
   backend:
     image: ${UNIROUTER_BACKEND_IMAGE:?Set the signed release backend image reference}
@@ -131,6 +139,7 @@ services:
       retries: 10
       start_period: 20s
     restart: unless-stopped
+    logging: *unirouter-json-logging
 
   frontend:
     image: ${UNIROUTER_FRONTEND_IMAGE:?Set the signed release frontend image reference}
@@ -148,6 +157,7 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    logging: *unirouter-json-logging
 
   prometheus:
     image: ${PROMETHEUS_IMAGE:?Set the approved Prometheus image digest reference}
@@ -158,6 +168,7 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
     restart: unless-stopped
+    logging: *unirouter-json-logging
 
   grafana:
     image: ${GRAFANA_IMAGE:?Set the approved Grafana image digest reference}
@@ -172,6 +183,7 @@ services:
     depends_on:
       - prometheus
     restart: unless-stopped
+    logging: *unirouter-json-logging
 
 volumes:
   postgres_data:

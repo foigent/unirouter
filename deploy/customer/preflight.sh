@@ -109,6 +109,19 @@ case "${request_pricing_authority}" in
     ;;
 esac
 
+load_effective_value DOCKER_LOG_MAX_SIZE true
+docker_log_max_size="${effective_value:-20m}"
+if [[ ! "${docker_log_max_size}" =~ ^[1-9][0-9]*[kKmMgG]$ ]]; then
+  echo "customer preflight: DOCKER_LOG_MAX_SIZE must be a positive k, m or g size such as 20m" >&2
+  exit 1
+fi
+load_effective_value DOCKER_LOG_MAX_FILES true
+docker_log_max_files="${effective_value:-3}"
+if [[ ! "${docker_log_max_files}" =~ ^[1-9][0-9]*$ ]] || (( docker_log_max_files > 100 )); then
+  echo "customer preflight: DOCKER_LOG_MAX_FILES must be an integer from 1 to 100" >&2
+  exit 1
+fi
+
 load_effective_value XINSIGHT_CONNECTOR_AGENT_ENABLED true
 connector_agent_enabled="${effective_value:-false}"
 case "${connector_agent_enabled}" in
@@ -241,6 +254,8 @@ unset connector_agent_enabled
 unset connector_key
 unset billing_mode
 unset request_pricing_authority
+unset docker_log_max_size
+unset docker_log_max_files
 
 if grep -Eq '^[[:space:]]*build:' <<<"${rendered}"; then
   echo "customer preflight: customer Compose must not contain build contexts" >&2
@@ -263,4 +278,4 @@ if [[ "${image_count}" -ne 6 ]]; then
   exit 1
 fi
 
-echo "customer preflight: PASS (runtime secrets, trusted proxy boundary, loopback bind, rendered Compose, no build contexts, six digest-pinned images)"
+echo "customer preflight: PASS (runtime secrets, trusted proxy boundary, loopback bind, bounded Docker logs, rendered Compose, no build contexts, six digest-pinned images)"
