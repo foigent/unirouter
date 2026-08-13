@@ -474,7 +474,8 @@ try {
     const path = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.ready_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
     await gotoHeading(unavailable.page, path, '调用诊断');
     await visible(unavailable.page.getByText('暂时无法判断', { exact: true }).first());
-    await visible(unavailable.page.getByText('诊断证据源暂时不可用，当前状态是“暂时无法判断”，不是“未配置”或“受阻”。', { exact: true }));
+    await unavailable.page.getByText('查看高级诊断证据', { exact: true }).click();
+    await visible(unavailable.page.getByText('routing_preview_unavailable', { exact: true }).first());
     journeys.push('readiness_unavailable_not_blocked');
   } finally {
     await unavailable.context.close();
