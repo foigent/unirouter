@@ -111,6 +111,9 @@ func TestResolveReadinessExplainsCredentialChannelContradiction(t *testing.T) {
 	if axis.State != AxisBlocked || axis.ReasonCode != "no_eligible_upstream_route" {
 		t.Fatalf("routing axis=%+v", axis)
 	}
+	if axis.FixRoute != "/channels" {
+		t.Fatalf("routing fix route=%q want /channels", axis.FixRoute)
+	}
 }
 
 func TestResolveReadinessRequiresModelContextWithoutInventingFailure(t *testing.T) {

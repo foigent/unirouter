@@ -20,7 +20,6 @@ import {
   IconShield,
   IconShieldStroked,
   IconTerminal,
-  IconTestScore,
   IconUserGroup,
 } from '@douyinfe/semi-icons';
 import type { ReactNode } from 'react';
@@ -187,7 +186,6 @@ const taskNavItems: NavItem[] = [
     icon: <IconSendStroked />,
     items: [
 	  { itemKey: '/channels', text: '模型连接', icon: <IconRoute /> },
-	  { itemKey: '/test', text: '检测并启用', icon: <IconTestScore />, licenseFeature: 'gateway' },
     ],
   },
   {

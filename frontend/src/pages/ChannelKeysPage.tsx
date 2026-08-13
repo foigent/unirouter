@@ -13,6 +13,7 @@ import {
   type CredentialCombinationState,
 } from '../utils/channelReadiness';
 import { normalizeModelList } from '../utils/modelList';
+import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 
 interface ChannelKey {
   id: number;
@@ -252,7 +253,10 @@ export default function ChannelKeysPage() {
         eyebrow="模型接入"
         title="供应商凭证"
         description="凭证状态、所属通道状态和模型覆盖是三个独立条件；凭证启用不代表通道已经生效。凭证标识来自加密存储记录，并非供应商 Key 前缀。"
-        actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>}
+        actions={<Space>
+          <ModelConnectionBackButton />
+          <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>
+        </Space>}
       />
 
       <Banner

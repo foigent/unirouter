@@ -977,7 +977,7 @@ export default function DeveloperConsolePage() {
                   onPageChange: (page: number) => setModelPage(page),
                   onPageSizeChange: (pageSize: number) => { setModelPageSize(pageSize); setModelPage(1); },
                 }}
-                empty={<EmptyState title="暂无已启用模型" description="请先在“检测并启用”完成一个模型的真实检测和首次启用。" minHeight={180} />}
+                empty={<EmptyState title="暂无已启用模型" description="请先在“模型连接”完成该模型的真实检测与启用。" minHeight={180} />}
                 size="small"
               />
             </div>
