@@ -52,13 +52,13 @@ export function customerContextBlockerCopy(state: Exclude<CustomerContextState, 
   switch (state) {
     case 'not_initialized':
       return {
-        title: '尚未初始化客户组织',
-        description: '当前部署还没有唯一客户组织。完成首客户初始化后，账号、项目和用量页面才会绑定客户范围。',
+		title: '未找到部署组织',
+		description: '正常安装会自动采用唯一根组织并补齐默认项目。当前数据库没有可用根组织，请由部署管理员检查安装或恢复状态。',
       };
     case 'ambiguous':
       return {
         title: '客户组织上下文不唯一',
-        description: '检测到多个客户组织，系统不会猜测目标。请先由部署管理员修复组织基线，再继续客户域操作。',
+		description: '检测到多个无法唯一判定的根组织，系统不会猜测目标。请先由部署管理员修复组织基线，再继续客户域操作。',
       };
     case 'inactive':
       return {

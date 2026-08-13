@@ -192,7 +192,7 @@ describe('App shell', () => {
   it('keeps every secondary navigation section expanded without another disclosure click', () => {
     renderApp();
 
-    expect(screen.getByText('上游通道')).toBeTruthy();
+    expect(screen.getByText('模型连接')).toBeTruthy();
     expect(screen.getByText('人员与权限')).toBeTruthy();
     expect(screen.getByText('请求日志')).toBeTruthy();
     expect(screen.getByText('预算与成本中心')).toBeTruthy();
@@ -213,10 +213,11 @@ describe('App shell', () => {
     expect(screen.queryByRole('button', { name: '通知' })).toBeNull();
   });
 
-  it('keeps licensed-by-role navigation visible but locked and disables the notification shortcut', async () => {
+  it('keeps visible licensed routes locked while advanced model governance stays out of the main navigation', async () => {
     renderApp('platform_admin', { licenseAccess: PARTIAL_LICENSE });
 
-    expect(await screen.findByText('模型治理（授权未包含）')).toBeTruthy();
+    expect(screen.queryByText('模型治理（授权未包含）')).toBeNull();
+    expect(await screen.findByText('模型连接')).toBeTruthy();
     expect(await screen.findByText('内容安全（授权未包含）')).toBeTruthy();
     expect(screen.getByRole('button', { name: '通知（授权未包含）' }).hasAttribute('disabled')).toBe(true);
   });

@@ -64,9 +64,9 @@ function routeKeys(authz: AuthzContext): string[] {
 
 const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   platform: {
-    authz: context('platform_admin'),
-    routes: [
-		'/', '/channels', '/channel-keys', '/model-governance', '/model-readiness', '/test',
+		authz: context('platform_admin'),
+		routes: [
+		'/', '/channels', '/test',
 		'/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
       '/wallet', '/model-prices', '/cost-optimization', '/reconciliation',
@@ -74,9 +74,9 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
     ],
   },
   organizationAdmin: {
-    authz: context('org_admin'),
-    routes: [
-		'/', '/model-governance', '/model-readiness', '/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
+	authz: context('org_admin'),
+	routes: [
+		'/', '/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
       '/model-prices', '/cost-optimization', '/docs',
     ],
@@ -87,19 +87,19 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   },
   organizationViewer: {
     authz: context('org_viewer'),
-	routes: ['/', '/model-governance', '/model-readiness', '/organization-members', '/docs'],
+	routes: ['/', '/organization-members', '/docs'],
   },
   projectAdmin: {
     authz: context('member', 'project_admin'),
-	routes: ['/access', '/developer', '/access-review', '/applications', '/model-readiness', '/organization-members', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/access-review', '/applications', '/organization-members', '/media-jobs', '/docs'],
   },
   projectUser: {
     authz: context('member', 'project_user'),
-	routes: ['/access', '/developer', '/model-readiness', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/media-jobs', '/docs'],
   },
   projectViewer: {
     authz: context('member', 'project_viewer'),
-	routes: ['/access', '/developer', '/model-readiness', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/media-jobs', '/docs'],
   },
   memberWithoutMembership: {
     authz: context('member'),
@@ -170,7 +170,7 @@ describe('two-axis navigation boundaries', () => {
     expect(getOpenKeysForPath('/notifications', context('platform_admin'))).toEqual(['g-observability']);
     expect(getOpenKeysForPath('/notifications', context('member', 'project_admin'))).toEqual([]);
     expect(getOpenKeysForPath('/docs', context('platform_admin'))).toEqual(['g-system-integration']);
-    expect(getOpenKeysForPath('/model-governance', context('org_admin'))).toEqual(['g-model-access']);
+	expect(getOpenKeysForPath('/model-governance', context('org_admin'))).toEqual([]);
   });
 
 	it('uses shell discovery capabilities without granting selected-project actions', () => {
@@ -184,7 +184,7 @@ describe('two-axis navigation boundaries', () => {
 			organization_role: 'member', role: 'member',
 			navigation_capabilities: capabilities,
 		});
-		expect(routeKeys(mixed)).toEqual(expect.arrayContaining(['/access', '/developer', '/access-review', '/applications', '/model-readiness']));
+		expect(routeKeys(mixed)).toEqual(expect.arrayContaining(['/access', '/developer', '/access-review', '/applications']));
 		expect(canCreateProjectKey(mixed)).toBe(false);
 		const managementOnly = authzContextForUser({ organization_role: 'platform_admin' });
 		expect(routeKeys(managementOnly)).not.toContain('/access');
@@ -273,9 +273,7 @@ describe('two-axis navigation boundaries', () => {
     const platformChildren = platformItems.flatMap(item => item.items || []);
 
     expect(platformChildren.find(item => item.itemKey === '/test')?.licenseLocked).toBeUndefined();
-    expect(platformChildren.find(item => item.itemKey === '/model-governance')).toMatchObject({
-      text: '模型治理（授权未包含）', licenseLocked: true, disabled: true,
-    });
+		expect(platformChildren.find(item => item.itemKey === '/model-governance')).toBeUndefined();
     expect(platformChildren.find(item => item.itemKey === '/integrations')?.licenseLocked).toBeUndefined();
     expect(isRouteLicensed('/guardrail-policies', partial)).toBe(false);
     expect(isRouteLicensed('/notifications?project_id=7', partial)).toBe(true);

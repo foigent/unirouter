@@ -137,6 +137,8 @@ export const api = {
     request('/runtime-changes', { method: 'POST', body: JSON.stringify(data) }),
   validateRuntimeChange: (releaseRef: string, expectedVersion: number) =>
     request(`/runtime-changes/${encodeURIComponent(releaseRef)}/validate`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
+  activateInitialRuntimeChange: (releaseRef: string, expectedVersion: number) =>
+    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/activate-initial`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
   shadowRuntimeChange: (releaseRef: string, expectedVersion: number) =>
     request(`/runtime-changes/${encodeURIComponent(releaseRef)}/shadow`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
   canaryRuntimeChange: (releaseRef: string, expectedVersion: number, canaryBasisPoints: number) =>

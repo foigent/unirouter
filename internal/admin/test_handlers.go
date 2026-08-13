@@ -159,7 +159,7 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	if adapters.NormalizeType(adapterType) == adapters.TypeAnthropicNative {
 		curlExample = fmt.Sprintf("curl %s -H \"x-api-key: sk-***\" -H \"anthropic-version: 2023-06-01\" -H \"Content-Type: application/json\" -d '{\"model\":\"%s\",\"max_tokens\":16,\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, upstreamModel, reqBody.Prompt)
 	} else if adapters.NormalizeType(adapterType) == adapters.TypeAzureOpenAI {
-		curlExample = fmt.Sprintf("curl %s -H \"api-key: ***\" -H \"Content-Type: application/json\" -d '{\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}],\"max_tokens\":16}'", result.RequestURL, reqBody.Prompt)
+		curlExample = fmt.Sprintf("curl %s -H \"api-key: ***\" -H \"Content-Type: application/json\" -d '{\"messages\":[{\"role\":\"user\",\"content\":\"%s\"}]}'", result.RequestURL, reqBody.Prompt)
 	}
 
 	h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{

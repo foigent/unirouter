@@ -10,8 +10,9 @@ import (
 )
 
 // ErrModelPriceNotConfigured is returned when a routed model has no explicit
-// price authority. Billing must fail closed instead of inventing a default
-// customer price.
+// price authority. Enforced and strict pricing modes fail closed. The default
+// local cost-observation mode may continue with an explicit immutable
+// "unpriced" snapshot so missing cost metadata does not become traffic policy.
 var ErrModelPriceNotConfigured = errors.New("model price is not configured")
 
 // PriceProvider returns the legacy database source unit as exact decimal text:

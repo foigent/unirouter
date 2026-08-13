@@ -59,6 +59,61 @@ func (m *Manager) AdvanceShadow(ctx context.Context, ref string, expectedVersion
 	})
 }
 
+// ActivateInitial promotes a validated candidate directly to the first stable
+// assignment for a model. It is deliberately unavailable once any stable or
+// canary assignment exists; replacements continue to use shadow and canary.
+func (m *Manager) ActivateInitial(ctx context.Context, ref string, expectedVersion, actorUserID int64) (Release, error) {
+	return m.runTransition(ctx, transition{
+		Ref: ref, ExpectedVersion: expectedVersion, ActorUserID: actorUserID,
+		From: "validated", To: "active", Action: "promote", InitialActivation: true,
+		UpdateSQL:  `activated_by=$4, activated_at=NOW(), canary_basis_points=0`,
+		UpdateArgs: []interface{}{actorUserID},
+		SlotAction: func(ctx context.Context, tx pgx.Tx, release Release) error {
+			if release.ParentStableReleaseID != nil {
+				return fmt.Errorf("%w: initial activation requires no stable baseline", ErrConflict)
+			}
+			var stableID, canaryID *int64
+			err := tx.QueryRow(ctx, `
+SELECT stable_release_id, canary_release_id
+  FROM runtime_change_slots
+ WHERE model_name=$1
+ FOR UPDATE`, release.ModelName).Scan(&stableID, &canaryID)
+			switch {
+			case err == pgx.ErrNoRows:
+				tag, insertErr := tx.Exec(ctx, `
+INSERT INTO runtime_change_slots (
+    model_name, stable_release_id, canary_release_id, canary_basis_points, slot_version)
+VALUES ($1,$2,NULL,0,1)
+ON CONFLICT (model_name) DO NOTHING`, release.ModelName, release.ID)
+				if insertErr != nil {
+					return insertErr
+				}
+				if tag.RowsAffected() != 1 {
+					return fmt.Errorf("%w: model assignment appeared concurrently", ErrConflict)
+				}
+				return nil
+			case err != nil:
+				return fmt.Errorf("%w: lock runtime slot: %v", ErrUnavailable, err)
+			case stableID != nil || canaryID != nil:
+				return fmt.Errorf("%w: model already has a runtime assignment", ErrConflict)
+			default:
+				tag, updateErr := tx.Exec(ctx, `
+UPDATE runtime_change_slots
+   SET stable_release_id=$1, canary_release_id=NULL, canary_basis_points=0,
+       slot_version=slot_version+1, updated_at=NOW()
+ WHERE model_name=$2 AND stable_release_id IS NULL AND canary_release_id IS NULL`, release.ID, release.ModelName)
+				if updateErr != nil {
+					return updateErr
+				}
+				if tag.RowsAffected() != 1 {
+					return ErrConflict
+				}
+				return nil
+			}
+		},
+	})
+}
+
 func (m *Manager) StartCanary(ctx context.Context, ref string, expectedVersion int64, basisPoints int, actorUserID int64) (Release, error) {
 	if basisPoints < 1 || basisPoints > 5000 {
 		return Release{}, fmt.Errorf("%w: canary_basis_points", ErrInvalid)
@@ -177,6 +232,7 @@ type transition struct {
 	UpdateArgs        []interface{}
 	SlotAction        func(context.Context, pgx.Tx, Release) error
 	SkipPinValidation bool
+	InitialActivation bool
 }
 
 func (m *Manager) runTransition(ctx context.Context, change transition) (Release, error) {
@@ -224,10 +280,14 @@ SELECT id, release_ref, model_name, candidate_version, candidate_hash, baseline_
 	if tag.RowsAffected() != 1 {
 		return Release{}, ErrConflict
 	}
-	detail, _ := json.Marshal(map[string]interface{}{
+	detailValue := map[string]interface{}{
 		"canary_basis_points": change.CanaryBasisPoints,
 		"runtime_mutation":    runtimeMutation(change.To),
-	})
+	}
+	if change.InitialActivation {
+		detailValue["initial_activation"] = true
+	}
+	detail, _ := json.Marshal(detailValue)
 	_, err = tx.Exec(ctx, `
 INSERT INTO runtime_change_events (
     release_id, sequence, action, from_stage, to_stage, actor_user_id,

@@ -26,6 +26,7 @@ import (
 	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/completedfeed"
 	"github.com/uniroute/unirouter/internal/config"
+	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/eventconnectorshadow"
 	"github.com/uniroute/unirouter/internal/filter"
@@ -96,6 +97,15 @@ func main() {
 			log.Fatalf("Migration failed: %v", err)
 		}
 		log.Println("Migrations complete")
+	}
+	baseline, err := customercontext.EnsureBaseline(context.Background(), postgres.Pool)
+	if err != nil {
+		log.Fatalf("Failed to initialize single-customer baseline: %v", err)
+	}
+	if baseline.Customer.Ready() {
+		log.Printf("Single-customer baseline ready: org_id=%d project_id=%d", baseline.Customer.OrganizationID, baseline.ProjectID)
+	} else {
+		log.Printf("Single-customer baseline not applied: state=%s", baseline.Customer.State)
 	}
 
 	// Initialize Redis
@@ -953,6 +963,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/runtime-changes/slot</code></td><td>Read stable and canary assignment for one model</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/runtime-changes/{ref}</code></td><td>Read release evidence and lifecycle</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/validate</code></td><td>Revalidate same-clock snapshots and block breaking changes</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/activate-initial</code></td><td>Activate the first stable route when no stable or canary assignment exists</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/shadow</code></td><td>Advance a validated release to zero-traffic shadow</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/canary</code></td><td>Start a deterministic bounded canary</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/promote</code></td><td>Promote the current canary to stable</td></tr>

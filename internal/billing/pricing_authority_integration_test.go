@@ -58,3 +58,27 @@ func TestV1PricingAuthorityExplicitZeroPriceIsNotMissing(t *testing.T) {
 	require.Zero(t, inputPrice)
 	require.Zero(t, outputPrice)
 }
+
+func TestCostObservationUnpricedModelDoesNotBecomeTrafficAdmission(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	orgID := testutil.NewTestOrg(t, pool)
+	service := NewBilling(pool, nil).WithMode(BillingModeCostObservation)
+
+	inputPrice, outputPrice, err := service.QueryModelPriceMicrosForOrg(ctx, orgID, "unpriced-observation-model")
+	require.NoError(t, err)
+	require.Zero(t, inputPrice)
+	require.Zero(t, outputPrice)
+
+	freeze, err := service.Freeze(ctx, FreezeRequest{
+		RequestID: "unpriced-observation-freeze", OrgID: orgID,
+		Model: "unpriced-observation-model", EstimatedTokens: 1000,
+		SafetyFactor: "1", MinFreezeCents: 1,
+	})
+	require.NoError(t, err)
+	require.True(t, freeze.Success)
+	require.Zero(t, freeze.AmountMicros)
+	require.Zero(t, freeze.CalculatedCostMicros)
+	require.Regexp(t, `^uo1_[a-f0-9]{64}$`, freeze.PricingVersion)
+	require.Equal(t, BillingModeCostObservation, freeze.BillingMode)
+}

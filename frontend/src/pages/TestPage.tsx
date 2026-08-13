@@ -17,7 +17,10 @@ export interface Channel {
   name: string;
   provider: string;
   status: string;
+  effective_status?: string;
+  published_models?: string;
   models: string;
+  routing_epoch?: number;
 }
 
 interface TestResult {
@@ -30,6 +33,7 @@ interface TestResult {
   error?: string;
   model?: string;
   tokens_used?: number;
+  enabled?: boolean;
 }
 
 type ChannelLoadState = 'loading' | 'ready' | 'error';
@@ -46,9 +50,18 @@ export function resolveChannelTestModel(channel?: Pick<Channel, 'models'>, selec
 
 export function summarizeBatchChannels(channels: Channel[]) {
   return {
-    included: channels.filter(channel => channel.status === 'active'),
-    excluded: channels.filter(channel => channel.status !== 'active'),
+    included: channels.filter(channel => effectiveChannelStatus(channel) === 'active'),
+    excluded: channels.filter(channel => effectiveChannelStatus(channel) !== 'active'),
   };
+}
+
+function effectiveChannelStatus(channel?: Channel) {
+  return channel?.effective_status || channel?.status || '';
+}
+
+export function channelPublishesModel(channel: Channel | undefined, model: string | undefined) {
+  const normalizedModel = String(model || '').trim();
+  return Boolean(normalizedModel) && parseChannelModels(channel?.published_models).includes(normalizedModel);
 }
 
 export default function TestPage() {
@@ -63,7 +76,10 @@ export default function TestPage() {
   const [channelLoadError, setChannelLoadError] = useState('');
   const [credentialsLoaded, setCredentialsLoaded] = useState(false);
   const [credentialLoadError, setCredentialLoadError] = useState('');
+  const [formApi, setFormApi] = useState<any>(null);
+  const [enablingResultKey, setEnablingResultKey] = useState('');
   const formApiRef = useRef<any>(null);
+  const deepLinkApplied = useRef(false);
 
   const loadChannels = useCallback(async () => {
     setChannelLoadState('loading');
@@ -95,6 +111,22 @@ export default function TestPage() {
         setCredentialLoadError(`供应商凭证状态加载失败${error?.message ? `：${error.message}` : ''}`);
       });
   }, [loadChannels]);
+
+  useEffect(() => {
+    if (deepLinkApplied.current || channelLoadState !== 'ready' || !formApi) return;
+    deepLinkApplied.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const channelID = Number(params.get('channel_id'));
+    const channel = channels.find(item => item.id === channelID);
+    if (!channel) return;
+    const requestedModel = String(params.get('model') || '').trim();
+    const model = parseChannelModels(channel.models).includes(requestedModel)
+      ? requestedModel
+      : firstChannelModel(channel);
+    setSelectedChannelId(channel.id);
+    setSelectedModel(model);
+    formApi.setValues({ channel_id: channel.id, model });
+  }, [channelLoadState, channels, formApi]);
 
   const withResultKey = (result: Omit<TestResult, 'result_key'>): TestResult => ({
     ...result,
@@ -254,6 +286,52 @@ export default function TestPage() {
     handleTest(formApiRef.current.getValues() || {});
   };
 
+  const enableInitialModel = async (result: TestResult) => {
+    const channel = channels.find(item => item.id === result.channel_id);
+    const model = String(result.model || '').trim();
+    if (!channel || !model || !channel.routing_epoch) {
+      Toast.error({ content: '无法读取当前连接快照，请刷新后重新检测' });
+      return;
+    }
+    setEnablingResultKey(result.result_key);
+    try {
+      const created = await api.createRuntimeChange({
+        model_name: model,
+        reason: '首次启用已通过真实上游检测的模型连接',
+        overrides: [{
+          channel_id: channel.id,
+          expected_routing_epoch: channel.routing_epoch,
+          admission: 'allow',
+        }],
+      });
+      const validated = await api.validateRuntimeChange(created.release_ref, created.version);
+      await api.activateInitialRuntimeChange(validated.release_ref, validated.version);
+      setResults(current => current.map(item => item.result_key === result.result_key ? { ...item, enabled: true } : item));
+      setChannels(current => current.map(item => item.id === channel.id
+        ? { ...item, effective_status: 'active', published_models: [item.published_models, model].filter(Boolean).join(',') }
+        : item));
+      Toast.success({ content: `${model} 已成为首个稳定路由，可创建应用 Key 后调用` });
+    } catch (error: any) {
+      const message = String(error?.message || '启用失败');
+      Toast.error({
+        content: message.toLowerCase().includes('conflict')
+          ? '该模型已有稳定或灰度路由；替换已有路由请使用“模型目录与灰度发布”'
+          : `首次启用失败：${message}`,
+      });
+    } finally {
+      setEnablingResultKey('');
+    }
+  };
+
+  const confirmInitialEnable = (result: TestResult) => {
+    Modal.confirm({
+      title: `启用 ${result.model || '所选模型'}？`,
+      content: '这只用于该模型尚无稳定路由的首次启用。检测证据和可回滚发布记录仍会保留；以后替换路由时需要灰度。',
+      okText: '确认首次启用',
+      onOk: () => enableInitialModel(result),
+    });
+  };
+
   const columns = [
     {
       title: '状态',
@@ -294,14 +372,26 @@ export default function TestPage() {
       ellipsis: true,
       render: (v: string) => v ? <Text type="danger">{v}</Text> : '-',
     },
+	{
+	  title: '下一步',
+	  key: 'action',
+	  width: 130,
+	  render: (_: unknown, result: TestResult) => {
+		if (!result.success) return '-';
+		if (result.enabled || channelPublishesModel(channels.find(item => item.id === result.channel_id), result.model)) {
+		  return <StatusTag status="success">已启用</StatusTag>;
+		}
+		return <Button size="small" type="primary" loading={enablingResultKey === result.result_key} onClick={() => confirmInitialEnable(result)}>首次启用</Button>;
+	  },
+	},
   ];
 
   return (
     <div className="ur-page">
       <PageHeader
         eyebrow="模型接入"
-        title="上游检测"
-        description="向真实供应商发起非流式模型请求，验证凭证、模型和网络链路；检测可能产生供应商费用，并写入正常用量与计费记录。"
+		title="检测并启用"
+		description="向真实供应商发起一次最小非流式请求，验证网络、Key 和模型权限。首次检测成功后可直接启用；替换已有路由时才进入灰度。"
       />
 
       {channelLoadState === 'ready' ? (
@@ -338,14 +428,14 @@ export default function TestPage() {
       </div>
 
       <Surface title="检测请求">
-        <Form onSubmit={handleTest} getFormApi={(api) => { formApiRef.current = api; }}>
+        <Form onSubmit={handleTest} getFormApi={(api) => { formApiRef.current = api; setFormApi(api); }}>
           <Form.Select
             field="channel_id"
             label="选择通道"
             rules={[{ required: true, message: '请选择通道' }]}
             placeholder="选择要检测的上游通道"
             optionList={channels.map(c => ({
-              label: `${c.name} (${c.provider}) · 通道${channelStatusLabel(c.status)}`,
+			  label: `${c.name} (${c.provider}) · ${effectiveChannelStatus(c) === 'active' ? '已启用' : `通道${channelStatusLabel(c.status)}`}`,
               value: c.id,
             }))}
             disabled={channelLoadState !== 'ready'}
@@ -358,10 +448,10 @@ export default function TestPage() {
               formApiRef.current?.setValue('model', (nextModel || undefined) as any);
             }}
           />
-          {selectedChannel && selectedChannel.status !== 'active' && (
+		  {selectedChannel && !channelPublishesModel(selectedChannel, selectedModel) && (
             <Banner
               type="warning"
-              description={`当前选择的是“通道${channelStatusLabel(selectedChannel.status)}”配置。手动检测只验证凭证、模型和网络，不会使该通道进入运行时路由。`}
+			  description={`当前选择的是“通道${channelStatusLabel(selectedChannel.status)}”配置。检测成功后可点击结果中的“首次启用”。`}
               closeIcon={null}
               style={{ marginBottom: 12 }}
             />
@@ -382,7 +472,7 @@ export default function TestPage() {
             style={{ width: 400 }}
           />
           <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
-            <Button type="primary" onClick={submitSelectedChannelTest} loading={selectedChannelTesting} disabled={channelLoadState !== 'ready' || batchTesting}>
+            <Button type="primary" onClick={submitSelectedChannelTest} loading={selectedChannelTesting} disabled={channelLoadState !== 'ready' || !credentialsLoaded || batchTesting}>
               检测选中通道
             </Button>
             <Button

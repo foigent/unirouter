@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '../../store/auth';
@@ -81,7 +81,7 @@ describe('OrganizationMembersPage', () => {
     expect(screen.queryByText('首客户初始化')).toBeNull();
   });
 
-  it('shows first-customer initialization only while the platform context is not initialized', async () => {
+  it('fails closed without exposing a second organization-initialization workflow', () => {
     useAuthStore.setState({
       user: {
         id: 1, username: 'admin', role: 'platform_admin', org_id: 1, license_access: null,
@@ -91,15 +91,10 @@ describe('OrganizationMembersPage', () => {
     renderPage();
 
     expect(screen.queryByRole('tab')).toBeNull();
-    expect(screen.getAllByRole('heading', { name: '初始化客户组织' })).toHaveLength(2);
-    fireEvent.change(screen.getByLabelText('首个客户组织名称'), { target: { value: 'First Customer' } });
-    fireEvent.click(screen.getByText('创建组织与零余额钱包'));
-
-    await waitFor(() => expect(apiMocks.bootstrapFirstCustomer).toHaveBeenCalledTimes(1));
-    expect(apiMocks.bootstrapFirstCustomer.mock.calls[0][0]).toBe('First Customer');
-    expect(apiMocks.bootstrapFirstCustomer.mock.calls[0][1]).toMatch(/^first-customer-/);
-    expect(apiMocks.getMe).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText('people:true')).toBeTruthy();
+    expect(screen.getAllByRole('heading', { name: '未找到部署组织' })).toHaveLength(2);
+    expect(screen.getByText(/正常安装会自动采用唯一根组织并补齐默认项目/)).toBeTruthy();
+    expect(apiMocks.bootstrapFirstCustomer).not.toHaveBeenCalled();
+    expect(apiMocks.getMe).not.toHaveBeenCalled();
   });
 
   it('removes the initialization entry after the canonical customer is ready', () => {
