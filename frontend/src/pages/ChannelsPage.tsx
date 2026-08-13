@@ -693,8 +693,10 @@ export default function ChannelsPage() {
                 </Typography.Text>
               </div>
 
-			  <Button icon={<IconEdit />} onClick={() => openEdit(selectedChannel)}>编辑当前连接</Button>
-			  <Button type="primary" onClick={() => document.getElementById('connection-models')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>查看并检测模型</Button>
+			  <Typography.Text type="tertiary" size="small">
+				真实检测就在本区域下方的“{selectedChannel.name} · 模型上线”中直接完成，无需再打开页面。
+			  </Typography.Text>
+			  <div><Button icon={<IconEdit />} onClick={() => openEdit(selectedChannel)}>编辑当前连接</Button></div>
             </div>
           )}
         </aside>

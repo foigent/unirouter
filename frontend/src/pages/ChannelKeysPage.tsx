@@ -27,6 +27,7 @@ interface ChannelKey {
   last_used_at?: string | null;
   cooldown_until?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 const combinationStatus: Record<CredentialCombinationState, string> = {
@@ -61,6 +62,9 @@ export default function ChannelKeysPage() {
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [channels, setChannels] = useState<Array<ChannelReadinessChannel & { label: string; value: number }>>([]);
+  const [saveNotice, setSaveNotice] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const load = (p = page, size = pageSize) => {
     const version = ++requestVersion.current;
@@ -100,32 +104,43 @@ export default function ChannelKeysPage() {
 
   useEffect(() => { load(1); loadChannels(); }, []);
 
-  const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
+  const closeDrawer = () => { setShowDrawer(false); setEditing(null); setSubmitError(''); };
 
   const handleSubmit = async (values: Record<string, any>) => {
+    setSubmitError('');
+    setSubmitting(true);
     try {
       if (editing) {
         const activeParent = editing.channel_status === 'active';
+		const keyChanged = !activeParent && Boolean(String(values.api_key || '').trim());
         const payload: Record<string, any> = activeParent ? { status: values.status } : {
           channel_id: parseInt(values.channel_id),
           allowed_models: normalizeModelList(values.allowed_models),
           status: values.status,
         };
-        if (!activeParent && String(values.api_key || '').trim()) payload.key = String(values.api_key).trim();
+		if (keyChanged) payload.key = String(values.api_key).trim();
         await api.updateChannelKey(editing.id, payload);
-        Toast.success('更新成功');
+		setSaveNotice(keyChanged
+		  ? `${editing.channel_name} 的新供应商 API Key 已加密保存；为安全起见不会回显明文。`
+		  : `${editing.channel_name} 的供应商凭证设置已保存。`);
+		Toast.success('供应商凭证已保存');
       } else {
         await api.createChannelKey({
           channel_id: parseInt(values.channel_id),
           key: String(values.api_key || '').trim(),
           allowed_models: normalizeModelList(values.allowed_models),
         });
-        Toast.success('创建成功');
+		setSaveNotice('新的供应商凭证已加密保存；为安全起见不会回显明文。');
+		Toast.success('供应商凭证已创建');
       }
       closeDrawer();
       load();
     } catch (error: any) {
-			Toast.error(`${editing ? '更新' : '创建'}失败${error?.message ? `：${error.message}` : ''}`);
+		const message = `${editing ? '保存' : '创建'}失败${error?.message ? `：${error.message}` : ''}`;
+		setSubmitError(message);
+		Toast.error(message);
+	} finally {
+		setSubmitting(false);
     }
   };
 
@@ -144,11 +159,13 @@ export default function ChannelKeysPage() {
   };
 
   const openEdit = (record: ChannelKey) => {
+	setSubmitError('');
     setEditing(record);
     setShowDrawer(true);
   };
 
   const openCreate = () => {
+	setSubmitError('');
     setEditing(null);
     setShowDrawer(true);
   };
@@ -235,7 +252,7 @@ export default function ChannelKeysPage() {
         : `失败 ${record.fail_count || 0} 次`,
     },
     { title: '最近使用', dataIndex: 'last_used_at', width: 170, render: (v: string | null) => v ? formatDateTime(v) : '尚未使用' },
-    { title: '创建时间', dataIndex: 'created_at', width: 170, render: (v: string) => formatDateTime(v) },
+	{ title: '最近更新', dataIndex: 'updated_at', width: 170, render: (v: string, record: ChannelKey) => formatDateTime(v || record.created_at) },
     {
       title: '操作', width: 120,
       render: (_: any, record: ChannelKey) => (
@@ -252,12 +269,19 @@ export default function ChannelKeysPage() {
       <PageHeader
         eyebrow="模型接入"
         title="供应商凭证"
-        description="凭证状态、所属通道状态和模型覆盖是三个独立条件；凭证启用不代表通道已经生效。凭证标识来自加密存储记录，并非供应商 Key 前缀。"
+		description="凭证状态、所属通道状态和模型覆盖是三个独立条件；凭证启用不代表通道已经生效。明文 Key 永不回显，保存结果请以成功提示和“最近更新”为准。"
         actions={<Space>
           <ModelConnectionBackButton />
           <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>
         </Space>}
       />
+
+	  {saveNotice && <Banner
+		type="success"
+		description={saveNotice}
+		closeIcon={null}
+		style={{ marginBottom: 16 }}
+	  />}
 
       <Banner
         type={(enabledOnInactiveChannelCount > 0 || modelMismatchCount > 0) ? 'warning' : 'info'}
@@ -292,15 +316,16 @@ export default function ChannelKeysPage() {
         width={480}
       >
         {editing?.channel_status === 'active' && <div className="ur-playground-error" style={{ marginBottom: 16 }}><strong>当前通道正在生效</strong><span>为防止绕过发布门禁，此处只允许紧急停用。轮换凭证请先把通道改为 staged。</span></div>}
+		{submitError && <Banner type="danger" description={submitError} closeIcon={null} style={{ marginBottom: 16 }} />}
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Select field="channel_id" label="所属通道" rules={[{ required: true, message: '必填' }]}
             optionList={editing ? channels : channels.filter(channel => channel.status !== 'active')} disabled={editing?.channel_status === 'active'} />
 			<PasswordField
 				field="api_key"
-				label="供应商 API Key"
+				label={editing ? '新的供应商 API Key（可选）' : '供应商 API Key'}
 				rules={editing ? [] : [{ required: true, message: '必填' }]}
-				placeholder={editing ? '留空表示不更换现有凭证' : 'sk-...'}
-				extraText={editing ? '已有凭证不会回显；只有需要轮换时才输入新的完整凭证。' : undefined}
+				placeholder={editing ? '留空保留当前 Key' : 'sk-...'}
+				extraText={editing ? '输入完整新 Key 后点击“保存修改”。保存成功后仍会置空，因为明文永不回显。' : undefined}
 				autoComplete="new-password"
 				visibilityResetKey={editing?.id || 'new'}
 				disabled={editing?.channel_status === 'active'}
@@ -320,7 +345,7 @@ export default function ChannelKeysPage() {
           />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
-            <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '创建'}</Button>
+			<Button type="primary" loading={submitting} disabled={submitting} onClick={() => formApi?.submitForm()}>{editing ? '保存修改' : '创建'}</Button>
           </div>
         </Form>
       </SideSheet>

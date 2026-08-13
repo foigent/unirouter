@@ -159,6 +159,8 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(screen.getByText('not verified')).toBeTruthy();
     expect(screen.getByText('unirouter.openai.core@1.0.0')).toBeTruthy();
     expect(screen.getByText(/不代表真实账号、网络、额度、模型权限或账单/)).toBeTruthy();
+	expect(screen.getByText(/真实检测就在本区域下方/)).toBeTruthy();
+	expect(screen.queryByRole('button', { name: '查看并检测模型' })).toBeNull();
     expect(new URLSearchParams(window.location.search).get('channel_id')).toBe('7');
   });
 

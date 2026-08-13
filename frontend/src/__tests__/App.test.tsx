@@ -126,11 +126,12 @@ describe('App shell', () => {
 		expect(screen.getByText('平台总览')).toBeTruthy();
 	});
 
-	it('shows end-user entries when a management identity has live project membership', () => {
+	it('keeps end-user entries hidden when a management identity has project membership data', () => {
 		renderApp('platform_admin', { hasLiveProjectMembership: true });
 
-		expect(screen.getByText('我的访问')).toBeTruthy();
-		expect(screen.getByText('项目工作台')).toBeTruthy();
+		expect(screen.queryByText('我的访问')).toBeNull();
+		expect(screen.queryByText('项目工作台')).toBeNull();
+		expect(screen.getByText('平台总览')).toBeTruthy();
 	});
 
 	it('keeps My Access but hides the project workbench for a member awaiting first membership', () => {
@@ -213,10 +214,10 @@ describe('App shell', () => {
     expect(screen.queryByRole('button', { name: '通知' })).toBeNull();
   });
 
-  it('keeps visible licensed routes locked while advanced model governance stays out of the main navigation', async () => {
+  it('shows advanced model workspaces in navigation and keeps unlicensed ones locked', async () => {
     renderApp('platform_admin', { licenseAccess: PARTIAL_LICENSE });
 
-    expect(screen.queryByText('模型治理（授权未包含）')).toBeNull();
+	expect(screen.getByText('模型目录与灰度（授权未包含）')).toBeTruthy();
     expect(await screen.findByText('模型连接')).toBeTruthy();
     expect(await screen.findByText('内容安全（授权未包含）')).toBeTruthy();
     expect(screen.getByRole('button', { name: '通知（授权未包含）' }).hasAttribute('disabled')).toBe(true);

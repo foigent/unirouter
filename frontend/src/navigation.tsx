@@ -186,6 +186,9 @@ const taskNavItems: NavItem[] = [
     icon: <IconSendStroked />,
     items: [
 	  { itemKey: '/channels', text: '模型连接', icon: <IconRoute /> },
+	  { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconKeyStroked /> },
+	  { itemKey: '/model-governance', text: '模型目录与灰度', icon: <IconChecklistStroked />, licenseFeature: 'model_governance' },
+	  { itemKey: '/model-readiness', text: '调用条件诊断', icon: <IconPulse /> },
     ],
   },
   {
@@ -316,13 +319,14 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
 	if (authz.hasLiveProjectMembership || isOrgAdminRole(organizationRole) || isOrgViewerRole(organizationRole)) allowedRoutes.add('/model-readiness');
 
   let items = filterTaskNavigation(allowedRoutes);
-  // End-user project navigation follows the live aggregate membership
-  // projection from /me. Pure organization-management identities keep the
-  // management taxonomy only; direct-route and backend authority are unchanged.
-  const exposeProjectWorkbench = authz.hasLiveProjectMembership;
+  // End-user navigation belongs to customer member identities only. Management
+  // accounts keep their management taxonomy even when stale project membership
+  // rows exist in /me.
+  const isEndUserIdentity = !organizationRole || organizationRole === 'member';
+  const exposeProjectWorkbench = organizationRole === 'member' && authz.hasLiveProjectMembership;
   if (exposeProjectWorkbench) items = [projectOverviewItem, ...items];
   if (organizationRole && organizationRole !== 'member') items = labelOverviewForRole(items, organizationRole);
-	const exposeAccessState = !organizationRole || organizationRole === 'member' || authz.hasLiveProjectMembership;
+	const exposeAccessState = isEndUserIdentity;
 	if (exposeAccessState) items = [accessStateItem, ...items];
   return applyLicenseState(items, licenseAccess);
 }
@@ -438,14 +442,14 @@ function projectRouteAllowed(path: string, authz: AuthzContext) {
 export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
   const route = firstSegmentPath(path);
   if (route === '/login') return true;
-  if (route === '/access') return true;
+  if (route === '/access') return !authz.organizationRole || authz.organizationRole === 'member';
 	if (route === '/access-review') return isOrgAdminRole(authz.organizationRole) || authz.canDiscoverAccessReview || authz.hasProjectAdminMembership;
 	if (route === '/applications') return isOrgAdminRole(authz.organizationRole) || authz.canDiscoverWorkloads || authz.hasProjectAdminMembership;
 	if (route === '/model-readiness') return isOrgAdminRole(authz.organizationRole) || isOrgViewerRole(authz.organizationRole) || authz.hasLiveProjectMembership;
   if (route === '/docs') return true;
   if (route === '/settings') return true;
   if (route === '/license') return isPlatformAdminRole(authz.organizationRole);
-  if (route === '/developer') return Boolean(authz.organizationRole);
+  if (route === '/developer') return authz.organizationRole === 'member' && authz.hasLiveProjectMembership;
 
   if (!platformRoutes.has(route) && !compatibilityRoutes.has(route)) return false;
 

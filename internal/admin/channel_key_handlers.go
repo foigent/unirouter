@@ -28,7 +28,7 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.db.Query(r.Context(),
 		`SELECT ck.id, ck.channel_id, c.name as channel_name, c.status AS channel_status, ck.key_enc, ck.allowed_models, ck.status,
-		        ck.fail_count, ck.last_used_at, ck.cooldown_until, ck.created_at
+		        ck.fail_count, ck.last_used_at, ck.cooldown_until, ck.created_at, ck.updated_at
 		 FROM channel_keys ck
 		 JOIN channels c ON c.id = ck.channel_id
 		 ORDER BY ck.id ASC
@@ -45,15 +45,16 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 		var channelName, channelStatus, keyEnc, allowedModels, status string
 		var failCount int
 		var lastUsedAt, cooldownUntil *time.Time
-		var createdAt time.Time
-		if err := rows.Scan(&id, &channelID, &channelName, &channelStatus, &keyEnc, &allowedModels, &status, &failCount, &lastUsedAt, &cooldownUntil, &createdAt); err != nil {
+		var createdAt, updatedAt time.Time
+		if err := rows.Scan(&id, &channelID, &channelName, &channelStatus, &keyEnc, &allowedModels, &status, &failCount, &lastUsedAt, &cooldownUntil, &createdAt, &updatedAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
 		keys = append(keys, map[string]interface{}{
 			"id": id, "channel_id": channelID, "channel_name": channelName, "channel_status": channelStatus,
 			"key_prefix": maskKey(keyEnc), "allowed_models": allowedModels, "status": status,
-			"fail_count": failCount, "last_used_at": lastUsedAt, "cooldown_until": cooldownUntil, "created_at": createdAt,
+			"fail_count": failCount, "last_used_at": lastUsedAt, "cooldown_until": cooldownUntil,
+			"created_at": createdAt, "updated_at": updatedAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
