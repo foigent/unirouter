@@ -4,14 +4,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelReadinessPage from '../ModelReadinessPage';
 import { ApiError } from '../../api/client';
 
-const mocks = vi.hoisted(() => ({ getProjects: vi.fn(), modelReadiness: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getProjects: vi.fn(),
+  getChannels: vi.fn(),
+  getModelAliases: vi.fn(),
+  getWorkloadApplications: vi.fn(),
+  modelReadiness: vi.fn(),
+}));
 
 vi.mock('../../api/client', () => ({
   ApiError: class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) { super(message); this.status = status; }
   },
-  api: { getProjects: (...args: unknown[]) => mocks.getProjects(...args) },
+  api: {
+    getProjects: (...args: unknown[]) => mocks.getProjects(...args),
+    getChannels: (...args: unknown[]) => mocks.getChannels(...args),
+    getModelAliases: (...args: unknown[]) => mocks.getModelAliases(...args),
+    getWorkloadApplications: (...args: unknown[]) => mocks.getWorkloadApplications(...args),
+  },
 }));
 
 vi.mock('../../api/access', () => ({ accessApi: { modelReadiness: (...args: unknown[]) => mocks.modelReadiness(...args) } }));
@@ -64,13 +75,16 @@ describe('ModelReadinessPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getProjects.mockResolvedValue({ data: [{ id: 11, name: 'Core', status: 'active' }], total: 1 });
+    mocks.getChannels.mockResolvedValue({ data: [{ models: 'company-chat,deepseek-v4-pro' }], total: 1 });
+    mocks.getModelAliases.mockResolvedValue({ data: [{ alias: 'chat-default', target_model: 'company-chat', status: 'active' }], total: 1 });
+    mocks.getWorkloadApplications.mockResolvedValue({ data: [{ application_ref: 'app_core', display_name: 'Core App', project_id: 11, environment: 'production', status: 'active' }] });
     mocks.modelReadiness.mockResolvedValue(readiness);
   });
 
   it('renders four independent facts and preserves unavailable as unknown', async () => {
     render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self']}><ModelReadinessPage /></MemoryRouter>);
 
-    expect(await screen.findByText('resolved_model=gpt-5 · runtime_mutation=none · external_requests=none')).toBeTruthy();
+    expect(await screen.findByText('当前模型：gpt-5')).toBeTruthy();
     expect(screen.getByText('model_unregistered')).toBeTruthy();
     expect(screen.getByText('catalog_hidden')).toBeTruthy();
     expect(screen.getByText('policy_store_unavailable')).toBeTruthy();
@@ -107,10 +121,21 @@ describe('ModelReadinessPage', () => {
     render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self']}><ModelReadinessPage /><ScopeSwitch /></MemoryRouter>);
     await waitFor(() => expect(mocks.modelReadiness).toHaveBeenCalledWith(expect.objectContaining({ project_id: 11 })));
     fireEvent.click(screen.getByRole('button', { name: 'switch-readiness-scope' }));
-    expect(await screen.findByText('resolved_model=project-b-resolved · runtime_mutation=none · external_requests=none')).toBeTruthy();
+    expect(await screen.findByText('当前模型：project-b-resolved')).toBeTruthy();
 
     scopeA.resolve(readiness);
-    await waitFor(() => expect(screen.queryByText('resolved_model=gpt-5 · runtime_mutation=none · external_requests=none')).toBeNull());
-    expect(screen.getByText('resolved_model=project-b-resolved · runtime_mutation=none · external_requests=none')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('当前模型：gpt-5')).toBeNull());
+    expect(screen.getByText('当前模型：project-b-resolved')).toBeTruthy();
+  });
+
+  it('uses searchable existing-object selectors instead of manual model and application refs', async () => {
+    render(<MemoryRouter initialEntries={['/model-readiness?model=deepseek-v4-pro&caller=self']}><ModelReadinessPage /></MemoryRouter>);
+
+    expect(await screen.findByRole('combobox', { name: '模型或 Alias' })).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: '模型或 Alias' })).toBeNull();
+    fireEvent.click(screen.getByRole('combobox', { name: '谁来调用' }));
+    fireEvent.click(await screen.findByText('应用 / Agent'));
+    expect(await screen.findByRole('combobox', { name: '应用 / Agent' })).toBeTruthy();
+    expect(screen.queryByText('Application ref（Workload 时必填）')).toBeNull();
   });
 });

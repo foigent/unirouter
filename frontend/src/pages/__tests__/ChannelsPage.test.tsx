@@ -9,6 +9,12 @@ const mocks = vi.hoisted(() => ({
   deleteChannel: vi.fn(),
   getProviderPacks: vi.fn(),
   previewRouting: vi.fn(),
+  getChannelKeys: vi.fn(),
+  request: vi.fn(),
+  createRuntimeChange: vi.fn(),
+  validateRuntimeChange: vi.fn(),
+  activateInitialRuntimeChange: vi.fn(),
+  getRuntimeChangeSlot: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({
@@ -105,6 +111,15 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     });
     mocks.updateChannel.mockResolvedValue({ message: 'Channel updated' });
 	mocks.createChannel.mockResolvedValue({ id: 99, credential_configured: true });
+    mocks.getChannelKeys.mockResolvedValue({
+      data: [{ channel_id: 7, status: 'active', allowed_models: 'gpt-4o' }],
+      total: 1,
+    });
+    mocks.request.mockResolvedValue({ success: true, channel_id: 7, model: 'gpt-4o', upstream_model: 'gpt-4o', status_code: 200, latency_ms: 9 });
+    mocks.createRuntimeChange.mockResolvedValue({ release_ref: 'rcr_test', version: 1 });
+    mocks.validateRuntimeChange.mockResolvedValue({ release_ref: 'rcr_test', version: 2 });
+    mocks.activateInitialRuntimeChange.mockResolvedValue({ release_ref: 'rcr_test', version: 3 });
+    mocks.getRuntimeChangeSlot.mockResolvedValue({ model_name: 'gpt-4o', runtime_mutation: 'none' });
   });
 
   it('explains weight semantics and renders safe candidate/exclusion preview', async () => {
@@ -114,9 +129,12 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(mocks.getChannels).toHaveBeenCalledWith(1, 20);
     expect(screen.getByText('同级权重')).toBeTruthy();
 	expect(screen.getByText(/填写供应商地址、模型和 Key/)).toBeTruthy();
-	expect(screen.getByText('三步即可使用')).toBeTruthy();
-	expect(screen.getByText(/首次路由可直接启用/)).toBeTruthy();
-    expect(screen.getByText(/真实请求仍以服务器请求 ID 进行稳定选择/)).toBeTruthy();
+	expect(screen.getByText('三步完成模型上线')).toBeTruthy();
+	expect(screen.getByText(/检测通过后启用该模型/)).toBeTruthy();
+	 expect(screen.getByRole('button', { name: '检测当前连接全部模型（1）' })).toBeTruthy();
+    expect(screen.getByText('高级：预览当前路由')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('高级：预览当前路由'));
 
     fireEvent.change(screen.getByPlaceholderText('模型名称，例如 gpt-4o'), { target: { value: 'gpt-4o' } });
     fireEvent.click(screen.getByRole('button', { name: '预览路由' }));
@@ -132,9 +150,10 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(screen.queryByText(/策略 routing-policy.v1/)).toBeNull();
   });
 
-  it('auto-selects the first channel and keeps fixture-only compatibility visible without an open-details click', async () => {
+  it('auto-selects the first channel and keeps fixture-only compatibility in the advanced evidence section', async () => {
     render(<ChannelsPage />);
 
+    fireEvent.click(screen.getByText('高级：查看协议与连接证据'));
     expect(await screen.findByRole('complementary', { name: 'Provider 兼容性检查器' })).toBeTruthy();
     expect((await screen.findAllByText('协议夹具（同名）')).length).toBeGreaterThan(0);
     expect(screen.getByText('not verified')).toBeTruthy();
@@ -196,7 +215,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 
   it('offers DeepSeek, Kimi and custom as supplier identities without treating protocol fixtures as live verification', async () => {
     render(<ChannelsPage />);
-	await screen.findByText('模型连接');
+	await screen.findByRole('heading', { name: '模型连接', level: 3 });
 	fireEvent.click(screen.getByRole('button', { name: /新增模型连接/ }));
     fireEvent.click(await screen.findByRole('combobox', { name: '供应商身份' }));
 
@@ -209,7 +228,20 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(screen.getByText(/离线协议夹具不等于真实供应商连通验证/)).toBeTruthy();
   });
 
-	it('saves the provider credential with a new connection and continues directly to its first model test', async () => {
+	it('saves a new connection and keeps detection on the same page', async () => {
+		mocks.getChannels.mockResolvedValueOnce({
+			data: [{
+				id: 7, name: 'primary-cn', provider: 'openai', base_url: 'https://provider.invalid', models: 'gpt-4o',
+				adapter_type: 'openai_compatible', adapter_config: {}, priority: 10, routing_weight: 200, routing_epoch: 9,
+				degradation_threshold: 4, status: 'active', circuit_state: 'healthy', fail_count: 0, created_at: '2026-07-12T00:00:00Z',
+			}], total: 1,
+		}).mockResolvedValueOnce({
+			data: [{
+				id: 99, name: 'kimi-new', provider: 'kimi', base_url: 'https://provider.invalid/v1', models: 'kimi-k2.6,kimi-k3',
+				adapter_type: 'openai_compatible', adapter_config: {}, priority: 100, routing_weight: 100, routing_epoch: 1,
+				degradation_threshold: 10, status: 'staged', circuit_state: 'healthy', fail_count: 0, created_at: '2026-08-13T00:00:00Z',
+			}], total: 1,
+		});
 		render(<ChannelsPage />);
 		fireEvent.click(await screen.findByRole('button', { name: /新增模型连接/ }));
 		fireEvent.change(screen.getByLabelText('通道名称'), { target: { value: 'kimi-new' } });
@@ -218,14 +250,15 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 		fireEvent.change(screen.getByLabelText('服务地址（Base URL）'), { target: { value: 'https://provider.invalid/v1' } });
 		fireEvent.change(screen.getByLabelText('支持模型'), { target: { value: 'kimi-k2.6；kimi-k3' } });
 		fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'provider-secret' } });
-		fireEvent.click(screen.getByRole('button', { name: '保存并检测' }));
+		fireEvent.click(screen.getByRole('button', { name: '保存并进入检测' }));
 
 		await waitFor(() => expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({
 			name: 'kimi-new', provider: 'kimi', models: 'kimi-k2.6,kimi-k3', api_key: 'provider-secret',
 		})));
-		expect(window.location.pathname).toBe('/test');
+		expect(window.location.pathname).toBe('/channels');
 		expect(new URLSearchParams(window.location.search).get('channel_id')).toBe('99');
-		expect(new URLSearchParams(window.location.search).get('model')).toBe('kimi-k2.6');
+		expect(await screen.findByText('kimi-new · 模型上线')).toBeTruthy();
+		expect(screen.getByRole('button', { name: '检测当前连接全部模型（2）' })).toBeTruthy();
 	});
 
   it('keeps the epoch conflict message and maps other backend failures to safe useful text', async () => {

@@ -9,6 +9,7 @@ import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerCont
 import { loadAllPages } from '../utils/loadAllPages';
 import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 import InvocationOptimizationWorkspace from './InvocationOptimizationWorkspace';
+import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 
 const { Text } = Typography;
 
@@ -134,7 +135,12 @@ export default function ModelGovernancePage() {
   const user = useAuthStore((state) => state.user);
   const platform = isPlatformAdminRole(organizationRoleForUser(user));
   const customerContext = resolveCustomerContext(user);
-  const [activeTab, setActiveTab] = useState<TabKey>('registry');
+  const requestedTab = new URLSearchParams(window.location.search).get('tab');
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    ['registry', 'aliases', 'sets', 'assignments', 'optimization', ...(platform ? ['releases'] : [])].includes(requestedTab || '')
+      ? requestedTab as TabKey
+      : 'registry',
+  );
 
   const [registry, setRegistry] = useState<ModelRegistryItem[]>([]);
   const [registryTotal, setRegistryTotal] = useState(0);
@@ -652,6 +658,7 @@ export default function ModelGovernancePage() {
           eyebrow="模型接入"
           title={blocker.title}
           description="模型目录、别名、模型集和项目分配必须共享同一个可验证客户范围；系统不会把部署技术组织当作客户组织。"
+          actions={<ModelConnectionBackButton />}
         />
         <Surface>
           <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
@@ -668,6 +675,7 @@ export default function ModelGovernancePage() {
         description="维护企业模型目录、别名、项目范围与调用优化策略；高影响变化统一经过验证、Shadow、证据门禁、Canary 和回滚。"
         actions={(
           <Space>
+            <ModelConnectionBackButton />
             {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
             {!['optimization', 'releases'].includes(activeTab) && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
           </Space>

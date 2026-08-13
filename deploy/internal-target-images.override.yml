@@ -1,0 +1,16 @@
+# Development/test Target only. Build each immutable image once, then use this
+# overlay for both stable and canary without invoking Compose builds again.
+services:
+  backend:
+    image: ${UNIROUTER_BACKEND_IMAGE:?Set one immutable development backend image reference}
+    build: !reset null
+
+  backend-canary:
+    image: ${UNIROUTER_BACKEND_IMAGE:?Use the exact same backend image as stable}
+    build: !reset null
+    ports: !override
+      - "127.0.0.1:8081:8080"
+
+  frontend:
+    image: ${UNIROUTER_FRONTEND_IMAGE:?Set one immutable development frontend image reference}
+    build: !reset null

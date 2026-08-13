@@ -1,9 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.17
-> **日期**：2026-08-04
+> **版本**：v1.18
+> **日期**：2026-08-13
 > **用途**：运维人员部署和维护 UniRouter 的操作手册
-> **变更记录**：v1.17 增加默认关闭的 Exact Response Cache 三段式密钥注入、客户 preflight all-or-none 校验、冷失效轮换边界和迁移 `000056` 运维约束；v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
+> **变更记录**：v1.18 增加 development/test Target 单次构建复用、两代已验证回滚保留和只读镜像生命周期报告；v1.17 增加默认关闭的 Exact Response Cache 三段式密钥注入、客户 preflight all-or-none 校验、冷失效轮换边界和迁移 `000056` 运维约束；v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
 
@@ -1449,6 +1449,68 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml stop backend-c
 curl -fsS http://localhost:8080/health/ready
 # 期望：{"status":"ok","db":"ok","redis":"ok"}
 ```
+
+### 9.10 development/test Target 镜像生命周期
+
+同一 release 只构建一个 backend 镜像和一个 frontend 镜像。stable 与 canary
+必须引用同一个 backend image ID；不能因为副本角色不同重复构建。构建完成后用
+`deploy/internal-target-images.override.yml` 固定这两个不可变引用，并在启动时加
+`--no-build`，避免 Compose 隐式产生新镜像：
+
+```bash
+: "${RUNTIME_VERSION:?Set the immutable development version}"
+: "${RUNTIME_COMMIT:?Set the complete Git commit}"
+
+release_tag="${RUNTIME_COMMIT:0:8}"
+export UNIROUTER_BACKEND_IMAGE="unirouter-release/backend:${release_tag}"
+export UNIROUTER_FRONTEND_IMAGE="unirouter-release/frontend:${release_tag}"
+
+docker build \
+  --build-arg "RUNTIME_VERSION=${RUNTIME_VERSION}" \
+  --build-arg "RUNTIME_COMMIT=${RUNTIME_COMMIT}" \
+  --build-arg UNIROUTER_RELEASE_TRUST_MODE=development \
+  --tag "${UNIROUTER_BACKEND_IMAGE}" .
+docker build \
+  --build-arg VITE_DEPLOY_ENV=development \
+  --tag "${UNIROUTER_FRONTEND_IMAGE}" ./frontend
+
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.canary.yml \
+  -f deploy/internal-target-images.override.yml \
+  up -d --no-build
+```
+
+每次 stable 验证通过后，运维必须维护一个部署机本地 keep file。它只列出最近
+两个**已经验证可回滚的完整部署状态**所引用的精确 backend/frontend 镜像；不能按
+“最新标签”猜测，也不能把失败构建当作回滚点。当前运行和已退出容器引用的镜像会
+由报告脚本自动保护，无需重复写入。示例：
+
+```text
+# /opt/unirouter/image-retention.keep
+unirouter-release/backend:<previous-release>
+unirouter-release/frontend:<previous-release>
+unirouter-release/backend:<previous-previous-release>
+unirouter-release/frontend:<previous-previous-release>
+```
+
+随后只生成只读报告：
+
+```bash
+scripts/docker-image-retention-report.sh \
+  --keep-file /opt/unirouter/image-retention.keep \
+  --min-age-days 14 \
+  > /opt/unirouter/image-retention-report.tsv
+```
+
+脚本会把全部运行中或已退出容器引用的 image ID 标为 `protected-container`，keep
+file 引用标为 `protected-rollback`；只有未被容器使用、属于 UniRouter、超过保留
+期且不在回滚集合中的对象才标为 `candidate`。它不会删除或取消任何标签。
+
+禁止直接使用无范围的 `docker image prune -a`：它无法知道哪两个版本已经完成
+回滚验证。实际清理是独立的破坏性运维动作，必须先复核报告中的精确 image ID、
+所有 tags、预计释放空间与回滚集合，再获得授权并只删除已批准候选。基础镜像、
+数据库卷、备份、发布目录和 keep file 不属于镜像清理范围。
 
 ---
 

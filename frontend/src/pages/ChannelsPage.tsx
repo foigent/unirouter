@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Input, Typography, Descriptions } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { normalizeModelList } from '../utils/modelList';
+import ConnectionModelPanel from '../components/ConnectionModelPanel';
+import { loadAllPages } from '../utils/loadAllPages';
+import { parseChannelModels, type ChannelReadinessCredential } from '../utils/channelReadiness';
 
 interface Channel {
   id: number;
@@ -173,6 +176,12 @@ function navigateWithinApp(path: string) {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
+function connectionAdvancedPath(path: string, channelID: number, model?: string) {
+  const params = new URLSearchParams({ from: 'connections', channel_id: String(channelID) });
+  if (model) params.set('model', model);
+  return `${path}?${params.toString()}`;
+}
+
 function adapterConfigFacts(channel: Channel) {
   let config: Record<string, unknown> = {};
   if (channel.adapter_config && typeof channel.adapter_config === 'object') {
@@ -215,8 +224,12 @@ export default function ChannelsPage() {
   const [providerPacks, setProviderPacks] = useState<ProviderPack[]>([]);
   const [providerPackError, setProviderPackError] = useState('');
   const [selectedChannelId, setSelectedChannelId] = useState<number | undefined>(() => selectedChannelIDFromParams());
+  const [channelKeys, setChannelKeys] = useState<ChannelReadinessCredential[]>([]);
+  const [credentialLoadState, setCredentialLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [credentialLoadError, setCredentialLoadError] = useState('');
+  const credentialRequestVersion = useRef(0);
 
-  const load = (p = page, size = pageSize) => {
+  const load = (p = page, size = pageSize, preferredChannelID?: number) => {
     const version = ++requestVersion.current;
     setLoading(true);
     setLoadError('');
@@ -229,8 +242,9 @@ export default function ChannelsPage() {
         setChannels(nextChannels);
         setTotal(data.total || 0);
         setSelectedChannelId((current) => {
-          const preferred = nextChannels.some((item: Channel) => item.id === current)
-            ? current
+          const requested = preferredChannelID || current;
+          const preferred = nextChannels.some((item: Channel) => item.id === requested)
+            ? requested
             : nextChannels[0]?.id;
           syncSelectedChannelID(preferred);
           return preferred;
@@ -248,7 +262,25 @@ export default function ChannelsPage() {
       });
   };
 
+  const loadCredentials = useCallback(async () => {
+    const version = ++credentialRequestVersion.current;
+    setCredentialLoadState('loading');
+    setCredentialLoadError('');
+    try {
+      const items = await loadAllPages<ChannelReadinessCredential>((nextPage, size) => api.getChannelKeys(nextPage, size));
+      if (version !== credentialRequestVersion.current) return;
+      setChannelKeys(items);
+      setCredentialLoadState('ready');
+    } catch (error: any) {
+      if (version !== credentialRequestVersion.current) return;
+      setChannelKeys([]);
+      setCredentialLoadState('error');
+      setCredentialLoadError(`供应商凭证状态加载失败${error?.message ? `：${error.message}` : ''}`);
+    }
+  }, []);
+
   useEffect(() => { load(1, pageSize); }, []);
+  useEffect(() => { void loadCredentials(); }, [loadCredentials]);
   useEffect(() => {
     let active = true;
     setProviderPackError('');
@@ -278,6 +310,14 @@ export default function ChannelsPage() {
     () => selectedChannel ? adapterConfigFacts(selectedChannel) : [],
     [selectedChannel],
   );
+  const modelsPublishedElsewhere = useMemo(() => {
+    const published = new Set<string>();
+    for (const channel of channels) {
+      if (channel.id === selectedChannelId) continue;
+      for (const model of parseChannelModels(channel.published_models)) published.add(model);
+    }
+    return published;
+  }, [channels, selectedChannelId]);
 
   const selectChannel = (channel: Channel) => {
     setSelectedChannelId(channel.id);
@@ -326,10 +366,14 @@ export default function ChannelsPage() {
         Toast.success('通道更新成功');
       } else {
 		const created = await api.createChannel(payload);
-		const firstModel = normalizeModelList(values.models).split(',')[0] || '';
-		Toast.success('模型连接和供应商凭证已保存，正在进入真实检测');
+		Toast.success('模型连接和供应商凭证已保存，请在本页完成真实检测并启用');
 		closeDrawer();
-		navigateWithinApp(`/test?channel_id=${created.id}${firstModel ? `&model=${encodeURIComponent(firstModel)}` : ''}`);
+		setPage(1);
+		setPageSize(100);
+		setSelectedChannelId(created.id);
+		syncSelectedChannelID(created.id);
+		void loadCredentials();
+		load(1, 100, created.id);
 		return;
       }
       closeDrawer();
@@ -471,18 +515,18 @@ export default function ChannelsPage() {
       <PageHeader
         eyebrow="模型接入"
         title="模型连接"
-        description="填写供应商地址、模型和 Key，保存后做一次真实检测；首次检测成功即可启用。内部仍保留凭证加密、发布证据和回滚能力。"
+        description="填写供应商地址、模型和 Key，在同一页面完成真实检测与启用。内部仍保留凭证加密、发布证据和回滚能力。"
         actions={<Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增模型连接</Button>}
       />
 
       <Surface
-        title="三步即可使用"
-        description="Readiness、Provider Pack、模型目录和发布记录都是高级诊断证据，不是新增模型的必填步骤。"
+        title="三步完成模型上线"
+        description="调用诊断、协议证据和发布记录都不是新增模型的必填步骤。模型上线后，如尚无应用凭证，再为应用创建 API Key。"
       >
         <ol className="ur-plain-list">
 		  <li><strong>连接：</strong>填写真实供应商、Base URL、模型 ID 和供应商 Key。</li>
-		  <li><strong>检测：</strong>系统向所选模型发起一次最小真实请求，验证网络、Key 和模型权限。</li>
-		  <li><strong>启用：</strong>首次路由可直接启用；以后替换已生效路由时才需要灰度。</li>
+		  <li><strong>检测：</strong>逐个检测，或一次检测当前连接配置的全部模型。</li>
+		  <li><strong>启用：</strong>检测通过后启用该模型；以后替换已生效连接时才进入灰度。</li>
         </ol>
       </Surface>
 
@@ -490,10 +534,10 @@ export default function ChannelsPage() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>通道列表</Typography.Title>
-              <Typography.Text className="ur-panel-hint">默认选择首条记录 · 右侧持续显示兼容性</Typography.Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>模型连接</Typography.Title>
+              <Typography.Text className="ur-panel-hint">选择一条连接后，在下方逐个检测和启用模型</Typography.Text>
             </div>
-            <Tag size="small">{total} channels</Tag>
+            <Tag size="small">{total} 个连接</Tag>
           </div>
           <div className="ur-table-shell">
             <Table
@@ -533,7 +577,9 @@ export default function ChannelsPage() {
           </div>
         </main>
 
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="Provider 兼容性检查器">
+        <details className="ur-explorer-panel ur-explorer-detail">
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>高级：查看协议与连接证据</summary>
+        <aside aria-label="Provider 兼容性检查器" style={{ marginTop: 12 }}>
           <div className="ur-detail-header">
             <div>
               <Typography.Text className="ur-panel-hint">Provider Conformance</Typography.Text>
@@ -648,16 +694,40 @@ export default function ChannelsPage() {
               </div>
 
 			  <Button icon={<IconEdit />} onClick={() => openEdit(selectedChannel)}>编辑当前连接</Button>
-			  <Button type={effectiveChannelStatus(selectedChannel) === 'active' ? 'tertiary' : 'primary'} onClick={() => navigateWithinApp(`/test?channel_id=${selectedChannel.id}&model=${encodeURIComponent(normalizeModelList(selectedChannel.models).split(',')[0] || '')}`)}>检测模型</Button>
+			  <Button type="primary" onClick={() => document.getElementById('connection-models')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>查看并检测模型</Button>
             </div>
           )}
         </aside>
+        </details>
       </div>
 
-      <Surface
-        title="路由预览"
-        description="只读解释指定模型当前会选择哪些通道以及排除原因。它不会调用上游、不会产生费用，也不会占用半开探针；真实请求仍以服务器请求 ID 进行稳定选择。"
-      >
+      {selectedChannel && <div id="connection-models">
+        <ConnectionModelPanel
+          key={`${selectedChannel.id}:${selectedChannel.routing_epoch}:${selectedChannel.models}`}
+          channel={selectedChannel}
+          credentials={channelKeys}
+          credentialLoadState={credentialLoadState}
+          credentialLoadError={credentialLoadError}
+          modelsPublishedElsewhere={modelsPublishedElsewhere}
+          onModelEnabled={(model) => setChannels(current => current.map(item => item.id === selectedChannel.id
+            ? {
+                ...item,
+                effective_status: 'active',
+                published_models: normalizeModelList(`${item.published_models || ''},${model}`),
+              }
+            : item))}
+          onManageCredentials={() => navigateWithinApp(connectionAdvancedPath('/channel-keys', selectedChannel.id))}
+          onOpenRouteManagement={(model) => navigateWithinApp(connectionAdvancedPath('/model-governance', selectedChannel.id, model) + '&tab=releases')}
+          onDiagnose={(model) => navigateWithinApp(connectionAdvancedPath('/model-readiness', selectedChannel.id, model))}
+        />
+      </div>}
+
+      <details>
+        <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: 12 }}>高级：预览当前路由</summary>
+        <Surface
+          title="路由预览"
+          description="只读解释指定模型当前会选择哪些连接以及排除原因。它不会调用上游，也不会产生费用。"
+        >
         <div className="ur-inline-controls">
           <Input
             value={previewModel}
@@ -704,15 +774,8 @@ export default function ChannelsPage() {
             </div>
           </div>
         )}
-      </Surface>
-
-	  <Surface title="高级管理" description="仅在轮换供应商凭证、维护客户目录能力、排查调用条件或替换已有路由时使用。">
-		<Space wrap>
-		  <Button onClick={() => navigateWithinApp('/channel-keys')}>供应商凭证</Button>
-		  <Button onClick={() => navigateWithinApp('/model-governance')}>模型目录与灰度发布</Button>
-		  <Button onClick={() => navigateWithinApp('/model-readiness')}>Readiness 诊断</Button>
-		</Space>
-	  </Surface>
+        </Surface>
+      </details>
 
       <SideSheet
         title={editing ? '编辑通道' : '新增通道'}
@@ -771,7 +834,7 @@ export default function ChannelsPage() {
             : channelStatusOptions} extraText="staged/disabled 不能直接改回 active；请通过运行时发布提升。" />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
-			<Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '保存并检测'}</Button>
+			<Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '保存并进入检测'}</Button>
           </div>
         </Form>
       </SideSheet>

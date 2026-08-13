@@ -6,10 +6,16 @@ import { accessApi, type ModelReadiness, type ReadinessAxis } from '../api/acces
 import { ApiError, api } from '../api/client';
 import { EmptyState, MetricTile, PageHeader, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
+import { parseChannelModels } from '../utils/channelReadiness';
+import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 
 const { Text, Title } = Typography;
 
 type Project = { id: number; name: string; status: string; current_user_membership_role?: string };
+type Channel = { models?: string };
+type ModelAlias = { alias: string; target_model: string; display_name?: string; status: string };
+type WorkloadApplication = { application_ref: string; display_name: string; project_id: number; environment?: string; status: string };
+type ModelOption = { value: string; label: string };
 
 const statePresentation: Record<ReadinessAxis['state'], { label: string; color: 'green' | 'red' | 'orange' | 'grey' | 'blue' }> = {
   ready: { label: '就绪', color: 'green' },
@@ -20,12 +26,12 @@ const statePresentation: Record<ReadinessAxis['state'], { label: string; color: 
 };
 
 const platformLabels: Record<string, string> = {
-  registration: '模型录入', lifecycle: '生命周期', catalog: '目录可见', price_authority: '价格权威',
-  channel: '通道', provider_credential: 'Provider 凭证', base_route: '基础路由', runtime_slot: 'Runtime slot',
+  registration: '模型记录', lifecycle: '生命周期', catalog: '目录可见', price_authority: '计价信息',
+  channel: '供应商连接', provider_credential: '供应商凭证', base_route: '可用路由', runtime_slot: '当前路由版本',
 };
 const projectLabels: Record<string, string> = {
-  project: '项目', alias: 'Alias', model_set: '模型集合', wallet: '钱包', project_budget: '项目预算监控',
-  application: 'Workload Application', grant: 'Access Grant', credential: '逻辑凭据',
+  project: '项目', alias: '模型别名', model_set: '项目模型范围', wallet: '钱包', project_budget: '项目预算监控',
+  application: '应用', grant: '访问授权', credential: '应用 API Key',
   model_authorization: '模型调用授权', limit_policy: '限额策略',
 };
 
@@ -54,11 +60,18 @@ export default function ModelReadinessPage() {
   const [formApi, setFormApi] = useState<any>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsError, setProjectsError] = useState('');
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const [modelOptionsError, setModelOptionsError] = useState('');
+  const [applications, setApplications] = useState<WorkloadApplication[]>([]);
+  const [applicationsError, setApplicationsError] = useState('');
+  const [draftProjectID, setDraftProjectID] = useState(0);
+  const [draftCaller, setDraftCaller] = useState<'self' | 'workload_application'>('self');
   const [readiness, setReadiness] = useState<ModelReadiness | null>(null);
   const [readinessScopeKey, setReadinessScopeKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const readinessGeneration = useRef(0);
+  const applicationGeneration = useRef(0);
 
   const query = useMemo(() => ({
     project_id: Number(search.get('project_id') || 0),
@@ -81,9 +94,52 @@ export default function ModelReadinessPage() {
       setProjects(await loadAllPages<Project>((page, size) => api.getProjects(page, size, { status: 'active' })));
     } catch {
       setProjects([]);
-      setProjectsError('项目范围暂时不可用；不会把它解释成“无项目”。');
+      setProjectsError('项目列表暂时不可用；不会把它解释成“没有项目”。');
     }
   }, []);
+
+  const loadModelOptions = useCallback(async () => {
+    setModelOptionsError('');
+    const [channelResult, aliasResult] = await Promise.allSettled([
+      loadAllPages<Channel>((page, size) => api.getChannels(page, size)),
+      loadAllPages<ModelAlias>((page, size) => api.getModelAliases(page, size)),
+    ]);
+    const options = new Map<string, string>();
+    if (channelResult.status === 'fulfilled') {
+      for (const channel of channelResult.value) {
+        for (const model of parseChannelModels(channel.models)) options.set(model, model);
+      }
+    }
+    if (aliasResult.status === 'fulfilled') {
+      for (const alias of aliasResult.value) {
+        if (alias.status === 'active') options.set(alias.alias, `${alias.display_name || alias.alias}（Alias → ${alias.target_model}）`);
+      }
+    }
+    if (query.model && !options.has(query.model)) options.set(query.model, query.model);
+    setModelOptions([...options.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label)));
+    if (channelResult.status === 'rejected' && aliasResult.status === 'rejected') {
+      setModelOptionsError('模型连接和 Alias 列表均暂时不可用，无法安全选择诊断模型。');
+    } else if (channelResult.status === 'rejected' || aliasResult.status === 'rejected') {
+      setModelOptionsError('部分模型来源暂时不可用；当前下拉只显示已成功读取的模型。');
+    }
+  }, [query.model]);
+
+  const loadApplications = useCallback(async () => {
+    const generation = ++applicationGeneration.current;
+    setApplications([]);
+    setApplicationsError('');
+    if (draftCaller !== 'workload_application' || !draftProjectID) return;
+    try {
+      const result = await api.getWorkloadApplications({ project_id: draftProjectID, status: 'active' }) as { data?: WorkloadApplication[] };
+      if (generation !== applicationGeneration.current) return;
+      setApplications((result.data || []).filter(item => item.project_id === draftProjectID && item.status === 'active'));
+    } catch {
+      if (generation !== applicationGeneration.current) return;
+      setApplicationsError('无法读取所选项目的应用列表。');
+    }
+  }, [draftCaller, draftProjectID]);
 
   const loadReadiness = useCallback(async () => {
     const generation = ++readinessGeneration.current;
@@ -104,18 +160,21 @@ export default function ModelReadinessPage() {
     } catch (readinessError) {
       if (readinessGeneration.current !== generation || queryScopeKey !== scopeKey) return;
       setError(readinessError instanceof ApiError && readinessError.status === 503
-        ? 'Readiness 证据源暂时不可用，当前状态是“暂时无法判断”，不是“未配置”或“受阻”。'
-        : '无法读取此项目与调用主体的 readiness。');
+        ? '诊断证据源暂时不可用，当前状态是“暂时无法判断”，不是“未配置”或“受阻”。'
+        : '无法读取所选项目与调用主体的诊断结果。');
     } finally {
       if (readinessGeneration.current === generation && queryScopeKey === scopeKey) setLoading(false);
     }
   }, [query, queryScopeKey, responseMatchesQuery]);
 
-  useEffect(() => { loadProjects(); }, [loadProjects]);
-  useEffect(() => { loadReadiness(); }, [loadReadiness]);
+  useEffect(() => { void loadProjects(); }, [loadProjects]);
+  useEffect(() => { void loadModelOptions(); }, [loadModelOptions]);
+  useEffect(() => { void loadApplications(); }, [loadApplications]);
+  useEffect(() => { void loadReadiness(); }, [loadReadiness]);
   useEffect(() => {
-    if (!formApi) return;
-    formApi.setValues(query);
+    setDraftProjectID(query.project_id);
+    setDraftCaller(query.caller);
+    if (formApi) formApi.setValues(query);
   }, [formApi, query]);
 
   const submit = (values: Record<string, any>) => {
@@ -125,45 +184,123 @@ export default function ModelReadinessPage() {
     next.set('endpoint', values.endpoint);
     next.set('caller', values.caller);
     if (values.caller === 'workload_application') next.set('application_ref', String(values.application_ref || '').trim());
+    if (search.get('from') === 'connections') {
+      next.set('from', 'connections');
+      const channelID = search.get('channel_id');
+      if (channelID) next.set('channel_id', channelID);
+    }
     setSearch(next);
   };
 
   const scopedReadiness = readinessScopeKey === queryScopeKey ? readiness : null;
   const platformAxes = scopedReadiness ? Object.entries(scopedReadiness.platform_model) : [];
   const projectAxes = scopedReadiness ? Object.entries(scopedReadiness.project_caller) : [];
+  const applicationOptions = applications.map(application => ({
+    value: application.application_ref,
+    label: `${application.display_name}${application.environment ? ` · ${application.environment}` : ''}`,
+  }));
+  if (query.application_ref && !applicationOptions.some(option => option.value === query.application_ref)) {
+    applicationOptions.push({ value: query.application_ref, label: query.application_ref });
+  }
 
   return (
     <div className="ur-page">
-	  <PageHeader eyebrow="高级诊断" title="模型调用条件诊断（Readiness）" description="Readiness 就是“调用条件是否齐全”的只读排查页，不是模型接入步骤。它不会发 Provider、Feed 或上游请求，也不会自动修改配置。" actions={<Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>刷新诊断</Button>} />
-      <Surface title="检查范围" description="模型保留为 query value；Workload caller 必须精确绑定同一项目的 application_ref。">
-        {projectsError && <Text type="warning">{projectsError}</Text>}
+      <PageHeader
+        eyebrow="高级诊断"
+        title="调用诊断"
+        description="回答“这个项目或应用为什么还不能调用该模型”。它不是模型上线步骤，不会请求供应商，也不会自动修改配置。"
+        actions={<Space><ModelConnectionBackButton /><Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>刷新诊断</Button></Space>}
+      />
+      <Surface title="选择要诊断的调用" description="从现有项目、模型和应用中选择；内部 ID 与 Ref 不再要求手工输入。">
+        {projectsError && <div><Text type="warning">{projectsError}</Text></div>}
+        {modelOptionsError && <div><Text type="warning">{modelOptionsError}</Text></div>}
+        {applicationsError && <div><Text type="warning">{applicationsError}</Text></div>}
         <Form layout="horizontal" getFormApi={setFormApi} onSubmit={submit}>
-          <Form.Select field="project_id" label="项目" optionList={projects.map((project) => ({ value: project.id, label: `${project.name} (#${project.id})` }))} rules={[{ required: true, message: '请选择项目' }]} style={{ width: 240 }} />
-          <Form.Input field="model" label="模型 / Alias" rules={[{ required: true, message: '请输入模型' }]} style={{ width: 220 }} />
-          <Form.Select field="endpoint" label="执行端点" optionList={['/v1/chat/completions', '/v1/embeddings', '/v1/models', '/v1/media/jobs'].map((value) => ({ value, label: value }))} rules={[{ required: true, message: '请选择端点' }]} style={{ width: 230 }} />
-          <Form.Select field="caller" label="调用主体" optionList={[{ value: 'self', label: '当前账号（self）' }, { value: 'workload_application', label: 'Workload Application' }]} rules={[{ required: true, message: '请选择主体' }]} style={{ width: 220 }} />
-          <Form.Input field="application_ref" label="Application ref（Workload 时必填）" style={{ width: 240 }} />
-          <Button htmlType="submit" type="primary" loading={loading}>检查</Button>
+          <Form.Select
+            field="project_id"
+            label="项目"
+            filter
+            optionList={projects.map(project => ({ value: project.id, label: project.name }))}
+            rules={[{ required: true, message: '请选择项目' }]}
+            style={{ width: 220 }}
+            onChange={(value) => {
+              setDraftProjectID(Number(value || 0));
+              formApi?.setValue('application_ref', undefined);
+            }}
+          />
+          <Form.Select
+            field="model"
+            label="模型或 Alias"
+            filter
+            optionList={modelOptions}
+            placeholder="选择或搜索已录入模型"
+            rules={[{ required: true, message: '请选择模型' }]}
+            style={{ width: 250 }}
+          />
+          <Form.Select
+            field="endpoint"
+            label="调用类型"
+            optionList={[
+              { value: '/v1/chat/completions', label: '聊天 / 多模态对话' },
+              { value: '/v1/embeddings', label: '文本向量（Embedding）' },
+              { value: '/v1/models', label: '读取模型列表' },
+              { value: '/v1/media/jobs', label: '异步媒体任务' },
+            ]}
+            rules={[{ required: true, message: '请选择调用类型' }]}
+            style={{ width: 230 }}
+          />
+          <Form.Select
+            field="caller"
+            label="谁来调用"
+            optionList={[
+              { value: 'self', label: '当前账号' },
+              { value: 'workload_application', label: '应用 / Agent' },
+            ]}
+            rules={[{ required: true, message: '请选择调用主体' }]}
+            style={{ width: 190 }}
+            onChange={(value) => {
+              const caller = value === 'workload_application' ? 'workload_application' : 'self';
+              setDraftCaller(caller);
+              if (caller === 'self') formApi?.setValue('application_ref', undefined);
+            }}
+          />
+          {draftCaller === 'workload_application' && <Form.Select
+            field="application_ref"
+            label="应用 / Agent"
+            filter
+            optionList={applicationOptions}
+            placeholder={draftProjectID ? '选择所选项目中的应用' : '请先选择项目'}
+            disabled={!draftProjectID}
+            rules={[{ required: true, message: '请选择应用' }]}
+            style={{ width: 240 }}
+          />}
+          <Button htmlType="submit" type="primary" loading={loading}>诊断调用条件</Button>
         </Form>
       </Surface>
 
-      {error ? <Surface><EmptyState title="暂时无法判断" description={error} actions={<Button onClick={loadReadiness}>重试</Button>} /></Surface> : !scopedReadiness ? <Surface><EmptyState title="选择项目、模型与调用主体后检查" /></Surface> : <>
-        <Surface title="四个独立事实" description={`resolved_model=${scopedReadiness.scope.resolved_model} · runtime_mutation=${scopedReadiness.runtime_mutation} · external_requests=${scopedReadiness.external_requests}`}>
+      {error ? <Surface><EmptyState title="暂时无法判断" description={error} actions={<Button onClick={loadReadiness}>重试</Button>} /></Surface> : !scopedReadiness ? <Surface><EmptyState title="选择项目、模型与调用主体后开始诊断" /></Surface> : <>
+        <Surface title="诊断结果" description={`当前模型：${scopedReadiness.scope.resolved_model}`}>
           <div className="ur-metric-grid">
-            <MetricTile label="已录入" value={factText(scopedReadiness.summary.registered)} />
-            <MetricTile label="目录可见" value={factText(scopedReadiness.summary.catalog_visible)} />
-            <MetricTile label="可路由" value={factText(scopedReadiness.summary.routable)} />
-            <MetricTile label="当前项目调用主体可调用" value={factText(scopedReadiness.summary.current_project_caller_callable)} />
+            <MetricTile label="已有模型记录" value={factText(scopedReadiness.summary.registered)} />
+            <MetricTile label="项目可以看见" value={factText(scopedReadiness.summary.catalog_visible)} />
+            <MetricTile label="已有可用路由" value={factText(scopedReadiness.summary.routable)} />
+            <MetricTile label="所选主体可以调用" value={factText(scopedReadiness.summary.current_project_caller_callable)} />
           </div>
         </Surface>
-        <Surface title="平台 / 模型层" description="注册、生命周期、目录、价格和纯读 route preview 各自保真。">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{platformAxes.map(([key, axis]) => <AxisCard key={key} label={platformLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
-        </Surface>
-        <Surface title="所选项目 / 调用主体层" description="Grant、credential、runtime boundary、model authorization 与 limit policy 复用当前权威。">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{projectAxes.map(([key, axis]) => <AxisCard key={key} label={projectLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
-        </Surface>
         <Surface>
-          <Space vertical align="start"><Title heading={6}>证据边界</Title><Text type="tertiary">as_of: {scopedReadiness.as_of}</Text><Text type="tertiary">页面只展示 safe_evidence；不包含 provider/key ID、base URL、密文、hash、token 或 secret。</Text></Space>
+          <details>
+            <summary style={{ cursor: 'pointer', fontWeight: 600 }}>查看高级诊断证据</summary>
+            <div style={{ marginTop: 16 }}>
+              <Title heading={6}>模型与供应商连接</Title>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{platformAxes.map(([key, axis]) => <AxisCard key={key} label={platformLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
+              <Title heading={6} style={{ marginTop: 20 }}>项目、应用与权限</Title>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{projectAxes.map(([key, axis]) => <AxisCard key={key} label={projectLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
+              <Space vertical align="start" style={{ marginTop: 16 }}>
+                <Text type="tertiary">诊断时间：{scopedReadiness.as_of}</Text>
+                <Text type="tertiary">只展示安全证据；不包含供应商 Key、Base URL、密文、Token 或 Secret。</Text>
+              </Space>
+            </div>
+          </details>
         </Surface>
       </>}
     </div>

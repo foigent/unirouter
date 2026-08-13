@@ -165,10 +165,10 @@ func routingAxis(input ReadinessInput) Axis {
 		return axis("upstream_route", AxisContextRequired, "model_required_for_routing", "选择模型后才能解析上游通道和供应商凭证。", "", "routing-policy.v1")
 	}
 	if !input.RoutingPreviewAvailable {
-		return axis("upstream_route", AxisBlocked, "routing_preview_unavailable", "上游路由状态暂时不可用，系统按 fail-closed 处理。", "/test", "routing-policy.v1")
+		return axis("upstream_route", AxisBlocked, "routing_preview_unavailable", "上游路由状态暂时不可用，系统按 fail-closed 处理。", "/channels", "routing-policy.v1")
 	}
 	if input.RoutingCandidateCount <= 0 {
-		return axis("upstream_route", AxisBlocked, "no_eligible_upstream_route", "没有同时满足通道、熔断、模型和供应商凭证条件的活跃路由。", "/test", "routing-policy.v1")
+		return axis("upstream_route", AxisBlocked, "no_eligible_upstream_route", "没有同时满足通道、熔断、模型和供应商凭证条件的活跃路由。", "/channels", "routing-policy.v1")
 	}
 	return axis("upstream_route", AxisReady, "eligible_upstream_route", "存在可用上游路由和供应商凭证。", "", "routing-policy.v1")
 }
