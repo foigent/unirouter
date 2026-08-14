@@ -309,4 +309,26 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
       expected_routing_epoch: 6,
     }));
   });
+
+  it('opens the exact recovery release for a disabled connection with retained evidence', async () => {
+    mocks.getChannels.mockResolvedValueOnce({
+      data: [{
+        id: 14, name: 'Kimi', provider: 'kimi', base_url: 'https://api.moonshot.cn/v1', models: 'kimi-k3',
+        adapter_type: 'openai_compatible', adapter_config: {}, priority: 100, routing_weight: 100, routing_epoch: 7,
+        degradation_threshold: 10, status: 'disabled', effective_status: 'disabled', published_models: 'kimi-k3',
+        circuit_state: 'healthy', fail_count: 0, created_at: '2026-08-14T00:00:00Z',
+      }],
+      total: 1,
+    });
+
+    render(<ChannelsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '查看恢复步骤' }));
+
+    const params = new URLSearchParams(window.location.search);
+    expect(window.location.pathname).toBe('/model-governance');
+    expect(params.get('channel_id')).toBe('14');
+    expect(params.get('model')).toBe('kimi-k3');
+    expect(params.get('tab')).toBe('releases');
+    expect(params.get('intent')).toBe('recover');
+  });
 });

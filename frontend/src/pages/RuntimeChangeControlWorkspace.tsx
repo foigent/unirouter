@@ -70,6 +70,10 @@ function riskColor(risk: string) {
 }
 
 export default function RuntimeChangeControlWorkspace() {
+  const requestedParams = new URLSearchParams(window.location.search);
+  const requestedModel = String(requestedParams.get('model') || '').trim();
+  const requestedChannelID = Number(requestedParams.get('channel_id'));
+  const recoveryRequested = requestedParams.get('from') === 'connections' && requestedParams.get('intent') === 'recover' && requestedModel !== '';
   const [releases, setReleases] = useState<RuntimeRelease[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedRef, setSelectedRef] = useState('');
@@ -93,13 +97,20 @@ export default function RuntimeChangeControlWorkspace() {
       const next = (releaseData?.data || []) as RuntimeRelease[];
       setReleases(next);
       setChannels(channelData as Channel[]);
-      setSelectedRef(current => next.some(item => item.release_ref === current) ? current : next[0]?.release_ref || '');
+      setSelectedRef(current => {
+        if (next.some(item => item.release_ref === current)) return current;
+        const requested = requestedModel
+          ? next.find(item => item.model_name === requestedModel && ['active', 'canary'].includes(item.stage))
+            || next.find(item => item.model_name === requestedModel)
+          : undefined;
+        return requested?.release_ref || next[0]?.release_ref || '';
+      });
     } catch (error: any) {
       setLoadError(error?.message || '无法加载运行时发布状态。');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [requestedModel]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -195,6 +206,10 @@ export default function RuntimeChangeControlWorkspace() {
 
   return (
     <>
+      {recoveryRequested && <Banner
+        type="warning"
+        description={`恢复 ${requestedModel}：先在右侧回滚该模型当前“已生效”的旧发布，释放历史占位；再返回模型连接，将连接 #${Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0 ? requestedChannelID : '-'} 改为“待发布”，补齐凭证并完成真实检测后重新启用。回滚不会自动恢复流量。`}
+      />}
       <Banner
         type="info"
         description="在线发布只覆盖通道准入、优先级和权重。Adapter 必须具备离线协议夹具，但夹具不代表供应商账号、网络或真实接口已经验证；请先在上游检测完成真实连通检查。紧急禁用始终高于任何发布。"

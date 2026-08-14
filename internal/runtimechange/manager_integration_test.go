@@ -193,6 +193,39 @@ func TestPRD8RuntimeChangeLifecycleCanaryActivationAndEmergencyDisable(t *testin
 	require.Empty(t, slot.CanaryReleaseRef)
 	require.Equal(t, "none", slot.RuntimeMutation)
 
+	var disabledEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT routing_epoch FROM channels WHERE id=$1`, channelID).Scan(&disabledEpoch))
+	restage := authorizedRequest(http.MethodPut, fmt.Sprintf("/api/v1/channels/%d", channelID),
+		fmt.Sprintf(`{"status":"staged","expected_routing_epoch":%d}`, disabledEpoch))
+	restage.SetPathValue("id", fmt.Sprintf("%d", channelID))
+	restageResponse := httptest.NewRecorder()
+	handler.UpdateChannel(restageResponse, restage)
+	require.Equal(t, http.StatusOK, restageResponse.Code, restageResponse.Body.String())
+	router.Invalidate()
+
+	var recoveredEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT routing_epoch FROM channels WHERE id=$1`, channelID).Scan(&recoveredEpoch))
+	recovered, err := manager.CreateDraft(ctx, runtimechange.DraftRequest{
+		ReleaseRef: "rcr_prd8_recovered",
+		ModelName:  "gpt-prd8-runtime",
+		Overrides: []routingpolicy.ChannelOverride{{
+			ChannelID: channelID, ExpectedRoutingEpoch: recoveredEpoch,
+			Admission: routingpolicy.AdmissionAllow,
+		}},
+		Reason: "restore a credential-recovered emergency-disabled connection",
+	}, userID)
+	require.NoError(t, err)
+	recovered, err = manager.Validate(ctx, recovered.ReleaseRef, recovered.Version, userID)
+	require.NoError(t, err)
+	recovered, err = manager.ActivateInitial(ctx, recovered.ReleaseRef, recovered.Version, userID, orgID)
+	require.NoError(t, err)
+	require.Equal(t, "active", recovered.Stage)
+	router.Invalidate()
+	recoveredRoutes, err := router.RouteAllWithKey(ctx, "gpt-prd8-runtime", "after-controlled-recovery")
+	require.NoError(t, err)
+	require.Equal(t, channelID, recoveredRoutes[0].Channel.ID)
+	require.Equal(t, recovered.ReleaseRef, recoveredRoutes[0].RuntimeReleaseRef)
+
 	var secondEventCount int
 	require.NoError(t, pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM runtime_change_events e

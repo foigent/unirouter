@@ -739,7 +739,7 @@ export default function ChannelsPage() {
               }
             : item))}
           onManageCredentials={() => navigateWithinApp(connectionAdvancedPath('/channel-keys', selectedChannel.id))}
-          onOpenRouteManagement={(model) => navigateWithinApp(connectionAdvancedPath('/model-governance', selectedChannel.id, model) + '&tab=releases')}
+          onOpenRouteManagement={(model, intent = 'replace') => navigateWithinApp(connectionAdvancedPath('/model-governance', selectedChannel.id, model) + `&tab=releases&intent=${intent}`)}
           onDiagnose={(model) => navigateWithinApp(connectionAdvancedPath('/model-readiness', selectedChannel.id, model))}
         />
       </div>}

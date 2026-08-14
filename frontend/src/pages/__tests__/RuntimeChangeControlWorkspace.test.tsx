@@ -45,6 +45,7 @@ const RELEASE = {
 describe('RuntimeChangeControlWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState(null, '', '/model-governance?tab=releases');
     mocks.getRuntimeChanges.mockResolvedValue({ data: [RELEASE], total: 1 });
     mocks.getChannels.mockResolvedValue({
       data: [{
@@ -123,5 +124,23 @@ describe('RuntimeChangeControlWorkspace', () => {
     expect((await screen.findAllByText('待灰度（零流量）')).length).toBeGreaterThan(0);
     expect(screen.getByText(/不会发送真实请求/)).toBeTruthy();
     expect(screen.getByRole('button', { name: '启动 5% 灰度' })).toBeTruthy();
+  });
+
+  it('selects the requested active model release and explains the disabled-channel recovery sequence', async () => {
+    window.history.replaceState(null, '', '/model-governance?from=connections&channel_id=14&model=kimi-k3&tab=releases&intent=recover');
+    mocks.getRuntimeChanges.mockResolvedValue({
+      data: [
+        RELEASE,
+        { ...RELEASE, id: 22, release_ref: 'rcr_kimi_active', model_name: 'kimi-k3', stage: 'active', version: 4, reason: 'Kimi 首次启用' },
+      ],
+      total: 2,
+    });
+
+    render(<RuntimeChangeControlWorkspace />);
+
+    expect(await screen.findByText(/恢复 kimi-k3：先在右侧回滚/)).toBeTruthy();
+    expect(screen.getByText(/连接 #14 改为“待发布”/)).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '回滚' })).toBeTruthy();
+    expect(screen.getAllByText('Kimi 首次启用').length).toBeGreaterThanOrEqual(2);
   });
 });
