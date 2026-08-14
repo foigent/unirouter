@@ -1,25 +1,29 @@
 import {
+  IconAppCenter,
   IconBarChartVStroked,
   IconBookOpenStroked,
+  IconBranch,
   IconChecklistStroked,
   IconConnectionPoint1,
   IconCoinMoney,
   IconCreditCard,
   IconFile,
   IconFlowChartStroked,
+  IconHistory,
   IconHomeStroked,
+  IconHistogram,
   IconKeyStroked,
   IconBell,
-  IconLockStroked,
   IconMonitorStroked,
-  IconPulse,
   IconPriceTag,
   IconRoute,
   IconSendStroked,
+  IconServerStroked,
   IconSettingStroked,
   IconShield,
   IconShieldStroked,
   IconTerminal,
+  IconTestScoreStroked,
   IconUserGroup,
 } from '@douyinfe/semi-icons';
 import type { ReactNode } from 'react';
@@ -187,8 +191,8 @@ const taskNavItems: NavItem[] = [
     items: [
 	  { itemKey: '/channels', text: '模型连接', icon: <IconRoute /> },
 	  { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconKeyStroked /> },
-	  { itemKey: '/model-governance', text: '模型目录与灰度', icon: <IconChecklistStroked />, licenseFeature: 'model_governance' },
-	  { itemKey: '/model-readiness', text: '调用条件诊断', icon: <IconPulse /> },
+	  { itemKey: '/model-governance', text: '模型目录与灰度', icon: <IconBranch />, licenseFeature: 'model_governance' },
+	  { itemKey: '/model-readiness', text: '调用条件诊断', icon: <IconTestScoreStroked /> },
     ],
   },
   {
@@ -197,12 +201,12 @@ const taskNavItems: NavItem[] = [
     icon: <IconShieldStroked />,
     items: [
 		{ itemKey: '/access-review', text: '访问审核', icon: <IconChecklistStroked /> },
-		{ itemKey: '/applications', text: '应用与 Agent', icon: <IconKeyStroked /> },
+		{ itemKey: '/applications', text: '应用与 Agent', icon: <IconAppCenter /> },
       { itemKey: '/organization-members', text: '人员与权限', icon: <IconUserGroup /> },
       { itemKey: '/agent-trust', text: '模型调用授权', icon: <IconShieldStroked /> },
-      { itemKey: '/limit-policies', text: '共享限额', icon: <IconPulse /> },
+      { itemKey: '/limit-policies', text: '共享限额', icon: <IconHistogram /> },
       { itemKey: '/guardrail-policies', text: '内容安全', icon: <IconShieldStroked />, licenseFeature: 'guardrails' },
-      { itemKey: '/audit-logs', text: '审计日志', icon: <IconChecklistStroked /> },
+      { itemKey: '/audit-logs', text: '审计日志', icon: <IconHistory /> },
     ],
   },
   {
@@ -214,7 +218,7 @@ const taskNavItems: NavItem[] = [
       { itemKey: '/media-jobs', text: '异步模型任务', icon: <IconFile />, licenseFeature: 'gateway' },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell />, licenseFeature: 'notifications' },
-      { itemKey: '/status', text: '运行状态', icon: <IconPulse /> },
+      { itemKey: '/status', text: '运行状态', icon: <IconServerStroked /> },
     ],
   },
   {
@@ -287,8 +291,10 @@ function applyLicenseState(items: NavItem[], licenseAccess?: LicenseAccess | nul
     if (!item.licenseFeature || hasLicensedFeature(licenseAccess, item.licenseFeature)) return item;
     return {
       ...item,
-      text: `${item.text}（授权未包含）`,
-      icon: <IconLockStroked />,
+      // Keep the feature's own icon so locked entries remain distinguishable.
+      // The compact suffix fits the fixed navigation width; the full reason is
+      // still retained for route-level authorization messaging.
+      text: `${item.text}（未授权）`,
       licenseLocked: true,
       licenseReason: licenseRestrictionMessage(licenseAccess, item.licenseFeature),
       disabled: true,

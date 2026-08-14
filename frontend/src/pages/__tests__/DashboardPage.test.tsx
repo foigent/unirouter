@@ -70,13 +70,13 @@ const MOCK_STATS = {
     { date: '2026-06-29', requests: 7345, cost_micros: '36780000' },
   ],
   model_distribution: [
-    { model: 'gpt-4o', requests: 8000 },
-    { model: 'claude-3.5-sonnet', requests: 4345 },
+    { model: 'gpt-4o', requests: 8000, success_count: 7980, fail_count: 20, success_rate: 0.9975, p95_latency_ms: 620 },
+    { model: 'claude-3.5-sonnet', requests: 4345, success_count: 4200, fail_count: 145, success_rate: 0.9666, p95_latency_ms: 980 },
   ],
   channel_health: [
-    { id: 1, name: 'OpenAI Main', provider: 'openai', enabled: true, status: 'healthy', success_count: 10000, fail_count: 50 },
-    { id: 2, name: 'Azure Backup', provider: 'azure', enabled: true, status: 'degraded', success_count: 2000, fail_count: 300 },
-    { id: 3, name: 'Disabled CH', provider: 'custom', enabled: false, status: 'healthy', success_count: 0, fail_count: 0 },
+    { id: 1, name: 'OpenAI Main', provider: 'openai', enabled: true, available: true, credential_ready: true, status: 'healthy', success_count: 10000, fail_count: 50 },
+    { id: 2, name: 'Azure Backup', provider: 'azure', enabled: true, available: true, credential_ready: true, status: 'warning', success_count: 2000, fail_count: 300 },
+    { id: 3, name: 'Disabled CH', provider: 'custom', enabled: false, available: false, credential_ready: false, status: 'disabled', success_count: 0, fail_count: 0 },
   ],
   delta_vs_yesterday: { cost_micros: '5000000', latency_ms: -20, success_rate: 0.005 },
 };
@@ -221,8 +221,8 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('button', { name: '上游通道' })).toBeNull();
     expect(screen.queryByRole('button', { name: '用户管理' })).toBeNull();
     expect(screen.getByText('结算可用额度')).toBeTruthy();
-    expect(screen.queryByText('窗口健康通道')).toBeNull();
-    expect(screen.queryByText('通道健康状态')).toBeNull();
+    expect(screen.queryByText('当前可路由连接')).toBeNull();
+    expect(screen.queryByText('连接可用状态')).toBeNull();
     expect(screen.queryByText('运行关注与待处理动作')).toBeNull();
     expect(mockGetInternalStatus).not.toHaveBeenCalled();
   });
@@ -321,20 +321,39 @@ describe('DashboardPage', () => {
   });
 
   it('renders channel health data', async () => {
-    const { container } = renderDashboard();
-    await waitFor(() => {
-      const html = container.textContent || '';
-      expect(html).toContain('OpenAI Main');
-      expect(html).toContain('Azure Backup');
+    renderDashboard();
+    expect(await screen.findByText('OpenAI Main')).toBeTruthy();
+    expect(screen.getByText('Azure Backup')).toBeTruthy();
+    expect(screen.getByText('当前可路由连接')).toBeTruthy();
+    expect(screen.getByText('2/3')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '查看模型连接 OpenAI Main' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/channels?channel_id=1');
+  });
+
+  it('separates current route readiness from historical window results', async () => {
+    mockGetDashboardStats.mockResolvedValue({
+      ...MOCK_STATS,
+      channel_health: [{
+        id: 9, name: 'Kimi', provider: 'kimi', enabled: true, available: false,
+        credential_ready: false, runtime_published: true, status: 'no_credential',
+        success_count: 1, fail_count: 0,
+      }],
     });
+
+    renderDashboard();
+
+    expect(await screen.findByText('缺少凭证')).toBeTruthy();
+    expect(screen.getByText('0/1')).toBeTruthy();
+    expect(screen.getByText('100.0%')).toBeTruthy();
+    expect(screen.getByText('已启用、凭证可用且未熔断')).toBeTruthy();
   });
 
   it('labels channel provider without repeating identical channel names', async () => {
     mockGetDashboardStats.mockResolvedValue({
       ...MOCK_STATS,
       channel_health: [
-        { id: 1, name: 'deepseek', provider: 'deepseek', enabled: true, status: 'healthy', success_count: 10, fail_count: 0 },
-        { id: 2, name: 'Mimo Token Plan', provider: 'openai', enabled: true, status: 'healthy', success_count: 5, fail_count: 0 },
+        { id: 1, name: 'deepseek', provider: 'deepseek', enabled: true, available: true, status: 'healthy', success_count: 10, fail_count: 0 },
+        { id: 2, name: 'Mimo Token Plan', provider: 'openai', enabled: true, available: true, status: 'healthy', success_count: 5, fail_count: 0 },
       ],
     });
 
@@ -396,8 +415,8 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('组织只读总览')).toBeTruthy();
     expect(screen.getByText(/当前只读角色不提供日志明细入口/)).toBeTruthy();
     expect(screen.queryByText('结算可用额度')).toBeNull();
-    expect(screen.queryByText('窗口健康通道')).toBeNull();
-    expect(screen.queryByText('通道健康状态')).toBeNull();
+    expect(screen.queryByText('当前可路由连接')).toBeNull();
+    expect(screen.queryByText('连接可用状态')).toBeNull();
     fireEvent.click(screen.getByText(/req-abc-123/));
     expect(mockNavigate).not.toHaveBeenCalled();
   });

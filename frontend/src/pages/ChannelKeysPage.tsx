@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Banner, Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
@@ -30,6 +31,21 @@ interface ChannelKey {
   updated_at?: string;
 }
 
+type ChannelOption = ChannelReadinessChannel & {
+  label: string;
+  value: number;
+  base_status: string;
+  disabled?: boolean;
+};
+
+function credentialMutationErrorMessage(error: unknown, action: '创建' | '保存') {
+  const raw = error instanceof Error ? error.message : '';
+  if (raw.toLowerCase().includes('channel must be staged or disabled')) {
+    return `${action}失败：该模型连接仍在生效。请返回“模型连接”先执行紧急禁用，再新增或轮换供应商凭证。`;
+  }
+  return `${action}失败${raw ? `：${raw}` : ''}`;
+}
+
 const combinationStatus: Record<CredentialCombinationState, string> = {
   credential_disabled: 'disabled',
   cooling_down: 'warning',
@@ -51,6 +67,7 @@ const combinationLabel: Record<CredentialCombinationState, string> = {
 };
 
 export default function ChannelKeysPage() {
+  const navigate = useNavigate();
   const [keys, setKeys] = useState<ChannelKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -61,7 +78,7 @@ export default function ChannelKeysPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [channels, setChannels] = useState<Array<ChannelReadinessChannel & { label: string; value: number }>>([]);
+  const [channels, setChannels] = useState<ChannelOption[]>([]);
   const [saveNotice, setSaveNotice] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -89,14 +106,19 @@ export default function ChannelKeysPage() {
   const loadChannels = () => {
     api.getChannels(1, 100)
       .then((d: any) => {
-        const list = (d.data || d.channels || []).map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          label: `${c.name} · ${channelStatusLabel(c.status)}`,
-          value: c.id,
-          status: c.status,
-          models: c.models || '',
-        }));
+        const list = (d.data || d.channels || []).map((c: any) => {
+          const effectiveStatus = c.effective_status || c.status;
+          return {
+            id: c.id,
+            name: c.name,
+            label: `${c.name} · ${channelStatusLabel(effectiveStatus)}${c.status === 'staged' && effectiveStatus === 'active' ? '（运行时发布）' : ''}`,
+            value: c.id,
+            base_status: c.status,
+            status: effectiveStatus,
+            models: c.models || '',
+            disabled: effectiveStatus === 'active',
+          };
+        });
         setChannels(list);
       })
       .catch(() => {});
@@ -136,7 +158,7 @@ export default function ChannelKeysPage() {
       closeDrawer();
       load();
     } catch (error: any) {
-		const message = `${editing ? '保存' : '创建'}失败${error?.message ? `：${error.message}` : ''}`;
+      const message = credentialMutationErrorMessage(error, editing ? '保存' : '创建');
 		setSubmitError(message);
 		Toast.error(message);
 	} finally {
@@ -147,7 +169,7 @@ export default function ChannelKeysPage() {
   const handleDelete = async (id: number) => {
     Modal.confirm({
       title: '确认删除',
-      content: '删除后该密钥将无法使用，确定吗？',
+      content: '这里只删除供应商凭证，不会删除模型连接或历史发布记录。删除后该 Key 将无法使用，确定吗？',
       onOk: async () => {
         try {
           await api.deleteChannelKey(id);
@@ -160,7 +182,7 @@ export default function ChannelKeysPage() {
 
   const openEdit = (record: ChannelKey) => {
 	setSubmitError('');
-    setEditing(record);
+    setEditing({ ...record, channel_status: recordChannel(record).status });
     setShowDrawer(true);
   };
 
@@ -187,8 +209,13 @@ export default function ChannelKeysPage() {
     () => new Map(channels.map(channel => [channel.id, channel])),
     [channels],
   );
+  const recordChannel = (record: ChannelKey): ChannelReadinessChannel => channelByID.get(record.channel_id) || {
+    id: record.channel_id,
+    name: record.channel_name,
+    status: record.channel_status,
+  };
   const enabledOnInactiveChannelCount = keys.filter(key => (
-    key.status === 'active' && key.channel_status !== 'active'
+    key.status === 'active' && recordChannel(key).status !== 'active'
   )).length;
   const modelMismatchCount = keys.filter(key => {
     const channel = channelByID.get(key.channel_id);
@@ -197,11 +224,7 @@ export default function ChannelKeysPage() {
       && credentialModelCoverage(channel?.models, key.allowed_models).kind === 'none';
   }).length;
 
-  const recordChannel = (record: ChannelKey): ChannelReadinessChannel => channelByID.get(record.channel_id) || {
-    id: record.channel_id,
-    name: record.channel_name,
-    status: record.channel_status,
-  };
+  const activeConnections = channels.filter(channel => channel.status === 'active');
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
@@ -210,7 +233,7 @@ export default function ChannelKeysPage() {
       render: (_: unknown, record: ChannelKey) => (
         <div style={{ display: 'grid', gap: 4 }}>
           <span>{record.channel_name || '-'}</span>
-          <StatusTag status={record.channel_status}>{`通道${channelStatusLabel(record.channel_status)}`}</StatusTag>
+          <StatusTag status={recordChannel(record).status}>{`通道${channelStatusLabel(recordChannel(record).status)}`}</StatusTag>
         </div>
       ),
     },
@@ -258,7 +281,7 @@ export default function ChannelKeysPage() {
       render: (_: any, record: ChannelKey) => (
         <Space>
           <Button aria-label={`编辑供应商凭证 ${record.channel_name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
-          <Button aria-label={`删除供应商凭证 ${record.channel_name}`} icon={<IconDelete />} size="small" type="danger" disabled={record.channel_status === 'active'} onClick={() => handleDelete(record.id)} />
+          <Button aria-label={`删除供应商凭证 ${record.channel_name}`} icon={<IconDelete />} size="small" type="danger" disabled={recordChannel(record).status === 'active'} onClick={() => handleDelete(record.id)} />
         </Space>
       ),
     },
@@ -315,11 +338,17 @@ export default function ChannelKeysPage() {
         onCancel={closeDrawer}
         width={480}
       >
-        {editing?.channel_status === 'active' && <div className="ur-playground-error" style={{ marginBottom: 16 }}><strong>当前通道正在生效</strong><span>为防止绕过发布门禁，此处只允许紧急停用。轮换凭证请先把通道改为 staged。</span></div>}
+        {!editing && activeConnections.length > 0 && <Banner
+          type="warning"
+          description={`${activeConnections.map(channel => channel.name).join('、')} 正在生效，不能直接新增或轮换凭证。请先到模型连接执行紧急禁用。`}
+          closeIcon={null}
+          style={{ marginBottom: 16 }}
+        />}
+        {editing?.channel_status === 'active' && <div className="ur-playground-error" style={{ marginBottom: 16 }}><strong>当前通道正在生效</strong><span>为防止绕过发布门禁，此处只允许停用现有凭证。新增或轮换凭证请先到“模型连接”执行紧急禁用。</span></div>}
 		{submitError && <Banner type="danger" description={submitError} closeIcon={null} style={{ marginBottom: 16 }} />}
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Select field="channel_id" label="所属通道" rules={[{ required: true, message: '必填' }]}
-            optionList={editing ? channels : channels.filter(channel => channel.status !== 'active')} disabled={editing?.channel_status === 'active'} />
+            optionList={channels} disabled={editing?.channel_status === 'active'} />
 			<PasswordField
 				field="api_key"
 				label={editing ? '新的供应商 API Key（可选）' : '供应商 API Key'}
@@ -344,6 +373,7 @@ export default function ChannelKeysPage() {
             rules={[{ required: true, message: '必填' }]}
           />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
+            {!editing && activeConnections.length > 0 && <Button onClick={() => navigate(`/channels?channel_id=${activeConnections[0].id}`)}>前往紧急禁用</Button>}
             <Button onClick={closeDrawer}>取消</Button>
 			<Button type="primary" loading={submitting} disabled={submitting} onClick={() => formApi?.submitForm()}>{editing ? '保存修改' : '创建'}</Button>
           </div>

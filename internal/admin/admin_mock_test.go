@@ -3898,7 +3898,7 @@ func TestDashboardStats_Success(t *testing.T) {
 				}, nil
 			}
 			if strings.Contains(sql, "channels") {
-				// channel health: id, name, provider, status, success_count, fail_count
+				// channel health: identity, base state, current route prerequisites, window counts
 				return &testutil.MockRows{
 					Rows: []func(dest ...any) error{
 						func(dest ...any) error {
@@ -3906,20 +3906,27 @@ func TestDashboardStats_Success(t *testing.T) {
 							*dest[1].(*string) = "channel-1"
 							*dest[2].(*string) = "openai"
 							*dest[3].(*string) = "active"
-							*dest[4].(*int) = 80
-							*dest[5].(*int) = 5
+							*dest[4].(*string) = "healthy"
+							*dest[5].(*bool) = true
+							*dest[6].(*bool) = true
+							*dest[7].(*int) = 80
+							*dest[8].(*int) = 5
 							return nil
 						},
 					},
 				}, nil
 			}
 			if strings.Contains(sql, "GROUP BY model") {
-				// model distribution: model, cnt
+				// model distribution: identity, counts, average latency, p95 latency
 				return &testutil.MockRows{
 					Rows: []func(dest ...any) error{
 						func(dest ...any) error {
 							*dest[0].(*string) = "gpt-4o"
 							*dest[1].(*int) = 50
+							*dest[2].(*int) = 48
+							*dest[3].(*int) = 2
+							*dest[4].(*float64) = 320
+							*dest[5].(*float64) = 780
 							return nil
 						},
 					},

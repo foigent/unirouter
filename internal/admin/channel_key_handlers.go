@@ -97,14 +97,15 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 			`INSERT INTO channel_keys (channel_id, key_enc, allowed_models, status, fail_count, created_at, updated_at)
 			 SELECT $1, $2, $3, 'active', 0, NOW(), NOW()
 			   FROM channels c
-			  WHERE c.id=$1 AND c.status IN ('staged','disabled')
-			    AND NOT EXISTS (
+			  WHERE c.id=$1 AND (
+			    c.status='disabled' OR (
+			      c.status='staged' AND NOT EXISTS (
 			        SELECT 1
 			          FROM runtime_change_slots rcs
 			          JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
 			          CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
 			         WHERE (runtime_override->>'channel_id')::bigint=c.id
-			           AND runtime_override->>'admission'='allow')
+			           AND runtime_override->>'admission'='allow')))
 			 RETURNING id`,
 			req.ChannelID, keyEnc, req.AllowedModels,
 		).Scan(&id)
@@ -120,14 +121,15 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 				`INSERT INTO channel_keys (channel_id, key_enc, allowed_models, status, fail_count, created_at, updated_at)
 				 SELECT $1, $2, $3, 'active', 0, NOW(), NOW()
 				   FROM channels c
-				  WHERE c.id=$1 AND c.status IN ('staged','disabled')
-				    AND NOT EXISTS (
+				  WHERE c.id=$1 AND (
+				    c.status='disabled' OR (
+				      c.status='staged' AND NOT EXISTS (
 				        SELECT 1
 				          FROM runtime_change_slots rcs
 				          JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
 				          CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
 				         WHERE (runtime_override->>'channel_id')::bigint=c.id
-				           AND runtime_override->>'admission'='allow')
+				           AND runtime_override->>'admission'='allow')))
 				 RETURNING id`,
 				req.ChannelID, keyEnc, req.AllowedModels,
 			).Scan(&id)
@@ -233,11 +235,11 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 		if req.ChannelID != nil {
 			targetChannel = strconv.FormatInt(*req.ChannelID, 10)
 		}
-		query += " AND EXISTS (SELECT 1 FROM channels c WHERE c.id=" + targetChannel + " AND c.status IN ('staged','disabled')" +
+		query += " AND EXISTS (SELECT 1 FROM channels c WHERE c.id=" + targetChannel + " AND (c.status='disabled' OR (c.status='staged'" +
 			" AND NOT EXISTS (SELECT 1 FROM runtime_change_slots rcs" +
 			" JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'" +
 			" CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override" +
-			" WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow'))"
+			" WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow'))))"
 	}
 	auditDetail := map[string]interface{}{
 		"channel_id_updated":     req.ChannelID != nil,
@@ -300,12 +302,13 @@ func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 	if isUnauthenticatedUnitContext(r.Context()) {
 		tag, err = h.db.Exec(r.Context(), `
 DELETE FROM channel_keys ck USING channels c
- WHERE ck.id=$1 AND c.id=ck.channel_id AND c.status IN ('staged','disabled')
-   AND NOT EXISTS (
+ WHERE ck.id=$1 AND c.id=ck.channel_id AND (
+   c.status='disabled' OR (
+     c.status='staged' AND NOT EXISTS (
        SELECT 1 FROM runtime_change_slots rcs
        JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
        CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
-       WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow')`, id)
+       WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow')))`, id)
 		if err == nil && tag.RowsAffected() > 0 {
 			h.recordAudit(r.Context(), "channelkey.delete", "channel_key", idStr, map[string]interface{}{}, r.RemoteAddr)
 		}
@@ -316,12 +319,13 @@ DELETE FROM channel_keys ck USING channels c
 			defer tx.Rollback(r.Context())
 			tag, err = tx.Exec(r.Context(), `
 DELETE FROM channel_keys ck USING channels c
- WHERE ck.id=$1 AND c.id=ck.channel_id AND c.status IN ('staged','disabled')
-   AND NOT EXISTS (
+ WHERE ck.id=$1 AND c.id=ck.channel_id AND (
+   c.status='disabled' OR (
+     c.status='staged' AND NOT EXISTS (
        SELECT 1 FROM runtime_change_slots rcs
        JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
        CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
-       WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow')`, id)
+       WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow')))`, id)
 		}
 		if err == nil && tag.RowsAffected() > 0 {
 			err = insertAuditEntry(r.Context(), tx, "channelkey.delete", "channel_key", idStr, map[string]interface{}{},

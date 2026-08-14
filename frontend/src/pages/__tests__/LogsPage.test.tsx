@@ -255,7 +255,21 @@ describe('LogsPage', () => {
     expect(labels.indexOf('供应商')).toBeGreaterThanOrEqual(0);
     expect(labels.indexOf('模型')).toBeGreaterThanOrEqual(0);
     expect(labels.indexOf('供应商')).toBeLessThan(labels.indexOf('模型'));
-    expect(screen.getByPlaceholderText('供应商名称')).toBeTruthy();
+    expect(screen.getByText('选择供应商')).toBeTruthy();
+  });
+
+  it('builds provider and model dropdowns from actual requests when the price catalog is empty', async () => {
+    mockGetModelNames.mockResolvedValueOnce({ data: [] });
+    renderLogs();
+
+    await waitFor(() => expect(mockGetLogs).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('选择供应商'));
+    await waitFor(() => expect(screen.getAllByText('openai').length).toBeGreaterThan(0));
+    expect(screen.getAllByText('anthropic').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText('模型名称'));
+    await waitFor(() => expect(screen.getAllByText('gpt-4o').length).toBeGreaterThan(0));
+    expect(screen.getAllByText('claude-3.5-sonnet').length).toBeGreaterThan(0);
   });
 
   it('renders usage source filter for metering drilldown', async () => {
