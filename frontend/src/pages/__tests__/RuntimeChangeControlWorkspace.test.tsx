@@ -61,6 +61,7 @@ describe('RuntimeChangeControlWorkspace', () => {
       total: 1,
     });
     mocks.validateRuntimeChange.mockResolvedValue({ ...RELEASE, stage: 'validated', version: 2 });
+    mocks.rollbackRuntimeChange.mockResolvedValue({ ...RELEASE, stage: 'rolled_back', version: 5 });
   });
 
   it('keeps release evidence visible and advances a draft with its exact revision', async () => {
@@ -126,8 +127,8 @@ describe('RuntimeChangeControlWorkspace', () => {
     expect(screen.getByRole('button', { name: '启动 5% 灰度' })).toBeTruthy();
   });
 
-  it('selects the requested active model release and explains the disabled-channel recovery sequence', async () => {
-    window.history.replaceState(null, '', '/model-governance?from=connections&channel_id=14&model=kimi-k3&tab=releases&intent=recover');
+  it('keeps disabled-channel recovery inline and rolls back only the exact active release', async () => {
+    window.history.replaceState(null, '', '/channels?from=connections&channel_id=14&model=kimi-k3&intent=recover');
     mocks.getRuntimeChanges.mockResolvedValue({
       data: [
         RELEASE,
@@ -135,12 +136,18 @@ describe('RuntimeChangeControlWorkspace', () => {
       ],
       total: 2,
     });
+    const onBack = vi.fn();
 
-    render(<RuntimeChangeControlWorkspace />);
+    render(<RuntimeChangeControlWorkspace recoveryOnly onBack={onBack} />);
 
-    expect(await screen.findByText(/恢复 kimi-k3：先在右侧回滚/)).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'kimi-k3 · 安全恢复' })).toBeTruthy();
+    expect(screen.getByText(/不依赖“模型目录与灰度”商业授权/)).toBeTruthy();
     expect(screen.getByText(/连接 #14 改为“待发布”/)).toBeTruthy();
-    expect(await screen.findByRole('button', { name: '回滚' })).toBeTruthy();
-    expect(screen.getAllByText('Kimi 首次启用').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole('button', { name: /新建发布/ })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: '回滚旧发布占位' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认回滚旧发布' }));
+    await waitFor(() => expect(mocks.rollbackRuntimeChange).toHaveBeenCalledWith('rcr_kimi_active', 4));
+    fireEvent.click(screen.getByRole('button', { name: '返回模型连接' }));
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

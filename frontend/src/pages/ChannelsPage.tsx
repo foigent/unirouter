@@ -5,6 +5,7 @@ import { api, ApiError } from '../api/client';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { normalizeModelList } from '../utils/modelList';
 import ConnectionModelPanel from '../components/ConnectionModelPanel';
+import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 import { loadAllPages } from '../utils/loadAllPages';
 import { parseChannelModels, type ChannelReadinessCredential } from '../utils/channelReadiness';
 
@@ -159,6 +160,22 @@ function selectedChannelIDFromParams() {
   return Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
+function recoveryModelFromParams() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('from') !== 'connections' || params.get('intent') !== 'recover') return '';
+  return String(params.get('model') || '').trim();
+}
+
+function clearConnectionRecoveryParams() {
+  const params = new URLSearchParams(window.location.search);
+  params.delete('from');
+  params.delete('model');
+  params.delete('intent');
+  params.delete('tab');
+  const query = params.toString();
+  window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+}
+
 function syncSelectedChannelID(id?: number) {
   const params = new URLSearchParams(window.location.search);
   if (id) params.set('channel_id', String(id));
@@ -224,6 +241,7 @@ export default function ChannelsPage() {
   const [providerPacks, setProviderPacks] = useState<ProviderPack[]>([]);
   const [providerPackError, setProviderPackError] = useState('');
   const [selectedChannelId, setSelectedChannelId] = useState<number | undefined>(() => selectedChannelIDFromParams());
+  const [recoveryModel, setRecoveryModel] = useState(() => recoveryModelFromParams());
   const [channelKeys, setChannelKeys] = useState<ChannelReadinessCredential[]>([]);
   const [credentialLoadState, setCredentialLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [credentialLoadError, setCredentialLoadError] = useState('');
@@ -322,8 +340,26 @@ export default function ChannelsPage() {
   }, [channels, selectedChannelId]);
 
   const selectChannel = (channel: Channel) => {
+    setRecoveryModel('');
+    clearConnectionRecoveryParams();
     setSelectedChannelId(channel.id);
     syncSelectedChannelID(channel.id);
+  };
+
+  const openRouteManagement = (model: string, intent: 'replace' | 'recover' = 'replace') => {
+    if (intent === 'recover' && selectedChannel) {
+      setRecoveryModel(model);
+      navigateWithinApp(`${connectionAdvancedPath('/channels', selectedChannel.id, model)}&intent=recover`);
+      window.setTimeout(() => document.getElementById('connection-recovery')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 0);
+      return;
+    }
+    if (selectedChannel) navigateWithinApp(`${connectionAdvancedPath('/model-governance', selectedChannel.id, model)}&tab=releases&intent=replace`);
+  };
+
+  const closeRecovery = () => {
+    setRecoveryModel('');
+    clearConnectionRecoveryParams();
+    window.setTimeout(() => document.getElementById('connection-models')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 0);
   };
 
   const closeDrawer = () => { setShowDrawer(false); setEditing(null); };
@@ -739,9 +775,13 @@ export default function ChannelsPage() {
               }
             : item))}
           onManageCredentials={() => navigateWithinApp(connectionAdvancedPath('/channel-keys', selectedChannel.id))}
-          onOpenRouteManagement={(model, intent = 'replace') => navigateWithinApp(connectionAdvancedPath('/model-governance', selectedChannel.id, model) + `&tab=releases&intent=${intent}`)}
+          onOpenRouteManagement={openRouteManagement}
           onDiagnose={(model) => navigateWithinApp(connectionAdvancedPath('/model-readiness', selectedChannel.id, model))}
         />
+      </div>}
+
+      {selectedChannel && recoveryModel && <div id="connection-recovery">
+        <RuntimeChangeControlWorkspace recoveryOnly onBack={closeRecovery} />
       </div>}
 
       <details>

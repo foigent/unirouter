@@ -277,6 +277,7 @@ describe('two-axis navigation boundaries', () => {
     expect(platformChildren.find(item => item.itemKey === '/test')?.licenseLocked).toBeUndefined();
 	expect(platformChildren.find(item => item.itemKey === '/model-governance')?.licenseLocked).toBe(true);
     expect(platformChildren.find(item => item.itemKey === '/integrations')?.licenseLocked).toBeUndefined();
+	expect(isRouteLicensed('/channels?from=connections&channel_id=14&model=kimi-k3&intent=recover', partial)).toBe(true);
     expect(isRouteLicensed('/guardrail-policies', partial)).toBe(false);
     expect(isRouteLicensed('/notifications?project_id=7', partial)).toBe(true);
     expect(isRouteLicensed('/connectors/x-insight/install', partial)).toBe(false);

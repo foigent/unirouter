@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Form, Popconfirm, SideSheet, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
-import { EmptyState } from '../ui';
+import { EmptyState, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
 import { parseModelList } from '../utils/modelList';
 
@@ -69,7 +69,12 @@ function riskColor(risk: string) {
   return risk === 'compatible' ? 'blue' : 'green';
 }
 
-export default function RuntimeChangeControlWorkspace() {
+interface RuntimeChangeControlWorkspaceProps {
+  recoveryOnly?: boolean;
+  onBack?: () => void;
+}
+
+export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, onBack }: RuntimeChangeControlWorkspaceProps = {}) {
   const requestedParams = new URLSearchParams(window.location.search);
   const requestedModel = String(requestedParams.get('model') || '').trim();
   const requestedChannelID = Number(requestedParams.get('channel_id'));
@@ -203,6 +208,59 @@ export default function RuntimeChangeControlWorkspace() {
   ];
 
   const selectedChannel = (id: number) => channels.find(item => item.id === id);
+
+  const recoveryRelease = requestedModel
+    ? releases.find(item => item.model_name === requestedModel && ['active', 'canary'].includes(item.stage))
+      || releases.find(item => item.model_name === requestedModel)
+      || null
+    : selected;
+
+  if (recoveryOnly) {
+    return (
+      <Surface
+        title={`${requestedModel || '模型'} · 安全恢复`}
+        description="紧急禁用后的恢复留在模型连接页完成，不依赖“模型目录与灰度”商业授权。"
+        actions={onBack ? <Button onClick={onBack}>返回模型连接</Button> : undefined}
+      >
+        <Banner
+          type="warning"
+          description={`恢复不会自动启用连接：先回滚 ${requestedModel || '该模型'} 的旧发布占位；再返回上方将连接 #${Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0 ? requestedChannelID : '-'} 改为“待发布”，补齐供应商凭证并完成真实检测；最后重新启用。紧急禁用状态始终优先。`}
+          closeIcon={null}
+          style={{ marginBottom: 12 }}
+        />
+        {loadError ? (
+          <EmptyState title="恢复状态加载失败" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={220} />
+        ) : loading && !recoveryRelease ? (
+          <Typography.Text type="tertiary">正在读取该模型的发布占位…</Typography.Text>
+        ) : !recoveryRelease ? (
+          <EmptyState title="没有需要回滚的旧发布" description="返回模型连接，将连接改为待发布后即可继续配置凭证、检测并启用。" minHeight={220} />
+        ) : (
+          <div className="ur-detail-card">
+            <dl className="ur-financial-truth-detail">
+              <dt>模型</dt><dd>{recoveryRelease.model_name}</dd>
+              <dt>当前发布阶段</dt><dd><Tag color={stageColor(recoveryRelease.stage)}>{stageLabels[recoveryRelease.stage] || recoveryRelease.stage}</Tag></dd>
+              <dt>发布理由</dt><dd>{recoveryRelease.reason}</dd>
+              <dt>通道</dt><dd>{recoveryRelease.candidate.overrides.map(item => selectedChannel(item.channel_id)?.name || `Channel #${item.channel_id}`).join('、')}</dd>
+            </dl>
+            {['active', 'canary'].includes(recoveryRelease.stage) ? (
+              <Popconfirm
+                title="确认回滚旧发布占位？"
+                content="该操作只释放旧运行时发布占位，不会把已紧急禁用的连接恢复流量。"
+                okText="确认回滚旧发布"
+                onConfirm={() => void transition('旧发布占位已回滚', () => api.rollbackRuntimeChange(recoveryRelease.release_ref, recoveryRelease.version))}
+              >
+                <Button type="danger" loading={transitioning}>回滚旧发布占位</Button>
+              </Popconfirm>
+            ) : recoveryRelease.stage === 'rolled_back' ? (
+              <Banner type="success" description="旧发布占位已释放。请返回模型连接，将连接改为待发布，然后配置凭证、真实检测并重新启用。" closeIcon={null} />
+            ) : (
+              <Banner type="info" description={`当前发布阶段为“${stageLabels[recoveryRelease.stage] || recoveryRelease.stage}”，没有可执行的旧生效占位回滚。`} closeIcon={null} />
+            )}
+          </div>
+        )}
+      </Surface>
+    );
+  }
 
   return (
     <>
