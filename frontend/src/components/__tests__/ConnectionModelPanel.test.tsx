@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { ComponentProps } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ConnectionModelPanel, { exactModelTestResult, type ModelConnectionChannel } from '../ConnectionModelPanel';
 
@@ -23,7 +24,7 @@ const channel: ModelConnectionChannel = {
 
 const credentials = [{ channel_id: 12, status: 'active', allowed_models: 'deepseek-v4-flash,deepseek-v4-pro' }];
 
-function renderPanel(modelsPublishedElsewhere = new Set<string>(), selectedChannel = channel) {
+function renderPanel(modelsPublishedElsewhere = new Set<string>(), selectedChannel = channel, overrides: Partial<ComponentProps<typeof ConnectionModelPanel>> = {}) {
   const props = {
     channel: selectedChannel,
     credentials,
@@ -33,6 +34,7 @@ function renderPanel(modelsPublishedElsewhere = new Set<string>(), selectedChann
     onManageCredentials: vi.fn(),
     onOpenRouteManagement: vi.fn(),
     onDiagnose: vi.fn(),
+    ...overrides,
   };
   render(<ConnectionModelPanel {...props} />);
   return props;
@@ -65,6 +67,23 @@ describe('ConnectionModelPanel', () => {
       { path: '/channels/12/test', model: 'deepseek-v4-pro' },
     ]);
     expect(mocks.request.mock.calls.some(call => call[0].includes('kimi'))).toBe(false);
+  });
+
+  it('blocks every real detection before the API call when the gateway license is unavailable', async () => {
+    const onOpenLicense = vi.fn();
+    renderPanel(new Set(), channel, {
+      gatewayLicensed: false,
+      gatewayRestrictionMessage: '当前商业授权未通过校验，因此「模型网关」不可用。',
+      onOpenLicense,
+    });
+
+    expect(screen.getByText(/当前商业授权未通过校验/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '检测当前连接全部模型（2）' })).toBeDisabled();
+    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
+    expect(within(row).getByRole('button', { name: '检测' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '查看商业授权' }));
+    expect(onOpenLicense).toHaveBeenCalledTimes(1);
+    expect(mocks.request).not.toHaveBeenCalled();
   });
 
   it('fails closed when the response model differs from the exact requested model', async () => {

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,9 +12,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/accessgrantboundary"
 	"github.com/uniroute/unirouter/internal/accessscope"
+	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
+	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelreadiness"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -43,6 +48,9 @@ func TestModelReadinessRejectsNonCanonicalOrUnboundedQueriesBeforeLookup(t *test
 		{"workload application missing", "project_id=1&model=m&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=workload_application"},
 		{"workload application too long", "project_id=1&model=m&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=workload_application&application_ref=app_" + strings.Repeat("a", maxReadinessApplicationRefLength)},
 		{"workload application control", "project_id=1&model=m&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=workload_application&application_ref=app_one%0Aother"},
+		{"connection with project", "mode=connection&project_id=1&model=m&endpoint=%2Fv1%2Fchat%2Fcompletions"},
+		{"connection with caller", "mode=connection&model=m&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self"},
+		{"unknown mode", "mode=other&model=m&endpoint=%2Fv1%2Fchat%2Fcompletions"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -54,6 +62,72 @@ func TestModelReadinessRejectsNonCanonicalOrUnboundedQueriesBeforeLookup(t *test
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestModelReadinessConnectionModeDoesNotRequireOrReadProjectScope(t *testing.T) {
+	database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+		return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
+	}}
+	handler := NewHandler(database, "jwt", []byte("0123456789abcdef01234567"), nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness?mode=connection&model=deepseek-v4-pro&endpoint=%2Fv1%2Fchat%2Fcompletions", nil)
+	ctx := context.WithValue(request.Context(), middleware.CtxOrgID, int64(7))
+	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+	request = request.WithContext(ctx)
+	response := httptest.NewRecorder()
+
+	handler.GetModelReadiness(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload modelreadiness.Response
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Scope.Mode != modelreadiness.ModeConnection || payload.Scope.OrgID != 7 || payload.Scope.ProjectID != 0 || payload.Scope.Caller != "" {
+		t.Fatalf("unexpected connection scope: %#v", payload.Scope)
+	}
+	if payload.Summary.CurrentProjectCallerCallable.State != modelreadiness.StateNotApplicable || payload.ExternalRequests != "none" {
+		t.Fatalf("unexpected connection summary: %#v", payload)
+	}
+}
+
+func TestReadinessGatewayLicenseAxisBlocksBeforeProviderRepair(t *testing.T) {
+	handler := NewHandler(&testutil.MockDB{}, "jwt", []byte("0123456789abcdef01234567"), nil)
+	handler.SetLicenseRuntime(licensing.NewRuntime(nil))
+	response := &modelreadiness.Response{Scope: modelreadiness.Scope{ResolvedModel: "deepseek-v4-pro"}}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
+	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+	request = request.WithContext(ctx)
+
+	handler.readinessPlatformAxes(request, 7, response)
+
+	axis := response.PlatformModel.GatewayLicense
+	if axis.State != modelreadiness.StateBlocked || axis.ReasonCode != "license_error.missing" || axis.FixRoute != "/license" {
+		t.Fatalf("gateway license axis=%#v", axis)
+	}
+}
+
+func TestReadinessProviderCredentialFixTargetsTheExactConnection(t *testing.T) {
+	database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+		return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
+	}}
+	handler := NewHandler(database, "jwt", []byte("0123456789abcdef01234567"), nil)
+	handler.SetRoutingController(&routingControllerStub{preview: routingpolicy.Preview{
+		Candidates: []routingpolicy.PreviewCandidate{{ChannelID: 102, ChannelName: "DeepSeek", EligibleKeyCount: 0}},
+	}})
+	response := &modelreadiness.Response{Scope: modelreadiness.Scope{ResolvedModel: "deepseek-v4-pro"}}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
+	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+	request = request.WithContext(ctx)
+
+	handler.readinessPlatformAxes(request, 7, response)
+
+	axis := response.PlatformModel.ProviderCredential
+	want := "/channel-keys?from=connections&channel_id=102&model=deepseek-v4-pro"
+	if axis.State != modelreadiness.StateBlocked || axis.FixRoute != want {
+		t.Fatalf("provider credential axis=%#v want_fix=%q", axis, want)
 	}
 }
 

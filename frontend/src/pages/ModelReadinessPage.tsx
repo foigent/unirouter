@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form, Space, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { accessApi, type ModelReadiness, type ReadinessAxis } from '../api/access';
 import { ApiError, api } from '../api/client';
-import { EmptyState, MetricTile, PageHeader, Surface } from '../ui';
+import { EmptyState, PageHeader, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
 import { parseChannelModels } from '../utils/channelReadiness';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
@@ -26,6 +26,7 @@ const statePresentation: Record<ReadinessAxis['state'], { label: string; color: 
 };
 
 const platformLabels: Record<string, string> = {
+  gateway_license: '模型网关授权',
   registration: '模型记录', lifecycle: '生命周期', catalog: '目录可见', price_authority: '计价信息',
   channel: '供应商连接', provider_credential: '供应商凭证', base_route: '可用路由', runtime_slot: '当前路由版本',
 };
@@ -35,9 +36,25 @@ const projectLabels: Record<string, string> = {
   model_authorization: '模型调用授权', limit_policy: '限额策略',
 };
 
-function factText(fact?: { value?: boolean; state: string }) {
-  if (!fact || fact.state === 'unavailable' || fact.value === undefined) return '暂时无法判断';
-  return fact.value ? '是' : '否';
+function summaryStateCopy(state: ReadinessAxis['state']) {
+  return ({
+    ready: '条件已满足',
+    blocked: '需要处理后才能使用',
+    warning: '可以使用，但建议检查',
+    not_applicable: '当前流程不要求',
+    unavailable: '证据源暂时不可用',
+  } as const)[state];
+}
+
+function ReadinessSummaryCard({ label, state }: { label: string; state: ReadinessAxis['state'] }) {
+  const presentation = statePresentation[state];
+  return <div className={`ur-readiness-summary-card ur-readiness-summary-${state}`}>
+    <div className="ur-readiness-summary-card-head">
+      <Text strong>{label}</Text>
+      <Tag color={presentation.color}>{presentation.label}</Tag>
+    </div>
+    <Text type="tertiary" size="small">{summaryStateCopy(state)}</Text>
+  </div>;
 }
 
 function AxisCard({ label, axis, onFix }: { label: string; axis: ReadinessAxis; onFix: (route: string) => void }) {
@@ -56,7 +73,9 @@ function AxisCard({ label, axis, onFix }: { label: string; axis: ReadinessAxis; 
 
 export default function ModelReadinessPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [search, setSearch] = useSearchParams();
+  const connectionMode = search.get('mode') === 'connection' || search.get('from') === 'connections';
   const [formApi, setFormApi] = useState<any>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsError, setProjectsError] = useState('');
@@ -74,21 +93,29 @@ export default function ModelReadinessPage() {
   const applicationGeneration = useRef(0);
 
   const query = useMemo(() => ({
+    mode: connectionMode ? 'connection' as const : 'caller' as const,
     project_id: Number(search.get('project_id') || 0),
     model: search.get('model') || '',
     endpoint: search.get('endpoint') || '/v1/chat/completions',
-    caller: (search.get('caller') || 'self') as 'self' | 'workload_application',
-    application_ref: search.get('application_ref') || undefined,
-  }), [search]);
+    caller: connectionMode ? undefined : (search.get('caller') || 'self') as 'self' | 'workload_application',
+    application_ref: connectionMode ? undefined : search.get('application_ref') || undefined,
+  }), [connectionMode, search]);
   const queryScopeKey = useMemo(() => JSON.stringify(query), [query]);
 
-  const responseMatchesQuery = useCallback((result: ModelReadiness) => result.scope.project_id === query.project_id &&
-    result.scope.requested_model === query.model &&
-    result.scope.endpoint === query.endpoint &&
-    result.scope.caller === query.caller &&
-    (result.scope.application_ref || undefined) === query.application_ref, [query]);
+  const responseMatchesQuery = useCallback((result: ModelReadiness) => {
+    const resultMode = result.scope.mode || 'caller';
+    if (resultMode !== query.mode || result.scope.requested_model !== query.model || result.scope.endpoint !== query.endpoint) return false;
+    if (query.mode === 'connection') return result.scope.project_id === 0 && !result.scope.caller;
+    return result.scope.project_id === query.project_id && result.scope.caller === query.caller &&
+      (result.scope.application_ref || undefined) === query.application_ref;
+  }, [query]);
 
   const loadProjects = useCallback(async () => {
+    if (connectionMode) {
+      setProjects([]);
+      setProjectsError('');
+      return;
+    }
     setProjectsError('');
     try {
       setProjects(await loadAllPages<Project>((page, size) => api.getProjects(page, size, { status: 'active' })));
@@ -96,13 +123,15 @@ export default function ModelReadinessPage() {
       setProjects([]);
       setProjectsError('项目列表暂时不可用；不会把它解释成“没有项目”。');
     }
-  }, []);
+  }, [connectionMode]);
 
   const loadModelOptions = useCallback(async () => {
     setModelOptionsError('');
     const [channelResult, aliasResult] = await Promise.allSettled([
       loadAllPages<Channel>((page, size) => api.getChannels(page, size)),
-      loadAllPages<ModelAlias>((page, size) => api.getModelAliases(page, size)),
+      connectionMode
+        ? Promise.resolve([] as ModelAlias[])
+        : loadAllPages<ModelAlias>((page, size) => api.getModelAliases(page, size)),
     ]);
     const options = new Map<string, string>();
     if (channelResult.status === 'fulfilled') {
@@ -119,18 +148,20 @@ export default function ModelReadinessPage() {
     setModelOptions([...options.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label)));
-    if (channelResult.status === 'rejected' && aliasResult.status === 'rejected') {
+    if (connectionMode && channelResult.status === 'rejected') {
+      setModelOptionsError('模型连接列表暂时不可用，无法安全选择诊断模型。');
+    } else if (channelResult.status === 'rejected' && aliasResult.status === 'rejected') {
       setModelOptionsError('模型连接和 Alias 列表均暂时不可用，无法安全选择诊断模型。');
     } else if (channelResult.status === 'rejected' || aliasResult.status === 'rejected') {
       setModelOptionsError('部分模型来源暂时不可用；当前下拉只显示已成功读取的模型。');
     }
-  }, [query.model]);
+  }, [connectionMode, query.model]);
 
   const loadApplications = useCallback(async () => {
     const generation = ++applicationGeneration.current;
     setApplications([]);
     setApplicationsError('');
-    if (draftCaller !== 'workload_application' || !draftProjectID) return;
+    if (connectionMode || draftCaller !== 'workload_application' || !draftProjectID) return;
     try {
       const result = await api.getWorkloadApplications({ project_id: draftProjectID, status: 'active' }) as { data?: WorkloadApplication[] };
       if (generation !== applicationGeneration.current) return;
@@ -139,7 +170,7 @@ export default function ModelReadinessPage() {
       if (generation !== applicationGeneration.current) return;
       setApplicationsError('无法读取所选项目的应用列表。');
     }
-  }, [draftCaller, draftProjectID]);
+  }, [connectionMode, draftCaller, draftProjectID]);
 
   const loadReadiness = useCallback(async () => {
     const generation = ++readinessGeneration.current;
@@ -147,13 +178,24 @@ export default function ModelReadinessPage() {
     setReadiness(null);
     setReadinessScopeKey('');
     setError('');
-    if (!query.project_id || !query.model || !query.endpoint || (query.caller === 'workload_application' && !query.application_ref)) {
+    const missingScope = query.mode === 'connection'
+      ? !query.model || !query.endpoint
+      : !query.project_id || !query.model || !query.endpoint || (query.caller === 'workload_application' && !query.application_ref);
+    if (missingScope) {
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const result = await accessApi.modelReadiness(query);
+      const result = await accessApi.modelReadiness(query.mode === 'connection'
+        ? { mode: 'connection', model: query.model, endpoint: query.endpoint }
+        : {
+            project_id: query.project_id,
+            model: query.model,
+            endpoint: query.endpoint,
+            caller: query.caller || 'self',
+            application_ref: query.application_ref,
+          });
       if (readinessGeneration.current !== generation || queryScopeKey !== scopeKey || !responseMatchesQuery(result)) return;
       setReadiness(result);
       setReadinessScopeKey(scopeKey);
@@ -161,7 +203,9 @@ export default function ModelReadinessPage() {
       if (readinessGeneration.current !== generation || queryScopeKey !== scopeKey) return;
       setError(readinessError instanceof ApiError && readinessError.status === 503
         ? '诊断证据源暂时不可用，当前状态是“暂时无法判断”，不是“未配置”或“受阻”。'
-        : '无法读取所选项目与调用主体的诊断结果。');
+        : query.mode === 'connection'
+          ? '无法读取当前模型连接的诊断结果。'
+          : '无法读取所选项目与调用主体的诊断结果。');
     } finally {
       if (readinessGeneration.current === generation && queryScopeKey === scopeKey) setLoading(false);
     }
@@ -172,18 +216,30 @@ export default function ModelReadinessPage() {
   useEffect(() => { void loadApplications(); }, [loadApplications]);
   useEffect(() => { void loadReadiness(); }, [loadReadiness]);
   useEffect(() => {
+    if (location.pathname !== '/model-readiness' || connectionMode || projects.length !== 1 || query.project_id || projectsError) return;
+    const next = new URLSearchParams(search);
+    next.set('project_id', String(projects[0].id));
+    if (!next.get('caller')) next.set('caller', 'self');
+    setSearch(next, { replace: true });
+  }, [connectionMode, location.pathname, projects, projectsError, query.project_id, search, setSearch]);
+  useEffect(() => {
     setDraftProjectID(query.project_id);
-    setDraftCaller(query.caller);
+    setDraftCaller(query.caller || 'self');
     if (formApi) formApi.setValues(query);
   }, [formApi, query]);
 
   const submit = (values: Record<string, any>) => {
     const next = new URLSearchParams();
-    next.set('project_id', String(values.project_id));
     next.set('model', String(values.model).trim());
     next.set('endpoint', values.endpoint);
-    next.set('caller', values.caller);
-    if (values.caller === 'workload_application') next.set('application_ref', String(values.application_ref || '').trim());
+    if (connectionMode) {
+      next.set('mode', 'connection');
+    } else {
+      const projectID = projects.length === 1 ? projects[0].id : Number(values.project_id || 0);
+      next.set('project_id', String(projectID));
+      next.set('caller', values.caller);
+      if (values.caller === 'workload_application') next.set('application_ref', String(values.application_ref || '').trim());
+    }
     if (search.get('from') === 'connections') {
       next.set('from', 'connections');
       const channelID = search.get('channel_id');
@@ -193,8 +249,9 @@ export default function ModelReadinessPage() {
   };
 
   const scopedReadiness = readinessScopeKey === queryScopeKey ? readiness : null;
-  const platformAxes = scopedReadiness ? Object.entries(scopedReadiness.platform_model) : [];
-  const projectAxes = scopedReadiness ? Object.entries(scopedReadiness.project_caller) : [];
+  const platformAxes = scopedReadiness ? Object.entries(scopedReadiness.platform_model)
+    .filter(([key]) => !connectionMode || ['gateway_license', 'channel', 'provider_credential', 'base_route'].includes(key)) : [];
+  const projectAxes = scopedReadiness && !connectionMode ? Object.entries(scopedReadiness.project_caller) : [];
   const applicationOptions = applications.map(application => ({
     value: application.application_ref,
     label: `${application.display_name}${application.environment ? ` · ${application.environment}` : ''}`,
@@ -207,16 +264,23 @@ export default function ModelReadinessPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="高级诊断"
-        title="调用诊断"
-        description="回答“这个项目或应用为什么还不能调用该模型”。它不是模型上线步骤，不会请求供应商，也不会自动修改配置。"
+        title={connectionMode ? '模型连接诊断' : '调用条件诊断'}
+        description={connectionMode
+          ? '检查模型网关授权、供应商连接、供应商凭证和当前路由；不需要项目，不会请求供应商，也不会自动修改配置。'
+          : '回答“这个项目或应用为什么还不能调用该模型”。诊断本身不会请求供应商，也不会自动修改配置。'}
         actions={<Space><ModelConnectionBackButton /><Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>刷新诊断</Button></Space>}
       />
-      <Surface title="选择要诊断的调用" description="从现有项目、模型和应用中选择；内部 ID 与 Ref 不再要求手工输入。">
-        {projectsError && <div><Text type="warning">{projectsError}</Text></div>}
+      <Surface
+        title={connectionMode ? '选择要检查的模型连接' : '选择要诊断的调用'}
+        description={connectionMode
+          ? '从当前已录入的模型中选择；这里只检查连接层，不要求先建立项目或应用。'
+          : '调用授权、应用 API Key 和模型范围按项目隔离；只有一个有效项目时系统会自动使用它。'}
+      >
+        {!connectionMode && projectsError && <div><Text type="warning">{projectsError}</Text></div>}
         {modelOptionsError && <div><Text type="warning">{modelOptionsError}</Text></div>}
-        {applicationsError && <div><Text type="warning">{applicationsError}</Text></div>}
+        {!connectionMode && applicationsError && <div><Text type="warning">{applicationsError}</Text></div>}
         <Form layout="horizontal" getFormApi={setFormApi} onSubmit={submit}>
-          <Form.Select
+          {!connectionMode && projects.length > 1 && <Form.Select
             field="project_id"
             label="项目"
             filter
@@ -227,7 +291,12 @@ export default function ModelReadinessPage() {
               setDraftProjectID(Number(value || 0));
               formApi?.setValue('application_ref', undefined);
             }}
-          />
+          />}
+          {!connectionMode && projects.length === 1 && <div className="ur-readiness-sole-project" role="status">
+            <Text type="tertiary" size="small">项目</Text>
+            <Text strong>{projects[0].name}</Text>
+            <Tag color="blue">唯一有效项目，已自动选择</Tag>
+          </div>}
           <Form.Select
             field="model"
             label="模型或 Alias"
@@ -249,7 +318,7 @@ export default function ModelReadinessPage() {
             rules={[{ required: true, message: '请选择调用类型' }]}
             style={{ width: 230 }}
           />
-          <Form.Select
+          {!connectionMode && <Form.Select
             field="caller"
             label="谁来调用"
             optionList={[
@@ -263,8 +332,8 @@ export default function ModelReadinessPage() {
               setDraftCaller(caller);
               if (caller === 'self') formApi?.setValue('application_ref', undefined);
             }}
-          />
-          {draftCaller === 'workload_application' && <Form.Select
+          />}
+          {!connectionMode && draftCaller === 'workload_application' && <Form.Select
             field="application_ref"
             label="应用 / Agent"
             filter
@@ -274,17 +343,29 @@ export default function ModelReadinessPage() {
             rules={[{ required: true, message: '请选择应用' }]}
             style={{ width: 240 }}
           />}
-          <Button htmlType="submit" type="primary" loading={loading}>诊断调用条件</Button>
+          <Button
+            htmlType="submit"
+            type="primary"
+            loading={loading}
+            disabled={!connectionMode && projects.length === 0}
+          >{connectionMode ? '诊断连接条件' : '诊断调用条件'}</Button>
         </Form>
       </Surface>
 
-      {error ? <Surface><EmptyState title="暂时无法判断" description={error} actions={<Button onClick={loadReadiness}>重试</Button>} /></Surface> : !scopedReadiness ? <Surface><EmptyState title="选择项目、模型与调用主体后开始诊断" /></Surface> : <>
+      {error ? <Surface><EmptyState title="暂时无法判断" description={error} actions={<Button onClick={loadReadiness}>重试</Button>} /></Surface> : !scopedReadiness ? <Surface><EmptyState title={connectionMode ? '选择模型后开始连接诊断' : '选择项目、模型与调用主体后开始诊断'} /></Surface> : <>
         <Surface title="诊断结果" description={`当前模型：${scopedReadiness.scope.resolved_model}`}>
-          <div className="ur-metric-grid">
-            <MetricTile label="已有模型记录" value={factText(scopedReadiness.summary.registered)} />
-            <MetricTile label="项目可以看见" value={factText(scopedReadiness.summary.catalog_visible)} />
-            <MetricTile label="已有可用路由" value={factText(scopedReadiness.summary.routable)} />
-            <MetricTile label="所选主体可以调用" value={factText(scopedReadiness.summary.current_project_caller_callable)} />
+          <div className="ur-readiness-summary-grid">
+            {connectionMode ? <>
+              <ReadinessSummaryCard label="模型网关授权" state={scopedReadiness.platform_model.gateway_license.state} />
+              <ReadinessSummaryCard label="供应商连接" state={scopedReadiness.platform_model.channel.state} />
+              <ReadinessSummaryCard label="供应商凭证" state={scopedReadiness.platform_model.provider_credential.state} />
+              <ReadinessSummaryCard label="当前可用路由" state={scopedReadiness.platform_model.base_route.state} />
+            </> : <>
+              <ReadinessSummaryCard label="模型记录" state={scopedReadiness.summary.registered.state} />
+              <ReadinessSummaryCard label="项目目录可见" state={scopedReadiness.summary.catalog_visible.state} />
+              <ReadinessSummaryCard label="当前可用路由" state={scopedReadiness.summary.routable.state} />
+              <ReadinessSummaryCard label="所选主体可调用" state={scopedReadiness.summary.current_project_caller_callable.state} />
+            </>}
           </div>
         </Surface>
         <Surface>
@@ -293,8 +374,10 @@ export default function ModelReadinessPage() {
             <div style={{ marginTop: 16 }}>
               <Title heading={6}>模型与供应商连接</Title>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{platformAxes.map(([key, axis]) => <AxisCard key={key} label={platformLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
-              <Title heading={6} style={{ marginTop: 20 }}>项目、应用与权限</Title>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{projectAxes.map(([key, axis]) => <AxisCard key={key} label={projectLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
+              {!connectionMode && <>
+                <Title heading={6} style={{ marginTop: 20 }}>项目、应用与权限</Title>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>{projectAxes.map(([key, axis]) => <AxisCard key={key} label={projectLabels[key] || key} axis={axis} onFix={navigate} />)}</div>
+              </>}
               <Space vertical align="start" style={{ marginTop: 16 }}>
                 <Text type="tertiary">诊断时间：{scopedReadiness.as_of}</Text>
                 <Text type="tertiary">只展示安全证据；不包含供应商 Key、Base URL、密文、Token 或 Secret。</Text>

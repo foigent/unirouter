@@ -3198,12 +3198,18 @@ paths:
   /api/v1/model-readiness:
     get:
       tags: [Admin]
-      summary: Explain platform-model and current-project caller readiness without runtime mutation or external traffic
+      summary: Explain either model-connection or current-project caller readiness without runtime mutation or external traffic
       description: |
-        Returns four independent facts: registered, catalog visible, routable, and callable by the selected current caller. It reuses model governance, pure routing preview, the live AccessGrant boundary, model authorization and distributed-limit selector materialization. It never claims a half-open route lease and sends no Provider, Feed, health-check or upstream request. Unavailable evidence remains `unavailable` rather than being reported as a business blocker. Non-platform responses contain only safe aggregates.
+        `mode=connection` checks gateway License, provider connection, provider credential and routing without requiring a project. The default `mode=caller` also evaluates the selected project's caller, AccessGrant, API key, model authorization and distributed-limit evidence. It never claims a half-open route lease and sends no Provider, Feed, health-check or upstream request. Unavailable evidence remains `unavailable` rather than being reported as a business blocker. Non-platform responses contain only safe aggregates.
       security: [{ bearerAuth: [] }]
       parameters:
-        - $ref: "#/components/parameters/ProjectId"
+        - name: mode
+          in: query
+          schema: { type: string, enum: [caller, connection], default: caller }
+        - name: project_id
+          in: query
+          description: Required for mode=caller and forbidden for mode=connection.
+          schema: { type: integer, format: int64, minimum: 1 }
         - name: model
           in: query
           required: true
@@ -3214,7 +3220,7 @@ paths:
           schema: { type: string, enum: [/v1/chat/completions, /v1/embeddings, /v1/models, /v1/media/jobs] }
         - name: caller
           in: query
-          required: true
+          description: Required for mode=caller and forbidden for mode=connection.
           schema: { type: string, enum: [self, workload_application] }
         - name: application_ref
           in: query
@@ -3225,6 +3231,7 @@ paths:
           description: Read-only readiness evidence
           content: { application/json: { schema: { $ref: "#/components/schemas/ModelReadinessResponse" } } }
         "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
     x-unirouter-rbac:
@@ -3940,16 +3947,17 @@ components:
       additionalProperties: false
       required: [state, reason_code]
       properties:
-        value: { type: boolean, description: Omitted when state=unavailable. }
-        state: { type: string, enum: [ready, blocked, unavailable] }
+        value: { type: boolean, description: Omitted when state=unavailable or state=not_applicable. }
+        state: { type: string, enum: [ready, blocked, warning, not_applicable, unavailable] }
         reason_code: { type: string }
     ModelReadinessScope:
       type: object
       additionalProperties: false
-      required: [org_id, project_id, requested_model, resolved_model, endpoint, caller]
+      required: [mode, org_id, project_id, requested_model, resolved_model, endpoint]
       properties:
+        mode: { type: string, enum: [caller, connection] }
         org_id: { type: integer, format: int64, minimum: 1 }
-        project_id: { type: integer, format: int64, minimum: 1 }
+        project_id: { type: integer, format: int64, minimum: 0, description: Zero only in connection mode. }
         requested_model: { type: string }
         resolved_model: { type: string }
         endpoint: { type: string }
@@ -3967,8 +3975,9 @@ components:
     ModelReadinessPlatformModel:
       type: object
       additionalProperties: false
-      required: [registration, lifecycle, catalog, price_authority, channel, provider_credential, base_route, runtime_slot]
+      required: [gateway_license, registration, lifecycle, catalog, price_authority, channel, provider_credential, base_route, runtime_slot]
       properties:
+        gateway_license: { $ref: "#/components/schemas/ModelReadinessAxis" }
         registration: { $ref: "#/components/schemas/ModelReadinessAxis" }
         lifecycle: { $ref: "#/components/schemas/ModelReadinessAxis" }
         catalog: { $ref: "#/components/schemas/ModelReadinessAxis" }

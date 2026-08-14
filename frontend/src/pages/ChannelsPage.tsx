@@ -8,6 +8,8 @@ import ConnectionModelPanel from '../components/ConnectionModelPanel';
 import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 import { loadAllPages } from '../utils/loadAllPages';
 import { parseChannelModels, type ChannelReadinessCredential } from '../utils/channelReadiness';
+import { useAuthStore } from '../store/auth';
+import { hasLicensedFeature, licenseRestrictionMessage } from '../navigation';
 
 interface Channel {
   id: number;
@@ -225,6 +227,11 @@ function adapterConfigFacts(channel: Channel) {
 }
 
 export default function ChannelsPage() {
+  const licenseAccess = useAuthStore((state) => state.user?.license_access);
+  const gatewayLicensed = hasLicensedFeature(licenseAccess, 'gateway');
+  const gatewayRestriction = licenseAccess && !gatewayLicensed
+    ? licenseRestrictionMessage(licenseAccess, 'gateway')
+    : '';
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -777,6 +784,9 @@ export default function ChannelsPage() {
           onManageCredentials={() => navigateWithinApp(connectionAdvancedPath('/channel-keys', selectedChannel.id))}
           onOpenRouteManagement={openRouteManagement}
           onDiagnose={(model) => navigateWithinApp(connectionAdvancedPath('/model-readiness', selectedChannel.id, model))}
+          gatewayLicensed={gatewayLicensed}
+          gatewayRestrictionMessage={gatewayRestriction}
+          onOpenLicense={() => navigateWithinApp('/license')}
         />
       </div>}
 

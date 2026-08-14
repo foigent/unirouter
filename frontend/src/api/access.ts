@@ -189,12 +189,13 @@ export type ReadinessAxis = {
 export type ModelReadiness = {
   contract_version: string;
   scope: {
+    mode: 'caller' | 'connection';
     org_id: number;
     project_id: number;
     requested_model: string;
     resolved_model: string;
     endpoint: string;
-    caller: 'self' | 'workload_application';
+    caller?: 'self' | 'workload_application';
     application_ref?: string;
   };
   summary: {
@@ -203,7 +204,7 @@ export type ModelReadiness = {
     routable: { value?: boolean; state: ReadinessAxis['state']; reason_code: string };
     current_project_caller_callable: { value?: boolean; state: ReadinessAxis['state']; reason_code: string };
   };
-  platform_model: Record<'registration' | 'lifecycle' | 'catalog' | 'price_authority' | 'channel' | 'provider_credential' | 'base_route' | 'runtime_slot', ReadinessAxis>;
+  platform_model: Record<'gateway_license' | 'registration' | 'lifecycle' | 'catalog' | 'price_authority' | 'channel' | 'provider_credential' | 'base_route' | 'runtime_slot', ReadinessAxis>;
   project_caller: Record<'project' | 'alias' | 'model_set' | 'wallet' | 'project_budget' | 'application' | 'grant' | 'credential' | 'model_authorization' | 'limit_policy', ReadinessAxis>;
   runtime_mutation: 'none';
   external_requests: 'none';
@@ -292,11 +293,18 @@ export const accessApi = {
     api.request(`/access-grants/${encodeURIComponent(grantRef)}/credentials/${keyID}/revoke`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: '{}' }) as Promise<{ status: string }>,
   previewLegacy: (orgID?: number) =>
     api.request(`/access-provisioning/legacy-preview${orgID ? `?org_id=${orgID}` : ''}`) as Promise<{ mutation: false; data: LegacyAccessClassification[]; total: number }>,
-  modelReadiness: (input: { project_id: number; model: string; endpoint: string; caller: 'self' | 'workload_application'; application_ref?: string }) => {
-    const search = new URLSearchParams({
-      project_id: String(input.project_id), model: input.model, endpoint: input.endpoint, caller: input.caller,
-    });
-    if (input.application_ref) search.set('application_ref', input.application_ref);
+  modelReadiness: (input: (
+    { mode: 'connection'; model: string; endpoint: string } |
+    { mode?: 'caller'; project_id: number; model: string; endpoint: string; caller: 'self' | 'workload_application'; application_ref?: string }
+  )) => {
+    const search = new URLSearchParams({ model: input.model, endpoint: input.endpoint });
+    if (input.mode === 'connection') {
+      search.set('mode', 'connection');
+    } else {
+      search.set('project_id', String(input.project_id));
+      search.set('caller', input.caller);
+      if (input.application_ref) search.set('application_ref', input.application_ref);
+    }
     return api.request(`/model-readiness?${search.toString()}`) as Promise<ModelReadiness>;
   },
 };

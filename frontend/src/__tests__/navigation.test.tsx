@@ -161,12 +161,12 @@ describe('two-axis navigation boundaries', () => {
 
   it('uses one task taxonomy and explicit authz context for shared sections', () => {
     expect(getNavItemsForAuthz(context('platform_admin')).map(item => item.text)).toEqual([
-		'平台总览', '模型接入', '访问与安全', '监控与用量', '成本与财务', '系统与集成',
+		'客户运营总览', '模型接入', '访问与安全', '监控与用量', '成本与财务', '系统与集成',
     ]);
-	expect(getNavItemsForAuthz(context('org_admin'))[0]?.text).toBe('组织总览');
-	expect(getNavItemsForAuthz(context('org_viewer'))[0]?.text).toBe('组织总览');
+	expect(getNavItemsForAuthz(context('org_admin'))[0]?.text).toBe('组织运营总览');
+	expect(getNavItemsForAuthz(context('org_viewer'))[0]?.text).toBe('组织只读总览');
 	expect(getNavItemsForAuthz(context('billing_admin'))[0]?.text).toBe('财务与用量总览');
-	expect(getNavItemsForAuthz(context('org_admin', 'project_user')).map(item => item.text).slice(0, 2)).toEqual(['组织总览', '模型接入']);
+	expect(getNavItemsForAuthz(context('org_admin', 'project_user')).map(item => item.text).slice(0, 2)).toEqual(['组织运营总览', '模型接入']);
 	expect(getNavItemsForAuthz(context('member', 'project_admin'))[0]?.text).toBe('我的访问');
 
     expect(getOpenKeysForPath('/notifications', context('platform_admin'))).toEqual(['g-observability']);

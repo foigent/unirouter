@@ -123,7 +123,7 @@ describe('App shell', () => {
 
 		expect(screen.queryByText('我的访问')).toBeNull();
 		expect(screen.queryByText('项目工作台')).toBeNull();
-		expect(screen.getByText('平台总览')).toBeTruthy();
+		expect(screen.getByText('客户运营总览')).toBeTruthy();
 	});
 
 	it('keeps end-user entries hidden when a management identity has project membership data', () => {
@@ -131,7 +131,7 @@ describe('App shell', () => {
 
 		expect(screen.queryByText('我的访问')).toBeNull();
 		expect(screen.queryByText('项目工作台')).toBeNull();
-		expect(screen.getByText('平台总览')).toBeTruthy();
+		expect(screen.getByText('客户运营总览')).toBeTruthy();
 	});
 
 	it('keeps My Access but hides the project workbench for a member awaiting first membership', () => {
@@ -184,7 +184,7 @@ describe('App shell', () => {
     const { container } = renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: '打开导航' }));
-    fireEvent.click(await screen.findByText('请求日志'));
+    fireEvent.click(await screen.findByText('执行请求'));
 
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/logs'));
     expect(container.querySelector('.ur-sider.open')).toBeNull();
@@ -195,7 +195,7 @@ describe('App shell', () => {
 
     expect(screen.getByText('模型连接')).toBeTruthy();
     expect(screen.getByText('人员与权限')).toBeTruthy();
-    expect(screen.getByText('请求日志')).toBeTruthy();
+    expect(screen.getByText('执行请求')).toBeTruthy();
     expect(screen.getByText('预算与成本中心')).toBeTruthy();
     expect(screen.getByText('部署与网络')).toBeTruthy();
     expect(screen.getByText('集成管理')).toBeTruthy();
@@ -217,7 +217,7 @@ describe('App shell', () => {
   it('shows advanced model workspaces in navigation and keeps unlicensed ones locked', async () => {
     renderApp('platform_admin', { licenseAccess: PARTIAL_LICENSE });
 
-	expect(screen.getByText('模型目录与灰度（未授权）')).toBeTruthy();
+	expect(screen.getByText('模型治理（未授权）')).toBeTruthy();
     expect(await screen.findByText('模型连接')).toBeTruthy();
     expect(await screen.findByText('内容安全（未授权）')).toBeTruthy();
     expect(screen.getByRole('button', { name: '通知（授权未包含）' }).hasAttribute('disabled')).toBe(true);

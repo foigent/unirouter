@@ -183,7 +183,7 @@ type NavItem = NavChild & { items?: NavChild[] };
 // One canonical task taxonomy is filtered by role. A route never moves to a
 // different section just because another role is looking at it.
 const taskNavItems: NavItem[] = [
-  { itemKey: '/', text: '平台总览', icon: <IconHomeStroked /> },
+  { itemKey: '/', text: '组织运营总览', icon: <IconHomeStroked /> },
   {
     itemKey: 'g-model-access',
     text: '模型接入',
@@ -191,7 +191,7 @@ const taskNavItems: NavItem[] = [
     items: [
 	  { itemKey: '/channels', text: '模型连接', icon: <IconRoute /> },
 	  { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconKeyStroked /> },
-	  { itemKey: '/model-governance', text: '模型目录与灰度', icon: <IconBranch />, licenseFeature: 'model_governance' },
+	  { itemKey: '/model-governance', text: '模型治理', icon: <IconBranch />, licenseFeature: 'model_governance' },
 	  { itemKey: '/model-readiness', text: '调用条件诊断', icon: <IconTestScoreStroked /> },
     ],
   },
@@ -214,7 +214,7 @@ const taskNavItems: NavItem[] = [
     text: '监控与用量',
     icon: <IconMonitorStroked />,
     items: [
-      { itemKey: '/logs', text: '请求日志', icon: <IconFile /> },
+      { itemKey: '/logs', text: '执行请求', icon: <IconFile /> },
       { itemKey: '/media-jobs', text: '异步模型任务', icon: <IconFile />, licenseFeature: 'gateway' },
       { itemKey: '/usage-analytics', text: '用量分析', icon: <IconBarChartVStroked /> },
       { itemKey: '/notifications', text: '通知中心', icon: <IconBell />, licenseFeature: 'notifications' },
@@ -280,8 +280,10 @@ function labelOverviewForRole(items: NavItem[], organizationRole?: string | null
   const overviewText = isBillingRole(organizationRole)
     ? '财务与用量总览'
     : isPlatformAdminRole(organizationRole)
-      ? '平台总览'
-      : '组织总览';
+      ? '客户运营总览'
+      : isOrgViewerRole(organizationRole)
+        ? '组织只读总览'
+        : '组织运营总览';
   return items.map(item => item.itemKey === '/' ? { ...item, text: overviewText } : item);
 }
 

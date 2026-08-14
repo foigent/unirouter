@@ -36,6 +36,15 @@ func TestSummarizePreservesUnavailable(t *testing.T) {
 	}
 }
 
+func TestSummarizePreservesOptionalFactsWithoutCallingThemBlocked(t *testing.T) {
+	optional := Optional("model_governance_not_licensed_optional", nil)
+	summary := Summarize(PlatformModel{Registration: optional, Catalog: optional}, ProjectCaller{})
+	if summary.Registered.State != StateNotApplicable || summary.Registered.Value != nil ||
+		summary.CatalogVisible.State != StateNotApplicable || summary.CatalogVisible.Value != nil {
+		t.Fatalf("optional facts were misrepresented: %#v", summary)
+	}
+}
+
 func TestCallableFactUsesEveryRuntimeAuthorityWithoutCollapsingOptionalFacts(t *testing.T) {
 	ready := Ready("ready", nil)
 	optional := Optional("optional", nil)
@@ -64,6 +73,9 @@ func TestCallableFactUsesEveryRuntimeAuthorityWithoutCollapsingOptionalFacts(t *
 		hasBool bool
 	}{
 		{"lifecycle", func(p *PlatformModel, _ *ProjectCaller) { p.Lifecycle = Blocked("retired", nil, "", "") }, StateBlocked, "retired", true},
+		{"gateway license", func(p *PlatformModel, _ *ProjectCaller) {
+			p.GatewayLicense = Blocked("license_error.invalid", nil, "/license", "platform_admin")
+		}, StateBlocked, "license_error.invalid", true},
 		{"price", func(p *PlatformModel, _ *ProjectCaller) { p.PriceAuthority = Blocked("price_missing", nil, "", "") }, StateBlocked, "price_missing", true},
 		{"base route", func(p *PlatformModel, _ *ProjectCaller) { p.BaseRoute = Blocked("route_missing", nil, "", "") }, StateBlocked, "route_missing", true},
 		{"project", func(_ *PlatformModel, p *ProjectCaller) { p.Project = Blocked("project_inactive", nil, "", "") }, StateBlocked, "project_inactive", true},
