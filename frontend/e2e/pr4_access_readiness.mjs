@@ -443,27 +443,27 @@ try {
   const readiness = await login('alice');
   try {
     const readyPath = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.ready_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
-    await gotoHeading(readiness.page, readyPath, '调用诊断');
+    await gotoHeading(readiness.page, readyPath, '调用条件诊断');
     await readiness.page.getByText('查看高级诊断证据', { exact: true }).click();
     await visible(readiness.page.getByText('direct_model_optional', { exact: true }));
     await visible(readiness.page.getByText('unrestricted_optional', { exact: true }));
     await visible(readiness.page.getByText('runtime_slot_not_configured_optional', { exact: true }));
-    const facts = readiness.page.locator('.ur-metric-grid');
+    const facts = readiness.page.locator('.ur-readiness-summary-grid');
     await visible(facts);
-    assert.ok((await facts.textContent()).includes('已有模型记录是'));
-    assert.ok((await facts.textContent()).includes('项目可以看见是'));
-    assert.ok((await facts.textContent()).includes('已有可用路由是'));
-    assert.ok((await facts.textContent()).includes('所选主体可以调用是'));
+    assert.ok((await facts.textContent()).includes('模型记录就绪条件已满足'));
+    assert.ok((await facts.textContent()).includes('项目目录可见就绪条件已满足'));
+    assert.ok((await facts.textContent()).includes('当前可用路由就绪条件已满足'));
+    assert.ok((await facts.textContent()).includes('所选主体可调用受阻需要处理后才能使用'));
 
     const runtimePath = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.runtime_only_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
     await readiness.page.goto(runtimePath);
     await visible(readiness.page.getByText('查看高级诊断证据', { exact: true }));
     await readiness.page.getByText('查看高级诊断证据', { exact: true }).click();
-    await visible(readiness.page.getByText('model_unregistered', { exact: true }));
-    const runtimeFacts = readiness.page.locator('.ur-metric-grid');
+    await visible(readiness.page.getByText('model_governance_not_licensed_optional', { exact: true }).first());
+    const runtimeFacts = readiness.page.locator('.ur-readiness-summary-grid');
     await visible(runtimeFacts);
-    assert.ok((await runtimeFacts.textContent()).includes('已有模型记录否'));
-    assert.ok((await runtimeFacts.textContent()).includes('已有可用路由是'));
+    assert.ok((await runtimeFacts.textContent()).includes('模型记录不适用 / 可选当前流程不要求'));
+    assert.ok((await runtimeFacts.textContent()).includes('当前可用路由就绪条件已满足'));
     journeys.push('readiness_four_facts_optional_states');
   } finally {
     await readiness.context.close();
@@ -472,7 +472,7 @@ try {
   const unavailable = await login('alice', fixture.unavailable_base_url);
   try {
     const path = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.ready_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
-    await gotoHeading(unavailable.page, path, '调用诊断');
+    await gotoHeading(unavailable.page, path, '调用条件诊断');
     await visible(unavailable.page.getByText('暂时无法判断', { exact: true }).first());
     await unavailable.page.getByText('查看高级诊断证据', { exact: true }).click();
     await visible(unavailable.page.getByText('routing_preview_unavailable', { exact: true }).first());

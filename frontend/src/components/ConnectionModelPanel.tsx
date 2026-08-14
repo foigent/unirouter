@@ -47,6 +47,9 @@ interface ConnectionModelPanelProps {
   onManageCredentials: () => void;
   onOpenRouteManagement: (model: string, intent?: 'replace' | 'recover') => void;
   onDiagnose: (model: string) => void;
+  gatewayLicensed?: boolean;
+  gatewayRestrictionMessage?: string;
+  onOpenLicense?: () => void;
 }
 
 function setMembership(current: Set<string>, model: string, present: boolean) {
@@ -105,6 +108,9 @@ export default function ConnectionModelPanel({
   onManageCredentials,
   onOpenRouteManagement,
   onDiagnose,
+  gatewayLicensed = true,
+  gatewayRestrictionMessage,
+  onOpenLicense,
 }: ConnectionModelPanelProps) {
   const models = useMemo(() => parseChannelModels(channel.models), [channel.models]);
   const connectionStatus = effectiveConnectionStatus(channel);
@@ -116,6 +122,10 @@ export default function ConnectionModelPanel({
   const [checkingRouteModel, setCheckingRouteModel] = useState('');
 
   const testModel = async (model: string, notify = true) => {
+    if (!gatewayLicensed) {
+      if (notify) Toast.error(gatewayRestrictionMessage || '模型网关商业授权未就绪，未发起真实请求');
+      return undefined;
+    }
     if (credentialLoadState !== 'ready') {
       if (notify) Toast.error(credentialLoadError || '供应商凭证状态尚未就绪，未发起真实请求');
       return undefined;
@@ -326,7 +336,7 @@ export default function ConnectionModelPanel({
           <Button
             size="small"
             loading={testingModels.has(row.model)}
-            disabled={batchTesting || credentialLoadState !== 'ready'}
+            disabled={!gatewayLicensed || batchTesting || credentialLoadState !== 'ready'}
             onClick={() => void testModel(row.model)}
           >检测</Button>
           {retainedRelease && <Button size="small" type="primary" onClick={() => onOpenRouteManagement(row.model, 'recover')}>查看恢复步骤</Button>}
@@ -348,11 +358,20 @@ export default function ConnectionModelPanel({
         <Button
           type="primary"
           loading={batchTesting}
-          disabled={models.length === 0 || credentialLoadState !== 'ready' || testingModels.size > 0}
+          disabled={!gatewayLicensed || models.length === 0 || credentialLoadState !== 'ready' || testingModels.size > 0}
           onClick={confirmAllTests}
         >检测当前连接全部模型（{models.length}）</Button>
       </Space>}
     >
+      {!gatewayLicensed && <Banner
+        type="danger"
+        description={<Space vertical align="start">
+          <Text>{gatewayRestrictionMessage || '模型网关商业授权未就绪；已阻止真实检测，不会向供应商发送请求。'}</Text>
+          {onOpenLicense && <Button size="small" onClick={onOpenLicense}>查看商业授权</Button>}
+        </Space>}
+        closeIcon={null}
+        style={{ marginBottom: 12 }}
+      />}
       {credentialLoadState === 'loading' && <Banner type="info" description="正在核对当前连接的供应商凭证；完成前不会发起真实请求。" closeIcon={null} style={{ marginBottom: 12 }} />}
       {credentialLoadState === 'error' && <Banner type="danger" description={credentialLoadError || '供应商凭证状态不可用；已阻止真实检测。'} closeIcon={null} style={{ marginBottom: 12 }} />}
       {hasRetainedRelease && <Banner

@@ -89,7 +89,7 @@ const endpointGroups = [
       ['POST', '/api/v1/access-grants/{ref}/credentials/{key_id}/rotate', '原子替换指定 secret version；旧 secret 在提交后立即失效'],
       ['POST', '/api/v1/access-grants/{ref}/credentials/{key_id}/revoke', '撤销指定逻辑 Credential family 及全部版本'],
       ['GET', '/api/v1/access-provisioning/legacy-preview', '组织管理员只读预览 legacy Key 与 Workload 分类，不执行回填'],
-      ['GET', '/api/v1/model-readiness', '只读聚合模型录入、目录、路由与当前项目调用者四项独立事实；不发 Provider/Feed 请求'],
+      ['GET', '/api/v1/model-readiness', 'connection 模式无需项目即可检查网关授权、供应商连接/凭证与路由；caller 模式再检查项目调用条件；不发 Provider/Feed 请求'],
     ],
   },
   {

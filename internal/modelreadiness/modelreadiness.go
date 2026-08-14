@@ -7,6 +7,11 @@ import "time"
 
 const ContractVersion = "unirouter.model-readiness.v1"
 
+const (
+	ModeCaller     = "caller"
+	ModeConnection = "connection"
+)
+
 type State string
 
 const (
@@ -32,6 +37,7 @@ type Fact struct {
 }
 
 type Scope struct {
+	Mode           string `json:"mode"`
 	OrgID          int64  `json:"org_id"`
 	ProjectID      int64  `json:"project_id"`
 	RequestedModel string `json:"requested_model"`
@@ -49,6 +55,7 @@ type Summary struct {
 }
 
 type PlatformModel struct {
+	GatewayLicense     Axis `json:"gateway_license"`
 	Registration       Axis `json:"registration"`
 	Lifecycle          Axis `json:"lifecycle"`
 	Catalog            Axis `json:"catalog"`
@@ -127,6 +134,9 @@ func factFromAxis(axis Axis) Fact {
 	if axis.State == StateUnavailable {
 		return Fact{State: StateUnavailable, ReasonCode: axis.ReasonCode}
 	}
+	if axis.State == StateNotApplicable {
+		return Fact{State: StateNotApplicable, ReasonCode: axis.ReasonCode}
+	}
 	value := axis.State == StateReady
 	state := StateBlocked
 	if value {
@@ -137,7 +147,7 @@ func factFromAxis(axis Axis) Fact {
 
 func callableFact(platform PlatformModel, project ProjectCaller) Fact {
 	required := []Axis{
-		platform.Lifecycle, platform.PriceAuthority, platform.BaseRoute,
+		platform.GatewayLicense, platform.Lifecycle, platform.PriceAuthority, platform.BaseRoute,
 		project.Project, project.Alias, project.ModelSet, project.Wallet, project.Grant,
 		project.Credential, project.ModelAuthorization, project.LimitPolicy,
 	}

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelReadinessPage from '../ModelReadinessPage';
@@ -33,7 +33,7 @@ const axis = (state: string, reason: string, fixRoute?: string) => ({
 
 const readiness = {
   contract_version: 'unirouter.model-readiness.v1',
-  scope: { org_id: 1, project_id: 11, requested_model: 'company-chat', resolved_model: 'gpt-5', endpoint: '/v1/chat/completions', caller: 'self' },
+  scope: { mode: 'caller', org_id: 1, project_id: 11, requested_model: 'company-chat', resolved_model: 'gpt-5', endpoint: '/v1/chat/completions', caller: 'self' },
   summary: {
     registered: { value: false, state: 'blocked', reason_code: 'model_unregistered' },
     catalog_visible: { value: false, state: 'blocked', reason_code: 'catalog_hidden' },
@@ -41,6 +41,7 @@ const readiness = {
     current_project_caller_callable: { state: 'unavailable', reason_code: 'caller_evidence_unavailable' },
   },
   platform_model: {
+    gateway_license: axis('ready', 'gateway_license_authorized'),
     registration: axis('blocked', 'model_unregistered', '/model-governance?tab=registry&model=company-chat'), lifecycle: axis('ready', 'lifecycle_active'),
     catalog: axis('blocked', 'catalog_hidden'), price_authority: axis('ready', 'price_authority_ready'),
     channel: axis('ready', 'channel_ready'), provider_credential: axis('ready', 'provider_credential_ready'),
@@ -85,13 +86,41 @@ describe('ModelReadinessPage', () => {
     render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self']}><ModelReadinessPage /></MemoryRouter>);
 
     expect(await screen.findByText('当前模型：gpt-5')).toBeTruthy();
-    expect(screen.getByText('model_unregistered')).toBeTruthy();
-    expect(screen.getByText('catalog_hidden')).toBeTruthy();
+    expect(screen.getAllByText('model_unregistered').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('catalog_hidden').length).toBeGreaterThan(0);
     expect(screen.getByText('policy_store_unavailable')).toBeTruthy();
     expect(screen.getAllByText('暂时无法判断').length).toBeGreaterThan(0);
+    expect(document.querySelector('.ur-metric-value')).toBeNull();
     expect(mocks.modelReadiness).toHaveBeenCalledWith({
       project_id: 11, model: 'company-chat', endpoint: '/v1/chat/completions', caller: 'self', application_ref: undefined,
     });
+  });
+
+  it('auto-selects the only active project instead of requiring a redundant project choice', async () => {
+    render(<MemoryRouter initialEntries={['/model-readiness?model=company-chat&caller=self']}><ModelReadinessPage /></MemoryRouter>);
+
+    expect(await screen.findByText('唯一有效项目，已自动选择')).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: '项目' })).toBeNull();
+    await waitFor(() => expect(mocks.modelReadiness).toHaveBeenCalledWith(expect.objectContaining({ project_id: 11, model: 'company-chat' })));
+  });
+
+  it('diagnoses a model connection without loading or requiring project and caller scope', async () => {
+    mocks.modelReadiness.mockResolvedValueOnce({
+      ...readiness,
+      scope: { mode: 'connection', org_id: 1, project_id: 0, requested_model: 'deepseek-v4-pro', resolved_model: 'deepseek-v4-pro', endpoint: '/v1/chat/completions' },
+      summary: { ...readiness.summary, current_project_caller_callable: { state: 'not_applicable', reason_code: 'connection_mode_has_no_caller' } },
+    });
+    render(<MemoryRouter initialEntries={['/model-readiness?from=connections&channel_id=12&model=deepseek-v4-pro']}><ModelReadinessPage /></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: '模型连接诊断' })).toBeTruthy();
+    await waitFor(() => expect(mocks.modelReadiness).toHaveBeenCalledWith({
+      mode: 'connection', model: 'deepseek-v4-pro', endpoint: '/v1/chat/completions',
+    }));
+    expect(mocks.getProjects).not.toHaveBeenCalled();
+    expect(screen.queryByRole('combobox', { name: '项目' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: '谁来调用' })).toBeNull();
+    expect(screen.getAllByText('模型网关授权').length).toBeGreaterThan(0);
+    expect(screen.queryByText('项目、应用与权限')).toBeNull();
   });
 
   it('labels a 503 as unavailable rather than blocked or unconfigured', async () => {
@@ -105,9 +134,11 @@ describe('ModelReadinessPage', () => {
   it('follows the exact actor-accessible fix route including blocker context', async () => {
     render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self']}><ModelReadinessPage /><LocationProbe /></MemoryRouter>);
 
-    await screen.findByText('model_unregistered');
-    fireEvent.click(screen.getByRole('button', { name: '前往修复' }));
-    expect(screen.getByTestId('location').textContent).toBe('/model-governance?tab=registry&model=company-chat');
+    const registrationReason = await screen.findByText('model_unregistered', { selector: 'code' });
+    const registrationCard = registrationReason.parentElement?.parentElement?.parentElement;
+    expect(registrationCard).toBeTruthy();
+    fireEvent.click(within(registrationCard!).getByRole('button', { name: '前往修复' }));
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/model-governance?tab=registry&model=company-chat'));
   });
 
   it('never renders a slower prior-scope readiness response after project/model/caller scope changes', async () => {

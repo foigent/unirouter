@@ -18,6 +18,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/enterprisefinance"
+	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
@@ -41,15 +42,55 @@ type readinessGrantEvidence struct {
 }
 
 func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
-	projectID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("project_id")), 10, 64)
+	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
+	if mode == "" {
+		mode = modelreadiness.ModeCaller
+	}
 	requestedModel := strings.TrimSpace(r.URL.Query().Get("model"))
 	rawEndpoint := strings.TrimSpace(r.URL.Query().Get("endpoint"))
 	endpoint := accessscope.CanonicalExecutionEndpoint(rawEndpoint)
 	caller := strings.TrimSpace(r.URL.Query().Get("caller"))
 	applicationRef := strings.TrimSpace(r.URL.Query().Get("application_ref"))
-	if err != nil || projectID <= 0 || requestedModel == "" || len(requestedModel) > maxReadinessModelLength ||
+	if requestedModel == "" || len(requestedModel) > maxReadinessModelLength ||
 		strings.ContainsAny(requestedModel, "\x00\r\n") || endpoint != rawEndpoint || !accessscope.IsSupportedEndpoint(endpoint) ||
-		!slices.Contains([]string{"self", "workload_application"}, caller) ||
+		!slices.Contains([]string{modelreadiness.ModeCaller, modelreadiness.ModeConnection}, mode) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid model readiness request", "reason": "invalid_request"})
+		return
+	}
+	if mode == modelreadiness.ModeConnection {
+		if strings.TrimSpace(r.URL.Query().Get("project_id")) != "" || caller != "" || applicationRef != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid model readiness request", "reason": "invalid_request"})
+			return
+		}
+		orgID, resolveErr := resolveActorOrganization(r.Context(), 0)
+		if resolveErr != nil || orgID <= 0 {
+			writeJSON(w, http.StatusForbidden, map[string]any{"error": "Customer organization unavailable", "reason": "customer_context_unavailable"})
+			return
+		}
+		response := modelreadiness.Response{
+			ContractVersion: modelreadiness.ContractVersion,
+			Scope: modelreadiness.Scope{Mode: mode, OrgID: orgID, RequestedModel: requestedModel,
+				ResolvedModel: requestedModel, Endpoint: endpoint},
+			RuntimeMutation: "none", ExternalRequests: "none", AsOf: time.Now().UTC(),
+		}
+		connectionOnly := modelreadiness.Optional("connection_mode_not_applicable", nil)
+		response.ProjectCaller = modelreadiness.ProjectCaller{
+			Project: connectionOnly, Alias: connectionOnly, ModelSet: connectionOnly,
+			Wallet: connectionOnly, ProjectBudget: connectionOnly, Application: connectionOnly,
+			Grant: connectionOnly, Credential: connectionOnly,
+			ModelAuthorization: connectionOnly, LimitPolicy: connectionOnly,
+		}
+		h.readinessPlatformAxes(r, orgID, &response)
+		response.Summary = modelreadiness.Summarize(response.PlatformModel, response.ProjectCaller)
+		response.Summary.CurrentProjectCallerCallable = modelreadiness.Fact{
+			State: modelreadiness.StateNotApplicable, ReasonCode: "connection_mode_has_no_caller",
+		}
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+
+	projectID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("project_id")), 10, 64)
+	if err != nil || projectID <= 0 || !slices.Contains([]string{"self", "workload_application"}, caller) ||
 		(caller == "self" && applicationRef != "") ||
 		(caller == "workload_application" && (applicationRef == "" || len(applicationRef) > maxReadinessApplicationRefLength ||
 			strings.ContainsAny(applicationRef, "\x00\r\n"))) {
@@ -81,7 +122,7 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 
 	response := modelreadiness.Response{
 		ContractVersion: modelreadiness.ContractVersion,
-		Scope: modelreadiness.Scope{OrgID: orgID, ProjectID: projectID, RequestedModel: requestedModel,
+		Scope: modelreadiness.Scope{Mode: mode, OrgID: orgID, ProjectID: projectID, RequestedModel: requestedModel,
 			ResolvedModel: requestedModel, Endpoint: endpoint, Caller: caller, ApplicationRef: applicationRef},
 		RuntimeMutation: "none", ExternalRequests: "none", AsOf: time.Now().UTC(),
 	}
@@ -176,6 +217,21 @@ func (h *Handler) readinessGovernanceAxes(r *http.Request, orgID, projectID int6
 
 func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *modelreadiness.Response) {
 	model := response.Scope.ResolvedModel
+	if h.licenseRuntime == nil {
+		response.PlatformModel.GatewayLicense = modelreadiness.Optional(
+			"gateway_license_evidence_not_configured", modelreadiness.Evidence("runtime_configured", false))
+	} else if decision := h.licenseRuntime.Authorize(licensing.FeatureGateway); decision.Allowed {
+		response.PlatformModel.GatewayLicense = modelreadiness.Ready(
+			"gateway_license_authorized", modelreadiness.Evidence("status", decision.Status.Status, "enforceable", decision.Status.Enforceable))
+	} else {
+		response.PlatformModel.GatewayLicense = modelreadiness.Blocked(
+			decision.Code,
+			modelreadiness.Evidence("status", decision.Status.Status, "enforceable", decision.Status.Enforceable),
+			h.readinessFixRoute(r, "/license", actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin),
+			"platform_admin",
+		)
+	}
+	modelGovernanceLicensed := h.licenseRuntime == nil || h.licenseRuntime.Authorize(licensing.FeatureModelGovernance).Allowed
 	var lifecycle string
 	var approvedCatalog bool
 	err := h.db.QueryRow(r.Context(), `SELECT lifecycle,approved_catalog FROM model_registry WHERE org_id=$1 AND model_name=$2`, orgID, model).Scan(&lifecycle, &approvedCatalog)
@@ -183,9 +239,14 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 		actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin || actorOrganizationRole(r.Context()) == auth.RoleOrgAdmin)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		response.PlatformModel.Registration = modelreadiness.Blocked("model_unregistered", modelreadiness.Evidence("registered", false), registryFix, "organization_admin")
+		if modelGovernanceLicensed {
+			response.PlatformModel.Registration = modelreadiness.Blocked("model_unregistered", modelreadiness.Evidence("registered", false), registryFix, "organization_admin")
+			response.PlatformModel.Catalog = modelreadiness.Blocked("catalog_not_published", modelreadiness.Evidence("visible", false), registryFix, "organization_admin")
+		} else {
+			response.PlatformModel.Registration = modelreadiness.Optional("model_governance_not_licensed_optional", modelreadiness.Evidence("registered", false, "feature_licensed", false))
+			response.PlatformModel.Catalog = modelreadiness.Optional("model_governance_not_licensed_optional", modelreadiness.Evidence("visible", false, "feature_licensed", false))
+		}
 		response.PlatformModel.Lifecycle = modelreadiness.Optional("unregistered_lifecycle_not_applicable", nil)
-		response.PlatformModel.Catalog = modelreadiness.Blocked("catalog_not_published", modelreadiness.Evidence("visible", false), registryFix, "organization_admin")
 	case err != nil:
 		response.PlatformModel.Registration = modelreadiness.Unavailable("model_registry_unavailable")
 		response.PlatformModel.Lifecycle = modelreadiness.Unavailable("model_lifecycle_unavailable")
@@ -199,6 +260,8 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 		}
 		if approvedCatalog && modelgov.IsCatalogLifecycle(lifecycle) {
 			response.PlatformModel.Catalog = modelreadiness.Ready("catalog_published", modelreadiness.Evidence("visible", true))
+		} else if !modelGovernanceLicensed {
+			response.PlatformModel.Catalog = modelreadiness.Optional("model_governance_not_licensed_optional", modelreadiness.Evidence("visible", false, "feature_licensed", false))
 		} else {
 			response.PlatformModel.Catalog = modelreadiness.Blocked("catalog_not_published", modelreadiness.Evidence("visible", false), registryFix, "organization_admin")
 		}
@@ -220,6 +283,18 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 			eligibleKeys += candidate.EligibleKeyCount
 		}
 		routeFix := h.readinessFixRoute(r, "/channels?model="+url.QueryEscape(model), actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin)
+		credentialFix := routeFix
+		credentialChannelID := int64(0)
+		if len(preview.Candidates) > 0 {
+			credentialChannelID = preview.Candidates[0].ChannelID
+		} else if len(preview.Exclusions) > 0 {
+			credentialChannelID = preview.Exclusions[0].ChannelID
+		}
+		if credentialChannelID > 0 {
+			credentialFix = h.readinessFixRoute(r,
+				"/channel-keys?from=connections&channel_id="+strconv.FormatInt(credentialChannelID, 10)+"&model="+url.QueryEscape(model),
+				actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin)
+		}
 		if len(preview.Candidates)+len(preview.Exclusions) > 0 {
 			response.PlatformModel.Channel = modelreadiness.Ready("channel_configured", modelreadiness.Evidence("candidate_count", len(preview.Candidates), "exclusion_count", len(preview.Exclusions)))
 		} else {
@@ -228,7 +303,7 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 		if eligibleKeys > 0 {
 			response.PlatformModel.ProviderCredential = modelreadiness.Ready("provider_credential_available", modelreadiness.Evidence("eligible_credential_count", eligibleKeys))
 		} else {
-			response.PlatformModel.ProviderCredential = modelreadiness.Blocked("provider_credential_unavailable", modelreadiness.Evidence("eligible_credential_count", 0), routeFix, "platform_admin")
+			response.PlatformModel.ProviderCredential = modelreadiness.Blocked("provider_credential_unavailable", modelreadiness.Evidence("eligible_credential_count", 0), credentialFix, "platform_admin")
 		}
 		if len(preview.Candidates) > 0 && eligibleKeys > 0 {
 			response.PlatformModel.BaseRoute = modelreadiness.Ready("base_route_active", modelreadiness.Evidence("candidate_count", len(preview.Candidates), "degraded", preview.Degraded))

@@ -321,7 +321,7 @@ export default function GuardrailPoliciesPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="访问与安全"
-        title="内容安全策略"
+        title="内容安全"
         description="在请求发往模型前，以及非流式或流式结果交付客户前，执行版本固定的审计、脱敏或阻断。"
         actions={canManage ? <Button icon={<IconPlus />} type="primary" onClick={() => { setEditing(null); setDrawerVisible(true); }}>新增策略</Button> : undefined}
       />

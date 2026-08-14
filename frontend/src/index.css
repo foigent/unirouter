@@ -1840,6 +1840,47 @@ body {
   margin-bottom: 18px;
 }
 
+.ur-readiness-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.ur-readiness-summary-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 86px;
+  padding: 14px;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.ur-readiness-summary-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ur-readiness-sole-project {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 2px 10px;
+  min-width: 220px;
+  padding: 8px 12px;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 8px;
+  background: var(--ur-bg-subtle);
+}
+
+.ur-readiness-sole-project .semi-tag {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
 .ur-readiness-axis {
   display: grid;
   gap: 4px;

@@ -246,7 +246,7 @@ export default function LimitPoliciesPage() {
     <div className="ur-page">
       <PageHeader
         eyebrow="访问与安全"
-        title="共享限额策略"
+        title="共享限额"
         description="跨所有 UniRouter 副本统一限制请求速率、Token 和并发；增加服务器不会把客户额度成倍放大。"
         actions={canManage ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增策略</Button> : undefined}
       />
