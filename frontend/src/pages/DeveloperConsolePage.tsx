@@ -719,11 +719,11 @@ export default function DeveloperConsolePage() {
                 <span>
                   <Button
                     icon={<IconBell />}
-                    aria-label={notificationsLicensed ? '打开当前项目通知' : '项目通知（授权未包含）'}
+                    aria-label={notificationsLicensed ? '打开当前项目通知' : '项目通知（商业授权不可用）'}
                     disabled={!notificationsLicensed}
                     onClick={() => navigate(`/notifications?project_id=${selectedProjectId}`)}
                   >
-                    {notificationsLicensed ? '项目通知' : '项目通知（授权未包含）'}
+                    {notificationsLicensed ? '项目通知' : '项目通知（商业授权不可用）'}
                   </Button>
                 </span>
               </Tooltip>
@@ -753,7 +753,7 @@ export default function DeveloperConsolePage() {
         <a href="#project-usage">概览与用量</a>
         <a href="#project-access">凭证与接入</a>
         {mayRunPlayground && <a href="#project-debug">{gatewayLicensed ? '调试与排障' : '调试与排障（授权未包含）'}</a>}
-        <a href="#project-models">{modelGovernanceLicensed ? '已启用模型' : '已启用模型（授权未包含）'}</a>
+        <a href="#project-models">{modelGovernanceLicensed ? '已启用模型' : '已启用模型（商业授权不可用）'}</a>
       </div>
     </nav>
   );

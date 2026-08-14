@@ -12,9 +12,9 @@ const PARTIAL_LICENSE: LicenseAccess = {
     gateway: true,
     agent_capabilities: false,
     oidc: false,
-    guardrails: false,
+    guardrails: true,
     notifications: true,
-    model_governance: false,
+    model_governance: true,
     data_exchange: false,
   },
 };

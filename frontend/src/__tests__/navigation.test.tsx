@@ -34,10 +34,13 @@ function licenseAccess(
   enforceable: boolean,
   enabled: Array<keyof LicenseAccess['features']> = [],
 ): LicenseAccess {
+  const coreManagement = enforceable
+    ? { guardrails: true, notifications: true, model_governance: true }
+    : {};
   return {
     status,
     enforceable,
-    features: { ...DENIED_FEATURES, ...Object.fromEntries(enabled.map(feature => [feature, true])) },
+    features: { ...DENIED_FEATURES, ...coreManagement, ...Object.fromEntries(enabled.map(feature => [feature, true])) },
   };
 }
 
@@ -269,16 +272,16 @@ describe('two-axis navigation boundaries', () => {
     });
   });
 
-  it('keeps licensed-route annotation independent from role axes', () => {
-    const partial = licenseAccess('active', true, ['gateway', 'notifications']);
+  it('keeps core management routes available while independently licensed features remain gated', () => {
+    const partial = licenseAccess('active', true, ['gateway']);
     const platformItems = getNavItemsForAuthz(context('platform_admin'), partial);
     const platformChildren = platformItems.flatMap(item => item.items || []);
 
     expect(platformChildren.find(item => item.itemKey === '/test')?.licenseLocked).toBeUndefined();
-	expect(platformChildren.find(item => item.itemKey === '/model-governance')?.licenseLocked).toBe(true);
+    expect(platformChildren.find(item => item.itemKey === '/model-governance')?.licenseLocked).toBeUndefined();
     expect(platformChildren.find(item => item.itemKey === '/integrations')?.licenseLocked).toBeUndefined();
 	expect(isRouteLicensed('/channels?from=connections&channel_id=14&model=kimi-k3&intent=recover', partial)).toBe(true);
-    expect(isRouteLicensed('/guardrail-policies', partial)).toBe(false);
+    expect(isRouteLicensed('/guardrail-policies', partial)).toBe(true);
     expect(isRouteLicensed('/notifications?project_id=7', partial)).toBe(true);
     expect(isRouteLicensed('/connectors/x-insight/install', partial)).toBe(false);
   });

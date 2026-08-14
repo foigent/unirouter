@@ -171,8 +171,8 @@ export default function App() {
                 icon={<IconBell />}
                 theme="borderless"
                 className="ur-icon-button"
-                aria-label={notificationsLicensed ? '通知' : '通知（授权未包含）'}
-                title={notificationsLicensed ? '通知' : notificationsRestrictionMessage || '当前商业授权未包含通知中心。'}
+                aria-label={notificationsLicensed ? '通知' : '通知（商业授权不可用）'}
+                title={notificationsLicensed ? '通知' : notificationsRestrictionMessage || '当前商业授权不可用，通知中心暂不可用。'}
                 disabled={!notificationsLicensed}
                 onClick={() => navigate('/notifications')}
               />

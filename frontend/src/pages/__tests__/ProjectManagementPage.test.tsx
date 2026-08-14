@@ -39,7 +39,7 @@ describe('ProjectManagementPage', () => {
         role: 'org_admin',
         org_id: 1,
         org_name: '总部',
-        license_access: { status: 'valid', enforceable: true, features: { gateway: true, agent_capabilities: true, oidc: true, guardrails: true, notifications: true, model_governance: false, data_exchange: true } },
+        license_access: { status: 'valid', enforceable: true, features: { gateway: true, agent_capabilities: true, oidc: true, guardrails: true, notifications: true, model_governance: true, data_exchange: true } },
       },
     });
     mocks.getProjects.mockResolvedValue({
@@ -62,6 +62,8 @@ describe('ProjectManagementPage', () => {
       total: 1,
       eligible_users: [],
     });
+    mocks.getModelSets.mockResolvedValue({ data: [], total: 0 });
+    mocks.getProjectModelSets.mockResolvedValue({ data: [], model_set_ids: [] });
   });
 
   it('keeps project details, members and licensed model scope in one second-level workspace', async () => {
@@ -84,8 +86,8 @@ describe('ProjectManagementPage', () => {
     expect(mocks.getProjectMembers).toHaveBeenCalledWith(31, 1, 20, '');
 
     fireEvent.click(screen.getByText('模型范围'));
-    expect(await screen.findByText('当前授权未包含模型治理')).toBeTruthy();
-    expect(mocks.getModelSets).not.toHaveBeenCalled();
+    expect(await screen.findByText('选择该项目允许使用的模型集合。模型集合本身在“模型治理”中维护。')).toBeTruthy();
+    expect(mocks.getModelSets).toHaveBeenCalled();
   });
 
   it('keeps the persistent table and inspector stable under application StrictMode', async () => {
@@ -108,7 +110,7 @@ describe('ProjectManagementPage', () => {
         role: 'project_admin',
         org_id: 1,
         org_name: '总部',
-        license_access: { status: 'valid', enforceable: true, features: { gateway: true, agent_capabilities: true, oidc: true, guardrails: true, notifications: true, model_governance: false, data_exchange: true } },
+        license_access: { status: 'valid', enforceable: true, features: { gateway: true, agent_capabilities: true, oidc: true, guardrails: true, notifications: true, model_governance: true, data_exchange: true } },
       },
     });
     render(<ProjectManagementPage />);

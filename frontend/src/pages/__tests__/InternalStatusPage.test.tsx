@@ -246,13 +246,13 @@ describe('InternalStatusPage', () => {
     expect((await screen.findByRole('link', { name: '打开通知中心' })).getAttribute('href')).toBe('/notifications?project_id=9');
   });
 
-  it('keeps runtime health available without calling the notification summary when the License omits notifications', async () => {
+  it('keeps runtime health available without calling the notification summary when the License is expired', async () => {
     auth.user = {
       role: 'org_admin',
       license_access: {
-        status: 'active',
-        enforceable: true,
-        features: { notifications: false },
+        status: 'expired',
+        enforceable: false,
+        features: { notifications: true },
       },
     };
     render(<InternalStatusPage />);
@@ -260,7 +260,7 @@ describe('InternalStatusPage', () => {
     await waitFor(() => expect(mockGetRuntimeStatus).toHaveBeenCalled());
     expect(mockGetInternalStatus).not.toHaveBeenCalled();
     expect(screen.getByText('通知摘要已锁定')).toBeTruthy();
-    expect(screen.getAllByText(/未包含「通知中心」/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/当前商业授权已过期/).length).toBeGreaterThan(0);
     expect(screen.getByText('运行时观测')).toBeTruthy();
     expect(screen.queryByRole('link', { name: '打开通知中心' })).toBeNull();
   });

@@ -614,7 +614,7 @@ export default function DashboardPage() {
                     ) : attentionLoadState === 'loading' ? (
                       <StatusTag status="pending">读取中</StatusTag>
                     ) : attentionLoadState === 'locked' ? (
-                      <StatusTag status="disabled">授权未包含</StatusTag>
+                      <StatusTag status="disabled">商业授权不可用</StatusTag>
                     ) : (
                       <StatusTag status="error">读取失败</StatusTag>
                     )}

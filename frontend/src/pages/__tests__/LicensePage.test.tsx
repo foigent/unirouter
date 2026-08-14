@@ -64,8 +64,8 @@ describe('LicensePage', () => {
           gateway: true,
           agent_capabilities: false,
           oidc: false,
-          guardrails: false,
-          notifications: false,
+          guardrails: true,
+          notifications: true,
           model_governance: true,
           data_exchange: false,
         },
@@ -87,7 +87,8 @@ describe('LicensePage', () => {
     expect(await screen.findByText('Acme Corp')).toBeTruthy();
     expect(screen.getAllByText('有效')).toHaveLength(2);
     expect(screen.getByText('enterprise')).toBeTruthy();
-    expect(screen.getByText('模型网关、模型治理')).toBeTruthy();
+    expect(screen.getByText('模型治理、内容安全、通知中心（有效授权自动包含）')).toBeTruthy();
+    expect(screen.getByText('模型网关')).toBeTruthy();
     expect(screen.getByText('unirouter.license.v1')).toBeTruthy();
     expect(screen.getByText('license-2026-a')).toBeTruthy();
   });
@@ -110,7 +111,7 @@ describe('LicensePage', () => {
     });
     await waitFor(() => expect(mockGetMe).toHaveBeenCalledTimes(1));
     expect(useAuthStore.getState().user?.license_access?.features.model_governance).toBe(true);
-    expect(useAuthStore.getState().user?.license_access?.features.notifications).toBe(false);
+    expect(useAuthStore.getState().user?.license_access?.features.notifications).toBe(true);
   });
 
   it('does not turn a status request failure into an invalid-license conclusion', async () => {

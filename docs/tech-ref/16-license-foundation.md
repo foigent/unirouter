@@ -1,6 +1,6 @@
 # Commercial License Enforcement
 
-> Version: v1.1
+> Version: v1.2
 > Scope: Post-PRD6 V1 commercial runtime. The PRD2 foundation remains
 > historical evidence, but its non-blocking behavior is superseded here.
 
@@ -12,8 +12,11 @@
 - The License is bound to `LICENSE_DEPLOYMENT_ID` and checked against current
   wall-clock time on every new model admission.
 - Missing, invalid, not-yet-valid, deployment-mismatched, expired, or
-  feature-incomplete authority rejects new model and Agent-capability traffic
-  before API-key lookup, billing reservation, or provider dispatch.
+  feature-incomplete runtime authority rejects new model and Agent-capability
+  traffic before API-key lookup, billing reservation, or provider dispatch.
+- Every enforceable commercial License includes model governance, content
+  safety management, and notifications. These core management modules are not
+  separate add-ons in a single-customer local deployment.
 - Local login, License read/import, health, migration, backup, diagnostics and
   audit recovery remain available.
 
@@ -41,7 +44,7 @@ Expected JSON:
     "issued_at": "2026-07-14T00:00:00Z",
     "not_before": "2026-07-14T00:00:00Z",
     "expires_at": "2027-07-14T00:00:00Z",
-    "features": ["gateway", "model_governance"],
+    "features": ["gateway"],
     "limits": {
       "active_api_keys": 100,
       "active_users": 100,
@@ -114,10 +117,15 @@ makes a real upstream request; Agent capability endpoints require both
 available for diagnosis, while feature-specific control-plane routes are gated
 separately.
 
+`guardrails`, `notifications`, and `model_governance` remain accepted in signed
+documents for backwards compatibility, but their presence is not required:
+all three are authorized whenever the commercial License is enforceable. The
+independently licensed capabilities are `gateway`, `agent_capabilities`,
+`oidc`, and `data_exchange` (or `*`).
+
 Existing Guardrail and model-governance enforcement is not turned off when a
-feature is absent or a License expires: doing so would weaken safety. The
-feature controls management/use of the licensed surface while existing
-deny/safety policy continues to apply.
+License expires: doing so would weaken safety. Expiry blocks management/use of
+the commercial surface while existing deny/safety policy continues to apply.
 
 Migration `000037_v1_commercial_release_control` stores only the verified
 entitlement projection and enforces positive active API-key, user, project and
