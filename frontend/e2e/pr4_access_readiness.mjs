@@ -459,7 +459,7 @@ try {
     await readiness.page.goto(runtimePath);
     await visible(readiness.page.getByText('查看高级诊断证据', { exact: true }));
     await readiness.page.getByText('查看高级诊断证据', { exact: true }).click();
-    await visible(readiness.page.getByText('model_governance_not_licensed_optional', { exact: true }));
+    await visible(readiness.page.getByText('model_governance_not_licensed_optional', { exact: true }).first());
     const runtimeFacts = readiness.page.locator('.ur-readiness-summary-grid');
     await visible(runtimeFacts);
     assert.ok((await runtimeFacts.textContent()).includes('模型记录不适用 / 可选当前流程不要求'));
