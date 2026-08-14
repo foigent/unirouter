@@ -4,6 +4,7 @@ package runtimechange_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -152,6 +153,33 @@ func TestPRD8RuntimeChangeLifecycleCanaryActivationAndEmergencyDisable(t *testin
 	emergencyResponse := httptest.NewRecorder()
 	handler.UpdateChannel(emergencyResponse, emergencyDisable)
 	require.Equal(t, http.StatusOK, emergencyResponse.Code, emergencyResponse.Body.String())
+
+	// A disabled channel cannot receive traffic even while its historical stable
+	// release remains attached, so credential recovery is safe after the
+	// emergency stop and must not require deleting the release evidence first.
+	replacementKey := authorizedRequest(http.MethodPost, "/api/v1/channel-keys",
+		fmt.Sprintf(`{"channel_id":%d,"key":"replacement-after-disable","allowed_models":"gpt-prd8-runtime"}`, channelID))
+	replacementKeyResponse := httptest.NewRecorder()
+	handler.CreateChannelKey(replacementKeyResponse, replacementKey)
+	require.Equal(t, http.StatusCreated, replacementKeyResponse.Code, replacementKeyResponse.Body.String())
+	var replacementKeyRecord struct {
+		ID int64 `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(replacementKeyResponse.Body.Bytes(), &replacementKeyRecord))
+	require.Positive(t, replacementKeyRecord.ID)
+	replacementKeyUpdate := authorizedRequest(http.MethodPut, fmt.Sprintf("/api/v1/channel-keys/%d", replacementKeyRecord.ID),
+		`{"key":"rotated-after-disable","allowed_models":"gpt-prd8-runtime","status":"active"}`)
+	replacementKeyUpdate.SetPathValue("id", fmt.Sprintf("%d", replacementKeyRecord.ID))
+	replacementKeyUpdateResponse := httptest.NewRecorder()
+	handler.UpdateChannelKey(replacementKeyUpdateResponse, replacementKeyUpdate)
+	require.Equal(t, http.StatusOK, replacementKeyUpdateResponse.Code, replacementKeyUpdateResponse.Body.String())
+
+	deleteOriginalAfterDisable := authorizedRequest(http.MethodDelete, fmt.Sprintf("/api/v1/channel-keys/%d", keyID), "")
+	deleteOriginalAfterDisable.SetPathValue("id", fmt.Sprintf("%d", keyID))
+	deleteOriginalAfterDisableResponse := httptest.NewRecorder()
+	handler.DeleteChannelKey(deleteOriginalAfterDisableResponse, deleteOriginalAfterDisable)
+	require.Equal(t, http.StatusOK, deleteOriginalAfterDisableResponse.Code, deleteOriginalAfterDisableResponse.Body.String())
+
 	router.Invalidate()
 	_, err = router.RouteAllWithKey(ctx, "gpt-prd8-runtime", "after-emergency-disable")
 	require.Error(t, err)

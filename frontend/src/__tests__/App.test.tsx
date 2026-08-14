@@ -217,9 +217,9 @@ describe('App shell', () => {
   it('shows advanced model workspaces in navigation and keeps unlicensed ones locked', async () => {
     renderApp('platform_admin', { licenseAccess: PARTIAL_LICENSE });
 
-	expect(screen.getByText('模型目录与灰度（授权未包含）')).toBeTruthy();
+	expect(screen.getByText('模型目录与灰度（未授权）')).toBeTruthy();
     expect(await screen.findByText('模型连接')).toBeTruthy();
-    expect(await screen.findByText('内容安全（授权未包含）')).toBeTruthy();
+    expect(await screen.findByText('内容安全（未授权）')).toBeTruthy();
     expect(screen.getByRole('button', { name: '通知（授权未包含）' }).hasAttribute('disabled')).toBe(true);
   });
 

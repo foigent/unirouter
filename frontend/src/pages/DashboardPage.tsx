@@ -18,7 +18,7 @@ import {
 } from '@douyinfe/semi-icons';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
-  ResponsiveContainer, BarChart, Bar, Cell,
+  ResponsiveContainer,
 } from 'recharts';
 import { api } from '../api/client';
 import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney, microsToChartYuan, parseMicros } from '../ui';
@@ -45,8 +45,29 @@ interface DashboardStats {
 	wallet_frozen_micros?: string;
 	wallet_threshold_micros?: string;
 	daily_trend?: { date: string; requests: number; cost_micros: string }[];
-  model_distribution?: { model: string; requests: number }[];
-  channel_health?: { id: number; name: string; provider: string; enabled: boolean; status: string; success_count: number; fail_count: number }[];
+  model_distribution?: {
+    model: string;
+    requests: number;
+    success_count?: number;
+    fail_count?: number;
+    success_rate?: number;
+    avg_latency_ms?: number;
+    p95_latency_ms?: number;
+  }[];
+  channel_health?: {
+    id: number;
+    name: string;
+    provider: string;
+    base_status?: string;
+    runtime_published?: boolean;
+    enabled: boolean;
+    credential_ready?: boolean;
+    available?: boolean;
+    circuit_state?: string;
+    status: string;
+    success_count: number;
+    fail_count: number;
+  }[];
 	delta_vs_yesterday?: { cost_micros: string; latency_ms: number; success_rate: number };
 }
 
@@ -118,8 +139,6 @@ function DeltaTag({ value, suffix = '', inverse = false }: { value: number; suff
   );
 }
 
-const MODEL_COLORS = ['#1f6feb', '#0f8f5f', '#b76e00', '#6f4bd8', '#d92d20', '#0e7490', '#be185d', '#475467'];
-
 function latencyTone(value: number): 'green' | 'amber' | 'red' {
   if (value > 2000) return 'red';
   if (value > 500) return 'amber';
@@ -134,7 +153,11 @@ function providerDisplayName(provider: string, channelName: string): string | nu
 }
 
 function channelHealthView(ch: NonNullable<DashboardStats['channel_health']>[number]) {
-  if (!ch.enabled) return { tone: 'disabled', label: '禁用', icon: <IconMinusCircle /> };
+  if (ch.status === 'disabled') return { tone: 'disabled', label: '禁用', icon: <IconMinusCircle /> };
+  if (ch.status === 'awaiting_release') return { tone: 'disabled', label: '待启用', icon: <IconMinusCircle /> };
+  if (ch.status === 'no_credential') return { tone: 'warning', label: '缺少凭证', icon: <IconAlertTriangle /> };
+  if (ch.status === 'circuit_unavailable') return { tone: 'error', label: '熔断不可用', icon: <IconAlertTriangle /> };
+  if (!ch.enabled) return { tone: 'disabled', label: '待启用', icon: <IconMinusCircle /> };
   if (ch.status === 'error') return { tone: 'error', label: '异常', icon: <IconAlertTriangle /> };
   if (ch.status === 'warning' || ch.status === 'degraded') return { tone: 'warning', label: '告警', icon: <IconAlertTriangle /> };
   return { tone: 'healthy', label: '健康', icon: <IconTickCircle /> };
@@ -153,14 +176,14 @@ function notificationAttentionLabel(level?: string) {
   }
 }
 
-function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_health']>[number] }) {
+function ChannelHealthCard({ ch, onOpen }: { ch: NonNullable<DashboardStats['channel_health']>[number]; onOpen: () => void }) {
   const total = ch.success_count + ch.fail_count;
   const rate = total > 0 ? (ch.success_count / total * 100) : 0;
   const providerLabel = providerDisplayName(ch.provider, ch.name);
   const health = channelHealthView(ch);
 
   return (
-    <div className="ur-channel-card">
+    <button type="button" className="ur-channel-card" onClick={onOpen} aria-label={`查看模型连接 ${ch.name}`}>
       <div style={{ minWidth: 0 }}>
         <Text className="ur-channel-name" title={ch.name}>{ch.name}</Text>
         {providerLabel && <Text className="ur-channel-provider" title={ch.provider}>供应商：{providerLabel}</Text>}
@@ -173,15 +196,15 @@ function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_hea
         />
         <div className="ur-channel-meta">
           <div className="ur-channel-stat">
-            <Text className="ur-channel-stat-label">成功率</Text>
+            <Text className="ur-channel-stat-label">窗口成功率</Text>
             <Text className="ur-channel-stat-value">{rate.toFixed(1)}%</Text>
           </div>
           <div className="ur-channel-stat">
-            <Text className="ur-channel-stat-label">请求</Text>
+            <Text className="ur-channel-stat-label">窗口请求</Text>
             <Text className="ur-channel-stat-value">{formatCompactNumber(total)}</Text>
           </div>
           <div className="ur-channel-stat">
-            <Text className="ur-channel-stat-label">失败</Text>
+            <Text className="ur-channel-stat-label">窗口失败</Text>
             <Text className="ur-channel-stat-value">{formatCompactNumber(ch.fail_count)}</Text>
           </div>
         </div>
@@ -190,7 +213,7 @@ function ChannelHealthCard({ ch }: { ch: NonNullable<DashboardStats['channel_hea
         {health.icon}
         <span>{health.label}</span>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -331,8 +354,7 @@ export default function DashboardPage() {
 		cost_yuan: microsToChartYuan(d.cost_micros),
   }));
   const modelData = [...(stats?.model_distribution || [])]
-    .sort((a, b) => b.requests - a.requests)
-    .slice(0, 6);
+    .sort((a, b) => b.requests - a.requests);
 	const walletThreshold = stats?.wallet_threshold_micros || '0';
 	const walletAvailable = parseMicros(stats?.wallet_balance_micros || '0') + parseMicros(stats?.wallet_granted_micros || '0');
   const hasWalletThreshold = parseMicros(walletThreshold) > 0n;
@@ -341,7 +363,7 @@ export default function DashboardPage() {
   const avgLatency = stats?.avg_latency_ms || 0;
   const p95Latency = stats?.p95_latency_ms ?? avgLatency;
   const p99Latency = stats?.p99_latency_ms ?? p95Latency;
-  const healthyChannels = (stats?.channel_health || []).filter(ch => channelHealthView(ch).tone === 'healthy').length;
+  const healthyChannels = (stats?.channel_health || []).filter(ch => ch.available ?? channelHealthView(ch).tone === 'healthy').length;
   const channelTotal = (stats?.channel_health || []).length;
   const enabledUnhealthyChannels = (stats?.channel_health || []).filter(ch => {
     const tone = channelHealthView(ch).tone;
@@ -497,8 +519,9 @@ export default function DashboardPage() {
               <div className="ur-dashboard-status-card">
                 <IconServer />
                 <div>
-                  <Text>窗口健康通道</Text>
+                  <Text>当前可路由连接</Text>
                   <strong>{healthyChannels}/{channelTotal || 0}</strong>
+                  <Text type="tertiary" size="small">已启用、凭证可用且未熔断</Text>
                 </div>
               </div>
             )}
@@ -528,14 +551,14 @@ export default function DashboardPage() {
             meta={<Text type="tertiary" size="small">当前窗口累计</Text>}
           />
           <MetricTile
-            label="成功率"
+            label="全模型成功率"
             value={`${((stats?.success_rate || 0) * 100).toFixed(2)}%`}
             tone={(stats?.success_rate || 0) >= 0.99 ? 'green' : 'red'}
             icon={<IconPercentage />}
             meta={comparableDelta && <><Text type="tertiary" size="small">较前 24h</Text><DeltaTag value={comparableDelta.success_rate * 100} suffix=" 个百分点" /></>}
           />
           <MetricTile
-            label="P95 延迟"
+            label="全模型 P95 延迟"
             value={`${p95Latency.toFixed(0)}ms`}
             tone={latencyTone(p95Latency)}
             icon={<IconClock />}
@@ -703,7 +726,7 @@ export default function DashboardPage() {
             )}
           </Surface>
 
-          <Surface title="延迟分位" description="当前窗口的平均与尾部延迟。" className="ur-latency-surface">
+          <Surface title="全模型延迟分位" description="当前窗口全部模型合并后的平均与尾部延迟；逐模型数据见下方。" className="ur-latency-surface">
             <div className="ur-latency-heading">
               <IconActivity />
               <div>
@@ -716,37 +739,43 @@ export default function DashboardPage() {
         </div>
 
         <div className={canReadChannelHealth ? 'ur-split-grid' : undefined}>
-          <Surface title="模型活动分布" description="按请求数展示 Top 模型，优先帮助定位成本和流量集中点。">
+          <Surface title="模型运行状态" description="逐模型展示当前窗口请求、成功率和 P95；同一模型的历史显示名会合并到规范标识。">
             {modelData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={modelData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--ur-border-soft)" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 12 }} stroke="var(--ur-text-muted)" />
-                  <YAxis type="category" dataKey="model" width={132} tick={{ fontSize: 12 }} stroke="var(--ur-text-muted)" />
-                  <RTooltip formatter={(v: any) => {
-                    const value = Number(v);
-                    const total = (stats?.model_distribution || []).reduce((s, m) => s + m.requests, 0);
-                    const pct = total > 0 ? (value / total * 100).toFixed(1) : '0';
-                    return [`${formatCompactNumber(value)} (${pct}%)`, '请求数'];
-                  }} />
-                  <Bar dataKey="requests" radius={[0, 4, 4, 0]} maxBarSize={24} isAnimationActive={false}>
-                    {modelData.map((_, i) => (
-                      <Cell key={i} fill={MODEL_COLORS[i % MODEL_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <Table
+                size="small"
+                pagination={false}
+                rowKey="model"
+                dataSource={modelData}
+                scroll={{ y: 300 }}
+                columns={[
+                  { title: '模型', dataIndex: 'model', render: (value: string) => <Tag size="small">{value}</Tag> },
+                  { title: '请求', dataIndex: 'requests', render: (value: number) => formatCompactNumber(value) },
+                  {
+                    title: '窗口状态',
+                    render: (_: unknown, row: NonNullable<DashboardStats['model_distribution']>[number]) => {
+                      const rate = row.success_rate ?? (row.requests > 0 ? (row.success_count || 0) / row.requests : 0);
+                      const status = rate >= 0.99 ? 'available' : rate >= 0.9 ? 'warning' : 'error';
+                      return <StatusTag status={status}>{(rate * 100).toFixed(1)}%</StatusTag>;
+                    },
+                  },
+                  {
+                    title: 'P95 延迟',
+                    dataIndex: 'p95_latency_ms',
+                    render: (value?: number) => value === undefined ? '—' : <LatencyText value={value} />,
+                  },
+                ]}
+              />
             ) : (
               <EmptyState title="暂无模型数据" />
             )}
           </Surface>
 
           {canReadChannelHealth && (
-            <Surface title="通道健康状态" description="聚合当前窗口内各通道成功、失败和可用状态。">
+            <Surface title="连接可用状态" description="当前是否可路由与窗口成功率分开显示；点击连接可进入处理。">
               {(stats?.channel_health || []).length > 0 ? (
                 <div className="ur-channel-list">
                   {(stats?.channel_health || []).map(ch => (
-                    <ChannelHealthCard key={ch.id} ch={ch} />
+                    <ChannelHealthCard key={ch.id} ch={ch} onOpen={() => navigate(`/channels?channel_id=${ch.id}`)} />
                   ))}
                 </div>
               ) : (

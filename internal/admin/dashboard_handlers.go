@@ -395,13 +395,36 @@ func (h *Handler) dashboardWalletInfo(ctx context.Context, orgID int64) (balance
 	return
 }
 
-// dashboardModelDistribution returns top 5 models by request count in the time range.
+// dashboardModelDistribution returns per-model request health for the selected
+// window. Historical human-readable labels containing spaces are normalized to
+// model-id form for this aggregate only (for example "Kimi K3" -> "kimi-k3");
+// already valid identifiers retain their exact spelling.
 func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, startTime, endTime string) ([]map[string]interface{}, error) {
 	rows, err := h.db.Query(ctx,
-		`SELECT model, COUNT(*) as cnt
-		 FROM call_logs
-		 WHERE org_id = $1 AND created_at >= $2 AND created_at < $3
-		 GROUP BY model ORDER BY cnt DESC LIMIT 5`, orgID, startTime, endTime)
+		`WITH scoped_logs AS (
+		   SELECT COALESCE(NULLIF(btrim(model),''),NULLIF(btrim(requested_model),''),'(unknown)') AS source_model,
+		          status_code,latency_ms
+		     FROM call_logs
+		    WHERE org_id=$1 AND created_at >= $2 AND created_at < $3
+		 ), normalized_logs AS (
+		   SELECT CASE
+		            WHEN source_model ~ '[[:space:]]'
+		              THEN lower(regexp_replace(source_model,'[[:space:]_]+','-','g'))
+		            ELSE source_model
+		          END AS model,
+		          status_code,latency_ms
+		     FROM scoped_logs
+		 )
+		 SELECT model,
+		        COUNT(*)::int AS requests,
+		        COUNT(*) FILTER (WHERE status_code >= 200 AND status_code < 300)::int AS success_count,
+		        COUNT(*) FILTER (WHERE status_code < 200 OR status_code >= 300)::int AS fail_count,
+		        COALESCE(AVG(latency_ms) FILTER (WHERE latency_ms > 0),0)::float8 AS avg_latency_ms,
+		        COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)
+		          FILTER (WHERE latency_ms > 0),0)::float8 AS p95_latency_ms
+		   FROM normalized_logs
+		  GROUP BY model
+		  ORDER BY requests DESC,model ASC`, orgID, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -409,11 +432,20 @@ func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, s
 	dist := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var model string
-		var cnt int
-		if err := rows.Scan(&model, &cnt); err != nil {
+		var requests, successCount, failCount int
+		var avgLatencyMS, p95LatencyMS float64
+		if err := rows.Scan(&model, &requests, &successCount, &failCount, &avgLatencyMS, &p95LatencyMS); err != nil {
 			return nil, err
 		}
-		dist = append(dist, map[string]interface{}{"model": model, "requests": cnt})
+		successRate := 0.0
+		if requests > 0 {
+			successRate = float64(successCount) / float64(requests)
+		}
+		dist = append(dist, map[string]interface{}{
+			"model": model, "requests": requests,
+			"success_count": successCount, "fail_count": failCount, "success_rate": successRate,
+			"avg_latency_ms": avgLatencyMS, "p95_latency_ms": p95LatencyMS,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -421,15 +453,42 @@ func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, s
 	return dist, nil
 }
 
-// dashboardChannelHealth returns channel health with success/fail counts and derived status.
+// dashboardChannelHealth separates current routability from historical window
+// results. A staged channel may be enabled by a stable runtime release, while a
+// published channel without an eligible credential is not currently routable.
 func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, startTime, endTime string) ([]map[string]interface{}, error) {
 	rows, err := h.db.Query(ctx,
-		`SELECT c.id, c.name, c.provider, c.status,
+		`SELECT c.id,c.name,c.provider,c.status,c.circuit_state,
+		        EXISTS (
+		          SELECT 1
+		            FROM runtime_change_slots rcs
+		            JOIN runtime_change_releases stable
+		              ON stable.id=rcs.stable_release_id AND stable.stage='active'
+		            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(stable.candidate->'overrides','[]'::jsonb)) AS runtime_override
+		           WHERE (runtime_override->>'channel_id')::bigint=c.id
+		             AND runtime_override->>'admission'='allow'
+		        ) AS runtime_published,
+		        EXISTS (
+		          SELECT 1
+		            FROM channel_keys ck
+		           WHERE ck.channel_id=c.id
+		             AND ck.status='active'
+		             AND (ck.cooldown_until IS NULL OR ck.cooldown_until <= NOW())
+		             AND (
+		               btrim(ck.allowed_models)='' OR EXISTS (
+		                 SELECT 1
+		                   FROM regexp_split_to_table(c.models,E'[,;；，\\n\\r]+') AS cm(model_name)
+		                   JOIN regexp_split_to_table(ck.allowed_models,E'[,;；，\\n\\r]+') AS am(model_name)
+		                     ON btrim(am.model_name)=btrim(cm.model_name)
+		                  WHERE btrim(cm.model_name)<>''
+		               )
+		             )
+		        ) AS credential_ready,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 200 AND cl.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 400 OR cl.status_code = 0 THEN 1 ELSE 0 END), 0) as fail_count
 		 FROM channels c
 		 LEFT JOIN call_logs cl ON cl.channel = c.name AND cl.org_id = $1 AND cl.created_at >= $2 AND cl.created_at < $3
-		 GROUP BY c.id, c.name, c.provider, c.status
+		 GROUP BY c.id,c.name,c.provider,c.status,c.circuit_state
 		 ORDER BY c.id`, orgID, startTime, endTime)
 	if err != nil {
 		return nil, err
@@ -438,22 +497,33 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, start
 	health := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id int
-		var name, provider, chStatus string
+		var name, provider, chStatus, circuitState string
+		var runtimePublished, credentialReady bool
 		var successCount, failCount int
-		if err := rows.Scan(&id, &name, &provider, &chStatus, &successCount, &failCount); err != nil {
+		if err := rows.Scan(&id, &name, &provider, &chStatus, &circuitState, &runtimePublished, &credentialReady, &successCount, &failCount); err != nil {
 			return nil, err
 		}
+		effectiveEnabled := chStatus == "active" || (chStatus == "staged" && runtimePublished)
+		available := effectiveEnabled && credentialReady && circuitState == "healthy"
 		status := "healthy"
-		if chStatus != "active" {
+		if chStatus == "disabled" {
 			status = "disabled"
+		} else if !effectiveEnabled {
+			status = "awaiting_release"
+		} else if !credentialReady {
+			status = "no_credential"
+		} else if circuitState != "healthy" {
+			status = "circuit_unavailable"
 		} else if failCount > 0 && successCount == 0 {
 			status = "error"
-		} else if failCount > 0 && float64(failCount)/float64(successCount+failCount) > 0.5 {
+		} else if failCount > 0 {
 			status = "warning"
 		}
 		health = append(health, map[string]interface{}{
 			"id": id, "name": name, "provider": provider,
-			"enabled": chStatus == "active", "status": status,
+			"base_status": chStatus, "runtime_published": runtimePublished,
+			"enabled": effectiveEnabled, "credential_ready": credentialReady,
+			"available": available, "circuit_state": circuitState, "status": status,
 			"success_count": successCount, "fail_count": failCount,
 		})
 	}

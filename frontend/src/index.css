@@ -882,6 +882,7 @@ body {
 
 .ur-channel-card {
   display: grid;
+  width: 100%;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: start;
@@ -890,6 +891,19 @@ body {
   padding: 14px;
   background: rgba(255,255,255,0.7);
   box-shadow: 0 10px 24px rgba(57, 45, 87, 0.06);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.ur-channel-card:hover,
+.ur-channel-card:focus-visible {
+  border-color: rgba(31, 111, 235, 0.35);
+  box-shadow: 0 12px 28px rgba(31, 111, 235, 0.12);
+  transform: translateY(-1px);
+  outline: none;
 }
 
 .ur-channel-name {

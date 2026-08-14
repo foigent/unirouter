@@ -1,20 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import ChannelKeysPage from '../ChannelKeysPage';
 
 const mockGetChannelKeys = vi.fn();
 const mockGetChannels = vi.fn();
 const mockUpdateChannelKey = vi.fn();
+const mockCreateChannelKey = vi.fn();
 
 vi.mock('../../api/client', () => ({
   api: {
     getChannelKeys: (...args: any[]) => mockGetChannelKeys(...args),
     getChannels: (...args: any[]) => mockGetChannels(...args),
     updateChannelKey: (...args: any[]) => mockUpdateChannelKey(...args),
-    createChannelKey: vi.fn(),
+    createChannelKey: (...args: any[]) => mockCreateChannelKey(...args),
     deleteChannelKey: vi.fn(),
   },
 }));
+
+function renderChannelKeys() {
+  return render(<MemoryRouter><ChannelKeysPage /></MemoryRouter>);
+}
 
 describe('ChannelKeysPage', () => {
   beforeEach(() => {
@@ -35,10 +41,11 @@ describe('ChannelKeysPage', () => {
     });
     mockGetChannels.mockResolvedValue({ data: [{ id: 3, name: 'mimo', status: 'staged', models: 'mimo-v2.5-pro,mimo-v2.5' }] });
     mockUpdateChannelKey.mockResolvedValue({ success: true });
+    mockCreateChannelKey.mockResolvedValue({ id: 8 });
   });
 
   it('updates model scope without forcing an upstream secret rotation', async () => {
-    render(<ChannelKeysPage />);
+    renderChannelKeys();
 
     await screen.findByText('mimo-v2.5-pro，mimo-v2.5');
     fireEvent.click(screen.getByRole('button', { name: '编辑供应商凭证 mimo' }));
@@ -56,7 +63,7 @@ describe('ChannelKeysPage', () => {
   });
 
   it('submits a newly entered supplier API key when rotating a staged connection credential', async () => {
-    render(<ChannelKeysPage />);
+    renderChannelKeys();
 
     await screen.findByText('mimo-v2.5-pro，mimo-v2.5');
     fireEvent.click(screen.getByRole('button', { name: '编辑供应商凭证 mimo' }));
@@ -75,7 +82,7 @@ describe('ChannelKeysPage', () => {
 
   it('keeps a supplier credential save failure visible in the editor', async () => {
 	mockUpdateChannelKey.mockRejectedValueOnce(new Error('数据库暂不可用'));
-	render(<ChannelKeysPage />);
+	renderChannelKeys();
 
 	await screen.findByText('mimo-v2.5-pro，mimo-v2.5');
 	fireEvent.click(screen.getByRole('button', { name: '编辑供应商凭证 mimo' }));
@@ -89,10 +96,29 @@ describe('ChannelKeysPage', () => {
   it('shows an explicit retry state when supplier credentials cannot be loaded', async () => {
     mockGetChannelKeys.mockRejectedValueOnce(new Error('unavailable'));
 
-    render(<ChannelKeysPage />);
+    renderChannelKeys();
 
     expect(await screen.findByRole('heading', { name: '供应商凭证加载失败' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新加载供应商凭证' })).toBeTruthy();
+  });
+
+  it('does not offer a runtime-published active connection as an editable credential target', async () => {
+    mockGetChannels.mockResolvedValueOnce({
+      data: [
+        { id: 3, name: 'Deepseek', status: 'staged', models: 'deepseek-v4-pro' },
+        { id: 14, name: 'Kimi', status: 'staged', effective_status: 'active', models: 'kimi-k3' },
+      ],
+    });
+
+    renderChannelKeys();
+    fireEvent.click(await screen.findByText('新增供应商凭证'));
+
+    expect(await screen.findByText(/Kimi 正在生效，不能直接新增或轮换凭证/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('combobox', { name: '所属通道' }));
+    const runtimeOption = await screen.findByText('Kimi · 生效（运行时发布）');
+    expect(runtimeOption.closest('.semi-select-option')).toHaveClass('semi-select-option-disabled');
+    fireEvent.click(runtimeOption);
+    expect(mockCreateChannelKey).not.toHaveBeenCalled();
   });
 
   it('explains an enabled credential on a disabled channel with no model overlap', async () => {
@@ -120,7 +146,7 @@ describe('ChannelKeysPage', () => {
       }],
     });
 
-    render(<ChannelKeysPage />);
+    renderChannelKeys();
 
     expect(await screen.findByText('凭证启用')).toBeTruthy();
     expect(screen.getByText('通道禁用')).toBeTruthy();

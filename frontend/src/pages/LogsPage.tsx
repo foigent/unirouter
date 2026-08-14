@@ -342,6 +342,13 @@ export default function LogsPage() {
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
   const customerContextReady = !platform || customerContext.state === 'ready';
+  const providerFilterOptions = useMemo(() => Array.from(new Set(
+    logs.map(log => log.provider?.trim()).filter((value): value is string => Boolean(value))
+  )).sort((a, b) => a.localeCompare(b)), [logs]);
+  const modelFilterOptions = useMemo(() => Array.from(new Set([
+    ...modelOptions,
+    ...logs.flatMap(log => [log.model?.trim(), log.requested_model?.trim()]),
+  ].filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b)), [logs, modelOptions]);
 
   const loadTrace = useCallback((record: Log) => {
     const requestSequence = ++traceRequestRef.current;
@@ -724,14 +731,17 @@ export default function LogsPage() {
 
           <div className="ur-filter-group">
             <Text className="ur-filter-label">供应商</Text>
-            <Input
+            <Select
               size="small"
-              placeholder="供应商名称"
+              placeholder="选择供应商"
               value={filters.provider || undefined}
-              onChange={(v) => updateFilter('provider', v)}
+              onChange={(v) => { setFilters(prev => ({ ...prev, provider: v as string || undefined })); setPage(1); }}
               style={{ width: '100%' }}
               showClear
-            />
+              filter
+            >
+              {providerFilterOptions.map(provider => <Select.Option key={provider} value={provider}>{provider}</Select.Option>)}
+            </Select>
           </div>
 
           <div className="ur-filter-group">
@@ -740,11 +750,12 @@ export default function LogsPage() {
               size="small"
               placeholder="模型名称"
               value={filters.model || undefined}
-              onChange={(v) => updateFilter('model', v as string)}
+              onChange={(v) => { setFilters(prev => ({ ...prev, model: v as string || undefined })); setPage(1); }}
               style={{ width: '100%' }}
+              showClear
               filter
             >
-              {modelOptions.map(m => <Select.Option key={m} value={m}>{m}</Select.Option>)}
+              {modelFilterOptions.map(m => <Select.Option key={m} value={m}>{m}</Select.Option>)}
             </Select>
           </div>
 

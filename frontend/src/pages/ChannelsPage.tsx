@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Input, Typography, Descriptions } from '@douyinfe/semi-ui';
+import { Banner, Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Input, Typography, Descriptions } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
@@ -306,6 +306,8 @@ export default function ChannelsPage() {
     [providerPacks, selectedChannel],
   );
   const selectedPack = selectedPackMatch?.pack;
+  const editingEffectiveStatus = editing ? effectiveChannelStatus(editing) : '';
+  const editingIsActive = editingEffectiveStatus === 'active';
   const selectedConfigFacts = useMemo(
     () => selectedChannel ? adapterConfigFacts(selectedChannel) : [],
     [selectedChannel],
@@ -346,6 +348,24 @@ export default function ChannelsPage() {
   };
 
   const handleSubmit = async (values: Record<string, any>) => {
+    if (editing && editingIsActive && values.status === 'disabled') {
+      try {
+        await api.updateChannel(editing.id, {
+          status: 'disabled',
+          expected_routing_epoch: editing.routing_epoch,
+        });
+        Toast.success(`${editing.name} 已紧急禁用；现在可以安全新增或轮换供应商凭证`);
+        closeDrawer();
+        load(page, pageSize, editing.id);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          Toast.error(channelConflictMessage(error));
+        } else {
+          Toast.error(channelUpdateErrorMessage(error));
+        }
+      }
+      return;
+    }
     let adapterConfig: Record<string, unknown>;
     try {
       adapterConfig = normalizeAdapterConfig(values.adapter_config) as Record<string, unknown>;
@@ -444,7 +464,7 @@ export default function ChannelsPage() {
       priority: editing.priority,
       routing_weight: editing.routing_weight,
       degradation_threshold: editing.degradation_threshold,
-      status: editing.status,
+      status: effectiveChannelStatus(editing) === 'active' ? 'disabled' : editing.status,
     } : {
       adapter_type: 'openai_compatible',
       adapter_config: '{}',
@@ -785,8 +805,14 @@ export default function ChannelsPage() {
         onCancel={closeDrawer}
         width={480}
       >
+        {editingIsActive && <Banner
+          type="warning"
+          description="该连接当前由运行时发布生效。为避免绕过发布门禁，本表单只执行紧急禁用；连接参数不会随本次操作修改。禁用后可前往“供应商凭证”新增或轮换 Key。"
+          closeIcon={null}
+          style={{ marginBottom: 16 }}
+        />}
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
-          <Form.Input field="name" label="通道名称" rules={[{ required: true, message: '必填' }]} />
+          <Form.Input field="name" label="通道名称" disabled={editingIsActive} rules={[{ required: true, message: '必填' }]} />
           <Form.Select field="provider" label="供应商身份" rules={[{ required: true, message: '必填' }]}
             optionList={[
               { label: 'OpenAI', value: 'openai' },
@@ -796,15 +822,17 @@ export default function ChannelsPage() {
               { label: 'Kimi / Moonshot（OpenAI-compatible）', value: 'kimi' },
               { label: '自定义 OpenAI-compatible', value: 'custom' },
             ]}
+            disabled={editingIsActive}
             onChange={(value) => formApi?.setValue('adapter_type', adapterTypeForProvider(value))}
             extraText="这里记录实际服务供应商，用于审计和运营；不会因为选择 OpenAI-compatible 协议而把 DeepSeek、Kimi 或自定义服务改名为 OpenAI。"
           />
-          <Form.Input field="base_url" label="服务地址（Base URL）" rules={[{ required: true, message: '必填' }]} />
+          <Form.Input field="base_url" label="服务地址（Base URL）" disabled={editingIsActive} rules={[{ required: true, message: '必填' }]} />
           <Form.Input
             field="models"
             label="支持模型"
             placeholder="如 gpt-4o；gpt-4o-mini"
             extraText="可用中英文逗号、分号或换行分隔；保存时会去空格、去重并统一为英文逗号。"
+            disabled={editingIsActive}
             rules={[{ required: true, message: '必填' }]}
           />
 		  {!editing && <Form.Input
@@ -820,6 +848,7 @@ export default function ChannelsPage() {
               { label: 'Anthropic Native', value: 'anthropic_native' },
               { label: 'Azure OpenAI (deployment-scoped)', value: 'azure_openai' },
             ]}
+            disabled={editingIsActive}
             extraText="Adapter 只决定 UniRouter 如何组装和解析请求；离线协议夹具不等于真实供应商连通验证。"
           />
           <Form.TextArea
@@ -827,16 +856,19 @@ export default function ChannelsPage() {
             label="Adapter Config (JSON)"
             placeholder='Anthropic: {"anthropic_version":"2023-06-01"} · Azure: {"api_version":"2024-10-21","deployment":"gpt-4o-prod"}'
             rows={4}
+            disabled={editingIsActive}
           />
-          <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} />
-          <Form.InputNumber field="routing_weight" label="同优先级权重 (1-1000)" initValue={100} extraText="只在优先级相同时分配流量；例如 100 与 200 约为 1:2。" />
-          <Form.InputNumber field="degradation_threshold" label="熔断阈值 (连续失败次数)" initValue={10} extraText="达到次数后暂停该通道，恢复窗口到期后只允许一个探针请求。" />
-          {editing && <Form.Select field="status" label="状态" optionList={editing.status === 'active'
-            ? [{ label: '保持生效（仅未改运行字段时）', value: 'active' }, ...channelStatusOptions]
-            : channelStatusOptions} extraText="staged/disabled 不能直接改回 active；请通过运行时发布提升。" />}
+          <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} disabled={editingIsActive} />
+          <Form.InputNumber field="routing_weight" label="同优先级权重 (1-1000)" initValue={100} disabled={editingIsActive} extraText="只在优先级相同时分配流量；例如 100 与 200 约为 1:2。" />
+          <Form.InputNumber field="degradation_threshold" label="熔断阈值 (连续失败次数)" initValue={10} disabled={editingIsActive} extraText="达到次数后暂停该通道，恢复窗口到期后只允许一个探针请求。" />
+          {editing && <Form.Select field="status" label="状态" optionList={editingIsActive
+            ? [{ label: '紧急禁用（disabled）', value: 'disabled' }]
+            : channelStatusOptions} extraText={editingIsActive
+              ? '仅停止当前连接；不会删除历史发布记录，禁用状态不会被旧发布重新启用。'
+              : 'staged/disabled 不能直接改回 active；请通过运行时发布提升。'} />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
-			<Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '更新' : '保存并进入检测'}</Button>
+			<Button type="primary" onClick={() => formApi?.submitForm()}>{editingIsActive ? '确认紧急禁用' : editing ? '更新' : '保存并进入检测'}</Button>
           </div>
         </Form>
       </SideSheet>

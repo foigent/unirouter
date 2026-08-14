@@ -265,6 +265,14 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 
   it('keeps the epoch conflict message and maps other backend failures to safe useful text', async () => {
     const { ApiError } = await import('../../api/client');
+    mocks.getChannels.mockResolvedValue({
+      data: [{
+        id: 7, name: 'primary-cn', provider: 'openai', base_url: 'https://provider.invalid', models: 'gpt-4o',
+        adapter_type: 'openai_compatible', adapter_config: {}, priority: 10, routing_weight: 200, routing_epoch: 9,
+        degradation_threshold: 4, status: 'disabled', circuit_state: 'healthy', fail_count: 0, created_at: '2026-07-12T00:00:00Z',
+      }],
+      total: 1,
+    });
     mocks.updateChannel.mockRejectedValueOnce(new ApiError('status must be active or disabled', 400, null));
 
     render(<ChannelsPage />);
@@ -275,5 +283,30 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     mocks.updateChannel.mockRejectedValueOnce(new ApiError('stale', 409, null));
     fireEvent.click(screen.getByRole('button', { name: '更新' }));
     expect(await screen.findByText('该通道已被其他管理员修改或正由运行时发布接管，请刷新后重试')).toBeTruthy();
+  });
+
+  it('emergency-disables a runtime-published staged connection with a status-only update', async () => {
+    mocks.getChannels.mockResolvedValueOnce({
+      data: [{
+        id: 14, name: 'Kimi', provider: 'kimi', base_url: 'https://api.moonshot.cn/v1', models: 'kimi-k3',
+        adapter_type: 'openai_compatible', adapter_config: {}, priority: 100, routing_weight: 100, routing_epoch: 6,
+        degradation_threshold: 10, status: 'staged', effective_status: 'active', published_models: 'kimi-k3',
+        circuit_state: 'healthy', fail_count: 0, created_at: '2026-08-14T00:00:00Z',
+      }],
+      total: 1,
+    });
+
+    render(<ChannelsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑通道 Kimi' }));
+
+    expect(await screen.findByText(/当前由运行时发布生效/)).toBeTruthy();
+    expect(screen.getByLabelText('服务地址（Base URL）')).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('紧急禁用');
+    fireEvent.click(screen.getByRole('button', { name: '确认紧急禁用' }));
+
+    await waitFor(() => expect(mocks.updateChannel).toHaveBeenCalledWith(14, {
+      status: 'disabled',
+      expected_routing_epoch: 6,
+    }));
   });
 });
