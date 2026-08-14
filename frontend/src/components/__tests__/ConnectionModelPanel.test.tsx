@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ConnectionModelPanel, { exactModelTestResult } from '../ConnectionModelPanel';
+import ConnectionModelPanel, { exactModelTestResult, type ModelConnectionChannel } from '../ConnectionModelPanel';
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../api/client', () => ({ api: mocks }));
 
-const channel = {
+const channel: ModelConnectionChannel = {
   id: 12,
   name: 'DeepSeek',
   provider: 'deepseek',
@@ -23,9 +23,9 @@ const channel = {
 
 const credentials = [{ channel_id: 12, status: 'active', allowed_models: 'deepseek-v4-flash,deepseek-v4-pro' }];
 
-function renderPanel(modelsPublishedElsewhere = new Set<string>()) {
+function renderPanel(modelsPublishedElsewhere = new Set<string>(), selectedChannel = channel) {
   const props = {
-    channel,
+    channel: selectedChannel,
     credentials,
     credentialLoadState: 'ready' as const,
     modelsPublishedElsewhere,
@@ -105,7 +105,7 @@ describe('ConnectionModelPanel', () => {
     const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: '检测' }));
     fireEvent.click(await within(row).findByRole('button', { name: '替换现有连接' }));
-    expect(props.onOpenRouteManagement).toHaveBeenCalledWith('deepseek-v4-pro');
+    expect(props.onOpenRouteManagement).toHaveBeenCalledWith('deepseek-v4-pro', 'replace');
     expect(mocks.createRuntimeChange).not.toHaveBeenCalled();
   });
 
@@ -123,5 +123,20 @@ describe('ConnectionModelPanel', () => {
     expect(await within(row).findByRole('button', { name: '替换现有连接' })).toBeTruthy();
     expect(screen.queryByRole('dialog', { name: '启用 deepseek-v4-pro？' })).toBeNull();
     expect(mocks.createRuntimeChange).not.toHaveBeenCalled();
+  });
+
+  it('does not call a disabled retained release enabled and provides the recovery path', async () => {
+    const props = renderPanel(new Set(), {
+      ...channel,
+      status: 'disabled',
+      effective_status: 'disabled',
+      published_models: 'deepseek-v4-pro',
+    });
+
+    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
+    expect(within(row).getByText('当前不可调用（发布记录保留）')).toBeTruthy();
+    expect(screen.getByText(/保留的发布记录只用于审计，不代表模型仍可调用/)).toBeTruthy();
+    fireEvent.click(within(row).getByRole('button', { name: '查看恢复步骤' }));
+    expect(props.onOpenRouteManagement).toHaveBeenCalledWith('deepseek-v4-pro', 'recover');
   });
 });

@@ -45,7 +45,7 @@ interface ConnectionModelPanelProps {
   modelsPublishedElsewhere: Set<string>;
   onModelEnabled: (model: string) => void;
   onManageCredentials: () => void;
-  onOpenRouteManagement: (model: string) => void;
+  onOpenRouteManagement: (model: string, intent?: 'replace' | 'recover') => void;
   onDiagnose: (model: string) => void;
 }
 
@@ -57,6 +57,10 @@ function setMembership(current: Set<string>, model: string, present: boolean) {
 
 export function modelIsPublished(channel: Pick<ModelConnectionChannel, 'published_models'>, model: string) {
   return parseChannelModels(channel.published_models).includes(model);
+}
+
+function effectiveConnectionStatus(channel: ModelConnectionChannel) {
+  return channel.effective_status || channel.status;
 }
 
 export function exactModelTestResult(
@@ -103,6 +107,8 @@ export default function ConnectionModelPanel({
   onDiagnose,
 }: ConnectionModelPanelProps) {
   const models = useMemo(() => parseChannelModels(channel.models), [channel.models]);
+  const connectionStatus = effectiveConnectionStatus(channel);
+  const hasRetainedRelease = models.some(model => modelIsPublished(channel, model)) && connectionStatus !== 'active';
   const [results, setResults] = useState<Record<string, ConnectionModelTestResult>>({});
   const [testingModels, setTestingModels] = useState<Set<string>>(new Set());
   const [batchTesting, setBatchTesting] = useState(false);
@@ -288,12 +294,14 @@ export default function ConnectionModelPanel({
     {
       title: '调用状态',
       key: 'route',
-      width: 150,
-      render: (_: unknown, row: { model: string }) => modelIsPublished(channel, row.model) || results[row.model]?.enabled
-        ? <StatusTag status="success">已启用</StatusTag>
-        : modelsPublishedElsewhere.has(row.model)
-          ? <StatusTag status="warning">其他连接已启用</StatusTag>
-          : <StatusTag status="pending">未启用</StatusTag>,
+      width: 220,
+      render: (_: unknown, row: { model: string }) => modelIsPublished(channel, row.model) && connectionStatus !== 'active'
+        ? <StatusTag status="failed">当前不可调用（发布记录保留）</StatusTag>
+        : modelIsPublished(channel, row.model) || results[row.model]?.enabled
+          ? <StatusTag status="success">已启用</StatusTag>
+          : modelsPublishedElsewhere.has(row.model)
+            ? <StatusTag status="warning">其他连接已启用</StatusTag>
+            : <StatusTag status="pending">未启用</StatusTag>,
     },
     {
       title: '结果',
@@ -312,6 +320,7 @@ export default function ConnectionModelPanel({
       render: (_: unknown, row: { model: string }) => {
         const result = results[row.model];
         const publishedHere = modelIsPublished(channel, row.model) || result?.enabled;
+        const retainedRelease = modelIsPublished(channel, row.model) && connectionStatus !== 'active';
         const replacement = modelsPublishedElsewhere.has(row.model) || result?.route_conflict;
         return <Space wrap>
           <Button
@@ -320,8 +329,9 @@ export default function ConnectionModelPanel({
             disabled={batchTesting || credentialLoadState !== 'ready'}
             onClick={() => void testModel(row.model)}
           >检测</Button>
+          {retainedRelease && <Button size="small" type="primary" onClick={() => onOpenRouteManagement(row.model, 'recover')}>查看恢复步骤</Button>}
           {!publishedHere && result?.success && (replacement
-            ? <Button size="small" type="primary" onClick={() => onOpenRouteManagement(row.model)}>替换现有连接</Button>
+            ? <Button size="small" type="primary" onClick={() => onOpenRouteManagement(row.model, 'replace')}>替换现有连接</Button>
             : <Button size="small" type="primary" loading={enablingModel === row.model || checkingRouteModel === row.model} onClick={() => void prepareEnable(row.model)}>启用此模型</Button>)}
           <Button size="small" type="tertiary" onClick={() => onDiagnose(row.model)}>调用诊断</Button>
         </Space>;
@@ -345,6 +355,12 @@ export default function ConnectionModelPanel({
     >
       {credentialLoadState === 'loading' && <Banner type="info" description="正在核对当前连接的供应商凭证；完成前不会发起真实请求。" closeIcon={null} style={{ marginBottom: 12 }} />}
       {credentialLoadState === 'error' && <Banner type="danger" description={credentialLoadError || '供应商凭证状态不可用；已阻止真实检测。'} closeIcon={null} style={{ marginBottom: 12 }} />}
+      {hasRetainedRelease && <Banner
+        type="warning"
+        description="连接当前不可调用，保留的发布记录只用于审计，不代表模型仍可调用。恢复时先处理旧发布占位，再将连接改为待发布、完成真实检测并重新启用；旧发布不会自动复活连接。"
+        closeIcon={null}
+        style={{ marginBottom: 12 }}
+      />}
       <Table
         dataSource={models.map(model => ({ model }))}
         columns={columns}
