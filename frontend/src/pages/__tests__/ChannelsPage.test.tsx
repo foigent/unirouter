@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   validateRuntimeChange: vi.fn(),
   activateInitialRuntimeChange: vi.fn(),
   getRuntimeChangeSlot: vi.fn(),
+  getRuntimeChanges: vi.fn(),
+  rollbackRuntimeChange: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({
@@ -120,6 +122,8 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     mocks.validateRuntimeChange.mockResolvedValue({ release_ref: 'rcr_test', version: 2 });
     mocks.activateInitialRuntimeChange.mockResolvedValue({ release_ref: 'rcr_test', version: 3 });
     mocks.getRuntimeChangeSlot.mockResolvedValue({ model_name: 'gpt-4o', runtime_mutation: 'none' });
+    mocks.getRuntimeChanges.mockResolvedValue({ data: [], total: 0 });
+    mocks.rollbackRuntimeChange.mockResolvedValue({});
   });
 
   it('explains weight semantics and renders safe candidate/exclusion preview', async () => {
@@ -311,7 +315,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
   });
 
   it('opens the exact recovery release for a disabled connection with retained evidence', async () => {
-    mocks.getChannels.mockResolvedValueOnce({
+    mocks.getChannels.mockResolvedValue({
       data: [{
         id: 14, name: 'Kimi', provider: 'kimi', base_url: 'https://api.moonshot.cn/v1', models: 'kimi-k3',
         adapter_type: 'openai_compatible', adapter_config: {}, priority: 100, routing_weight: 100, routing_epoch: 7,
@@ -320,15 +324,37 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
       }],
       total: 1,
     });
+    mocks.getRuntimeChanges.mockResolvedValue({
+      data: [{
+        id: 31,
+        release_ref: 'rcr_kimi_active',
+        model_name: 'kimi-k3',
+        candidate_hash: `sha256:${'a'.repeat(64)}`,
+        baseline_hash: `sha256:${'b'.repeat(64)}`,
+        candidate: { contract_version: 'unirouter.runtime-change-candidate.v1', model_name: 'kimi-k3', overrides: [{ channel_id: 14, expected_routing_epoch: 6, admission: 'allow' }] },
+        provider_pack_pins: [],
+        simulation_report: { report_version: 'v1', overall_risk: 'compatible' },
+        overall_risk: 'compatible',
+        stage: 'active',
+        version: 3,
+        canary_basis_points: 0,
+        reason: 'Kimi 首次启用',
+        created_at: '2026-08-13T00:00:00Z',
+        updated_at: '2026-08-13T00:00:00Z',
+      }],
+      total: 1,
+    });
 
     render(<ChannelsPage />);
     fireEvent.click(await screen.findByRole('button', { name: '查看恢复步骤' }));
 
     const params = new URLSearchParams(window.location.search);
-    expect(window.location.pathname).toBe('/model-governance');
+    expect(window.location.pathname).toBe('/channels');
     expect(params.get('channel_id')).toBe('14');
     expect(params.get('model')).toBe('kimi-k3');
-    expect(params.get('tab')).toBe('releases');
     expect(params.get('intent')).toBe('recover');
+    expect(await screen.findByRole('heading', { name: 'kimi-k3 · 安全恢复' })).toBeTruthy();
+    expect(screen.getByText(/不依赖“模型目录与灰度”商业授权/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '回滚旧发布占位' })).toBeTruthy();
   });
 });
