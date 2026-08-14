@@ -459,10 +459,10 @@ try {
     await readiness.page.goto(runtimePath);
     await visible(readiness.page.getByText('查看高级诊断证据', { exact: true }));
     await readiness.page.getByText('查看高级诊断证据', { exact: true }).click();
-    await visible(readiness.page.getByText('model_unregistered', { exact: true }));
+    await visible(readiness.page.getByText('model_governance_not_licensed_optional', { exact: true }));
     const runtimeFacts = readiness.page.locator('.ur-readiness-summary-grid');
     await visible(runtimeFacts);
-    assert.ok((await runtimeFacts.textContent()).includes('模型记录受阻需要处理后才能使用'));
+    assert.ok((await runtimeFacts.textContent()).includes('模型记录不适用 / 可选当前流程不要求'));
     assert.ok((await runtimeFacts.textContent()).includes('当前可用路由就绪条件已满足'));
     journeys.push('readiness_four_facts_optional_states');
   } finally {
