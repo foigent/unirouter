@@ -41,6 +41,15 @@ var concreteFeatures = []string{
 	FeatureDataExchange,
 }
 
+// Core management features are part of every enforceable commercial License.
+// They remain named capabilities so clients can fail closed when the License
+// itself is unavailable, but they are not independently sold feature flags.
+var coreManagementFeatures = map[string]bool{
+	FeatureGuardrails:      true,
+	FeatureNotifications:   true,
+	FeatureModelGovernance: true,
+}
+
 var supportedLimits = map[string]bool{
 	LimitActiveAPIKeys: true, LimitActiveUsers: true,
 	LimitActiveProjects: true, LimitActiveChannels: true,
@@ -98,7 +107,8 @@ func (r *Runtime) Status() Status {
 }
 
 // Capabilities expands wildcard and partial licenses into one stable boolean
-// result per supported concrete feature. Invalid, missing, expired, not-yet-
+// result per supported concrete feature. Every enforceable commercial License
+// includes the core management features. Invalid, missing, expired, not-yet-
 // valid and deployment-mismatched licenses deny every feature.
 func (r *Runtime) Capabilities() CapabilityStatus {
 	status := r.Status()
@@ -124,7 +134,7 @@ func authorizeStatus(status Status, feature string) Decision {
 		decision.Code, decision.Message = denialForStatus(status)
 		return decision
 	}
-	if feature != "" && !hasFeature(status.License, feature) {
+	if feature != "" && !coreManagementFeatures[feature] && !hasFeature(status.License, feature) {
 		decision.Code = "license_error.feature_not_licensed"
 		decision.Message = "The commercial license does not authorize this feature"
 		return decision

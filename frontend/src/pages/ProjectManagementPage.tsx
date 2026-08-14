@@ -862,7 +862,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
             {canManageMembers && (
               <TabPane tab="模型范围" itemKey="models">
                 {!licenseModelGovernance ? (
-                  <EmptyState title="当前授权未包含模型治理" description="项目其他功能仍可使用；平台管理员可在商业授权中更新能力。" />
+                  <EmptyState title="模型治理暂不可用" description="模型治理随有效商业授权自动包含；请刷新授权状态，若仍不可用请检查许可证有效性。" />
                 ) : modelError ? (
                   <Banner type="danger" description={modelError} />
                 ) : (

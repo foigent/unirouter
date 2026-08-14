@@ -225,8 +225,9 @@ allowed = key_allows(requested_model_or_alias)
 
 Retired models must not be callable even if old keys or project sets reference them.
 
-All model-set list/assignment routes require the commercial
-`model_governance` feature. `project_admin` may list model sets only after live
+All model-set list/assignment routes require an enforceable commercial License;
+model governance is included as a core management module rather than a separate
+signed feature item. `project_admin` may list model sets only after live
 membership authorization and may read/replace `/projects/{id}/model-sets` only
 for that project. Its organization role and compatibility shadow do not grant
 project authority. It cannot create model sets or read/replace

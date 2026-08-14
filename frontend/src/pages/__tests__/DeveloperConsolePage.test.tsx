@@ -85,10 +85,13 @@ function accessWith(
   status: LicenseAccess['status'] = 'active',
   enforceable = true,
 ): LicenseAccess {
+  const coreManagement = enforceable
+    ? { guardrails: true, notifications: true, model_governance: true }
+    : {};
   return {
     status,
     enforceable,
-    features: { ...DENIED_FEATURES, ...Object.fromEntries(enabled.map(feature => [feature, true])) },
+    features: { ...DENIED_FEATURES, ...coreManagement, ...Object.fromEntries(enabled.map(feature => [feature, true])) },
   };
 }
 
@@ -415,16 +418,15 @@ describe('DeveloperConsolePage', () => {
     expect(within(taskNav).getByRole('link', { name: '已启用模型' })).toBeTruthy();
   });
 
-  it('degrades only the model-governance section when a partial license omits it', async () => {
-    renderPage('project_admin', accessWith(['gateway', 'notifications']));
+  it('keeps core management sections available when the signed list only licenses the gateway', async () => {
+    renderPage('project_admin', accessWith(['gateway']));
 
     expect(await screen.findByText('frontend')).toBeTruthy();
     expect(screen.getByText('req-001')).toBeTruthy();
     expect(screen.getByText('我的模型用量')).toBeTruthy();
-    expect(mockGetModelCatalog).not.toHaveBeenCalled();
-    expect(screen.getByText('模型目录暂不可用')).toBeTruthy();
-    expect(screen.getAllByText(/当前商业授权未包含「模型治理」/).length).toBeGreaterThan(0);
-    expect(screen.getByPlaceholderText('输入现有模型或别名')).toBeTruthy();
+    expect(mockGetModelCatalog).toHaveBeenCalled();
+    expect(screen.getByText('Company Chat')).toBeTruthy();
+    expect(screen.queryByText('模型目录暂不可用')).toBeNull();
     expect(screen.getByRole('button', { name: '打开当前项目通知' }).hasAttribute('disabled')).toBe(false);
   });
 
@@ -442,14 +444,14 @@ describe('DeveloperConsolePage', () => {
     expect(screen.queryByPlaceholderText('粘贴项目访问凭证')).toBeNull();
   });
 
-  it('keeps the project notification entry visible but locked when notifications are unlicensed', async () => {
-    renderPage('project_admin', accessWith(['gateway', 'model_governance']));
+  it('keeps project notifications available without a separate signed notifications item', async () => {
+    renderPage('project_admin', accessWith(['gateway']));
 
     expect(await screen.findByText('Core Project')).toBeTruthy();
-    const notificationButton = screen.getByRole('button', { name: '项目通知（授权未包含）' });
-    expect(notificationButton.hasAttribute('disabled')).toBe(true);
+    const notificationButton = screen.getByRole('button', { name: '打开当前项目通知' });
+    expect(notificationButton.hasAttribute('disabled')).toBe(false);
     fireEvent.click(notificationButton);
-    expect(screen.getByTestId('location')).toHaveTextContent('/developer');
+    expect(screen.getByTestId('location')).toHaveTextContent('/notifications?project_id=7');
   });
 
   it('fail-closes every licensed section for an expired wildcard projection without hiding unrelated data', async () => {
@@ -463,7 +465,7 @@ describe('DeveloperConsolePage', () => {
     expect(screen.getByText('模型目录暂不可用')).toBeTruthy();
     expect(screen.getByText('模型接入暂不可用')).toBeTruthy();
     expect(screen.getByText('调试调用暂不可用')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '项目通知（授权未包含）' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: '项目通知（商业授权不可用）' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getAllByText(/当前商业授权已过期/).length).toBeGreaterThan(0);
   });
 });

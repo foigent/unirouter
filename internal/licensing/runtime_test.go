@@ -43,6 +43,11 @@ func TestRuntimeAuthorizesFeaturesAndLimits(t *testing.T) {
 	if decision := runtime.Authorize(FeatureAgentCapabilities); decision.Allowed || decision.Code != "license_error.feature_not_licensed" {
 		t.Fatalf("agent feature should be denied: %#v", decision)
 	}
+	for _, feature := range []string{FeatureGuardrails, FeatureNotifications, FeatureModelGovernance} {
+		if decision := runtime.Authorize(feature); !decision.Allowed {
+			t.Fatalf("core management feature %s should follow the enforceable License: %#v", feature, decision)
+		}
+	}
 	if limit, ok := runtime.Limit("active_projects"); !ok || limit != 20 {
 		t.Fatalf("expected signed project limit, got %d %v", limit, ok)
 	}
@@ -50,16 +55,17 @@ func TestRuntimeAuthorizesFeaturesAndLimits(t *testing.T) {
 
 func TestRuntimeCapabilitiesExposeOnlyConcreteAuthorizationResults(t *testing.T) {
 	t.Run("partial", func(t *testing.T) {
-		runtime, _ := commercialRuntimeFixture(t, []string{FeatureGateway, FeatureNotifications})
+		runtime, _ := commercialRuntimeFixture(t, []string{FeatureGateway})
 		capabilities := runtime.Capabilities()
 		if capabilities.Status != StatusActive || !capabilities.Enforceable {
 			t.Fatalf("unexpected partial license status: %#v", capabilities)
 		}
-		if !capabilities.Features[FeatureGateway] || !capabilities.Features[FeatureNotifications] {
+		if !capabilities.Features[FeatureGateway] || !capabilities.Features[FeatureNotifications] ||
+			!capabilities.Features[FeatureModelGovernance] || !capabilities.Features[FeatureGuardrails] {
 			t.Fatalf("licensed features missing: %#v", capabilities.Features)
 		}
-		if capabilities.Features[FeatureModelGovernance] || capabilities.Features[FeatureGuardrails] {
-			t.Fatalf("unlicensed features must remain denied: %#v", capabilities.Features)
+		if capabilities.Features[FeatureAgentCapabilities] || capabilities.Features[FeatureOIDC] || capabilities.Features[FeatureDataExchange] {
+			t.Fatalf("independently licensed features must remain denied: %#v", capabilities.Features)
 		}
 		if _, ok := capabilities.Features[FeatureAll]; ok {
 			t.Fatalf("wildcard must be expanded instead of exposed: %#v", capabilities.Features)

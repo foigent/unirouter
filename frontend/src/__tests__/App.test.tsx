@@ -13,9 +13,9 @@ const PARTIAL_LICENSE: LicenseAccess = {
     gateway: true,
     agent_capabilities: false,
     oidc: false,
-    guardrails: false,
-    notifications: false,
-    model_governance: false,
+    guardrails: true,
+    notifications: true,
+    model_governance: true,
     data_exchange: false,
   },
 };
@@ -214,13 +214,13 @@ describe('App shell', () => {
     expect(screen.queryByRole('button', { name: '通知' })).toBeNull();
   });
 
-  it('shows advanced model workspaces in navigation and keeps unlicensed ones locked', async () => {
+  it('keeps core management workspaces available with an enforceable commercial License', async () => {
     renderApp('platform_admin', { licenseAccess: PARTIAL_LICENSE });
 
-	expect(screen.getByText('模型治理（未授权）')).toBeTruthy();
+    expect(screen.getByText('模型治理')).toBeTruthy();
     expect(await screen.findByText('模型连接')).toBeTruthy();
-    expect(await screen.findByText('内容安全（未授权）')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '通知（授权未包含）' }).hasAttribute('disabled')).toBe(true);
+    expect(await screen.findByText('内容安全')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '通知' }).hasAttribute('disabled')).toBe(false);
   });
 
   it('replaces a role-allowed direct URL with one unified license explanation before the page mounts', () => {
@@ -238,7 +238,7 @@ describe('App shell', () => {
   it('gives platform administrators a direct path to repair a restricted license', async () => {
     renderApp('platform_admin', {
       initialEntry: '/guardrail-policies',
-      licenseAccess: PARTIAL_LICENSE,
+      licenseAccess: { ...PARTIAL_LICENSE, status: 'invalid', enforceable: false },
     });
 
     fireEvent.click(screen.getByRole('button', { name: '查看或更新商业授权' }));

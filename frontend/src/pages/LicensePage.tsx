@@ -76,19 +76,19 @@ function statusText(status?: string) {
   }
 }
 
-function formatList(values?: string[]) {
+const coreManagementFeatureKeys = new Set(['guardrails', 'notifications', 'model_governance']);
+
+function formatIndependentFeatures(values?: string[]) {
   if (!values || values.length === 0) return '-';
   const labels: Record<string, string> = {
-    '*': '全部功能',
+    '*': '全部独立授权功能',
     gateway: '模型网关',
     agent_capabilities: 'Agent 能力令牌',
     oidc: '企业身份登录（OIDC）',
-    guardrails: '内容安全',
-    notifications: '通知中心',
-    model_governance: '模型治理',
     data_exchange: 'X-Insight 数据交换',
   };
-  return values.map((value) => labels[value] || value).join('、');
+  const independent = values.filter((value) => !coreManagementFeatureKeys.has(value));
+  return independent.length > 0 ? independent.map((value) => labels[value] || value).join('、') : '-';
 }
 
 function formatRecord(record?: Record<string, number | string>) {
@@ -186,7 +186,7 @@ export default function LicensePage() {
         <PageHeader
           eyebrow="系统与集成"
           title="商业授权"
-          description="查看当前部署是否获准提供模型服务、授权给谁、何时到期以及可用功能和容量。"
+          description="查看当前部署的授权有效性、核心管理功能、独立授权功能和容量。"
           actions={<Button icon={<IconRefresh />} onClick={loadLicense}>重试</Button>}
         />
         <Surface title="授权结论">
@@ -206,7 +206,7 @@ export default function LicensePage() {
       <PageHeader
         eyebrow="系统与集成"
         title="商业授权"
-        description="查看当前部署是否获准提供模型服务、授权给谁、何时到期以及可用功能和容量。"
+        description="查看当前部署的授权有效性、核心管理功能、独立授权功能和容量。"
         actions={
           <Button icon={<IconRefresh />} onClick={loadLicense}>
             刷新
@@ -224,7 +224,13 @@ export default function LicensePage() {
               { key: '授权版本', value: status?.license?.tier || '-' },
               { key: '到期时间', value: status?.license?.expires_at || '-' },
               { key: '剩余天数', value: status?.license ? String(status.days_until_expiry) : '-' },
-              { key: '授权功能', value: formatList(status?.license?.features) },
+              {
+                key: '核心管理功能',
+                value: status?.enforceable
+                  ? '模型治理、内容安全、通知中心（有效授权自动包含）'
+                  : '需要有效商业授权',
+              },
+              { key: '独立授权功能', value: formatIndependentFeatures(status?.license?.features) },
             ]}
             row
           />

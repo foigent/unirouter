@@ -125,7 +125,8 @@ The admin API exposes:
 - `POST /api/v1/notification-webhooks/{id}/verify-scope`
 
 Project-scoped roles must provide a readable project id for event/delivery visibility. Webhook writes require project write permission when scoped to a project.
-Every route above requires the commercial `notifications` feature.
+Every route above requires an enforceable commercial License. Notifications are
+a core management module and do not require a separate signed feature item.
 
 Role boundaries:
 

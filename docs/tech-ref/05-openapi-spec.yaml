@@ -1021,7 +1021,7 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
       put: [platform_admin, org_admin, project_admin]
-    description: Requires the model_governance License feature. org_viewer may read ordinary model-set assignment metadata in its organization. organization_role=member is constrained by the exact live membership; PUT requires a live project_admin membership. The users.role/JWT compatibility shadow cannot grant a role in another project.
+    description: Requires an enforceable commercial License; model governance is included as a core management module. org_viewer may read ordinary model-set assignment metadata in its organization. organization_role=member is constrained by the exact live membership; PUT requires a live project_admin membership. The users.role/JWT compatibility shadow cannot grant a role in another project.
     get: *operation_list_by_id
     put: *operation_update_by_id
 
@@ -1906,7 +1906,7 @@ paths:
       get: [platform_admin, org_admin, org_viewer, project_admin]
       post: [platform_admin, org_admin]
     description: |
-      Requires the model_governance License feature. Organization administrators and
+      Requires an enforceable commercial License; model governance is included as a core management module. Organization administrators and
       organization viewers always use their JWT organization; a foreign org_id query or
       request-body value returns 403, and a missing/zero JWT organization fails closed.
       A member may list candidate sets only with project_id and a live project_admin
@@ -1924,7 +1924,7 @@ paths:
       get: [platform_admin, org_admin]
       put: [platform_admin, org_admin]
     description: |
-      Requires the model_governance License feature and remains limited to platform/org
+      Requires an enforceable commercial License and remains limited to platform/org
       governance; project administrators cannot read or replace items. Organization-
       scoped global-ID access binds organization administrators to their JWT organization;
       a foreign org_id query returns 403, while a foreign or nonexistent set ID returns
@@ -2508,7 +2508,7 @@ paths:
   /api/v1/notification-events:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, billing_admin, project_admin, project_user, project_viewer]
-    description: Requires the notifications License feature. Billing administrators are SQL-filtered to the financial taxonomy `project_budget.threshold` and `token_metering.estimated_ratio.high`; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
+    description: Requires an enforceable commercial License; notifications are included as a core management module. Billing administrators are SQL-filtered to the financial taxonomy `project_budget.threshold` and `token_metering.estimated_ratio.high`; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
     get: *operation_list
 
   /api/v1/notification-events/{id}/acknowledge:
@@ -2517,7 +2517,7 @@ paths:
     post:
       tags: [Admin]
       summary: Acknowledge a tenant-scoped notification event
-      description: Requires the notifications License feature. Billing administrators can transition only the two financial event types visible to them. Lifecycle state is independent from webhook delivery state.
+      description: Requires an enforceable commercial License. Billing administrators can transition only the two financial event types visible to them. Lifecycle state is independent from webhook delivery state.
       security:
         - bearerAuth: []
       parameters:
@@ -2555,7 +2555,7 @@ paths:
     post:
       tags: [Admin]
       summary: Resolve a tenant-scoped notification event
-      description: Requires the notifications License feature. Billing administrators can transition only the two financial event types visible to them. Resolved events cannot be reopened through this API.
+      description: Requires an enforceable commercial License. Billing administrators can transition only the two financial event types visible to them. Resolved events cannot be reopened through this API.
       security:
         - bearerAuth: []
       parameters:
@@ -2582,27 +2582,27 @@ paths:
   /api/v1/notification-deliveries:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, billing_admin, project_admin, project_user, project_viewer]
-    description: Requires the notifications License feature. Billing administrators see delivery rows only when the joined event is in the two-type financial taxonomy; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
+    description: Requires an enforceable commercial License. Billing administrators see delivery rows only when the joined event is in the two-type financial taxonomy; membership-scoped callers require project_id and a live project_admin/project_user/project_viewer membership.
     get: *operation_list
 
   /api/v1/notification-webhooks:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, project_admin, project_user, project_viewer]
       post: [platform_admin, org_admin, project_admin]
-    description: Requires the notifications License feature. Billing administrators have no webhook authority; route middleware excludes the role and every handler also returns 403 before persistence as defense in depth.
+    description: Requires an enforceable commercial License. Billing administrators have no webhook authority; route middleware excludes the role and every handler also returns 403 before persistence as defense in depth.
     get: *operation_list
     post: *operation_create
 
   /api/v1/notification-webhooks/{id}:
     x-unirouter-rbac:
       put: [platform_admin, org_admin, project_admin]
-    description: Requires the notifications License feature. Billing administrators receive 403 and no read or write is attempted.
+    description: Requires an enforceable commercial License. Billing administrators receive 403 and no read or write is attempted.
     put: *operation_update_by_id
 
   /api/v1/notification-webhooks/{id}/verify-scope:
     x-unirouter-rbac:
       post: [platform_admin, org_admin, project_admin]
-    description: Requires the notifications License feature. Billing administrators receive 403 and no verification or audit mutation is attempted.
+    description: Requires an enforceable commercial License. Billing administrators receive 403 and no verification or audit mutation is attempted.
     post: *operation_update_by_id
 
   /api/v1/audit-logs:
@@ -4563,6 +4563,7 @@ components:
       type: object
       additionalProperties: false
       required: [gateway, agent_capabilities, oidc, guardrails, notifications, model_governance, data_exchange]
+      description: Effective authorization results. Guardrails, notifications, and model governance are true for every enforceable commercial License; the remaining capabilities require their signed feature item or wildcard.
       properties:
         gateway: { type: boolean }
         agent_capabilities: { type: boolean }

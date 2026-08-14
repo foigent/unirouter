@@ -166,6 +166,9 @@ export type LicenseFeature =
 export interface LicenseAccess {
   status: 'missing' | 'active' | 'expiring' | 'expired' | 'invalid' | 'not_yet_valid' | 'deployment_mismatch' | string;
   enforceable: boolean;
+  // Effective authorization projection from the backend. Core management
+  // features are true for every enforceable commercial License even when the
+  // signed document does not list them individually.
   features: Record<LicenseFeature, boolean>;
 }
 
@@ -408,6 +411,9 @@ export function licenseRestrictionMessage(licenseAccess: LicenseAccess, feature:
     default:
       if (!licenseAccess.enforceable) {
         return `当前商业授权不可执行，因此「${label}」不可用。`;
+      }
+      if (feature === 'guardrails' || feature === 'notifications' || feature === 'model_governance') {
+        return `「${label}」应随有效商业授权启用，但当前能力状态不可用；请刷新授权状态。`;
       }
       return `当前商业授权未包含「${label}」。`;
   }
