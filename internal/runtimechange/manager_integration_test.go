@@ -184,6 +184,17 @@ func TestPRD8RuntimeChangeLifecycleCanaryActivationAndEmergencyDisable(t *testin
 	_, err = router.RouteAllWithKey(ctx, "gpt-prd8-runtime", "after-emergency-disable")
 	require.Error(t, err)
 
+	var disabledEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT routing_epoch FROM channels WHERE id=$1`, channelID).Scan(&disabledEpoch))
+	blockedRestage := authorizedRequest(http.MethodPut, fmt.Sprintf("/api/v1/channels/%d", channelID),
+		fmt.Sprintf(`{"status":"staged","expected_routing_epoch":%d}`, disabledEpoch))
+	blockedRestage.SetPathValue("id", fmt.Sprintf("%d", channelID))
+	blockedRestageResponse := httptest.NewRecorder()
+	handler.UpdateChannel(blockedRestageResponse, blockedRestage)
+	require.Equal(t, http.StatusConflict, blockedRestageResponse.Code, blockedRestageResponse.Body.String())
+	require.Contains(t, blockedRestageResponse.Body.String(), `"code":"channel_bound_to_active_release"`)
+	require.Contains(t, blockedRestageResponse.Body.String(), `"published_models":["gpt-prd8-runtime"]`)
+
 	second, err = manager.Rollback(ctx, second.ReleaseRef, second.Version, userID)
 	require.NoError(t, err, "rollback must remain available after emergency epoch drift")
 	require.Equal(t, "rolled_back", second.Stage)
@@ -193,8 +204,6 @@ func TestPRD8RuntimeChangeLifecycleCanaryActivationAndEmergencyDisable(t *testin
 	require.Empty(t, slot.CanaryReleaseRef)
 	require.Equal(t, "none", slot.RuntimeMutation)
 
-	var disabledEpoch int64
-	require.NoError(t, pool.QueryRow(ctx, `SELECT routing_epoch FROM channels WHERE id=$1`, channelID).Scan(&disabledEpoch))
 	restage := authorizedRequest(http.MethodPut, fmt.Sprintf("/api/v1/channels/%d", channelID),
 		fmt.Sprintf(`{"status":"staged","expected_routing_epoch":%d}`, disabledEpoch))
 	restage.SetPathValue("id", fmt.Sprintf("%d", channelID))
