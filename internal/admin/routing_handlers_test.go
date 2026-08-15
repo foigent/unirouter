@@ -148,21 +148,14 @@ func TestP6F08ChannelUpdateUsesOptionalRoutingEpochCASAndInvalidatesSnapshot(t *
 	}
 }
 
-func TestChannelUpdateExplainsRetainedActiveReleaseBeforeRestaging(t *testing.T) {
+func TestChannelStatusRestorePreservesRetainedReleaseEpoch(t *testing.T) {
+	var updateSQL string
 	db := &testutil.MockDB{
-		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
-			if !strings.Contains(sql, "binding.published_models") {
-				return &testutil.MockRow{}
+		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+			if strings.HasPrefix(sql, "UPDATE channels") {
+				updateSQL = sql
 			}
-			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*dest[0].(*int64) = int64(3)
-				*dest[1].(*string) = "kimi-k3"
-				*dest[2].(*string) = "rcr_kimi_active"
-				return nil
-			}}
-		},
-		ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
-			return pgconn.NewCommandTag("UPDATE 0"), nil
+			return pgconn.NewCommandTag("UPDATE 1"), nil
 		},
 	}
 	h := &Handler{db: db}
@@ -172,19 +165,14 @@ func TestChannelUpdateExplainsRetainedActiveReleaseBeforeRestaging(t *testing.T)
 
 	h.UpdateChannel(rec, req)
 
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("retained release expected 409, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status restore expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var payload struct {
-		Code            string   `json:"code"`
-		PublishedModels []string `json:"published_models"`
-		ReleaseRefs     []string `json:"release_refs"`
+	if strings.Contains(updateSQL, "routing_epoch = routing_epoch + 1") {
+		t.Fatalf("status-only restore must not stale the retained release pin: %s", updateSQL)
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode retained release conflict: %v", err)
-	}
-	if payload.Code != "channel_bound_to_active_release" || len(payload.PublishedModels) != 1 || payload.PublishedModels[0] != "kimi-k3" || len(payload.ReleaseRefs) != 1 || payload.ReleaseRefs[0] != "rcr_kimi_active" {
-		t.Fatalf("unexpected retained release conflict: %#v", payload)
+	if strings.Contains(updateSQL, "runtime_change_slots") || !strings.Contains(updateSQL, "routing_epoch = $") {
+		t.Fatalf("status-only restore must retain CAS without an active-release exclusion: %s", updateSQL)
 	}
 }
 

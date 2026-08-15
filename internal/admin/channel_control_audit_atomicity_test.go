@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -292,14 +293,16 @@ func channelControlSnapshotRow(state *channelControlTransactionState) pgx.Row {
 		*dest[1].(*string) = "openai"
 		*dest[2].(*string) = "https://api.openai.com"
 		*dest[3].(*string) = "gpt-4o"
-		*dest[4].(*string) = "openai_compatible"
-		*dest[5].(*int) = 1
-		*dest[6].(*int) = 3
-		*dest[7].(*string) = status
-		*dest[8].(*string) = "healthy"
-		*dest[9].(*int) = 0
-		*dest[10].(*int) = 100
-		*dest[11].(*int64) = int64(state.snapshotCalls)
+		*dest[4].(*json.RawMessage) = json.RawMessage(`{}`)
+		*dest[5].(*string) = "openai_compatible"
+		*dest[6].(*json.RawMessage) = json.RawMessage(`{}`)
+		*dest[7].(*int) = 1
+		*dest[8].(*int) = 3
+		*dest[9].(*string) = status
+		*dest[10].(*string) = "healthy"
+		*dest[11].(*int) = 0
+		*dest[12].(*int) = 100
+		*dest[13].(*int64) = int64(state.snapshotCalls)
 		return nil
 	}}
 }

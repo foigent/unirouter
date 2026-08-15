@@ -37,6 +37,8 @@ func TestTestChannelRequiresEligibleCredentialForSelectedModel(t *testing.T) {
 					*dest[1].(*string) = "moonshot-v1-8k,moonshot-v1-32k"
 					*dest[2].(*string) = "openai_compatible"
 					*dest[3].(*json.RawMessage) = json.RawMessage(`{}`)
+					*dest[4].(*json.RawMessage) = json.RawMessage(`{}`)
+					*dest[5].(*int64) = 1
 					return nil
 				case 2:
 					credentialQuery = sql

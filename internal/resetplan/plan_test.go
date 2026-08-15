@@ -47,7 +47,7 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 	if first.Summary.ReviewRequiredCount != 0 || first.Summary.ProtectedCount != len(protectedTables) {
 		t.Fatalf("unexpected classification summary: %+v", first.Summary)
 	}
-	if first.Summary.TableCount != 101 || first.Summary.ResetCandidateCount != 93 ||
+	if first.Summary.TableCount != 102 || first.Summary.ResetCandidateCount != 94 ||
 		first.Summary.ProtectedCount != 6 || first.Summary.ProtectedPartialCount != 1 ||
 		first.Summary.SchemaLedgerCount != 1 {
 		t.Fatalf("reset classification cardinality drifted: %+v", first.Summary)
@@ -80,20 +80,20 @@ func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T)
 	}
 }
 
-func TestBuildSupportsExactSchema64AndRejectsPreviousOrFutureMax(t *testing.T) {
+func TestBuildSupportsExactSchema65AndRejectsPreviousOrFutureMax(t *testing.T) {
 	current := completeSnapshot()
 	plan, err := Build(current, testTarget(), "source-a", "source-b", time.Unix(0, 0))
 	if err != nil {
-		t.Fatalf("Build schema 64: %v", err)
+		t.Fatalf("Build schema 65: %v", err)
 	}
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
 		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
-	if plan.Summary.TableCount != 101 || plan.Summary.ResetCandidateCount != 93 || plan.Summary.ReviewRequiredCount != 0 {
-		t.Fatalf("schema 64 changed reviewed table classification: %+v", plan.Summary)
+	if plan.Summary.TableCount != 102 || plan.Summary.ResetCandidateCount != 94 || plan.Summary.ReviewRequiredCount != 0 {
+		t.Fatalf("schema 65 changed reviewed table classification: %+v", plan.Summary)
 	}
 	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+4 {
-		t.Fatalf("schema 64 compatibility trigger missing from reset contract: %+v", plan.Schema)
+		t.Fatalf("schema 65 compatibility trigger missing from reset contract: %+v", plan.Schema)
 	}
 	if plan.SelectedAdmin.OrganizationRole != "platform_admin" || plan.SelectedAdmin.Role != "platform_admin" {
 		t.Fatalf("selected admin identity axes drifted: %+v", plan.SelectedAdmin)
@@ -106,7 +106,7 @@ func TestBuildSupportsExactSchema64AndRejectsPreviousOrFutureMax(t *testing.T) {
 	}
 
 	future := completeSnapshot()
-	future.MigrationVersions = append(future.MigrationVersions, "000065_future_contract")
+	future.MigrationVersions = append(future.MigrationVersions, "000066_future_contract")
 	if _, err := Build(future, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
 		t.Fatalf("future migration error = %v", err)
 	}

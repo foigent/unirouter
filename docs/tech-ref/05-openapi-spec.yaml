@@ -772,6 +772,24 @@ paths:
         "200":
           $ref: "#/components/responses/JSON"
 
+  /api/v1/model-endpoints:
+    x-unirouter-rbac:
+      get: [platform_admin]
+    description: Canonical read projection combining public models, provider targets, current credentials, persisted real probes, runtime slots and the gateway routing evaluator. It contains no credential secret.
+    get: *operation_list
+
+  /api/v1/model-endpoints/activate:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Activates the first stable target only when its latest real provider probe still matches the connection routing epoch, model mapping and credential state.
+    post: *operation_create
+
+  /api/v1/model-endpoints/canary:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Adds or replaces a tested provider target through the existing validated, shadow and bounded-canary runtime lifecycle.
+    post: *operation_create
+
   /api/v1/provider-packs:
     get:
       tags: [Admin]

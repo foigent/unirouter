@@ -5,19 +5,18 @@ import { Button, Spin } from '@douyinfe/semi-ui'
 import './index.css'
 import ErrorBoundary from './components/ErrorBoundary'
 import { profileNeedsRefresh, useAuthStore } from './store/auth'
-import { authzContextForUser, getDefaultPathForAuthz, isRouteAllowedForAuthz } from './navigation'
+import { authzContextForUser, getDefaultPathForAuthz, isPlatformAdminRole, isRouteAllowedForAuthz } from './navigation'
 
 const App = lazy(() => import('./App'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const DeveloperConsolePage = lazy(() => import('./pages/DeveloperConsolePage'))
-const ChannelsPage = lazy(() => import('./pages/ChannelsPage'))
+const ModelEndpointsPage = lazy(() => import('./pages/ModelEndpointsPage'))
 const KeysPage = lazy(() => import('./pages/KeysPage'))
 const ApplicationsV2Page = lazy(() => import('./pages/ApplicationsV2Page'))
 const AccessReviewPage = lazy(() => import('./pages/AccessReviewPage'))
 const ModelReadinessPage = lazy(() => import('./pages/ModelReadinessPage'))
 const WalletPage = lazy(() => import('./pages/WalletPage'))
-const ChannelKeysPage = lazy(() => import('./pages/ChannelKeysPage'))
 const LogsPage = lazy(() => import('./pages/LogsPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const LicensePage = lazy(() => import('./pages/LicensePage'))
@@ -29,7 +28,6 @@ const NotificationCenterPage = lazy(() => import('./pages/NotificationCenterPage
 const UsageAnalyticsPage = lazy(() => import('./pages/UsageAnalyticsPage'))
 const CostOptimizationPage = lazy(() => import('./pages/CostOptimizationPage'))
 const InternalStatusPage = lazy(() => import('./pages/InternalStatusPage'))
-const TestPage = lazy(() => import('./pages/TestPage'))
 const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'))
 const AccessStatePage = lazy(() => import('./pages/AccessStatePage'))
 const DeploymentNetworkPage = lazy(() => import('./pages/DeploymentNetworkPage'))
@@ -103,6 +101,14 @@ function HomeRoute() {
   )
 }
 
+function UnifiedModelAccessRoute({ view, children }: { view: 'catalog' | 'diagnostics'; children: React.ReactNode }) {
+  const user = useAuthStore((s) => s.user)
+  if (isPlatformAdminRole(user?.organization_role || user?.role)) {
+    return <Navigate to={`/channels?tab=advanced&view=${view}`} replace />
+  }
+  return <RoleRoute>{children}</RoleRoute>
+}
+
 function UnknownRoute() {
   const user = useAuthStore((s) => s.user)
   return <Navigate to={getDefaultPathForAuthz(authzContextForUser(user))} replace />
@@ -123,16 +129,16 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/" element={<ProtectedRoute><App /></ProtectedRoute>}>
               <Route index element={<HomeRoute />} />
               <Route path="developer" element={<RoleRoute><DeveloperConsolePage /></RoleRoute>} />
-              <Route path="channels" element={<RoleRoute><ChannelsPage /></RoleRoute>} />
+              <Route path="channels" element={<RoleRoute><ModelEndpointsPage /></RoleRoute>} />
               <Route path="governance-simulation" element={<RoleRoute><GovernanceSimulationPage /></RoleRoute>} />
               <Route path="keys" element={<RoleRoute><KeysPage /></RoleRoute>} />
 				<Route path="applications" element={<RoleRoute><ApplicationsV2Page /></RoleRoute>} />
 				<Route path="access-review" element={<RoleRoute><AccessReviewPage /></RoleRoute>} />
-				<Route path="model-readiness" element={<RoleRoute><ModelReadinessPage /></RoleRoute>} />
+				<Route path="model-readiness" element={<UnifiedModelAccessRoute view="diagnostics"><ModelReadinessPage /></UnifiedModelAccessRoute>} />
               <Route path="limit-policies" element={<RoleRoute><LimitPoliciesPage /></RoleRoute>} />
               <Route path="guardrail-policies" element={<RoleRoute><GuardrailPoliciesPage /></RoleRoute>} />
               <Route path="wallet" element={<RoleRoute><WalletPage /></RoleRoute>} />
-              <Route path="channel-keys" element={<RoleRoute><ChannelKeysPage /></RoleRoute>} />
+              <Route path="channel-keys" element={<RoleRoute><Navigate to="/channels?tab=credentials" replace /></RoleRoute>} />
               <Route path="logs" element={<RoleRoute><LogsPage /></RoleRoute>} />
               <Route path="organization-members" element={<RoleRoute><OrganizationMembersPage /></RoleRoute>} />
               <Route path="users" element={<RoleRoute><Navigate to="/organization-members" replace /></RoleRoute>} />
@@ -143,7 +149,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="provenance-passport" element={<RoleRoute><ProvenancePassportPage /></RoleRoute>} />
               <Route path="risk-control" element={<RoleRoute><RiskControlPage /></RoleRoute>} />
               <Route path="media-jobs" element={<RoleRoute><MediaJobsPage /></RoleRoute>} />
-              <Route path="model-governance" element={<RoleRoute><ModelGovernancePage /></RoleRoute>} />
+              <Route path="model-governance" element={<UnifiedModelAccessRoute view="catalog"><ModelGovernancePage /></UnifiedModelAccessRoute>} />
               <Route path="model-prices" element={<RoleRoute><ModelBillingPage /></RoleRoute>} />
               <Route path="org-model-prices" element={<Navigate to="/model-prices?tab=org" replace />} />
               <Route path="grants" element={<Navigate to="/wallet?tab=grants" replace />} />
@@ -157,7 +163,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="cost-optimization" element={<RoleRoute><CostOptimizationPage /></RoleRoute>} />
               <Route path="notifications" element={<RoleRoute><NotificationCenterPage /></RoleRoute>} />
               <Route path="status" element={<RoleRoute><InternalStatusPage /></RoleRoute>} />
-              <Route path="test" element={<RoleRoute><TestPage /></RoleRoute>} />
+              <Route path="test" element={<Navigate to="/channels" replace />} />
               <Route path="settings" element={<RoleRoute><SettingsPage /></RoleRoute>} />
               <Route path="license" element={<RoleRoute><LicensePage /></RoleRoute>} />
               <Route path="access" element={<RoleRoute><AccessStatePage /></RoleRoute>} />

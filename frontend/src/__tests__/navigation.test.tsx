@@ -69,7 +69,7 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   platform: {
 		authz: context('platform_admin'),
 		routes: [
-		'/', '/channels', '/channel-keys', '/model-governance', '/model-readiness',
+		'/', '/channels',
 		'/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
       '/wallet', '/model-prices', '/cost-optimization', '/reconciliation',

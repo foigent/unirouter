@@ -22,12 +22,13 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var baseURL, channelModels, adapterType string
+	var routingEpoch int64
 	var adapterConfig, modelMapping json.RawMessage
 	err = h.db.QueryRow(r.Context(),
 		`SELECT base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
-		        COALESCE(model_mapping, '{}'::jsonb)
+		        COALESCE(model_mapping, '{}'::jsonb), routing_epoch
 		 FROM channels WHERE id = $1`, id,
-	).Scan(&baseURL, &channelModels, &adapterType, &adapterConfig, &modelMapping)
+	).Scan(&baseURL, &channelModels, &adapterType, &adapterConfig, &modelMapping, &routingEpoch)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
 		return
@@ -70,9 +71,10 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	// release, but they must still use the same credential model scope and
 	// cooldown eligibility as runtime routing. Never fall back to an arbitrary
 	// active credential for a model it does not permit.
+	var keyID, keyStateEpoch int64
 	var keyEnc string
 	err = h.db.QueryRow(r.Context(),
-		`SELECT ck.key_enc
+		`SELECT ck.id, ck.key_enc, ck.state_epoch
 		   FROM channel_keys ck
 		  WHERE ck.channel_id = $1
 		    AND ck.status = 'active'
@@ -87,8 +89,16 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		    )
 		  ORDER BY ck.id
 		  LIMIT 1`, id, reqBody.Model,
-	).Scan(&keyEnc)
+	).Scan(&keyID, &keyEnc, &keyStateEpoch)
 	if err != nil {
+		if persistErr := h.persistChannelModelProbe(r, channelModelProbeRecord{
+			ChannelID: id, PublicModel: reqBody.Model, UpstreamModel: upstreamModel,
+			RoutingEpoch: routingEpoch, CredentialStateEpoch: 1, Success: false,
+			ErrorSummary: "No active, non-cooling credential allows the selected model",
+		}); persistErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Failed to persist provider test evidence"})
+			return
+		}
 		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
 			"success": false,
 			"status":  "no_eligible_key",
@@ -104,6 +114,14 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	// Decrypt the key
 	apiKey, err := auth.DecryptKey(keyEnc, h.encKey)
 	if err != nil {
+		if persistErr := h.persistChannelModelProbe(r, channelModelProbeRecord{
+			ChannelID: id, PublicModel: reqBody.Model, UpstreamModel: upstreamModel,
+			RoutingEpoch: routingEpoch, CredentialID: keyID, CredentialStateEpoch: keyStateEpoch,
+			Success: false, ErrorSummary: "Failed to decrypt provider credential",
+		}); persistErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Failed to persist provider test evidence"})
+			return
+		}
 		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
 			"success": false,
 			"status":  "decrypt_error",
@@ -115,6 +133,14 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 
 	adapter, err := adapters.DefaultRegistry().Get(adapterType)
 	if err != nil {
+		if persistErr := h.persistChannelModelProbe(r, channelModelProbeRecord{
+			ChannelID: id, PublicModel: reqBody.Model, UpstreamModel: upstreamModel,
+			RoutingEpoch: routingEpoch, CredentialID: keyID, CredentialStateEpoch: keyStateEpoch,
+			Success: false, ErrorSummary: "Unknown adapter_type",
+		}); persistErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Failed to persist provider test evidence"})
+			return
+		}
 		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
 			"success": false,
 			"status":  "adapter_error",
@@ -142,6 +168,14 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		Prompt: reqBody.Prompt,
 	})
 	if err != nil {
+		if persistErr := h.persistChannelModelProbe(r, channelModelProbeRecord{
+			ChannelID: id, PublicModel: reqBody.Model, UpstreamModel: upstreamModel,
+			RoutingEpoch: routingEpoch, CredentialID: keyID, CredentialStateEpoch: keyStateEpoch,
+			Success: false, ErrorSummary: auditErrorSummary(err.Error()),
+		}); persistErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Failed to persist provider test evidence"})
+			return
+		}
 		h.recordChannelTestAudit(r, id, reqBody.Model, adapterType, map[string]interface{}{
 			"success":        false,
 			"status":         "error",
@@ -151,6 +185,15 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status": "error", "error": err.Error(), "model": reqBody.Model, "upstream_model": upstreamModel,
 		})
+		return
+	}
+	if persistErr := h.persistChannelModelProbe(r, channelModelProbeRecord{
+		ChannelID: id, PublicModel: reqBody.Model, UpstreamModel: upstreamModel,
+		RoutingEpoch: routingEpoch, CredentialID: keyID, CredentialStateEpoch: keyStateEpoch,
+		Success: result.Success, StatusCode: result.StatusCode, LatencyMS: result.LatencyMs,
+		ErrorSummary: auditErrorSummary(result.Error),
+	}); persistErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Provider request completed but its test evidence could not be persisted; activation remains blocked"})
 		return
 	}
 

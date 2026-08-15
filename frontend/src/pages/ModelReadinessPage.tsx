@@ -105,11 +105,11 @@ function AxisCard({ label, axis, onFix }: { label: string; axis: ReadinessAxis; 
   );
 }
 
-export default function ModelReadinessPage() {
+export default function ModelReadinessPage({ embedded = false, forceConnectionMode = false }: { embedded?: boolean; forceConnectionMode?: boolean } = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useSearchParams();
-  const connectionMode = search.get('mode') === 'connection' || search.get('from') === 'connections';
+  const connectionMode = forceConnectionMode || search.get('mode') === 'connection' || search.get('from') === 'connections';
   const [formApi, setFormApi] = useState<any>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsError, setProjectsError] = useState('');
@@ -295,15 +295,19 @@ export default function ModelReadinessPage() {
   }
 
   return (
-    <div className="ur-page">
-      <PageHeader
+    <div className={embedded ? 'ur-embedded-page' : 'ur-page'}>
+      {!embedded && <PageHeader
         eyebrow="高级诊断"
         title={connectionMode ? '模型连接诊断' : '调用条件诊断'}
         description={connectionMode
           ? '检查模型网关授权、供应商连接、供应商凭证和当前路由；不需要项目，不会请求供应商，也不会自动修改配置。'
           : '回答“这个项目或应用为什么还不能调用该模型”。诊断本身不会请求供应商，也不会自动修改配置。'}
         actions={<Space><ModelConnectionBackButton /><Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>刷新诊断</Button></Space>}
-      />
+      />}
+      {embedded && <div className="ur-embedded-heading">
+        <div><Title heading={5} style={{ margin: 0 }}>{connectionMode ? '模型连接诊断' : '调用条件诊断'}</Title><Text type="tertiary">只读取当前证据，不请求供应商，也不会自动修改配置。</Text></div>
+        <Button icon={<IconRefresh />} loading={loading} onClick={loadReadiness}>刷新诊断</Button>
+      </div>}
       <Surface
         title={connectionMode ? '选择要检查的模型连接' : '选择要诊断的调用'}
         description={connectionMode

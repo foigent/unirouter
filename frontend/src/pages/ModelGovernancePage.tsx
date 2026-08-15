@@ -11,7 +11,7 @@ import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 import InvocationOptimizationWorkspace from './InvocationOptimizationWorkspace';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
 const lifecycleOptions = [
   { label: 'Staging', value: 'staging' },
@@ -135,7 +135,7 @@ export function formatModelSetItems(items: ModelSetItem[]) {
   return items.map(item => `${item.item_type}:${item.item_name}`).join('\n');
 }
 
-export default function ModelGovernancePage() {
+export default function ModelGovernancePage({ embedded = false }: { embedded?: boolean } = {}) {
   const user = useAuthStore((state) => state.user);
   const platform = isPlatformAdminRole(organizationRoleForUser(user));
   const customerContext = resolveCustomerContext(user);
@@ -696,13 +696,13 @@ export default function ModelGovernancePage() {
   if (!customerContextReady) {
     const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
     return (
-      <div className="ur-page ur-page-wide">
-        <PageHeader
+      <div className={embedded ? 'ur-embedded-page' : 'ur-page ur-page-wide'}>
+        {!embedded && <PageHeader
           eyebrow="模型接入"
           title={blocker.title}
           description="模型目录、别名、模型集和项目分配必须共享同一个可验证客户范围；系统不会把部署技术组织当作客户组织。"
           actions={<ModelConnectionBackButton />}
-        />
+        />}
         <Surface>
           <EmptyState title={blocker.title} description={blocker.description} minHeight={260} />
         </Surface>
@@ -711,8 +711,8 @@ export default function ModelGovernancePage() {
   }
 
   return (
-    <div className="ur-page ur-page-wide">
-      <PageHeader
+    <div className={embedded ? 'ur-embedded-page' : 'ur-page ur-page-wide'}>
+      {!embedded && <PageHeader
         eyebrow="模型接入"
         title="模型治理"
         description="维护企业模型目录、别名、项目范围与调用优化策略；高影响变化统一经过验证、Shadow、证据门禁、Canary 和回滚。"
@@ -723,7 +723,12 @@ export default function ModelGovernancePage() {
             {!['optimization', 'releases'].includes(activeTab) && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
           </Space>
         )}
-      />
+      />}
+
+      {embedded && <div className="ur-embedded-heading">
+        <div><Title heading={5} style={{ margin: 0 }}>模型目录与项目范围</Title><Text type="tertiary">运行路由在主页面管理；这里仅维护企业目录、别名和项目可见范围。</Text></div>
+        {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
+      </div>}
 
       <div className="ur-modelgov-tabs" role="tablist" aria-label="模型治理视图">
         {tabs.map(tab => (

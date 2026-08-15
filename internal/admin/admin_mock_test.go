@@ -1376,17 +1376,18 @@ func TestListChannels_Success(t *testing.T) {
 						*dest[2].(*string) = "openai"                 // provider
 						*dest[3].(*string) = "https://api.openai.com" // base_url
 						*dest[4].(*string) = "gpt-4o"                 // models
-						*dest[5].(*string) = "openai_compatible"      // adapter_type
-						*dest[6].(*json.RawMessage) = json.RawMessage(`{}`)
-						*dest[7].(*int) = 100           // priority
-						*dest[8].(*int) = 5             // degradation_threshold
-						*dest[9].(*string) = "staged"   // stored status
-						*dest[10].(*string) = "healthy" // circuit_state
-						*dest[11].(*int) = 0            // fail_count
-						*dest[12].(*time.Time) = now    // created_at
-						*dest[13].(*int) = 100          // routing_weight
-						*dest[14].(*int64) = 7          // routing_epoch
-						*dest[15].(*string) = "gpt-4o"  // published_models
+						*dest[5].(*json.RawMessage) = json.RawMessage(`{"gpt-4o":"gpt-4o-2024-11-20"}`)
+						*dest[6].(*string) = "openai_compatible" // adapter_type
+						*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[8].(*int) = 100           // priority
+						*dest[9].(*int) = 5             // degradation_threshold
+						*dest[10].(*string) = "staged"  // stored status
+						*dest[11].(*string) = "healthy" // circuit_state
+						*dest[12].(*int) = 0            // fail_count
+						*dest[13].(*time.Time) = now    // created_at
+						*dest[14].(*int) = 100          // routing_weight
+						*dest[15].(*int64) = 7          // routing_epoch
+						*dest[16].(*string) = "gpt-4o"  // published_models
 						return nil
 					},
 				},
@@ -2160,8 +2161,11 @@ func TestTestChannel_Upstream401IsFailureAndAppliesModelMapping(t *testing.T) {
 						*dest[2].(*string) = "openai_compatible"
 						*dest[3].(*json.RawMessage) = json.RawMessage(`{}`)
 						*dest[4].(*json.RawMessage) = json.RawMessage(`{"company-chat":"mimo-v2.5"}`)
+						*dest[5].(*int64) = 3
 					case 2:
-						*dest[0].(*string) = keyEnc
+						*dest[0].(*int64) = 8
+						*dest[1].(*string) = keyEnc
+						*dest[2].(*int64) = 4
 					default:
 						t.Fatalf("unexpected query count %d", queryCount)
 					}
@@ -2243,8 +2247,12 @@ func TestTestChannel_AnthropicNativeUsesMessagesEndpoint(t *testing.T) {
 						*dest[1].(*string) = "claude-3-5-sonnet-20241022"
 						*dest[2].(*string) = "anthropic_native"
 						*dest[3].(*json.RawMessage) = json.RawMessage(`{"anthropic_version":"2023-06-01"}`)
+						*dest[4].(*json.RawMessage) = json.RawMessage(`{}`)
+						*dest[5].(*int64) = 2
 					case 2:
-						*dest[0].(*string) = keyEnc
+						*dest[0].(*int64) = 9
+						*dest[1].(*string) = keyEnc
+						*dest[2].(*int64) = 1
 					default:
 						t.Fatalf("unexpected query count %d", queryCount)
 					}
@@ -2692,14 +2700,17 @@ func TestGetChannel_Success(t *testing.T) {
 					*dest[2].(*string) = "openai"
 					*dest[3].(*string) = "https://api.openai.com"
 					*dest[4].(*string) = "gpt-4o"
-					*dest[5].(*string) = "openai_compatible"
-					*dest[6].(*json.RawMessage) = json.RawMessage(`{}`)
-					*dest[7].(*int) = 100
-					*dest[8].(*int) = 5
-					*dest[9].(*string) = "active"
-					*dest[10].(*string) = "healthy"
-					*dest[11].(*int) = 0
-					*dest[12].(*time.Time) = now
+					*dest[5].(*json.RawMessage) = json.RawMessage(`{"gpt-4o":"gpt-4o-2024-11-20"}`)
+					*dest[6].(*string) = "openai_compatible"
+					*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+					*dest[8].(*int) = 100
+					*dest[9].(*int) = 5
+					*dest[10].(*string) = "active"
+					*dest[11].(*string) = "healthy"
+					*dest[12].(*int) = 0
+					*dest[13].(*time.Time) = now
+					*dest[14].(*int) = 100
+					*dest[15].(*int64) = 3
 					return nil
 				},
 			}

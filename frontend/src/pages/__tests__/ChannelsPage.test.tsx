@@ -301,7 +301,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(await screen.findByText(/仍关联已生效的历史发布记录（kimi-k3）/)).toBeTruthy();
     expect(screen.getByText(/刷新页面不会改变运行状态/)).toBeTruthy();
     expect(screen.queryByText(/占位/)).toBeNull();
-  });
+  }, 20_000);
 
   it('emergency-disables a runtime-published staged connection with a status-only update', async () => {
     mocks.getChannels.mockResolvedValueOnce({

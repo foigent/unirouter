@@ -33,6 +33,55 @@
   --ur-shadow-card: 0 18px 48px rgba(82, 64, 124, 0.1), inset 0 1px 0 rgba(255,255,255,0.72);
 }
 
+.ur-model-endpoint-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.ur-model-endpoint-name,
+.ur-model-endpoint-sheet-summary > div,
+.ur-model-endpoint-probe,
+.ur-model-endpoint-sheet {
+  display: grid;
+  gap: 6px;
+}
+
+.ur-model-endpoint-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ur-model-endpoint-sheet {
+  gap: 16px;
+}
+
+.ur-model-endpoint-sheet-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(2, minmax(120px, 0.45fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 12px;
+  background: var(--ur-bg-subtle);
+}
+
+.ur-model-endpoint-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .ur-model-endpoint-kpis,
+  .ur-model-endpoint-sheet-summary,
+  .ur-model-endpoint-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;

@@ -124,6 +124,16 @@ export const api = {
     request(`/channels/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteChannel: (id: number) =>
     request(`/channels/${id}`, { method: 'DELETE' }),
+  getModelEndpoints: () => request('/model-endpoints'),
+  testChannelModel: (channelId: number, model: string, prompt = 'Reply with exactly: OK') =>
+    request(`/channels/${channelId}/test`, {
+      method: 'POST',
+      body: JSON.stringify({ model, prompt }),
+    }),
+  activateModelEndpoint: (data: { channel_id: number; model: string; expected_routing_epoch: number }) =>
+    request('/model-endpoints/activate', { method: 'POST', body: JSON.stringify(data) }),
+  startModelEndpointCanary: (data: { channel_id: number; model: string; expected_routing_epoch: number; canary_basis_points?: number }) =>
+    request('/model-endpoints/canary', { method: 'POST', body: JSON.stringify(data) }),
   getProviderPacks: () => request('/provider-packs'),
   previewRouting: (model: string) =>
     request(`/routing/preview?model=${encodeURIComponent(model)}`),

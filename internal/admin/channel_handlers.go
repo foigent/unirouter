@@ -15,6 +15,7 @@ import (
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modellist"
 )
 
 func validChannelStatus(status string) bool {
@@ -101,7 +102,7 @@ func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
+		`SELECT id, name, provider, base_url, models, COALESCE(model_mapping, '{}'::jsonb), COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
 		        priority, degradation_threshold, status, circuit_state, fail_count, created_at,
 		        routing_weight, routing_epoch,
 		        COALESCE((
@@ -125,10 +126,10 @@ func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, routingEpoch int64
 		var name, provider, baseURL, models, adapterType, status, circuitState, publishedModels string
-		var adapterConfig json.RawMessage
+		var modelMapping, adapterConfig json.RawMessage
 		var priority, failCount, degradationThreshold, routingWeight int
 		var createdAt time.Time
-		if err := rows.Scan(&id, &name, &provider, &baseURL, &models, &adapterType, &adapterConfig, &priority, &degradationThreshold, &status, &circuitState, &failCount, &createdAt, &routingWeight, &routingEpoch, &publishedModels); err != nil {
+		if err := rows.Scan(&id, &name, &provider, &baseURL, &models, &modelMapping, &adapterType, &adapterConfig, &priority, &degradationThreshold, &status, &circuitState, &failCount, &createdAt, &routingWeight, &routingEpoch, &publishedModels); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to read channels"})
 			return
 		}
@@ -138,7 +139,7 @@ func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 		}
 		channels = append(channels, map[string]interface{}{
 			"id": id, "name": name, "provider": provider, "base_url": baseURL,
-			"models": models, "adapter_type": adapters.NormalizeType(adapterType), "adapter_config": adapterConfig,
+			"models": models, "model_mapping": modelMapping, "adapter_type": adapters.NormalizeType(adapterType), "adapter_config": adapterConfig,
 			"priority": priority, "degradation_threshold": degradationThreshold, "status": status,
 			"effective_status": effectiveStatus, "published_models": publishedModels,
 			"routing_weight": routingWeight, "routing_epoch": routingEpoch,
@@ -159,6 +160,7 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		Provider             string          `json:"provider"`
 		BaseURL              string          `json:"base_url"`
 		Models               string          `json:"models"`
+		ModelMapping         json.RawMessage `json:"model_mapping"`
 		AdapterType          string          `json:"adapter_type"`
 		AdapterConfig        json.RawMessage `json:"adapter_config"`
 		Priority             int             `json:"priority"`
@@ -172,6 +174,12 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Models = normalizeModels(req.Models)
+	var mappingErr error
+	req.ModelMapping, mappingErr = normalizeModelMapping(req.ModelMapping, req.Models)
+	if mappingErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid model_mapping", "message": "model_mapping keys must be configured public model IDs and values must be exact supplier model IDs"})
+		return
+	}
 	req.AdapterType = adapters.NormalizeType(req.AdapterType)
 	if !adapters.DefaultRegistry().Has(req.AdapterType) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid adapter_type"})
@@ -231,10 +239,10 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := store.QueryRow(r.Context(),
-		`INSERT INTO channels (name, provider, base_url, models, adapter_type, adapter_config, priority, degradation_threshold, routing_weight, status, circuit_state, fail_count, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, 'staged', 'healthy', 0, NOW(), NOW())
-		 RETURNING id`,
-		req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, string(req.AdapterConfig), req.Priority, req.DegradationThreshold, req.RoutingWeight,
+		`INSERT INTO channels (name, provider, base_url, models, model_mapping, adapter_type, adapter_config, priority, degradation_threshold, routing_weight, status, circuit_state, fail_count, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8, $9, $10, 'staged', 'healthy', 0, NOW(), NOW())
+			 RETURNING id`,
+		req.Name, req.Provider, req.BaseURL, req.Models, string(req.ModelMapping), req.AdapterType, string(req.AdapterConfig), req.Priority, req.DegradationThreshold, req.RoutingWeight,
 	).Scan(&id)
 	if err != nil {
 		if writeCommercialLimitViolation(w, err) {
@@ -255,6 +263,8 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	after := channelAuditState(id, req.Name, req.Provider, req.BaseURL, req.Models, req.AdapterType, req.Priority, req.DegradationThreshold, "staged", "healthy", 0)
+	after["model_mapping"] = req.ModelMapping
+	after["adapter_config"] = req.AdapterConfig
 	after["routing_weight"] = req.RoutingWeight
 	after["routing_epoch"] = int64(1)
 	after["credential_configured"] = keyID > 0
@@ -303,6 +313,7 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		Provider             *string          `json:"provider"`
 		BaseURL              *string          `json:"base_url"`
 		Models               *string          `json:"models"`
+		ModelMapping         *json.RawMessage `json:"model_mapping"`
 		AdapterType          *string          `json:"adapter_type"`
 		AdapterConfig        *json.RawMessage `json:"adapter_config"`
 		Priority             *int             `json:"priority"`
@@ -319,6 +330,10 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Models != nil {
 		normalized := normalizeModels(*req.Models)
 		req.Models = &normalized
+	}
+	if req.ModelMapping != nil && (len(*req.ModelMapping) == 0 || string(*req.ModelMapping) == "null") {
+		empty := json.RawMessage(`{}`)
+		req.ModelMapping = &empty
 	}
 	if req.AdapterType != nil {
 		normalized := adapters.NormalizeType(*req.AdapterType)
@@ -366,6 +381,11 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Models != nil {
 		sets = append(sets, fmt.Sprintf("models = $%d", argIdx))
 		args = append(args, *req.Models)
+		argIdx++
+	}
+	if req.ModelMapping != nil {
+		sets = append(sets, fmt.Sprintf("model_mapping = $%d::jsonb", argIdx))
+		args = append(args, string(*req.ModelMapping))
 		argIdx++
 	}
 	if req.AdapterType != nil {
@@ -460,10 +480,60 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.Models != nil || req.ModelMapping != nil {
+		effectiveModels := ""
+		effectiveMapping := json.RawMessage(`{}`)
+		if req.Models != nil {
+			effectiveModels = *req.Models
+		}
+		if req.ModelMapping != nil {
+			effectiveMapping = *req.ModelMapping
+		}
+		if req.Models == nil || req.ModelMapping == nil {
+			var existingModels string
+			var existingMapping json.RawMessage
+			query := `SELECT models, COALESCE(model_mapping, '{}'::jsonb) FROM channels WHERE id = $1`
+			if tx != nil {
+				query += " FOR UPDATE"
+			}
+			if err := store.QueryRow(r.Context(), query, id).Scan(&existingModels, &existingMapping); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
+				} else {
+					writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to validate model mapping"})
+				}
+				return
+			}
+			if req.Models == nil {
+				effectiveModels = existingModels
+			}
+			if req.ModelMapping == nil {
+				effectiveMapping = existingMapping
+			}
+		}
+		normalized, mappingErr := normalizeModelMapping(effectiveMapping, effectiveModels)
+		if mappingErr != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid model_mapping", "message": "mapping keys must remain within the configured public model list"})
+			return
+		}
+		if req.ModelMapping != nil {
+			*req.ModelMapping = normalized
+			for index, clause := range sets {
+				if strings.HasPrefix(clause, "model_mapping = $") {
+					args[index] = string(normalized)
+					break
+				}
+			}
+		}
+	}
+
+	statusOnly := req.Status != nil && req.Name == nil && req.Provider == nil && req.BaseURL == nil && req.Models == nil &&
+		req.ModelMapping == nil && req.AdapterType == nil && req.AdapterConfig == nil && req.Priority == nil &&
+		req.RoutingWeight == nil && req.DegradationThreshold == nil
 	before, beforeFound := h.channelAuditSnapshot(r.Context(), store, id, tx != nil)
 	if beforeFound {
 		beforeStatus, _ := before["status"].(string)
-		runtimeFieldsChanged := req.Provider != nil || req.BaseURL != nil || req.Models != nil ||
+		runtimeFieldsChanged := req.Provider != nil || req.BaseURL != nil || req.Models != nil || req.ModelMapping != nil ||
 			req.AdapterType != nil || req.AdapterConfig != nil || req.Priority != nil ||
 			req.RoutingWeight != nil || req.DegradationThreshold != nil
 		leavesActive := req.Status == nil || *req.Status == "active"
@@ -481,9 +551,30 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		if statusOnly && beforeStatus == "disabled" && req.Status != nil && *req.Status == "staged" {
+			currentEpoch, publishedModels, _, scopeErr := channelUpdateConflictState(r.Context(), store, id)
+			if scopeErr != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to validate retained runtime route"})
+				return
+			}
+			for _, publishedModel := range modellist.Parse(publishedModels) {
+				if probeErr := requireCurrentSuccessfulProbeFrom(r.Context(), store, modelEndpointActivationRequest{
+					ChannelID: id, Model: publishedModel, ExpectedRoutingEpoch: currentEpoch,
+				}); probeErr != nil {
+					writeJSON(w, http.StatusConflict, map[string]interface{}{
+						"error": "A current successful provider test is required before restoring this connection",
+						"code":  "current_probe_required", "model": publishedModel, "message": probeErr.Error(),
+					})
+					return
+				}
+			}
+		}
 	}
 
-	sets = append(sets, "routing_epoch = routing_epoch + 1", "updated_at = NOW()")
+	if !statusOnly {
+		sets = append(sets, "routing_epoch = routing_epoch + 1")
+	}
+	sets = append(sets, "updated_at = NOW()")
 	args = append(args, id)
 	where := fmt.Sprintf("id = $%d", argIdx)
 	if req.ExpectedRoutingEpoch != nil {
@@ -491,11 +582,7 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		where += fmt.Sprintf(" AND routing_epoch = $%d", argIdx)
 		args = append(args, *req.ExpectedRoutingEpoch)
 	}
-	emergencyDisableOnly := req.Status != nil && *req.Status == "disabled" &&
-		req.Name == nil && req.Provider == nil && req.BaseURL == nil && req.Models == nil &&
-		req.AdapterType == nil && req.AdapterConfig == nil && req.Priority == nil &&
-		req.RoutingWeight == nil && req.DegradationThreshold == nil
-	if !emergencyDisableOnly {
+	if !statusOnly {
 		where += ` AND NOT EXISTS (
             SELECT 1
               FROM runtime_change_slots rcs
@@ -532,6 +619,9 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Models != nil {
 		changedFields = append(changedFields, "models")
+	}
+	if req.ModelMapping != nil {
+		changedFields = append(changedFields, "model_mapping")
 	}
 	if req.AdapterType != nil {
 		changedFields = append(changedFields, "adapter_type")
@@ -670,9 +760,11 @@ func channelAuditState(id int64, name, provider, baseURL, models, adapterType st
 
 func (h *Handler) channelAuditSnapshot(ctx context.Context, store channelMutationStore, id int64, lock bool) (map[string]interface{}, bool) {
 	var name, provider, baseURL, models, adapterType, status, circuitState string
+	var modelMapping, adapterConfig json.RawMessage
 	var priority, degradationThreshold, routingWeight, failCount int
 	var routingEpoch int64
-	query := `SELECT name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'),
+	query := `SELECT name, provider, base_url, models, COALESCE(model_mapping, '{}'::jsonb),
+		        COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
 		        priority, degradation_threshold, status, circuit_state, fail_count,
 		        routing_weight, routing_epoch
 		 FROM channels WHERE id = $1`
@@ -682,11 +774,13 @@ func (h *Handler) channelAuditSnapshot(ctx context.Context, store channelMutatio
 	err := store.QueryRow(ctx,
 		query,
 		id,
-	).Scan(&name, &provider, &baseURL, &models, &adapterType, &priority, &degradationThreshold, &status, &circuitState, &failCount, &routingWeight, &routingEpoch)
+	).Scan(&name, &provider, &baseURL, &models, &modelMapping, &adapterType, &adapterConfig, &priority, &degradationThreshold, &status, &circuitState, &failCount, &routingWeight, &routingEpoch)
 	if err != nil {
 		return nil, false
 	}
 	state := channelAuditState(id, name, provider, baseURL, models, adapterType, priority, degradationThreshold, status, circuitState, failCount)
+	state["model_mapping"] = modelMapping
+	state["adapter_config"] = adapterConfig
 	state["routing_weight"] = routingWeight
 	state["routing_epoch"] = routingEpoch
 	return state, true
@@ -703,6 +797,7 @@ func (h *Handler) GetChannel(w http.ResponseWriter, r *http.Request) {
 		ID                   int64
 		Name, Provider       string
 		BaseURL, Models      string
+		ModelMapping         json.RawMessage
 		AdapterType          string
 		AdapterConfig        json.RawMessage
 		Priority             int
@@ -715,11 +810,11 @@ func (h *Handler) GetChannel(w http.ResponseWriter, r *http.Request) {
 		RoutingEpoch         int64
 	}
 	err = h.db.QueryRow(r.Context(),
-		`SELECT id, name, provider, base_url, models, COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
+		`SELECT id, name, provider, base_url, models, COALESCE(model_mapping, '{}'::jsonb), COALESCE(adapter_type, 'openai_compatible'), COALESCE(adapter_config, '{}'::jsonb),
 		        priority, degradation_threshold, status, circuit_state, fail_count, created_at,
 		        routing_weight, routing_epoch
 		 FROM channels WHERE id = $1`, id).Scan(
-		&ch.ID, &ch.Name, &ch.Provider, &ch.BaseURL, &ch.Models, &ch.AdapterType, &ch.AdapterConfig, &ch.Priority,
+		&ch.ID, &ch.Name, &ch.Provider, &ch.BaseURL, &ch.Models, &ch.ModelMapping, &ch.AdapterType, &ch.AdapterConfig, &ch.Priority,
 		&ch.DegradationThreshold, &ch.Status, &ch.CircuitState, &ch.FailCount, &ch.CreatedAt, &ch.RoutingWeight, &ch.RoutingEpoch)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
@@ -727,7 +822,7 @@ func (h *Handler) GetChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id": ch.ID, "name": ch.Name, "provider": ch.Provider, "base_url": ch.BaseURL,
-		"models": ch.Models, "adapter_type": adapters.NormalizeType(ch.AdapterType), "adapter_config": ch.AdapterConfig,
+		"models": ch.Models, "model_mapping": ch.ModelMapping, "adapter_type": adapters.NormalizeType(ch.AdapterType), "adapter_config": ch.AdapterConfig,
 		"priority": ch.Priority, "degradation_threshold": ch.DegradationThreshold,
 		"routing_weight": ch.RoutingWeight, "routing_epoch": ch.RoutingEpoch,
 		"status": ch.Status, "circuit_state": ch.CircuitState, "fail_count": ch.FailCount, "created_at": ch.CreatedAt,

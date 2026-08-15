@@ -12,7 +12,6 @@ import {
   IconHistory,
   IconHomeStroked,
   IconHistogram,
-  IconKeyStroked,
   IconBell,
   IconMonitorStroked,
   IconPriceTag,
@@ -192,8 +191,7 @@ const taskNavItems: NavItem[] = [
     text: '模型接入',
     icon: <IconSendStroked />,
     items: [
-	  { itemKey: '/channels', text: '模型连接', icon: <IconRoute /> },
-	  { itemKey: '/channel-keys', text: '供应商凭证', icon: <IconKeyStroked /> },
+	  { itemKey: '/channels', text: '模型与端点', icon: <IconRoute />, licenseFeature: 'gateway' },
 	  { itemKey: '/model-governance', text: '模型治理', icon: <IconBranch />, licenseFeature: 'model_governance' },
 	  { itemKey: '/model-readiness', text: '调用条件诊断', icon: <IconTestScoreStroked /> },
     ],
@@ -330,6 +328,11 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
 	if (authz.hasLiveProjectMembership || isOrgAdminRole(organizationRole) || isOrgViewerRole(organizationRole)) allowedRoutes.add('/model-readiness');
 
   let items = filterTaskNavigation(allowedRoutes);
+  if (isPlatformAdminRole(organizationRole)) {
+    items = items.map(item => item.itemKey === 'g-model-access'
+      ? { ...item, items: item.items?.filter(child => child.itemKey === '/channels') }
+      : item).filter(item => !item.items || item.items.length > 0);
+  }
   // End-user navigation belongs to customer member identities only. Management
   // accounts keep their management taxonomy even when stale project membership
   // rows exist in /me.
@@ -356,6 +359,7 @@ function firstSegmentPath(path: string) {
 }
 
 const routeLicenseFeatures: Partial<Record<string, LicenseFeature>> = {
+  '/channels': 'gateway',
   '/model-governance': 'model_governance',
   '/test': 'gateway',
   '/guardrail-policies': 'guardrails',

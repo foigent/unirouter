@@ -193,7 +193,7 @@ describe('App shell', () => {
   it('keeps every secondary navigation section expanded without another disclosure click', () => {
     renderApp();
 
-    expect(screen.getByText('模型连接')).toBeTruthy();
+    expect(screen.getByText('模型与端点')).toBeTruthy();
     expect(screen.getByText('人员与权限')).toBeTruthy();
     expect(screen.getByText('执行请求')).toBeTruthy();
     expect(screen.getByText('预算与成本中心')).toBeTruthy();
@@ -217,8 +217,8 @@ describe('App shell', () => {
   it('keeps core management workspaces available with an enforceable commercial License', async () => {
     renderApp('platform_admin', { licenseAccess: PARTIAL_LICENSE });
 
-    expect(screen.getByText('模型治理')).toBeTruthy();
-    expect(await screen.findByText('模型连接')).toBeTruthy();
+    expect(screen.queryByText('模型治理')).toBeNull();
+    expect(await screen.findByText('模型与端点')).toBeTruthy();
     expect(await screen.findByText('内容安全')).toBeTruthy();
     expect(screen.getByRole('button', { name: '通知' }).hasAttribute('disabled')).toBe(false);
   });
