@@ -155,6 +155,8 @@ describe('ConnectionModelPanel', () => {
     const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
     expect(within(row).getByText('当前不可调用（发布记录保留）')).toBeTruthy();
     expect(screen.getByText(/保留的发布记录只用于审计，不代表模型仍可调用/)).toBeTruthy();
+    expect(screen.getByText(/先结束这些历史发布并将连接转为待发布/)).toBeTruthy();
+    expect(screen.queryByText(/占位/)).toBeNull();
     fireEvent.click(within(row).getByRole('button', { name: '查看恢复步骤' }));
     expect(props.onOpenRouteManagement).toHaveBeenCalledWith('deepseek-v4-pro', 'recover');
   });

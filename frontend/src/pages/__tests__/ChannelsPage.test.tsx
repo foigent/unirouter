@@ -298,8 +298,9 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
       published_models: ['kimi-k3'],
     }));
     fireEvent.click(screen.getByRole('button', { name: '更新' }));
-    expect(await screen.findByText(/仍保留已生效发布占位（kimi-k3）/)).toBeTruthy();
-    expect(screen.getByText(/刷新不会解除占位/)).toBeTruthy();
+    expect(await screen.findByText(/仍关联已生效的历史发布记录（kimi-k3）/)).toBeTruthy();
+    expect(screen.getByText(/刷新页面不会改变运行状态/)).toBeTruthy();
+    expect(screen.queryByText(/占位/)).toBeNull();
   });
 
   it('emergency-disables a runtime-published staged connection with a status-only update', async () => {
