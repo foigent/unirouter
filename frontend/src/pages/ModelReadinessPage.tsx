@@ -32,7 +32,7 @@ const platformLabels: Record<string, string> = {
 };
 const projectLabels: Record<string, string> = {
   project: '项目', alias: '模型别名', model_set: '项目模型范围', wallet: '钱包', project_budget: '项目预算监控',
-  application: '应用', grant: '访问授权', credential: '应用 API Key',
+  application: '应用', grant: '访问授权', credential: '调用 API Key',
   model_authorization: '模型调用授权', limit_policy: '限额策略',
 };
 
@@ -59,7 +59,7 @@ const reasonCopy: Record<string, string> = {
 	unrestricted_optional: '项目未设置额外模型集限制',
 	self_application_not_applicable: '当前选择个人 API 访问，不需要应用对象',
 	access_grant_active: '访问授权有效',
-	access_credential_missing: '缺少可用的应用 API Key',
+	access_credential_missing: '所选调用身份缺少可用的 API Key',
 	legacy_authority_unchanged: '没有额外模型授权策略阻止调用',
 	limit_policy_evaluated: '限额策略已完成检查',
 };
@@ -308,7 +308,7 @@ export default function ModelReadinessPage() {
         title={connectionMode ? '选择要检查的模型连接' : '选择要诊断的调用'}
         description={connectionMode
           ? '从当前已录入的模型中选择；这里只检查连接层，不要求先建立项目或应用。'
-          : '调用授权、应用 API Key 和模型范围按项目隔离；只有一个有效项目时系统会自动使用它。'}
+          : '调用授权、API Key 和模型范围按项目隔离；只有一个有效项目时系统会自动使用它。'}
       >
         {!connectionMode && projectsError && <div><Text type="warning">{projectsError}</Text></div>}
         {modelOptionsError && <div><Text type="warning">{modelOptionsError}</Text></div>}
