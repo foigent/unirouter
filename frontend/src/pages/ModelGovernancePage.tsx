@@ -719,7 +719,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
         actions={(
           <Space>
             <ModelConnectionBackButton />
-            {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
+            {platform && <Text type="tertiary">当前部署组织：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
             {!['optimization', 'releases'].includes(activeTab) && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
           </Space>
         )}
@@ -727,7 +727,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 
       {embedded && <div className="ur-embedded-heading">
         <div><Title heading={5} style={{ margin: 0 }}>模型目录与项目范围</Title><Text type="tertiary">运行路由在主页面管理；这里仅维护企业目录、别名和项目可见范围。</Text></div>
-        {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
+        {platform && <Text type="tertiary">当前部署组织：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
       </div>}
 
       <div className="ur-modelgov-tabs" role="tablist" aria-label="模型治理视图">

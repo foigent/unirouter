@@ -202,7 +202,10 @@ export default function ModelEndpointsPage() {
     const next = new URLSearchParams(search);
     next.set('tab', tab);
     if (tab !== 'advanced') next.delete('view');
-    if (tab !== 'models') setSelectedModel('');
+    if (tab !== 'models') {
+      next.delete('model');
+      setSelectedModel('');
+    }
     setSearch(next, { replace: true });
   };
 
@@ -210,6 +213,14 @@ export default function ModelEndpointsPage() {
     const next = new URLSearchParams(search);
     next.set('tab', 'advanced');
     next.set('view', view);
+    next.delete('model');
+    setSelectedModel('');
+    setSearch(next, { replace: true });
+  };
+
+  const closeSelectedModel = () => {
+    const next = new URLSearchParams(search);
+    next.delete('model');
     setSelectedModel('');
     setSearch(next, { replace: true });
   };
@@ -268,11 +279,12 @@ export default function ModelEndpointsPage() {
   };
 
   const confirmBatchTests = () => Modal.confirm({
-    title: `检测全部 ${testableTargets.length} 个待检测端点？`,
+    title: `检测 ${testableTargets.length} 个缺少有效证据的端点？`,
     content: <div>
       <p>每个“供应商端点 × 公共模型”都会单独发起一次真实请求：</p>
       <ul>{testableTargets.map(target => <li key={target.target_ref}>{target.connection_name} · {target.public_model} → {target.upstream_model}</li>)}</ul>
       <p>不会用一条 Kimi 结果代替 DeepSeek，也不会只检测列表第一项。</p>
+      <p>已经处于稳定路由的端点可以继续调用；这里更新的是该精确端点的当前检测证据。</p>
     </div>,
     okText: '确认逐项检测',
     onOk: executeBatchTests,
@@ -435,7 +447,7 @@ export default function ModelEndpointsPage() {
         <div className="ur-model-endpoint-kpis">
           <MetricTile label="公共模型" value={projection?.summary.total ?? '-'} meta="按对外调用 ID 聚合" />
           <MetricTile label="当前可调用" value={projection?.summary.callable ?? '-'} tone="green" meta="来自网关真实候选" />
-          <MetricTile label="需要处理" value={projection?.summary.attention ?? '-'} tone="amber" meta="缺凭证、待检测或路由异常" />
+          <MetricTile label="调用阻塞" value={projection?.summary.attention ?? '-'} tone="amber" meta="当前不能调用的凭证、检测或路由问题" />
           <MetricTile label="灰度中" value={projection?.summary.canary ?? '-'} tone="blue" meta="稳定路由仍保留" />
         </div>
 
@@ -444,7 +456,7 @@ export default function ModelEndpointsPage() {
           description="表格不再把通道状态、凭证状态或历史发布单独冒充为“已启用”；调用状态只来自后端权威投影。"
           actions={<Space>
             <Input prefix={<IconSearch />} value={filter} onChange={setFilter} placeholder="搜索模型、供应商或上游 ID" style={{ width: 280 }} />
-            <Button disabled={testableTargets.length === 0 || batchTesting} loading={batchTesting} onClick={confirmBatchTests}>逐项检测待检测端点（{testableTargets.length}）</Button>
+            <Button disabled={testableTargets.length === 0 || batchTesting} loading={batchTesting} onClick={confirmBatchTests}>补齐端点检测证据（{testableTargets.length}）</Button>
           </Space>}
         >
           {loadError ? <EmptyState title="模型状态暂时不可用" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} /> :
@@ -481,7 +493,7 @@ export default function ModelEndpointsPage() {
     <SideSheet
       title={selected ? `${selected.display_name || selected.public_model} · 供应商端点` : '供应商端点'}
       visible={Boolean(selected)}
-      onCancel={() => setSelectedModel('')}
+      onCancel={closeSelectedModel}
       width={760}
     >
       {selected && <div className="ur-model-endpoint-sheet">
