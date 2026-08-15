@@ -118,8 +118,9 @@ describe('ModelReadinessPage', () => {
 		render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self']}><ModelReadinessPage /></MemoryRouter>);
 
 		expect(await screen.findByText('所选调用身份可用')).toBeTruthy();
-		expect(screen.getAllByText('缺少可用的应用 API Key').length).toBeGreaterThan(0);
+		expect(screen.getAllByText('所选调用身份缺少可用的 API Key').length).toBeGreaterThan(0);
 		expect(screen.getByRole('combobox', { name: '谁来调用' })).toHaveTextContent('当前账号的个人 API Key');
+		expect(screen.getByText('调用 API Key')).toBeTruthy();
 	});
 
   it('explains a missing gateway license instead of showing a generic blocker', async () => {
