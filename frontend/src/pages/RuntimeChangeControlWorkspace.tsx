@@ -12,6 +12,8 @@ interface Channel {
   provider: string;
   models: string;
   status: string;
+	effective_status?: string;
+	published_models?: string;
   priority: number;
   routing_weight: number;
   routing_epoch: number;
@@ -49,7 +51,7 @@ interface RuntimeRelease {
 }
 
 const stageLabels: Record<string, string> = {
-  draft: '草稿', validated: '已验证', shadow: '待灰度（零流量）', canary: '灰度', active: '已生效', rolled_back: '已回滚', rejected: '已拒绝',
+  draft: '草稿', validated: '已验证', shadow: '待灰度（零流量）', canary: '灰度', active: '已生效记录', rolled_back: '已回滚', rejected: '已拒绝',
 };
 
 const riskLabels: Record<string, string> = {
@@ -67,6 +69,36 @@ function riskColor(risk: string) {
   if (risk === 'breaking') return 'red';
   if (risk === 'review_required') return 'orange';
   return risk === 'compatible' ? 'blue' : 'green';
+}
+
+type ReleaseAssignmentState = 'applied' | 'channel_disabled' | 'epoch_conflict' | 'channel_missing' | 'not_active';
+
+function releaseAssignmentState(release: RuntimeRelease, channels: Channel[]): ReleaseAssignmentState {
+	if (!['active', 'canary'].includes(release.stage)) return 'not_active';
+	const admitted = release.candidate.overrides.filter(item => item.admission === 'allow');
+	if (admitted.length === 0) return 'channel_missing';
+	let sawDisabled = false;
+	let sawEpochConflict = false;
+	let sawChannel = false;
+	for (const item of admitted) {
+		const channel = channels.find(candidate => candidate.id === item.channel_id);
+		if (!channel) continue;
+		sawChannel = true;
+		if (channel.routing_epoch !== item.expected_routing_epoch) {
+			sawEpochConflict = true;
+			continue;
+		}
+		if ((channel.effective_status || channel.status) === 'active') return 'applied';
+		if (channel.status === 'disabled') sawDisabled = true;
+	}
+	if (sawEpochConflict) return 'epoch_conflict';
+	if (sawDisabled) return 'channel_disabled';
+	return sawChannel ? 'channel_disabled' : 'channel_missing';
+}
+
+function releaseRiskLabel(release: RuntimeRelease) {
+	if (release.stage === 'active' && release.overall_risk === 'review_required') return '启用时有变化（已确认）';
+	return riskLabels[release.overall_risk] || release.overall_risk;
 }
 
 interface RuntimeChangeControlWorkspaceProps {
@@ -119,11 +151,16 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
 
   useEffect(() => { void load(); }, [load]);
 
-  const stats = useMemo(() => ({
-    active: releases.filter(item => item.stage === 'active').length,
-    canary: releases.filter(item => item.stage === 'canary').length,
-    pending: releases.filter(item => ['draft', 'validated', 'shadow'].includes(item.stage)).length,
-  }), [releases]);
+  const stats = useMemo(() => {
+	const activeRecords = releases.filter(item => item.stage === 'active');
+	return {
+		activeRecords: activeRecords.length,
+		appliedActive: activeRecords.filter(item => releaseAssignmentState(item, channels) === 'applied').length,
+		retainedActive: activeRecords.filter(item => releaseAssignmentState(item, channels) !== 'applied').length,
+		canary: releases.filter(item => item.stage === 'canary').length,
+		pending: releases.filter(item => ['draft', 'validated', 'shadow'].includes(item.stage)).length,
+	};
+  }, [channels, releases]);
 
   const releaseChannels = useMemo(
     () => channels.filter(channel => ['staged', 'active'].includes(channel.status) && parseModelList(channel.models).length > 0),
@@ -200,62 +237,100 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
         </button>
       ),
     },
-    { title: '阶段', dataIndex: 'stage', width: 150, render: (value: string) => <Tag color={stageColor(value)}>{stageLabels[value] || value}</Tag> },
-    { title: '风险', dataIndex: 'overall_risk', width: 110, render: (value: string) => <Tag color={riskColor(value)}>{riskLabels[value] || value}</Tag> },
-    { title: '版本', dataIndex: 'version', width: 80, render: (value: number) => `r${value}` },
+	{ title: '发布记录', dataIndex: 'stage', width: 150, render: (value: string) => <Tag color={stageColor(value)}>{value === 'active' ? '已生效记录' : stageLabels[value] || value}</Tag> },
+	{ title: '验证结论', dataIndex: 'overall_risk', width: 190, render: (_: string, record: RuntimeRelease) => <Tag color={riskColor(record.overall_risk)}>{releaseRiskLabel(record)}</Tag> },
+	{ title: '记录修订', dataIndex: 'version', width: 100, render: (value: number) => `修订 ${value}` },
     { title: '灰度', dataIndex: 'canary_basis_points', width: 90, render: (value: number) => value ? `${(value / 100).toFixed(0)}%` : '-' },
     { title: '更新时间', dataIndex: 'updated_at', render: (value: string) => value ? new Date(value).toLocaleString() : '-' },
   ];
 
   const selectedChannel = (id: number) => channels.find(item => item.id === id);
+	const selectedAssignmentState = selected ? releaseAssignmentState(selected, channels) : 'not_active';
 
-  const recoveryRelease = requestedModel
-    ? releases.find(item => item.model_name === requestedModel && ['active', 'canary'].includes(item.stage))
-      || releases.find(item => item.model_name === requestedModel)
-      || null
-    : selected;
+  const recoveryChannel = channels.find(item => item.id === requestedChannelID);
+	const retainedReleases = Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0
+		? releases.filter(item => ['active', 'canary'].includes(item.stage) && item.candidate.overrides.some(override => (
+			override.channel_id === requestedChannelID && override.admission === 'allow'
+		)))
+		: [];
+	const sharedRetainedReleases = retainedReleases.filter(release => release.candidate.overrides.some(override => (
+		override.admission === 'allow' && override.channel_id !== requestedChannelID
+	)));
+
+	const recoverConnection = async () => {
+		if (!recoveryChannel) {
+			Toast.error('无法确认要恢复的模型连接，请刷新后重试');
+			return;
+		}
+		if (sharedRetainedReleases.length > 0) {
+			Toast.error('部分发布记录同时包含其他连接，不能使用快速恢复，以免影响仍在承载流量的连接');
+			return;
+		}
+		setTransitioning(true);
+		try {
+			for (const release of retainedReleases) {
+				await api.rollbackRuntimeChange(release.release_ref, release.version);
+			}
+			await api.updateChannel(recoveryChannel.id, {
+				status: 'staged',
+				expected_routing_epoch: recoveryChannel.routing_epoch,
+			});
+			Toast.success('旧发布记录已释放，连接已转为待发布；请完成真实检测后重新启用模型');
+			await load();
+			onBack?.();
+		} catch (error: any) {
+			Toast.error(`恢复准备失败${error?.message ? `：${error.message}` : ''}；连接仍保持禁用或待发布，不会自动恢复流量`);
+			await load();
+		} finally {
+			setTransitioning(false);
+		}
+	};
 
   if (recoveryOnly) {
     return (
       <Surface
-        title={`${requestedModel || '模型'} · 安全恢复`}
-        description="紧急禁用后的恢复留在模型连接页完成，不依赖“模型目录与灰度”商业授权。"
+		title={`${recoveryChannel?.name || '模型连接'} · 安全恢复`}
+		description="一次释放该连接保留的全部运行时发布记录，再转为待发布；不会自动恢复流量。"
         actions={onBack ? <Button onClick={onBack}>返回模型连接</Button> : undefined}
       >
         <Banner
           type="warning"
-          description={`恢复不会自动启用连接：先回滚 ${requestedModel || '该模型'} 的旧发布占位；再返回上方将连接 #${Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0 ? requestedChannelID : '-'} 改为“待发布”，补齐供应商凭证并完成真实检测；最后重新启用。紧急禁用状态始终优先。`}
+		  description={`连接仍保持禁用。下面将释放 ${retainedReleases.length} 条旧发布记录，并只把连接转成“待发布”；之后必须完成真实检测并逐个启用模型。`}
           closeIcon={null}
           style={{ marginBottom: 12 }}
         />
         {loadError ? (
           <EmptyState title="恢复状态加载失败" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={220} />
-        ) : loading && !recoveryRelease ? (
-          <Typography.Text type="tertiary">正在读取该模型的发布占位…</Typography.Text>
-        ) : !recoveryRelease ? (
-          <EmptyState title="没有需要回滚的旧发布" description="返回模型连接，将连接改为待发布后即可继续配置凭证、检测并启用。" minHeight={220} />
+		) : loading && !recoveryChannel ? (
+		  <Typography.Text type="tertiary">正在读取该连接的发布记录…</Typography.Text>
+		) : !recoveryChannel ? (
+		  <EmptyState title="没有找到要恢复的连接" description="请返回模型连接刷新后重试。" minHeight={220} />
         ) : (
           <div className="ur-detail-card">
             <dl className="ur-financial-truth-detail">
-              <dt>模型</dt><dd>{recoveryRelease.model_name}</dd>
-              <dt>当前发布阶段</dt><dd><Tag color={stageColor(recoveryRelease.stage)}>{stageLabels[recoveryRelease.stage] || recoveryRelease.stage}</Tag></dd>
-              <dt>发布理由</dt><dd>{recoveryRelease.reason}</dd>
-              <dt>通道</dt><dd>{recoveryRelease.candidate.overrides.map(item => selectedChannel(item.channel_id)?.name || `Channel #${item.channel_id}`).join('、')}</dd>
+			  <dt>连接</dt><dd>{recoveryChannel.name}</dd>
+			  <dt>当前连接状态</dt><dd><Tag color="grey">{recoveryChannel.status === 'disabled' ? '禁用' : recoveryChannel.status}</Tag></dd>
+			  <dt>保留发布记录</dt><dd>{retainedReleases.length} 条</dd>
+			  <dt>涉及模型</dt><dd>{retainedReleases.map(item => item.model_name).join('、') || '无'}</dd>
             </dl>
-            {['active', 'canary'].includes(recoveryRelease.stage) ? (
-              <Popconfirm
-                title="确认回滚旧发布占位？"
-                content="该操作只释放旧运行时发布占位，不会把已紧急禁用的连接恢复流量。"
-                okText="确认回滚旧发布"
-                onConfirm={() => void transition('旧发布占位已回滚', () => api.rollbackRuntimeChange(recoveryRelease.release_ref, recoveryRelease.version))}
-              >
-                <Button type="danger" loading={transitioning}>回滚旧发布占位</Button>
-              </Popconfirm>
-            ) : recoveryRelease.stage === 'rolled_back' ? (
-              <Banner type="success" description="旧发布占位已释放。请返回模型连接，将连接改为待发布，然后配置凭证、真实检测并重新启用。" closeIcon={null} />
-            ) : (
-              <Banner type="info" description={`当前发布阶段为“${stageLabels[recoveryRelease.stage] || recoveryRelease.stage}”，没有可执行的旧生效占位回滚。`} closeIcon={null} />
-            )}
+			{retainedReleases.length > 0 && <div className="ur-release-overrides">
+			  {retainedReleases.map(item => <div key={item.release_ref}>
+				<strong>{item.model_name}</strong>
+				<span>{stageLabels[item.stage] || item.stage} · 修订 {item.version}</span>
+			  </div>)}
+			</div>}
+			{sharedRetainedReleases.length > 0 ? <Banner
+			  type="danger"
+			  description={`其中 ${sharedRetainedReleases.length} 条发布记录还包含其他连接。为避免误伤现有流量，快速恢复已停用；请返回后在完整发布管理中逐条处理。`}
+			  closeIcon={null}
+			/> : <Popconfirm
+			  title={`确认准备恢复 ${recoveryChannel.name}？`}
+			  content={`将释放 ${retainedReleases.length} 条旧发布记录，并把连接转为待发布；不会自动恢复流量。`}
+			  okText="确认释放并转为待发布"
+			  onConfirm={() => void recoverConnection()}
+			>
+			  <Button type="danger" loading={transitioning}>释放全部旧发布并转为待发布</Button>
+			</Popconfirm>}
           </div>
         )}
       </Surface>
@@ -266,14 +341,16 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
     <>
       {recoveryRequested && <Banner
         type="warning"
-        description={`恢复 ${requestedModel}：先在右侧回滚该模型当前“已生效”的旧发布，释放历史占位；再返回模型连接，将连接 #${Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0 ? requestedChannelID : '-'} 改为“待发布”，补齐凭证并完成真实检测后重新启用。回滚不会自动恢复流量。`}
+        description={`恢复 ${requestedModel}：先释放连接 #${Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0 ? requestedChannelID : '-'} 保留的全部运行时发布记录，再把连接转为“待发布”；补齐凭证并完成真实检测后，才能重新启用。该过程不会自动恢复流量。`}
       />}
       <Banner
         type="info"
         description="在线发布只覆盖通道准入、优先级和权重。Adapter 必须具备离线协议夹具，但夹具不代表供应商账号、网络或真实接口已经验证；请先在上游检测完成真实连通检查。紧急禁用始终高于任何发布。"
       />
       <div className="ur-modelgov-summary">
-        <div><Typography.Text type="tertiary">当前生效</Typography.Text><strong>{stats.active}</strong></div>
+		<div><Typography.Text type="tertiary">发布记录生效</Typography.Text><strong>{stats.activeRecords}</strong></div>
+		<div><Typography.Text type="tertiary">当前可应用</Typography.Text><strong>{stats.appliedActive}</strong></div>
+		<div><Typography.Text type="tertiary">保留或漂移</Typography.Text><strong>{stats.retainedActive}</strong></div>
         <div><Typography.Text type="tertiary">灰度中</Typography.Text><strong>{stats.canary}</strong></div>
         <div><Typography.Text type="tertiary">待推进</Typography.Text><strong>{stats.pending}</strong></div>
       </div>
@@ -300,19 +377,29 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
         </main>
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="运行时发布检查器">
           <div className="ur-detail-header">
-            <div><Typography.Text className="ur-panel-hint">Release Inspector</Typography.Text><Typography.Title heading={5} style={{ margin: 0 }}>证据与推进</Typography.Title></div>
+			<div><Typography.Text className="ur-panel-hint">Release Inspector</Typography.Text><Typography.Title heading={5} style={{ margin: 0 }}>发布记录与当前状态</Typography.Title></div>
             <Tag color={stageColor(selected?.stage || '')}>{selected ? stageLabels[selected.stage] || selected.stage : '未选择'}</Tag>
           </div>
           {selected ? (
             <>
               <dl className="ur-financial-truth-detail">
                 <dt>模型</dt><dd>{selected.model_name}</dd>
-                <dt>版本 / 阶段</dt><dd>r{selected.version} / {stageLabels[selected.stage] || selected.stage}</dd>
-                <dt>模拟风险</dt><dd>{riskLabels[selected.overall_risk] || selected.overall_risk}</dd>
-                <dt>灰度比例</dt><dd>{selected.canary_basis_points ? `${selected.canary_basis_points / 100}%` : '未启用'}</dd>
+				<dt>记录修订 / 阶段</dt><dd>修订 {selected.version} / {stageLabels[selected.stage] || selected.stage}</dd>
+				<dt>启用时验证结论</dt><dd>{releaseRiskLabel(selected)}</dd>
+				<dt>当前灰度流量</dt><dd>{selectedAssignmentState !== 'applied'
+					? '不适用（当前发布不可应用）'
+					: selected.stage === 'active' ? '0%（已全量生效）' : selected.canary_basis_points ? `${selected.canary_basis_points / 100}%` : '0%'}</dd>
                 <dt>理由</dt><dd>{selected.reason}</dd>
-                <dt>运行时范围</dt><dd>route assignment only</dd>
+				<dt>运行时范围</dt><dd>仅路由分配</dd>
               </dl>
+			  {selected.stage === 'active' && selectedAssignmentState !== 'applied' && <Banner
+				type="warning"
+				description={selectedAssignmentState === 'epoch_conflict'
+					? '这是一条保留的已生效记录，但连接版本已经变化，当前不能应用到路由。请在模型连接中执行恢复。'
+					: selectedAssignmentState === 'channel_disabled'
+						? '这是一条保留的已生效记录，但连接已禁用，当前没有流量。请在模型连接中执行恢复。'
+						: '这条发布记录当前找不到可应用的连接，不能作为可调用状态。'}
+			  />}
               <details>
                 <summary>高级标识与证据哈希</summary>
                 <dl className="ur-financial-truth-detail">
@@ -329,7 +416,7 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
                   const channel = selectedChannel(item.channel_id);
                   return <div key={item.channel_id}>
                     <strong>{channel?.name || `Channel #${item.channel_id}`}</strong>
-                    <span>epoch {item.expected_routing_epoch} · {item.admission} · P{item.priority ?? channel?.priority ?? '-'} · W{item.weight ?? channel?.routing_weight ?? '-'}</span>
+					<span>期望 epoch {item.expected_routing_epoch} / 当前 {channel?.routing_epoch ?? '-'} · {item.admission} · P{item.priority ?? channel?.priority ?? '-'} · W{item.weight ?? channel?.routing_weight ?? '-'}</span>
                   </div>;
                 })}
               </div>

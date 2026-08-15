@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import ModelGovernancePage, { formatModelSetItems, parseModelSetItems } from '../ModelGovernancePage';
+import ModelGovernancePage, { comparableModelIdentity, formatModelSetItems, parseModelSetItems } from '../ModelGovernancePage';
 
 const mockGetModelRegistry = vi.fn();
 const mockCreateModelRegistry = vi.fn();
@@ -114,6 +114,11 @@ describe('ModelGovernancePage helpers', () => {
     ]);
     expect(formatModelSetItems(items)).toBe('alias:company-chat\nmodel:gpt-4o');
   });
+
+	it('detects display-format variants of the same model identity', () => {
+		expect(comparableModelIdentity(' Kimi K3 ')).toBe('kimi-k3');
+		expect(comparableModelIdentity('DeepSeek-V4-Pro')).toBe(comparableModelIdentity('deepseek-v4-pro'));
+	});
 });
 
 describe('ModelGovernancePage', () => {
@@ -138,6 +143,24 @@ describe('ModelGovernancePage', () => {
     expect(screen.getByText('gpt-4o')).toBeTruthy();
     expect(screen.getByText('Migrate to gpt-4.1-mini')).toBeTruthy();
   });
+
+	it('separates lifecycle totals from project visibility and flags duplicate test records', async () => {
+		mockGetModelRegistry.mockResolvedValueOnce({
+			data: [
+				{ ...REGISTRY.data[0], id: 1, model_name: 'Kimi K3', lifecycle: 'ga', approved_catalog: true },
+				{ ...REGISTRY.data[0], id: 2, model_name: 'kimi-k3', lifecycle: 'staging', approved_catalog: true },
+			],
+			total: 2,
+		});
+		render(<ModelGovernancePage />);
+
+		expect(await screen.findByText(/发现 1 组疑似重复模型标识/)).toBeTruthy();
+		expect(screen.getByText('当前页 GA 记录').nextElementSibling?.textContent).toBe('1');
+		expect(screen.getByText('当前筛选记录总数').nextElementSibling?.textContent).toBe('2');
+		expect(screen.getByText('项目可见')).toBeTruthy();
+		expect(screen.getByText('已批准·待上线')).toBeTruthy();
+		expect(screen.getAllByRole('button', { name: '退役并移出目录' })).toHaveLength(2);
+	});
 
   it('binds platform model governance to the canonical customer without an organization selector', async () => {
     auth.user = {

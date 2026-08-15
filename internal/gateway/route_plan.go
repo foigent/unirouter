@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +15,11 @@ import (
 )
 
 const maxRoutingModelLength = 200
+
+// ErrRuntimeAssignmentStale means a retained release points at an older
+// channel routing epoch. Operators must reconcile or roll back that release;
+// silently ignoring the pin would make the preview disagree with live traffic.
+var ErrRuntimeAssignmentStale = errors.New("runtime routing assignment is stale")
 
 // channelQuery deliberately returns control-plane state that may make a
 // channel ineligible. Filtering happens against one PostgreSQL clock value in
@@ -408,7 +414,7 @@ func applyRuntimeAssignment(load snapshotLoad, assignment routingpolicy.RuntimeA
 		}
 		channel := &copySnapshot.Channels[position].Channel
 		if channel.RoutingEpoch != override.ExpectedRoutingEpoch {
-			return snapshotLoad{}, fmt.Errorf("runtime assignment channel %d epoch conflict", override.ChannelID)
+			return snapshotLoad{}, fmt.Errorf("%w: channel %d epoch conflict", ErrRuntimeAssignmentStale, override.ChannelID)
 		}
 		// Emergency/manual disable remains stronger than a progressive release.
 		if override.Admission == routingpolicy.AdmissionAllow && channel.Status != "disabled" {

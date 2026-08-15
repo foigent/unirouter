@@ -33,9 +33,10 @@ const (
 )
 
 var (
-	ErrModelRequired = errors.New("model is required")
-	ErrModelRetired  = errors.New("model is retired")
-	ErrModelDenied   = errors.New("model is not allowed for project")
+	ErrModelRequired         = errors.New("model is required")
+	ErrModelRetired          = errors.New("model is retired")
+	ErrModelDenied           = errors.New("model is not allowed for project")
+	ErrModelIdentityConflict = errors.New("equivalent model identity already exists")
 )
 
 // AccessResult describes the model governance decision for a gateway request.
@@ -141,6 +142,34 @@ func EnsureActivatedCatalogModel(ctx context.Context, tx pgx.Tx, orgID int64, mo
 	providerFamily = strings.TrimSpace(providerFamily)
 	if orgID <= 0 || modelName == "" {
 		return fmt.Errorf("activated catalog model requires org_id and model_name")
+	}
+
+	var exactExists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM model_registry WHERE org_id=$1 AND model_name=$2
+		)`, orgID, modelName).Scan(&exactExists); err != nil {
+		return fmt.Errorf("check activated model identity: %w", err)
+	}
+	if !exactExists {
+		var conflictingModel string
+		err := tx.QueryRow(ctx, `
+			SELECT model_name
+			  FROM model_registry
+			 WHERE org_id=$1
+			   AND lifecycle <> 'retired'
+			   AND TRIM(BOTH '-' FROM regexp_replace(lower(model_name), '[^a-z0-9]+', '-', 'g'))
+			       = TRIM(BOTH '-' FROM regexp_replace(lower($2), '[^a-z0-9]+', '-', 'g'))
+			 ORDER BY id
+			 LIMIT 1`, orgID, modelName).Scan(&conflictingModel)
+		switch {
+		case err == nil:
+			return fmt.Errorf("%w: %s conflicts with %s", ErrModelIdentityConflict, modelName, conflictingModel)
+		case errors.Is(err, pgx.ErrNoRows):
+			// No equivalent active catalog identity exists; create the exact ID below.
+		case err != nil:
+			return fmt.Errorf("check equivalent activated model identity: %w", err)
+		}
 	}
 
 	tag, err := tx.Exec(ctx, `

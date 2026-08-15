@@ -209,10 +209,13 @@ export default function ChannelKeysPage() {
     () => new Map(channels.map(channel => [channel.id, channel])),
     [channels],
   );
-  const recordChannel = (record: ChannelKey): ChannelReadinessChannel => channelByID.get(record.channel_id) || {
+  const recordChannel = (record: ChannelKey): ChannelOption => channelByID.get(record.channel_id) || {
     id: record.channel_id,
     name: record.channel_name,
     status: record.channel_status,
+	base_status: record.channel_status,
+	label: record.channel_name,
+	value: record.channel_id,
   };
   const enabledOnInactiveChannelCount = keys.filter(key => (
     key.status === 'active' && recordChannel(key).status !== 'active'
@@ -230,12 +233,14 @@ export default function ChannelKeysPage() {
     { title: 'ID', dataIndex: 'id', width: 60 },
     {
       title: '所属通道', width: 150,
-      render: (_: unknown, record: ChannelKey) => (
-        <div style={{ display: 'grid', gap: 4 }}>
-          <span>{record.channel_name || '-'}</span>
-          <StatusTag status={recordChannel(record).status}>{`通道${channelStatusLabel(recordChannel(record).status)}`}</StatusTag>
-        </div>
-      ),
+		render: (_: unknown, record: ChannelKey) => {
+			const channel = recordChannel(record);
+			const runtimePublished = channel.base_status === 'staged' && channel.status === 'active';
+			return <div style={{ display: 'grid', gap: 4 }}>
+				<span>{record.channel_name || '-'}</span>
+				<StatusTag status={channel.status}>{runtimePublished ? '运行时生效（配置待发布）' : `通道${channelStatusLabel(channel.status)}`}</StatusTag>
+			</div>;
+		},
     },
     { title: '凭证标识', dataIndex: 'key_prefix', render: (v: string) => <code>{v}</code> },
     {
@@ -264,8 +269,12 @@ export default function ChannelKeysPage() {
     {
       title: '组合状态', width: 170,
       render: (_: unknown, record: ChannelKey) => {
-        const state = evaluateCredentialCombination(record, recordChannel(record));
-        return <StatusTag status={combinationStatus[state]}>{combinationLabel[state]}</StatusTag>;
+		const channel = recordChannel(record);
+        const state = evaluateCredentialCombination(record, channel);
+		const label = state === 'route_candidate' && channel.base_status === 'staged'
+			? '已进入路由（发布生效）'
+			: combinationLabel[state];
+		return <StatusTag status={combinationStatus[state]}>{label}</StatusTag>;
       },
     },
     {

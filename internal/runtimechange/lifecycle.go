@@ -3,6 +3,7 @@ package runtimechange
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -121,8 +122,11 @@ UPDATE runtime_change_slots
 			if catalogErr := modelgov.EnsureActivatedCatalogModel(
 				ctx, tx, customerOrgID, release.ModelName, providerFamily,
 			); catalogErr != nil {
-				if catalogErr == modelgov.ErrModelRetired {
+				if errors.Is(catalogErr, modelgov.ErrModelRetired) {
 					return fmt.Errorf("%w: activated model is retired", ErrConflict)
+				}
+				if errors.Is(catalogErr, modelgov.ErrModelIdentityConflict) {
+					return fmt.Errorf("%w: activated model identity conflicts with an existing catalog record: %v", ErrConflict, catalogErr)
 				}
 				return fmt.Errorf("%w: activated model catalog: %v", ErrUnavailable, catalogErr)
 			}

@@ -36,7 +36,36 @@ const projectLabels: Record<string, string> = {
   model_authorization: '模型调用授权', limit_policy: '限额策略',
 };
 
-function summaryStateCopy(state: ReadinessAxis['state']) {
+const reasonCopy: Record<string, string> = {
+	model_unregistered: '模型尚未加入模型目录',
+	model_retired: '模型已经退役，不能继续调用',
+	catalog_not_published: '模型尚未对项目目录开放',
+	channel_missing: '没有连接声明这个精确模型 ID',
+	provider_credential_unavailable: '没有可用于该模型的供应商凭证',
+	base_route_unavailable: '当前没有可实际承载请求的连接',
+	project_inactive: '所选项目未启用',
+	project_model_set_denied: '项目的模型范围不包含该模型',
+	access_grant_missing: '当前身份尚未获得项目访问授权',
+	gateway_license_authorized: '商业授权有效',
+	model_registered: '已有模型目录记录',
+	model_callable_lifecycle: '模型未退役',
+	catalog_published: '项目目录可以看到该模型',
+	channel_configured: '已有供应商连接',
+	provider_credential_available: '供应商凭证可用于该模型',
+	base_route_active: '当前至少有一条可用路由',
+	runtime_slot_configured: '已有稳定发布记录',
+	project_active: '项目处于启用状态',
+	direct_model_optional: '本次直接使用模型 ID，不需要 Alias',
+	unrestricted_optional: '项目未设置额外模型集限制',
+	self_application_not_applicable: '当前选择个人 API 访问，不需要应用对象',
+	access_grant_active: '访问授权有效',
+	access_credential_missing: '缺少可用的应用 API Key',
+	legacy_authority_unchanged: '没有额外模型授权策略阻止调用',
+	limit_policy_evaluated: '限额策略已完成检查',
+};
+
+function summaryStateCopy(state: ReadinessAxis['state'], reasonCode?: string) {
+	if (reasonCode && reasonCopy[reasonCode]) return reasonCopy[reasonCode];
   return ({
     ready: '条件已满足',
     blocked: '需要处理后才能使用',
@@ -46,28 +75,32 @@ function summaryStateCopy(state: ReadinessAxis['state']) {
   } as const)[state];
 }
 
-function ReadinessSummaryCard({ label, state }: { label: string; state: ReadinessAxis['state'] }) {
+function ReadinessSummaryCard({ label, state, reasonCode }: { label: string; state: ReadinessAxis['state']; reasonCode?: string }) {
   const presentation = statePresentation[state];
   return <div className={`ur-readiness-summary-card ur-readiness-summary-${state}`}>
     <div className="ur-readiness-summary-card-head">
       <Text strong>{label}</Text>
       <Tag color={presentation.color}>{presentation.label}</Tag>
     </div>
-    <Text type="tertiary" size="small">{summaryStateCopy(state)}</Text>
+	<Text type={state === 'blocked' ? 'danger' : 'tertiary'} size="small">{summaryStateCopy(state, reasonCode)}</Text>
   </div>;
 }
 
 function AxisCard({ label, axis, onFix }: { label: string; axis: ReadinessAxis; onFix: (route: string) => void }) {
   const presentation = statePresentation[axis.state];
   return (
-    <div style={{ border: '1px solid var(--semi-color-border)', borderRadius: 10, padding: 14, minHeight: 150 }}>
+    <section aria-label={`${label}诊断`} style={{ border: '1px solid var(--semi-color-border)', borderRadius: 10, padding: 14, minHeight: 150 }}>
       <Space style={{ justifyContent: 'space-between', width: '100%' }}>
         <Text strong>{label}</Text><Tag color={presentation.color}>{presentation.label}</Tag>
       </Space>
-      <div style={{ marginTop: 10 }}><Text code>{axis.reason_code}</Text></div>
-      {Object.keys(axis.safe_evidence || {}).length > 0 && <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, color: 'var(--semi-color-text-2)' }}>{JSON.stringify(axis.safe_evidence, null, 2)}</pre>}
+	  <div style={{ marginTop: 10 }}><Text type="tertiary">{reasonCopy[axis.reason_code] || summaryStateCopy(axis.state)}</Text></div>
+	  <details style={{ marginTop: 8 }}>
+		<summary style={{ cursor: 'pointer' }}>技术证据</summary>
+		<div style={{ marginTop: 8 }}><Text code>{axis.reason_code}</Text></div>
+		{Object.keys(axis.safe_evidence || {}).length > 0 && <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, color: 'var(--semi-color-text-2)' }}>{JSON.stringify(axis.safe_evidence, null, 2)}</pre>}
+	  </details>
       {axis.fix_route ? <Button size="small" onClick={() => onFix(axis.fix_route!)}>前往修复</Button> : axis.fix_owner ? <Text type="tertiary">修复责任：{axis.fix_owner}</Text> : null}
-    </div>
+    </section>
   );
 }
 
@@ -322,7 +355,7 @@ export default function ModelReadinessPage() {
             field="caller"
             label="谁来调用"
             optionList={[
-              { value: 'self', label: '当前账号' },
+			  { value: 'self', label: '当前账号的个人 API Key' },
               { value: 'workload_application', label: '应用 / Agent' },
             ]}
             rules={[{ required: true, message: '请选择调用主体' }]}
@@ -356,15 +389,15 @@ export default function ModelReadinessPage() {
         <Surface title="诊断结果" description={`当前模型：${scopedReadiness.scope.resolved_model}`}>
           <div className="ur-readiness-summary-grid">
             {connectionMode ? <>
-              <ReadinessSummaryCard label="模型网关授权" state={scopedReadiness.platform_model.gateway_license.state} />
-              <ReadinessSummaryCard label="供应商连接" state={scopedReadiness.platform_model.channel.state} />
-              <ReadinessSummaryCard label="供应商凭证" state={scopedReadiness.platform_model.provider_credential.state} />
-              <ReadinessSummaryCard label="当前可用路由" state={scopedReadiness.platform_model.base_route.state} />
+			  <ReadinessSummaryCard label="模型网关授权" state={scopedReadiness.platform_model.gateway_license.state} reasonCode={scopedReadiness.platform_model.gateway_license.reason_code} />
+			  <ReadinessSummaryCard label="供应商连接" state={scopedReadiness.platform_model.channel.state} reasonCode={scopedReadiness.platform_model.channel.reason_code} />
+			  <ReadinessSummaryCard label="供应商凭证" state={scopedReadiness.platform_model.provider_credential.state} reasonCode={scopedReadiness.platform_model.provider_credential.reason_code} />
+			  <ReadinessSummaryCard label="当前可用路由" state={scopedReadiness.platform_model.base_route.state} reasonCode={scopedReadiness.platform_model.base_route.reason_code} />
             </> : <>
-              <ReadinessSummaryCard label="模型记录" state={scopedReadiness.summary.registered.state} />
-              <ReadinessSummaryCard label="项目目录可见" state={scopedReadiness.summary.catalog_visible.state} />
-              <ReadinessSummaryCard label="当前可用路由" state={scopedReadiness.summary.routable.state} />
-              <ReadinessSummaryCard label="所选主体可调用" state={scopedReadiness.summary.current_project_caller_callable.state} />
+			  <ReadinessSummaryCard label="模型记录" state={scopedReadiness.summary.registered.state} reasonCode={scopedReadiness.summary.registered.reason_code} />
+			  <ReadinessSummaryCard label="项目目录可见" state={scopedReadiness.summary.catalog_visible.state} reasonCode={scopedReadiness.summary.catalog_visible.reason_code} />
+			  <ReadinessSummaryCard label="当前可用路由" state={scopedReadiness.summary.routable.state} reasonCode={scopedReadiness.summary.routable.reason_code} />
+			  <ReadinessSummaryCard label="所选调用身份可用" state={scopedReadiness.summary.current_project_caller_callable.state} reasonCode={scopedReadiness.summary.current_project_caller_callable.reason_code} />
             </>}
           </div>
         </Surface>
