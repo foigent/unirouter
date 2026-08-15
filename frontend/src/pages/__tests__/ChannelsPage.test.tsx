@@ -177,7 +177,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(screen.getByRole('button', { name: '重新加载上游通道' })).toBeTruthy();
   });
 
-  it('restores Kimi and only permits a disabled channel to move to staged', async () => {
+  it('permits a disabled channel without retained releases to move to staged', async () => {
     mocks.getChannels.mockResolvedValueOnce({
       data: [{
         id: 8,
@@ -284,9 +284,21 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     fireEvent.click(screen.getByRole('button', { name: '更新' }));
     expect(await screen.findByText('通道状态仅支持 active、staged 或 disabled')).toBeTruthy();
 
-    mocks.updateChannel.mockRejectedValueOnce(new ApiError('stale', 409, null));
+    mocks.updateChannel.mockRejectedValueOnce(new ApiError('Channel routing epoch changed since it was loaded', 409, {
+      code: 'stale_routing_epoch',
+      expected_routing_epoch: 9,
+      current_routing_epoch: 10,
+    }));
     fireEvent.click(screen.getByRole('button', { name: '更新' }));
-    expect(await screen.findByText('该通道已被其他管理员修改或正由运行时发布接管，请刷新后重试')).toBeTruthy();
+    expect(await screen.findByText('该连接确实已在你打开页面后发生变化，请刷新后重试')).toBeTruthy();
+
+    mocks.updateChannel.mockRejectedValueOnce(new ApiError('Channel is referenced by an active runtime release', 409, {
+      code: 'channel_bound_to_active_release',
+      published_models: ['kimi-k3'],
+    }));
+    fireEvent.click(screen.getByRole('button', { name: '更新' }));
+    expect(await screen.findByText(/仍保留已生效发布占位（kimi-k3）/)).toBeTruthy();
+    expect(screen.getByText(/刷新不会解除占位/)).toBeTruthy();
   });
 
   it('emergency-disables a runtime-published staged connection with a status-only update', async () => {
@@ -346,7 +358,10 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     });
 
     render(<ChannelsPage />);
-    fireEvent.click(await screen.findByRole('button', { name: '查看恢复步骤' }));
+    expect(await screen.findByRole('button', { name: '恢复连接 Kimi' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '编辑通道 Kimi' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '删除通道 Kimi' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '恢复连接 Kimi' }));
 
     const params = new URLSearchParams(window.location.search);
     expect(window.location.pathname).toBe('/channels');

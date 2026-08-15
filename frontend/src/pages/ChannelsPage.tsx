@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Banner, Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Input, Typography, Descriptions } from '@douyinfe/semi-ui';
-import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
+import { IconPlus, IconDelete, IconEdit, IconRefresh } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { normalizeModelList } from '../utils/modelList';
@@ -126,15 +126,35 @@ function channelUpdateErrorMessage(error: unknown) {
   return `更新失败（HTTP ${error.status}）`;
 }
 
+function channelConflictCode(error: ApiError) {
+  const payload = error.payload && typeof error.payload === 'object'
+    ? error.payload as { code?: unknown }
+    : {};
+  return typeof payload.code === 'string' ? payload.code : '';
+}
+
 function channelConflictMessage(error: ApiError) {
   const backendMessage = error.message.toLowerCase();
+  const payload = error.payload && typeof error.payload === 'object'
+    ? error.payload as { published_models?: unknown }
+    : {};
+  const code = channelConflictCode(error);
+  if (code === 'channel_bound_to_active_release') {
+    const models = Array.isArray(payload.published_models)
+      ? payload.published_models.filter((model): model is string => typeof model === 'string').join('、')
+      : '';
+    return `该连接仍保留已生效发布占位${models ? `（${models}）` : ''}。请点击“恢复连接”先回滚旧发布占位，再改为待发布；刷新不会解除占位。`;
+  }
+  if (code === 'stale_routing_epoch') {
+    return '该连接确实已在你打开页面后发生变化，请刷新后重试';
+  }
   if (backendMessage.includes('active channel runtime fields')) {
     return '生效通道的运行参数不能直接修改；请先改为 staged，再通过“模型治理 → 运行时发布”上线';
   }
   if (backendMessage.includes('direct channel activation')) {
     return '不能直接启用通道；请通过“模型治理 → 运行时发布”完成验证、灰度与提升';
   }
-  return '该通道已被其他管理员修改或正由运行时发布接管，请刷新后重试';
+  return '连接状态在更新时发生变化，请刷新后重试';
 }
 
 const routingReasonLabel = (reason: string) => ({
@@ -188,6 +208,10 @@ function syncSelectedChannelID(id?: number) {
 
 function effectiveChannelStatus(channel: Channel) {
   return channel.effective_status || channel.status;
+}
+
+function channelHasRetainedRelease(channel: Channel) {
+  return effectiveChannelStatus(channel) !== 'active' && parseChannelModels(channel.published_models).length > 0;
 }
 
 function navigateWithinApp(path: string) {
@@ -353,17 +377,27 @@ export default function ChannelsPage() {
     syncSelectedChannelID(channel.id);
   };
 
+  const openConnectionRecovery = (channel: Channel, model = parseChannelModels(channel.published_models)[0] || '') => {
+    if (!model) return;
+    setShowDrawer(false);
+    setEditing(null);
+    setSelectedChannelId(channel.id);
+    syncSelectedChannelID(channel.id);
+    setRecoveryModel(model);
+    navigateWithinApp(`${connectionAdvancedPath('/channels', channel.id, model)}&intent=recover`);
+    window.setTimeout(() => document.getElementById('connection-recovery')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 0);
+  };
+
   const openRouteManagement = (model: string, intent: 'replace' | 'recover' = 'replace') => {
     if (intent === 'recover' && selectedChannel) {
-      setRecoveryModel(model);
-      navigateWithinApp(`${connectionAdvancedPath('/channels', selectedChannel.id, model)}&intent=recover`);
-      window.setTimeout(() => document.getElementById('connection-recovery')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 0);
+      openConnectionRecovery(selectedChannel, model);
       return;
     }
     if (selectedChannel) navigateWithinApp(`${connectionAdvancedPath('/model-governance', selectedChannel.id, model)}&tab=releases&intent=replace`);
   };
 
   const closeRecovery = () => {
+    load(page, pageSize, selectedChannelId);
     setRecoveryModel('');
     clearConnectionRecoveryParams();
     window.setTimeout(() => document.getElementById('connection-models')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }), 0);
@@ -444,6 +478,11 @@ export default function ChannelsPage() {
     } catch (error) {
       if (editing && error instanceof ApiError && error.status === 409) {
 			Toast.error(channelConflictMessage(error));
+			if (channelConflictCode(error) === 'channel_bound_to_active_release') {
+				const channelID = editing.id;
+				closeDrawer();
+				load(page, pageSize, channelID);
+			}
       } else {
         Toast.error(editing ? channelUpdateErrorMessage(error) : '创建失败');
       }
@@ -485,6 +524,10 @@ export default function ChannelsPage() {
   };
 
   const openEdit = (record: Channel) => {
+    if (channelHasRetainedRelease(record)) {
+      openConnectionRecovery(record);
+      return;
+    }
     setEditing(record);
     setShowDrawer(true);
   };
@@ -563,11 +606,13 @@ export default function ChannelsPage() {
     {
       title: '操作',
       key: 'actions',
-      width: 120,
+      width: 150,
       render: (_: any, record: Channel) => (
         <Space>
-          <Button aria-label={`编辑通道 ${record.name}`} icon={<IconEdit />} size="small" onClick={(event) => { event.stopPropagation(); openEdit(record); }} />
-          <Button aria-label={`删除通道 ${record.name}`} icon={<IconDelete />} size="small" type="danger" onClick={(event) => { event.stopPropagation(); handleDelete(record.id); }} />
+          {channelHasRetainedRelease(record)
+            ? <Button aria-label={`恢复连接 ${record.name}`} icon={<IconRefresh />} size="small" type="primary" onClick={(event) => { event.stopPropagation(); openConnectionRecovery(record); }}>恢复</Button>
+            : <Button aria-label={`编辑通道 ${record.name}`} icon={<IconEdit />} size="small" onClick={(event) => { event.stopPropagation(); openEdit(record); }} />}
+          {!channelHasRetainedRelease(record) && <Button aria-label={`删除通道 ${record.name}`} icon={<IconDelete />} size="small" type="danger" onClick={(event) => { event.stopPropagation(); handleDelete(record.id); }} />}
         </Space>
       ),
     },
@@ -759,7 +804,9 @@ export default function ChannelsPage() {
 			  <Typography.Text type="tertiary" size="small">
 				真实检测就在本区域下方的“{selectedChannel.name} · 模型上线”中直接完成，无需再打开页面。
 			  </Typography.Text>
-			  <div><Button icon={<IconEdit />} onClick={() => openEdit(selectedChannel)}>编辑当前连接</Button></div>
+			  <div>{channelHasRetainedRelease(selectedChannel)
+				? <Button icon={<IconRefresh />} type="primary" onClick={() => openConnectionRecovery(selectedChannel)}>恢复连接</Button>
+				: <Button icon={<IconEdit />} onClick={() => openEdit(selectedChannel)}>编辑当前连接</Button>}</div>
             </div>
           )}
         </aside>

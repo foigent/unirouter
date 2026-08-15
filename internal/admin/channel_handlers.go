@@ -31,6 +31,65 @@ type channelMutationStore interface {
 	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
 }
 
+func channelUpdateConflictState(ctx context.Context, store channelMutationStore, id int64) (int64, string, string, error) {
+	var routingEpoch int64
+	var publishedModels, releaseRefs string
+	err := store.QueryRow(ctx, `
+		SELECT c.routing_epoch,
+		       COALESCE(binding.published_models, ''),
+		       COALESCE(binding.release_refs, '')
+		  FROM channels c
+		  LEFT JOIN LATERAL (
+		        SELECT string_agg(DISTINCT rcs.model_name, ',' ORDER BY rcs.model_name) AS published_models,
+		               string_agg(DISTINCT rcr.release_ref, ',' ORDER BY rcr.release_ref) AS release_refs
+		          FROM runtime_change_slots rcs
+		          JOIN runtime_change_releases rcr
+		            ON rcr.id = rcs.stable_release_id AND rcr.stage = 'active'
+		          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(rcr.candidate->'overrides', '[]'::jsonb)) AS runtime_override
+		         WHERE (runtime_override->>'channel_id')::bigint = c.id
+		           AND runtime_override->>'admission' = 'allow'
+		  ) binding ON TRUE
+		 WHERE c.id = $1`, id).Scan(&routingEpoch, &publishedModels, &releaseRefs)
+	return routingEpoch, publishedModels, releaseRefs, err
+}
+
+func writeChannelUpdateConflict(w http.ResponseWriter, r *http.Request, store channelMutationStore, id int64, expectedRoutingEpoch *int64) {
+	currentRoutingEpoch, publishedModels, releaseRefs, err := channelUpdateConflictState(r.Context(), store, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to resolve channel update conflict"})
+		return
+	}
+	if expectedRoutingEpoch != nil && currentRoutingEpoch != *expectedRoutingEpoch {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":                  "Channel routing epoch changed since it was loaded",
+			"code":                   "stale_routing_epoch",
+			"expected_routing_epoch": *expectedRoutingEpoch,
+			"current_routing_epoch":  currentRoutingEpoch,
+			"next_step":              "refresh the channel and retry",
+		})
+		return
+	}
+	if publishedModels != "" {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":            "Channel is referenced by an active runtime release",
+			"code":             "channel_bound_to_active_release",
+			"published_models": strings.Split(publishedModels, ","),
+			"release_refs":     strings.Split(releaseRefs, ","),
+			"next_step":        "rollback the retained active release before restaging the channel",
+		})
+		return
+	}
+	writeJSON(w, http.StatusConflict, map[string]interface{}{
+		"error":     "Channel state changed while the update was being applied",
+		"code":      "channel_update_conflict",
+		"next_step": "refresh the channel and retry",
+	})
+}
+
 func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
@@ -457,11 +516,7 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		if req.ExpectedRoutingEpoch != nil {
-			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Channel changed since it was loaded; refresh and retry"})
-			return
-		}
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "Channel not found"})
+		writeChannelUpdateConflict(w, r, store, id, req.ExpectedRoutingEpoch)
 		return
 	}
 

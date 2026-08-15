@@ -5125,6 +5125,12 @@ func TestUpdateChannel_DBError(t *testing.T) {
 
 func TestUpdateChannel_NotFound(t *testing.T) {
 	db := &testutil.MockDB{
+		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			if strings.Contains(sql, "binding.published_models") {
+				return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
+			}
+			return &testutil.MockRow{}
+		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			return pgconn.CommandTag{}, nil // RowsAffected=0
 		},

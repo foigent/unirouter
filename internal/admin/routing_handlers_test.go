@@ -79,7 +79,21 @@ func TestP6F08PreviewRoutingValidatesModelAndAvailability(t *testing.T) {
 func TestP6F08ChannelUpdateUsesOptionalRoutingEpochCASAndInvalidatesSnapshot(t *testing.T) {
 	controller := &routingControllerStub{}
 	var updateSQL string
+	currentRoutingEpoch := int64(10)
+	publishedModels := ""
+	releaseRefs := ""
 	db := &testutil.MockDB{
+		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			if !strings.Contains(sql, "binding.published_models") {
+				return &testutil.MockRow{}
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = currentRoutingEpoch
+				*dest[1].(*string) = publishedModels
+				*dest[2].(*string) = releaseRefs
+				return nil
+			}}
+		},
 		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
 			if strings.HasPrefix(sql, "UPDATE channels") {
 				updateSQL = sql
@@ -115,8 +129,48 @@ func TestP6F08ChannelUpdateUsesOptionalRoutingEpochCASAndInvalidatesSnapshot(t *
 	}
 	var payload map[string]interface{}
 	_ = json.Unmarshal(rec.Body.Bytes(), &payload)
-	if payload["error"] == "" || controller.invalidated {
+	if payload["code"] != "stale_routing_epoch" || payload["current_routing_epoch"] != float64(10) || controller.invalidated {
 		t.Fatalf("stale update contract violated: payload=%#v invalidated=%t", payload, controller.invalidated)
+	}
+}
+
+func TestChannelUpdateExplainsRetainedActiveReleaseBeforeRestaging(t *testing.T) {
+	db := &testutil.MockDB{
+		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			if !strings.Contains(sql, "binding.published_models") {
+				return &testutil.MockRow{}
+			}
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int64) = int64(3)
+				*dest[1].(*string) = "kimi-k3"
+				*dest[2].(*string) = "rcr_kimi_active"
+				return nil
+			}}
+		},
+		ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
+			return pgconn.NewCommandTag("UPDATE 0"), nil
+		},
+	}
+	h := &Handler{db: db}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/14", strings.NewReader(`{"status":"staged","expected_routing_epoch":3}`))
+	req.SetPathValue("id", "14")
+	rec := httptest.NewRecorder()
+
+	h.UpdateChannel(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("retained release expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Code            string   `json:"code"`
+		PublishedModels []string `json:"published_models"`
+		ReleaseRefs     []string `json:"release_refs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode retained release conflict: %v", err)
+	}
+	if payload.Code != "channel_bound_to_active_release" || len(payload.PublishedModels) != 1 || payload.PublishedModels[0] != "kimi-k3" || len(payload.ReleaseRefs) != 1 || payload.ReleaseRefs[0] != "rcr_kimi_active" {
+		t.Fatalf("unexpected retained release conflict: %#v", payload)
 	}
 }
 
