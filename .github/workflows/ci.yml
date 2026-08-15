@@ -263,9 +263,9 @@ jobs:
       - name: Run admin integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        # The race-enabled real-PostgreSQL suite can exceed Go's default
-        # 10-minute package timeout on a slower hosted runner.
-        run: go test -tags=integration -race ./internal/admin -count=1 -timeout=20m
+        # The race-enabled real-PostgreSQL suite can exceed 20 minutes on a
+        # slower hosted runner; keep the full suite and allow bounded headroom.
+        run: go test -tags=integration -race ./internal/admin -count=1 -timeout=30m
 
       - name: Run X-Insight Connector PostgreSQL 16 integration tests
         env:
