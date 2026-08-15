@@ -66,6 +66,7 @@ const reasonCopy: Record<string, string> = {
 
 function summaryStateCopy(state: ReadinessAxis['state'], reasonCode?: string) {
 	if (reasonCode && reasonCopy[reasonCode]) return reasonCopy[reasonCode];
+  if (reasonCode?.startsWith('license_error.')) return '当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证';
   return ({
     ready: '条件已满足',
     blocked: '需要处理后才能使用',
@@ -93,7 +94,7 @@ function AxisCard({ label, axis, onFix }: { label: string; axis: ReadinessAxis; 
       <Space style={{ justifyContent: 'space-between', width: '100%' }}>
         <Text strong>{label}</Text><Tag color={presentation.color}>{presentation.label}</Tag>
       </Space>
-	  <div style={{ marginTop: 10 }}><Text type="tertiary">{reasonCopy[axis.reason_code] || summaryStateCopy(axis.state)}</Text></div>
+	  <div style={{ marginTop: 10 }}><Text type="tertiary">{summaryStateCopy(axis.state, axis.reason_code)}</Text></div>
 	  <details style={{ marginTop: 8 }}>
 		<summary style={{ cursor: 'pointer' }}>技术证据</summary>
 		<div style={{ marginTop: 8 }}><Text code>{axis.reason_code}</Text></div>

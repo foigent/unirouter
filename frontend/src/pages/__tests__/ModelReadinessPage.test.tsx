@@ -122,6 +122,20 @@ describe('ModelReadinessPage', () => {
 		expect(screen.getByRole('combobox', { name: '谁来调用' })).toHaveTextContent('当前账号的个人 API Key');
 	});
 
+  it('explains a missing gateway license instead of showing a generic blocker', async () => {
+    mocks.modelReadiness.mockResolvedValueOnce({
+      ...readiness,
+      summary: {
+        ...readiness.summary,
+        current_project_caller_callable: { value: false, state: 'blocked', reason_code: 'license_error.missing' },
+      },
+      platform_model: { ...readiness.platform_model, gateway_license: axis('blocked', 'license_error.missing') },
+    });
+    render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self']}><ModelReadinessPage /></MemoryRouter>);
+
+    expect((await screen.findAllByText('当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证')).length).toBeGreaterThan(0);
+  });
+
   it('diagnoses a model connection without loading or requiring project and caller scope', async () => {
     mocks.modelReadiness.mockResolvedValueOnce({
       ...readiness,
