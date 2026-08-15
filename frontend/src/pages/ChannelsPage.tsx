@@ -143,7 +143,7 @@ function channelConflictMessage(error: ApiError) {
     const models = Array.isArray(payload.published_models)
       ? payload.published_models.filter((model): model is string => typeof model === 'string').join('、')
       : '';
-    return `该连接仍保留已生效发布占位${models ? `（${models}）` : ''}。请点击“恢复连接”先回滚旧发布占位，再改为待发布；刷新不会解除占位。`;
+    return `该连接仍关联已生效的历史发布记录${models ? `（${models}）` : ''}。请点击“恢复连接”，先结束这些历史发布并把连接转为待发布；刷新页面不会改变运行状态。`;
   }
   if (code === 'stale_routing_epoch') {
     return '该连接确实已在你打开页面后发生变化，请刷新后重试';

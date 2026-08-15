@@ -376,7 +376,7 @@ export default function ConnectionModelPanel({
       {credentialLoadState === 'error' && <Banner type="danger" description={credentialLoadError || '供应商凭证状态不可用；已阻止真实检测。'} closeIcon={null} style={{ marginBottom: 12 }} />}
       {hasRetainedRelease && <Banner
         type="warning"
-        description="连接当前不可调用，保留的发布记录只用于审计，不代表模型仍可调用。恢复时先处理旧发布占位，再将连接改为待发布、完成真实检测并重新启用；旧发布不会自动复活连接。"
+        description="连接当前不可调用，保留的发布记录只用于审计，不代表模型仍可调用。恢复时请点击“查看恢复步骤”：系统会先结束这些历史发布并将连接转为待发布；随后完成真实检测并逐个重新启用。"
         closeIcon={null}
         style={{ marginBottom: 12 }}
       />}
