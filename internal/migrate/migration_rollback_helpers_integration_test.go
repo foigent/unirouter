@@ -21,6 +21,7 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000065_model_endpoint_projection.down.sql",
 	"000064_rate_card_request_pricing_authority.down.sql",
 	"000063_onprem_billing_mode.down.sql",
 	"000062_xinsight_connector_redeem_lifecycle.down.sql",
@@ -44,9 +45,10 @@ var enterpriseDirectoryDownMigrations = []string{
 func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 	t.Helper()
 	ctx := context.Background()
-	orderedNames := make([]string, 0, len(names)+2)
-	seen := make(map[string]struct{}, len(names)+2)
+	orderedNames := make([]string, 0, len(names)+3)
+	seen := make(map[string]struct{}, len(names)+3)
 	for _, name := range []string{
+		"000065_model_endpoint_projection.down.sql",
 		"000064_rate_card_request_pricing_authority.down.sql",
 		"000063_onprem_billing_mode.down.sql",
 	} {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Banner, Button, Modal, Form, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Banner, Button, Modal, Form, Toast, Space, SideSheet, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { EmptyState, PagedTable, PageHeader, PasswordField, StatusTag, Surface } from '../ui';
@@ -66,7 +66,7 @@ const combinationLabel: Record<CredentialCombinationState, string> = {
   unknown_channel: '通道状态待确认',
 };
 
-export default function ChannelKeysPage() {
+export default function ChannelKeysPage({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate();
   const [keys, setKeys] = useState<ChannelKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -297,8 +297,8 @@ export default function ChannelKeysPage() {
   ];
 
   return (
-    <div className="ur-page">
-      <PageHeader
+    <div className={embedded ? 'ur-embedded-page' : 'ur-page'}>
+      {!embedded && <PageHeader
         eyebrow="模型接入"
         title="供应商凭证"
 		description="凭证状态、所属通道状态和模型覆盖是三个独立条件；凭证启用不代表通道已经生效。明文 Key 永不回显，保存结果请以成功提示和“最近更新”为准。"
@@ -306,7 +306,12 @@ export default function ChannelKeysPage() {
           <ModelConnectionBackButton />
           <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>
         </Space>}
-      />
+      />}
+
+      {embedded && <div className="ur-embedded-heading">
+        <div><Typography.Title heading={5} style={{ margin: 0 }}>供应商凭证</Typography.Title><Typography.Text type="tertiary">明文 Key 永不回显；状态以当前端点、模型覆盖和冷却条件共同计算。</Typography.Text></div>
+        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>
+      </div>}
 
 	  {saveNotice && <Banner
 		type="success"

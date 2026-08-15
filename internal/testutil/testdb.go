@@ -248,6 +248,7 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 		"model_sets",
 		"model_registry",
 		"project_members",
+		"channel_model_probes",
 		"channel_keys",
 		"org_model_prices",
 		"model_prices",

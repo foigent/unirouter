@@ -45,9 +45,10 @@ func TestRateCardAuthorityMigrationRollbackRefusesDailySchedules(t *testing.T) {
 		INSERT INTO enterprise_finance_rate_card_versions (
 		  org_id,rate_card_ref,version,provider_ref,model_ref,layer,state,effective_from,
 		  daily_price_bands,created_by
-		) VALUES ($1,'scheduled-rate',1,'provider-a','model-a','supplier_contracted','draft',NOW(),
-		  '[{"band_ref":"whole-day","start_minute_utc":0,"end_minute_utc":1440,"components":[]}]'::jsonb,'user:1')`, orgID)
+	) VALUES ($1,'scheduled-rate',1,'provider-a','model-a','supplier_contracted','draft',NOW(),
+	  '[{"band_ref":"whole-day","start_minute_utc":0,"end_minute_utc":1440,"components":[]}]'::jsonb,'user:1')`, orgID)
 	require.NoError(t, err)
+	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000064_rate_card_request_pricing_authority.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
@@ -75,8 +76,9 @@ func TestRateCardAuthorityMigrationRollbackRefusesSourceEvidence(t *testing.T) {
 		  transform_version,currency,unit_contract,last_success_at,stale_after,imported_by
 		) VALUES ($1,'source-1','official_import','https://example.invalid/pricing','r1',NOW(),
 		  'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-		  'transform.v1','CNY','tokens',NOW(),NOW()+INTERVAL '1 day','user:1')`, orgID)
+	  'transform.v1','CNY','tokens',NOW(),NOW()+INTERVAL '1 day','user:1')`, orgID)
 	require.NoError(t, err)
+	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000064_rate_card_request_pricing_authority.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))

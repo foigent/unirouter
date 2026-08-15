@@ -67,6 +67,7 @@ func TestOnPremBillingModeMigrationCleanRollbackAndReapply(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
 
+	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")
 	execMigrationDown(t, ctx, pool, "000064_rate_card_request_pricing_authority.down.sql")
 	execMigrationDown(t, ctx, pool, "000063_onprem_billing_mode.down.sql")
 
@@ -140,6 +141,7 @@ INSERT INTO freeze_idempotency (
 VALUES (
     'op_billing_mode_observation',960002,'frozen','observation-price-v1','cost_observation')`)
 	require.NoError(t, err)
+	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")
 	execMigrationDown(t, ctx, pool, "000064_rate_card_request_pricing_authority.down.sql")
 
 	down, err := os.ReadFile(filepath.Join(

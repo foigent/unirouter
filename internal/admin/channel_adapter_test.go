@@ -20,7 +20,7 @@ func TestCreateChannel_DefaultsAdapterType(t *testing.T) {
 			if !strings.Contains(sql, "adapter_type") {
 				t.Fatalf("expected insert to include adapter_type, got %s", sql)
 			}
-			capturedAdapterType = args[4].(string)
+			capturedAdapterType = args[5].(string)
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int64) = 42
 				return nil
@@ -62,8 +62,8 @@ func TestCreateChannel_AcceptsAnthropicNativeAdapterType(t *testing.T) {
 	var capturedAdapterConfig string
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			capturedAdapterType = args[4].(string)
-			capturedAdapterConfig = args[5].(string)
+			capturedAdapterType = args[5].(string)
+			capturedAdapterConfig = args[6].(string)
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int64) = 42
 				return nil
@@ -94,8 +94,8 @@ func TestCreateChannelAcceptsStrictAzureOpenAIConfig(t *testing.T) {
 	var capturedAdapterConfig string
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			capturedAdapterType = args[4].(string)
-			capturedAdapterConfig = args[5].(string)
+			capturedAdapterType = args[5].(string)
+			capturedAdapterConfig = args[6].(string)
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				*dest[0].(*int64) = 43
 				return nil

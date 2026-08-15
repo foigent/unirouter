@@ -42,7 +42,8 @@ func TestCreateChannel_AuditIncludesAfterState(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(auditAfter, `"name":"primary"`) || !strings.Contains(auditAfter, `"adapter_type":"openai_compatible"`) {
+	if !strings.Contains(auditAfter, `"name":"primary"`) || !strings.Contains(auditAfter, `"adapter_type":"openai_compatible"`) ||
+		!strings.Contains(auditAfter, `"model_mapping":{}`) || !strings.Contains(auditAfter, `"adapter_config":{}`) {
 		t.Fatalf("expected channel create audit after-state, got %s", auditAfter)
 	}
 }
@@ -61,12 +62,16 @@ func TestUpdateChannel_AuditIncludesBeforeAfterState(t *testing.T) {
 				*dest[1].(*string) = "openai"
 				*dest[2].(*string) = "https://api.openai.com"
 				*dest[3].(*string) = "gpt-4o"
-				*dest[4].(*string) = "openai_compatible"
-				*dest[5].(*int) = map[bool]int{true: 1, false: 2}[snapshotCalls == 1]
-				*dest[6].(*int) = 3
-				*dest[7].(*string) = "staged"
-				*dest[8].(*string) = "healthy"
-				*dest[9].(*int) = 0
+				*dest[4].(*json.RawMessage) = json.RawMessage(`{"gpt-4o":"gpt-4o-2026"}`)
+				*dest[5].(*string) = "openai_compatible"
+				*dest[6].(*json.RawMessage) = json.RawMessage(`{}`)
+				*dest[7].(*int) = map[bool]int{true: 1, false: 2}[snapshotCalls == 1]
+				*dest[8].(*int) = 3
+				*dest[9].(*string) = "staged"
+				*dest[10].(*string) = "healthy"
+				*dest[11].(*int) = 0
+				*dest[12].(*int) = 100
+				*dest[13].(*int64) = int64(snapshotCalls)
 				return nil
 			}}
 		},
@@ -91,7 +96,8 @@ func TestUpdateChannel_AuditIncludesBeforeAfterState(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(auditBefore, `"name":"before"`) || !strings.Contains(auditAfter, `"name":"after"`) {
+	if !strings.Contains(auditBefore, `"name":"before"`) || !strings.Contains(auditAfter, `"name":"after"`) ||
+		!strings.Contains(auditAfter, `"model_mapping":{"gpt-4o":"gpt-4o-2026"}`) {
 		t.Fatalf("expected channel update before/after audit, before=%s after=%s", auditBefore, auditAfter)
 	}
 }
@@ -105,12 +111,16 @@ func TestDeleteChannel_AuditIncludesBeforeState(t *testing.T) {
 				*dest[1].(*string) = "openai"
 				*dest[2].(*string) = "https://api.openai.com"
 				*dest[3].(*string) = "gpt-4o"
-				*dest[4].(*string) = "openai_compatible"
-				*dest[5].(*int) = 1
-				*dest[6].(*int) = 3
-				*dest[7].(*string) = "active"
-				*dest[8].(*string) = "healthy"
-				*dest[9].(*int) = 0
+				*dest[4].(*json.RawMessage) = json.RawMessage(`{}`)
+				*dest[5].(*string) = "openai_compatible"
+				*dest[6].(*json.RawMessage) = json.RawMessage(`{}`)
+				*dest[7].(*int) = 1
+				*dest[8].(*int) = 3
+				*dest[9].(*string) = "active"
+				*dest[10].(*string) = "healthy"
+				*dest[11].(*int) = 0
+				*dest[12].(*int) = 100
+				*dest[13].(*int64) = 1
 				return nil
 			}}
 		},
@@ -162,8 +172,12 @@ func TestTestChannel_WritesAuditWithoutSecret(t *testing.T) {
 					*dest[1].(*string) = "mimo-v2.5"
 					*dest[2].(*string) = "openai_compatible"
 					*dest[3].(*json.RawMessage) = json.RawMessage(`{}`)
+					*dest[4].(*json.RawMessage) = json.RawMessage(`{}`)
+					*dest[5].(*int64) = 1
 				case 2:
-					*dest[0].(*string) = keyEnc
+					*dest[0].(*int64) = 2
+					*dest[1].(*string) = keyEnc
+					*dest[2].(*int64) = 1
 				default:
 					t.Fatalf("unexpected query count %d", queryCount)
 				}

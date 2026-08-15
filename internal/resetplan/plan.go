@@ -63,7 +63,7 @@ var (
 		"async_media_limit_reservations",
 		"audit_logs", "billing_provider_attempts", "billing_reservation_extensions",
 		"billing_observation_receipts",
-		"billing_reservation_grant_allocations", "call_logs", "channel_keys", "channels",
+		"billing_reservation_grant_allocations", "call_logs", "channel_model_probes", "channel_keys", "channels",
 		"completed_execution_feed_connections", "completed_execution_feed_items",
 		"completed_execution_feed_states", "delivery_attempt_quarantine",
 		"distributed_limit_policies", "enterprise_directory_account_snapshots",

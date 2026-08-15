@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000064_rate_card_request_pricing_authority"
+const LatestSupportedMigration = "000065_model_endpoint_projection"

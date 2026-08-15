@@ -179,6 +179,20 @@ func TestPRD8RuntimeChangeLifecycleCanaryActivationAndEmergencyDisable(t *testin
 	deleteOriginalAfterDisableResponse := httptest.NewRecorder()
 	handler.DeleteChannelKey(deleteOriginalAfterDisableResponse, deleteOriginalAfterDisable)
 	require.Equal(t, http.StatusOK, deleteOriginalAfterDisableResponse.Code, deleteOriginalAfterDisableResponse.Body.String())
+	var replacementCredentialEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT state_epoch FROM channel_keys WHERE id=$1`, replacementKeyRecord.ID).Scan(&replacementCredentialEpoch))
+	_, err = pool.Exec(ctx, `
+INSERT INTO channel_model_probes (
+  channel_id,public_model,upstream_model,routing_epoch,credential_id,
+  credential_state_epoch,success,status_code,latency_ms,tested_by)
+VALUES ($1,'gpt-prd8-runtime','gpt-prd8-runtime',$2,$3,$4,TRUE,200,12,$5)
+ON CONFLICT (channel_id,public_model) DO UPDATE SET
+  upstream_model=EXCLUDED.upstream_model,routing_epoch=EXCLUDED.routing_epoch,
+  credential_id=EXCLUDED.credential_id,credential_state_epoch=EXCLUDED.credential_state_epoch,
+  success=EXCLUDED.success,status_code=EXCLUDED.status_code,latency_ms=EXCLUDED.latency_ms,
+  tested_by=EXCLUDED.tested_by,tested_at=NOW()`,
+		channelID, routingEpoch, replacementKeyRecord.ID, replacementCredentialEpoch, userID)
+	require.NoError(t, err)
 
 	router.Invalidate()
 	_, err = router.RouteAllWithKey(ctx, "gpt-prd8-runtime", "after-emergency-disable")
@@ -198,31 +212,30 @@ func TestPRD8RuntimeChangeLifecycleCanaryActivationAndEmergencyDisable(t *testin
 	require.ErrorIs(t, err, runtimechange.ErrConflict)
 	require.ErrorContains(t, err, "emergency disabled")
 
-	blockedRestage := authorizedRequest(http.MethodPut, fmt.Sprintf("/api/v1/channels/%d", channelID),
+	resume := authorizedRequest(http.MethodPut, fmt.Sprintf("/api/v1/channels/%d", channelID),
 		fmt.Sprintf(`{"status":"staged","expected_routing_epoch":%d}`, disabledEpoch))
-	blockedRestage.SetPathValue("id", fmt.Sprintf("%d", channelID))
-	blockedRestageResponse := httptest.NewRecorder()
-	handler.UpdateChannel(blockedRestageResponse, blockedRestage)
-	require.Equal(t, http.StatusConflict, blockedRestageResponse.Code, blockedRestageResponse.Body.String())
-	require.Contains(t, blockedRestageResponse.Body.String(), `"code":"channel_bound_to_active_release"`)
-	require.Contains(t, blockedRestageResponse.Body.String(), `"published_models":["gpt-prd8-runtime"]`)
+	resume.SetPathValue("id", fmt.Sprintf("%d", channelID))
+	resumeResponse := httptest.NewRecorder()
+	handler.UpdateChannel(resumeResponse, resume)
+	require.Equal(t, http.StatusOK, resumeResponse.Code, resumeResponse.Body.String())
+	router.Invalidate()
+	resumedRoutes, err := router.RouteAllWithKey(ctx, "gpt-prd8-runtime", "after-emergency-resume")
+	require.NoError(t, err)
+	require.Equal(t, channelID, resumedRoutes[0].Channel.ID)
+	require.Equal(t, second.ReleaseRef, resumedRoutes[0].RuntimeReleaseRef,
+		"status-only recovery must reuse the retained stable release instead of creating a duplicate")
+	var resumedEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT routing_epoch FROM channels WHERE id=$1`, channelID).Scan(&resumedEpoch))
+	require.Equal(t, disabledEpoch, resumedEpoch, "pause and resume must not mutate the pinned routing configuration epoch")
 
 	second, err = manager.Rollback(ctx, second.ReleaseRef, second.Version, userID)
-	require.NoError(t, err, "rollback must remain available after emergency epoch drift")
+	require.NoError(t, err, "rollback must remain available after an emergency pause and resume")
 	require.Equal(t, "rolled_back", second.Stage)
 	slot, err := manager.Slot(ctx, "gpt-prd8-runtime")
 	require.NoError(t, err)
 	require.Empty(t, slot.StableReleaseRef)
 	require.Empty(t, slot.CanaryReleaseRef)
 	require.Equal(t, "none", slot.RuntimeMutation)
-
-	restage := authorizedRequest(http.MethodPut, fmt.Sprintf("/api/v1/channels/%d", channelID),
-		fmt.Sprintf(`{"status":"staged","expected_routing_epoch":%d}`, disabledEpoch))
-	restage.SetPathValue("id", fmt.Sprintf("%d", channelID))
-	restageResponse := httptest.NewRecorder()
-	handler.UpdateChannel(restageResponse, restage)
-	require.Equal(t, http.StatusOK, restageResponse.Code, restageResponse.Body.String())
-	router.Invalidate()
 
 	var recoveredEpoch int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT routing_epoch FROM channels WHERE id=$1`, channelID).Scan(&recoveredEpoch))
