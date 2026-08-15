@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Banner, Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Input, Typography, Descriptions } from '@douyinfe/semi-ui';
+import { Banner, Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Select, Typography, Descriptions } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit, IconRefresh } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
@@ -369,6 +369,19 @@ export default function ChannelsPage() {
     }
     return published;
   }, [channels, selectedChannelId]);
+	const routingModelOptions = useMemo(() => {
+		const owners = new Map<string, string[]>();
+		for (const channel of channels) {
+			for (const model of parseChannelModels(channel.models)) {
+				const names = owners.get(model) || [];
+				if (!names.includes(channel.name)) names.push(channel.name);
+				owners.set(model, names);
+			}
+		}
+		return [...owners.entries()]
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([model, names]) => ({ value: model, label: `${model} · ${names.join('、')}` }));
+	}, [channels]);
 
   const selectChannel = (channel: Channel) => {
     setRecoveryModel('');
@@ -499,9 +512,9 @@ export default function ChannelsPage() {
     setPreviewLoading(true);
     try {
       setPreview(await api.previewRouting(model) as RoutingPreview);
-    } catch {
+    } catch (error) {
       setPreview(null);
-      Toast.error('路由预览失败，请检查模型和通道状态');
+		Toast.error(error instanceof ApiError ? error.message : '路由预览失败，请检查模型和通道状态');
     } finally {
       setPreviewLoading(false);
     }
@@ -558,7 +571,6 @@ export default function ChannelsPage() {
   }, [editing, formApi, showDrawer]);
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', key: 'id', width: 60 },
     { title: '名称', dataIndex: 'name', key: 'name', width: 180 },
     { title: '供应商', dataIndex: 'provider', key: 'provider', width: 100 },
     { title: '协议适配', dataIndex: 'adapter_type', key: 'adapter_type', width: 160, render: (v: string) => v || 'openai_compatible' },
@@ -590,7 +602,9 @@ export default function ChannelsPage() {
 		render: (_: unknown, record: Channel) => {
 			const status = effectiveChannelStatus(record);
 			if (status === 'deprecated') return <Tooltip content="该通道已废弃，建议尽快迁移到新通道"><Tag color="yellow">deprecated ⚠</Tag></Tooltip>;
-			const label = status === 'active' ? '已启用' : status === 'staged' ? '待检测/启用' : status === 'disabled' ? '禁用' : status;
+			const label = record.status === 'staged' && status === 'active'
+				? '运行时已启用'
+				: status === 'active' ? '已启用' : status === 'staged' ? '待检测/启用' : status === 'disabled' ? '禁用' : status;
 			return record.status === 'staged' && status === 'active'
 				? <Tooltip content={`运行时已启用：${record.published_models || '已发布模型'}；底层配置仍保持可回滚的 staged 快照`}><StatusTag status="active">{label}</StatusTag></Tooltip>
 				: <StatusTag status={status}>{label}</StatusTag>;
@@ -713,7 +727,9 @@ export default function ChannelsPage() {
                   <div><Typography.Text strong>{selectedChannel.name}</Typography.Text></div>
                   <Typography.Text code size="small">channel:{selectedChannel.id}</Typography.Text>
                 </div>
-				<StatusTag status={effectiveChannelStatus(selectedChannel)}>{effectiveChannelStatus(selectedChannel) === 'active' ? '已启用' : '待检测/启用'}</StatusTag>
+				<StatusTag status={effectiveChannelStatus(selectedChannel)}>{selectedChannel.status === 'staged' && effectiveChannelStatus(selectedChannel) === 'active'
+					? '运行时已启用（底层待发布）'
+					: effectiveChannelStatus(selectedChannel) === 'active' ? '已启用' : effectiveChannelStatus(selectedChannel) === 'disabled' ? '禁用' : '待检测/启用'}</StatusTag>
               </div>
 
               <div className="ur-receipt-summary" aria-label="Provider Pack 摘要">
@@ -848,16 +864,19 @@ export default function ChannelsPage() {
           description="只读解释指定模型当前会选择哪些连接以及排除原因。它不会调用上游，也不会产生费用。"
         >
         <div className="ur-inline-controls">
-          <Input
-            value={previewModel}
-            onChange={(value) => {
-              setPreviewModel(value);
-              setPreview(null);
-            }}
-            onEnterPress={handlePreview}
-            placeholder="模型名称，例如 gpt-4o"
-            style={{ width: 320 }}
-          />
+          <div role="group" aria-label="选择精确模型 ID">
+            <Select
+              value={previewModel}
+              onChange={(value) => {
+                setPreviewModel(String(value || ''));
+                setPreview(null);
+              }}
+              filter
+              optionList={routingModelOptions}
+              placeholder="选择精确模型 ID"
+              style={{ width: 360 }}
+            />
+          </div>
           <Button type="primary" loading={previewLoading} onClick={handlePreview}>预览路由</Button>
           {preview?.degraded && <Tag color="orange">数据库刷新失败，正在使用短时最后可用快照</Tag>}
         </div>
@@ -869,7 +888,9 @@ export default function ChannelsPage() {
             <div className="ur-routing-preview-grid">
               <div>
                 <strong>候选顺序</strong>
-                {preview.candidates.length === 0 && <p>没有可用通道</p>}
+				{preview.candidates.length === 0 && preview.exclusions.length === 0
+					? <p>没有连接声明这个精确模型 ID；请刷新连接列表。</p>
+					: preview.candidates.length === 0 && <p>没有可用通道</p>}
                 {preview.candidates.map((item) => (
                   <div className="ur-routing-preview-item" key={`candidate-${item.channel_id}`}>
                     <Tag color="blue">#{item.order}</Tag>
@@ -882,7 +903,7 @@ export default function ChannelsPage() {
               </div>
               <div>
                 <strong>未入选及原因</strong>
-                {preview.exclusions.length === 0 && <p>没有被排除的通道</p>}
+				{preview.exclusions.length === 0 && preview.candidates.length > 0 && <p>没有被排除的通道</p>}
                 {preview.exclusions.map((item) => (
                   <div className="ur-routing-preview-item" key={`exclusion-${item.channel_id}`}>
                     <span>{item.channel_name}</span>

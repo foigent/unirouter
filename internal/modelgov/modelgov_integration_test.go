@@ -92,6 +92,32 @@ func TestFilterCallableModels_MatchesCheckAccessIntegration(t *testing.T) {
 	}
 }
 
+func TestEnsureActivatedCatalogModelRejectsEquivalentLiveIdentity(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	orgID := testutil.NewTestOrg(t, pool)
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO model_registry
+			(org_id, model_name, display_name, lifecycle, approved_catalog)
+		VALUES ($1, 'DeepSeek-V4-Flash', 'DeepSeek V4 Flash', 'ga', TRUE)`, orgID)
+	require.NoError(t, err)
+
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback(ctx) })
+	err = EnsureActivatedCatalogModel(ctx, tx, orgID, "deepseek-v4-flash", "deepseek")
+	require.ErrorIs(t, err, ErrModelIdentityConflict)
+	require.Contains(t, err.Error(), "DeepSeek-V4-Flash")
+	require.NoError(t, tx.Rollback(ctx))
+
+	var exactCount int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM model_registry WHERE org_id=$1 AND model_name='deepseek-v4-flash'`, orgID,
+	).Scan(&exactCount))
+	require.Zero(t, exactCount)
+}
+
 func callableModelsByCheckAccess(t *testing.T, ctx context.Context, q db.DBQuerier, orgID, projectID int64, candidates []string) []string {
 	t.Helper()
 	allowed := make([]string, 0, len(candidates))

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChannelsPage from '../ChannelsPage';
 
@@ -140,7 +140,9 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 
     fireEvent.click(screen.getByText('高级：预览当前路由'));
 
-    fireEvent.change(screen.getByPlaceholderText('模型名称，例如 gpt-4o'), { target: { value: 'gpt-4o' } });
+	const previewModelPicker = screen.getByRole('group', { name: '选择精确模型 ID' });
+	fireEvent.click(within(previewModelPicker).getByRole('combobox'));
+	fireEvent.click(await screen.findByText('gpt-4o · primary-cn'));
     fireEvent.click(screen.getByRole('button', { name: '预览路由' }));
 
     await waitFor(() => expect(mocks.previewRouting).toHaveBeenCalledWith('gpt-4o'));
@@ -150,8 +152,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(screen.getByText('凭证冷却中')).toBeTruthy();
     expect(screen.getByRole('button', { name: '编辑通道 primary-cn' })).toBeTruthy();
 
-    fireEvent.change(screen.getByPlaceholderText('模型名称，例如 gpt-4o'), { target: { value: 'claude-3-5-sonnet' } });
-    expect(screen.queryByText(/策略 routing-policy.v1/)).toBeNull();
+	expect(screen.queryByText('claude-3-5-sonnet')).toBeNull();
   });
 
   it('auto-selects the first channel and keeps fixture-only compatibility in the advanced evidence section', async () => {
@@ -368,8 +369,8 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
     expect(params.get('channel_id')).toBe('14');
     expect(params.get('model')).toBe('kimi-k3');
     expect(params.get('intent')).toBe('recover');
-    expect(await screen.findByRole('heading', { name: 'kimi-k3 · 安全恢复' })).toBeTruthy();
-    expect(screen.getByText(/不依赖“模型目录与灰度”商业授权/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: '回滚旧发布占位' })).toBeTruthy();
+	expect(await screen.findByRole('heading', { name: 'Kimi · 安全恢复' })).toBeTruthy();
+	expect(screen.getByText(/不会自动恢复流量/)).toBeTruthy();
+	expect(screen.getByRole('button', { name: '释放全部旧发布并转为待发布' })).toBeTruthy();
   });
 });

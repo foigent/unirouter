@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   canaryRuntimeChange: vi.fn(),
   promoteRuntimeChange: vi.fn(),
   rollbackRuntimeChange: vi.fn(),
+	updateChannel: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({ api: mocks }));
@@ -62,6 +63,7 @@ describe('RuntimeChangeControlWorkspace', () => {
     });
     mocks.validateRuntimeChange.mockResolvedValue({ ...RELEASE, stage: 'validated', version: 2 });
     mocks.rollbackRuntimeChange.mockResolvedValue({ ...RELEASE, stage: 'rolled_back', version: 5 });
+	mocks.updateChannel.mockResolvedValue({ success: true });
   });
 
   it('keeps release evidence visible and advances a draft with its exact revision', async () => {
@@ -127,27 +129,112 @@ describe('RuntimeChangeControlWorkspace', () => {
     expect(screen.getByRole('button', { name: '启动 5% 灰度' })).toBeTruthy();
   });
 
-  it('keeps disabled-channel recovery inline and rolls back only the exact active release', async () => {
+  it('separates active release records from assignments that can currently apply', async () => {
+    const activeRelease = (id: number, model: string, channelID: number, expectedEpoch: number, risk = 'unchanged') => ({
+      ...RELEASE,
+      id,
+      release_ref: `rcr_${model}`,
+      model_name: model,
+      stage: 'active',
+      version: 3,
+      overall_risk: risk,
+      candidate: {
+        ...RELEASE.candidate,
+        model_name: model,
+        overrides: [{ channel_id: channelID, expected_routing_epoch: expectedEpoch, admission: 'allow' }],
+      },
+    });
+    mocks.getChannels.mockResolvedValue({
+      data: [
+        { id: 13, name: 'Deepseek', provider: 'deepseek', models: 'deepseek-v4-flash,deepseek-v4-pro', status: 'staged', effective_status: 'active', priority: 1, routing_weight: 1, routing_epoch: 3 },
+        { id: 14, name: 'Kimi', provider: 'kimi', models: 'kimi-k3,kimi-k2.7-code,kimi-k2.6', status: 'disabled', effective_status: 'disabled', priority: 1, routing_weight: 1, routing_epoch: 3 },
+      ],
+      total: 2,
+    });
+    mocks.getRuntimeChanges.mockResolvedValue({
+      data: [
+        activeRelease(1, 'kimi-k3', 14, 2, 'review_required'),
+        activeRelease(2, 'deepseek-v4-flash', 13, 3, 'review_required'),
+        activeRelease(3, 'deepseek-v4-pro', 13, 3, 'review_required'),
+        activeRelease(4, 'kimi-k2.6', 14, 3),
+        activeRelease(5, 'kimi-k2.7-code', 14, 3),
+      ],
+      total: 5,
+    });
+
+    render(<RuntimeChangeControlWorkspace />);
+
+    expect(await screen.findByText('发布记录生效')).toBeTruthy();
+    expect(screen.getByText('发布记录生效').nextElementSibling?.textContent).toBe('5');
+    expect(screen.getByText('当前可应用').nextElementSibling?.textContent).toBe('2');
+    expect(screen.getByText('保留或漂移').nextElementSibling?.textContent).toBe('3');
+    expect((await screen.findAllByText('启用时有变化（已确认）')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('修订 3')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('r3')).toBeNull();
+  });
+
+  it('recovers a disabled connection by releasing every retained model record before restaging', async () => {
     window.history.replaceState(null, '', '/channels?from=connections&channel_id=14&model=kimi-k3&intent=recover');
+	mocks.getChannels.mockResolvedValue({
+	  data: [{ id: 14, name: 'Kimi', provider: 'kimi', models: 'kimi-k3,kimi-k2.6', status: 'disabled', priority: 1, routing_weight: 1, routing_epoch: 7 }],
+	  total: 1,
+	});
     mocks.getRuntimeChanges.mockResolvedValue({
       data: [
         RELEASE,
-        { ...RELEASE, id: 22, release_ref: 'rcr_kimi_active', model_name: 'kimi-k3', stage: 'active', version: 4, reason: 'Kimi 首次启用' },
+		{ ...RELEASE, id: 22, release_ref: 'rcr_kimi_active', model_name: 'kimi-k3', stage: 'active', version: 4, reason: 'Kimi 首次启用', candidate: { ...RELEASE.candidate, model_name: 'kimi-k3', overrides: [{ channel_id: 14, expected_routing_epoch: 6, admission: 'allow' }] } },
+		{ ...RELEASE, id: 23, release_ref: 'rcr_kimi_26_active', model_name: 'kimi-k2.6', stage: 'active', version: 3, reason: 'Kimi 2.6 启用', candidate: { ...RELEASE.candidate, model_name: 'kimi-k2.6', overrides: [{ channel_id: 14, expected_routing_epoch: 7, admission: 'allow' }] } },
       ],
-      total: 2,
+	  total: 3,
     });
     const onBack = vi.fn();
 
     render(<RuntimeChangeControlWorkspace recoveryOnly onBack={onBack} />);
 
-    expect(await screen.findByRole('heading', { name: 'kimi-k3 · 安全恢复' })).toBeTruthy();
-    expect(screen.getByText(/不依赖“模型目录与灰度”商业授权/)).toBeTruthy();
-    expect(screen.getByText(/连接 #14 改为“待发布”/)).toBeTruthy();
+	expect(await screen.findByRole('heading', { name: 'Kimi · 安全恢复' })).toBeTruthy();
+	expect(screen.getByText(/释放 2 条旧发布记录/)).toBeTruthy();
+	expect(screen.getByText('kimi-k3、kimi-k2.6')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /新建发布/ })).toBeNull();
-    fireEvent.click(await screen.findByRole('button', { name: '回滚旧发布占位' }));
-    fireEvent.click(await screen.findByRole('button', { name: '确认回滚旧发布' }));
-    await waitFor(() => expect(mocks.rollbackRuntimeChange).toHaveBeenCalledWith('rcr_kimi_active', 4));
-    fireEvent.click(screen.getByRole('button', { name: '返回模型连接' }));
-    expect(onBack).toHaveBeenCalledTimes(1);
+	fireEvent.click(await screen.findByRole('button', { name: '释放全部旧发布并转为待发布' }));
+	fireEvent.click(await screen.findByRole('button', { name: '确认释放并转为待发布' }));
+	await waitFor(() => expect(mocks.rollbackRuntimeChange).toHaveBeenNthCalledWith(1, 'rcr_kimi_active', 4));
+	expect(mocks.rollbackRuntimeChange).toHaveBeenNthCalledWith(2, 'rcr_kimi_26_active', 3);
+	expect(mocks.updateChannel).toHaveBeenCalledWith(14, { status: 'staged', expected_routing_epoch: 7 });
+	await waitFor(() => expect(onBack).toHaveBeenCalledTimes(1));
+  });
+
+  it('refuses quick recovery when a retained release also carries another connection', async () => {
+    window.history.replaceState(null, '', '/channels?from=connections&channel_id=14&model=kimi-k3&intent=recover');
+    mocks.getChannels.mockResolvedValue({
+      data: [
+        { id: 14, name: 'Kimi', provider: 'kimi', models: 'kimi-k3', status: 'disabled', priority: 1, routing_weight: 1, routing_epoch: 7 },
+        { id: 15, name: 'Kimi 备用', provider: 'kimi', models: 'kimi-k3', status: 'staged', effective_status: 'active', priority: 2, routing_weight: 1, routing_epoch: 4 },
+      ],
+      total: 2,
+    });
+    mocks.getRuntimeChanges.mockResolvedValue({
+      data: [{
+        ...RELEASE,
+        release_ref: 'rcr_kimi_shared',
+        model_name: 'kimi-k3',
+        stage: 'active',
+        version: 4,
+        candidate: {
+          ...RELEASE.candidate,
+          model_name: 'kimi-k3',
+          overrides: [
+            { channel_id: 14, expected_routing_epoch: 7, admission: 'allow' },
+            { channel_id: 15, expected_routing_epoch: 4, admission: 'allow' },
+          ],
+        },
+      }],
+      total: 1,
+    });
+
+    render(<RuntimeChangeControlWorkspace recoveryOnly />);
+
+    expect(await screen.findByText(/快速恢复已停用/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '释放全部旧发布并转为待发布' })).toBeNull();
+    expect(mocks.rollbackRuntimeChange).not.toHaveBeenCalled();
   });
 });

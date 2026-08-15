@@ -104,6 +104,38 @@ describe('ModelReadinessPage', () => {
     await waitFor(() => expect(mocks.modelReadiness).toHaveBeenCalledWith(expect.objectContaining({ project_id: 11, model: 'company-chat' })));
   });
 
+	it('shows the concrete caller blocker instead of a generic unavailable subject label', async () => {
+		mocks.modelReadiness.mockResolvedValueOnce({
+			...readiness,
+			summary: {
+				...readiness.summary,
+				registered: { value: true, state: 'ready', reason_code: 'model_registered' },
+				catalog_visible: { value: true, state: 'ready', reason_code: 'catalog_published' },
+				current_project_caller_callable: { value: false, state: 'blocked', reason_code: 'access_credential_missing' },
+			},
+			project_caller: { ...readiness.project_caller, credential: axis('blocked', 'access_credential_missing', '/applications') },
+		});
+		render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self']}><ModelReadinessPage /></MemoryRouter>);
+
+		expect(await screen.findByText('所选调用身份可用')).toBeTruthy();
+		expect(screen.getAllByText('缺少可用的应用 API Key').length).toBeGreaterThan(0);
+		expect(screen.getByRole('combobox', { name: '谁来调用' })).toHaveTextContent('当前账号的个人 API Key');
+	});
+
+  it('explains a missing gateway license instead of showing a generic blocker', async () => {
+    mocks.modelReadiness.mockResolvedValueOnce({
+      ...readiness,
+      summary: {
+        ...readiness.summary,
+        current_project_caller_callable: { value: false, state: 'blocked', reason_code: 'license_error.missing' },
+      },
+      platform_model: { ...readiness.platform_model, gateway_license: axis('blocked', 'license_error.missing') },
+    });
+    render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self']}><ModelReadinessPage /></MemoryRouter>);
+
+    expect((await screen.findAllByText('当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证')).length).toBeGreaterThan(0);
+  });
+
   it('diagnoses a model connection without loading or requiring project and caller scope', async () => {
     mocks.modelReadiness.mockResolvedValueOnce({
       ...readiness,
@@ -134,10 +166,8 @@ describe('ModelReadinessPage', () => {
   it('follows the exact actor-accessible fix route including blocker context', async () => {
     render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self']}><ModelReadinessPage /><LocationProbe /></MemoryRouter>);
 
-    const registrationReason = await screen.findByText('model_unregistered', { selector: 'code' });
-    const registrationCard = registrationReason.parentElement?.parentElement?.parentElement;
-    expect(registrationCard).toBeTruthy();
-    fireEvent.click(within(registrationCard!).getByRole('button', { name: '前往修复' }));
+    const registrationCard = await screen.findByRole('region', { name: '模型记录诊断' });
+    fireEvent.click(within(registrationCard).getByRole('button', { name: '前往修复' }));
     await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/model-governance?tab=registry&model=company-chat'));
   });
 

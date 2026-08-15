@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Banner, Button, Form, Input, Select, SideSheet, Space, Table, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Form, Input, Modal, Select, SideSheet, Space, Table, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus, IconRefresh, IconServer, IconSetting } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
@@ -97,6 +97,10 @@ function toNumber(value: unknown) {
 
 function isApproved(value: unknown) {
   return value === true || value === 'true' || value === '1';
+}
+
+export function comparableModelIdentity(value: string) {
+	return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 function slugify(value: string) {
@@ -390,6 +394,18 @@ export default function ModelGovernancePage() {
     const retired = registry.filter(item => item.lifecycle === 'retired').length;
     return { ga, deprecated, retired };
   }, [registry]);
+	const duplicateRegistryGroups = useMemo(() => {
+		const groups = new Map<string, ModelRegistryItem[]>();
+		for (const item of registry) {
+			if (item.lifecycle === 'retired') continue;
+			const key = comparableModelIdentity(item.model_name);
+			if (!key) continue;
+			const entries = groups.get(key) || [];
+			entries.push(item);
+			groups.set(key, entries);
+		}
+		return [...groups.values()].filter(items => items.length > 1);
+	}, [registry]);
 
   const openCreateRegistry = () => {
     setRegistrySheet({ mode: 'create' });
@@ -404,6 +420,22 @@ export default function ModelGovernancePage() {
     setRegistrySheet(null);
     registryFormApi?.reset();
   };
+
+	const retireRegistry = (record: ModelRegistryItem) => {
+		Modal.confirm({
+			title: `退役 ${record.model_name}？`,
+			content: '退役会使这个精确模型 ID 不再可调用，并把它移出项目目录；历史发布、审计证据和供应商连接仍会保留。',
+			onOk: async () => {
+				try {
+					await api.updateModelRegistry(record.id, { lifecycle: 'retired', approved_catalog: false });
+					Toast.success('模型记录已退役并移出目录');
+					loadRegistry();
+				} catch (error: any) {
+					Toast.error(`退役失败${error?.message ? `：${error.message}` : ''}`);
+				}
+			},
+		});
+	};
 
   const handleRegistrySubmit = async (values: Record<string, any>) => {
     const parsedContextLength = parseExactTokenCount(values.context_length);
@@ -595,16 +627,27 @@ export default function ModelGovernancePage() {
     },
     { title: '供应商族', dataIndex: 'provider_family', key: 'provider_family', render: (value: string) => value || '-' },
     { title: '生命周期', dataIndex: 'lifecycle', key: 'lifecycle', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
-    { title: '目录可见性', dataIndex: 'approved_catalog', key: 'approved_catalog', render: (value: boolean) => <StatusTag status={Boolean(value)}>{value ? '已批准' : '内部'}</StatusTag> },
+	{
+		title: '项目目录状态', dataIndex: 'approved_catalog', key: 'approved_catalog',
+		render: (value: boolean, record: ModelRegistryItem) => {
+			if (record.lifecycle === 'retired') return <StatusTag status="disabled">已退役·不可见</StatusTag>;
+			if (value && ['ga', 'deprecated'].includes(record.lifecycle)) return <StatusTag status="success">项目可见</StatusTag>;
+			if (value) return <StatusTag status="warning">已批准·待上线</StatusTag>;
+			return <StatusTag status="disabled">仅内部</StatusTag>;
+		},
+	},
     { title: '上下文 / 输出', key: 'limits', render: (_: unknown, record: ModelRegistryItem) => `${compactNumber(record.context_length)} / ${compactNumber(record.output_limit)}` },
     { title: '能力', dataIndex: 'capability_tags', key: 'capability_tags', render: (value: string[] | string) => toList(value).slice(0, 4).join(', ') || '-' },
     { title: '数据驻留', dataIndex: 'data_residency', key: 'data_residency', render: (value: string) => value || '-' },
     {
       title: '操作',
       key: 'actions',
-      width: 86,
+	  width: 210,
       render: (_: unknown, record: ModelRegistryItem) => (
-        <Button icon={<IconEdit />} size="small" onClick={() => openEditRegistry(record)} aria-label="编辑模型" />
+		<Space>
+		  <Button icon={<IconEdit />} size="small" onClick={() => openEditRegistry(record)} aria-label="编辑模型" />
+		  {record.lifecycle !== 'retired' && <Button size="small" type="danger" onClick={() => retireRegistry(record)}>退役并移出目录</Button>}
+		</Space>
       ),
     },
   ];
@@ -700,10 +743,18 @@ export default function ModelGovernancePage() {
       {activeTab === 'registry' && (
         <>
           <div className="ur-modelgov-summary">
-            <div><Text type="tertiary">生产可用</Text><strong>{registryStats.ga}</strong></div>
-            <div><Text type="tertiary">已弃用</Text><strong>{registryStats.deprecated}</strong></div>
-            <div><Text type="tertiary">已退役</Text><strong>{registryStats.retired}</strong></div>
+			<div><Text type="tertiary">当前页 GA 记录</Text><strong>{registryStats.ga}</strong></div>
+			<div><Text type="tertiary">当前筛选记录总数</Text><strong>{registryTotal}</strong></div>
+			<div><Text type="tertiary">当前页已弃用</Text><strong>{registryStats.deprecated}</strong></div>
+			<div><Text type="tertiary">当前页已退役</Text><strong>{registryStats.retired}</strong></div>
           </div>
+		  <Text type="tertiary" size="small">GA、目录批准和当前可调用是不同条件；这里的数字只统计模型目录记录，不代表供应商路由或应用 API Key 已就绪。</Text>
+		  {duplicateRegistryGroups.length > 0 && <Banner
+			type="warning"
+			description={`发现 ${duplicateRegistryGroups.length} 组疑似重复模型标识：${duplicateRegistryGroups.map(group => group.map(item => item.model_name).join(' / ')).join('；')}。请选择保留的精确模型 ID，并将旧记录“退役并移出目录”。`}
+			closeIcon={null}
+			style={{ marginTop: 12, marginBottom: 12 }}
+		  />}
           <Surface
             title="模型目录"
             description="这里是企业内部目录，不是公开模型市场；只维护企业确实允许评估、发布或逐步退役的模型。"

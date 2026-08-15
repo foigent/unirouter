@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
@@ -73,6 +74,19 @@ func TestP6F08PreviewRoutingValidatesModelAndAvailability(t *testing.T) {
 		if rec.Code != test.status {
 			t.Fatalf("%s: expected %d, got %d", test.url, test.status, rec.Code)
 		}
+	}
+}
+
+func TestPreviewRoutingExplainsStaleRuntimeAssignment(t *testing.T) {
+	h := &Handler{routingController: &routingControllerStub{err: gateway.ErrRuntimeAssignmentStale}}
+	rec := httptest.NewRecorder()
+	h.PreviewRouting(rec, httptest.NewRequest(http.MethodGet, "/api/v1/routing/preview?model=kimi-k3", nil))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"runtime_assignment_stale"`) ||
+		!strings.Contains(rec.Body.String(), "处理该连接保留的旧发布记录") {
+		t.Fatalf("missing actionable stale-assignment contract: %s", rec.Body.String())
 	}
 }
 

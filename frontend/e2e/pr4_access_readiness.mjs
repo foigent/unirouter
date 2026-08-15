@@ -445,25 +445,36 @@ try {
     const readyPath = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.ready_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
     await gotoHeading(readiness.page, readyPath, '调用条件诊断');
     await readiness.page.getByText('查看高级诊断证据', { exact: true }).click();
-    await visible(readiness.page.getByText('direct_model_optional', { exact: true }));
-    await visible(readiness.page.getByText('unrestricted_optional', { exact: true }));
-    await visible(readiness.page.getByText('runtime_slot_not_configured_optional', { exact: true }));
+    const aliasAxis = readiness.page.locator('section[aria-label="模型别名诊断"]');
+    await visible(aliasAxis.getByText('本次直接使用模型 ID，不需要 Alias', { exact: true }));
+    await aliasAxis.locator('summary').click();
+    await visible(aliasAxis.getByText('direct_model_optional', { exact: true }));
+    const modelSetAxis = readiness.page.locator('section[aria-label="项目模型范围诊断"]');
+    await visible(modelSetAxis.getByText('项目未设置额外模型集限制', { exact: true }));
+    await modelSetAxis.locator('summary').click();
+    await visible(modelSetAxis.getByText('unrestricted_optional', { exact: true }));
+    const runtimeSlotAxis = readiness.page.locator('section[aria-label="当前路由版本诊断"]');
+    await runtimeSlotAxis.locator('summary').click();
+    await visible(runtimeSlotAxis.getByText('runtime_slot_not_configured_optional', { exact: true }));
     const facts = readiness.page.locator('.ur-readiness-summary-grid');
     await visible(facts);
-    assert.ok((await facts.textContent()).includes('模型记录就绪条件已满足'));
-    assert.ok((await facts.textContent()).includes('项目目录可见就绪条件已满足'));
-    assert.ok((await facts.textContent()).includes('当前可用路由就绪条件已满足'));
-    assert.ok((await facts.textContent()).includes('所选主体可调用受阻需要处理后才能使用'));
+    await visible(facts.getByText('已有模型目录记录', { exact: true }));
+    await visible(facts.getByText('项目目录可以看到该模型', { exact: true }));
+    await visible(facts.getByText('当前至少有一条可用路由', { exact: true }));
+    await visible(facts.getByText('当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证', { exact: true }));
 
     const runtimePath = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.runtime_only_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
     await readiness.page.goto(runtimePath);
     await visible(readiness.page.getByText('查看高级诊断证据', { exact: true }));
     await readiness.page.getByText('查看高级诊断证据', { exact: true }).click();
-    await visible(readiness.page.getByText('model_governance_not_licensed_optional', { exact: true }).first());
+    const registrationAxis = readiness.page.locator('section[aria-label="模型记录诊断"]');
+    await visible(registrationAxis.getByText('当前流程不要求', { exact: true }));
+    await registrationAxis.locator('summary').click();
+    await visible(registrationAxis.getByText('model_governance_not_licensed_optional', { exact: true }));
     const runtimeFacts = readiness.page.locator('.ur-readiness-summary-grid');
     await visible(runtimeFacts);
-    assert.ok((await runtimeFacts.textContent()).includes('模型记录不适用 / 可选当前流程不要求'));
-    assert.ok((await runtimeFacts.textContent()).includes('当前可用路由就绪条件已满足'));
+    await visible(runtimeFacts.getByText('当前流程不要求', { exact: true }).first());
+    await visible(runtimeFacts.getByText('当前至少有一条可用路由', { exact: true }));
     journeys.push('readiness_four_facts_optional_states');
   } finally {
     await readiness.context.close();
@@ -475,7 +486,10 @@ try {
     await gotoHeading(unavailable.page, path, '调用条件诊断');
     await visible(unavailable.page.getByText('暂时无法判断', { exact: true }).first());
     await unavailable.page.getByText('查看高级诊断证据', { exact: true }).click();
-    await visible(unavailable.page.getByText('routing_preview_unavailable', { exact: true }).first());
+    const unavailableRouteAxis = unavailable.page.locator('section[aria-label="可用路由诊断"]');
+    await visible(unavailableRouteAxis.getByText('证据源暂时不可用', { exact: true }));
+    await unavailableRouteAxis.locator('summary').click();
+    await visible(unavailableRouteAxis.getByText('routing_preview_unavailable', { exact: true }));
     journeys.push('readiness_unavailable_not_blocked');
   } finally {
     await unavailable.context.close();

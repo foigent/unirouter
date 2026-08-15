@@ -243,11 +243,11 @@ func (m *Manager) validateChannelPins(ctx context.Context, store interface {
 	QueryRow(context.Context, string, ...interface{}) pgx.Row
 }, modelName string, overrides []routingpolicy.ChannelOverride) error {
 	for _, override := range overrides {
-		var provider, adapterType, models string
+		var provider, adapterType, models, channelStatus string
 		var epoch int64
 		err := store.QueryRow(ctx, `
-SELECT provider, COALESCE(adapter_type,'openai_compatible'), models, routing_epoch
-  FROM channels WHERE id=$1`, override.ChannelID).Scan(&provider, &adapterType, &models, &epoch)
+SELECT provider, COALESCE(adapter_type,'openai_compatible'), models, routing_epoch, status
+  FROM channels WHERE id=$1`, override.ChannelID).Scan(&provider, &adapterType, &models, &epoch, &channelStatus)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("%w: channel %d not found", ErrInvalid, override.ChannelID)
 		}
@@ -256,6 +256,9 @@ SELECT provider, COALESCE(adapter_type,'openai_compatible'), models, routing_epo
 		}
 		if epoch != override.ExpectedRoutingEpoch || !modelInCSV(models, modelName) {
 			return fmt.Errorf("%w: channel %d identity changed", ErrConflict, override.ChannelID)
+		}
+		if override.Admission == routingpolicy.AdmissionAllow && channelStatus == "disabled" {
+			return fmt.Errorf("%w: channel %d is emergency disabled", ErrConflict, override.ChannelID)
 		}
 		_, _, found, packErr := providerpack.FindConformance(provider, adapterType)
 		if packErr != nil {

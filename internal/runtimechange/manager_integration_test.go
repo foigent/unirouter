@@ -186,6 +186,18 @@ func TestPRD8RuntimeChangeLifecycleCanaryActivationAndEmergencyDisable(t *testin
 
 	var disabledEpoch int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT routing_epoch FROM channels WHERE id=$1`, channelID).Scan(&disabledEpoch))
+	_, err = manager.CreateDraft(ctx, runtimechange.DraftRequest{
+		ReleaseRef: "rcr_prd8_disabled_must_not_activate",
+		ModelName:  "gpt-prd8-runtime",
+		Overrides: []routingpolicy.ChannelOverride{{
+			ChannelID: channelID, ExpectedRoutingEpoch: disabledEpoch,
+			Admission: routingpolicy.AdmissionAllow,
+		}},
+		Reason: "a disabled connection must not produce another active release record",
+	}, userID)
+	require.ErrorIs(t, err, runtimechange.ErrConflict)
+	require.ErrorContains(t, err, "emergency disabled")
+
 	blockedRestage := authorizedRequest(http.MethodPut, fmt.Sprintf("/api/v1/channels/%d", channelID),
 		fmt.Sprintf(`{"status":"staged","expected_routing_epoch":%d}`, disabledEpoch))
 	blockedRestage.SetPathValue("id", fmt.Sprintf("%d", channelID))
