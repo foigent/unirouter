@@ -157,12 +157,39 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
       .mockResolvedValueOnce({ success: true, model: 'deepseek-v4-flash', upstream_model: 'deepseek/deepseek-v4-flash' });
 
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '逐项检测待检测端点（2）' }));
+    fireEvent.click(await screen.findByRole('button', { name: '补齐端点检测证据（2）' }));
     fireEvent.click(await screen.findByText('确认逐项检测'));
 
     await waitFor(() => expect(mocks.testChannelModel).toHaveBeenCalledTimes(2));
     expect(mocks.testChannelModel).toHaveBeenNthCalledWith(1, 13, 'deepseek-v4-flash');
     expect(mocks.testChannelModel).toHaveBeenNthCalledWith(2, 14, 'deepseek-v4-flash');
+  });
+
+  it('separates call blockers from missing evidence on an already-callable route', async () => {
+    mocks.getModelEndpoints.mockResolvedValue(projection([
+      target({ state: 'active', route_candidate: true, stable_assignment: true }),
+    ], { state: 'active', callable: true }));
+
+    renderPage();
+
+    expect(await screen.findByText('调用阻塞')).toBeTruthy();
+    expect(screen.getByText('补齐端点检测证据（1）')).toBeTruthy();
+    expect(screen.queryByText('需要处理')).toBeNull();
+  });
+
+  it('clears the selected model URL state before changing top-level tabs', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
+    const sheetTitle = await screen.findByText('DeepSeek V4 Flash · 供应商端点');
+    const sheet = sheetTitle.closest<HTMLElement>('[role="dialog"]');
+    expect(sheet).toBeTruthy();
+
+    fireEvent.click(within(sheet!).getByRole('button', { name: 'close' }));
+    await waitFor(() => expect(screen.queryByText('DeepSeek V4 Flash · 供应商端点')).toBeNull());
+    fireEvent.click(screen.getByRole('tab', { name: '凭证' }));
+
+    await waitFor(() => expect(screen.queryByText('DeepSeek V4 Flash · 供应商端点')).toBeNull());
+    expect(await screen.findByText('凭证内嵌视图')).toBeTruthy();
   });
 
   it('creates separate public and upstream identities with a provider mapping', async () => {
