@@ -262,21 +262,20 @@ func ReconcileActivatedCatalogModels(ctx context.Context, tx pgx.Tx, orgID int64
 	}
 
 	rows, err := tx.Query(ctx, `
-		SELECT s.model_name,
-		       COALESCE((
-		         SELECT CASE
-		                  WHEN COUNT(DISTINCT c.provider) = 0 THEN ''
-		                  WHEN COUNT(DISTINCT c.provider) = 1 THEN MIN(c.provider)
-		                  ELSE 'mixed'
-		                END
-		           FROM jsonb_array_elements(r.candidate->'overrides') AS override
-		           JOIN channels c ON c.id = (override->>'channel_id')::bigint
-		          WHERE override->>'admission' = 'allow'
-		       ), '') AS provider_family
-		  FROM runtime_change_slots s
-		  JOIN runtime_change_releases r ON r.id = s.stable_release_id
-		 WHERE r.stage = 'active'
-		 ORDER BY s.model_name`)
+		SELECT assignment.model_name,
+		       CASE
+		         WHEN COUNT(DISTINCT c.provider) = 0 THEN ''
+		         WHEN COUNT(DISTINCT c.provider) = 1 THEN MIN(c.provider)
+		         ELSE 'mixed'
+		       END AS provider_family
+		  FROM runtime_channel_assignments_v1 assignment
+		  LEFT JOIN channels c
+		    ON c.id = assignment.channel_id
+		   AND assignment.admission = 'allow'
+		 WHERE assignment.assignment_kind = 'stable'
+		   AND assignment.release_stage = 'active'
+		 GROUP BY assignment.model_name
+		 ORDER BY assignment.model_name`)
 	if err != nil {
 		return fmt.Errorf("list activated models for catalog reconciliation: %w", err)
 	}

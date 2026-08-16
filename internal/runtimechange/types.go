@@ -71,6 +71,23 @@ type Release struct {
 	UpdatedAt             time.Time                            `json:"updated_at"`
 }
 
+type ReleaseListSummary struct {
+	ActiveRecords  int `json:"active_records"`
+	CurrentStable  int `json:"current_stable"`
+	RetainedActive int `json:"retained_active"`
+	Canary         int `json:"canary"`
+	Pending        int `json:"pending"`
+	History        int `json:"history"`
+}
+
+type ReleasePage struct {
+	Data     []Release          `json:"data"`
+	Total    int                `json:"total"`
+	Page     int                `json:"page"`
+	PageSize int                `json:"page_size"`
+	Summary  ReleaseListSummary `json:"summary"`
+}
+
 type Slot struct {
 	ModelName         string `json:"model_name"`
 	StableReleaseRef  string `json:"stable_release_ref,omitempty"`

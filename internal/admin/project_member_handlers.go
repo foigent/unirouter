@@ -51,7 +51,8 @@ func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 		`SELECT COUNT(*)
 		 FROM project_members pm
 		 JOIN users u ON u.id = pm.user_id
-		 WHERE pm.project_id = $1 AND u.org_id = $2`,
+		 WHERE pm.project_id = $1 AND u.org_id = $2
+		   AND u.organization_role <> 'platform_admin'`,
 		projectID, orgID,
 	).Scan(&total); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
@@ -66,6 +67,7 @@ func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 		 JOIN users u ON u.id = pm.user_id
 		 JOIN projects p ON p.id = pm.project_id AND p.org_id = u.org_id
 		 WHERE pm.project_id = $1 AND p.org_id = $2
+		   AND u.organization_role <> 'platform_admin'
 		 ORDER BY CASE pm.role WHEN 'project_admin' THEN 0 WHEN 'project_user' THEN 1 WHEN 'project_developer' THEN 1 ELSE 2 END,
 		          u.username ASC, u.id ASC
 		 LIMIT $3 OFFSET $4`,
@@ -106,6 +108,7 @@ func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 		 FROM users u
 		 WHERE u.org_id = $1
 		   AND u.status = 'active'
+		   AND u.organization_role <> 'platform_admin'
 		   AND ($2 = '' OR u.username ILIKE $3 OR COALESCE(u.email, '') ILIKE $3)
 		   AND NOT EXISTS (
 		       SELECT 1 FROM project_members pm WHERE pm.project_id = $4 AND pm.user_id = u.id
@@ -121,6 +124,7 @@ func (h *Handler) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 		 FROM users u
 		 WHERE u.org_id = $1
 		   AND u.status = 'active'
+		   AND u.organization_role <> 'platform_admin'
 		   AND ($2 = '' OR u.username ILIKE $3 OR COALESCE(u.email, '') ILIKE $3)
 		   AND NOT EXISTS (
 		       SELECT 1 FROM project_members pm WHERE pm.project_id = $4 AND pm.user_id = u.id
@@ -213,8 +217,8 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 	organizationWideActor := auth.RoleIn(actorState.OrganizationRole, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
 
 	var targetOrgID int64
-	var targetStatus string
-	targetQuery := `SELECT u.org_id, u.status
+	var targetStatus, targetOrganizationRole string
+	targetQuery := `SELECT u.org_id, u.status, u.organization_role
 		  FROM users u
 		 WHERE u.id = $1 AND u.org_id = $2
 		 FOR UPDATE OF u`
@@ -224,7 +228,7 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 		// account whose exact-project membership already makes it visible.
 		// Keep this predicate in the first lookup so status and other account
 		// metadata cannot turn a hidden ID into an existence oracle.
-		targetQuery = `SELECT u.org_id, u.status
+		targetQuery = `SELECT u.org_id, u.status, u.organization_role
 			  FROM users u
 			 WHERE u.id = $1 AND u.org_id = $2
 			   AND (
@@ -239,7 +243,7 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 			 FOR UPDATE OF u`
 		targetArgs = append(targetArgs, projectID)
 	}
-	if err := tx.QueryRow(r.Context(), targetQuery, targetArgs...).Scan(&targetOrgID, &targetStatus); err != nil {
+	if err := tx.QueryRow(r.Context(), targetQuery, targetArgs...).Scan(&targetOrgID, &targetStatus, &targetOrganizationRole); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]interface{}{"error": "User not found"})
 		return
 	}
@@ -249,6 +253,13 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 	}
 	if targetStatus != "active" {
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Only active accounts can receive project membership"})
+		return
+	}
+	if targetOrganizationRole == auth.RolePlatformAdmin {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error": "Deployment operators cannot receive project membership",
+			"code":  "deployment_operator_not_project_identity",
+		})
 		return
 	}
 	var existingMembershipRole string
@@ -273,11 +284,6 @@ func (h *Handler) UpsertProjectMember(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !hasExistingMembership || canonicalProjectMembershipRole(existingMembershipRole) != membershipRole {
-		var targetOrganizationRole string
-		if err := tx.QueryRow(r.Context(), `SELECT organization_role FROM users WHERE id=$1 AND org_id=$2`, userID, orgID).Scan(&targetOrganizationRole); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Sponsor transition validation failed"})
-			return
-		}
 		if err := accesssponsor.ValidatePostTransition(r.Context(), tx, accesssponsor.PostTransitionState{
 			UserID: userID, OrgID: orgID, Status: targetStatus, OrganizationRole: targetOrganizationRole,
 			MembershipOverride: &accesssponsor.MembershipOverride{ProjectID: projectID, Role: membershipRole, Present: true},

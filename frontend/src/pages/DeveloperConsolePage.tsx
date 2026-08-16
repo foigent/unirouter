@@ -34,6 +34,7 @@ import { loadAllPages } from '../utils/loadAllPages';
 import { normalizeModelList, parseModelList } from '../utils/modelList';
 import { keyQuotaText } from '../utils/quota';
 import { buildChatCompletionsCurl } from '../utils/shell';
+import { projectDisplayName, projectOption } from '../utils/projectDisplay';
 
 const { Text } = Typography;
 
@@ -707,10 +708,7 @@ export default function DeveloperConsolePage() {
             <Select
               value={selectedProjectId}
               onChange={handleProjectChange}
-              optionList={projects.map(project => ({
-                label: `${project.name} (${project.slug})`,
-                value: project.id,
-              }))}
+              optionList={projects.map(projectOption)}
               style={{ width: 280 }}
               aria-label="选择项目"
             />
@@ -736,12 +734,12 @@ export default function DeveloperConsolePage() {
       <section className="ur-dev-context">
         <div>
           <Text className="ur-page-eyebrow">当前项目</Text>
-          <strong>{selectedProject?.name}</strong>
+          <strong>{projectDisplayName(selectedProject)}</strong>
           <Text type="tertiary">/{selectedProject?.slug}</Text>
         </div>
         <StatusTag status={selectedProject?.status || 'active'}>{selectedProject?.status || 'active'}</StatusTag>
         <StatusTag status={projectRoleLabel}>{projectRoleLabel}</StatusTag>
-        <Text type="tertiary">项目 ID：{selectedProject?.id}</Text>
+        <Text type="tertiary">项目标识：{selectedProject?.slug || '-'}</Text>
       </section>
     </>
   );

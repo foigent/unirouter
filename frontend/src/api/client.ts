@@ -139,8 +139,8 @@ export const api = {
   getProviderPacks: () => request('/provider-packs'),
   previewRouting: (model: string) =>
     request(`/routing/preview?model=${encodeURIComponent(model)}`),
-  getRuntimeChanges: (model?: string) =>
-    request(appendParams('/runtime-changes', { model })),
+  getRuntimeChanges: (model?: string, page = 1, pageSize = 20) =>
+    request(appendParams('/runtime-changes', { model, page, page_size: pageSize })),
   getRuntimeChange: (releaseRef: string) =>
     request(`/runtime-changes/${encodeURIComponent(releaseRef)}`),
   getRuntimeChangeSlot: (model: string) =>

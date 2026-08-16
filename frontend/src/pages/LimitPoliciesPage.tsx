@@ -7,6 +7,7 @@ import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectDisplayName } from '../utils/projectDisplay';
 
 const { Text, Paragraph } = Typography;
 
@@ -61,7 +62,7 @@ function selectorText(policy: LimitPolicy) {
   const parts: string[] = [policy.org_id
     ? (policy.org_name || `客户组织 #${policy.org_id}`)
     : '部署全局（当前部署全部请求）'];
-  if (policy.project_id) parts.push(policy.project_name || `项目 #${policy.project_id}`);
+  if (policy.project_id) parts.push(projectDisplayName({ id: policy.project_id, name: policy.project_name || '', slug: policy.project_name === 'Default Project' ? 'default' : undefined }));
   if (policy.api_key_id) parts.push(policy.api_key_name ? `凭证 ${policy.api_key_name}` : `凭证 #${policy.api_key_id}`);
   if (policy.model) parts.push(`模型 ${policy.model}`);
   if (policy.policy_label) parts.push(`标签 ${policy.policy_label}`);
@@ -133,7 +134,7 @@ export default function LimitPoliciesPage() {
         setKeys((keyData || []).filter((key) => key.org_id === customerOrgID));
         setProjects((projectData || [])
           .filter((project: any) => project.org_id === customerOrgID)
-          .map((project: any) => ({ value: project.id, label: project.name })));
+          .map((project: any) => ({ value: project.id, label: projectDisplayName(project) })));
         const source = Array.isArray(modelData?.data) ? modelData.data : modelData;
         setModels((Array.isArray(source) ? source : []).map((item: any) => typeof item === 'string' ? item : item.model).filter(Boolean));
       } catch {
@@ -304,7 +305,7 @@ export default function LimitPoliciesPage() {
           <Form.Select
             field="api_key_id"
             label="访问凭证（可选）"
-            optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${key.project_name || `项目 #${key.project_id}`} · ${key.key_prefix}***` }))}
+            optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${projectDisplayName({ id: key.project_id || 0, name: key.project_name || '' })} · ${key.key_prefix}***` }))}
             showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }}
           />
           <Form.Select field="model" label="模型（可选）" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />

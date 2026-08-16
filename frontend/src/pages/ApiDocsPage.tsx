@@ -152,7 +152,7 @@ const endpointGroups = [
 	  ['POST', '/api/v1/model-endpoints/recover', '仅在旧稳定发布已无可用路由时，用已检测端点恢复稳定路由'],
       ['GET', '/api/v1/provider-packs', '列出离线 fixture-verified Provider Pack、能力和精确摘要'],
       ['GET', '/api/v1/routing/preview', '只读预览模型的路由候选、排除原因与快照状态'],
-      ['GET', '/api/v1/runtime-changes', '读取通道准入、优先级和权重的确定性发布队列'],
+      ['GET', '/api/v1/runtime-changes', '分页读取确定性发布记录，并区分当前稳定路由与保留的旧审计记录'],
       ['POST', '/api/v1/runtime-changes', '创建绑定通道 epoch、Provider Pack 和模拟证据的发布草稿'],
       ['GET', '/api/v1/runtime-changes/slot', '读取一个模型的稳定与灰度发布槽'],
       ['GET', '/api/v1/runtime-changes/{ref}', '读取发布候选、Hash、Pack Pin、模拟报告和生命周期'],

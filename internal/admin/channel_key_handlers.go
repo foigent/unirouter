@@ -111,11 +111,11 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 			    c.status='disabled' OR (
 			      c.status='staged' AND NOT EXISTS (
 			        SELECT 1
-			          FROM runtime_change_slots rcs
-			          JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
-			          CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
-			         WHERE (runtime_override->>'channel_id')::bigint=c.id
-			           AND runtime_override->>'admission'='allow')))
+			          FROM runtime_channel_assignments_v1 assignment
+			         WHERE assignment.channel_id=c.id
+			           AND assignment.assignment_kind='stable'
+			           AND assignment.release_stage='active'
+			           AND assignment.admission='allow')))
 			 RETURNING id`,
 			req.ChannelID, keyEnc, req.AllowedModels,
 		).Scan(&id)
@@ -135,11 +135,11 @@ func (h *Handler) CreateChannelKey(w http.ResponseWriter, r *http.Request) {
 				    c.status='disabled' OR (
 				      c.status='staged' AND NOT EXISTS (
 				        SELECT 1
-				          FROM runtime_change_slots rcs
-				          JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
-				          CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
-				         WHERE (runtime_override->>'channel_id')::bigint=c.id
-				           AND runtime_override->>'admission'='allow')))
+				          FROM runtime_channel_assignments_v1 assignment
+				         WHERE assignment.channel_id=c.id
+				           AND assignment.assignment_kind='stable'
+				           AND assignment.release_stage='active'
+				           AND assignment.admission='allow')))
 				 RETURNING id`,
 				req.ChannelID, keyEnc, req.AllowedModels,
 			).Scan(&id)
@@ -246,10 +246,9 @@ func (h *Handler) UpdateChannelKey(w http.ResponseWriter, r *http.Request) {
 			targetChannel = strconv.FormatInt(*req.ChannelID, 10)
 		}
 		query += " AND EXISTS (SELECT 1 FROM channels c WHERE c.id=" + targetChannel + " AND (c.status='disabled' OR (c.status='staged'" +
-			" AND NOT EXISTS (SELECT 1 FROM runtime_change_slots rcs" +
-			" JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'" +
-			" CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override" +
-			" WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow'))))"
+			" AND NOT EXISTS (SELECT 1 FROM runtime_channel_assignments_v1 assignment" +
+			" WHERE assignment.channel_id=c.id AND assignment.assignment_kind='stable'" +
+			" AND assignment.release_stage='active' AND assignment.admission='allow'))))"
 	}
 	auditDetail := map[string]interface{}{
 		"channel_id_updated":     req.ChannelID != nil,
@@ -314,11 +313,10 @@ func (h *Handler) DeleteChannelKey(w http.ResponseWriter, r *http.Request) {
 DELETE FROM channel_keys ck USING channels c
  WHERE ck.id=$1 AND c.id=ck.channel_id AND (
    c.status='disabled' OR (
-     c.status='staged' AND NOT EXISTS (
-       SELECT 1 FROM runtime_change_slots rcs
-       JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
-       CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
-       WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow')))`, id)
+	 c.status='staged' AND NOT EXISTS (
+	   SELECT 1 FROM runtime_channel_assignments_v1 assignment
+	   WHERE assignment.channel_id=c.id AND assignment.assignment_kind='stable'
+	     AND assignment.release_stage='active' AND assignment.admission='allow')))`, id)
 		if err == nil && tag.RowsAffected() > 0 {
 			h.recordAudit(r.Context(), "channelkey.delete", "channel_key", idStr, map[string]interface{}{}, r.RemoteAddr)
 		}
@@ -331,11 +329,10 @@ DELETE FROM channel_keys ck USING channels c
 DELETE FROM channel_keys ck USING channels c
  WHERE ck.id=$1 AND c.id=ck.channel_id AND (
    c.status='disabled' OR (
-     c.status='staged' AND NOT EXISTS (
-       SELECT 1 FROM runtime_change_slots rcs
-       JOIN runtime_change_releases rcr ON rcr.id=rcs.stable_release_id AND rcr.stage='active'
-       CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
-       WHERE (runtime_override->>'channel_id')::bigint=c.id AND runtime_override->>'admission'='allow')))`, id)
+	 c.status='staged' AND NOT EXISTS (
+	   SELECT 1 FROM runtime_channel_assignments_v1 assignment
+	   WHERE assignment.channel_id=c.id AND assignment.assignment_kind='stable'
+	     AND assignment.release_stage='active' AND assignment.admission='allow')))`, id)
 		}
 		if err == nil && tag.RowsAffected() > 0 {
 			err = insertAuditEntry(r.Context(), tx, "channelkey.delete", "channel_key", idStr, map[string]interface{}{},

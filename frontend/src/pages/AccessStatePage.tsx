@@ -9,6 +9,7 @@ import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
 import { IntentRequestIDs } from '../utils/intentRequestId';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectOption } from '../utils/projectDisplay';
 
 const { Text } = Typography;
 
@@ -16,6 +17,7 @@ type Project = {
   id: number;
   org_id: number;
   name: string;
+  slug?: string;
   status: string;
   current_user_membership_role?: string;
 };
@@ -301,7 +303,7 @@ export default function AccessStatePage() {
           <EmptyState title="暂无可申请项目" description="请让管理员提供明确的项目加入路径；当前页面不会枚举同组织全部项目。" />
         ) : (
           <Space wrap>
-            <Select loading={projectLoading} value={selectedProjectID} style={{ width: 280 }} placeholder="选择项目" optionList={projects.map((project) => ({ value: project.id, label: `${project.name} (#${project.id})` }))} onChange={(value) => replaceSearch({ project_id: Number(value) })} />
+            <Select loading={projectLoading} value={selectedProjectID} style={{ width: 280 }} placeholder="选择项目" optionList={projects.map(projectOption)} onChange={(value) => replaceSearch({ project_id: Number(value) })} />
             <Button type="primary" icon={<IconPlus />} disabled={!selectedProject} onClick={() => setRequestDrawer(true)}>提交访问请求</Button>
           </Space>
         )}

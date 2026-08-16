@@ -10,10 +10,11 @@ import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { IntentRequestIDs } from '../utils/intentRequestId';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectOption } from '../utils/projectDisplay';
 
 const { Text } = Typography;
 
-type Project = { id: number; org_id: number; name: string; status: string; current_user_membership_role?: string };
+type Project = { id: number; org_id: number; name: string; slug?: string; status: string; current_user_membership_role?: string };
 type ApplicationScope = { projectID: number; applicationID?: number; applicationRef?: string };
 
 function grantBelongsToApplication(grant: AccessGrant, application: WorkloadApplication) {
@@ -502,7 +503,7 @@ export default function ApplicationsV2Page() {
       <Tabs activeKey={activeTab} onChange={(tab) => updateSearch({ tab })}>
         <TabPane tab="应用与 Agent v2" itemKey="applications">
           <Surface title="项目范围" description="Project admin 能力按当前所选项目实时变化。">
-            {projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjectsAndContract}>重试</Button>} /> : <Space><Select value={selectedProjectID} style={{ width: 300 }} optionList={projects.map((project) => ({ value: project.id, label: `${project.name} (#${project.id})` }))} placeholder="选择项目" onChange={(value) => updateSearch({ project_id: Number(value), application_ref: undefined })} /><Button type="primary" icon={<IconPlus />} disabled={!selectedProjectID || !canManageSelectedProject} onClick={openCreateDrawer}>新建 v2 Application</Button></Space>}
+            {projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjectsAndContract}>重试</Button>} /> : <Space><Select value={selectedProjectID} style={{ width: 300 }} optionList={projects.map(projectOption)} placeholder="选择项目" onChange={(value) => updateSearch({ project_id: Number(value), application_ref: undefined })} /><Button type="primary" icon={<IconPlus />} disabled={!selectedProjectID || !canManageSelectedProject} onClick={openCreateDrawer}>新建 v2 Application</Button></Space>}
             {selectedProjectID && !canManageSelectedProject && <Text type="tertiary">当前所选项目只有读取/使用权限；创建或维护 Workload identity 需要该项目的实时 project_admin 权限。</Text>}
           </Surface>
           <Surface title="Workload identities" description="Kind、project、logical_ref、environment、production_use 是 v2 安全身份；环境与用途创建后不可变。">

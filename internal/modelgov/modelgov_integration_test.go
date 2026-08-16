@@ -118,6 +118,56 @@ func TestEnsureActivatedCatalogModelRejectsEquivalentLiveIdentity(t *testing.T) 
 	require.Zero(t, exactCount)
 }
 
+func TestReconcileActivatedCatalogModelsUsesCanonicalRuntimeAssignments(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	orgID := testutil.NewTestOrg(t, pool)
+
+	var userID, channelID, releaseID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,role,status,organization_role)
+		VALUES ($1,'runtime-catalog-owner','test-hash','org_admin','active','org_admin') RETURNING id`, orgID).Scan(&userID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channels (name,provider,base_url,models,status,routing_epoch)
+		VALUES ('runtime-catalog-provider','custom-maas','https://provider.invalid','runtime-catalog-model','staged',4)
+		RETURNING id`).Scan(&channelID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO runtime_change_releases (
+		  release_ref,model_name,candidate_version,candidate_hash,baseline_hash,
+		  candidate,provider_pack_pins,simulation_report,overall_risk,stage,version,
+		  reason,created_by,validated_by,activated_by,validated_at,activated_at)
+		VALUES (
+		  'rcr_runtime_catalog','runtime-catalog-model','unirouter.runtime-change-candidate.v1',
+		  'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+		  'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+		  jsonb_build_object(
+		    'contract_version','unirouter.runtime-change-candidate.v1',
+		    'model_name','runtime-catalog-model',
+		    'overrides',jsonb_build_array(jsonb_build_object(
+		      'channel_id',$2::bigint,'expected_routing_epoch',4,'admission','allow'))),
+		  '[]','{}','unchanged','active',1,'runtime catalog fixture',$1,$1,$1,NOW(),NOW())
+		RETURNING id`, userID, channelID).Scan(&releaseID))
+	_, err := pool.Exec(ctx, `
+		INSERT INTO runtime_change_slots (model_name,stable_release_id,slot_version)
+		VALUES ('runtime-catalog-model',$1,2)`, releaseID)
+	require.NoError(t, err)
+
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	require.NoError(t, ReconcileActivatedCatalogModels(ctx, tx, orgID))
+	require.NoError(t, tx.Commit(ctx))
+
+	var providerFamily, lifecycle string
+	var approved bool
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT provider_family,lifecycle,approved_catalog
+		  FROM model_registry
+		 WHERE org_id=$1 AND model_name='runtime-catalog-model'`, orgID).Scan(&providerFamily, &lifecycle, &approved))
+	require.Equal(t, "custom-maas", providerFamily)
+	require.Equal(t, LifecycleGA, lifecycle)
+	require.True(t, approved)
+}
+
 func callableModelsByCheckAccess(t *testing.T, ctx context.Context, q db.DBQuerier, orgID, projectID int64, candidates []string) []string {
 	t.Helper()
 	allowed := make([]string, 0, len(candidates))

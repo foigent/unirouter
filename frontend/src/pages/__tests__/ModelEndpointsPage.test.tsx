@@ -214,6 +214,26 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     })));
   });
 
+  it('makes an unlisted OpenAI-compatible provider a first-class creation path', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
+    fireEvent.click(await screen.findByText('为此公共模型增加供应商端点'));
+    fireEvent.click(await screen.findByRole('button', { name: '列表中没有？新增自定义兼容供应商' }));
+
+    fireEvent.change(await screen.findByLabelText('供应商标识'), { target: { value: 'another-aggregator' } });
+    fireEvent.change(await screen.findByLabelText('Base URL'), { target: { value: 'https://api.example.test/v1' } });
+    fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'vendor/deepseek-v4-flash' } });
+    fireEvent.change(await screen.findByLabelText('供应商 API Key'), { target: { value: 'sk-custom-test-only' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存端点与凭证' }));
+
+    await waitFor(() => expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'another-aggregator',
+      base_url: 'https://api.example.test/v1',
+      adapter_type: 'openai_compatible',
+      model_mapping: { 'deepseek-v4-flash': 'vendor/deepseek-v4-flash' },
+    })));
+  });
+
   it('uses the server workflow for first activation after a current successful probe', async () => {
     const readyTarget = target({
       state: 'ready',

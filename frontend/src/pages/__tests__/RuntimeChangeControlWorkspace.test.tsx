@@ -160,16 +160,21 @@ describe('RuntimeChangeControlWorkspace', () => {
         activeRelease(5, 'kimi-k2.7-code', 14, 3),
       ],
       total: 5,
+      page: 1,
+      page_size: 20,
+      summary: { active_records: 5, current_stable: 2, retained_active: 3, canary: 0, pending: 0, history: 0 },
     });
 
     render(<RuntimeChangeControlWorkspace />);
 
-    expect(await screen.findByText('发布记录生效')).toBeTruthy();
-    expect(screen.getByText('发布记录生效').nextElementSibling?.textContent).toBe('5');
-    expect(screen.getByText('当前可应用').nextElementSibling?.textContent).toBe('2');
-    expect(screen.getByText('保留或漂移').nextElementSibling?.textContent).toBe('3');
+    expect(await screen.findByText('当前稳定发布')).toBeTruthy();
+    expect(screen.getByText('当前稳定发布').nextElementSibling?.textContent).toBe('2');
+    expect(screen.getByText('保留的旧生效记录').nextElementSibling?.textContent).toBe('3');
+    expect(screen.getByText('灰度中').nextElementSibling?.textContent).toBe('0');
+    expect(screen.getByText('待推进').nextElementSibling?.textContent).toBe('0');
+    expect(screen.getByText('历史记录').nextElementSibling?.textContent).toBe('0');
     expect((await screen.findAllByText('启用时有变化（已确认）')).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText('修订 3')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('修订 3')).toBeNull();
     expect(screen.queryByText('r3')).toBeNull();
   });
 

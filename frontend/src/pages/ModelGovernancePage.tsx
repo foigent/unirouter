@@ -1,139 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Banner, Button, Form, Input, Modal, Select, SideSheet, Space, Table, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
-import { IconEdit, IconPlus, IconRefresh, IconServer, IconSetting } from '@douyinfe/semi-icons';
+import { Button, Modal, Space, Toast, Typography } from '@douyinfe/semi-ui';
+import { IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
-import { EmptyState, ExactTokenCountInput, PageHeader, parseExactTokenCount, StatusTag, Surface } from '../ui';
+import { EmptyState, PageHeader, parseExactTokenCount, Surface } from '../ui';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
 import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 import InvocationOptimizationWorkspace from './InvocationOptimizationWorkspace';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
+import ModelGovernanceAssignment from '../components/ModelGovernanceAssignment';
+import ModelGovernanceSheets from '../components/ModelGovernanceSheets';
+import { ModelAliasPanel, ModelRegistryPanel, ModelSetPanel } from '../components/ModelGovernanceCatalog';
+import {
+  comparableModelIdentity,
+  formatModelSetItems,
+  isApproved,
+  parseModelSetItems,
+  slugify,
+  toList,
+  toNumber,
+  type ModelAlias,
+  type ModelRegistryItem,
+  type ModelSet,
+  type ModelSetItem,
+  type Project,
+  type TabKey,
+} from '../utils/modelGovernance';
+export { comparableModelIdentity, formatModelSetItems, parseModelSetItems } from '../utils/modelGovernance';
 
 const { Text, Title } = Typography;
-
-const lifecycleOptions = [
-  { label: 'Staging', value: 'staging' },
-  { label: 'GA', value: 'ga' },
-  { label: 'Deprecated', value: 'deprecated' },
-  { label: 'Retired', value: 'retired' },
-];
-
-const statusOptions = [
-  { label: 'Active', value: 'active' },
-  { label: 'Disabled', value: 'disabled' },
-];
-
-const approvedOptions = [
-  { label: '加入开发者目录', value: 'true' },
-  { label: '仅内部可见', value: 'false' },
-];
-
-type TabKey = 'registry' | 'aliases' | 'sets' | 'assignments' | 'optimization' | 'releases';
-
-interface ModelRegistryItem {
-  id: number;
-  model_name: string;
-  display_name?: string;
-  provider_family?: string;
-  lifecycle: string;
-  context_length?: number;
-  output_limit?: number;
-  capability_tags?: string[] | string;
-  data_residency?: string;
-  pricing_model_name?: string;
-  approved_catalog?: boolean;
-  migration_recommendation?: string;
-}
-
-interface ModelAlias {
-  id: number;
-  alias: string;
-  target_model: string;
-  display_name?: string;
-  description?: string;
-  status: string;
-}
-
-interface ModelSet {
-  id: number;
-  name: string;
-  slug: string;
-  description?: string;
-  status: string;
-  item_count?: number;
-}
-
-interface Project {
-  id: number;
-  name: string;
-  slug: string;
-  status: string;
-}
-
-interface ModelSetItem {
-  item_type: 'model' | 'alias';
-  item_name: string;
-}
-
-function compactNumber(value?: number) {
-  const n = Number(value || 0);
-  if (!n) return '-';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function toList(value?: string[] | string) {
-  if (Array.isArray(value)) return value.filter(Boolean);
-  return (value || '').split(',').map(item => item.trim()).filter(Boolean);
-}
-
-function toNumber(value: unknown) {
-  const n = Number(value || 0);
-  return Number.isFinite(n) && n >= 0 ? n : 0;
-}
-
-function isApproved(value: unknown) {
-  return value === true || value === 'true' || value === '1';
-}
-
-export function comparableModelIdentity(value: string) {
-	return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-}
-
-function slugify(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
-
-export function parseModelSetItems(text: string): ModelSetItem[] {
-  const seen = new Set<string>();
-  const items: ModelSetItem[] = [];
-  text.split(/\r?\n/).forEach(raw => {
-    const line = raw.trim().replace('：', ':');
-    if (!line) return;
-    const separator = line.indexOf(':');
-    if (separator <= 0) {
-      throw new Error('invalid item');
-    }
-    const itemType = line.slice(0, separator).trim();
-    const itemName = line.slice(separator + 1).trim();
-    if ((itemType !== 'model' && itemType !== 'alias') || !itemName) {
-      throw new Error('invalid item');
-    }
-    const key = `${itemType}:${itemName}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      items.push({ item_type: itemType, item_name: itemName });
-    }
-  });
-  return items;
-}
-
-export function formatModelSetItems(items: ModelSetItem[]) {
-  return items.map(item => `${item.item_type}:${item.item_name}`).join('\n');
-}
 
 export default function ModelGovernancePage({ embedded = false }: { embedded?: boolean } = {}) {
   const user = useAuthStore((state) => state.user);
@@ -612,87 +509,6 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     }
   };
 
-  const registryColumns = [
-    {
-      title: '模型',
-      dataIndex: 'model_name',
-      key: 'model_name',
-      render: (value: string, record: ModelRegistryItem) => (
-        <div className="ur-modelgov-name">
-          <Text strong>{record.display_name || value}</Text>
-          <Text code>{value}</Text>
-          {record.migration_recommendation && <Text type="tertiary" size="small">{record.migration_recommendation}</Text>}
-        </div>
-      ),
-    },
-    { title: '供应商族', dataIndex: 'provider_family', key: 'provider_family', render: (value: string) => value || '-' },
-    { title: '生命周期', dataIndex: 'lifecycle', key: 'lifecycle', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
-	{
-		title: '项目目录状态', dataIndex: 'approved_catalog', key: 'approved_catalog',
-		render: (value: boolean, record: ModelRegistryItem) => {
-			if (record.lifecycle === 'retired') return <StatusTag status="disabled">已退役·不可见</StatusTag>;
-			if (value && ['ga', 'deprecated'].includes(record.lifecycle)) return <StatusTag status="success">项目可见</StatusTag>;
-			if (value) return <StatusTag status="warning">已批准·待上线</StatusTag>;
-			return <StatusTag status="disabled">仅内部</StatusTag>;
-		},
-	},
-    { title: '上下文 / 输出', key: 'limits', render: (_: unknown, record: ModelRegistryItem) => `${compactNumber(record.context_length)} / ${compactNumber(record.output_limit)}` },
-    { title: '能力', dataIndex: 'capability_tags', key: 'capability_tags', render: (value: string[] | string) => toList(value).slice(0, 4).join(', ') || '-' },
-    { title: '数据驻留', dataIndex: 'data_residency', key: 'data_residency', render: (value: string) => value || '-' },
-    {
-      title: '操作',
-      key: 'actions',
-	  width: 210,
-      render: (_: unknown, record: ModelRegistryItem) => (
-		<Space>
-		  <Button icon={<IconEdit />} size="small" onClick={() => openEditRegistry(record)} aria-label="编辑模型" />
-		  {record.lifecycle !== 'retired' && <Button size="small" type="danger" onClick={() => retireRegistry(record)}>退役并移出目录</Button>}
-		</Space>
-      ),
-    },
-  ];
-
-  const aliasColumns = [
-    { title: '别名', dataIndex: 'alias', key: 'alias', render: (value: string) => <Text code>{value}</Text> },
-    { title: '目标模型', dataIndex: 'target_model', key: 'target_model' },
-    { title: '名称', dataIndex: 'display_name', key: 'display_name', render: (value: string) => value || '-' },
-    { title: '描述', dataIndex: 'description', key: 'description', render: (value: string) => value || '-' },
-    { title: '状态', dataIndex: 'status', key: 'status', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 86,
-      render: (_: unknown, record: ModelAlias) => (
-        <Button icon={<IconEdit />} size="small" onClick={() => openEditAlias(record)} aria-label="编辑别名" />
-      ),
-    },
-  ];
-
-  const modelSetColumns = [
-    {
-      title: '模型集',
-      dataIndex: 'name',
-      key: 'name',
-      render: (value: string, record: ModelSet) => (
-        <div className="ur-modelgov-name">
-          <Text strong>{value}</Text>
-          <Text code>{record.slug}</Text>
-          {record.description && <Text type="tertiary" size="small">{record.description}</Text>}
-        </div>
-      ),
-    },
-    { title: '状态', dataIndex: 'status', key: 'status', render: (value: string) => <StatusTag status={value}>{value}</StatusTag> },
-    { title: '条目数', dataIndex: 'item_count', key: 'item_count', render: (value: number) => value || 0 },
-    {
-      title: '操作',
-      key: 'actions',
-      width: 112,
-      render: (_: unknown, record: ModelSet) => (
-        <Button icon={<IconSetting />} size="small" onClick={() => openItemsSheet(record)}>条目</Button>
-      ),
-    },
-  ];
-
   if (!customerContextReady) {
     const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
     return (
@@ -745,270 +561,128 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
       </div>
 
       {activeTab === 'registry' && (
-        <>
-          <div className="ur-modelgov-summary">
-			<div><Text type="tertiary">当前页 GA 记录</Text><strong>{registryStats.ga}</strong></div>
-			<div><Text type="tertiary">当前筛选记录总数</Text><strong>{registryTotal}</strong></div>
-			<div><Text type="tertiary">当前页已弃用</Text><strong>{registryStats.deprecated}</strong></div>
-			<div><Text type="tertiary">当前页已退役</Text><strong>{registryStats.retired}</strong></div>
-          </div>
-		  <Text type="tertiary" size="small">GA、目录批准和当前可调用是不同条件；这里的数字只统计模型目录记录，不代表供应商路由或应用 API Key 已就绪。</Text>
-		  {duplicateRegistryGroups.length > 0 && <Banner
-			type="warning"
-			description={`发现 ${duplicateRegistryGroups.length} 组疑似重复模型标识：${duplicateRegistryGroups.map(group => group.map(item => item.model_name).join(' / ')).join('；')}。请选择保留的精确模型 ID，并将旧记录“退役并移出目录”。`}
-			closeIcon={null}
-			style={{ marginTop: 12, marginBottom: 12 }}
-		  />}
-          <Surface
-            title="模型目录"
-            description="这里是企业内部目录，不是公开模型市场；只维护企业确实允许评估、发布或逐步退役的模型。"
-            actions={<Button icon={<IconPlus />} type="primary" onClick={openCreateRegistry}>新增模型</Button>}
-          >
-            <div className="ur-modelgov-filters">
-              <Input prefix={<IconServer />} value={registrySearch} onChange={(value) => {
-                registryRequestVersion.current += 1;
-                setRegistry([]);
-                setRegistryTotal(0);
-                setRegistrySearch(value);
-              }} placeholder="搜索模型、显示名或供应商族" showClear />
-              <Select value={registryLifecycle} onChange={(value) => {
-                registryRequestVersion.current += 1;
-                setRegistry([]);
-                setRegistryTotal(0);
-                setRegistryLifecycle(String(value || ''));
-              }} optionList={lifecycleOptions} placeholder="生命周期" showClear />
-              <Button type={registryApprovedOnly ? 'primary' : 'tertiary'} onClick={() => {
-                registryRequestVersion.current += 1;
-                setRegistry([]);
-                setRegistryTotal(0);
-                setRegistryApprovedOnly(current => !current);
-              }}>仅看已批准</Button>
-            </div>
-            <div className="ur-table-shell">
-              <Table
-                columns={registryColumns}
-                dataSource={registry}
-                rowKey="id"
-                loading={registryLoading}
-                empty={registryLoadError ? (
-                  <EmptyState title="模型目录加载失败" description={registryLoadError} actions={<Button type="primary" onClick={() => loadRegistry()}>重新加载模型目录</Button>} minHeight={220} />
-                ) : <EmptyState title="暂无模型" description="新增模型后才能进入别名、模型集和项目分配流程。" minHeight={220} />}
-                pagination={{
-                  currentPage: registryPage,
-                  pageSize: registryPageSize,
-                  total: registryTotal,
-                  onPageChange: (page: number) => setRegistryPage(page),
-                  onPageSizeChange: (pageSize: number) => { setRegistryPageSize(pageSize); setRegistryPage(1); },
-                }}
-              />
-            </div>
-          </Surface>
-        </>
+        <ModelRegistryPanel
+          stats={registryStats}
+          total={registryTotal}
+          duplicates={duplicateRegistryGroups}
+          search={registrySearch}
+          lifecycle={registryLifecycle}
+          approvedOnly={registryApprovedOnly}
+          records={registry}
+          loading={registryLoading}
+          error={registryLoadError}
+          page={registryPage}
+          pageSize={registryPageSize}
+          onSearchChange={(value) => {
+            registryRequestVersion.current += 1;
+            setRegistry([]);
+            setRegistryTotal(0);
+            setRegistrySearch(value);
+          }}
+          onLifecycleChange={(value) => {
+            registryRequestVersion.current += 1;
+            setRegistry([]);
+            setRegistryTotal(0);
+            setRegistryLifecycle(value);
+          }}
+          onApprovedOnlyChange={() => {
+            registryRequestVersion.current += 1;
+            setRegistry([]);
+            setRegistryTotal(0);
+            setRegistryApprovedOnly(current => !current);
+          }}
+          onPageChange={setRegistryPage}
+          onPageSizeChange={(pageSize) => { setRegistryPageSize(pageSize); setRegistryPage(1); }}
+          onReload={() => loadRegistry()}
+          onCreate={openCreateRegistry}
+          onEdit={openEditRegistry}
+          onRetire={retireRegistry}
+        />
       )}
 
       {activeTab === 'aliases' && (
-        <Surface
-          title="企业别名"
-          description="把内部稳定名称映射到真实上游模型，方便后续替换模型时减少应用侧改动。"
-          actions={<Button icon={<IconPlus />} type="primary" onClick={openCreateAlias}>新增别名</Button>}
-        >
-          <div className="ur-table-shell">
-            <Table
-              columns={aliasColumns}
-              dataSource={aliases}
-              rowKey="id"
-              loading={aliasLoading}
-              empty={aliasLoadError ? (
-                <EmptyState title="企业别名加载失败" description={aliasLoadError} actions={<Button type="primary" onClick={() => loadAliases()}>重新加载企业别名</Button>} minHeight={220} />
-              ) : <EmptyState title="暂无别名" description="常见形式如 company-chat -> gpt-4o。" minHeight={220} />}
-              pagination={{
-                currentPage: aliasPage,
-                pageSize: aliasPageSize,
-                total: aliasTotal,
-                onPageChange: (page: number) => setAliasPage(page),
-                onPageSizeChange: (pageSize: number) => { setAliasPageSize(pageSize); setAliasPage(1); },
-              }}
-            />
-          </div>
-        </Surface>
+        <ModelAliasPanel
+          records={aliases}
+          loading={aliasLoading}
+          error={aliasLoadError}
+          page={aliasPage}
+          pageSize={aliasPageSize}
+          total={aliasTotal}
+          onReload={() => loadAliases()}
+          onCreate={openCreateAlias}
+          onEdit={openEditAlias}
+          onPageChange={setAliasPage}
+          onPageSizeChange={(pageSize) => { setAliasPageSize(pageSize); setAliasPage(1); }}
+        />
       )}
 
       {activeTab === 'sets' && (
-        <Surface
-          title="模型集"
-          description="把模型或别名组合成可复用集合，再分配给项目。"
-          actions={<Button icon={<IconPlus />} type="primary" onClick={openCreateModelSet}>新增模型集</Button>}
-        >
-          <div className="ur-table-shell">
-            <Table
-              columns={modelSetColumns}
-              dataSource={modelSets}
-              rowKey="id"
-              loading={modelSetLoading}
-              empty={modelSetLoadError ? (
-                <EmptyState title="模型集加载失败" description={modelSetLoadError} actions={<Button type="primary" onClick={() => loadModelSets()}>重新加载模型集</Button>} minHeight={220} />
-              ) : <EmptyState title="暂无模型集" description="模型集条目支持 model:gpt-4o 和 alias:company-chat 两种格式。" minHeight={220} />}
-              pagination={{
-                currentPage: modelSetPage,
-                pageSize: modelSetPageSize,
-                total: modelSetTotal,
-                onPageChange: (page: number) => setModelSetPage(page),
-                onPageSizeChange: (pageSize: number) => { setModelSetPageSize(pageSize); setModelSetPage(1); },
-              }}
-            />
-          </div>
-        </Surface>
+        <ModelSetPanel
+          records={modelSets}
+          loading={modelSetLoading}
+          error={modelSetLoadError}
+          page={modelSetPage}
+          pageSize={modelSetPageSize}
+          total={modelSetTotal}
+          onReload={() => loadModelSets()}
+          onCreate={openCreateModelSet}
+          onEditItems={openItemsSheet}
+          onPageChange={setModelSetPage}
+          onPageSizeChange={(pageSize) => { setModelSetPageSize(pageSize); setModelSetPage(1); }}
+        />
       )}
 
       {activeTab === 'assignments' && (
-        <Surface title="项目分配" description="把模型集绑定到项目；项目存在绑定时，网关只允许这些模型或别名。">
-          {assignmentBaseError ? (
-            <EmptyState title="项目分配加载失败" description={assignmentBaseError} actions={<Button type="primary" onClick={loadAssignmentBase}>重新加载项目分配</Button>} minHeight={260} />
-          ) : projects.length === 0 ? (
-            <EmptyState title="暂无可分配项目" description="先创建活跃项目后再绑定模型集。" minHeight={260} />
-          ) : (
-            <div className="ur-modelgov-assignment">
-              <div>
-								<Text id="model-governance-project-label" className="ur-filter-label">项目</Text>
-                <Select
-                  value={selectedProjectId}
-                  onChange={(value) => {
-                    const projectId = Number(value);
-                    if (!Number.isSafeInteger(projectId) || projectId <= 0 || projectId === selectedProjectId) return;
-                    assignmentRequestVersion.current += 1;
-                    setSelectedProjectId(projectId);
-                    setAssignedIds([]);
-                    setLoadedAssignmentProjectId(undefined);
-                    setAssignmentLoading(true);
-                  }}
-                  optionList={projects.map(project => ({ label: `${project.name} (${project.slug})`, value: project.id }))}
-                  style={{ width: '100%' }}
-									aria-labelledby="model-governance-project-label"
-                  disabled={assignmentLoading}
-                />
-              </div>
-              <div>
-                <Text className="ur-filter-label">模型集</Text>
-                <Select
-                  multiple
-                  value={assignedIds}
-                  onChange={(value) => setAssignedIds(Array.isArray(value) ? value.map(Number) : [])}
-                  optionList={assignmentModelSets.map(set => ({ label: `${set.name} (${set.slug})`, value: set.id }))}
-                  style={{ width: '100%' }}
-                  placeholder="选择一个或多个模型集"
-                  aria-label="选择模型集"
-                  disabled={assignmentLoading || loadedAssignmentProjectId !== selectedProjectId}
-                />
-              </div>
-              <div className="ur-modelgov-assignment-actions">
-                <Button icon={<IconRefresh />} onClick={() => selectedProjectId && loadProjectAssignment(selectedProjectId)} loading={assignmentLoading}>重新加载</Button>
-                <Button
-                  type="primary"
-                  onClick={handleAssignmentSubmit}
-                  loading={assignmentLoading}
-                  disabled={!selectedProjectId || loadedAssignmentProjectId !== selectedProjectId}
-                >保存分配</Button>
-              </div>
-              {assignmentLoadError && (
-                <EmptyState
-                  title="所选项目分配加载失败"
-                  description={assignmentLoadError}
-                  actions={<Button type="primary" onClick={() => selectedProjectId && loadProjectAssignment(selectedProjectId)}>重新加载所选项目</Button>}
-                  minHeight={160}
-                />
-              )}
-              <div className="ur-chip-row">
-                {!assignmentLoadError && assignedIds.length === 0 ? (
-                  <Text type="tertiary">当前项目未绑定模型集，将使用基础模型目录。</Text>
-                ) : !assignmentLoadError && assignedIds.map(id => {
-                  const set = assignmentModelSets.find(item => item.id === id);
-                  return <StatusTag key={id} status="active">{set?.name || `#${id}`}</StatusTag>;
-                })}
-              </div>
-            </div>
-          )}
-        </Surface>
+        <ModelGovernanceAssignment
+          projects={projects}
+          modelSets={assignmentModelSets}
+          selectedProjectId={selectedProjectId}
+          assignedIds={assignedIds}
+          loading={assignmentLoading}
+          baseError={assignmentBaseError}
+          loadError={assignmentLoadError}
+          loadedProjectId={loadedAssignmentProjectId}
+          onReloadBase={loadAssignmentBase}
+          onSelectProject={(projectId) => {
+            assignmentRequestVersion.current += 1;
+            setSelectedProjectId(projectId);
+            setAssignedIds([]);
+            setLoadedAssignmentProjectId(undefined);
+            setAssignmentLoading(true);
+          }}
+          onChangeAssigned={setAssignedIds}
+          onReloadProject={loadProjectAssignment}
+          onSave={handleAssignmentSubmit}
+        />
       )}
 
       {activeTab === 'releases' && platform && <RuntimeChangeControlWorkspace />}
 
       {activeTab === 'optimization' && <InvocationOptimizationWorkspace orgId={targetOrgID} />}
 
-      <SideSheet title={registrySheet?.mode === 'edit' ? '编辑模型' : '新增模型'} visible={!!registrySheet} onCancel={closeRegistrySheet} width={560}>
-        <Banner
-          type="warning"
-          description="UniRouter 不会根据模型名称自动猜测文本、多模态或其他能力。这里保存的是人工声明，不是已验证事实；请依据供应商官方能力说明或真实请求测试证据填写，未验证能力不要加入开发者目录。"
-          style={{ marginBottom: 16 }}
-        />
-        <Form getFormApi={(apiRef: any) => setRegistryFormApi(apiRef)} onSubmit={handleRegistrySubmit}>
-          <Form.Input field="model_name" label="模型名称" placeholder="gpt-4o" rules={[{ required: true, message: '请输入模型名称' }]} />
-          <Form.Input field="display_name" label="显示名称" placeholder="Company Chat" />
-          <Form.Input field="provider_family" label="供应商族" placeholder="openai / anthropic / gemini" />
-          <Form.Select field="lifecycle" label="生命周期" optionList={lifecycleOptions} rules={[{ required: true, message: '请选择生命周期' }]} />
-          <div className="ur-modelgov-form-grid">
-            <ExactTokenCountInput
-              field="context_length"
-              initialValue={registrySheet?.record?.context_length ?? 0}
-              resetKey={`${registrySheet?.mode || 'closed'}-${registrySheet?.record?.id || 'new'}`}
-              style={{ width: '100%' }}
-            />
-            <Form.InputNumber field="output_limit" label="输出上限" min={0} style={{ width: '100%' }} />
-          </div>
-          <Form.Input
-            field="capability_tags"
-            label="能力标签（声明）"
-            placeholder="chat,vision,json"
-            extraText="例如 vision 只有在官方能力说明或真实多模态请求验证后才能填写；标签本身不会执行能力检测。"
-          />
-          <Form.Input field="data_residency" label="数据驻留" placeholder="us / eu / cn" />
-          <Form.Input field="pricing_model_name" label="计价模型名" placeholder="默认使用模型名称" />
-          <Form.Select field="approved_catalog" label="开发者目录可见" optionList={approvedOptions} />
-          <Form.TextArea field="migration_recommendation" label="迁移建议" placeholder="例如：请迁移至 gpt-4.1-mini" rows={3} />
-          <div className="ur-form-actions">
-            <Button onClick={closeRegistrySheet}>取消</Button>
-            <Button type="primary" onClick={() => registryFormApi?.submitForm()}>保存</Button>
-          </div>
-        </Form>
-      </SideSheet>
-
-      <SideSheet title={aliasSheet?.mode === 'edit' ? '编辑别名' : '新增别名'} visible={!!aliasSheet} onCancel={closeAliasSheet} width={520}>
-        <Form getFormApi={(apiRef: any) => setAliasFormApi(apiRef)} onSubmit={handleAliasSubmit}>
-          <Form.Input field="alias" label="别名" placeholder="company-chat" rules={[{ required: true, message: '请输入别名' }]} />
-          <Form.Input field="target_model" label="目标模型" placeholder="gpt-4o" rules={[{ required: true, message: '请输入目标模型' }]} />
-          <Form.Input field="display_name" label="显示名称" placeholder="Company Chat" />
-          <Form.TextArea field="description" label="描述" placeholder="内部稳定聊天模型" rows={3} />
-          <Form.Select field="status" label="状态" optionList={statusOptions} />
-          <div className="ur-form-actions">
-            <Button onClick={closeAliasSheet}>取消</Button>
-            <Button type="primary" onClick={() => aliasFormApi?.submitForm()}>保存</Button>
-          </div>
-        </Form>
-      </SideSheet>
-
-      <SideSheet title="新增模型集" visible={modelSetSheet} onCancel={closeModelSetSheet} width={540}>
-        <Form getFormApi={(apiRef: any) => setModelSetFormApi(apiRef)} onSubmit={handleModelSetSubmit}>
-          <Form.Input field="name" label="名称" placeholder="Core Chat Models" rules={[{ required: true, message: '请输入名称' }]} />
-          <Form.Input field="slug" label="标识 Slug" placeholder="core-chat-models" />
-          <Form.TextArea field="description" label="描述" placeholder="核心业务应用可用模型集合" rows={2} />
-          <Form.Select field="status" label="状态" optionList={statusOptions} />
-          <Form.TextArea field="items" label="条目" placeholder={'alias:company-chat\nmodel:gpt-4o-mini'} rows={7} />
-          <div className="ur-form-actions">
-            <Button onClick={closeModelSetSheet}>取消</Button>
-            <Button type="primary" onClick={() => modelSetFormApi?.submitForm()}>创建</Button>
-          </div>
-        </Form>
-      </SideSheet>
-
-      <SideSheet title={`模型集条目：${itemsSheet?.name || ''}`} visible={!!itemsSheet} onCancel={closeItemsSheet} width={520}>
-        <Space vertical align="start" style={{ width: '100%' }}>
-          <Text type="tertiary">每行一条，格式为 model:gpt-4o 或 alias:company-chat。</Text>
-          <TextArea value={itemsText} onChange={setItemsText} rows={12} style={{ width: '100%' }} disabled={itemsLoading} />
-          <div className="ur-form-actions">
-            <Button onClick={closeItemsSheet}>取消</Button>
-            <Button type="primary" loading={itemsLoading} onClick={handleItemsSubmit}>保存条目</Button>
-          </div>
-        </Space>
-      </SideSheet>
+      <ModelGovernanceSheets
+        registrySheet={registrySheet}
+        registryFormApi={registryFormApi}
+        setRegistryFormApi={setRegistryFormApi}
+        onRegistrySubmit={handleRegistrySubmit}
+        closeRegistrySheet={closeRegistrySheet}
+        aliasSheet={aliasSheet}
+        aliasFormApi={aliasFormApi}
+        setAliasFormApi={setAliasFormApi}
+        onAliasSubmit={handleAliasSubmit}
+        closeAliasSheet={closeAliasSheet}
+        modelSetSheet={modelSetSheet}
+        modelSetFormApi={modelSetFormApi}
+        setModelSetFormApi={setModelSetFormApi}
+        onModelSetSubmit={handleModelSetSubmit}
+        closeModelSetSheet={closeModelSetSheet}
+        itemsSheet={itemsSheet}
+        itemsText={itemsText}
+        setItemsText={setItemsText}
+        itemsLoading={itemsLoading}
+        onItemsSubmit={handleItemsSubmit}
+        closeItemsSheet={closeItemsSheet}
+      />
     </div>
   );
 }

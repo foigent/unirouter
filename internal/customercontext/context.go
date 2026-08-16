@@ -130,13 +130,27 @@ func EnsureBaseline(ctx context.Context, q db.DBQuerier) (Baseline, error) {
 		return Baseline{Customer: snapshot}, fmt.Errorf("read default project: %w", err)
 	}
 
+	// Deployment operators have organization-wide break-glass authority and are
+	// not customer project identities. Remove every legacy project projection so
+	// it cannot leak into project workspaces, access reviews or membership APIs.
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM project_members pm
+		 USING projects p, users u
+		 WHERE pm.project_id=p.id
+		   AND p.org_id=$1
+		   AND pm.user_id=u.id
+		   AND u.org_id=p.org_id
+		   AND u.organization_role='platform_admin'`, snapshot.OrganizationID); err != nil {
+		return Baseline{Customer: snapshot}, fmt.Errorf("remove deployment operators from customer projects: %w", err)
+	}
+
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO project_members (project_id, user_id, role)
 		SELECT $1, u.id, 'project_admin'
 		  FROM users u
 		 WHERE u.org_id=$2
 		   AND u.status='active'
-		   AND u.organization_role IN ('platform_admin','org_admin')
+		   AND u.organization_role='org_admin'
 		ON CONFLICT (project_id, user_id) DO NOTHING`, projectID, snapshot.OrganizationID); err != nil {
 		return Baseline{Customer: snapshot}, fmt.Errorf("ensure default project administrators: %w", err)
 	}

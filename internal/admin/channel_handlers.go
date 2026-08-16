@@ -41,14 +41,13 @@ func channelUpdateConflictState(ctx context.Context, store channelMutationStore,
 		       COALESCE(binding.release_refs, '')
 		  FROM channels c
 		  LEFT JOIN LATERAL (
-		        SELECT string_agg(DISTINCT rcs.model_name, ',' ORDER BY rcs.model_name) AS published_models,
-		               string_agg(DISTINCT rcr.release_ref, ',' ORDER BY rcr.release_ref) AS release_refs
-		          FROM runtime_change_slots rcs
-		          JOIN runtime_change_releases rcr
-		            ON rcr.id = rcs.stable_release_id AND rcr.stage = 'active'
-		          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(rcr.candidate->'overrides', '[]'::jsonb)) AS runtime_override
-		         WHERE (runtime_override->>'channel_id')::bigint = c.id
-		           AND runtime_override->>'admission' = 'allow'
+		        SELECT string_agg(DISTINCT assignment.model_name, ',' ORDER BY assignment.model_name) AS published_models,
+		               string_agg(DISTINCT assignment.release_ref, ',' ORDER BY assignment.release_ref) AS release_refs
+		          FROM runtime_channel_assignments_v1 assignment
+		         WHERE assignment.channel_id = c.id
+		           AND assignment.assignment_kind = 'stable'
+		           AND assignment.release_stage = 'active'
+		           AND assignment.admission = 'allow'
 		  ) binding ON TRUE
 		 WHERE c.id = $1`, id).Scan(&routingEpoch, &publishedModels, &releaseRefs)
 	return routingEpoch, publishedModels, releaseRefs, err
@@ -106,13 +105,12 @@ func (h *Handler) ListChannels(w http.ResponseWriter, r *http.Request) {
 		        priority, degradation_threshold, status, circuit_state, fail_count, created_at,
 		        routing_weight, routing_epoch,
 		        COALESCE((
-		          SELECT string_agg(DISTINCT rcs.model_name, ',' ORDER BY rcs.model_name)
-		            FROM runtime_change_slots rcs
-		            JOIN runtime_change_releases stable
-		              ON stable.id=rcs.stable_release_id AND stable.stage='active'
-		            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(stable.candidate->'overrides','[]'::jsonb)) AS runtime_override
-		           WHERE (runtime_override->>'channel_id')::bigint=channels.id
-		             AND runtime_override->>'admission'='allow'
+		          SELECT string_agg(DISTINCT assignment.model_name, ',' ORDER BY assignment.model_name)
+		            FROM runtime_channel_assignments_v1 assignment
+		           WHERE assignment.channel_id=channels.id
+		             AND assignment.assignment_kind='stable'
+		             AND assignment.release_stage='active'
+		             AND assignment.admission='allow'
 		        ), '') AS published_models
 		 FROM channels ORDER BY priority ASC, id ASC LIMIT $1 OFFSET $2`, pageSize, offset,
 	)
@@ -607,11 +605,11 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if !statusOnly {
 		where += ` AND NOT EXISTS (
             SELECT 1
-              FROM runtime_change_slots rcs
-              JOIN runtime_change_releases rcr ON rcr.id = rcs.stable_release_id AND rcr.stage = 'active'
-              CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
-             WHERE (runtime_override->>'channel_id')::bigint = channels.id
-               AND runtime_override->>'admission' = 'allow'
+		      FROM runtime_channel_assignments_v1 assignment
+		     WHERE assignment.channel_id = channels.id
+		       AND assignment.assignment_kind = 'stable'
+		       AND assignment.release_stage = 'active'
+		       AND assignment.admission = 'allow'
         )`
 	}
 
@@ -723,11 +721,11 @@ DELETE FROM channels
    AND status <> 'active'
    AND NOT EXISTS (
        SELECT 1
-         FROM runtime_change_slots rcs
-         JOIN runtime_change_releases rcr ON rcr.id = rcs.stable_release_id AND rcr.stage = 'active'
-         CROSS JOIN LATERAL jsonb_array_elements(rcr.candidate->'overrides') AS runtime_override
-        WHERE (runtime_override->>'channel_id')::bigint = channels.id
-          AND runtime_override->>'admission' = 'allow'
+	     FROM runtime_channel_assignments_v1 assignment
+	    WHERE assignment.channel_id = channels.id
+	      AND assignment.assignment_kind = 'stable'
+	      AND assignment.release_stage = 'active'
+	      AND assignment.admission = 'allow'
    )`, id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Failed to delete channel"})

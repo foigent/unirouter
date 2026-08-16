@@ -10,10 +10,11 @@ import { useAuthStore } from '../store/auth';
 import { formatDateTime } from '../utils/formatDate';
 import { IntentRequestIDs } from '../utils/intentRequestId';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectDisplayName, projectOption } from '../utils/projectDisplay';
 
 const { Text } = Typography;
 
-type Project = { id: number; org_id: number; name: string; status: string; current_user_membership_role?: string };
+type Project = { id: number; org_id: number; name: string; slug?: string; status: string; current_user_membership_role?: string };
 
 export default function AccessReviewPage() {
   const user = useAuthStore((state) => state.user);
@@ -166,7 +167,9 @@ export default function AccessReviewPage() {
       <PageHeader eyebrow="访问与安全" title="访问审核" description="仅展示所选项目中服务端过滤后的 needs_review 队列；操作能力由同一决策规则投影，提交时仍执行 commit-time 复核。" actions={<Button icon={<IconRefresh />} onClick={() => loadQueue()}>刷新</Button>} />
       <Surface title="审核项目" description="平台/组织管理员按组织范围选择；项目管理员只看当前实时担任 project_admin 的项目。">
         {projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjects}>重试</Button>} /> : (
-          <Select loading={projectsLoading} value={selectedProjectID} style={{ width: 320 }} placeholder="选择审核项目" optionList={projects.map((project) => ({ value: project.id, label: `${project.name} (#${project.id})` }))} onChange={(value) => replaceProject(Number(value))} />
+          projectsLoading ? <Text type="tertiary">正在读取审核范围…</Text> : projects.length === 1
+            ? <Text strong>{projectDisplayName(projects[0])}</Text>
+            : <Select value={selectedProjectID} style={{ width: 320 }} placeholder="选择审核项目" optionList={projects.map(projectOption)} onChange={(value) => replaceProject(Number(value))} />
         )}
       </Surface>
       <Surface title="待审核请求" description="状态筛选在 PostgreSQL cursor limit 之前完成；非 actionable 项不会靠尝试写入探测权限。">

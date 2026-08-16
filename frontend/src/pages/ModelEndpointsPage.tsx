@@ -19,6 +19,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { EmptyState, LatencyText, MetricTile, PageHeader, PasswordField, StatusTag, Surface } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
+import { providerPreset, providerPresets } from '../utils/providerEndpoints';
 import ChannelKeysPage from './ChannelKeysPage';
 import ModelGovernancePage from './ModelGovernancePage';
 import ModelReadinessPage from './ModelReadinessPage';
@@ -83,26 +84,6 @@ type ModelEndpointProjection = {
   models: ModelEndpointModel[];
   summary: { total: number; route_available: number; attention: number; canary: number };
 };
-
-type ProviderPreset = {
-  value: string;
-  label: string;
-  provider: string;
-  baseURL: string;
-  adapterType: 'openai_compatible' | 'anthropic_native' | 'azure_openai';
-  note: string;
-};
-
-const providerPresets: ProviderPreset[] = [
-  { value: 'deepseek', label: 'DeepSeek 官方', provider: 'deepseek', baseURL: 'https://api.deepseek.com', adapterType: 'openai_compatible', note: 'OpenAI 兼容协议；上游模型 ID 以 DeepSeek 控制台实际授权为准。' },
-  { value: 'kimi', label: 'Kimi / Moonshot 官方', provider: 'kimi', baseURL: 'https://api.moonshot.cn/v1', adapterType: 'openai_compatible', note: 'OpenAI 兼容协议；不会按模型名称猜测参数能力。' },
-  { value: 'openai', label: 'OpenAI 官方', provider: 'openai', baseURL: 'https://api.openai.com/v1', adapterType: 'openai_compatible', note: '当前连接使用 Chat Completions 兼容适配。' },
-  { value: 'openrouter', label: 'OpenRouter', provider: 'openrouter', baseURL: 'https://openrouter.ai/api/v1', adapterType: 'openai_compatible', note: '同一公共模型可与官方端点并存，供应商模型 ID 必须分别填写。' },
-  { value: 'dashscope', label: '阿里云百炼兼容模式', provider: 'dashscope', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', adapterType: 'openai_compatible', note: '使用百炼 OpenAI 兼容端点；不会把供应商名称等同于模型身份。' },
-  { value: 'anthropic', label: 'Anthropic 官方', provider: 'anthropic', baseURL: 'https://api.anthropic.com', adapterType: 'anthropic_native', note: '使用 Anthropic Messages 原生协议。' },
-  { value: 'azure', label: 'Azure OpenAI / Foundry 部署', provider: 'azure', baseURL: '', adapterType: 'azure_openai', note: 'Base URL、部署名和 API Version 来自你的 Azure 资源；部署名是上游身份。' },
-  { value: 'custom', label: '其他 OpenAI 兼容端点', provider: 'custom', baseURL: '', adapterType: 'openai_compatible', note: '适用于已确认兼容 Chat Completions 的 MaaS；Bedrock/Vertex 原生鉴权尚不在此适配器范围。' },
-];
 
 const stateCopy: Record<string, { label: string; help: string }> = {
   active: { label: '稳定路由', help: '当前稳定发布可选中至少一个供应商端点。项目或应用能否调用仍由高级调用诊断确认。' },
@@ -226,7 +207,8 @@ export default function ModelEndpointsPage() {
     formApi.reset();
     formApi.setValues({
       preset: 'deepseek',
-      base_url: providerPresets[0].baseURL,
+      base_url: providerPreset('deepseek').baseURL,
+      adapter_type: providerPreset('deepseek').adapterType,
       public_model: lockedPublicModel,
       upstream_model: lockedPublicModel,
       route_role: 'primary',
@@ -414,25 +396,28 @@ export default function ModelEndpointsPage() {
   };
 
   const submitCreate = async (values: Record<string, any>) => {
-    const preset = providerPresets.find(item => item.value === values.preset) || providerPresets[providerPresets.length - 1];
+    const preset = providerPreset(values.preset);
     const publicModel = String(values.public_model || '').trim();
     const upstreamModel = String(values.upstream_model || publicModel).trim();
     const provider = preset.value === 'custom' ? String(values.provider || 'custom').trim() : preset.provider;
     const baseURL = String(values.base_url || preset.baseURL).trim();
-    const adapterConfig = preset.adapterType === 'anthropic_native'
+    const adapterType = preset.value === 'custom'
+      ? String(values.adapter_type || 'openai_compatible') as 'openai_compatible' | 'anthropic_native'
+      : preset.adapterType;
+    const adapterConfig = adapterType === 'anthropic_native'
       ? { anthropic_version: '2023-06-01' }
-      : preset.adapterType === 'azure_openai'
+      : adapterType === 'azure_openai'
         ? { api_version: String(values.azure_api_version || '').trim(), deployment: upstreamModel }
         : {};
     setSaving(true);
     try {
       await api.createChannel({
-        name: String(values.connection_name || `${preset.label} · ${upstreamModel}`).trim(),
+        name: String(values.connection_name || `${provider} · ${upstreamModel}`).trim(),
         provider,
         base_url: baseURL,
         models: publicModel,
         model_mapping: upstreamModel !== publicModel ? { [publicModel]: upstreamModel } : {},
-        adapter_type: preset.adapterType,
+        adapter_type: adapterType,
         adapter_config: adapterConfig,
         priority: values.route_role === 'backup' ? 200 : 100,
         routing_weight: 100,
@@ -568,7 +553,7 @@ export default function ModelEndpointsPage() {
         {selected.canary_release_ref && <Surface title={`当前 ${selected.canary_basis_points / 100}% 灰度`} description="稳定路由仍在；确认真实业务指标后提升，异常时回滚。" actions={<Space>
           <Button type="danger" onClick={() => transitionCanary(selected, 'rollback')}>回滚灰度</Button>
           <Button type="primary" onClick={() => transitionCanary(selected, 'promote')}>提升为稳定</Button>
-        </Space>}><Text type="tertiary">发布标识和修订仅属于高级审计，不需要在日常流程中手填。</Text></Surface>}
+        </Space>}><Text type="tertiary">发布标识和并发控制版本属于系统内部证据，不需要在日常流程中查看或填写。</Text></Surface>}
 
         {selected.targets.map(target => <Surface
           key={target.target_ref}
@@ -610,7 +595,7 @@ export default function ModelEndpointsPage() {
         <details>
           <summary style={{ cursor: 'pointer' }}>高级审计信息</summary>
           <div style={{ marginTop: 12 }}>
-            <Text type="tertiary">稳定发布：{selected.stable_release_ref ? `修订 ${selected.stable_release_version}` : '无'}；历史记录 {selected.release_history_count} 条。旧发布是不可变审计记录，不是重复的当前模型。</Text>
+            <Text type="tertiary">稳定发布：{selected.stable_release_ref ? '已建立' : '无'}；历史记录 {selected.release_history_count} 条。旧发布是不可变审计记录，不是重复的当前模型。</Text>
           </div>
         </details>
       </div>}
@@ -618,20 +603,35 @@ export default function ModelEndpointsPage() {
 
     <SideSheet title="新增供应商端点" visible={createOpen} onCancel={() => { setCreateOpen(false); setLockedPublicModel(''); }} width={600}>
       <Banner type="info" description="公共模型 ID 是应用调用 UniRouter 时使用的名字；上游模型 ID 是这个供应商实际接受的模型或部署名。相同公共模型可以绑定多个供应商端点。" closeIcon={null} style={{ marginBottom: 16 }} />
-      <Form getFormApi={setFormApi} onSubmit={submitCreate} initValues={{ preset: 'deepseek', base_url: providerPresets[0].baseURL, public_model: lockedPublicModel, upstream_model: lockedPublicModel, route_role: 'primary' }}>
+      <Form getFormApi={setFormApi} onSubmit={submitCreate} initValues={{ preset: 'deepseek', base_url: providerPreset('deepseek').baseURL, public_model: lockedPublicModel, upstream_model: lockedPublicModel, route_role: 'primary' }}>
         <Form.Select
           field="preset"
-          label="供应商端点"
+          label="接入模板"
           optionList={providerPresets.map(preset => ({ label: preset.label, value: preset.value }))}
-          rules={[{ required: true, message: '请选择供应商端点' }]}
+          rules={[{ required: true, message: '请选择接入模板' }]}
           onChange={(value) => {
             const preset = providerPresets.find(item => item.value === value);
             setSelectedPreset(String(value));
-            if (preset) formApi?.setValue('base_url', preset.baseURL);
+            if (preset) {
+              formApi?.setValue('base_url', preset.baseURL);
+              formApi?.setValue('adapter_type', preset.adapterType);
+            }
           }}
           extraText={providerPresets.find(item => item.value === selectedPreset)?.note || '选择模板后仍以你的供应商控制台配置为准。'}
         />
-        {selectedPreset === 'custom' && <Form.Input field="provider" label="供应商标识" placeholder="例如 volcengine" rules={[{ required: true, message: '必填' }]} />}
+        {selectedPreset !== 'custom' && <Button theme="borderless" onClick={() => {
+          setSelectedPreset('custom');
+          formApi?.setValue('preset', 'custom');
+          formApi?.setValue('base_url', '');
+          formApi?.setValue('adapter_type', 'openai_compatible');
+        }}>列表中没有？新增自定义兼容供应商</Button>}
+        {selectedPreset === 'custom' && <div className="ur-model-endpoint-form-grid">
+          <Form.Input field="provider" label="供应商标识" placeholder="例如 minimax、mimo、volcengine" rules={[{ required: true, message: '必填' }]} extraText="这是审计和运营使用的稳定名称，不限制必须属于内置供应商。" />
+          <Form.Select field="adapter_type" label="兼容协议" optionList={[
+            { label: 'OpenAI Chat Completions 兼容', value: 'openai_compatible' },
+            { label: 'Anthropic Messages 兼容', value: 'anthropic_native' },
+          ]} rules={[{ required: true, message: '必填' }]} extraText="选择供应商明确声明兼容的协议；UniRouter 不会仅凭 URL 猜测。" />
+        </div>}
         <Form.Input field="connection_name" label="连接名称（可选）" placeholder="例如 DeepSeek 官方 · 华北生产" />
         <Form.Input field="base_url" label="Base URL" placeholder="https://..." rules={[{ required: true, message: '必填' }]} />
         <div className="ur-model-endpoint-form-grid">

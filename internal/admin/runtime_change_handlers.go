@@ -16,12 +16,13 @@ func (h *Handler) ListRuntimeChanges(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime change control unavailable"})
 		return
 	}
-	items, err := h.runtimeChangeManager.List(r.Context(), r.URL.Query().Get("model"), 100)
+	page, pageSize := parsePagination(r)
+	items, err := h.runtimeChangeManager.ListPage(r.Context(), r.URL.Query().Get("model"), page, pageSize)
 	if err != nil {
 		writeRuntimeChangeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": len(items)})
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (h *Handler) GetRuntimeChange(w http.ResponseWriter, r *http.Request) {
