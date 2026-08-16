@@ -511,6 +511,7 @@ export default function ModelEndpointsPage() {
           </Space>}
         >
           {loadError ? <EmptyState title="模型状态暂时不可用" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} /> :
+            loading && !projection ? <EmptyState title="正在加载模型端点" description="正在汇总模型、供应商端点、检测证据和当前路由，请稍候。" minHeight={320} /> :
             <Table
               rowKey="public_model"
               loading={loading}

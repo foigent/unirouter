@@ -130,6 +130,23 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     expect(screen.getByText(/历史记录 7 条。旧发布是不可变审计记录，不是重复的当前模型/)).toBeTruthy();
   });
 
+  it('does not present a false empty state while the initial projection is loading', async () => {
+    let resolveProjection!: (value: ReturnType<typeof projection>) => void;
+    mocks.getModelEndpoints.mockReturnValueOnce(new Promise((resolve) => {
+      resolveProjection = resolve;
+    }));
+
+    renderPage();
+
+    expect(await screen.findByText('正在加载模型端点')).toBeTruthy();
+    expect(screen.queryByText('还没有模型端点')).toBeNull();
+
+    resolveProjection(projection());
+
+    expect(await screen.findByText('DeepSeek V4 Flash')).toBeTruthy();
+    expect(screen.queryByText('正在加载模型端点')).toBeNull();
+  });
+
   it('tests the exact selected DeepSeek target and never substitutes a Kimi target', async () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
