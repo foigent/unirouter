@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import DeploymentNetworkPage from '../DeploymentNetworkPage';
 
 const mocks = { contract: vi.fn(), profiles: vi.fn(), endpoints: vi.fn(), runtime: vi.fn(), createProfile: vi.fn(), updateProfile: vi.fn(), createEndpoint: vi.fn(), updateEndpoint: vi.fn() };
@@ -39,5 +39,26 @@ describe('DeploymentNetworkPage', () => {
     expect(screen.getByText('secret://tls/gateway')).toBeTruthy();
     expect(screen.getByText('无')).toBeTruthy();
     expect(screen.getByText(/TLS 私钥/)).toBeTruthy();
+  });
+
+  it('shows a loading state instead of falsely claiming runtime observation is unavailable', async () => {
+    let resolveRuntime: (value: unknown) => void = () => undefined;
+    mocks.runtime.mockReturnValue(new Promise(resolve => { resolveRuntime = resolve; }));
+
+    render(<DeploymentNetworkPage />);
+
+    expect(await screen.findByRole('heading', { name: '正在加载当前运行实例...' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '当前运行实例观测不可用' })).toBeNull();
+
+    await act(async () => {
+      resolveRuntime({
+        status: 'operational', generated_at: '2026-08-17T00:00:00Z',
+        runtime_environment: { version: '1.1.26', commit: '23db6edcea60', deployment_mode: 'docker-compose', environment: 'local', deployment_role: 'stable' },
+        capacity_health: { database: { status: 'connected', latency_ms: 1 }, redis: { status: 'connected', latency_ms: 1 } },
+      });
+    });
+
+    expect(await screen.findByText('1.1.26')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '当前运行实例观测不可用' })).toBeNull();
   });
 });

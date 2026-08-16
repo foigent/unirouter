@@ -252,7 +252,7 @@ export default function DeploymentNetworkPage() {
         style={{ marginBottom: 16 }}
       />
       <Surface title="当前运行实例（只读观测）" description="这里显示当前 UniRouter 进程实际报告的环境和依赖健康，不依赖下面的手工登记。">
-        {runtime ? <div className="ur-kpi-grid ur-workload-kpis">
+        {loading && !runtime ? <EmptyState title="正在加载当前运行实例..." description="正在读取服务自身报告的运行版本与依赖健康。" minHeight={150} /> : runtime ? <div className="ur-kpi-grid ur-workload-kpis">
           <MetricTile label="服务状态" value={label(runtime.status)} tone={runtime.status === 'operational' || runtime.status === 'ready' ? 'green' : 'amber'} />
           <MetricTile label="运行版本" value={runtime.runtime_environment?.version || '未声明'} meta={runtime.runtime_environment?.commit ? `commit ${runtime.runtime_environment.commit.slice(0, 12)}` : '未声明 commit'} />
           <MetricTile label="部署形态" value={runtime.runtime_environment?.deployment_mode || '未声明'} meta={`${runtime.runtime_environment?.environment || '未知环境'} · ${runtime.runtime_environment?.deployment_role || '未知角色'}`} />
