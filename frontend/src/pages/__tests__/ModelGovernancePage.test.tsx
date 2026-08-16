@@ -172,7 +172,7 @@ describe('ModelGovernancePage', () => {
 
     render(<ModelGovernancePage />);
 
-    expect(await screen.findByText('当前部署组织：总部')).toBeTruthy();
+    expect(await screen.findByText('客户范围：总部')).toBeTruthy();
     expect(screen.queryByLabelText('目标组织')).toBeNull();
     await waitFor(() => {
       expect(mockGetModelRegistry).toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 7 }));

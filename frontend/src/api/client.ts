@@ -134,6 +134,8 @@ export const api = {
     request('/model-endpoints/activate', { method: 'POST', body: JSON.stringify(data) }),
   startModelEndpointCanary: (data: { channel_id: number; model: string; expected_routing_epoch: number; canary_basis_points?: number }) =>
     request('/model-endpoints/canary', { method: 'POST', body: JSON.stringify(data) }),
+  recoverModelEndpoint: (data: { channel_id: number; model: string; expected_routing_epoch: number }) =>
+    request('/model-endpoints/recover', { method: 'POST', body: JSON.stringify(data) }),
   getProviderPacks: () => request('/provider-packs'),
   previewRouting: (model: string) =>
     request(`/routing/preview?model=${encodeURIComponent(model)}`),
@@ -157,6 +159,8 @@ export const api = {
     request(`/runtime-changes/${encodeURIComponent(releaseRef)}/promote`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
   rollbackRuntimeChange: (releaseRef: string, expectedVersion: number) =>
     request(`/runtime-changes/${encodeURIComponent(releaseRef)}/rollback`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
+  rejectRuntimeChange: (releaseRef: string, expectedVersion: number, reason: string) =>
+    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/reject`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion, reason }) }),
 
   // Product-local invocation optimization. Policies always require explicit
   // request opt-in; only an evidence-gated canary stage may affect execution.
@@ -630,8 +634,8 @@ export const api = {
     request('/license', { method: 'PUT', body: JSON.stringify({ license }) }),
 
   // Channel Keys
-  getChannelKeys: (page = 1, pageSize = 20) =>
-    request(`/channel-keys?page=${page}&page_size=${pageSize}`),
+  getChannelKeys: (page = 1, pageSize = 20, channelId?: number) =>
+    request(appendParams('/channel-keys', { page, page_size: pageSize, channel_id: channelId })),
   createChannelKey: (data: any) =>
     request('/channel-keys', { method: 'POST', body: JSON.stringify(data) }),
   updateChannelKey: (id: number, data: any) =>

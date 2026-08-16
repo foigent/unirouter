@@ -67,7 +67,7 @@ type ModelEndpointModel = {
   catalog_approved: boolean;
   state: string;
   reason_code: string;
-  callable: boolean;
+  route_available: boolean;
   stable_release_ref?: string;
   stable_release_version?: number;
   canary_release_ref?: string;
@@ -81,7 +81,7 @@ type ModelEndpointProjection = {
   contract_version: string;
   generated_at: string;
   models: ModelEndpointModel[];
-  summary: { total: number; callable: number; attention: number; canary: number };
+  summary: { total: number; route_available: number; attention: number; canary: number };
 };
 
 type ProviderPreset = {
@@ -105,10 +105,10 @@ const providerPresets: ProviderPreset[] = [
 ];
 
 const stateCopy: Record<string, { label: string; help: string }> = {
-  active: { label: '可调用', help: '当前稳定路由可选中至少一个供应商端点。' },
+  active: { label: '稳定路由', help: '当前稳定发布可选中至少一个供应商端点。项目或应用能否调用仍由高级调用诊断确认。' },
   canary: { label: '灰度中', help: '稳定路由仍在，部分流量按服务端分桶进入候选路由。' },
   degraded: { label: '路由异常', help: '保留了稳定发布记录，但网关当前没有可用候选。' },
-  legacy_active: { label: '兼容路由', help: '当前可调用，但尚未完全收敛到确定性发布记录。' },
+  legacy_active: { label: '兼容路由', help: '网关当前有候选端点，但尚未完全收敛到确定性发布记录。' },
   ready: { label: '可启用', help: '凭证和最新真实检测已就绪，尚未进入路由。' },
   test_failed: { label: '检测失败', help: '最近一次真实供应商请求失败。' },
   needs_test: { label: '待检测', help: '凭证已配置，需要对这个精确端点和模型发起真实检测。' },
@@ -116,6 +116,7 @@ const stateCopy: Record<string, { label: string; help: string }> = {
   unconfigured: { label: '尚无端点', help: '模型目录中存在记录，但还没有供应商端点。' },
   paused: { label: '已暂停', help: '连接被紧急禁用；发布记录仍用于审计和恢复。' },
   stale: { label: '版本不一致', help: '发布固定的连接版本与当前配置不一致。' },
+  governance_blocked: { label: '治理阻断', help: '供应商路由与模型目录生命周期冲突；当前模型已退役，网关调用会被拒绝。' },
 };
 
 function stateLabel(state: string) {
@@ -127,7 +128,15 @@ function stateHelp(state: string) {
 }
 
 function endpointError(error: unknown, fallback: string) {
-  if (error instanceof ApiError) return error.message;
+  if (error instanceof ApiError) {
+    const payload = error.payload as { code?: string; canonical_model?: string; message?: string } | null;
+    if (payload?.code === 'model_identity_conflict' && payload.canonical_model) {
+      return `检测到同一公共模型已存在：${payload.canonical_model}。请选择这个现有 ID，并把当前供应商配置为它的另一个端点。`;
+    }
+    if (payload?.code === 'model_retired') return '该公共模型已退役；请先在高级运营中恢复其生命周期，再启用端点。';
+    if (payload?.code === 'automatic_release_cleanup_failed') return payload.message || '自动发布记录未能安全终止，请先到发布记录处理。';
+    return error.message;
+  }
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
@@ -139,6 +148,28 @@ function exactTestSucceeded(target: ModelEndpointTarget, response: any) {
 function providerSummary(targets: ModelEndpointTarget[]) {
   if (targets.length === 0) return '尚无供应商端点';
   return targets.map(target => `${target.provider} · ${target.connection_name}`).join('；');
+}
+
+function routeCandidateCopy(target: ModelEndpointTarget) {
+  if (target.route_candidate) return '已进入候选';
+  switch (target.route_exclusion_reason) {
+    case 'channel_inactive':
+      return '尚未发布或当前已暂停';
+    case 'no_key':
+    case 'no_active_key':
+    case 'no_eligible_key':
+      return '没有可用凭证';
+    case 'key_model_not_allowed':
+      return '凭证未允许该模型';
+    case 'key_cooldown':
+      return '凭证正在冷却';
+    case 'circuit_open':
+      return '端点熔断中';
+    case 'channel_model_not_found':
+      return '端点未配置该公共模型';
+    default:
+      return target.route_exclusion_reason ? '暂不可用（查看高级诊断）' : '未进入候选';
+  }
 }
 
 export default function ModelEndpointsPage() {
@@ -155,6 +186,7 @@ export default function ModelEndpointsPage() {
   const [filter, setFilter] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [lockedPublicModel, setLockedPublicModel] = useState('');
   const [formApi, setFormApi] = useState<any>(null);
   const [selectedPreset, setSelectedPreset] = useState('deepseek');
   const [saving, setSaving] = useState(false);
@@ -172,6 +204,8 @@ export default function ModelEndpointsPage() {
       setProjection(result);
       setSelectedModel(current => {
         if (keepSelection && result.models.some(model => model.public_model === current)) return current;
+        const modelTab = !search.get('tab') || search.get('tab') === 'models';
+        if (!modelTab) return '';
         const requested = search.get('model') || '';
         if (result.models.some(model => model.public_model === requested)) return requested;
         return '';
@@ -187,6 +221,18 @@ export default function ModelEndpointsPage() {
 
   useEffect(() => { void load(false); }, [load]);
 
+  useEffect(() => {
+    if (!createOpen || !formApi) return;
+    formApi.reset();
+    formApi.setValues({
+      preset: 'deepseek',
+      base_url: providerPresets[0].baseURL,
+      public_model: lockedPublicModel,
+      upstream_model: lockedPublicModel,
+      route_role: 'primary',
+    });
+  }, [createOpen, formApi, lockedPublicModel]);
+
   const models = projection?.models || [];
   const filteredModels = useMemo(() => {
     const keyword = filter.trim().toLowerCase();
@@ -198,22 +244,30 @@ export default function ModelEndpointsPage() {
   const testableTargets = useMemo(() => models.flatMap(model => model.targets)
     .filter(target => target.eligible_credential_count > 0 && (!target.last_probe?.current || !target.last_probe.success)), [models]);
 
-  const changeTab = (tab: string) => {
+  const changeTab = (tab: string, target?: ModelEndpointTarget) => {
     const next = new URLSearchParams(search);
     next.set('tab', tab);
     if (tab !== 'advanced') next.delete('view');
+    if (target) {
+      next.set('model', target.public_model);
+      next.set('channel_id', String(target.channel_id));
+      next.set('from', 'connections');
+    }
     if (tab !== 'models') {
-      next.delete('model');
       setSelectedModel('');
     }
     setSearch(next, { replace: true });
   };
 
-  const changeAdvanced = (view: string) => {
+  const changeAdvanced = (view: string, target?: ModelEndpointTarget) => {
     const next = new URLSearchParams(search);
     next.set('tab', 'advanced');
     next.set('view', view);
-    next.delete('model');
+    if (target) {
+      next.set('model', target.public_model);
+      next.set('channel_id', String(target.channel_id));
+      next.set('from', 'connections');
+    }
     setSelectedModel('');
     setSearch(next, { replace: true });
   };
@@ -290,30 +344,33 @@ export default function ModelEndpointsPage() {
     onOk: executeBatchTests,
   });
 
-  const activate = async (target: ModelEndpointTarget, canary: boolean) => {
+  const activate = async (target: ModelEndpointTarget, mode: 'initial' | 'canary' | 'recover') => {
     setWorkingTarget(target.target_ref);
     try {
       const request = { channel_id: target.channel_id, model: target.public_model, expected_routing_epoch: target.routing_epoch };
-      if (canary) await api.startModelEndpointCanary({ ...request, canary_basis_points: 500 });
+      if (mode === 'canary') await api.startModelEndpointCanary({ ...request, canary_basis_points: 500 });
+      else if (mode === 'recover') await api.recoverModelEndpoint(request);
       else await api.activateModelEndpoint(request);
-      Toast.success(canary ? '5% 灰度已启动；稳定路由仍保留' : `${target.public_model} 已首次启用`);
+      Toast.success(mode === 'canary' ? '5% 灰度已启动；稳定路由仍保留' : mode === 'recover' ? '失效的旧稳定路由已留存为历史，新端点已成为稳定路由' : `${target.public_model} 已首次启用`);
       await load();
     } catch (error) {
-      Toast.error(endpointError(error, canary ? '启动灰度失败' : '首次启用失败'));
+      Toast.error(endpointError(error, mode === 'canary' ? '启动灰度失败' : mode === 'recover' ? '恢复路由失败' : '首次启用失败'));
     } finally {
       setWorkingTarget('');
     }
   };
 
   const confirmActivate = (model: ModelEndpointModel, target: ModelEndpointTarget) => {
-    const canary = Boolean(model.stable_release_ref);
+    const mode: 'initial' | 'canary' | 'recover' = !model.stable_release_ref ? 'initial' : model.route_available ? 'canary' : 'recover';
     Modal.confirm({
-      title: canary ? `将 ${target.connection_name} 加入 5% 灰度？` : `首次启用 ${target.public_model}？`,
-      content: canary
+      title: mode === 'canary' ? `将 ${target.connection_name} 加入 5% 灰度？` : mode === 'recover' ? `用 ${target.connection_name} 恢复路由？` : `首次启用 ${target.public_model}？`,
+      content: mode === 'canary'
         ? '候选发布会继承当前稳定端点并加入这个已检测端点；稳定路由不会被直接覆盖。确认灰度结果后再提升或回滚。'
+        : mode === 'recover'
+          ? '当前稳定发布已经没有可用路由。系统会把旧发布保留为“已回滚”历史，再用这个已检测端点创建新的稳定路由；不会把失效路由当成仍可承载流量。'
         : '系统会自动生成发布标识、验证连接版本并创建第一条稳定路由；不需要手填发布记录。',
-      okText: canary ? '启动 5% 灰度' : '确认首次启用',
-      onOk: () => activate(target, canary),
+      okText: mode === 'canary' ? '启动 5% 灰度' : mode === 'recover' ? '替换失效路由' : '确认首次启用',
+      onOk: () => activate(target, mode),
     });
   };
 
@@ -352,11 +409,8 @@ export default function ModelEndpointsPage() {
 
   const openCreate = (publicModel = '') => {
     setSelectedPreset('deepseek');
+    setLockedPublicModel(publicModel);
     setCreateOpen(true);
-    window.setTimeout(() => {
-      formApi?.reset();
-      formApi?.setValues({ preset: 'deepseek', base_url: providerPresets[0].baseURL, public_model: publicModel, upstream_model: publicModel, route_role: 'primary' });
-    }, 0);
   };
 
   const submitCreate = async (values: Record<string, any>) => {
@@ -387,9 +441,17 @@ export default function ModelEndpointsPage() {
       });
       Toast.success('供应商端点与加密凭证已创建；下一步只需真实检测');
       setCreateOpen(false);
+      setLockedPublicModel('');
       setSelectedModel(publicModel);
       await load(false);
     } catch (error) {
+      if (error instanceof ApiError) {
+        const payload = error.payload as { code?: string; canonical_model?: string } | null;
+        if (payload?.code === 'model_identity_conflict' && payload.canonical_model) {
+          formApi?.setValue('public_model', payload.canonical_model);
+          formApi?.setValue('upstream_model', upstreamModel);
+        }
+      }
       Toast.error(endpointError(error, '创建供应商端点失败'));
     } finally {
       setSaving(false);
@@ -405,7 +467,7 @@ export default function ModelEndpointsPage() {
       </div>,
     },
     {
-      title: '调用状态', key: 'state', width: 140,
+      title: '路由状态', key: 'state', width: 140,
       render: (_: unknown, model: ModelEndpointModel) => <Space vertical align="start" spacing={3}>
         <StatusTag status={model.state}>{stateLabel(model.state)}</StatusTag>
         {model.canary_basis_points > 0 && <Text type="tertiary" size="small">{model.canary_basis_points / 100}% 灰度</Text>}
@@ -446,14 +508,14 @@ export default function ModelEndpointsPage() {
       <TabPane tab="模型与路由" itemKey="models">
         <div className="ur-model-endpoint-kpis">
           <MetricTile label="公共模型" value={projection?.summary.total ?? '-'} meta="按对外调用 ID 聚合" />
-          <MetricTile label="当前可调用" value={projection?.summary.callable ?? '-'} tone="green" meta="来自网关真实候选" />
-          <MetricTile label="调用阻塞" value={projection?.summary.attention ?? '-'} tone="amber" meta="当前不能调用的凭证、检测或路由问题" />
+          <MetricTile label="路由可用" value={projection?.summary.route_available ?? '-'} tone="green" meta="网关当前至少有一个候选端点" />
+          <MetricTile label="需要处理" value={projection?.summary.attention ?? '-'} tone="amber" meta="凭证、检测、路由或生命周期尚未闭环" />
           <MetricTile label="灰度中" value={projection?.summary.canary ?? '-'} tone="blue" meta="稳定路由仍保留" />
         </div>
 
         <Surface
           title="模型"
-          description="表格不再把通道状态、凭证状态或历史发布单独冒充为“已启用”；调用状态只来自后端权威投影。"
+          description="表格按公共模型聚合供应商端点。这里展示路由是否可用；项目、应用与 API Key 的最终调用权限只在高级诊断中判断。"
           actions={<Space>
             <Input prefix={<IconSearch />} value={filter} onChange={setFilter} placeholder="搜索模型、供应商或上游 ID" style={{ width: 280 }} />
             <Button disabled={testableTargets.length === 0 || batchTesting} loading={batchTesting} onClick={confirmBatchTests}>补齐端点检测证据（{testableTargets.length}）</Button>
@@ -476,7 +538,7 @@ export default function ModelEndpointsPage() {
         <ChannelKeysPage embedded />
       </TabPane>
 
-      <TabPane tab="高级管理" itemKey="advanced">
+      <TabPane tab="高级运营" itemKey="advanced">
         <Surface description="日常新增与启用不需要进入这里。目录、调用诊断和历史发布只在需要审计或排障时使用。">
           <Space wrap>
             <Button type={advancedView === 'catalog' ? 'primary' : 'tertiary'} onClick={() => changeAdvanced('catalog')}>模型目录与项目范围</Button>
@@ -499,10 +561,10 @@ export default function ModelEndpointsPage() {
       {selected && <div className="ur-model-endpoint-sheet">
         <div className="ur-model-endpoint-sheet-summary">
           <div><Text type="tertiary">公共模型</Text><Text code>{selected.public_model}</Text></div>
-          <div><Text type="tertiary">当前调用状态</Text><StatusTag status={selected.state}>{stateLabel(selected.state)}</StatusTag></div>
+          <div><Text type="tertiary">当前路由状态</Text><StatusTag status={selected.state}>{stateLabel(selected.state)}</StatusTag></div>
           <div><Text type="tertiary">供应商端点</Text><Text>{selected.targets.length}</Text></div>
         </div>
-        <Banner type={selected.callable ? 'success' : selected.state === 'degraded' ? 'danger' : 'info'} description={stateHelp(selected.state)} closeIcon={null} />
+        <Banner type={selected.route_available && selected.state !== 'governance_blocked' ? 'success' : ['degraded', 'governance_blocked'].includes(selected.state) ? 'danger' : 'info'} description={stateHelp(selected.state)} closeIcon={null} />
         {selected.canary_release_ref && <Surface title={`当前 ${selected.canary_basis_points / 100}% 灰度`} description="稳定路由仍在；确认真实业务指标后提升，异常时回滚。" actions={<Space>
           <Button type="danger" onClick={() => transitionCanary(selected, 'rollback')}>回滚灰度</Button>
           <Button type="primary" onClick={() => transitionCanary(selected, 'promote')}>提升为稳定</Button>
@@ -514,7 +576,7 @@ export default function ModelEndpointsPage() {
           description={`${target.public_model} → ${target.upstream_model}`}
           actions={<Space wrap>
             <Button loading={workingTarget === target.target_ref} disabled={workingTarget !== '' || target.eligible_credential_count === 0} onClick={() => confirmTest(target)}>真实检测</Button>
-            {target.state === 'ready' && <Button type="primary" loading={workingTarget === target.target_ref} onClick={() => confirmActivate(selected, target)}>{selected.stable_release_ref ? '加入 5% 灰度' : '首次启用'}</Button>}
+            {target.state === 'ready' && selected.state !== 'governance_blocked' && <Button type="primary" loading={workingTarget === target.target_ref} onClick={() => confirmActivate(selected, target)}>{!selected.stable_release_ref ? '首次启用' : selected.route_available ? '加入 5% 灰度' : '替换失效路由'}</Button>}
             {target.config_status === 'disabled'
               ? <Button type="primary" disabled={!target.last_probe?.current || !target.last_probe.success} loading={workingTarget === target.target_ref} onClick={() => toggleConnection(target)}>恢复连接</Button>
               : (target.stable_assignment || target.route_candidate) && <Button type="danger" theme="borderless" loading={workingTarget === target.target_ref} onClick={() => toggleConnection(target)}>紧急暂停</Button>}
@@ -526,7 +588,7 @@ export default function ModelEndpointsPage() {
             { key: '路由角色', value: target.priority <= 100 ? `主端点 · P${target.priority} / W${target.weight}` : `备用端点 · P${target.priority} / W${target.weight}` },
             { key: '凭证', value: target.eligible_credential_count > 0 ? `${target.eligible_credential_count} 个当前可用` : '缺少可用凭证' },
             { key: '熔断状态', value: target.circuit_state },
-            { key: '网关候选', value: target.route_candidate ? '已进入候选' : target.route_exclusion_reason || '未进入候选' },
+            { key: '网关候选', value: routeCandidateCopy(target) },
           ]} />
           <div className="ur-model-endpoint-probe">
             <Text strong>最近真实检测</Text>
@@ -540,8 +602,8 @@ export default function ModelEndpointsPage() {
             </Space>}
           </div>
           <Space style={{ marginTop: 12 }}>
-            <Button type="tertiary" onClick={() => changeTab('credentials')}>管理凭证</Button>
-            <Button type="tertiary" onClick={() => changeAdvanced('diagnostics')}>查看高级诊断</Button>
+            <Button type="tertiary" onClick={() => changeTab('credentials', target)}>管理此端点凭证</Button>
+            <Button type="tertiary" onClick={() => changeAdvanced('diagnostics', target)}>诊断此模型连接</Button>
           </Space>
         </Surface>)}
         <Button icon={<IconPlus />} onClick={() => openCreate(selected.public_model)}>为此公共模型增加供应商端点</Button>
@@ -554,9 +616,9 @@ export default function ModelEndpointsPage() {
       </div>}
     </SideSheet>
 
-    <SideSheet title="新增供应商端点" visible={createOpen} onCancel={() => setCreateOpen(false)} width={600}>
+    <SideSheet title="新增供应商端点" visible={createOpen} onCancel={() => { setCreateOpen(false); setLockedPublicModel(''); }} width={600}>
       <Banner type="info" description="公共模型 ID 是应用调用 UniRouter 时使用的名字；上游模型 ID 是这个供应商实际接受的模型或部署名。相同公共模型可以绑定多个供应商端点。" closeIcon={null} style={{ marginBottom: 16 }} />
-      <Form getFormApi={setFormApi} onSubmit={submitCreate} initValues={{ preset: 'deepseek', base_url: providerPresets[0].baseURL, route_role: 'primary' }}>
+      <Form getFormApi={setFormApi} onSubmit={submitCreate} initValues={{ preset: 'deepseek', base_url: providerPresets[0].baseURL, public_model: lockedPublicModel, upstream_model: lockedPublicModel, route_role: 'primary' }}>
         <Form.Select
           field="preset"
           label="供应商端点"
@@ -573,7 +635,20 @@ export default function ModelEndpointsPage() {
         <Form.Input field="connection_name" label="连接名称（可选）" placeholder="例如 DeepSeek 官方 · 华北生产" />
         <Form.Input field="base_url" label="Base URL" placeholder="https://..." rules={[{ required: true, message: '必填' }]} />
         <div className="ur-model-endpoint-form-grid">
-          <Form.Input field="public_model" label="公共模型 ID" placeholder="例如 deepseek-v4-flash" rules={[{ required: true, message: '必填' }]} />
+          <Form.Select
+            field="public_model"
+            label="公共模型 ID"
+            placeholder="选择已有模型，或输入一个全新的稳定 ID"
+            filter
+            allowCreate
+            disabled={Boolean(lockedPublicModel)}
+            optionList={models.filter(model => model.lifecycle !== 'retired').map(model => ({
+              value: model.public_model,
+              label: model.display_name && model.display_name !== model.public_model ? `${model.display_name} · ${model.public_model}` : model.public_model,
+            }))}
+            rules={[{ required: true, message: '必填' }]}
+            extraText={lockedPublicModel ? '正在为当前公共模型增加另一个供应商端点，公共 ID 不可改变。' : '同一模型来自官方、OpenRouter、百炼、Azure 等不同供应商时，应选择同一个公共 ID；只有对外身份确实不同才新建。'}
+          />
           <Form.Input field="upstream_model" label="上游模型 / 部署 ID" placeholder="供应商实际接受的精确 ID" rules={[{ required: true, message: '必填' }]} />
         </div>
         {selectedPreset === 'azure' && <div className="ur-model-endpoint-form-grid">
@@ -586,7 +661,7 @@ export default function ModelEndpointsPage() {
           { label: '备用端点（主端点不可用时使用）', value: 'backup' },
         ]} rules={[{ required: true, message: '请选择路由角色' }]} extraText="稍后可在高级发布中调整精确优先级和同级权重。" />
         <div className="ur-form-actions">
-          <Button onClick={() => setCreateOpen(false)}>取消</Button>
+          <Button onClick={() => { setCreateOpen(false); setLockedPublicModel(''); }}>取消</Button>
           <Button type="primary" loading={saving} onClick={() => formApi?.submitForm()}>保存端点与凭证</Button>
         </div>
       </Form>

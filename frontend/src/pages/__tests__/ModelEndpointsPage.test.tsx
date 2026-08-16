@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   testChannelModel: vi.fn(),
   activateModelEndpoint: vi.fn(),
   startModelEndpointCanary: vi.fn(),
+  recoverModelEndpoint: vi.fn(),
   updateChannel: vi.fn(),
   createChannel: vi.fn(),
   promoteRuntimeChange: vi.fn(),
@@ -60,9 +61,9 @@ function target(overrides: Record<string, unknown>) {
 
 function projection(targets = [target({})], modelOverrides: Record<string, unknown> = {}) {
   return {
-    contract_version: 'unirouter.model-endpoints.v1',
+    contract_version: 'unirouter.model-endpoints.v2',
     generated_at: '2026-08-16T01:00:00Z',
-    summary: { total: 1, callable: 0, attention: 1, canary: 0 },
+    summary: { total: 1, route_available: 0, attention: 1, canary: 0 },
     models: [{
       public_model: 'deepseek-v4-flash',
       display_name: 'DeepSeek V4 Flash',
@@ -70,7 +71,6 @@ function projection(targets = [target({})], modelOverrides: Record<string, unkno
       catalog_approved: true,
       state: 'needs_test',
       reason_code: 'provider_probe_required',
-      callable: false,
       canary_basis_points: 0,
       release_history_count: 7,
       targets,
@@ -79,8 +79,8 @@ function projection(targets = [target({})], modelOverrides: Record<string, unkno
   };
 }
 
-function renderPage() {
-  return render(<MemoryRouter initialEntries={['/channels']}><ModelEndpointsPage /></MemoryRouter>);
+function renderPage(entry = '/channels') {
+  return render(<MemoryRouter initialEntries={[entry]}><ModelEndpointsPage /></MemoryRouter>);
 }
 
 describe('ModelEndpointsPage canonical model and provider target flow', () => {
@@ -98,6 +98,7 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     });
     mocks.activateModelEndpoint.mockResolvedValue({ stage: 'active' });
     mocks.startModelEndpointCanary.mockResolvedValue({ stage: 'canary' });
+    mocks.recoverModelEndpoint.mockResolvedValue({ stage: 'active' });
     mocks.updateChannel.mockResolvedValue({ message: 'Channel updated' });
     mocks.createChannel.mockResolvedValue({ id: 21, credential_configured: true });
   });
@@ -165,16 +166,16 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     expect(mocks.testChannelModel).toHaveBeenNthCalledWith(2, 14, 'deepseek-v4-flash');
   });
 
-  it('separates call blockers from missing evidence on an already-callable route', async () => {
+  it('separates route availability from missing endpoint evidence', async () => {
     mocks.getModelEndpoints.mockResolvedValue(projection([
       target({ state: 'active', route_candidate: true, stable_assignment: true }),
-    ], { state: 'active', callable: true }));
+    ], { state: 'active', route_available: true }));
 
     renderPage();
 
-    expect(await screen.findByText('调用阻塞')).toBeTruthy();
+    expect(await screen.findByText('路由可用')).toBeTruthy();
     expect(screen.getByText('补齐端点检测证据（1）')).toBeTruthy();
-    expect(screen.queryByText('需要处理')).toBeNull();
+    expect(screen.getByText('需要处理')).toBeTruthy();
   });
 
   it('clears the selected model URL state before changing top-level tabs', async () => {
@@ -192,20 +193,23 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     expect(await screen.findByText('凭证内嵌视图')).toBeTruthy();
   });
 
-  it('creates separate public and upstream identities with a provider mapping', async () => {
+  it('creates a provider-specific upstream mapping for the selected public model', async () => {
     renderPage();
-    await screen.findByText('DeepSeek V4 Flash');
-    fireEvent.click(screen.getByRole('button', { name: /新增供应商端点/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
+    await screen.findByText('DeepSeek V4 Flash · 供应商端点');
+    fireEvent.click(await screen.findByText('为此公共模型增加供应商端点'));
     await screen.findByText('公共模型 ID 是应用调用 UniRouter 时使用的名字；上游模型 ID 是这个供应商实际接受的模型或部署名。相同公共模型可以绑定多个供应商端点。');
     fireEvent.change(await screen.findByLabelText('连接名称（可选）'), { target: { value: 'OpenRouter DeepSeek' } });
-    fireEvent.change(await screen.findByLabelText('公共模型 ID'), { target: { value: 'company-fast' } });
+    const publicModelField = await screen.findByLabelText('公共模型 ID');
+    await waitFor(() => expect(publicModelField).toHaveTextContent('DeepSeek V4 Flash'));
+    expect(publicModelField).toHaveAttribute('aria-disabled', 'true');
     fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'deepseek/deepseek-v4-flash' } });
     fireEvent.change(await screen.findByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
     fireEvent.click(screen.getByRole('button', { name: '保存端点与凭证' }));
 
     await waitFor(() => expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({
-      models: 'company-fast',
-      model_mapping: { 'company-fast': 'deepseek/deepseek-v4-flash' },
+      models: 'deepseek-v4-flash',
+      model_mapping: { 'deepseek-v4-flash': 'deepseek/deepseek-v4-flash' },
       api_key: 'sk-test-only',
     })));
   });
@@ -224,6 +228,34 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     fireEvent.click(await screen.findByText('确认首次启用'));
 
     await waitFor(() => expect(mocks.activateModelEndpoint).toHaveBeenCalledWith({
+      channel_id: 13,
+      model: 'deepseek-v4-flash',
+      expected_routing_epoch: 4,
+    }));
+  });
+
+  it('replaces a retained stable release when it has no gateway candidate', async () => {
+    const readyTarget = target({
+      state: 'ready',
+      reason_code: 'probe_passed_not_routed',
+      last_probe: { success: true, current: true, status_code: 200, latency_ms: 12, tested_at: '2026-08-16T01:00:00Z' },
+    });
+    mocks.getModelEndpoints.mockResolvedValue(projection([readyTarget], {
+      state: 'degraded',
+      reason_code: 'stable_route_unavailable',
+      route_available: false,
+      stable_release_ref: 'rcr_old_stable',
+      stable_release_version: 3,
+    }));
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
+    fireEvent.click(await screen.findByRole('button', { name: '替换失效路由' }));
+    expect(await screen.findByText(/旧发布保留为“已回滚”历史/)).toBeTruthy();
+    const dialogs = screen.getAllByRole('dialog');
+    fireEvent.click(within(dialogs[dialogs.length - 1]).getByRole('button', { name: 'confirm' }));
+
+    await waitFor(() => expect(mocks.recoverModelEndpoint).toHaveBeenCalledWith({
       channel_id: 13,
       model: 'deepseek-v4-flash',
       expected_routing_epoch: 4,

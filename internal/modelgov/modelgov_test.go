@@ -37,6 +37,67 @@ func TestCheckAccess_DeniesRetiredModel(t *testing.T) {
 	}
 }
 
+func TestActivatedIdentityReturnsExistingCanonicalConflict(t *testing.T) {
+	query := 0
+	database := &testutil.MockDB{QueryRowFn: func(_ context.Context, sql string, args ...any) pgx.Row {
+		query++
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			if query == 1 {
+				return pgx.ErrNoRows
+			}
+			if !strings.Contains(sql, "regexp_replace") || args[1] != "DeepSeek V4 Flash" {
+				t.Fatalf("unexpected equivalent identity query: %s %#v", sql, args)
+			}
+			*dest[0].(*string) = "deepseek-v4-flash"
+			return nil
+		}}
+	}}
+
+	canonical, err := ActivatedIdentity(context.Background(), database, 7, "DeepSeek V4 Flash")
+	if !errors.Is(err, ErrModelIdentityConflict) || canonical != "deepseek-v4-flash" || ExistingIdentity(err) != canonical {
+		t.Fatalf("canonical=%q err=%v existing=%q", canonical, err, ExistingIdentity(err))
+	}
+}
+
+func TestActivatedIdentityRejectsExactRetiredModel(t *testing.T) {
+	query := 0
+	database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+		query++
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			if query > 1 {
+				return pgx.ErrNoRows
+			}
+			*dest[0].(*string) = LifecycleRetired
+			return nil
+		}}
+	}}
+
+	canonical, err := ActivatedIdentity(context.Background(), database, 7, "retired-model")
+	if canonical != "retired-model" || !errors.Is(err, ErrModelRetired) {
+		t.Fatalf("canonical=%q err=%v", canonical, err)
+	}
+}
+
+func TestActivatedIdentityRedirectsARetiredLegacySpellingToTheLiveCanonicalModel(t *testing.T) {
+	query := 0
+	database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+		query++
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			if query == 1 {
+				*dest[0].(*string) = LifecycleRetired
+				return nil
+			}
+			*dest[0].(*string) = "deepseek-v4-flash"
+			return nil
+		}}
+	}}
+
+	canonical, err := ActivatedIdentity(context.Background(), database, 7, "DeepSeek V4 Flash")
+	if canonical != "deepseek-v4-flash" || !errors.Is(err, ErrModelIdentityConflict) {
+		t.Fatalf("canonical=%q err=%v", canonical, err)
+	}
+}
+
 func TestCheckAccess_ProjectSetDeniesUnassignedModel(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {

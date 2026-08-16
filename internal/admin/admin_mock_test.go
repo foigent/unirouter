@@ -3224,6 +3224,40 @@ func TestListChannelKeys_QueryError(t *testing.T) {
 	}
 }
 
+func TestListChannelKeys_FiltersTheExactEndpoint(t *testing.T) {
+	var countChannelID, queryChannelID int64
+	db := &testutil.MockDB{
+		QueryRowFn: func(_ context.Context, _ string, args ...any) pgx.Row {
+			countChannelID = args[0].(int64)
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
+		QueryFn: func(_ context.Context, _ string, args ...any) (pgx.Rows, error) {
+			queryChannelID = args[2].(int64)
+			return &testutil.MockRows{}, nil
+		},
+	}
+	h := newTestHandler(db)
+	rec := httptest.NewRecorder()
+	h.ListChannelKeys(rec, httptest.NewRequest(http.MethodGet, "/channel-keys?channel_id=7", nil))
+
+	if rec.Code != http.StatusOK || countChannelID != 7 || queryChannelID != 7 {
+		t.Fatalf("exact endpoint filter was not applied: status=%d count=%d query=%d body=%s", rec.Code, countChannelID, queryChannelID, rec.Body.String())
+	}
+}
+
+func TestListChannelKeys_RejectsInvalidEndpointFilter(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+	rec := httptest.NewRecorder()
+	h.ListChannelKeys(rec, httptest.NewRequest(http.MethodGet, "/channel-keys?channel_id=all", nil))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // Suppress unused import warnings
 var _ = time.Now()
 

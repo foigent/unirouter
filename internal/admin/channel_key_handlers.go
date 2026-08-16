@@ -17,10 +17,19 @@ import (
 func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePagination(r)
 	offset := paginationOffset(page, pageSize)
+	var channelID int64
+	if raw := strings.TrimSpace(r.URL.Query().Get("channel_id")); raw != "" {
+		parsed, parseErr := strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || parsed <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "channel_id must be a positive integer"})
+			return
+		}
+		channelID = parsed
+	}
 
 	// Count total
 	var total int
-	err := h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM channel_keys`).Scan(&total)
+	err := h.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM channel_keys WHERE ($1::bigint=0 OR channel_id=$1)`, channelID).Scan(&total)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Count failed"})
 		return
@@ -31,8 +40,9 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 		        ck.fail_count, ck.last_used_at, ck.cooldown_until, ck.created_at, ck.updated_at
 		 FROM channel_keys ck
 		 JOIN channels c ON c.id = ck.channel_id
+		 WHERE ($3::bigint=0 OR ck.channel_id=$3)
 		 ORDER BY ck.id ASC
-		 LIMIT $1 OFFSET $2`, pageSize, offset)
+		 LIMIT $1 OFFSET $2`, pageSize, offset, channelID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
 		return

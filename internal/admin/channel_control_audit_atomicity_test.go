@@ -108,6 +108,9 @@ func channelControlMutationCases() []channelControlMutationCase {
 			},
 			assertAudit: func(t *testing.T, state *channelControlTransactionState) {
 				t.Helper()
+				if !state.identityChecked {
+					t.Fatal("create must validate the public model identity before mutating the channel")
+				}
 				if !strings.Contains(state.auditAfter, `"name":"primary"`) {
 					t.Fatalf("create audit must contain authoritative after state, got %s", state.auditAfter)
 				}
@@ -176,6 +179,7 @@ type channelControlTransactionState struct {
 	rolledBack      bool
 	lockingSnapshot bool
 	snapshotCalls   int
+	identityChecked bool
 	auditAction     string
 	auditBefore     string
 	auditAfter      string
@@ -241,6 +245,10 @@ func newChannelControlAtomicityHandler(state *channelControlTransactionState) *H
 			return tx, nil
 		},
 		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			if strings.Contains(sql, "FROM model_registry") {
+				state.identityChecked = true
+				return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
+			}
 			if strings.Contains(sql, "INSERT INTO channels") {
 				state.poolMutation = true
 				return &testutil.MockRow{ScanFn: func(dest ...any) error {

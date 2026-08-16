@@ -282,6 +282,9 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 		for _, candidate := range preview.Candidates {
 			eligibleKeys += candidate.EligibleKeyCount
 		}
+		for _, exclusion := range preview.Exclusions {
+			eligibleKeys += exclusion.EligibleKeyCount
+		}
 		routeFix := h.readinessFixRoute(r, "/channels?model="+url.QueryEscape(model), actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin)
 		credentialFix := routeFix
 		credentialChannelID := int64(0)

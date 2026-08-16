@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Banner, Button, Modal, Form, Toast, Space, SideSheet, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
@@ -13,7 +13,7 @@ import {
   type ChannelReadinessChannel,
   type CredentialCombinationState,
 } from '../utils/channelReadiness';
-import { normalizeModelList } from '../utils/modelList';
+import { normalizeModelList, parseModelList } from '../utils/modelList';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 
 interface ChannelKey {
@@ -41,7 +41,7 @@ type ChannelOption = ChannelReadinessChannel & {
 function credentialMutationErrorMessage(error: unknown, action: '创建' | '保存') {
   const raw = error instanceof Error ? error.message : '';
   if (raw.toLowerCase().includes('channel must be staged or disabled')) {
-    return `${action}失败：该模型连接仍在生效。请返回“模型连接”先执行紧急禁用，再新增或轮换供应商凭证。`;
+    return `${action}失败：该供应商端点仍在承载路由。请返回“模型与端点”先执行紧急暂停，再新增或轮换供应商凭证。`;
   }
   return `${action}失败${raw ? `：${raw}` : ''}`;
 }
@@ -62,12 +62,16 @@ const combinationLabel: Record<CredentialCombinationState, string> = {
   model_mismatch: '阻断：模型无交集',
   route_candidate: '可进入路由候选',
   awaiting_release: '凭证就绪·待发布',
-  channel_disabled: '凭证保留·通道禁用',
-  unknown_channel: '通道状态待确认',
+  channel_disabled: '凭证保留·端点暂停',
+  unknown_channel: '端点状态待确认',
 };
 
 export default function ChannelKeysPage({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate();
+  const [search, setSearch] = useSearchParams();
+  const requestedChannelID = Number(search.get('channel_id') || 0);
+  const focusedChannelID = Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0 ? requestedChannelID : undefined;
+  const focusedModel = String(search.get('model') || '').trim();
   const [keys, setKeys] = useState<ChannelKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -82,6 +86,7 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
   const [saveNotice, setSaveNotice] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [draftChannelID, setDraftChannelID] = useState<number>();
 
   const load = (p = page, size = pageSize) => {
     const version = ++requestVersion.current;
@@ -89,7 +94,7 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
     setLoadError('');
     setKeys([]);
     setTotal(0);
-    api.getChannelKeys(p, size)
+    api.getChannelKeys(p, size, focusedChannelID)
       .then((d: any) => {
         if (version !== requestVersion.current) return;
         setKeys(d.data || []);
@@ -124,7 +129,7 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
       .catch(() => {});
   };
 
-  useEffect(() => { load(1); loadChannels(); }, []);
+  useEffect(() => { setPage(1); load(1, pageSize); loadChannels(); }, [focusedChannelID]);
 
   const closeDrawer = () => { setShowDrawer(false); setEditing(null); setSubmitError(''); };
 
@@ -134,35 +139,35 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
     try {
       if (editing) {
         const activeParent = editing.channel_status === 'active';
-		const keyChanged = !activeParent && Boolean(String(values.api_key || '').trim());
+        const keyChanged = !activeParent && Boolean(String(values.api_key || '').trim());
         const payload: Record<string, any> = activeParent ? { status: values.status } : {
           channel_id: parseInt(values.channel_id),
           allowed_models: normalizeModelList(values.allowed_models),
           status: values.status,
         };
-		if (keyChanged) payload.key = String(values.api_key).trim();
+        if (keyChanged) payload.key = String(values.api_key).trim();
         await api.updateChannelKey(editing.id, payload);
-		setSaveNotice(keyChanged
-		  ? `${editing.channel_name} 的新供应商 API Key 已加密保存；为安全起见不会回显明文。`
-		  : `${editing.channel_name} 的供应商凭证设置已保存。`);
-		Toast.success('供应商凭证已保存');
+        setSaveNotice(keyChanged
+          ? `${editing.channel_name} 的新供应商 API Key 已加密保存；为安全起见不会回显明文。`
+          : `${editing.channel_name} 的供应商凭证设置已保存。`);
+        Toast.success('供应商凭证已保存');
       } else {
         await api.createChannelKey({
           channel_id: parseInt(values.channel_id),
           key: String(values.api_key || '').trim(),
           allowed_models: normalizeModelList(values.allowed_models),
         });
-		setSaveNotice('新的供应商凭证已加密保存；为安全起见不会回显明文。');
-		Toast.success('供应商凭证已创建');
+        setSaveNotice('新的供应商凭证已加密保存；为安全起见不会回显明文。');
+        Toast.success('供应商凭证已创建');
       }
       closeDrawer();
       load();
     } catch (error: any) {
       const message = credentialMutationErrorMessage(error, editing ? '保存' : '创建');
-		setSubmitError(message);
-		Toast.error(message);
-	} finally {
-		setSubmitting(false);
+      setSubmitError(message);
+      Toast.error(message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -181,14 +186,16 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
   };
 
   const openEdit = (record: ChannelKey) => {
-	setSubmitError('');
+    setSubmitError('');
     setEditing({ ...record, channel_status: recordChannel(record).status });
+    setDraftChannelID(record.channel_id);
     setShowDrawer(true);
   };
 
   const openCreate = () => {
-	setSubmitError('');
+    setSubmitError('');
     setEditing(null);
+    setDraftChannelID(focusedChannelID);
     setShowDrawer(true);
   };
 
@@ -202,8 +209,10 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
         allowed_models: editing.allowed_models || '',
         status: editing.status,
       });
+    } else if (focusedChannelID) {
+      formApi.setValues({ channel_id: focusedChannelID, allowed_models: focusedModel });
     }
-  }, [editing, formApi, showDrawer]);
+  }, [editing, focusedChannelID, focusedModel, formApi, showDrawer]);
 
   const channelByID = useMemo(
     () => new Map(channels.map(channel => [channel.id, channel])),
@@ -213,9 +222,9 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
     id: record.channel_id,
     name: record.channel_name,
     status: record.channel_status,
-	base_status: record.channel_status,
-	label: record.channel_name,
-	value: record.channel_id,
+    base_status: record.channel_status,
+    label: record.channel_name,
+    value: record.channel_id,
   };
   const enabledOnInactiveChannelCount = keys.filter(key => (
     key.status === 'active' && recordChannel(key).status !== 'active'
@@ -227,20 +236,22 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
       && credentialModelCoverage(channel?.models, key.allowed_models).kind === 'none';
   }).length;
 
-  const activeConnections = channels.filter(channel => channel.status === 'active');
+  const draftChannel = draftChannelID ? channelByID.get(draftChannelID) : undefined;
+  const focusedChannel = focusedChannelID ? channelByID.get(focusedChannelID) : undefined;
+  const draftModel = focusedModel || parseModelList(draftChannel?.models)[0] || '';
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     {
-      title: '所属通道', width: 150,
-		render: (_: unknown, record: ChannelKey) => {
-			const channel = recordChannel(record);
-			const runtimePublished = channel.base_status === 'staged' && channel.status === 'active';
-			return <div style={{ display: 'grid', gap: 4 }}>
-				<span>{record.channel_name || '-'}</span>
-				<StatusTag status={channel.status}>{runtimePublished ? '运行时生效（配置待发布）' : `通道${channelStatusLabel(channel.status)}`}</StatusTag>
-			</div>;
-		},
+      title: '供应商端点', width: 150,
+      render: (_: unknown, record: ChannelKey) => {
+        const channel = recordChannel(record);
+        const runtimePublished = channel.base_status === 'staged' && channel.status === 'active';
+        return <div style={{ display: 'grid', gap: 4 }}>
+          <span>{record.channel_name || '-'}</span>
+          <StatusTag status={channel.status}>{runtimePublished ? '运行时生效（配置待发布）' : channel.status === 'disabled' ? '端点暂停' : `端点${channelStatusLabel(channel.status)}`}</StatusTag>
+        </div>;
+      },
     },
     { title: '凭证标识', dataIndex: 'key_prefix', render: (v: string) => <code>{v}</code> },
     {
@@ -252,12 +263,12 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
       render: (_: unknown, record: ChannelKey) => {
         const coverage = credentialModelCoverage(recordChannel(record).models, record.allowed_models);
         const label = coverage.kind === 'all'
-          ? `全部通道模型（${coverage.matching.length}）`
+          ? `全部端点模型（${coverage.matching.length}）`
           : coverage.kind === 'partial'
             ? `相交 ${coverage.matching.length}/${coverage.channelModels.length}`
             : coverage.kind === 'none'
               ? '模型范围无交集'
-              : '通道模型未配置或待加载';
+              : '端点模型未配置或待加载';
         return (
           <div style={{ display: 'grid', gap: 4 }}>
             <span>{record.allowed_models || '全部'}</span>
@@ -269,12 +280,12 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
     {
       title: '组合状态', width: 170,
       render: (_: unknown, record: ChannelKey) => {
-		const channel = recordChannel(record);
+        const channel = recordChannel(record);
         const state = evaluateCredentialCombination(record, channel);
-		const label = state === 'route_candidate' && channel.base_status === 'staged'
-			? '已进入路由（发布生效）'
-			: combinationLabel[state];
-		return <StatusTag status={combinationStatus[state]}>{label}</StatusTag>;
+        const label = state === 'route_candidate' && channel.base_status === 'staged'
+          ? '已进入路由（发布生效）'
+          : combinationLabel[state];
+        return <StatusTag status={combinationStatus[state]}>{label}</StatusTag>;
       },
     },
     {
@@ -284,7 +295,7 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
         : `失败 ${record.fail_count || 0} 次`,
     },
     { title: '最近使用', dataIndex: 'last_used_at', width: 170, render: (v: string | null) => v ? formatDateTime(v) : '尚未使用' },
-	{ title: '最近更新', dataIndex: 'updated_at', width: 170, render: (v: string, record: ChannelKey) => formatDateTime(v || record.created_at) },
+    { title: '最近更新', dataIndex: 'updated_at', width: 170, render: (v: string, record: ChannelKey) => formatDateTime(v || record.created_at) },
     {
       title: '操作', width: 120,
       render: (_: any, record: ChannelKey) => (
@@ -301,7 +312,7 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
       {!embedded && <PageHeader
         eyebrow="模型接入"
         title="供应商凭证"
-		description="凭证状态、所属通道状态和模型覆盖是三个独立条件；凭证启用不代表通道已经生效。明文 Key 永不回显，保存结果请以成功提示和“最近更新”为准。"
+        description="凭证状态、供应商端点状态和模型覆盖是三个独立条件；凭证启用不代表端点已经进入路由。明文 Key 永不回显。"
         actions={<Space>
           <ModelConnectionBackButton />
           <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>
@@ -313,16 +324,31 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
         <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>
       </div>}
 
-	  {saveNotice && <Banner
-		type="success"
-		description={saveNotice}
-		closeIcon={null}
-		style={{ marginBottom: 16 }}
-	  />}
+      {saveNotice && <Banner
+        type="success"
+        description={saveNotice}
+        closeIcon={null}
+        style={{ marginBottom: 16 }}
+      />}
+
+      {focusedChannelID && <Banner
+        type="info"
+        description={`当前只显示 ${focusedChannel?.name || `端点 #${focusedChannelID}`}${focusedModel ? ` · ${focusedModel}` : ''} 的凭证。`}
+        closeIcon={null}
+        style={{ marginBottom: 16 }}
+      >
+        <Button size="small" onClick={() => {
+          const next = new URLSearchParams(search);
+          next.delete('channel_id');
+          next.delete('model');
+          next.delete('from');
+          setSearch(next, { replace: true });
+        }}>查看全部凭证</Button>
+      </Banner>}
 
       <Banner
         type={(enabledOnInactiveChannelCount > 0 || modelMismatchCount > 0) ? 'warning' : 'info'}
-        description={`只有“通道生效 + 凭证启用且未冷却 + 模型范围相交”才可进入路由候选。当前页 ${enabledOnInactiveChannelCount} 条启用凭证绑定待发布/禁用通道，${modelMismatchCount} 条凭证与通道模型范围无交集。`}
+        description={`只有“端点进入路由 + 凭证启用且未冷却 + 模型范围相交”才可承载请求。当前范围 ${enabledOnInactiveChannelCount} 条启用凭证绑定待发布/禁用端点，${modelMismatchCount} 条凭证与端点模型范围无交集。`}
         closeIcon={null}
         style={{ marginBottom: 16 }}
       />
@@ -352,33 +378,33 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
         onCancel={closeDrawer}
         width={480}
       >
-        {!editing && activeConnections.length > 0 && <Banner
+        {!editing && draftChannel?.status === 'active' && <Banner
           type="warning"
-          description={`${activeConnections.map(channel => channel.name).join('、')} 正在生效，不能直接新增或轮换凭证。请先到模型连接执行紧急禁用。`}
+          description={`${draftChannel.name} 正在承载路由，不能直接新增或轮换凭证。请先回到模型与端点执行紧急暂停。`}
           closeIcon={null}
           style={{ marginBottom: 16 }}
         />}
-        {editing?.channel_status === 'active' && <div className="ur-playground-error" style={{ marginBottom: 16 }}><strong>当前通道正在生效</strong><span>为防止绕过发布门禁，此处只允许停用现有凭证。新增或轮换凭证请先到“模型连接”执行紧急禁用。</span></div>}
-		{submitError && <Banner type="danger" description={submitError} closeIcon={null} style={{ marginBottom: 16 }} />}
+        {editing?.channel_status === 'active' && <div className="ur-playground-error" style={{ marginBottom: 16 }}><strong>当前端点正在承载路由</strong><span>为防止绕过发布门禁，此处只允许停用现有凭证。新增或轮换凭证请先到“模型与端点”执行紧急暂停。</span></div>}
+        {submitError && <Banner type="danger" description={submitError} closeIcon={null} style={{ marginBottom: 16 }} />}
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
-          <Form.Select field="channel_id" label="所属通道" rules={[{ required: true, message: '必填' }]}
-            optionList={channels} disabled={editing?.channel_status === 'active'} />
-			<PasswordField
-				field="api_key"
-				label={editing ? '新的供应商 API Key（可选）' : '供应商 API Key'}
-				rules={editing ? [] : [{ required: true, message: '必填' }]}
-				placeholder={editing ? '留空保留当前 Key' : 'sk-...'}
-				extraText={editing ? '输入完整新 Key 后点击“保存修改”。保存成功后仍会置空，因为明文永不回显。' : undefined}
-				autoComplete="new-password"
-				visibilityResetKey={editing?.id || 'new'}
-				disabled={editing?.channel_status === 'active'}
-			/>
+          <Form.Select field="channel_id" label="供应商端点" rules={[{ required: true, message: '必填' }]}
+            optionList={channels} disabled={editing?.channel_status === 'active'} onChange={(value) => setDraftChannelID(Number(value || 0) || undefined)} />
+          <PasswordField
+            field="api_key"
+            label={editing ? '新的供应商 API Key（可选）' : '供应商 API Key'}
+            rules={editing ? [] : [{ required: true, message: '必填' }]}
+            placeholder={editing ? '留空保留当前 Key' : 'sk-...'}
+            extraText={editing ? '输入完整新 Key 后点击“保存修改”。保存成功后仍会置空，因为明文永不回显。' : undefined}
+            autoComplete="new-password"
+            visibilityResetKey={editing?.id || 'new'}
+            disabled={editing?.channel_status === 'active'}
+          />
           <Form.Input
             field="allowed_models"
             label="允许模型（留空=全部）"
             placeholder="deepseek-chat,deepseek-reasoner"
             extraText="必须使用精确模型标识；可用中英文逗号、分号或换行分隔，保存时会去空格、去重并统一为英文逗号。"
-				disabled={editing?.channel_status === 'active'}
+            disabled={editing?.channel_status === 'active'}
           />
           {editing && <Form.Select
             field="status"
@@ -387,9 +413,9 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
             rules={[{ required: true, message: '必填' }]}
           />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
-            {!editing && activeConnections.length > 0 && <Button onClick={() => navigate(`/channels?channel_id=${activeConnections[0].id}`)}>前往紧急禁用</Button>}
+            {!editing && draftChannel?.status === 'active' && draftModel && <Button onClick={() => navigate(`/channels?tab=models&model=${encodeURIComponent(draftModel)}`)}>返回端点并暂停</Button>}
             <Button onClick={closeDrawer}>取消</Button>
-			<Button type="primary" loading={submitting} disabled={submitting} onClick={() => formApi?.submitForm()}>{editing ? '保存修改' : '创建'}</Button>
+            <Button type="primary" loading={submitting} disabled={submitting} onClick={() => formApi?.submitForm()}>{editing ? '保存修改' : '创建'}</Button>
           </div>
         </Form>
       </SideSheet>

@@ -23,15 +23,58 @@ func (r *Router) BuildRuntimeChangeSnapshots(
 	if err != nil {
 		return governancesim.RouteSnapshot{}, governancesim.RouteSnapshot{}, err
 	}
-	baselineLoad, err := applyRuntimeAssignment(load, routingpolicy.RuntimeAssignment{Overrides: baselineOverrides})
+	baselineForSnapshot, candidateForSnapshot := governedSnapshotOverrides(load, baselineOverrides, candidateOverrides)
+	baselineLoad, err := applyRuntimeAssignment(load, routingpolicy.RuntimeAssignment{Overrides: baselineForSnapshot})
 	if err != nil {
 		return governancesim.RouteSnapshot{}, governancesim.RouteSnapshot{}, fmt.Errorf("build baseline snapshot: %w", err)
 	}
-	candidateLoad, err := applyRuntimeAssignment(load, routingpolicy.RuntimeAssignment{Overrides: candidateOverrides})
+	candidateLoad, err := applyRuntimeAssignment(load, routingpolicy.RuntimeAssignment{Overrides: candidateForSnapshot})
 	if err != nil {
 		return governancesim.RouteSnapshot{}, governancesim.RouteSnapshot{}, fmt.Errorf("build candidate snapshot: %w", err)
 	}
 	return governanceSnapshot(baselineLoad.Snapshot), governanceSnapshot(candidateLoad.Snapshot), nil
+}
+
+// governedSnapshotOverrides keeps ordinary release simulation strict while
+// allowing one explicit recovery shape: a candidate may deny a retained
+// stable channel whose old model membership or routing epoch has drifted.
+// That channel is already unable to carry traffic, so the current database
+// snapshot is the truthful baseline. A deny for a channel absent from the
+// model-specific snapshot is an idempotent no-op. Allow overrides and every
+// non-recovery pin remain strict.
+func governedSnapshotOverrides(
+	load snapshotLoad,
+	baselineOverrides, candidateOverrides []routingpolicy.ChannelOverride,
+) ([]routingpolicy.ChannelOverride, []routingpolicy.ChannelOverride) {
+	currentEpochs := make(map[int64]int64, len(load.Snapshot.Channels))
+	for _, channel := range load.Snapshot.Channels {
+		currentEpochs[channel.Channel.ID] = channel.Channel.RoutingEpoch
+	}
+	deniedByCandidate := make(map[int64]struct{})
+	for _, override := range candidateOverrides {
+		if override.Admission == routingpolicy.AdmissionDeny {
+			deniedByCandidate[override.ChannelID] = struct{}{}
+		}
+	}
+
+	baseline := make([]routingpolicy.ChannelOverride, 0, len(baselineOverrides))
+	for _, override := range baselineOverrides {
+		_, explicitlyDenied := deniedByCandidate[override.ChannelID]
+		currentEpoch, present := currentEpochs[override.ChannelID]
+		if explicitlyDenied && (!present || currentEpoch != override.ExpectedRoutingEpoch) {
+			continue
+		}
+		baseline = append(baseline, override)
+	}
+	candidate := make([]routingpolicy.ChannelOverride, 0, len(candidateOverrides))
+	for _, override := range candidateOverrides {
+		_, present := currentEpochs[override.ChannelID]
+		if override.Admission == routingpolicy.AdmissionDeny && !present {
+			continue
+		}
+		candidate = append(candidate, override)
+	}
+	return baseline, candidate
 }
 
 func governanceSnapshot(snapshot *routeSnapshot) governancesim.RouteSnapshot {

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -10,12 +11,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 )
 
-const modelEndpointProjectionVersion = "unirouter.model-endpoints.v1"
+const modelEndpointProjectionVersion = "unirouter.model-endpoints.v2"
 
 type modelEndpointProbeView struct {
 	Success      bool      `json:"success"`
@@ -59,7 +62,7 @@ type modelEndpointModelView struct {
 	CatalogApproved      bool                      `json:"catalog_approved"`
 	State                string                    `json:"state"`
 	ReasonCode           string                    `json:"reason_code"`
-	Callable             bool                      `json:"callable"`
+	RouteAvailable       bool                      `json:"route_available"`
 	StableReleaseRef     string                    `json:"stable_release_ref,omitempty"`
 	StableReleaseVersion int64                     `json:"stable_release_version,omitempty"`
 	CanaryReleaseRef     string                    `json:"canary_release_ref,omitempty"`
@@ -223,8 +226,7 @@ SELECT model_name,display_name,lifecycle,approved_catalog
 
 	slotRows, slotErr := h.db.Query(r.Context(), `
 SELECT slot.model_name,COALESCE(stable.release_ref,''),COALESCE(stable.version,0),
-       COALESCE(canary.release_ref,''),COALESCE(canary.version,0),slot.canary_basis_points,
-       (SELECT COUNT(*) FROM runtime_change_releases history WHERE history.model_name=slot.model_name)
+       COALESCE(canary.release_ref,''),COALESCE(canary.version,0),slot.canary_basis_points
   FROM runtime_change_slots slot
   LEFT JOIN runtime_change_releases stable ON stable.id=slot.stable_release_id
   LEFT JOIN runtime_change_releases canary ON canary.id=slot.canary_release_id
@@ -237,7 +239,7 @@ SELECT slot.model_name,COALESCE(stable.release_ref,''),COALESCE(stable.version,0
 		var name string
 		model := &modelEndpointModelView{}
 		if err := slotRows.Scan(&name, &model.StableReleaseRef, &model.StableReleaseVersion,
-			&model.CanaryReleaseRef, &model.CanaryReleaseVersion, &model.CanaryBasisPoints, &model.ReleaseHistoryCount); err != nil {
+			&model.CanaryReleaseRef, &model.CanaryReleaseVersion, &model.CanaryBasisPoints); err != nil {
 			slotRows.Close()
 			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime assignment projection unreadable"})
 			return
@@ -254,21 +256,48 @@ SELECT slot.model_name,COALESCE(stable.release_ref,''),COALESCE(stable.version,0
 	}
 	slotRows.Close()
 
+	historyRows, historyErr := h.db.Query(r.Context(), `
+SELECT model_name,COUNT(*)
+  FROM runtime_change_releases
+ GROUP BY model_name`)
+	if historyErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime release history projection unavailable"})
+		return
+	}
+	for historyRows.Next() {
+		var name string
+		var count int
+		if err := historyRows.Scan(&name, &count); err != nil {
+			historyRows.Close()
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime release history projection unreadable"})
+			return
+		}
+		if existing := models[strings.TrimSpace(name)]; existing != nil {
+			existing.ReleaseHistoryCount = count
+		}
+	}
+	if err := historyRows.Err(); err != nil {
+		historyRows.Close()
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime release history projection unavailable"})
+		return
+	}
+	historyRows.Close()
+
 	items := make([]modelEndpointModelView, 0, len(models))
 	for _, model := range models {
 		h.applyGatewayProjection(r, model)
 		items = append(items, *model)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].PublicModel < items[j].PublicModel })
-	summary := map[string]int{"total": len(items), "callable": 0, "attention": 0, "canary": 0}
+	summary := map[string]int{"total": len(items), "route_available": 0, "attention": 0, "canary": 0}
 	for _, model := range items {
-		if model.Callable {
-			summary["callable"]++
+		if model.RouteAvailable {
+			summary["route_available"]++
 		}
 		if model.State == "canary" {
 			summary["canary"]++
 		}
-		if model.State == "degraded" || strings.HasPrefix(model.State, "needs_") || model.State == "test_failed" {
+		if model.State != "active" && model.State != "canary" && model.State != "legacy_active" {
 			summary["attention"]++
 		}
 	}
@@ -286,6 +315,7 @@ func modelEndpointModel(models map[string]*modelEndpointModelView, name string) 
 }
 
 func (h *Handler) applyGatewayProjection(r *http.Request, model *modelEndpointModelView) {
+	model.RouteAvailable = false
 	candidates := map[int64]routingpolicy.PreviewCandidate{}
 	exclusions := map[int64]routingpolicy.PreviewCandidate{}
 	previewUnavailable := false
@@ -350,15 +380,15 @@ func (h *Handler) applyGatewayProjection(r *http.Request, model *modelEndpointMo
 	case previewUnavailable && len(model.Targets) > 0:
 		model.State, model.ReasonCode = "degraded", "routing_projection_unavailable"
 	case model.CanaryReleaseRef != "" && stableCandidateCount > 0:
-		model.State, model.ReasonCode, model.Callable = "canary", "canary_in_progress", true
+		model.State, model.ReasonCode = "canary", "canary_in_progress"
 	case model.CanaryReleaseRef != "":
-		model.State, model.ReasonCode, model.Callable = "degraded", "canary_stable_route_unavailable", len(candidates) > 0
+		model.State, model.ReasonCode = "degraded", "canary_stable_route_unavailable"
 	case model.StableReleaseRef != "" && stableCandidateCount > 0:
-		model.State, model.ReasonCode, model.Callable = "active", "stable_route_available", true
+		model.State, model.ReasonCode = "active", "stable_route_available"
 	case model.StableReleaseRef != "":
-		model.State, model.ReasonCode, model.Callable = "degraded", "stable_route_unavailable", len(candidates) > 0
+		model.State, model.ReasonCode = "degraded", "stable_route_unavailable"
 	case len(candidates) > 0:
-		model.State, model.ReasonCode, model.Callable = "legacy_active", "legacy_route_available", true
+		model.State, model.ReasonCode = "legacy_active", "legacy_route_available"
 	case hasReady:
 		model.State, model.ReasonCode = "ready", "tested_target_ready_to_enable"
 	case hasFailedProbe:
@@ -369,6 +399,11 @@ func (h *Handler) applyGatewayProjection(r *http.Request, model *modelEndpointMo
 		model.State, model.ReasonCode = "needs_credential", "provider_credential_required"
 	default:
 		model.State, model.ReasonCode = "unconfigured", "no_provider_target"
+	}
+	model.RouteAvailable = len(candidates) > 0
+	if model.Lifecycle == modelgov.LifecycleRetired {
+		model.RouteAvailable = false
+		model.State, model.ReasonCode = "governance_blocked", "model_retired"
 	}
 }
 
@@ -396,6 +431,15 @@ func (h *Handler) ActivateModelEndpoint(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "A current successful provider test is required", "code": "current_probe_required", "message": err.Error()})
 		return
 	}
+	orgID, err := resolveActorOrganization(r.Context(), 0)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
+	if _, identityErr := modelgov.ActivatedIdentity(r.Context(), h.db, orgID, request.Model); identityErr != nil {
+		writePublicModelIdentityError(w, request.Model, identityErr)
+		return
+	}
 	slot, err := h.runtimeChangeManager.Slot(r.Context(), request.Model)
 	if err != nil {
 		writeRuntimeChangeError(w, err)
@@ -416,20 +460,31 @@ func (h *Handler) ActivateModelEndpoint(w http.ResponseWriter, r *http.Request) 
 	}
 	release, err = h.runtimeChangeManager.Validate(r.Context(), release.ReleaseRef, release.Version, actor)
 	if err != nil {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "自动首次启用未通过候选验证"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
 		writeRuntimeChangeError(w, err)
 		return
 	}
 	if err := h.requireCurrentSuccessfulProbe(r.Context(), request); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Provider test became stale during activation", "code": "probe_became_stale", "release_ref": release.ReleaseRef})
-		return
-	}
-	orgID, err := resolveActorOrganization(r.Context(), 0)
-	if err != nil {
-		writeOrganizationScopeError(w, err)
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "自动首次启用期间真实检测证据失效"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Provider test became stale during activation", "code": "probe_became_stale", "release_ref": release.ReleaseRef, "release_stage": "rejected"})
 		return
 	}
 	release, err = h.runtimeChangeManager.ActivateInitial(r.Context(), release.ReleaseRef, release.Version, actor, orgID)
 	if err != nil {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "自动首次启用未能写入稳定路由"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
+		if errors.Is(err, modelgov.ErrModelIdentityConflict) || errors.Is(err, modelgov.ErrModelRetired) {
+			writePublicModelIdentityError(w, request.Model, err)
+			return
+		}
 		writeRuntimeChangeError(w, err)
 		return
 	}
@@ -460,6 +515,15 @@ func (h *Handler) StartModelEndpointCanary(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "A current successful provider test is required", "code": "current_probe_required", "message": err.Error()})
 		return
 	}
+	orgID, scopeErr := resolveActorOrganization(r.Context(), 0)
+	if scopeErr != nil {
+		writeOrganizationScopeError(w, scopeErr)
+		return
+	}
+	if _, identityErr := modelgov.ActivatedIdentity(r.Context(), h.db, orgID, request.Model); identityErr != nil {
+		writePublicModelIdentityError(w, request.Model, identityErr)
+		return
+	}
 	slot, err := h.runtimeChangeManager.Slot(r.Context(), request.Model)
 	if err != nil {
 		writeRuntimeChangeError(w, err)
@@ -480,20 +544,36 @@ func (h *Handler) StartModelEndpointCanary(w http.ResponseWriter, r *http.Reques
 	}
 	release, err = h.runtimeChangeManager.Validate(r.Context(), release.ReleaseRef, release.Version, actor)
 	if err != nil {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "自动灰度未通过候选验证"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
 		writeRuntimeChangeError(w, err)
 		return
 	}
 	release, err = h.runtimeChangeManager.AdvanceShadow(r.Context(), release.ReleaseRef, release.Version, actor)
 	if err != nil {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "自动灰度未能进入零流量准备阶段"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
 		writeRuntimeChangeError(w, err)
 		return
 	}
 	if err := h.requireCurrentSuccessfulProbe(r.Context(), request); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Provider test became stale during canary preparation", "code": "probe_became_stale", "release_ref": release.ReleaseRef})
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "自动灰度准备期间真实检测证据失效"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Provider test became stale during canary preparation", "code": "probe_became_stale", "release_ref": release.ReleaseRef, "release_stage": "rejected"})
 		return
 	}
 	release, err = h.runtimeChangeManager.StartCanary(r.Context(), release.ReleaseRef, release.Version, request.CanaryBasisPoints, actor)
 	if err != nil {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "自动灰度未能写入灰度路由"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
 		writeRuntimeChangeError(w, err)
 		return
 	}
@@ -502,6 +582,191 @@ func (h *Handler) StartModelEndpointCanary(w http.ResponseWriter, r *http.Reques
 		"model": request.Model, "channel_id": request.ChannelID, "release_ref": release.ReleaseRef, "routing_epoch": request.ExpectedRoutingEpoch, "canary_basis_points": request.CanaryBasisPoints,
 	}, requestAuditMeta(r, middleware.GetCustomerOrgIDFromContext(r.Context()), 0))
 	writeJSON(w, http.StatusOK, release)
+}
+
+// RecoverModelEndpoint replaces a retained stable assignment only when the
+// gateway currently has no route candidate for the model. A working route
+// must use canary instead. The old release and its validated replacement are
+// switched atomically so a failed recovery cannot erase the retained slot.
+func (h *Handler) RecoverModelEndpoint(w http.ResponseWriter, r *http.Request) {
+	request, ok := decodeModelEndpointActivation(w, r)
+	if !ok {
+		return
+	}
+	if h.runtimeChangeManager == nil || h.routingController == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model endpoint recovery unavailable"})
+		return
+	}
+	if err := h.requireCurrentSuccessfulProbe(r.Context(), request); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "A current successful provider test is required", "code": "current_probe_required", "message": err.Error()})
+		return
+	}
+	orgID, err := resolveActorOrganization(r.Context(), 0)
+	if err != nil {
+		writeOrganizationScopeError(w, err)
+		return
+	}
+	if _, identityErr := modelgov.ActivatedIdentity(r.Context(), h.db, orgID, request.Model); identityErr != nil {
+		writePublicModelIdentityError(w, request.Model, identityErr)
+		return
+	}
+	preview, err := h.routingController.Preview(r.Context(), request.Model)
+	if err != nil && !errors.Is(err, gateway.ErrRuntimeAssignmentStale) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Current route projection unavailable"})
+		return
+	}
+	if err == nil && len(preview.Candidates) > 0 {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error": "Model still has an available route", "code": "canary_required",
+			"message": "当前模型仍有可用路由；新增或替换端点必须使用灰度，不能走失效路由恢复。",
+		})
+		return
+	}
+	slot, err := h.runtimeChangeManager.Slot(r.Context(), request.Model)
+	if err != nil {
+		writeRuntimeChangeError(w, err)
+		return
+	}
+	if slot.StableReleaseRef == "" || slot.CanaryReleaseRef != "" {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error": "Retained stable route is not recoverable", "code": "recovery_slot_conflict",
+			"message": "只有“保留稳定发布但当前无路由候选”的模型可以直接恢复；当前槽位已经变化，请刷新。",
+		})
+		return
+	}
+	retained, err := h.runtimeChangeManager.Get(r.Context(), slot.StableReleaseRef)
+	if err != nil || retained.Stage != "active" {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Retained stable release changed", "code": "recovery_slot_conflict"})
+		return
+	}
+	actor := middleware.GetUserIDFromContext(r.Context())
+	replacementOverrides := make([]routingpolicy.ChannelOverride, 0, len(retained.Candidate.Overrides)+1)
+	targetIncluded := false
+	for _, existing := range retained.Candidate.Overrides {
+		if existing.ChannelID == request.ChannelID {
+			replacementOverrides = append(replacementOverrides, routingpolicy.ChannelOverride{
+				ChannelID: request.ChannelID, ExpectedRoutingEpoch: request.ExpectedRoutingEpoch,
+				Admission: routingpolicy.AdmissionAllow,
+			})
+			targetIncluded = true
+			continue
+		}
+		var currentEpoch int64
+		if epochErr := h.db.QueryRow(r.Context(), `SELECT routing_epoch FROM channels WHERE id=$1`, existing.ChannelID).Scan(&currentEpoch); epochErr != nil {
+			if errors.Is(epochErr, pgx.ErrNoRows) {
+				writeJSON(w, http.StatusConflict, map[string]interface{}{
+					"error": "Retained endpoint no longer exists", "code": "recovery_channel_missing",
+					"message": "旧稳定发布引用的端点已经不存在，无法自动构造可审计替换；请在高级运营中处理该发布。",
+				})
+				return
+			}
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Retained endpoint version unavailable"})
+			return
+		}
+		existing.ExpectedRoutingEpoch = currentEpoch
+		existing.Admission = routingpolicy.AdmissionDeny
+		existing.Priority = nil
+		existing.Weight = nil
+		replacementOverrides = append(replacementOverrides, existing)
+	}
+	if !targetIncluded {
+		replacementOverrides = append(replacementOverrides, routingpolicy.ChannelOverride{
+			ChannelID: request.ChannelID, ExpectedRoutingEpoch: request.ExpectedRoutingEpoch,
+			Admission: routingpolicy.AdmissionAllow,
+		})
+	}
+	release, err := h.runtimeChangeManager.CreateDraft(r.Context(), runtimechange.DraftRequest{
+		ModelName: request.Model, Reason: "替换已失效但保留审计记录的稳定供应商端点",
+		Overrides: replacementOverrides,
+	}, actor)
+	if err != nil {
+		writeRuntimeChangeError(w, err)
+		return
+	}
+	release, err = h.runtimeChangeManager.Validate(r.Context(), release.ReleaseRef, release.Version, actor)
+	if err != nil {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "失效路由恢复未通过候选验证"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
+		writeRuntimeChangeError(w, err)
+		return
+	}
+	if err := h.requireCurrentSuccessfulProbe(r.Context(), request); err != nil {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "失效路由恢复期间真实检测证据失效"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
+		writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Provider test became stale during recovery", "code": "probe_became_stale", "release_ref": release.ReleaseRef, "release_stage": "rejected"})
+		return
+	}
+	preview, err = h.routingController.Preview(r.Context(), request.Model)
+	if err != nil && !errors.Is(err, gateway.ErrRuntimeAssignmentStale) {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "失效路由恢复前无法再次确认当前路由"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Current route projection unavailable"})
+		return
+	}
+	if err == nil && len(preview.Candidates) > 0 {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "恢复期间旧路由重新可用，必须改走灰度"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error": "Model route recovered concurrently", "code": "canary_required",
+			"message": "当前模型已经重新出现可用路由；新增或替换端点必须使用灰度，请刷新后重试。",
+		})
+		return
+	}
+	release, err = h.runtimeChangeManager.ReplaceUnavailableStable(
+		r.Context(), release.ReleaseRef, release.Version,
+		retained.ReleaseRef, retained.Version, actor, orgID,
+	)
+	if err != nil {
+		if closeErr := closeAutomaticRelease(r.Context(), h.runtimeChangeManager, release.ReleaseRef, actor, "失效路由恢复未能写入新稳定路由"); closeErr != nil {
+			writeAutomaticReleaseCleanupError(w, release.ReleaseRef, closeErr)
+			return
+		}
+		if errors.Is(err, modelgov.ErrModelIdentityConflict) || errors.Is(err, modelgov.ErrModelRetired) {
+			writePublicModelIdentityError(w, request.Model, err)
+			return
+		}
+		writeRuntimeChangeError(w, err)
+		return
+	}
+	h.invalidateRoutingSnapshots()
+	h.recordAuditEntry(r.Context(), "model_endpoint.recover_unavailable", "model_endpoint", targetReference(request.ChannelID, request.Model), map[string]interface{}{
+		"model": request.Model, "channel_id": request.ChannelID, "replaced_release_ref": retained.ReleaseRef,
+		"release_ref": release.ReleaseRef, "routing_epoch": request.ExpectedRoutingEpoch,
+	}, requestAuditMeta(r, orgID, 0))
+	writeJSON(w, http.StatusOK, release)
+}
+
+func closeAutomaticRelease(ctx context.Context, manager *runtimechange.Manager, releaseRef string, actorUserID int64, reason string) error {
+	release, err := manager.Get(ctx, releaseRef)
+	if err != nil {
+		return err
+	}
+	if release.Stage == "rejected" {
+		return nil
+	}
+	if release.Stage != "draft" && release.Stage != "validated" && release.Stage != "shadow" {
+		return fmt.Errorf("release is already in non-closable stage %s", release.Stage)
+	}
+	_, err = manager.Reject(ctx, release.ReleaseRef, release.Version, actorUserID, reason)
+	return err
+}
+
+func writeAutomaticReleaseCleanupError(w http.ResponseWriter, releaseRef string, err error) {
+	writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+		"error":       "Automatic release cleanup failed",
+		"code":        "automatic_release_cleanup_failed",
+		"message":     "自动发布未完成，且候选记录未能安全终止。请在高级运营中处理该记录后再重试。",
+		"release_ref": releaseRef,
+		"detail":      err.Error(),
+	})
 }
 
 func decodeModelEndpointActivation(w http.ResponseWriter, r *http.Request) (modelEndpointActivationRequest, bool) {

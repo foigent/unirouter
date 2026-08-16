@@ -131,6 +131,29 @@ func TestReadinessProviderCredentialFixTargetsTheExactConnection(t *testing.T) {
 	}
 }
 
+func TestReadinessCountsEligibleCredentialOnAStagedExcludedEndpoint(t *testing.T) {
+	database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
+		return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
+	}}
+	handler := NewHandler(database, "jwt", []byte("0123456789abcdef01234567"), nil)
+	handler.SetRoutingController(&routingControllerStub{preview: routingpolicy.Preview{
+		Exclusions: []routingpolicy.PreviewCandidate{{
+			ChannelID: 102, ChannelName: "DeepSeek", EligibleKeyCount: 1, Reason: "channel_inactive",
+		}},
+	}})
+	response := &modelreadiness.Response{Scope: modelreadiness.Scope{ResolvedModel: "deepseek-v4-pro"}}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
+	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+	request = request.WithContext(ctx)
+
+	handler.readinessPlatformAxes(request, 7, response)
+
+	axis := response.PlatformModel.ProviderCredential
+	if axis.State != modelreadiness.StateReady || axis.ReasonCode != "provider_credential_available" {
+		t.Fatalf("staged endpoint credential was mistaken for missing: %#v", axis)
+	}
+}
+
 func TestReadinessProjectAndBudgetAxesPreserveIndependentSemantics(t *testing.T) {
 	tests := []struct {
 		name   string

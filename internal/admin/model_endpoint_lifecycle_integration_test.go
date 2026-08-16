@@ -81,7 +81,7 @@ VALUES ($1,'company-fast','deepseek/deepseek-v4-flash',$2,$3,$4,TRUE,200,18,$5)`
 	require.Equal(t, "active", activated.Stage)
 	require.NotEmpty(t, activated.ReleaseRef)
 
-	assertProjection := func(expectedState string, expectedCallable bool, expectedTargetState string) modelEndpointProjection {
+	assertProjection := func(expectedState string, expectedRouteAvailable bool, expectedTargetState string) modelEndpointProjection {
 		t.Helper()
 		response := httptest.NewRecorder()
 		handler.ListModelEndpoints(response, authorized(http.MethodGet, "/api/v1/model-endpoints", ""))
@@ -90,9 +90,10 @@ VALUES ($1,'company-fast','deepseek/deepseek-v4-flash',$2,$3,$4,TRUE,200,18,$5)`
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &projection))
 		require.Len(t, projection.Models, 1)
 		model := projection.Models[0]
+		require.Equal(t, modelEndpointProjectionVersion, projection.ContractVersion)
 		require.Equal(t, "company-fast", model.PublicModel)
 		require.Equal(t, expectedState, model.State)
-		require.Equal(t, expectedCallable, model.Callable)
+		require.Equal(t, expectedRouteAvailable, model.RouteAvailable)
 		require.Equal(t, activated.ReleaseRef, model.StableReleaseRef)
 		require.Equal(t, 1, model.ReleaseHistoryCount)
 		require.Len(t, model.Targets, 1)
@@ -200,4 +201,123 @@ VALUES ($1,'company-fast','deepseek/deepseek-v4-flash:free',$2,$3,$4,TRUE,200,29
 	}
 	require.Equal(t, "active", targetStates[channelID])
 	require.Equal(t, "canary", targetStates[alternateChannelID])
+
+	// End the canary so the original stable release is retained, then emulate
+	// the real failure mode: that endpoint is administratively disabled and its
+	// model declaration changes after the release was activated. Recovery must
+	// pin the old endpoint's current epoch as an explicit deny and atomically
+	// replace the unavailable stable route with the already-tested alternate.
+	canary, err = manager.Rollback(ctx, canary.ReleaseRef, canary.Version, userID)
+	require.NoError(t, err)
+	require.Equal(t, "rolled_back", canary.Stage)
+	var driftedRoutingEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `
+UPDATE channels
+   SET status='disabled',models='retired-old-model',routing_epoch=routing_epoch+1,updated_at=NOW()
+ WHERE id=$1
+ RETURNING routing_epoch`, channelID).Scan(&driftedRoutingEpoch))
+	require.Greater(t, driftedRoutingEpoch, routingEpoch)
+	router.Invalidate()
+
+	_, err = router.Preview(ctx, "company-fast")
+	require.ErrorIs(t, err, gateway.ErrRuntimeAssignmentStale, "the retained stable route must be unavailable before recovery")
+
+	recoveryRequest := authorized(http.MethodPost, "/api/v1/model-endpoints/recover",
+		fmt.Sprintf(`{"channel_id":%d,"model":"company-fast","expected_routing_epoch":%d}`,
+			alternateChannelID, alternateRoutingEpoch))
+	recoveryResponse := httptest.NewRecorder()
+	handler.RecoverModelEndpoint(recoveryResponse, recoveryRequest)
+	require.Equal(t, http.StatusOK, recoveryResponse.Code, recoveryResponse.Body.String())
+	var recovered runtimechange.Release
+	require.NoError(t, json.Unmarshal(recoveryResponse.Body.Bytes(), &recovered))
+	require.Equal(t, "active", recovered.Stage)
+	require.Equal(t, activated.ID, *recovered.ParentStableReleaseID)
+
+	retainedAfterRecovery, err := manager.Get(ctx, activated.ReleaseRef)
+	require.NoError(t, err)
+	require.Equal(t, "rolled_back", retainedAfterRecovery.Stage)
+	slot, err := manager.Slot(ctx, "company-fast")
+	require.NoError(t, err)
+	require.Equal(t, recovered.ReleaseRef, slot.StableReleaseRef)
+	require.Empty(t, slot.CanaryReleaseRef)
+
+	recoveryOverrides := map[int64]routingpolicy.ChannelOverride{}
+	for _, override := range recovered.Candidate.Overrides {
+		recoveryOverrides[override.ChannelID] = override
+	}
+	require.Equal(t, routingpolicy.AdmissionDeny, recoveryOverrides[channelID].Admission)
+	require.Equal(t, driftedRoutingEpoch, recoveryOverrides[channelID].ExpectedRoutingEpoch)
+	require.Equal(t, routingpolicy.AdmissionAllow, recoveryOverrides[alternateChannelID].Admission)
+	require.Equal(t, alternateRoutingEpoch, recoveryOverrides[alternateChannelID].ExpectedRoutingEpoch)
+
+	router.Invalidate()
+	recoveredPreview, err := router.Preview(ctx, "company-fast")
+	require.NoError(t, err)
+	require.Len(t, recoveredPreview.Candidates, 1)
+	require.Equal(t, alternateChannelID, recoveredPreview.Candidates[0].ChannelID)
+}
+
+func TestModelEndpointActivationRejectsEquivalentCatalogIdentityBeforeCreatingARelease(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	orgID := testutil.NewTestOrg(t, pool)
+	var userID, channelID, credentialID, routingEpoch, credentialEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+VALUES ($1,'identity-conflict-owner','fixture','platform_admin','platform_admin','active')
+RETURNING id`, orgID).Scan(&userID))
+	_, err := pool.Exec(ctx, `
+INSERT INTO model_registry (
+  org_id,model_name,display_name,provider_family,lifecycle,approved_catalog)
+VALUES ($1,'DeepSeek-V4-Flash','DeepSeek V4 Flash','deepseek','ga',TRUE)`, orgID)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO channels (
+  name,provider,base_url,models,model_mapping,adapter_type,adapter_config,
+  priority,routing_weight,degradation_threshold,status,circuit_state)
+VALUES ('DeepSeek duplicate','deepseek','https://provider.invalid','DeepSeek V4 Flash',
+  '{"DeepSeek V4 Flash":"deepseek-v4-flash"}','openai_compatible','{}',
+  100,100,10,'staged','healthy')
+RETURNING id,routing_epoch`).Scan(&channelID, &routingEpoch))
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO channel_keys (channel_id,key_enc,allowed_models,status)
+VALUES ($1,'encrypted-fixture','DeepSeek V4 Flash','active')
+RETURNING id,state_epoch`, channelID).Scan(&credentialID, &credentialEpoch))
+	_, err = pool.Exec(ctx, `
+INSERT INTO channel_model_probes (
+  channel_id,public_model,upstream_model,routing_epoch,credential_id,
+  credential_state_epoch,success,status_code,latency_ms,tested_by)
+VALUES ($1,'DeepSeek V4 Flash','deepseek-v4-flash',$2,$3,$4,TRUE,200,18,$5)`,
+		channelID, routingEpoch, credentialID, credentialEpoch, userID)
+	require.NoError(t, err)
+
+	policy := routingpolicy.Default()
+	router, err := gateway.NewRouterWithPolicy(pool, policy)
+	require.NoError(t, err)
+	manager, err := runtimechange.NewManager(pool, router, policy)
+	require.NoError(t, err)
+	handler := NewHandler(pool, "model-endpoint-jwt", []byte("0123456789abcdef01234567"), nil)
+	handler.SetRoutingController(router)
+	handler.SetRuntimeChangeManager(manager)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/model-endpoints/activate", strings.NewReader(fmt.Sprintf(
+		`{"channel_id":%d,"model":"DeepSeek V4 Flash","expected_routing_epoch":%d}`, channelID, routingEpoch,
+	)))
+	requestContext := context.WithValue(request.Context(), middleware.CtxUserID, userID)
+	requestContext = context.WithValue(requestContext, middleware.CtxOrgID, orgID)
+	requestContext = context.WithValue(requestContext, middleware.CtxUserRole, auth.RolePlatformAdmin)
+	requestContext = context.WithValue(requestContext, middleware.CtxCustomerContext, customercontext.Snapshot{
+		State: customercontext.StateReady, OrganizationID: orgID, OrganizationName: "Customer",
+	})
+	requestContext = context.WithValue(requestContext, middleware.CtxCustomerOrgID, orgID)
+	response := httptest.NewRecorder()
+	handler.ActivateModelEndpoint(response, request.WithContext(requestContext))
+
+	require.Equal(t, http.StatusConflict, response.Code, response.Body.String())
+	require.Contains(t, response.Body.String(), `"code":"model_identity_conflict"`)
+	require.Contains(t, response.Body.String(), `"canonical_model":"DeepSeek-V4-Flash"`)
+	var releaseCount, slotCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM runtime_change_releases`).Scan(&releaseCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM runtime_change_slots`).Scan(&slotCount))
+	require.Zero(t, releaseCount, "identity conflict must not leave a draft or validated orphan")
+	require.Zero(t, slotCount)
 }
