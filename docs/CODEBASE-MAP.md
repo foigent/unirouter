@@ -1,6 +1,8 @@
 # UniRouter Codebase Map
 
 > Purpose: help agents locate implementation quickly without rediscovering the repository from scratch.
+>
+> For entity ownership, state authority, cross-page consumers, and golden journeys, read `docs/architecture/SYSTEM-FACT-MAP.md` first.
 
 ## Runtime Entry
 
@@ -11,7 +13,7 @@
 | Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata, stream transport, weighted workload admission and application-authoritative payload limits |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
-| Migrations | `migrations/*.sql` | Base schema plus wallet/schema/PRD alignment migrations, including PRD4/PRD5 history through `000020`, PRD6 operation/billing/stream invariants in `000021`-`000023`, distributed limits/routing/cache-aware billing/outbox/provider-cost/usage-delivery integrity in `000024`-`000032`, and Guardrail Kernel policy plus output-withhold authority in `000033` |
+| Migrations | `migrations/*.sql` | Ordered PostgreSQL schema history. The current supported ceiling is `000066`; `internal/schemaauthority/version.go` is the executable compatibility authority. Read later migrations directly instead of inferring current schema from early PRD ranges. |
 
 ## Backend Packages
 
@@ -67,7 +69,7 @@ Defined in `cmd/uniroute/main.go`.
 | API keys | `GET/POST /api/v1/keys`, `GET/PUT /api/v1/keys/{id}`, `POST /api/v1/keys/{id}/disable` |
 | Shared limit policies | `GET/POST /api/v1/limit-policies`, `PUT /api/v1/limit-policies/{id}` |
 | Guardrail policies | `GET/POST /api/v1/guardrail-policies`, `PUT /api/v1/guardrail-policies/{id}` |
-| Channel keys | `GET/POST /api/v1/channel-keys`, `PUT/DELETE /api/v1/channel-keys/{id}` |
+| Channel keys | `GET/POST /api/v1/channel-keys`, `PUT/DELETE /api/v1/channel-keys/{id}`, `POST /api/v1/channel-keys/{id}/rotate` for live-probed atomic replacement |
 | Wallet | `GET /api/v1/wallet`, `POST /api/v1/wallet/topup`, `POST /api/v1/wallet/adjust`, `GET /api/v1/wallet/transactions`, `GET /api/v1/wallet/transactions/export` |
 | Logs/dashboard | `GET /api/v1/logs`, `GET /api/v1/logs/{id}`, `GET /api/v1/logs/{id}/trace`, `GET /api/v1/dashboard/stats` |
 | Product status/analytics/docs | `GET /api/v1/usage/analytics`, `GET /api/v1/internal-status`, `GET /api/v1/runtime/status` for runtime/capacity/external monitoring state, `GET /api/v1/error-docs` |

@@ -3186,8 +3186,9 @@ func TestListChannelKeys_Success(t *testing.T) {
 						*dest[7].(*int) = 0
 						*dest[8].(**time.Time) = nil
 						*dest[9].(**time.Time) = nil
-						*dest[10].(*time.Time) = now
+						*dest[10].(*int64) = 1
 						*dest[11].(*time.Time) = now
+						*dest[12].(*time.Time) = now
 						return nil
 					},
 				},

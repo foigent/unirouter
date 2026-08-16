@@ -56,7 +56,7 @@ export default function ModelGovernanceSheets(props: ModelGovernanceSheetsProps)
               resetKey={`${props.registrySheet?.mode || 'closed'}-${props.registrySheet?.record?.id || 'new'}`}
               style={{ width: '100%' }}
             />
-            <Form.InputNumber field="output_limit" label="输出上限" min={0} style={{ width: '100%' }} />
+            <Form.InputNumber field="output_limit" label="单次输出上限（Token，可选）" min={0} style={{ width: '100%' }} extraText="留空或 0 表示未知；用于目录说明，不会替代供应商返回的实际限制。" />
           </div>
           <Form.Input
             field="capability_tags"

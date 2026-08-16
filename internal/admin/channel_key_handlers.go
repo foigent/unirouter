@@ -37,7 +37,7 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.db.Query(r.Context(),
 		`SELECT ck.id, ck.channel_id, c.name as channel_name, c.status AS channel_status, ck.key_enc, ck.allowed_models, ck.status,
-		        ck.fail_count, ck.last_used_at, ck.cooldown_until, ck.created_at, ck.updated_at
+		        ck.fail_count, ck.last_used_at, ck.cooldown_until, ck.state_epoch, ck.created_at, ck.updated_at
 		 FROM channel_keys ck
 		 JOIN channels c ON c.id = ck.channel_id
 		 WHERE ($3::bigint=0 OR ck.channel_id=$3)
@@ -51,12 +51,12 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 
 	keys := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var id, channelID int64
+		var id, channelID, stateEpoch int64
 		var channelName, channelStatus, keyEnc, allowedModels, status string
 		var failCount int
 		var lastUsedAt, cooldownUntil *time.Time
 		var createdAt, updatedAt time.Time
-		if err := rows.Scan(&id, &channelID, &channelName, &channelStatus, &keyEnc, &allowedModels, &status, &failCount, &lastUsedAt, &cooldownUntil, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &channelID, &channelName, &channelStatus, &keyEnc, &allowedModels, &status, &failCount, &lastUsedAt, &cooldownUntil, &stateEpoch, &createdAt, &updatedAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
@@ -64,7 +64,8 @@ func (h *Handler) ListChannelKeys(w http.ResponseWriter, r *http.Request) {
 			"id": id, "channel_id": channelID, "channel_name": channelName, "channel_status": channelStatus,
 			"key_prefix": maskKey(keyEnc), "allowed_models": allowedModels, "status": status,
 			"fail_count": failCount, "last_used_at": lastUsedAt, "cooldown_until": cooldownUntil,
-			"created_at": createdAt, "updated_at": updatedAt,
+			"state_epoch": stateEpoch,
+			"created_at":  createdAt, "updated_at": updatedAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -356,8 +357,6 @@ DELETE FROM channel_keys ck USING channels c
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
-// maskKey returns a record-distinguishing suffix of the ciphertext. It is not a
-// prefix or any other portion of the plaintext supplier credential.
 func (h *Handler) GetModelNames(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(),
 		`SELECT DISTINCT model_name FROM model_prices ORDER BY model_name`)
@@ -376,6 +375,8 @@ func (h *Handler) GetModelNames(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": names})
 }
 
+// maskKey returns a record-distinguishing suffix of the ciphertext. It is not a
+// prefix or any other portion of the plaintext supplier credential.
 func maskKey(keyEnc string) string {
 	if len(keyEnc) <= 8 {
 		return "****"

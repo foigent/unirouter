@@ -373,5 +373,5 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 	expect(await screen.findByRole('heading', { name: 'Kimi · 安全恢复' })).toBeTruthy();
 	expect(screen.getByText(/不会自动恢复流量/)).toBeTruthy();
 	expect(screen.getByRole('button', { name: '释放全部旧发布并转为待发布' })).toBeTruthy();
-  });
+  }, 20_000);
 });

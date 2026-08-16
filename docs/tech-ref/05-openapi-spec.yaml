@@ -1177,6 +1177,9 @@ paths:
     put: *operation_update_by_id
     delete: *operation_delete_by_id
 
+  /api/v1/channel-keys/{id}/rotate:
+    post: *operation_update_by_id
+
   /api/v1/wallet:
     get:
       tags: [Admin]

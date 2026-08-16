@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildUTCValleyPriceBands, EnterpriseRateCardWorkspace } from '../EnterpriseFinanceWorkspaces';
+import { buildUTCOverridePriceBands, buildUTCValleyPriceBands, EnterpriseRateCardWorkspace } from '../EnterpriseFinanceWorkspaces';
 
 const apiMocks = vi.hoisted(() => ({
   getEnterpriseRateCards: vi.fn(),
@@ -69,7 +69,7 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     fireEvent.change(screen.getByLabelText('Rate Card 输入 Token每百万价格'), { target: { value: '1.25' } });
     fireEvent.change(screen.getByLabelText('Rate Card 输出 Token每百万价格'), { target: { value: '2.5' } });
     fireEvent.change(screen.getByLabelText('Rate Card 缓存读取 Token每百万价格'), { target: { value: '0.25' } });
-    fireEvent.change(screen.getByLabelText('Rate Card 缓存写入 Token每百万价格'), { target: { value: '1.25' } });
+    fireEvent.change(screen.getByLabelText('Rate Card 缓存创建 / 写入 Token每百万价格'), { target: { value: '1.25' } });
     fireEvent.change(screen.getByLabelText('Rate Card 生效日期'), { target: { value: '2026-08-13' } });
     fireEvent.click(screen.getByText('保存草稿'));
 
@@ -113,6 +113,34 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     expect(buildUTCValleyPriceBands({
       price_schedule: 'utc_valley', valley_start_utc: '22:00', valley_end_utc: '06:00',
     }, base)).toBeNull();
+  });
+
+  it('materializes multiple disjoint UTC overrides and fills every base-price gap', () => {
+    const component = (meter: string, value_minor: string) => ({
+      meter, unit_quantity: '1000000', amount: { value_minor, currency: 'CNY', scale: 1_000_000 },
+    });
+    const base = [component('input_tokens', '1500000'), component('output_tokens', '4500000'),
+      component('cache_read_tokens', '50000'), component('cache_creation_tokens', '1500000')];
+    const override = (start_utc: string, end_utc: string, input: string) => ({
+      start_utc, end_utc, input_price_yuan: input, output_price_yuan: '9',
+      cache_read_price_yuan: '0.10', cache_creation_price_yuan: '3',
+    });
+
+    const bands = buildUTCOverridePriceBands([
+      override('01:00', '04:00', '3'),
+      override('06:00', '10:00', '3'),
+    ], base);
+
+    expect(bands?.map(band => [band.start_minute_utc, band.end_minute_utc])).toEqual([
+      [0, 60], [60, 240], [240, 360], [360, 600], [600, 1440],
+    ]);
+    expect(bands?.[1].components.map(item => item.amount.value_minor)).toEqual([
+      '3000000', '9000000', '100000', '3000000',
+    ]);
+    expect(buildUTCOverridePriceBands([
+      override('01:00', '04:00', '3'),
+      override('03:00', '05:00', '3'),
+    ], base)).toBeNull();
   });
 
   it('keeps legacy bootstrap draft-only and reveals the switch instruction only after ready preflight', async () => {

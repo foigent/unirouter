@@ -10,7 +10,6 @@ import (
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/modellist"
-	"github.com/uniroute/unirouter/internal/models"
 )
 
 func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
@@ -131,8 +130,7 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	adapter, err := adapters.DefaultRegistry().Get(adapterType)
-	if err != nil {
+	if _, err := adapters.DefaultRegistry().Get(adapterType); err != nil {
 		if persistErr := h.persistChannelModelProbe(r, channelModelProbeRecord{
 			ChannelID: id, PublicModel: reqBody.Model, UpstreamModel: upstreamModel,
 			RoutingEpoch: routingEpoch, CredentialID: keyID, CredentialStateEpoch: keyStateEpoch,
@@ -154,19 +152,8 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := adapter.Test(r.Context(), adapters.TestInput{
-		Channel: models.Channel{
-			ID:            id,
-			BaseURL:       baseURL,
-			Models:        channelModels,
-			ModelMapping:  modelMapping,
-			AdapterType:   adapters.NormalizeType(adapterType),
-			AdapterConfig: adapterConfig,
-		},
-		APIKey: apiKey,
-		Model:  upstreamModel,
-		Prompt: reqBody.Prompt,
-	})
+	result, err := runProviderCredentialProbe(r.Context(), id, baseURL, channelModels, adapterType,
+		adapterConfig, modelMapping, apiKey, upstreamModel, reqBody.Prompt)
 	if err != nil {
 		if persistErr := h.persistChannelModelProbe(r, channelModelProbeRecord{
 			ChannelID: id, PublicModel: reqBody.Model, UpstreamModel: upstreamModel,

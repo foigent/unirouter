@@ -170,6 +170,8 @@ export default function ModelEndpointsPage() {
   const [lockedPublicModel, setLockedPublicModel] = useState('');
   const [formApi, setFormApi] = useState<any>(null);
   const [selectedPreset, setSelectedPreset] = useState('deepseek');
+  const [publicModelMode, setPublicModelMode] = useState<'existing' | 'new'>('new');
+  const [credentialTarget, setCredentialTarget] = useState<ModelEndpointTarget | null>(null);
   const [saving, setSaving] = useState(false);
   const [workingTarget, setWorkingTarget] = useState('');
   const [batchTesting, setBatchTesting] = useState(false);
@@ -213,6 +215,7 @@ export default function ModelEndpointsPage() {
       upstream_model: lockedPublicModel,
       route_role: 'primary',
     });
+    setPublicModelMode(lockedPublicModel ? 'existing' : 'new');
   }, [createOpen, formApi, lockedPublicModel]);
 
   const models = projection?.models || [];
@@ -391,6 +394,7 @@ export default function ModelEndpointsPage() {
 
   const openCreate = (publicModel = '') => {
     setSelectedPreset('deepseek');
+    setPublicModelMode(publicModel ? 'existing' : 'new');
     setLockedPublicModel(publicModel);
     setCreateOpen(true);
   };
@@ -520,20 +524,22 @@ export default function ModelEndpointsPage() {
       </TabPane>
 
       <TabPane tab="凭证" itemKey="credentials">
-        <ChannelKeysPage embedded />
+        {activeTab === 'credentials' && <ChannelKeysPage embedded />}
       </TabPane>
 
       <TabPane tab="高级运营" itemKey="advanced">
-        <Surface description="日常新增与启用不需要进入这里。目录、调用诊断和历史发布只在需要审计或排障时使用。">
-          <Space wrap>
-            <Button type={advancedView === 'catalog' ? 'primary' : 'tertiary'} onClick={() => changeAdvanced('catalog')}>模型目录与项目范围</Button>
-            <Button type={advancedView === 'diagnostics' ? 'primary' : 'tertiary'} onClick={() => changeAdvanced('diagnostics')}>连接条件诊断</Button>
-            <Button type={advancedView === 'releases' ? 'primary' : 'tertiary'} onClick={() => changeAdvanced('releases')}>发布记录与证据</Button>
-          </Space>
-        </Surface>
-        {advancedView === 'catalog' && <ModelGovernancePage embedded />}
-        {advancedView === 'diagnostics' && <ModelReadinessPage embedded forceConnectionMode />}
-        {advancedView === 'releases' && <RuntimeChangeControlWorkspace />}
+        {activeTab === 'advanced' && <>
+          <Surface description="日常新增与启用不需要进入这里。目录、调用诊断和历史发布只在需要审计或排障时使用。">
+            <Space wrap>
+              <Button type={advancedView === 'catalog' ? 'primary' : 'tertiary'} onClick={() => changeAdvanced('catalog')}>模型目录与项目范围</Button>
+              <Button type={advancedView === 'diagnostics' ? 'primary' : 'tertiary'} onClick={() => changeAdvanced('diagnostics')}>连接条件诊断</Button>
+              <Button type={advancedView === 'releases' ? 'primary' : 'tertiary'} onClick={() => changeAdvanced('releases')}>发布记录与证据</Button>
+            </Space>
+          </Surface>
+          {advancedView === 'catalog' && <ModelGovernancePage embedded />}
+          {advancedView === 'diagnostics' && <ModelReadinessPage embedded forceConnectionMode />}
+          {advancedView === 'releases' && <RuntimeChangeControlWorkspace />}
+        </>}
       </TabPane>
     </Tabs>
 
@@ -587,7 +593,7 @@ export default function ModelEndpointsPage() {
             </Space>}
           </div>
           <Space style={{ marginTop: 12 }}>
-            <Button type="tertiary" onClick={() => changeTab('credentials', target)}>管理此端点凭证</Button>
+            <Button type="tertiary" onClick={() => setCredentialTarget(target)}>管理此端点凭证</Button>
             <Button type="tertiary" onClick={() => changeAdvanced('diagnostics', target)}>诊断此模型连接</Button>
           </Space>
         </Surface>)}
@@ -634,21 +640,50 @@ export default function ModelEndpointsPage() {
         </div>}
         <Form.Input field="connection_name" label="连接名称（可选）" placeholder="例如 DeepSeek 官方 · 华北生产" />
         <Form.Input field="base_url" label="Base URL" placeholder="https://..." rules={[{ required: true, message: '必填' }]} />
+        {!lockedPublicModel && <Form.RadioGroup
+          field="public_model_mode"
+          label="公共模型"
+          initValue="new"
+          type="button"
+          buttonSize="middle"
+          options={[
+            { label: '创建新的公共模型 ID', value: 'new' },
+            { label: '连接到已有公共模型', value: 'existing' },
+          ]}
+          onChange={(event) => {
+            const mode = String(event?.target?.value || 'new') as 'existing' | 'new';
+            setPublicModelMode(mode);
+            formApi?.setValue('public_model', '');
+          }}
+          extraText="同一个模型来自官方、OpenRouter、百炼、Azure 等供应商时，选择已有公共模型；只有应用需要一个全新的对外调用 ID 时才创建。"
+        />}
         <div className="ur-model-endpoint-form-grid">
-          <Form.Select
+          {lockedPublicModel ? <Form.Input
             field="public_model"
             label="公共模型 ID"
-            placeholder="选择已有模型，或输入一个全新的稳定 ID"
+            disabled
+            rules={[{ required: true, message: '必填' }]}
+            extraText="正在为当前公共模型增加另一个供应商端点，公共 ID 不可改变。"
+          /> : publicModelMode === 'existing' ? <Form.Select
+            field="public_model"
+            label="已有公共模型 ID"
+            placeholder="选择一个已有公共模型"
             filter
-            allowCreate
-            disabled={Boolean(lockedPublicModel)}
             optionList={models.filter(model => model.lifecycle !== 'retired').map(model => ({
               value: model.public_model,
               label: model.display_name && model.display_name !== model.public_model ? `${model.display_name} · ${model.public_model}` : model.public_model,
             }))}
-            rules={[{ required: true, message: '必填' }]}
-            extraText={lockedPublicModel ? '正在为当前公共模型增加另一个供应商端点，公共 ID 不可改变。' : '同一模型来自官方、OpenRouter、百炼、Azure 等不同供应商时，应选择同一个公共 ID；只有对外身份确实不同才新建。'}
-          />
+            rules={[{ required: true, message: '请选择已有公共模型' }]}
+            onChange={(value) => {
+              if (!String(formApi?.getValue('upstream_model') || '').trim()) formApi?.setValue('upstream_model', value);
+            }}
+          /> : <Form.Input
+            field="public_model"
+            label="新的公共模型 ID"
+            placeholder="例如 deepseek-v4-flash"
+            rules={[{ required: true, message: '请输入新的公共模型 ID' }]}
+            extraText="这是应用请求 UniRouter 时使用的稳定 ID。建议使用小写字母、数字、点、短横线或下划线；不要把供应商名称重复写入同一模型的多个 ID。"
+          />}
           <Form.Input field="upstream_model" label="上游模型 / 部署 ID" placeholder="供应商实际接受的精确 ID" rules={[{ required: true, message: '必填' }]} />
         </div>
         {selectedPreset === 'azure' && <div className="ur-model-endpoint-form-grid">
@@ -665,6 +700,19 @@ export default function ModelEndpointsPage() {
           <Button type="primary" loading={saving} onClick={() => formApi?.submitForm()}>保存端点与凭证</Button>
         </div>
       </Form>
+    </SideSheet>
+    <SideSheet
+      title={credentialTarget ? `${credentialTarget.connection_name} · 凭证` : '端点凭证'}
+      visible={Boolean(credentialTarget)}
+      onCancel={() => { setCredentialTarget(null); void load(); }}
+      width={720}
+    >
+      {credentialTarget && <ChannelKeysPage
+        embedded
+        channelId={credentialTarget.channel_id}
+        model={credentialTarget.public_model}
+        scoped
+      />}
     </SideSheet>
   </div>;
 }

@@ -227,7 +227,7 @@ export function OfflineAgentTrustWorkspace() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>模型调用授权树与离线证据</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>高级模型限制合同与离线证据</Typography.Title>
               <Typography.Text className="ur-panel-hint">
                 {contract ? `${contract.contract_version} · ${contract.receipt_version}` : '正在读取离线合同'}
               </Typography.Text>
@@ -329,8 +329,8 @@ export default function AgentTrustPage() {
     <div className="ur-page ur-page-wide">
       <PageHeader
         eyebrow="访问与安全"
-        title="模型调用授权"
-        description="按访问凭证、项目、人员或 Agent 收窄可调用模型与端点；右侧固定显示适用原因与生命周期操作，不扩展 Tool 或 MCP 权限。"
+        title="高级模型限制"
+        description="在项目与应用 Key 已经授予访问后，按凭证、项目、人员或 Agent 进一步收窄模型与端点；本页不能为用户开通基础访问。"
         actions={<Button onClick={() => navigate('/agent-trust-evidence')}>离线合同验证</Button>}
       />
       <ModelAuthorizationWorkspace />

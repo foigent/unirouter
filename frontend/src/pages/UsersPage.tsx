@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography, Tabs, TabPane } from '@douyinfe/semi-ui';
-import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
+import { Button, Table, Modal, Form, Tag, Toast, SideSheet, Typography, Tabs, TabPane, Space } from '@douyinfe/semi-ui';
+import { IconPlus, IconDelete, IconEdit, IconUserGroup } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
 import { organizationRoleLabel, roleTagColor, userManagementOrganizationRoleOptions } from '../utils/displayLabels';
@@ -14,6 +14,7 @@ import {
   localPasswordCodePointCount,
   localPasswordUTF8ByteCount,
 } from '../utils/passwordPolicy';
+import { loadAllPages } from '../utils/loadAllPages';
 
 const apiErrorCode = (error: ApiError) => {
   if (!error.payload || typeof error.payload !== 'object') return '';
@@ -35,6 +36,10 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const [showDrawer, setShowDrawer] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
+	const [accessUser, setAccessUser] = useState<any>(null);
+	const [accessFormApi, setAccessFormApi] = useState<any>(null);
+	const [accessProjects, setAccessProjects] = useState<any[]>([]);
+	const [accessLoading, setAccessLoading] = useState(false);
 	const [providerScope, setProviderScope] = useState<'local' | 'enterprise'>('local');
 
   const load = (p = page, size = pageSize, provider: 'local' | 'enterprise' = providerScope) => {
@@ -155,6 +160,40 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     setShowDrawer(true);
   };
 
+  const openProjectAccess = async (u: any) => {
+    const restriction = mutationRestriction(u);
+    if (restriction) {
+      Toast.warning(restriction);
+      return;
+    }
+    setAccessUser(u);
+    setAccessLoading(true);
+    try {
+      const projects = await loadAllPages<any>((nextPage, size) => api.getProjects(nextPage, size, { status: 'active' }));
+      setAccessProjects(projects.filter(project => Number(project.org_id) === Number(customerOrgID) && project.status === 'active'));
+    } catch (error) {
+      setAccessProjects([]);
+      Toast.error(error instanceof ApiError ? error.message : '无法加载可授权项目');
+    } finally {
+      setAccessLoading(false);
+    }
+  };
+
+  const grantProjectAccess = async (values: Record<string, any>) => {
+    if (!accessUser) return;
+    setAccessLoading(true);
+    try {
+      await api.upsertProjectMember(Number(values.project_id), Number(accessUser.id), String(values.role || 'project_user'));
+      Toast.success(`${accessUser.username} 已获得项目访问；重新登录后可在项目工作台创建自己的项目访问凭证`);
+      setAccessUser(null);
+      accessFormApi?.reset();
+    } catch (error) {
+      Toast.error(error instanceof ApiError ? error.message : '授予项目访问失败');
+    } finally {
+      setAccessLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!showDrawer || !formApi) return;
     formApi.reset();
@@ -199,9 +238,9 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     {
       title: '所属组织',
       key: 'organization',
-      render: (_: unknown, record: any) => record.org_name
-        ? `${record.org_name} (#${record.org_id})`
-        : (record.org_id ? `组织 #${record.org_id}` : '—'),
+      render: (_: unknown, record: any) => Number(record.org_id) === Number(customerOrgID)
+        ? (customerContext.orgName || '当前客户范围')
+        : '非当前客户范围',
     },
     { title: '邮箱', dataIndex: 'email', render: (v: string) => v || '-' },
     { title: '认证来源', dataIndex: 'auth_provider', width: 110, render: (v: string) => v === 'oidc' ? '企业 OIDC' : '本地账号' },
@@ -209,16 +248,22 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     { title: '状态', dataIndex: 'status', render: (v: string) => <StatusTag status={v}>{v === 'active' ? '启用' : v === 'disabled' ? '停用' : v}</StatusTag> },
     { title: '创建时间', dataIndex: 'created_at', render: (v: string) => formatDateTime(v) },
     {
-      title: '操作', width: 120,
+      title: '操作', width: 170,
       render: (_: any, record: any) => {
         const restriction = mutationRestriction(record);
         return (
-          <span title={restriction || undefined}>
+          <span title={restriction || undefined}><Space>
+            <Button
+              aria-label={`授予项目访问 ${record.username}`}
+              icon={<IconUserGroup />}
+              size="small"
+              disabled={!!restriction || record.status !== 'active'}
+              onClick={() => void openProjectAccess(record)}
+            />
             <Button
               aria-label={`编辑用户 ${record.username}`}
               icon={<IconEdit />}
               size="small"
-              style={{ marginRight: 8 }}
               disabled={!!restriction}
               onClick={() => openEdit(record)}
             />
@@ -230,7 +275,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
               disabled={!!restriction}
               onClick={() => handleDelete(record)}
             />
-          </span>
+          </Space></span>
         );
       },
     },
@@ -331,6 +376,42 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editUser ? '更新' : '创建'}</Button>
+          </div>
+        </Form>
+      </SideSheet>
+
+      <SideSheet
+        title={accessUser ? `授予 ${accessUser.username} 项目访问` : '授予项目访问'}
+        visible={Boolean(accessUser)}
+        onCancel={() => { setAccessUser(null); accessFormApi?.reset(); }}
+        width={480}
+      >
+        <Typography.Paragraph>
+          这是让用户能够使用模型的正常入口：先加入一个项目，再由项目使用者在“项目工作台”创建自己的项目访问凭证。工作负载应用则由项目管理员在“应用与 Agent”中管理。组织角色不等于项目访问；“高级模型限制”只用于进一步收窄权限。
+        </Typography.Paragraph>
+        <Form getFormApi={setAccessFormApi} onSubmit={grantProjectAccess} initValues={{ role: 'project_user' }}>
+          <Form.Select
+            field="project_id"
+            label="项目"
+            loading={accessLoading}
+            optionList={accessProjects.map(project => ({ value: project.id, label: project.name }))}
+            rules={[{ required: true, message: '请选择项目' }]}
+            emptyContent="当前没有可授权的启用项目"
+          />
+          <Form.Select
+            field="role"
+            label="项目角色"
+            optionList={[
+              { value: 'project_user', label: '项目使用者（可创建凭证并调用）' },
+              { value: 'project_viewer', label: '项目只读（不可调用）' },
+              { value: 'project_admin', label: '项目管理员（可管理成员与配置）' },
+            ]}
+            rules={[{ required: true, message: '请选择项目角色' }]}
+            extraText="普通模型使用请选择“项目使用者”；只有确需维护项目成员和配置时才授予项目管理员。"
+          />
+          <div className="ur-form-actions">
+            <Button onClick={() => setAccessUser(null)}>取消</Button>
+            <Button type="primary" loading={accessLoading} onClick={() => accessFormApi?.submitForm()}>授予项目访问</Button>
           </div>
         </Form>
       </SideSheet>

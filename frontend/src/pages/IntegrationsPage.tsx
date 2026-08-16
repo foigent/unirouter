@@ -16,11 +16,16 @@ interface IntegrationCardProps {
 }
 
 function IntegrationCard({ title, state, description, boundary, action }: IntegrationCardProps) {
+  const statePresentation = state === 'available'
+    ? { color: 'blue', label: '可配置' }
+    : state === 'configured'
+      ? { color: 'green', label: '已配置' }
+      : { color: 'orange', label: '规划中' };
   return (
     <Surface className="ur-integration-card">
       <div className="ur-detail-header">
         <Title heading={5} style={{ margin: 0 }}>{title}</Title>
-        <Tag color={state === 'reference' ? 'green' : 'orange'}>{state === 'reference' ? 'Reference Connector' : '规划中'}</Tag>
+        <Tag color={statePresentation.color as any}>{statePresentation.label}</Tag>
       </div>
       <Paragraph>{description}</Paragraph>
       <dl className="ur-financial-truth-detail">
@@ -59,7 +64,7 @@ export default function IntegrationsPage() {
           <div className="ur-integration-grid">
             <IntegrationCard
               title="X-Insight completed-execution Feed"
-              state="reference"
+              state="available"
               description="首个 Reference Connector：保留现有 Feed API、DTO、事件身份、凭据、数据、游标与 UI 兼容基线。"
               boundary="UniRouter 提供来源事实与 Feed；X-Insight 独立拥有投影、分析与调查。"
               action="在 X-Insight 标签页维护现有连接，不新增双边专用字段"
@@ -85,7 +90,7 @@ export default function IntegrationsPage() {
           </div>
         </TabPane>
         <TabPane tab="X-Insight" itemKey="xinsight">
-          <DataExchangePage />
+          {activeTab === 'xinsight' && <DataExchangePage />}
         </TabPane>
         <TabPane tab="飞书" itemKey="feishu">
           <Surface title="飞书适配准备" description="暂无真实租户，因此不创建凭据、不接入流量、不声明已验证。">

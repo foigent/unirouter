@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getUsers: vi.fn(),
   getOrganizations: vi.fn(),
   getProjects: vi.fn(),
+  upsertProjectMember: vi.fn(),
   createUser: vi.fn(),
   updateUser: vi.fn(),
   deleteUser: vi.fn(),
@@ -68,6 +69,7 @@ describe('UsersPage enterprise identity presentation', () => {
       total: 1,
 	}));
     mocks.updateUser.mockResolvedValue({ success: true });
+    mocks.upsertProjectMember.mockResolvedValue({ success: true });
   });
 
   it('keeps OIDC source fields read-only while allowing UniRouter-owned role, status, and offboarding controls', async () => {
@@ -80,7 +82,7 @@ describe('UsersPage enterprise identity presentation', () => {
 	expect(mocks.getUsers).toHaveBeenCalledWith(1, 20, 'enterprise');
     expect(mocks.getOrganizations).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('所属组织')).toBeNull();
-    expect(screen.getByText('总部 (#1)')).toBeTruthy();
+    expect(screen.getByText('总部')).toBeTruthy();
     expect(screen.getByText('user@example.com')).toBeTruthy();
     expect(screen.getByText('企业 OIDC')).toBeTruthy();
     expect(screen.getByText('启用')).toBeTruthy();
@@ -120,6 +122,21 @@ describe('UsersPage enterprise identity presentation', () => {
       organization_role: 'member',
       status: 'active',
     }));
+  });
+
+  it('grants normal model use through project membership instead of an advanced model grant', async () => {
+    render(<UsersPage />);
+
+    await screen.findByText('local-user');
+    fireEvent.click(screen.getByRole('button', { name: '授予项目访问 local-user' }));
+
+    expect(await screen.findByText(/先加入一个项目，再由项目使用者在“项目工作台”创建自己的项目访问凭证/)).toBeTruthy();
+    await waitFor(() => expect(mocks.getProjects).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('combobox', { name: '项目' }));
+    fireEvent.click(await screen.findByText('核心项目'));
+    fireEvent.click(screen.getByRole('button', { name: '授予项目访问' }));
+
+    await waitFor(() => expect(mocks.upsertProjectMember).toHaveBeenCalledWith(31, 8, 'project_user'));
   });
 
   it('shows a safe conflict message when a local login ID is unavailable', async () => {

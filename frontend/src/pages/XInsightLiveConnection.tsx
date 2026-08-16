@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Descriptions, Input, Popconfirm, Select, Spin, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Descriptions, Input, Popconfirm, Select, Spin, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
@@ -254,14 +254,18 @@ export default function XInsightLiveConnection({
   const [allowedIP, setAllowedIP] = useState('');
   const [registrationJSON, setRegistrationJSON] = useState('');
   const [invitationJSON, setInvitationJSON] = useState('');
+  const [projectLoadError, setProjectLoadError] = useState('');
+  const [statusLoadError, setStatusLoadError] = useState('');
 
   const loadProjects = useCallback(async () => {
+    setProjectLoadError('');
     try {
       const next = await loadAllPages<Project>((page, pageSize) => api.getProjects(page, pageSize));
       setProjects(next);
       setProjectID(current => current || next[0]?.id);
     } catch (error: any) {
-      Toast.error(`项目加载失败${error?.message ? `：${error.message}` : ''}`);
+      setProjects([]);
+      setProjectLoadError(`无法读取可用于 X-Insight 的项目${error?.message ? `：${error.message}` : ''}`);
     }
   }, []);
 
@@ -271,10 +275,11 @@ export default function XInsightLiveConnection({
       return;
     }
     setLoading(true);
+    setStatusLoadError('');
     try {
       setStatus(await api.getXInsightFeedConnection(projectID) as FeedConnectionStatus);
     } catch (error: any) {
-      Toast.error(`实时连接状态加载失败${error?.message ? `：${error.message}` : ''}`);
+      setStatusLoadError(error?.message || '无法读取 X-Insight 连接状态');
       setStatus(null);
     } finally {
       setLoading(false);
@@ -387,6 +392,7 @@ export default function XInsightLiveConnection({
   const connectorIntakeEnabled = expansionEnabled && Boolean(status?.global_enabled && status?.source_instance);
 
   if (!projectID && projects.length === 0) {
+    if (projectLoadError) return <Banner type="warning" description={projectLoadError} />;
     return <Spin tip="正在读取可用项目…" />;
   }
 
@@ -403,6 +409,12 @@ export default function XInsightLiveConnection({
         <div style={{ flex: 1 }} />
         <Button icon={<IconRefresh />} onClick={loadStatus} loading={loading}>刷新状态</Button>
       </div>
+
+      {statusLoadError && <Banner
+        type="warning"
+        description={`当前项目尚不能读取 X-Insight 连接状态：${statusLoadError}。这只影响 X-Insight 连接管理，不影响模型网关、其他集成或本页目录。请确认该 Connector 已配置且 License 包含 Data Exchange 后再重试。`}
+        closeIcon={null}
+      />}
 
       <div className="ur-chip-row">
         <Tag color="green">metadata only</Tag>

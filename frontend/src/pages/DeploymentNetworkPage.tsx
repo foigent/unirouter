@@ -60,7 +60,26 @@ interface DeploymentContract {
   runtime_mutation: string;
 }
 
+interface ObservedRuntimeStatus {
+  status: string;
+  generated_at: string;
+  runtime_environment?: {
+    service?: string;
+    environment?: string;
+    deployment_mode?: string;
+    deployment_role?: string;
+    version?: string;
+    commit?: string;
+    uptime_seconds?: number;
+  };
+  capacity_health?: {
+    database?: { status?: string; latency_ms?: number; reason?: string };
+    redis?: { status?: string; latency_ms?: number; reason?: string };
+  };
+}
+
 const labels: Record<string, string> = {
+  operational: '正常', warning: '需关注',
   active: '启用', disabled: '停用', ecs_development: 'ECS 开发联调', onprem_compose: '本地 Compose',
   onprem_kubernetes: '本地 Kubernetes', public: '公网', internal: '内网', external_load_balancer: '外部负载均衡',
   bundled_reverse_proxy: '内置反向代理', cluster_ingress: '集群 Ingress', public_dns: '公网 DNS',
@@ -91,6 +110,8 @@ export default function DeploymentNetworkPage() {
   const [selectedEndpoint, setSelectedEndpoint] = useState<GatewayEndpoint | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [runtime, setRuntime] = useState<ObservedRuntimeStatus | null>(null);
+  const [runtimeError, setRuntimeError] = useState('');
   const [profileDrawer, setProfileDrawer] = useState(false);
   const [endpointDrawer, setEndpointDrawer] = useState(false);
   const [editingProfile, setEditingProfile] = useState<DeploymentProfile | null>(null);
@@ -101,10 +122,14 @@ export default function DeploymentNetworkPage() {
   const load = async () => {
     setLoading(true);
     setLoadError('');
+    setRuntimeError('');
+    const [registryResult, runtimeResult] = await Promise.allSettled([
+      Promise.all([api.getDeploymentNetworkContract(), api.getDeploymentProfiles(), api.getGatewayEndpoints()]),
+      api.getRuntimeStatus(),
+    ]);
     try {
-      const [contractResult, profileResult, endpointResult] = await Promise.all([
-        api.getDeploymentNetworkContract(), api.getDeploymentProfiles(), api.getGatewayEndpoints(),
-      ]);
+      if (registryResult.status === 'rejected') throw registryResult.reason;
+      const [contractResult, profileResult, endpointResult] = registryResult.value;
       const profileItems = profileResult?.data || [];
       const endpointItems = endpointResult?.data || [];
       setContract(contractResult);
@@ -113,10 +138,15 @@ export default function DeploymentNetworkPage() {
       setSelectedProfile(current => profileItems.find((item: DeploymentProfile) => item.profile_ref === current?.profile_ref) || profileItems[0] || null);
       setSelectedEndpoint(current => endpointItems.find((item: GatewayEndpoint) => item.endpoint_ref === current?.endpoint_ref) || endpointItems[0] || null);
     } catch (error: any) {
-      setLoadError(error?.message || '无法加载部署与网络状态。');
-    } finally {
-      setLoading(false);
+      setLoadError(error?.message || '无法加载附加部署与入口登记。');
     }
+    if (runtimeResult.status === 'fulfilled') {
+      setRuntime(runtimeResult.value as ObservedRuntimeStatus);
+    } else {
+      setRuntime(null);
+      setRuntimeError(runtimeResult.reason?.message || '无法读取当前运行实例');
+    }
+    setLoading(false);
   };
 
   useEffect(() => { void load(); }, []);
@@ -213,28 +243,37 @@ export default function DeploymentNetworkPage() {
       <PageHeader
         eyebrow="系统与集成"
         title="部署与网络"
-        description="用 Deployment Profile 描述安装形态，用 Gateway Endpoint 描述客户端入口；期望状态与运行时观测严格分离。"
-        actions={<><Button onClick={() => openProfile()} icon={<IconPlus />}>新建部署</Button><Button type="primary" onClick={() => openEndpoint()} icon={<IconPlus />} disabled={!profiles.length}>登记入口</Button></>}
+        description="先查看 UniRouter 实际正在运行的实例；如需记录额外的客户部署或访问入口，再维护附加登记。登记不会执行部署。"
+        actions={<><Button onClick={() => openProfile()} icon={<IconPlus />}>登记附加部署</Button><Button type="primary" onClick={() => openEndpoint()} icon={<IconPlus />} disabled={!profiles.length}>登记附加入口</Button></>}
       />
       <Banner
         type="info"
-        description="UI 只保存非秘密的期望状态和证书引用，不保存 TLS 私钥、不重启 Ingress。实际应用由 Operator / CLI / Compose / Helm 完成，并需回写独立观测证据。"
+        description="上方“当前运行实例”来自服务自身的只读观测；下方登记只保存非秘密的说明与期望状态，不会创建服务器、修改 DNS、重启 Ingress 或保存 TLS 私钥。"
         style={{ marginBottom: 16 }}
       />
+      <Surface title="当前运行实例（只读观测）" description="这里显示当前 UniRouter 进程实际报告的环境和依赖健康，不依赖下面的手工登记。">
+        {runtime ? <div className="ur-kpi-grid ur-workload-kpis">
+          <MetricTile label="服务状态" value={label(runtime.status)} tone={runtime.status === 'operational' || runtime.status === 'ready' ? 'green' : 'amber'} />
+          <MetricTile label="运行版本" value={runtime.runtime_environment?.version || '未声明'} meta={runtime.runtime_environment?.commit ? `commit ${runtime.runtime_environment.commit.slice(0, 12)}` : '未声明 commit'} />
+          <MetricTile label="部署形态" value={runtime.runtime_environment?.deployment_mode || '未声明'} meta={`${runtime.runtime_environment?.environment || '未知环境'} · ${runtime.runtime_environment?.deployment_role || '未知角色'}`} />
+          <MetricTile label="依赖健康" value={`DB ${runtime.capacity_health?.database?.status || '未知'} / Redis ${runtime.capacity_health?.redis?.status || '未知'}`} meta={`本次探测：DB ${runtime.capacity_health?.database?.latency_ms ?? '-'}ms · Redis ${runtime.capacity_health?.redis?.latency_ms ?? '-'}ms`} />
+        </div> : <EmptyState title="当前运行实例观测不可用" description={runtimeError || '服务未返回运行状态。'} minHeight={150} />}
+        {runtime?.generated_at && <Text type="tertiary">观测时间：{formatDateTime(runtime.generated_at)}。延迟是这一次健康探测的往返耗时，不是持续固定值。</Text>}
+      </Surface>
       <div className="ur-context-explorer ur-deployment-explorer">
         <main className="ur-explorer-panel">
           <div className="ur-kpi-grid ur-workload-kpis">
-            <MetricTile label="Deployment Profile" value={profiles.length} tone="blue" />
-            <MetricTile label="Gateway Endpoint" value={endpoints.length} tone="violet" />
+            <MetricTile label="已登记附加部署" value={profiles.length} tone="blue" />
+            <MetricTile label="已登记附加入口" value={endpoints.length} tone="violet" />
             <MetricTile label="HTTPS 期望入口" value={endpoints.filter(item => item.base_url.startsWith('https://') && item.status === 'active').length} tone="green" />
             <MetricTile label="独立验证通过" value={endpoints.filter(item => item.observed_status === 'ready').length} tone={endpoints.some(item => item.observed_status === 'ready') ? 'green' : 'amber'} />
           </div>
           {loadError && <Banner type="danger" description={loadError} style={{ marginBottom: 14 }} />}
-          <Surface title="部署形态" description="ECS 联调与客户本地部署使用同一对象，不为短期测试牺牲长期产品边界。" actions={<Button icon={<IconRefresh />} onClick={() => void load()}>刷新</Button>}>
-            <Table rowKey="profile_ref" columns={profileColumns} dataSource={profiles} loading={loading} pagination={false} empty={<EmptyState title="尚未登记部署" minHeight={150} />} onRow={(row?: DeploymentProfile) => ({ onClick: () => row && setSelectedProfile(row), 'aria-selected': row?.profile_ref === selectedProfile?.profile_ref })} />
+          <Surface title="附加部署登记" description="只在需要记录另一个 ECS、客户 Compose 或 Kubernetes 安装时使用；0 条不表示当前服务没有运行。" actions={<Button icon={<IconRefresh />} onClick={() => void load()}>刷新</Button>}>
+            <Table rowKey="profile_ref" columns={profileColumns} dataSource={profiles} loading={loading} pagination={false} empty={<EmptyState title="没有附加部署登记" description="当前实例仍以上方只读观测为准。" minHeight={150} />} onRow={(row?: DeploymentProfile) => ({ onClick: () => row && setSelectedProfile(row), 'aria-selected': row?.profile_ref === selectedProfile?.profile_ref })} />
           </Surface>
-          <Surface title="客户端入口" description="公开入口必须使用 HTTPS；Responses 目前只能登记为合同，不会升级为运行时支持。">
-            <Table rowKey="endpoint_ref" columns={endpointColumns} dataSource={endpoints} loading={loading} pagination={false} empty={<EmptyState title="尚未登记 Gateway Endpoint" minHeight={160} />} onRow={(row?: GatewayEndpoint) => ({ onClick: () => row && setSelectedEndpoint(row), 'aria-selected': row?.endpoint_ref === selectedEndpoint?.endpoint_ref })} />
+          <Surface title="附加客户端入口登记" description="公开入口必须使用 HTTPS；登记描述预期访问方式，不会自动配置负载均衡、证书或 DNS。">
+            <Table rowKey="endpoint_ref" columns={endpointColumns} dataSource={endpoints} loading={loading} pagination={false} empty={<EmptyState title="没有附加入口登记" minHeight={160} />} onRow={(row?: GatewayEndpoint) => ({ onClick: () => row && setSelectedEndpoint(row), 'aria-selected': row?.endpoint_ref === selectedEndpoint?.endpoint_ref })} />
           </Surface>
         </main>
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="部署与网络检查器">
@@ -251,7 +290,6 @@ export default function DeploymentNetworkPage() {
               <dt>兼容证据</dt><dd><Tag color={stateColor(endpointProfile?.evidence_level)}>{label(endpointProfile?.evidence_level)}</Tag></dd>
               <dt>观测 URL</dt><dd className="ur-mono-break">{selectedEndpoint.observed_base_url || '尚无独立观测'}</dd>
               <dt>观测时间</dt><dd>{selectedEndpoint.observed_at ? formatDateTime(selectedEndpoint.observed_at) : '尚未验证'}</dd>
-              <dt>期望修订</dt><dd>r{selectedEndpoint.desired_revision}</dd>
               <dt>运行时变更</dt><dd>无</dd>
             </dl>
             <div className="ur-governance-actions"><Button onClick={() => openEndpoint(selectedEndpoint)}>编辑期望状态</Button>{selectedProfile && <Button onClick={() => openProfile(selectedProfile)}>编辑部署</Button>}</div>
@@ -259,18 +297,19 @@ export default function DeploymentNetworkPage() {
         </aside>
       </div>
 
-      <SideSheet title={editingProfile ? '编辑 Deployment Profile' : '新建 Deployment Profile'} visible={profileDrawer} onCancel={() => setProfileDrawer(false)} width={520}>
+      <SideSheet title={editingProfile ? '编辑附加部署登记' : '登记附加部署'} visible={profileDrawer} onCancel={() => setProfileDrawer(false)} width={520}>
+        <Banner type="info" description="此表单只记录一个附加安装的预期形态，保存后不会构建镜像、创建主机或修改正在运行的 UniRouter。" style={{ marginBottom: 16 }} />
         <Form getFormApi={setProfileForm} onSubmit={submitProfile}>
-          {!editingProfile && <Form.Input field="profile_ref" label="稳定部署标识" placeholder="dep_ecs_poc" rules={[{ required: true }]} />}
-          <Form.Input field="display_name" label="部署名称" rules={[{ required: true }]} />
+          {!editingProfile && <Form.Input field="profile_ref" label="内部登记标识" placeholder="dep_ecs_poc" rules={[{ required: true }]} extraText="只用于引用这条登记，建议小写字母、数字和下划线；不是镜像 Tag 或云资源 ID。" />}
+          <Form.Input field="display_name" label="显示名称" rules={[{ required: true }]} extraText="例如“客户生产 Compose”或“华北 ECS 联调”。" />
           <Form.Select field="kind" label="部署形态" optionList={[{ value: 'ecs_development', label: 'ECS 开发联调' }, { value: 'onprem_compose', label: '客户本地 Compose' }, { value: 'onprem_kubernetes', label: '客户本地 Kubernetes' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Input field="environment" label="环境" placeholder="poc / prod" rules={[{ required: true }]} />
+          <Form.Input field="environment" label="环境标识" placeholder="poc / prod" rules={[{ required: true }]} extraText="用于区分测试、POC、预发布或生产，不会创建环境。" />
           <Form.Select field="ingress_mode" label="入口管理" optionList={[{ value: 'external_load_balancer', label: '客户 / 云负载均衡' }, { value: 'bundled_reverse_proxy', label: '内置反向代理' }, { value: 'cluster_ingress', label: 'Kubernetes Ingress' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.Select field="dns_mode" label="名称解析" optionList={[{ value: 'public_dns', label: '公网 DNS' }, { value: 'private_dns', label: '内网 DNS' }, { value: 'ip_address', label: 'IP 地址' }, { value: 'customer_managed', label: '客户管理' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.Select field="outbound_mode" label="出站模式" optionList={[{ value: 'direct', label: '直接出站' }, { value: 'proxy', label: '企业代理' }, { value: 'restricted', label: '受限出站' }, { value: 'air_gapped', label: '离线隔离' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.TextArea field="notes" label="部署说明" maxCount={2000} />
           <Form.Select field="status" label="期望状态" optionList={[{ value: 'active', label: '启用' }, { value: 'disabled', label: '停用' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <div className="ur-form-actions"><Button onClick={() => setProfileDrawer(false)}>取消</Button><Button type="primary" onClick={() => profileForm?.submitForm()}>保存期望状态</Button></div>
+          <div className="ur-form-actions"><Button onClick={() => setProfileDrawer(false)}>取消</Button><Button type="primary" onClick={() => profileForm?.submitForm()}>保存登记</Button></div>
         </Form>
       </SideSheet>
 

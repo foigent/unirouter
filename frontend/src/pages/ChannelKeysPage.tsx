@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Banner, Button, Modal, Form, Toast, Space, SideSheet, Typography } from '@douyinfe/semi-ui';
-import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
+import { IconPlus, IconDelete, IconEdit, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { EmptyState, PagedTable, PageHeader, PasswordField, StatusTag, Surface } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
@@ -29,6 +29,7 @@ interface ChannelKey {
   cooldown_until?: string | null;
   created_at: string;
   updated_at?: string;
+  state_epoch?: number;
 }
 
 type ChannelOption = ChannelReadinessChannel & {
@@ -66,12 +67,17 @@ const combinationLabel: Record<CredentialCombinationState, string> = {
   unknown_channel: '端点状态待确认',
 };
 
-export default function ChannelKeysPage({ embedded = false }: { embedded?: boolean } = {}) {
+export default function ChannelKeysPage({
+  embedded = false,
+  channelId,
+  model,
+  scoped = false,
+}: { embedded?: boolean; channelId?: number; model?: string; scoped?: boolean } = {}) {
   const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
   const requestedChannelID = Number(search.get('channel_id') || 0);
-  const focusedChannelID = Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0 ? requestedChannelID : undefined;
-  const focusedModel = String(search.get('model') || '').trim();
+  const focusedChannelID = channelId || (Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0 ? requestedChannelID : undefined);
+  const focusedModel = String(model || search.get('model') || '').trim();
   const [keys, setKeys] = useState<ChannelKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -87,6 +93,8 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [draftChannelID, setDraftChannelID] = useState<number>();
+  const [rotating, setRotating] = useState<ChannelKey | null>(null);
+  const [rotationFormApi, setRotationFormApi] = useState<any>(null);
 
   const load = (p = page, size = pageSize) => {
     const version = ++requestVersion.current;
@@ -199,6 +207,37 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
     setShowDrawer(true);
   };
 
+  const openRotation = (record: ChannelKey) => {
+    setSubmitError('');
+    setRotating(record);
+  };
+
+  const submitRotation = async (values: Record<string, any>) => {
+    if (!rotating) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      const result = await api.rotateChannelKey(rotating.id, {
+        key: String(values.api_key || '').trim(),
+        model: String(values.model || '').trim(),
+        allowed_models: normalizeModelList(values.allowed_models),
+      }) as any;
+      setSaveNotice(`${rotating.channel_name} 的新 Key 已完成真实检测并原子接替旧凭证；路由未暂停。检测延迟 ${result?.probe?.latency_ms ?? '-'}ms。`);
+      Toast.success('供应商凭证已无中断轮换');
+      setRotating(null);
+      rotationFormApi?.reset();
+      load();
+    } catch (error: any) {
+      const message = error instanceof Error && error.message
+        ? `轮换失败：${error.message}。旧凭证仍保持启用，未改变当前路由。`
+        : '轮换失败；旧凭证仍保持启用，未改变当前路由。';
+      setSubmitError(message);
+      Toast.error(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     if (!showDrawer || !formApi) return;
     formApi.reset();
@@ -239,6 +278,18 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
   const draftChannel = draftChannelID ? channelByID.get(draftChannelID) : undefined;
   const focusedChannel = focusedChannelID ? channelByID.get(focusedChannelID) : undefined;
   const draftModel = focusedModel || parseModelList(draftChannel?.models)[0] || '';
+  const rotatingChannel = rotating ? recordChannel(rotating) : undefined;
+  const rotationModels = parseModelList(rotatingChannel?.models);
+
+  useEffect(() => {
+    if (!rotating || !rotationFormApi) return;
+    const allowed = parseModelList(rotating.allowed_models);
+    const preferredModel = focusedModel && rotationModels.includes(focusedModel)
+      ? focusedModel
+      : rotationModels.find(item => allowed.length === 0 || allowed.includes(item)) || rotationModels[0] || '';
+    rotationFormApi.reset();
+    rotationFormApi.setValues({ model: preferredModel, allowed_models: rotating.allowed_models || '' });
+  }, [focusedModel, rotating, rotationFormApi, rotationModels.join('\n')]);
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60 },
@@ -297,10 +348,11 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
     { title: '最近使用', dataIndex: 'last_used_at', width: 170, render: (v: string | null) => v ? formatDateTime(v) : '尚未使用' },
     { title: '最近更新', dataIndex: 'updated_at', width: 170, render: (v: string, record: ChannelKey) => formatDateTime(v || record.created_at) },
     {
-      title: '操作', width: 120,
+      title: '操作', width: 160,
       render: (_: any, record: ChannelKey) => (
         <Space>
           <Button aria-label={`编辑供应商凭证 ${record.channel_name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
+          <Button aria-label={`轮换供应商凭证 ${record.channel_name}`} icon={<IconRefresh />} size="small" disabled={record.status !== 'active'} onClick={() => openRotation(record)} />
           <Button aria-label={`删除供应商凭证 ${record.channel_name}`} icon={<IconDelete />} size="small" type="danger" disabled={recordChannel(record).status === 'active'} onClick={() => handleDelete(record.id)} />
         </Space>
       ),
@@ -320,8 +372,10 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
       />}
 
       {embedded && <div className="ur-embedded-heading">
-        <div><Typography.Title heading={5} style={{ margin: 0 }}>供应商凭证</Typography.Title><Typography.Text type="tertiary">明文 Key 永不回显；状态以当前端点、模型覆盖和冷却条件共同计算。</Typography.Text></div>
-        <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>
+        <div><Typography.Title heading={5} style={{ margin: 0 }}>{scoped ? '此端点的凭证' : '供应商凭证'}</Typography.Title><Typography.Text type="tertiary">明文 Key 永不回显；状态以当前端点、模型覆盖和冷却条件共同计算。</Typography.Text></div>
+        <span title={scoped && focusedChannel?.status === 'active' ? '当前端点正在承载流量；请使用现有凭证旁的“轮换”操作' : undefined}>
+          <Button icon={<IconPlus />} type="primary" disabled={scoped && focusedChannel?.status === 'active'} onClick={openCreate}>新增供应商凭证</Button>
+        </span>
       </div>}
 
       {saveNotice && <Banner
@@ -331,7 +385,7 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
         style={{ marginBottom: 16 }}
       />}
 
-      {focusedChannelID && <Banner
+      {focusedChannelID && !scoped && <Banner
         type="info"
         description={`当前只显示 ${focusedChannel?.name || `端点 #${focusedChannelID}`}${focusedModel ? ` · ${focusedModel}` : ''} 的凭证。`}
         closeIcon={null}
@@ -380,11 +434,11 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
       >
         {!editing && draftChannel?.status === 'active' && <Banner
           type="warning"
-          description={`${draftChannel.name} 正在承载路由，不能直接新增或轮换凭证。请先回到模型与端点执行紧急暂停。`}
+          description={`${draftChannel.name} 正在承载路由，不能把未经检测的新凭证直接加入候选。要更换 Key，请关闭本抽屉并点击现有凭证旁的“轮换”按钮；系统会先检测再原子替换，无需暂停路由。`}
           closeIcon={null}
           style={{ marginBottom: 16 }}
         />}
-        {editing?.channel_status === 'active' && <div className="ur-playground-error" style={{ marginBottom: 16 }}><strong>当前端点正在承载路由</strong><span>为防止绕过发布门禁，此处只允许停用现有凭证。新增或轮换凭证请先到“模型与端点”执行紧急暂停。</span></div>}
+        {editing?.channel_status === 'active' && <div className="ur-playground-error" style={{ marginBottom: 16 }}><strong>当前端点正在承载路由</strong><span>普通编辑只允许紧急停用；更换 API Key 请使用列表中的“轮换”操作，先真实检测新 Key，再原子替换旧 Key，无需暂停。</span></div>}
         {submitError && <Banner type="danger" description={submitError} closeIcon={null} style={{ marginBottom: 16 }} />}
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           <Form.Select field="channel_id" label="供应商端点" rules={[{ required: true, message: '必填' }]}
@@ -415,7 +469,47 @@ export default function ChannelKeysPage({ embedded = false }: { embedded?: boole
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             {!editing && draftChannel?.status === 'active' && draftModel && <Button onClick={() => navigate(`/channels?tab=models&model=${encodeURIComponent(draftModel)}`)}>返回端点并暂停</Button>}
             <Button onClick={closeDrawer}>取消</Button>
-            <Button type="primary" loading={submitting} disabled={submitting} onClick={() => formApi?.submitForm()}>{editing ? '保存修改' : '创建'}</Button>
+            <Button type="primary" loading={submitting} disabled={submitting || (!editing && draftChannel?.status === 'active')} onClick={() => formApi?.submitForm()}>{editing ? '保存修改' : '创建'}</Button>
+          </div>
+        </Form>
+      </SideSheet>
+
+      <SideSheet
+        title={rotating ? `无中断轮换 · ${rotating.channel_name}` : '无中断轮换供应商凭证'}
+        visible={Boolean(rotating)}
+        onCancel={() => { setRotating(null); setSubmitError(''); rotationFormApi?.reset(); }}
+        width={520}
+      >
+        <Banner
+          type="info"
+          description="保存前会用新 Key 对所选模型发起一次真实最小请求，可能产生少量供应商费用。只有检测成功且端点/旧凭证没有并发变化时，系统才会在一个事务中启用新凭证、停用旧凭证并绑定新证据；失败时旧凭证和路由保持不变。"
+          closeIcon={null}
+          style={{ marginBottom: 16 }}
+        />
+        {submitError && <Banner type="danger" description={submitError} closeIcon={null} style={{ marginBottom: 16 }} />}
+        <Form getFormApi={setRotationFormApi} onSubmit={submitRotation}>
+          <Form.Select
+            field="model"
+            label="用于验证新 Key 的模型"
+            optionList={rotationModels.map(item => ({ value: item, label: item }))}
+            rules={[{ required: true, message: '请选择一个模型' }]}
+            extraText="检测和新证据只绑定到这个精确公共模型及其上游映射；其他模型需要各自具备有效检测证据。"
+          />
+          <PasswordField
+            field="api_key"
+            label="新的供应商 API Key"
+            rules={[{ required: true, message: '请输入新的完整 Key' }]}
+            autoComplete="new-password"
+            visibilityResetKey={rotating?.id || 'rotation'}
+          />
+          <Form.Input
+            field="allowed_models"
+            label="新凭证允许模型（留空=全部端点模型）"
+            extraText="默认继承旧凭证范围；可用中英文逗号、分号或换行分隔。所选验证模型必须包含在范围内。"
+          />
+          <div className="ur-form-actions">
+            <Button onClick={() => setRotating(null)}>取消</Button>
+            <Button type="primary" loading={submitting} onClick={() => rotationFormApi?.submitForm()}>检测并原子轮换</Button>
           </div>
         </Form>
       </SideSheet>

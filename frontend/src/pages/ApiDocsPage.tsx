@@ -166,6 +166,7 @@ const endpointGroups = [
       ['GET', '/api/v1/channel-keys', '上游凭证列表'],
       ['POST', '/api/v1/channel-keys', '创建上游凭证'],
       ['PUT', '/api/v1/channel-keys/{id}', '更新上游凭证'],
+      ['POST', '/api/v1/channel-keys/{id}/rotate', '先真实检测新 Key，再原子启用新凭证并停用旧凭证；路由无需暂停'],
       ['DELETE', '/api/v1/channel-keys/{id}', '删除上游凭证'],
       ['GET', '/api/v1/keys', '访问凭证列表'],
       ['GET', '/api/v1/organizations', '返回这套部署唯一的客户组织；未初始化、不唯一或已停用时不猜测目标'],

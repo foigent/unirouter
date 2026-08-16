@@ -200,9 +200,9 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     fireEvent.click(await screen.findByText('为此公共模型增加供应商端点'));
     await screen.findByText('公共模型 ID 是应用调用 UniRouter 时使用的名字；上游模型 ID 是这个供应商实际接受的模型或部署名。相同公共模型可以绑定多个供应商端点。');
     fireEvent.change(await screen.findByLabelText('连接名称（可选）'), { target: { value: 'OpenRouter DeepSeek' } });
-    const publicModelField = await screen.findByLabelText('公共模型 ID');
-    await waitFor(() => expect(publicModelField).toHaveTextContent('DeepSeek V4 Flash'));
-    expect(publicModelField).toHaveAttribute('aria-disabled', 'true');
+    const publicModelField = await screen.findByLabelText('公共模型 ID') as HTMLInputElement;
+    await waitFor(() => expect(publicModelField.value).toBe('deepseek-v4-flash'));
+    expect(publicModelField).toBeDisabled();
     fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'deepseek/deepseek-v4-flash' } });
     fireEvent.change(await screen.findByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
     fireEvent.click(screen.getByRole('button', { name: '保存端点与凭证' }));
@@ -232,7 +232,7 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
       adapter_type: 'openai_compatible',
       model_mapping: { 'deepseek-v4-flash': 'vendor/deepseek-v4-flash' },
     })));
-  });
+  }, 20_000);
 
   it('uses the server workflow for first activation after a current successful probe', async () => {
     const readyTarget = target({

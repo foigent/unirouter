@@ -337,7 +337,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
   const handleRegistrySubmit = async (values: Record<string, any>) => {
     const parsedContextLength = parseExactTokenCount(values.context_length);
     if (!parsedContextLength.ok) {
-      Toast.error('上下文长度必须是 0..2147483647 的整数 tokens，或十进制整数 K/M');
+      Toast.error('模型上下文窗口上限必须是 0..2147483647 的整数 Token、十进制整数 K/M，或留空');
       return;
     }
     const payload = {

@@ -856,6 +856,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/channel-keys</code></td><td>List upstream credentials</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/channel-keys</code></td><td>Create upstream credential</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/channel-keys/{id}</code></td><td>Update upstream credential</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/channel-keys/{id}/rotate</code></td><td>Probe and atomically rotate an upstream credential without pausing the route</td></tr>
 <tr><td class="method">DELETE</td><td><code>/api/v1/channel-keys/{id}</code></td><td>Delete upstream credential</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/keys</code></td><td>List API keys</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/keys</code></td><td>Create API key</td></tr>
@@ -1050,6 +1051,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/channel-keys", platformRoute(adminHandler.ListChannelKeys))
 	mux.Handle("POST /api/v1/channel-keys", platformRoute(adminHandler.CreateChannelKey))
 	mux.Handle("PUT /api/v1/channel-keys/{id}", platformRoute(adminHandler.UpdateChannelKey))
+	mux.Handle("POST /api/v1/channel-keys/{id}/rotate", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.RotateChannelKey))
 	mux.Handle("DELETE /api/v1/channel-keys/{id}", platformRoute(adminHandler.DeleteChannelKey))
 
 	mux.Handle("GET /api/v1/wallet", billingRoute(adminHandler.GetWallet))
