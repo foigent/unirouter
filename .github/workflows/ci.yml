@@ -599,10 +599,10 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Run real-backend PR4 browser acceptance
+      - name: Run real-backend browser acceptances
         run: >-
           go test -tags=integration,pr4browser ./cmd/uniroute
-          -run '^TestPR4AccessUXModelReadinessBrowserE2E$'
+          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E)$'
           -count=1 -timeout=20m -v
 
   docker:
