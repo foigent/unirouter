@@ -55,6 +55,16 @@ func TestEvaluateSelectionExplainsCredentialFreeExclusions(t *testing.T) {
 	if result.ExclusionReasons != "channel_inactive=1,key_cooldown=1,no_key=1" {
 		t.Fatalf("unexpected reason summary: %q", result.ExclusionReasons)
 	}
+	byChannel := make(map[int64]PreviewCandidate, len(result.Exclusions))
+	for _, exclusion := range result.Exclusions {
+		byChannel[exclusion.ChannelID] = exclusion
+	}
+	if byChannel[2].EligibleKeyCount != 1 {
+		t.Fatalf("disabled channel lost its independently eligible credential count: %#v", byChannel[2])
+	}
+	if byChannel[3].EligibleKeyCount != 0 || byChannel[4].EligibleKeyCount != 0 {
+		t.Fatalf("ineligible credentials were counted: %#v", byChannel)
+	}
 }
 
 func TestModelAllowedAcceptsHistoricalListSeparators(t *testing.T) {

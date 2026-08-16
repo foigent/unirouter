@@ -412,3 +412,140 @@ func TestInitialActivationRejectsRetiredCatalogModelAtomically(t *testing.T) {
 	require.Equal(t, "retired", lifecycle)
 	require.False(t, approved)
 }
+
+func TestUnavailableStableReplacementIsAtomicAndAuditable(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	orgID := testutil.NewTestOrg(t, pool)
+	var userID, oldChannelID, oldEpoch, replacementChannelID, replacementEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+		VALUES ($1,'unavailable-route-admin','fixture','platform_admin','platform_admin','active') RETURNING id`, orgID).Scan(&userID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channels (
+		  name,provider,base_url,models,adapter_type,adapter_config,
+		  priority,routing_weight,degradation_threshold,status,circuit_state)
+		VALUES ('unavailable-old','openai','https://old.invalid','unavailable-route-model',
+		  'openai_compatible','{}',100,100,10,'staged','healthy')
+		RETURNING id,routing_epoch`).Scan(&oldChannelID, &oldEpoch))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channels (
+		  name,provider,base_url,models,adapter_type,adapter_config,
+		  priority,routing_weight,degradation_threshold,status,circuit_state)
+		VALUES ('unavailable-replacement','openai','https://replacement.invalid','unavailable-route-model',
+		  'openai_compatible','{}',100,100,10,'staged','healthy')
+		RETURNING id,routing_epoch`).Scan(&replacementChannelID, &replacementEpoch))
+	for _, channelID := range []int64{oldChannelID, replacementChannelID} {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO channel_keys (channel_id,key_enc,allowed_models,status)
+			VALUES ($1,'fixture','unavailable-route-model','active')`, channelID)
+		require.NoError(t, err)
+	}
+
+	policy := routingpolicy.Default()
+	router, err := gateway.NewRouterWithPolicy(pool, policy)
+	require.NoError(t, err)
+	manager, err := runtimechange.NewManager(pool, router, policy)
+	require.NoError(t, err)
+	router.SetRuntimeResolver(manager)
+
+	retained, err := manager.CreateDraft(ctx, runtimechange.DraftRequest{
+		ReleaseRef: "rcr_unavailable_retained", ModelName: "unavailable-route-model", Reason: "initial stable route",
+		Overrides: []routingpolicy.ChannelOverride{{
+			ChannelID: oldChannelID, ExpectedRoutingEpoch: oldEpoch, Admission: routingpolicy.AdmissionAllow,
+		}},
+	}, userID)
+	require.NoError(t, err)
+	retained, err = manager.Validate(ctx, retained.ReleaseRef, retained.Version, userID)
+	require.NoError(t, err)
+	retained, err = manager.ActivateInitial(ctx, retained.ReleaseRef, retained.Version, userID, orgID)
+	require.NoError(t, err)
+	var retiredOldEpoch int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		UPDATE channels
+		   SET status='disabled',models='retired-old-model',routing_epoch=routing_epoch+1
+		 WHERE id=$1
+		 RETURNING routing_epoch`, oldChannelID).Scan(&retiredOldEpoch))
+	router.Invalidate()
+	_, err = router.RouteAllWithKey(ctx, "unavailable-route-model", "old-route-disabled")
+	require.Error(t, err)
+
+	replacement, err := manager.CreateDraft(ctx, runtimechange.DraftRequest{
+		ReleaseRef: "rcr_unavailable_replacement", ModelName: "unavailable-route-model", Reason: "replace unavailable stable route",
+		Overrides: []routingpolicy.ChannelOverride{
+			{ChannelID: oldChannelID, ExpectedRoutingEpoch: retiredOldEpoch, Admission: routingpolicy.AdmissionDeny},
+			{ChannelID: replacementChannelID, ExpectedRoutingEpoch: replacementEpoch, Admission: routingpolicy.AdmissionAllow},
+		},
+	}, userID)
+	require.NoError(t, err)
+	replacement, err = manager.Validate(ctx, replacement.ReleaseRef, replacement.Version, userID)
+	require.NoError(t, err)
+
+	_, err = manager.ReplaceUnavailableStable(
+		ctx, replacement.ReleaseRef, replacement.Version,
+		retained.ReleaseRef, retained.Version+1, userID, orgID,
+	)
+	require.ErrorIs(t, err, runtimechange.ErrConflict)
+	unchangedSlot, err := manager.Slot(ctx, "unavailable-route-model")
+	require.NoError(t, err)
+	require.Equal(t, retained.ReleaseRef, unchangedSlot.StableReleaseRef)
+	unchangedRetained, err := manager.Get(ctx, retained.ReleaseRef)
+	require.NoError(t, err)
+	require.Equal(t, "active", unchangedRetained.Stage)
+	unchangedReplacement, err := manager.Get(ctx, replacement.ReleaseRef)
+	require.NoError(t, err)
+	require.Equal(t, "validated", unchangedReplacement.Stage)
+
+	replacement, err = manager.ReplaceUnavailableStable(
+		ctx, replacement.ReleaseRef, replacement.Version,
+		retained.ReleaseRef, retained.Version, userID, orgID,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "active", replacement.Stage)
+	rolledBack, err := manager.Get(ctx, retained.ReleaseRef)
+	require.NoError(t, err)
+	require.Equal(t, "rolled_back", rolledBack.Stage)
+	finalSlot, err := manager.Slot(ctx, "unavailable-route-model")
+	require.NoError(t, err)
+	require.Equal(t, replacement.ReleaseRef, finalSlot.StableReleaseRef)
+	require.Empty(t, finalSlot.CanaryReleaseRef)
+
+	router.Invalidate()
+	routes, err := router.RouteAllWithKey(ctx, "unavailable-route-model", "replacement-stable")
+	require.NoError(t, err)
+	require.Equal(t, replacementChannelID, routes[0].Channel.ID)
+	require.Equal(t, replacement.ReleaseRef, routes[0].RuntimeReleaseRef)
+	var rollbackMarked, promotionMarked bool
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT COALESCE((detail->>'unavailable_route_recovery')::boolean,FALSE)
+		  FROM runtime_change_events
+		 WHERE release_id=$1 AND to_stage='rolled_back'`, retained.ID).Scan(&rollbackMarked))
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT COALESCE((detail->>'unavailable_route_recovery')::boolean,FALSE)
+		  FROM runtime_change_events
+		 WHERE release_id=$1 AND to_stage='active'`, replacement.ID).Scan(&promotionMarked))
+	require.True(t, rollbackMarked)
+	require.True(t, promotionMarked)
+
+	abandoned, err := manager.CreateDraft(ctx, runtimechange.DraftRequest{
+		ReleaseRef: "rcr_unavailable_abandoned", ModelName: "unavailable-route-model", Reason: "operator closes an unused candidate",
+		Overrides: []routingpolicy.ChannelOverride{{
+			ChannelID: replacementChannelID, ExpectedRoutingEpoch: replacementEpoch, Admission: routingpolicy.AdmissionAllow,
+		}},
+	}, userID)
+	require.NoError(t, err)
+	abandoned, err = manager.Reject(ctx, abandoned.ReleaseRef, abandoned.Version, userID, "不再需要这个候选")
+	require.NoError(t, err)
+	require.Equal(t, "rejected", abandoned.Stage)
+	_, err = manager.Reject(ctx, replacement.ReleaseRef, replacement.Version, userID, "活动发布不能按候选终止")
+	require.ErrorIs(t, err, runtimechange.ErrConflict)
+	stableAfterReject, err := manager.Slot(ctx, "unavailable-route-model")
+	require.NoError(t, err)
+	require.Equal(t, replacement.ReleaseRef, stableAfterReject.StableReleaseRef)
+	var rejectReason string
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT detail->>'reason'
+		  FROM runtime_change_events
+		 WHERE release_id=$1 AND to_stage='rejected'`, abandoned.ID).Scan(&rejectReason))
+	require.Equal(t, "不再需要这个候选", rejectReason)
+}

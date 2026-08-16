@@ -263,12 +263,18 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
   }, [formApi, query]);
 
   const submit = (values: Record<string, any>) => {
-    const next = new URLSearchParams();
+    const next = new URLSearchParams(search);
     next.set('model', String(values.model).trim());
     next.set('endpoint', values.endpoint);
     if (connectionMode) {
       next.set('mode', 'connection');
+      next.set('tab', 'advanced');
+      next.set('view', 'diagnostics');
+      next.delete('project_id');
+      next.delete('caller');
+      next.delete('application_ref');
     } else {
+      next.delete('mode');
       const projectID = projects.length === 1 ? projects[0].id : Number(values.project_id || 0);
       next.set('project_id', String(projectID));
       next.set('caller', values.caller);

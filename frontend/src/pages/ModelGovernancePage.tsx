@@ -141,7 +141,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
   const customerContext = resolveCustomerContext(user);
   const requestedTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState<TabKey>(
-    ['registry', 'aliases', 'sets', 'assignments', 'optimization', ...(platform ? ['releases'] : [])].includes(requestedTab || '')
+    ['registry', 'aliases', 'sets', 'assignments', 'optimization', ...(!embedded && platform ? ['releases'] : [])].includes(requestedTab || '')
       ? requestedTab as TabKey
       : 'registry',
   );
@@ -199,7 +199,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     { key: 'sets' as const, label: '模型集' },
     { key: 'assignments' as const, label: '项目分配' },
     { key: 'optimization' as const, label: '调用优化' },
-    ...(platform ? [{ key: 'releases' as const, label: '运行时发布' }] : []),
+    ...(!embedded && platform ? [{ key: 'releases' as const, label: '运行时发布' }] : []),
   ];
   const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
   const customerContextReady = !platform || customerContext.state === 'ready';
@@ -719,7 +719,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
         actions={(
           <Space>
             <ModelConnectionBackButton />
-            {platform && <Text type="tertiary">当前部署组织：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
+            {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `客户 #${targetOrgID}`}</Text>}
             {!['optimization', 'releases'].includes(activeTab) && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
           </Space>
         )}
@@ -727,7 +727,6 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 
       {embedded && <div className="ur-embedded-heading">
         <div><Title heading={5} style={{ margin: 0 }}>模型目录与项目范围</Title><Text type="tertiary">运行路由在主页面管理；这里仅维护企业目录、别名和项目可见范围。</Text></div>
-        {platform && <Text type="tertiary">当前部署组织：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
       </div>}
 
       <div className="ur-modelgov-tabs" role="tablist" aria-label="模型治理视图">

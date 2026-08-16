@@ -850,6 +850,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/model-endpoints</code></td><td>Canonical model, provider target, probe and runtime projection</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/activate</code></td><td>Activate a tested first provider target</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/canary</code></td><td>Add or replace a tested target through bounded canary</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/recover</code></td><td>Replace a retained but unavailable stable route with a tested target</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/provider-packs</code></td><td>List immutable fixture-verified Provider Conformance Packs</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/routing/preview</code></td><td>Preview routing candidates and exclusions</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channel-keys</code></td><td>List upstream credentials</td></tr>
@@ -971,6 +972,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/canary</code></td><td>Start a deterministic bounded canary</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/promote</code></td><td>Promote the current canary to stable</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/rollback</code></td><td>Restore the parent stable assignment</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/reject</code></td><td>Terminate a zero-traffic candidate while retaining evidence</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-call-authorizations/contract</code></td><td>Read narrow-only model-call authorization semantics</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-call-authorizations</code></td><td>List tenant-scoped model-call authorization policies</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-call-authorizations</code></td><td>Create a non-enforcing authorization draft</td></tr>
@@ -1019,6 +1021,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("GET /api/v1/model-endpoints", platformRoute(adminHandler.ListModelEndpoints))
 	mux.Handle("POST /api/v1/model-endpoints/activate", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.ActivateModelEndpoint))
 	mux.Handle("POST /api/v1/model-endpoints/canary", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.StartModelEndpointCanary))
+	mux.Handle("POST /api/v1/model-endpoints/recover", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.RecoverModelEndpoint))
 	mux.Handle("GET /api/v1/provider-packs", platformRoute(adminHandler.ListProviderPacks))
 	mux.Handle("GET /api/v1/routing/preview", platformRoute(adminHandler.PreviewRouting))
 

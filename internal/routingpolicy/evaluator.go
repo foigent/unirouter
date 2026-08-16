@@ -76,13 +76,13 @@ func EvaluateSelection(snapshot SelectionSnapshot, policy Config, selectionKey s
 		keyID, requiresProbe, reason := evaluateChannel(channel, snapshot.Model, selectionKey, snapshot.DBNow, policy)
 		if reason != "" {
 			reasonCounts[reason]++
-			exclusions = appendPreviewBounded(exclusions, previewExclusion(channel, reason), policy.MaxCandidateCount)
+			exclusions = appendPreviewBounded(exclusions, previewExclusion(channel, snapshot.Model, snapshot.DBNow, reason), policy.MaxCandidateCount)
 			continue
 		}
 		if len(eligible) >= policy.MaxCandidateCount {
 			reason = "candidate_limit"
 			reasonCounts[reason]++
-			exclusions = appendPreviewBounded(exclusions, previewExclusion(channel, reason), policy.MaxCandidateCount)
+			exclusions = appendPreviewBounded(exclusions, previewExclusion(channel, snapshot.Model, snapshot.DBNow, reason), policy.MaxCandidateCount)
 			continue
 		}
 		eligible = append(eligible, eligibleCandidate{
@@ -257,7 +257,7 @@ func hasEqualPriorityPeer(routes []eligibleCandidate, index int) bool {
 		(index+1 < len(routes) && routes[index+1].channel.Priority == priority)
 }
 
-func previewExclusion(channel SelectionChannel, reason string) PreviewCandidate {
+func previewExclusion(channel SelectionChannel, modelName string, dbNow time.Time, reason string) PreviewCandidate {
 	return PreviewCandidate{
 		ChannelID:        channel.ID,
 		ChannelName:      channel.Name,
@@ -265,7 +265,7 @@ func previewExclusion(channel SelectionChannel, reason string) PreviewCandidate 
 		Priority:         channel.Priority,
 		Weight:           channel.Weight,
 		CircuitState:     channel.CircuitState,
-		EligibleKeyCount: 0,
+		EligibleKeyCount: eligibleKeyCount(channel, modelName, dbNow),
 		Reason:           reason,
 	}
 }

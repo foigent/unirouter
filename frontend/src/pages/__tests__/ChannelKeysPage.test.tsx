@@ -18,8 +18,8 @@ vi.mock('../../api/client', () => ({
   },
 }));
 
-function renderChannelKeys() {
-  return render(<MemoryRouter><ChannelKeysPage /></MemoryRouter>);
+function renderChannelKeys(entry = '/channels?tab=credentials') {
+  return render(<MemoryRouter initialEntries={[entry]}><ChannelKeysPage /></MemoryRouter>);
 }
 
 describe('ChannelKeysPage', () => {
@@ -102,7 +102,7 @@ describe('ChannelKeysPage', () => {
     expect(screen.getByRole('button', { name: '重新加载供应商凭证' })).toBeTruthy();
   });
 
-  it('does not offer a runtime-published active connection as an editable credential target', async () => {
+  it('does not let an unrelated active endpoint block credential creation for the selected staged endpoint', async () => {
     mockGetChannels.mockResolvedValueOnce({
       data: [
         { id: 3, name: 'Deepseek', status: 'staged', models: 'deepseek-v4-pro' },
@@ -113,11 +113,27 @@ describe('ChannelKeysPage', () => {
     renderChannelKeys();
     fireEvent.click(await screen.findByText('新增供应商凭证'));
 
-    expect(await screen.findByText(/Kimi 正在生效，不能直接新增或轮换凭证/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('combobox', { name: '所属通道' }));
+    expect(screen.queryByText(/Kimi 正在承载路由/)).toBeNull();
+    fireEvent.click(screen.getByRole('combobox', { name: '供应商端点' }));
     const runtimeOption = await screen.findByText('Kimi · 生效（运行时发布）');
     expect(runtimeOption.closest('.semi-select-option')).toHaveClass('semi-select-option-disabled');
-    fireEvent.click(runtimeOption);
+    fireEvent.click(screen.getByText('Deepseek · 待发布'));
+    fireEvent.change(await screen.findByLabelText('供应商 API Key'), { target: { value: 'sk-deepseek-test' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+
+    await waitFor(() => expect(mockCreateChannelKey).toHaveBeenCalledWith(expect.objectContaining({
+      channel_id: 3,
+      key: 'sk-deepseek-test',
+    })));
+  });
+
+  it('loads and preselects the exact endpoint context from model and endpoint actions', async () => {
+    renderChannelKeys('/channels?tab=credentials&channel_id=3&model=mimo-v2.5&from=connections');
+
+    expect(await screen.findByText('当前只显示 mimo · mimo-v2.5 的凭证。')).toBeTruthy();
+    expect(mockGetChannelKeys).toHaveBeenCalledWith(1, 20, 3);
+    fireEvent.click(screen.getByRole('button', { name: /新增供应商凭证/ }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '供应商端点' })).toHaveTextContent('mimo'));
     expect(mockCreateChannelKey).not.toHaveBeenCalled();
   });
 
@@ -149,10 +165,10 @@ describe('ChannelKeysPage', () => {
     renderChannelKeys();
 
     expect(await screen.findByText('凭证启用')).toBeTruthy();
-    expect(screen.getByText('通道禁用')).toBeTruthy();
+    expect(screen.getByText('端点暂停')).toBeTruthy();
     expect(screen.getByText('模型范围无交集')).toBeTruthy();
     expect(screen.getByText('阻断：模型无交集')).toBeTruthy();
-    expect(screen.getByText(/1 条启用凭证绑定待发布\/禁用通道，1 条凭证与通道模型范围无交集/)).toBeTruthy();
+    expect(screen.getByText(/1 条启用凭证绑定待发布\/禁用端点，1 条凭证与端点模型范围无交集/)).toBeTruthy();
     expect(screen.queryByText(/冷却至/)).toBeNull();
   });
 });

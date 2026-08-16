@@ -97,10 +97,19 @@ VALUES ($1,1,'create','none','draft',$2,0,1,$3::jsonb)`,
 	if err != nil {
 		return Release{}, fmt.Errorf("%w: create event: %v", ErrUnavailable, err)
 	}
+	created, err := scanRelease(tx.QueryRow(ctx, `
+SELECT id, release_ref, model_name, candidate_version, candidate_hash, baseline_hash,
+       candidate, provider_pack_pins, simulation_report, overall_risk, stage, version,
+       parent_stable_release_id, canary_basis_points, reason, created_by, validated_by,
+       activated_by, created_at, validated_at, activated_at, rolled_back_at, updated_at
+  FROM runtime_change_releases WHERE release_ref=$1`, request.ReleaseRef))
+	if err != nil {
+		return Release{}, fmt.Errorf("%w: read created release before commit: %v", ErrUnavailable, err)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Release{}, fmt.Errorf("%w: commit create: %v", ErrUnavailable, err)
 	}
-	return m.Get(ctx, request.ReleaseRef)
+	return created, nil
 }
 
 func (m *Manager) List(ctx context.Context, modelName string, limit int) ([]Release, error) {
@@ -254,7 +263,16 @@ SELECT provider, COALESCE(adapter_type,'openai_compatible'), models, routing_epo
 		if err != nil {
 			return fmt.Errorf("%w: read channel pin: %v", ErrUnavailable, err)
 		}
-		if epoch != override.ExpectedRoutingEpoch || !modelInCSV(models, modelName) {
+		if epoch != override.ExpectedRoutingEpoch {
+			return fmt.Errorf("%w: channel %d identity changed", ErrConflict, override.ChannelID)
+		}
+		if override.Admission == routingpolicy.AdmissionDeny {
+			// A deny override carries no traffic. It may intentionally retire a
+			// channel that no longer declares this model or whose old adapter pack
+			// is gone, but its current epoch is still pinned to prevent ID reuse.
+			continue
+		}
+		if !modelInCSV(models, modelName) {
 			return fmt.Errorf("%w: channel %d identity changed", ErrConflict, override.ChannelID)
 		}
 		if override.Admission == routingpolicy.AdmissionAllow && channelStatus == "disabled" {

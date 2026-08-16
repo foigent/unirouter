@@ -95,6 +95,10 @@ func (h *Handler) RollbackRuntimeChange(w http.ResponseWriter, r *http.Request) 
 	h.transitionRuntimeChange(w, r, "rollback")
 }
 
+func (h *Handler) RejectRuntimeChange(w http.ResponseWriter, r *http.Request) {
+	h.transitionRuntimeChange(w, r, "reject")
+}
+
 func (h *Handler) transitionRuntimeChange(w http.ResponseWriter, r *http.Request, action string) {
 	if h.runtimeChangeManager == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime change control unavailable"})
@@ -130,6 +134,8 @@ func (h *Handler) transitionRuntimeChange(w http.ResponseWriter, r *http.Request
 		item, err = h.runtimeChangeManager.Promote(r.Context(), ref, request.ExpectedVersion, actor)
 	case "rollback":
 		item, err = h.runtimeChangeManager.Rollback(r.Context(), ref, request.ExpectedVersion, actor)
+	case "reject":
+		item, err = h.runtimeChangeManager.Reject(r.Context(), ref, request.ExpectedVersion, actor, request.Reason)
 	default:
 		err = runtimechange.ErrInvalid
 	}

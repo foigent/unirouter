@@ -790,6 +790,12 @@ paths:
     description: Adds or replaces a tested provider target through the existing validated, shadow and bounded-canary runtime lifecycle.
     post: *operation_create
 
+  /api/v1/model-endpoints/recover:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Replaces a retained stable assignment only when the gateway currently has no candidate for the model. The old release is rolled back as immutable history, then the current tested endpoint follows the first-activation lifecycle. A working route must use canary instead.
+    post: *operation_create
+
   /api/v1/provider-packs:
     get:
       tags: [Admin]
@@ -2096,6 +2102,12 @@ paths:
     x-unirouter-rbac:
       post: [platform_admin]
     description: Atomically removes a canary or restores the recorded parent stable assignment. It does not overwrite emergency channel disable state.
+    post: *operation_create
+
+  /api/v1/runtime-changes/{ref}/reject:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Terminates a draft, validated or zero-traffic shadow candidate as rejected while retaining its immutable evidence. Canary and active releases must use rollback.
     post: *operation_create
 
   /api/v1/model-call-authorizations/contract:

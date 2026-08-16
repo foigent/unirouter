@@ -40,8 +40,9 @@ type DraftRequest struct {
 }
 
 type TransitionRequest struct {
-	ExpectedVersion   int64 `json:"expected_version"`
-	CanaryBasisPoints int   `json:"canary_basis_points,omitempty"`
+	ExpectedVersion   int64  `json:"expected_version"`
+	CanaryBasisPoints int    `json:"canary_basis_points,omitempty"`
+	Reason            string `json:"reason,omitempty"`
 }
 
 type Release struct {

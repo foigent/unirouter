@@ -39,6 +39,76 @@ var (
 	ErrModelIdentityConflict = errors.New("equivalent model identity already exists")
 )
 
+// IdentityConflict describes two public model IDs that collapse to the same
+// product identity after case and separator normalization. Public model IDs
+// are stable API inputs, so callers must reuse the existing exact ID instead
+// of creating a second catalog/runtime identity for the same model.
+type IdentityConflict struct {
+	Requested string
+	Existing  string
+}
+
+func (e *IdentityConflict) Error() string {
+	return fmt.Sprintf("%s conflicts with %s", e.Requested, e.Existing)
+}
+
+func (e *IdentityConflict) Unwrap() error { return ErrModelIdentityConflict }
+
+// ActivatedIdentity validates the public model identity before a channel or a
+// release draft is created. The exact registry row may be absent (first
+// onboarding) or present and non-retired. An equivalent live row is returned
+// as a structured conflict so the UI can point to the existing canonical ID.
+func ActivatedIdentity(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}, orgID int64, modelName string) (string, error) {
+	modelName = strings.TrimSpace(modelName)
+	if orgID <= 0 || modelName == "" {
+		return "", fmt.Errorf("activated model identity requires org_id and model_name")
+	}
+
+	var lifecycle string
+	err := q.QueryRow(ctx, `
+		SELECT lifecycle
+		  FROM model_registry
+		 WHERE org_id=$1 AND model_name=$2`, orgID, modelName).Scan(&lifecycle)
+	switch {
+	case err == nil && lifecycle != LifecycleRetired:
+		return modelName, nil
+	case err != nil && !errors.Is(err, pgx.ErrNoRows):
+		return "", fmt.Errorf("check activated model identity: %w", err)
+	}
+
+	var existing string
+	err = q.QueryRow(ctx, `
+		SELECT model_name
+		  FROM model_registry
+		 WHERE org_id=$1
+		   AND lifecycle <> 'retired'
+		   AND TRIM(BOTH '-' FROM regexp_replace(lower(model_name), '[[:space:]_-]+', '-', 'g'))
+		       = TRIM(BOTH '-' FROM regexp_replace(lower($2), '[[:space:]_-]+', '-', 'g'))
+		 ORDER BY id
+		 LIMIT 1`, orgID, modelName).Scan(&existing)
+	switch {
+	case err == nil:
+		return existing, &IdentityConflict{Requested: modelName, Existing: existing}
+	case errors.Is(err, pgx.ErrNoRows):
+		if lifecycle == LifecycleRetired {
+			return modelName, ErrModelRetired
+		}
+		return modelName, nil
+	default:
+		return "", fmt.Errorf("check equivalent activated model identity: %w", err)
+	}
+}
+
+func ExistingIdentity(err error) string {
+	var conflict *IdentityConflict
+	if errors.As(err, &conflict) {
+		return conflict.Existing
+	}
+	return ""
+}
+
 // AccessResult describes the model governance decision for a gateway request.
 type AccessResult struct {
 	RequestedModel string
@@ -144,32 +214,8 @@ func EnsureActivatedCatalogModel(ctx context.Context, tx pgx.Tx, orgID int64, mo
 		return fmt.Errorf("activated catalog model requires org_id and model_name")
 	}
 
-	var exactExists bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM model_registry WHERE org_id=$1 AND model_name=$2
-		)`, orgID, modelName).Scan(&exactExists); err != nil {
-		return fmt.Errorf("check activated model identity: %w", err)
-	}
-	if !exactExists {
-		var conflictingModel string
-		err := tx.QueryRow(ctx, `
-			SELECT model_name
-			  FROM model_registry
-			 WHERE org_id=$1
-			   AND lifecycle <> 'retired'
-			   AND TRIM(BOTH '-' FROM regexp_replace(lower(model_name), '[^a-z0-9]+', '-', 'g'))
-			       = TRIM(BOTH '-' FROM regexp_replace(lower($2), '[^a-z0-9]+', '-', 'g'))
-			 ORDER BY id
-			 LIMIT 1`, orgID, modelName).Scan(&conflictingModel)
-		switch {
-		case err == nil:
-			return fmt.Errorf("%w: %s conflicts with %s", ErrModelIdentityConflict, modelName, conflictingModel)
-		case errors.Is(err, pgx.ErrNoRows):
-			// No equivalent active catalog identity exists; create the exact ID below.
-		case err != nil:
-			return fmt.Errorf("check equivalent activated model identity: %w", err)
-		}
+	if _, err := ActivatedIdentity(ctx, tx, orgID, modelName); err != nil {
+		return err
 	}
 
 	tag, err := tx.Exec(ctx, `

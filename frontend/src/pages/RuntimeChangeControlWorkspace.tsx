@@ -426,6 +426,7 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
                 {selected.stage === 'shadow' && <Popconfirm title="启动 5% 确定性灰度？" content="同一服务端请求标识会稳定落在同一发布槽。" onConfirm={() => void transition('5% 灰度已启动', () => api.canaryRuntimeChange(selected.release_ref, selected.version, 500))}><Button type="primary" loading={transitioning}>启动 5% 灰度</Button></Popconfirm>}
                 {selected.stage === 'canary' && <Popconfirm title="将灰度候选提升为稳定版本？" content="提升后全部请求采用该受控路由覆盖。" onConfirm={() => void transition('发布已提升为稳定版本', () => api.promoteRuntimeChange(selected.release_ref, selected.version))}><Button type="primary" loading={transitioning}>提升为稳定</Button></Popconfirm>}
                 {['canary', 'active'].includes(selected.stage) && <Popconfirm title="确认回滚该发布？" content="将恢复父稳定版本；紧急禁用状态不会被覆盖。" onConfirm={() => void transition('发布已回滚', () => api.rollbackRuntimeChange(selected.release_ref, selected.version))}><Button type="danger" loading={transitioning}>回滚</Button></Popconfirm>}
+				{['draft', 'validated', 'shadow'].includes(selected.stage) && <Popconfirm title="终止这个未生效候选？" content="记录会保留为“已拒绝”审计历史，但不再出现在待推进队列，也不能获得流量。" onConfirm={() => void transition('候选已终止并保留审计记录', () => api.rejectRuntimeChange(selected.release_ref, selected.version, '管理员终止未生效发布候选'))}><Button type="danger" theme="borderless" loading={transitioning}>终止候选</Button></Popconfirm>}
               </div>
             </>
           ) : <EmptyState title="选择一条发布" description="右侧固定显示风险、Hash、Provider Pack、覆盖内容和允许的下一步。" minHeight={300} />}

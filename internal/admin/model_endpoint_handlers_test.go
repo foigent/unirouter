@@ -15,7 +15,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestApplyGatewayProjectionUsesGatewayCandidatesAsCallabilityAuthority(t *testing.T) {
+func TestApplyGatewayProjectionUsesGatewayCandidatesAsRouteAuthority(t *testing.T) {
 	model := &modelEndpointModelView{
 		PublicModel:      "company-fast",
 		StableReleaseRef: "rcr_stable",
@@ -31,7 +31,7 @@ func TestApplyGatewayProjectionUsesGatewayCandidatesAsCallabilityAuthority(t *te
 	}}}
 	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
 
-	if !model.Callable || model.State != "active" || model.ReasonCode != "stable_route_available" {
+	if !model.RouteAvailable || model.State != "active" || model.ReasonCode != "stable_route_available" {
 		t.Fatalf("unexpected model projection: %+v", model)
 	}
 	if !model.Targets[0].RouteCandidate || model.Targets[0].State != "active" {
@@ -39,7 +39,25 @@ func TestApplyGatewayProjectionUsesGatewayCandidatesAsCallabilityAuthority(t *te
 	}
 }
 
-func TestApplyGatewayProjectionNeverCallsAReleaseCallableWithoutAGatewayCandidate(t *testing.T) {
+func TestApplyGatewayProjectionDoesNotReportARetiredModelRouteAsAvailable(t *testing.T) {
+	model := &modelEndpointModelView{
+		PublicModel: "company-retired", Lifecycle: "retired", StableReleaseRef: "rcr_stable",
+		Targets: []modelEndpointTargetView{{
+			ChannelID: 13, ConfigStatus: "active", RoutingEpoch: 4,
+			EligibleCredentialCount: 1, StableAssignment: true, StableExpectedEpoch: 4,
+		}},
+	}
+	h := &Handler{routingController: &routingControllerStub{preview: routingpolicy.Preview{
+		Model: "company-retired", Candidates: []routingpolicy.PreviewCandidate{{ChannelID: 13}},
+	}}}
+	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
+
+	if model.RouteAvailable || model.State != "governance_blocked" || model.ReasonCode != "model_retired" {
+		t.Fatalf("retired lifecycle must override a raw routing candidate: %+v", model)
+	}
+}
+
+func TestApplyGatewayProjectionNeverCallsAReleaseRoutableWithoutAGatewayCandidate(t *testing.T) {
 	model := &modelEndpointModelView{
 		PublicModel: "company-fast", StableReleaseRef: "rcr_stable",
 		Targets: []modelEndpointTargetView{{
@@ -54,7 +72,7 @@ func TestApplyGatewayProjectionNeverCallsAReleaseCallableWithoutAGatewayCandidat
 	}}}
 	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
 
-	if model.Callable || model.State != "degraded" || model.ReasonCode != "stable_route_unavailable" {
+	if model.RouteAvailable || model.State != "degraded" || model.ReasonCode != "stable_route_unavailable" {
 		t.Fatalf("release metadata was mistaken for callability: %+v", model)
 	}
 	if model.Targets[0].RouteCandidate || model.Targets[0].RouteExclusionReason != "no_eligible_keys" || model.Targets[0].State != "ready" {
@@ -74,7 +92,7 @@ func TestApplyGatewayProjectionDoesNotMistakeCanaryMetadataForACandidate(t *test
 	h := &Handler{routingController: &routingControllerStub{preview: routingpolicy.Preview{Model: "company-fast"}}}
 	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
 
-	if model.Callable || model.State != "degraded" || model.ReasonCode != "canary_stable_route_unavailable" {
+	if model.RouteAvailable || model.State != "degraded" || model.ReasonCode != "canary_stable_route_unavailable" {
 		t.Fatalf("unexpected canary model projection: %+v", model)
 	}
 	if model.Targets[0].State != "needs_credential" || model.Targets[0].ReasonCode != "no_eligible_provider_credential" {
@@ -103,7 +121,7 @@ func TestApplyGatewayProjectionDistinguishesStableAndCanaryTargets(t *testing.T)
 	}}}
 	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
 
-	if !model.Callable || model.State != "canary" {
+	if !model.RouteAvailable || model.State != "canary" {
 		t.Fatalf("unexpected canary model projection: %+v", model)
 	}
 	if model.Targets[0].State != "active" || model.Targets[1].State != "canary" {

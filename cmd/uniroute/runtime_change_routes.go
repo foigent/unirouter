@@ -17,4 +17,5 @@ func registerRuntimeChangeRoutes(mux *http.ServeMux, handler *admin.Handler, pla
 	mux.Handle("POST /api/v1/runtime-changes/{ref}/canary", platformRoute(handler.StartRuntimeChangeCanary))
 	mux.Handle("POST /api/v1/runtime-changes/{ref}/promote", platformRoute(handler.PromoteRuntimeChange))
 	mux.Handle("POST /api/v1/runtime-changes/{ref}/rollback", platformRoute(handler.RollbackRuntimeChange))
+	mux.Handle("POST /api/v1/runtime-changes/{ref}/reject", platformRoute(handler.RejectRuntimeChange))
 }

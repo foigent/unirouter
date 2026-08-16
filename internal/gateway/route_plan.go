@@ -410,7 +410,13 @@ func applyRuntimeAssignment(load snapshotLoad, assignment routingpolicy.RuntimeA
 	for _, override := range normalized {
 		position, exists := index[override.ChannelID]
 		if !exists {
-			return snapshotLoad{}, fmt.Errorf("runtime assignment channel %d is absent from model snapshot", override.ChannelID)
+			if override.Admission == routingpolicy.AdmissionDeny {
+				// Denying a channel that no longer declares this model is an
+				// idempotent, fail-closed operation. Recovery releases retain the
+				// deny as audit evidence without requiring a synthetic route row.
+				continue
+			}
+			return snapshotLoad{}, fmt.Errorf("%w: channel %d is absent from model snapshot", ErrRuntimeAssignmentStale, override.ChannelID)
 		}
 		channel := &copySnapshot.Channels[position].Channel
 		if channel.RoutingEpoch != override.ExpectedRoutingEpoch {

@@ -197,6 +197,17 @@ func (h *Handler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "name, provider, base_url, models are required"})
 		return
 	}
+	if !isUnauthenticatedUnitContext(r.Context()) {
+		orgID, scopeErr := resolveActorOrganization(r.Context(), 0)
+		if scopeErr != nil {
+			writeOrganizationScopeError(w, scopeErr)
+			return
+		}
+		if identityErr := validatePublicModelIdentities(r.Context(), h.db, orgID, req.Models); identityErr != nil {
+			writePublicModelIdentityError(w, req.Models, identityErr)
+			return
+		}
+	}
 
 	if req.Priority == 0 {
 		req.Priority = 100
@@ -350,6 +361,17 @@ func (h *Handler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Status != nil && !validChannelStatus(*req.Status) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "status must be active, staged, or disabled"})
 		return
+	}
+	if req.Models != nil && !isUnauthenticatedUnitContext(r.Context()) {
+		orgID, scopeErr := resolveActorOrganization(r.Context(), 0)
+		if scopeErr != nil {
+			writeOrganizationScopeError(w, scopeErr)
+			return
+		}
+		if identityErr := validatePublicModelIdentities(r.Context(), h.db, orgID, *req.Models); identityErr != nil {
+			writePublicModelIdentityError(w, *req.Models, identityErr)
+			return
+		}
 	}
 	if (req.Priority != nil && (*req.Priority < 1 || *req.Priority > 10000)) ||
 		(req.RoutingWeight != nil && (*req.RoutingWeight < 1 || *req.RoutingWeight > 1000)) ||
