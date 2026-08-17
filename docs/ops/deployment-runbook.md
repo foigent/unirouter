@@ -1566,12 +1566,55 @@ install -m 0755 scripts/docker-image-retention-report.sh \
   scripts/docker-image-retention-maintenance.sh \
   scripts/docker-storage-preflight.sh \
   scripts/internal-target-build-images.sh \
+  scripts/release-worktree-retention-report.sh \
+  scripts/release-worktree-retention-maintenance.sh \
   /usr/local/libexec/unirouter/
 ```
 
 禁止直接使用无范围的 `docker image prune -a`：它无法知道哪两个版本已经完成
 回滚验证。禁止 `--volumes`。正式客户安装仍应使用签名、digest-pinned 制品；本节
 的 source build 和 local tag 只适用于内部 development/test Target。
+
+commit-addressed build worktree 也必须显式保留 N/N-1/N-2，不能因镜像已经治理就让
+`/opt/unirouter/releases` 无限增长。keep file 只接受完整 40 位小写 Git commit；它
+应与已经验证的镜像回滚集合同时更新：
+
+```text
+# /opt/unirouter/release-retention.keep
+<current-verified-commit>
+<previous-verified-commit>
+<previous-previous-verified-commit>
+```
+
+先生成只读报告：
+
+```bash
+scripts/release-worktree-retention-maintenance.sh \
+  --release-root /opt/unirouter/releases \
+  --keep-file /opt/unirouter/release-retention.keep \
+  --min-age-days 14 \
+  --report-out /opt/unirouter/release-retention-report.tsv
+```
+
+只有目录名等于完整 HEAD、处于 detached/clean 状态、没有运行容器引用、未出现在
+keep file、且超过保留期的直接子 worktree 才会标为 `candidate`。脏目录、branch
+worktree、符号链接、非 Git 目录、目录名与 HEAD 不一致等情况全部标为
+`review-required`，不会进入删除集合。
+
+复核并对本次精确候选集合取得删除授权后，才增加 `--apply`：
+
+```bash
+scripts/release-worktree-retention-maintenance.sh --apply \
+  --release-root /opt/unirouter/releases \
+  --keep-file /opt/unirouter/release-retention.keep \
+  --min-age-days 14 \
+  --report-out /opt/unirouter/release-retention-report.tsv
+```
+
+apply 会逐项重新核对路径、HEAD、mtime、clean/detached 状态、keep file 和运行容器
+revision，再通过 `git worktree remove` 删除候选；任一漂移都会停止。工具不会删除
+镜像、容器、volume、bundle、备份、数据库或普通非 worktree 目录，也不会安装 timer
+或 cron。
 
 ---
 
