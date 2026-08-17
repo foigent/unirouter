@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/migrate"
@@ -138,6 +140,19 @@ func EnableMigratedTestDBTemplate() {
 	migratedTestDBTemplate.Lock()
 	defer migratedTestDBTemplate.Unlock()
 	migratedTestDBTemplate.enabled = true
+}
+
+// RunWithMigratedTestDBTemplate runs an integration-test package with one
+// migrated template database. Every SetupMigratedTestDB call still receives
+// an isolated clone, while the package pays the migration cost only once.
+func RunWithMigratedTestDBTemplate(m *testing.M) {
+	EnableMigratedTestDBTemplate()
+	code := m.Run()
+	if err := CleanupMigratedTestDBTemplate(); err != nil {
+		fmt.Fprintf(os.Stderr, "cleanup migrated test database template: %v\n", err)
+		code = 1
+	}
+	os.Exit(code)
 }
 
 // CleanupMigratedTestDBTemplate removes the process-scoped template database.
@@ -433,23 +448,36 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 	}
 }
 
-// NewTestOrg creates a unique test org and returns its ID.
-// Uses UUID-based name to avoid conflicts between parallel tests.
-// IMPORTANT: Calls TruncateAll first to clean up leftover data from previous tests.
-// This prevents FK violations when the previous test's TruncateAll deletes our org.
+// NewTestOrg creates a unique test org and returns its ID. The caller's test-DB
+// setup owns isolation and cleanup; repeating TruncateAll here would scan and
+// clear the entire schema a second time for every fixture.
 func NewTestOrg(t *testing.T, pool *pgxpool.Pool) int64 {
 	t.Helper()
 	ctx := context.Background()
 
-	// Clean up leftover data from previous tests to prevent FK violations
-	TruncateAll(t, pool)
-
 	name := fmt.Sprintf("test-org-%s-%d", t.Name(), time.Now().UnixNano())
 	var orgID int64
-	err := pool.QueryRow(ctx,
-		`INSERT INTO orgs (name, status, org_type) VALUES ($1, 'active', 'standard') RETURNING id`,
-		name,
-	).Scan(&orgID)
+	insert := func() error {
+		return pool.QueryRow(ctx,
+			`INSERT INTO orgs (name, status, org_type) VALUES ($1, 'active', 'standard') RETURNING id`,
+			name,
+		).Scan(&orgID)
+	}
+	err := insert()
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23505" && postgresError.ConstraintName == "orgs_pkey" {
+		// Some historical migration fixtures insert the platform organization
+		// with an explicit ID without advancing the serial sequence. Repair only
+		// that stale-sequence case instead of clearing every business table.
+		_, syncErr := pool.Exec(ctx, `
+			SELECT setval(
+				pg_get_serial_sequence('orgs', 'id'),
+				GREATEST(COALESCE((SELECT MAX(id) FROM orgs), 0) + 1, 1),
+				FALSE
+			)`)
+		require.NoError(t, syncErr, "synchronize test organization sequence")
+		err = insert()
+	}
 	require.NoError(t, err, "create test org")
 
 	return orgID
