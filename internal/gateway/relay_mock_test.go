@@ -668,6 +668,9 @@ func TestRecordRequest_Success(t *testing.T) {
 	if capturedArgs[callLogArgKeyType] != "personal" {
 		t.Fatalf("expected key_type arg personal, got %v", capturedArgs[callLogArgKeyType])
 	}
+	if capturedArgs[callLogArgChannelID] != int64(1) {
+		t.Fatalf("expected immutable route_channel_id arg 1, got %v", capturedArgs[callLogArgChannelID])
+	}
 	if capturedArgs[callLogArgLatencyMS] != 123 {
 		t.Fatalf("expected latency_ms arg 123, got %v", capturedArgs[callLogArgLatencyMS])
 	}

@@ -198,7 +198,7 @@ func (s *Service) provisionTx(ctx context.Context, tx pgx.Tx, input ProvisionInp
 		return ProvisionResult{}, fmt.Errorf("%w: valid_until must be in the future", ErrInvalid)
 	}
 
-	projectActive, subjectRole, subjectOrganizationRole, err := validateSubjectScopeTx(ctx, tx, input)
+	projectActive, subjectRole, subjectOrganizationRole, subjectDisplayName, err := validateSubjectScopeTx(ctx, tx, input)
 	if err != nil {
 		return ProvisionResult{}, err
 	}
@@ -253,6 +253,7 @@ func (s *Service) provisionTx(ctx context.Context, tx pgx.Tx, input ProvisionInp
 		Status: decision.status, DecisionMode: decision.mode,
 		PolicyReasonCodes: normalizeStringSet(decision.policyReasons), DecisionReasonCodes: normalizeStringSet(decision.decisionReasons), PolicyVersion: PolicyVersion,
 		SubmittedBy: actor.UserID, Revision: 1, SubmittedAt: now,
+		SubjectDisplayName: subjectDisplayName,
 	}
 	if decision.status == RequestApproved || decision.status == RequestRejected {
 		request.DecidedBy = actor.UserID
@@ -565,63 +566,63 @@ func validateSubmissionAuthority(actor Actor, input ProvisionInput) error {
 	return nil
 }
 
-func validateSubjectScopeTx(ctx context.Context, tx pgx.Tx, input ProvisionInput) (bool, string, string, error) {
+func validateSubjectScopeTx(ctx context.Context, tx pgx.Tx, input ProvisionInput) (bool, string, string, string, error) {
 	var projectStatus string
 	if err := tx.QueryRow(ctx,
 		`SELECT status FROM projects WHERE id=$1 AND org_id=$2 FOR SHARE`, input.ProjectID, input.OrgID,
 	).Scan(&projectStatus); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return false, "", "", ErrNotFound
+			return false, "", "", "", ErrNotFound
 		}
-		return false, "", "", fmt.Errorf("read access project: %w", err)
+		return false, "", "", "", fmt.Errorf("read access project: %w", err)
 	}
 	switch input.Subject.Type {
 	case SubjectUser:
-		var status, organizationRole string
-		if err := tx.QueryRow(ctx, `SELECT status,organization_role FROM users WHERE id=$1 AND org_id=$2 FOR SHARE`, input.Subject.UserID, input.OrgID).Scan(&status, &organizationRole); err != nil {
+		var status, organizationRole, displayName string
+		if err := tx.QueryRow(ctx, `SELECT status,organization_role,username FROM users WHERE id=$1 AND org_id=$2 FOR SHARE`, input.Subject.UserID, input.OrgID).Scan(&status, &organizationRole, &displayName); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return false, "", "", ErrNotFound
+				return false, "", "", "", ErrNotFound
 			}
-			return false, "", "", fmt.Errorf("read access subject: %w", err)
+			return false, "", "", "", fmt.Errorf("read access subject: %w", err)
 		}
 		if status != "active" {
-			return false, "", "", fmt.Errorf("%w: subject is inactive", ErrConflict)
+			return false, "", "", "", fmt.Errorf("%w: subject is inactive", ErrConflict)
 		}
 		var role string
 		err := tx.QueryRow(ctx, `SELECT role FROM project_members WHERE project_id=$1 AND user_id=$2 FOR SHARE`, input.ProjectID, input.Subject.UserID).Scan(&role)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return false, "", "", fmt.Errorf("read subject membership: %w", err)
+			return false, "", "", "", fmt.Errorf("read subject membership: %w", err)
 		}
 		if err == nil {
 			role, _ = auth.NormalizeProjectMembershipRole(role)
 		}
-		return projectStatus == "active", role, organizationRole, nil
+		return projectStatus == "active", role, organizationRole, strings.TrimSpace(displayName), nil
 	case SubjectWorkloadApplication:
-		var status, environment, identityVersion string
+		var status, environment, identityVersion, displayName string
 		var productionUse bool
 		if err := tx.QueryRow(ctx, `
-			SELECT status,environment,production_use,identity_contract_version
+			SELECT status,environment,production_use,identity_contract_version,display_name
 			FROM workload_applications
 			WHERE id=$1 AND org_id=$2 AND project_id=$3 FOR SHARE`,
 			input.Subject.WorkloadApplicationID, input.OrgID, input.ProjectID,
-		).Scan(&status, &environment, &productionUse, &identityVersion); err != nil {
+		).Scan(&status, &environment, &productionUse, &identityVersion, &displayName); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return false, "", "", ErrNotFound
+				return false, "", "", "", ErrNotFound
 			}
-			return false, "", "", fmt.Errorf("read workload subject: %w", err)
+			return false, "", "", "", fmt.Errorf("read workload subject: %w", err)
 		}
 		if status != "active" {
-			return false, "", "", fmt.Errorf("%w: workload is inactive", ErrConflict)
+			return false, "", "", "", fmt.Errorf("%w: workload is inactive", ErrConflict)
 		}
 		if environment != input.Environment || productionUse != input.ProductionUse {
-			return false, "", "", fmt.Errorf("%w: workload environment and production classification are immutable", ErrConflict)
+			return false, "", "", "", fmt.Errorf("%w: workload environment and production classification are immutable", ErrConflict)
 		}
 		if identityVersion != "unirouter.workload-identity.v2" {
-			return false, "", "", fmt.Errorf("%w: workload requires explicit v2 classification", ErrConflict)
+			return false, "", "", "", fmt.Errorf("%w: workload requires explicit v2 classification", ErrConflict)
 		}
-		return projectStatus == "active", "", "", nil
+		return projectStatus == "active", "", "", strings.TrimSpace(displayName), nil
 	default:
-		return false, "", "", ErrInvalid
+		return false, "", "", "", ErrInvalid
 	}
 }
 
@@ -1049,7 +1050,7 @@ func (s *Service) Decide(ctx context.Context, scope ActorScope, input DecisionIn
 			}
 		}
 	} else {
-		projectActive, subjectRole, subjectOrganizationRole, validateErr := validateSubjectScopeTx(ctx, tx, ProvisionInput{
+		projectActive, subjectRole, subjectOrganizationRole, _, validateErr := validateSubjectScopeTx(ctx, tx, ProvisionInput{
 			OrgID: request.OrgID, ProjectID: request.ProjectID, Subject: request.Subject,
 			RequestKind: request.RequestKind, Envelope: request.Envelope,
 			Environment: request.Environment, ProductionUse: request.ProductionUse,

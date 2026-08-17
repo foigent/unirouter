@@ -106,7 +106,7 @@ func TestBuildSupportsExactSchema66AndRejectsPreviousOrFutureMax(t *testing.T) {
 	}
 
 	future := completeSnapshot()
-	future.MigrationVersions = append(future.MigrationVersions, "000067_future_contract")
+	future.MigrationVersions = append(future.MigrationVersions, "000068_future_contract")
 	if _, err := Build(future, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
 		t.Fatalf("future migration error = %v", err)
 	}

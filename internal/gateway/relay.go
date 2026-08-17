@@ -2555,7 +2555,7 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		cacheCreationCost = settlement.CacheCreationCostMicros
 	}
 	sourceEventHash := hashCallLogEvidence(requestID, requestIdentity.ClientRequestID, requestIdentity.IdempotencyKeyHash,
-		orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName,
+		orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, channelID,
 		usage.PromptTokens, usage.UncachedPromptTokens, usage.CacheReadTokens, usage.CacheCreationTokens,
 		usage.CompletionTokens, costMicros, statusCode, latencyMs, ttftMs, usageSource,
 		string(usage.Authority), string(usage.Purpose), string(usage.Finality), usage.ContractVersion, usage.EstimateVersion,
@@ -2577,6 +2577,7 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 			RequestedModel:                          requestedModel,
 			Provider:                                provider,
 			Channel:                                 channelName,
+			ChannelID:                               channelID,
 			PromptTokens:                            usage.PromptTokens,
 			UncachedPromptTokens:                    usage.UncachedPromptTokens,
 			CacheReadTokens:                         usage.CacheReadTokens,
@@ -2644,7 +2645,7 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		`INSERT INTO call_logs (
 			request_id, client_request_id, idempotency_key_hash,
 			org_id, project_id, api_key_id, owner_user_id, key_type,
-			model, requested_model, provider, channel,
+			model, requested_model, provider, channel, route_channel_id,
 			prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 			completion_tokens, total_tokens, cost_micros, status_code, upstream_status_code, latency_ms, ttft_ms, usage_source,
 			usage_authority, usage_purpose, usage_finality, usage_contract_version, usage_estimate_version,
@@ -2660,28 +2661,28 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		 VALUES (
 			$1, $2, $3,
 			$4, $5, $6, $7, $8,
-			$9, $10, $11, $12,
-			$13, $14, $15, $16,
-			$17, $18, $19, $20,
+			$9, $10, $11, $12, NULLIF($13, 0),
+			$14, $15, $16, $17,
+			$18, $19, $20, $21,
 			(SELECT provider_attempt.http_status
 			   FROM billing_provider_attempts provider_attempt
 			  WHERE provider_attempt.org_id = $4::bigint
 			    AND provider_attempt.request_id = $1::varchar(64)
-			    AND provider_attempt.attempt_id = $50::varchar(64)
+			    AND provider_attempt.attempt_id = $51::varchar(64)
 			  LIMIT 1),
-			$21, $22, $23,
-			$24, $25, $26, $27, $28,
-			$29, $30, $31,
-			$32, $33, $34, $35,
-			$36, $37,
-			$38, $39, $40, $41,
-			$42, $43, $44, $45, $46, $47,
-			$48, $49, $50,
-			$51, $52, $53, $54, $55
+			$22, $23, $24,
+			$25, $26, $27, $28, $29,
+			$30, $31, $32,
+			$33, $34, $35, $36,
+			$37, $38,
+			$39, $40, $41, $42,
+			$43, $44, $45, $46, $47, $48,
+			$49, $50, $51,
+			$52, $53, $54, $55, $56
 		)`,
 		requestID, nullableString(requestIdentity.ClientRequestID), nullableString(requestIdentity.IdempotencyKeyHash),
 		orgID, projectIDArg, keyID, ownerUserIDArg, keyType,
-		model, requestedModel, provider, channelName,
+		model, requestedModel, provider, channelName, channelID,
 		usage.PromptTokens, usage.UncachedPromptTokens, usage.CacheReadTokens, usage.CacheCreationTokens,
 		usage.CompletionTokens, usage.PromptTokens+usage.CompletionTokens,
 		costMicros, statusCode, latencyMs, ttftMs, usageSource,

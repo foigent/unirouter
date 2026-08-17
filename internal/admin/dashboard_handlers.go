@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -226,7 +227,10 @@ func (h *Handler) dashboardWindowMetrics(ctx context.Context, orgID int64, start
 // dashboardRecentLogs returns the last 10 call logs.
 func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) ([]map[string]interface{}, error) {
 	rows, err := h.db.Query(ctx,
-		`SELECT request_id, model, status_code, latency_ms, cost_micros, created_at
+		`SELECT request_id,
+		        COALESCE(NULLIF(BTRIM(requested_model),''),NULLIF(BTRIM(model),''),'(unknown)'),
+		        COALESCE(NULLIF(BTRIM(model),''),''),COALESCE(route_channel_id,0),
+		        provider,channel,status_code,latency_ms,cost_micros,created_at
 		 FROM call_logs WHERE org_id = $1 ORDER BY created_at DESC LIMIT 10`, orgID)
 	if err != nil {
 		return nil, err
@@ -234,15 +238,17 @@ func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) ([]map[s
 	defer rows.Close()
 	logs := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var requestID, model string
+		var requestID, model, routingModel, provider, channel string
+		var routeChannelID int64
 		var statusCode, latencyMs int
 		var costMicros int64
 		var createdAt time.Time
-		if err := rows.Scan(&requestID, &model, &statusCode, &latencyMs, &costMicros, &createdAt); err != nil {
+		if err := rows.Scan(&requestID, &model, &routingModel, &routeChannelID, &provider, &channel, &statusCode, &latencyMs, &costMicros, &createdAt); err != nil {
 			return nil, err
 		}
 		logs = append(logs, map[string]interface{}{
-			"request_id": requestID, "model": model, "status_code": statusCode,
+			"request_id": requestID, "model": model, "routing_model": routingModel,
+			"route_channel_id": routeChannelID, "provider": provider, "channel": channel, "status_code": statusCode,
 			"latency_ms": latencyMs, "cost_micros": strconv.FormatInt(costMicros, 10), "created_at": createdAt,
 		})
 	}
@@ -374,25 +380,18 @@ func (h *Handler) dashboardWalletInfo(ctx context.Context, orgID int64) (balance
 	return
 }
 
-// dashboardModelDistribution returns per-model request health for the selected
-// window. Historical human-readable labels containing spaces are normalized to
-// model-id form for this aggregate only (for example "Kimi K3" -> "kimi-k3");
-// already valid identifiers retain their exact spelling.
+// dashboardModelDistribution returns request health by the resolved callable
+// model for the selected window. call_logs.model is the alias-resolved identity;
+// requested_model is retained separately for request inspection. This
+// projection must not invent another identity by rewriting case, spaces or
+// punctuation.
 func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, startTime, endTime string) ([]map[string]interface{}, error) {
 	rows, err := h.db.Query(ctx,
-		`WITH scoped_logs AS (
-		   SELECT COALESCE(NULLIF(btrim(model),''),NULLIF(btrim(requested_model),''),'(unknown)') AS source_model,
+		`WITH normalized_logs AS (
+		   SELECT COALESCE(NULLIF(BTRIM(model),''),NULLIF(BTRIM(requested_model),''),'(unknown)') AS model,
 		          status_code,latency_ms
 		     FROM call_logs
 		    WHERE org_id=$1 AND created_at >= $2 AND created_at < $3
-		 ), normalized_logs AS (
-		   SELECT CASE
-		            WHEN source_model ~ '[[:space:]]'
-		              THEN lower(regexp_replace(source_model,'[[:space:]_]+','-','g'))
-		            ELSE source_model
-		          END AS model,
-		          status_code,latency_ms
-		     FROM scoped_logs
 		 )
 		 SELECT model,
 		        COUNT(*)::int AS requests,
@@ -443,12 +442,12 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, start
 	operational := dashboardChannelOperationalStates(endpointProjection)
 
 	rows, err := h.db.Query(ctx,
-		`SELECT c.id,c.name,c.provider,c.status,c.circuit_state,
+		`SELECT c.id,c.name,c.provider,c.base_url,c.status,c.circuit_state,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 200 AND cl.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 400 OR cl.status_code = 0 THEN 1 ELSE 0 END), 0) as fail_count
 		 FROM channels c
-		 LEFT JOIN call_logs cl ON cl.channel = c.name AND cl.org_id = $1 AND cl.created_at >= $2 AND cl.created_at < $3
-		 GROUP BY c.id,c.name,c.provider,c.status,c.circuit_state
+		 LEFT JOIN call_logs cl ON cl.route_channel_id = c.id AND cl.org_id = $1 AND cl.created_at >= $2 AND cl.created_at < $3
+		 GROUP BY c.id,c.name,c.provider,c.base_url,c.status,c.circuit_state
 		 ORDER BY c.id`, orgID, startTime, endTime)
 	if err != nil {
 		return nil, err
@@ -457,12 +456,17 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, start
 	health := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id int
-		var name, provider, chStatus, circuitState string
+		var name, provider, baseURL, chStatus, circuitState string
 		var successCount, failCount int
-		if err := rows.Scan(&id, &name, &provider, &chStatus, &circuitState, &successCount, &failCount); err != nil {
+		if err := rows.Scan(&id, &name, &provider, &baseURL, &chStatus, &circuitState, &successCount, &failCount); err != nil {
 			return nil, err
 		}
 		state := operational[int64(id)]
+		publicModels := make([]string, 0, len(state.publicModels))
+		for publicModel := range state.publicModels {
+			publicModels = append(publicModels, publicModel)
+		}
+		sort.Strings(publicModels)
 		runtimePublished := state.runtimePublished
 		credentialReady := state.credentialReady
 		effectiveEnabled := chStatus == "active" || (chStatus == "staged" && runtimePublished)
@@ -490,8 +494,9 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, start
 			status = "degraded"
 		}
 		health = append(health, map[string]interface{}{
-			"id": id, "name": name, "provider": provider,
-			"base_status": chStatus, "runtime_published": runtimePublished,
+			"id": id, "name": name, "provider": provider, "base_url": baseURL,
+			"public_models": publicModels,
+			"base_status":   chStatus, "runtime_published": runtimePublished,
 			"enabled": effectiveEnabled, "credential_ready": credentialReady,
 			"available": available, "circuit_state": circuitState, "status": status,
 			"projection_version": endpointProjection.ContractVersion,
@@ -511,6 +516,7 @@ type dashboardChannelOperationalState struct {
 	staleAssignment       bool
 	projectionUnavailable bool
 	degraded              bool
+	publicModels          map[string]struct{}
 }
 
 func dashboardChannelOperationalStates(projection modelEndpointProjection) map[int64]dashboardChannelOperationalState {
@@ -518,6 +524,10 @@ func dashboardChannelOperationalStates(projection modelEndpointProjection) map[i
 	for _, model := range projection.Models {
 		for _, target := range model.Targets {
 			state := states[target.ChannelID]
+			if state.publicModels == nil {
+				state.publicModels = make(map[string]struct{})
+			}
+			state.publicModels[model.PublicModel] = struct{}{}
 			stableCurrent := target.StableAssignment && target.StableExpectedEpoch == target.RoutingEpoch
 			canaryCurrent := target.CanaryAssignment && target.CanaryExpectedEpoch == target.RoutingEpoch
 			state.runtimePublished = state.runtimePublished || stableCurrent || canaryCurrent

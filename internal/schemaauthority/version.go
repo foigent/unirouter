@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000066_runtime_assignment_projection"
+const LatestSupportedMigration = "000067_call_log_route_identity"

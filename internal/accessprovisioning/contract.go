@@ -181,6 +181,7 @@ type Request struct {
 	OrgID                 int64           `json:"org_id"`
 	ProjectID             int64           `json:"project_id"`
 	Subject               Subject         `json:"subject"`
+	SubjectDisplayName    string          `json:"subject_display_name,omitempty"`
 	RequestKind           string          `json:"request_kind"`
 	Envelope              Envelope        `json:"requested_scope"`
 	Environment           string          `json:"environment"`

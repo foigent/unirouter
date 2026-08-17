@@ -68,6 +68,7 @@ type callLogOutboxPayload struct {
 	RequestedModel                            string      `json:"requested_model"`
 	Provider                                  string      `json:"provider"`
 	Channel                                   string      `json:"channel"`
+	ChannelID                                 int64       `json:"route_channel_id,omitempty"`
 	PromptTokens                              int         `json:"prompt_tokens"`
 	UncachedPromptTokens                      int         `json:"uncached_prompt_tokens"`
 	CacheReadTokens                           int         `json:"cache_read_tokens"`
@@ -324,7 +325,7 @@ func (relay *Relay) ProcessCallLogOutbox(ctx context.Context, event outbox.Event
 		`INSERT INTO call_logs (
 			request_id, client_request_id, idempotency_key_hash,
 			org_id, project_id, api_key_id, owner_user_id, key_type,
-			model, requested_model, provider, channel,
+			model, requested_model, provider, channel, route_channel_id,
 			prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 			completion_tokens, total_tokens, cost_micros, status_code, upstream_status_code, latency_ms, ttft_ms, usage_source,
 			usage_authority, usage_purpose, usage_finality, usage_contract_version, usage_estimate_version,
@@ -341,25 +342,25 @@ func (relay *Relay) ProcessCallLogOutbox(ctx context.Context, event outbox.Event
 		 SELECT
 			$1, $2, $3,
 			$4, $5, $6, $7, $8,
-			$9, $10, $11, $12,
-			$13, $14, $15, $16,
-			$17, $18, $19, $20,
+			$9, $10, $11, $12, NULLIF($13, 0),
+			$14, $15, $16, $17,
+			$18, $19, $20, $21,
 			(SELECT provider_attempt.http_status
 			   FROM billing_provider_attempts provider_attempt
 			  WHERE provider_attempt.org_id = $4::bigint
 			    AND provider_attempt.request_id = $1::varchar(64)
-			    AND provider_attempt.attempt_id = $50::varchar(64)
+			    AND provider_attempt.attempt_id = $51::varchar(64)
 			  LIMIT 1),
-			$21, $22, $23,
-			$24, $25, $26, $27, $28,
-			$29, $30, $31,
-			$32, $33, $34, $35,
-			$36, $37,
-			$38, $39, $40, $41,
-			$42, $43, $44, $45, $46, $47,
-			$48, $49, $50,
-			$51, $52, $53, $54, $55,
-			$56, $57
+			$22, $23, $24,
+			$25, $26, $27, $28, $29,
+			$30, $31, $32,
+			$33, $34, $35, $36,
+			$37, $38,
+			$39, $40, $41, $42,
+			$43, $44, $45, $46, $47, $48,
+			$49, $50, $51,
+			$52, $53, $54, $55, $56,
+			$57, $58
 		 WHERE NOT EXISTS (
 			SELECT 1 FROM call_logs
 			 WHERE org_id = $4::bigint AND request_id = $1::varchar(64)
@@ -367,7 +368,7 @@ func (relay *Relay) ProcessCallLogOutbox(ctx context.Context, event outbox.Event
 		 ON CONFLICT (outbox_event_key) DO NOTHING`,
 		payload.RequestID, nullableString(payload.ClientRequestID), nullableString(payload.IdempotencyKeyHash),
 		payload.OrgID, payload.ProjectID, payload.APIKeyID, payload.OwnerUserID, payload.KeyType,
-		payload.Model, payload.RequestedModel, payload.Provider, payload.Channel,
+		payload.Model, payload.RequestedModel, payload.Provider, payload.Channel, payload.ChannelID,
 		payload.PromptTokens, payload.UncachedPromptTokens, payload.CacheReadTokens, payload.CacheCreationTokens,
 		payload.CompletionTokens, payload.PromptTokens+payload.CompletionTokens,
 		moneyValues.CostMicros, payload.StatusCode, payload.LatencyMS, payload.TTFTMS, payload.UsageSource,

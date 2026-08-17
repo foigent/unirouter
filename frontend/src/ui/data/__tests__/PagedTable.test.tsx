@@ -23,7 +23,7 @@ vi.mock('@douyinfe/semi-ui', async (importOriginal) => {
 });
 
 describe('PagedTable', () => {
-  it('passes table shell, empty state, and pagination callbacks through', () => {
+  it('does not render a false empty result while the first page is loading', () => {
     const onPageChange = vi.fn();
     const onPageSizeChange = vi.fn();
 
@@ -43,12 +43,30 @@ describe('PagedTable', () => {
     expect(screen.getByTestId('semi-table')).toHaveAttribute('data-loading', 'true');
     expect(screen.getByTestId('semi-table')).toHaveAttribute('data-row-key', 'id');
     expect(screen.getByText('page-2-size-20-total-35')).toBeInTheDocument();
-    expect(screen.getByText('暂无数据')).toBeInTheDocument();
+    expect(screen.getByText('正在加载数据')).toBeInTheDocument();
+    expect(screen.queryByText('暂无数据')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText('page'));
     fireEvent.click(screen.getByText('size'));
 
     expect(onPageChange).toHaveBeenCalledWith(3);
     expect(onPageSizeChange).toHaveBeenCalledWith(50);
+  });
+
+  it('renders the configured empty state after loading completes', () => {
+    render(
+      <PagedTable
+        columns={[]}
+        dataSource={[]}
+        page={1}
+        pageSize={20}
+        total={0}
+        onPageChange={() => undefined}
+        empty={<span>没有供应商凭证</span>}
+      />,
+    );
+
+    expect(screen.getByText('没有供应商凭证')).toBeInTheDocument();
+    expect(screen.queryByText('正在加载数据')).not.toBeInTheDocument();
   });
 });

@@ -31,6 +31,9 @@ export default function PagedTable<T extends Record<string, any> = Record<string
   showSizeChanger = false,
   empty,
 }: PagedTableProps<T>) {
+  const resolvedEmpty = loading && dataSource.length === 0
+    ? <EmptyState title="正在加载数据" description="正在读取当前范围，请稍候。" minHeight={180} />
+    : (empty ?? <EmptyState title="暂无数据" minHeight={180} />);
   return (
     <div className="ur-table-shell">
       <Table
@@ -38,7 +41,7 @@ export default function PagedTable<T extends Record<string, any> = Record<string
         dataSource={dataSource}
         loading={loading}
         rowKey={rowKey as never}
-        empty={empty ?? <EmptyState title="暂无数据" minHeight={180} />}
+        empty={resolvedEmpty}
         pagination={{
           currentPage: page,
           pageSize,

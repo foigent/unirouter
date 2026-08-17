@@ -12,6 +12,7 @@ import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { organizationRoleLabel } from '../utils/displayLabels';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectDisplayName } from '../utils/projectDisplay';
 import {
   deleteLocalView,
   loadSavedViews,
@@ -595,14 +596,14 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   // pure definitions stable prevents an application-StrictMode render from
   // turning the persistent table + inspector form into a nested update loop.
   const columns = useMemo(() => [
-    { title: '项目', dataIndex: 'name', width: 180, render: (name: string) => <Text strong>{name}</Text> },
-    { title: '组织', dataIndex: 'org_name', width: 150, render: (name: string, project: Project) => name || `组织 #${project.org_id}` },
+    { title: '项目', dataIndex: 'name', width: 180, render: (_name: string, project: Project) => <Text strong>{projectDisplayName(project)}</Text> },
+    { title: '客户', dataIndex: 'org_name', width: 150, render: () => customerContext.orgName || '当前客户' },
     { title: '标识', dataIndex: 'slug', width: 130 },
     { title: '状态', dataIndex: 'status', width: 90, render: (status: string) => <StatusTag status={status}>{status === 'active' ? '启用' : status === 'disabled' ? '停用' : '归档'}</StatusTag> },
     { title: '预算', key: 'budget', width: 150, render: (_: unknown, project: Project) => !project.budget_period ? '受限字段' : project.budget_period === 'none' || !project.budget_cents ? '不限制' : `¥${yuanFromCents(project.budget_cents).toFixed(2)} / ${project.budget_period === 'daily' ? '日' : '月'}` },
     { title: '凭证数', dataIndex: 'key_count', width: 88, render: (count: number | undefined) => typeof count === 'number' ? count : '受限字段' },
     { title: '我的项目角色', dataIndex: 'current_user_membership_role', width: 170, render: (value: string) => value ? roleNames[canonicalProjectMembershipRole(value)] || value : '组织级权限' },
-  ], []);
+  ], [customerContext.orgName]);
 
   const memberColumns = useMemo(() => [
     { title: '用户', dataIndex: 'username', render: (username: string, member: ProjectMember) => <span>{username}{member.email ? <Text type="tertiary"> · {member.email}</Text> : null}</span> },
@@ -737,7 +738,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
               <Typography.Title heading={5} style={{ margin: 0 }}>项目列表</Typography.Title>
               <Text className="ur-panel-hint">默认选择首条记录 · 键盘可切换项目</Text>
             </div>
-            <Tag size="small">{projectTotal} projects</Tag>
+            <Tag size="small">{projectTotal} 个项目</Tag>
           </div>
           <div className="ur-table-shell">
           <Table
@@ -771,18 +772,18 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
         <aside className="ur-explorer-panel ur-explorer-detail ur-project-workspace" aria-label="项目工作区检查器">
           <div className="ur-detail-header">
             <div>
-              <Text className="ur-panel-hint">Project Workspace</Text>
-              <Typography.Title heading={5} style={{ margin: 0 }}>项目工作区</Typography.Title>
+              <Text className="ur-panel-hint">项目详情</Text>
+              <Typography.Title heading={5} style={{ margin: 0 }}>项目管理</Typography.Title>
             </div>
-            <Tag size="small" color={selectedProject ? 'blue' : undefined}>{selectedProject ? `project:${selectedProject.id}` : '等待项目'}</Tag>
+            <Tag size="small" color={selectedProject ? 'blue' : undefined}>{selectedProject ? projectDisplayName(selectedProject) : '等待选择'}</Tag>
           </div>
 
           {selectedProject ? (
             <div className="ur-project-detail" aria-label={`项目详情：${selectedProject.name}`}>
               <div className="ur-detail-hero">
                 <div>
-                  <Text type="tertiary" size="small">{selectedProject.org_name || `组织 #${selectedProject.org_id}`}</Text>
-                  <div><Typography.Title heading={5} style={{ margin: 0 }}>{selectedProject.name}</Typography.Title></div>
+                  <Text type="tertiary" size="small">{customerContext.orgName || '当前客户'}</Text>
+                  <div><Typography.Title heading={5} style={{ margin: 0 }}>{projectDisplayName(selectedProject)}</Typography.Title></div>
                   <Text type="tertiary">{selectedProject.description || '暂无项目说明'}</Text>
                 </div>
                 <StatusTag status={selectedProject.status}>

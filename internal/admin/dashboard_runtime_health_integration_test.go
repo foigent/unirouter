@@ -50,10 +50,10 @@ func TestDashboardSeparatesRuntimeAvailabilityFromWindowHealthIntegration(t *tes
 		VALUES ('kimi-k3',$1,NULL,0,1)`, releaseID)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `
-		INSERT INTO call_logs (request_id,org_id,model,requested_model,provider,channel,status_code,latency_ms,created_at)
+		INSERT INTO call_logs (request_id,org_id,model,requested_model,provider,channel,route_channel_id,status_code,latency_ms,created_at)
 		VALUES
-		 ('dashboard-kimi-legacy',$1,'Kimi K3','Kimi K3','kimi','Kimi',503,45,NOW()),
-		 ('dashboard-kimi-canonical',$1,'kimi-k3','kimi-k3','kimi','Kimi',200,10624,NOW())`, orgID)
+		 ('dashboard-kimi-alias',$1,'kimi-k3','Kimi K3','kimi','Kimi',$2,503,45,NOW()),
+		 ('dashboard-kimi-canonical',$1,'kimi-k3','kimi-k3','kimi','Kimi',$2,200,10624,NOW())`, orgID, channelID)
 	require.NoError(t, err)
 
 	policy := routingpolicy.Default()
@@ -115,4 +115,26 @@ func TestDashboardSeparatesRuntimeAvailabilityFromWindowHealthIntegration(t *tes
 	require.Equal(t, false, channels[0]["runtime_published"])
 	require.Equal(t, false, channels[0]["available"])
 	require.Equal(t, "stale_release", channels[0]["status"])
+
+	var duplicateChannelID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO channels (name,provider,base_url,models,status,circuit_state)
+		VALUES ('Kimi','aggregator','https://aggregator.invalid','kimi-k3','staged','healthy') RETURNING id`,
+	).Scan(&duplicateChannelID))
+	_, err = pool.Exec(ctx, `
+		INSERT INTO call_logs (request_id,org_id,model,requested_model,provider,channel,route_channel_id,status_code,latency_ms,created_at)
+		VALUES ('dashboard-kimi-duplicate-name',$1,'kimi-k3','kimi-k3','aggregator','Kimi',$2,200,80,NOW())`, orgID, duplicateChannelID)
+	require.NoError(t, err)
+	router.Invalidate()
+	channels, err = h.dashboardChannelHealth(ctx, orgID, "2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z")
+	require.NoError(t, err)
+	require.Len(t, channels, 2)
+	byID := make(map[int64]map[string]interface{}, len(channels))
+	for _, channel := range channels {
+		byID[int64(channel["id"].(int))] = channel
+	}
+	require.Equal(t, 1, byID[channelID]["success_count"])
+	require.Equal(t, 1, byID[channelID]["fail_count"])
+	require.Equal(t, 1, byID[duplicateChannelID]["success_count"])
+	require.Equal(t, 0, byID[duplicateChannelID]["fail_count"])
 }

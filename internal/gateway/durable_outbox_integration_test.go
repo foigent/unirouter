@@ -62,7 +62,7 @@ func TestP6F20GatewayEvidenceIsReplayableAndIdempotent(t *testing.T) {
 		"outbox_version": outbox.Version,
 	})
 	relay.recordRequest(
-		evidenceCtx, requestID, orgID, 0, 0, "provider-a", "channel-a",
+		evidenceCtx, requestID, orgID, 0, 201, "provider-a", "channel-a",
 		"model-a", "model-a", "127.0.0.1", 10, 2, 3, 200, 20, 0,
 		false, metering.UsageSourceUpstream, 12, "upstream-a",
 	)
@@ -83,10 +83,12 @@ func TestP6F20GatewayEvidenceIsReplayableAndIdempotent(t *testing.T) {
 	require.Equal(t, 1, logs)
 	require.Equal(t, 2, traces)
 	var upstreamStatus int
+	var routeChannelID int64
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT upstream_status_code FROM call_logs WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
-	).Scan(&upstreamStatus))
+		`SELECT upstream_status_code,route_channel_id FROM call_logs WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
+	).Scan(&upstreamStatus, &routeChannelID))
 	require.Equal(t, 202, upstreamStatus, "call-log materialization must preserve the authoritative provider-attempt status")
+	require.Equal(t, int64(201), routeChannelID, "call-log materialization must preserve the immutable route identity")
 
 	var createdAt time.Time
 	require.NoError(t, pool.QueryRow(ctx,
@@ -97,7 +99,7 @@ func TestP6F20GatewayEvidenceIsReplayableAndIdempotent(t *testing.T) {
 	// A duplicate producer call after the original outbox row was removed is
 	// still harmless because each destination keeps its durable event key.
 	relay.recordRequest(
-		evidenceCtx, requestID, orgID, 0, 0, "provider-a", "channel-a",
+		evidenceCtx, requestID, orgID, 0, 201, "provider-a", "channel-a",
 		"model-a", "model-a", "127.0.0.1", 10, 2, 3, 200, 20, 0,
 		false, metering.UsageSourceUpstream, 12, "upstream-a",
 	)
@@ -132,12 +134,13 @@ func TestP6F20GatewayEvidenceIsReplayableAndIdempotent(t *testing.T) {
 	relay.outbox = nil
 	syncEvidenceCtx := contextWithAttemptID(context.WithValue(ctx, middleware.CtxOrgID, orgID), syncAttemptID)
 	relay.recordRequest(
-		syncEvidenceCtx, syncRequestID, orgID, 0, 0, "provider-b", "channel-b",
+		syncEvidenceCtx, syncRequestID, orgID, 0, 202, "provider-b", "channel-b",
 		"model-b", "model-b", "127.0.0.1", 10, 2, 3, 200, 20, 0,
 		false, metering.UsageSourceUpstream, 12, "upstream-b",
 	)
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT upstream_status_code FROM call_logs WHERE org_id=$1 AND request_id=$2`, orgID, syncRequestID,
-	).Scan(&upstreamStatus))
+		`SELECT upstream_status_code,route_channel_id FROM call_logs WHERE org_id=$1 AND request_id=$2`, orgID, syncRequestID,
+	).Scan(&upstreamStatus, &routeChannelID))
 	require.Equal(t, 204, upstreamStatus, "synchronous call-log fallback must preserve the authoritative provider-attempt status")
+	require.Equal(t, int64(202), routeChannelID, "synchronous call-log fallback must preserve the immutable route identity")
 }

@@ -111,6 +111,15 @@ function providerDisplayName(provider: string, channelName: string): string | nu
   return provider;
 }
 
+function endpointHost(baseURL?: string): string {
+  if (!baseURL) return '';
+  try {
+    return new URL(baseURL).host;
+  } catch {
+    return baseURL;
+  }
+}
+
 function channelHealthView(ch: NonNullable<DashboardStats['channel_health']>[number]) {
   if (ch.status === 'disabled') return { tone: 'disabled', label: '禁用', icon: <IconMinusCircle /> };
   if (ch.status === 'stale_release') return { tone: 'error', label: '发布记录已过期', icon: <IconAlertTriangle /> };
@@ -143,12 +152,19 @@ function ChannelHealthCard({ ch, onOpen }: { ch: NonNullable<DashboardStats['cha
   const rate = total > 0 ? (ch.success_count / total * 100) : 0;
   const providerLabel = providerDisplayName(ch.provider, ch.name);
   const health = channelHealthView(ch);
+  const models = ch.public_models || [];
+  const host = endpointHost(ch.base_url);
 
   return (
     <button type="button" className="ur-channel-card" onClick={onOpen} aria-label={`查看模型连接 ${ch.name}`}>
       <div style={{ minWidth: 0 }}>
         <Text className="ur-channel-name" title={ch.name}>{ch.name}</Text>
         {providerLabel && <Text className="ur-channel-provider" title={ch.provider}>供应商：{providerLabel}</Text>}
+        {(models.length > 0 || host) && (
+          <Text className="ur-channel-provider" title={[models.join('、'), host].filter(Boolean).join(' · ')}>
+            {[models.length > 0 ? `模型：${models.join('、')}` : '', host].filter(Boolean).join(' · ')}
+          </Text>
+        )}
         <Progress
           percent={rate}
           showInfo={false}
@@ -367,6 +383,13 @@ export default function DashboardPage() {
       dataIndex: 'model',
       key: 'model',
       render: (v: string) => <Tag size="small">{v}</Tag>,
+    },
+    {
+      title: '端点',
+      key: 'endpoint',
+      render: (_: unknown, row: NonNullable<DashboardStats['recent_logs']>[number]) => row.route_channel_id
+        ? <Tooltip content={[row.provider, row.channel].filter(Boolean).join(' · ')}><Text>{row.channel || `端点 #${row.route_channel_id}`}</Text></Tooltip>
+        : <Text type="tertiary">未选择路由</Text>,
     },
     {
       title: '状态码',
@@ -701,7 +724,7 @@ export default function DashboardPage() {
         </div>
 
         <div className={canReadChannelHealth ? 'ur-split-grid' : undefined}>
-          <Surface title="模型运行状态" description="逐模型展示当前窗口请求、成功率和 P95；同一模型的历史显示名会合并到规范标识。">
+          <Surface title="模型运行状态" description="逐公共模型展示当前窗口请求、成功率和 P95；模型身份直接来自网关已解析的请求记录，不按名称猜测合并。">
             {modelData.length > 0 ? (
               <Table
                 size="small"

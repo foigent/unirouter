@@ -29,6 +29,7 @@ export type AccessRequest = {
   org_id: number;
   project_id: number;
   subject: AccessSubject;
+  subject_display_name?: string;
   request_kind: string;
   requested_scope: AccessEnvelope;
   environment: string;

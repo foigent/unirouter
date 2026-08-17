@@ -48,6 +48,7 @@ func TestRateCardAuthorityMigrationRollbackRefusesDailySchedules(t *testing.T) {
 	) VALUES ($1,'scheduled-rate',1,'provider-a','model-a','supplier_contracted','draft',NOW(),
 	  '[{"band_ref":"whole-day","start_minute_utc":0,"end_minute_utc":1440,"components":[]}]'::jsonb,'user:1')`, orgID)
 	require.NoError(t, err)
+	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000066_runtime_assignment_projection.down.sql")
 	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000064_rate_card_request_pricing_authority.down.sql"))
@@ -79,6 +80,7 @@ func TestRateCardAuthorityMigrationRollbackRefusesSourceEvidence(t *testing.T) {
 		  'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 	  'transform.v1','CNY','tokens',NOW(),NOW()+INTERVAL '1 day','user:1')`, orgID)
 	require.NoError(t, err)
+	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000066_runtime_assignment_projection.down.sql")
 	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000064_rate_card_request_pricing_authority.down.sql"))

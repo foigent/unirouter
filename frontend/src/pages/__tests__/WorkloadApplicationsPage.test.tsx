@@ -1,6 +1,6 @@
 import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Modal, Toast } from '@douyinfe/semi-ui';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import WorkloadApplicationsPage from '../WorkloadApplicationsPage';
@@ -103,7 +103,7 @@ function ApplicationTransitionProbe({ onApplicationBLayout }: { onApplicationBLa
       text: document.body.textContent || '',
       credentialActions: Array.from(document.querySelectorAll('button'))
         .map((button) => button.textContent?.trim() || '')
-        .filter((label) => ['签发 Workload 凭据', '原子轮换', '撤销'].includes(label)),
+        .filter((label) => ['创建应用 Key', '安全轮换', '撤销'].includes(label)),
     });
   }, [location.search, onApplicationBLayout]);
   return null;
@@ -135,11 +135,11 @@ async function renderApplicationBAfterAdverseAccessOrdering() {
   render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /></MemoryRouter>);
   await waitFor(() => expect(accessMocks.listProjectGrants).toHaveBeenCalledWith(11, expect.objectContaining({ workload_application_id: application.id })));
   fireEvent.click(screen.getByRole('button', { name: 'show-app-b-same-project' }));
-  expect(await screen.findByText('cred-project-b runtime · cred-project-b')).toBeTruthy();
+  expect(await screen.findByText('cred-project-b runtime')).toBeTruthy();
 
   aRequests.resolve({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
   aGrants.resolve({ data: [grantFor(application.id, 11, 'grant-project-a')], pagination: { limit: 50, has_more: false }, scope: 'project' });
-  await waitFor(() => expect(screen.queryByText('cred-project-a runtime · cred-project-a')).toBeNull());
+  await waitFor(() => expect(screen.queryByText('cred-project-a runtime')).toBeNull());
 }
 
 describe('ApplicationsV2Page', () => {
@@ -154,6 +154,15 @@ describe('ApplicationsV2Page', () => {
     });
     clientMocks.getProjects.mockResolvedValue({ data: [{ id: 11, org_id: 1, name: '理赔 POC', status: 'active', current_user_membership_role: 'project_admin' }], total: 1 });
     clientMocks.getApplications.mockResolvedValue({ data: [application], total: 1 });
+    clientMocks.createApplication.mockResolvedValue({
+      ...application,
+      id: 45,
+      application_ref: 'app_generated_0123456789abcdef01234567',
+      logical_ref: 'workload_generated_0123456789abcdef01234567',
+      display_name: '新服务',
+      kind: 'service',
+      environment: 'development',
+    });
     clientMocks.getCredentials.mockResolvedValue({ data: [{
       id: 81, credential_ref: 'cred_claims_agent', grant_ref: 'grant_claims_agent', name: 'Claims runtime', status: 'active', effective_status: 'active',
       allowed_ips: '', allowed_models: [], allowed_endpoints: ['/v1/chat/completions'], rpm_limit: 60, rps_limit: 10,
@@ -178,11 +187,11 @@ describe('ApplicationsV2Page', () => {
 
     expect(await screen.findByRole('heading', { name: '应用与 Agent' })).toBeTruthy();
     expect((await screen.findAllByText('理赔 Agent')).length).toBeGreaterThan(0);
-    expect(screen.getByText('workload_claims_agent · unirouter.workload-identity.v2')).toBeTruthy();
+    expect(screen.getByText('Logical identity: workload_claims_agent')).toBeTruthy();
     expect(screen.getByText('可选，未配置')).toBeTruthy();
-    expect(await screen.findByText('Claims runtime · cred_claims_agent')).toBeTruthy();
-    expect(screen.getByText('sk-agent (active)')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '原子轮换' })).toBeTruthy();
+    expect(await screen.findByText('Claims runtime')).toBeTruthy();
+    expect(screen.getByText('sk-agent（可用）')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '安全轮换' })).toBeTruthy();
     expect(screen.queryByText('interactive_client')).toBeNull();
     expect(screen.queryByText('personal_development')).toBeNull();
     expect(accessMocks.listProjectRequests).toHaveBeenCalledWith(11, { workload_application_id: 31, limit: 50 });
@@ -192,7 +201,7 @@ describe('ApplicationsV2Page', () => {
   it('uses only the canonical read-only legacy preview and exposes no migration mutation', async () => {
     render(<MemoryRouter initialEntries={['/applications?project_id=11&tab=legacy']}><WorkloadApplicationsPage /></MemoryRouter>);
 
-    expect(await screen.findByRole('tab', { name: 'Legacy 兼容区（只读）' })).toBeTruthy();
+    expect(await screen.findByRole('tab', { name: '旧版兼容（只读）' })).toBeTruthy();
     expect(await screen.findByText('app_legacy')).toBeTruthy();
     expect(screen.getByText('interactive_client_requires_review')).toBeTruthy();
     expect(screen.getByText(/不自动迁移、不推断、不提供写操作/)).toBeTruthy();
@@ -220,21 +229,64 @@ describe('ApplicationsV2Page', () => {
     accessMocks.listProjectRequests.mockRejectedValue(new Error('request store unavailable'));
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
 
-    expect(await screen.findByText('Request 暂时不可用；不会清空 Grant 或凭据事实。')).toBeTruthy();
-    expect(await screen.findByText('Grant：grant_claims_agent (active)')).toBeTruthy();
-    expect(await screen.findByText('Claims runtime · cred_claims_agent')).toBeTruthy();
+    expect(await screen.findByText('访问申请暂时不可用；不会清空授权或 Key 的已知事实。')).toBeTruthy();
+    expect(await screen.findByText('当前授权：已生效')).toBeTruthy();
+    expect(await screen.findByText('Claims runtime')).toBeTruthy();
   });
 
-  it('opens a native form with only v2 workload kinds and immutable identity copy', async () => {
+  it('does not present an empty access state before all application facts finish loading', async () => {
+    const requests = deferred<any>();
+    const grants = deferred<any>();
+    const credentials = deferred<any>();
+    accessMocks.listProjectRequests.mockReturnValue(requests.promise);
+    accessMocks.listProjectGrants.mockReturnValue(grants.promise);
+    clientMocks.getCredentials.mockReturnValue(credentials.promise);
+
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    expect(await screen.findByText('正在读取访问状态…')).toBeTruthy();
+    expect(screen.getByText('正在读取应用 Key')).toBeTruthy();
+    expect(screen.queryByText('访问申请：未申请')).toBeNull();
+    expect(screen.queryByText('当前授权：未授权')).toBeNull();
+    expect(screen.queryByText('尚未创建应用 Key')).toBeNull();
+
+    await act(async () => {
+      requests.resolve({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
+      grants.resolve({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(clientMocks.getCredentials).toHaveBeenCalled());
+    expect(screen.getByText('正在读取应用 Key')).toBeTruthy();
+
+    await act(async () => {
+      credentials.resolve({ data: [], has_more: false });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText('访问申请：未申请')).toBeTruthy();
+    expect(screen.getByText('当前授权：未授权')).toBeTruthy();
+    expect(screen.getByText('尚未创建应用 Key')).toBeTruthy();
+  });
+
+  it('creates an application without asking the operator for internal identity refs', async () => {
     render(<MemoryRouter initialEntries={['/applications?project_id=11']}><WorkloadApplicationsPage /></MemoryRouter>);
 
-    const createLabel = await screen.findByText('新建 v2 Application');
+    const createLabel = await screen.findByText('新建应用');
     fireEvent.click(createLabel.closest('button') as HTMLButtonElement);
-    expect((await screen.findAllByText('新建 v2 Application')).length).toBe(2);
-    expect(screen.getByText('Environment（创建后不可变）')).toBeTruthy();
+    expect((await screen.findAllByText('新建应用')).length).toBe(2);
+    expect(screen.getByText('环境（创建后不可变）')).toBeTruthy();
+    expect(screen.queryByLabelText(/Application ref|Logical ref/i)).toBeNull();
     expect(screen.queryByText('personal_development')).toBeNull();
     expect(screen.queryByText('interactive_client')).toBeNull();
-    await waitFor(() => expect(screen.getByText('Client profiles（可选、多选）')).toBeTruthy());
+    expect(screen.getByText('高级配置（可选）')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '新服务' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(clientMocks.createApplication).toHaveBeenCalledWith(expect.objectContaining({
+      display_name: '新服务', kind: 'service', environment: 'development', production_use: false,
+    })));
+    const payload = clientMocks.createApplication.mock.calls[0][0];
+    expect(payload).not.toHaveProperty('application_ref');
+    expect(payload).not.toHaveProperty('logical_ref');
   });
 
   it('keeps an actor-scoped project_user project discoverable without granting workload writes', async () => {
@@ -255,8 +307,8 @@ describe('ApplicationsV2Page', () => {
 
     expect(await screen.findByText('Project B')).toBeTruthy();
     await waitFor(() => expect(clientMocks.getApplications).toHaveBeenCalledWith({ project_id: 12 }));
-    expect((screen.getByText('新建 v2 Application').closest('button') as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/当前所选项目只有读取\/使用权限/)).toBeTruthy();
+    expect((screen.getByText('新建应用').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/当前所选项目只有读取或使用权限/)).toBeTruthy();
   });
 
   it('renders expired Grant state and prevents issue or rotation while preserving containment', async () => {
@@ -278,13 +330,13 @@ describe('ApplicationsV2Page', () => {
 
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
 
-    expect(await screen.findByText('Grant：grant_claims_agent (expired)')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '签发 Workload 凭据' })).toBeNull();
-    const rotate = await screen.findByRole('button', { name: '原子轮换' }) as HTMLButtonElement;
+    expect(await screen.findByText('当前授权：已过期')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '创建应用 Key' })).toBeNull();
+    const rotate = await screen.findByRole('button', { name: '安全轮换' }) as HTMLButtonElement;
     expect(rotate.disabled).toBe(true);
     expect((screen.getByRole('button', { name: '撤销' }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: '撤销' }));
-    await waitFor(() => expect(screen.getAllByText('撤销整个逻辑凭据？').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('撤销应用 Key？').length).toBeGreaterThan(0));
     const confirmButtons = screen.getAllByRole('button', { name: 'confirm' });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
     await waitFor(() => expect(accessMocks.revokeCredential).toHaveBeenCalledWith('grant_claims_agent', 91, expect.any(String)));
@@ -300,10 +352,10 @@ describe('ApplicationsV2Page', () => {
 
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
 
-    expect(await screen.findByText('cred-suspended runtime · cred-suspended')).toBeTruthy();
-    expect((screen.getByRole('button', { name: '原子轮换' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(await screen.findByText('cred-suspended runtime')).toBeTruthy();
+    expect((screen.getByRole('button', { name: '安全轮换' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '撤销' }));
-    await waitFor(() => expect(screen.getAllByText('撤销整个逻辑凭据？').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('撤销应用 Key？').length).toBeGreaterThan(0));
     const confirmButtons = screen.getAllByRole('button', { name: 'confirm' });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
@@ -315,8 +367,8 @@ describe('ApplicationsV2Page', () => {
     clientMocks.getCredentials.mockResolvedValue({ data: [{ ...credentialFor('cred-missing-grant', '', 291), grant_ref: '' }], has_more: false });
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
 
-    expect(await screen.findByText('exact Grant identity unavailable')).toBeTruthy();
-    expect((screen.getByRole('button', { name: '原子轮换' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(await screen.findByText('授权身份缺失')).toBeTruthy();
+    expect((screen.getByRole('button', { name: '安全轮换' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: '撤销' }) as HTMLButtonElement).disabled).toBe(true);
     expect(accessMocks.rotateCredential).not.toHaveBeenCalled();
     expect(accessMocks.revokeCredential).not.toHaveBeenCalled();
@@ -325,9 +377,9 @@ describe('ApplicationsV2Page', () => {
   it('binds credential issue to the currently displayed Application after adverse access-response ordering', async () => {
     await renderApplicationBAfterAdverseAccessOrdering();
 
-    fireEvent.click(screen.getByRole('button', { name: /签发 Workload 凭据/ }));
-    fireEvent.change(await screen.findByLabelText('凭据名称'), { target: { value: 'project-b-runtime' } });
-    fireEvent.click(screen.getByRole('button', { name: '签发' }));
+    fireEvent.click(screen.getByRole('button', { name: /创建应用 Key/ }));
+    fireEvent.change(await screen.findByLabelText('Key 名称'), { target: { value: 'project-b-runtime' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalledWith('grant-project-b', expect.objectContaining({ name: 'project-b-runtime' }), expect.any(String)));
     expect(accessMocks.issueCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
@@ -336,7 +388,7 @@ describe('ApplicationsV2Page', () => {
   it('binds credential rotation to the currently displayed exact Grant after adverse response ordering', async () => {
     await renderApplicationBAfterAdverseAccessOrdering();
 
-    fireEvent.click(screen.getByRole('button', { name: '原子轮换' }));
+    fireEvent.click(screen.getByRole('button', { name: '安全轮换' }));
     await waitFor(() => expect(accessMocks.rotateCredential).toHaveBeenCalledWith('grant-project-b', 291, expect.any(String)));
     expect(accessMocks.rotateCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
   }, 30_000);
@@ -345,7 +397,7 @@ describe('ApplicationsV2Page', () => {
     await renderApplicationBAfterAdverseAccessOrdering();
 
     fireEvent.click(screen.getByRole('button', { name: '撤销' }));
-    await waitFor(() => expect(screen.getAllByText('撤销整个逻辑凭据？').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('撤销应用 Key？').length).toBeGreaterThan(0));
     const confirmButtons = screen.getAllByRole('button', { name: 'confirm' });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
@@ -372,13 +424,13 @@ describe('ApplicationsV2Page', () => {
       : projectBCredentials.promise);
 
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /><ApplicationTransitionProbe onApplicationBLayout={recordTransition} /></MemoryRouter>);
-    expect(await screen.findByText('Grant：grant-project-a (active)')).toBeTruthy();
-    expect(await screen.findByText('cred-project-a runtime · cred-project-a')).toBeTruthy();
+    expect(await screen.findByText('当前授权：已生效')).toBeTruthy();
+    expect(await screen.findByText('cred-project-a runtime')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'show-app-b-same-project' }));
     expect(recordTransition).toHaveBeenCalledTimes(1);
-    expect(transitionSnapshots[0].text).not.toContain('Grant：grant-project-a (active)');
-    expect(transitionSnapshots[0].text).not.toContain('cred-project-a runtime · cred-project-a');
+    expect(transitionSnapshots[0].text).not.toContain('grant-project-a (active)');
+    expect(transitionSnapshots[0].text).not.toContain('cred-project-a runtime');
     expect(transitionSnapshots[0].credentialActions).toEqual([]);
     expect(accessMocks.issueCredential).not.toHaveBeenCalled();
     expect(accessMocks.rotateCredential).not.toHaveBeenCalled();
@@ -388,8 +440,8 @@ describe('ApplicationsV2Page', () => {
     projectBGrants.resolve({ data: [grantFor(applicationSameProjectB.id, 11, 'grant-project-b')], pagination: { limit: 50, has_more: false }, scope: 'project' });
     await waitFor(() => expect(clientMocks.getCredentials).toHaveBeenCalledWith(applicationSameProjectB.application_ref, 1, 1, 100));
     projectBCredentials.resolve({ data: [credentialFor('cred-project-b', 'grant-project-b', 291)], has_more: false });
-    expect(await screen.findByText('Grant：grant-project-b (active)')).toBeTruthy();
-    expect(await screen.findByText('cred-project-b runtime · cred-project-b')).toBeTruthy();
+    expect(await screen.findByText('grant-project-b (active)')).toBeTruthy();
+    expect(await screen.findByText('cred-project-b runtime')).toBeTruthy();
   }, 30_000);
 
   it('ignores a late prior-project Application list before update, archive, or access sinks become reachable', async () => {
@@ -413,8 +465,8 @@ describe('ApplicationsV2Page', () => {
     expect((await screen.findAllByText('Project B Agent')).length).toBeGreaterThan(0);
 
     projectA.resolve({ data: [application], total: 1 });
-    await waitFor(() => expect(screen.queryByText('workload_claims_agent · unirouter.workload-identity.v2')).toBeNull());
-    expect(screen.getByText('workload_project_b_agent · unirouter.workload-identity.v2')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('Logical identity: workload_claims_agent')).toBeNull());
+    expect(screen.getByText('Logical identity: workload_project_b_agent')).toBeTruthy();
     expect(clientMocks.updateApplication).not.toHaveBeenCalled();
     expect(clientMocks.archiveApplication).not.toHaveBeenCalled();
     expect(accessMocks.createRequest).not.toHaveBeenCalled();
@@ -428,7 +480,7 @@ describe('ApplicationsV2Page', () => {
     clientMocks.getApplications.mockImplementation(({ project_id }: { project_id: number }) => Promise.resolve({ data: [project_id === 11 ? application : applicationB], total: 1 }));
 
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /></MemoryRouter>);
-    fireEvent.click(await screen.findByRole('button', { name: '编辑元数据' }));
+    fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
     fireEvent.click(screen.getByRole('button', { name: 'show-app-b' }));
     expect((await screen.findAllByText('Project B Agent')).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -445,7 +497,7 @@ describe('ApplicationsV2Page', () => {
 
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: '归档' }));
-    await screen.findByText('归档 Workload Application？');
+    await screen.findByText('归档应用？');
     fireEvent.click(screen.getByRole('button', { name: 'show-app-b' }));
     expect((await screen.findAllByText('Project B Agent')).length).toBeGreaterThan(0);
     const modalButtons = screen.getAllByRole('button');
