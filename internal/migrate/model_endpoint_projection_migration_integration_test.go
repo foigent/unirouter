@@ -36,6 +36,7 @@ SELECT COUNT(*)
    AND usage.column_name IN ('channel_id','public_model')`).Scan(&primaryKeyColumns))
 	require.Equal(t, 2, primaryKeyColumns)
 
+	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000066_runtime_assignment_projection.down.sql")
 	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -55,7 +56,7 @@ SELECT to_regclass('public.channel_model_probes') IS NOT NULL,
 func TestModelEndpointProjectionMigrationRejectsOutOfOrderRollback(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	_, err := pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000067_future_contract')`)
+	_, err := pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000068_future_contract')`)
 	require.NoError(t, err)
 
 	downBytes, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000065_model_endpoint_projection.down.sql"))

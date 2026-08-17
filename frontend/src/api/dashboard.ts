@@ -3,6 +3,10 @@ import { appendParams, request } from './transport';
 export type DashboardRecentLog = {
   request_id: string;
   model: string;
+  routing_model?: string;
+  route_channel_id?: number;
+  provider?: string;
+  channel?: string;
   status_code: number;
   latency_ms: number;
   cost_micros: string;
@@ -35,6 +39,8 @@ export type DashboardChannelHealth = {
   id: number;
   name: string;
   provider: string;
+  base_url?: string;
+  public_models?: string[];
   base_status: string;
   runtime_published: boolean;
   enabled: boolean;

@@ -57,7 +57,10 @@ const MOCK_STATS = {
     {
       request_id: 'req-abc-123',
       model: 'gpt-4o',
+      routing_model: 'gpt-4o',
+      route_channel_id: 1,
       provider: 'openai',
+      channel: 'OpenAI Main',
       status_code: 200,
       latency_ms: 450,
       total_tokens: 1500,
@@ -78,7 +81,7 @@ const MOCK_STATS = {
     { model: 'claude-3.5-sonnet', requests: 4345, success_count: 4200, fail_count: 145, success_rate: 0.9666, p95_latency_ms: 980 },
   ],
   channel_health: [
-    { id: 1, name: 'OpenAI Main', provider: 'openai', enabled: true, available: true, credential_ready: true, status: 'healthy', success_count: 10000, fail_count: 50 },
+    { id: 1, name: 'OpenAI Main', provider: 'openai', base_url: 'https://api.openai.com/v1', public_models: ['gpt-4o'], enabled: true, available: true, credential_ready: true, status: 'healthy', success_count: 10000, fail_count: 50 },
     { id: 2, name: 'Azure Backup', provider: 'azure', enabled: true, available: true, credential_ready: true, status: 'warning', success_count: 2000, fail_count: 300 },
     { id: 3, name: 'Disabled CH', provider: 'custom', enabled: false, available: false, credential_ready: false, status: 'disabled', success_count: 0, fail_count: 0 },
   ],
@@ -326,12 +329,21 @@ describe('DashboardPage', () => {
 
   it('renders channel health data', async () => {
     renderDashboard();
-    expect(await screen.findByText('OpenAI Main')).toBeTruthy();
+    const openAIConnection = await screen.findByRole('button', { name: '查看模型连接 OpenAI Main' });
+    expect(openAIConnection).toBeTruthy();
     expect(screen.getByText('Azure Backup')).toBeTruthy();
+    expect(screen.getByText('模型：gpt-4o · api.openai.com')).toBeTruthy();
     expect(screen.getByText('当前可路由连接')).toBeTruthy();
     expect(screen.getByText('2/3')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '查看模型连接 OpenAI Main' }));
+    fireEvent.click(openAIConnection);
     expect(mockNavigate).toHaveBeenCalledWith('/channels?channel_id=1');
+  });
+
+  it('shows the immutable selected endpoint on each recent request', async () => {
+    renderDashboard();
+
+    expect((await screen.findAllByText('OpenAI Main')).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('未选择路由')).toBeNull();
   });
 
   it('separates current route readiness from historical window results', async () => {

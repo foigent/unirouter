@@ -7,9 +7,10 @@ import { ApiError, api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
+import { accessReasonLabel, accessScopeLabel } from '../utils/accessDisplay';
 import { IntentRequestIDs } from '../utils/intentRequestId';
 import { loadAllPages } from '../utils/loadAllPages';
-import { projectOption } from '../utils/projectDisplay';
+import { projectDisplayName, projectOption } from '../utils/projectDisplay';
 
 const { Text } = Typography;
 
@@ -25,6 +26,8 @@ type Project = {
 const statusText: Record<string, string> = {
   approved: '已批准', needs_review: '待审核', rejected: '已拒绝', cancelled: '已取消',
   active: '有效', suspended: '已暂停', revoked: '已撤销', disabled: '已停用', expired: '已过期',
+  disabled_by_grant: '访问授权已失效', subject_blocked: '账号或应用不可用', no_active_version: '没有有效版本',
+  rotated: '已轮换', grant_expired: '访问授权已过期', grant_suspended: '访问授权已暂停', grant_revoked: '访问授权已撤销',
 };
 
 const errorText = (error: unknown, fallback: string) => {
@@ -64,6 +67,10 @@ export default function AccessStatePage() {
 
   const selectedGrant = grants.find((grant) => grant.grant_ref === selectedGrantRef);
   const selectedProject = projects.find((project) => project.id === selectedProjectID);
+  const visibleProjectName = (projectID: number) => {
+    const project = projects.find((item) => item.id === projectID);
+    return project ? projectDisplayName(project) : '历史或当前不可见项目';
+  };
 
   const replaceSearch = useCallback((values: Record<string, string | number | undefined>) => {
     const next = new URLSearchParams(search);
@@ -134,7 +141,7 @@ export default function AccessStatePage() {
       setCredentialCursor(page.pagination.has_more ? page.pagination.next_after_id : undefined);
     } catch {
       if (!append) setCredentials([]);
-      setCredentialsError('无法读取此授权的凭据清单；授权本身的事实仍保留在上方。');
+      setCredentialsError('无法读取此授权的 API Key；授权记录仍保留在上方。');
     } finally {
       setCredentialsLoading(false);
     }
@@ -216,7 +223,7 @@ export default function AccessStatePage() {
       await loadCredentials();
     } catch (error) {
       intents.settleError(intent, error);
-      Toast.error(errorText(error, '凭据签发失败'));
+      Toast.error(errorText(error, 'API Key 创建失败'));
       if (error instanceof ApiError && error.status === 409) await loadCredentials();
     } finally {
       setMutating(false);
@@ -235,7 +242,7 @@ export default function AccessStatePage() {
       await loadCredentials();
     } catch (error) {
       intents.settleError(intent, error);
-      Toast.error(errorText(error, '凭据轮换失败'));
+      Toast.error(errorText(error, 'API Key 轮换失败'));
       if (error instanceof ApiError && error.status === 409) await loadCredentials();
     } finally {
       setMutating(false);
@@ -246,15 +253,15 @@ export default function AccessStatePage() {
     const locator = family.versions.find((version) => version.status === 'active') || family.versions[0];
     if (!selectedGrant || !locator) return;
     Modal.confirm({
-      title: '撤销逻辑凭据',
-      content: '此操作会撤销整个凭据 family，所有 secret version 都将失效，且不能恢复。',
+      title: '撤销 API Key',
+      content: '此操作会使这个 Key 的全部历史版本立即失效，且不能恢复。',
       onOk: async () => {
         const intent = `revoke:${family.credential_ref}:${locator.id}`;
         setMutating(true);
         try {
           await accessApi.revokeCredential(selectedGrant.grant_ref, locator.id, intents.get(intent));
           intents.complete(intent);
-          Toast.success('逻辑凭据已撤销');
+          Toast.success('API Key 已撤销');
           await loadCredentials();
         } catch (error) {
           intents.settleError(intent, error);
@@ -268,35 +275,33 @@ export default function AccessStatePage() {
   };
 
   const requestColumns = useMemo(() => [
-    { title: '请求', dataIndex: 'request_ref', render: (value: string) => <Text code>{value}</Text> },
-    { title: '项目', dataIndex: 'project_id', width: 90, render: (value: number) => `#${value}` },
-    { title: '范围', render: (_: unknown, row: AccessRequest) => `${row.requested_scope.project_role} · ${row.requested_scope.scope_mode}` },
+    { title: '项目', render: (_: unknown, row: AccessRequest) => <><Text strong>{visibleProjectName(row.project_id)}</Text><details><summary>高级审计标识</summary><Text code>{row.request_ref}</Text></details></> },
+    { title: '申请范围', render: (_: unknown, row: AccessRequest) => accessScopeLabel(row.requested_scope.project_role, row.requested_scope.scope_mode) },
     { title: '状态', dataIndex: 'status', width: 100, render: (value: string) => <StatusTag status={value}>{statusText[value] || value}</StatusTag> },
-    { title: '策略原因', render: (_: unknown, row: AccessRequest) => (row.policy_reason_codes || []).join('、') || '—' },
+    { title: '原因', render: (_: unknown, row: AccessRequest) => (row.policy_reason_codes || []).map(accessReasonLabel).join('、') || '—' },
     { title: '提交时间', dataIndex: 'submitted_at', render: (value: string) => formatDateTime(value) },
     { title: '操作', width: 90, render: (_: unknown, row: AccessRequest) => row.actions?.can_cancel ? <Button size="small" disabled={mutating} onClick={() => cancelRequest(row)}>取消</Button> : <Text type="tertiary">—</Text> },
-  ], [mutating]);
+  ], [mutating, projects]);
 
   const grantColumns = useMemo(() => [
-    { title: '授权', dataIndex: 'grant_ref', render: (value: string) => <Text code>{value}</Text> },
-    { title: '项目', dataIndex: 'project_id', width: 90, render: (value: number) => `#${value}` },
-    { title: '范围', render: (_: unknown, row: AccessGrant) => `${row.scope.project_role} · ${row.scope.scope_mode}` },
+    { title: '项目', render: (_: unknown, row: AccessGrant) => <><Text strong>{visibleProjectName(row.project_id)}</Text><details><summary>高级审计标识</summary><Text code>{row.grant_ref}</Text></details></> },
+    { title: '可用范围', render: (_: unknown, row: AccessGrant) => accessScopeLabel(row.scope.project_role, row.scope.scope_mode) },
     { title: '状态', width: 100, render: (_: unknown, row: AccessGrant) => { const status = effectiveGrantStatus(row); return <StatusTag status={status}>{statusText[status] || status}</StatusTag>; } },
     { title: '有效期', render: (_: unknown, row: AccessGrant) => row.valid_until ? formatDateTime(row.valid_until) : '长期' },
-    { title: '操作', width: 110, render: (_: unknown, row: AccessGrant) => <Button size="small" onClick={() => replaceSearch({ grant_ref: row.grant_ref })}>{row.grant_ref === selectedGrantRef ? '已选择' : '管理凭据'}</Button> },
-  ], [replaceSearch, selectedGrantRef]);
+    { title: '操作', width: 120, render: (_: unknown, row: AccessGrant) => <Button size="small" onClick={() => replaceSearch({ grant_ref: row.grant_ref })}>{row.grant_ref === selectedGrantRef ? '正在管理' : '管理 API Key'}</Button> },
+  ], [projects, replaceSearch, selectedGrantRef]);
 
   const credentialColumns = useMemo(() => [
-    { title: '逻辑凭据', render: (_: unknown, row: AccessCredentialFamily) => <><Text strong>{row.name}</Text><br /><Text code>{row.credential_ref}</Text></> },
+    { title: 'API Key', render: (_: unknown, row: AccessCredentialFamily) => <><Text strong>{row.name}</Text><details><summary>高级审计标识</summary><Text code>{row.credential_ref}</Text></details></> },
     { title: '有效状态', dataIndex: 'effective_status', render: (value: string) => <StatusTag status={value}>{statusText[value] || value}</StatusTag> },
-    { title: '边界', render: (_: unknown, row: AccessCredentialFamily) => <Text type="tertiary">{row.allowed_endpoints.join(', ') || '项目默认端点'} · {row.rpm_limit} RPM / {row.rps_limit} RPS</Text> },
-    { title: 'Secret versions', render: (_: unknown, row: AccessCredentialFamily) => <Space wrap>{row.versions.map((version) => <Tag key={version.id} color={version.status === 'active' ? 'green' : 'grey'}>{version.key_prefix} · {version.status}</Tag>)}</Space> },
-    { title: '操作', width: 160, render: (_: unknown, row: AccessCredentialFamily) => <Space><Button size="small" disabled={mutating || row.effective_status !== 'active' || !selectedGrant || !isGrantCurrentlyActive(selectedGrant)} onClick={() => rotateCredential(row)}>原子轮换</Button><Button size="small" type="danger" disabled={mutating || row.status !== 'active'} onClick={() => revokeCredential(row)}>撤销</Button></Space> },
+    { title: '使用限制', render: (_: unknown, row: AccessCredentialFamily) => <Text type="tertiary">{row.allowed_endpoints.join(', ') || '跟随项目接口'} · 每分钟 {row.rpm_limit} 次 / 每秒 {row.rps_limit} 次</Text> },
+    { title: 'Key 版本', render: (_: unknown, row: AccessCredentialFamily) => <Space wrap>{row.versions.map((version) => <Tag key={version.id} color={version.status === 'active' ? 'green' : 'grey'}>{version.key_prefix} · {statusText[version.status] || version.status}</Tag>)}</Space> },
+    { title: '操作', width: 160, render: (_: unknown, row: AccessCredentialFamily) => <Space><Button size="small" disabled={mutating || row.effective_status !== 'active' || !selectedGrant || !isGrantCurrentlyActive(selectedGrant)} onClick={() => rotateCredential(row)}>安全轮换</Button><Button size="small" type="danger" disabled={mutating || row.status !== 'active'} onClick={() => revokeCredential(row)}>撤销</Button></Space> },
   ], [mutating, selectedGrant]);
 
   return (
     <div className="ur-page">
-      <PageHeader eyebrow="访问与安全" title="我的访问" description="查看本人提交的请求、本人 Grant 与逻辑凭据。授权、凭据 family 和 secret version 是相互独立的事实。" actions={<Button icon={<IconRefresh />} onClick={refreshAccess}>刷新</Button>} />
+      <PageHeader eyebrow="访问与安全" title="我的访问与 API Key" description="申请项目使用权限，并在获批后创建、轮换或撤销自己的 API Key。密钥只会在创建或轮换成功时显示一次。" actions={<Button icon={<IconRefresh />} onClick={refreshAccess}>刷新</Button>} />
 
       <Surface title="申请项目访问" description="仅显示当前账号已获准发现的项目；没有项目时不会扩大同组织项目枚举。">
         {projectError ? <EmptyState title="项目列表暂时不可用" description={projectError} actions={<Button onClick={loadProjects}>重试</Button>} /> : projects.length === 0 && !projectLoading ? (
@@ -309,21 +314,21 @@ export default function AccessStatePage() {
         )}
       </Surface>
 
-      <Surface title="我的请求" description="Actor-owned、服务端 keyset 分页；请求失败不会清空 Grant 或凭据事实。" actions={<Button icon={<IconRefresh />} onClick={() => loadRequests()}>刷新</Button>}>
+      <Surface title="我的访问申请" description="查看申请状态和需要审核的原因。列表读取失败不会影响已经生效的授权或 API Key。" actions={<Button icon={<IconRefresh />} onClick={() => loadRequests()}>刷新</Button>}>
         {requestsError ? <EmptyState title="请求列表暂时不可用" description={requestsError} actions={<Button onClick={() => loadRequests()}>重试</Button>} /> : (
           <><Table columns={requestColumns} dataSource={requests} rowKey="id" loading={requestsLoading && requests.length === 0} pagination={false} empty={<EmptyState title="暂无访问请求" />} />{requestCursor && <Button block loading={requestsLoading} onClick={() => loadRequests(true)}>加载更早请求</Button>}</>
         )}
       </Surface>
 
-      <Surface title="我的 Grant" description="包含有效、暂停、撤销和过期历史；不依赖当前项目枚举。" actions={<Button icon={<IconRefresh />} onClick={() => loadGrants()}>刷新</Button>}>
-        {grantsError ? <EmptyState title="Grant 列表暂时不可用" description={grantsError} actions={<Button onClick={() => loadGrants()}>重试</Button>} /> : (
-          <><Table columns={grantColumns} dataSource={grants} rowKey="id" loading={grantsLoading && grants.length === 0} pagination={false} empty={<EmptyState title="暂无个人 Grant" />} />{grantCursor && <Button block loading={grantsLoading} onClick={() => loadGrants(true)}>加载更早 Grant</Button>}</>
+      <Surface title="我的有效与历史授权" description="包含有效、暂停、撤销和过期记录；选择一项有效授权后即可管理对应 API Key。" actions={<Button icon={<IconRefresh />} onClick={() => loadGrants()}>刷新</Button>}>
+        {grantsError ? <EmptyState title="授权列表暂时不可用" description={grantsError} actions={<Button onClick={() => loadGrants()}>重试</Button>} /> : (
+          <><Table columns={grantColumns} dataSource={grants} rowKey="id" loading={grantsLoading && grants.length === 0} pagination={false} empty={<EmptyState title="暂无访问授权" />} />{grantCursor && <Button block loading={grantsLoading} onClick={() => loadGrants(true)}>加载更早授权</Button>}</>
         )}
       </Surface>
 
-      <Surface title="逻辑凭据与 Secret versions" description={selectedGrant ? `当前 Grant：${selectedGrant.grant_ref}。Secret 只在签发/轮换成功后的当前内存弹层显示一次。` : '先从上方选择一个 Grant。'} actions={selectedGrant && isGrantCurrentlyActive(selectedGrant) ? <Button icon={<IconKeyStroked />} type="primary" onClick={() => setCredentialDrawer(true)}>签发逻辑凭据</Button> : undefined}>
-        {!selectedGrant ? <EmptyState title="尚未选择 Grant" /> : credentialsError ? <EmptyState title="凭据列表暂时不可用" description={credentialsError} actions={<Button onClick={() => loadCredentials()}>重试</Button>} /> : (
-          <><Table columns={credentialColumns} dataSource={credentials} rowKey="id" loading={credentialsLoading && credentials.length === 0} pagination={false} empty={<EmptyState title="此 Grant 暂无逻辑凭据" />} />{credentialCursor && <Button block loading={credentialsLoading} onClick={() => loadCredentials(true)}>加载更多凭据</Button>}</>
+      <Surface title="我的 API Key" description={selectedGrant ? `正在管理“${visibleProjectName(selectedGrant.project_id)}”的 API Key。新密钥只显示一次，请立即安全保存。` : '请先从上方选择一项有效授权。'} actions={selectedGrant && isGrantCurrentlyActive(selectedGrant) ? <Button icon={<IconKeyStroked />} type="primary" onClick={() => setCredentialDrawer(true)}>创建 API Key</Button> : undefined}>
+        {!selectedGrant ? <EmptyState title="尚未选择访问授权" /> : credentialsError ? <EmptyState title="API Key 列表暂时不可用" description={credentialsError} actions={<Button onClick={() => loadCredentials()}>重试</Button>} /> : (
+          <><Table columns={credentialColumns} dataSource={credentials} rowKey="id" loading={credentialsLoading && credentials.length === 0} pagination={false} empty={<EmptyState title="此授权尚未创建 API Key" />} />{credentialCursor && <Button block loading={credentialsLoading} onClick={() => loadCredentials(true)}>加载更多 API Key</Button>}</>
         )}
       </Surface>
 
@@ -335,19 +340,19 @@ export default function AccessStatePage() {
         </Form>
       </Modal>
 
-      <Modal title="签发逻辑凭据" visible={credentialDrawer} onCancel={() => setCredentialDrawer(false)} footer={null} closeOnEsc={!mutating}>
+      <Modal title="创建 API Key" visible={credentialDrawer} onCancel={() => setCredentialDrawer(false)} footer={null} closeOnEsc={!mutating}>
         <Form getFormApi={setCredentialForm} onSubmit={issueCredential}>
-          <Form.Input field="name" label="凭据名称" rules={[{ required: true, message: '请输入名称' }]} />
-          <Form.Input field="allowed_ips" label="IP / CIDR（可选）" placeholder="例如 203.0.113.10/32" extraText="留空表示不增加凭据级 IP 收窄；服务端会规范化并验证。" />
-          <div style={{ textAlign: 'right' }}><Button onClick={() => setCredentialDrawer(false)}>取消</Button><Button type="primary" htmlType="submit" loading={mutating} style={{ marginLeft: 8 }}>签发</Button></div>
+          <Form.Input field="name" label="Key 名称" placeholder="例如：我的开发电脑" rules={[{ required: true, message: '请输入名称' }]} />
+          <Form.Input field="allowed_ips" label="允许的 IP / CIDR（可选）" placeholder="例如 203.0.113.10/32" extraText="留空表示不额外限制来源 IP；填写后只有这些地址可以使用此 Key。" />
+          <div style={{ textAlign: 'right' }}><Button onClick={() => setCredentialDrawer(false)}>取消</Button><Button type="primary" htmlType="submit" loading={mutating} style={{ marginLeft: 8 }}>创建</Button></div>
         </Form>
       </Modal>
 
-      <Modal title="一次性 Secret" visible={!!secret} onCancel={() => setSecret(null)} onOk={() => setSecret(null)} okText="我已安全保存" cancelButtonProps={{ style: { display: 'none' } }} closeOnEsc={false} maskClosable={false}>
+      <Modal title="一次性 API Key" visible={!!secret} onCancel={() => setSecret(null)} onOk={() => setSecret(null)} okText="我已安全保存" cancelButtonProps={{ style: { display: 'none' } }} closeOnEsc={false} maskClosable={false}>
         {secret?.secret_available && secret.key ? (
-          <><Text type="warning">关闭后前端不会保留或再次显示此 secret。</Text><div style={{ marginTop: 16, wordBreak: 'break-all' }}><Text code copyable>{secret.key}</Text></div></>
+          <><Text type="warning">关闭后系统不会保留或再次显示完整 Key。</Text><div style={{ marginTop: 16, wordBreak: 'break-all' }}><Text code copyable>{secret.key}</Text></div></>
         ) : (
-          <Text type="warning">本次是已提交操作的幂等重放，原 secret 不可恢复。{secret?.recovery_action ? `恢复动作：${secret.recovery_action}` : '请对当前 active version 执行新的原子轮换。'}</Text>
+          <Text type="warning">这次请求是之前成功操作的安全重放，原 Key 无法再次显示。请对当前有效版本执行一次安全轮换以获得新 Key。</Text>
         )}
       </Modal>
     </div>

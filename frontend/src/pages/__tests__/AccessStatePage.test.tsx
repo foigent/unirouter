@@ -71,7 +71,7 @@ describe('AccessStatePage', () => {
 
     expect(await screen.findByText('请求列表暂时不可用')).toBeTruthy();
     expect(await screen.findByText('grant-one')).toBeTruthy();
-    expect(screen.getByText('当前 Grant：grant-one。Secret 只在签发/轮换成功后的当前内存弹层显示一次。')).toBeTruthy();
+    expect(screen.getByText('正在管理“Core”的 API Key。新密钥只显示一次，请立即安全保存。')).toBeTruthy();
   });
 
   it('uses the server keyset cursor without replacing the first page', async () => {
@@ -101,19 +101,19 @@ describe('AccessStatePage', () => {
       });
     render(<MemoryRouter initialEntries={['/access?project_id=11']}><AccessStatePage /></MemoryRouter>);
 
-    fireEvent.click(await screen.findByRole('button', { name: '管理凭据' }));
-    fireEvent.click(await screen.findByRole('button', { name: /签发逻辑凭据/ }));
-    fireEvent.change(await screen.findByLabelText('凭据名称'), { target: { value: 'Laptop' } });
-    fireEvent.click(screen.getByRole('button', { name: '签发' }));
+    fireEvent.click(await screen.findByRole('button', { name: '管理 API Key' }));
+    fireEvent.click(await screen.findByRole('button', { name: /创建 API Key/ }));
+    fireEvent.change(await screen.findByLabelText('Key 名称'), { target: { value: 'Laptop' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
     expect(await screen.findByText('ur-secret-once')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'confirm' }));
     await waitFor(() => expect(screen.queryByText('ur-secret-once')).toBeNull());
 
-    fireEvent.click(await screen.findByRole('button', { name: /签发逻辑凭据/ }));
-    fireEvent.change(await screen.findByLabelText('凭据名称'), { target: { value: 'Laptop' } });
-    fireEvent.click(screen.getByRole('button', { name: '签发' }));
-    expect(await screen.findByText(/幂等重放，原 secret 不可恢复/)).toBeTruthy();
-    expect(screen.getByText(/rotate_active_version/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /创建 API Key/ }));
+    fireEvent.change(await screen.findByLabelText('Key 名称'), { target: { value: 'Laptop' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+    expect(await screen.findByText(/之前成功操作的安全重放/)).toBeTruthy();
+    expect(screen.queryByText(/rotate_active_version/)).toBeNull();
     expect(screen.queryByText('ur-secret-once')).toBeNull();
   }, 20_000);
 
@@ -128,8 +128,8 @@ describe('AccessStatePage', () => {
     render(<MemoryRouter initialEntries={['/access?project_id=11&grant_ref=grant-one']}><AccessStatePage /></MemoryRouter>);
 
     expect(await screen.findByText('已过期')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '签发逻辑凭据' })).toBeNull();
-    const rotate = await screen.findByRole('button', { name: '原子轮换' }) as HTMLButtonElement;
+    expect(screen.queryByRole('button', { name: '创建 API Key' })).toBeNull();
+    const rotate = await screen.findByRole('button', { name: '安全轮换' }) as HTMLButtonElement;
     expect(rotate.disabled).toBe(true);
     expect(mocks.issueCredential).not.toHaveBeenCalled();
     expect(mocks.rotateCredential).not.toHaveBeenCalled();

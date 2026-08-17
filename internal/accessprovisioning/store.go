@@ -100,7 +100,22 @@ const requestSelect = `
 	       COALESCE(ar.expected_grant_revision,0),ar.status,ar.decision_mode,
 	       ar.policy_reason_codes,ar.decision_reason_codes,ar.policy_version,ar.submitted_by,
 	       COALESCE(ar.decided_by,0),COALESCE(ar.cancelled_by,0),ar.submitted_at,
-	       ar.decided_at,ar.cancelled_at,ar.revision
+	       ar.decided_at,ar.cancelled_at,ar.revision,
+	       CASE ar.subject_type
+	         WHEN 'user' THEN COALESCE((
+	           SELECT NULLIF(BTRIM(subject_user.username),'')
+	             FROM users subject_user
+	            WHERE subject_user.id=ar.subject_user_id AND subject_user.org_id=ar.org_id
+	         ),'')
+	         WHEN 'workload_application' THEN COALESCE((
+	           SELECT NULLIF(BTRIM(subject_application.display_name),'')
+	             FROM workload_applications subject_application
+	            WHERE subject_application.id=ar.subject_workload_application_id
+	              AND subject_application.org_id=ar.org_id
+	              AND subject_application.project_id=ar.project_id
+	         ),'')
+	         ELSE ''
+	       END
 	FROM access_requests ar`
 
 const grantSelect = `
@@ -199,7 +214,7 @@ func scanRequest(row rowScanner) (Request, error) {
 		&request.TargetAccessGrantID, &request.ExpectedGrantRevision,
 		&request.Status, &request.DecisionMode, &request.PolicyReasonCodes, &request.DecisionReasonCodes, &request.PolicyVersion,
 		&request.SubmittedBy, &request.DecidedBy, &request.CancelledBy, &request.SubmittedAt,
-		&decidedAt, &cancelledAt, &request.Revision,
+		&decidedAt, &cancelledAt, &request.Revision, &request.SubjectDisplayName,
 	); err != nil {
 		return Request{}, err
 	}

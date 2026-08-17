@@ -154,6 +154,7 @@ func TestDecideAndSponsorTransitionUsePrincipalThenRequestGrantLockOrderIntegrat
 	initial, err := fixture.service.Provision(ctx, initialInput)
 	require.NoError(t, err)
 	require.NotNil(t, initial.Grant)
+	require.Equal(t, "Access service fixture", initial.Request.SubjectDisplayName)
 
 	newRaceService := func(beforePrincipalLock, afterPrincipalLock func()) *Service {
 		authorizer := CommitAuthorizerFunc(func(ctx context.Context, tx pgx.Tx, requirement AuthorizationRequirement) (Actor, error) {
@@ -411,6 +412,7 @@ func TestPlatformSubmitterCanCancelCrossOrganizationMigrationRequestIntegration(
 	require.NoError(t, err)
 	require.Len(t, firstPage.Data, 1)
 	require.Equal(t, secondPending.Request.ID, firstPage.Data[0].ID)
+	require.Equal(t, "access-subject", firstPage.Data[0].SubjectDisplayName)
 	require.True(t, firstPage.Pagination.HasMore)
 	require.NotNil(t, firstPage.Pagination.NextAfterID)
 	secondPage, err := fixture.service.ListMyRequests(ctx, platformScope, PageInput{
@@ -419,6 +421,7 @@ func TestPlatformSubmitterCanCancelCrossOrganizationMigrationRequestIntegration(
 	require.NoError(t, err)
 	require.Len(t, secondPage.Data, 1)
 	require.Equal(t, pending.Request.ID, secondPage.Data[0].ID)
+	require.Equal(t, "access-subject", secondPage.Data[0].SubjectDisplayName)
 	require.False(t, secondPage.Pagination.HasMore)
 
 	unrelatedPage, err := fixture.service.ListMyRequests(ctx, ActorScope{

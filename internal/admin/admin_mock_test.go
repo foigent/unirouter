@@ -3946,12 +3946,11 @@ func TestDashboardStats_Success(t *testing.T) {
 							*dest[0].(*int) = 1
 							*dest[1].(*string) = "channel-1"
 							*dest[2].(*string) = "openai"
-							*dest[3].(*string) = "active"
-							*dest[4].(*string) = "healthy"
-							*dest[5].(*bool) = true
-							*dest[6].(*bool) = true
-							*dest[7].(*int) = 80
-							*dest[8].(*int) = 5
+							*dest[3].(*string) = "https://api.example.com/v1"
+							*dest[4].(*string) = "active"
+							*dest[5].(*string) = "healthy"
+							*dest[6].(*int) = 80
+							*dest[7].(*int) = 5
 							return nil
 						},
 					},
@@ -3983,13 +3982,17 @@ func TestDashboardStats_Success(t *testing.T) {
 							*dest[1].(*int) = 50
 							*dest[2].(*int64) = 10_000_000
 						} else {
-							// recent logs: request_id, model, status_code, latency_ms, cost_micros, created_at
+							// recent logs: request/model/route identity, status, latency, cost, time
 							*dest[0].(*string) = "req-001"
 							*dest[1].(*string) = "gpt-4o"
-							*dest[2].(*int) = 200
-							*dest[3].(*int) = 350
-							*dest[4].(*int64) = 50_000
-							*dest[5].(*time.Time) = now
+							*dest[2].(*string) = "gpt-4o"
+							*dest[3].(*int64) = 1
+							*dest[4].(*string) = "openai"
+							*dest[5].(*string) = "channel-1"
+							*dest[6].(*int) = 200
+							*dest[7].(*int) = 350
+							*dest[8].(*int64) = 50_000
+							*dest[9].(*time.Time) = now
 						}
 						return nil
 					},

@@ -2155,7 +2155,7 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, org_viewer, project_admin, project_user, project_viewer]
       post: [platform_admin, org_admin, project_admin]
-    description: Lists actor-scoped v2 applications or creates one inside an active same-tenant project. New identities use an explicit logical_ref, immutable project/environment/production classification, a service_credential identity and optional multiple client profiles.
+    description: Lists actor-scoped v2 applications or creates one inside an active same-tenant project. The server generates application_ref and logical_ref when they are omitted; project/environment/production classification remains immutable, the identity is service_credential, and client profiles are optional.
     get:
       tags: [Admin]
       security: [{ bearerAuth: [] }]
@@ -2179,7 +2179,7 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/WorkloadApplicationCreateInput" } } }
       responses:
         "201":
-          description: Native v2 Workload identity.
+          description: Native v2 Workload identity with server-owned application and logical references.
           content: { application/json: { schema: { $ref: "#/components/schemas/WorkloadApplication" } } }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -3609,12 +3609,12 @@ components:
     WorkloadApplicationCreateInput:
       type: object
       additionalProperties: false
-      required: [org_id, project_id, application_ref, logical_ref, display_name, kind, environment, production_use, identity_mode, client_profiles, owner_team, description, status]
+      required: [org_id, project_id, display_name, kind, environment, production_use, identity_mode, client_profiles, owner_team, description, status]
       properties:
         org_id: { type: integer, format: int64, minimum: 1 }
         project_id: { type: integer, format: int64, minimum: 1 }
-        application_ref: { type: string, pattern: '^app_[a-z0-9][a-z0-9._-]{2,59}$' }
-        logical_ref: { type: string, pattern: '^workload_[a-z0-9][a-z0-9._-]{2,54}$' }
+        application_ref: { type: string, pattern: '^app_[a-z0-9][a-z0-9._-]{2,59}$', description: Optional compatibility input. Omit it for a server-generated immutable application identity. }
+        logical_ref: { type: string, pattern: '^workload_[a-z0-9][a-z0-9._-]{2,54}$', description: Optional compatibility input. Omit it to derive the logical identity from application_ref. }
         display_name: { type: string, minLength: 1, maxLength: 160 }
         kind: { type: string, enum: [service, agent, workflow, integration_adapter] }
         environment: { type: string, pattern: '^[a-z][a-z0-9_-]{0,31}$' }

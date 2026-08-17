@@ -24,11 +24,11 @@ vi.mock('../../api/access', () => ({
 }));
 
 const queueRequest = (id: number, ref: string, actionable: boolean, projectID = 11) => ({
-  id, request_ref: ref, org_id: 1, project_id: projectID, subject: { type: 'user', user_id: 9 }, request_kind: 'human_personal',
+  id, request_ref: ref, org_id: 1, project_id: projectID, subject: { type: 'user', user_id: 9 }, subject_display_name: '张三', request_kind: 'human_personal',
   requested_scope: { project_role: 'project_user', scope_mode: 'project_default', models: [], endpoints: [] },
   environment: 'personal', production_use: false, submission_mode: 'self', status: 'needs_review', decision_mode: 'policy',
   policy_reason_codes: ['first_cross_project'], decision_reason_codes: [], submitted_by: 9, submitted_at: '2026-08-09T00:00:00Z', revision: 2,
-  actions: { can_approve: actionable, can_reject: actionable, can_cancel: false, reason_code: actionable ? 'project_admin_can_decide' : 'decision_requires_org_admin' },
+  actions: { can_approve: actionable, can_reject: actionable, can_cancel: false, reason_code: actionable ? 'project_admin_actionable' : 'organization_admin_required' },
 });
 
 function ProjectSwitch() {
@@ -65,9 +65,29 @@ describe('AccessReviewPage', () => {
     expect(await screen.findByText('request-actionable')).toBeTruthy();
     expect(screen.getByText('request-visible-only')).toBeTruthy();
     expect(mocks.listProjectRequests).toHaveBeenCalledWith(11, { status: 'needs_review', limit: 25, after_id: undefined });
-    expect(screen.getByText('decision_requires_org_admin')).toBeTruthy();
+    expect(screen.getByText('需要组织管理员处理')).toBeTruthy();
+    expect(screen.getAllByText('首次加入此项目，需要管理员确认')).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: '批准' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: '拒绝' })).toHaveLength(1);
+    expect(screen.getAllByText('张三')).toHaveLength(2);
+    expect(screen.queryByText('用户 #9')).toBeNull();
+  });
+
+  it('shows an application name instead of an internal workload id', async () => {
+    mocks.listProjectRequests.mockResolvedValue({
+      data: [{
+        ...queueRequest(22, 'request-application', true),
+        subject: { type: 'workload_application', workload_application_id: 41 },
+        subject_display_name: '订单处理 Agent',
+      }],
+      pagination: { limit: 25, has_more: false }, scope: 'project',
+    });
+
+    render(<MemoryRouter initialEntries={['/access-review?project_id=11']}><AccessReviewPage /></MemoryRouter>);
+
+    expect(await screen.findByText('订单处理 Agent')).toBeTruthy();
+    expect(screen.getByText('应用或 Agent')).toBeTruthy();
+    expect(screen.queryByText(/Workload #41|应用 #41/)).toBeNull();
   });
 
   it('shows the single default project as a human label without its database id', async () => {
@@ -90,6 +110,8 @@ describe('AccessReviewPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '批准' }));
     await screen.findByText('批准访问请求');
+    expect(screen.getByText('确认批准张三的访问申请？系统会在保存前再次核对你的权限、项目状态和申请范围。')).toBeTruthy();
+    expect(screen.queryByText(/revision/i)).toBeNull();
     const modalButtons = screen.getAllByRole('button');
     fireEvent.click(modalButtons[modalButtons.length - 1]);
     await waitFor(() => expect(mocks.decideRequest).toHaveBeenCalledWith('request-actionable', {

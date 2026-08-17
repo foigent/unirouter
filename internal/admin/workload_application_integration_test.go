@@ -85,6 +85,19 @@ func TestWorkloadApplicationLifecycleCredentialBindingReadinessAndTenantIsolatio
 	require.Equal(t, workloadapp.StatusActive, application.Status)
 	require.EqualValues(t, 1, application.Revision)
 
+	generatedResponse := httptest.NewRecorder()
+	handler.CreateWorkloadApplication(generatedResponse, requestFor(a, http.MethodPost, "/api/v1/workload-applications", fmt.Sprintf(`{
+		"project_id":%d,"display_name":"Generated Service",
+		"kind":"service","environment":"development","identity_mode":"service_credential",
+		"owner_team":"AI Platform","description":"server generated identity"
+	}`, a.projectID)))
+	require.Equal(t, http.StatusCreated, generatedResponse.Code, generatedResponse.Body.String())
+	var generated workloadApplicationRecord
+	require.NoError(t, json.Unmarshal(generatedResponse.Body.Bytes(), &generated))
+	require.Regexp(t, `^app_generated_[a-f0-9]{24}$`, generated.ApplicationRef)
+	require.Equal(t, "workload_"+strings.TrimPrefix(generated.ApplicationRef, "app_"), generated.LogicalRef)
+	require.Equal(t, "server_generated_v2_identity", generated.CompatibilityEvidence)
+
 	crossBody := strings.Replace(createBody, "app_claims_agent", "app_cross_tenant", 1)
 	crossBody = strings.Replace(crossBody, fmt.Sprintf(`"project_id":%d`, a.projectID), fmt.Sprintf(`"org_id":%d,"project_id":%d`, b.orgID, b.projectID), 1)
 	crossResponse := httptest.NewRecorder()

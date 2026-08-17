@@ -2,8 +2,24 @@ package admin
 
 import (
 	"net/http/httptest"
+	"regexp"
 	"testing"
 )
+
+func TestNewWorkloadApplicationRefIsOpaqueAndContractValid(t *testing.T) {
+	first, err := newWorkloadApplicationRef()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := newWorkloadApplicationRef()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := regexp.MustCompile(`^app_generated_[a-f0-9]{24}$`)
+	if !pattern.MatchString(first) || !pattern.MatchString(second) || first == second {
+		t.Fatalf("unexpected generated refs: %q %q", first, second)
+	}
+}
 
 func TestWorkloadCredentialPaginationIsStrictlyBounded(t *testing.T) {
 	tests := []struct {

@@ -8,6 +8,7 @@ import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { canonicalProjectMembershipRole, isOrgAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { formatDateTime } from '../utils/formatDate';
+import { accessReasonLabel, accessScopeLabel } from '../utils/accessDisplay';
 import { IntentRequestIDs } from '../utils/intentRequestId';
 import { loadAllPages } from '../utils/loadAllPages';
 import { projectDisplayName, projectOption } from '../utils/projectDisplay';
@@ -15,6 +16,14 @@ import { projectDisplayName, projectOption } from '../utils/projectDisplay';
 const { Text } = Typography;
 
 type Project = { id: number; org_id: number; name: string; slug?: string; status: string; current_user_membership_role?: string };
+
+function accessSubjectLabel(request: AccessRequest) {
+  const displayName = request.subject_display_name?.trim();
+  if (displayName) return displayName;
+  return request.subject.type === 'user'
+    ? `用户 #${request.subject.user_id}`
+    : `应用 #${request.subject.workload_application_id}`;
+}
 
 export default function AccessReviewPage() {
   const user = useAuthStore((state) => state.user);
@@ -111,7 +120,7 @@ export default function AccessReviewPage() {
     const verb = decision === 'approve' ? '批准' : '拒绝';
     Modal.confirm({
       title: `${verb}访问请求`,
-      content: `将按请求 revision ${request.revision} 提交${verb}，后端会再次校验当前角色、项目、主体与策略原因。`,
+      content: `确认${verb}${accessSubjectLabel(request)}的访问申请？系统会在保存前再次核对你的权限、项目状态和申请范围。`,
       onOk: async () => {
 		if (currentProjectID.current !== projectID || request.project_id !== projectID) {
 			Toast.warning('审核范围已切换；未提交旧项目请求。');
@@ -145,10 +154,9 @@ export default function AccessReviewPage() {
 	}, [intents, loadQueue]);
 
   const columns = useMemo(() => [
-    { title: '请求', dataIndex: 'request_ref', render: (value: string) => <Text code>{value}</Text> },
-    { title: '主体', render: (_: unknown, row: AccessRequest) => row.subject.type === 'user' ? `用户 #${row.subject.user_id}` : `Workload #${row.subject.workload_application_id}` },
-    { title: '请求范围', render: (_: unknown, row: AccessRequest) => <Space vertical align="start"><Text>{row.requested_scope.project_role} · {row.requested_scope.scope_mode}</Text>{row.production_use && <Tag color="red">生产用途</Tag>}</Space> },
-    { title: '策略原因', render: (_: unknown, row: AccessRequest) => <Space wrap>{row.policy_reason_codes.map((reason) => <Tag key={reason}>{reason}</Tag>)}</Space> },
+    { title: '申请对象', render: (_: unknown, row: AccessRequest) => <><Text strong>{accessSubjectLabel(row)}</Text><br /><Text type="tertiary">{row.subject.type === 'user' ? '人员账号' : '应用或 Agent'}</Text><details><summary>高级审计标识</summary><Text code>{row.request_ref}</Text></details></> },
+    { title: '申请范围', render: (_: unknown, row: AccessRequest) => <Space vertical align="start"><Text>{accessScopeLabel(row.requested_scope.project_role, row.requested_scope.scope_mode)}</Text>{row.production_use && <Tag color="red">生产用途</Tag>}</Space> },
+    { title: '需要审核的原因', render: (_: unknown, row: AccessRequest) => <Space wrap>{row.policy_reason_codes.map((reason) => <Tag key={reason}>{accessReasonLabel(reason)}</Tag>)}</Space> },
     { title: '状态', render: () => <StatusTag status="needs_review">待审核</StatusTag> },
     { title: '提交时间', dataIndex: 'submitted_at', render: (value: string) => formatDateTime(value) },
     {
@@ -158,21 +166,21 @@ export default function AccessReviewPage() {
           <Button size="small" type="primary" loading={mutatingRef === row.request_ref} disabled={!row.actions.can_approve} onClick={() => decide(row, 'approve')}>批准</Button>
           <Button size="small" type="danger" loading={mutatingRef === row.request_ref} disabled={!row.actions.can_reject} onClick={() => decide(row, 'reject')}>拒绝</Button>
         </Space>
-      ) : <Text type="tertiary">{row.actions?.reason_code || '当前角色不可操作'}</Text>,
+      ) : <Text type="tertiary">{row.actions?.reason_code ? accessReasonLabel(row.actions.reason_code) : '当前账号不可处理'}</Text>,
     },
 	], [decide, mutatingRef]);
 
   return (
     <div className="ur-page">
-      <PageHeader eyebrow="访问与安全" title="访问审核" description="仅展示所选项目中服务端过滤后的 needs_review 队列；操作能力由同一决策规则投影，提交时仍执行 commit-time 复核。" actions={<Button icon={<IconRefresh />} onClick={() => loadQueue()}>刷新</Button>} />
-      <Surface title="审核项目" description="平台/组织管理员按组织范围选择；项目管理员只看当前实时担任 project_admin 的项目。">
+      <PageHeader eyebrow="访问与安全" title="访问审核" description="查看需要人工确认的人员和应用访问申请。批准或拒绝前，系统会再次核对项目、主体和你的当前权限。" actions={<Button icon={<IconRefresh />} onClick={() => loadQueue()}>刷新</Button>} />
+      <Surface title="审核项目" description="组织管理员可审核当前客户项目；项目管理员只会看到自己负责的项目。">
         {projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjects}>重试</Button>} /> : (
           projectsLoading ? <Text type="tertiary">正在读取审核范围…</Text> : projects.length === 1
             ? <Text strong>{projectDisplayName(projects[0])}</Text>
             : <Select value={selectedProjectID} style={{ width: 320 }} placeholder="选择审核项目" optionList={projects.map(projectOption)} onChange={(value) => replaceProject(Number(value))} />
         )}
       </Surface>
-      <Surface title="待审核请求" description="状态筛选在 PostgreSQL cursor limit 之前完成；非 actionable 项不会靠尝试写入探测权限。">
+      <Surface title="待审核申请" description="这里只显示真正需要你处理的申请；已处理或无权处理的项目不会混入队列。">
         {!selectedProjectID ? <EmptyState title="暂无可审核项目" description="当前账号没有可发现的实时项目管理员范围。" /> : visibleError ? <EmptyState title="审核队列暂时不可用" description={visibleError} actions={<Button onClick={() => loadQueue()}>重试</Button>} /> : (
           <><Table columns={columns} dataSource={visibleRequests} rowKey="id" pagination={false} loading={visibleLoading && visibleRequests.length === 0} empty={<EmptyState title="当前项目没有待审核请求" />} />{visibleCursor && <Button block loading={visibleLoading} onClick={() => loadQueue(true)}>加载更多待审核请求</Button>}</>
         )}

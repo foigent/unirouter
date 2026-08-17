@@ -2,7 +2,9 @@ package admin
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -231,7 +233,20 @@ func (h *Handler) CreateWorkloadApplication(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	request.Kind = kind
-	compatibilityAdapted := kindAdapted
+	identityEvidence := "native_v2"
+	if kindAdapted {
+		identityEvidence = "legacy_endpoint_payload_adapted_to_v2"
+	}
+	generatedApplicationRef := false
+	if strings.TrimSpace(request.ApplicationRef) == "" {
+		request.ApplicationRef, err = newWorkloadApplicationRef()
+		if err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application identity generation unavailable"})
+			return
+		}
+		generatedApplicationRef = true
+		identityEvidence = "server_generated_v2_identity"
+	}
 	if strings.TrimSpace(request.LogicalRef) == "" {
 		if request.IdentityMode != workloadapp.IdentityServiceCredential {
 			writeWorkloadApplicationError(w, workloadapp.ErrInvalid)
@@ -242,7 +257,9 @@ func (h *Handler) CreateWorkloadApplication(w http.ResponseWriter, r *http.Reque
 			writeWorkloadApplicationError(w, err)
 			return
 		}
-		compatibilityAdapted = true
+		if !generatedApplicationRef {
+			identityEvidence = "legacy_endpoint_payload_adapted_to_v2"
+		}
 	}
 	if len(request.ClientProfiles) == 0 && strings.TrimSpace(request.ClientProfile) != "" {
 		request.ClientProfiles = []string{request.ClientProfile}
@@ -306,13 +323,8 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11,NULLIF($12,''),$13,$14,$15,1,$1
 		"application_ref": draft.ApplicationRef, "logical_ref": draft.LogicalRef, "kind": draft.Kind,
 		"environment": draft.Environment, "production_use": draft.ProductionUse, "client_profiles": draft.ClientProfiles,
 		"identity_contract_version": workloadapp.IdentityContractVersion,
-		"compatibility_evidence": func() string {
-			if compatibilityAdapted {
-				return "legacy_endpoint_payload_adapted_to_v2"
-			}
-			return "native_v2"
-		}(),
-		"identity_mode": workloadapp.IdentityServiceCredential, "status": draft.Status, "revision": 1,
+		"compatibility_evidence":    identityEvidence,
+		"identity_mode":             workloadapp.IdentityServiceCredential, "status": draft.Status, "revision": 1,
 	}
 	if err := insertAuditEntry(r.Context(), tx, "workload_application.create", "workload_application", draft.ApplicationRef,
 		map[string]interface{}{"after": after}, requestAuditMeta(r, orgID, request.ProjectID)); err != nil {
@@ -328,8 +340,8 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11,NULLIF($12,''),$13,$14,$15,1,$1
 		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Application store unavailable"})
 		return
 	}
-	if compatibilityAdapted {
-		item.CompatibilityEvidence = "legacy_endpoint_payload_adapted_to_v2"
+	if identityEvidence != "native_v2" {
+		item.CompatibilityEvidence = identityEvidence
 	}
 	item, err = h.decorateWorkloadApplicationCapabilities(r.Context(), item)
 	if err != nil {
@@ -337,6 +349,14 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11,NULLIF($12,''),$13,$14,$15,1,$1
 		return
 	}
 	writeJSON(w, http.StatusCreated, item)
+}
+
+func newWorkloadApplicationRef() (string, error) {
+	var entropy [12]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		return "", err
+	}
+	return "app_generated_" + hex.EncodeToString(entropy[:]), nil
 }
 
 func (h *Handler) UpdateWorkloadApplication(w http.ResponseWriter, r *http.Request) {

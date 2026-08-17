@@ -604,7 +604,7 @@ func hashTraceEvent(requestID, clientRequestID, idempotencyKeyHash, traceID, par
 	return hex.EncodeToString(sum[:])
 }
 
-func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens int, costMicros int64, statusCode, latencyMs, ttftMs int, usageSource, usageAuthority, usagePurpose, usageFinality, usageContractVersion, usageEstimateVersion, cacheUsageSchema, cacheUsageStatus, pricingVersion string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, workflowID, agentID, attemptID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
+func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, channelID int64, promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens int, costMicros int64, statusCode, latencyMs, ttftMs int, usageSource, usageAuthority, usagePurpose, usageFinality, usageContractVersion, usageEstimateVersion, cacheUsageSchema, cacheUsageStatus, pricingVersion string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, workflowID, agentID, attemptID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
 	payload := struct {
 		RequestID            string      `json:"request_id"`
 		ClientRequestID      string      `json:"client_request_id"`
@@ -623,6 +623,7 @@ func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, 
 		RequestedModel       string      `json:"requested_model"`
 		Provider             string      `json:"provider"`
 		Channel              string      `json:"channel"`
+		ChannelID            int64       `json:"route_channel_id"`
 		PromptTokens         int         `json:"prompt_tokens"`
 		UncachedPromptTokens int         `json:"uncached_prompt_tokens"`
 		CacheReadTokens      int         `json:"cache_read_tokens"`
@@ -655,7 +656,7 @@ func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, 
 		TraceID: traceID, SessionID: sessionID, WorkflowID: workflowID, AgentID: agentID, AttemptID: attemptID,
 		OrgID: orgID, ProjectID: projectID, KeyID: keyID,
 		OwnerUserID: ownerUserID, KeyType: keyType, Model: model, RequestedModel: requestedModel,
-		Provider: provider, Channel: channel, PromptTokens: promptTokens,
+		Provider: provider, Channel: channel, ChannelID: channelID, PromptTokens: promptTokens,
 		UncachedPromptTokens: uncachedPromptTokens, CacheReadTokens: cacheReadTokens,
 		CacheCreationTokens: cacheCreationTokens, CompletionTokens: completionTokens,
 		CostMicros: microsText(costMicros), MoneySchema: outbox.MoneyVersion,
