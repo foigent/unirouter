@@ -64,6 +64,7 @@ export default function ApplicationsV2Page() {
 
   const [contract, setContract] = useState<WorkloadContract | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState('');
   const [applications, setApplications] = useState<WorkloadApplication[]>([]);
   const [applicationsLoading, setApplicationsLoading] = useState(false);
@@ -125,10 +126,12 @@ export default function ApplicationsV2Page() {
   }, [search, setSearch]);
 
   const loadProjectsAndContract = useCallback(async () => {
+    setProjectsLoading(true);
     setProjectsError('');
     if (!customerContextReady) {
       setContract(null);
       setProjects([]);
+      setProjectsLoading(false);
       return;
     }
     try {
@@ -145,6 +148,8 @@ export default function ApplicationsV2Page() {
     } catch {
       setProjects([]);
       setProjectsError('无法读取应用合同或当前账号可管理的项目。');
+    } finally {
+      setProjectsLoading(false);
     }
   }, [customerContextReady, organizationRole, selectedProjectID, updateSearch]);
 
@@ -539,11 +544,18 @@ export default function ApplicationsV2Page() {
       <Tabs activeKey={activeTab} onChange={(tab) => updateSearch({ tab })}>
         <TabPane tab="应用与 Agent" itemKey="applications">
           <Surface title="项目范围" description="可用操作按当前项目和你的实时项目角色决定。">
-            {projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjectsAndContract}>重试</Button>} /> : <Space><Select value={selectedProjectID} style={{ width: 300 }} optionList={projects.map(projectOption)} placeholder="选择项目" onChange={(value) => updateSearch({ project_id: Number(value), application_ref: undefined })} /><Button type="primary" icon={<IconPlus />} disabled={!selectedProjectID || !canManageSelectedProject} onClick={openCreateDrawer}>新建应用</Button></Space>}
+            {projectsLoading ? <EmptyState title="正在读取项目范围" description="正在读取当前账号可访问的项目和应用合同，请稍候。" />
+              : projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjectsAndContract}>重试</Button>} />
+                : projects.length === 0 ? <EmptyState title="暂无可用项目" description="请先在“人员与权限”中创建或加入一个启用项目。" />
+                  : <Space><Select value={selectedProjectID} style={{ width: 300 }} optionList={projects.map(projectOption)} placeholder="选择项目" onChange={(value) => updateSearch({ project_id: Number(value), application_ref: undefined })} /><Button type="primary" icon={<IconPlus />} disabled={!selectedProjectID || !canManageSelectedProject} onClick={openCreateDrawer}>新建应用</Button></Space>}
             {selectedProjectID && !canManageSelectedProject && <Text type="tertiary">当前所选项目只有读取或使用权限；创建和维护应用需要项目管理员权限。</Text>}
           </Surface>
           <Surface title="应用" description="每个应用绑定一个项目和环境；内部身份标识由服务端生成并保留在高级审计信息中。">
-            {applicationsError ? <EmptyState title="应用列表暂时不可用" description={applicationsError} actions={<Button onClick={loadApplications}>重试</Button>} /> : <Table columns={applicationColumns} dataSource={applications} rowKey="id" pagination={false} loading={applicationsLoading} empty={<EmptyState title="当前项目暂无应用" />} />}
+            {projectsLoading || (!selectedProjectID && projects.length > 0) ? <EmptyState title="正在准备应用范围" description="正在选择并确认当前项目，请稍候。" />
+              : !selectedProjectID ? <EmptyState title="没有可读取的项目应用" description="应用必须绑定一个启用项目。" />
+                : applicationsError ? <EmptyState title="应用列表暂时不可用" description={applicationsError} actions={<Button onClick={loadApplications}>重试</Button>} />
+                  : applicationsLoading && applications.length === 0 ? <EmptyState title="正在读取应用" description="正在读取当前项目的应用，请稍候。" />
+                    : <Table columns={applicationColumns} dataSource={applications} rowKey="id" pagination={false} loading={applicationsLoading} empty={<EmptyState title="当前项目暂无应用" />} />}
           </Surface>
           {selectedApplication && <>
             <Surface title={selectedApplication.display_name} description={`${applicationKindLabel(selectedApplication.kind)} · ${environmentLabel(selectedApplication.environment)}`} actions={<Space><Button disabled={!selectedApplication.can_manage} onClick={() => openApplicationDrawer('edit', selectedApplication)}>编辑</Button><Button disabled={!selectedApplication.can_request_access || mutating} onClick={requestAccess}>申请应用访问</Button><Button type="danger" disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived' || mutating} onClick={archiveApplication}>归档</Button></Space>}>

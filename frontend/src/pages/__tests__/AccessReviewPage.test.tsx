@@ -104,6 +104,23 @@ describe('AccessReviewPage', () => {
     expect(screen.queryByRole('combobox', { name: '选择审核项目' })).toBeNull();
   });
 
+  it('does not claim there are no reviewable projects while the project scope is loading', async () => {
+    const projectsRequest = deferred<any>();
+    mocks.getProjects.mockReturnValue(projectsRequest.promise);
+
+    render(<MemoryRouter initialEntries={['/access-review']}><AccessReviewPage /></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: '正在读取待审核范围' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '暂无可审核项目' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: '当前项目没有待审核请求' })).toBeNull();
+
+    await act(async () => {
+      projectsRequest.resolve({ data: [], total: 0 });
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('heading', { name: '暂无可审核项目' })).toBeTruthy();
+  });
+
   it('refreshes the authoritative queue after an optimistic revision conflict', async () => {
     mocks.decideRequest.mockRejectedValue(new ApiError('conflict', 409, {}));
     render(<MemoryRouter initialEntries={['/access-review?project_id=11']}><AccessReviewPage /></MemoryRouter>);

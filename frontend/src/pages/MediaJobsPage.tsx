@@ -135,6 +135,7 @@ export default function MediaJobsPage() {
   const user = useAuthStore((state) => state.user);
   const organizationRole = organizationRoleForUser(user);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectID, setProjectID] = useState<number>();
   const [contract, setContract] = useState<RuntimeContract | null>(null);
   const [jobs, setJobs] = useState<MediaJob[]>([]);
@@ -199,6 +200,7 @@ export default function MediaJobsPage() {
 
   useEffect(() => {
     let active = true;
+    setProjectsLoading(true);
     api.getProjects(1, 100, { status: 'active' })
       .then((value: unknown) => {
         if (!active) return;
@@ -214,9 +216,13 @@ export default function MediaJobsPage() {
       })
       .catch((loadError: unknown) => {
         if (!active) return;
+        setProjects([]);
         setError(loadError instanceof ApiError
           ? `项目读取失败（${loadError.status}）：${loadError.message}`
           : '暂时无法读取项目。');
+      })
+      .finally(() => {
+        if (active) setProjectsLoading(false);
       });
     return () => {
       active = false;
@@ -369,18 +375,18 @@ export default function MediaJobsPage() {
       )}
 
       <div className="ur-kpi-grid ur-media-kpis">
-        <MetricTile label="本页任务" value={String(jobs.length)} meta="当前项目最近 50 条" />
+        <MetricTile label="本页任务" value={projectsLoading || loading ? '—' : String(jobs.length)} meta={projectsLoading || loading ? '正在读取当前范围' : '当前项目最近 50 条'} />
         <MetricTile
           label="进行中"
-          value={String(jobs.filter((job) => job.lifecycle.execution !== 'terminal').length)}
+          value={projectsLoading || loading ? '—' : String(jobs.filter((job) => job.lifecycle.execution !== 'terminal').length)}
           meta="队列、租约与运行状态独立追踪"
         />
         <MetricTile
           label="输出可用"
-          value={String(jobs.filter((job) => outputReadable(job, clock)).length)}
+          value={projectsLoading || loading ? '—' : String(jobs.filter((job) => outputReadable(job, clock)).length)}
           meta="到期后读取立即关闭"
         />
-        <MetricTile label="固定保留" value={contract?.retention || 'P7D'} meta="七天后读取关闭并进入删除" />
+        <MetricTile label="固定保留" value={contract?.retention || '—'} meta={contract ? '七天后读取关闭并进入删除' : '正在读取运行时合同'} />
       </div>
 
       <div className="ur-context-explorer ur-media-explorer">
@@ -391,8 +397,12 @@ export default function MediaJobsPage() {
               <Text type="tertiary">只展示当前项目范围；Prompt、凭据和对象定位符不会返回。</Text>
             </div>
           </div>
-          {projects.length === 0 ? (
+          {projectsLoading ? (
+            <EmptyState title="正在读取项目范围" description="正在确认当前账号可读取的项目，请稍候。" />
+          ) : projects.length === 0 ? (
             <EmptyState title="没有可见项目" description="当前账号没有可读取的项目范围。" />
+          ) : loading && jobs.length === 0 ? (
+            <EmptyState title="正在读取异步模型任务" description="正在读取当前项目的任务与运行时合同，请稍候。" />
           ) : jobs.length === 0 && !loading ? (
             <EmptyState title="暂无异步模型任务" description="通过项目 API Key 提交当前已支持的异步 Endpoint Profile 后，状态会在这里出现。" />
           ) : (

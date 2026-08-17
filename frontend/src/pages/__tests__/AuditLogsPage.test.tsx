@@ -67,6 +67,25 @@ describe('AuditLogsPage', () => {
     expect(container.querySelector('input[placeholder="结束时间"]')).toBeTruthy();
   });
 
+  it('does not render zero events or an empty audit result before the request completes', async () => {
+    const auditRequest = deferred<any>();
+    mockGetAuditLogs.mockReturnValue(auditRequest.promise);
+
+    render(<AuditLogsPage />);
+
+    expect(await screen.findByText('读取中')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '正在加载审计记录' })).toBeTruthy();
+    expect(screen.queryByText('0 events')).toBeNull();
+    expect(screen.queryByRole('heading', { name: '暂无审计记录' })).toBeNull();
+
+    await act(async () => {
+      auditRequest.resolve({ data: [], total: 0 });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText('0 events')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '暂无审计记录' })).toBeTruthy();
+  });
+
   it('keeps only the latest filtered response and exposes load failures', async () => {
     const oldRequest = deferred<any>();
     const currentRequest = deferred<any>();

@@ -225,6 +225,29 @@ describe('ApplicationsV2Page', () => {
     expect(accessMocks.previewLegacy).not.toHaveBeenCalled();
   });
 
+  it('does not present missing projects or applications before the initial scope finishes loading', async () => {
+    const contractRequest = deferred<any>();
+    const projectsRequest = deferred<any>();
+    clientMocks.getContract.mockReturnValue(contractRequest.promise);
+    clientMocks.getProjects.mockReturnValue(projectsRequest.promise);
+
+    render(<MemoryRouter initialEntries={['/applications']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: '正在读取项目范围' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '正在准备应用范围' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '暂无可用项目' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: '当前项目暂无应用' })).toBeNull();
+
+    await act(async () => {
+      contractRequest.resolve({ contract_version: 'unirouter.workload-application.v2', client_profiles: [] });
+      projectsRequest.resolve({ data: [], total: 0 });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByRole('heading', { name: '暂无可用项目' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '没有可读取的项目应用' })).toBeTruthy();
+  });
+
   it('keeps Grant and credential facts when the independent Request source fails', async () => {
     accessMocks.listProjectRequests.mockRejectedValue(new Error('request store unavailable'));
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);

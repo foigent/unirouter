@@ -29,6 +29,12 @@ vi.mock('../../api/client', () => ({
   },
 }));
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
 describe('UsersPage enterprise identity presentation', () => {
   beforeEach(() => {
     act(() => { Toast.destroyAll(); });
@@ -100,6 +106,22 @@ describe('UsersPage enterprise identity presentation', () => {
 	expect(screen.queryByLabelText('初始密码')).toBeNull();
 	fireEvent.click(screen.getByText('更新'));
 	await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith(9, { organization_role: 'member', status: 'active' }));
+  });
+
+  it('does not present an empty user directory before the initial request completes', async () => {
+    const usersRequest = deferred<any>();
+    mocks.getUsers.mockReturnValue(usersRequest.promise);
+
+    render(<UsersPage />);
+
+    expect(await screen.findByRole('heading', { name: '正在加载用户列表' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '暂无用户' })).toBeNull();
+
+    await act(async () => {
+      usersRequest.resolve({ data: [], total: 0 });
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('heading', { name: '暂无用户' })).toBeTruthy();
   });
 
   it('creates a local user with an explicit organization', async () => {
