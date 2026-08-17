@@ -1,6 +1,23 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-17 canonical model-route projection CI/merge/Target checkpoint:**
+> PR #296 exact head/tree `78f19bfe2fcd2c5fcb68995f5b8b0cb94d9f9cbc` /
+> `5ce271327abd768e1809190bc6c67832a9227f36` passed Change Routing,
+> Backend, Frontend, Browser E2E and Docker, then squash-merged as
+> `f5465cf99a09c96fc132af571765fdd6a6aae02c` with the same tree. The
+> development ECS now runs stable, canary and frontend from that commit as
+> `1.1.29-route-projection`; stable and canary share one backend image. There
+> is no migration change, all 65 ledger entries through `000066` remain
+> applied, and pre/post customer, channel, credential, catalog and runtime
+> release counts are identical. Public HTTPS health, authenticated Dashboard,
+> Model Endpoints, connection diagnostics and Runtime Status all passed with
+> no browser-console or startup-error signal. Dashboard and Model Endpoints
+> now agree on 2/2 currently routable connections, while read-only connection
+> diagnosis reports License, connection, credential and route ready. This is
+> development Target evidence, not Production or a paid Provider call.
+> Evidence:
+> `docs/ops/evidence/V1-MODEL-ROUTE-PROJECTION-TARGET-20260817.md`.
 > **2026-08-05 second-integration pre-reset gate:** the current development
 > Target release, public HTTPS endpoint, fail-closed reset scope and zero-network
 > Agent compatibility artifacts were revalidated without mutation. Two
