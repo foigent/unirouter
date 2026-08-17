@@ -64,6 +64,7 @@ interface DashboardStats {
     credential_ready?: boolean;
     available?: boolean;
     circuit_state?: string;
+    projection_version?: string;
     status: string;
     success_count: number;
     fail_count: number;
@@ -154,7 +155,10 @@ function providerDisplayName(provider: string, channelName: string): string | nu
 
 function channelHealthView(ch: NonNullable<DashboardStats['channel_health']>[number]) {
   if (ch.status === 'disabled') return { tone: 'disabled', label: '禁用', icon: <IconMinusCircle /> };
+  if (ch.status === 'stale_release') return { tone: 'error', label: '发布记录已过期', icon: <IconAlertTriangle /> };
+  if (ch.status === 'projection_unavailable') return { tone: 'error', label: '路由状态不可判定', icon: <IconAlertTriangle /> };
   if (ch.status === 'awaiting_release') return { tone: 'disabled', label: '待启用', icon: <IconMinusCircle /> };
+  if (ch.status === 'standby') return { tone: 'disabled', label: '未承载当前路由', icon: <IconMinusCircle /> };
   if (ch.status === 'no_credential') return { tone: 'warning', label: '缺少凭证', icon: <IconAlertTriangle /> };
   if (ch.status === 'circuit_unavailable') return { tone: 'error', label: '熔断不可用', icon: <IconAlertTriangle /> };
   if (!ch.enabled) return { tone: 'disabled', label: '待启用', icon: <IconMinusCircle /> };
@@ -521,7 +525,7 @@ export default function DashboardPage() {
                 <div>
                   <Text>当前可路由连接</Text>
                   <strong>{healthyChannels}/{channelTotal || 0}</strong>
-                  <Text type="tertiary" size="small">已启用、凭证可用且未熔断</Text>
+                  <Text type="tertiary" size="small">按模型端点与网关当前路由判定</Text>
                 </div>
               </div>
             )}

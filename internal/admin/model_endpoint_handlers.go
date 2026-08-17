@@ -83,10 +83,23 @@ type modelEndpointProjection struct {
 // connectivity. It composes configuration, credential, probe, runtime-slot and
 // the gateway's own routing preview without inventing another mutable state.
 func (h *Handler) ListModelEndpoints(w http.ResponseWriter, r *http.Request) {
-	models := make(map[string]*modelEndpointModelView)
 	orgID := middleware.GetCustomerOrgIDFromContext(r.Context())
+	projection, err := h.loadModelEndpointProjection(r.Context(), orgID)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model endpoint projection unavailable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, projection)
+}
 
-	rows, err := h.db.Query(r.Context(), `
+// loadModelEndpointProjection is the canonical read model for model and
+// provider-endpoint operational state. HTTP surfaces must consume this method
+// instead of independently reinterpreting channel, credential, release and
+// gateway state.
+func (h *Handler) loadModelEndpointProjection(ctx context.Context, orgID int64) (modelEndpointProjection, error) {
+	models := make(map[string]*modelEndpointModelView)
+
+	rows, err := h.db.Query(ctx, `
 WITH configured AS (
     SELECT c.id,c.name,c.provider,c.base_url,c.models,c.model_mapping,
            COALESCE(c.adapter_type,'openai_compatible') AS adapter_type,
@@ -140,10 +153,9 @@ SELECT configured.id,configured.name,configured.provider,configured.base_url,con
 	AND canary_assignment.release_stage='canary'
 	AND canary_assignment.admission='allow'
   LEFT JOIN channel_model_probes probe ON probe.channel_id=configured.id AND probe.public_model=configured.public_model
- ORDER BY configured.public_model,configured.priority,configured.id`)
+	 ORDER BY configured.public_model,configured.priority,configured.id`)
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model endpoint projection unavailable"})
-		return
+		return modelEndpointProjection{}, fmt.Errorf("query configured model endpoints: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -164,8 +176,7 @@ SELECT configured.id,configured.name,configured.provider,configured.base_url,con
 			&canaryRef, &canaryVersion, &target.CanaryExpectedEpoch, &target.CanaryAssignment,
 			&probeSuccess, &probeStatus, &probeLatency, &probeError, &probeAt, &probeCurrent,
 		); err != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model endpoint projection unreadable"})
-			return
+			return modelEndpointProjection{}, fmt.Errorf("scan configured model endpoint: %w", err)
 		}
 		target.TargetRef = targetReference(target.ChannelID, target.PublicModel)
 		if probeAt.Valid {
@@ -185,25 +196,22 @@ SELECT configured.id,configured.name,configured.provider,configured.base_url,con
 		}
 	}
 	if err := rows.Err(); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model endpoint projection unavailable"})
-		return
+		return modelEndpointProjection{}, fmt.Errorf("read configured model endpoints: %w", err)
 	}
 
 	if orgID > 0 {
-		registryRows, registryErr := h.db.Query(r.Context(), `
+		registryRows, registryErr := h.db.Query(ctx, `
 SELECT model_name,display_name,lifecycle,approved_catalog
   FROM model_registry WHERE org_id=$1 ORDER BY model_name`, orgID)
 		if registryErr != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model catalog projection unavailable"})
-			return
+			return modelEndpointProjection{}, fmt.Errorf("query model catalog projection: %w", registryErr)
 		}
 		for registryRows.Next() {
 			var name, displayName, lifecycle string
 			var approved bool
 			if err := registryRows.Scan(&name, &displayName, &lifecycle, &approved); err != nil {
 				registryRows.Close()
-				writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model catalog projection unreadable"})
-				return
+				return modelEndpointProjection{}, fmt.Errorf("scan model catalog projection: %w", err)
 			}
 			model := models[strings.TrimSpace(name)]
 			if model == nil && (!approved || lifecycle == "retired") {
@@ -219,13 +227,12 @@ SELECT model_name,display_name,lifecycle,approved_catalog
 		}
 		if err := registryRows.Err(); err != nil {
 			registryRows.Close()
-			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Model catalog projection unavailable"})
-			return
+			return modelEndpointProjection{}, fmt.Errorf("read model catalog projection: %w", err)
 		}
 		registryRows.Close()
 	}
 
-	slotRows, slotErr := h.db.Query(r.Context(), `
+	slotRows, slotErr := h.db.Query(ctx, `
 	SELECT model_name,
 	       COALESCE(MAX(release_ref) FILTER (WHERE assignment_kind='stable'),''),
 	       COALESCE(MAX(release_version) FILTER (WHERE assignment_kind='stable'),0),
@@ -236,8 +243,7 @@ SELECT model_name,display_name,lifecycle,approved_catalog
 	 GROUP BY model_name
 	 ORDER BY model_name`)
 	if slotErr != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime assignment projection unavailable"})
-		return
+		return modelEndpointProjection{}, fmt.Errorf("query runtime assignment projection: %w", slotErr)
 	}
 	for slotRows.Next() {
 		var name string
@@ -245,8 +251,7 @@ SELECT model_name,display_name,lifecycle,approved_catalog
 		if err := slotRows.Scan(&name, &model.StableReleaseRef, &model.StableReleaseVersion,
 			&model.CanaryReleaseRef, &model.CanaryReleaseVersion, &model.CanaryBasisPoints); err != nil {
 			slotRows.Close()
-			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime assignment projection unreadable"})
-			return
+			return modelEndpointProjection{}, fmt.Errorf("scan runtime assignment projection: %w", err)
 		}
 		existing := modelEndpointModel(models, name)
 		existing.StableReleaseRef, existing.StableReleaseVersion = model.StableReleaseRef, model.StableReleaseVersion
@@ -255,26 +260,23 @@ SELECT model_name,display_name,lifecycle,approved_catalog
 	}
 	if err := slotRows.Err(); err != nil {
 		slotRows.Close()
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime assignment projection unavailable"})
-		return
+		return modelEndpointProjection{}, fmt.Errorf("read runtime assignment projection: %w", err)
 	}
 	slotRows.Close()
 
-	historyRows, historyErr := h.db.Query(r.Context(), `
+	historyRows, historyErr := h.db.Query(ctx, `
 SELECT model_name,COUNT(*)
   FROM runtime_change_releases
- GROUP BY model_name`)
+	 GROUP BY model_name`)
 	if historyErr != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime release history projection unavailable"})
-		return
+		return modelEndpointProjection{}, fmt.Errorf("query runtime release history projection: %w", historyErr)
 	}
 	for historyRows.Next() {
 		var name string
 		var count int
 		if err := historyRows.Scan(&name, &count); err != nil {
 			historyRows.Close()
-			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime release history projection unreadable"})
-			return
+			return modelEndpointProjection{}, fmt.Errorf("scan runtime release history projection: %w", err)
 		}
 		if existing := models[strings.TrimSpace(name)]; existing != nil {
 			existing.ReleaseHistoryCount = count
@@ -282,14 +284,13 @@ SELECT model_name,COUNT(*)
 	}
 	if err := historyRows.Err(); err != nil {
 		historyRows.Close()
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime release history projection unavailable"})
-		return
+		return modelEndpointProjection{}, fmt.Errorf("read runtime release history projection: %w", err)
 	}
 	historyRows.Close()
 
 	items := make([]modelEndpointModelView, 0, len(models))
 	for _, model := range models {
-		h.applyGatewayProjection(r, model)
+		h.applyGatewayProjection(ctx, model)
 		items = append(items, *model)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].PublicModel < items[j].PublicModel })
@@ -305,7 +306,7 @@ SELECT model_name,COUNT(*)
 			summary["attention"]++
 		}
 	}
-	writeJSON(w, http.StatusOK, modelEndpointProjection{ContractVersion: modelEndpointProjectionVersion, GeneratedAt: time.Now().UTC(), Models: items, Summary: summary})
+	return modelEndpointProjection{ContractVersion: modelEndpointProjectionVersion, GeneratedAt: time.Now().UTC(), Models: items, Summary: summary}, nil
 }
 
 func modelEndpointModel(models map[string]*modelEndpointModelView, name string) *modelEndpointModelView {
@@ -318,14 +319,14 @@ func modelEndpointModel(models map[string]*modelEndpointModelView, name string) 
 	return model
 }
 
-func (h *Handler) applyGatewayProjection(r *http.Request, model *modelEndpointModelView) {
+func (h *Handler) applyGatewayProjection(ctx context.Context, model *modelEndpointModelView) {
 	model.RouteAvailable = false
 	candidates := map[int64]routingpolicy.PreviewCandidate{}
 	exclusions := map[int64]routingpolicy.PreviewCandidate{}
 	previewUnavailable := false
 	if h.routingController == nil {
 		previewUnavailable = true
-	} else if preview, err := h.routingController.Preview(r.Context(), model.PublicModel); err != nil {
+	} else if preview, err := h.routingController.Preview(ctx, model.PublicModel); err != nil {
 		previewUnavailable = true
 	} else {
 		for _, item := range preview.Candidates {
