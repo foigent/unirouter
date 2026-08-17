@@ -11,10 +11,28 @@ const mocks = vi.hoisted(() => ({
   canaryRuntimeChange: vi.fn(),
   promoteRuntimeChange: vi.fn(),
   rollbackRuntimeChange: vi.fn(),
+	rejectRuntimeChange: vi.fn(),
 	updateChannel: vi.fn(),
 }));
 
-vi.mock('../../api/client', () => ({ api: mocks }));
+vi.mock('../../api/channels', () => ({
+  channelApi: {
+    list: mocks.getChannels,
+    update: mocks.updateChannel,
+  },
+}));
+vi.mock('../../api/routing', () => ({
+  routingApi: {
+    listReleases: mocks.getRuntimeChanges,
+    createRelease: mocks.createRuntimeChange,
+    validateRelease: mocks.validateRuntimeChange,
+    markReleaseShadow: mocks.shadowRuntimeChange,
+    startReleaseCanary: mocks.canaryRuntimeChange,
+    promoteRelease: mocks.promoteRuntimeChange,
+    rollbackRelease: mocks.rollbackRuntimeChange,
+    rejectRelease: mocks.rejectRuntimeChange,
+  },
+}));
 
 const RELEASE = {
   id: 21,

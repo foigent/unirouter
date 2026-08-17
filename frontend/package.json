@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/check-bundle-budget.mjs",
+    "build": "tsc && npm run check:api-contracts && vite build && node scripts/check-bundle-budget.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
+    "check:api-contracts": "node scripts/check-api-contract-debt.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit && npm run check:api-contracts"
   },
   "dependencies": {
     "@douyinfe/semi-icons": "^2.100.0",

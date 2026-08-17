@@ -13,8 +13,9 @@ import {
 } from '@douyinfe/semi-ui';
 import { IconPlus, IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import { useSearchParams } from 'react-router-dom';
-import { api } from '../api/client';
-import type { ModelEndpointModel, ModelEndpointProjection, ModelEndpointTarget } from '../api/modelEndpoints';
+import { channelApi } from '../api/channels';
+import { modelEndpointApi, type ModelEndpointModel, type ModelEndpointProjection, type ModelEndpointTarget } from '../api/modelEndpoints';
+import { routingApi } from '../api/routing';
 import ModelEndpointCreateSheet from '../features/modelEndpoints/ModelEndpointCreateSheet';
 import ModelEndpointDetailsSheet from '../features/modelEndpoints/ModelEndpointDetailsSheet';
 import { endpointError, exactTestSucceeded, providerSummary, stateHelp, stateLabel } from '../features/modelEndpoints/presentation';
@@ -53,7 +54,7 @@ export default function ModelEndpointsPage() {
     setLoading(true);
     setLoadError('');
     try {
-      const result = await api.getModelEndpoints();
+      const result = await modelEndpointApi.getModelEndpoints();
       if (version !== requestVersion.current) return;
       setProjection(result);
       setSelectedModel(current => {
@@ -132,7 +133,7 @@ export default function ModelEndpointsPage() {
   const testTarget = async (target: ModelEndpointTarget, notify = true) => {
     setWorkingTarget(target.target_ref);
     try {
-      const response = await api.testChannelModel(target.channel_id, target.public_model) as any;
+      const response = await modelEndpointApi.testChannelModel(target.channel_id, target.public_model);
       const exact = exactTestSucceeded(target, response);
       if (notify) {
         if (exact) Toast.success(`${target.connection_name} · ${target.public_model} 检测通过`);
@@ -190,9 +191,9 @@ export default function ModelEndpointsPage() {
     setWorkingTarget(target.target_ref);
     try {
       const request = { channel_id: target.channel_id, model: target.public_model, expected_routing_epoch: target.routing_epoch };
-      if (mode === 'canary') await api.startModelEndpointCanary({ ...request, canary_basis_points: 500 });
-      else if (mode === 'recover') await api.recoverModelEndpoint(request);
-      else await api.activateModelEndpoint(request);
+      if (mode === 'canary') await modelEndpointApi.startModelEndpointCanary({ ...request, canary_basis_points: 500 });
+      else if (mode === 'recover') await modelEndpointApi.recoverModelEndpoint(request);
+      else await modelEndpointApi.activateModelEndpoint(request);
       Toast.success(mode === 'canary' ? '5% 灰度已启动；稳定路由仍保留' : mode === 'recover' ? '失效的旧稳定路由已留存为历史，新端点已成为稳定路由' : `${target.public_model} 已首次启用`);
       await load();
     } catch (error) {
@@ -224,7 +225,7 @@ export default function ModelEndpointsPage() {
     }
     setWorkingTarget(target.target_ref);
     try {
-      await api.updateChannel(target.channel_id, {
+      await channelApi.update(target.channel_id, {
         status: resume ? 'staged' : 'disabled',
         expected_routing_epoch: target.routing_epoch,
       });
@@ -240,8 +241,8 @@ export default function ModelEndpointsPage() {
   const transitionCanary = async (model: ModelEndpointModel, action: 'promote' | 'rollback') => {
     if (!model.canary_release_ref || !model.canary_release_version) return;
     try {
-      if (action === 'promote') await api.promoteRuntimeChange(model.canary_release_ref, model.canary_release_version);
-      else await api.rollbackRuntimeChange(model.canary_release_ref, model.canary_release_version);
+      if (action === 'promote') await routingApi.promoteRelease(model.canary_release_ref, model.canary_release_version);
+      else await routingApi.rollbackRelease(model.canary_release_ref, model.canary_release_version);
       Toast.success(action === 'promote' ? '灰度端点已提升为稳定路由' : '灰度已回滚，稳定路由保持不变');
       await load();
     } catch (error) {

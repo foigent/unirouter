@@ -2,8 +2,6 @@ package admin
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -17,7 +15,6 @@ import (
 	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
-	"github.com/uniroute/unirouter/internal/enterprisefinance"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
@@ -30,16 +27,6 @@ const (
 	maxReadinessModelLength          = 160
 	maxReadinessApplicationRefLength = 64
 )
-
-type readinessGrantEvidence struct {
-	ID               int64
-	Status           string
-	ScopeMode        string
-	AllowedModels    []string
-	AllowedEndpoints []string
-	ValidFrom        time.Time
-	ValidUntil       *time.Time
-}
 
 func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
@@ -80,7 +67,8 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 			Grant: connectionOnly, Credential: connectionOnly,
 			ModelAuthorization: connectionOnly, LimitPolicy: connectionOnly,
 		}
-		h.readinessPlatformAxes(r, orgID, &response)
+		billingState, billingErr := h.inspectBillingReadiness(r.Context(), orgID, response.Scope.ResolvedModel)
+		h.readinessPlatformAxes(r, orgID, &response, billingState, billingErr)
 		response.Summary = modelreadiness.Summarize(response.PlatformModel, response.ProjectCaller)
 		response.Summary.CurrentProjectCallerCallable = modelreadiness.Fact{
 			State: modelreadiness.StateNotApplicable, ReasonCode: "connection_mode_has_no_caller",
@@ -102,12 +90,8 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var orgID int64
-	var projectStatus, budgetPeriod string
-	var budgetCents sql.NullInt64
-	if err := h.db.QueryRow(r.Context(), `
-		SELECT org_id,status,budget_cents,COALESCE(budget_period,'')
-		FROM projects WHERE id=$1`, projectID).Scan(&orgID, &projectStatus, &budgetCents, &budgetPeriod); err != nil {
+	project, err := modelreadiness.ReadProject(r.Context(), h.db, projectID)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSON(w, http.StatusNotFound, map[string]any{"error": "Project not found", "reason": "not_found"})
 			return
@@ -115,6 +99,7 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "Model readiness unavailable", "reason": "service_unavailable"})
 		return
 	}
+	orgID := project.OrgID
 	if actorOrganizationRole(r.Context()) != auth.RolePlatformAdmin && orgID != middleware.GetOrgIDFromContext(r.Context()) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "Project not found", "reason": "not_found"})
 		return
@@ -127,18 +112,19 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 		RuntimeMutation: "none", ExternalRequests: "none", AsOf: time.Now().UTC(),
 	}
 	projectRoute := "/organization-members?section=projects&project_id=" + strconv.FormatInt(projectID, 10)
-	response.ProjectCaller.Project = readinessProjectAxis(projectStatus, h.readinessFixRoute(r, projectRoute, h.canWriteProject(r.Context(), projectID)))
-	response.ProjectCaller.ProjectBudget = readinessProjectBudgetAxis(h.effectiveBillingMode(), budgetCents, budgetPeriod,
+	response.ProjectCaller.Project = readinessProjectAxis(project.Status, h.readinessFixRoute(r, projectRoute, h.canWriteProject(r.Context(), projectID)))
+	response.ProjectCaller.ProjectBudget = readinessProjectBudgetAxis(h.effectiveBillingMode(), project.BudgetConfigured, project.BudgetPeriod,
 		h.readinessFixRoute(r, projectRoute+"&tab=budget", h.canWriteProject(r.Context(), projectID)))
 
-	access, accessErr := modelgov.CheckAccess(r.Context(), h.db, orgID, projectID, requestedModel)
-	response.Scope.ResolvedModel = access.ResolvedModel
+	governance := modelreadiness.InspectGovernance(r.Context(), h.db, orgID, projectID, requestedModel)
+	response.Scope.ResolvedModel = governance.Access.ResolvedModel
 	if response.Scope.ResolvedModel == "" {
 		response.Scope.ResolvedModel = requestedModel
 	}
-	response.ProjectCaller.Alias, response.ProjectCaller.ModelSet = h.readinessGovernanceAxes(r, orgID, projectID, access, accessErr)
-	h.readinessPlatformAxes(r, orgID, &response)
-	h.readinessWalletAxis(r, orgID, &response)
+	response.ProjectCaller.Alias, response.ProjectCaller.ModelSet = h.readinessGovernanceAxes(r, orgID, projectID, governance)
+	billingState, billingErr := h.inspectBillingReadiness(r.Context(), orgID, response.Scope.ResolvedModel)
+	h.readinessPlatformAxes(r, orgID, &response, billingState, billingErr)
+	h.readinessWalletAxis(&response, billingState, billingErr)
 	h.readinessCallerAxes(r, orgID, projectID, caller, applicationRef, &response)
 	response.Summary = modelreadiness.Summarize(response.PlatformModel, response.ProjectCaller)
 	writeJSON(w, http.StatusOK, response)
@@ -151,71 +137,62 @@ func readinessProjectAxis(status, fixRoute string) modelreadiness.Axis {
 	return modelreadiness.Blocked("project_inactive", modelreadiness.Evidence("status", status), fixRoute, "project_admin")
 }
 
-func readinessProjectBudgetAxis(mode billing.BillingMode, budget sql.NullInt64, period, fixRoute string) modelreadiness.Axis {
+func readinessProjectBudgetAxis(mode billing.BillingMode, configured bool, period, fixRoute string) modelreadiness.Axis {
 	if mode == billing.BillingModeCostObservation {
 		evidence := modelreadiness.Evidence(
-			"configured", budget.Valid,
+			"configured", configured,
 			"billing_mode", string(mode),
 			"project_budget_admission_required", false,
 			"project_budget_enforced", false,
 			"calculated_cost_budget_alerts_available", false,
 		)
-		if budget.Valid {
+		if configured {
 			evidence["period"] = period
 			return modelreadiness.Warning("project_budget_configured_only_not_enforced_under_cost_observation", evidence, fixRoute, "project_admin")
 		}
 		return modelreadiness.Optional("project_budget_not_configured_or_enforced_under_cost_observation", evidence)
 	}
 	evidence := modelreadiness.Evidence(
-		"configured", budget.Valid,
+		"configured", configured,
 		"billing_mode", string(mode),
 		"project_budget_admission_required", false,
 	)
-	if !budget.Valid {
+	if !configured {
 		return modelreadiness.Optional("project_budget_not_configured_monitoring_only", evidence)
 	}
 	evidence["period"] = period
 	return modelreadiness.Warning("project_budget_monitoring_only", evidence, fixRoute, "project_admin")
 }
 
-func (h *Handler) readinessGovernanceAxes(r *http.Request, orgID, projectID int64, access modelgov.AccessResult, accessErr error) (modelreadiness.Axis, modelreadiness.Axis) {
+func (h *Handler) readinessGovernanceAxes(r *http.Request, orgID, projectID int64, snapshot modelreadiness.GovernanceSnapshot) (modelreadiness.Axis, modelreadiness.Axis) {
 	aliasRoute := h.readinessFixRoute(r, "/model-governance?tab=aliases&org_id="+strconv.FormatInt(orgID, 10),
 		actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin || actorOrganizationRole(r.Context()) == auth.RoleOrgAdmin)
 	aliasAxis := modelreadiness.Optional("direct_model_optional", modelreadiness.Evidence("alias_applied", false))
-	if access.Alias != "" {
+	if snapshot.Access.Alias != "" {
 		aliasAxis = modelreadiness.Ready("active_alias_resolved", modelreadiness.Evidence("alias_applied", true))
-	} else {
-		var aliasStatus string
-		if err := h.db.QueryRow(r.Context(), `SELECT status FROM model_aliases WHERE org_id=$1 AND alias=$2`, orgID, access.RequestedModel).Scan(&aliasStatus); err == nil {
-			aliasAxis = modelreadiness.Blocked("alias_inactive", modelreadiness.Evidence("alias_applied", false, "status", aliasStatus), aliasRoute, "organization_admin")
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			aliasAxis = modelreadiness.Unavailable("alias_evidence_unavailable")
-		}
+	} else if snapshot.AliasConfigured {
+		aliasAxis = modelreadiness.Blocked("alias_inactive", modelreadiness.Evidence("alias_applied", false, "status", snapshot.AliasStatus), aliasRoute, "organization_admin")
+	} else if snapshot.AliasEvidenceError != nil {
+		aliasAxis = modelreadiness.Unavailable("alias_evidence_unavailable")
 	}
-	var modelSetCount int
-	setErr := h.db.QueryRow(r.Context(), `
-		SELECT COUNT(*) FROM project_model_sets pms
-		JOIN projects p ON p.id=pms.project_id
-		JOIN model_sets ms ON ms.id=pms.model_set_id AND ms.org_id=p.org_id
-		WHERE pms.project_id=$1 AND p.org_id=$2`, projectID, orgID).Scan(&modelSetCount)
-	if setErr != nil {
+	if snapshot.ModelSetEvidenceError != nil {
 		return aliasAxis, modelreadiness.Unavailable("model_set_evidence_unavailable")
 	}
-	if accessErr != nil && !errors.Is(accessErr, modelgov.ErrModelDenied) && !errors.Is(accessErr, modelgov.ErrModelRetired) {
+	if snapshot.AccessError != nil && !errors.Is(snapshot.AccessError, modelgov.ErrModelDenied) && !errors.Is(snapshot.AccessError, modelgov.ErrModelRetired) {
 		return modelreadiness.Unavailable("alias_evidence_unavailable"), modelreadiness.Unavailable("model_set_evidence_unavailable")
 	}
-	if modelSetCount == 0 {
+	if snapshot.AssignedModelSetCount == 0 {
 		return aliasAxis, modelreadiness.Optional("unrestricted_optional", modelreadiness.Evidence("assigned_model_set_count", 0))
 	}
-	if errors.Is(accessErr, modelgov.ErrModelDenied) {
-		return aliasAxis, modelreadiness.Blocked("project_model_set_denied", modelreadiness.Evidence("assigned_model_set_count", modelSetCount),
+	if errors.Is(snapshot.AccessError, modelgov.ErrModelDenied) {
+		return aliasAxis, modelreadiness.Blocked("project_model_set_denied", modelreadiness.Evidence("assigned_model_set_count", snapshot.AssignedModelSetCount),
 			h.readinessFixRoute(r, "/model-governance?tab=model-sets&project_id="+strconv.FormatInt(projectID, 10),
 				actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin || actorOrganizationRole(r.Context()) == auth.RoleOrgAdmin), "organization_admin")
 	}
-	return aliasAxis, modelreadiness.Ready("project_model_set_allowed", modelreadiness.Evidence("assigned_model_set_count", modelSetCount))
+	return aliasAxis, modelreadiness.Ready("project_model_set_allowed", modelreadiness.Evidence("assigned_model_set_count", snapshot.AssignedModelSetCount))
 }
 
-func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *modelreadiness.Response) {
+func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *modelreadiness.Response, billingState billing.AdmissionReadiness, billingErr error) {
 	model := response.Scope.ResolvedModel
 	if h.licenseRuntime == nil {
 		response.PlatformModel.GatewayLicense = modelreadiness.Optional(
@@ -232,13 +209,15 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 		)
 	}
 	modelGovernanceLicensed := h.licenseRuntime == nil || h.licenseRuntime.Authorize(licensing.FeatureModelGovernance).Allowed
-	var lifecycle string
-	var approvedCatalog bool
-	err := h.db.QueryRow(r.Context(), `SELECT lifecycle,approved_catalog FROM model_registry WHERE org_id=$1 AND model_name=$2`, orgID, model).Scan(&lifecycle, &approvedCatalog)
+	registry, err := modelreadiness.ReadRegistry(r.Context(), h.db, orgID, model)
 	registryFix := h.readinessFixRoute(r, "/model-governance?tab=registry&model="+url.QueryEscape(model),
 		actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin || actorOrganizationRole(r.Context()) == auth.RoleOrgAdmin)
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
+	case err != nil:
+		response.PlatformModel.Registration = modelreadiness.Unavailable("model_registry_unavailable")
+		response.PlatformModel.Lifecycle = modelreadiness.Unavailable("model_lifecycle_unavailable")
+		response.PlatformModel.Catalog = modelreadiness.Unavailable("model_catalog_unavailable")
+	case !registry.Exists:
 		if modelGovernanceLicensed {
 			response.PlatformModel.Registration = modelreadiness.Blocked("model_unregistered", modelreadiness.Evidence("registered", false), registryFix, "organization_admin")
 			response.PlatformModel.Catalog = modelreadiness.Blocked("catalog_not_published", modelreadiness.Evidence("visible", false), registryFix, "organization_admin")
@@ -247,18 +226,14 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 			response.PlatformModel.Catalog = modelreadiness.Optional("model_governance_not_licensed_optional", modelreadiness.Evidence("visible", false, "feature_licensed", false))
 		}
 		response.PlatformModel.Lifecycle = modelreadiness.Optional("unregistered_lifecycle_not_applicable", nil)
-	case err != nil:
-		response.PlatformModel.Registration = modelreadiness.Unavailable("model_registry_unavailable")
-		response.PlatformModel.Lifecycle = modelreadiness.Unavailable("model_lifecycle_unavailable")
-		response.PlatformModel.Catalog = modelreadiness.Unavailable("model_catalog_unavailable")
 	default:
 		response.PlatformModel.Registration = modelreadiness.Ready("model_registered", modelreadiness.Evidence("registered", true))
-		if lifecycle == modelgov.LifecycleRetired {
-			response.PlatformModel.Lifecycle = modelreadiness.Blocked("model_retired", modelreadiness.Evidence("lifecycle", lifecycle), registryFix, "organization_admin")
+		if registry.Lifecycle == modelgov.LifecycleRetired {
+			response.PlatformModel.Lifecycle = modelreadiness.Blocked("model_retired", modelreadiness.Evidence("lifecycle", registry.Lifecycle), registryFix, "organization_admin")
 		} else {
-			response.PlatformModel.Lifecycle = modelreadiness.Ready("model_callable_lifecycle", modelreadiness.Evidence("lifecycle", lifecycle))
+			response.PlatformModel.Lifecycle = modelreadiness.Ready("model_callable_lifecycle", modelreadiness.Evidence("lifecycle", registry.Lifecycle))
 		}
-		if approvedCatalog && modelgov.IsCatalogLifecycle(lifecycle) {
+		if registry.ApprovedCatalog && modelgov.IsCatalogLifecycle(registry.Lifecycle) {
 			response.PlatformModel.Catalog = modelreadiness.Ready("catalog_published", modelreadiness.Evidence("visible", true))
 		} else if !modelGovernanceLicensed {
 			response.PlatformModel.Catalog = modelreadiness.Optional("model_governance_not_licensed_optional", modelreadiness.Evidence("visible", false, "feature_licensed", false))
@@ -267,7 +242,7 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 		}
 	}
 
-	response.PlatformModel.PriceAuthority = h.readinessPriceAuthorityAxis(r, orgID, model)
+	response.PlatformModel.PriceAuthority = h.readinessPriceAuthorityAxis(r, model, billingState, billingErr)
 
 	if h.routingController == nil {
 		response.PlatformModel.Channel = modelreadiness.Unavailable("routing_preview_unavailable")
@@ -326,58 +301,45 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 	}
 }
 
-func (h *Handler) readinessPriceAuthorityAxis(r *http.Request, orgID int64, model string) modelreadiness.Axis {
-	mode := h.effectiveRequestPricingAuthority()
-	if mode == string(billing.RequestPricingAuthorityRateCard) {
-		store, err := enterprisefinance.NewPostgresStore(h.db)
-		if err != nil {
-			return modelreadiness.Unavailable("rate_card_authority_unavailable")
-		}
-		quote, err := store.ResolveRequestPriceQuote(r.Context(), orgID, model, time.Now().UTC().Truncate(time.Microsecond))
-		if err != nil {
-			evidence := modelreadiness.Evidence(
-				"configured", false,
-				"request_pricing_mode", mode,
-				"selection_key", enterprisefinance.RequestPricingKey,
-			)
-			if errors.Is(err, enterprisefinance.ErrRequestPricingNotReady) || errors.Is(err, enterprisefinance.ErrRequestPricingAmbiguous) {
-				return modelreadiness.Blocked("rate_card_authority_not_ready", evidence,
-					h.readinessFixRoute(r, "/enterprise-finance?section=rate-cards&model="+url.QueryEscape(model),
-						actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin || actorOrganizationRole(r.Context()) == auth.RoleBillingAdmin),
-					"billing_admin")
-			}
-			return modelreadiness.Unavailable("rate_card_authority_unavailable")
-		}
-		return modelreadiness.Ready("rate_card_authority_resolved", modelreadiness.Evidence(
+func (h *Handler) inspectBillingReadiness(ctx context.Context, orgID int64, model string) (billing.AdmissionReadiness, error) {
+	if h == nil || h.billingReadiness == nil {
+		return billing.AdmissionReadiness{}, errors.New("billing readiness unavailable")
+	}
+	return h.billingReadiness.InspectAdmissionReadiness(ctx, orgID, model)
+}
+
+func (h *Handler) readinessPriceAuthorityAxis(r *http.Request, model string, state billing.AdmissionReadiness, err error) modelreadiness.Axis {
+	if err != nil {
+		return modelreadiness.Unavailable("request_pricing_authority_unavailable")
+	}
+	mode := string(state.PricingAuthority)
+	if state.PriceConfigured {
+		evidence := modelreadiness.Evidence(
 			"configured", true,
 			"request_pricing_mode", mode,
-			"selection_key", quote.SelectionKey,
-			"rate_card_ref", quote.RateCardRef,
-			"rate_card_version", quote.RateCardVersion,
-			"layer", quote.Layer,
-			"provider_ref", quote.ProviderRef,
-			"pricing_version", quote.PricingVersion,
-		))
+			"pricing_version", state.PricingVersion,
+		)
+		if state.PricingAuthority == billing.RequestPricingAuthorityRateCard {
+			evidence["selection_key"] = state.SelectionKey
+			evidence["rate_card_ref"] = state.RateCardRef
+			evidence["rate_card_version"] = state.RateCardVersion
+			evidence["layer"] = state.RateCardLayer
+			evidence["provider_ref"] = state.ProviderRef
+			return modelreadiness.Ready("rate_card_authority_resolved", evidence)
+		}
+		return modelreadiness.Ready("model_price_configured", evidence)
 	}
-	if mode != string(billing.RequestPricingAuthorityLegacy) {
-		return modelreadiness.Unavailable("request_pricing_authority_invalid")
+	if state.PricingAuthority == billing.RequestPricingAuthorityRateCard {
+		return modelreadiness.Blocked("rate_card_authority_not_ready", modelreadiness.Evidence(
+			"configured", false, "request_pricing_mode", mode, "selection_key", state.SelectionKey,
+		), h.readinessFixRoute(r, "/enterprise-finance?section=rate-cards&model="+url.QueryEscape(model),
+			actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin || actorOrganizationRole(r.Context()) == auth.RoleBillingAdmin), "billing_admin")
 	}
-	var priceExists bool
-	if err := h.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM model_prices WHERE model_name=$1)`, model).Scan(&priceExists); err != nil {
-		return modelreadiness.Unavailable("model_price_unavailable")
-	}
-	if priceExists {
-		return modelreadiness.Ready("model_price_configured", modelreadiness.Evidence(
-			"configured", true, "request_pricing_mode", mode,
-		))
-	}
-	if h.effectiveBillingMode() == billing.BillingModeCostObservation {
+	if state.BillingMode == billing.BillingModeCostObservation {
 		return modelreadiness.Optional("model_price_unconfigured_cost_observation", modelreadiness.Evidence(
-			"configured", false,
-			"request_pricing_mode", mode,
-			"billing_mode", string(billing.BillingModeCostObservation),
-			"traffic_admission_required", false,
-			"calculated_cost_available", false,
+			"configured", false, "request_pricing_mode", mode,
+			"billing_mode", string(state.BillingMode), "traffic_admission_required", false,
+			"calculated_cost_available", false, "pricing_version", state.PricingVersion,
 		))
 	}
 	return modelreadiness.Blocked("model_price_missing", modelreadiness.Evidence(
@@ -385,9 +347,13 @@ func (h *Handler) readinessPriceAuthorityAxis(r *http.Request, orgID int64, mode
 	), h.readinessFixRoute(r, "/model-prices?model="+url.QueryEscape(model), actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin), "platform_admin")
 }
 
-func (h *Handler) readinessWalletAxis(r *http.Request, orgID int64, response *modelreadiness.Response) {
-	mode := h.effectiveBillingMode()
-	if mode == billing.BillingModeCostObservation {
+func (h *Handler) readinessWalletAxis(response *modelreadiness.Response, state billing.AdmissionReadiness, err error) {
+	if err != nil {
+		response.ProjectCaller.Wallet = modelreadiness.Unavailable("wallet_unavailable")
+		return
+	}
+	mode := state.BillingMode
+	if !state.WalletAdmissionRequired {
 		response.ProjectCaller.Wallet = modelreadiness.Optional(
 			"wallet_not_used_for_cost_observation_admission",
 			modelreadiness.Evidence(
@@ -409,54 +375,46 @@ func (h *Handler) readinessWalletAxis(r *http.Request, orgID int64, response *mo
 		}
 		return result
 	}
-	var balance, granted, frozen int64
-	err := h.db.QueryRow(r.Context(), `SELECT balance_micros,granted_balance_micros,frozen_micros FROM wallets WHERE org_id=$1`, orgID).Scan(&balance, &granted, &frozen)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if !state.WalletExists {
 		response.ProjectCaller.Wallet = modelreadiness.Blocked("wallet_missing", evidence("exists", false), "", "billing_admin")
-	} else if err != nil {
-		response.ProjectCaller.Wallet = modelreadiness.Axis{
-			State:        modelreadiness.StateUnavailable,
-			ReasonCode:   "wallet_unavailable",
-			SafeEvidence: evidence(),
-		}
-	} else if balance+granted-frozen > 0 {
-		response.ProjectCaller.Wallet = modelreadiness.Ready("wallet_has_spendable_balance", evidence("exists", true, "has_spendable_balance", true))
+	} else if state.SpendableBalanceMicros > 0 {
+		response.ProjectCaller.Wallet = modelreadiness.Ready("wallet_has_spendable_balance", evidence(
+			"exists", true, "has_spendable_balance", true, "spendable_balance_micros", state.SpendableBalanceMicros))
 	} else {
-		response.ProjectCaller.Wallet = modelreadiness.Blocked("wallet_no_spendable_balance", evidence("exists", true, "has_spendable_balance", false), "", "billing_admin")
+		response.ProjectCaller.Wallet = modelreadiness.Blocked("wallet_no_spendable_balance", evidence(
+			"exists", true, "has_spendable_balance", false, "spendable_balance_micros", state.SpendableBalanceMicros), "", "billing_admin")
 	}
 }
 
 func (h *Handler) readinessCallerAxes(r *http.Request, orgID, projectID int64, caller, applicationRef string, response *modelreadiness.Response) {
 	actorUserID := middleware.GetUserIDFromContext(r.Context())
-	workloadID := int64(0)
 	accessFixRoute := "/access?project_id=" + strconv.FormatInt(projectID, 10)
 	accessFixAllowed := caller == "self"
+	state := modelreadiness.InspectCaller(r.Context(), h.db, modelreadiness.CallerInput{
+		OrgID: orgID, ProjectID: projectID, Caller: caller, ActorUserID: actorUserID,
+		ApplicationRef: applicationRef, RequestedModel: response.Scope.RequestedModel,
+		ResolvedModel: response.Scope.ResolvedModel, Endpoint: response.Scope.Endpoint,
+	})
 	if caller == "self" {
 		response.ProjectCaller.Application = modelreadiness.Optional("self_application_not_applicable", nil)
 	} else {
 		accessFixRoute = "/applications?project_id=" + strconv.FormatInt(projectID, 10) + "&application_ref=" + url.QueryEscape(applicationRef)
 		accessFixAllowed = h.canWriteProject(r.Context(), projectID)
-		var status, identity, environment string
-		var productionUse bool
-		err := h.db.QueryRow(r.Context(), `
-			SELECT id,status,identity_contract_version,environment,production_use
-			FROM workload_applications WHERE application_ref=$1 AND org_id=$2 AND project_id=$3`, applicationRef, orgID, projectID).
-			Scan(&workloadID, &status, &identity, &environment, &productionUse)
-		if errors.Is(err, pgx.ErrNoRows) {
+		if state.Workload.EvidenceError != nil {
+			response.ProjectCaller.Application = modelreadiness.Unavailable("workload_application_unavailable")
+		} else if !state.Workload.Exists {
 			response.ProjectCaller.Application = modelreadiness.Blocked("workload_application_not_found", modelreadiness.Evidence("present", false),
 				h.readinessFixRoute(r, "/applications?project_id="+strconv.FormatInt(projectID, 10), h.canWriteProject(r.Context(), projectID)), "project_admin")
-		} else if err != nil {
-			response.ProjectCaller.Application = modelreadiness.Unavailable("workload_application_unavailable")
-		} else if status != "active" || identity != "unirouter.workload-identity.v2" {
-			response.ProjectCaller.Application = modelreadiness.Blocked("workload_application_inactive", modelreadiness.Evidence("present", true, "status", status, "identity_v2", identity == "unirouter.workload-identity.v2"),
+		} else if state.Workload.Status != "active" || state.Workload.IdentityContractVersion != "unirouter.workload-identity.v2" {
+			response.ProjectCaller.Application = modelreadiness.Blocked("workload_application_inactive", modelreadiness.Evidence("present", true, "status", state.Workload.Status, "identity_v2", state.Workload.IdentityContractVersion == "unirouter.workload-identity.v2"),
 				h.readinessFixRoute(r, "/applications?project_id="+strconv.FormatInt(projectID, 10)+"&application_ref="+url.QueryEscape(applicationRef), h.canWriteProject(r.Context(), projectID)), "project_admin")
 		} else {
-			response.ProjectCaller.Application = modelreadiness.Ready("workload_application_active_v2", modelreadiness.Evidence("present", true, "environment", environment, "production_use", productionUse))
+			response.ProjectCaller.Application = modelreadiness.Ready("workload_application_active_v2", modelreadiness.Evidence("present", true, "environment", state.Workload.Environment, "production_use", state.Workload.ProductionUse))
 		}
 	}
 
-	grant, err := h.readReadinessGrant(r, orgID, projectID, caller, actorUserID, workloadID)
-	if err != nil {
+	grant := state.Grant
+	if state.GrantEvidenceError != nil {
 		response.ProjectCaller.Grant = modelreadiness.Unavailable("access_grant_unavailable")
 		response.ProjectCaller.Credential = modelreadiness.Unavailable("access_credential_unavailable")
 		h.readinessPolicyAxes(r, response, nil, actorUserID)
@@ -471,7 +429,7 @@ func (h *Handler) readinessCallerAxes(r *http.Request, orgID, projectID int64, c
 		return
 	}
 	now := time.Now().UTC()
-	grantScopeAllowed := readinessGrantScopeAllows(grant, response.Scope.RequestedModel, response.Scope.ResolvedModel, response.Scope.Endpoint)
+	grantScopeAllowed := grant.AllowsExecution(response.Scope.RequestedModel, response.Scope.ResolvedModel, response.Scope.Endpoint)
 	if grant.Status != "active" {
 		response.ProjectCaller.Grant = modelreadiness.Blocked("access_grant_"+grant.Status, modelreadiness.Evidence("status", grant.Status), "", "project_admin")
 	} else if grant.ValidFrom.After(now) {
@@ -484,116 +442,31 @@ func (h *Handler) readinessCallerAxes(r *http.Request, orgID, projectID int64, c
 	} else {
 		response.ProjectCaller.Grant = modelreadiness.Ready("access_grant_active", modelreadiness.Evidence("status", grant.Status, "scope_mode", grant.ScopeMode))
 	}
-	snapshots, hasCandidate, hasLiveBoundary, resolveErr := h.readReadinessCredentials(
-		r, orgID, projectID, grant.ID, response.Scope.RequestedModel, response.Scope.ResolvedModel, response.Scope.Endpoint)
-	if resolveErr != nil {
+	if state.CredentialError != nil {
 		response.ProjectCaller.Credential = modelreadiness.Unavailable("runtime_caller_boundary_unavailable")
 		h.readinessPolicyAxes(r, response, nil, actorUserID)
 		return
 	}
-	if !hasCandidate {
+	if !state.CredentialCandidates {
 		response.ProjectCaller.Credential = modelreadiness.Blocked("access_credential_missing", modelreadiness.Evidence("present", false),
 			h.readinessFixRoute(r, accessFixRoute, accessFixAllowed), "subject_or_project_admin")
 		h.readinessPolicyAxes(r, response, nil, actorUserID)
 		return
 	}
-	if !hasLiveBoundary {
+	if !state.LiveBoundary {
 		response.ProjectCaller.Credential = modelreadiness.Blocked("runtime_caller_boundary_inactive", modelreadiness.Evidence("present", true), "", "subject_or_project_admin")
 		h.readinessPolicyAxes(r, response, nil, actorUserID)
 		return
 	}
-	if len(snapshots) == 0 {
+	if len(state.Credentials) == 0 {
 		response.ProjectCaller.Credential = modelreadiness.Blocked("access_credential_scope_excludes_request",
 			modelreadiness.Evidence("present", true), h.readinessFixRoute(r, accessFixRoute, accessFixAllowed), "subject_or_project_admin")
 		h.readinessPolicyAxes(r, response, nil, actorUserID)
 		return
 	}
-	snapshot := snapshots[0]
+	snapshot := state.Credentials[0]
 	response.ProjectCaller.Credential = modelreadiness.Ready("runtime_caller_boundary_active", modelreadiness.Evidence("present", true, "grant_revision", snapshot.GrantRevision))
-	h.readinessPolicyAxes(r, response, snapshots, actorUserID)
-}
-
-func (h *Handler) readReadinessGrant(r *http.Request, orgID, projectID int64, caller string, userID, workloadID int64) (readinessGrantEvidence, error) {
-	var grant readinessGrantEvidence
-	var modelsJSON, endpointsJSON []byte
-	var validUntil sql.NullTime
-	err := h.db.QueryRow(r.Context(), `
-		SELECT ag.id,ag.status,ag.scope_mode,ag.allowed_models,ag.allowed_endpoints,ag.valid_from,ag.valid_until
-		FROM access_grants ag
-		WHERE ag.org_id=$1 AND ag.project_id=$2
-		  AND (($3='self' AND ag.subject_type='user' AND ag.subject_user_id=$4)
-		    OR ($3='workload_application' AND ag.subject_type='workload_application' AND ag.subject_workload_application_id=$5))
-		ORDER BY (ag.status<>'revoked') DESC,ag.id DESC LIMIT 1`, orgID, projectID, caller, userID, workloadID).
-		Scan(&grant.ID, &grant.Status, &grant.ScopeMode, &modelsJSON, &endpointsJSON, &grant.ValidFrom, &validUntil)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return readinessGrantEvidence{}, nil
-	}
-	if err != nil {
-		return readinessGrantEvidence{}, err
-	}
-	if validUntil.Valid {
-		value := validUntil.Time
-		grant.ValidUntil = &value
-	}
-	if json.Unmarshal(modelsJSON, &grant.AllowedModels) != nil || json.Unmarshal(endpointsJSON, &grant.AllowedEndpoints) != nil {
-		return readinessGrantEvidence{}, errors.New("invalid access grant scope")
-	}
-	return grant, nil
-}
-
-func (h *Handler) readReadinessCredentials(
-	r *http.Request,
-	orgID, projectID, grantID int64,
-	requestedModel, resolvedModel, endpoint string,
-) ([]accessgrantboundary.Snapshot, bool, bool, error) {
-	rows, err := h.db.Query(r.Context(), `
-		SELECT k.id
-		FROM access_credentials ac
-		JOIN api_keys k
-		  ON k.access_credential_id=ac.id AND k.access_grant_id=ac.access_grant_id
-		 AND k.org_id=ac.org_id AND k.project_id=ac.project_id AND k.credential_ref=ac.credential_ref
-		WHERE ac.access_grant_id=$1 AND ac.org_id=$2 AND ac.project_id=$3
-		  AND ac.status='active' AND k.status='active' AND COALESCE(k.purpose,'')=''
-		ORDER BY k.id DESC`, grantID, orgID, projectID)
-	if err != nil {
-		return nil, false, false, err
-	}
-	defer rows.Close()
-	hasCandidate := false
-	hasLiveBoundary := false
-	snapshots := make([]accessgrantboundary.Snapshot, 0)
-	for rows.Next() {
-		hasCandidate = true
-		var keyID int64
-		if err := rows.Scan(&keyID); err != nil {
-			return nil, hasCandidate, hasLiveBoundary, err
-		}
-		snapshot, err := accessgrantboundary.Resolve(r.Context(), h.db, keyID)
-		if errors.Is(err, accessgrantboundary.ErrInactive) {
-			continue
-		}
-		if err != nil {
-			return nil, hasCandidate, hasLiveBoundary, err
-		}
-		hasLiveBoundary = true
-		if snapshot.AllowsExecution(requestedModel, resolvedModel, endpoint) {
-			snapshots = append(snapshots, snapshot)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, hasCandidate, hasLiveBoundary, err
-	}
-	return snapshots, hasCandidate, hasLiveBoundary, nil
-}
-
-func readinessGrantScopeAllows(grant readinessGrantEvidence, requested, resolved, endpoint string) bool {
-	if grant.ScopeMode == accessscope.ModeProjectDefault {
-		return accessscope.IsProjectDefaultEndpoint(endpoint)
-	}
-	if grant.ScopeMode != accessscope.ModeExplicit || !slices.Contains(grant.AllowedEndpoints, endpoint) {
-		return false
-	}
-	return slices.Contains(grant.AllowedModels, requested) || slices.Contains(grant.AllowedModels, resolved)
+	h.readinessPolicyAxes(r, response, state.Credentials, actorUserID)
 }
 
 func (h *Handler) readinessPolicyAxes(r *http.Request, response *modelreadiness.Response, snapshots []accessgrantboundary.Snapshot, actorUserID int64) {
@@ -601,34 +474,32 @@ func (h *Handler) readinessPolicyAxes(r *http.Request, response *modelreadiness.
 		snapshots = []accessgrantboundary.Snapshot{{}}
 	}
 	allowedSnapshots := make([]accessgrantboundary.Snapshot, 0, len(snapshots))
-	modelAuthorizationUnavailable := false
 	deniedReason := "model_authorization_denied"
 	deniedPolicyCount := 0
 	if h.modelAuthorizationEvaluator == nil {
 		response.ProjectCaller.ModelAuthorization = modelreadiness.Unavailable("model_authorization_unavailable")
 	} else {
-		for _, snapshot := range snapshots {
-			input := readinessModelAuthorizationInput(response, snapshot, actorUserID)
-			decision, err := h.modelAuthorizationEvaluator.Evaluate(r.Context(), input)
-			if err != nil {
-				modelAuthorizationUnavailable = true
-				continue
-			}
-			if decision.Allowed {
-				allowedSnapshots = append(allowedSnapshots, snapshot)
-				if len(allowedSnapshots) == 1 {
-					response.ProjectCaller.ModelAuthorization = modelreadiness.Ready(decision.Reason,
-						modelreadiness.Evidence("allowed", true, "matched_policy_count", len(decision.PolicyRefs)))
-				}
-				continue
-			}
-			deniedReason = decision.Reason
-			deniedPolicyCount = len(decision.PolicyRefs)
+		inputs := make([]modelauthz.Input, len(snapshots))
+		for index, snapshot := range snapshots {
+			inputs[index] = readinessModelAuthorizationInput(response, snapshot, actorUserID)
 		}
-		if len(allowedSnapshots) == 0 {
-			if modelAuthorizationUnavailable {
-				response.ProjectCaller.ModelAuthorization = modelreadiness.Unavailable("model_authorization_unavailable")
-			} else {
+		decisions, err := h.modelAuthorizationEvaluator.EvaluateAlternatives(r.Context(), inputs)
+		if err != nil {
+			response.ProjectCaller.ModelAuthorization = modelreadiness.Unavailable("model_authorization_unavailable")
+		} else {
+			for index, decision := range decisions {
+				if decision.Allowed {
+					allowedSnapshots = append(allowedSnapshots, snapshots[index])
+					if len(allowedSnapshots) == 1 {
+						response.ProjectCaller.ModelAuthorization = modelreadiness.Ready(decision.Reason,
+							modelreadiness.Evidence("allowed", true, "matched_policy_count", len(decision.PolicyRefs)))
+					}
+					continue
+				}
+				deniedReason = decision.Reason
+				deniedPolicyCount = len(decision.PolicyRefs)
+			}
+			if len(allowedSnapshots) == 0 {
 				response.ProjectCaller.ModelAuthorization = modelreadiness.Blocked(deniedReason,
 					modelreadiness.Evidence("allowed", false, "matched_policy_count", deniedPolicyCount), "", "organization_admin")
 			}

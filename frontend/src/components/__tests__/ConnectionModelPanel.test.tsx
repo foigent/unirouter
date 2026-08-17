@@ -4,14 +4,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ConnectionModelPanel, { exactModelTestResult, type ModelConnectionChannel } from '../ConnectionModelPanel';
 
 const mocks = vi.hoisted(() => ({
-  request: vi.fn(),
+  testChannelModel: vi.fn(),
   createRuntimeChange: vi.fn(),
   validateRuntimeChange: vi.fn(),
   activateInitialRuntimeChange: vi.fn(),
   getRuntimeChangeSlot: vi.fn(),
 }));
 
-vi.mock('../../api/client', () => ({ api: mocks }));
+vi.mock('../../api/modelEndpoints', () => ({
+  modelEndpointApi: { testChannelModel: mocks.testChannelModel },
+}));
+vi.mock('../../api/routing', () => ({
+  routingApi: {
+    createRelease: mocks.createRuntimeChange,
+    validateRelease: mocks.validateRuntimeChange,
+    activateInitialRelease: mocks.activateInitialRuntimeChange,
+    getSlot: mocks.getRuntimeChangeSlot,
+  },
+}));
 
 const channel: ModelConnectionChannel = {
   id: 12,
@@ -42,8 +52,7 @@ function renderPanel(modelsPublishedElsewhere = new Set<string>(), selectedChann
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.request.mockImplementation((_path: string, init: { body: string }) => {
-    const model = JSON.parse(init.body).model;
+  mocks.testChannelModel.mockImplementation((_channelId: number, model: string) => {
     return Promise.resolve({ success: true, channel_id: 12, model, upstream_model: model, status_code: 200, latency_ms: 12, tokens_used: 3 });
   });
   mocks.createRuntimeChange.mockResolvedValue({ release_ref: 'rcr_deepseek', version: 1 });
@@ -58,15 +67,15 @@ describe('ConnectionModelPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '检测当前连接全部模型（2）' }));
     fireEvent.click(await screen.findByText('确认检测全部模型'));
 
-    await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
-    expect(mocks.request.mock.calls.map((call) => ({
-      path: call[0],
-      model: JSON.parse(call[1].body).model,
+    await waitFor(() => expect(mocks.testChannelModel).toHaveBeenCalledTimes(2));
+    expect(mocks.testChannelModel.mock.calls.map((call) => ({
+      channelId: call[0],
+      model: call[1],
     }))).toEqual([
-      { path: '/channels/12/test', model: 'deepseek-v4-flash' },
-      { path: '/channels/12/test', model: 'deepseek-v4-pro' },
+      { channelId: 12, model: 'deepseek-v4-flash' },
+      { channelId: 12, model: 'deepseek-v4-pro' },
     ]);
-    expect(mocks.request.mock.calls.some(call => call[0].includes('kimi'))).toBe(false);
+    expect(mocks.testChannelModel.mock.calls.some(call => call[1].includes('kimi'))).toBe(false);
   });
 
   it('blocks every real detection before the API call when the gateway license is unavailable', async () => {
@@ -83,7 +92,7 @@ describe('ConnectionModelPanel', () => {
     expect(within(row).getByRole('button', { name: '检测' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '查看商业授权' }));
     expect(onOpenLicense).toHaveBeenCalledTimes(1);
-    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.testChannelModel).not.toHaveBeenCalled();
   });
 
   it('fails closed when the response model differs from the exact requested model', async () => {
@@ -93,7 +102,7 @@ describe('ConnectionModelPanel', () => {
       upstream_model: 'deepseek-v4-flash',
     }).success).toBe(false);
 
-    mocks.request.mockResolvedValueOnce({ success: true, model: 'deepseek-v4-flash', status_code: 200, latency_ms: 8 });
+    mocks.testChannelModel.mockResolvedValueOnce({ success: true, model: 'deepseek-v4-flash', status_code: 200, latency_ms: 8 });
     renderPanel();
     const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: '检测' }));

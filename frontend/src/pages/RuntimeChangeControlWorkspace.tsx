@@ -1,63 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Banner, Button, Form, Popconfirm, SideSheet, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconRefresh } from '@douyinfe/semi-icons';
-import { api } from '../api/client';
+import { channelApi, type ProviderChannel } from '../api/channels';
+import { routingApi, type RuntimeChannelOverride, type RuntimeRelease, type RuntimeReleaseSummary } from '../api/routing';
 import { EmptyState, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
 import { parseModelList } from '../utils/modelList';
 
-interface Channel {
-  id: number;
-  name: string;
-  provider: string;
-  models: string;
-  status: string;
-	effective_status?: string;
-	published_models?: string;
-  priority: number;
-  routing_weight: number;
-  routing_epoch: number;
-}
-
-interface ChannelOverride {
-  channel_id: number;
-  expected_routing_epoch: number;
-  admission: string;
-  priority?: number;
-  weight?: number;
-}
-
-interface RuntimeRelease {
-  id: number;
-  release_ref: string;
-  model_name: string;
-  candidate_hash: string;
-  baseline_hash: string;
-  candidate: { contract_version: string; model_name: string; overrides: ChannelOverride[] };
-  provider_pack_pins: Array<{ pack_id: string; pack_version: string; manifest_sha256: string }>;
-  simulation_report: {
-    report_version: string;
-    overall_risk: string;
-    summary?: { unchanged: number; compatible: number; review_required: number; breaking: number };
-    route_changes?: Array<{ field: string; baseline: string; candidate: string; risk: string; reason: string }>;
-  };
-  overall_risk: string;
-  stage: string;
-  version: number;
-  canary_basis_points: number;
-  reason: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface RuntimeReleaseSummary {
-  active_records: number;
-  current_stable: number;
-  retained_active: number;
-  canary: number;
-  pending: number;
-  history: number;
-}
+type Channel = Pick<ProviderChannel,
+  'id' | 'name' | 'provider' | 'models' | 'status' | 'effective_status' |
+  'published_models' | 'priority' | 'routing_weight' | 'routing_epoch'>;
 
 const stageLabels: Record<string, string> = {
   draft: '草稿', validated: '已验证', shadow: '待灰度（零流量）', canary: '灰度', active: '已生效记录', rolled_back: '已回滚', rejected: '已拒绝',
@@ -145,11 +97,11 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
       const [releaseData, channelData] = await Promise.all([
         recoveryOnly
           ? (async () => {
-            const data = await loadAllPages<RuntimeRelease>((page, size) => api.getRuntimeChanges(requestedModel, page, size));
+            const data = await loadAllPages<RuntimeRelease>((page, size) => routingApi.listReleases(requestedModel, page, size));
             return { data, total: data.length, page: 1, page_size: data.length || 20, summary: { active_records: 0, current_stable: 0, retained_active: 0, canary: 0, pending: 0, history: 0 } };
           })()
-          : api.getRuntimeChanges(undefined, requestedPage, requestedPageSize),
-        loadAllPages<Channel>((page, size) => api.getChannels(page, size)),
+          : routingApi.listReleases(undefined, requestedPage, requestedPageSize),
+        loadAllPages<Channel>((page, size) => channelApi.list(page, size)),
       ]);
       const next = (releaseData?.data || []) as RuntimeRelease[];
       setReleases(next);
@@ -203,19 +155,23 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
     const priority = values.priority === undefined || values.priority === null || values.priority === '' ? undefined : Number(values.priority);
     const weight = values.weight === undefined || values.weight === null || values.weight === '' ? undefined : Number(values.weight);
     const admission = String(values.admission || 'inherit');
+    if (!['inherit', 'allow', 'deny'].includes(admission)) {
+      Toast.error('请选择受支持的通道准入方式');
+      return;
+    }
     if (admission === 'inherit' && priority === undefined && weight === undefined) {
       Toast.error('至少选择准入变化，或填写优先级/权重');
       return;
     }
     setTransitioning(true);
     try {
-      const created = await api.createRuntimeChange({
+      const created = await routingApi.createRelease({
         model_name: modelName,
         reason: String(values.reason || '').trim(),
         overrides: [{
           channel_id: channel.id,
           expected_routing_epoch: channel.routing_epoch,
-          admission,
+          admission: admission as RuntimeChannelOverride['admission'],
           ...(priority !== undefined ? { priority } : {}),
           ...(weight !== undefined ? { weight } : {}),
         }],
@@ -287,9 +243,9 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
 		setTransitioning(true);
 		try {
 			for (const release of retainedReleases) {
-				await api.rollbackRuntimeChange(release.release_ref, release.version);
+				await routingApi.rollbackRelease(release.release_ref, release.version);
 			}
-			await api.updateChannel(recoveryChannel.id, {
+			await channelApi.update(recoveryChannel.id, {
 				status: 'staged',
 				expected_routing_epoch: recoveryChannel.routing_epoch,
 			});
@@ -448,12 +404,12 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
                 })}
               </div>
               <div className="ur-governance-actions">
-                {selected.stage === 'draft' && <Button type="primary" loading={transitioning} onClick={() => void transition('验证完成', () => api.validateRuntimeChange(selected.release_ref, selected.version))}>验证候选</Button>}
-                {selected.stage === 'validated' && <Button type="primary" loading={transitioning} onClick={() => void transition('已标记为待灰度（零流量）', () => api.shadowRuntimeChange(selected.release_ref, selected.version))}>标记为待灰度（零流量）</Button>}
-                {selected.stage === 'shadow' && <Popconfirm title="启动 5% 确定性灰度？" content="同一服务端请求标识会稳定落在同一发布槽。" onConfirm={() => void transition('5% 灰度已启动', () => api.canaryRuntimeChange(selected.release_ref, selected.version, 500))}><Button type="primary" loading={transitioning}>启动 5% 灰度</Button></Popconfirm>}
-                {selected.stage === 'canary' && <Popconfirm title="将灰度候选提升为稳定版本？" content="提升后全部请求采用该受控路由覆盖。" onConfirm={() => void transition('发布已提升为稳定版本', () => api.promoteRuntimeChange(selected.release_ref, selected.version))}><Button type="primary" loading={transitioning}>提升为稳定</Button></Popconfirm>}
-                {['canary', 'active'].includes(selected.stage) && <Popconfirm title="确认回滚该发布？" content="将恢复父稳定版本；紧急禁用状态不会被覆盖。" onConfirm={() => void transition('发布已回滚', () => api.rollbackRuntimeChange(selected.release_ref, selected.version))}><Button type="danger" loading={transitioning}>回滚</Button></Popconfirm>}
-				{['draft', 'validated', 'shadow'].includes(selected.stage) && <Popconfirm title="终止这个未生效候选？" content="记录会保留为“已拒绝”审计历史，但不再出现在待推进队列，也不能获得流量。" onConfirm={() => void transition('候选已终止并保留审计记录', () => api.rejectRuntimeChange(selected.release_ref, selected.version, '管理员终止未生效发布候选'))}><Button type="danger" theme="borderless" loading={transitioning}>终止候选</Button></Popconfirm>}
+                {selected.stage === 'draft' && <Button type="primary" loading={transitioning} onClick={() => void transition('验证完成', () => routingApi.validateRelease(selected.release_ref, selected.version))}>验证候选</Button>}
+                {selected.stage === 'validated' && <Button type="primary" loading={transitioning} onClick={() => void transition('已标记为待灰度（零流量）', () => routingApi.markReleaseShadow(selected.release_ref, selected.version))}>标记为待灰度（零流量）</Button>}
+                {selected.stage === 'shadow' && <Popconfirm title="启动 5% 确定性灰度？" content="同一服务端请求标识会稳定落在同一发布槽。" onConfirm={() => void transition('5% 灰度已启动', () => routingApi.startReleaseCanary(selected.release_ref, selected.version, 500))}><Button type="primary" loading={transitioning}>启动 5% 灰度</Button></Popconfirm>}
+                {selected.stage === 'canary' && <Popconfirm title="将灰度候选提升为稳定版本？" content="提升后全部请求采用该受控路由覆盖。" onConfirm={() => void transition('发布已提升为稳定版本', () => routingApi.promoteRelease(selected.release_ref, selected.version))}><Button type="primary" loading={transitioning}>提升为稳定</Button></Popconfirm>}
+                {['canary', 'active'].includes(selected.stage) && <Popconfirm title="确认回滚该发布？" content="将恢复父稳定版本；紧急禁用状态不会被覆盖。" onConfirm={() => void transition('发布已回滚', () => routingApi.rollbackRelease(selected.release_ref, selected.version))}><Button type="danger" loading={transitioning}>回滚</Button></Popconfirm>}
+				{['draft', 'validated', 'shadow'].includes(selected.stage) && <Popconfirm title="终止这个未生效候选？" content="记录会保留为“已拒绝”审计历史，但不再出现在待推进队列，也不能获得流量。" onConfirm={() => void transition('候选已终止并保留审计记录', () => routingApi.rejectRelease(selected.release_ref, selected.version, '管理员终止未生效发布候选'))}><Button type="danger" theme="borderless" loading={transitioning}>终止候选</Button></Popconfirm>}
               </div>
             </>
           ) : <EmptyState title="选择一条发布" description="右侧固定显示风险、Hash、Provider Pack、覆盖内容和允许的下一步。" minHeight={300} />}

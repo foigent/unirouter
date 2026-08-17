@@ -9,14 +9,16 @@ const mockUpdateChannelKey = vi.fn();
 const mockCreateChannelKey = vi.fn();
 const mockRotateChannelKey = vi.fn();
 
-vi.mock('../../api/client', () => ({
-  api: {
-    getChannelKeys: (...args: any[]) => mockGetChannelKeys(...args),
-    getChannels: (...args: any[]) => mockGetChannels(...args),
-    updateChannelKey: (...args: any[]) => mockUpdateChannelKey(...args),
-    createChannelKey: (...args: any[]) => mockCreateChannelKey(...args),
-    rotateChannelKey: (...args: any[]) => mockRotateChannelKey(...args),
-    deleteChannelKey: vi.fn(),
+vi.mock('../../api/channels', () => ({
+  channelApi: {
+    list: (...args: unknown[]) => mockGetChannels(...args),
+  },
+  providerCredentialApi: {
+    list: (...args: unknown[]) => mockGetChannelKeys(...args),
+    update: (...args: unknown[]) => mockUpdateChannelKey(...args),
+    create: (...args: unknown[]) => mockCreateChannelKey(...args),
+    rotate: (...args: unknown[]) => mockRotateChannelKey(...args),
+    remove: vi.fn(),
   },
 }));
 

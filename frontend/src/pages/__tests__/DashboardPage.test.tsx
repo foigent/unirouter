@@ -30,9 +30,13 @@ const mockGetOrganizations = vi.fn();
 const mockGetInternalStatus = vi.fn();
 vi.mock('../../api/client', () => ({
   api: {
-    getDashboardStats: (...args: any[]) => mockGetDashboardStats(...args),
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
     getInternalStatus: (...args: any[]) => mockGetInternalStatus(...args),
+  },
+}));
+vi.mock('../../api/dashboard', () => ({
+  dashboardApi: {
+    getStats: (...args: unknown[]) => mockGetDashboardStats(...args),
   },
 }));
 

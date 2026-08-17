@@ -3,27 +3,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildUTCOverridePriceBands, buildUTCValleyPriceBands, EnterpriseRateCardWorkspace } from '../EnterpriseFinanceWorkspaces';
 
 const apiMocks = vi.hoisted(() => ({
-  getEnterpriseRateCards: vi.fn(),
-  createEnterpriseRateCardDraft: vi.fn(),
-  approveEnterpriseRateCard: vi.fn(),
-  activateEnterpriseRateCard: vi.fn(),
-  getEnterprisePricingSnapshot: vi.fn(),
-  bootstrapLegacyEnterpriseRateCardDrafts: vi.fn(),
-  preflightEnterpriseRateCardAuthority: vi.fn(),
+  getRateCards: vi.fn(),
+  createRateCardDraft: vi.fn(),
+  approveRateCard: vi.fn(),
+  activateRateCard: vi.fn(),
+  getPricingSnapshot: vi.fn(),
+  bootstrapLegacyRateCardDrafts: vi.fn(),
+  preflightRateCardAuthority: vi.fn(),
 }));
 
-vi.mock('../../api/client', () => ({ api: apiMocks }));
+vi.mock('../../api/enterpriseFinance', () => ({ enterpriseFinanceApi: apiMocks }));
 
 describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
   beforeEach(() => {
     Object.values(apiMocks).forEach(mock => mock.mockReset());
-    apiMocks.createEnterpriseRateCardDraft.mockResolvedValue({});
-    apiMocks.bootstrapLegacyEnterpriseRateCardDrafts.mockResolvedValue({
+    apiMocks.createRateCardDraft.mockResolvedValue({});
+    apiMocks.bootstrapLegacyRateCardDrafts.mockResolvedValue({
       created_draft_count: 2, existing_draft_count: 1, skipped_model_count: 1,
       skipped_models: ['unknown-model:provider_ref_missing'], state: 'drafts_only',
       approval_required: true, activation_required: true, legacy_runtime_fallback: false,
     });
-    apiMocks.preflightEnterpriseRateCardAuthority.mockResolvedValue({
+    apiMocks.preflightRateCardAuthority.mockResolvedValue({
       ready: true, checked_at: '2026-08-13T00:00:00Z',
       switch_instruction: 'Set REQUEST_PRICING_AUTHORITY=rate_card only when ready=true, then restart UniRouter.',
       models: [{
@@ -32,7 +32,7 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
         pricing_version: 'rcq2_hash',
       }],
     });
-    apiMocks.getEnterpriseRateCards.mockResolvedValue({
+    apiMocks.getRateCards.mockResolvedValue({
       data: [], total: 0,
       request_pricing_authority: {
         authority: 'versioned_rate_card', selection_key: 'model_ref',
@@ -44,8 +44,8 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
         public_source_failure: 'keep_current_active_rate', current_mode: 'legacy', strict_active: false,
       },
     });
-    apiMocks.approveEnterpriseRateCard.mockResolvedValue({});
-    apiMocks.activateEnterpriseRateCard.mockResolvedValue({});
+    apiMocks.approveRateCard.mockResolvedValue({});
+    apiMocks.activateRateCard.mockResolvedValue({});
   });
 
   it('states the fail-closed authority and evidence-backed draft boundary', async () => {
@@ -73,8 +73,8 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     fireEvent.change(screen.getByLabelText('Rate Card 生效日期'), { target: { value: '2026-08-13' } });
     fireEvent.click(screen.getByText('保存草稿'));
 
-    await waitFor(() => expect(apiMocks.createEnterpriseRateCardDraft).toHaveBeenCalledTimes(1));
-    const payload = apiMocks.createEnterpriseRateCardDraft.mock.calls[0][0];
+    await waitFor(() => expect(apiMocks.createRateCardDraft).toHaveBeenCalledTimes(1));
+    const payload = apiMocks.createRateCardDraft.mock.calls[0][0];
     expect(payload.rate_card_ref).toBeUndefined();
     expect(payload.org_id).toBe(9);
     expect(payload.model_ref).toBe('deepseek-v4-pro');
@@ -150,14 +150,14 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     fireEvent.click(screen.getByText('从旧价格生成草稿'));
     expect(screen.getByText(/不会批准、激活、切换请求定价权威/)).toBeTruthy();
     fireEvent.click(screen.getByText('确认只生成草稿'));
-    await waitFor(() => expect(apiMocks.bootstrapLegacyEnterpriseRateCardDrafts).toHaveBeenCalledWith({ org_id: 9 }));
+    await waitFor(() => expect(apiMocks.bootstrapLegacyRateCardDrafts).toHaveBeenCalledWith({ org_id: 9 }));
     expect(await screen.findByText(/迁移草稿：新建 2，已存在 1，跳过 1/)).toBeTruthy();
     expect(screen.getByText(/仍须独立复核和激活/)).toBeTruthy();
 
     expect(screen.queryByText('REQUEST_PRICING_AUTHORITY=rate_card')).toBeNull();
     fireEvent.change(screen.getByLabelText('Rate Card 预检模型列表'), { target: { value: 'deepseek-v4-pro；deepseek-v4-pro' } });
     fireEvent.click(screen.getByText('逐模型预检'));
-    await waitFor(() => expect(apiMocks.preflightEnterpriseRateCardAuthority).toHaveBeenCalledWith({
+    await waitFor(() => expect(apiMocks.preflightRateCardAuthority).toHaveBeenCalledWith({
       org_id: 9, models: [{ model_ref: 'deepseek-v4-pro' }],
     }));
     expect(await screen.findByText('supplier_contracted · deepseek · v3')).toBeTruthy();
@@ -179,7 +179,7 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
         }],
       },
     });
-    apiMocks.getEnterpriseRateCards.mockResolvedValue({
+    apiMocks.getRateCards.mockResolvedValue({
       data: [card('old-rate', 3, 'active', '1000000'), card('new-rate', 2, 'approved', '1200000')],
       total: 2,
       request_pricing_authority: {
@@ -202,7 +202,7 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     expect(screen.getByText('input_tokens：¥1.200000 / 1000000 tokens')).toBeTruthy();
     fireEvent.click(screen.getByText('确认原子替换'));
 
-    await waitFor(() => expect(apiMocks.activateEnterpriseRateCard).toHaveBeenCalledWith('new-rate', {
+    await waitFor(() => expect(apiMocks.activateRateCard).toHaveBeenCalledWith('new-rate', {
       org_id: 9,
       expected_version: 2,
       supersedes_rate_card_ref: 'old-rate',
@@ -211,7 +211,7 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
   });
 
   it('shows the complete candidate detail before first activation', async () => {
-    apiMocks.getEnterpriseRateCards.mockResolvedValue({
+    apiMocks.getRateCards.mockResolvedValue({
       data: [{
         id: 2,
         card: {
@@ -232,10 +232,10 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     fireEvent.click(await screen.findByText('激活'));
     expect(screen.getByText(/将使 first-rate v2 进入 active/)).toBeTruthy();
     expect(screen.getByText('input_tokens：¥1.000000 / 1000000 tokens')).toBeTruthy();
-    expect(apiMocks.activateEnterpriseRateCard).not.toHaveBeenCalled();
+    expect(apiMocks.activateRateCard).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByText('确认激活此版本'));
-    await waitFor(() => expect(apiMocks.activateEnterpriseRateCard).toHaveBeenCalledWith('first-rate', {
+    await waitFor(() => expect(apiMocks.activateRateCard).toHaveBeenCalledWith('first-rate', {
       org_id: 9, expected_version: 2,
     }));
   });
@@ -248,7 +248,7 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
       component('cache_read_tokens', '250000'), component('cache_creation_tokens', '1250000')];
     const valley = [component('input_tokens', '500000'), component('output_tokens', '1000000'),
       component('cache_read_tokens', '100000'), component('cache_creation_tokens', '600000')];
-    apiMocks.getEnterpriseRateCards.mockResolvedValue({
+    apiMocks.getRateCards.mockResolvedValue({
       data: [{
         id: 7,
         card: {
@@ -286,10 +286,10 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     expect(screen.getByText('URL：https://provider.example/pricing')).toBeTruthy();
     expect(screen.getByText('修订：revision-7')).toBeTruthy();
     expect(screen.getByText(`原始载荷：sha256:${'a'.repeat(64)}`)).toBeTruthy();
-    expect(apiMocks.approveEnterpriseRateCard).not.toHaveBeenCalled();
+    expect(apiMocks.approveRateCard).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByText('确认批准此版本'));
-    await waitFor(() => expect(apiMocks.approveEnterpriseRateCard).toHaveBeenCalledWith('official-rate', {
+    await waitFor(() => expect(apiMocks.approveRateCard).toHaveBeenCalledWith('official-rate', {
       org_id: 9, expected_version: 1,
     }));
   });

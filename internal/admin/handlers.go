@@ -32,6 +32,10 @@ type providerCostReconciler interface {
 	ReconcileProviderAttempt(context.Context, billing.ProviderReconciliationRequest) (*billing.ProviderReconciliationResult, error)
 }
 
+type billingReadinessProvider interface {
+	InspectAdmissionReadiness(context.Context, int64, string) (billing.AdmissionReadiness, error)
+}
+
 type guardrailController interface {
 	Refresh(context.Context) error
 	ApprovedDetectors() []string
@@ -68,6 +72,7 @@ type Handler struct {
 	routingController            routingController
 	outbox                       *outbox.Service
 	providerCostReconciler       providerCostReconciler
+	billingReadiness             billingReadinessProvider
 	guardrailController          guardrailController
 	completedFeedController      completedFeedController
 	xInsightConnectorManager     *xinsightconnector.Manager
@@ -129,6 +134,12 @@ func (h *Handler) SetRoutingController(controller routingController) {
 
 func (h *Handler) SetProviderCostReconciler(reconciler providerCostReconciler) {
 	h.providerCostReconciler = reconciler
+}
+
+func (h *Handler) SetBillingReadinessProvider(provider billingReadinessProvider) {
+	if h != nil {
+		h.billingReadiness = provider
+	}
 }
 
 func (h *Handler) SetGuardrailController(controller guardrailController) {

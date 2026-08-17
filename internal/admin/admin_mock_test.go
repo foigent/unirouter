@@ -3902,18 +3902,13 @@ func TestDashboardStats_Success(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					if strings.Contains(sql, "percentile_cont(0.95)") {
-						switch len(dest) {
-						case 1:
-							*dest[0].(*float64) = 420.5
-						case 2:
-							*dest[0].(*float64) = 420.5
-							*dest[1].(*float64) = 950.25
-						}
-						return nil
-					}
-					if strings.Contains(sql, "AVG(latency_ms)") {
-						*dest[0].(*float64) = 350.5
+					if strings.Contains(sql, "COUNT(*)::int") {
+						*dest[0].(*int) = 100
+						*dest[1].(*int64) = 1_000_000
+						*dest[2].(*float64) = 350.5
+						*dest[3].(*float64) = 420.5
+						*dest[4].(*float64) = 950.25
+						*dest[5].(*int) = 99
 						return nil
 					}
 					for _, target := range dest {
@@ -4122,8 +4117,8 @@ func TestDashboardPreviousPeriodDelta_UsesImmediatelyPrecedingEqualWindow(t *tes
 	if _, _, _, err := h.dashboardPreviousPeriodDelta(context.Background(), 7, start, end, 0, 0, 0); err != nil {
 		t.Fatalf("dashboardPreviousPeriodDelta returned error: %v", err)
 	}
-	if len(queryArgs) != 4 {
-		t.Fatalf("expected four previous-period queries, got %d", len(queryArgs))
+	if len(queryArgs) != 1 {
+		t.Fatalf("expected one previous-period snapshot query, got %d", len(queryArgs))
 	}
 	expectedStart := start.Add(-6 * time.Hour).Format(time.RFC3339Nano)
 	expectedEnd := start.Format(time.RFC3339Nano)
@@ -4134,7 +4129,7 @@ func TestDashboardPreviousPeriodDelta_UsesImmediatelyPrecedingEqualWindow(t *tes
 	}
 }
 
-func TestDashboardOverview_TotalUsesTimeRange(t *testing.T) {
+func TestDashboardWindowMetrics_UsesOneConsistentOrgTimeRangeSnapshot(t *testing.T) {
 	var firstSQL string
 	var firstArgs []any
 	queryCount := 0
@@ -4147,12 +4142,12 @@ func TestDashboardOverview_TotalUsesTimeRange(t *testing.T) {
 			}
 			return &testutil.MockRow{
 				ScanFn: func(dest ...any) error {
-					switch d := dest[0].(type) {
-					case *int:
-						*d = 7
-					case *float64:
-						*d = 123
-					}
+					*dest[0].(*int) = 7
+					*dest[1].(*int64) = 70
+					*dest[2].(*float64) = 123
+					*dest[3].(*float64) = 820
+					*dest[4].(*float64) = 1240
+					*dest[5].(*int) = 6
 					return nil
 				},
 			}
@@ -4160,62 +4155,32 @@ func TestDashboardOverview_TotalUsesTimeRange(t *testing.T) {
 	}
 	h := newTestHandler(db)
 
-	total, _, _, _, err := h.dashboardOverview(context.Background(), 1, "2026-07-01T00:00:00Z", "2026-07-01T01:00:00Z")
+	metrics, err := h.dashboardWindowMetrics(context.Background(), 1, "2026-07-01T00:00:00Z", "2026-07-01T01:00:00Z")
 	if err != nil {
-		t.Fatalf("dashboardOverview returned error: %v", err)
+		t.Fatalf("dashboardWindowMetrics returned error: %v", err)
 	}
 
-	if total != 7 {
-		t.Fatalf("expected total=7, got %d", total)
-	}
-	if !strings.Contains(firstSQL, "created_at >= $2") || !strings.Contains(firstSQL, "created_at < $3") {
-		t.Fatalf("expected total query to use time range, got %s", firstSQL)
-	}
-	if len(firstArgs) != 3 {
-		t.Fatalf("expected org/start/end args, got %d", len(firstArgs))
-	}
-}
-
-func TestDashboardLatencyPercentiles_UsesOrgTimeRangeAndPositiveLatency(t *testing.T) {
-	var sqlSeen string
-	var argsSeen []any
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			sqlSeen = sql
-			argsSeen = append([]any(nil), args...)
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*float64) = 820
-					*dest[1].(*float64) = 1240
-					return nil
-				},
-			}
-		},
-	}
-	h := newTestHandler(db)
-
-	p95, p99, err := h.dashboardLatencyPercentiles(context.Background(), 42, "2026-07-01T00:00:00Z", "2026-07-01T01:00:00Z")
-	if err != nil {
-		t.Fatalf("dashboardLatencyPercentiles returned error: %v", err)
-	}
-
-	if p95 != 820 || p99 != 1240 {
-		t.Fatalf("expected p95=820 and p99=1240, got p95=%v p99=%v", p95, p99)
+	if metrics.TotalRequests != 7 || metrics.CostMicros != 70 || metrics.AvgLatencyMS != 123 ||
+		metrics.P95LatencyMS != 820 || metrics.P99LatencyMS != 1240 || metrics.SuccessRate != float64(6)/7 {
+		t.Fatalf("unexpected metrics: %+v", metrics)
 	}
 	for _, expected := range []string{
+		"COUNT(*)::int",
+		"SUM(cost_micros)",
+		"AVG(latency_ms)",
 		"percentile_cont(0.95)",
 		"percentile_cont(0.99)",
-		"org_id = $1",
+		"status_code>=200",
+		"org_id=$1",
 		"created_at >= $2",
 		"created_at < $3",
-		"latency_ms > 0",
 	} {
-		if !strings.Contains(sqlSeen, expected) {
-			t.Fatalf("expected percentile query to contain %q, got %s", expected, sqlSeen)
+		if !strings.Contains(firstSQL, expected) {
+			t.Fatalf("expected window snapshot query to contain %q, got %s", expected, firstSQL)
 		}
 	}
-	if len(argsSeen) != 3 || argsSeen[0] != int64(42) {
-		t.Fatalf("expected org/start/end args, got %#v", argsSeen)
+	if queryCount != 1 || len(firstArgs) != 3 {
+		t.Fatalf("expected org/start/end args, got %d", len(firstArgs))
 	}
 }
 

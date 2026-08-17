@@ -84,18 +84,6 @@ describe('API Client', () => {
     })
   })
 
-  describe('getDashboardStats', () => {
-    it('passes the selected organization and time range explicitly', async () => {
-      mockJsonResponse({ total_requests: 0 })
-
-      await api.getDashboardStats('2026-07-15T00:00:00Z', '2026-07-16T00:00:00Z', 22)
-      expect(mockFetch).toHaveBeenCalledWith(
-        '/api/v1/dashboard/stats?start_time=2026-07-15T00%3A00%3A00Z&end_time=2026-07-16T00%3A00%3A00Z&org_id=22',
-        expect.objectContaining({ headers: expect.any(Object) })
-      )
-    })
-  })
-
   describe('first-customer bootstrap', () => {
     it('binds the organization body to one explicit client request identity', async () => {
       mockJsonResponse({ organization_id: 9, wallet_balance_micros: 0 })
@@ -111,28 +99,6 @@ describe('API Client', () => {
             'X-UniRouter-Client-Request-ID': 'bootstrap-client-001',
           }),
         }),
-      )
-    })
-  })
-
-  describe('getChannels', () => {
-    it('sends GET to /api/v1/channels with pagination', async () => {
-      mockJsonResponse({ data: [], total: 0 })
-
-      await api.getChannels(2, 10)
-      expect(mockFetch).toHaveBeenCalledWith(
-        '/api/v1/channels?page=2&page_size=10',
-        expect.objectContaining({ headers: expect.any(Object) })
-      )
-    })
-
-    it('encodes the model in the read-only routing preview request', async () => {
-      mockJsonResponse({ policy_version: 'routing-policy.v1', candidates: [], exclusions: [] })
-
-      await api.previewRouting('company/chat v2')
-      expect(mockFetch).toHaveBeenCalledWith(
-        '/api/v1/routing/preview?model=company%2Fchat%20v2',
-        expect.objectContaining({ headers: expect.any(Object) })
       )
     })
   })

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Banner, Button, Modal, Space, Table, Toast, Typography } from '@douyinfe/semi-ui';
 import { LatencyText, StatusTag, Surface } from '../ui';
-import { api } from '../api/client';
+import { modelEndpointApi, type ModelEndpointTestResponse } from '../api/modelEndpoints';
+import { routingApi } from '../api/routing';
+import { ApiError } from '../api/transport';
 import {
   eligibleCredentialsForModel,
   parseChannelModels,
@@ -68,7 +70,7 @@ function effectiveConnectionStatus(channel: ModelConnectionChannel) {
 
 export function exactModelTestResult(
   requestedModel: string,
-  response: Record<string, unknown>,
+  response: ModelEndpointTestResponse,
   testedAt = new Date().toISOString(),
 ): ConnectionModelTestResult {
   const responseModel = String(response.model || '').trim();
@@ -148,10 +150,7 @@ export default function ConnectionModelPanel({
 
     setTestingModels(current => setMembership(current, model, true));
     try {
-      const response = await api.request(`/channels/${channel.id}/test`, {
-        method: 'POST',
-        body: JSON.stringify({ model, prompt: 'Hello, this is a test message.' }),
-      }) as Record<string, unknown>;
+      const response = await modelEndpointApi.testChannelModel(channel.id, model, 'Hello, this is a test message.');
       const result = exactModelTestResult(model, response);
       setResults(current => ({ ...current, [model]: result }));
       if (notify) {
@@ -159,15 +158,15 @@ export default function ConnectionModelPanel({
         else Toast.error(`${model} 检测失败：${result.error || '上游未返回成功状态'}`);
       }
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       const result: ConnectionModelTestResult = {
         requested_model: model,
         response_model: model,
         upstream_model: model,
         success: false,
         latency_ms: 0,
-        status_code: Number(error?.status || 0),
-        error: String(error?.message || '检测请求失败'),
+        status_code: error instanceof ApiError ? error.status : 0,
+        error: error instanceof Error ? error.message : '检测请求失败',
         tested_at: new Date().toISOString(),
       };
       setResults(current => ({ ...current, [model]: result }));
@@ -219,7 +218,7 @@ export default function ConnectionModelPanel({
     }
     setEnablingModel(model);
     try {
-      const created = await api.createRuntimeChange({
+      const created = await routingApi.createRelease({
         model_name: model,
         reason: '启用已通过真实上游检测的模型连接',
         overrides: [{
@@ -228,13 +227,13 @@ export default function ConnectionModelPanel({
           admission: 'allow',
         }],
       });
-      const validated = await api.validateRuntimeChange(created.release_ref, created.version);
-      await api.activateInitialRuntimeChange(validated.release_ref, validated.version);
+      const validated = await routingApi.validateRelease(created.release_ref, created.version);
+      await routingApi.activateInitialRelease(validated.release_ref, validated.version);
       setResults(current => ({ ...current, [model]: { ...current[model], enabled: true } }));
       onModelEnabled(model);
       Toast.success(`${model} 已启用，可通过 UniRouter 调用`);
-    } catch (error: any) {
-      const message = String(error?.message || '启用失败');
+    } catch (error: unknown) {
+	  const message = error instanceof Error ? error.message : '启用失败';
       const conflict = message.toLowerCase().includes('conflict');
       if (conflict) {
         setResults(current => ({ ...current, [model]: { ...current[model], route_conflict: true } }));
@@ -259,15 +258,15 @@ export default function ConnectionModelPanel({
   const prepareEnable = async (model: string) => {
     setCheckingRouteModel(model);
     try {
-      const slot = await api.getRuntimeChangeSlot(model) as { stable_release_ref?: string; canary_release_ref?: string };
+      const slot = await routingApi.getSlot(model);
       if (slot.stable_release_ref || slot.canary_release_ref) {
         setResults(current => ({ ...current, [model]: { ...current[model], route_conflict: true } }));
         Toast.warning(`${model} 已有生效或灰度连接，请使用“替换现有连接”`);
         return;
       }
       confirmEnable(model);
-    } catch (error: any) {
-      Toast.error(`无法确认 ${model} 当前路由状态：${String(error?.message || '请稍后重试')}`);
+    } catch (error: unknown) {
+      Toast.error(`无法确认 ${model} 当前路由状态：${error instanceof Error ? error.message : '请稍后重试'}`);
     } finally {
       setCheckingRouteModel('');
     }

@@ -55,33 +55,47 @@ func (e *Evaluator) Evaluate(ctx context.Context, input Input) (Decision, error)
 	return e.EvaluateWithQuerier(ctx, e.db, input)
 }
 
-// EvaluateAny evaluates a bounded set of alternative physical/logical
-// credentials against one authoritative policy read. Readiness uses it to
-// answer whether at least one currently effective credential can call without
-// issuing one database query per denied credential.
-func (e *Evaluator) EvaluateAny(ctx context.Context, inputs []Input) (Decision, error) {
+// EvaluateAlternatives evaluates a bounded set of physical/logical credential
+// alternatives against one authoritative policy read. The returned decisions
+// retain input order so callers can continue with the matching credential
+// without issuing one database query per alternative.
+func (e *Evaluator) EvaluateAlternatives(ctx context.Context, inputs []Input) ([]Decision, error) {
 	if e == nil || e.db == nil || len(inputs) == 0 || len(inputs) > maxBatchEvaluationInputs {
-		return Decision{}, fmt.Errorf("%w: evaluation_inputs", ErrInvalid)
+		return nil, fmt.Errorf("%w: evaluation_inputs", ErrInvalid)
 	}
+	normalized := slices.Clone(inputs)
 	now := e.now().UTC()
-	orgID := inputs[0].OrgID
-	for index := range inputs {
-		if inputs[index].OrgID <= 0 || inputs[index].OrgID != orgID ||
-			strings.TrimSpace(inputs[index].Endpoint) == "" || strings.TrimSpace(inputs[index].RequestedModel) == "" {
-			return Decision{}, fmt.Errorf("%w: evaluation_inputs", ErrInvalid)
+	orgID := normalized[0].OrgID
+	for index := range normalized {
+		if normalized[index].OrgID <= 0 || normalized[index].OrgID != orgID ||
+			strings.TrimSpace(normalized[index].Endpoint) == "" || strings.TrimSpace(normalized[index].RequestedModel) == "" {
+			return nil, fmt.Errorf("%w: evaluation_inputs", ErrInvalid)
 		}
-		inputs[index].Environment = e.environment
-		if inputs[index].Now.IsZero() {
-			inputs[index].Now = now
+		normalized[index].Environment = e.environment
+		if normalized[index].Now.IsZero() {
+			normalized[index].Now = now
 		}
 	}
-	policies, err := e.loadActiveForInputs(ctx, inputs)
+	policies, err := e.loadActiveForInputs(ctx, normalized)
+	if err != nil {
+		return nil, err
+	}
+	decisions := make([]Decision, len(normalized))
+	for index, input := range normalized {
+		decisions[index] = EvaluatePolicies(input, policiesForInput(input, policies))
+	}
+	return decisions, nil
+}
+
+// EvaluateAny answers whether any alternative is allowed while preserving the
+// historical single-decision API used by existing admission projections.
+func (e *Evaluator) EvaluateAny(ctx context.Context, inputs []Input) (Decision, error) {
+	decisions, err := e.EvaluateAlternatives(ctx, inputs)
 	if err != nil {
 		return Decision{}, err
 	}
 	var denied Decision
-	for _, input := range inputs {
-		decision := EvaluatePolicies(input, policiesForInput(input, policies))
+	for _, decision := range decisions {
 		if decision.Allowed {
 			return decision, nil
 		}

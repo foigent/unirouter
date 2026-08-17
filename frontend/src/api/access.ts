@@ -1,4 +1,4 @@
-import { api } from './client';
+import { request } from './transport';
 
 export type AccessSubject = {
   type: 'user' | 'workload_application';
@@ -259,40 +259,40 @@ const clientRequestHeaders = (clientRequestID: string) => ({
 
 export const accessApi = {
   listMyRequests: (limit = 50, afterID?: number) =>
-    api.request(`/access-requests?scope=my&limit=${limit}${afterID ? `&after_id=${afterID}` : ''}`) as Promise<AccessPage<AccessRequest>>,
+    request<AccessPage<AccessRequest>>(`/access-requests?scope=my&limit=${limit}${afterID ? `&after_id=${afterID}` : ''}`),
   listProjectRequests: (projectID: number, filters?: { status?: string; workload_application_id?: number; limit?: number; after_id?: number }) => {
     const search = new URLSearchParams({ scope: 'project', project_id: String(projectID), limit: String(filters?.limit || 50) });
     if (filters?.status) search.set('status', filters.status);
     if (filters?.workload_application_id) search.set('workload_application_id', String(filters.workload_application_id));
     if (filters?.after_id) search.set('after_id', String(filters.after_id));
-    return api.request(`/access-requests?${search.toString()}`) as Promise<AccessPage<AccessRequest>>;
+    return request<AccessPage<AccessRequest>>(`/access-requests?${search.toString()}`);
   },
   getRequest: (requestRef: string) =>
-    api.request(`/access-requests/${encodeURIComponent(requestRef)}`) as Promise<{ request: AccessRequest; grant?: AccessGrant }>,
+    request<{ request: AccessRequest; grant?: AccessGrant }>(`/access-requests/${encodeURIComponent(requestRef)}`),
   createRequest: (input: Record<string, unknown>, clientRequestID: string) =>
-    api.request('/access-requests', { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: JSON.stringify(input) }) as Promise<ProvisionResult>,
+    request<ProvisionResult>('/access-requests', { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: JSON.stringify(input) }),
   decideRequest: (requestRef: string, input: { expected_revision: number; decision: 'approve' | 'reject'; reason_codes?: string[] }, clientRequestID: string) =>
-    api.request(`/access-requests/${encodeURIComponent(requestRef)}/decision`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: JSON.stringify({ ...input, reason_codes: input.reason_codes || [] }) }) as Promise<ProvisionResult>,
+    request<ProvisionResult>(`/access-requests/${encodeURIComponent(requestRef)}/decision`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: JSON.stringify({ ...input, reason_codes: input.reason_codes || [] }) }),
   cancelRequest: (requestRef: string, expectedRevision: number, clientRequestID: string) =>
-    api.request(`/access-requests/${encodeURIComponent(requestRef)}/cancel`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: JSON.stringify({ expected_revision: expectedRevision }) }) as Promise<{ request: AccessRequest; idempotent: boolean }>,
+    request<{ request: AccessRequest; idempotent: boolean }>(`/access-requests/${encodeURIComponent(requestRef)}/cancel`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: JSON.stringify({ expected_revision: expectedRevision }) }),
   listMyGrants: (limit = 50, afterID?: number) =>
-    api.request(`/access-grants?scope=my&limit=${limit}${afterID ? `&after_id=${afterID}` : ''}`) as Promise<AccessPage<AccessGrant>>,
+    request<AccessPage<AccessGrant>>(`/access-grants?scope=my&limit=${limit}${afterID ? `&after_id=${afterID}` : ''}`),
   listProjectGrants: (projectID: number, filters?: { workload_application_id?: number; limit?: number; after_id?: number }) => {
     const search = new URLSearchParams({ scope: 'project', project_id: String(projectID), limit: String(filters?.limit || 50) });
     if (filters?.workload_application_id) search.set('workload_application_id', String(filters.workload_application_id));
     if (filters?.after_id) search.set('after_id', String(filters.after_id));
-    return api.request(`/access-grants?${search.toString()}`) as Promise<AccessPage<AccessGrant>>;
+    return request<AccessPage<AccessGrant>>(`/access-grants?${search.toString()}`);
   },
   listCredentials: (grantRef: string, limit = 50, afterID?: number) =>
-    api.request(`/access-grants/${encodeURIComponent(grantRef)}/credentials?limit=${limit}${afterID ? `&after_id=${afterID}` : ''}`) as Promise<AccessPage<AccessCredentialFamily>>,
+    request<AccessPage<AccessCredentialFamily>>(`/access-grants/${encodeURIComponent(grantRef)}/credentials?limit=${limit}${afterID ? `&after_id=${afterID}` : ''}`),
   issueCredential: (grantRef: string, input: Record<string, unknown>, clientRequestID: string) =>
-    api.request(`/access-grants/${encodeURIComponent(grantRef)}/credentials`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: JSON.stringify(input) }) as Promise<IssuedCredential>,
+    request<IssuedCredential>(`/access-grants/${encodeURIComponent(grantRef)}/credentials`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: JSON.stringify(input) }),
   rotateCredential: (grantRef: string, keyID: number, clientRequestID: string) =>
-    api.request(`/access-grants/${encodeURIComponent(grantRef)}/credentials/${keyID}/rotate`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: '{}' }) as Promise<{ credential: IssuedCredential; predecessor: CredentialVersion; idempotent: boolean }>,
+    request<{ credential: IssuedCredential; predecessor: CredentialVersion; idempotent: boolean }>(`/access-grants/${encodeURIComponent(grantRef)}/credentials/${keyID}/rotate`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: '{}' }),
   revokeCredential: (grantRef: string, keyID: number, clientRequestID: string) =>
-    api.request(`/access-grants/${encodeURIComponent(grantRef)}/credentials/${keyID}/revoke`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: '{}' }) as Promise<{ status: string }>,
+    request<{ status: string }>(`/access-grants/${encodeURIComponent(grantRef)}/credentials/${keyID}/revoke`, { method: 'POST', headers: clientRequestHeaders(clientRequestID), body: '{}' }),
   previewLegacy: (orgID?: number) =>
-    api.request(`/access-provisioning/legacy-preview${orgID ? `?org_id=${orgID}` : ''}`) as Promise<{ mutation: false; data: LegacyAccessClassification[]; total: number }>,
+    request<{ mutation: false; data: LegacyAccessClassification[]; total: number }>(`/access-provisioning/legacy-preview${orgID ? `?org_id=${orgID}` : ''}`),
   modelReadiness: (input: (
     { mode: 'connection'; model: string; endpoint: string } |
     { mode?: 'caller'; project_id: number; model: string; endpoint: string; caller: 'self' | 'workload_application'; application_ref?: string }
@@ -305,6 +305,6 @@ export const accessApi = {
       search.set('caller', input.caller);
       if (input.application_ref) search.set('application_ref', input.application_ref);
     }
-    return api.request(`/model-readiness?${search.toString()}`) as Promise<ModelReadiness>;
+    return request<ModelReadiness>(`/model-readiness?${search.toString()}`);
   },
 };

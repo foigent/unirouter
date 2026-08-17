@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Banner, Button, Form, SideSheet, Toast, Typography } from '@douyinfe/semi-ui';
-import { api, ApiError } from '../../api/client';
+import { channelApi } from '../../api/channels';
+import { ApiError } from '../../api/transport';
 import type { ModelEndpointModel } from '../../api/modelEndpoints';
 import { PasswordField } from '../../ui';
 import { providerPreset, providerPresets } from '../../utils/providerEndpoints';
@@ -53,7 +54,7 @@ export default function ModelEndpointCreateSheet({ open, lockedPublicModel, mode
         : {};
     setSaving(true);
     try {
-      await api.createChannel({
+      await channelApi.create({
         name: String(values.connection_name || `${provider} · ${upstreamModel}`).trim(),
         provider,
         base_url: baseURL,
