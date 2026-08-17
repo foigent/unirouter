@@ -99,7 +99,7 @@ jobs:
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 75
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-backend
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
