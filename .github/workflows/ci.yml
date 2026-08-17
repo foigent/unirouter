@@ -267,187 +267,50 @@ jobs:
         # Avoid rerunning the ordinary admin unit suite already covered above.
         run: go test -tags=integration -race ./internal/admin -run 'Integration$' -count=1 -timeout=20m
 
-      - name: Run X-Insight Connector PostgreSQL 16 integration tests
+      - name: Run consolidated backend integration and feature gates
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: >-
-          go test -tags=integration -race
-          ./internal/xinsightconnector ./internal/migrate
-          -run '^Test(ConnectorManager|ConnectorRedeem|PostgresPhaseJournal|XInsightConnector(CP1|CP2A|RedeemLifecycle)).*$'
-          -count=1 -timeout=20m
+        # Keep the accepted named integration selectors, but start each selected
+        # package only once. The ordinary unit/race suite above already covers
+        # admin and other untagged feature tests.
+        run: |
+          test_pattern='^(Test(ConnectorManager|ConnectorRedeem|PostgresPhaseJournal|XInsightConnector(CP1|CP2A|RedeemLifecycle)).*'
+          test_pattern+='|Test(ApplyDeterministicReset|ApplyStopsBeforeRedisMutation|SecondIntegrationResetSupportMigration|FirstCustomerBootstrap|ResetPreviewCLI).*'
+          test_pattern+='|Test(PostgresStore|ProjectionStore|Enterprise|Allocation|PRD8RuntimeChange|PRD8RuntimeControl|PRD8GatewayModelAuthorization).*'
+          test_pattern+='|TestAdminSessionRevocationMigration(ConstraintsIntegration|UnusedDownAndEvidenceGuardsIntegration)'
+          test_pattern+='|TestAdmin(SetPassword|Create)CLI.*Integration'
+          test_pattern+='|TestGatewayAuth_PersonalProjectAuthorityRevocation_Integration'
+          test_pattern+='|TestV1(DeliveryAttemptBinding|StreamLeaseFencing|LocalLoginIdentity|ProviderBackedFrozenReservation|StreamFence|CheckpointCannotReviveLease|StreamGenerationFences|GenericRecoveryRejects|Pricing(Authority|UnitContract)|MicroPrecisionLedger|CommercialReleaseControlMigrationAndConcurrentResourceLimit).*'
+          test_pattern+='|TestUpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema'
+          test_pattern+='|TestMaterializationProjectFenceOrdersVisibilityByCommit|TestMaterializationRollbackAndReplayRemainSingleFinalItem|TestRetentionUsesPublicationOrderNotTerminalTime|TestRetentionProjectFencePreventsFloorJumpOnConcurrentRollback'
+          test_pattern+='|TestBillingTerminalMaterializationFailureIsRetriedWithoutPartialFeedState|TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed|TestCompletedExecutionFeedMigrationDownRemainsAvailableWithoutFeedState|TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRollback'
+          test_pattern+='|TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration|TestUpgradeLegacyRollbackPreflightRequiresFeedCredentialDisablement'
+          test_pattern+='|Test(RoutingPolicyPostgresStateTransitions|P6F08RoutingPolicyV1).*'
+          test_pattern+='|TestEventService_CheckProjectBudgetTenantScope_Integration'
+          test_pattern+='|TestAgentCapabilityPostgresAuthorityAndRevocationIntegration'
+          test_pattern+='|TestP6F(06|07|08|09|10|11|20|21|40|41).*)$'
+          readonly test_pattern
 
-      - name: Run second-integration reset and bootstrap gates
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: >-
-          go test -tags=integration -race
-          ./internal/resetexec ./internal/migrate ./internal/admin ./cmd/uniroute
-          -run '^(Test(ApplyDeterministicReset|ApplyStopsBeforeRedisMutation|SecondIntegrationResetSupportMigration|FirstCustomerBootstrap|ResetPreviewCLI).*)$'
-          -count=1 -timeout=20m
+          go test -tags=integration -race \
+            ./internal/xinsightconnector ./internal/migrate \
+            ./internal/resetexec ./cmd/uniroute \
+            ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange \
+            ./internal/billing ./internal/middleware ./internal/completedfeed \
+            ./internal/gateway ./internal/outbox ./internal/terminalhook \
+            -run "$test_pattern" -count=1 -timeout=20m
 
-      - name: Run PRD8 enterprise and runtime-control integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: >-
-          go test -tags=integration -race
-          ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange ./internal/migrate ./cmd/uniroute
-          -run '^(Test(PostgresStore|ProjectionStore|Enterprise|Allocation|PRD8RuntimeChange|PRD8RuntimeControl|PRD8GatewayModelAuthorization).*)$'
-          -count=1 -timeout=20m
-
-      - name: Run V1 security migration integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run '^(TestAdminSessionRevocationMigration(ConstraintsIntegration|UnusedDownAndEvidenceGuardsIntegration)|TestV1(DeliveryAttemptBinding|StreamLeaseFencing|LocalLoginIdentity).*)$' -count=1
-
-      - name: Run secure admin CLI integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./cmd/uniroute -run '^TestAdmin(SetPassword|Create)CLI.*Integration$' -count=1
-
-      - name: Run V1 delivery and personal-key authority integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing ./internal/middleware -run '^(TestV1(DeliveryAttemptBinding|ProviderBackedFrozenReservation|StreamFence|CheckpointCannotReviveLease|StreamGenerationFences|GenericRecoveryRejects).*|TestGatewayAuth_PersonalProjectAuthorityRevocation_Integration)$' -count=1
-
-      - name: Run V1 pricing and micro-ledger integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing ./internal/migrate -run 'TestV1(Pricing(Authority|UnitContract)|MicroPrecisionLedger)' -count=1
-
-      - name: Run V1 commercial license and signed upgrade integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate ./cmd/uniroute -run 'Test(V1CommercialReleaseControlMigrationAndConcurrentResourceLimit|UpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema)' -count=1
-
-      - name: Run completed-execution feed ordering, retention, retry and rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: >-
-          go test -tags=integration -race
-          ./internal/completedfeed ./internal/migrate ./internal/admin ./cmd/uniroute
-          -run '^(TestMaterializationProjectFenceOrdersVisibilityByCommit|TestMaterializationRollbackAndReplayRemainSingleFinalItem|TestRetentionUsesPublicationOrderNotTerminalTime|TestRetentionProjectFencePreventsFloorJumpOnConcurrentRollback|TestBillingTerminalMaterializationFailureIsRetriedWithoutPartialFeedState|TestCompletedExecutionFeedPurposeCredentialIsLegacyBinaryFailClosed|TestCompletedExecutionFeedMigrationDownRemainsAvailableWithoutFeedState|TestCompletedExecutionFeedProjectScopeSurvivesGuardrailRollbackThenFeedRollback|TestCompletedExecutionFeedKeyControlPlaneLifecycleIntegration|TestUpgradeLegacyRollbackPreflightRequiresFeedCredentialDisablement)$'
-          -count=1
-
-      - name: Run routing policy integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/gateway -run 'Test(RoutingPolicyPostgresStateTransitions|P6F08RoutingPolicyV1)' -count=1
-
-      - name: Run budget alert contract integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing -run TestEventService_CheckProjectBudgetTenantScope_Integration -count=1
-
-      - name: Run multiplier freeze integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing -run TestP6F06 -count=1
-
-      - name: Run stream transport safety tests
-        run: go test -race ./internal/gateway ./internal/middleware -run 'Test(P6StreamTransport|SSEStreamWriter|MetricsMiddleware_ResponseController)' -count=1
-
-      - name: Run Agent capability authority and runtime integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/agentcap -count=1
-
-      - name: Run distributed limit-policy integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/limitpolicy -count=1
-
-      - name: Run weighted workload admission integration tests
-        run: go test -tags=integration -race ./internal/workloadadmission -run TestP6F21 -count=1
-
-      - name: Run distributed limit-policy migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run TestP6F07DistributedLimitPolicyMigrationUpDownGuardAndRollForward -count=1
-
-      - name: Run routing-policy migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run TestP6F08RoutingPolicyV1MigrationUpDownGuardAndRollForward -count=1
-
-      - name: Run prompt-cache billing integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing -run TestP6F09 -count=1
-
-      - name: Run prompt-cache billing migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run TestP6F09PromptCacheBillingMigrationUpDownGuardAndRollForward -count=1
-
-      - name: Run durable internal outbox and terminal recovery tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/outbox ./internal/billing ./internal/gateway ./internal/admin ./internal/terminalhook ./internal/capbilling ./internal/policybilling ./internal/limitpolicy ./internal/workloadadmission -run TestP6F20 -count=1
-
-      - name: Run durable internal outbox migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run TestP6F20DurableOutboxMigrationUpDownGuardAndRollForward -count=1
-
-      - name: Run provider-cost shortfall integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing ./internal/gateway -run TestP6F40 -count=1
-
-      - name: Run provider-cost pending migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run TestP6F40ProviderCostPendingMigrationUpDownGuardAndRollForward -count=1
-
-      - name: Run provider-attempt ledger and retry-authority tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing ./internal/gateway ./internal/capbilling ./internal/policybilling -run TestP6F40B -count=1
-
-      - name: Run provider-attempt ledger migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run TestP6F40BProviderAttemptLedgerMigrationUpDownGuardAndRollForward -count=1
-
-      - name: Run provider-cost reconciliation and affected-key tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing ./internal/middleware ./internal/admin ./cmd/uniroute -run TestP6F40C -count=1
-
-      - name: Run provider-cost reconciliation migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run TestP6F40CProviderCostReconciliationMigrationUpDownGuardAndRollForward -count=1
-
-      - name: Run typed usage and delivery integrity tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/adapters ./internal/billing ./internal/gateway ./internal/middleware ./internal/capbilling ./internal/policybilling -run TestP6F41 -count=1
-
-      - name: Run typed usage and delivery migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run 'TestP6F41(AUsageAuthority|BDeliveryReceipt)MigrationUpDownGuardAndRollForward' -count=1
-
-      - name: Run guardrail kernel billing integration tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/billing -run TestP6F10 -count=1
-
-      - name: Run guardrail kernel migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run TestP6F10GuardrailKernelMigrationUpDownGuardAndRollForward -count=1
-
-      - name: Run stream policy and termination contract tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -race ./internal/billing ./internal/gateway ./internal/agentcap ./internal/limitpolicy ./internal/guardrail ./internal/admin ./internal/middleware ./internal/capbilling ./internal/policybilling -run TestP6F11 -count=1
-
-      - name: Run stream policy and termination migration rollback tests
-        env:
-          REQUIRE_TEST_DATABASE: "1"
-        run: go test -tags=integration -race ./internal/migrate -run TestP6F11StreamPolicyTerminationMigrationUpDownGuardAndRollForward -count=1
+          # These packages intentionally share and reset the dedicated Redis
+          # test database, so package-level parallelism would corrupt their
+          # observations. Untagged tests already ran in the full race suite.
+          go test -tags=integration -race ./internal/agentcap \
+            -run '^TestAgentCapabilityPostgresAuthorityAndRevocationIntegration$' \
+            -count=1 -timeout=20m
+          go test -tags=integration -race ./internal/limitpolicy \
+            -run '^TestP6F07PostgresRedisMultiInstanceIntegration$' \
+            -count=1 -timeout=20m
+          go test -tags=integration -race ./internal/workloadadmission \
+            -run '^TestP6F21RedisMultiInstanceLeaseAndFaultIntegration$' \
+            -count=1 -timeout=20m
       
       - name: Upload coverage
         uses: actions/upload-artifact@v4
