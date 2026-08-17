@@ -73,6 +73,7 @@ export default function ChannelKeysPage({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const requestVersion = useRef(0);
+  const channelRequestVersion = useRef(0);
   const [showDrawer, setShowDrawer] = useState(false);
   const [editing, setEditing] = useState<ChannelKey | null>(null);
   const [formApi, setFormApi] = useState<any>(null);
@@ -80,6 +81,8 @@ export default function ChannelKeysPage({
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [channels, setChannels] = useState<ChannelOption[]>([]);
+  const [channelsLoading, setChannelsLoading] = useState(true);
+  const [channelsLoadError, setChannelsLoadError] = useState('');
   const [saveNotice, setSaveNotice] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -108,8 +111,13 @@ export default function ChannelKeysPage({
   };
 
   const loadChannels = () => {
+    const version = ++channelRequestVersion.current;
+    setChannelsLoading(true);
+    setChannelsLoadError('');
+    setChannels([]);
     channelApi.list(1, 100)
       .then(d => {
+        if (version !== channelRequestVersion.current) return;
         const list = d.data.map(c => {
           const effectiveStatus = c.effective_status || c.status;
           return {
@@ -125,7 +133,14 @@ export default function ChannelKeysPage({
         });
         setChannels(list);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (version !== channelRequestVersion.current) return;
+        setChannels([]);
+        setChannelsLoadError('无法加载供应商端点状态。');
+      })
+      .finally(() => {
+        if (version === channelRequestVersion.current) setChannelsLoading(false);
+      });
   };
 
   useEffect(() => { setPage(1); load(1, pageSize); loadChannels(); }, [focusedChannelID]);
@@ -265,9 +280,19 @@ export default function ChannelKeysPage({
       && Boolean(channel?.models)
       && credentialModelCoverage(channel?.models, key.allowed_models).kind === 'none';
   }).length;
-
   const draftChannel = draftChannelID ? channelByID.get(draftChannelID) : undefined;
   const focusedChannel = focusedChannelID ? channelByID.get(focusedChannelID) : undefined;
+  const combinationLoading = loading || channelsLoading;
+  const createDisabled = channelsLoading || Boolean(channelsLoadError)
+    || Boolean(scoped && focusedChannel?.status === 'active');
+  const createDisabledReason = channelsLoading
+    ? '正在确认端点是否承载流量'
+    : channelsLoadError
+      ? '端点状态不可用，刷新成功前不能变更凭证'
+      : scoped && focusedChannel?.status === 'active'
+        ? '当前端点正在承载流量；请使用现有凭证旁的“轮换”操作'
+        : undefined;
+
   const draftModel = focusedModel || parseModelList(draftChannel?.models)[0] || '';
   const rotatingChannel = rotating ? recordChannel(rotating) : undefined;
   const rotationModels = parseModelList(rotatingChannel?.models);
@@ -358,14 +383,16 @@ export default function ChannelKeysPage({
         description="凭证状态、供应商端点状态和模型覆盖是三个独立条件；凭证启用不代表端点已经进入路由。明文 Key 永不回显。"
         actions={<Space>
           <ModelConnectionBackButton />
-          <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增供应商凭证</Button>
+          <span title={createDisabledReason}>
+            <Button icon={<IconPlus />} type="primary" disabled={createDisabled} onClick={openCreate}>新增供应商凭证</Button>
+          </span>
         </Space>}
       />}
 
       {embedded && <div className="ur-embedded-heading">
         <div><Typography.Title heading={5} style={{ margin: 0 }}>{scoped ? '此端点的凭证' : '供应商凭证'}</Typography.Title><Typography.Text type="tertiary">明文 Key 永不回显；状态以当前端点、模型覆盖和冷却条件共同计算。</Typography.Text></div>
-        <span title={scoped && focusedChannel?.status === 'active' ? '当前端点正在承载流量；请使用现有凭证旁的“轮换”操作' : undefined}>
-          <Button icon={<IconPlus />} type="primary" disabled={scoped && focusedChannel?.status === 'active'} onClick={openCreate}>新增供应商凭证</Button>
+        <span title={createDisabledReason}>
+          <Button icon={<IconPlus />} type="primary" disabled={createDisabled} onClick={openCreate}>新增供应商凭证</Button>
         </span>
       </div>}
 
@@ -391,31 +418,46 @@ export default function ChannelKeysPage({
         }}>查看全部凭证</Button>
       </Banner>}
 
-      <Banner
+      {combinationLoading ? <Banner
+        type="info"
+        description="正在读取供应商端点、运行时路由和凭证范围；确认完成前不会显示组合结论或开放凭证变更。"
+        closeIcon={null}
+        style={{ marginBottom: 16 }}
+      /> : channelsLoadError ? <Banner
+        type="danger"
+        description={channelsLoadError}
+        closeIcon={null}
+        style={{ marginBottom: 16 }}
+      ><Button size="small" onClick={loadChannels}>重新加载端点状态</Button></Banner> : <Banner
         type={(enabledOnInactiveChannelCount > 0 || modelMismatchCount > 0) ? 'warning' : 'info'}
         description={`只有“端点进入路由 + 凭证启用且未冷却 + 模型范围相交”才可承载请求。当前范围 ${enabledOnInactiveChannelCount} 条启用凭证绑定待发布/禁用端点，${modelMismatchCount} 条凭证与端点模型范围无交集。`}
         closeIcon={null}
         style={{ marginBottom: 16 }}
-      />
+      />}
 
-      <Surface>
+      {!channelsLoadError && <Surface>
         <PagedTable
           columns={columns}
-          dataSource={keys}
-          loading={loading}
+          dataSource={combinationLoading ? [] : keys}
+          loading={combinationLoading}
           rowKey="id"
           empty={loadError ? (
-            <EmptyState title="供应商凭证加载失败" description={loadError} actions={<Button type="primary" onClick={() => load()}>重新加载供应商凭证</Button>} minHeight={220} />
+            <EmptyState
+              title="供应商凭证加载失败"
+              description={loadError}
+              actions={<Button type="primary" onClick={() => load()}>重新加载供应商凭证</Button>}
+              minHeight={220}
+            />
           ) : <EmptyState title="暂无供应商凭证" minHeight={220} />}
           page={page}
           pageSize={pageSize}
-          total={total}
+          total={combinationLoading ? 0 : total}
           pageSizeOpts={[20, 50, 100]}
           showSizeChanger
           onPageChange={(p: number) => { setPage(p); load(p, pageSize); }}
           onPageSizeChange={(s: number) => { setPageSize(s); setPage(1); load(1, s); }}
         />
-      </Surface>
+      </Surface>}
 
       <SideSheet
         title={editing ? '编辑供应商凭证' : '新增供应商凭证'}
