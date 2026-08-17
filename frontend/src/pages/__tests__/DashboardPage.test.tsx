@@ -345,7 +345,31 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('缺少凭证')).toBeTruthy();
     expect(screen.getByText('0/1')).toBeTruthy();
     expect(screen.getByText('100.0%')).toBeTruthy();
-    expect(screen.getByText('已启用、凭证可用且未熔断')).toBeTruthy();
+    expect(screen.getByText('按模型端点与网关当前路由判定')).toBeTruthy();
+  });
+
+  it('explains stale and unavailable route projections instead of showing healthy', async () => {
+    mockGetDashboardStats.mockResolvedValue({
+      ...MOCK_STATS,
+      channel_health: [
+        {
+          id: 9, name: 'Kimi stale', provider: 'kimi', enabled: false, available: false,
+          credential_ready: true, runtime_published: false, status: 'stale_release',
+          success_count: 1, fail_count: 0,
+        },
+        {
+          id: 10, name: 'DeepSeek unknown', provider: 'deepseek', enabled: true, available: false,
+          credential_ready: true, runtime_published: true, status: 'projection_unavailable',
+          success_count: 3, fail_count: 0,
+        },
+      ],
+    });
+
+    renderDashboard();
+
+    expect(await screen.findByText('发布记录已过期')).toBeTruthy();
+    expect(screen.getByText('路由状态不可判定')).toBeTruthy();
+    expect(screen.getByText('0/2')).toBeTruthy();
   });
 
   it('labels channel provider without repeating identical channel names', async () => {

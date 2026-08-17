@@ -162,6 +162,7 @@ These are cross-layer acceptance contracts, not mock-page demonstrations.
 - Runtime release history has server pagination and current/history separation; revision counters remain internal CAS evidence rather than a user-facing model version.
 - This fact map is the canonical entity/authority/consumer impact map, and the codebase map now tracks the current migration ceiling.
 - A real-backend browser journey now proves endpoint creation, encrypted credential storage, exact mapped-model probing, first activation, gateway dispatch, usage logging, and audit evidence in one isolated test.
+- Dashboard channel health now consumes the canonical model-endpoint operational projection instead of reinterpreting channel, credential and release rows. A key for one configured model cannot make another published model look callable, and stale routing epochs are surfaced consistently across Dashboard, model endpoints and Readiness.
 
 ### P0 - correctness and access
 
@@ -169,7 +170,7 @@ These are cross-layer acceptance contracts, not mock-page demonstrations.
 
 ### P1 - recurring product inconsistency
 
-- Readiness and Dashboard are projections assembled from distributed queries; every authority change needs projection-contract tests.
+- Readiness still composes model, access, pricing and policy authorities from their owners. Its route axis, Dashboard channel health and model endpoints are now locked by a shared route/projection contract test; every future authority change must retain that cross-surface gate.
 - Finance and access still contain advanced audit/workflow surfaces. The changed pages now explain and separate them, but a future information-architecture batch may move them out of the ordinary task path; that is not required for the current golden journeys.
 - The canonical-customer projection fix is covered on the changed people and endpoint paths. Remaining customer-domain pages stay under the existing access/readiness browser journey and must keep that gate when their scope logic changes.
 
@@ -177,7 +178,7 @@ These are cross-layer acceptance contracts, not mock-page demonstrations.
 
 - Large frontend workspaces and backend handlers still mix orchestration, data loading, forms, and rendering. The Rate Card band editor and price calculations were extracted in this batch; further splits are justified only when they remove another authority or test seam, not to chase line-count targets.
 - The hand-written API client has weakly typed response seams and repeated casts; OpenAPI is route-complete but not yet the generated client authority.
-- Routing/release/readiness projections still have repeated SQL and DTO shaping that should converge behind read-model services when touched by product work.
+- Access, pricing and policy portions of Readiness still have repeated SQL and DTO shaping that should converge behind read-model services when touched by product work. Dashboard no longer owns a separate model-route interpretation.
 
 Debt is closed only when the affected golden journey and projection checks pass. Moving code into more files without reducing authority duplication does not close architectural debt.
 

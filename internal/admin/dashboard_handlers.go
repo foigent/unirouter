@@ -457,32 +457,14 @@ func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, s
 // results. A staged channel may be enabled by a stable runtime release, while a
 // published channel without an eligible credential is not currently routable.
 func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, startTime, endTime string) ([]map[string]interface{}, error) {
+	endpointProjection, err := h.loadModelEndpointProjection(ctx, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("load canonical model endpoint projection: %w", err)
+	}
+	operational := dashboardChannelOperationalStates(endpointProjection)
+
 	rows, err := h.db.Query(ctx,
 		`SELECT c.id,c.name,c.provider,c.status,c.circuit_state,
-		        EXISTS (
-		          SELECT 1
-		            FROM runtime_channel_assignments_v1 assignment
-		           WHERE assignment.channel_id=c.id
-		             AND assignment.assignment_kind='stable'
-		             AND assignment.release_stage='active'
-		             AND assignment.admission='allow'
-		        ) AS runtime_published,
-		        EXISTS (
-		          SELECT 1
-		            FROM channel_keys ck
-		           WHERE ck.channel_id=c.id
-		             AND ck.status='active'
-		             AND (ck.cooldown_until IS NULL OR ck.cooldown_until <= NOW())
-		             AND (
-		               btrim(ck.allowed_models)='' OR EXISTS (
-		                 SELECT 1
-		                   FROM regexp_split_to_table(c.models,E'[,;；，\\n\\r]+') AS cm(model_name)
-		                   JOIN regexp_split_to_table(ck.allowed_models,E'[,;；，\\n\\r]+') AS am(model_name)
-		                     ON btrim(am.model_name)=btrim(cm.model_name)
-		                  WHERE btrim(cm.model_name)<>''
-		               )
-		             )
-		        ) AS credential_ready,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 200 AND cl.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
 		        COALESCE(SUM(CASE WHEN cl.status_code >= 400 OR cl.status_code = 0 THEN 1 ELSE 0 END), 0) as fail_count
 		 FROM channels c
@@ -497,39 +479,84 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, start
 	for rows.Next() {
 		var id int
 		var name, provider, chStatus, circuitState string
-		var runtimePublished, credentialReady bool
 		var successCount, failCount int
-		if err := rows.Scan(&id, &name, &provider, &chStatus, &circuitState, &runtimePublished, &credentialReady, &successCount, &failCount); err != nil {
+		if err := rows.Scan(&id, &name, &provider, &chStatus, &circuitState, &successCount, &failCount); err != nil {
 			return nil, err
 		}
+		state := operational[int64(id)]
+		runtimePublished := state.runtimePublished
+		credentialReady := state.credentialReady
 		effectiveEnabled := chStatus == "active" || (chStatus == "staged" && runtimePublished)
-		available := effectiveEnabled && credentialReady && circuitState == "healthy"
+		available := state.available
 		status := "healthy"
 		if chStatus == "disabled" {
 			status = "disabled"
+		} else if state.staleAssignment {
+			status = "stale_release"
+		} else if state.projectionUnavailable {
+			status = "projection_unavailable"
 		} else if !effectiveEnabled {
 			status = "awaiting_release"
 		} else if !credentialReady {
 			status = "no_credential"
 		} else if circuitState != "healthy" {
 			status = "circuit_unavailable"
+		} else if !available {
+			status = "standby"
 		} else if failCount > 0 && successCount == 0 {
 			status = "error"
 		} else if failCount > 0 {
 			status = "warning"
+		} else if state.degraded {
+			status = "degraded"
 		}
 		health = append(health, map[string]interface{}{
 			"id": id, "name": name, "provider": provider,
 			"base_status": chStatus, "runtime_published": runtimePublished,
 			"enabled": effectiveEnabled, "credential_ready": credentialReady,
 			"available": available, "circuit_state": circuitState, "status": status,
-			"success_count": successCount, "fail_count": failCount,
+			"projection_version": endpointProjection.ContractVersion,
+			"success_count":      successCount, "fail_count": failCount,
 		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return health, nil
+}
+
+type dashboardChannelOperationalState struct {
+	runtimePublished      bool
+	credentialReady       bool
+	available             bool
+	staleAssignment       bool
+	projectionUnavailable bool
+	degraded              bool
+}
+
+func dashboardChannelOperationalStates(projection modelEndpointProjection) map[int64]dashboardChannelOperationalState {
+	states := make(map[int64]dashboardChannelOperationalState)
+	for _, model := range projection.Models {
+		for _, target := range model.Targets {
+			state := states[target.ChannelID]
+			stableCurrent := target.StableAssignment && target.StableExpectedEpoch == target.RoutingEpoch
+			canaryCurrent := target.CanaryAssignment && target.CanaryExpectedEpoch == target.RoutingEpoch
+			state.runtimePublished = state.runtimePublished || stableCurrent || canaryCurrent
+			currentRouteTarget := stableCurrent || canaryCurrent || target.RouteCandidate
+			state.credentialReady = state.credentialReady || (currentRouteTarget && target.EligibleCredentialCount > 0)
+			state.staleAssignment = state.staleAssignment || target.State == "stale"
+			state.projectionUnavailable = state.projectionUnavailable || model.ReasonCode == "routing_projection_unavailable"
+			state.degraded = state.degraded || model.State == "degraded"
+			if model.RouteAvailable && target.CircuitState == "healthy" {
+				switch target.State {
+				case "active", "canary", "legacy_active":
+					state.available = true
+				}
+			}
+			states[target.ChannelID] = state
+		}
+	}
+	return states
 }
 
 // dashboardPreviousPeriodDelta compares the selected range with the immediately

@@ -16,6 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelreadiness"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -81,7 +82,13 @@ VALUES ($1,'company-fast','deepseek/deepseek-v4-flash',$2,$3,$4,TRUE,200,18,$5)`
 	require.Equal(t, "active", activated.Stage)
 	require.NotEmpty(t, activated.ReleaseRef)
 
-	assertProjection := func(expectedState string, expectedRouteAvailable bool, expectedTargetState string) modelEndpointProjection {
+	assertProjection := func(
+		expectedState string,
+		expectedRouteAvailable bool,
+		expectedTargetState string,
+		expectedDashboardStatus string,
+		expectedReadinessState modelreadiness.State,
+	) modelEndpointProjection {
 		t.Helper()
 		response := httptest.NewRecorder()
 		handler.ListModelEndpoints(response, authorized(http.MethodGet, "/api/v1/model-endpoints", ""))
@@ -98,10 +105,30 @@ VALUES ($1,'company-fast','deepseek/deepseek-v4-flash',$2,$3,$4,TRUE,200,18,$5)`
 		require.Equal(t, 1, model.ReleaseHistoryCount)
 		require.Len(t, model.Targets, 1)
 		require.Equal(t, expectedTargetState, model.Targets[0].State)
+
+		channelHealth, healthErr := handler.dashboardChannelHealth(
+			ctx, orgID, "2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z",
+		)
+		require.NoError(t, healthErr)
+		require.Len(t, channelHealth, 1)
+		require.Equal(t, expectedRouteAvailable, channelHealth[0]["available"])
+		require.Equal(t, expectedDashboardStatus, channelHealth[0]["status"])
+		require.Equal(t, modelEndpointProjectionVersion, channelHealth[0]["projection_version"])
+
+		readinessResponse := httptest.NewRecorder()
+		handler.GetModelReadiness(readinessResponse, authorized(
+			http.MethodGet,
+			"/api/v1/model-readiness?mode=connection&model=company-fast&endpoint=%2Fv1%2Fchat%2Fcompletions",
+			"",
+		))
+		require.Equal(t, http.StatusOK, readinessResponse.Code, readinessResponse.Body.String())
+		var readiness modelreadiness.Response
+		require.NoError(t, json.Unmarshal(readinessResponse.Body.Bytes(), &readiness))
+		require.Equal(t, expectedReadinessState, readiness.PlatformModel.BaseRoute.State)
 		return projection
 	}
 
-	assertProjection("active", true, "active")
+	assertProjection("active", true, "active", "healthy", modelreadiness.StateReady)
 
 	pause := authorized(http.MethodPut, fmt.Sprintf("/api/v1/channels/%d", channelID),
 		fmt.Sprintf(`{"status":"disabled","expected_routing_epoch":%d}`, routingEpoch))
@@ -110,7 +137,7 @@ VALUES ($1,'company-fast','deepseek/deepseek-v4-flash',$2,$3,$4,TRUE,200,18,$5)`
 	handler.UpdateChannel(pauseResponse, pause)
 	require.Equal(t, http.StatusOK, pauseResponse.Code, pauseResponse.Body.String())
 	router.Invalidate()
-	assertProjection("degraded", false, "paused")
+	assertProjection("degraded", false, "paused", "disabled", modelreadiness.StateBlocked)
 
 	_, err = pool.Exec(ctx, `UPDATE channel_keys SET state_epoch=state_epoch+1,updated_at=NOW() WHERE id=$1`, credentialID)
 	require.NoError(t, err)
@@ -136,7 +163,7 @@ UPDATE channel_model_probes
 	handler.UpdateChannel(resumeResponse, resume)
 	require.Equal(t, http.StatusOK, resumeResponse.Code, resumeResponse.Body.String())
 	router.Invalidate()
-	assertProjection("active", true, "active")
+	assertProjection("active", true, "active", "healthy", modelreadiness.StateReady)
 
 	var finalEpoch int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT routing_epoch FROM channels WHERE id=$1`, channelID).Scan(&finalEpoch))

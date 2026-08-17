@@ -29,7 +29,7 @@ func TestApplyGatewayProjectionUsesGatewayCandidatesAsRouteAuthority(t *testing.
 		Model:      "company-fast",
 		Candidates: []routingpolicy.PreviewCandidate{{ChannelID: 13}},
 	}}}
-	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
+	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil).Context(), model)
 
 	if !model.RouteAvailable || model.State != "active" || model.ReasonCode != "stable_route_available" {
 		t.Fatalf("unexpected model projection: %+v", model)
@@ -50,7 +50,7 @@ func TestApplyGatewayProjectionDoesNotReportARetiredModelRouteAsAvailable(t *tes
 	h := &Handler{routingController: &routingControllerStub{preview: routingpolicy.Preview{
 		Model: "company-retired", Candidates: []routingpolicy.PreviewCandidate{{ChannelID: 13}},
 	}}}
-	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
+	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil).Context(), model)
 
 	if model.RouteAvailable || model.State != "governance_blocked" || model.ReasonCode != "model_retired" {
 		t.Fatalf("retired lifecycle must override a raw routing candidate: %+v", model)
@@ -70,7 +70,7 @@ func TestApplyGatewayProjectionNeverCallsAReleaseRoutableWithoutAGatewayCandidat
 		Model:      "company-fast",
 		Exclusions: []routingpolicy.PreviewCandidate{{ChannelID: 13, Reason: "no_eligible_keys"}},
 	}}}
-	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
+	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil).Context(), model)
 
 	if model.RouteAvailable || model.State != "degraded" || model.ReasonCode != "stable_route_unavailable" {
 		t.Fatalf("release metadata was mistaken for callability: %+v", model)
@@ -90,7 +90,7 @@ func TestApplyGatewayProjectionDoesNotMistakeCanaryMetadataForACandidate(t *test
 		}},
 	}
 	h := &Handler{routingController: &routingControllerStub{preview: routingpolicy.Preview{Model: "company-fast"}}}
-	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
+	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil).Context(), model)
 
 	if model.RouteAvailable || model.State != "degraded" || model.ReasonCode != "canary_stable_route_unavailable" {
 		t.Fatalf("unexpected canary model projection: %+v", model)
@@ -119,7 +119,7 @@ func TestApplyGatewayProjectionDistinguishesStableAndCanaryTargets(t *testing.T)
 	h := &Handler{routingController: &routingControllerStub{preview: routingpolicy.Preview{
 		Model: "company-fast", Candidates: []routingpolicy.PreviewCandidate{{ChannelID: 13}},
 	}}}
-	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
+	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil).Context(), model)
 
 	if !model.RouteAvailable || model.State != "canary" {
 		t.Fatalf("unexpected canary model projection: %+v", model)
@@ -140,7 +140,7 @@ func TestApplyGatewayProjectionSurfacesStaleCanaryPin(t *testing.T) {
 		}},
 	}
 	h := &Handler{routingController: &routingControllerStub{preview: routingpolicy.Preview{Model: "company-fast"}}}
-	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil), model)
+	h.applyGatewayProjection(httptest.NewRequest(http.MethodGet, "/", nil).Context(), model)
 
 	if model.Targets[0].State != "stale" || model.Targets[0].ReasonCode != "canary_assignment_epoch_mismatch" {
 		t.Fatalf("canary pin drift was not surfaced: %+v", model.Targets[0])
