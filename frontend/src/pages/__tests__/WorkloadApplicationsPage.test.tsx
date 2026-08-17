@@ -253,7 +253,7 @@ describe('ApplicationsV2Page', () => {
 
     render(<MemoryRouter initialEntries={['/applications?project_id=12']}><WorkloadApplicationsPage /></MemoryRouter>);
 
-    expect(await screen.findByText('Project B (#12)')).toBeTruthy();
+    expect(await screen.findByText('Project B')).toBeTruthy();
     await waitFor(() => expect(clientMocks.getApplications).toHaveBeenCalledWith({ project_id: 12 }));
     expect((screen.getByText('新建 v2 Application').closest('button') as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/当前所选项目只有读取\/使用权限/)).toBeTruthy();

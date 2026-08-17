@@ -107,12 +107,12 @@ SELECT configured.id,configured.name,configured.provider,configured.base_url,con
            AND (BTRIM(COALESCE(ck.allowed_models,''))='' OR EXISTS (
                SELECT 1 FROM regexp_split_to_table(COALESCE(ck.allowed_models,''),'[,，;；\r\n]+') allowed(model)
                 WHERE BTRIM(allowed.model)=configured.public_model))) AS eligible_key_count,
-       COALESCE(stable.release_ref,''),COALESCE(stable.version,0),
-       COALESCE((stable_override.value->>'expected_routing_epoch')::bigint,0),
-       stable_override.value IS NOT NULL,
-       COALESCE(canary.release_ref,''),COALESCE(canary.version,0),
-       COALESCE((canary_override.value->>'expected_routing_epoch')::bigint,0),
-       canary_override.value IS NOT NULL,
+       COALESCE(stable_assignment.release_ref,''),COALESCE(stable_assignment.release_version,0),
+	   COALESCE(stable_assignment.expected_routing_epoch,0),
+	   stable_assignment.channel_id IS NOT NULL,
+	   COALESCE(canary_assignment.release_ref,''),COALESCE(canary_assignment.release_version,0),
+	   COALESCE(canary_assignment.expected_routing_epoch,0),
+	   canary_assignment.channel_id IS NOT NULL,
        probe.success,probe.status_code,probe.latency_ms,probe.error_summary,probe.tested_at,
        CASE WHEN probe.channel_id IS NULL THEN FALSE ELSE
          probe.routing_epoch=configured.routing_epoch AND EXISTS (
@@ -127,17 +127,18 @@ SELECT configured.id,configured.name,configured.provider,configured.base_url,con
                    WHERE BTRIM(allowed.model)=configured.public_model))
          ) END AS probe_current
   FROM configured
-  LEFT JOIN runtime_change_slots slot ON slot.model_name=configured.public_model
-  LEFT JOIN runtime_change_releases stable ON stable.id=slot.stable_release_id AND stable.stage='active'
-  LEFT JOIN LATERAL (
-      SELECT value FROM jsonb_array_elements(COALESCE(stable.candidate->'overrides','[]'::jsonb))
-       WHERE (value->>'channel_id')::bigint=configured.id AND value->>'admission'='allow' LIMIT 1
-  ) stable_override ON TRUE
-  LEFT JOIN runtime_change_releases canary ON canary.id=slot.canary_release_id AND canary.stage='canary'
-  LEFT JOIN LATERAL (
-      SELECT value FROM jsonb_array_elements(COALESCE(canary.candidate->'overrides','[]'::jsonb))
-       WHERE (value->>'channel_id')::bigint=configured.id AND value->>'admission'='allow' LIMIT 1
-  ) canary_override ON TRUE
+  LEFT JOIN runtime_channel_assignments_v1 stable_assignment
+	ON stable_assignment.model_name=configured.public_model
+	AND stable_assignment.channel_id=configured.id
+	AND stable_assignment.assignment_kind='stable'
+	AND stable_assignment.release_stage='active'
+	AND stable_assignment.admission='allow'
+  LEFT JOIN runtime_channel_assignments_v1 canary_assignment
+	ON canary_assignment.model_name=configured.public_model
+	AND canary_assignment.channel_id=configured.id
+	AND canary_assignment.assignment_kind='canary'
+	AND canary_assignment.release_stage='canary'
+	AND canary_assignment.admission='allow'
   LEFT JOIN channel_model_probes probe ON probe.channel_id=configured.id AND probe.public_model=configured.public_model
  ORDER BY configured.public_model,configured.priority,configured.id`)
 	if err != nil {
@@ -225,12 +226,15 @@ SELECT model_name,display_name,lifecycle,approved_catalog
 	}
 
 	slotRows, slotErr := h.db.Query(r.Context(), `
-SELECT slot.model_name,COALESCE(stable.release_ref,''),COALESCE(stable.version,0),
-       COALESCE(canary.release_ref,''),COALESCE(canary.version,0),slot.canary_basis_points
-  FROM runtime_change_slots slot
-  LEFT JOIN runtime_change_releases stable ON stable.id=slot.stable_release_id
-  LEFT JOIN runtime_change_releases canary ON canary.id=slot.canary_release_id
- ORDER BY slot.model_name`)
+	SELECT model_name,
+	       COALESCE(MAX(release_ref) FILTER (WHERE assignment_kind='stable'),''),
+	       COALESCE(MAX(release_version) FILTER (WHERE assignment_kind='stable'),0),
+	       COALESCE(MAX(release_ref) FILTER (WHERE assignment_kind='canary'),''),
+	       COALESCE(MAX(release_version) FILTER (WHERE assignment_kind='canary'),0),
+	       COALESCE(MAX(canary_basis_points),0)
+	  FROM runtime_channel_assignments_v1
+	 GROUP BY model_name
+	 ORDER BY model_name`)
 	if slotErr != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime assignment projection unavailable"})
 		return

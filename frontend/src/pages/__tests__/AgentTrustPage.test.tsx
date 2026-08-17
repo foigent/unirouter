@@ -172,8 +172,8 @@ describe('AgentTrustPage', () => {
     expect(screen.queryByRole('tab')).toBeNull();
     expect(screen.getByRole('button', { name: '离线合同验证' })).toBeTruthy();
     expect((await screen.findAllByText('mca_project_company_chat')).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByRole('complementary', { name: '模型调用授权检查器' })).toBeTruthy();
-    expect(screen.getByText('显式拒绝优先，多个主体的允许范围取交集', { exact: false })).toBeTruthy();
+    expect(screen.getByRole('complementary', { name: '高级模型限制检查器' })).toBeTruthy();
+    expect(screen.getByText('这里的显式拒绝与允许交集只能进一步缩小已有权限', { exact: false })).toBeTruthy();
     expect(screen.getByText('客户范围：总部')).toBeTruthy();
     expect(screen.queryByLabelText('授权目标组织')).toBeNull();
     expect(mocks.getModelAuthorizations).toHaveBeenCalledWith(7, '');

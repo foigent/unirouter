@@ -2,18 +2,24 @@ import { useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Input, Modal, Select, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import RateCardPriceBandsEditor from '../components/RateCardPriceBandsEditor';
 import { EmptyState, MetricTile, StatusTag, Surface, formatMoney } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
+import { useAuthStore } from '../store/auth';
+import {
+  buildRequestRateComponents,
+  buildUTCOverridePriceBands,
+  requestPriceMeters,
+  yuanToMicrosString,
+  type DailyPriceBand,
+  type PriceBandOverrideDraft,
+  type RateComponent,
+} from '../utils/rateCardPriceBands';
+
+export { buildUTCOverridePriceBands, buildUTCValleyPriceBands, yuanToMicrosString } from '../utils/rateCardPriceBands';
 
 type ExactAmount = { value_minor: string; currency: string; scale: number };
 type Scope = { kind: string; ref: string };
-type RateComponent = { meter: string; unit_quantity: string; amount: ExactAmount };
-type DailyPriceBand = {
-  band_ref: string;
-  start_minute_utc: number;
-  end_minute_utc: number;
-  components: RateComponent[];
-};
 
 type FiscalPeriod = {
   org_id: number;
@@ -206,55 +212,6 @@ const rateLayerLabels: Record<string, string> = {
   internal_chargeback: '内部结算价',
 };
 
-const requestPriceMeters = [
-  { key: 'input_price_yuan', meter: 'input_tokens', label: '输入 Token' },
-  { key: 'output_price_yuan', meter: 'output_tokens', label: '输出 Token' },
-  { key: 'cache_read_price_yuan', meter: 'cache_read_tokens', label: '缓存读取 Token' },
-  { key: 'cache_creation_price_yuan', meter: 'cache_creation_tokens', label: '缓存写入 Token' },
-] as const;
-
-function buildRequestRateComponents(form: Record<string, string>, keyPrefix = ''): RateComponent[] | null {
-  const components = requestPriceMeters.map(item => ({ item, valueMinor: yuanToMicrosString(form[`${keyPrefix}${item.key}`] || '') }));
-  if (components.some(item => item.valueMinor === null)) return null;
-  return components.map(({ item, valueMinor }) => ({
-    meter: item.meter,
-    unit_quantity: '1000000',
-    amount: { value_minor: valueMinor as string, currency: 'CNY', scale: 1_000_000 },
-  }));
-}
-
-function parseUTCMinute(value: string) {
-  const match = /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.exec(value.trim());
-  if (!match) return null;
-  const [hour, minute] = value.split(':').map(Number);
-  return hour * 60 + minute;
-}
-
-function copyRateComponents(components: RateComponent[]): RateComponent[] {
-  return components.map(component => ({ ...component, amount: { ...component.amount } }));
-}
-
-export function buildUTCValleyPriceBands(
-  form: Record<string, string>,
-  baseComponents: RateComponent[],
-): DailyPriceBand[] | null {
-  if (form.price_schedule !== 'utc_valley') return [];
-  const start = parseUTCMinute(form.valley_start_utc || '');
-  const end = parseUTCMinute(form.valley_end_utc || '');
-  const valleyComponents = buildRequestRateComponents(form, 'valley_');
-  if (start === null || end === null || start >= end || !valleyComponents) return null;
-
-  const bands: DailyPriceBand[] = [];
-  if (start > 0) {
-    bands.push({ band_ref: 'base-before', start_minute_utc: 0, end_minute_utc: start, components: copyRateComponents(baseComponents) });
-  }
-  bands.push({ band_ref: 'valley', start_minute_utc: start, end_minute_utc: end, components: valleyComponents });
-  if (end < 24 * 60) {
-    bands.push({ band_ref: 'base-after', start_minute_utc: end, end_minute_utc: 24 * 60, components: copyRateComponents(baseComponents) });
-  }
-  return bands;
-}
-
 function rateWindowsOverlap(left: RateCardRecord, right: RateCardRecord) {
   const leftStart = Date.parse(left.card.effective_from);
   const rightStart = Date.parse(right.card.effective_from);
@@ -329,15 +286,8 @@ function errorMessage(prefix: string, error: unknown) {
   return `${prefix}${error instanceof Error && error.message ? `：${error.message}` : ''}`;
 }
 
-export function yuanToMicrosString(value: string): string | null {
-  const normalized = value.trim();
-  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/.test(normalized)) return null;
-  const [whole, fraction = ''] = normalized.split('.');
-  const micros = `${whole}${fraction.padEnd(6, '0')}`.replace(/^0+(?=\d)/, '');
-  return micros || '0';
-}
-
 export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number; canManage: boolean }) {
+  const currentUser = useAuthStore(state => state.user);
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
   const [centers, setCenters] = useState<CostCenter[]>([]);
   const [budgets, setBudgets] = useState<BudgetRecord[]>([]);
@@ -497,8 +447,14 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
       title: '状态', dataIndex: 'state', width: 130,
       render: (value: string) => <StatusTag status={value === 'closed' || value === 'reconciled' ? 'success' : value}>{periodStateLabels[value] || value}</StatusTag>,
     },
-    { title: '版本', dataIndex: 'version', width: 90 },
-    { title: '最后操作人', dataIndex: 'state_changed_by', width: 150 },
+    {
+      title: '最后操作人', dataIndex: 'state_changed_by', width: 180,
+      render: (value: string) => value === `user:${currentUser?.id}`
+        ? `当前账号 · ${currentUser?.username || '管理员'}`
+        : /^user:\d+$/.test(value || '')
+          ? `用户 #${String(value).slice(5)}`
+          : value || '—',
+    },
     {
       title: '推进', width: 180,
       render: (_: unknown, record: FiscalPeriod) => canManage ? (
@@ -568,7 +524,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
         <MetricTile label="预算计划" value={budgets.length} tone="green" meta={`${budgets.filter(item => item.plan.state === 'approved').length} 个已双人复核`} />
         <MetricTile label="请求路径影响" value="无" tone="slate" meta="默认 report_only" />
       </div>
-      <Surface title="财务期间" actions={(
+      <Surface title="财务期间" description="“初步核对”只是人工复核标记：表示本期数据正在检查，仍可退回开放状态，不会自动记账或扣款。只有“已对账”之后的关账操作才执行完整关账门禁。" actions={(
         <Space>
           {canManage ? <Button size="small" type="primary" onClick={() => openCreate('period')}>新建期间</Button> : null}
           <Button size="small" icon={<IconRefresh />} onClick={load}>刷新</Button>
@@ -690,6 +646,8 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
   const [replacementTarget, setReplacementTarget] = useState<{ candidate: RateCardRecord; current: RateCardRecord } | null>(null);
   const [form, setForm] = useState<Record<string, string>>({ layer: 'supplier_contracted' });
   const [importForm, setImportForm] = useState<Record<string, string>>({ transform_version: 'official-rate-import.v1' });
+  const [priceOverrides, setPriceOverrides] = useState<PriceBandOverrideDraft[]>([]);
+  const [importPriceOverrides, setImportPriceOverrides] = useState<PriceBandOverrideDraft[]>([]);
   const [bootstrapResult, setBootstrapResult] = useState<LegacyBootstrapResult | null>(null);
   const [preflightModels, setPreflightModels] = useState('');
   const [preflightResult, setPreflightResult] = useState<RateCardPreflightResult | null>(null);
@@ -797,9 +755,11 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
 
   const createRateCard = async () => {
     const components = buildRequestRateComponents(form);
-    const dailyPriceBands = components ? buildUTCValleyPriceBands(form, components) : null;
+    const dailyPriceBands = components
+      ? form.price_schedule === 'utc_overrides' ? buildUTCOverridePriceBands(priceOverrides, components) : []
+      : null;
     if (!components || dailyPriceBands === null || !form.provider_ref?.trim() || !form.model_ref?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.effective_from || '')) {
-      Toast.error('请完整填写供应商、模型、四类基础价格、生效日期；启用日内价时还须填写合法 UTC 谷段和四类谷段价格');
+      Toast.error('请完整填写供应商、模型、四类默认价格和生效日期；日内特殊价段必须是不重叠、不跨午夜的 UTC 区间，且每段四类价格齐全');
       return;
     }
     if (form.layer === 'supplier_billed_effective' && !form.source_evidence_ref?.trim()) {
@@ -821,6 +781,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       Toast.success('企业 Rate Card 草稿已创建');
       setCreateVisible(false);
       setForm({ layer: 'supplier_contracted' });
+      setPriceOverrides([]);
       await load();
     } catch (createError) {
       Toast.error(errorMessage('企业 Rate Card 创建失败', createError));
@@ -831,7 +792,9 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
 
   const importOfficialDraft = async () => {
     const components = buildRequestRateComponents(importForm);
-    const dailyPriceBands = components ? buildUTCValleyPriceBands(importForm, components) : null;
+    const dailyPriceBands = components
+      ? importForm.price_schedule === 'utc_overrides' ? buildUTCOverridePriceBands(importPriceOverrides, components) : []
+      : null;
     const isDate = (value?: string) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
     if (!components || dailyPriceBands === null || !importForm.provider_ref?.trim() || !importForm.model_ref?.trim() ||
       !importForm.source_url?.trim() || !importForm.source_revision?.trim() ||
@@ -857,6 +820,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       Toast.success('官方来源证据与目录价草稿已导入；仍需独立复核和激活');
       setImportVisible(false);
       setImportForm({ transform_version: 'official-rate-import.v1' });
+      setImportPriceOverrides([]);
       await load();
     } catch (importError) {
       Toast.error(errorMessage('官方价格草稿导入失败', importError));
@@ -1093,7 +1057,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       <Modal
         title="新建企业 Rate Card 草稿"
         visible={createVisible}
-        onCancel={() => { setCreateVisible(false); setForm({ layer: 'supplier_contracted' }); }}
+        onCancel={() => { setCreateVisible(false); setForm({ layer: 'supplier_contracted' }); setPriceOverrides([]); }}
         onOk={createRateCard}
         confirmLoading={submitting}
         okText="保存草稿"
@@ -1126,26 +1090,11 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
             onChange={value => updateForm('price_schedule', String(value || 'flat'))}
             optionList={[
               { value: 'flat', label: '全天同价（UTC）' },
-              { value: 'utc_valley', label: '基础价 + 一个 UTC 谷段' },
+              { value: 'utc_overrides', label: '默认价 + 多个 UTC 特殊价段' },
             ]}
             style={{ width: '100%' }}
           />
-          {form.price_schedule === 'utc_valley' ? (
-            <>
-              <Input aria-label="Rate Card UTC 谷段开始" type="time" value={form.valley_start_utc || ''} onChange={value => updateForm('valley_start_utc', value)} />
-              <Input aria-label="Rate Card UTC 谷段结束" type="time" value={form.valley_end_utc || ''} onChange={value => updateForm('valley_end_utc', value)} />
-              {requestPriceMeters.map(item => (
-                <Input
-                  key={`valley-${item.key}`}
-                  aria-label={`Rate Card UTC 谷段 ${item.label}每百万价格`}
-                  value={form[`valley_${item.key}`] || ''}
-                  onChange={value => updateForm(`valley_${item.key}`, value)}
-                  placeholder={`${item.label}谷段：CNY / 1,000,000 tokens`}
-                />
-              ))}
-              <Typography.Text type="tertiary">谷段必须 start &lt; end，不能跨午夜。界面会把谷段外基础价显式拆成完整 24 小时 UTC 价带；不会猜测本地时区或折扣比例。</Typography.Text>
-            </>
-          ) : null}
+          {form.price_schedule === 'utc_overrides' && <RateCardPriceBandsEditor ariaPrefix="Rate Card " overrides={priceOverrides} onChange={setPriceOverrides} />}
           <Input aria-label="Rate Card 生效日期" type="date" value={form.effective_from || ''} onChange={value => updateForm('effective_from', value)} />
           <Input aria-label="Rate Card 失效日期" type="date" value={form.effective_to || ''} onChange={value => updateForm('effective_to', value)} />
           <Input aria-label="Rate Card 来源证据" value={form.source_evidence_ref || ''} onChange={value => updateForm('source_evidence_ref', value)} placeholder="合同号、签署证据或账单证据引用（按层级要求）" />
@@ -1165,7 +1114,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       <Modal
         title="导入可验证官方价格草稿"
         visible={importVisible}
-        onCancel={() => { setImportVisible(false); setImportForm({ transform_version: 'official-rate-import.v1' }); }}
+        onCancel={() => { setImportVisible(false); setImportForm({ transform_version: 'official-rate-import.v1' }); setImportPriceOverrides([]); }}
         onOk={importOfficialDraft}
         confirmLoading={submitting}
         okText="导入草稿"
@@ -1189,26 +1138,11 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
             onChange={value => updateImportForm('price_schedule', String(value || 'flat'))}
             optionList={[
               { value: 'flat', label: '全天同价（UTC）' },
-              { value: 'utc_valley', label: '基础价 + 一个 UTC 谷段' },
+              { value: 'utc_overrides', label: '默认价 + 多个 UTC 特殊价段' },
             ]}
             style={{ width: '100%' }}
           />
-          {importForm.price_schedule === 'utc_valley' ? (
-            <>
-              <Input aria-label="官方价格 UTC 谷段开始" type="time" value={importForm.valley_start_utc || ''} onChange={value => updateImportForm('valley_start_utc', value)} />
-              <Input aria-label="官方价格 UTC 谷段结束" type="time" value={importForm.valley_end_utc || ''} onChange={value => updateImportForm('valley_end_utc', value)} />
-              {requestPriceMeters.map(item => (
-                <Input
-                  key={`official-valley-${item.key}`}
-                  aria-label={`官方价格 UTC 谷段 ${item.label}每百万价格`}
-                  value={importForm[`valley_${item.key}`] || ''}
-                  onChange={value => updateImportForm(`valley_${item.key}`, value)}
-                  placeholder={`${item.label}谷段：CNY / 1,000,000 tokens`}
-                />
-              ))}
-              <Typography.Text type="tertiary">只接受不跨午夜的 UTC 谷段；谷段外继续使用上方四项基础价，并被显式写入完整日内 schedule。</Typography.Text>
-            </>
-          ) : null}
+          {importForm.price_schedule === 'utc_overrides' && <RateCardPriceBandsEditor ariaPrefix="官方价格 " overrides={importPriceOverrides} onChange={setImportPriceOverrides} />}
           <Input aria-label="官方价格生效日期" type="date" value={importForm.effective_from || ''} onChange={value => updateImportForm('effective_from', value)} />
           <Input aria-label="官方来源 URL" value={importForm.source_url || ''} onChange={value => updateImportForm('source_url', value)} placeholder="官方定价文档 URL" />
           <Input aria-label="官方来源修订" value={importForm.source_revision || ''} onChange={value => updateImportForm('source_revision', value)} placeholder="文档版本、ETag 或明确修订号" />

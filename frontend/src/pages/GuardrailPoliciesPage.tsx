@@ -7,6 +7,7 @@ import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectDisplayName } from '../utils/projectDisplay';
 
 const { Text, Paragraph } = Typography;
 
@@ -51,7 +52,7 @@ function selectorText(policy: GuardrailPolicy) {
   const parts: string[] = [policy.org_id
     ? (policy.org_name || `客户组织 #${policy.org_id}`)
     : '部署全局（当前部署全部请求）'];
-  if (policy.project_id) parts.push(policy.project_name || `项目 #${policy.project_id}`);
+  if (policy.project_id) parts.push(projectDisplayName({ id: policy.project_id, name: policy.project_name || '', slug: policy.project_name === 'Default Project' ? 'default' : undefined }));
   if (policy.api_key_id) parts.push(policy.api_key_name ? `凭证 ${policy.api_key_name}` : `凭证 #${policy.api_key_id}`);
   if (policy.model) parts.push(`模型 ${policy.model}`);
   return parts.join(' · ');
@@ -179,7 +180,7 @@ export default function GuardrailPoliciesPage() {
         setKeys((keyData || []).filter((key) => key.org_id === customerOrgID));
         setProjects((projectData || [])
           .filter((project: any) => project.org_id === customerOrgID)
-          .map((project: any) => ({ value: project.id, label: project.name })));
+          .map((project: any) => ({ value: project.id, label: projectDisplayName(project) })));
         const source = Array.isArray(modelData?.data) ? modelData.data : modelData;
         setModels((Array.isArray(source) ? source : []).map((item: any) => typeof item === 'string' ? item : item.model).filter(Boolean));
       } catch {
@@ -412,7 +413,7 @@ export default function GuardrailPoliciesPage() {
             />
           ) : <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${customerOrgID}`}</Text>}
           <Form.Select field="project_id" label="项目（可选）" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
-          <Form.Select field="api_key_id" label="访问凭证（可选）" optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${key.project_name || `项目 #${key.project_id}`} · ${key.key_prefix}***` }))} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
+          <Form.Select field="api_key_id" label="访问凭证（可选）" optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${projectDisplayName({ id: key.project_id || 0, name: key.project_name || '' })} · ${key.key_prefix}***` }))} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
           <Form.Select field="model" label="模型（可选）" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />
           <Form.Select field="stage" label="检查阶段" optionList={[{ value: 'input', label: '请求输入（发往上游前）' }, { value: 'nonstream_output', label: '非流式输出（完整结果交付前）' }, { value: 'stream_output', label: '流式输出（每个模型数据帧写出前）' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.Select field="detector_ref" label="检测器" optionList={detectors.map((value) => ({

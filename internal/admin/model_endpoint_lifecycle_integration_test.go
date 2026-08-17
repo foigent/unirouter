@@ -21,7 +21,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestModelEndpointLifecycleKeepsOneStableTruthAcrossPauseAndResume(t *testing.T) {
+func TestModelEndpointLifecycleKeepsOneStableTruthAcrossPauseAndResumeIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	orgID := testutil.NewTestOrg(t, pool)
@@ -257,7 +257,7 @@ UPDATE channels
 	require.Equal(t, alternateChannelID, recoveredPreview.Candidates[0].ChannelID)
 }
 
-func TestModelEndpointActivationRejectsEquivalentCatalogIdentityBeforeCreatingARelease(t *testing.T) {
+func TestModelEndpointActivationRejectsEquivalentCatalogIdentityBeforeCreatingAReleaseIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	orgID := testutil.NewTestOrg(t, pool)

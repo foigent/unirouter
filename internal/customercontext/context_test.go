@@ -3,9 +3,11 @@ package customercontext
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -63,5 +65,48 @@ func TestResolveCustomerContextUnavailable(t *testing.T) {
 	snapshot, err = Resolve(context.Background(), database)
 	if err == nil || snapshot.State != StateUnavailable {
 		t.Fatalf("expected database error to be unavailable, got state=%q err=%v", snapshot.State, err)
+	}
+}
+
+func TestEnsureBaselineKeepsDeploymentOperatorsOutOfProjectMembership(t *testing.T) {
+	var executed []string
+	tx := &testutil.MockTx{
+		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+			executed = append(executed, sql)
+			return pgconn.CommandTag{}, nil
+		},
+		QueryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*(dest[0].(*int64)) = 37
+				return nil
+			}}
+		},
+	}
+	database := &testutil.MockDB{
+		QueryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*(dest[0].(*int64)) = 1
+				*(dest[1].(*int64)) = 1
+				*(dest[2].(*string)) = "Platform Admin"
+				*(dest[3].(*string)) = "active"
+				return nil
+			}}
+		},
+		BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil },
+	}
+
+	baseline, err := EnsureBaseline(context.Background(), database)
+	if err != nil {
+		t.Fatalf("EnsureBaseline() error = %v", err)
+	}
+	if baseline.ProjectID != 37 {
+		t.Fatalf("ProjectID = %d, want 37", baseline.ProjectID)
+	}
+	joined := strings.Join(executed, "\n")
+	if !strings.Contains(joined, "DELETE FROM project_members") || !strings.Contains(joined, "u.organization_role='platform_admin'") {
+		t.Fatalf("baseline did not remove deployment operator membership: %s", joined)
+	}
+	if !strings.Contains(joined, "u.organization_role='org_admin'") || strings.Contains(joined, "IN ('platform_admin','org_admin')") {
+		t.Fatalf("baseline still assigns deployment operators to the default project: %s", joined)
 	}
 }

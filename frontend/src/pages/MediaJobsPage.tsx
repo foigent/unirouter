@@ -19,6 +19,7 @@ import {
 } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, MetricTile, PageHeader } from '../ui';
+import { projectOption } from '../utils/projectDisplay';
 
 const { Text, Title } = Typography;
 
@@ -343,10 +344,7 @@ export default function MediaJobsPage() {
               value={projectID}
               placeholder="选择项目"
               style={{ width: 220 }}
-              optionList={projects.map((project) => ({
-                value: project.id,
-                label: `${project.name} · ${project.id}`,
-              }))}
+              optionList={projects.map(projectOption)}
               onChange={(value) => setProjectID(Number(value))}
             />
             <Button onClick={() => loadJobs()} loading={loading}>刷新</Button>

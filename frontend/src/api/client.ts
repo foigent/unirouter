@@ -139,8 +139,8 @@ export const api = {
   getProviderPacks: () => request('/provider-packs'),
   previewRouting: (model: string) =>
     request(`/routing/preview?model=${encodeURIComponent(model)}`),
-  getRuntimeChanges: (model?: string) =>
-    request(appendParams('/runtime-changes', { model })),
+  getRuntimeChanges: (model?: string, page = 1, pageSize = 20) =>
+    request(appendParams('/runtime-changes', { model, page, page_size: pageSize })),
   getRuntimeChange: (releaseRef: string) =>
     request(`/runtime-changes/${encodeURIComponent(releaseRef)}`),
   getRuntimeChangeSlot: (model: string) =>
@@ -640,6 +640,8 @@ export const api = {
     request('/channel-keys', { method: 'POST', body: JSON.stringify(data) }),
   updateChannelKey: (id: number, data: any) =>
     request(`/channel-keys/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  rotateChannelKey: (id: number, data: { key: string; model: string; allowed_models?: string; prompt?: string }) =>
+    request(`/channel-keys/${id}/rotate`, { method: 'POST', body: JSON.stringify(data) }),
   deleteChannelKey: (id: number) =>
     request(`/channel-keys/${id}`, { method: 'DELETE' }),
 

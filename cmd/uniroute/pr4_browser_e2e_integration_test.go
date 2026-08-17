@@ -422,7 +422,7 @@ func newPR4BrowserApplicationServer(
 func pr4BrowserSPAHandler(distDir string, api http.Handler) http.Handler {
 	fileServer := http.FileServer(http.Dir(distDir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/v1/") {
 			api.ServeHTTP(w, r)
 			return
 		}

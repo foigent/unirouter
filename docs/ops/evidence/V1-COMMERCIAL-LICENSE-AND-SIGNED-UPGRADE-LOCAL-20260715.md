@@ -88,7 +88,7 @@ REQUIRE_TEST_DATABASE=1 go test -tags=integration -race \
   ./internal/migrate ./cmd/uniroute \
   -run 'Test(V1CommercialReleaseControlMigrationAndConcurrentResourceLimit|UpgradeRecordAppliedPinsRuntimeDigestSequenceAndSchema)'
 REQUIRE_TEST_DATABASE=1 go test -tags=integration -race ./internal/admin \
-  -run TestReconcileStoredCommercialLicenseRestoresDerivedProjection
+  -run TestReconcileStoredCommercialLicenseRestoresDerivedProjectionIntegration
 npm test -- --run                 # frontend: 31 files / 164 tests
 npm run type-check
 npm run build

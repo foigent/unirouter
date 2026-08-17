@@ -89,7 +89,7 @@ export default function ModelAuthorizationWorkspace() {
       setSelectedRef(current => next.some(item => item.authorization_ref === current) ? current : next[0]?.authorization_ref || '');
     } catch (loadError: any) {
       setPolicies([]);
-      setError(loadError?.message || '无法加载模型调用授权。');
+      setError(loadError?.message || '无法加载高级模型限制。');
     } finally {
       setLoading(false);
     }
@@ -176,7 +176,7 @@ export default function ModelAuthorizationWorkspace() {
 
   return (
     <>
-      <Banner type="info" description="这是 UniRouter 的模型调用 PEP：显式拒绝优先，多个主体的允许范围取交集；它只能缩小现有访问凭证、项目、人员和 Agent 能力，不能授予 Tool 或 MCP 权限。" />
+      <Banner type="info" description="这是高级收窄策略，不是给用户开通模型的入口。正常授权请先在“人员与权限”把用户加入项目，再由用户创建个人项目凭证；工作负载则由项目管理员创建应用凭证。这里的显式拒绝与允许交集只能进一步缩小已有权限。" />
       <div className="ur-modelgov-summary">
         <div><Typography.Text type="tertiary">生效策略</Typography.Text><strong>{stats.active}</strong></div>
         <div><Typography.Text type="tertiary">待激活草稿</Typography.Text><strong>{stats.draft}</strong></div>
@@ -186,22 +186,22 @@ export default function ModelAuthorizationWorkspace() {
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>模型调用授权策略</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>高级模型限制策略</Typography.Title>
               <Typography.Text className="ur-panel-hint">{contract?.contract_version || '正在加载合同'} · 当前环境 {contract?.environment || '-'}</Typography.Text>
             </div>
             <Space>
               {platform && <Typography.Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${orgID}`}</Typography.Text>}
               <Select aria-label="授权状态筛选" value={status} onChange={value => setStatus(String(value || ''))} showClear placeholder="全部状态" optionList={[{ label: '草稿', value: 'draft' }, { label: '生效', value: 'active' }, { label: '已撤销', value: 'revoked' }]} style={{ width: 120 }} />
               <Button icon={<IconRefresh />} loading={loading} onClick={() => void load()}>刷新</Button>
-              <Button icon={<IconPlus />} type="primary" onClick={() => setSheetOpen(true)}>新增授权</Button>
+              <Button icon={<IconPlus />} type="primary" onClick={() => setSheetOpen(true)}>新增限制策略</Button>
             </Space>
           </div>
-          {error ? <EmptyState title="授权策略加载失败" description={error} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} /> : (
+          {error ? <EmptyState title="高级模型限制加载失败" description={error} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} /> : (
             <div className="ur-table-shell"><Table rowKey="authorization_ref" columns={columns} dataSource={policies} loading={loading} pagination={false}
               empty={<EmptyState title="暂无授权策略" description="无策略时保持现有访问凭证、项目模型集和 Agent 能力规则；创建并激活后只会进一步收窄。" minHeight={300} />} /></div>
           )}
         </main>
-        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="模型调用授权检查器">
+        <aside className="ur-explorer-panel ur-explorer-detail" aria-label="高级模型限制检查器">
           <div className="ur-detail-header"><div><Typography.Text className="ur-panel-hint">Authorization Inspector</Typography.Text><Typography.Title heading={5} style={{ margin: 0 }}>适用范围与操作</Typography.Title></div><Tag color={statusColor(selected?.status || '')}>{selected?.status === 'active' ? '生效' : selected?.status === 'draft' ? '草稿' : selected ? '已撤销' : '未选择'}</Tag></div>
           {selected ? <>
             <dl className="ur-financial-truth-detail">
@@ -226,8 +226,8 @@ export default function ModelAuthorizationWorkspace() {
         </aside>
       </div>
 
-      <SideSheet title="新增模型调用授权" visible={sheetOpen} onCancel={() => setSheetOpen(false)} width={560}>
-        <Banner type="warning" description="草稿不会影响请求；激活后只会收窄现有权限。主体 ID 必须属于当前组织，Agent 使用已约定的 Agent 标识。" style={{ marginBottom: 16 }} />
+      <SideSheet title="新增高级模型限制" visible={sheetOpen} onCancel={() => setSheetOpen(false)} width={560}>
+        <Banner type="warning" description="这不是项目访问授权。草稿不会影响请求；激活后只会收窄已有项目、应用 Key 或 Agent 权限。主体 ID 必须属于当前客户范围。" style={{ marginBottom: 16 }} />
         <Form getFormApi={(next: any) => setFormApi(next)} onSubmit={create} initValues={{ environment: contract?.environment || '*', effect: 'allow', allowed_endpoints: contract?.endpoints || [] }}>
           <Form.Input field="authorization_ref" label="策略标识" placeholder="mca_project_company_chat" rules={[{ required: true, message: '请输入策略标识' }]} />
           <div className="ur-modelgov-form-grid">

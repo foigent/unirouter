@@ -8,10 +8,11 @@ import { EmptyState, PageHeader, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
 import { parseChannelModels } from '../utils/channelReadiness';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
+import { projectOption } from '../utils/projectDisplay';
 
 const { Text, Title } = Typography;
 
-type Project = { id: number; name: string; status: string; current_user_membership_role?: string };
+type Project = { id: number; name: string; slug?: string; status: string; current_user_membership_role?: string };
 type Channel = { models?: string };
 type ModelAlias = { alias: string; target_model: string; display_name?: string; status: string };
 type WorkloadApplication = { application_ref: string; display_name: string; project_id: number; environment?: string; status: string };
@@ -328,7 +329,7 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
             field="project_id"
             label="项目"
             filter
-            optionList={projects.map(project => ({ value: project.id, label: project.name }))}
+            optionList={projects.map(projectOption)}
             rules={[{ required: true, message: '请选择项目' }]}
             style={{ width: 220 }}
             onChange={(value) => {

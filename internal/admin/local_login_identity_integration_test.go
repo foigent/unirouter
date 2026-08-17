@@ -19,7 +19,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestLocalLoginIdentityRequiresUniqueSchemaContract(t *testing.T) {
+func TestLocalLoginIdentityRequiresUniqueSchemaContractIntegration(t *testing.T) {
 	t.Run("duplicate normalized legacy rows never select an implicit winner", func(t *testing.T) {
 		pool := testutil.SetupMigratedTestDB(t)
 		ctx := t.Context()
@@ -43,7 +43,7 @@ func TestLocalLoginIdentityRequiresUniqueSchemaContract(t *testing.T) {
 	})
 }
 
-func TestLocalLoginIdentityNormalizesInputAndIgnoresExternalUsername(t *testing.T) {
+func TestLocalLoginIdentityNormalizesInputAndIgnoresExternalUsernameIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
 	orgIDs := newLocalLoginTestOrgs(t, pool, 1)
@@ -69,7 +69,7 @@ func TestLocalLoginIdentityNormalizesInputAndIgnoresExternalUsername(t *testing.
 	require.Equal(t, "local", body["auth_provider"])
 }
 
-func TestCreateUserEnforcesGlobalLocalLoginIdentity(t *testing.T) {
+func TestCreateUserEnforcesGlobalLocalLoginIdentityIntegration(t *testing.T) {
 	t.Run("trims display username and returns typed global conflict", func(t *testing.T) {
 		pool := testutil.SetupMigratedTestDB(t)
 		orgIDs := newLocalLoginTestOrgs(t, pool, 2)

@@ -461,12 +461,11 @@ func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, start
 		`SELECT c.id,c.name,c.provider,c.status,c.circuit_state,
 		        EXISTS (
 		          SELECT 1
-		            FROM runtime_change_slots rcs
-		            JOIN runtime_change_releases stable
-		              ON stable.id=rcs.stable_release_id AND stable.stage='active'
-		            CROSS JOIN LATERAL jsonb_array_elements(COALESCE(stable.candidate->'overrides','[]'::jsonb)) AS runtime_override
-		           WHERE (runtime_override->>'channel_id')::bigint=c.id
-		             AND runtime_override->>'admission'='allow'
+		            FROM runtime_channel_assignments_v1 assignment
+		           WHERE assignment.channel_id=c.id
+		             AND assignment.assignment_kind='stable'
+		             AND assignment.release_stage='active'
+		             AND assignment.admission='allow'
 		        ) AS runtime_published,
 		        EXISTS (
 		          SELECT 1

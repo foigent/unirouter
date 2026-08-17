@@ -1,255 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Banner, Button, Table, Modal, Form, Tag, Toast, Space, Tooltip, SideSheet, Select, Typography, Descriptions } from '@douyinfe/semi-ui';
+import { Button, Table, Modal, Tag, Toast, Space, Tooltip, Select, Typography, Descriptions } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit, IconRefresh } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { normalizeModelList } from '../utils/modelList';
 import ConnectionModelPanel from '../components/ConnectionModelPanel';
+import ChannelEditorSheet from '../components/ChannelEditorSheet';
 import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 import { loadAllPages } from '../utils/loadAllPages';
 import { parseChannelModels, type ChannelReadinessCredential } from '../utils/channelReadiness';
 import { useAuthStore } from '../store/auth';
 import { hasLicensedFeature, licenseRestrictionMessage } from '../navigation';
-
-interface Channel {
-  id: number;
-  name: string;
-  provider: string;
-  base_url: string;
-  models: string;
-  adapter_type?: string;
-  adapter_config?: Record<string, unknown> | string;
-  priority: number;
-  routing_weight: number;
-  routing_epoch: number;
-  degradation_threshold: number;
-  status: string;
-  effective_status?: string;
-  published_models?: string;
-  circuit_state: string;
-  fail_count: number;
-  created_at: string;
-}
-
-interface RoutingPreviewCandidate {
-  channel_id: number;
-  channel_name: string;
-  provider: string;
-  priority: number;
-  weight: number;
-  order?: number;
-  circuit_state: string;
-  eligible_key_count: number;
-  reason: string;
-  requires_probe: boolean;
-}
-
-interface RoutingPreview {
-  policy_version: string;
-  snapshot_version: string;
-  snapshot_source: string;
-  degraded: boolean;
-  model: string;
-  candidates: RoutingPreviewCandidate[];
-  exclusions: RoutingPreviewCandidate[];
-}
-
-interface ProviderPackManifest {
-  pack_id: string;
-  pack_version: string;
-  provider: string;
-  adapter_type: string;
-  conformance_level: 'fixture_verified';
-  network_verified: boolean;
-  endpoints: string[];
-  modalities: string[];
-  auth_profiles: Array<{ type: string; wire_header: string }>;
-}
-
-interface ProviderPack {
-  manifest: ProviderPackManifest;
-  manifest_sha256: string;
-  schema_sha256: string;
-}
-
-type ProviderPackMatch = {
-  pack: ProviderPack;
-  scope: 'provider_fixture' | 'adapter_protocol_fixture';
-};
-
-function adapterTypeForProvider(provider: unknown) {
-  if (provider === 'anthropic') return 'anthropic_native';
-  if (provider === 'azure') return 'azure_openai';
-  return 'openai_compatible';
-}
-
-function findProviderPackMatch(packs: ProviderPack[], channel?: Channel): ProviderPackMatch | undefined {
-  if (!channel) return undefined;
-  const adapterType = channel.adapter_type || 'openai_compatible';
-  const exact = packs.find(pack =>
-    pack.manifest.provider.toLowerCase() === channel.provider.toLowerCase() &&
-    pack.manifest.adapter_type === adapterType);
-  if (exact) return { pack: exact, scope: 'provider_fixture' };
-
-  const referenceProvider = ({
-    openai_compatible: 'openai',
-    anthropic_native: 'anthropic',
-    azure_openai: 'azure',
-  } as Record<string, string>)[adapterType];
-  const protocolFixture = referenceProvider
-    ? packs.find(pack => pack.manifest.provider === referenceProvider && pack.manifest.adapter_type === adapterType)
-    : undefined;
-  return protocolFixture ? { pack: protocolFixture, scope: 'adapter_protocol_fixture' } : undefined;
-}
-
-const channelStatusOptions = [
-  { label: '待发布（staged）', value: 'staged' },
-  { label: '紧急禁用（disabled）', value: 'disabled' },
-];
-
-function channelUpdateErrorMessage(error: unknown) {
-  if (!(error instanceof ApiError)) return '更新失败，请稍后重试';
-  const backendMessage = error.message.toLowerCase();
-  if (error.status === 400 && backendMessage.includes('status must be')) {
-    return '通道状态仅支持 active、staged 或 disabled';
-  }
-  if (error.status === 400 && backendMessage.includes('adapter_type')) {
-    return 'Adapter Type 不受支持';
-  }
-  if (error.status === 400 && backendMessage.includes('adapter_config')) {
-    return 'Adapter Config 与所选协议不兼容';
-  }
-  if (error.status === 400) return '通道配置无效，请检查字段后重试';
-  if (error.status === 403) return '当前账号无权更新此通道';
-  if (error.status === 404) return '通道不存在或已被删除';
-  if (error.status >= 500) return '服务暂时无法更新通道，请稍后重试';
-  return `更新失败（HTTP ${error.status}）`;
-}
-
-function channelConflictCode(error: ApiError) {
-  const payload = error.payload && typeof error.payload === 'object'
-    ? error.payload as { code?: unknown }
-    : {};
-  return typeof payload.code === 'string' ? payload.code : '';
-}
-
-function channelConflictMessage(error: ApiError) {
-  const backendMessage = error.message.toLowerCase();
-  const payload = error.payload && typeof error.payload === 'object'
-    ? error.payload as { published_models?: unknown }
-    : {};
-  const code = channelConflictCode(error);
-  if (code === 'channel_bound_to_active_release') {
-    const models = Array.isArray(payload.published_models)
-      ? payload.published_models.filter((model): model is string => typeof model === 'string').join('、')
-      : '';
-    return `该连接仍关联已生效的历史发布记录${models ? `（${models}）` : ''}。请点击“恢复连接”，先结束这些历史发布并把连接转为待发布；刷新页面不会改变运行状态。`;
-  }
-  if (code === 'stale_routing_epoch') {
-    return '该连接确实已在你打开页面后发生变化，请刷新后重试';
-  }
-  if (backendMessage.includes('active channel runtime fields')) {
-    return '生效通道的运行参数不能直接修改；请先改为 staged，再通过“模型治理 → 运行时发布”上线';
-  }
-  if (backendMessage.includes('direct channel activation')) {
-    return '不能直接启用通道；请通过“模型治理 → 运行时发布”完成验证、灰度与提升';
-  }
-  return '连接状态在更新时发生变化，请刷新后重试';
-}
-
-const routingReasonLabel = (reason: string) => ({
-  equal_priority_static_weight: '同优先级内按权重排序',
-  priority_failover: '按优先级故障转移',
-  channel_inactive: '通道未启用',
-  circuit_recovery_pending: '熔断恢复等待中',
-  probe_sample_not_selected: '本次未抽中恢复探测',
-  circuit_unavailable: '熔断状态不可用',
-  no_key: '没有凭证',
-  no_active_key: '没有启用的凭证',
-  key_cooldown: '凭证冷却中',
-  key_model_not_allowed: '凭证不允许此模型',
-  candidate_limit: '超过单次候选上限',
-}[reason] || reason);
-
-const routingSourceLabel = (source: string) => ({
-  live: '刚从数据库刷新',
-  cache: '本机 1 秒内快照',
-  last_known_good: '数据库异常时的短时备用快照',
-}[source] || source);
-
-function selectedChannelIDFromParams() {
-  const value = Number(new URLSearchParams(window.location.search).get('channel_id'));
-  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
-}
-
-function recoveryModelFromParams() {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('from') !== 'connections' || params.get('intent') !== 'recover') return '';
-  return String(params.get('model') || '').trim();
-}
-
-function clearConnectionRecoveryParams() {
-  const params = new URLSearchParams(window.location.search);
-  params.delete('from');
-  params.delete('model');
-  params.delete('intent');
-  params.delete('tab');
-  const query = params.toString();
-  window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
-}
-
-function syncSelectedChannelID(id?: number) {
-  const params = new URLSearchParams(window.location.search);
-  if (id) params.set('channel_id', String(id));
-  else params.delete('channel_id');
-  const query = params.toString();
-  window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
-}
-
-function effectiveChannelStatus(channel: Channel) {
-  return channel.effective_status || channel.status;
-}
-
-function channelHasRetainedRelease(channel: Channel) {
-  return effectiveChannelStatus(channel) !== 'active' && parseChannelModels(channel.published_models).length > 0;
-}
-
-function navigateWithinApp(path: string) {
-  window.history.pushState(null, '', path);
-  window.dispatchEvent(new PopStateEvent('popstate'));
-}
-
-function connectionAdvancedPath(path: string, channelID: number, model?: string) {
-  const params = new URLSearchParams({ from: 'connections', channel_id: String(channelID) });
-  if (model) params.set('model', model);
-  return `${path}?${params.toString()}`;
-}
-
-function adapterConfigFacts(channel: Channel) {
-  let config: Record<string, unknown> = {};
-  if (channel.adapter_config && typeof channel.adapter_config === 'object') {
-    config = channel.adapter_config;
-  } else if (typeof channel.adapter_config === 'string') {
-    try {
-      const parsed = JSON.parse(channel.adapter_config);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed;
-    } catch {
-      return [{ key: 'config', label: '配置状态', value: '无法解析' }];
-    }
-  }
-  const allowed = channel.adapter_type === 'azure_openai'
-    ? [['deployment', 'Deployment'], ['api_version', 'API version'], ['auth_mode', 'Auth mode']]
-    : channel.adapter_type === 'anthropic_native'
-      ? [['anthropic_version', 'Anthropic version'], ['anthropic_beta', 'Anthropic beta']]
-      : [];
-  return allowed.flatMap(([key, label]) => {
-    const value = config[key];
-    return typeof value === 'string' && value.trim()
-      ? [{ key, label, value }]
-      : [];
-  });
-}
-
+import {
+  adapterConfigFacts,
+  channelConflictCode,
+  channelConflictMessage,
+  channelHasRetainedRelease,
+  channelUpdateErrorMessage,
+  clearConnectionRecoveryParams,
+  connectionAdvancedPath,
+  effectiveChannelStatus,
+  findProviderPackMatch,
+  navigateWithinApp,
+  recoveryModelFromParams,
+  routingReasonLabel,
+  routingSourceLabel,
+  selectedChannelIDFromParams,
+  syncSelectedChannelID,
+  type Channel,
+  type ProviderPack,
+  type RoutingPreview,
+} from '../utils/channelAdmin';
 export default function ChannelsPage() {
   const licenseAccess = useAuthStore((state) => state.user?.license_access);
   const gatewayLicensed = hasLicensedFeature(licenseAccess, 'gateway');
@@ -917,79 +698,15 @@ export default function ChannelsPage() {
         </Surface>
       </details>
 
-      <SideSheet
-        title={editing ? '编辑通道' : '新增通道'}
+      <ChannelEditorSheet
         visible={showDrawer}
+        editing={editing}
+        editingIsActive={editingIsActive}
+        formApi={formApi}
+        setFormApi={setFormApi}
+        onSubmit={handleSubmit}
         onCancel={closeDrawer}
-        width={480}
-      >
-        {editingIsActive && <Banner
-          type="warning"
-          description="该连接当前由运行时发布生效。为避免绕过发布门禁，本表单只执行紧急禁用；连接参数不会随本次操作修改。禁用后可前往“供应商凭证”新增或轮换 Key。"
-          closeIcon={null}
-          style={{ marginBottom: 16 }}
-        />}
-        <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
-          <Form.Input field="name" label="通道名称" disabled={editingIsActive} rules={[{ required: true, message: '必填' }]} />
-          <Form.Select field="provider" label="供应商身份" rules={[{ required: true, message: '必填' }]}
-            optionList={[
-              { label: 'OpenAI', value: 'openai' },
-              { label: 'Anthropic', value: 'anthropic' },
-              { label: 'Azure', value: 'azure' },
-              { label: 'DeepSeek（OpenAI-compatible）', value: 'deepseek' },
-              { label: 'Kimi / Moonshot（OpenAI-compatible）', value: 'kimi' },
-              { label: '自定义 OpenAI-compatible', value: 'custom' },
-            ]}
-            disabled={editingIsActive}
-            onChange={(value) => formApi?.setValue('adapter_type', adapterTypeForProvider(value))}
-            extraText="这里记录实际服务供应商，用于审计和运营；不会因为选择 OpenAI-compatible 协议而把 DeepSeek、Kimi 或自定义服务改名为 OpenAI。"
-          />
-          <Form.Input field="base_url" label="服务地址（Base URL）" disabled={editingIsActive} rules={[{ required: true, message: '必填' }]} />
-          <Form.Input
-            field="models"
-            label="支持模型"
-            placeholder="如 gpt-4o；gpt-4o-mini"
-            extraText="可用中英文逗号、分号或换行分隔；保存时会去空格、去重并统一为英文逗号。"
-            disabled={editingIsActive}
-            rules={[{ required: true, message: '必填' }]}
-          />
-		  {!editing && <Form.Input
-			field="api_key"
-			label="供应商 API Key"
-			mode="password"
-			extraText="与连接一起加密保存，提交后不回显。"
-			rules={[{ required: true, message: '请输入供应商 API Key' }]}
-		  />}
-          <Form.Select field="adapter_type" label="请求协议（Adapter Type）" initValue="openai_compatible"
-            optionList={[
-              { label: 'OpenAI Compatible', value: 'openai_compatible' },
-              { label: 'Anthropic Native', value: 'anthropic_native' },
-              { label: 'Azure OpenAI (deployment-scoped)', value: 'azure_openai' },
-            ]}
-            disabled={editingIsActive}
-            extraText="Adapter 只决定 UniRouter 如何组装和解析请求；离线协议夹具不等于真实供应商连通验证。"
-          />
-          <Form.TextArea
-            field="adapter_config"
-            label="Adapter Config (JSON)"
-            placeholder='Anthropic: {"anthropic_version":"2023-06-01"} · Azure: {"api_version":"2024-10-21","deployment":"gpt-4o-prod"}'
-            rows={4}
-            disabled={editingIsActive}
-          />
-          <Form.InputNumber field="priority" label="优先级 (越小越优先)" initValue={100} disabled={editingIsActive} />
-          <Form.InputNumber field="routing_weight" label="同优先级权重 (1-1000)" initValue={100} disabled={editingIsActive} extraText="只在优先级相同时分配流量；例如 100 与 200 约为 1:2。" />
-          <Form.InputNumber field="degradation_threshold" label="熔断阈值 (连续失败次数)" initValue={10} disabled={editingIsActive} extraText="达到次数后暂停该通道，恢复窗口到期后只允许一个探针请求。" />
-          {editing && <Form.Select field="status" label="状态" optionList={editingIsActive
-            ? [{ label: '紧急禁用（disabled）', value: 'disabled' }]
-            : channelStatusOptions} extraText={editingIsActive
-              ? '仅停止当前连接；不会删除历史发布记录，禁用状态不会被旧发布重新启用。'
-              : 'staged/disabled 不能直接改回 active；请通过运行时发布提升。'} />}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
-            <Button onClick={closeDrawer}>取消</Button>
-			<Button type="primary" onClick={() => formApi?.submitForm()}>{editingIsActive ? '确认紧急禁用' : editing ? '更新' : '保存并进入检测'}</Button>
-          </div>
-        </Form>
-      </SideSheet>
+      />
     </div>
   );
 }

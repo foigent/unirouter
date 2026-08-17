@@ -1,8 +1,10 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/middleware"
 )
 
@@ -23,6 +25,14 @@ func (h *Handler) persistChannelModelProbe(r *http.Request, record channelModelP
 	if isUnauthenticatedUnitContext(r.Context()) {
 		return nil
 	}
+	return upsertChannelModelProbe(r.Context(), h.db, record, middleware.GetUserIDFromContext(r.Context()))
+}
+
+type channelModelProbeExecer interface {
+	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
+}
+
+func upsertChannelModelProbe(ctx context.Context, execer channelModelProbeExecer, record channelModelProbeRecord, testedBy int64) error {
 	var credentialID interface{}
 	if record.CredentialID > 0 {
 		credentialID = record.CredentialID
@@ -30,7 +40,7 @@ func (h *Handler) persistChannelModelProbe(r *http.Request, record channelModelP
 	if record.CredentialStateEpoch <= 0 {
 		record.CredentialStateEpoch = 1
 	}
-	_, err := h.db.Exec(r.Context(), `
+	_, err := execer.Exec(ctx, `
 INSERT INTO channel_model_probes (
     channel_id,public_model,upstream_model,routing_epoch,credential_id,
     credential_state_epoch,success,status_code,latency_ms,error_summary,tested_by,tested_at)
@@ -48,6 +58,6 @@ ON CONFLICT (channel_id,public_model) DO UPDATE SET
     tested_at=EXCLUDED.tested_at`,
 		record.ChannelID, record.PublicModel, record.UpstreamModel, record.RoutingEpoch, credentialID,
 		record.CredentialStateEpoch, record.Success, record.StatusCode, record.LatencyMS,
-		auditErrorSummary(record.ErrorSummary), middleware.GetUserIDFromContext(r.Context()))
+		auditErrorSummary(record.ErrorSummary), testedBy)
 	return err
 }

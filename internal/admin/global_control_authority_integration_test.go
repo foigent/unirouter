@@ -1,3 +1,5 @@
+//go:build integration
+
 package admin
 
 import (
@@ -5,7 +7,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -378,19 +379,6 @@ func p6f35GlobalControlMux(h *Handler) *http.ServeMux {
 	mux.Handle("PUT /api/v1/sensitive-words", platformRoute(h.UpdateSensitiveWords))
 	mux.Handle("DELETE /api/v1/sensitive-words", platformRoute(h.DeleteSensitiveWords))
 	return mux
-}
-
-func p6f35SignedLicense(t testing.TB, privateKey ed25519.PrivateKey, deploymentID, expiresAt string) []byte {
-	t.Helper()
-	doc, err := licensing.SignPayload(licensing.Payload{
-		Customer: "P6F35 Customer", DeploymentID: deploymentID, Tier: "enterprise",
-		IssuedAt: "2026-07-01T00:00:00Z", ExpiresAt: expiresAt,
-		Features: []string{"projects"}, Limits: map[string]int64{"projects": 20},
-	}, privateKey)
-	require.NoError(t, err)
-	raw, err := json.Marshal(doc)
-	require.NoError(t, err)
-	return raw
 }
 
 type p6f35Snapshot struct {

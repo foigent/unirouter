@@ -45,9 +45,9 @@ describe('pricing authority pages', () => {
 
     render(<ModelPricesPage />);
 
-    expect(await screen.findByText('模型定价')).toBeTruthy();
+    expect(await screen.findByText('兼容基础价格')).toBeTruthy();
     await waitFor(() => expect(mocks.getModelPriceList).toHaveBeenCalledWith(1, 20));
-    expect(screen.getByText('只读查看平台统一维护的 CNY/百万 tokens 基础价格与供应商 Prompt Cache 倍率。')).toBeTruthy();
+    expect(screen.getByText('只读查看旧版全天同价合同；峰谷与精确缓存价格以已激活 Rate Card 为准。')).toBeTruthy();
     expect(screen.getByText('0.100×')).toBeTruthy();
     expect(screen.getByText('1.250×')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /新增价格/ })).toBeNull();
@@ -73,7 +73,7 @@ describe('pricing authority pages', () => {
     await waitFor(() => expect(modelName.value).toBe('gpt-4o'));
     expect(modelName.disabled).toBe(true);
     expect(screen.getByText(/模型名称是计费、组织倍率、路由和模型治理共同使用的稳定标识/)).toBeTruthy();
-	const inputPrice = screen.getByLabelText('输入价格（CNY/百万 tokens）') as HTMLInputElement;
+	const inputPrice = screen.getByLabelText('普通 / 缓存未命中输入价（CNY/百万 tokens）') as HTMLInputElement;
 	await waitFor(() => expect(inputPrice.value).toBe('50'));
 
     fireEvent.click(screen.getByRole('button', { name: '更新' }));

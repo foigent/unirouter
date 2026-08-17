@@ -7,6 +7,7 @@
 | Role | Canonical File | Rule |
 |------|----------------|------|
 | Agent handoff | `docs/PROJECT-HANDOFF.md` | Read first when taking over the project |
+| System fact map | `docs/architecture/SYSTEM-FACT-MAP.md` | Canonical current entity, authority, writer, projection-consumer, impact, and golden-journey map; update it with any relationship change |
 | Codebase map | `docs/CODEBASE-MAP.md` | High-level implementation map, not a substitute for reading code |
 | Document inventory | `docs/DOC-INVENTORY.md` | Classifies current, reference, and historical docs |
 | Active delivery scope | `docs/agent-workflows/EXECUTION-RECORD.md` | Current issue/corrective batch, baseline, non-goals, verification and promotion state; it cannot silently reopen a completed PRD |
@@ -50,6 +51,7 @@
    active PRD7 matrix contains the row and exact evidence. The User's
    2026-07-30/31 decisions accept the scope in `docs/PRD-Phase7.md`; they do
    not retroactively change old evidence or authorize runtime actions.
+10. Before changing a cross-page product concept, use `docs/architecture/SYSTEM-FACT-MAP.md` to identify its authority, writers, and projection consumers. A local page fix is incomplete when an affected consumer is left inconsistent.
 
 ## Cleanup Policy
 

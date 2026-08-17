@@ -1,3 +1,5 @@
+//go:build integration
+
 package admin
 
 import (
@@ -12,7 +14,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestP6F20AuditOutboxMaterializesExactlyOnce(t *testing.T) {
+func TestP6F20AuditOutboxMaterializesExactlyOnceIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
 	var orgID int64

@@ -7,6 +7,7 @@ const mockGetChannelKeys = vi.fn();
 const mockGetChannels = vi.fn();
 const mockUpdateChannelKey = vi.fn();
 const mockCreateChannelKey = vi.fn();
+const mockRotateChannelKey = vi.fn();
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -14,6 +15,7 @@ vi.mock('../../api/client', () => ({
     getChannels: (...args: any[]) => mockGetChannels(...args),
     updateChannelKey: (...args: any[]) => mockUpdateChannelKey(...args),
     createChannelKey: (...args: any[]) => mockCreateChannelKey(...args),
+    rotateChannelKey: (...args: any[]) => mockRotateChannelKey(...args),
     deleteChannelKey: vi.fn(),
   },
 }));
@@ -34,6 +36,7 @@ describe('ChannelKeysPage', () => {
         key_prefix: '****c20c',
         allowed_models: 'mimo-v2.5-pro，mimo-v2.5',
         status: 'active',
+        state_epoch: 2,
         created_at: '2026-07-01T00:00:00Z',
 		updated_at: '2026-08-14T01:59:49+08:00',
       }],
@@ -42,6 +45,7 @@ describe('ChannelKeysPage', () => {
     mockGetChannels.mockResolvedValue({ data: [{ id: 3, name: 'mimo', status: 'staged', models: 'mimo-v2.5-pro,mimo-v2.5' }] });
     mockUpdateChannelKey.mockResolvedValue({ success: true });
     mockCreateChannelKey.mockResolvedValue({ id: 8 });
+    mockRotateChannelKey.mockResolvedValue({ id: 8, probe: { latency_ms: 12 } });
   });
 
   it('updates model scope without forcing an upstream secret rotation', async () => {
@@ -78,6 +82,78 @@ describe('ChannelKeysPage', () => {
       status: 'active',
     }));
 	expect(await screen.findByText(/mimo 的新供应商 API Key 已加密保存/)).toBeTruthy();
+  });
+
+  it('tests and atomically rotates an active route credential without pausing the endpoint', async () => {
+    mockGetChannelKeys.mockResolvedValueOnce({
+      data: [{
+        id: 7, channel_id: 3, channel_name: 'mimo', channel_status: 'active',
+        key_prefix: '****c20c', allowed_models: 'mimo-v2.5-pro,mimo-v2.5',
+        status: 'active', state_epoch: 4, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-08-14T01:59:49+08:00',
+      }],
+      total: 1,
+    });
+    mockGetChannels.mockResolvedValueOnce({ data: [{ id: 3, name: 'mimo', status: 'active', models: 'mimo-v2.5-pro,mimo-v2.5' }] });
+    renderChannelKeys();
+
+    await screen.findByText('mimo-v2.5-pro,mimo-v2.5');
+    fireEvent.click(screen.getByRole('button', { name: '轮换供应商凭证 mimo' }));
+    expect(await screen.findByText(/只有检测成功且端点\/旧凭证没有并发变化/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('新的供应商 API Key'), { target: { value: 'sk-new-active-key' } });
+    fireEvent.click(screen.getByRole('button', { name: '检测并原子轮换' }));
+
+    await waitFor(() => expect(mockRotateChannelKey).toHaveBeenCalledWith(7, {
+      key: 'sk-new-active-key',
+      model: 'mimo-v2.5-pro',
+      allowed_models: 'mimo-v2.5-pro,mimo-v2.5',
+    }));
+    expect(await screen.findByText(/路由未暂停。检测延迟 12ms/)).toBeTruthy();
+  });
+
+  it('keeps scoped active-endpoint credential management on the atomic rotation path', async () => {
+    mockGetChannelKeys.mockResolvedValueOnce({
+      data: [{
+        id: 7, channel_id: 3, channel_name: 'mimo', channel_status: 'active',
+        key_prefix: '****c20c', allowed_models: 'mimo-v2.5-pro',
+        status: 'active', state_epoch: 4, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-08-14T01:59:49+08:00',
+      }],
+      total: 1,
+    });
+    mockGetChannels.mockResolvedValueOnce({ data: [{ id: 3, name: 'mimo', status: 'active', models: 'mimo-v2.5-pro' }] });
+
+    render(
+      <MemoryRouter>
+        <ChannelKeysPage embedded scoped channelId={3} model="mimo-v2.5-pro" />
+      </MemoryRouter>,
+    );
+
+    const createButton = (await screen.findByText('新增供应商凭证')).closest('button');
+    expect(createButton).not.toBeNull();
+    expect(createButton).toBeDisabled();
+    expect(createButton?.parentElement).toHaveAttribute('title', expect.stringContaining('轮换'));
+    expect(screen.getByRole('button', { name: '轮换供应商凭证 mimo' })).toBeEnabled();
+    fireEvent.click(createButton!);
+    expect(screen.queryByRole('heading', { name: '新增供应商凭证' })).toBeNull();
+  });
+
+  it('keeps the active credential and route unchanged when replacement probing fails', async () => {
+    mockGetChannelKeys.mockResolvedValueOnce({
+      data: [{
+        id: 7, channel_id: 3, channel_name: 'mimo', channel_status: 'active',
+        key_prefix: '****c20c', allowed_models: 'mimo-v2.5-pro',
+        status: 'active', state_epoch: 4, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-08-14T01:59:49+08:00',
+      }], total: 1,
+    });
+    mockGetChannels.mockResolvedValueOnce({ data: [{ id: 3, name: 'mimo', status: 'active', models: 'mimo-v2.5-pro' }] });
+    mockRotateChannelKey.mockRejectedValueOnce(new Error('上游拒绝新 Key'));
+    renderChannelKeys();
+
+    await screen.findByText('mimo-v2.5-pro');
+    fireEvent.click(screen.getByRole('button', { name: '轮换供应商凭证 mimo' }));
+    fireEvent.change(await screen.findByLabelText('新的供应商 API Key'), { target: { value: 'sk-bad-key' } });
+    fireEvent.click(screen.getByRole('button', { name: '检测并原子轮换' }));
+
+    expect((await screen.findAllByText(/旧凭证仍保持启用，未改变当前路由/)).length).toBeGreaterThan(0);
   });
 
   it('keeps a supplier credential save failure visible in the editor', async () => {

@@ -6,6 +6,22 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+func providerAttemptFixture(requestID, attemptID string, orgID int64, sequence, total int) ProviderAttemptStart {
+	return ProviderAttemptStart{
+		RequestID:     requestID,
+		AttemptID:     attemptID,
+		OrgID:         orgID,
+		APIKeyID:      101,
+		ChannelID:     int64(200 + sequence),
+		ChannelKeyID:  int64(300 + sequence),
+		RouteSequence: sequence,
+		RouteTotal:    total,
+		Endpoint:      "/v1/chat/completions",
+		Provider:      "test-provider",
+		Channel:       "test-channel",
+	}
+}
+
 func TestFreezeRequest_Fields(t *testing.T) {
 	req := FreezeRequest{
 		RequestID:       "req-001",

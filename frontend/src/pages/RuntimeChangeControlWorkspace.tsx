@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Banner, Button, Form, Popconfirm, SideSheet, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
@@ -48,6 +48,15 @@ interface RuntimeRelease {
   reason: string;
   created_at: string;
   updated_at: string;
+}
+
+interface RuntimeReleaseSummary {
+  active_records: number;
+  current_stable: number;
+  retained_active: number;
+  canary: number;
+  pending: number;
+  history: number;
 }
 
 const stageLabels: Record<string, string> = {
@@ -112,6 +121,12 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
   const requestedChannelID = Number(requestedParams.get('channel_id'));
   const recoveryRequested = requestedParams.get('from') === 'connections' && requestedParams.get('intent') === 'recover' && requestedModel !== '';
   const [releases, setReleases] = useState<RuntimeRelease[]>([]);
+  const [releasePage, setReleasePage] = useState(1);
+  const [releasePageSize, setReleasePageSize] = useState(20);
+  const [releaseTotal, setReleaseTotal] = useState(0);
+  const [releaseSummary, setReleaseSummary] = useState<RuntimeReleaseSummary>({ active_records: 0, current_stable: 0, retained_active: 0, canary: 0, pending: 0, history: 0 });
+  const releasePageRef = useRef(1);
+  const releasePageSizeRef = useRef(20);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedRef, setSelectedRef] = useState('');
   const [loading, setLoading] = useState(false);
@@ -123,16 +138,31 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
 
   const selected = releases.find(item => item.release_ref === selectedRef) || releases[0] || null;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (requestedPage = releasePageRef.current, requestedPageSize = releasePageSizeRef.current) => {
     setLoading(true);
     setLoadError('');
     try {
       const [releaseData, channelData] = await Promise.all([
-        api.getRuntimeChanges(),
+        recoveryOnly
+          ? (async () => {
+            const data = await loadAllPages<RuntimeRelease>((page, size) => api.getRuntimeChanges(requestedModel, page, size));
+            return { data, total: data.length, page: 1, page_size: data.length || 20, summary: { active_records: 0, current_stable: 0, retained_active: 0, canary: 0, pending: 0, history: 0 } };
+          })()
+          : api.getRuntimeChanges(undefined, requestedPage, requestedPageSize),
         loadAllPages<Channel>((page, size) => api.getChannels(page, size)),
       ]);
       const next = (releaseData?.data || []) as RuntimeRelease[];
       setReleases(next);
+      setReleaseTotal(Number(releaseData?.total || 0));
+      if (!recoveryOnly) {
+        const nextPage = Number(releaseData?.page || requestedPage);
+        const nextPageSize = Number(releaseData?.page_size || requestedPageSize);
+        releasePageRef.current = nextPage;
+        releasePageSizeRef.current = nextPageSize;
+        setReleasePage(nextPage);
+        setReleasePageSize(nextPageSize);
+        setReleaseSummary(releaseData?.summary || { active_records: 0, current_stable: 0, retained_active: 0, canary: 0, pending: 0, history: 0 });
+      }
       setChannels(channelData as Channel[]);
       setSelectedRef(current => {
         if (next.some(item => item.release_ref === current)) return current;
@@ -147,20 +177,9 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
     } finally {
       setLoading(false);
     }
-  }, [requestedModel]);
+  }, [recoveryOnly, requestedModel]);
 
   useEffect(() => { void load(); }, [load]);
-
-  const stats = useMemo(() => {
-	const activeRecords = releases.filter(item => item.stage === 'active');
-	return {
-		activeRecords: activeRecords.length,
-		appliedActive: activeRecords.filter(item => releaseAssignmentState(item, channels) === 'applied').length,
-		retainedActive: activeRecords.filter(item => releaseAssignmentState(item, channels) !== 'applied').length,
-		canary: releases.filter(item => item.stage === 'canary').length,
-		pending: releases.filter(item => ['draft', 'validated', 'shadow'].includes(item.stage)).length,
-	};
-  }, [channels, releases]);
 
   const releaseChannels = useMemo(
     () => channels.filter(channel => ['staged', 'active'].includes(channel.status) && parseModelList(channel.models).length > 0),
@@ -239,7 +258,6 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
     },
 	{ title: '发布记录', dataIndex: 'stage', width: 150, render: (value: string) => <Tag color={stageColor(value)}>{value === 'active' ? '已生效记录' : stageLabels[value] || value}</Tag> },
 	{ title: '验证结论', dataIndex: 'overall_risk', width: 190, render: (_: string, record: RuntimeRelease) => <Tag color={riskColor(record.overall_risk)}>{releaseRiskLabel(record)}</Tag> },
-	{ title: '记录修订', dataIndex: 'version', width: 100, render: (value: number) => `修订 ${value}` },
     { title: '灰度', dataIndex: 'canary_basis_points', width: 90, render: (value: number) => value ? `${(value / 100).toFixed(0)}%` : '-' },
     { title: '更新时间', dataIndex: 'updated_at', render: (value: string) => value ? new Date(value).toLocaleString() : '-' },
   ];
@@ -316,7 +334,7 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
 			{retainedReleases.length > 0 && <div className="ur-release-overrides">
 			  {retainedReleases.map(item => <div key={item.release_ref}>
 				<strong>{item.model_name}</strong>
-				<span>{stageLabels[item.stage] || item.stage} · 修订 {item.version}</span>
+				<span>{stageLabels[item.stage] || item.stage}</span>
 			  </div>)}
 			</div>}
 			{sharedRetainedReleases.length > 0 ? <Banner
@@ -348,11 +366,12 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
         description="在线发布只覆盖通道准入、优先级和权重。Adapter 必须具备离线协议夹具，但夹具不代表供应商账号、网络或真实接口已经验证；请先在上游检测完成真实连通检查。紧急禁用始终高于任何发布。"
       />
       <div className="ur-modelgov-summary">
-		<div><Typography.Text type="tertiary">发布记录生效</Typography.Text><strong>{stats.activeRecords}</strong></div>
-		<div><Typography.Text type="tertiary">当前可应用</Typography.Text><strong>{stats.appliedActive}</strong></div>
-		<div><Typography.Text type="tertiary">保留或漂移</Typography.Text><strong>{stats.retainedActive}</strong></div>
-        <div><Typography.Text type="tertiary">灰度中</Typography.Text><strong>{stats.canary}</strong></div>
-        <div><Typography.Text type="tertiary">待推进</Typography.Text><strong>{stats.pending}</strong></div>
+		<div><Typography.Text type="tertiary">全部发布记录</Typography.Text><strong>{releaseTotal}</strong></div>
+		<div><Typography.Text type="tertiary">当前稳定发布</Typography.Text><strong>{releaseSummary.current_stable}</strong></div>
+		<div><Typography.Text type="tertiary">保留的旧生效记录</Typography.Text><strong>{releaseSummary.retained_active}</strong></div>
+        <div><Typography.Text type="tertiary">灰度中</Typography.Text><strong>{releaseSummary.canary}</strong></div>
+        <div><Typography.Text type="tertiary">待推进</Typography.Text><strong>{releaseSummary.pending}</strong></div>
+		<div><Typography.Text type="tertiary">历史记录</Typography.Text><strong>{releaseSummary.history}</strong></div>
       </div>
       <div className="ur-context-explorer ur-governance-explorer ur-runtime-release-workspace">
         <main className="ur-explorer-panel">
@@ -370,7 +389,15 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
             <EmptyState title="发布状态加载失败" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} />
           ) : (
             <div className="ur-table-shell">
-              <Table rowKey="release_ref" columns={columns} dataSource={releases} loading={loading} pagination={false}
+              <Table rowKey="release_ref" columns={columns} dataSource={releases} loading={loading} pagination={{
+                currentPage: releasePage,
+                pageSize: releasePageSize,
+                total: releaseTotal,
+                pageSizeOpts: [20, 50, 100],
+                showSizeChanger: true,
+                onPageChange: (page: number) => { void load(page, releasePageSize); },
+                onPageSizeChange: (pageSize: number) => { void load(1, pageSize); },
+              }}
                 empty={<EmptyState title="暂无运行时发布" description="新 Provider 通道先保持 staged，再在这里生成模拟证据并灰度上线。" minHeight={300} />} />
             </div>
           )}
@@ -384,7 +411,7 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
             <>
               <dl className="ur-financial-truth-detail">
                 <dt>模型</dt><dd>{selected.model_name}</dd>
-				<dt>记录修订 / 阶段</dt><dd>修订 {selected.version} / {stageLabels[selected.stage] || selected.stage}</dd>
+				<dt>发布阶段</dt><dd>{stageLabels[selected.stage] || selected.stage}</dd>
 				<dt>启用时验证结论</dt><dd>{releaseRiskLabel(selected)}</dd>
 				<dt>当前灰度流量</dt><dd>{selectedAssignmentState !== 'applied'
 					? '不适用（当前发布不可应用）'

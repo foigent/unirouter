@@ -267,13 +267,14 @@ func TestListApprovedModelCatalog_FiltersApprovedLifecycle(t *testing.T) {
 }
 
 func TestListApprovedModelCatalog_RoutableOnlyRequiresStableActiveRelease(t *testing.T) {
-	const stableActiveFilter = "JOIN runtime_change_releases rcr ON rcr.id = rcs.stable_release_id AND rcr.stage = 'active'"
+	const assignmentProjection = "FROM runtime_channel_assignments_v1 assignment"
 	countChecked := false
 	listChecked := false
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			if !strings.Contains(sql, stableActiveFilter) || !strings.Contains(sql, "rcs.model_name = mr.model_name") {
-				t.Fatalf("routable catalog count query missing stable active exact-model filter: %s", sql)
+			if !strings.Contains(sql, assignmentProjection) || !strings.Contains(sql, "assignment.model_name = mr.model_name") ||
+				!strings.Contains(sql, "assignment.assignment_kind = 'stable'") || !strings.Contains(sql, "assignment.release_stage = 'active'") {
+				t.Fatalf("routable catalog count query missing canonical stable assignment filter: %s", sql)
 			}
 			countChecked = true
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
@@ -282,8 +283,9 @@ func TestListApprovedModelCatalog_RoutableOnlyRequiresStableActiveRelease(t *tes
 			}}
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-			if !strings.Contains(sql, stableActiveFilter) || !strings.Contains(sql, "rcs.model_name = mr.model_name") {
-				t.Fatalf("routable catalog list query missing stable active exact-model filter: %s", sql)
+			if !strings.Contains(sql, assignmentProjection) || !strings.Contains(sql, "assignment.model_name = mr.model_name") ||
+				!strings.Contains(sql, "assignment.assignment_kind = 'stable'") || !strings.Contains(sql, "assignment.release_stage = 'active'") {
+				t.Fatalf("routable catalog list query missing canonical stable assignment filter: %s", sql)
 			}
 			listChecked = true
 			return &testutil.MockRows{}, nil

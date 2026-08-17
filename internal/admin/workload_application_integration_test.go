@@ -31,7 +31,7 @@ func (stub workloadRoutingPreviewStub) Preview(context.Context, string) (routing
 
 func (workloadRoutingPreviewStub) Invalidate() {}
 
-func TestWorkloadApplicationLifecycleCredentialBindingReadinessAndTenantIsolation(t *testing.T) {
+func TestWorkloadApplicationLifecycleCredentialBindingReadinessAndTenantIsolationIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	type tenant struct {
@@ -190,7 +190,7 @@ func TestWorkloadApplicationLifecycleCredentialBindingReadinessAndTenantIsolatio
 	require.GreaterOrEqual(t, receiptRows, 4)
 }
 
-func TestWorkloadReadinessCountsOnlyRuntimeEffectiveCredentials(t *testing.T) {
+func TestWorkloadReadinessCountsOnlyRuntimeEffectiveCredentialsIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	var orgID, actorID, sponsorID, projectID, applicationID, requestID, grantID int64

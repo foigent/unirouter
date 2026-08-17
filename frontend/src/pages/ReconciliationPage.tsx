@@ -194,17 +194,17 @@ function ProviderCOGSOfflineWorkspace() {
   ];
 
   return (
-    <Surface title="供应商成本离线预览">
+    <Surface title="导入供应商账单证据（高级）">
       <Banner
         type="info"
-        description="只在内存中校验最多 4 MiB 的导出证据：不保存、不连接供应商、不接收凭据、不修改客户账。只有唯一上游请求证据才允许请求级匹配；聚合账单永不自动摊到客户。"
+        description="当供应商没有实时账单连接器时，可把从供应商后台导出的 JSON 在这里做一次本地对账预览。内容只在当前浏览器内存中校验：不上传保存、不连接供应商、不接收凭据、不修改客户账。普通运营不需要使用本工具。"
         style={{ marginBottom: 16 }}
       />
       <div className="ur-context-explorer ur-financial-truth-explorer">
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>离线证据</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>供应商账单导出 JSON</Typography.Title>
               <Typography.Text className="ur-panel-hint">
                 合同 unirouter.provider-cogs-offline.v1 · 原始 JSON 不写入浏览器存储
               </Typography.Text>
@@ -221,7 +221,7 @@ function ProviderCOGSOfflineWorkspace() {
               setError('');
             }}
             autosize={{ minRows: 8, maxRows: 16 }}
-            placeholder="粘贴 provider-cogs offline JSON，或从本机载入文件"
+            placeholder="粘贴符合 unirouter.provider-cogs-offline.v1 的供应商账单导出 JSON，或从本机载入文件"
           />
           <div className="ur-financial-truth-actions">
             <label className="semi-button semi-button-tertiary semi-button-light" tabIndex={0}>
@@ -557,7 +557,11 @@ export default function ReconciliationPage() {
           />
         </div>
       </Surface>
-      <ProviderCOGSOfflineWorkspace />
+      <details className="ur-advanced-disclosure">
+        <summary>高级：导入供应商账单证据</summary>
+        <Typography.Paragraph type="tertiary">仅当你已经从供应商后台导出兼容 JSON，且需要核对供应商成本时使用。展开不会读取文件或发送请求。</Typography.Paragraph>
+        <ProviderCOGSOfflineWorkspace />
+      </details>
     </div>
   );
 }

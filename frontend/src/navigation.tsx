@@ -204,7 +204,7 @@ const taskNavItems: NavItem[] = [
 		{ itemKey: '/access-review', text: '访问审核', icon: <IconChecklistStroked /> },
 		{ itemKey: '/applications', text: '应用与 Agent', icon: <IconAppCenter /> },
       { itemKey: '/organization-members', text: '人员与权限', icon: <IconUserGroup /> },
-      { itemKey: '/agent-trust', text: '模型调用授权', icon: <IconShieldStroked /> },
+      { itemKey: '/agent-trust', text: '高级模型限制', icon: <IconShieldStroked /> },
       { itemKey: '/limit-policies', text: '共享限额', icon: <IconHistogram /> },
       { itemKey: '/guardrail-policies', text: '内容安全', icon: <IconShieldStroked />, licenseFeature: 'guardrails' },
       { itemKey: '/audit-logs', text: '审计日志', icon: <IconHistory /> },

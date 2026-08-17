@@ -263,9 +263,9 @@ jobs:
       - name: Run admin integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        # The race-enabled real-PostgreSQL suite can exceed 20 minutes on a
-        # slower hosted runner; keep the full suite and allow bounded headroom.
-        run: go test -tags=integration -race ./internal/admin -count=1 -timeout=30m
+        # Integration test names are enforced by TestAdminIntegrationFilesUseIntegrationSuffix.
+        # Avoid rerunning the ordinary admin unit suite already covered above.
+        run: go test -tags=integration -race ./internal/admin -run 'Integration$' -count=1 -timeout=20m
 
       - name: Run X-Insight Connector PostgreSQL 16 integration tests
         env:
@@ -341,7 +341,7 @@ jobs:
       - name: Run multiplier freeze integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -race ./internal/billing -run TestP6F06 -count=1
+        run: go test -tags=integration -race ./internal/billing -run TestP6F06 -count=1
 
       - name: Run stream transport safety tests
         run: go test -race ./internal/gateway ./internal/middleware -run 'Test(P6StreamTransport|SSEStreamWriter|MetricsMiddleware_ResponseController)' -count=1
@@ -372,7 +372,7 @@ jobs:
       - name: Run prompt-cache billing integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -race ./internal/billing -run TestP6F09 -count=1
+        run: go test -tags=integration -race ./internal/billing -run TestP6F09 -count=1
 
       - name: Run prompt-cache billing migration rollback tests
         env:
@@ -382,7 +382,7 @@ jobs:
       - name: Run durable internal outbox and terminal recovery tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -race ./internal/outbox ./internal/billing ./internal/gateway ./internal/admin ./internal/terminalhook ./internal/capbilling ./internal/policybilling ./internal/limitpolicy ./internal/workloadadmission -run TestP6F20 -count=1
+        run: go test -tags=integration -race ./internal/outbox ./internal/billing ./internal/gateway ./internal/admin ./internal/terminalhook ./internal/capbilling ./internal/policybilling ./internal/limitpolicy ./internal/workloadadmission -run TestP6F20 -count=1
 
       - name: Run durable internal outbox migration rollback tests
         env:
@@ -392,7 +392,7 @@ jobs:
       - name: Run provider-cost shortfall integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -race ./internal/billing ./internal/gateway -run TestP6F40 -count=1
+        run: go test -tags=integration -race ./internal/billing ./internal/gateway -run TestP6F40 -count=1
 
       - name: Run provider-cost pending migration rollback tests
         env:
@@ -402,7 +402,7 @@ jobs:
       - name: Run provider-attempt ledger and retry-authority tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -race ./internal/billing ./internal/gateway ./internal/capbilling ./internal/policybilling -run TestP6F40B -count=1
+        run: go test -tags=integration -race ./internal/billing ./internal/gateway ./internal/capbilling ./internal/policybilling -run TestP6F40B -count=1
 
       - name: Run provider-attempt ledger migration rollback tests
         env:
@@ -412,7 +412,7 @@ jobs:
       - name: Run provider-cost reconciliation and affected-key tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        run: go test -race ./internal/billing ./internal/middleware ./internal/admin ./cmd/uniroute -run TestP6F40C -count=1
+        run: go test -tags=integration -race ./internal/billing ./internal/middleware ./internal/admin ./cmd/uniroute -run TestP6F40C -count=1
 
       - name: Run provider-cost reconciliation migration rollback tests
         env:
@@ -599,10 +599,10 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Run real-backend PR4 browser acceptance
+      - name: Run real-backend browser acceptances
         run: >-
           go test -tags=integration,pr4browser ./cmd/uniroute
-          -run '^TestPR4AccessUXModelReadinessBrowserE2E$'
+          -run '^(TestPR4AccessUXModelReadinessBrowserE2E|TestModelEndpointOnboardingBrowserE2E)$'
           -count=1 -timeout=20m -v
 
   docker:

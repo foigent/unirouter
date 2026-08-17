@@ -19,8 +19,11 @@ export function resolveCustomerContext(user: UserProfile | null | undefined): Ef
   const contextOrgID = positiveOrganizationID(context?.org_id);
 
   if (context?.state === 'ready') {
+    const adoptedDeploymentRoot = isPlatformAdminRole(organizationRoleForUser(user)) &&
+      positiveOrganizationID(user?.org_id) === contextOrgID &&
+      user?.identity_scope === 'deployment_operator_and_customer';
     return contextOrgID
-      ? { state: 'ready', orgID: contextOrgID, orgName: context.org_name?.trim() || undefined }
+      ? { state: 'ready', orgID: contextOrgID, orgName: adoptedDeploymentRoot ? '当前部署' : context.org_name?.trim() || undefined }
       : { state: 'unavailable' };
   }
   if (context?.state === 'not_initialized') return { state: 'not_initialized' };

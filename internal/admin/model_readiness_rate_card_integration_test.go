@@ -16,7 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestRateCardReadinessPriceAuthorityIgnoresLegacyRowsAndReflectsStrictResolver(t *testing.T) {
+func TestRateCardReadinessPriceAuthorityIgnoresLegacyRowsAndReflectsStrictResolverIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	var orgID int64

@@ -19,7 +19,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestEnterpriseRateCardAuthorityStatusReportsConfiguredProcessMode(t *testing.T) {
+func TestEnterpriseRateCardAuthorityStatusReportsConfiguredProcessModeIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	var orgID int64
@@ -49,7 +49,7 @@ func TestEnterpriseRateCardAuthorityStatusReportsConfiguredProcessMode(t *testin
 	require.Equal(t, "no_active_rate", response.Authority.State)
 }
 
-func TestEnterpriseRateCardPreflightReportsMissingModelWithoutChangingMode(t *testing.T) {
+func TestEnterpriseRateCardPreflightReportsMissingModelWithoutChangingModeIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	var orgID int64
@@ -84,7 +84,7 @@ func TestEnterpriseRateCardPreflightReportsMissingModelWithoutChangingMode(t *te
 	require.Equal(t, "legacy", handler.effectiveRequestPricingAuthority())
 }
 
-func TestEnterpriseRateCardCreateAPIStoresCompleteUTCDailySchedule(t *testing.T) {
+func TestEnterpriseRateCardCreateAPIStoresCompleteUTCDailyScheduleIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	var orgID int64
@@ -127,7 +127,7 @@ func TestEnterpriseRateCardCreateAPIStoresCompleteUTCDailySchedule(t *testing.T)
 	require.Equal(t, 1440, listed[0].Card.DailyPriceBands[2].EndMinuteUTC)
 }
 
-func TestEnterpriseRateCardActivationAPIRequiresAndAppliesExactSupersede(t *testing.T) {
+func TestEnterpriseRateCardActivationAPIRequiresAndAppliesExactSupersedeIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	var orgID int64

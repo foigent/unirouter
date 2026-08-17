@@ -13,13 +13,13 @@ describe('parseExactTokenCount', () => {
     [' 1M ', 1_000_000],
     ['131072', 131_072],
     ['0', 0],
+    ['', 0],
     [String(MAX_EXACT_TOKEN_COUNT), MAX_EXACT_TOKEN_COUNT],
   ])('parses %s as exact decimal-SI tokens', (input, expected) => {
     expect(parseExactTokenCount(input)).toMatchObject({ ok: true, value: expected });
   });
 
   it.each([
-    '',
     '2147483648',
     '1.5',
     '1.5K',
@@ -74,5 +74,20 @@ describe('ExactTokenCountInput', () => {
 
     await waitFor(() => expect(screen.getByText(/请输入 0\.\.2147483647/)).toBeTruthy());
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('allows the optional context limit to stay blank', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <Form onSubmit={onSubmit}>
+        <ExactTokenCountInput field="context_length" />
+        <Button htmlType="submit">保存</Button>
+      </Form>,
+    );
+
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
   });
 });

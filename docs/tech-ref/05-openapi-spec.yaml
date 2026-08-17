@@ -1177,6 +1177,9 @@ paths:
     put: *operation_update_by_id
     delete: *operation_delete_by_id
 
+  /api/v1/channel-keys/{id}/rotate:
+    post: *operation_update_by_id
+
   /api/v1/wallet:
     get:
       tags: [Admin]
@@ -2052,7 +2055,7 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin]
       post: [platform_admin]
-    description: Product-local bounded runtime releases for channel admission, priority and weight. Provider Pack pins and deterministic simulation are mandatory; credentials, IAM, billing, retry and breaker policy are outside this hot-release surface.
+    description: Paginated product-local runtime release history for channel admission, priority and weight. The response summary distinguishes the current stable assignment from retained active-stage audit records; lifecycle revision remains an internal optimistic-concurrency field. Provider Pack pins and deterministic simulation are mandatory; credentials, IAM, billing, retry and breaker policy are outside this hot-release surface.
     get: *operation_list
     post: *operation_create
 

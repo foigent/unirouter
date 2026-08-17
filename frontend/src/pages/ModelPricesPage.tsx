@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Modal, Form, Input, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
+import { Banner, Button, Modal, Form, Input, Toast, Space, SideSheet } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
@@ -141,10 +141,10 @@ export default function ModelPricesPage({ embedded = false }: { embedded?: boole
   const columns: any[] = [
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '模型名称', dataIndex: 'model_name' },
-    { title: '输入价格（CNY/百万 tokens）', dataIndex: 'input_price_cny_per_million_tokens', render: formatCNYPerMillionPrice },
+    { title: '普通 / 缓存未命中输入价', dataIndex: 'input_price_cny_per_million_tokens', render: formatCNYPerMillionPrice },
     { title: '输出价格（CNY/百万 tokens）', dataIndex: 'output_price_cny_per_million_tokens', render: formatCNYPerMillionPrice },
-	{ title: '缓存读取倍率', dataIndex: 'cache_read_ratio', width: 120, render: formatCachePriceRatio },
-	{ title: '缓存写入倍率', dataIndex: 'cache_creation_ratio', width: 120, render: formatCachePriceRatio },
+	{ title: '缓存命中价倍率', dataIndex: 'cache_read_ratio', width: 140, render: formatCachePriceRatio },
+	{ title: '缓存创建价倍率', dataIndex: 'cache_creation_ratio', width: 140, render: formatCachePriceRatio },
     { title: '更新时间', dataIndex: 'updated_at', render: (v: string) => v || '-' },
   ];
   if (canMutate) columns.push({
@@ -161,18 +161,18 @@ export default function ModelPricesPage({ embedded = false }: { embedded?: boole
     <div className={embedded ? undefined : 'ur-page'}>
       {!embedded && <PageHeader
         eyebrow="成本与财务"
-        title="模型定价"
+        title="兼容基础价格"
         description={canMutate
-          ? '按 CNY/百万 tokens 维护明确的基础价格和供应商 Prompt Cache 倍率；未配置价格的模型拒绝计费与路由。'
-          : '只读查看平台统一维护的 CNY/百万 tokens 基础价格与供应商 Prompt Cache 倍率。'}
+          ? '仅维护旧版全天同价合同。需要峰谷时段或精确缓存命中价格时，请使用同页 Rate Card；未配置价格的模型拒绝计费与路由。'
+          : '只读查看旧版全天同价合同；峰谷与精确缓存价格以已激活 Rate Card 为准。'}
         actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button> : undefined}
       />}
 
       <Surface
-        title={embedded ? '基础价格' : undefined}
+        title={embedded ? '兼容基础价格' : undefined}
         description={embedded ? (canMutate
-          ? '维护平台统一的 CNY/百万 tokens 基础价格与 Prompt Cache 倍率；未配置价格的模型拒绝计费与路由。'
-          : '只读查看平台统一维护的基础价格与 Prompt Cache 倍率。') : undefined}
+          ? '旧版全天同价兼容入口；峰谷和四类精确价格请在 Rate Card 中维护。'
+          : '只读查看旧版全天同价合同。') : undefined}
         actions={embedded && canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button> : undefined}
       >
         <PagedTable
@@ -197,6 +197,7 @@ export default function ModelPricesPage({ embedded = false }: { embedded?: boole
         onCancel={closeDrawer}
         width={480}
       >
+        <Banner type="info" description="DeepSeek 等供应商同时公布缓存命中 / 未命中价和峰谷价时，不要把所有价格压进本表的倍率。请在下方企业 Rate Card 直接填写四类价格和多个 UTC 特殊时段；请求只按供应商明确回传的缓存 Token 分类，不会猜测命中。" style={{ marginBottom: 12 }} />
         <Form
           key={editPrice ? `edit-${editPrice.id}` : 'create'}
           getFormApi={(api: any) => setFormApi(api)}
@@ -215,12 +216,12 @@ export default function ModelPricesPage({ embedded = false }: { embedded?: boole
               模型名称是计费、组织倍率、路由和模型治理共同使用的稳定标识，创建后不可修改。如需更名，请新建价格记录并单独迁移相关引用。
             </div>
           </div> : <Form.Input field="model_name" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]} placeholder="例如 gpt-4o" />}
-          <Form.Input field="input_price" label="输入价格（CNY/百万 tokens）" rules={[{ required: true, message: '必填' }]} placeholder="例如 18.00000" />
+          <Form.Input field="input_price" label="普通 / 缓存未命中输入价（CNY/百万 tokens）" rules={[{ required: true, message: '必填' }]} placeholder="例如 18.00000" />
           <Form.Input field="output_price" label="输出价格（CNY/百万 tokens）" rules={[{ required: true, message: '必填' }]} placeholder="例如 72.00000" />
-		  <Form.Input field="cache_read_ratio" label="缓存读取倍率" rules={[{ required: true, message: '必填' }]} placeholder="0.1" />
-		  <Form.Input field="cache_creation_ratio" label="缓存写入倍率" rules={[{ required: true, message: '必填' }]} placeholder="1.25" />
+		  <Form.Input field="cache_read_ratio" label="缓存命中价 ÷ 未命中价（兼容倍率）" rules={[{ required: true, message: '必填' }]} placeholder="0.1" />
+		  <Form.Input field="cache_creation_ratio" label="缓存创建价 ÷ 未命中价（兼容倍率）" rules={[{ required: true, message: '必填' }]} placeholder="1" />
           <div style={{ marginTop: 8, color: 'var(--semi-color-text-2)', fontSize: 12, lineHeight: 1.7 }}>
-            价格统一使用人民币/百万 tokens，最多 5 位小数，不接受单位缩写、尾随字符或科学计数法。倍率以普通输入价格为基准：0.1 表示按 10% 计费，1.25 表示按 125% 计费；仅供应商明确回传的 Prompt Cache Token 使用倍率，不是响应缓存。
+            价格统一使用人民币/百万 Token。兼容倍率以“缓存未命中输入价”为基准，例如命中价 1 元、未命中价 10 元时填 0.1。DeepSeek 的部分价格比例不能被 6 位倍率精确表达，且有两个高峰区间，因此应使用 Rate Card 直接填金额。缓存创建字段仅在供应商明确回传对应 Token 时使用；DeepSeek 当前只回传命中/未命中时，该倍率不会凭空产生用量。
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>

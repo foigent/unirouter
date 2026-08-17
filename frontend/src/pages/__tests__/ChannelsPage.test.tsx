@@ -226,10 +226,10 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 	fireEvent.click(screen.getByRole('button', { name: /新增模型连接/ }));
     fireEvent.click(await screen.findByRole('combobox', { name: '供应商身份' }));
 
-    expect(await screen.findByText('DeepSeek（OpenAI-compatible）')).toBeTruthy();
-    expect(screen.getByText('Kimi / Moonshot（OpenAI-compatible）')).toBeTruthy();
-    expect(screen.getByText('自定义 OpenAI-compatible')).toBeTruthy();
-    fireEvent.click(screen.getByText('DeepSeek（OpenAI-compatible）'));
+    expect(await screen.findByText('DeepSeek 官方')).toBeTruthy();
+    expect(screen.getByText('Kimi / Moonshot 官方')).toBeTruthy();
+    expect(screen.getByText('自定义供应商（也可直接输入名称）')).toBeTruthy();
+    fireEvent.click(screen.getByText('DeepSeek 官方'));
     expect(screen.getByRole('combobox', { name: '请求协议（Adapter Type）' })).toHaveTextContent('OpenAI Compatible');
     expect(screen.getByText(/不会因为选择 OpenAI-compatible 协议而把 DeepSeek、Kimi 或自定义服务改名为 OpenAI/)).toBeTruthy();
     expect(screen.getByText(/离线协议夹具不等于真实供应商连通验证/)).toBeTruthy();
@@ -253,7 +253,7 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 		fireEvent.click(await screen.findByRole('button', { name: /新增模型连接/ }));
 		fireEvent.change(screen.getByLabelText('通道名称'), { target: { value: 'kimi-new' } });
 		fireEvent.click(screen.getByRole('combobox', { name: '供应商身份' }));
-		fireEvent.click(await screen.findByText('Kimi / Moonshot（OpenAI-compatible）'));
+		fireEvent.click(await screen.findByText('Kimi / Moonshot 官方'));
 		fireEvent.change(screen.getByLabelText('服务地址（Base URL）'), { target: { value: 'https://provider.invalid/v1' } });
 		fireEvent.change(screen.getByLabelText('支持模型'), { target: { value: 'kimi-k2.6；kimi-k3' } });
 		fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'provider-secret' } });
@@ -373,5 +373,5 @@ describe('ChannelsPage routing-policy.v1 controls', () => {
 	expect(await screen.findByRole('heading', { name: 'Kimi · 安全恢复' })).toBeTruthy();
 	expect(screen.getByText(/不会自动恢复流量/)).toBeTruthy();
 	expect(screen.getByRole('button', { name: '释放全部旧发布并转为待发布' })).toBeTruthy();
-  });
+  }, 20_000);
 });

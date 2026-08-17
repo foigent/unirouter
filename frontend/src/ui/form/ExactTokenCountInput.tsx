@@ -7,7 +7,7 @@ export const MAX_EXACT_TOKEN_COUNT = 2_147_483_647;
 
 export type ExactTokenCountParseResult =
   | { ok: true; value: number; normalized: string; raw: string }
-  | { ok: false; reason: 'empty' | 'invalid_format' | 'out_of_range' };
+  | { ok: false; reason: 'invalid_format' | 'out_of_range' };
 
 export function formatExactTokenCount(value: number): string {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -22,7 +22,7 @@ export function parseExactTokenCount(input: unknown): ExactTokenCountParseResult
   const raw = typeof input === 'number' && Number.isSafeInteger(input)
     ? String(input)
     : String(input ?? '').trim();
-  if (raw === '') return { ok: false, reason: 'empty' };
+  if (raw === '') return { ok: true, value: 0, normalized: '未声明', raw };
 
   const match = /^([0-9]+)([kKmM]?)$/.exec(raw);
   if (!match) return { ok: false, reason: 'invalid_format' };
@@ -54,11 +54,11 @@ export type ExactTokenCountInputProps = Omit<
 export default function ExactTokenCountInput({
   field,
   initialValue = 0,
-  label = '上下文长度（tokens）',
+  label = '模型上下文窗口上限（Token，可选）',
   resetKey,
   ...inputProps
 }: ExactTokenCountInputProps) {
-  const [raw, setRaw] = useState(String(initialValue));
+  const [raw, setRaw] = useState(initialValue > 0 ? String(initialValue) : '');
   const parsed = parseExactTokenCount(raw);
   const normalized = parsed.ok
     ? parsed.value === 0
@@ -67,21 +67,20 @@ export default function ExactTokenCountInput({
     : '支持精确整数、整数 K 或 M；K=1000，M=1000000。';
 
   useEffect(() => {
-    setRaw(String(initialValue));
+    setRaw(initialValue > 0 ? String(initialValue) : '');
   }, [initialValue, resetKey]);
 
   return (
     <Form.Input
       {...inputProps}
       field={field}
-      initValue={initialValue}
+      initValue={initialValue > 0 ? initialValue : ''}
       label={label}
       placeholder="128K / 1M / 131072"
-      rules={[{ required: true, message: '请输入上下文长度；0 表示未声明 / 未知' }]}
       validator={(fieldValue) => parseExactTokenCount(fieldValue).ok
         ? ''
         : '请输入 0..2147483647 的整数 tokens，或使用十进制整数 K/M'}
-      extraText={`${normalized}；首尾空白会被忽略，K/M 不区分大小写。`}
+      extraText={`${normalized}；留空表示未知，不影响端点检测或路由。该字段用于目录说明和客户端规划，不替代供应商实际限制。首尾空白会被忽略，K/M 不区分大小写。`}
       onChange={(value) => setRaw(String(value ?? ''))}
     />
   );

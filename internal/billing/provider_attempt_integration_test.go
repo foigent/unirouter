@@ -1,3 +1,5 @@
+//go:build integration
+
 package billing
 
 import (
@@ -7,22 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
-
-func providerAttemptFixture(requestID, attemptID string, orgID int64, sequence, total int) ProviderAttemptStart {
-	return ProviderAttemptStart{
-		RequestID:     requestID,
-		AttemptID:     attemptID,
-		OrgID:         orgID,
-		APIKeyID:      101,
-		ChannelID:     int64(200 + sequence),
-		ChannelKeyID:  int64(300 + sequence),
-		RouteSequence: sequence,
-		RouteTotal:    total,
-		Endpoint:      "/v1/chat/completions",
-		Provider:      "test-provider",
-		Channel:       "test-channel",
-	}
-}
 
 func TestP6F40BProviderAttemptBeginIsIdempotentAndConflictSafe(t *testing.T) {
 	pool, orgID, model := newReservationFixture(t, 1000, 0)

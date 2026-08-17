@@ -4,6 +4,7 @@ import { IconEdit, IconPlus, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { EmptyState, StatusTag } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectOption } from '../utils/projectDisplay';
 
 interface InvocationOptimizationPolicy {
   id: number;
@@ -84,6 +85,7 @@ interface OptimizationCanaryReadiness {
 interface ProjectOption {
   id: number;
   name: string;
+  slug?: string;
 }
 
 type TransitionAction = 'validate' | 'shadow' | 'canary' | 'rollback';
@@ -442,7 +444,7 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
           <div className="ur-modelgov-form-grid">
             <Form.Input field="policy_ref" label="策略标识" placeholder="opt_company_chat" disabled={Boolean(editing)} rules={[{ required: true, message: '请输入策略标识' }]} />
             <Form.Input field="display_name" label="显示名称" placeholder="Company Chat 优化" rules={[{ required: true, message: '请输入显示名称' }]} />
-            <Form.Select field="project_id" label="项目范围（留空为组织级）" showClear optionList={projects.map(item => ({ value: item.id, label: `${item.name}（ID ${item.id}）` }))} style={{ width: '100%' }} />
+            <Form.Select field="project_id" label="项目范围（留空为组织级）" showClear optionList={projects.map(projectOption)} style={{ width: '100%' }} />
             <Form.Input field="model_selector" label="模型范围" placeholder="* 或 company-chat" rules={[{ required: true }]} />
             <Form.Input field="region" label="区域" rules={[{ required: true }]} />
             <Form.Input field="residency" label="数据驻留策略" rules={[{ required: true }]} />

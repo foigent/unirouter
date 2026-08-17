@@ -70,6 +70,20 @@ describe('AccessReviewPage', () => {
     expect(screen.getAllByRole('button', { name: '拒绝' })).toHaveLength(1);
   });
 
+  it('shows the single default project as a human label without its database id', async () => {
+    mocks.getProjects.mockResolvedValue({
+      data: [{ id: 37, org_id: 1, name: 'Default Project', slug: 'default', status: 'active', current_user_membership_role: 'project_admin' }],
+      total: 1,
+    });
+    mocks.listProjectRequests.mockResolvedValue({ data: [], pagination: { limit: 25, has_more: false }, scope: 'project' });
+
+    render(<MemoryRouter initialEntries={['/access-review?project_id=37']}><AccessReviewPage /></MemoryRouter>);
+
+    expect(await screen.findByText('默认项目')).toBeTruthy();
+    expect(screen.queryByText(/#37/)).toBeNull();
+    expect(screen.queryByRole('combobox', { name: '选择审核项目' })).toBeNull();
+  });
+
   it('refreshes the authoritative queue after an optimistic revision conflict', async () => {
     mocks.decideRequest.mockRejectedValue(new ApiError('conflict', 409, {}));
     render(<MemoryRouter initialEntries={['/access-review?project_id=11']}><AccessReviewPage /></MemoryRouter>);

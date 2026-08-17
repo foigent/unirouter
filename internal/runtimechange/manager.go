@@ -112,11 +112,45 @@ SELECT id, release_ref, model_name, candidate_version, candidate_hash, baseline_
 	return created, nil
 }
 
-func (m *Manager) List(ctx context.Context, modelName string, limit int) ([]Release, error) {
-	if limit < 1 || limit > 200 {
-		limit = 100
+func (m *Manager) ListPage(ctx context.Context, modelName string, page, pageSize int) (ReleasePage, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
 	}
 	modelName = strings.TrimSpace(modelName)
+	result := ReleasePage{Data: make([]Release, 0), Page: page, PageSize: pageSize}
+	if err := m.db.QueryRow(ctx, `
+SELECT COUNT(*),
+       COUNT(*) FILTER (WHERE stage='active'),
+       COUNT(*) FILTER (
+         WHERE stage='active' AND EXISTS (
+           SELECT 1 FROM runtime_channel_assignments_v1 assignment
+            WHERE assignment.release_id=runtime_change_releases.id
+              AND assignment.assignment_kind='stable'
+              AND assignment.release_stage='active')),
+       COUNT(*) FILTER (
+         WHERE stage='active' AND NOT EXISTS (
+           SELECT 1 FROM runtime_channel_assignments_v1 assignment
+            WHERE assignment.release_id=runtime_change_releases.id
+              AND assignment.assignment_kind='stable'
+              AND assignment.release_stage='active')),
+       COUNT(*) FILTER (WHERE stage='canary'),
+       COUNT(*) FILTER (WHERE stage IN ('draft','validated','shadow')),
+       COUNT(*) FILTER (WHERE stage IN ('rolled_back','rejected'))
+  FROM runtime_change_releases
+ WHERE ($1 = '' OR model_name = $1)`, modelName).Scan(
+		&result.Total,
+		&result.Summary.ActiveRecords,
+		&result.Summary.CurrentStable,
+		&result.Summary.RetainedActive,
+		&result.Summary.Canary,
+		&result.Summary.Pending,
+		&result.Summary.History,
+	); err != nil {
+		return ReleasePage{}, fmt.Errorf("%w: count releases: %v", ErrUnavailable, err)
+	}
 	rows, err := m.db.Query(ctx, `
 SELECT id, release_ref, model_name, candidate_version, candidate_hash, baseline_hash,
        candidate, provider_pack_pins, simulation_report, overall_risk, stage, version,
@@ -124,21 +158,20 @@ SELECT id, release_ref, model_name, candidate_version, candidate_hash, baseline_
        activated_by, created_at, validated_at, activated_at, rolled_back_at, updated_at
   FROM runtime_change_releases
  WHERE ($1 = '' OR model_name = $1)
- ORDER BY updated_at DESC, id DESC LIMIT $2`, modelName, limit)
+ ORDER BY updated_at DESC, id DESC LIMIT $2 OFFSET $3`, modelName, pageSize, (page-1)*pageSize)
 	if err != nil {
-		return nil, fmt.Errorf("%w: list releases: %v", ErrUnavailable, err)
+		return ReleasePage{}, fmt.Errorf("%w: list releases: %v", ErrUnavailable, err)
 	}
 	defer rows.Close()
-	result := make([]Release, 0)
 	for rows.Next() {
 		release, scanErr := scanRelease(rows)
 		if scanErr != nil {
-			return nil, scanErr
+			return ReleasePage{}, scanErr
 		}
-		result = append(result, release)
+		result.Data = append(result.Data, release)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%w: list releases: %v", ErrUnavailable, err)
+		return ReleasePage{}, fmt.Errorf("%w: list releases: %v", ErrUnavailable, err)
 	}
 	return result, nil
 }

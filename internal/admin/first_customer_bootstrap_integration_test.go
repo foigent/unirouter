@@ -20,7 +20,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestFirstCustomerBootstrapCreatesOnlyOrganizationZeroWalletAndAudit(t *testing.T) {
+func TestFirstCustomerBootstrapCreatesOnlyOrganizationZeroWalletAndAuditIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 	handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
@@ -119,7 +119,7 @@ func TestFirstCustomerBootstrapRejectsCommittedExactSessionLogoutIntegration(t *
 	require.Zero(t, bootstrapAuditCount)
 }
 
-func TestFirstCustomerBootstrapFailsClosedOnDirtyBaselineAndRole(t *testing.T) {
+func TestFirstCustomerBootstrapFailsClosedOnDirtyBaselineAndRoleIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 	handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
@@ -134,7 +134,7 @@ func TestFirstCustomerBootstrapFailsClosedOnDirtyBaselineAndRole(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, nonPlatform.Code)
 }
 
-func TestFirstCustomerBootstrapFailsClosedOnSchemaDrift(t *testing.T) {
+func TestFirstCustomerBootstrapFailsClosedOnSchemaDriftIntegration(t *testing.T) {
 	t.Run("unknown public table", func(t *testing.T) {
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
@@ -150,7 +150,7 @@ func TestFirstCustomerBootstrapFailsClosedOnSchemaDrift(t *testing.T) {
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
-		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000066_future_contract')`)
+		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000067_future_contract')`)
 		require.NoError(t, err)
 
 		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-002", "First Customer")
