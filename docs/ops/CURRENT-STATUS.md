@@ -1,6 +1,25 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-17 maintenance-debt/Node-runtime Target closeout:** PR #300
+> upgraded GitHub-owned workflow actions to their Node 24 generation, removed
+> the unused Channels compatibility page and obsolete Compose version field,
+> split the model-endpoint frontend/backend projection surfaces, added typed
+> endpoint API contracts and BuildKit Go caches, and introduced fail-closed
+> release-worktree lifecycle reporting. Its exact code-bearing squash merge
+> `dbd61156d804b340843bf3521f98cddcea75efe6` passed all routed CI and protocol
+> gates and is running on the development/test ECS as
+> `1.1.30-maintenance · dbd61156d804`; public and direct readiness, DB/Redis,
+> authenticated Model Endpoints/Runtime Status, browser console, immutable
+> image identity, backup, and core entity-count checks passed. PR #301 then
+> bounded weekly Dependabot maintenance to readable public GitHub Actions;
+> its first clean scheduled run passed, without widening organization private-
+> repository permissions. Image and release lifecycle checks were dry-run only:
+> no images or worktrees were deleted. Five canonical old releases are eligible
+> for separately authorized deletion, while 32 legacy/noncanonical/attached/
+> dirty entries remain fail-closed for review. The shared API client and some
+> Readiness access/pricing/policy projections remain honest P1/P2 debt. Evidence:
+> `docs/ops/evidence/V1-MAINTENANCE-DEBT-CLOSEOUT-TARGET-20260817.md`.
 > **2026-08-17 backend test-infrastructure optimization checkpoint:** PR #298
 > final head `5146aa8e20b837dec9d9d03b892537e9e2cfcf7e` passed Change
 > Routing, Backend, Frontend, Browser E2E and Docker and was squash-merged as
