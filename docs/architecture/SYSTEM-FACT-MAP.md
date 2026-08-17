@@ -164,6 +164,16 @@ These are cross-layer acceptance contracts, not mock-page demonstrations.
 - A real-backend browser journey now proves endpoint creation, encrypted credential storage, exact mapped-model probing, first activation, gateway dispatch, usage logging, and audit evidence in one isolated test.
 - Dashboard channel health now consumes the canonical model-endpoint operational projection instead of reinterpreting channel, credential and release rows. A key for one configured model cannot make another published model look callable, and stale routing epochs are surfaced consistently across Dashboard, model endpoints and Readiness.
 
+### Closed in the maintenance-debt batch
+
+- The retired `ChannelsPage` compatibility implementation and its isolated test were deleted; `/channels` continues to resolve only to the supported Model Endpoints workspace.
+- Model Endpoints is now a page orchestrator with separate create/detail surfaces and presentation helpers. Its API contract has a typed domain module instead of page-local response assertions.
+- Model endpoint reads now live in one canonical projection file, while endpoint lifecycle writes remain in their handler. Model-governance registry mutations, catalog reads, and shared scope/scanning helpers are separate review and test seams.
+- Dashboard did not retain a second channel/release SQL authority: it already consumes the canonical endpoint projection. Readiness route eligibility already calls the gateway routing controller. The remaining Readiness duplication is limited to access, pricing, and policy read models.
+- GitHub-maintained JavaScript actions used by active workflows run on the current Node 24 action generations. Compose no longer declares the obsolete top-level `version` field.
+- Commit-addressed release worktrees now have a read-only retention report and an explicit, revalidated apply path. Only old, detached, clean, canonical worktrees absent from running-container and keep-file protection can become candidates; no timer or automatic deletion is installed.
+- Development Target backend builds keep the truthful new runtime commit while reusing persistent Go module and build caches. Reusing an old backend image under a new release identity remains forbidden.
+
 ### P0 - correctness and access
 
 - No known P0 remains in the model-endpoint lifecycle scope. A newly discovered P0 must include its broken authority or golden-journey invariant rather than being recorded as a page-local symptom.
@@ -176,9 +186,10 @@ These are cross-layer acceptance contracts, not mock-page demonstrations.
 
 ### P2 - maintainability
 
-- Large frontend workspaces and backend handlers still mix orchestration, data loading, forms, and rendering. The Rate Card band editor and price calculations were extracted in this batch; further splits are justified only when they remove another authority or test seam, not to chase line-count targets.
-- The hand-written API client has weakly typed response seams and repeated casts; OpenAPI is route-complete but not yet the generated client authority.
+- The Model Endpoints workspace and its two backend domains now have meaningful orchestration/read/write seams. Other large files should be split only when a product change needs an independent authority or test seam, not to chase line-count targets.
+- The API client now has a shared transport and a typed Model Endpoints domain module, but its remaining compatibility surface is still hand-written and has weakly typed response seams. OpenAPI is route-complete but most response bodies are generic JSON, so generating a client today would move rather than remove the weak types. Migrate domains as their response schemas become authoritative.
 - Access, pricing and policy portions of Readiness still have repeated SQL and DTO shaping that should converge behind read-model services when touched by product work. Dashboard no longer owns a separate model-route interpretation.
+- A frontend-only release still produces a backend binary bound to the same release commit by design. Persistent BuildKit Go caches reduce the rebuild cost without creating mixed or misleading release identity; independently versioned components would require a separate release-manifest contract and is not being implied here.
 
 Debt is closed only when the affected golden journey and projection checks pass. Moving code into more files without reducing authority duplication does not close architectural debt.
 

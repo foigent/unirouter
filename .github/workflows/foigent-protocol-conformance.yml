@@ -71,7 +71,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout UniRouter
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run pinned cross-language Conformance kit and verify UniRouter pin
         uses: foigent/event-connector-spec/actions/source-neutral-v2@ad8fe7a38c9d7335657630baa8670dd07556b98c
@@ -80,7 +80,7 @@ jobs:
           product: unirouter
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.25.12'
           cache: false

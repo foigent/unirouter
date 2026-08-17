@@ -8,7 +8,8 @@ ARG UNIROUTER_LICENSE_TRUST_BUNDLE_B64=
 ARG UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=
 ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY . .
 RUN test -e /app/.env.example \
     && test -z "$(find /app -type f \( \
@@ -19,7 +20,9 @@ RUN test -e /app/.env.example \
     && test -z "$(find /app -type d \( \
         -name '.secrets' -o -name 'secrets' \
       \) -print -quit)"
-RUN case "${UNIROUTER_RELEASE_TRUST_MODE}" in \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    case "${UNIROUTER_RELEASE_TRUST_MODE}" in \
       release) \
         case "${RUNTIME_VERSION}" in \
           ''|local|unknown|*[!A-Za-z0-9._+-]*) echo "release builds require a safe immutable runtime version" >&2; exit 1 ;; \

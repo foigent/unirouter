@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -146,20 +146,20 @@ jobs:
         run: exit 1
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Mint read-only Neutral N1 installation token
         id: integration-control-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.INTEGRATION_CONTROL_APP_ID }}
+          client-id: ${{ secrets.INTEGRATION_CONTROL_APP_ID }}
           private-key: ${{ secrets.INTEGRATION_CONTROL_APP_PRIVATE_KEY }}
           owner: foigent
           repositories: integration-control
           permission-contents: read
 
       - name: Checkout exact Neutral D1 qualifier
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: foigent/integration-control
           ref: db10730d64a9302887ad59c53921e98c757927e7
@@ -220,14 +220,14 @@ jobs:
           echo "Neutral N1 release manifest SHA-256: $N1_MANIFEST_SHA256"
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.25.12'
           cache: false
 
       - name: Restore shared Go cache
         id: go-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/go/pkg/mod
@@ -313,7 +313,7 @@ jobs:
             -count=1 -timeout=20m
       
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
@@ -324,7 +324,7 @@ jobs:
           github.event_name == 'workflow_dispatch' &&
           github.ref == 'refs/heads/main' &&
           steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             ~/go/pkg/mod
@@ -353,10 +353,10 @@ jobs:
         run: exit 1
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -432,16 +432,16 @@ jobs:
         run: exit 1
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.25.12'
           cache: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -495,7 +495,7 @@ jobs:
 
       - name: Checkout code
         if: needs.changes.outputs.docker == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build backend image and verify Docker contexts
         if: needs.changes.outputs.docker == 'true'
@@ -567,6 +567,9 @@ jobs:
             scripts/docker-image-retention-report.sh \
             scripts/docker-image-retention-maintenance.sh \
             scripts/docker-storage-preflight.sh \
+            scripts/release-worktree-retention-report.sh \
+            scripts/release-worktree-retention-maintenance.sh \
+            scripts/test-release-worktree-retention.sh \
             scripts/test-docker-image-retention-report.sh; do
             bash -n "${lifecycle_script}"
           done
@@ -574,6 +577,9 @@ jobs:
           scripts/docker-image-retention-report.sh --help >/dev/null
           scripts/docker-image-retention-maintenance.sh --help >/dev/null
           scripts/docker-storage-preflight.sh --help >/dev/null
+          scripts/release-worktree-retention-report.sh --help >/dev/null
+          scripts/release-worktree-retention-maintenance.sh --help >/dev/null
+          scripts/test-release-worktree-retention.sh
           scripts/test-docker-image-retention-report.sh
           grep -F 'location = /favicon.ico' frontend/nginx.conf
           grep -F 'return 204;' frontend/nginx.conf

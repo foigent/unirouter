@@ -1,99 +1,7 @@
-const BASE_URL = '/api/v1';
+import { modelEndpointApi } from './modelEndpoints';
+import { apiPath, appendParams, request, requestBlob } from './transport';
 
-export class ApiError extends Error {
-  status: number;
-  payload: unknown;
-
-  constructor(message: string, status: number, payload: unknown) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.payload = payload;
-  }
-}
-
-function getErrorMessage(payload: unknown, fallback: string) {
-  if (payload && typeof payload === 'object') {
-    const data = payload as { message?: unknown; error?: unknown };
-    if (typeof data.message === 'string') return data.message;
-    if (typeof data.error === 'string') return data.error;
-    if (data.error && typeof data.error === 'object') {
-      const nested = data.error as { message?: unknown };
-      if (typeof nested.message === 'string') return nested.message;
-    }
-  }
-  return fallback;
-}
-
-async function parseResponse(res: Response) {
-  const text = await res.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-}
-
-async function request(path: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...((options.headers as Record<string, string>) || {}),
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
-  const payload = await parseResponse(res);
-
-  if (res.status === 401) {
-    localStorage.removeItem('token');
-    window.location.href = '/login';
-    throw new ApiError(getErrorMessage(payload, 'Unauthorized'), res.status, payload);
-  }
-
-  if (!res.ok) {
-    throw new ApiError(getErrorMessage(payload, `Request failed with status ${res.status}`), res.status, payload);
-  }
-
-  return payload;
-}
-
-async function requestBlob(path: string) {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  const res = await fetch(`${BASE_URL}${path}`, { headers });
-  if (res.status === 401) {
-    localStorage.removeItem('token');
-    window.location.href = '/login';
-    throw new ApiError('Unauthorized', res.status, null);
-  }
-  if (!res.ok) {
-    const payload = await parseResponse(res);
-    throw new ApiError(
-      getErrorMessage(payload, `Request failed with status ${res.status}`),
-      res.status,
-      payload,
-    );
-  }
-  return res.blob();
-}
-
-function appendParams(path: string, params: Record<string, string | number | boolean | undefined | null>) {
-  const search = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      search.set(key, String(value));
-    }
-  });
-  const query = search.toString();
-  return query ? `${path}?${query}` : path;
-}
+export { ApiError } from './transport';
 
 export const api = {
   // Auth
@@ -105,7 +13,7 @@ export const api = {
   logout: () => request('/auth/logout', { method: 'POST' }),
   getOIDCConfig: () => request('/auth/oidc/config'),
   getOIDCStartURL: (redirect = '/') =>
-    `${BASE_URL}/auth/oidc/start?redirect=${encodeURIComponent(redirect)}`,
+    apiPath(`/auth/oidc/start?redirect=${encodeURIComponent(redirect)}`),
 
   // Dashboard
   getDashboardStats: (startTime?: string, endTime?: string, orgId?: number) =>
@@ -124,18 +32,7 @@ export const api = {
     request(`/channels/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteChannel: (id: number) =>
     request(`/channels/${id}`, { method: 'DELETE' }),
-  getModelEndpoints: () => request('/model-endpoints'),
-  testChannelModel: (channelId: number, model: string, prompt = 'Reply with exactly: OK') =>
-    request(`/channels/${channelId}/test`, {
-      method: 'POST',
-      body: JSON.stringify({ model, prompt }),
-    }),
-  activateModelEndpoint: (data: { channel_id: number; model: string; expected_routing_epoch: number }) =>
-    request('/model-endpoints/activate', { method: 'POST', body: JSON.stringify(data) }),
-  startModelEndpointCanary: (data: { channel_id: number; model: string; expected_routing_epoch: number; canary_basis_points?: number }) =>
-    request('/model-endpoints/canary', { method: 'POST', body: JSON.stringify(data) }),
-  recoverModelEndpoint: (data: { channel_id: number; model: string; expected_routing_epoch: number }) =>
-    request('/model-endpoints/recover', { method: 'POST', body: JSON.stringify(data) }),
+  ...modelEndpointApi,
   getProviderPacks: () => request('/provider-packs'),
   previewRouting: (model: string) =>
     request(`/routing/preview?model=${encodeURIComponent(model)}`),

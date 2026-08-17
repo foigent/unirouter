@@ -1,5 +1,3 @@
-version: "3.8"
-
 x-unirouter-json-logging: &unirouter-json-logging
   driver: json-file
   options:
