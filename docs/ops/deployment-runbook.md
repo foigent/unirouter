@@ -1566,6 +1566,7 @@ install -m 0755 scripts/docker-image-retention-report.sh \
   scripts/docker-image-retention-maintenance.sh \
   scripts/docker-storage-preflight.sh \
   scripts/internal-target-build-images.sh \
+  scripts/release-retention-common.sh \
   scripts/release-worktree-retention-report.sh \
   scripts/release-worktree-retention-maintenance.sh \
   /usr/local/libexec/unirouter/
@@ -1596,9 +1597,11 @@ scripts/release-worktree-retention-maintenance.sh \
   --report-out /opt/unirouter/release-retention-report.tsv
 ```
 
-只有目录名等于完整 HEAD、处于 detached/clean 状态、没有运行容器引用、未出现在
-keep file、且超过保留期的直接子 worktree 才会标为 `candidate`。脏目录、branch
-worktree、符号链接、非 Git 目录、目录名与 HEAD 不一致等情况全部标为
+只有目录名等于完整 HEAD、处于 detached/clean 状态、没有运行容器 revision 或
+bind mount 引用、未出现在 keep file、且超过保留期的直接子 checkout 才会标为
+`candidate`。当前 linked worktree 与历史遗留的自包含 standalone repository 都会
+明确标出拓扑；后者只在唯一 worktree、没有 Git alternates 时才可进入候选。脏目录、
+branch worktree、符号链接、非 Git 目录、目录名与 HEAD 不一致等情况全部标为
 `review-required`，不会进入删除集合。
 
 复核并对本次精确候选集合取得删除授权后，才增加 `--apply`：
@@ -1611,10 +1614,11 @@ scripts/release-worktree-retention-maintenance.sh --apply \
   --report-out /opt/unirouter/release-retention-report.tsv
 ```
 
-apply 会逐项重新核对路径、HEAD、mtime、clean/detached 状态、keep file 和运行容器
-revision，再通过 `git worktree remove` 删除候选；任一漂移都会停止。工具不会删除
-镜像、容器、volume、bundle、备份、数据库或普通非 worktree 目录，也不会安装 timer
-或 cron。
+apply 会逐项重新核对路径、HEAD、mtime、clean/detached 状态、Git 拓扑、keep file、
+运行容器 revision 与 bind mount；任一漂移都会停止。linked worktree 通过
+`git worktree remove` 删除；历史 standalone repository 仅在再次证明自包含后执行
+限定到该精确目录的树删除。工具不会删除镜像、容器、volume、bundle、备份、数据库
+或其他 review-required 目录，也不会安装 timer 或 cron。
 
 ---
 

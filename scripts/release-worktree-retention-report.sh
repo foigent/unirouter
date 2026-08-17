@@ -7,17 +7,25 @@ Usage:
   scripts/release-worktree-retention-report.sh \
     --release-root DIR --keep-file FILE [--min-age-days N]
 
-Builds a read-only report for commit-addressed deployment worktrees. FILE must
+Builds a read-only report for commit-addressed deployment checkouts. FILE must
 contain one complete 40-character Git commit per line. Running container image
-revision labels and the keep file are protected. Only clean, detached, direct
-child worktrees whose directory name equals HEAD and whose age is at least N
-days are candidates. This command never removes a worktree.
+revision labels, running bind-mount sources and the keep file are protected.
+Only clean, detached, direct child linked worktrees or self-contained legacy
+repositories whose directory name equals HEAD and whose age is at least N days
+are candidates. This command never removes a checkout.
 EOF
 }
 
 release_root=""
 keep_file=""
 min_age_days=14
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+common_script="$script_dir/release-retention-common.sh"
+[[ -r "$common_script" ]] || {
+  echo "release retention report: common helper is unavailable" >&2
+  exit 2
+}
+source "$common_script"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -79,14 +87,6 @@ case "$release_root" in
     ;;
 esac
 
-path_mtime() {
-  if stat -c %Y "$1" >/dev/null 2>&1; then
-    stat -c %Y "$1"
-  else
-    stat -f %m "$1"
-  fi
-}
-
 report_dir="$(mktemp -d "${TMPDIR:-/tmp}/unirouter-release-report.XXXXXX")"
 cleanup() {
   rm -rf -- "$report_dir"
@@ -95,8 +95,10 @@ trap cleanup EXIT
 
 keep_revisions="$report_dir/keep-revisions"
 running_revisions="$report_dir/running-revisions"
+running_paths="$report_dir/running-paths"
 : >"$keep_revisions"
 : >"$running_revisions"
+: >"$running_paths"
 
 while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
   revision="$(printf '%s' "$raw_line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
@@ -113,12 +115,7 @@ if [[ ! -s "$keep_revisions" ]]; then
   exit 2
 fi
 
-while IFS= read -r container_id; do
-  [[ -n "$container_id" ]] || continue
-  revision="$(docker container inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$container_id" 2>/dev/null || true)"
-  [[ "$revision" =~ ^[0-9a-f]{40}$ ]] && printf '%s\n' "$revision" >>"$running_revisions"
-done < <(docker container ls -q)
-sort -u -o "$running_revisions" "$running_revisions"
+release_collect_running_references "$running_revisions" "$running_paths" "$release_root"
 
 now_epoch="$(date +%s)"
 minimum_age_seconds=$((min_age_days * 86400))
@@ -136,7 +133,7 @@ while IFS= read -r -d '' path; do
   detail=""
   head="-"
   age_days=0
-  mtime_epoch="$(path_mtime "$path" 2>/dev/null || printf '0')"
+  mtime_epoch="$(release_path_mtime "$path" 2>/dev/null || printf '0')"
   size_kib="$(du -sk "$path" 2>/dev/null | awk '{print $1}')"
   size_bytes=$((${size_kib:-0} * 1024))
   size_mib="$(awk -v bytes="$size_bytes" 'BEGIN { printf "%.1f", bytes / 1048576 }')"
@@ -167,9 +164,22 @@ while IFS= read -r -d '' path; do
   elif [[ -n "$(git -C "$path" status --porcelain=v1 --untracked-files=all)" ]]; then
     status="review-required"
     detail="dirty-worktree"
+  elif ! git_layout="$(release_git_layout "$path")"; then
+    status="review-required"
+    detail="unsupported-git-layout"
+  elif [[ "$git_layout" == "standalone-repository" ]] && ! release_standalone_is_single_self_contained_worktree "$path" "$head"; then
+    status="review-required"
+    detail="standalone-repository-not-self-contained"
+  elif [[ "$git_layout" == "standalone-repository" ]] && release_root_has_nonempty_alternates "$release_root"; then
+    status="review-required"
+    detail="release-root-has-git-alternates"
   elif grep -Fxq "$head" "$running_revisions"; then
     status="protected-running"
-    detail="running-container-revision"
+    detail="running-container-revision-label"
+    protected_running_count=$((protected_running_count + 1))
+  elif grep -Fxq "$path" "$running_paths"; then
+    status="protected-running"
+    detail="running-container-mount-source"
     protected_running_count=$((protected_running_count + 1))
   elif grep -Fxq "$head" "$keep_revisions"; then
     status="protected-keep"
@@ -181,7 +191,7 @@ while IFS= read -r -d '' path; do
     young_count=$((young_count + 1))
   else
     status="candidate"
-    detail="clean-detached-unreferenced"
+    detail="clean-detached-$git_layout"
     candidate_count=$((candidate_count + 1))
     candidate_bytes=$((candidate_bytes + size_bytes))
   fi

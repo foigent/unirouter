@@ -567,6 +567,7 @@ jobs:
             scripts/docker-image-retention-report.sh \
             scripts/docker-image-retention-maintenance.sh \
             scripts/docker-storage-preflight.sh \
+            scripts/release-retention-common.sh \
             scripts/release-worktree-retention-report.sh \
             scripts/release-worktree-retention-maintenance.sh \
             scripts/test-release-worktree-retention.sh \
