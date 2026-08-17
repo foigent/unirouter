@@ -348,6 +348,7 @@ try {
     const projectListResponsePromise = hybrid.page.waitForResponse((response) =>
       new URL(response.url()).pathname === '/api/v1/projects' &&
       response.request().method() === 'GET');
+    void projectListResponsePromise.catch(() => undefined);
 
     await gotoHeading(hybrid.page, `/applications?project_id=${fixture.project_a}`, '应用与 Agent');
     const createButton = hybrid.page.locator('button').filter({ hasText: '新建应用' }).first();

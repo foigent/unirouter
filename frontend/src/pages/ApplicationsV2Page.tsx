@@ -544,7 +544,13 @@ export default function ApplicationsV2Page() {
       <Tabs activeKey={activeTab} onChange={(tab) => updateSearch({ tab })}>
         <TabPane tab="应用与 Agent" itemKey="applications">
           <Surface title="项目范围" description="可用操作按当前项目和你的实时项目角色决定。">
-            {projectsLoading ? <EmptyState title="正在读取项目范围" description="正在读取当前账号可访问的项目和应用合同，请稍候。" />
+            {projectsLoading ? <>
+              <Space>
+                <Select disabled style={{ width: 300 }} optionList={[]} placeholder="正在读取项目" />
+                <Button type="primary" icon={<IconPlus />} disabled>新建应用</Button>
+              </Space>
+              <EmptyState title="正在读取项目范围" description="正在读取当前账号可访问的项目和应用合同；权限确认前不会开放创建操作。" />
+            </>
               : projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjectsAndContract}>重试</Button>} />
                 : projects.length === 0 ? <EmptyState title="暂无可用项目" description="请先在“人员与权限”中创建或加入一个启用项目。" />
                   : <Space><Select value={selectedProjectID} style={{ width: 300 }} optionList={projects.map(projectOption)} placeholder="选择项目" onChange={(value) => updateSearch({ project_id: Number(value), application_ref: undefined })} /><Button type="primary" icon={<IconPlus />} disabled={!selectedProjectID || !canManageSelectedProject} onClick={openCreateDrawer}>新建应用</Button></Space>}

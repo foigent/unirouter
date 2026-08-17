@@ -235,6 +235,7 @@ describe('ApplicationsV2Page', () => {
 
     expect(await screen.findByRole('heading', { name: '正在读取项目范围' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: '正在准备应用范围' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /新建应用/ })).toBeDisabled();
     expect(screen.queryByRole('heading', { name: '暂无可用项目' })).toBeNull();
     expect(screen.queryByRole('heading', { name: '当前项目暂无应用' })).toBeNull();
 
@@ -293,8 +294,9 @@ describe('ApplicationsV2Page', () => {
   it('creates an application without asking the operator for internal identity refs', async () => {
     render(<MemoryRouter initialEntries={['/applications?project_id=11']}><WorkloadApplicationsPage /></MemoryRouter>);
 
-    const createLabel = await screen.findByText('新建应用');
-    fireEvent.click(createLabel.closest('button') as HTMLButtonElement);
+    await waitFor(() => expect(screen.getByRole('button', { name: /新建应用/ })).toBeEnabled());
+    const createButton = screen.getByRole('button', { name: /新建应用/ });
+    fireEvent.click(createButton);
     expect((await screen.findAllByText('新建应用')).length).toBe(2);
     expect(screen.getByText('环境（创建后不可变）')).toBeTruthy();
     expect(screen.queryByLabelText(/Application ref|Logical ref/i)).toBeNull();
