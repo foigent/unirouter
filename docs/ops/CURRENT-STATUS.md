@@ -1,6 +1,21 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-17 backend test-infrastructure optimization checkpoint:** PR #298
+> final head `5146aa8e20b837dec9d9d03b892537e9e2cfcf7e` passed Change
+> Routing, Backend, Frontend, Browser E2E and Docker and was squash-merged as
+> `3cc6c448392e387631255fce41cc04fa38d68672` with the same tree. On the
+> comparable GitHub runner, Backend fell from 33m01s to 10m38s; the 34 former
+> serial integration/feature commands became one 2m42s package-deduplicated
+> gate, Source-evidence fell from 29s to 7s and Admin integration from 3m59s
+> to 1m38s. Heavy packages now migrate one process-scoped PostgreSQL template
+> and clone an isolated database per test; shared-Redis integration packages
+> remain explicitly serial. The Backend timeout is 25 minutes rather than 50.
+> Final Local and CI gates passed, and Local `uniroute_it_*` counts were zero
+> before and after final database gates. This is test/CI infrastructure only;
+> no runtime code, migration, customer data, credentials, traffic or Target
+> deployment changed. Evidence:
+> `docs/ops/evidence/V1-BACKEND-CI-OPTIMIZATION-20260817.md`.
 > **2026-08-17 canonical model-route projection CI/merge/Target checkpoint:**
 > PR #296 exact head/tree `78f19bfe2fcd2c5fcb68995f5b8b0cb94d9f9cbc` /
 > `5ce271327abd768e1809190bc6c67832a9227f36` passed Change Routing,

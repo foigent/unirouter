@@ -120,6 +120,7 @@ keep-protected images, zero stopped-container holds and zero deletion
 candidates. No image or tag was removed. Root disk use after the release was
 72% with 11 GiB available, still inside the 80% / 8 GiB build gate.
 
-This evidence does not claim Production, paid Provider traffic, load/HA/DR,
-automatic image or release-directory deletion, or completion of the remaining
-CI command-consolidation debt.
+This evidence does not claim Production, paid Provider traffic, load/HA/DR, or
+automatic image or release-directory deletion. The CI command-consolidation
+debt measured during this release was subsequently completed by PR #298; see
+`V1-BACKEND-CI-OPTIMIZATION-20260817.md`.
