@@ -8,9 +8,11 @@ Usage:
     --release-root DIR --keep-file FILE [--min-age-days N] [--report-out FILE]
 
 Without --apply this is a read-only report. With --apply, only rows frozen as
-candidate by the report are revalidated and removed through `git worktree
-remove`. Drift, dirty state, a running-container reference or keep-file changes
-stop the command before that worktree is removed. No cron or timer is created.
+candidate by the report are revalidated. Every candidate must pass a complete
+preflight before deletion begins, then each is checked again immediately before
+removal. Linked worktrees use `git worktree remove`; self-contained legacy
+repositories use a bounded tree deletion. Drift, dirty state, a running
+reference, Git alternates or keep-file changes stop the command. No timer is created.
 EOF
 }
 
@@ -34,10 +36,16 @@ done
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 report_script="$script_dir/release-worktree-retention-report.sh"
+common_script="$script_dir/release-retention-common.sh"
 [[ -x "$report_script" ]] || {
   echo "release retention maintenance: report helper is not executable" >&2
   exit 2
 }
+[[ -r "$common_script" ]] || {
+  echo "release retention maintenance: common helper is unavailable" >&2
+  exit 2
+}
+source "$common_script"
 command -v flock >/dev/null 2>&1 || {
   echo "release retention maintenance: flock is required" >&2
   exit 2
@@ -82,13 +90,8 @@ fi
 
 release_root="$(realpath "$release_root")"
 current_keep_revisions="$report_dir/current-keep-revisions"
-path_mtime() {
-  if stat -c %Y "$1" >/dev/null 2>&1; then
-    stat -c %Y "$1"
-  else
-    stat -f %m "$1"
-  fi
-}
+current_running_revisions="$report_dir/current-running-revisions"
+current_running_paths="$report_dir/current-running-paths"
 build_current_keep_revisions() {
   : >"$current_keep_revisions"
   while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
@@ -106,9 +109,18 @@ build_current_keep_revisions() {
     exit 2
   }
 }
-removed=0
-while IFS=$'\t' read -r status _age _size frozen_mtime frozen_head path _detail; do
-  [[ "$status" == "candidate" ]] || continue
+
+refresh_current_protections() {
+  release_collect_running_references "$current_running_revisions" "$current_running_paths" "$release_root"
+  build_current_keep_revisions
+}
+
+validate_candidate() {
+  local frozen_mtime="$1"
+  local frozen_head="$2"
+  local path="$3"
+  local frozen_detail="$4"
+  local current_path current_layout common_git_dir=""
   if [[ -d "$path" && ! -L "$path" ]]; then
     current_path="$(realpath "$path")"
   else
@@ -118,7 +130,7 @@ while IFS=$'\t' read -r status _age _size frozen_mtime frozen_head path _detail;
     echo "release retention maintenance: candidate path drift: $path" >&2
     exit 1
   }
-  [[ "$(path_mtime "$current_path")" == "$frozen_mtime" ]] || {
+  [[ "$(release_path_mtime "$current_path")" == "$frozen_mtime" ]] || {
     echo "release retention maintenance: candidate mtime drift: $current_path" >&2
     exit 1
   }
@@ -134,32 +146,73 @@ while IFS=$'\t' read -r status _age _size frozen_mtime frozen_head path _detail;
     echo "release retention maintenance: candidate is now dirty: $current_path" >&2
     exit 1
   }
-  build_current_keep_revisions
   ! grep -Fxq "$frozen_head" "$current_keep_revisions" || {
     echo "release retention maintenance: candidate is now retained: $current_path" >&2
     exit 1
   }
-  while IFS= read -r container_id; do
-    [[ -n "$container_id" ]] || continue
-    running_revision="$(docker container inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$container_id" 2>/dev/null || true)"
-    [[ "$running_revision" != "$frozen_head" ]] || {
-      echo "release retention maintenance: candidate is now used by a running container: $current_path" >&2
-      exit 1
-    }
-  done < <(docker container ls -q)
-
-  common_git_dir="$(git -C "$current_path" rev-parse --path-format=absolute --git-common-dir)"
-  [[ -d "$common_git_dir" && ! -L "$common_git_dir" ]] || {
-    echo "release retention maintenance: common Git directory unavailable: $current_path" >&2
+  ! grep -Fxq "$frozen_head" "$current_running_revisions" || {
+    echo "release retention maintenance: candidate revision is now used by a running container: $current_path" >&2
     exit 1
   }
-  git --git-dir="$common_git_dir" worktree remove -- "$current_path"
-  [[ ! -e "$current_path" && ! -L "$current_path" ]] || {
-    echo "release retention maintenance: worktree removal did not complete: $current_path" >&2
+  ! grep -Fxq "$current_path" "$current_running_paths" || {
+    echo "release retention maintenance: candidate path is now mounted by a running container: $current_path" >&2
+    exit 1
+  }
+
+  current_layout="$(release_git_layout "$current_path")" || {
+    echo "release retention maintenance: candidate Git layout is unsupported: $current_path" >&2
+    exit 1
+  }
+  [[ "$frozen_detail" == "clean-detached-$current_layout" ]] || {
+    echo "release retention maintenance: candidate Git layout drift: $current_path" >&2
+    exit 1
+  }
+  if [[ "$current_layout" == "linked-worktree" ]]; then
+    common_git_dir="$(release_git_metadata_path "$current_path" --git-common-dir)"
+    [[ -d "$common_git_dir" && ! -L "$common_git_dir" && "$common_git_dir" != "$current_path/.git" ]] || {
+      echo "release retention maintenance: linked worktree common Git directory unavailable: $current_path" >&2
+      exit 1
+    }
+  else
+    release_standalone_is_single_self_contained_worktree "$current_path" "$frozen_head" || {
+      echo "release retention maintenance: standalone repository is not self-contained: $current_path" >&2
+      exit 1
+    }
+    ! release_root_has_nonempty_alternates "$release_root" || {
+      echo "release retention maintenance: Git alternates require manual dependency review: $current_path" >&2
+      exit 1
+    }
+  fi
+
+  validated_path="$current_path"
+  validated_layout="$current_layout"
+  validated_common_git_dir="$common_git_dir"
+}
+
+validated_candidates="$report_dir/validated-candidates.tsv"
+: >"$validated_candidates"
+refresh_current_protections
+while IFS=$'\t' read -r status _age _size frozen_mtime frozen_head path frozen_detail; do
+  [[ "$status" == "candidate" ]] || continue
+  validate_candidate "$frozen_mtime" "$frozen_head" "$path" "$frozen_detail"
+  printf '%s\t%s\t%s\t%s\n' "$frozen_mtime" "$frozen_head" "$path" "$frozen_detail" >>"$validated_candidates"
+done <"$frozen_report"
+
+removed=0
+while IFS=$'\t' read -r frozen_mtime frozen_head path frozen_detail; do
+  refresh_current_protections
+  validate_candidate "$frozen_mtime" "$frozen_head" "$path" "$frozen_detail"
+  if [[ "$validated_layout" == "linked-worktree" ]]; then
+    git --git-dir="$validated_common_git_dir" worktree remove -- "$validated_path"
+  else
+    find "$validated_path" -depth -delete
+  fi
+  [[ ! -e "$validated_path" && ! -L "$validated_path" ]] || {
+    echo "release retention maintenance: checkout removal did not complete: $validated_path" >&2
     exit 1
   }
   removed=$((removed + 1))
-  printf 'REMOVED\t%s\t%s\n' "$frozen_head" "$current_path"
-done <"$frozen_report"
+  printf 'REMOVED\t%s\t%s\n' "$frozen_head" "$validated_path"
+done <"$validated_candidates"
 
 printf 'APPLY\tperformed=true\tcandidates=%s\tremoved=%d\n' "$candidate_count" "$removed"
