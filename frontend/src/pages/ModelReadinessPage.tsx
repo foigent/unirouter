@@ -3,7 +3,9 @@ import { Button, Form, Space, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { accessApi, type ModelReadiness, type ReadinessAxis } from '../api/access';
-import { ApiError, api } from '../api/client';
+import { channelApi, type ProviderChannel } from '../api/channels';
+import { api } from '../api/client';
+import { ApiError } from '../api/transport';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
 import { parseChannelModels } from '../utils/channelReadiness';
@@ -13,7 +15,7 @@ import { projectOption } from '../utils/projectDisplay';
 const { Text, Title } = Typography;
 
 type Project = { id: number; name: string; slug?: string; status: string; current_user_membership_role?: string };
-type Channel = { models?: string };
+type Channel = Pick<ProviderChannel, 'models'>;
 type ModelAlias = { alias: string; target_model: string; display_name?: string; status: string };
 type WorkloadApplication = { application_ref: string; display_name: string; project_id: number; environment?: string; status: string };
 type ModelOption = { value: string; label: string };
@@ -163,7 +165,7 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
   const loadModelOptions = useCallback(async () => {
     setModelOptionsError('');
     const [channelResult, aliasResult] = await Promise.allSettled([
-      loadAllPages<Channel>((page, size) => api.getChannels(page, size)),
+      loadAllPages<Channel>((page, size) => channelApi.list(page, size)),
       connectionMode
         ? Promise.resolve([] as ModelAlias[])
         : loadAllPages<ModelAlias>((page, size) => api.getModelAliases(page, size)),

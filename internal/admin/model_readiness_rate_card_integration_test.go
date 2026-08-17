@@ -30,9 +30,12 @@ func TestRateCardReadinessPriceAuthorityIgnoresLegacyRowsAndReflectsStrictResolv
 
 	handler := NewHandler(pool, "readiness-rate-card-secret", []byte("0123456789abcdef01234567"), nil)
 	handler.SetRequestPricingAuthority(string(billing.RequestPricingAuthorityRateCard))
+	billingService := billing.NewBilling(pool, nil).WithRequestPricingAuthority(billing.RequestPricingAuthorityRateCard)
+	handler.SetBillingReadinessProvider(billingService)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
 
-	missing := handler.readinessPriceAuthorityAxis(request, orgID, "legacy-only-readiness")
+	missingState, missingErr := billingService.InspectAdmissionReadiness(ctx, orgID, "legacy-only-readiness")
+	missing := handler.readinessPriceAuthorityAxis(request, "legacy-only-readiness", missingState, missingErr)
 	require.Equal(t, modelreadiness.StateBlocked, missing.State)
 	require.Equal(t, "rate_card_authority_not_ready", missing.ReasonCode)
 	require.Equal(t, "rate_card", missing.SafeEvidence["request_pricing_mode"])
@@ -51,7 +54,8 @@ func TestRateCardReadinessPriceAuthorityIgnoresLegacyRowsAndReflectsStrictResolv
 	active, err := store.ActivateRateCard(ctx, orgID, approved.Card.RateCardRef, approved.Card.Version, "user:202", time.Now().UTC().Truncate(time.Microsecond))
 	require.NoError(t, err)
 
-	ready := handler.readinessPriceAuthorityAxis(request, orgID, "strict-only-readiness")
+	readyState, readyErr := billingService.InspectAdmissionReadiness(ctx, orgID, "strict-only-readiness")
+	ready := handler.readinessPriceAuthorityAxis(request, "strict-only-readiness", readyState, readyErr)
 	require.Equal(t, modelreadiness.StateReady, ready.State)
 	require.Equal(t, "rate_card_authority_resolved", ready.ReasonCode)
 	require.Equal(t, active.Card.RateCardRef, ready.SafeEvidence["rate_card_ref"])

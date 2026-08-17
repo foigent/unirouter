@@ -21,6 +21,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { api } from '../api/client';
+import { dashboardApi, type DashboardStats } from '../api/dashboard';
 import { EmptyState, LatencyText, MetricTile, MoneyText, PageHeader, StatusTag, Surface, formatMoney, microsToChartYuan, parseMicros } from '../ui';
 import { formatCompactNumber } from '../utils/formatNumber';
 import { useAuthStore } from '../store/auth';
@@ -28,49 +29,6 @@ import { authzContextForUser, hasLicensedFeature, isBillingRole, isOrgViewerRole
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 
 const { Text } = Typography;
-
-interface DashboardStats {
-  total_requests: number;
-	today_cost_micros: string;
-	currency: 'CNY';
-	amount_scale: 1000000;
-  avg_latency_ms: number;
-  p95_latency_ms?: number;
-  p99_latency_ms?: number;
-  success_rate: number;
-  recent_logs: any[];
-	model_prices?: { model_name: string; input_price_cny_per_million: string; output_price_cny_per_million: string }[];
-	wallet_balance_micros?: string;
-	wallet_granted_micros?: string;
-	wallet_frozen_micros?: string;
-	wallet_threshold_micros?: string;
-	daily_trend?: { date: string; requests: number; cost_micros: string }[];
-  model_distribution?: {
-    model: string;
-    requests: number;
-    success_count?: number;
-    fail_count?: number;
-    success_rate?: number;
-    avg_latency_ms?: number;
-    p95_latency_ms?: number;
-  }[];
-  channel_health?: {
-    id: number;
-    name: string;
-    provider: string;
-    base_status?: string;
-    runtime_published?: boolean;
-    enabled: boolean;
-    credential_ready?: boolean;
-    available?: boolean;
-    circuit_state?: string;
-    projection_version?: string;
-    status: string;
-    success_count: number;
-    fail_count: number;
-  }[];
-	delta_vs_yesterday?: { cost_micros: string; latency_ms: number; success_rate: number };
-}
 
 interface DashboardAttention {
   summary_kind: 'notification_events';
@@ -298,7 +256,7 @@ export default function DashboardPage() {
     setLoadError('');
     try {
       const params = getRangeParams(range);
-      const data = await api.getDashboardStats(params.startTime, params.endTime, platform ? selectedOrgID : undefined);
+      const data = await dashboardApi.getStats(params.startTime, params.endTime, platform ? selectedOrgID : undefined);
       if (version !== requestVersion.current) return;
       setStats(data);
       setLastUpdated(new Date());
@@ -802,11 +760,13 @@ export default function DashboardPage() {
               rowKey="request_id"
               size="small"
               pagination={false}
-              empty="暂无请求记录"
-              onRow={canOpenRecentRequests ? (record) => ({
-                onClick: () => navigate(`/logs?request_id=${record.request_id}`),
-                style: { cursor: 'pointer' },
-              }) : undefined}
+			  empty="暂无请求记录"
+			  onRow={canOpenRecentRequests ? (record) => ({
+				onClick: () => {
+				  if (record) navigate(`/logs?request_id=${record.request_id}`);
+				},
+				style: { cursor: 'pointer' },
+			  }) : undefined}
             />
           </div>
         </Surface>

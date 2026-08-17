@@ -20,7 +20,6 @@ type dashboardQueryStage string
 
 const (
 	dashboardStageOverview            dashboardQueryStage = "overview"
-	dashboardStageLatencyPercentiles  dashboardQueryStage = "latency_percentiles"
 	dashboardStageRecentLogs          dashboardQueryStage = "recent_logs"
 	dashboardStageDailyTrend          dashboardQueryStage = "daily_trend"
 	dashboardStageModelDistribution   dashboardQueryStage = "model_distribution"
@@ -53,14 +52,9 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	}
 	startTime, endTime := start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)
 
-	totalRequests, todayCostMicros, avgLatencyMs, successRate, err := h.dashboardOverview(ctx, orgID, startTime, endTime)
+	window, err := h.dashboardWindowMetrics(ctx, orgID, startTime, endTime)
 	if err != nil {
 		writeDashboardQueryError(w, r, dashboardStageOverview, err)
-		return
-	}
-	p95LatencyMs, p99LatencyMs, err := h.dashboardLatencyPercentiles(ctx, orgID, startTime, endTime)
-	if err != nil {
-		writeDashboardQueryError(w, r, dashboardStageLatencyPercentiles, err)
 		return
 	}
 	recentLogs, err := h.dashboardRecentLogs(ctx, orgID)
@@ -78,20 +72,20 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 		writeDashboardQueryError(w, r, dashboardStageModelDistribution, err)
 		return
 	}
-	deltaCostMicros, deltaLatency, deltaRate, err := h.dashboardPreviousPeriodDelta(ctx, orgID, start, end, todayCostMicros, p95LatencyMs, successRate)
+	deltaCostMicros, deltaLatency, deltaRate, err := h.dashboardPreviousPeriodDelta(ctx, orgID, start, end, window.CostMicros, window.P95LatencyMS, window.SuccessRate)
 	if err != nil {
 		writeDashboardQueryError(w, r, dashboardStagePreviousPeriodDelta, err)
 		return
 	}
 
 	response := map[string]interface{}{
-		"total_requests":    totalRequests,
-		"today_cost_micros": strconv.FormatInt(todayCostMicros, 10),
+		"total_requests":    window.TotalRequests,
+		"today_cost_micros": strconv.FormatInt(window.CostMicros, 10),
 		"currency":          "CNY", "amount_scale": money.MicrosPerCNY,
-		"avg_latency_ms":     avgLatencyMs,
-		"p95_latency_ms":     p95LatencyMs,
-		"p99_latency_ms":     p99LatencyMs,
-		"success_rate":       successRate,
+		"avg_latency_ms":     window.AvgLatencyMS,
+		"p95_latency_ms":     window.P95LatencyMS,
+		"p99_latency_ms":     window.P99LatencyMS,
+		"success_rate":       window.SuccessRate,
 		"recent_logs":        recentLogs,
 		"daily_trend":        dailyTrend,
 		"model_distribution": modelDistribution,
@@ -191,57 +185,42 @@ func classifyDashboardQueryError(err error) (reasonCode, sqlState string) {
 	return dashboardReasonDatabase, "none"
 }
 
-// dashboardOverview returns total requests, period cost, avg latency, and success rate.
-func (h *Handler) dashboardOverview(ctx context.Context, orgID int64, startTime, endTime string) (totalRequests int, todayCostMicros int64, avgLatencyMs float64, successRate float64, err error) {
-	if err = h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
-		orgID, startTime, endTime,
-	).Scan(&totalRequests); err != nil {
-		return
-	}
-	if err = h.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_micros), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
-		orgID, startTime, endTime,
-	).Scan(&todayCostMicros); err != nil {
-		return
-	}
-	if err = h.db.QueryRow(ctx,
-		`SELECT COALESCE(AVG(latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND latency_ms > 0`,
-		orgID, startTime, endTime,
-	).Scan(&avgLatencyMs); err != nil {
-		return
-	}
-
-	var successCount, totalCount int
-	if err = h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND status_code >= 200 AND status_code < 300`,
-		orgID, startTime, endTime,
-	).Scan(&successCount); err != nil {
-		return
-	}
-	if err = h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
-		orgID, startTime, endTime,
-	).Scan(&totalCount); err != nil {
-		return
-	}
-	if totalCount > 0 {
-		successRate = float64(successCount) / float64(totalCount)
-	}
-	return
+type dashboardWindowMetrics struct {
+	TotalRequests int
+	CostMicros    int64
+	AvgLatencyMS  float64
+	P95LatencyMS  float64
+	P99LatencyMS  float64
+	SuccessRate   float64
 }
 
-// dashboardLatencyPercentiles returns tail latency for the selected org/time range.
-func (h *Handler) dashboardLatencyPercentiles(ctx context.Context, orgID int64, startTime, endTime string) (p95LatencyMs, p99LatencyMs float64, err error) {
-	err = h.db.QueryRow(ctx,
-		`SELECT
-			COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0),
-			COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms), 0)
-		 FROM call_logs
-		 WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND latency_ms > 0`,
+// dashboardWindowMetrics reads one organization-scoped observation window in
+// one PostgreSQL snapshot. Apart from reducing round trips, this prevents the
+// count, cost, latency and success-rate tiles from describing different clocks.
+func (h *Handler) dashboardWindowMetrics(ctx context.Context, orgID int64, startTime, endTime string) (dashboardWindowMetrics, error) {
+	var metrics dashboardWindowMetrics
+	var successCount int
+	err := h.db.QueryRow(ctx, `
+		SELECT COUNT(*)::int,
+		       COALESCE(SUM(cost_micros),0)::bigint,
+		       COALESCE(AVG(latency_ms) FILTER (WHERE latency_ms>0),0)::float8,
+		       COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)
+		         FILTER (WHERE latency_ms>0),0)::float8,
+		       COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms)
+		         FILTER (WHERE latency_ms>0),0)::float8,
+		       COUNT(*) FILTER (WHERE status_code>=200 AND status_code<300)::int
+		  FROM call_logs
+		 WHERE org_id=$1 AND created_at >= $2 AND created_at < $3`,
 		orgID, startTime, endTime,
-	).Scan(&p95LatencyMs, &p99LatencyMs)
-	return
+	).Scan(&metrics.TotalRequests, &metrics.CostMicros, &metrics.AvgLatencyMS,
+		&metrics.P95LatencyMS, &metrics.P99LatencyMS, &successCount)
+	if err != nil {
+		return dashboardWindowMetrics{}, err
+	}
+	if metrics.TotalRequests > 0 {
+		metrics.SuccessRate = float64(successCount) / float64(metrics.TotalRequests)
+	}
+	return metrics, nil
 }
 
 // dashboardRecentLogs returns the last 10 call logs.
@@ -565,38 +544,10 @@ func dashboardChannelOperationalStates(projection modelEndpointProjection) map[i
 func (h *Handler) dashboardPreviousPeriodDelta(ctx context.Context, orgID int64, start, end time.Time, todayCost int64, todayLatency, todayRate float64) (deltaCost int64, deltaLatency, deltaRate float64, err error) {
 	previousEnd := start
 	previousStart := start.Add(-end.Sub(start))
-	previousStartText := previousStart.Format(time.RFC3339Nano)
-	previousEndText := previousEnd.Format(time.RFC3339Nano)
-	var yesterCost int64
-	if err = h.db.QueryRow(ctx,
-		`SELECT COALESCE(SUM(cost_micros), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
-		orgID, previousStartText, previousEndText,
-	).Scan(&yesterCost); err != nil {
-		return
+	previous, err := h.dashboardWindowMetrics(ctx, orgID,
+		previousStart.Format(time.RFC3339Nano), previousEnd.Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, 0, 0, err
 	}
-	var yesterLatency float64
-	if err = h.db.QueryRow(ctx,
-		`SELECT COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND latency_ms > 0`,
-		orgID, previousStartText, previousEndText,
-	).Scan(&yesterLatency); err != nil {
-		return
-	}
-	var yesterSuccess, yesterTotal int
-	if err = h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3 AND status_code >= 200 AND status_code < 300`,
-		orgID, previousStartText, previousEndText,
-	).Scan(&yesterSuccess); err != nil {
-		return
-	}
-	if err = h.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM call_logs WHERE org_id = $1 AND created_at >= $2 AND created_at < $3`,
-		orgID, previousStartText, previousEndText,
-	).Scan(&yesterTotal); err != nil {
-		return
-	}
-	yesterRate := 0.0
-	if yesterTotal > 0 {
-		yesterRate = float64(yesterSuccess) / float64(yesterTotal)
-	}
-	return todayCost - yesterCost, todayLatency - yesterLatency, todayRate - yesterRate, nil
+	return todayCost - previous.CostMicros, todayLatency - previous.P95LatencyMS, todayRate - previous.SuccessRate, nil
 }

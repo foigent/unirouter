@@ -26,11 +26,16 @@ vi.mock('../../api/client', () => ({
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
     getWalletTransactions: (...args: any[]) => mockGetWalletTransactions(...args),
     exportWalletTransactions: (...args: any[]) => mockExportWalletTransactions(...args),
-    getEnterpriseFiscalPeriods: (...args: any[]) => mockGetEnterpriseFiscalPeriods(...args),
-    getEnterpriseCostCenters: (...args: any[]) => mockGetEnterpriseCostCenters(...args),
-    getEnterpriseBudgets: (...args: any[]) => mockGetEnterpriseBudgets(...args),
-    getEnterpriseBudgetPositions: (...args: any[]) => mockGetEnterpriseBudgetPositions(...args),
-    approveEnterpriseBudget: (...args: any[]) => mockApproveEnterpriseBudget(...args),
+  },
+}));
+
+vi.mock('../../api/enterpriseFinance', () => ({
+  enterpriseFinanceApi: {
+    getFiscalPeriods: (...args: any[]) => mockGetEnterpriseFiscalPeriods(...args),
+    getCostCenters: (...args: any[]) => mockGetEnterpriseCostCenters(...args),
+    getBudgets: (...args: any[]) => mockGetEnterpriseBudgets(...args),
+    getBudgetPositions: (...args: any[]) => mockGetEnterpriseBudgetPositions(...args),
+    approveBudget: (...args: any[]) => mockApproveEnterpriseBudget(...args),
   },
 }));
 

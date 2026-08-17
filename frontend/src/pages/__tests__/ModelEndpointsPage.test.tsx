@@ -16,16 +16,25 @@ const mocks = vi.hoisted(() => ({
   rollbackRuntimeChange: vi.fn(),
 }));
 
-vi.mock('../../api/client', () => ({
-  api: mocks,
-  ApiError: class ApiError extends Error {
-    status: number;
-    payload: unknown;
-    constructor(message: string, status = 500, payload: unknown = null) {
-      super(message);
-      this.status = status;
-      this.payload = payload;
-    }
+vi.mock('../../api/channels', () => ({
+  channelApi: {
+    update: mocks.updateChannel,
+    create: mocks.createChannel,
+  },
+}));
+vi.mock('../../api/modelEndpoints', () => ({
+  modelEndpointApi: {
+    getModelEndpoints: mocks.getModelEndpoints,
+    testChannelModel: mocks.testChannelModel,
+    activateModelEndpoint: mocks.activateModelEndpoint,
+    startModelEndpointCanary: mocks.startModelEndpointCanary,
+    recoverModelEndpoint: mocks.recoverModelEndpoint,
+  },
+}));
+vi.mock('../../api/routing', () => ({
+  routingApi: {
+    promoteRelease: mocks.promoteRuntimeChange,
+    rollbackRelease: mocks.rollbackRuntimeChange,
   },
 }));
 

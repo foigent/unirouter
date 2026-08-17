@@ -1,122 +1,85 @@
-import { modelEndpointApi } from './modelEndpoints';
-import { apiPath, appendParams, request, requestBlob } from './transport';
+import { apiPath, appendParams, request as typedRequest, requestBlob } from './transport';
 
 export { ApiError } from './transport';
+
+type JsonObject = Record<string, unknown>;
+
+// Compatibility boundary for domains not yet migrated to a named API module.
+// Keep this private: new call sites must use typedRequest<T> in a domain client.
+type LegacyApiResponse = any;
+const legacyRequest = (path: string, options?: RequestInit) =>
+  typedRequest<LegacyApiResponse>(path, options);
 
 export const api = {
   // Auth
   login: (username: string, password: string) =>
-    request('/auth/login', {
+    legacyRequest('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
-  logout: () => request('/auth/logout', { method: 'POST' }),
-  getOIDCConfig: () => request('/auth/oidc/config'),
+  logout: () => legacyRequest('/auth/logout', { method: 'POST' }),
+  getOIDCConfig: () => legacyRequest('/auth/oidc/config'),
   getOIDCStartURL: (redirect = '/') =>
     apiPath(`/auth/oidc/start?redirect=${encodeURIComponent(redirect)}`),
 
-  // Dashboard
-  getDashboardStats: (startTime?: string, endTime?: string, orgId?: number) =>
-    request(appendParams('/dashboard/stats', {
-      start_time: startTime,
-      end_time: endTime,
-      org_id: orgId,
-    })),
-
-  // Channels
-  getChannels: (page = 1, pageSize = 20) =>
-    request(`/channels?page=${page}&page_size=${pageSize}`),
-  createChannel: (data: any) =>
-    request('/channels', { method: 'POST', body: JSON.stringify(data) }),
-  updateChannel: (id: number, data: any) =>
-    request(`/channels/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteChannel: (id: number) =>
-    request(`/channels/${id}`, { method: 'DELETE' }),
-  ...modelEndpointApi,
-  getProviderPacks: () => request('/provider-packs'),
-  previewRouting: (model: string) =>
-    request(`/routing/preview?model=${encodeURIComponent(model)}`),
-  getRuntimeChanges: (model?: string, page = 1, pageSize = 20) =>
-    request(appendParams('/runtime-changes', { model, page, page_size: pageSize })),
-  getRuntimeChange: (releaseRef: string) =>
-    request(`/runtime-changes/${encodeURIComponent(releaseRef)}`),
-  getRuntimeChangeSlot: (model: string) =>
-    request(appendParams('/runtime-changes/slot', { model })),
-  createRuntimeChange: (data: any) =>
-    request('/runtime-changes', { method: 'POST', body: JSON.stringify(data) }),
-  validateRuntimeChange: (releaseRef: string, expectedVersion: number) =>
-    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/validate`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
-  activateInitialRuntimeChange: (releaseRef: string, expectedVersion: number) =>
-    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/activate-initial`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
-  shadowRuntimeChange: (releaseRef: string, expectedVersion: number) =>
-    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/shadow`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
-  canaryRuntimeChange: (releaseRef: string, expectedVersion: number, canaryBasisPoints: number) =>
-    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/canary`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion, canary_basis_points: canaryBasisPoints }) }),
-  promoteRuntimeChange: (releaseRef: string, expectedVersion: number) =>
-    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/promote`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
-  rollbackRuntimeChange: (releaseRef: string, expectedVersion: number) =>
-    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/rollback`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }) }),
-  rejectRuntimeChange: (releaseRef: string, expectedVersion: number, reason: string) =>
-    request(`/runtime-changes/${encodeURIComponent(releaseRef)}/reject`, { method: 'POST', body: JSON.stringify({ expected_version: expectedVersion, reason }) }),
-
   // Product-local invocation optimization. Policies always require explicit
   // request opt-in; only an evidence-gated canary stage may affect execution.
-  getInvocationOptimizationContract: () => request('/invocation-optimization/contract'),
+  getInvocationOptimizationContract: () => legacyRequest('/invocation-optimization/contract'),
   getInvocationOptimizationPolicies: (orgId?: number) =>
-    request(appendParams('/invocation-optimization/policies', { org_id: orgId })),
+    legacyRequest(appendParams('/invocation-optimization/policies', { org_id: orgId })),
   getInvocationOptimizationPolicyReadiness: (policyRef: string, orgId?: number) =>
-    request(appendParams(`/invocation-optimization/policies/${encodeURIComponent(policyRef)}/readiness`, { org_id: orgId })),
-  createInvocationOptimizationPolicy: (data: any) =>
-    request('/invocation-optimization/policies', { method: 'POST', body: JSON.stringify(data) }),
-  updateInvocationOptimizationPolicy: (policyRef: string, data: any) =>
-    request(`/invocation-optimization/policies/${encodeURIComponent(policyRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams(`/invocation-optimization/policies/${encodeURIComponent(policyRef)}/readiness`, { org_id: orgId })),
+  createInvocationOptimizationPolicy: (data: JsonObject) =>
+    legacyRequest('/invocation-optimization/policies', { method: 'POST', body: JSON.stringify(data) }),
+  updateInvocationOptimizationPolicy: (policyRef: string, data: JsonObject) =>
+    legacyRequest(`/invocation-optimization/policies/${encodeURIComponent(policyRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
   transitionInvocationOptimizationPolicy: (
     policyRef: string,
     action: 'validate' | 'shadow' | 'canary' | 'rollback',
     expectedRevision: number,
     reason: string,
-  ) => request(`/invocation-optimization/policies/${encodeURIComponent(policyRef)}/${action}`, {
+  ) => legacyRequest(`/invocation-optimization/policies/${encodeURIComponent(policyRef)}/${action}`, {
     method: 'POST',
     body: JSON.stringify({ expected_revision: expectedRevision, reason }),
   }),
 
   // Keys
   getKeys: (page = 1, pageSize = 20, filters?: { project_id?: number }) =>
-    request(appendParams('/keys', { page, page_size: pageSize, project_id: filters?.project_id })),
-  createKey: (data: any) =>
-    request('/keys', { method: 'POST', body: JSON.stringify(data) }),
-  updateKey: (id: number, data: any) =>
-    request(`/keys/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/keys', { page, page_size: pageSize, project_id: filters?.project_id })),
+  createKey: (data: JsonObject) =>
+    legacyRequest('/keys', { method: 'POST', body: JSON.stringify(data) }),
+  updateKey: (id: number, data: JsonObject) =>
+    legacyRequest(`/keys/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   disableKey: (id: number) =>
-    request(`/keys/${id}/disable`, { method: 'POST' }),
+    legacyRequest(`/keys/${id}/disable`, { method: 'POST' }),
 
   // Product-local workload/application identity. This surface composes model
   // execution authority only; it never grants Tool or MCP capabilities.
-  getWorkloadApplicationContract: () => request('/workload-applications/contract'),
+  getWorkloadApplicationContract: () => legacyRequest('/workload-applications/contract'),
   getWorkloadApplications: (filters?: { org_id?: number; project_id?: number; status?: string }) =>
-    request(appendParams('/workload-applications', {
+    legacyRequest(appendParams('/workload-applications', {
       org_id: filters?.org_id,
       project_id: filters?.project_id,
       status: filters?.status,
     })),
   getWorkloadApplication: (applicationRef: string, orgId?: number) =>
-    request(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}`, { org_id: orgId })),
-  createWorkloadApplication: (data: any) =>
-    request('/workload-applications', { method: 'POST', body: JSON.stringify(data) }),
-  updateWorkloadApplication: (applicationRef: string, data: any) =>
-    request(`/workload-applications/${encodeURIComponent(applicationRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}`, { org_id: orgId })),
+  createWorkloadApplication: (data: JsonObject) =>
+    legacyRequest('/workload-applications', { method: 'POST', body: JSON.stringify(data) }),
+  updateWorkloadApplication: (applicationRef: string, data: JsonObject) =>
+    legacyRequest(`/workload-applications/${encodeURIComponent(applicationRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
   archiveWorkloadApplication: (applicationRef: string, data: { org_id?: number; expected_revision: number }) =>
-    request(`/workload-applications/${encodeURIComponent(applicationRef)}/archive`, { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest(`/workload-applications/${encodeURIComponent(applicationRef)}/archive`, { method: 'POST', body: JSON.stringify(data) }),
   getWorkloadApplicationCredentials: (applicationRef: string, orgId?: number, page = 1, pageSize = 20) =>
-    request(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}/credentials`, {
+    legacyRequest(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}/credentials`, {
       org_id: orgId,
       page,
       page_size: pageSize,
     })),
   bindWorkloadApplicationCredential: (applicationRef: string, keyId: number, data: { org_id?: number; expected_revision: number }) =>
-    request(`/workload-applications/${encodeURIComponent(applicationRef)}/credentials/${keyId}/bind`, { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest(`/workload-applications/${encodeURIComponent(applicationRef)}/credentials/${keyId}/bind`, { method: 'POST', body: JSON.stringify(data) }),
   getWorkloadApplicationReadiness: (applicationRef: string, filters?: { org_id?: number; model?: string; endpoint?: string }) =>
-    request(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}/readiness`, {
+    legacyRequest(appendParams(`/workload-applications/${encodeURIComponent(applicationRef)}/readiness`, {
       org_id: filters?.org_id,
       model: filters?.model,
       endpoint: filters?.endpoint,
@@ -124,101 +87,50 @@ export const api = {
 
   // Desired deployment/network state. The API stores no TLS private keys and
   // does not apply or restart runtime infrastructure.
-  getDeploymentNetworkContract: () => request('/deployment/contract'),
-  getDeploymentProfiles: () => request('/deployment/profiles'),
-  createDeploymentProfile: (data: any) =>
-    request('/deployment/profiles', { method: 'POST', body: JSON.stringify(data) }),
-  updateDeploymentProfile: (profileRef: string, data: any) =>
-    request(`/deployment/profiles/${encodeURIComponent(profileRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  getDeploymentNetworkContract: () => legacyRequest('/deployment/contract'),
+  getDeploymentProfiles: () => legacyRequest('/deployment/profiles'),
+  createDeploymentProfile: (data: JsonObject) =>
+    legacyRequest('/deployment/profiles', { method: 'POST', body: JSON.stringify(data) }),
+  updateDeploymentProfile: (profileRef: string, data: JsonObject) =>
+    legacyRequest(`/deployment/profiles/${encodeURIComponent(profileRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
   getGatewayEndpoints: (deploymentProfileRef?: string) =>
-    request(appendParams('/deployment/endpoints', { deployment_profile_ref: deploymentProfileRef })),
-  createGatewayEndpoint: (data: any) =>
-    request('/deployment/endpoints', { method: 'POST', body: JSON.stringify(data) }),
-  updateGatewayEndpoint: (endpointRef: string, data: any) =>
-    request(`/deployment/endpoints/${encodeURIComponent(endpointRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/deployment/endpoints', { deployment_profile_ref: deploymentProfileRef })),
+  createGatewayEndpoint: (data: JsonObject) =>
+    legacyRequest('/deployment/endpoints', { method: 'POST', body: JSON.stringify(data) }),
+  updateGatewayEndpoint: (endpointRef: string, data: JsonObject) =>
+    legacyRequest(`/deployment/endpoints/${encodeURIComponent(endpointRef)}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Shared RPM/RPS/TPM/concurrency policies
   getLimitPolicies: (page = 1, pageSize = 20, filters?: { org_id?: number; mode?: string }) =>
-    request(appendParams('/limit-policies', { page, page_size: pageSize, org_id: filters?.org_id, mode: filters?.mode })),
-  createLimitPolicy: (data: any) =>
-    request('/limit-policies', { method: 'POST', body: JSON.stringify(data) }),
-  updateLimitPolicy: (id: number, data: any) =>
-    request(`/limit-policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/limit-policies', { page, page_size: pageSize, org_id: filters?.org_id, mode: filters?.mode })),
+  createLimitPolicy: (data: JsonObject) =>
+    legacyRequest('/limit-policies', { method: 'POST', body: JSON.stringify(data) }),
+  updateLimitPolicy: (id: number, data: JsonObject) =>
+    legacyRequest(`/limit-policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Versioned input/non-stream output guardrail policies
   getGuardrailPolicies: (page = 1, pageSize = 20, filters?: { stage?: string }) =>
-    request(appendParams('/guardrail-policies', { page, page_size: pageSize, stage: filters?.stage })),
-  createGuardrailPolicy: (data: any) =>
-    request('/guardrail-policies', { method: 'POST', body: JSON.stringify(data) }),
-  updateGuardrailPolicy: (id: number, data: any) =>
-    request(`/guardrail-policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/guardrail-policies', { page, page_size: pageSize, stage: filters?.stage })),
+  createGuardrailPolicy: (data: JsonObject) =>
+    legacyRequest('/guardrail-policies', { method: 'POST', body: JSON.stringify(data) }),
+  updateGuardrailPolicy: (id: number, data: JsonObject) =>
+    legacyRequest(`/guardrail-policies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Deployment-wide input blocking words (platform admin only)
-  getSensitiveWords: () => request('/sensitive-words'),
+  getSensitiveWords: () => legacyRequest('/sensitive-words'),
   replaceSensitiveWords: (words: string[]) =>
-    request('/sensitive-words', { method: 'PUT', body: JSON.stringify({ words }) }),
+    legacyRequest('/sensitive-words', { method: 'PUT', body: JSON.stringify({ words }) }),
 
   // Wallet
-  getWallet: (orgId?: number) => request(appendParams('/wallet', { org_id: orgId })),
+  getWallet: (orgId?: number) => legacyRequest(appendParams('/wallet', { org_id: orgId })),
   getWalletTransactions: (page = 1, pageSize = 20, orgId?: number) =>
-    request(appendParams('/wallet/transactions', { page, page_size: pageSize, org_id: orgId })),
+    legacyRequest(appendParams('/wallet/transactions', { page, page_size: pageSize, org_id: orgId })),
   exportWalletTransactions: (orgId?: number) =>
-    request(appendParams('/wallet/transactions/export', { org_id: orgId })),
+    legacyRequest(appendParams('/wallet/transactions/export', { org_id: orgId })),
   topUp: (data: { org_id?: number; amount_cents: number; description: string; client_request_id: string }) =>
-    request('/wallet/topup', { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest('/wallet/topup', { method: 'POST', body: JSON.stringify(data) }),
   adjustWallet: (data: { org_id?: number; delta_cents: number; description: string; client_request_id: string }) =>
-    request('/wallet/adjust', { method: 'POST', body: JSON.stringify(data) }),
-
-  // PRD8 enterprise finance. These records are product-local planning,
-  // allocation and evidence surfaces; they do not replace wallet settlement.
-  getEnterpriseFiscalPeriods: (orgId?: number) =>
-    request(appendParams('/enterprise-finance/fiscal-periods', { org_id: orgId })),
-  createEnterpriseFiscalPeriod: (data: any) =>
-    request('/enterprise-finance/fiscal-periods', { method: 'POST', body: JSON.stringify(data) }),
-  transitionEnterpriseFiscalPeriod: (periodRef: string, data: any) =>
-    request(`/enterprise-finance/fiscal-periods/${encodeURIComponent(periodRef)}/transition`, { method: 'POST', body: JSON.stringify(data) }),
-  getEnterpriseCostCenters: (orgId?: number, effectiveAt?: string) =>
-    request(appendParams('/enterprise-finance/cost-centers', { org_id: orgId, effective_at: effectiveAt })),
-  createEnterpriseCostCenterVersion: (data: any) =>
-    request('/enterprise-finance/cost-centers', { method: 'POST', body: JSON.stringify(data) }),
-  getEnterpriseBudgets: (orgId?: number) =>
-    request(appendParams('/enterprise-finance/budgets', { org_id: orgId })),
-  getEnterpriseBudgetPositions: (orgId?: number) =>
-    request(appendParams('/enterprise-finance/budget-positions', { org_id: orgId })),
-  createEnterpriseBudgetDraft: (data: any) =>
-    request('/enterprise-finance/budgets', { method: 'POST', body: JSON.stringify(data) }),
-  approveEnterpriseBudget: (budgetRef: string, data: any) =>
-    request(`/enterprise-finance/budgets/${encodeURIComponent(budgetRef)}/approve`, { method: 'POST', body: JSON.stringify(data) }),
-  getEnterpriseRateCards: (orgId?: number) =>
-    request(appendParams('/enterprise-finance/rate-cards', { org_id: orgId })),
-  createEnterpriseRateCardDraft: (data: any) =>
-    request('/enterprise-finance/rate-cards', { method: 'POST', body: JSON.stringify(data) }),
-  importOfficialEnterpriseRateCardDraft: (data: any) =>
-    request('/enterprise-finance/rate-cards/import-official-draft', { method: 'POST', body: JSON.stringify(data) }),
-  bootstrapLegacyEnterpriseRateCardDrafts: (data: { org_id?: number }) =>
-    request('/enterprise-finance/rate-cards/bootstrap-legacy-drafts', { method: 'POST', body: JSON.stringify(data) }),
-  preflightEnterpriseRateCardAuthority: (data: { org_id?: number; models: Array<{ model_ref: string }> }) =>
-    request('/enterprise-finance/rate-cards/preflight', { method: 'POST', body: JSON.stringify(data) }),
-  approveEnterpriseRateCard: (rateCardRef: string, data: any) =>
-    request(`/enterprise-finance/rate-cards/${encodeURIComponent(rateCardRef)}/approve`, { method: 'POST', body: JSON.stringify(data) }),
-  activateEnterpriseRateCard: (rateCardRef: string, data: any) =>
-    request(`/enterprise-finance/rate-cards/${encodeURIComponent(rateCardRef)}/activate`, { method: 'POST', body: JSON.stringify(data) }),
-  getEnterprisePricingSnapshot: (requestRef: string, orgId?: number) =>
-    request(appendParams(`/enterprise-finance/pricing-snapshots/${encodeURIComponent(requestRef)}`, { org_id: orgId })),
-  getEnterpriseAllocationRuns: (periodRef: string, orgId?: number) =>
-    request(appendParams('/enterprise-finance/allocation-runs', { period_ref: periodRef, org_id: orgId })),
-  getEnterpriseAllocationRun: (runRef: string, orgId?: number) =>
-    request(appendParams(`/enterprise-finance/allocation-runs/${encodeURIComponent(runRef)}`, { org_id: orgId })),
-  createEnterpriseAllocationRun: (data: any) =>
-    request('/enterprise-finance/allocation-runs', { method: 'POST', body: JSON.stringify(data) }),
-  getEnterpriseAllocationSummary: (periodRef: string, orgId?: number) =>
-    request(appendParams('/enterprise-finance/allocation-summary', { period_ref: periodRef, org_id: orgId })),
-  getEnterpriseAdjustmentJournals: (periodRef: string, orgId?: number) =>
-    request(appendParams('/enterprise-finance/adjustment-journals', { period_ref: periodRef, org_id: orgId })),
-  createEnterpriseAdjustmentJournal: (data: any) =>
-    request('/enterprise-finance/adjustment-journals', { method: 'POST', body: JSON.stringify(data) }),
-  approveEnterpriseAdjustmentJournal: (journalRef: string, data: any) =>
-    request(`/enterprise-finance/adjustment-journals/${encodeURIComponent(journalRef)}/approve`, { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest('/wallet/adjust', { method: 'POST', body: JSON.stringify(data) }),
 
   // Logs (with optional filters)
   getLogs: (page = 1, pageSize = 20, filters?: {
@@ -229,7 +141,7 @@ export const api = {
     evidence_ref?: string; source_event_hash?: string;
     org_id?: number; project_id?: number; usage_source?: string;
   }) => {
-    return request(appendParams('/logs', {
+    return legacyRequest(appendParams('/logs', {
       page,
       page_size: pageSize,
       model: filters?.model,
@@ -254,39 +166,39 @@ export const api = {
       usage_source: filters?.usage_source,
     }));
   },
-  getLogDetail: (id: number, orgId?: number) => request(appendParams(`/logs/${id}`, { org_id: orgId })),
-  getLogTrace: (id: number, orgId?: number) => request(appendParams(`/logs/${id}/trace`, { org_id: orgId })),
+  getLogDetail: (id: number, orgId?: number) => legacyRequest(appendParams(`/logs/${id}`, { org_id: orgId })),
+  getLogTrace: (id: number, orgId?: number) => legacyRequest(appendParams(`/logs/${id}/trace`, { org_id: orgId })),
 
   // PRD5 Data Exchange Control (platform admin only)
   getDataExchangeItems: (page = 1, pageSize = 20, status?: string) =>
-    request(appendParams('/data-exchange/items', { page, page_size: pageSize, status })),
-  createDataExchangeItem: (data: any) =>
-    request('/data-exchange/items', { method: 'POST', body: JSON.stringify(data) }),
-  updateDataExchangeItem: (id: number, data: any) =>
-    request(`/data-exchange/items/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/data-exchange/items', { page, page_size: pageSize, status })),
+  createDataExchangeItem: (data: JsonObject) =>
+    legacyRequest('/data-exchange/items', { method: 'POST', body: JSON.stringify(data) }),
+  updateDataExchangeItem: (id: number, data: JsonObject) =>
+    legacyRequest(`/data-exchange/items/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   getDataExchanges: (page = 1, pageSize = 20) =>
-    request(appendParams('/data-exchange/exchanges', { page, page_size: pageSize })),
-  createDataExchange: (data: any) =>
-    request('/data-exchange/exchanges', { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/data-exchange/exchanges', { page, page_size: pageSize })),
+  createDataExchange: (data: JsonObject) =>
+    legacyRequest('/data-exchange/exchanges', { method: 'POST', body: JSON.stringify(data) }),
   getDataExchangeActivity: (id: number) =>
-    request(`/data-exchange/exchanges/${id}/activity`),
-  createDataExchangeDelivery: (id: number, data: any) =>
-    request(`/data-exchange/exchanges/${id}/deliveries`, { method: 'POST', body: JSON.stringify(data) }),
-  createDataExchangeReceipt: (id: number, data: any) =>
-    request(`/data-exchange/exchanges/${id}/receipts`, { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest(`/data-exchange/exchanges/${id}/activity`),
+  createDataExchangeDelivery: (id: number, data: JsonObject) =>
+    legacyRequest(`/data-exchange/exchanges/${id}/deliveries`, { method: 'POST', body: JSON.stringify(data) }),
+  createDataExchangeReceipt: (id: number, data: JsonObject) =>
+    legacyRequest(`/data-exchange/exchanges/${id}/receipts`, { method: 'POST', body: JSON.stringify(data) }),
   markDataExchangeArtifactDeleted: (id: number) =>
-    request(`/data-exchange/exchanges/${id}/artifact-delete`, { method: 'POST' }),
+    legacyRequest(`/data-exchange/exchanges/${id}/artifact-delete`, { method: 'POST' }),
   getXInsightFeedConnection: (projectId: number) =>
-    request(`/data-exchange/xinsight/connections/${projectId}`),
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}`),
   installXInsightConnector: (projectId: number, data: { invitation: unknown }) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/install`, {
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}/install`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   pauseXInsightFeedConnection: (projectId: number) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/pause`, { method: 'POST' }),
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}/pause`, { method: 'POST' }),
   resumeXInsightFeedConnection: (projectId: number) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/resume`, { method: 'POST' }),
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}/resume`, { method: 'POST' }),
   createXInsightFeedCredential: (projectId: number, data: {
     allowed_ip: string;
     registration: {
@@ -298,14 +210,14 @@ export const api = {
       operation_id: string;
     };
   }) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/credentials`, { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}/credentials`, { method: 'POST', body: JSON.stringify(data) }),
   activateInitialXInsightFeedCredential: (projectId: number, stagedCredentialId: number) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/credentials/activate`, {
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}/credentials/activate`, {
       method: 'POST',
       body: JSON.stringify({ staged_credential_id: stagedCredentialId }),
     }),
   revokeXInsightFeedCredential: (projectId: number, credentialId: number) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/credentials/${credentialId}/revoke`, { method: 'POST' }),
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}/credentials/${credentialId}/revoke`, { method: 'POST' }),
   prepareXInsightFeedRotation: (projectId: number, data: {
     registration: {
       schema_version: string;
@@ -316,17 +228,17 @@ export const api = {
       operation_id: string;
     };
   }) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/rotation/prepare`, {
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}/rotation/prepare`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   activateXInsightFeedRotation: (projectId: number, stagedCredentialId: number) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/rotation/activate`, {
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}/rotation/activate`, {
       method: 'POST',
       body: JSON.stringify({ staged_credential_id: stagedCredentialId }),
     }),
   cancelXInsightFeedRotation: (projectId: number, stagedCredentialId: number) =>
-    request(`/data-exchange/xinsight/connections/${projectId}/rotation/cancel`, {
+    legacyRequest(`/data-exchange/xinsight/connections/${projectId}/rotation/cancel`, {
       method: 'POST',
       body: JSON.stringify({ staged_credential_id: stagedCredentialId }),
     }),
@@ -337,7 +249,7 @@ export const api = {
     owner_user_id?: string | number; key_type?: string; scope?: string;
     model?: string; alias?: string; provider?: string; channel?: string; status?: string;
     usage_source?: string; start_time?: string; end_time?: string; format?: string;
-  }) => request(appendParams('/usage/analytics', {
+  }) => legacyRequest(appendParams('/usage/analytics', {
     group_by: filters?.group_by,
     org_id: filters?.org_id,
     project_id: filters?.project_id,
@@ -358,7 +270,7 @@ export const api = {
   getCostOptimizationSummary: (filters?: {
     org_id?: string | number; project_id?: string | number; model?: string;
     provider?: string; channel?: string; start_time?: string; end_time?: string;
-  }) => request(appendParams('/cost-optimization/summary', {
+  }) => legacyRequest(appendParams('/cost-optimization/summary', {
     org_id: filters?.org_id,
     project_id: filters?.project_id,
     model: filters?.model,
@@ -370,7 +282,7 @@ export const api = {
   getCostOptimizationTrend: (filters?: {
     org_id?: string | number; project_id?: string | number; model?: string;
     provider?: string; channel?: string; start_time?: string; end_time?: string;
-  }) => request(appendParams('/cost-optimization/trend', {
+  }) => legacyRequest(appendParams('/cost-optimization/trend', {
     org_id: filters?.org_id,
     project_id: filters?.project_id,
     model: filters?.model,
@@ -382,7 +294,7 @@ export const api = {
   getCostOptimizationBreakdown: (filters?: {
     group_by?: string; org_id?: string | number; project_id?: string | number; model?: string;
     provider?: string; channel?: string; start_time?: string; end_time?: string;
-  }) => request(appendParams('/cost-optimization/breakdown', {
+  }) => legacyRequest(appendParams('/cost-optimization/breakdown', {
     group_by: filters?.group_by,
     org_id: filters?.org_id,
     project_id: filters?.project_id,
@@ -395,7 +307,7 @@ export const api = {
   getCostOptimizationOpportunities: (filters?: {
     group_by?: string; org_id?: string | number; project_id?: string | number; model?: string;
     provider?: string; channel?: string; start_time?: string; end_time?: string;
-  }) => request(appendParams('/cost-optimization/opportunities', {
+  }) => legacyRequest(appendParams('/cost-optimization/opportunities', {
     group_by: filters?.group_by,
     org_id: filters?.org_id,
     project_id: filters?.project_id,
@@ -406,25 +318,25 @@ export const api = {
     end_time: filters?.end_time,
   })),
   getInternalStatus: (filters?: { org_id?: string | number; project_id?: string | number }) =>
-    request(appendParams('/internal-status', { org_id: filters?.org_id, project_id: filters?.project_id })),
-  getRuntimeStatus: (orgId?: number) => request(appendParams('/runtime/status', { org_id: orgId })),
-  getErrorDocs: () => request('/error-docs'),
+    legacyRequest(appendParams('/internal-status', { org_id: filters?.org_id, project_id: filters?.project_id })),
+  getRuntimeStatus: (orgId?: number) => legacyRequest(appendParams('/runtime/status', { org_id: orgId })),
+  getErrorDocs: () => legacyRequest('/error-docs'),
   getMediaJobContract: (projectId: number, orgId?: number) =>
-    request(appendParams('/media-jobs/contract', { project_id: projectId, org_id: orgId })),
+    legacyRequest(appendParams('/media-jobs/contract', { project_id: projectId, org_id: orgId })),
   getMediaJobs: (projectId: number, orgId?: number, cursor?: string, limit = 50) =>
-    request(appendParams('/media-jobs', {
+    legacyRequest(appendParams('/media-jobs', {
       project_id: projectId,
       org_id: orgId,
       cursor,
       limit,
     })),
   getMediaJob: (jobId: string, projectId: number, orgId?: number) =>
-    request(appendParams(`/media-jobs/${encodeURIComponent(jobId)}`, {
+    legacyRequest(appendParams(`/media-jobs/${encodeURIComponent(jobId)}`, {
       project_id: projectId,
       org_id: orgId,
     })),
   cancelMediaJob: (jobId: string, projectId: number, orgId?: number) =>
-    request(appendParams(`/media-jobs/${encodeURIComponent(jobId)}/cancel`, {
+    legacyRequest(appendParams(`/media-jobs/${encodeURIComponent(jobId)}/cancel`, {
       project_id: projectId,
       org_id: orgId,
     }), { method: 'POST' }),
@@ -436,26 +348,26 @@ export const api = {
 
   // Projects and developer catalog
   getProjects: (page = 1, pageSize = 20, filters?: { status?: string; org_id?: number }) =>
-    request(appendParams('/projects', { page, page_size: pageSize, status: filters?.status, org_id: filters?.org_id })),
-  createProject: (data: any) =>
-    request('/projects', { method: 'POST', body: JSON.stringify(data) }),
-  getProject: (id: number) => request(`/projects/${id}`),
-  updateProject: (id: number, data: any) =>
-    request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/projects', { page, page_size: pageSize, status: filters?.status, org_id: filters?.org_id })),
+  createProject: (data: JsonObject) =>
+    legacyRequest('/projects', { method: 'POST', body: JSON.stringify(data) }),
+  getProject: (id: number) => legacyRequest(`/projects/${id}`),
+  updateProject: (id: number, data: JsonObject) =>
+    legacyRequest(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   getProjectMembers: (id: number, page = 1, pageSize = 20, query?: string) =>
-    request(appendParams(`/projects/${id}/members`, { page, page_size: pageSize, q: query })),
+    legacyRequest(appendParams(`/projects/${id}/members`, { page, page_size: pageSize, q: query })),
   upsertProjectMember: (projectId: number, userId: number, role: string) =>
-    request(`/projects/${projectId}/members/${userId}`, { method: 'PUT', body: JSON.stringify({ role }) }),
+    legacyRequest(`/projects/${projectId}/members/${userId}`, { method: 'PUT', body: JSON.stringify({ role }) }),
   deleteProjectMember: (projectId: number, userId: number) =>
-    request(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' }),
-  getProjectBudget: (id: number) => request(`/projects/${id}/budget`),
+    legacyRequest(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' }),
+  getProjectBudget: (id: number) => legacyRequest(`/projects/${id}/budget`),
   updateProjectBudget: (id: number, data: { budget_cents?: number; budget_period?: string }) =>
-    request(`/projects/${id}/budget`, { method: 'PUT', body: JSON.stringify(data) }),
-  getProjectModelSets: (id: number) => request(`/projects/${id}/model-sets`),
+    legacyRequest(`/projects/${id}/budget`, { method: 'PUT', body: JSON.stringify(data) }),
+  getProjectModelSets: (id: number) => legacyRequest(`/projects/${id}/model-sets`),
   replaceProjectModelSets: (id: number, modelSetIds: number[]) =>
-    request(`/projects/${id}/model-sets`, { method: 'PUT', body: JSON.stringify({ model_set_ids: modelSetIds }) }),
+    legacyRequest(`/projects/${id}/model-sets`, { method: 'PUT', body: JSON.stringify({ model_set_ids: modelSetIds }) }),
   getModelCatalog: (page = 1, pageSize = 20, filters?: { project_id?: number; org_id?: number; routable_only?: boolean }) =>
-    request(appendParams('/model-catalog', {
+    legacyRequest(appendParams('/model-catalog', {
       page,
       page_size: pageSize,
       project_id: filters?.project_id,
@@ -465,23 +377,23 @@ export const api = {
 
   // Product-local model-call authorization. These policies can only narrow
   // existing API-key/project/user/Agent authority and never grant Tool/MCP use.
-  getModelAuthorizationContract: () => request('/model-call-authorizations/contract'),
+  getModelAuthorizationContract: () => legacyRequest('/model-call-authorizations/contract'),
   getModelAuthorizations: (orgId?: number, status?: string) =>
-    request(appendParams('/model-call-authorizations', { org_id: orgId, status })),
-  createModelAuthorization: (data: any) =>
-    request('/model-call-authorizations', { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/model-call-authorizations', { org_id: orgId, status })),
+  createModelAuthorization: (data: JsonObject) =>
+    legacyRequest('/model-call-authorizations', { method: 'POST', body: JSON.stringify(data) }),
   activateModelAuthorization: (authorizationRef: string, expectedRevision: number, orgId?: number) =>
-    request(`/model-call-authorizations/${encodeURIComponent(authorizationRef)}/activate`, {
+    legacyRequest(`/model-call-authorizations/${encodeURIComponent(authorizationRef)}/activate`, {
       method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision, ...(orgId ? { org_id: orgId } : {}) }),
     }),
   revokeModelAuthorization: (authorizationRef: string, expectedRevision: number, orgId?: number) =>
-    request(`/model-call-authorizations/${encodeURIComponent(authorizationRef)}/revoke`, {
+    legacyRequest(`/model-call-authorizations/${encodeURIComponent(authorizationRef)}/revoke`, {
       method: 'POST', body: JSON.stringify({ expected_revision: expectedRevision, ...(orgId ? { org_id: orgId } : {}) }),
     }),
 
   // Model governance
   getModelRegistry: (page = 1, pageSize = 20, filters?: { lifecycle?: string; approved_only?: boolean; q?: string; org_id?: number }) =>
-    request(appendParams('/model-registry', {
+    legacyRequest(appendParams('/model-registry', {
       page,
       page_size: pageSize,
       lifecycle: filters?.lifecycle,
@@ -489,98 +401,86 @@ export const api = {
       q: filters?.q,
       org_id: filters?.org_id,
     })),
-  createModelRegistry: (data: any) =>
-    request('/model-registry', { method: 'POST', body: JSON.stringify(data) }),
-  updateModelRegistry: (id: number, data: any, orgId?: number) =>
-    request(appendParams(`/model-registry/${id}`, { org_id: orgId }), { method: 'PUT', body: JSON.stringify(data) }),
+  createModelRegistry: (data: JsonObject) =>
+    legacyRequest('/model-registry', { method: 'POST', body: JSON.stringify(data) }),
+  updateModelRegistry: (id: number, data: JsonObject, orgId?: number) =>
+    legacyRequest(appendParams(`/model-registry/${id}`, { org_id: orgId }), { method: 'PUT', body: JSON.stringify(data) }),
   getModelAliases: (page = 1, pageSize = 20, filters?: { org_id?: number }) =>
-    request(appendParams('/model-aliases', { page, page_size: pageSize, org_id: filters?.org_id })),
-  createModelAlias: (data: any) =>
-    request('/model-aliases', { method: 'POST', body: JSON.stringify(data) }),
-  updateModelAlias: (id: number, data: any, orgId?: number) =>
-    request(appendParams(`/model-aliases/${id}`, { org_id: orgId }), { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/model-aliases', { page, page_size: pageSize, org_id: filters?.org_id })),
+  createModelAlias: (data: JsonObject) =>
+    legacyRequest('/model-aliases', { method: 'POST', body: JSON.stringify(data) }),
+  updateModelAlias: (id: number, data: JsonObject, orgId?: number) =>
+    legacyRequest(appendParams(`/model-aliases/${id}`, { org_id: orgId }), { method: 'PUT', body: JSON.stringify(data) }),
   getModelSets: (page = 1, pageSize = 20, filters?: { org_id?: number }) =>
-    request(appendParams('/model-sets', { page, page_size: pageSize, org_id: filters?.org_id })),
-  createModelSet: (data: any) =>
-    request('/model-sets', { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/model-sets', { page, page_size: pageSize, org_id: filters?.org_id })),
+  createModelSet: (data: JsonObject) =>
+    legacyRequest('/model-sets', { method: 'POST', body: JSON.stringify(data) }),
   getModelSetItems: (id: number, filters?: { org_id?: number }) =>
-    request(appendParams(`/model-sets/${id}/items`, { org_id: filters?.org_id })),
+    legacyRequest(appendParams(`/model-sets/${id}/items`, { org_id: filters?.org_id })),
   replaceModelSetItems: (id: number, data: { items: { item_type: string; item_name: string }[] }, orgId?: number) =>
-    request(appendParams(`/model-sets/${id}/items`, { org_id: orgId }), { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams(`/model-sets/${id}/items`, { org_id: orgId }), { method: 'PUT', body: JSON.stringify(data) }),
 
   // Model prices
-  getModelPrices: () => request('/model-prices'),
+  getModelPrices: () => legacyRequest('/model-prices'),
   getModelPriceList: (page = 1, pageSize = 20) =>
-    request(`/model-prices?page=${page}&page_size=${pageSize}`),
-  getModelNames: () => request('/model-names'),
+    legacyRequest(`/model-prices?page=${page}&page_size=${pageSize}`),
+  getModelNames: () => legacyRequest('/model-names'),
   createModelPrice: (data: { model_name: string; input_price_cny_per_million_tokens: string; output_price_cny_per_million_tokens: string; cache_read_ratio?: string; cache_creation_ratio?: string }) =>
-    request('/model-prices', { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest('/model-prices', { method: 'POST', body: JSON.stringify(data) }),
   updateModelPrice: (id: number, data: { input_price_cny_per_million_tokens?: string; output_price_cny_per_million_tokens?: string; cache_read_ratio?: string; cache_creation_ratio?: string }) =>
-    request(`/model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(`/model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteModelPrice: (id: number) =>
-    request(`/model-prices/${id}`, { method: 'DELETE' }),
+    legacyRequest(`/model-prices/${id}`, { method: 'DELETE' }),
 
   // Settings
-  getSettings: () => request('/settings'),
-  updateSetting: (key: string, value: any) =>
-    request(`/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value }) }),
+  getSettings: () => legacyRequest('/settings'),
+  updateSetting: (key: string, value: unknown) =>
+    legacyRequest(`/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value }) }),
 
   // License
-  getLicense: () => request('/license'),
-  updateLicense: (license: any) =>
-    request('/license', { method: 'PUT', body: JSON.stringify({ license }) }),
-
-  // Channel Keys
-  getChannelKeys: (page = 1, pageSize = 20, channelId?: number) =>
-    request(appendParams('/channel-keys', { page, page_size: pageSize, channel_id: channelId })),
-  createChannelKey: (data: any) =>
-    request('/channel-keys', { method: 'POST', body: JSON.stringify(data) }),
-  updateChannelKey: (id: number, data: any) =>
-    request(`/channel-keys/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  rotateChannelKey: (id: number, data: { key: string; model: string; allowed_models?: string; prompt?: string }) =>
-    request(`/channel-keys/${id}/rotate`, { method: 'POST', body: JSON.stringify(data) }),
-  deleteChannelKey: (id: number) =>
-    request(`/channel-keys/${id}`, { method: 'DELETE' }),
+  getLicense: () => legacyRequest('/license'),
+  updateLicense: (license: unknown) =>
+    legacyRequest('/license', { method: 'PUT', body: JSON.stringify({ license }) }),
 
   // Users
   getOrganizations: (page = 1, pageSize = 100) =>
-    request(`/organizations?page=${page}&page_size=${pageSize}`),
+    legacyRequest(`/organizations?page=${page}&page_size=${pageSize}`),
   bootstrapFirstCustomer: (organizationName: string, clientRequestId: string) =>
-    request('/bootstrap/first-customer', {
+    legacyRequest('/bootstrap/first-customer', {
       method: 'POST',
       headers: { 'X-UniRouter-Client-Request-ID': clientRequestId },
       body: JSON.stringify({ organization_name: organizationName }),
     }),
   getEnterpriseDirectorySources: (orgId?: number) =>
-    request(appendParams('/enterprise-directory/sources', { org_id: orgId })),
+    legacyRequest(appendParams('/enterprise-directory/sources', { org_id: orgId })),
   getEnterpriseDirectoryTree: (sourceRef: string, effectiveAt?: string, orgId?: number) =>
-    request(appendParams('/enterprise-directory/tree', {
+    legacyRequest(appendParams('/enterprise-directory/tree', {
       source_ref: sourceRef,
       effective_at: effectiveAt,
       org_id: orgId,
     })),
   getEnterpriseDirectoryIAMActions: (limit = 100, orgId?: number) =>
-    request(appendParams('/enterprise-directory/iam-actions', { limit, org_id: orgId })),
+    legacyRequest(appendParams('/enterprise-directory/iam-actions', { limit, org_id: orgId })),
   getUsers: (page = 1, pageSize = 20, authProvider?: 'local' | 'enterprise') =>
-    request(appendParams('/users', { page, page_size: pageSize, auth_provider: authProvider })),
-  createUser: (data: any) =>
-    request('/users', { method: 'POST', body: JSON.stringify(data) }),
-  updateUser: (id: number, data: any) =>
-    request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/users', { page, page_size: pageSize, auth_provider: authProvider })),
+  createUser: (data: JsonObject) =>
+    legacyRequest('/users', { method: 'POST', body: JSON.stringify(data) }),
+  updateUser: (id: number, data: JsonObject) =>
+    legacyRequest(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteUser: (id: number) =>
-    request(`/users/${id}`, { method: 'DELETE' }),
+    legacyRequest(`/users/${id}`, { method: 'DELETE' }),
 
   // Grants
   getGrants: (page = 1, pageSize = 20, orgId?: number) =>
-    request(appendParams('/grants', { page, page_size: pageSize, org_id: orgId })),
-  createGrant: (data: any) =>
-    request('/grants', { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest(appendParams('/grants', { page, page_size: pageSize, org_id: orgId })),
+  createGrant: (data: JsonObject) =>
+    legacyRequest('/grants', { method: 'POST', body: JSON.stringify(data) }),
 
   // Audit Logs
   getAuditLogs: (page = 1, pageSize = 20, filters?: {
     org_id?: string; project_id?: string; actor_id?: string; action?: string; resource?: string; resource_id?: string;
     request_id?: string; client_request_id?: string; source?: string; start_time?: string; end_time?: string;
-  }) => request(appendParams('/audit-logs', {
+  }) => legacyRequest(appendParams('/audit-logs', {
     page,
     page_size: pageSize,
     org_id: filters?.org_id,
@@ -598,18 +498,18 @@ export const api = {
 
   // Org Model Prices
   getOrgModelPrices: (page = 1, pageSize = 20, orgId?: number) =>
-    request(appendParams('/org-model-prices', { page, page_size: pageSize, org_id: orgId })),
+    legacyRequest(appendParams('/org-model-prices', { page, page_size: pageSize, org_id: orgId })),
   createOrgModelPrice: (data: { org_id: number; model_name: string; multiplier: string }) =>
-    request('/org-model-prices', { method: 'POST', body: JSON.stringify(data) }),
+    legacyRequest('/org-model-prices', { method: 'POST', body: JSON.stringify(data) }),
   updateOrgModelPrice: (id: number, data: { multiplier: string }) =>
-    request(`/org-model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest(`/org-model-prices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteOrgModelPrice: (id: number) =>
-    request(`/org-model-prices/${id}`, { method: 'DELETE' }),
+    legacyRequest(`/org-model-prices/${id}`, { method: 'DELETE' }),
 
   // User profile
-  getMe: () => request('/me'),
+  getMe: () => legacyRequest('/me'),
   changePassword: (data: { old_password: string; new_password: string }) =>
-    request('/me/password', { method: 'PUT', body: JSON.stringify(data) }),
+    legacyRequest('/me/password', { method: 'PUT', body: JSON.stringify(data) }),
 
   // Reconciliation
   getReconciliation: (page = 1, pageSize = 20, filters?: { org_id?: number; model?: string; status?: string; usage_source?: string }) => {
@@ -618,31 +518,31 @@ export const api = {
     if (filters?.model) url += `&model=${encodeURIComponent(filters.model)}`;
     if (filters?.status) url += `&status=${encodeURIComponent(filters.status)}`;
     if (filters?.usage_source) url += `&usage_source=${encodeURIComponent(filters.usage_source)}`;
-    return request(url);
+    return legacyRequest(url);
   },
-  getProviderCOGSOfflineContract: () => request('/provider-cogs/offline-contract'),
+  getProviderCOGSOfflineContract: () => legacyRequest('/provider-cogs/offline-contract'),
   previewProviderCOGSOffline: (body: string) =>
-    request('/provider-cogs/offline-preview', { method: 'POST', body }),
-  getGovernanceSimulationContract: () => request('/governance-simulation/offline-contract'),
+    legacyRequest('/provider-cogs/offline-preview', { method: 'POST', body }),
+  getGovernanceSimulationContract: () => legacyRequest('/governance-simulation/offline-contract'),
   previewGovernanceSimulation: (body: string) =>
-    request('/governance-simulation/offline-preview', { method: 'POST', body }),
-  getMemberLifecycleContract: () => request('/member-lifecycle/offline-contract'),
+    legacyRequest('/governance-simulation/offline-preview', { method: 'POST', body }),
+  getMemberLifecycleContract: () => legacyRequest('/member-lifecycle/offline-contract'),
   previewMemberLifecycle: (body: string) =>
-    request('/member-lifecycle/offline-preview', { method: 'POST', body }),
-  getAgentTrustContract: () => request('/agent-trust/offline-contract'),
+    legacyRequest('/member-lifecycle/offline-preview', { method: 'POST', body }),
+  getAgentTrustContract: () => legacyRequest('/agent-trust/offline-contract'),
   previewAgentTrust: (body: string) =>
-    request('/agent-trust/offline-preview', { method: 'POST', body }),
-  getProvenancePassportContract: () => request('/provenance-passport/offline-contract'),
+    legacyRequest('/agent-trust/offline-preview', { method: 'POST', body }),
+  getProvenancePassportContract: () => legacyRequest('/provenance-passport/offline-contract'),
   previewProvenancePassport: (body: string) =>
-    request('/provenance-passport/offline-preview', { method: 'POST', body }),
-  getRiskControlContract: () => request('/risk-control/offline-contract'),
+    legacyRequest('/provenance-passport/offline-preview', { method: 'POST', body }),
+  getRiskControlContract: () => legacyRequest('/risk-control/offline-contract'),
   previewRiskControl: (body: string) =>
-    request('/risk-control/offline-preview', { method: 'POST', body }),
+    legacyRequest('/risk-control/offline-preview', { method: 'POST', body }),
 
   // Notifications
   getNotificationEvents: (page = 1, pageSize = 20, filters?: {
     event_type?: string; severity?: string; status?: string; delivery_state?: string; org_id?: number; project_id?: number;
-  }) => request(appendParams('/notification-events', {
+  }) => legacyRequest(appendParams('/notification-events', {
     page,
     page_size: pageSize,
     event_type: filters?.event_type,
@@ -653,11 +553,11 @@ export const api = {
     project_id: filters?.project_id,
   })),
   acknowledgeNotificationEvent: (id: number, projectId?: number, orgId?: number) =>
-    request(appendParams(`/notification-events/${id}/acknowledge`, { project_id: projectId, org_id: orgId }), { method: 'POST' }),
+    legacyRequest(appendParams(`/notification-events/${id}/acknowledge`, { project_id: projectId, org_id: orgId }), { method: 'POST' }),
   resolveNotificationEvent: (id: number, projectId?: number, orgId?: number) =>
-    request(appendParams(`/notification-events/${id}/resolve`, { project_id: projectId, org_id: orgId }), { method: 'POST' }),
+    legacyRequest(appendParams(`/notification-events/${id}/resolve`, { project_id: projectId, org_id: orgId }), { method: 'POST' }),
   getNotificationDeliveries: (page = 1, pageSize = 20, filters?: { status?: string; event_id?: number; org_id?: number; project_id?: number }) =>
-    request(appendParams('/notification-deliveries', {
+    legacyRequest(appendParams('/notification-deliveries', {
       page,
       page_size: pageSize,
       status: filters?.status,
@@ -666,23 +566,20 @@ export const api = {
       project_id: filters?.project_id,
     })),
   getNotificationWebhooks: (page = 1, pageSize = 20, filters?: { enabled?: boolean; org_id?: number; project_id?: number }) =>
-    request(appendParams('/notification-webhooks', {
+    legacyRequest(appendParams('/notification-webhooks', {
       page,
       page_size: pageSize,
       enabled: filters?.enabled === undefined ? undefined : String(filters.enabled),
       org_id: filters?.org_id,
       project_id: filters?.project_id,
     })),
-  createNotificationWebhook: (data: any) =>
-    request('/notification-webhooks', { method: 'POST', body: JSON.stringify(data) }),
-  updateNotificationWebhook: (id: number, data: any) =>
-    request(`/notification-webhooks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  createNotificationWebhook: (data: JsonObject) =>
+    legacyRequest('/notification-webhooks', { method: 'POST', body: JSON.stringify(data) }),
+  updateNotificationWebhook: (id: number, data: JsonObject) =>
+    legacyRequest(`/notification-webhooks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   verifyNotificationWebhookScope: (id: number, expectedUpdatedAt: string) =>
-    request(`/notification-webhooks/${id}/verify-scope`, {
+    legacyRequest(`/notification-webhooks/${id}/verify-scope`, {
       method: 'POST',
       body: JSON.stringify({ expected_updated_at: expectedUpdatedAt }),
     }),
-
-  // Generic request
-  request,
 };

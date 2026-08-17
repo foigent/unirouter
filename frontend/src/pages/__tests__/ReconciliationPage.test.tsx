@@ -18,10 +18,15 @@ vi.mock('../../api/client', () => ({
     getModelNames: (...args: any[]) => mockGetModelNames(...args),
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
     previewProviderCOGSOffline: (...args: any[]) => mockPreviewProviderCOGSOffline(...args),
-    getEnterpriseFiscalPeriods: (...args: any[]) => mockGetEnterpriseFiscalPeriods(...args),
-    getEnterpriseAllocationSummary: (...args: any[]) => mockGetEnterpriseAllocationSummary(...args),
-    getEnterpriseAllocationRuns: (...args: any[]) => mockGetEnterpriseAllocationRuns(...args),
-    getEnterpriseAdjustmentJournals: (...args: any[]) => mockGetEnterpriseAdjustmentJournals(...args),
+  },
+}));
+
+vi.mock('../../api/enterpriseFinance', () => ({
+  enterpriseFinanceApi: {
+    getFiscalPeriods: (...args: any[]) => mockGetEnterpriseFiscalPeriods(...args),
+    getAllocationSummary: (...args: any[]) => mockGetEnterpriseAllocationSummary(...args),
+    getAllocationRuns: (...args: any[]) => mockGetEnterpriseAllocationRuns(...args),
+    getAdjustmentJournals: (...args: any[]) => mockGetEnterpriseAdjustmentJournals(...args),
   },
 }));
 

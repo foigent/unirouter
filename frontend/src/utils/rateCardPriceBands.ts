@@ -1,15 +1,6 @@
-export type RateComponent = {
-  meter: string;
-  unit_quantity: string;
-  amount: { value_minor: string; currency: string; scale: number };
-};
+import type { DailyPriceBand, RateComponent } from '../api/enterpriseFinance';
 
-export type DailyPriceBand = {
-  band_ref: string;
-  start_minute_utc: number;
-  end_minute_utc: number;
-  components: RateComponent[];
-};
+export type { DailyPriceBand, RateComponent } from '../api/enterpriseFinance';
 
 export type PriceBandOverrideDraft = {
   start_utc: string;

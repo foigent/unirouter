@@ -1,7 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Input, Modal, Select, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh, IconSearch } from '@douyinfe/semi-icons';
-import { api } from '../api/client';
+import {
+  enterpriseFinanceApi,
+  type AllocationRun,
+  type BudgetPosition,
+  type BudgetRecord,
+  type CostCenter,
+  type ExactAmount,
+  type FiscalPeriod,
+  type JournalRecord,
+  type LegacyRateBootstrapResult as LegacyBootstrapResult,
+  type PricingSnapshotResult,
+  type RateCardPreflightResult,
+  type RateCardRecord,
+  type ReconciliationSummary,
+  type RequestPricingAuthority,
+} from '../api/enterpriseFinance';
 import RateCardPriceBandsEditor from '../components/RateCardPriceBandsEditor';
 import { EmptyState, MetricTile, StatusTag, Surface, formatMoney } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
@@ -11,191 +26,10 @@ import {
   buildUTCOverridePriceBands,
   requestPriceMeters,
   yuanToMicrosString,
-  type DailyPriceBand,
   type PriceBandOverrideDraft,
-  type RateComponent,
 } from '../utils/rateCardPriceBands';
 
 export { buildUTCOverridePriceBands, buildUTCValleyPriceBands, yuanToMicrosString } from '../utils/rateCardPriceBands';
-
-type ExactAmount = { value_minor: string; currency: string; scale: number };
-type Scope = { kind: string; ref: string };
-
-type FiscalPeriod = {
-  org_id: number;
-  period_ref: string;
-  start_at: string;
-  end_at: string;
-  state: string;
-  version: number;
-  state_changed_by: string;
-};
-
-type CostCenter = {
-  cost_center_ref: string;
-  version: number;
-  name: string;
-  legal_entity_ref: string;
-  owner_unit_ref?: string;
-  source_ref: string;
-  source_revision: string;
-  valid_from: string;
-};
-
-type BudgetRecord = {
-  plan: {
-    budget_ref: string;
-    scope: Scope;
-    fiscal_period_ref: string;
-    amount: ExactAmount;
-    version: number;
-    state: string;
-    approved_by?: string;
-  };
-  created_by: string;
-  runtime_effect: string;
-};
-
-type BudgetPosition = {
-  budget_ref: string;
-  budget_version: number;
-  actual: { status: string; amount?: ExactAmount };
-  committed: { status: string; amount?: ExactAmount };
-  forecast: { status: string; amount?: ExactAmount };
-  variance_minor?: string;
-  coverage_state: string;
-  allocation_run_ref?: string;
-};
-
-type RateCardRecord = {
-  id: number;
-  card: {
-    rate_card_ref: string;
-    provider_ref: string;
-    model_ref: string;
-    layer: string;
-    version: number;
-    state: string;
-    effective_from: string;
-    effective_to?: string;
-    source_evidence_ref?: string;
-    created_by: string;
-    approved_by?: string;
-    components: RateComponent[];
-    daily_price_bands?: DailyPriceBand[];
-  };
-  source_evidence?: {
-    evidence_ref: string;
-    source_kind: string;
-    source_url: string;
-    source_revision: string;
-    fetched_at: string;
-    payload_sha256: string;
-    transform_version: string;
-    last_success_at: string;
-    stale_after: string;
-  };
-};
-
-type RequestPricingAuthority = {
-  authority: string;
-  selection_key: string;
-  contract_priority: string[];
-  state: string;
-  missing_behavior: string;
-  provider_ambiguity: string;
-  active_card_count: number;
-  draft_card_count: number;
-  source_evidence_count: number;
-  stale_source_count: number;
-  last_source_success_at?: string;
-  official_sync_mode: string;
-  active_on_import: boolean;
-  legacy_compatibility: string;
-  public_source_failure: string;
-  current_mode: 'legacy' | 'rate_card';
-  strict_active: boolean;
-};
-
-type LegacyBootstrapResult = {
-  created_draft_count: number;
-  existing_draft_count: number;
-  skipped_model_count: number;
-  skipped_models?: string[];
-  state: string;
-  approval_required: boolean;
-  activation_required: boolean;
-  legacy_runtime_fallback: boolean;
-};
-
-type RateCardPreflightResult = {
-  ready: boolean;
-  checked_at: string;
-  switch_instruction: string;
-  models: Array<{
-    model_ref: string;
-    state: 'ready' | 'not_ready';
-    rate_card_ref?: string;
-    rate_card_version?: number;
-    layer?: string;
-    provider_ref?: string;
-    pricing_version?: string;
-    error?: string;
-  }>;
-};
-
-type AllocationRun = {
-  id: number;
-  request: {
-    allocation_run_ref: string;
-    source_revision: string;
-    rule_set_ref: string;
-    rule_set_revision: string;
-    supersedes_run_ref?: string;
-  };
-  input_hash: string;
-  source_record_count: number;
-  direct_count: number;
-  rule_based_count: number;
-  unallocated_count: number;
-  conflict_count: number;
-  source_total: ExactAmount;
-  allocated_total: ExactAmount;
-  created_at: string;
-};
-
-type ReconciliationSummary = {
-  fiscal_period_ref: string;
-  period_state: string;
-  period_version: number;
-  source_record_count: number;
-  source_total: ExactAmount;
-  latest_run?: AllocationRun;
-  missing_record_count: number;
-  coverage_state: string;
-  close_ready: boolean;
-  ledger_mutation: string;
-  customer_debt_action: string;
-  gl_export_state: string;
-};
-
-type JournalRecord = {
-  journal: {
-    journal_ref: string;
-    version: number;
-    request_ref: string;
-    entry_type: string;
-    reversal_of_journal_ref?: string;
-    target: Scope;
-    amount: ExactAmount;
-    state: string;
-    source_allocation_run_ref: string;
-    created_by: string;
-    approved_by?: string;
-    gl_export_state: string;
-  };
-  created_at: string;
-};
 
 const periodStateLabels: Record<string, string> = {
   open: '开放',
@@ -305,11 +139,11 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
     setError('');
     try {
       const [periodResponse, centerResponse, budgetResponse, positionResponse] = await Promise.all([
-        api.getEnterpriseFiscalPeriods(orgId),
-        api.getEnterpriseCostCenters(orgId),
-        api.getEnterpriseBudgets(orgId),
-        api.getEnterpriseBudgetPositions(orgId),
-      ]) as any[];
+        enterpriseFinanceApi.getFiscalPeriods(orgId),
+        enterpriseFinanceApi.getCostCenters(orgId),
+        enterpriseFinanceApi.getBudgets(orgId),
+        enterpriseFinanceApi.getBudgetPositions(orgId),
+      ]);
       setPeriods(periodResponse?.data || []);
       setCenters(centerResponse?.data || []);
       setBudgets(budgetResponse?.data || []);
@@ -333,7 +167,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
 
   const approveBudget = async (record: BudgetRecord) => {
     try {
-      await api.approveEnterpriseBudget(record.plan.budget_ref, {
+      await enterpriseFinanceApi.approveBudget(record.plan.budget_ref, {
         org_id: orgId,
         expected_version: record.plan.version,
       });
@@ -362,7 +196,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
         if (!form.period_ref?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.start_date || '') || !/^\d{4}-\d{2}-\d{2}$/.test(form.end_date || '')) {
           throw new Error('请填写期间标识以及有效的开始/结束日期');
         }
-        await api.createEnterpriseFiscalPeriod({
+        await enterpriseFinanceApi.createFiscalPeriod({
           org_id: orgId,
           period_ref: form.period_ref.trim(),
           start_at: `${form.start_date}T00:00:00.000000Z`,
@@ -373,7 +207,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
         if (!Number.isSafeInteger(version) || version <= 0 || !form.cost_center_ref?.trim() || !form.name?.trim() || !form.legal_entity_ref?.trim() || !form.source_revision?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.valid_from || '')) {
           throw new Error('请完整填写成本中心、法人实体、来源修订、生效日期与连续版本');
         }
-        await api.createEnterpriseCostCenterVersion({
+        await enterpriseFinanceApi.createCostCenterVersion({
           org_id: orgId,
           cost_center_ref: form.cost_center_ref.trim(), version,
           name: form.name.trim(), legal_entity_ref: form.legal_entity_ref.trim(),
@@ -387,7 +221,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
         if (!valueMinor || !form.budget_ref?.trim() || !form.scope_ref?.trim() || !form.fiscal_period_ref?.trim()) {
           throw new Error('请填写预算标识、归属范围、财务期间与最多六位小数的金额');
         }
-        await api.createEnterpriseBudgetDraft({
+        await enterpriseFinanceApi.createBudgetDraft({
           org_id: orgId,
           budget_ref: form.budget_ref.trim(),
           scope: { kind: form.scope_kind || 'cost_center', ref: form.scope_ref.trim() },
@@ -413,7 +247,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
     }
     setSubmitting(true);
     try {
-      await api.transitionEnterpriseFiscalPeriod(transitionTarget.period.period_ref, {
+      await enterpriseFinanceApi.transitionFiscalPeriod(transitionTarget.period.period_ref, {
         org_id: orgId,
         to_state: transitionTarget.toState,
         expected_version: transitionTarget.period.version,
@@ -637,7 +471,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [requestRef, setRequestRef] = useState('');
-  const [snapshot, setSnapshot] = useState<any>(null);
+  const [snapshot, setSnapshot] = useState<PricingSnapshotResult | null>(null);
   const [createVisible, setCreateVisible] = useState(false);
   const [importVisible, setImportVisible] = useState(false);
   const [bootstrapConfirmVisible, setBootstrapConfirmVisible] = useState(false);
@@ -657,7 +491,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
     setLoading(true);
     setError('');
     try {
-      const response = await api.getEnterpriseRateCards(orgId) as any;
+      const response = await enterpriseFinanceApi.getRateCards(orgId);
       setCards(response?.data || []);
       setAuthority(response?.request_pricing_authority || null);
     } catch (loadError) {
@@ -686,8 +520,8 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
           expected_superseded_version: superseded.card.version,
         } : {}),
       };
-      if (action === 'approve') await api.approveEnterpriseRateCard(record.card.rate_card_ref, payload);
-      else await api.activateEnterpriseRateCard(record.card.rate_card_ref, payload);
+      if (action === 'approve') await enterpriseFinanceApi.approveRateCard(record.card.rate_card_ref, payload);
+      else await enterpriseFinanceApi.activateRateCard(record.card.rate_card_ref, payload);
       Toast.success(action === 'approve' ? '费率卡已追加批准版本' : superseded ? '旧费率已原子退役，新费率已激活' : '费率卡已激活');
       await load();
       return true;
@@ -743,7 +577,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
   const lookupSnapshot = async () => {
     if (!requestRef.trim()) return;
     try {
-      setSnapshot(await api.getEnterprisePricingSnapshot(requestRef.trim(), orgId));
+      setSnapshot(await enterpriseFinanceApi.getPricingSnapshot(requestRef.trim(), orgId));
     } catch (lookupError) {
       setSnapshot(null);
       Toast.error(errorMessage('计价快照查询失败', lookupError));
@@ -768,7 +602,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
     }
     setSubmitting(true);
     try {
-      await api.createEnterpriseRateCardDraft({
+      await enterpriseFinanceApi.createRateCardDraft({
         org_id: orgId,
         provider_ref: form.provider_ref.trim(),
         model_ref: form.model_ref.trim(), layer: form.layer,
@@ -806,7 +640,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
     }
     setSubmitting(true);
     try {
-      await api.importOfficialEnterpriseRateCardDraft({
+      await enterpriseFinanceApi.importOfficialRateCardDraft({
         org_id: orgId,
         provider_ref: importForm.provider_ref.trim(), model_ref: importForm.model_ref.trim(),
         effective_from: `${importForm.effective_from}T00:00:00.000000Z`, effective_to: null,
@@ -832,7 +666,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
   const bootstrapLegacyDrafts = async () => {
     setSubmitting(true);
     try {
-      const result = await api.bootstrapLegacyEnterpriseRateCardDrafts({ org_id: orgId }) as LegacyBootstrapResult;
+      const result = await enterpriseFinanceApi.bootstrapLegacyRateCardDrafts({ org_id: orgId });
       setBootstrapResult(result);
       setBootstrapConfirmVisible(false);
       Toast.success(`已生成 ${result.created_draft_count} 个草稿；跳过 ${result.skipped_model_count} 个模型`);
@@ -852,10 +686,10 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
     }
     setSubmitting(true);
     try {
-      const result = await api.preflightEnterpriseRateCardAuthority({
+      const result = await enterpriseFinanceApi.preflightRateCardAuthority({
         org_id: orgId,
         models: models.map(model_ref => ({ model_ref })),
-      }) as RateCardPreflightResult;
+      });
       setPreflightResult(result);
       if (result.ready) Toast.success('全部模型已通过 Rate Card 严格模式预检');
       else Toast.warning('仍有模型未通过，不能切换严格模式');
@@ -1171,8 +1005,8 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
   useEffect(() => {
     setLoading(true);
     setError('');
-    api.getEnterpriseFiscalPeriods(orgId)
-      .then((response: any) => {
+    enterpriseFinanceApi.getFiscalPeriods(orgId)
+      .then(response => {
         const next = response?.data || [];
         setPeriods(next);
         setPeriodRef(current => next.some((item: FiscalPeriod) => item.period_ref === current) ? current : (next[0]?.period_ref || ''));
@@ -1196,10 +1030,10 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
     setError('');
     try {
       const [nextSummary, runResponse, journalResponse] = await Promise.all([
-        api.getEnterpriseAllocationSummary(periodRef, orgId),
-        api.getEnterpriseAllocationRuns(periodRef, orgId),
-        api.getEnterpriseAdjustmentJournals(periodRef, orgId),
-      ]) as any[];
+        enterpriseFinanceApi.getAllocationSummary(periodRef, orgId),
+        enterpriseFinanceApi.getAllocationRuns(periodRef, orgId),
+        enterpriseFinanceApi.getAdjustmentJournals(periodRef, orgId),
+      ]);
       setSummary(nextSummary || null);
       setRuns(runResponse?.data || []);
       setJournals(journalResponse?.data || []);
@@ -1230,7 +1064,7 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
     }
     setSubmitting(true);
     try {
-      await api.createEnterpriseAdjustmentJournal({
+      await enterpriseFinanceApi.createAdjustmentJournal({
         org_id: orgId,
         journal_ref: journalForm.journal_ref.trim(), fiscal_period_ref: periodRef,
         request_ref: journalForm.request_ref.trim(), entry_type: journalForm.entry_type || 'adjustment',
@@ -1254,7 +1088,7 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
   const approveJournal = async (record: JournalRecord) => {
     setSubmitting(true);
     try {
-      await api.approveEnterpriseAdjustmentJournal(record.journal.journal_ref, {
+      await enterpriseFinanceApi.approveAdjustmentJournal(record.journal.journal_ref, {
         org_id: orgId, expected_version: record.journal.version,
       });
       Toast.success('调整流水已追加批准版本');

@@ -96,7 +96,7 @@ func TestEvaluatePoliciesOnlyAppliesEndpointSpecificRules(t *testing.T) {
 	}
 }
 
-func TestEvaluateAnyUsesOnePolicyQueryForBoundedCredentialAlternatives(t *testing.T) {
+func TestEvaluateAlternativesUsesOnePolicyQueryAndRetainsCredentialOrder(t *testing.T) {
 	var queryCount atomic.Int64
 	database := &testutil.MockDB{QueryFn: func(_ context.Context, _ string, _ ...any) (pgx.Rows, error) {
 		queryCount.Add(1)
@@ -128,16 +128,16 @@ func TestEvaluateAnyUsesOnePolicyQueryForBoundedCredentialAlternatives(t *testin
 		{OrgID: 7, ProjectID: 22, APIKeyID: 11, Endpoint: "/v1/chat/completions", RequestedModel: "company-chat", ResolvedModel: "company-chat"},
 		{OrgID: 7, ProjectID: 22, APIKeyID: 12, Endpoint: "/v1/chat/completions", RequestedModel: "company-chat", ResolvedModel: "company-chat"},
 	}
-	decision, err := evaluator.EvaluateAny(context.Background(), inputs)
-	if err != nil || !decision.Allowed || queryCount.Load() != 1 {
-		t.Fatalf("decision=%#v err=%v query_count=%d", decision, err, queryCount.Load())
+	decisions, err := evaluator.EvaluateAlternatives(context.Background(), inputs)
+	if err != nil || len(decisions) != 2 || decisions[0].Allowed || !decisions[1].Allowed || queryCount.Load() != 1 {
+		t.Fatalf("decisions=%#v err=%v query_count=%d", decisions, err, queryCount.Load())
 	}
 
 	overLimit := make([]Input, maxBatchEvaluationInputs+1)
 	for index := range overLimit {
 		overLimit[index] = inputs[0]
 	}
-	if _, err := evaluator.EvaluateAny(context.Background(), overLimit); !errors.Is(err, ErrInvalid) {
+	if _, err := evaluator.EvaluateAlternatives(context.Background(), overLimit); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("over-limit batch error=%v, want ErrInvalid", err)
 	}
 	if queryCount.Load() != 1 {

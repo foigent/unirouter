@@ -81,6 +81,9 @@ func priceQuoteFromRateCardQuote(quote enterprisefinance.RequestPriceQuote) (pri
 		CacheCreationPriceMicrosPerMillion: cacheCreation, OutputPriceMicrosPerMillion: output,
 		CacheReadRatio: cacheReadRatio, CacheCreationRatio: cacheCreationRatio,
 		Multiplier: "1", Version: quote.PricingVersion,
+		SelectionKey: quote.SelectionKey, RateCardRef: quote.RateCardRef,
+		RateCardVersion: quote.RateCardVersion, RateCardLayer: quote.Layer,
+		ProviderRef: quote.ProviderRef,
 	}, nil
 }
 

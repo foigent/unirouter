@@ -2,7 +2,6 @@ package admin
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -101,7 +100,9 @@ func TestReadinessGatewayLicenseAxisBlocksBeforeProviderRepair(t *testing.T) {
 	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
 	request = request.WithContext(ctx)
 
-	handler.readinessPlatformAxes(request, 7, response)
+	handler.readinessPlatformAxes(request, 7, response, billing.AdmissionReadiness{
+		BillingMode: billing.BillingModePrepaidEnforced, PricingAuthority: billing.RequestPricingAuthorityLegacy,
+	}, nil)
 
 	axis := response.PlatformModel.GatewayLicense
 	if axis.State != modelreadiness.StateBlocked || axis.ReasonCode != "license_error.missing" || axis.FixRoute != "/license" {
@@ -122,7 +123,9 @@ func TestReadinessProviderCredentialFixTargetsTheExactConnection(t *testing.T) {
 	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
 	request = request.WithContext(ctx)
 
-	handler.readinessPlatformAxes(request, 7, response)
+	handler.readinessPlatformAxes(request, 7, response, billing.AdmissionReadiness{
+		BillingMode: billing.BillingModePrepaidEnforced, PricingAuthority: billing.RequestPricingAuthorityLegacy,
+	}, nil)
 
 	axis := response.PlatformModel.ProviderCredential
 	want := "/channel-keys?from=connections&channel_id=102&model=deepseek-v4-pro"
@@ -146,7 +149,9 @@ func TestReadinessCountsEligibleCredentialOnAStagedExcludedEndpoint(t *testing.T
 	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
 	request = request.WithContext(ctx)
 
-	handler.readinessPlatformAxes(request, 7, response)
+	handler.readinessPlatformAxes(request, 7, response, billing.AdmissionReadiness{
+		BillingMode: billing.BillingModePrepaidEnforced, PricingAuthority: billing.RequestPricingAuthorityLegacy,
+	}, nil)
 
 	axis := response.PlatformModel.ProviderCredential
 	if axis.State != modelreadiness.StateReady || axis.ReasonCode != "provider_credential_available" {
@@ -163,10 +168,10 @@ func TestReadinessProjectAndBudgetAxesPreserveIndependentSemantics(t *testing.T)
 	}{
 		{"active project", readinessProjectAxis("active", "/projects/1"), modelreadiness.StateReady, "project_active"},
 		{"inactive project", readinessProjectAxis("archived", "/projects/1"), modelreadiness.StateBlocked, "project_inactive"},
-		{"budget absent", readinessProjectBudgetAxis(billing.BillingModePrepaidEnforced, sql.NullInt64{}, "", "/projects/1?tab=budget"), modelreadiness.StateNotApplicable, "project_budget_not_configured_monitoring_only"},
-		{"budget monitoring", readinessProjectBudgetAxis(billing.BillingModePrepaidEnforced, sql.NullInt64{Int64: 100, Valid: true}, "monthly", "/projects/1?tab=budget"), modelreadiness.StateWarning, "project_budget_monitoring_only"},
-		{"observation budget absent", readinessProjectBudgetAxis(billing.BillingModeCostObservation, sql.NullInt64{}, "", "/projects/1?tab=budget"), modelreadiness.StateNotApplicable, "project_budget_not_configured_or_enforced_under_cost_observation"},
-		{"observation budget configured", readinessProjectBudgetAxis(billing.BillingModeCostObservation, sql.NullInt64{Int64: 100, Valid: true}, "monthly", "/projects/1?tab=budget"), modelreadiness.StateWarning, "project_budget_configured_only_not_enforced_under_cost_observation"},
+		{"budget absent", readinessProjectBudgetAxis(billing.BillingModePrepaidEnforced, false, "", "/projects/1?tab=budget"), modelreadiness.StateNotApplicable, "project_budget_not_configured_monitoring_only"},
+		{"budget monitoring", readinessProjectBudgetAxis(billing.BillingModePrepaidEnforced, true, "monthly", "/projects/1?tab=budget"), modelreadiness.StateWarning, "project_budget_monitoring_only"},
+		{"observation budget absent", readinessProjectBudgetAxis(billing.BillingModeCostObservation, false, "", "/projects/1?tab=budget"), modelreadiness.StateNotApplicable, "project_budget_not_configured_or_enforced_under_cost_observation"},
+		{"observation budget configured", readinessProjectBudgetAxis(billing.BillingModeCostObservation, true, "monthly", "/projects/1?tab=budget"), modelreadiness.StateWarning, "project_budget_configured_only_not_enforced_under_cost_observation"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -177,7 +182,7 @@ func TestReadinessProjectAndBudgetAxesPreserveIndependentSemantics(t *testing.T)
 	}
 	observation := readinessProjectBudgetAxis(
 		billing.BillingModeCostObservation,
-		sql.NullInt64{Int64: 100, Valid: true},
+		true,
 		"monthly",
 		"/projects/1?tab=budget",
 	)
@@ -194,8 +199,9 @@ func TestCostObservationReadinessDoesNotQueryOrBlockOnWallet(t *testing.T) {
 		t.Fatalf("SetBillingMode: %v", err)
 	}
 	response := &modelreadiness.Response{}
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
-	handler.readinessWalletAxis(request, 99, response)
+	handler.readinessWalletAxis(response, billing.AdmissionReadiness{
+		BillingMode: billing.BillingModeCostObservation, PricingAuthority: billing.RequestPricingAuthorityLegacy,
+	}, nil)
 
 	wallet := response.ProjectCaller.Wallet
 	if wallet.State != modelreadiness.StateNotApplicable || wallet.ReasonCode != "wallet_not_used_for_cost_observation_admission" {
@@ -219,48 +225,36 @@ func TestCostObservationReadinessDoesNotQueryOrBlockOnWallet(t *testing.T) {
 	}
 }
 
-func TestLegacyReadinessPriceAuthorityUsesOnlyLegacyTable(t *testing.T) {
-	queries := 0
-	database := &testutil.MockDB{QueryRowFn: func(_ context.Context, query string, _ ...any) pgx.Row {
-		queries++
-		if !strings.Contains(query, "model_prices") {
-			t.Fatalf("legacy price authority issued unexpected query: %s", query)
-		}
-		return &testutil.MockRow{ScanFn: func(dest ...any) error {
-			*dest[0].(*bool) = true
-			return nil
-		}}
-	}}
-	handler := NewHandler(database, "jwt", []byte("0123456789abcdef01234567"), nil)
-	handler.SetRequestPricingAuthority("legacy")
-	axis := handler.readinessPriceAuthorityAxis(httptest.NewRequest(http.MethodGet, "/", nil), 7, "model-a")
-	if queries != 1 || axis.State != modelreadiness.StateReady || axis.ReasonCode != "model_price_configured" || axis.SafeEvidence["request_pricing_mode"] != "legacy" {
-		t.Fatalf("legacy price authority axis=%#v queries=%d", axis, queries)
+func TestLegacyReadinessPriceAuthorityUsesBillingAuthorityProjection(t *testing.T) {
+	handler := NewHandler(nil, "jwt", []byte("0123456789abcdef01234567"), nil)
+	axis := handler.readinessPriceAuthorityAxis(httptest.NewRequest(http.MethodGet, "/", nil), "model-a", billing.AdmissionReadiness{
+		BillingMode: billing.BillingModePrepaidEnforced, PricingAuthority: billing.RequestPricingAuthorityLegacy,
+		PriceConfigured: true, PricingVersion: "pv3_test",
+	}, nil)
+	if axis.State != modelreadiness.StateReady || axis.ReasonCode != "model_price_configured" ||
+		axis.SafeEvidence["request_pricing_mode"] != "legacy" || axis.SafeEvidence["pricing_version"] != "pv3_test" {
+		t.Fatalf("legacy price authority axis=%#v", axis)
 	}
 }
 
 func TestPrepaidReadinessStillBlocksMissingOrEmptyWallet(t *testing.T) {
 	tests := []struct {
 		name   string
-		scan   func(...any) error
+		state  billing.AdmissionReadiness
 		reason string
 	}{
-		{name: "missing", scan: func(...any) error { return pgx.ErrNoRows }, reason: "wallet_missing"},
-		{name: "empty", scan: func(dest ...any) error {
-			*dest[0].(*int64) = 0
-			*dest[1].(*int64) = 0
-			*dest[2].(*int64) = 0
-			return nil
+		{name: "missing", state: billing.AdmissionReadiness{
+			BillingMode: billing.BillingModePrepaidEnforced, WalletAdmissionRequired: true,
+		}, reason: "wallet_missing"},
+		{name: "empty", state: billing.AdmissionReadiness{
+			BillingMode: billing.BillingModePrepaidEnforced, WalletAdmissionRequired: true, WalletExists: true,
 		}, reason: "wallet_no_spendable_balance"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
-				return &testutil.MockRow{ScanFn: test.scan}
-			}}
-			handler := NewHandlerWithAPIKeyHashSecret(database, "jwt", "api-key", []byte("0123456789abcdef01234567"), nil)
+			handler := NewHandlerWithAPIKeyHashSecret(nil, "jwt", "api-key", []byte("0123456789abcdef01234567"), nil)
 			response := &modelreadiness.Response{}
-			handler.readinessWalletAxis(httptest.NewRequest(http.MethodGet, "/", nil), 99, response)
+			handler.readinessWalletAxis(response, test.state, nil)
 			wallet := response.ProjectCaller.Wallet
 			if wallet.State != modelreadiness.StateBlocked || wallet.ReasonCode != test.reason {
 				t.Fatalf("wallet axis=%#v", wallet)
@@ -275,22 +269,22 @@ func TestPrepaidReadinessStillBlocksMissingOrEmptyWallet(t *testing.T) {
 func TestReadinessGrantScopeUsesCanonicalProjectDefaultAndExplicitIntersection(t *testing.T) {
 	tests := []struct {
 		name      string
-		grant     readinessGrantEvidence
+		grant     modelreadiness.GrantSnapshot
 		requested string
 		resolved  string
 		endpoint  string
 		allowed   bool
 	}{
-		{"project default chat", readinessGrantEvidence{ScopeMode: accessscope.ModeProjectDefault}, "alias", "model", "/v1/chat/completions", true},
-		{"project default media excluded", readinessGrantEvidence{ScopeMode: accessscope.ModeProjectDefault}, "model", "model", "/v1/media/jobs", false},
-		{"explicit requested model", readinessGrantEvidence{ScopeMode: accessscope.ModeExplicit, AllowedModels: []string{"alias"}, AllowedEndpoints: []string{"/v1/embeddings"}}, "alias", "model", "/v1/embeddings", true},
-		{"explicit resolved model", readinessGrantEvidence{ScopeMode: accessscope.ModeExplicit, AllowedModels: []string{"model"}, AllowedEndpoints: []string{"/v1/embeddings"}}, "alias", "model", "/v1/embeddings", true},
-		{"explicit endpoint excluded", readinessGrantEvidence{ScopeMode: accessscope.ModeExplicit, AllowedModels: []string{"model"}, AllowedEndpoints: []string{"/v1/chat/completions"}}, "model", "model", "/v1/embeddings", false},
-		{"unknown mode", readinessGrantEvidence{ScopeMode: "unknown", AllowedModels: []string{"model"}, AllowedEndpoints: []string{"/v1/chat/completions"}}, "model", "model", "/v1/chat/completions", false},
+		{"project default chat", modelreadiness.GrantSnapshot{ScopeMode: accessscope.ModeProjectDefault}, "alias", "model", "/v1/chat/completions", true},
+		{"project default media excluded", modelreadiness.GrantSnapshot{ScopeMode: accessscope.ModeProjectDefault}, "model", "model", "/v1/media/jobs", false},
+		{"explicit requested model", modelreadiness.GrantSnapshot{ScopeMode: accessscope.ModeExplicit, AllowedModels: []string{"alias"}, AllowedEndpoints: []string{"/v1/embeddings"}}, "alias", "model", "/v1/embeddings", true},
+		{"explicit resolved model", modelreadiness.GrantSnapshot{ScopeMode: accessscope.ModeExplicit, AllowedModels: []string{"model"}, AllowedEndpoints: []string{"/v1/embeddings"}}, "alias", "model", "/v1/embeddings", true},
+		{"explicit endpoint excluded", modelreadiness.GrantSnapshot{ScopeMode: accessscope.ModeExplicit, AllowedModels: []string{"model"}, AllowedEndpoints: []string{"/v1/chat/completions"}}, "model", "model", "/v1/embeddings", false},
+		{"unknown mode", modelreadiness.GrantSnapshot{ScopeMode: "unknown", AllowedModels: []string{"model"}, AllowedEndpoints: []string{"/v1/chat/completions"}}, "model", "model", "/v1/chat/completions", false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := readinessGrantScopeAllows(test.grant, test.requested, test.resolved, test.endpoint); got != test.allowed {
+			if got := test.grant.AllowsExecution(test.requested, test.resolved, test.endpoint); got != test.allowed {
 				t.Fatalf("allowed=%v want=%v", got, test.allowed)
 			}
 		})

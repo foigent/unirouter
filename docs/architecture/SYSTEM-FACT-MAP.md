@@ -169,10 +169,14 @@ These are cross-layer acceptance contracts, not mock-page demonstrations.
 - The retired `ChannelsPage` compatibility implementation and its isolated test were deleted; `/channels` continues to resolve only to the supported Model Endpoints workspace.
 - Model Endpoints is now a page orchestrator with separate create/detail surfaces and presentation helpers. Its API contract has a typed domain module instead of page-local response assertions.
 - Model endpoint reads now live in one canonical projection file, while endpoint lifecycle writes remain in their handler. Model-governance registry mutations, catalog reads, and shared scope/scanning helpers are separate review and test seams.
-- Dashboard did not retain a second channel/release SQL authority: it already consumes the canonical endpoint projection. Readiness route eligibility already calls the gateway routing controller. The remaining Readiness duplication is limited to access, pricing, and policy read models.
+- Dashboard did not retain a second channel/release SQL authority: it consumes the canonical endpoint projection. Readiness route eligibility calls the gateway routing controller, while access, pricing and policy decisions now come from their owning services or bounded read models.
 - GitHub-maintained JavaScript actions used by active workflows run on the current Node 24 action generations. Compose no longer declares the obsolete top-level `version` field.
 - Commit-addressed release worktrees now have a read-only retention report and an explicit, revalidated apply path. Only old, detached, clean, canonical worktrees absent from running-container and keep-file protection can become candidates; no timer or automatic deletion is installed.
 - Development Target backend builds keep the truthful new runtime commit while reusing persistent Go module and build caches. Reusing an old backend image under a new release identity remains forbidden.
+- PostgreSQL-backed tests run only in the integration gate and reuse a migrated template per package. The sensitive-word database contract no longer makes the ordinary Go unit gate create and migrate a temporary database; its source-order assertion remains in the unit gate.
+- Readiness no longer owns copied pricing, grant/key, registry or model-set admission SQL inside the HTTP handler. Pricing and wallet evidence comes from the billing service used by `Freeze`; credentials are rechecked through the gateway's live access-grant boundary; model authorization alternatives share one bounded policy read; governance and explanatory reads live behind the `modelreadiness` read model.
+- Dashboard current/previous window metrics are each read from one organization-scoped PostgreSQL snapshot instead of ten separate aggregate queries. Route availability still comes from the canonical endpoint projection and gateway preview, not from those observation aggregates.
+- Provider channels/credentials, model endpoints, runtime routing/releases, Dashboard, enterprise finance and access/Readiness use named typed frontend API modules. The remaining aggregate compatibility calls are explicitly counted by a non-increasing build gate, so a new feature cannot silently add another `any` response seam. The unused legacy channel editor and its duplicate status helpers were removed.
 
 ### P0 - correctness and access
 
@@ -180,15 +184,15 @@ These are cross-layer acceptance contracts, not mock-page demonstrations.
 
 ### P1 - recurring product inconsistency
 
-- Readiness still composes model, access, pricing and policy authorities from their owners. Its route axis, Dashboard channel health and model endpoints are now locked by a shared route/projection contract test; every future authority change must retain that cross-surface gate.
+- Readiness composes model, access, pricing and policy authorities from their owners and remains a read-only explanation rather than a mutable status. Its route axis, Dashboard channel health and model endpoints are locked by shared gateway/projection tests; every future authority change must retain that cross-surface gate.
 - Finance and access still contain advanced audit/workflow surfaces. The changed pages now explain and separate them, but a future information-architecture batch may move them out of the ordinary task path; that is not required for the current golden journeys.
 - The canonical-customer projection fix is covered on the changed people and endpoint paths. Remaining customer-domain pages stay under the existing access/readiness browser journey and must keep that gate when their scope logic changes.
 
 ### P2 - maintainability
 
 - The Model Endpoints workspace and its two backend domains now have meaningful orchestration/read/write seams. Other large files should be split only when a product change needs an independent authority or test seam, not to chase line-count targets.
-- The API client now has a shared transport and a typed Model Endpoints domain module, but its remaining compatibility surface is still hand-written and has weakly typed response seams. OpenAPI is route-complete but most response bodies are generic JSON, so generating a client today would move rather than remove the weak types. Migrate domains as their response schemas become authoritative.
-- Access, pricing and policy portions of Readiness still have repeated SQL and DTO shaping that should converge behind read-model services when touched by product work. Dashboard no longer owns a separate model-route interpretation.
+- The API client has a strict shared transport and named contracts for provider channels/credentials, Model Endpoints, runtime routing/releases, Dashboard, enterprise finance and access. The remaining aggregate compatibility surface is still hand-written and weakly typed, but its exact call ceiling is ratcheted by the build. OpenAPI is route-complete while many response bodies remain generic JSON, so generation must follow authoritative response schemas rather than manufacture `unknown` wrappers.
+- Readiness authority duplication is closed for the current model-call path. Its HTTP handler still shapes product explanations, while durable reads and admission decisions remain owned by billing, model governance, access-grant boundary, model authorization, limit policy and gateway routing services.
 - A frontend-only release still produces a backend binary bound to the same release commit by design. Persistent BuildKit Go caches reduce the rebuild cost without creating mixed or misleading release identity; independently versioned components would require a separate release-manifest contract and is not being implied here.
 
 Debt is closed only when the affected golden journey and projection checks pass. Moving code into more files without reducing authority duplication does not close architectural debt.

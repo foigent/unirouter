@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Banner, Button, Modal, Form, Toast, Space, SideSheet, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconDelete, IconEdit, IconRefresh } from '@douyinfe/semi-icons';
-import { api } from '../api/client';
+import {
+  channelApi,
+  providerCredentialApi,
+  type ProviderCredential,
+  type UpdateProviderCredential,
+} from '../api/channels';
 import { EmptyState, PagedTable, PageHeader, PasswordField, StatusTag, Surface } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
 import {
@@ -16,21 +21,7 @@ import {
 import { normalizeModelList, parseModelList } from '../utils/modelList';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 
-interface ChannelKey {
-  id: number;
-  channel_id: number;
-  channel_name: string;
-  channel_status: string;
-  key_prefix: string;
-  allowed_models: string;
-  status: string;
-  fail_count: number;
-  last_used_at?: string | null;
-  cooldown_until?: string | null;
-  created_at: string;
-  updated_at?: string;
-  state_epoch?: number;
-}
+type ChannelKey = ProviderCredential;
 
 type ChannelOption = ChannelReadinessChannel & {
   label: string;
@@ -102,8 +93,8 @@ export default function ChannelKeysPage({
     setLoadError('');
     setKeys([]);
     setTotal(0);
-    api.getChannelKeys(p, size, focusedChannelID)
-      .then((d: any) => {
+    providerCredentialApi.list(p, size, focusedChannelID)
+      .then(d => {
         if (version !== requestVersion.current) return;
         setKeys(d.data || []);
         setTotal(d.total || 0);
@@ -117,9 +108,9 @@ export default function ChannelKeysPage({
   };
 
   const loadChannels = () => {
-    api.getChannels(1, 100)
-      .then((d: any) => {
-        const list = (d.data || d.channels || []).map((c: any) => {
+    channelApi.list(1, 100)
+      .then(d => {
+        const list = d.data.map(c => {
           const effectiveStatus = c.effective_status || c.status;
           return {
             id: c.id,
@@ -148,19 +139,19 @@ export default function ChannelKeysPage({
       if (editing) {
         const activeParent = editing.channel_status === 'active';
         const keyChanged = !activeParent && Boolean(String(values.api_key || '').trim());
-        const payload: Record<string, any> = activeParent ? { status: values.status } : {
+        const payload: UpdateProviderCredential = activeParent ? { status: values.status } : {
           channel_id: parseInt(values.channel_id),
           allowed_models: normalizeModelList(values.allowed_models),
           status: values.status,
         };
         if (keyChanged) payload.key = String(values.api_key).trim();
-        await api.updateChannelKey(editing.id, payload);
+        await providerCredentialApi.update(editing.id, payload);
         setSaveNotice(keyChanged
           ? `${editing.channel_name} 的新供应商 API Key 已加密保存；为安全起见不会回显明文。`
           : `${editing.channel_name} 的供应商凭证设置已保存。`);
         Toast.success('供应商凭证已保存');
       } else {
-        await api.createChannelKey({
+        await providerCredentialApi.create({
           channel_id: parseInt(values.channel_id),
           key: String(values.api_key || '').trim(),
           allowed_models: normalizeModelList(values.allowed_models),
@@ -185,7 +176,7 @@ export default function ChannelKeysPage({
       content: '这里只删除供应商凭证，不会删除模型连接或历史发布记录。删除后该 Key 将无法使用，确定吗？',
       onOk: async () => {
         try {
-          await api.deleteChannelKey(id);
+          await providerCredentialApi.remove(id);
           Toast.success('已删除');
           load();
         } catch { Toast.error('删除失败'); }
@@ -217,11 +208,11 @@ export default function ChannelKeysPage({
     setSubmitting(true);
     setSubmitError('');
     try {
-      const result = await api.rotateChannelKey(rotating.id, {
+      const result = await providerCredentialApi.rotate(rotating.id, {
         key: String(values.api_key || '').trim(),
         model: String(values.model || '').trim(),
         allowed_models: normalizeModelList(values.allowed_models),
-      }) as any;
+      });
       setSaveNotice(`${rotating.channel_name} 的新 Key 已完成真实检测并原子接替旧凭证；路由未暂停。检测延迟 ${result?.probe?.latency_ms ?? '-'}ms。`);
       Toast.success('供应商凭证已无中断轮换');
       setRotating(null);

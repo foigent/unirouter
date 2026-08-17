@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelReadinessPage from '../ModelReadinessPage';
-import { ApiError } from '../../api/client';
+import { ApiError } from '../../api/transport';
 
 const mocks = vi.hoisted(() => ({
   getProjects: vi.fn(),
@@ -13,15 +13,16 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../api/client', () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(message: string, status: number) { super(message); this.status = status; }
-  },
   api: {
     getProjects: (...args: unknown[]) => mocks.getProjects(...args),
-    getChannels: (...args: unknown[]) => mocks.getChannels(...args),
     getModelAliases: (...args: unknown[]) => mocks.getModelAliases(...args),
     getWorkloadApplications: (...args: unknown[]) => mocks.getWorkloadApplications(...args),
+  },
+}));
+
+vi.mock('../../api/channels', () => ({
+  channelApi: {
+    list: (...args: unknown[]) => mocks.getChannels(...args),
   },
 }));
 

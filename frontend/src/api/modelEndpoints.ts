@@ -70,6 +70,7 @@ export type ModelEndpointTestResponse = {
   error?: string;
   status_code?: number;
   latency_ms?: number;
+  tokens_used?: number;
 };
 
 export const modelEndpointApi = {

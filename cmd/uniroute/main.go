@@ -513,6 +513,7 @@ func main() {
 	adminHandler.SetModelAuthorizationEvaluator(modelAuthorizationEvaluator)
 	adminHandler.SetGuardrailController(guardrailService)
 	adminHandler.SetProviderCostReconciler(billingSvc)
+	adminHandler.SetBillingReadinessProvider(billingSvc)
 	adminHandler.SetLimitPolicyReloader(limitPolicyService)
 	adminHandler.SetInvocationOptimization(invocationOptimizationManager, responseCacheService != nil)
 	legacyLicenseKey, err := licensing.ParsePublicKey(cfg.LicensePublicKey)

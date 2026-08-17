@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/accessprovisioning"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
@@ -420,6 +421,7 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 	handler.SetRoutingController(routing)
 	handler.SetModelAuthorizationEvaluator(evaluator)
 	handler.SetLimitPolicyReloader(policyService)
+	handler.SetBillingReadinessProvider(billing.NewBilling(pool, nil))
 
 	createHumanGrant := func(userID int64, clientID string, validUntil *time.Time) accessprovisioning.ProvisionResult {
 		t.Helper()

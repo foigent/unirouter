@@ -35,10 +35,10 @@ async function parseResponse(res: Response): Promise<unknown> {
   }
 }
 
-// Legacy domains still rely on inference through the aggregate client. New or
-// migrated domains must pass an explicit response type instead of accepting the
-// compatibility default.
-export async function request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
+// Every domain client must name its response contract. The legacy aggregate
+// client keeps its compatibility boundary locally instead of weakening the
+// transport used by new or migrated domains.
+export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('token');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

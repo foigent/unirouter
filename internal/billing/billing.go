@@ -120,6 +120,11 @@ type priceQuote struct {
 	CacheCreationRatio                 float64
 	Multiplier                         string
 	Version                            string
+	SelectionKey                       string
+	RateCardRef                        string
+	RateCardVersion                    int64
+	RateCardLayer                      string
+	ProviderRef                        string
 }
 
 type reservationRecord struct {
