@@ -9,6 +9,13 @@ const mockUpdateChannelKey = vi.fn();
 const mockCreateChannelKey = vi.fn();
 const mockRotateChannelKey = vi.fn();
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
 vi.mock('../../api/channels', () => ({
   channelApi: {
     list: (...args: unknown[]) => mockGetChannels(...args),
@@ -189,7 +196,9 @@ describe('ChannelKeysPage', () => {
     });
 
     renderChannelKeys();
-    fireEvent.click(await screen.findByText('新增供应商凭证'));
+    const createButton = (await screen.findByText('新增供应商凭证')).closest('button');
+    await waitFor(() => expect(createButton).toBeEnabled());
+    fireEvent.click(createButton!);
 
     expect(screen.queryByText(/Kimi 正在承载路由/)).toBeNull();
     fireEvent.click(screen.getByRole('combobox', { name: '供应商端点' }));
@@ -248,5 +257,41 @@ describe('ChannelKeysPage', () => {
     expect(screen.getByText('阻断：模型无交集')).toBeTruthy();
     expect(screen.getByText(/1 条启用凭证绑定待发布\/禁用端点，1 条凭证与端点模型范围无交集/)).toBeTruthy();
     expect(screen.queryByText(/冷却至/)).toBeNull();
+  });
+
+  it('does not publish a false credential combination while endpoint authority is still loading', async () => {
+    const channelResult = deferred<{ data: Array<{ id: number; name: string; status: string; effective_status: string; models: string }> }>();
+    mockGetChannels.mockReturnValueOnce(channelResult.promise);
+
+    render(
+      <MemoryRouter>
+        <ChannelKeysPage embedded scoped channelId={3} model="mimo-v2.5-pro" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(/正在读取供应商端点、运行时路由和凭证范围/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /新增供应商凭证/ })).toBeDisabled();
+    expect(screen.queryByText('凭证就绪·待发布')).toBeNull();
+    expect(screen.queryByText('端点模型未配置或待加载')).toBeNull();
+
+    channelResult.resolve({
+      data: [{ id: 3, name: 'mimo', status: 'staged', effective_status: 'active', models: 'mimo-v2.5-pro' }],
+    });
+
+    expect(await screen.findByText('运行时生效（配置待发布）')).toBeTruthy();
+    expect(screen.getByText('已进入路由（发布生效）')).toBeTruthy();
+    expect(screen.getByText(/当前范围 0 条启用凭证绑定待发布\/禁用端点/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /新增供应商凭证/ })).toBeDisabled();
+  });
+
+  it('fails closed when endpoint authority cannot be loaded', async () => {
+    mockGetChannels.mockRejectedValueOnce(new Error('unavailable'));
+
+    renderChannelKeys();
+
+    expect(await screen.findByText('无法加载供应商端点状态。')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新加载端点状态' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /新增供应商凭证/ })).toBeDisabled();
+    expect(screen.queryByText('凭证就绪·待发布')).toBeNull();
   });
 });
