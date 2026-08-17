@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/oidc"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
@@ -36,6 +37,33 @@ func TestOIDCConfigDisabled(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"enabled":false`) {
 		t.Fatalf("expected disabled config, got %s", rec.Body.String())
 	}
+}
+
+func TestOIDCConfigProjectsLicensedAvailability(t *testing.T) {
+	h := newOIDCTestHandler(t, &testutil.MockDB{}, "https://issuer.example")
+
+	t.Run("configured service is visible without a runtime wrapper", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/config", nil)
+		rec := httptest.NewRecorder()
+
+		h.OIDCConfig(rec, req)
+
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"enabled":true`) {
+			t.Fatalf("expected enabled config, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("unlicensed service is projected as unavailable", func(t *testing.T) {
+		h.SetLicenseRuntime(licensing.NewRuntime(nil))
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/config", nil)
+		rec := httptest.NewRecorder()
+
+		h.OIDCConfig(rec, req)
+
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"enabled":false`) {
+			t.Fatalf("expected unavailable config, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
 }
 
 func TestOIDCStartRedirectsWithSignedStateCookie(t *testing.T) {

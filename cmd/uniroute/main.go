@@ -790,7 +790,7 @@ func main() {
 	// Admin endpoints
 	mux.Handle("POST /api/v1/auth/login", loginRateLimiter(http.HandlerFunc(adminHandler.Login)))
 	mux.HandleFunc("POST /api/v1/auth/logout", adminHandler.Logout)
-	mux.Handle("GET /api/v1/auth/oidc/config", licenseRuntime.Gate(licensing.FeatureOIDC)(http.HandlerFunc(adminHandler.OIDCConfig)))
+	mux.HandleFunc("GET /api/v1/auth/oidc/config", adminHandler.OIDCConfig)
 	mux.Handle("GET /api/v1/auth/oidc/start", licenseRuntime.Gate(licensing.FeatureOIDC)(http.HandlerFunc(adminHandler.OIDCStart)))
 	mux.Handle("GET /api/v1/auth/oidc/callback", licenseRuntime.Gate(licensing.FeatureOIDC)(http.HandlerFunc(adminHandler.OIDCCallback)))
 	mux.Handle("GET /api/v1/me", adminRoute(adminHandler.GetMe))
