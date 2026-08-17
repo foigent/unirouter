@@ -16,7 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestDeploymentNetworkDesiredStateLifecycleDoesNotMutateObservedState(t *testing.T) {
+func TestDeploymentNetworkDesiredStateLifecycleDoesNotMutateObservedStateIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	var orgID, userID int64

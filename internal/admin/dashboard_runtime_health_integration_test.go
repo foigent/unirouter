@@ -10,7 +10,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestDashboardSeparatesRuntimeAvailabilityFromWindowHealth(t *testing.T) {
+func TestDashboardSeparatesRuntimeAvailabilityFromWindowHealthIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 

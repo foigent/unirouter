@@ -18,7 +18,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestP6F10GuardrailControlPlaneTenantAuthorityAndVersioning(t *testing.T) {
+func TestP6F10GuardrailControlPlaneTenantAuthorityAndVersioningIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	fx := seedP6F16Fixture(t, pool)

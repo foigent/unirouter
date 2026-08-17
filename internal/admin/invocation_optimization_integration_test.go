@@ -17,7 +17,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestInvocationOptimizationLifecycleEvidenceGateAndTenantScope(t *testing.T) {
+func TestInvocationOptimizationLifecycleEvidenceGateAndTenantScopeIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	fixture := seedP6F16Fixture(t, pool)

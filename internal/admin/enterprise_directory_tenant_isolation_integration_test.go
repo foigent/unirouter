@@ -18,7 +18,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestEnterpriseDirectoryHandlersFailClosedAcrossOrganizations(t *testing.T) {
+func TestEnterpriseDirectoryHandlersFailClosedAcrossOrganizationsIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	store, err := orgdirectory.NewPostgresStore(pool)

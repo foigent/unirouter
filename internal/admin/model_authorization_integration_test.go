@@ -17,7 +17,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestPRD8ModelAuthorizationLifecycleTenantIsolationAndEvaluation(t *testing.T) {
+func TestPRD8ModelAuthorizationLifecycleTenantIsolationAndEvaluationIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	type tenant struct {

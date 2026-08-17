@@ -60,7 +60,7 @@ the model-request path.
   TestEnterpriseDirectoryFoundationMigrationAndRollbackGuard -count=1 -v`
   with required local PostgreSQL: PASS, 1/1 test.
 - `go test -tags=integration ./internal/admin -run
-  TestEnterpriseDirectoryHandlersFailClosedAcrossOrganizations -count=1 -v`
+  TestEnterpriseDirectoryHandlersFailClosedAcrossOrganizationsIntegration -count=1 -v`
   with required local PostgreSQL: PASS, 1/1 test.
 - `go vet ./internal/orgdirectory ./internal/admin ./cmd/uniroute`: PASS.
 - `npm test -- src/pages/__tests__/OrganizationMembersPage.test.tsx`: PASS,

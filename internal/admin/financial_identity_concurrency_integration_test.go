@@ -15,7 +15,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestP6F17ConcurrentAdminFinancialClientIDsHaveOneEffect(t *testing.T) {
+func TestP6F17ConcurrentAdminFinancialClientIDsHaveOneEffectIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	var orgID, userID int64
@@ -110,7 +110,7 @@ func TestP6F17ConcurrentAdminFinancialClientIDsHaveOneEffect(t *testing.T) {
 	require.Equal(t, 1, grantTransactions)
 }
 
-func TestWalletConcurrentDistinctDeltasPreserveAllEffects(t *testing.T) {
+func TestWalletConcurrentDistinctDeltasPreserveAllEffectsIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	var orgID, userID int64

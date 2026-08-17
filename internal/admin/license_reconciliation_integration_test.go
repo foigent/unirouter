@@ -14,7 +14,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestReconcileStoredCommercialLicenseRestoresDerivedProjection(t *testing.T) {
+func TestReconcileStoredCommercialLicenseRestoresDerivedProjectionIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

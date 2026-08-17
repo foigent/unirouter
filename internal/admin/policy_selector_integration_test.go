@@ -21,7 +21,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestPolicyMutationsReauthorizeActorAndLockCanonicalFamilyAtCommit(t *testing.T) {
+func TestPolicyMutationsReauthorizeActorAndLockCanonicalFamilyAtCommitIntegration(t *testing.T) {
 	for _, operation := range []string{"limit", "guardrail", "model_authorization"} {
 		for _, change := range []string{"actor_epoch", "family_revoked"} {
 			t.Run(operation+"/"+change, func(t *testing.T) {
@@ -109,7 +109,7 @@ func TestPolicyMutationsReauthorizeActorAndLockCanonicalFamilyAtCommit(t *testin
 	}
 }
 
-func TestPolicySelectorsCanonicalizeVisibleBoundKeysAndHideForeignObjects(t *testing.T) {
+func TestPolicySelectorsCanonicalizeVisibleBoundKeysAndHideForeignObjectsIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	fx := seedP6F16Fixture(t, pool)

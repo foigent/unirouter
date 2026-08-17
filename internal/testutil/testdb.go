@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,14 @@ import (
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/money"
 )
+
+var migratedTestDBTemplate struct {
+	sync.Mutex
+	enabled   bool
+	baseDSN   string
+	adminPool *pgxpool.Pool
+	dbName    string
+}
 
 // TestDB_DSN returns the test database DSN from environment or default.
 // Uses uniroute_test database to avoid polluting development data.
@@ -111,12 +120,140 @@ func SetupIsolatedTestDB(t *testing.T) *pgxpool.Pool {
 // SetupMigratedTestDB creates a clean temporary database and applies all repo migrations.
 func SetupMigratedTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
+	if migratedTestDBTemplateEnabled() {
+		return setupMigratedTestDBFromTemplate(t)
+	}
 	pool := SetupIsolatedTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	require.NoError(t, migrate.Run(ctx, pool, MigrationsDir(t)), "run migrations in isolated test database")
 	TruncateAll(t, pool)
 	return pool
+}
+
+// EnableMigratedTestDBTemplate makes SetupMigratedTestDB migrate and clean one
+// process-scoped template database, then clone it for each test. The caller must
+// invoke CleanupMigratedTestDBTemplate after the package test run completes.
+func EnableMigratedTestDBTemplate() {
+	migratedTestDBTemplate.Lock()
+	defer migratedTestDBTemplate.Unlock()
+	migratedTestDBTemplate.enabled = true
+}
+
+// CleanupMigratedTestDBTemplate removes the process-scoped template database.
+func CleanupMigratedTestDBTemplate() error {
+	migratedTestDBTemplate.Lock()
+	adminPool := migratedTestDBTemplate.adminPool
+	dbName := migratedTestDBTemplate.dbName
+	migratedTestDBTemplate.enabled = false
+	migratedTestDBTemplate.baseDSN = ""
+	migratedTestDBTemplate.adminPool = nil
+	migratedTestDBTemplate.dbName = ""
+	migratedTestDBTemplate.Unlock()
+
+	if adminPool == nil || dbName == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := dropTemporaryDatabase(ctx, adminPool, dbName)
+	adminPool.Close()
+	return err
+}
+
+func migratedTestDBTemplateEnabled() bool {
+	migratedTestDBTemplate.Lock()
+	defer migratedTestDBTemplate.Unlock()
+	return migratedTestDBTemplate.enabled
+}
+
+func setupMigratedTestDBFromTemplate(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	baseDSN := TestDB_DSN()
+	adminPool, templateName := ensureMigratedTestDBTemplate(t, baseDSN)
+	_, cloneDSN, cloneName, err := tempDatabaseDSNs(baseDSN)
+	require.NoError(t, err, "build cloned test database DSN")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err = adminPool.Exec(ctx, `CREATE DATABASE `+quoteIdent(cloneName)+` TEMPLATE `+quoteIdent(templateName))
+	if err != nil {
+		testDatabaseUnavailable(t, "cannot clone migrated test database %s: %v", cloneName, err)
+	}
+
+	pool, err := pgxpool.New(ctx, cloneDSN)
+	if err != nil {
+		_ = dropTemporaryDatabase(ctx, adminPool, cloneName)
+		testDatabaseUnavailable(t, "cannot connect to cloned test database %s: %v", cloneName, err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		_ = dropTemporaryDatabase(ctx, adminPool, cloneName)
+		testDatabaseUnavailable(t, "cannot ping cloned test database %s: %v", cloneName, err)
+	}
+
+	t.Cleanup(func() {
+		pool.Close()
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer dropCancel()
+		if err := dropTemporaryDatabase(dropCtx, adminPool, cloneName); err != nil {
+			t.Errorf("drop cloned test database %s: %v", cloneName, err)
+		}
+	})
+	return pool
+}
+
+func ensureMigratedTestDBTemplate(t *testing.T, baseDSN string) (*pgxpool.Pool, string) {
+	t.Helper()
+	migratedTestDBTemplate.Lock()
+	defer migratedTestDBTemplate.Unlock()
+	if migratedTestDBTemplate.adminPool != nil {
+		require.Equal(t, migratedTestDBTemplate.baseDSN, baseDSN, "migrated test database template DSN changed during one test process")
+		return migratedTestDBTemplate.adminPool, migratedTestDBTemplate.dbName
+	}
+
+	adminDSN, templateDSN, templateName, err := tempDatabaseDSNs(baseDSN)
+	require.NoError(t, err, "build migrated template database DSN")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	adminPool, err := pgxpool.New(ctx, adminDSN)
+	if err != nil {
+		testDatabaseUnavailable(t, "cannot connect to PostgreSQL admin database for migrated template: %v", err)
+	}
+	if err := adminPool.Ping(ctx); err != nil {
+		adminPool.Close()
+		testDatabaseUnavailable(t, "cannot ping PostgreSQL admin database for migrated template: %v", err)
+	}
+	if _, err := adminPool.Exec(ctx, `CREATE DATABASE `+quoteIdent(templateName)); err != nil {
+		adminPool.Close()
+		testDatabaseUnavailable(t, "cannot create migrated template database %s: %v", templateName, err)
+	}
+
+	templatePool, err := pgxpool.New(ctx, templateDSN)
+	if err != nil {
+		_ = dropTemporaryDatabase(ctx, adminPool, templateName)
+		adminPool.Close()
+		testDatabaseUnavailable(t, "cannot connect to migrated template database %s: %v", templateName, err)
+	}
+	if err := templatePool.Ping(ctx); err != nil {
+		templatePool.Close()
+		_ = dropTemporaryDatabase(ctx, adminPool, templateName)
+		adminPool.Close()
+		testDatabaseUnavailable(t, "cannot ping migrated template database %s: %v", templateName, err)
+	}
+	if err := migrate.Run(ctx, templatePool, MigrationsDir(t)); err != nil {
+		templatePool.Close()
+		_ = dropTemporaryDatabase(ctx, adminPool, templateName)
+		adminPool.Close()
+		require.NoError(t, err, "run migrations in template test database")
+	}
+	TruncateAll(t, templatePool)
+	templatePool.Close()
+
+	migratedTestDBTemplate.baseDSN = baseDSN
+	migratedTestDBTemplate.adminPool = adminPool
+	migratedTestDBTemplate.dbName = templateName
+	return adminPool, templateName
 }
 
 // MigrationsDir returns the repository migrations directory from the testutil package location.
@@ -257,11 +394,42 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 		"orgs",
 	}
 
-	for _, table := range tables {
-		_, err := pool.Exec(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
-		if err != nil {
-			t.Logf("truncate warning for %s: %v", table, err)
+	rows, err := pool.Query(ctx, `
+		SELECT tablename
+		FROM pg_catalog.pg_tables
+		WHERE schemaname = 'public' AND tablename = ANY($1::text[])`, tables)
+	if err != nil {
+		t.Logf("truncate table discovery warning: %v", err)
+		return
+	}
+	existing := make(map[string]struct{}, len(tables))
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			rows.Close()
+			t.Logf("truncate table discovery scan warning: %v", err)
+			return
 		}
+		existing[table] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		t.Logf("truncate table discovery warning: %v", err)
+		return
+	}
+	rows.Close()
+
+	quotedTables := make([]string, 0, len(existing))
+	for _, table := range tables {
+		if _, ok := existing[table]; ok {
+			quotedTables = append(quotedTables, quoteIdent(table))
+		}
+	}
+	if len(quotedTables) == 0 {
+		return
+	}
+	if _, err := pool.Exec(ctx, "TRUNCATE TABLE "+strings.Join(quotedTables, ", ")+" CASCADE"); err != nil {
+		t.Logf("truncate warning: %v", err)
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestRotateChannelKeyProbesBeforeAtomicSwapAndPreservesOldCredentialOnFailure(t *testing.T) {
+func TestRotateChannelKeyProbesBeforeAtomicSwapAndPreservesOldCredentialOnFailureIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	orgID := testutil.NewTestOrg(t, pool)

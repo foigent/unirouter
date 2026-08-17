@@ -99,7 +99,7 @@ jobs:
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 50
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-backend
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -263,9 +263,9 @@ jobs:
       - name: Run admin integration tests
         env:
           REQUIRE_TEST_DATABASE: "1"
-        # The race-enabled real-PostgreSQL suite can exceed 20 minutes on a
-        # slower hosted runner; keep the full suite and allow bounded headroom.
-        run: go test -tags=integration -race ./internal/admin -count=1 -timeout=30m
+        # Integration test names are enforced by TestAdminIntegrationFilesUseIntegrationSuffix.
+        # Avoid rerunning the ordinary admin unit suite already covered above.
+        run: go test -tags=integration -race ./internal/admin -run 'Integration$' -count=1 -timeout=20m
 
       - name: Run X-Insight Connector PostgreSQL 16 integration tests
         env:

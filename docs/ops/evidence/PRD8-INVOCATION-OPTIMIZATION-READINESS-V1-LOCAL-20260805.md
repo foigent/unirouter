@@ -62,7 +62,7 @@ go test -p 1 ./... -count=1
 TEST_DATABASE_URL=<isolated-loopback-test-postgres> \
 REQUIRE_TEST_DATABASE=1 \
 go test -tags=integration -p 1 ./internal/admin \
-  -run '^TestInvocationOptimizationLifecycleEvidenceGateAndTenantScope$' \
+  -run '^TestInvocationOptimizationLifecycleEvidenceGateAndTenantScopeIntegration$' \
   -count=1
   PASS: exact lifecycle gate, current-revision counters and tenant isolation
 
