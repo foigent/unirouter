@@ -330,6 +330,9 @@ func TestMainRegistersCommercialFeatureGates(t *testing.T) {
 	}
 	mainSource := string(src)
 	for _, fragment := range []string{
+		`mux.HandleFunc("GET /api/v1/auth/oidc/config", adminHandler.OIDCConfig)`,
+		`mux.Handle("GET /api/v1/auth/oidc/start", licenseRuntime.Gate(licensing.FeatureOIDC)`,
+		`mux.Handle("GET /api/v1/auth/oidc/callback", licenseRuntime.Gate(licensing.FeatureOIDC)`,
 		"licenseRuntime.Gate(licensing.FeatureOIDC)",
 		"licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.TestChannel)",
 		"licensedRoute(licensing.FeatureNotifications",

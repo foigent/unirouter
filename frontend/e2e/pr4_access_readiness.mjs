@@ -90,7 +90,13 @@ async function login(role, baseURL = fixture.base_url) {
   page.on('console', (message) => {
     if (message.type() === 'error') browserErrors.push(`${role} console: ${message.text()}`);
   });
+  const oidcConfigPromise = page.waitForResponse((response) =>
+    response.url().endsWith('/api/v1/auth/oidc/config') && response.request().method() === 'GET');
   await page.goto('/login');
+  const oidcConfigResponse = await oidcConfigPromise;
+  assert.equal(oidcConfigResponse.status(), 200, 'OIDC availability must be readable without presenting a false login error');
+  assert.equal((await oidcConfigResponse.json()).enabled, false, 'unconfigured or unlicensed OIDC must be unavailable');
+  assert.equal(await page.getByText(/企业登录配置暂时无法确认/).count(), 0, 'license availability is not a transient login error');
   await page.getByLabel('用户名').fill(fixture.usernames[role]);
   await page.locator('input[type="password"]').fill(fixture.password);
   const [response] = await Promise.all([

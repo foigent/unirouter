@@ -401,7 +401,7 @@ func newPR4BrowserApplicationServer(
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("POST /api/v1/auth/login", handler.Login)
 	apiMux.HandleFunc("POST /api/v1/auth/logout", handler.Logout)
-	apiMux.Handle("GET /api/v1/auth/oidc/config", licenseRuntime.Gate(licensing.FeatureOIDC)(http.HandlerFunc(handler.OIDCConfig)))
+	apiMux.HandleFunc("GET /api/v1/auth/oidc/config", handler.OIDCConfig)
 	apiMux.Handle("GET /api/v1/me", authenticated(handler.GetMe))
 	apiMux.Handle("GET /api/v1/organizations", authenticated(handler.ListOrganizations))
 	apiMux.Handle("GET /api/v1/projects", authenticated(handler.ListProjects))
