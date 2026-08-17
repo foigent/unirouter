@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/admin"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
@@ -378,6 +379,7 @@ func newPR4BrowserApplicationServer(
 	handler.SetRedisClient(redisClient)
 	handler.SetModelAuthorizationEvaluator(evaluator)
 	handler.SetLimitPolicyReloader(policyService)
+	handler.SetBillingReadinessProvider(billing.NewBilling(pool, nil))
 	if routing != nil {
 		handler.SetRoutingController(routing)
 	}
