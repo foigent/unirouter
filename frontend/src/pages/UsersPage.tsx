@@ -307,9 +307,11 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 			{providerScope === 'local'
 				? '本页服务端只查询 auth_provider=local；可创建本地账号并管理本地生命周期。'
 				: '本页服务端只查询企业身份。OIDC / 企业目录拥有登录来源与外部身份属性；UniRouter 管理已映射账号的组织角色、启停与离场，项目成员关系仍在“项目与成员”中管理。'}
-		</Typography.Text>
+        </Typography.Text>
         <div className="ur-table-shell">
-          <Table
+          {loading && users.length === 0 ? (
+            <EmptyState title="正在加载用户列表" description="正在读取当前客户的账号与身份，请稍候。" minHeight={220} />
+          ) : <Table
             columns={columns}
             dataSource={users}
             loading={loading}
@@ -323,7 +325,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
               onPageChange: (p: number) => { setPage(p); load(p, pageSize, providerScope); },
               onPageSizeChange: (s: number) => { setPageSize(s); setPage(1); load(1, s, providerScope); },
             }}
-          />
+          />}
         </div>
       </Surface>
 

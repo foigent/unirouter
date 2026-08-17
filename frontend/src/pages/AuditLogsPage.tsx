@@ -396,7 +396,7 @@ export default function AuditLogsPage() {
               <Text className="ur-panel-hint">默认选择首条记录 · 详情始终在右侧</Text>
             </div>
             <Space>
-              <Tag size="small">{total} events</Tag>
+              <Tag size="small">{loading && logs.length === 0 ? '读取中' : `${total} events`}</Tag>
               <Button
                 size="small"
                 icon={<IconRefresh />}
@@ -408,7 +408,9 @@ export default function AuditLogsPage() {
             </Space>
           </div>
           <div className="ur-table-shell">
-            <Table
+            {loading && logs.length === 0 ? (
+              <EmptyState title="正在加载审计记录" description="正在读取当前筛选范围的审计事实，请稍候。" minHeight={220} />
+            ) : <Table
               columns={columns}
               dataSource={logs}
               loading={loading}
@@ -446,7 +448,7 @@ export default function AuditLogsPage() {
                 onPageChange: changePage,
                 onPageSizeChange: changePageSize,
               }}
-            />
+            />}
           </div>
         </main>
 

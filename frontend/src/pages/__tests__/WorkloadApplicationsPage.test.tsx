@@ -225,6 +225,30 @@ describe('ApplicationsV2Page', () => {
     expect(accessMocks.previewLegacy).not.toHaveBeenCalled();
   });
 
+  it('does not present missing projects or applications before the initial scope finishes loading', async () => {
+    const contractRequest = deferred<any>();
+    const projectsRequest = deferred<any>();
+    clientMocks.getContract.mockReturnValue(contractRequest.promise);
+    clientMocks.getProjects.mockReturnValue(projectsRequest.promise);
+
+    render(<MemoryRouter initialEntries={['/applications']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: '正在读取项目范围' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '正在准备应用范围' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /新建应用/ })).toBeDisabled();
+    expect(screen.queryByRole('heading', { name: '暂无可用项目' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: '当前项目暂无应用' })).toBeNull();
+
+    await act(async () => {
+      contractRequest.resolve({ contract_version: 'unirouter.workload-application.v2', client_profiles: [] });
+      projectsRequest.resolve({ data: [], total: 0 });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByRole('heading', { name: '暂无可用项目' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '没有可读取的项目应用' })).toBeTruthy();
+  });
+
   it('keeps Grant and credential facts when the independent Request source fails', async () => {
     accessMocks.listProjectRequests.mockRejectedValue(new Error('request store unavailable'));
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
@@ -270,8 +294,9 @@ describe('ApplicationsV2Page', () => {
   it('creates an application without asking the operator for internal identity refs', async () => {
     render(<MemoryRouter initialEntries={['/applications?project_id=11']}><WorkloadApplicationsPage /></MemoryRouter>);
 
-    const createLabel = await screen.findByText('新建应用');
-    fireEvent.click(createLabel.closest('button') as HTMLButtonElement);
+    await waitFor(() => expect(screen.getByRole('button', { name: /新建应用/ })).toBeEnabled());
+    const createButton = screen.getByRole('button', { name: /新建应用/ });
+    fireEvent.click(createButton);
     expect((await screen.findAllByText('新建应用')).length).toBe(2);
     expect(screen.getByText('环境（创建后不可变）')).toBeTruthy();
     expect(screen.queryByLabelText(/Application ref|Logical ref/i)).toBeNull();

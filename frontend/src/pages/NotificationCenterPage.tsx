@@ -147,7 +147,7 @@ export default function NotificationCenterPage() {
   const [eventTotal, setEventTotal] = useState(0);
   const [eventPage, setEventPage] = useState(1);
   const [eventPageSize, setEventPageSize] = useState(20);
-  const [eventLoading, setEventLoading] = useState(false);
+  const [eventLoading, setEventLoading] = useState(true);
   const [eventLoadError, setEventLoadError] = useState('');
   const [eventType, setEventType] = useState('');
   const [severity, setSeverity] = useState('');
@@ -159,7 +159,7 @@ export default function NotificationCenterPage() {
   const [deliveryTotal, setDeliveryTotal] = useState(0);
   const [deliveryPage, setDeliveryPage] = useState(1);
   const [deliveryPageSize, setDeliveryPageSize] = useState(20);
-  const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [deliveryLoading, setDeliveryLoading] = useState(true);
   const [deliveryLoadError, setDeliveryLoadError] = useState('');
   const [deliveryStatus, setDeliveryStatus] = useState('');
   const [deliveryEventID, setDeliveryEventID] = useState<number | undefined>();
@@ -168,7 +168,7 @@ export default function NotificationCenterPage() {
   const [webhookTotal, setWebhookTotal] = useState(0);
   const [webhookPage, setWebhookPage] = useState(1);
   const [webhookPageSize, setWebhookPageSize] = useState(20);
-  const [webhookLoading, setWebhookLoading] = useState(false);
+  const [webhookLoading, setWebhookLoading] = useState(true);
   const [webhookLoadError, setWebhookLoadError] = useState('');
   const [webhookSheet, setWebhookSheet] = useState<{ mode: 'create' | 'edit'; record?: NotificationWebhook } | null>(null);
   const [webhookFormApi, setWebhookFormApi] = useState<any>(null);
@@ -177,7 +177,7 @@ export default function NotificationCenterPage() {
   const webhookRequestVersion = useRef(0);
 
   const loadEvents = useCallback(async (page = eventPage, pageSize = eventPageSize) => {
-    if (!customerContextReady || !canReadNotifications) return;
+    if (!customerContextReady || !canReadNotifications) { setEventLoading(false); return; }
     const version = ++eventRequestVersion.current;
     setEventLoading(true);
     setEventLoadError('');
@@ -205,7 +205,7 @@ export default function NotificationCenterPage() {
   }, [canReadNotifications, customerContextReady, deliveryState, eventPage, eventPageSize, eventStatus, eventType, projectID, severity, targetOrgID]);
 
   const loadDeliveries = useCallback(async (page = deliveryPage, pageSize = deliveryPageSize) => {
-    if (!customerContextReady || !canReadNotifications) return;
+    if (!customerContextReady || !canReadNotifications) { setDeliveryLoading(false); return; }
     const version = ++deliveryRequestVersion.current;
     setDeliveryLoading(true);
     setDeliveryLoadError('');
@@ -231,7 +231,7 @@ export default function NotificationCenterPage() {
   }, [canReadNotifications, customerContextReady, deliveryEventID, deliveryPage, deliveryPageSize, deliveryStatus, projectID, targetOrgID]);
 
   const loadWebhooks = useCallback(async (page = webhookPage, pageSize = webhookPageSize) => {
-    if (!customerContextReady || !canReadNotifications || billing) return;
+    if (!customerContextReady || !canReadNotifications || billing) { setWebhookLoading(false); return; }
     const version = ++webhookRequestVersion.current;
     setWebhookLoading(true);
     setWebhookLoadError('');
@@ -256,6 +256,7 @@ export default function NotificationCenterPage() {
 
   const invalidateEvents = () => {
     eventRequestVersion.current += 1;
+    setEventLoading(true);
     setEvents([]);
     setEventTotal(0);
     setEventLoadError('');
@@ -263,6 +264,7 @@ export default function NotificationCenterPage() {
 
   const invalidateDeliveries = () => {
     deliveryRequestVersion.current += 1;
+    setDeliveryLoading(true);
     setDeliveries([]);
     setDeliveryTotal(0);
     setDeliveryLoadError('');
@@ -544,7 +546,9 @@ export default function NotificationCenterPage() {
                 dataSource={events}
                 loading={eventLoading}
                 rowKey="id"
-                empty={eventLoadError ? (
+                empty={eventLoading && events.length === 0 ? (
+                  <EmptyState title="正在加载通知事件" description="正在读取当前通知范围，请稍候。" minHeight={220} />
+                ) : eventLoadError ? (
                   <EmptyState
                     title="通知事件加载失败"
                     description={eventLoadError}
@@ -573,7 +577,9 @@ export default function NotificationCenterPage() {
                 dataSource={deliveries}
                 loading={deliveryLoading}
                 rowKey="id"
-                empty={deliveryLoadError ? (
+                empty={deliveryLoading && deliveries.length === 0 ? (
+                  <EmptyState title="正在加载投递记录" description="正在读取当前通知范围的投递事实，请稍候。" minHeight={220} />
+                ) : deliveryLoadError ? (
                   <EmptyState
                     title="投递记录加载失败"
                     description={deliveryLoadError}
@@ -602,7 +608,9 @@ export default function NotificationCenterPage() {
                   dataSource={webhooks}
                   loading={webhookLoading}
                   rowKey="id"
-                  empty={webhookLoadError ? (
+                  empty={webhookLoading && webhooks.length === 0 ? (
+                    <EmptyState title="正在加载 Webhook 路由" description="正在读取当前范围的 Webhook 配置，请稍候。" minHeight={220} />
+                  ) : webhookLoadError ? (
                     <EmptyState
                       title="Webhook 路由加载失败"
                       description={webhookLoadError}

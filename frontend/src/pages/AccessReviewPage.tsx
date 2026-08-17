@@ -181,8 +181,11 @@ export default function AccessReviewPage() {
         )}
       </Surface>
       <Surface title="待审核申请" description="这里只显示真正需要你处理的申请；已处理或无权处理的项目不会混入队列。">
-        {!selectedProjectID ? <EmptyState title="暂无可审核项目" description="当前账号没有可发现的实时项目管理员范围。" /> : visibleError ? <EmptyState title="审核队列暂时不可用" description={visibleError} actions={<Button onClick={() => loadQueue()}>重试</Button>} /> : (
-          <><Table columns={columns} dataSource={visibleRequests} rowKey="id" pagination={false} loading={visibleLoading && visibleRequests.length === 0} empty={<EmptyState title="当前项目没有待审核请求" />} />{visibleCursor && <Button block loading={visibleLoading} onClick={() => loadQueue(true)}>加载更多待审核请求</Button>}</>
+        {projectsLoading ? <EmptyState title="正在读取待审核范围" description="正在确认当前账号可审核的项目，请稍候。" />
+          : !selectedProjectID ? <EmptyState title="暂无可审核项目" description="当前账号没有可发现的实时项目管理员范围。" />
+            : visibleError ? <EmptyState title="审核队列暂时不可用" description={visibleError} actions={<Button onClick={() => loadQueue()}>重试</Button>} />
+              : visibleLoading && visibleRequests.length === 0 ? <EmptyState title="正在读取待审核申请" description="正在读取当前项目的实时审核队列，请稍候。" /> : (
+                <><Table columns={columns} dataSource={visibleRequests} rowKey="id" pagination={false} loading={visibleLoading} empty={<EmptyState title="当前项目没有待审核请求" />} />{visibleCursor && <Button block loading={visibleLoading} onClick={() => loadQueue(true)}>加载更多待审核请求</Button>}</>
         )}
       </Surface>
     </div>

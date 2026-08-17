@@ -123,6 +123,28 @@ describe('NotificationCenterPage', () => {
     expect(screen.getAllByText('投递失败').length).toBeGreaterThan(0);
   });
 
+  it('does not present empty notification facts while the initial reads are pending', async () => {
+    const eventRequest = deferred<any>();
+    const deliveryRequest = deferred<any>();
+    const webhookRequest = deferred<any>();
+    mockGetNotificationEvents.mockReturnValue(eventRequest.promise);
+    mockGetNotificationDeliveries.mockReturnValue(deliveryRequest.promise);
+    mockGetNotificationWebhooks.mockReturnValue(webhookRequest.promise);
+
+    render(<NotificationCenterPage />);
+
+    expect(await screen.findByRole('heading', { name: '正在加载通知事件' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '暂无通知事件' })).toBeNull();
+
+    await act(async () => {
+      eventRequest.resolve({ data: [], total: 0 });
+      deliveryRequest.resolve({ data: [], total: 0 });
+      webhookRequest.resolve({ data: [], total: 0 });
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('heading', { name: '暂无通知事件' })).toBeTruthy();
+  });
+
   it('gives billing administrators a finance-only center without webhook management', async () => {
     auth.user = { id: 4, username: 'billing-admin', role: 'billing_admin', org_id: 7 };
     render(<NotificationCenterPage />);

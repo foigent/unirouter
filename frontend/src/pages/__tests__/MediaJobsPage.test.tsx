@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '../../store/auth';
 import MediaJobsPage from '../MediaJobsPage';
@@ -24,6 +24,12 @@ vi.mock('../../api/client', () => ({
     }
   },
 }));
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
 
 const JOB = {
   contract_version: 'unirouter.async-media-runtime.v1',
@@ -112,6 +118,25 @@ describe('MediaJobsPage', () => {
     expect(screen.queryByText(/private prompt/)).toBeNull();
     expect(document.body.textContent).not.toContain('object_key');
     expect(mocks.getMediaJobs).toHaveBeenCalledWith(7, 1);
+  });
+
+  it('does not claim there are no visible projects while the project scope is loading', async () => {
+    const projectsRequest = deferred<any>();
+    mocks.getProjects.mockReturnValue(projectsRequest.promise);
+
+    render(<MediaJobsPage />);
+
+    expect(await screen.findByRole('heading', { name: '正在读取项目范围' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '没有可见项目' })).toBeNull();
+    expect(screen.queryByText('P7D')).toBeNull();
+
+    await act(async () => {
+      projectsRequest.resolve({ data: [] });
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole('heading', { name: '没有可见项目' })).toBeTruthy();
+    expect(mocks.getMediaJobContract).not.toHaveBeenCalled();
+    expect(mocks.getMediaJobs).not.toHaveBeenCalled();
   });
 
   it('loads output only after an explicit authenticated action', async () => {
