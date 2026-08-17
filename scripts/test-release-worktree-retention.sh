@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+test_stage="setup"
+test_failed() {
+  local exit_code="$?"
+  local line="$1"
+  printf 'release worktree retention tests: FAIL stage=%s line=%s exit=%s\n' \
+    "$test_stage" "$line" "$exit_code" >&2
+  exit "$exit_code"
+}
+trap 'test_failed "$LINENO"' ERR
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/unirouter-release-retention-test.XXXXXX")"
 cleanup() {
@@ -12,7 +22,7 @@ source_repo="$fixture/source"
 release_root="$fixture/releases"
 fake_bin="$fixture/bin"
 mkdir -p "$source_repo" "$release_root" "$fake_bin"
-git -C "$source_repo" init -q
+git -C "$source_repo" init --object-format=sha1 -q
 git -C "$source_repo" config user.email test@example.invalid
 git -C "$source_repo" config user.name "Retention Test"
 
@@ -68,6 +78,7 @@ export PATH="$fake_bin:$PATH"
 export UNIROUTER_DOCKER_LIFECYCLE_LOCK="$fixture/docker-lifecycle.lock"
 export FAKE_MOUNT_SOURCE="$release_root/$revision_6"
 
+test_stage="running-container-inspect-fail-closed"
 export FAKE_FAIL_MOUNT_INSPECT=true
 if "$repo_root/scripts/release-worktree-retention-report.sh" \
   --release-root "$release_root" --keep-file "$fixture/keep" --min-age-days 14 >/dev/null 2>&1; then
@@ -76,6 +87,7 @@ if "$repo_root/scripts/release-worktree-retention-report.sh" \
 fi
 unset FAKE_FAIL_MOUNT_INSPECT
 
+test_stage="standalone-alternates-fail-closed"
 printf '%s/.git/objects\n' "$source_repo" >"$release_root/$revision_5/.git/objects/info/alternates"
 alternate_report="$fixture/alternate-report.tsv"
 "$repo_root/scripts/release-worktree-retention-report.sh" \
@@ -85,6 +97,7 @@ grep -F $'review-required\t20' "$alternate_report" | grep -F "$revision_5" | \
 rm -f -- "$release_root/$revision_5/.git/objects/info/alternates"
 touch -t "$old_timestamp" "$release_root/$revision_5"
 
+test_stage="topology-and-running-reference-report"
 report="$fixture/report.tsv"
 "$repo_root/scripts/release-worktree-retention-report.sh" \
   --release-root "$release_root" --keep-file "$fixture/keep" --min-age-days 14 >"$report"
@@ -96,11 +109,13 @@ grep -F $'protected-running\t20' "$report" | grep -F "$revision_6" | grep -F 'ru
 grep -F $'review-required\t20' "$report" | grep -F "$revision_4" | grep -F 'dirty-worktree' >/dev/null
 grep -F $'SUMMARY\tcandidates=2' "$report" >/dev/null
 
+test_stage="dry-run"
 "$repo_root/scripts/release-worktree-retention-maintenance.sh" \
   --release-root "$release_root" --keep-file "$fixture/keep" --min-age-days 14 >/dev/null
 [[ -d "$release_root/$revision_3" ]]
 [[ -d "$release_root/$revision_5" ]]
 
+test_stage="keep-file-drift-fail-closed"
 export FAKE_KEEP_FILE="$fixture/keep"
 export FAKE_KEEP_APPEND_REVISION="$revision_3"
 if "$repo_root/scripts/release-worktree-retention-maintenance.sh" --apply \
@@ -113,11 +128,13 @@ fi
 printf '%s\n' "$revision_1" >"$fixture/keep"
 unset FAKE_KEEP_APPEND_REVISION FAKE_KEEP_FILE
 
+test_stage="guarded-apply"
 "$repo_root/scripts/release-worktree-retention-maintenance.sh" --apply \
   --release-root "$release_root" --keep-file "$fixture/keep" --min-age-days 14 >/dev/null
 [[ ! -e "$release_root/$revision_3" ]]
 [[ ! -e "$release_root/$revision_5" ]]
 [[ -d "$release_root/$revision_1" && -d "$release_root/$revision_2" && -d "$release_root/$revision_4" && -d "$release_root/$revision_6" ]]
+test_stage="post-apply-registration"
 git -C "$source_repo" worktree list --porcelain | grep -F "$revision_3" && {
   echo "removed worktree remains registered" >&2
   exit 1

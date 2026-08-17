@@ -8,10 +8,11 @@ Usage:
     --release-root DIR --keep-file FILE [--min-age-days N] [--report-out FILE]
 
 Without --apply this is a read-only report. With --apply, only rows frozen as
-candidate by the report are revalidated. Linked worktrees use `git worktree
-remove`; self-contained legacy repositories use a bounded tree deletion.
-Drift, dirty state, a running-container reference, Git alternates or keep-file
-changes stop the command before that checkout is removed. No timer is created.
+candidate by the report are revalidated. Every candidate must pass a complete
+preflight before deletion begins, then each is checked again immediately before
+removal. Linked worktrees use `git worktree remove`; self-contained legacy
+repositories use a bounded tree deletion. Drift, dirty state, a running
+reference, Git alternates or keep-file changes stop the command. No timer is created.
 EOF
 }
 
@@ -108,9 +109,18 @@ build_current_keep_revisions() {
     exit 2
   }
 }
-removed=0
-while IFS=$'\t' read -r status _age _size frozen_mtime frozen_head path frozen_detail; do
-  [[ "$status" == "candidate" ]] || continue
+
+refresh_current_protections() {
+  release_collect_running_references "$current_running_revisions" "$current_running_paths" "$release_root"
+  build_current_keep_revisions
+}
+
+validate_candidate() {
+  local frozen_mtime="$1"
+  local frozen_head="$2"
+  local path="$3"
+  local frozen_detail="$4"
+  local current_path current_layout common_git_dir=""
   if [[ -d "$path" && ! -L "$path" ]]; then
     current_path="$(realpath "$path")"
   else
@@ -136,12 +146,10 @@ while IFS=$'\t' read -r status _age _size frozen_mtime frozen_head path frozen_d
     echo "release retention maintenance: candidate is now dirty: $current_path" >&2
     exit 1
   }
-  build_current_keep_revisions
   ! grep -Fxq "$frozen_head" "$current_keep_revisions" || {
     echo "release retention maintenance: candidate is now retained: $current_path" >&2
     exit 1
   }
-  release_collect_running_references "$current_running_revisions" "$current_running_paths" "$release_root"
   ! grep -Fxq "$frozen_head" "$current_running_revisions" || {
     echo "release retention maintenance: candidate revision is now used by a running container: $current_path" >&2
     exit 1
@@ -165,7 +173,6 @@ while IFS=$'\t' read -r status _age _size frozen_mtime frozen_head path frozen_d
       echo "release retention maintenance: linked worktree common Git directory unavailable: $current_path" >&2
       exit 1
     }
-    git --git-dir="$common_git_dir" worktree remove -- "$current_path"
   else
     release_standalone_is_single_self_contained_worktree "$current_path" "$frozen_head" || {
       echo "release retention maintenance: standalone repository is not self-contained: $current_path" >&2
@@ -175,14 +182,37 @@ while IFS=$'\t' read -r status _age _size frozen_mtime frozen_head path frozen_d
       echo "release retention maintenance: Git alternates require manual dependency review: $current_path" >&2
       exit 1
     }
-    find "$current_path" -depth -delete
   fi
-  [[ ! -e "$current_path" && ! -L "$current_path" ]] || {
-    echo "release retention maintenance: worktree removal did not complete: $current_path" >&2
+
+  validated_path="$current_path"
+  validated_layout="$current_layout"
+  validated_common_git_dir="$common_git_dir"
+}
+
+validated_candidates="$report_dir/validated-candidates.tsv"
+: >"$validated_candidates"
+refresh_current_protections
+while IFS=$'\t' read -r status _age _size frozen_mtime frozen_head path frozen_detail; do
+  [[ "$status" == "candidate" ]] || continue
+  validate_candidate "$frozen_mtime" "$frozen_head" "$path" "$frozen_detail"
+  printf '%s\t%s\t%s\t%s\n' "$frozen_mtime" "$frozen_head" "$path" "$frozen_detail" >>"$validated_candidates"
+done <"$frozen_report"
+
+removed=0
+while IFS=$'\t' read -r frozen_mtime frozen_head path frozen_detail; do
+  refresh_current_protections
+  validate_candidate "$frozen_mtime" "$frozen_head" "$path" "$frozen_detail"
+  if [[ "$validated_layout" == "linked-worktree" ]]; then
+    git --git-dir="$validated_common_git_dir" worktree remove -- "$validated_path"
+  else
+    find "$validated_path" -depth -delete
+  fi
+  [[ ! -e "$validated_path" && ! -L "$validated_path" ]] || {
+    echo "release retention maintenance: checkout removal did not complete: $validated_path" >&2
     exit 1
   }
   removed=$((removed + 1))
-  printf 'REMOVED\t%s\t%s\n' "$frozen_head" "$current_path"
-done <"$frozen_report"
+  printf 'REMOVED\t%s\t%s\n' "$frozen_head" "$validated_path"
+done <"$validated_candidates"
 
 printf 'APPLY\tperformed=true\tcandidates=%s\tremoved=%d\n' "$candidate_count" "$removed"

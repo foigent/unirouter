@@ -1614,11 +1614,12 @@ scripts/release-worktree-retention-maintenance.sh --apply \
   --report-out /opt/unirouter/release-retention-report.tsv
 ```
 
-apply 会逐项重新核对路径、HEAD、mtime、clean/detached 状态、Git 拓扑、keep file、
-运行容器 revision 与 bind mount；任一漂移都会停止。linked worktree 通过
-`git worktree remove` 删除；历史 standalone repository 仅在再次证明自包含后执行
-限定到该精确目录的树删除。工具不会删除镜像、容器、volume、bundle、备份、数据库
-或其他 review-required 目录，也不会安装 timer 或 cron。
+apply 会先对冻结候选全集核对路径、HEAD、mtime、clean/detached 状态、Git 拓扑、
+keep file、运行容器 revision 与 bind mount；只有全部通过才进入删除阶段，并在每项
+删除前再次复核。linked worktree 通过 `git worktree remove` 删除；历史 standalone
+repository 仅在再次证明自包含后执行限定到该精确目录的树删除。工具不会删除镜像、
+容器、volume、bundle、备份、数据库或其他 review-required 目录，也不会安装 timer
+或 cron。
 
 ---
 
