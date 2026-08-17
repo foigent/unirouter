@@ -61,8 +61,11 @@ try {
 
   const modelRow = page.locator('.semi-table-row').filter({ hasText: fixture.public_model }).first();
   await modelRow.waitFor({ state: 'visible' });
-  await modelRow.getByRole('button', { name: '管理端点', exact: true }).click();
-  const endpointSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: fixture.public_model }).last();
+  let endpointSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: fixture.public_model }).last();
+  if (!await endpointSheet.isVisible()) {
+    await modelRow.getByRole('button', { name: '管理端点', exact: true }).click();
+    endpointSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: fixture.public_model }).last();
+  }
   await endpointSheet.waitFor({ state: 'visible' });
 
   await endpointSheet.getByRole('button', { name: '真实检测', exact: true }).click();
