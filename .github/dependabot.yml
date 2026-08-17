@@ -8,6 +8,11 @@ updates:
       time: "02:00"
       timezone: Asia/Shanghai
     open-pull-requests-limit: 3
+    # This workflow consumes a private, contract-pinned action. Its revision is
+    # advanced through the protocol pin and conformance gate, while Dependabot
+    # remains responsible for every public GitHub Action in the repository.
+    exclude-paths:
+      - .github/workflows/foigent-protocol-conformance.yml
     groups:
       github-actions-runtime:
         patterns:
