@@ -165,19 +165,24 @@ async function closeOneTimeSecret(page, title) {
 }
 
 async function openPersonalCredentialGrant(page) {
-  await page.locator('button').filter({ hasText: '管理凭据' }).first().click();
+  await page.getByRole('button', { name: '管理 API Key', exact: true }).first().click();
   await page.waitForURL((url) => url.searchParams.has('grant_ref'));
-  await visible(page.locator('button').filter({ hasText: '签发逻辑凭据' }).first());
+  try {
+    await visible(page.locator('button').filter({ hasText: '创建 API Key' }).first());
+  } catch (error) {
+    const body = (await page.locator('body').innerText()).slice(0, 3_000);
+    throw new Error(`personal credential action missing at ${page.url()}\n${body}`, { cause: error });
+  }
 }
 
 async function issuePersonalCredential(page, name) {
-  await page.locator('button').filter({ hasText: '签发逻辑凭据' }).first().click();
-  const dialog = await visible(page.locator('.semi-modal:visible').filter({ hasText: '签发逻辑凭据' }).last());
-  await dialog.getByLabel('凭据名称').fill(name);
+  await page.locator('button').filter({ hasText: '创建 API Key' }).first().click();
+  const dialog = await visible(page.locator('.semi-modal:visible').filter({ hasText: '创建 API Key' }).last());
+  await dialog.getByLabel('Key 名称').fill(name);
   const responsePromise = page.waitForResponse((response) =>
     /\/api\/v1\/access-grants\/[^/]+\/credentials$/.test(new URL(response.url()).pathname) &&
     response.request().method() === 'POST');
-  await dialog.getByRole('button', { name: '签发', exact: true }).click();
+  await dialog.getByRole('button', { name: '创建', exact: true }).click();
   const response = await responsePromise;
   assert.ok([200, 201].includes(response.status()));
   return response.json();
@@ -186,7 +191,7 @@ async function issuePersonalCredential(page, name) {
 async function preparePendingRequest(role) {
   const { context, page } = await login(role);
   try {
-    await gotoHeading(page, `/access?project_id=${fixture.project_a}`, '我的访问');
+    await gotoHeading(page, `/access?project_id=${fixture.project_a}`, '我的访问与 API Key');
     const result = await submitPersonalRequest(page, '项目管理员（通常需要审核）');
     assert.equal(result.request.status, 'needs_review');
     return result.request;
@@ -200,7 +205,7 @@ try {
 
   const alice = await login('alice');
   try {
-    await gotoHeading(alice.page, `/access?project_id=${fixture.project_a}`, '我的访问');
+    await gotoHeading(alice.page, `/access?project_id=${fixture.project_a}`, '我的访问与 API Key');
     const approved = await submitPersonalRequest(alice.page, '项目使用者');
     assert.equal(approved.request.status, 'approved');
     assert.equal(approved.grant.status, 'active');
@@ -230,16 +235,16 @@ try {
       await route.continue();
     });
 
-    await alice.page.locator('button').filter({ hasText: '签发逻辑凭据' }).first().click();
-    const lostDialog = await visible(alice.page.locator('.semi-modal:visible').filter({ hasText: '签发逻辑凭据' }).last());
-    await lostDialog.getByLabel('凭据名称').fill('pr4-lost-response');
-    await lostDialog.getByRole('button', { name: '签发', exact: true }).click();
-    await visible(alice.page.getByText('凭据签发失败', { exact: false }));
+    await alice.page.locator('button').filter({ hasText: '创建 API Key' }).first().click();
+    const lostDialog = await visible(alice.page.locator('.semi-modal:visible').filter({ hasText: '创建 API Key' }).last());
+    await lostDialog.getByLabel('Key 名称').fill('pr4-lost-response');
+    await lostDialog.getByRole('button', { name: '创建', exact: true }).click();
+    await visible(alice.page.getByText('API Key 创建失败', { exact: false }));
 
     const replayPromise = alice.page.waitForResponse((response) =>
       /\/api\/v1\/access-grants\/[^/]+\/credentials$/.test(new URL(response.url()).pathname) &&
       response.request().method() === 'POST');
-    await lostDialog.getByRole('button', { name: '签发', exact: true }).click();
+    await lostDialog.getByRole('button', { name: '创建', exact: true }).click();
     const replayResponse = await replayPromise;
     assert.equal(replayResponse.status(), 200);
     const replay = await replayResponse.json();
@@ -248,8 +253,8 @@ try {
     assert.equal(retryClientIDs.length, 2);
     assert.ok(retryClientIDs[0]);
     assert.equal(retryClientIDs[0], retryClientIDs[1]);
-    await visible(alice.page.getByText('原 secret 不可恢复', { exact: false }));
-    await closeOneTimeSecret(alice.page, '一次性 Secret');
+    await visible(alice.page.getByText('原 Key 无法再次显示', { exact: false }));
+    await closeOneTimeSecret(alice.page, '一次性 API Key');
     await alice.page.unroute(issuePattern);
 
     const issued = await issuePersonalCredential(alice.page, 'pr4-personal-live');
@@ -261,23 +266,23 @@ try {
     const storedSecret = await alice.page.evaluate((secret) =>
       Object.values(localStorage).some((value) => String(value).includes(secret)), rawSecret);
     assert.equal(storedSecret, false);
-    await closeOneTimeSecret(alice.page, '一次性 Secret');
+    await closeOneTimeSecret(alice.page, '一次性 API Key');
     assert.equal(await alice.page.getByText(rawSecret, { exact: true }).count(), 0);
 
     const familyRow = alice.page.locator('tr').filter({ hasText: 'pr4-personal-live' }).first();
     const rotatePromise = alice.page.waitForResponse((response) => response.url().endsWith('/rotate') && response.request().method() === 'POST');
-    await familyRow.getByRole('button', { name: '原子轮换', exact: true }).click();
+    await familyRow.getByRole('button', { name: '安全轮换', exact: true }).click();
     const rotateResponse = await rotatePromise;
     assert.equal(rotateResponse.status(), 201);
     const rotated = await rotateResponse.json();
     assert.equal(rotated.credential.secret_available, true);
     assert.notEqual(rotated.credential.key, rawSecret);
-    await closeOneTimeSecret(alice.page, '一次性 Secret');
+    await closeOneTimeSecret(alice.page, '一次性 API Key');
 
     const refreshedFamily = alice.page.locator('tr').filter({ hasText: 'pr4-personal-live' }).first();
     const revokePromise = alice.page.waitForResponse((response) => response.url().endsWith('/revoke') && response.request().method() === 'POST');
     await refreshedFamily.getByRole('button', { name: '撤销', exact: true }).click();
-    const confirm = await visible(alice.page.locator('.semi-modal:visible').filter({ hasText: '撤销逻辑凭据' }).last());
+    const confirm = await visible(alice.page.locator('.semi-modal:visible').filter({ hasText: '撤销 API Key' }).last());
     await confirm.locator('.semi-modal-footer button').last().click();
     const revokeResponse = await revokePromise;
     assert.equal(revokeResponse.status(), 200);
@@ -292,7 +297,7 @@ try {
   const admin = await login('org_admin');
   try {
     await gotoHeading(admin.page, `/access-review?project_id=${fixture.project_a}`, '访问审核');
-    const aliceRow = await visible(admin.page.locator('tr').filter({ hasText: `用户 #${fixture.users.alice}` }).first());
+    const aliceRow = await visible(admin.page.locator('tr').filter({ hasText: fixture.usernames.alice }).first());
     const approvePromise = admin.page.waitForResponse((response) => response.url().endsWith('/decision') && response.request().method() === 'POST');
     await aliceRow.getByRole('button', { name: '批准', exact: true }).click();
     const approveDialog = await visible(admin.page.locator('.semi-modal:visible').filter({ hasText: '批准访问请求' }).last());
@@ -301,8 +306,9 @@ try {
     assert.equal(approveResponse.status(), 200);
     assert.equal((await approveResponse.json()).request.status, 'approved');
 
-    const bobRow = await visible(admin.page.locator('tr').filter({ hasText: `用户 #${fixture.users.bob}` }).first());
-    assert.ok((await bobRow.textContent()).includes(bobRequest.request_ref));
+    const bobRow = await visible(admin.page.locator('tr').filter({ hasText: fixture.usernames.bob }).first());
+    assert.equal(await bobRow.getByText(bobRequest.request_ref, { exact: true }).isVisible(), false,
+      'internal request identity must remain collapsed in the primary review flow');
     const rejectPromise = admin.page.waitForResponse((response) => response.url().endsWith('/decision') && response.request().method() === 'POST');
     await bobRow.getByRole('button', { name: '拒绝', exact: true }).click();
     const rejectDialog = await visible(admin.page.locator('.semi-modal:visible').filter({ hasText: '拒绝访问请求' }).last());
@@ -320,9 +326,10 @@ try {
     assert.equal(await admin.page.getByText(fixture.usernames.alice, { exact: true }).count(), 0);
 
     await gotoHeading(admin.page, `/applications?project_id=${fixture.project_a}&tab=legacy`, '应用与 Agent');
-    await visible(admin.page.getByLabel('Legacy 兼容区（只读）').getByText(fixture.legacy_ref, { exact: true }));
-    await visible(admin.page.getByLabel('Legacy 兼容区（只读）').getByText('review_required', { exact: true }).first());
-    await visible(admin.page.getByText('只读取 canonical preview；不自动迁移、不推断、不提供写操作。', { exact: false }));
+    const legacySurface = admin.page.locator('section').filter({ has: admin.page.getByRole('heading', { name: '旧版对象分类', exact: true }) }).first();
+    await visible(legacySurface.getByText(fixture.legacy_ref, { exact: true }));
+    await visible(legacySurface.getByText('review_required', { exact: true }).first());
+    await visible(admin.page.getByText('只展示服务端已确认的兼容信息；不自动迁移、不推断、不提供写操作。', { exact: true }));
     journeys.push('review_approve_reject_local_oidc_legacy');
   } finally {
     await admin.context.close();
@@ -343,7 +350,7 @@ try {
       response.request().method() === 'GET');
 
     await gotoHeading(hybrid.page, `/applications?project_id=${fixture.project_a}`, '应用与 Agent');
-    const createButton = hybrid.page.locator('button').filter({ hasText: '新建 v2 Application' }).first();
+    const createButton = hybrid.page.locator('button').filter({ hasText: '新建应用' }).first();
     await visible(createButton);
     assert.equal(await createButton.isDisabled(), true,
       'create must remain disabled until the selected project authority is loaded');
@@ -360,58 +367,59 @@ try {
     await chooseProject(hybrid.page, 'PR4 Beta', fixture.project_b);
     await waitForEnabledState(createButton, false,
       'project B project_user must not create applications');
-    await visible(hybrid.page.getByText('当前所选项目只有读取/使用权限', { exact: false }));
+    await visible(hybrid.page.getByText('当前所选项目只有读取或使用权限', { exact: false }));
     await chooseProject(hybrid.page, 'PR4 Alpha', fixture.project_a);
     await waitForEnabledState(createButton, true,
       'returning to project A must restore project_admin create authority');
     console.log('PR4_BROWSER_PROJECT_AUTHORITY delayed_response=held project_a=project_admin project_b=project_user beta_create=disabled return_alpha_create=enabled');
 
     await createButton.click();
-    const sheet = await visible(hybrid.page.locator('.semi-sidesheet:visible').filter({ hasText: '新建 v2 Application' }).last());
-    await sheet.getByLabel('Application ref').fill('app_pr4_browser_agent');
-    await sheet.getByLabel('Logical ref').fill('workload_pr4_browser_agent');
+    const sheet = await visible(hybrid.page.locator('.semi-sidesheet:visible').filter({ hasText: '新建应用' }).last());
+    assert.equal(await sheet.getByLabel('Application ref').count(), 0);
+    assert.equal(await sheet.getByLabel('Logical ref').count(), 0);
     await sheet.getByLabel('显示名称').fill('PR4 Browser Agent');
-    await sheet.getByLabel('Environment（创建后不可变）').fill('development');
     const createResponsePromise = hybrid.page.waitForResponse((response) => response.url().endsWith('/api/v1/workload-applications') && response.request().method() === 'POST');
     await sheet.getByRole('button', { name: '保存', exact: true }).click();
     const createResponse = await createResponsePromise;
     assert.equal(createResponse.status(), 201);
     const application = await createResponse.json();
     assert.equal(application.identity_contract_version, 'unirouter.workload-identity.v2');
-    assert.equal(application.logical_ref, 'workload_pr4_browser_agent');
+    assert.equal(application.compatibility_evidence, 'server_generated_v2_identity');
+    assert.match(application.application_ref, /^app_generated_[a-f0-9]{24}$/);
+    assert.equal(application.logical_ref, `workload_${application.application_ref.slice('app_'.length)}`);
     await visible(hybrid.page.getByRole('heading', { name: 'PR4 Browser Agent', exact: true }));
 
     const requestPromise = hybrid.page.waitForResponse((response) => response.url().endsWith('/api/v1/access-requests') && response.request().method() === 'POST');
-    await hybrid.page.getByRole('button', { name: '申请默认执行访问', exact: true }).click();
+    await hybrid.page.getByRole('button', { name: '申请应用访问', exact: true }).click();
     const requestResponse = await requestPromise;
     assert.equal(requestResponse.status(), 201);
     const workloadAccess = await requestResponse.json();
     assert.equal(workloadAccess.request.status, 'approved');
     assert.equal(workloadAccess.grant.status, 'active');
 
-    await hybrid.page.locator('button').filter({ hasText: '签发 Workload 凭据' }).first().click();
-    const credentialDialog = await visible(hybrid.page.locator('.semi-modal:visible').filter({ hasText: '签发 Workload 逻辑凭据' }).last());
-    await credentialDialog.getByLabel('凭据名称').fill('pr4-workload-live');
+    await hybrid.page.locator('button').filter({ hasText: '创建应用 Key' }).first().click();
+    const credentialDialog = await visible(hybrid.page.locator('.semi-modal:visible').filter({ hasText: '创建应用 API Key' }).last());
+    await credentialDialog.getByLabel('Key 名称').fill('pr4-workload-live');
     const workloadIssuePromise = hybrid.page.waitForResponse((response) => /\/credentials$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST');
-    await credentialDialog.getByRole('button', { name: '签发', exact: true }).click();
+    await credentialDialog.getByRole('button', { name: '创建', exact: true }).click();
     const workloadIssue = await workloadIssuePromise;
     assert.equal(workloadIssue.status(), 201);
     assert.equal((await workloadIssue.json()).secret_available, true);
-    await closeOneTimeSecret(hybrid.page, '一次性 Workload Secret');
+    await closeOneTimeSecret(hybrid.page, '一次性应用 API Key');
 
     let workloadRow = hybrid.page.locator('tr').filter({ hasText: 'pr4-workload-live' }).first();
     const workloadRotatePromise = hybrid.page.waitForResponse((response) => response.url().endsWith('/rotate') && response.request().method() === 'POST');
-    await workloadRow.getByRole('button', { name: '原子轮换', exact: true }).click();
+    await workloadRow.getByRole('button', { name: '安全轮换', exact: true }).click();
     assert.equal((await workloadRotatePromise).status(), 201);
-    await closeOneTimeSecret(hybrid.page, '一次性 Workload Secret');
+    await closeOneTimeSecret(hybrid.page, '一次性应用 API Key');
 
     workloadRow = hybrid.page.locator('tr').filter({ hasText: 'pr4-workload-live' }).first();
     const workloadRevokePromise = hybrid.page.waitForResponse((response) => response.url().endsWith('/revoke') && response.request().method() === 'POST');
     await workloadRow.getByRole('button', { name: '撤销', exact: true }).click();
-    const workloadConfirm = await visible(hybrid.page.locator('.semi-modal:visible').filter({ hasText: '撤销整个逻辑凭据' }).last());
+    const workloadConfirm = await visible(hybrid.page.locator('.semi-modal:visible').filter({ hasText: '撤销应用 Key？' }).last());
     await workloadConfirm.locator('.semi-modal-footer button').last().click();
     assert.equal((await workloadRevokePromise).status(), 200);
-    await visible(hybrid.page.locator('tr').filter({ hasText: 'pr4-workload-live' }).filter({ hasText: 'revoked' }));
+    await visible(hybrid.page.locator('tr').filter({ hasText: 'pr4-workload-live' }).filter({ hasText: '已撤销' }));
     journeys.push('project_switch_native_v2_workload_credential_lifecycle');
   } finally {
     await hybrid.context.close();
@@ -431,7 +439,7 @@ try {
 
   const noMembership = await login('no_membership');
   try {
-    await gotoHeading(noMembership.page, '/access', '我的访问');
+    await gotoHeading(noMembership.page, '/access', '我的访问与 API Key');
     await visible(noMembership.page.getByText('暂无可申请项目', { exact: true }));
     await visible(noMembership.page.getByText('当前页面不会枚举同组织全部项目', { exact: false }));
     assert.equal(await noMembership.page.locator('button').filter({ hasText: '提交访问请求' }).count(), 0);

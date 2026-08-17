@@ -121,7 +121,7 @@ describe('App shell', () => {
 	it('hides end-user entries from a pure management identity', () => {
 		renderApp('platform_admin', { hasLiveProjectMembership: false });
 
-		expect(screen.queryByText('我的访问')).toBeNull();
+		expect(screen.queryByText('我的访问与 API Key')).toBeNull();
 		expect(screen.queryByText('项目工作台')).toBeNull();
 		expect(screen.getByText('客户运营总览')).toBeTruthy();
 	});
@@ -129,7 +129,7 @@ describe('App shell', () => {
 	it('keeps end-user entries hidden when a management identity has project membership data', () => {
 		renderApp('platform_admin', { hasLiveProjectMembership: true });
 
-		expect(screen.queryByText('我的访问')).toBeNull();
+		expect(screen.queryByText('我的访问与 API Key')).toBeNull();
 		expect(screen.queryByText('项目工作台')).toBeNull();
 		expect(screen.getByText('客户运营总览')).toBeTruthy();
 	});
@@ -137,7 +137,7 @@ describe('App shell', () => {
 	it('keeps My Access but hides the project workbench for a member awaiting first membership', () => {
 		renderApp('member', { hasLiveProjectMembership: false });
 
-		expect(screen.getByText('我的访问')).toBeTruthy();
+		expect(screen.getByText('我的访问与 API Key')).toBeTruthy();
 		expect(screen.queryByText('项目工作台')).toBeNull();
 	});
 

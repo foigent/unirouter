@@ -247,7 +247,7 @@ const taskNavItems: NavItem[] = [
 ];
 
 const projectOverviewItem: NavItem = { itemKey: '/developer', text: '项目工作台', icon: <IconTerminal /> };
-const accessStateItem: NavItem = { itemKey: '/access', text: '我的访问', icon: <IconShieldStroked /> };
+const accessStateItem: NavItem = { itemKey: '/access', text: '我的访问与 API Key', icon: <IconShieldStroked /> };
 
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
 const compatibilityRoutes = new Set([

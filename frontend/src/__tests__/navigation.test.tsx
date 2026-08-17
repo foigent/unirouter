@@ -170,7 +170,7 @@ describe('two-axis navigation boundaries', () => {
 	expect(getNavItemsForAuthz(context('org_viewer'))[0]?.text).toBe('组织只读总览');
 	expect(getNavItemsForAuthz(context('billing_admin'))[0]?.text).toBe('财务与用量总览');
 	expect(getNavItemsForAuthz(context('org_admin', 'project_user')).map(item => item.text).slice(0, 2)).toEqual(['组织运营总览', '模型接入']);
-	expect(getNavItemsForAuthz(context('member', 'project_admin'))[0]?.text).toBe('我的访问');
+	expect(getNavItemsForAuthz(context('member', 'project_admin'))[0]?.text).toBe('我的访问与 API Key');
 
     expect(getOpenKeysForPath('/notifications', context('platform_admin'))).toEqual(['g-observability']);
     expect(getOpenKeysForPath('/notifications', context('member', 'project_admin'))).toEqual([]);
