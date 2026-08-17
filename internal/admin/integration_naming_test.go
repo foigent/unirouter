@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -25,6 +26,13 @@ func TestAdminIntegrationFilesUseIntegrationSuffix(t *testing.T) {
 	}
 
 	for _, file := range files {
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Base(file), err)
+		}
+		if !strings.HasPrefix(string(source), "//go:build integration\n") {
+			t.Errorf("%s must use the integration build tag so the ordinary unit gate does not execute PostgreSQL tests", filepath.Base(file))
+		}
 		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", filepath.Base(file), err)
