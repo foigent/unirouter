@@ -13,6 +13,7 @@ const { Text } = Typography;
 
 interface AnalyticsRow {
   key: string;
+  label?: string;
   total_requests: number;
   success_requests: number;
   failed_requests: number;
@@ -144,7 +145,7 @@ export default function UsageAnalyticsPage() {
   };
 
   const columns = [
-    { title: usageAnalyticsGroupOptions.find(option => option.value === groupBy)?.label || '分组', dataIndex: 'key', key: 'key', render: (value: string) => <Text code>{value}</Text> },
+    { title: usageAnalyticsGroupOptions.find(option => option.value === groupBy)?.label || '分组', dataIndex: 'label', key: 'label', render: (value: string, row: AnalyticsRow) => <Text>{value || row.key}</Text> },
     { title: '请求数', dataIndex: 'total_requests', key: 'total_requests', render: (value: number) => formatCompactNumber(value) },
     { title: '成功 / 失败', key: 'status_mix', render: (_: unknown, row: AnalyticsRow) => `${row.success_requests || 0} / ${row.failed_requests || 0}` },
     { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => formatCompactNumber(value) },

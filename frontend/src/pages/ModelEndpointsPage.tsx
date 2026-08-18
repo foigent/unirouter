@@ -63,6 +63,10 @@ export default function ModelEndpointsPage() {
         if (!modelTab) return '';
         const requested = search.get('model') || '';
         if (result.models.some(model => model.public_model === requested)) return requested;
+        const requestedChannelID = Number(search.get('channel_id'));
+        if (Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0) {
+          return result.models.find(model => model.targets.some(target => target.channel_id === requestedChannelID))?.public_model || '';
+        }
         return '';
       });
     } catch (error) {
@@ -118,6 +122,8 @@ export default function ModelEndpointsPage() {
   const closeSelectedModel = () => {
     const next = new URLSearchParams(search);
     next.delete('model');
+    next.delete('channel_id');
+    next.delete('from');
     setSelectedModel('');
     setSearch(next, { replace: true });
   };
@@ -127,6 +133,8 @@ export default function ModelEndpointsPage() {
     const next = new URLSearchParams(search);
     next.set('tab', 'models');
     next.set('model', model);
+    next.delete('channel_id');
+    next.delete('from');
     setSearch(next, { replace: true });
   };
 

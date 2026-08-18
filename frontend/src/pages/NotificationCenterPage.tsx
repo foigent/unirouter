@@ -8,6 +8,7 @@ import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerCont
 import { formatDateTime } from '../utils/formatDate';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectDisplayName } from '../utils/projectDisplay';
 import {
   deliveryStateLabel,
   deliveryStateOptions,
@@ -324,7 +325,7 @@ export default function NotificationCenterPage() {
     const options = [{ label: '客户组织（全部项目）', value: '' }];
     for (const project of projects) {
       options.push({
-        label: project.name || project.slug || `项目（内部编号 ${project.id}）`,
+        label: projectDisplayName(project),
         value: String(project.id),
       });
     }
@@ -338,7 +339,7 @@ export default function NotificationCenterPage() {
   const projectScopeLabel = (value?: number | null) => {
     if (!value) return '客户组织（全部项目）';
     const project = projects.find(item => item.id === value);
-    return project?.name || project?.slug || `已归档或不可见项目（内部编号 ${value}）`;
+    return project ? projectDisplayName(project) : `已归档或不可见项目（内部编号 ${value}）`;
   };
 
   useEffect(() => {

@@ -339,6 +339,30 @@ describe('DashboardPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/channels?channel_id=1');
   });
 
+  it('shows no sample instead of a zero success rate for a healthy idle connection', async () => {
+    mockGetDashboardStats.mockResolvedValue({
+      ...MOCK_STATS,
+      channel_health: [{
+        id: 4,
+        name: 'Idle healthy endpoint',
+        provider: 'deepseek',
+        enabled: true,
+        available: true,
+        credential_ready: true,
+        status: 'healthy',
+        success_count: 0,
+        fail_count: 0,
+      }],
+    });
+
+    renderDashboard();
+
+    const card = await screen.findByRole('button', { name: '查看模型连接 Idle healthy endpoint' });
+    expect(card.textContent).toContain('暂无样本');
+    expect(card.textContent).not.toContain('0.0%');
+    expect(card.textContent).toContain('健康');
+  });
+
   it('shows the immutable selected endpoint on each recent request', async () => {
     renderDashboard();
 

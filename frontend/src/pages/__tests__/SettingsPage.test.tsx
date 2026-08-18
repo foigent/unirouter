@@ -57,6 +57,27 @@ describe('SettingsPage account scope', () => {
     expect(screen.queryByText('v1.0.0')).toBeNull();
   });
 
+  it('shows the authoritative platform role and deployment scope instead of compatibility shadows', async () => {
+    mocks.getMe.mockResolvedValue({
+      id: 1,
+      username: 'admin',
+      role: 'admin',
+      organization_role: 'platform_admin',
+      org_id: 1,
+      org_name: 'Platform Admin',
+      customer_context: { state: 'ready', org_id: 1, org_name: 'Platform Admin' },
+      identity_scope: 'deployment_operator_and_customer',
+      auth_provider: 'local',
+    });
+
+    render(<SettingsPage />);
+
+    expect(await screen.findByText('平台管理员')).toBeTruthy();
+    expect(screen.getByText('当前部署（运维与客户管理）')).toBeTruthy();
+    expect(screen.queryByText('系统管理员（兼容）')).toBeNull();
+    expect(screen.queryByText('Platform Admin')).toBeNull();
+  });
+
   it('shows identity-provider ownership and hides local password controls for OIDC accounts', async () => {
     mocks.getMe.mockResolvedValue({
       id: 8,

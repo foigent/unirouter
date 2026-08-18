@@ -52,6 +52,59 @@ func TestUsageAnalyticsGroup(t *testing.T) {
 	}
 }
 
+func TestUsageAnalyticsEntityLabels(t *testing.T) {
+	cases := []struct {
+		groupKey string
+		id       int64
+		name     string
+		detail   string
+		want     string
+	}{
+		{groupKey: "project", id: 37, name: "Default Project", detail: "default", want: "默认项目（项目 #37）"},
+		{groupKey: "owner", id: 34, name: "uiaccept", want: "uiaccept（用户 #34）"},
+		{groupKey: "key", id: 61, name: "个人凭证", detail: "ur_live", want: "个人凭证 · ur_live***（凭证 #61）"},
+	}
+	for _, tc := range cases {
+		if got := usageAnalyticsEntityLabel(tc.groupKey, tc.id, tc.name, tc.detail); got != tc.want {
+			t.Fatalf("%s label: got %q want %q", tc.groupKey, got, tc.want)
+		}
+	}
+}
+
+func TestHydrateUsageAnalyticsLabelsUsesOneOrganizationScopedLookup(t *testing.T) {
+	queryCalls := 0
+	db := &testutil.MockDB{QueryFn: func(_ context.Context, query string, args ...any) (pgx.Rows, error) {
+		queryCalls++
+		if !strings.Contains(query, "FROM users") || !strings.Contains(query, "org_id=$1") {
+			t.Fatalf("unexpected label query: %s", query)
+		}
+		if len(args) != 2 || args[0] != int64(7) {
+			t.Fatalf("unexpected label args: %#v", args)
+		}
+		ids, ok := args[1].([]int64)
+		if !ok || len(ids) != 1 || ids[0] != 34 {
+			t.Fatalf("unexpected label ids: %#v", args[1])
+		}
+		return &testutil.MockRows{Rows: []func(...any) error{
+			func(dest ...any) error {
+				*dest[0].(*int64) = 34
+				*dest[1].(*string) = "uiaccept"
+				*dest[2].(*string) = ""
+				return nil
+			},
+		}}, nil
+	}}
+	h := newTestHandler(db)
+	groups := []map[string]interface{}{{"key": "34"}, {"key": "0"}}
+
+	if err := h.hydrateUsageAnalyticsLabels(context.Background(), "owner", 7, groups); err != nil {
+		t.Fatalf("hydrate labels: %v", err)
+	}
+	if queryCalls != 1 || groups[0]["label"] != "uiaccept（用户 #34）" || groups[1]["label"] != "未归属" {
+		t.Fatalf("unexpected hydrated groups: %#v calls=%d", groups, queryCalls)
+	}
+}
+
 func TestNotificationAttentionLevel(t *testing.T) {
 	cases := []struct {
 		critical int64

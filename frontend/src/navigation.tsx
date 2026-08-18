@@ -12,6 +12,7 @@ import {
   IconHomeStroked,
   IconHistogram,
   IconListView,
+  IconLineChartStroked,
   IconLockStroked,
   IconBell,
   IconMonitorStroked,
@@ -232,7 +233,7 @@ const taskNavItems: NavItem[] = [
     items: [
       { itemKey: '/wallet', text: '预算与成本中心', icon: <IconCreditCard /> },
       { itemKey: '/model-prices', text: '费率与计价', icon: <IconPriceTag /> },
-      { itemKey: '/cost-optimization', text: '成本优化', icon: <IconBarChartVStroked /> },
+      { itemKey: '/cost-optimization', text: '成本优化', icon: <IconLineChartStroked /> },
       { itemKey: '/reconciliation', text: '分摊与对账', icon: <IconFlowChartStroked /> },
     ],
   },

@@ -15,6 +15,7 @@ import {
   localPasswordUTF8ByteCount,
 } from '../utils/passwordPolicy';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectDisplayName } from '../utils/projectDisplay';
 
 const apiErrorCode = (error: ApiError) => {
   if (!error.payload || typeof error.payload !== 'object') return '';
@@ -399,7 +400,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
             label={<span id="user-project-access-project-label">项目</span>}
             aria-labelledby="user-project-access-project-label"
             loading={accessLoading}
-            optionList={accessProjects.map(project => ({ value: project.id, label: project.name }))}
+            optionList={accessProjects.map(project => ({ value: project.id, label: projectDisplayName(project) }))}
             rules={[{ required: true, message: '请选择项目' }]}
             emptyContent="当前没有可授权的启用项目"
           />

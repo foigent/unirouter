@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import AuditLogsPage from '../AuditLogsPage';
+import { useAuthStore } from '../../store/auth';
 
 const mockGetAuditLogs = vi.fn();
 
@@ -19,13 +20,26 @@ vi.mock('../../api/client', () => ({
 describe('AuditLogsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuthStore.setState({
+      user: {
+        id: 1,
+        username: 'admin',
+        role: 'platform_admin',
+        org_id: 1,
+        org_name: 'Platform Admin',
+        customer_context: { state: 'ready', org_id: 1, org_name: 'Platform Admin' },
+        identity_scope: 'deployment_operator_and_customer',
+      },
+    });
     window.localStorage.clear();
     window.history.replaceState(null, '', '/audit-logs');
     mockGetAuditLogs.mockResolvedValue({
       data: [{
         id: 1,
-        org_id: 3,
-        project_id: 9,
+        org_id: 1,
+        org_name: 'Platform Admin',
+        project_id: 37,
+        project_name: 'Default Project',
         user_id: 7,
         action: 'channel.test',
         resource: 'channel',
@@ -68,6 +82,9 @@ describe('AuditLogsPage', () => {
     expect(screen.getByRole('textbox', { name: '审计动作筛选' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '来源' })).toBeTruthy();
     expect(screen.getByLabelText('时间范围')).toBeTruthy();
+    expect(screen.getAllByText('当前部署 (#1)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('默认项目 (#37)').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Platform Admin (#1)')).toBeNull();
   });
 
   it('does not render zero events or an empty audit result before the request completes', async () => {

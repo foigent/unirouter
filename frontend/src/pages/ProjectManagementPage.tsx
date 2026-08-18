@@ -569,7 +569,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     const project = selectedProject;
     Modal.confirm({
       title: '移除项目成员',
-      content: `确认从 ${project.name} 移除 ${member.username}？这不会改变其组织角色或其他项目成员关系。`,
+      content: `确认从 ${projectDisplayName(project)} 移除 ${member.username}？这不会改变其组织角色或其他项目成员关系。`,
       onOk: async () => {
         try {
           await api.deleteProjectMember(project.id, member.user_id);

@@ -51,6 +51,29 @@ export function effectiveCustomerOrgID(user: UserProfile | null | undefined): nu
   return context.state === 'ready' ? context.orgID : undefined;
 }
 
+export function customerOrganizationDisplayName(
+  user: UserProfile | null | undefined,
+  organizationID?: unknown,
+  organizationName?: unknown,
+  fallback = '当前客户',
+): string {
+  const context = resolveCustomerContext(user);
+  const requestedOrganizationID = positiveOrganizationID(organizationID);
+  if (
+    context.state === 'ready'
+    && context.orgID
+    && (!requestedOrganizationID || requestedOrganizationID === context.orgID)
+  ) {
+    return context.orgName || fallback;
+  }
+
+  const requestedOrganizationName = typeof organizationName === 'string'
+    ? organizationName.trim()
+    : '';
+  if (requestedOrganizationName) return requestedOrganizationName;
+  return requestedOrganizationID ? `组织 #${requestedOrganizationID}` : fallback;
+}
+
 export function customerContextBlockerCopy(state: Exclude<CustomerContextState, 'ready'>) {
   switch (state) {
     case 'not_initialized':
