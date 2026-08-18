@@ -380,13 +380,13 @@ export default function ApplicationsV2Page() {
       intents.complete(intent);
 	  if (isCurrentScope(scope)) {
 		setSecret(issued); closeDrawer();
-		await loadApplicationAccess();
+		await loadApplications();
 	  }
     } catch (error) {
       intents.settleError(intent, error);
 	  if (isCurrentScope(scope)) {
 		Toast.error(error instanceof ApiError && error.status === 409 ? 'Key 状态已变化，请刷新。' : '应用 Key 签发失败');
-		if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+		if (error instanceof ApiError && error.status === 409) await loadApplications();
 	  }
     } finally { setMutating(false); }
   };
@@ -411,13 +411,13 @@ export default function ApplicationsV2Page() {
       intents.complete(intent);
 	  if (isCurrentScope(scope)) {
 		setSecret(result.credential);
-		await loadApplicationAccess();
+		await loadApplications();
 	  }
     } catch (error) {
       intents.settleError(intent, error);
 	  if (isCurrentScope(scope)) {
 		Toast.error(error instanceof ApiError && error.status === 409 ? 'Key 版本已变化，已刷新。' : '应用 Key 轮换失败');
-		if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+		if (error instanceof ApiError && error.status === 409) await loadApplications();
 	  }
     } finally { setMutating(false); }
   };
@@ -451,13 +451,13 @@ export default function ApplicationsV2Page() {
           intents.complete(intent);
 		  if (isCurrentScope(scope)) {
 			Toast.success('逻辑凭据已撤销');
-			await loadApplicationAccess();
+			await loadApplications();
 		  }
         } catch (error) {
           intents.settleError(intent, error);
 		  if (isCurrentScope(scope)) {
 			Toast.error(error instanceof ApiError && error.status === 409 ? 'Key 状态已变化，已刷新。' : '撤销应用 Key 失败');
-			if (error instanceof ApiError && error.status === 409) await loadApplicationAccess();
+			if (error instanceof ApiError && error.status === 409) await loadApplications();
 		  }
         } finally { setMutating(false); }
       },

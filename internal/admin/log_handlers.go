@@ -220,7 +220,7 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		        effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
 		        effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
 		        cache_read_cost_micros, cache_creation_cost_micros,
-		        is_stream, created_at
+		        is_stream, ip_address, requested_model, created_at
 		 FROM call_logs%s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
 		whereClause, argIdx, argIdx+1)
 	args = append(args, pageSize, offset)
@@ -239,7 +239,7 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 		var promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens, totalTokens, statusCode, latencyMs, ttftMs int
 		var costMicros int64
 		var upstreamStatusCode *int
-		var upstreamError, usageSource, cacheUsageSchema, cacheUsageStatus, pricingVersion string
+		var upstreamError, usageSource, ipAddress, requestedModel, cacheUsageSchema, cacheUsageStatus, pricingVersion string
 		var cacheReadRatio, cacheCreationRatio float64
 		var effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice int64
 		var cacheReadCost, cacheCreationCost int64
@@ -251,14 +251,14 @@ func (h *Handler) ListLogs(w http.ResponseWriter, r *http.Request) {
 			&usageSource, &cacheUsageSchema, &cacheUsageStatus, &pricingVersion,
 			&cacheReadRatio, &cacheCreationRatio,
 			&effectiveInputPrice, &effectiveCacheReadPrice, &effectiveCacheCreationPrice, &effectiveOutputPrice,
-			&cacheReadCost, &cacheCreationCost, &isStream, &createdAt); err != nil {
+			&cacheReadCost, &cacheCreationCost, &isStream, &ipAddress, &requestedModel, &createdAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
 		}
 		logs = append(logs, map[string]interface{}{
 			"id": id, "project_id": projectID, "request_id": requestID, "client_request_id": clientRequestID,
 			"workflow_id": workflowID, "agent_id": agentID, "attempt_id": attemptID,
-			"model": model, "provider": provider, "channel": channel,
+			"model": model, "requested_model": requestedModel, "provider": provider, "channel": channel, "ip_address": ipAddress,
 			"prompt_tokens": promptTokens, "uncached_prompt_tokens": uncachedPromptTokens,
 			"cache_read_tokens": cacheReadTokens, "cache_creation_tokens": cacheCreationTokens,
 			"completion_tokens": completionTokens, "total_tokens": totalTokens,

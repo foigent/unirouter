@@ -3318,7 +3318,9 @@ func TestListLogs_Success(t *testing.T) {
 						*dest[32].(*int64) = 40
 						*dest[33].(*int64) = 250
 						*dest[34].(*bool) = false
-						*dest[35].(*time.Time) = now
+						*dest[35].(*string) = "203.0.113.8"
+						*dest[36].(*string) = "customer-chat"
+						*dest[37].(*time.Time) = now
 						return nil
 					},
 				},
@@ -3335,6 +3337,15 @@ func TestListLogs_Success(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Data) != 1 || body.Data[0]["requested_model"] != "customer-chat" || body.Data[0]["ip_address"] != "203.0.113.8" {
+		t.Fatalf("expected request identity fields in list projection, got %#v", body.Data)
 	}
 }
 
@@ -3391,7 +3402,9 @@ func TestListLogs_WithFilters(t *testing.T) {
 							*dest[i].(*int64) = 0
 						}
 						*dest[34].(*bool) = false
-						*dest[35].(*time.Time) = now
+						*dest[35].(*string) = "203.0.113.9"
+						*dest[36].(*string) = "customer-chat"
+						*dest[37].(*time.Time) = now
 						return nil
 					},
 				},

@@ -425,11 +425,33 @@ describe('ApplicationsV2Page', () => {
     expect(accessMocks.issueCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
   }, 30_000);
 
+  it('refreshes the application summary after issuing a credential', async () => {
+    const withoutCredential = { ...application, credential_count: 0, active_credential_count: 0 };
+    clientMocks.getApplications
+      .mockResolvedValueOnce({ data: [withoutCredential], total: 1 })
+      .mockResolvedValue({ data: [application], total: 1 });
+    clientMocks.getCredentials
+      .mockResolvedValueOnce({ data: [], has_more: false })
+      .mockResolvedValue({ data: [credentialFor('cred-issued', 'grant_claims_agent', 391)], has_more: false });
+
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    expect(await screen.findByText('0/0')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: /创建应用 Key/ }));
+    fireEvent.change(await screen.findByLabelText('Key 名称'), { target: { value: 'issued-runtime' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+
+    await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalled());
+    expect(await screen.findByText('1/1')).toBeTruthy();
+    expect(clientMocks.getApplications.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('binds credential rotation to the currently displayed exact Grant after adverse response ordering', async () => {
     await renderApplicationBAfterAdverseAccessOrdering();
 
     fireEvent.click(screen.getByRole('button', { name: '安全轮换' }));
     await waitFor(() => expect(accessMocks.rotateCredential).toHaveBeenCalledWith('grant-project-b', 291, expect.any(String)));
+    await waitFor(() => expect(clientMocks.getApplications.mock.calls.length).toBeGreaterThanOrEqual(2));
     expect(accessMocks.rotateCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
   }, 30_000);
 
@@ -442,6 +464,7 @@ describe('ApplicationsV2Page', () => {
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
     await waitFor(() => expect(accessMocks.revokeCredential).toHaveBeenCalledWith('grant-project-b', 291, expect.any(String)));
+    await waitFor(() => expect(clientMocks.getApplications.mock.calls.length).toBeGreaterThanOrEqual(2));
     expect(accessMocks.revokeCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
   }, 30_000);
 
