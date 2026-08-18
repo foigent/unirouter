@@ -83,7 +83,9 @@ func TestListLogs_ProjectScopedRoleWithMembership(t *testing.T) {
 							*dest[i].(*int64) = 0
 						}
 						*dest[34].(*bool) = false
-						*dest[35].(*time.Time) = now
+						*dest[35].(*string) = "203.0.113.10"
+						*dest[36].(*string) = "customer-chat"
+						*dest[37].(*time.Time) = now
 						return nil
 					},
 				},
