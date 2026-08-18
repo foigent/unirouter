@@ -5,7 +5,9 @@ import { IconLock, IconUser } from '@douyinfe/semi-icons';
 import { api, ApiError } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, PasswordField, Surface } from '../ui';
-import { roleLabel, roleTagColor } from '../utils/displayLabels';
+import { organizationRoleLabel, roleTagColor } from '../utils/displayLabels';
+import { organizationRoleForUser } from '../navigation';
+import { customerOrganizationDisplayName, resolveCustomerContext } from '../utils/customerContext';
 import {
   LOCAL_PASSWORD_MAX_UTF8_BYTES,
   LOCAL_PASSWORD_MIN_CODE_POINTS,
@@ -103,6 +105,13 @@ export default function SettingsPage() {
   const authProvider = String(profile.auth_provider || '').trim().toLowerCase();
   const isLocalAccount = authProvider === 'local';
   const authProviderLabel = authProvider === 'oidc' ? '企业身份认证（OIDC）' : authProvider === 'local' ? '本地账号' : authProvider;
+  const organizationRole = organizationRoleForUser(profile);
+  const customerContext = resolveCustomerContext(profile);
+  const accountScope = profile.identity_scope === 'deployment_operator'
+    ? '当前部署（运维身份）'
+    : profile.identity_scope === 'deployment_operator_and_customer'
+      ? `${customerContext.orgName || '当前部署'}（运维与客户管理）`
+      : customerOrganizationDisplayName(profile, profile.org_id, profile.org_name, '—');
 
   return (
     <div className="ur-page">
@@ -120,17 +129,17 @@ export default function SettingsPage() {
                 <div style={{ marginTop: 4 }}><Text>{profile?.username || '—'}</Text></div>
               </div>
               <div>
-                <Text type="secondary">角色</Text>
+                <Text type="secondary">账号角色</Text>
                 <div style={{ marginTop: 4 }}>
-                  <Tag color={roleTagColor(profile?.role) as any}>
-                    {roleLabel(profile?.role, '—')}
+                  <Tag color={roleTagColor(organizationRole) as any}>
+                    {organizationRoleLabel(organizationRole, '—')}
                   </Tag>
                 </div>
               </div>
               <div>
-                <Text type="secondary">组织</Text>
+                <Text type="secondary">身份范围</Text>
                 <div style={{ marginTop: 4 }}>
-                  <Text>{profile?.org_name || (profile?.org_id ? `组织 #${profile.org_id}` : '—')}</Text>
+                  <Text>{accountScope}</Text>
                 </div>
               </div>
               <div>

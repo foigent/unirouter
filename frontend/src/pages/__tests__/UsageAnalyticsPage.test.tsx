@@ -46,6 +46,7 @@ describe('UsageAnalyticsPage', () => {
       },
       data: [{
         key: '全部请求',
+        label: '全部请求',
         total_requests: 12,
         success_requests: 10,
         failed_requests: 2,
@@ -55,6 +56,28 @@ describe('UsageAnalyticsPage', () => {
         estimated_ratio: 0.2,
       }],
     });
+  });
+
+  it('renders resolved entity labels instead of bare owner ids', async () => {
+    mockGetUsageAnalytics.mockResolvedValueOnce({
+      summary: { total_requests: 1, total_tokens: 96, cost_micros: '0', estimated_ratio: 0 },
+      data: [{
+        key: '34',
+        label: 'uiaccept（用户 #34）',
+        total_requests: 1,
+        success_requests: 1,
+        failed_requests: 0,
+        total_tokens: 96,
+        cost_micros: '0',
+        avg_latency_ms: 1200,
+        estimated_ratio: 0,
+      }],
+    });
+
+    render(<UsageAnalyticsPage />);
+
+    expect(await screen.findByText('uiaccept（用户 #34）')).toBeTruthy();
+    expect(screen.queryByText('34')).toBeNull();
   });
 
   it('loads usage analytics with the default overall group and visible semantics', async () => {

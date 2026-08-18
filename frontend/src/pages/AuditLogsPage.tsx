@@ -5,6 +5,9 @@ import { IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { auditSourceLabel, auditSourceOptions } from '../utils/displayLabels';
+import { useAuthStore } from '../store/auth';
+import { customerOrganizationDisplayName } from '../utils/customerContext';
+import { projectDisplayName } from '../utils/projectDisplay';
 import {
   deleteLocalView,
   loadSavedViews,
@@ -145,7 +148,14 @@ function actorIdentity(row: any) {
   return scopedIdentity(row.actor_name, row.actor_id, '用户');
 }
 
+function projectIdentity(name: string | undefined, id: number | null | undefined) {
+  if (!id) return '-';
+  const displayName = projectDisplayName({ id, name, slug: name === 'Default Project' ? 'default' : undefined });
+  return `${displayName} (#${id})`;
+}
+
 export default function AuditLogsPage() {
+  const user = useAuthStore((state) => state.user);
   const initialState = useRef(readInitialAuditState()).current;
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [total, setTotal] = useState(0);
@@ -291,14 +301,19 @@ export default function AuditLogsPage() {
     [logs, selectedLogID],
   );
   const appliedFilterCount = Object.values(filters).filter(Boolean).length;
+  const organizationIdentity = (row: AuditLog) => scopedIdentity(
+    customerOrganizationDisplayName(user, row.org_id, row.org_name, '当前客户'),
+    row.org_id,
+    '组织',
+  );
 
   const columns = [
     { title: '时间', dataIndex: 'created_at', width: 170, render: (v: string) => formatDateTime(v) },
     {
       title: '范围', width: 220,
       render: (_: unknown, row: AuditLog) => row.project_id
-        ? `${scopedIdentity(row.org_name, row.org_id, '组织')} / ${scopedIdentity(row.project_name, row.project_id, '项目')}`
-        : scopedIdentity(row.org_name, row.org_id, '组织'),
+        ? `${organizationIdentity(row)} / ${projectIdentity(row.project_name, row.project_id)}`
+        : organizationIdentity(row),
     },
     { title: '操作者', dataIndex: 'actor_id', width: 170, render: (_: number, row: AuditLog) => actorIdentity(row) },
     {
@@ -490,8 +505,8 @@ export default function AuditLogsPage() {
                 <div className="ur-audit-fact-grid">
                   <span><Text type="tertiary">发生时间</Text><code>{formatDateTime(selectedLog.created_at)}</code></span>
                   <span><Text type="tertiary">操作者</Text><code>{actorIdentity(selectedLog)}</code></span>
-                  <span><Text type="tertiary">组织</Text><code>{scopedIdentity(selectedLog.org_name, selectedLog.org_id, '组织')}</code></span>
-                  <span><Text type="tertiary">项目</Text><code>{selectedLog.project_id ? scopedIdentity(selectedLog.project_name, selectedLog.project_id, '项目') : '组织级'}</code></span>
+                  <span><Text type="tertiary">组织</Text><code>{organizationIdentity(selectedLog)}</code></span>
+                  <span><Text type="tertiary">项目</Text><code>{selectedLog.project_id ? projectIdentity(selectedLog.project_name, selectedLog.project_id) : '组织级'}</code></span>
                   <span><Text type="tertiary">操作对象</Text><code>{`${selectedLog.resource || '-'}${selectedLog.resource_id ? ` #${selectedLog.resource_id}` : ''}`}</code></span>
                 </div>
               </section>

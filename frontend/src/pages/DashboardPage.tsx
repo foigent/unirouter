@@ -150,6 +150,7 @@ function notificationAttentionLabel(level?: string) {
 function ChannelHealthCard({ ch, onOpen }: { ch: NonNullable<DashboardStats['channel_health']>[number]; onOpen: () => void }) {
   const total = ch.success_count + ch.fail_count;
   const rate = total > 0 ? (ch.success_count / total * 100) : 0;
+  const hasWindowSample = total > 0;
   const providerLabel = providerDisplayName(ch.provider, ch.name);
   const health = channelHealthView(ch);
   const models = ch.public_models || [];
@@ -170,12 +171,12 @@ function ChannelHealthCard({ ch, onOpen }: { ch: NonNullable<DashboardStats['cha
           showInfo={false}
           size="small"
           className="ur-channel-progress"
-          stroke={rate >= 99 ? '#13a671' : rate >= 90 ? '#bd7a13' : '#d94c48'}
+          stroke={!hasWindowSample ? '#a6a6a6' : rate >= 99 ? '#13a671' : rate >= 90 ? '#bd7a13' : '#d94c48'}
         />
         <div className="ur-channel-meta">
           <div className="ur-channel-stat">
             <Text className="ur-channel-stat-label">窗口成功率</Text>
-            <Text className="ur-channel-stat-value">{rate.toFixed(1)}%</Text>
+            <Text className="ur-channel-stat-value">{hasWindowSample ? `${rate.toFixed(1)}%` : '暂无样本'}</Text>
           </div>
           <div className="ur-channel-stat">
             <Text className="ur-channel-stat-label">窗口请求</Text>

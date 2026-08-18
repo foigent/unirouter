@@ -13,6 +13,7 @@ import {
 } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { loadAllPages } from '../utils/loadAllPages';
+import { projectDisplayName } from '../utils/projectDisplay';
 
 const { Text } = Typography;
 
@@ -380,6 +381,7 @@ const organizationModelGovernanceWrites = new Set([
 interface ProjectOption {
   id: number;
   name: string;
+  slug?: string;
   current_user_membership_role?: string;
 }
 
@@ -571,7 +573,7 @@ export default function ApiDocsPage() {
             aria-label="API 文档项目范围"
             value={selectedProjectID}
             optionList={projects.map(project => ({
-              label: `${project.name} · ${canonicalProjectMembershipRole(project.current_user_membership_role) || '无显式项目角色'}`,
+              label: `${projectDisplayName(project)} · ${canonicalProjectMembershipRole(project.current_user_membership_role) || '无显式项目角色'}`,
               value: project.id,
             }))}
             onChange={value => setSelectedProjectID(Number(value))}
@@ -584,8 +586,8 @@ export default function ApiDocsPage() {
           <Banner
             type={gatewayEndpoints.some(endpoint => endpoint.status === 'active' && endpoint.observed_status === 'ready') ? 'success' : 'warning'}
             description={gatewayEndpoints.some(endpoint => endpoint.status === 'active' && endpoint.observed_status === 'ready')
-              ? '存在已启用且独立验证通过的 Gateway Endpoint。'
-              : '当前没有“已启用且独立验证通过”的 Gateway Endpoint；配置可以生成，但不能宣称现场可用。'}
+              ? '存在已登记、已启用且独立观测为 ready 的附加 Gateway Endpoint；真实客户端认证与模型调用仍需单独验证。'
+              : '尚未登记并独立验证附加 Gateway Endpoint；这不等同于当前 UniRouter 服务不可用。当前服务健康看“运行状态”，现场可用性以真实 API 调用为准。'}
             closeIcon={null}
             style={{ marginBottom: 12 }}
           />

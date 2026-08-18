@@ -32,7 +32,7 @@ func usageAnalyticsGroup(groupBy string) (analyticsGroup, string, bool) {
 	case "key":
 		return analyticsGroup{Key: "key", Label: "访问凭证"}, "COALESCE(api_key_id, 0)::text", true
 	case "owner":
-		return analyticsGroup{Key: "owner", Label: "Key Owner"}, "COALESCE(owner_user_id, 0)::text", true
+		return analyticsGroup{Key: "owner", Label: "凭证所有者"}, "COALESCE(owner_user_id, 0)::text", true
 	case "key_type":
 		return analyticsGroup{Key: "key_type", Label: "凭证类型"}, "COALESCE(NULLIF(key_type, ''), 'unknown')", true
 	case "model":
@@ -92,8 +92,17 @@ func (h *Handler) UsageAnalytics(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Summary failed"})
 		return
 	}
-	groups, err := h.usageAnalyticsGroups(r, groupExpr, where, args)
+	groups, err := h.usageAnalyticsGroups(r, group.Key, groupExpr, where, args)
 	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
+		return
+	}
+	orgID, ok := args[0].(int64)
+	if !ok || orgID <= 0 {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
+		return
+	}
+	if err := h.hydrateUsageAnalyticsLabels(r.Context(), group.Key, orgID, groups); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Query failed"})
 		return
 	}
@@ -281,7 +290,7 @@ func (h *Handler) usageAnalyticsSummary(r *http.Request, where string, args []in
 	}, nil
 }
 
-func (h *Handler) usageAnalyticsGroups(r *http.Request, groupExpr, where string, args []interface{}) ([]map[string]interface{}, error) {
+func (h *Handler) usageAnalyticsGroups(r *http.Request, groupKey, groupExpr, where string, args []interface{}) ([]map[string]interface{}, error) {
 	query := fmt.Sprintf(
 		`SELECT
 			%s AS group_key,
@@ -315,6 +324,7 @@ func (h *Handler) usageAnalyticsGroups(r *http.Request, groupExpr, where string,
 		}
 		groups = append(groups, map[string]interface{}{
 			"key":              key,
+			"label":            usageAnalyticsFallbackLabel(groupKey, key),
 			"total_requests":   totalRequests,
 			"success_requests": successRequests,
 			"failed_requests":  failedRequests,
@@ -339,8 +349,12 @@ func (h *Handler) writeUsageAnalyticsCSV(w http.ResponseWriter, group analyticsG
 	writer := csv.NewWriter(w)
 	_ = writer.Write([]string{neutralizeSpreadsheetFormula(group.Label), "total_requests", "success_requests", "failed_requests", "total_tokens", "cost_micros", "currency", "amount_scale", "avg_latency_ms", "estimated_ratio"})
 	for _, row := range groups {
+		label := strings.TrimSpace(fmt.Sprint(row["label"]))
+		if label == "" || label == "<nil>" {
+			label = fmt.Sprint(row["key"])
+		}
 		_ = writer.Write([]string{
-			neutralizeSpreadsheetFormula(fmt.Sprint(row["key"])),
+			neutralizeSpreadsheetFormula(label),
 			fmt.Sprint(row["total_requests"]),
 			fmt.Sprint(row["success_requests"]),
 			fmt.Sprint(row["failed_requests"]),

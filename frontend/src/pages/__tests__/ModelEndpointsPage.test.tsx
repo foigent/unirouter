@@ -220,6 +220,13 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     expect(await screen.findByText('凭证内嵌视图')).toBeTruthy();
   });
 
+  it('opens the model sheet when a dashboard deep link identifies a channel', async () => {
+    renderPage('/channels?channel_id=13');
+
+    expect(await screen.findByText('DeepSeek V4 Flash · 供应商端点')).toBeTruthy();
+    expect(screen.getByText('DeepSeek official · deepseek')).toBeTruthy();
+  });
+
   it('keeps routing internals out of the primary endpoint summary', async () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));

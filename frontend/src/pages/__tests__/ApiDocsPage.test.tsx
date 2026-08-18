@@ -84,6 +84,8 @@ describe('ApiDocsPage', () => {
     });
 
     expect(await screen.findByText('auth_error.invalid_api_key')).toBeTruthy();
+    expect(screen.getByText(/这不等同于当前 UniRouter 服务不可用/)).toBeTruthy();
+    expect(screen.queryByText(/不能宣称现场可用/)).toBeNull();
   });
 
   it('shows organization model governance writes without platform-only financial operations', async () => {

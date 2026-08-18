@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { effectiveCustomerOrgID, resolveCustomerContext } from '../customerContext';
+import { customerOrganizationDisplayName, effectiveCustomerOrgID, resolveCustomerContext } from '../customerContext';
 
 describe('customer context', () => {
   it('uses the canonical ready customer instead of the platform technical organization', () => {
@@ -62,5 +62,20 @@ describe('customer context', () => {
     };
 
     expect(resolveCustomerContext(user)).toEqual({ state: 'unavailable' });
+  });
+
+  it('uses the canonical single-deployment label for matching legacy organization rows', () => {
+    const user = {
+      id: 1,
+      username: 'admin',
+      role: 'platform_admin',
+      org_id: 1,
+      org_name: 'Platform Admin',
+      customer_context: { state: 'ready' as const, org_id: 1, org_name: 'Platform Admin' },
+      identity_scope: 'deployment_operator_and_customer' as const,
+    };
+
+    expect(customerOrganizationDisplayName(user, 1, 'Platform Admin')).toBe('当前部署');
+    expect(customerOrganizationDisplayName(user, 8, '另一个组织')).toBe('另一个组织');
   });
 });

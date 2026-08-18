@@ -5,12 +5,17 @@ import { api } from '../api/client';
 import { formatDateTime } from '../utils/formatDate';
 import { loadAllPages } from '../utils/loadAllPages';
 import { StatusTag } from '../ui';
+import { useAuthStore } from '../store/auth';
+import { customerOrganizationDisplayName } from '../utils/customerContext';
+import { projectDisplayName } from '../utils/projectDisplay';
 
 const { Text, Title } = Typography;
 
 interface Project {
   id: number;
+  org_id?: number;
   name: string;
+  slug?: string;
   org_name?: string;
   status: 'active' | 'disabled' | 'archived';
 }
@@ -247,6 +252,7 @@ export default function XInsightLiveConnection({
   expansionAllowed = true,
   expansionRestriction = '',
 }: XInsightLiveConnectionProps) {
+  const user = useAuthStore((state) => state.user);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectID, setProjectID] = useState<number>();
   const [status, setStatus] = useState<FeedConnectionStatus | null>(null);
@@ -362,10 +368,10 @@ export default function XInsightLiveConnection({
 
   const projectOptions = useMemo(() => projects.map(project => ({
     value: project.id,
-    label: `${project.name}${project.org_name ? ` · ${project.org_name}` : ''}${
+    label: `${projectDisplayName(project)}${project.org_name || project.org_id ? ` · ${customerOrganizationDisplayName(user, project.org_id, project.org_name)}` : ''}${
       project.status === 'active' ? '' : project.status === 'archived' ? ' · 已归档' : ' · 已停用'
     }`,
-  })), [projects]);
+  })), [projects, user]);
   const selectedProject = useMemo(
     () => projects.find(project => project.id === projectID),
     [projectID, projects],

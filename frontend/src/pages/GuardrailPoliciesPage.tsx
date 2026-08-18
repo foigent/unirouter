@@ -48,9 +48,9 @@ interface StreamDetectorCapability {
   lookbehind_bytes: number;
 }
 
-function selectorText(policy: GuardrailPolicy) {
+function selectorText(policy: GuardrailPolicy, customerOrgID?: number, customerOrgName?: string) {
   const parts: string[] = [policy.org_id
-    ? (policy.org_name || `客户组织 #${policy.org_id}`)
+    ? (policy.org_id === customerOrgID ? customerOrgName || '唯一客户' : policy.org_name || `客户组织 #${policy.org_id}`)
     : '部署全局（当前部署全部请求）'];
   if (policy.project_id) parts.push(projectDisplayName({ id: policy.project_id, name: policy.project_name || '', slug: policy.project_name === 'Default Project' ? 'default' : undefined }));
   if (policy.api_key_id) parts.push(policy.api_key_name ? `凭证 ${policy.api_key_name}` : `凭证 #${policy.api_key_id}`);
@@ -296,7 +296,7 @@ export default function GuardrailPoliciesPage() {
 
   const columns = [
     { title: '策略', dataIndex: 'name', render: (value: string, record: GuardrailPolicy) => <div><Text strong>{value}</Text><br /><Text type="tertiary" size="small">版本 v{record.version}{record.mandatory ? ' · 平台强制' : ''}</Text></div> },
-    { title: '适用范围', render: (_: unknown, record: GuardrailPolicy) => selectorText(record) },
+    { title: '适用范围', render: (_: unknown, record: GuardrailPolicy) => selectorText(record, customerOrgID, customerContext.orgName) },
     { title: '阶段', dataIndex: 'stage', width: 130, render: (value: GuardrailPolicy['stage']) => stageLabels[value] || value },
     { title: '检测与动作', render: (_: unknown, record: GuardrailPolicy) => `${detectorLabels[record.detector_ref] || record.detector_ref} · ${actionLabels[record.action] || record.action}` },
     { title: '状态', dataIndex: 'mode', width: 100, render: (value: GuardrailPolicy['mode']) => modeTag(value) },
