@@ -48,8 +48,16 @@ proves all of the following:
 - health/readiness and PostgreSQL/Redis dependencies are ready;
 - commercial License is enforceable and remains valid through the planned
   integration window plus seven days;
-- TLS hostname/SAN validation succeeds and the leaf remains valid for strictly
-  more than seven days at reset time;
+- TLS hostname/SAN validation succeeds and the certificate profile's validity
+  and renewal gate passes. A conventional certificate must remain valid through
+  the planned integration window plus seven days. A CA-mandated short-lived IP
+  certificate cannot satisfy that duration by construction; for that profile,
+  the exact IP SAN and live/disk certificate identity must match, the remaining
+  validity must cover the planned reset plus at least two maximum renewal
+  intervals, the renewal timer must be enabled with its next run inside that
+  window, and the two latest scheduled renewals must have succeeded. Any
+  profile ambiguity, missed run, live/disk mismatch, or insufficient window
+  stops the reset;
 - authenticated admin UI smoke is verified with the preserved account;
 - Feed/Outbox workers, current Source Instance, and public/auth boundaries have
   been read back without sending a model or Provider request; and

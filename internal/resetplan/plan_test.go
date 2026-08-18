@@ -55,6 +55,10 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 	if !strings.HasPrefix(first.ScopeSHA256, "sha256:") || len(first.DeleteOrder) == 0 {
 		t.Fatalf("missing digest or deterministic delete order: %+v", first)
 	}
+	if !slices.Contains(first.ExecutionPreconditions, "tls_certificate_profile_aware_validity_and_renewal_gate_satisfied") ||
+		slices.Contains(first.ExecutionPreconditions, "tls_validity_strictly_greater_than_seven_days") {
+		t.Fatalf("reset plan does not declare the profile-aware TLS gate: %+v", first.ExecutionPreconditions)
+	}
 }
 
 func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T) {
