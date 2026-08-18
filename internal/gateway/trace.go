@@ -224,7 +224,7 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		traceID = evidenceContext.TraceID
 	}
 	spanID := newEvidenceID()
-	sourceComponent := sourceComponentForTraceStage(stage)
+	sourceComponent := sourceComponentForTraceEvent(eventType, stage)
 	parentSpanID := parentSpanForEvent(ctx, spanID, sourceComponent, evidenceContext.ParentSpanID)
 	evidenceRef := fmt.Sprintf("%s:request_trace_events:request_id:%s:span:%s", evidenceTraceRefSourceType, requestID, spanID)
 	upstreamRequestID := ""
@@ -454,6 +454,13 @@ func sourceComponentForTraceStage(stage string) string {
 	default:
 		return "unknown"
 	}
+}
+
+func sourceComponentForTraceEvent(eventType, stage string) string {
+	if strings.HasPrefix(strings.TrimSpace(strings.ToLower(eventType)), "limit_policy.") {
+		return "limit_policy"
+	}
+	return sourceComponentForTraceStage(stage)
 }
 
 func decisionEvidence(eventType string, metadata map[string]interface{}) (string, string, string) {
