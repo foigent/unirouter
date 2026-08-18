@@ -105,6 +105,12 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		args = append(args, actorOrgID)
 		argIdx++
 	}
+	// Customer identity management must not expose deployment operators as
+	// assignable customer members. Platform administrators remain available
+	// through their own authenticated account and host recovery path.
+	if _, present := middleware.GetCustomerContextFromContext(r.Context()); present {
+		whereParts = append(whereParts, "COALESCE(NULLIF(u.organization_role, ''), u.role) <> 'platform_admin'")
+	}
 	providerScope := strings.TrimSpace(r.URL.Query().Get("auth_provider"))
 	switch providerScope {
 	case "":

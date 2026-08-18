@@ -108,6 +108,7 @@ describe('ChannelKeysPage', () => {
     await screen.findByText('mimo-v2.5-pro,mimo-v2.5');
     fireEvent.click(screen.getByRole('button', { name: '轮换供应商凭证 mimo' }));
     expect(await screen.findByText(/只有检测成功且端点\/旧凭证没有并发变化/)).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '用于验证新 Key 的模型' })).toBeTruthy();
     fireEvent.change(screen.getByLabelText('新的供应商 API Key'), { target: { value: 'sk-new-active-key' } });
     fireEvent.click(screen.getByRole('button', { name: '检测并原子轮换' }));
 
@@ -117,6 +118,29 @@ describe('ChannelKeysPage', () => {
       allowed_models: 'mimo-v2.5-pro,mimo-v2.5',
     }));
     expect(await screen.findByText(/路由未暂停。检测延迟 12ms/)).toBeTruthy();
+  });
+
+  it('turns active-route editing into one explicit emergency-disable action', async () => {
+    mockGetChannelKeys.mockResolvedValueOnce({
+      data: [{
+        id: 7, channel_id: 3, channel_name: 'mimo', channel_status: 'active',
+        key_prefix: '****c20c', allowed_models: 'mimo-v2.5-pro',
+        status: 'active', state_epoch: 4, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-08-14T01:59:49+08:00',
+      }], total: 1,
+    });
+    mockGetChannels.mockResolvedValueOnce({ data: [{ id: 3, name: 'mimo', status: 'active', models: 'mimo-v2.5-pro' }] });
+    renderChannelKeys();
+
+    await screen.findByText('mimo-v2.5-pro');
+    fireEvent.click(screen.getByRole('button', { name: '紧急停用供应商凭证 mimo' }));
+
+    expect(await screen.findByText('紧急停用供应商凭证')).toBeTruthy();
+    expect(screen.queryByLabelText('新的供应商 API Key（可选）')).toBeNull();
+    expect(screen.queryByLabelText('允许模型（留空=全部）')).toBeNull();
+    expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('紧急停用');
+    fireEvent.click(screen.getByRole('button', { name: '确认紧急停用' }));
+
+    await waitFor(() => expect(mockUpdateChannelKey).toHaveBeenCalledWith(7, { status: 'disabled' }));
   });
 
   it('keeps scoped active-endpoint credential management on the atomic rotation path', async () => {
@@ -202,7 +226,7 @@ describe('ChannelKeysPage', () => {
 
     expect(screen.queryByText(/Kimi 正在承载路由/)).toBeNull();
     fireEvent.click(screen.getByRole('combobox', { name: '供应商端点' }));
-    const runtimeOption = await screen.findByText('Kimi · 生效（运行时发布）');
+    const runtimeOption = await screen.findByText('Kimi · 稳定路由承载中');
     expect(runtimeOption.closest('.semi-select-option')).toHaveClass('semi-select-option-disabled');
     fireEvent.click(screen.getByText('Deepseek · 待发布'));
     fireEvent.change(await screen.findByLabelText('供应商 API Key'), { target: { value: 'sk-deepseek-test' } });
@@ -212,6 +236,23 @@ describe('ChannelKeysPage', () => {
       channel_id: 3,
       key: 'sk-deepseek-test',
     })));
+  });
+
+  it('does not open an unusable create form when every endpoint is carrying traffic', async () => {
+    mockGetChannels.mockResolvedValueOnce({
+      data: [
+        { id: 3, name: 'Deepseek', status: 'staged', effective_status: 'active', models: 'deepseek-v4-pro' },
+        { id: 14, name: 'Kimi', status: 'active', effective_status: 'active', models: 'kimi-k3' },
+      ],
+    });
+
+    renderChannelKeys();
+
+    const createButton = (await screen.findByText('新增供应商凭证')).closest('button');
+    await waitFor(() => expect(createButton).toBeDisabled());
+    expect(createButton?.parentElement).toHaveAttribute('title', expect.stringContaining('所有端点都在承载流量'));
+    fireEvent.click(createButton!);
+    expect(screen.queryByRole('heading', { name: '新增供应商凭证' })).toBeNull();
   });
 
   it('loads and preselects the exact endpoint context from model and endpoint actions', async () => {
@@ -278,8 +319,8 @@ describe('ChannelKeysPage', () => {
       data: [{ id: 3, name: 'mimo', status: 'staged', effective_status: 'active', models: 'mimo-v2.5-pro' }],
     });
 
-    expect(await screen.findByText('运行时生效（配置待发布）')).toBeTruthy();
-    expect(screen.getByText('已进入路由（发布生效）')).toBeTruthy();
+    expect(await screen.findByText('稳定路由承载中')).toBeTruthy();
+    expect(screen.getByText('已可承载请求（稳定发布）')).toBeTruthy();
     expect(screen.getByText(/当前范围 0 条启用凭证绑定待发布\/禁用端点/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /新增供应商凭证/ })).toBeDisabled();
   });

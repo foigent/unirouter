@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Form, Modal, Select, SideSheet, Table, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconBell, IconPlus, IconRefresh, IconSetting } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
@@ -74,6 +74,13 @@ interface NotificationWebhook {
   updated_at: string;
 }
 
+interface NotificationProject {
+  id: number;
+  name?: string;
+  slug?: string;
+  current_user_membership_role?: string;
+}
+
 function severityColor(severity: string) {
   if (severity === 'critical') return 'red';
   if (severity === 'warning') return 'orange';
@@ -136,6 +143,9 @@ export default function NotificationCenterPage() {
   const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
   const [projectMembershipRole, setProjectMembershipRole] = useState('');
   const [projectMembershipLoaded, setProjectMembershipLoaded] = useState(!projectID);
+  const [projects, setProjects] = useState<NotificationProject[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectsLoadError, setProjectsLoadError] = useState('');
   const hasOrganizationNotificationScope = organizationAdmin || billing;
   const canReadProjectNotifications = Boolean(canonicalProjectMembershipRole(projectMembershipRole));
   const canWriteProjectNotifications = canonicalProjectMembershipRole(projectMembershipRole) === 'project_admin';
@@ -280,36 +290,67 @@ export default function NotificationCenterPage() {
     if (!customerContextReady) {
       setProjectMembershipRole('');
       setProjectMembershipLoaded(false);
+      setProjects([]);
+      setProjectsLoadError('');
       return;
     }
-    if (!projectID) {
+    if (!projectID && !organizationAdmin) {
       setProjectMembershipRole('');
       setProjectMembershipLoaded(true);
+      setProjects([]);
       return;
     }
-    setProjectMembershipLoaded(false);
+    setProjectMembershipLoaded(!projectID);
     setProjectMembershipRole('');
-    loadAllPages<{ id: number; current_user_membership_role?: string }>((page, size) => (
+    setProjectsLoading(true);
+    setProjectsLoadError('');
+    loadAllPages<NotificationProject>((page, size) => (
       api.getProjects(page, size, { status: 'active' })
     )).then(projects => {
+      setProjects(projects);
       setProjectMembershipRole(projects.find(project => project.id === projectID)?.current_user_membership_role || '');
       setProjectMembershipLoaded(true);
     }).catch(() => {
+      setProjects([]);
+      setProjectsLoadError('项目列表加载失败；仍可创建客户组织级 Webhook。');
       setProjectMembershipRole('');
       setProjectMembershipLoaded(true);
+    }).finally(() => {
+      setProjectsLoading(false);
     });
-  }, [customerContextReady, projectID]);
+  }, [customerContextReady, organizationAdmin, projectID]);
+
+  const projectOptions = useMemo(() => {
+    const options = [{ label: '客户组织（全部项目）', value: '' }];
+    for (const project of projects) {
+      options.push({
+        label: project.name || project.slug || `项目（内部编号 ${project.id}）`,
+        value: String(project.id),
+      });
+    }
+    const historicalProjectID = webhookSheet?.record?.project_id;
+    if (historicalProjectID && !projects.some(project => project.id === historicalProjectID)) {
+      options.push({ label: `已归档或不可见项目（内部编号 ${historicalProjectID}）`, value: String(historicalProjectID) });
+    }
+    return options;
+  }, [projects, webhookSheet?.record?.project_id]);
+
+  const projectScopeLabel = (value?: number | null) => {
+    if (!value) return '客户组织（全部项目）';
+    const project = projects.find(item => item.id === value);
+    return project?.name || project?.slug || `已归档或不可见项目（内部编号 ${value}）`;
+  };
 
   useEffect(() => {
     if (!webhookSheet || !webhookFormApi) return;
     const record = webhookSheet.record;
     webhookFormApi.setValues(record ? {
-      name: record.name,
-      url: '',
-      event_types: toEventTypeList(record.event_types) === '-' ? '' : toEventTypeList(record.event_types),
-      enabled: (record.scope_verified ? record.enabled : record.scope_quarantine_previous_enabled) ? 'true' : 'false',
-      project_id: record.project_id || projectID || undefined,
-    } : { enabled: 'true', project_id: projectID });
+      webhook_name: record.name,
+      webhook_url: '',
+      webhook_event_types: toEventTypeList(record.event_types) === '-' ? '' : toEventTypeList(record.event_types),
+      webhook_enabled: (record.scope_verified ? record.enabled : record.scope_quarantine_previous_enabled) ? 'true' : 'false',
+      webhook_project_id: String(record.project_id || projectID || ''),
+    } : { webhook_enabled: 'true', webhook_project_id: String(projectID || '') });
   }, [projectID, webhookFormApi, webhookSheet]);
 
   const openWebhookSheet = (record?: NotificationWebhook) => {
@@ -321,21 +362,21 @@ export default function NotificationCenterPage() {
       Toast.error('无法确认唯一客户组织，未保存 Webhook');
       return;
     }
-    const enteredProjectID = String(values.project_id || '').trim();
+    const enteredProjectID = String(values.webhook_project_id || '').trim();
     const selectedProjectID = projectID || (enteredProjectID ? Number(enteredProjectID) : 0);
     if (enteredProjectID && (!Number.isSafeInteger(selectedProjectID) || selectedProjectID <= 0)) {
-      Toast.error('项目 ID 必须是正整数');
+      Toast.error('所选项目无效，请重新选择');
       return;
     }
     const payload: Record<string, unknown> = {
-      name: values.name,
+      name: values.webhook_name,
       ...(targetOrgID ? { org_id: targetOrgID } : {}),
       project_id: selectedProjectID,
-      event_types: parseEventTypes(values.event_types),
-      enabled: values.enabled !== 'false',
+      event_types: parseEventTypes(values.webhook_event_types),
+      enabled: values.webhook_enabled !== 'false',
     };
-    if (webhookSheet?.mode !== 'edit' || String(values.url || '').trim()) {
-      payload.url = String(values.url || '').trim();
+    if (webhookSheet?.mode !== 'edit' || String(values.webhook_url || '').trim()) {
+      payload.url = String(values.webhook_url || '').trim();
     }
     try {
       if (webhookSheet?.mode === 'edit' && webhookSheet.record) {
@@ -407,7 +448,7 @@ export default function NotificationCenterPage() {
           <p>请逐项核对以下不可编辑快照。确认后只影响后续新通知；升级前失败投递不会自动重放。</p>
           <p><strong>名称：</strong>{record.name}</p>
           <p><strong>组织：</strong>#{record.org_id}</p>
-          <p><strong>项目：</strong>{record.project_id ? `#${record.project_id}` : '组织级'}</p>
+          <p><strong>范围：</strong>{projectScopeLabel(record.project_id)}</p>
           <p><strong>目标 URL：</strong><code style={{ wordBreak: 'break-all' }}>{record.url}</code></p>
           <p><strong>事件类型：</strong>{toEventTypeList(record.event_types)}</p>
           <p><strong>确认后状态：</strong>{record.scope_quarantine_previous_enabled ? '启用' : '停用'}</p>
@@ -475,11 +516,11 @@ export default function NotificationCenterPage() {
 
   const webhookColumns = [
     { title: 'ID', dataIndex: 'id', width: 72 },
-    { title: '组织', dataIndex: 'org_id', width: 100, render: (v: number) => `#${v}` },
+    { title: '客户范围', dataIndex: 'org_id', width: 140, render: () => customerContext.orgName || '当前客户' },
     { title: '名称', dataIndex: 'name', width: 180 },
     { title: '目标（路径已隐藏）', dataIndex: 'url', ellipsis: true },
     { title: '事件类型', dataIndex: 'event_types', width: 260, render: (v: unknown) => eventTypeListLabel(v) },
-    { title: '范围', dataIndex: 'project_id', width: 120, render: (v: number) => v ? `项目 #${v}` : '组织级' },
+    { title: '投递范围', dataIndex: 'project_id', width: 180, render: (v: number) => projectScopeLabel(v) },
     {
       title: '启用',
       dataIndex: 'enabled',
@@ -535,10 +576,10 @@ export default function NotificationCenterPage() {
         <Tabs activeKey={activeTab} onChange={(key) => setActiveTab(key as TabKey)}>
           <TabPane tab={billing ? '财务事件' : '事件'} itemKey="events">
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-              <Select optionList={billing ? financialEventTypeOptions : eventTypeOptions} value={eventType || undefined} placeholder={billing ? '财务事件类型' : '事件类型'} style={{ width: 250 }} onChange={(v) => { invalidateEvents(); setEventType((v as string) || ''); setEventPage(1); }} />
-              <Select optionList={severityOptions} value={severity || undefined} placeholder="级别" style={{ width: 160 }} onChange={(v) => { invalidateEvents(); setSeverity((v as string) || ''); setEventPage(1); }} />
-              <Select optionList={eventStatusOptions} value={eventStatus || undefined} placeholder="处理状态" style={{ width: 160 }} onChange={(v) => { invalidateEvents(); setEventStatus((v as string) || ''); setEventPage(1); }} />
-              <Select optionList={deliveryStateOptions} value={deliveryState || undefined} placeholder="投递状态" style={{ width: 190 }} onChange={(v) => { invalidateEvents(); setDeliveryState((v as string) || ''); setEventPage(1); }} />
+              <Select aria-labelledby="notification-event-type-label" insetLabel={billing ? '财务事件类型' : '事件类型'} insetLabelId="notification-event-type-label" optionList={billing ? financialEventTypeOptions : eventTypeOptions} value={eventType || undefined} placeholder="全部" style={{ width: 250 }} onChange={(v) => { invalidateEvents(); setEventType((v as string) || ''); setEventPage(1); }} />
+              <Select aria-labelledby="notification-severity-label" insetLabel="级别" insetLabelId="notification-severity-label" optionList={severityOptions} value={severity || undefined} placeholder="全部" style={{ width: 160 }} onChange={(v) => { invalidateEvents(); setSeverity((v as string) || ''); setEventPage(1); }} />
+              <Select aria-labelledby="notification-status-label" insetLabel="处理状态" insetLabelId="notification-status-label" optionList={eventStatusOptions} value={eventStatus || undefined} placeholder="全部" style={{ width: 160 }} onChange={(v) => { invalidateEvents(); setEventStatus((v as string) || ''); setEventPage(1); }} />
+              <Select aria-labelledby="notification-delivery-label" insetLabel="投递状态" insetLabelId="notification-delivery-label" optionList={deliveryStateOptions} value={deliveryState || undefined} placeholder="全部" style={{ width: 190 }} onChange={(v) => { invalidateEvents(); setDeliveryState((v as string) || ''); setEventPage(1); }} />
             </div>
             <div className="ur-table-shell">
               <Table
@@ -568,7 +609,7 @@ export default function NotificationCenterPage() {
           </TabPane>
           <TabPane tab={billing ? '投递记录（只读）' : '投递'} itemKey="deliveries">
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-              <Select optionList={deliveryStatusOptions} value={deliveryStatus || undefined} placeholder="投递状态" style={{ width: 180 }} onChange={(v) => { invalidateDeliveries(); setDeliveryStatus((v as string) || ''); setDeliveryPage(1); }} />
+              <Select aria-labelledby="notification-delivery-status-filter-label" insetLabel="投递状态" insetLabelId="notification-delivery-status-filter-label" optionList={deliveryStatusOptions} value={deliveryStatus || undefined} placeholder="全部" style={{ width: 180 }} onChange={(v) => { invalidateDeliveries(); setDeliveryStatus((v as string) || ''); setDeliveryPage(1); }} />
               {deliveryEventID && <Text>仅显示事件 #{deliveryEventID} <Button size="small" onClick={() => { invalidateDeliveries(); setDeliveryEventID(undefined); setDeliveryPage(1); }}>显示全部</Button></Text>}
             </div>
             <div className="ur-table-shell">
@@ -640,17 +681,26 @@ export default function NotificationCenterPage() {
           onCancel={() => setWebhookSheet(null)}
         >
           <Form getFormApi={(formApi: any) => setWebhookFormApi(formApi)} onSubmit={saveWebhook}>
-            <Form.Input field="name" label="名称" rules={[{ required: true, message: '必填' }]} />
+            <Form.Input field="webhook_name" label="名称" rules={[{ required: true, message: '必填' }]} />
             <Form.Input
-              field="url"
+              field="webhook_url"
               label={webhookSheet?.mode === 'edit' ? '新 URL（留空保持现有目标）' : 'URL'}
               rules={webhookSheet?.mode === 'edit' ? [] : [{ required: true, message: '必填' }]}
               placeholder={webhookSheet?.mode === 'edit' ? `当前：${webhookSheet.record?.url || '-'}` : 'https://ops.example.com/webhook'}
               extraText="允许客户内网地址；本机、链路本地和云元数据地址会被拒绝。"
             />
-            <Form.Input field="project_id" label="项目 ID" placeholder="留空为组织级路由" disabled={webhookSheet?.mode === 'edit' || !!projectID} />
-            <Form.TextArea field="event_types" label="事件类型" placeholder="留空表示全部事件；可用逗号或换行分隔" autosize={{ minRows: 3, maxRows: 6 }} />
-            <Form.Select field="enabled" label="状态" initValue="true" optionList={[
+            <Form.Select
+              field="webhook_project_id"
+              aria-label="Webhook 投递范围"
+              label="投递范围"
+              optionList={projectOptions}
+              loading={projectsLoading}
+              disabled={webhookSheet?.mode === 'edit' || !!projectID}
+              placeholder="选择客户组织或项目"
+              extraText={projectsLoadError || '组织级路由覆盖全部项目；项目级路由只接收所选项目的事件。创建后需再次确认范围才会启用。'}
+            />
+            <Form.TextArea field="webhook_event_types" label="事件类型" placeholder="留空表示全部事件；可用逗号或换行分隔" autosize={{ minRows: 3, maxRows: 6 }} />
+            <Form.Select field="webhook_enabled" aria-label="Webhook 状态" label="状态" initValue="true" optionList={[
               { label: '启用', value: 'true' },
               { label: '停用', value: 'false' },
             ]} />

@@ -109,8 +109,8 @@ export function ModelRegistryPanel({
       actions={<Button icon={<IconPlus />} type="primary" onClick={onCreate}>新增模型</Button>}
     >
       <div className="ur-modelgov-filters">
-        <Input prefix={<IconServer />} value={search} onChange={onSearchChange} placeholder="搜索模型、显示名或供应商族" showClear />
-        <Select value={lifecycle} onChange={(value) => onLifecycleChange(String(value || ''))} optionList={lifecycleOptions} placeholder="生命周期" showClear />
+        <Input aria-label="搜索模型目录" prefix={<IconServer />} value={search} onChange={onSearchChange} placeholder="搜索模型、显示名或供应商族" showClear />
+        <Select aria-labelledby="model-catalog-lifecycle-label" insetLabel="生命周期" insetLabelId="model-catalog-lifecycle-label" value={lifecycle} onChange={(value) => onLifecycleChange(String(value || ''))} optionList={lifecycleOptions} placeholder="全部" showClear />
         <Button type={approvedOnly ? 'primary' : 'tertiary'} onClick={onApprovedOnlyChange}>仅看已批准</Button>
       </div>
       <div className="ur-table-shell">

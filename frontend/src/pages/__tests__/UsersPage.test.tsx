@@ -132,6 +132,9 @@ describe('UsersPage enterprise identity presentation', () => {
     fireEvent.click(screen.getByText('新增本地用户'));
 
     expect(await screen.findByText('本地登录名在当前部署中全局唯一，忽略大小写和首尾空白。')).toBeTruthy();
+    expect(screen.queryByText(/登录来源、外部 subject、用户名与邮箱由 OIDC/)).toBeNull();
+    expect(screen.getByRole('combobox', { name: '组织角色' })).toHaveTextContent('普通成员');
+    expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('启用');
 
     fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'local-user' } });
     fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'secret-password-123' } });
@@ -156,6 +159,7 @@ describe('UsersPage enterprise identity presentation', () => {
     await waitFor(() => expect(mocks.getProjects).toHaveBeenCalled());
     fireEvent.click(screen.getByRole('combobox', { name: '项目' }));
     fireEvent.click(await screen.findByText('核心项目'));
+    expect(screen.getByRole('combobox', { name: '项目角色' })).toHaveTextContent('项目使用者');
     fireEvent.click(screen.getByRole('button', { name: '授予项目访问' }));
 
     await waitFor(() => expect(mocks.upsertProjectMember).toHaveBeenCalledWith(31, 8, 'project_user'));

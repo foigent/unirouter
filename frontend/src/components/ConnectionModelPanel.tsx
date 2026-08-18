@@ -342,7 +342,7 @@ export default function ConnectionModelPanel({
           {!publishedHere && result?.success && (replacement
             ? <Button size="small" type="primary" onClick={() => onOpenRouteManagement(row.model, 'replace')}>替换现有连接</Button>
             : <Button size="small" type="primary" loading={enablingModel === row.model || checkingRouteModel === row.model} onClick={() => void prepareEnable(row.model)}>启用此模型</Button>)}
-          <Button size="small" type="tertiary" onClick={() => onDiagnose(row.model)}>调用诊断</Button>
+          <Button size="small" type="tertiary" onClick={() => onDiagnose(row.model)}>连接诊断</Button>
         </Space>;
       },
     },

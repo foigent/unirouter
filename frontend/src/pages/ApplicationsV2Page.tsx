@@ -546,14 +546,14 @@ export default function ApplicationsV2Page() {
           <Surface title="项目范围" description="可用操作按当前项目和你的实时项目角色决定。">
             {projectsLoading ? <>
               <Space>
-                <Select disabled style={{ width: 300 }} optionList={[]} placeholder="正在读取项目" />
+                <Select aria-labelledby="application-project-loading-label" insetLabel="项目" insetLabelId="application-project-loading-label" disabled style={{ width: 300 }} optionList={[]} placeholder="正在读取项目" />
                 <Button type="primary" icon={<IconPlus />} disabled>新建应用</Button>
               </Space>
               <EmptyState title="正在读取项目范围" description="正在读取当前账号可访问的项目和应用合同；权限确认前不会开放创建操作。" />
             </>
               : projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjectsAndContract}>重试</Button>} />
                 : projects.length === 0 ? <EmptyState title="暂无可用项目" description="请先在“人员与权限”中创建或加入一个启用项目。" />
-                  : <Space><Select value={selectedProjectID} style={{ width: 300 }} optionList={projects.map(projectOption)} placeholder="选择项目" onChange={(value) => updateSearch({ project_id: Number(value), application_ref: undefined })} /><Button type="primary" icon={<IconPlus />} disabled={!selectedProjectID || !canManageSelectedProject} onClick={openCreateDrawer}>新建应用</Button></Space>}
+                  : <Space><Select aria-labelledby="application-project-label" insetLabel="项目" insetLabelId="application-project-label" value={selectedProjectID} style={{ width: 300 }} optionList={projects.map(projectOption)} placeholder="选择项目" onChange={(value) => updateSearch({ project_id: Number(value), application_ref: undefined })} /><Button type="primary" icon={<IconPlus />} disabled={!selectedProjectID || !canManageSelectedProject} onClick={openCreateDrawer}>新建应用</Button></Space>}
             {selectedProjectID && !canManageSelectedProject && <Text type="tertiary">当前所选项目只有读取或使用权限；创建和维护应用需要项目管理员权限。</Text>}
           </Surface>
           <Surface title="应用" description="每个应用绑定一个项目和环境；内部身份标识由服务端生成并保留在高级审计信息中。">
@@ -564,7 +564,7 @@ export default function ApplicationsV2Page() {
                     : <Table columns={applicationColumns} dataSource={applications} rowKey="id" pagination={false} loading={applicationsLoading} empty={<EmptyState title="当前项目暂无应用" />} />}
           </Surface>
           {selectedApplication && <>
-            <Surface title={selectedApplication.display_name} description={`${applicationKindLabel(selectedApplication.kind)} · ${environmentLabel(selectedApplication.environment)}`} actions={<Space><Button disabled={!selectedApplication.can_manage} onClick={() => openApplicationDrawer('edit', selectedApplication)}>编辑</Button><Button disabled={!selectedApplication.can_request_access || mutating} onClick={requestAccess}>申请应用访问</Button><Button type="danger" disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived' || mutating} onClick={archiveApplication}>归档</Button></Space>}>
+            <Surface title={selectedApplication.display_name} description={`${applicationKindLabel(selectedApplication.kind)} · ${environmentLabel(selectedApplication.environment)}`} actions={<Space><Button disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived'} onClick={() => openApplicationDrawer('edit', selectedApplication)}>编辑</Button><Button disabled={!selectedApplication.can_request_access || mutating} onClick={requestAccess}>申请应用访问</Button><Button type="danger" disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived' || mutating} onClick={archiveApplication}>归档</Button></Space>}>
               <Space wrap><Tag>{applicationKindLabel(selectedApplication.kind)}</Tag><Tag>{environmentLabel(selectedApplication.environment)}</Tag>{selectedApplication.production_use && <Tag color="red">生产用途</Tag>}<Tag color={selectedApplication.can_manage ? 'green' : 'grey'}>{selectedApplication.can_manage ? '可管理' : '只读'}</Tag></Space>
 			  <details style={{ marginTop: 12 }}><summary>高级审计标识</summary><div style={{ marginTop: 8 }}><Text code>Application: {selectedApplication.application_ref}</Text><br /><Text code>Logical identity: {selectedApplication.logical_ref}</Text><br /><Text type="tertiary">{selectedApplication.identity_contract_version}</Text></div></details>
             </Surface>
@@ -593,15 +593,15 @@ export default function ApplicationsV2Page() {
       <SideSheet title={drawer === 'edit' ? '编辑应用' : '新建应用'} visible={drawer === 'create' || drawer === 'edit'} onCancel={closeDrawer} width={540}>
         <Form getFormApi={setFormApi} onSubmit={submitApplication}>
           <Form.Input field="display_name" label="显示名称" rules={[{ required: true, message: '必填' }]} />
-          {drawer === 'create' && <Form.Select field="kind" label="应用类型" initValue="service" optionList={applicationKindOptions} rules={[{ required: true, message: '必填' }]} style={{ width: '100%' }} />}
-          {drawer === 'create' ? <Form.Select field="environment" label="环境（创建后不可变）" initValue="development" optionList={[{ value: 'development', label: '开发' }, { value: 'staging', label: '测试' }, { value: 'production', label: '生产' }]} rules={[{ required: true, message: '必填' }]} style={{ width: '100%' }} /> : <Form.Input field="environment" label="环境（创建后不可变）" disabled />}
+          {drawer === 'create' && <Form.Select field="kind" label={<span id="application-kind-label">应用类型</span>} aria-labelledby="application-kind-label" initValue="service" optionList={applicationKindOptions} rules={[{ required: true, message: '必填' }]} style={{ width: '100%' }} />}
+          {drawer === 'create' ? <Form.Select field="environment" label={<span id="application-environment-label">环境（创建后不可变）</span>} aria-labelledby="application-environment-label" initValue="development" optionList={[{ value: 'development', label: '开发' }, { value: 'staging', label: '测试' }, { value: 'production', label: '生产' }]} rules={[{ required: true, message: '必填' }]} style={{ width: '100%' }} /> : <Form.Input field="environment" label="环境（创建后不可变）" disabled />}
           <details><summary>高级配置（可选）</summary><div style={{ marginTop: 12 }}>
-			<Form.Select field="client_profiles" label="客户端兼容配置" multiple optionList={profileOptions} style={{ width: '100%' }} />
-			<Form.Select field="primary_client_profile" label="主要客户端配置" optionList={profileOptions} style={{ width: '100%' }} />
+			<Form.Select field="client_profiles" label={<span id="application-client-profiles-label">客户端兼容配置</span>} aria-labelledby="application-client-profiles-label" multiple optionList={profileOptions} style={{ width: '100%' }} />
+			<Form.Select field="primary_client_profile" label={<span id="application-primary-client-profile-label">主要客户端配置</span>} aria-labelledby="application-primary-client-profile-label" optionList={profileOptions} style={{ width: '100%' }} />
 			<Form.Input field="owner_team" label="负责团队" />
 			<Form.TextArea field="description" label="说明" />
 		  </div></details>
-          {drawer === 'edit' && <Form.Select field="status" label="状态" optionList={[{ value: 'active', label: '启用' }, { value: 'disabled', label: '停用' }]} rules={[{ required: true, message: '必填' }]} style={{ width: '100%' }} />}
+          {drawer === 'edit' && <Form.Select field="status" label={<span id="application-status-label">状态</span>} aria-labelledby="application-status-label" optionList={[{ value: 'active', label: '启用' }, { value: 'disabled', label: '停用' }]} rules={[{ required: true, message: '必填' }]} style={{ width: '100%' }} />}
           <div style={{ textAlign: 'right', marginTop: 20 }}><Button onClick={closeDrawer}>取消</Button><Button type="primary" htmlType="submit" loading={mutating} style={{ marginLeft: 8 }}>保存</Button></div>
         </Form>
       </SideSheet>

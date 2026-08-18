@@ -1,7 +1,8 @@
 import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { Button, Spin } from '@douyinfe/semi-ui'
+import { Button, LocaleProvider, Spin } from '@douyinfe/semi-ui'
+import zh_CN from '@douyinfe/semi-ui/lib/es/locale/source/zh_CN'
 import './index.css'
 import ErrorBoundary from './components/ErrorBoundary'
 import { profileNeedsRefresh, useAuthStore } from './store/auth'
@@ -44,8 +45,9 @@ const OrganizationMembersPage = lazy(() => import('./pages/OrganizationMembersPa
 
 function RouteLoading() {
   return (
-    <div className="ur-route-loading">
+    <div className="ur-route-loading" role="status" aria-label="正在加载页面">
       <Spin size="large" />
+      <span>正在加载页面…</span>
     </div>
   )
 }
@@ -123,8 +125,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
       <Suspense fallback={<RouteLoading />}>
-        <BrowserRouter>
-          <Routes>
+        <LocaleProvider locale={zh_CN}>
+          <BrowserRouter>
+            <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<ProtectedRoute><App /></ProtectedRoute>}>
               <Route index element={<HomeRoute />} />
@@ -170,8 +173,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="docs" element={<ApiDocsPage />} />
               <Route path="*" element={<UnknownRoute />} />
             </Route>
-          </Routes>
-        </BrowserRouter>
+            </Routes>
+          </BrowserRouter>
+        </LocaleProvider>
       </Suspense>
     </ErrorBoundary>
   </React.StrictMode>

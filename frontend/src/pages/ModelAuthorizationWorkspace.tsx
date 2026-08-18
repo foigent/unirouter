@@ -65,7 +65,7 @@ export default function ModelAuthorizationWorkspace() {
   const [policies, setPolicies] = useState<ModelAuthorization[]>([]);
   const [selectedRef, setSelectedRef] = useState('');
   const [status, setStatus] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -166,7 +166,6 @@ export default function ModelAuthorizationWorkspace() {
     { title: '模型范围', dataIndex: 'allowed_models', render: (value: string[]) => value.join('、') },
     { title: '环境', dataIndex: 'environment', width: 110 },
     { title: '状态', dataIndex: 'status', width: 100, render: (value: string) => <Tag color={statusColor(value)}>{value === 'active' ? '生效' : value === 'draft' ? '草稿' : '已撤销'}</Tag> },
-    { title: '修订', dataIndex: 'revision', width: 80, render: (value: number) => `r${value}` },
   ];
 
   if (!customerContextReady || !orgID) {
@@ -176,7 +175,7 @@ export default function ModelAuthorizationWorkspace() {
 
   return (
     <>
-      <Banner type="info" description="这是高级收窄策略，不是给用户开通模型的入口。正常授权请先在“人员与权限”把用户加入项目，再由用户创建个人项目凭证；工作负载则由项目管理员创建应用凭证。这里的显式拒绝与允许交集只能进一步缩小已有权限。" />
+      <Banner type="info" description="这是高级收窄策略，不是给用户开通模型的入口。正常授权请先在“人员与权限”把用户加入项目，再由用户创建个人项目凭证；工作负载则由项目管理员创建应用凭证。这里的显式拒绝与允许交集只能进一步缩小已有权限。" closeIcon={null} />
       <div className="ur-modelgov-summary">
         <div><Typography.Text type="tertiary">生效策略</Typography.Text><strong>{stats.active}</strong></div>
         <div><Typography.Text type="tertiary">待激活草稿</Typography.Text><strong>{stats.draft}</strong></div>
@@ -191,19 +190,19 @@ export default function ModelAuthorizationWorkspace() {
             </div>
             <Space>
               {platform && <Typography.Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${orgID}`}</Typography.Text>}
-              <Select aria-label="授权状态筛选" value={status} onChange={value => setStatus(String(value || ''))} showClear placeholder="全部状态" optionList={[{ label: '草稿', value: 'draft' }, { label: '生效', value: 'active' }, { label: '已撤销', value: 'revoked' }]} style={{ width: 120 }} />
+              <Select aria-labelledby="model-authorization-status-label" insetLabel="状态" insetLabelId="model-authorization-status-label" value={status} onChange={value => setStatus(String(value || ''))} showClear placeholder="全部" optionList={[{ label: '草稿', value: 'draft' }, { label: '生效', value: 'active' }, { label: '已撤销', value: 'revoked' }]} style={{ width: 140 }} />
               <Button icon={<IconRefresh />} loading={loading} onClick={() => void load()}>刷新</Button>
-              <Button icon={<IconPlus />} type="primary" onClick={() => setSheetOpen(true)}>新增限制策略</Button>
+              <Button aria-label="新增限制策略" icon={<IconPlus />} type="primary" onClick={() => setSheetOpen(true)}>新增限制策略</Button>
             </Space>
           </div>
-          {error ? <EmptyState title="高级模型限制加载失败" description={error} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} /> : (
+          {loading && policies.length === 0 ? <EmptyState title="正在读取高级模型限制" description="正在核对当前客户范围和生效策略，请稍候。" minHeight={320} /> : error ? <EmptyState title="高级模型限制加载失败" description={error} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} /> : (
             <div className="ur-table-shell"><Table rowKey="authorization_ref" columns={columns} dataSource={policies} loading={loading} pagination={false}
               empty={<EmptyState title="暂无授权策略" description="无策略时保持现有访问凭证、项目模型集和 Agent 能力规则；创建并激活后只会进一步收窄。" minHeight={300} />} /></div>
           )}
         </main>
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="高级模型限制检查器">
-          <div className="ur-detail-header"><div><Typography.Text className="ur-panel-hint">Authorization Inspector</Typography.Text><Typography.Title heading={5} style={{ margin: 0 }}>适用范围与操作</Typography.Title></div><Tag color={statusColor(selected?.status || '')}>{selected?.status === 'active' ? '生效' : selected?.status === 'draft' ? '草稿' : selected ? '已撤销' : '未选择'}</Tag></div>
-          {selected ? <>
+          <div className="ur-detail-header"><div><Typography.Text className="ur-panel-hint">限制策略检查器</Typography.Text><Typography.Title heading={5} style={{ margin: 0 }}>适用范围与操作</Typography.Title></div><Tag color={statusColor(selected?.status || '')}>{selected?.status === 'active' ? '生效' : selected?.status === 'draft' ? '草稿' : selected ? '已撤销' : '未选择'}</Tag></div>
+          {loading && policies.length === 0 ? <EmptyState title="正在读取限制策略证据" description="加载完成后会显示适用主体、模型、端点和允许的下一步。" minHeight={300} /> : selected ? <>
             <dl className="ur-financial-truth-detail">
               <dt>策略标识</dt><dd className="ur-mono-break">{selected.authorization_ref}</dd>
               <dt>客户范围</dt><dd>{customerContext.orgName || `组织 #${selected.org_id}`}</dd>
@@ -213,7 +212,6 @@ export default function ModelAuthorizationWorkspace() {
               <dt>模型</dt><dd>{selected.allowed_models.join('、')}</dd>
               <dt>端点</dt><dd>{selected.allowed_endpoints.map(item => endpointLabels[item] || item).join('、')}</dd>
               <dt>有效期</dt><dd>{selected.not_before || selected.expires_at ? `${selected.not_before || '立即'} → ${selected.expires_at || '持续'}` : '持续（直至撤销）'}</dd>
-              <dt>修订</dt><dd>r{selected.revision}</dd>
               <dt>理由</dt><dd>{selected.reason}</dd>
               <dt>Tool/MCP 权限</dt><dd>无</dd>
               <dt>运行时变更</dt><dd>none（请求时只读判定）</dd>
@@ -227,19 +225,19 @@ export default function ModelAuthorizationWorkspace() {
       </div>
 
       <SideSheet title="新增高级模型限制" visible={sheetOpen} onCancel={() => setSheetOpen(false)} width={560}>
-        <Banner type="warning" description="这不是项目访问授权。草稿不会影响请求；激活后只会收窄已有项目、应用 Key 或 Agent 权限。主体 ID 必须属于当前客户范围。" style={{ marginBottom: 16 }} />
+        <Banner type="warning" description="这不是项目访问授权。草稿不会影响请求；激活后只会收窄已有项目、应用 Key 或 Agent 权限。主体 ID 必须属于当前客户范围。" closeIcon={null} style={{ marginBottom: 16 }} />
         <Form getFormApi={(next: any) => setFormApi(next)} onSubmit={create} initValues={{ environment: contract?.environment || '*', effect: 'allow', allowed_endpoints: contract?.endpoints || [] }}>
           <Form.Input field="authorization_ref" label="策略标识" placeholder="mca_project_company_chat" rules={[{ required: true, message: '请输入策略标识' }]} />
           <div className="ur-modelgov-form-grid">
-            <Form.Select field="subject_type" label="主体类型" optionList={(contract?.subjects || ['api_key', 'project', 'user', 'agent']).map(value => ({ label: subjectLabels[value] || value, value }))} rules={[{ required: true, message: '请选择主体类型' }]} />
-            <Form.Input field="subject_ref" label="主体 ID / Agent 标识" rules={[{ required: true, message: '请输入主体标识' }]} />
+            <Form.Select field="subject_type" label={<span id="model-authorization-subject-type-label">主体类型</span>} aria-labelledby="model-authorization-subject-type-label" optionList={(contract?.subjects || ['api_key', 'project', 'user', 'agent']).map(value => ({ label: subjectLabels[value] || value, value }))} rules={[{ required: true, message: '请选择主体类型' }]} />
+            <Form.Input field="subject_ref" label="已存在主体标识（高级）" rules={[{ required: true, message: '请输入主体标识' }]} extraText="只用于对现有项目、人员、访问凭证或 Agent 进一步收窄；请从相应对象的高级审计信息复制，不能在这里创建主体。" />
           </div>
           <div className="ur-modelgov-form-grid">
             <Form.Input field="environment" label="环境" placeholder="production 或 *" rules={[{ required: true, message: '请输入环境' }]} />
-            <Form.Select field="effect" label="效果" optionList={[{ label: '允许范围（交集）', value: 'allow' }, { label: '显式拒绝', value: 'deny' }]} />
+            <Form.Select field="effect" label={<span id="model-authorization-effect-label">效果</span>} aria-labelledby="model-authorization-effect-label" optionList={[{ label: '允许范围（交集）', value: 'allow' }, { label: '显式拒绝', value: 'deny' }]} />
           </div>
           <Form.TextArea field="allowed_models" label="模型范围" placeholder={'company-chat\ngpt-4o'} rows={5} rules={[{ required: true, message: '请输入模型范围' }]} />
-          <Form.Select field="allowed_endpoints" label="端点范围" multiple optionList={(contract?.endpoints || []).map(value => ({ label: endpointLabels[value] || value, value }))} rules={[{ required: true, message: '请选择端点范围' }]} />
+          <Form.Select field="allowed_endpoints" label={<span id="model-authorization-endpoints-label">端点范围</span>} aria-labelledby="model-authorization-endpoints-label" multiple optionList={(contract?.endpoints || []).map(value => ({ label: endpointLabels[value] || value, value }))} rules={[{ required: true, message: '请选择端点范围' }]} />
           <Form.TextArea field="reason" label="业务理由" rows={4} rules={[{ required: true, message: '请输入业务理由' }]} />
           <div className="ur-form-actions"><Button onClick={() => setSheetOpen(false)}>取消</Button><Button type="primary" loading={mutating} onClick={() => formApi?.submitForm()}>创建草稿</Button></div>
         </Form>

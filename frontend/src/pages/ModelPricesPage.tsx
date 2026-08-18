@@ -197,7 +197,7 @@ export default function ModelPricesPage({ embedded = false }: { embedded?: boole
         onCancel={closeDrawer}
         width={480}
       >
-        <Banner type="info" description="DeepSeek 等供应商同时公布缓存命中 / 未命中价和峰谷价时，不要把所有价格压进本表的倍率。请在下方企业 Rate Card 直接填写四类价格和多个 UTC 特殊时段；请求只按供应商明确回传的缓存 Token 分类，不会猜测命中。" style={{ marginBottom: 12 }} />
+        <Banner type="info" description="DeepSeek 等供应商同时公布缓存命中 / 未命中价和峰谷价时，不要把所有价格压进本表的倍率。请在下方企业 Rate Card 直接填写四类价格和多个 UTC 特殊时段；请求只按供应商明确回传的缓存 Token 分类，不会猜测命中。" closeIcon={null} style={{ marginBottom: 12 }} />
         <Form
           key={editPrice ? `edit-${editPrice.id}` : 'create'}
           getFormApi={(api: any) => setFormApi(api)}

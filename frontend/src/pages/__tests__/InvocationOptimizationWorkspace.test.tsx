@@ -177,7 +177,11 @@ describe('InvocationOptimizationWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /新建策略/ }));
 
     expect(await screen.findByText(/允许在该范围内以独立密钥加密持久化/)).toBeTruthy();
-    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(screen.getByRole('combobox', { name: '项目范围（留空为组织级）' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '精确响应缓存（Exact Cache）' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '提示词压缩（Prompt Compression）' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '策略状态' })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: /允许在该范围内以独立密钥加密持久化/ })).not.toBeChecked();
   });
 
   it('keeps a no-driver draft editable instead of advancing it into a dead-end lifecycle', async () => {

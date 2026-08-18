@@ -155,7 +155,7 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     expect(screen.getByText(/仍须独立复核和激活/)).toBeTruthy();
 
     expect(screen.queryByText('REQUEST_PRICING_AUTHORITY=rate_card')).toBeNull();
-    fireEvent.change(screen.getByLabelText('Rate Card 预检模型列表'), { target: { value: 'deepseek-v4-pro；deepseek-v4-pro' } });
+    fireEvent.change(screen.getByLabelText('预检公共模型 ID 列表'), { target: { value: 'deepseek-v4-pro；deepseek-v4-pro' } });
     fireEvent.click(screen.getByText('逐模型预检'));
     await waitFor(() => expect(apiMocks.preflightRateCardAuthority).toHaveBeenCalledWith({
       org_id: 9, models: [{ model_ref: 'deepseek-v4-pro' }],

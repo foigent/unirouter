@@ -288,9 +288,14 @@ describe('LogsPage', () => {
     });
     const labels = Array.from(container.querySelectorAll('.ur-filter-label')).map(el => el.textContent || '');
     expect(labels).toContain('证据标识');
-    for (const placeholder of ['Trace ID（精确匹配）', '上游 Request ID（精确匹配）', 'Evidence Ref（精确匹配）', 'Source Event Hash（精确匹配）']) {
+    for (const placeholder of ['Trace ID（精确匹配）', '上游 Request ID（精确匹配）', '证据引用（精确匹配）', '来源事件哈希（精确匹配）']) {
       expect(container.querySelector(`input[placeholder="${placeholder}"]`)).toBeTruthy();
     }
+    expect(screen.getByRole('button', { name: '刷新执行请求' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '搜索执行请求' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '供应商' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '模型' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Trace ID 精确匹配' })).toBeTruthy();
   });
 
   it('renders request id copy buttons', async () => {
@@ -320,14 +325,14 @@ describe('LogsPage', () => {
   it('shows authoritative provider prompt-cache usage separately from response caching', async () => {
     const { container } = renderLogs();
     await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Cost & Finality' }));
+    fireEvent.click(screen.getByRole('button', { name: '成本与终态' }));
 
     await waitFor(() => {
       const html = container.textContent || '';
       expect(html).toContain('财务终态');
       expect(html).toContain('settled');
-      expect(html).toContain('Actual¥0.150000');
-      expect(html).toContain('Charged¥0.150000');
+      expect(html).toContain('实际成本¥0.150000');
+      expect(html).toContain('实际扣费¥0.150000');
       expect(html).toContain('micro-cny.v1');
       expect(html).toContain('当前脱敏 Trace 合同不暴露');
       expect(html).toContain('供应商 Prompt Cache');
@@ -350,13 +355,13 @@ describe('LogsPage', () => {
     });
     const { container } = renderLogs();
     await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Cost & Finality' }));
+    fireEvent.click(screen.getByRole('button', { name: '成本与终态' }));
 
     await waitFor(() => {
       const html = container.textContent || '';
-      expect(html).toContain('Terminalnot captured');
+      expect(html).toContain('终态not captured');
       expect(html).toContain('HTTP 成功和日志费用不会被当作财务终态');
-      expect(html).not.toContain('Terminalsettled');
+      expect(html).not.toContain('终态settled');
     });
   });
 
@@ -383,13 +388,13 @@ describe('LogsPage', () => {
     });
     const { container } = renderLogs();
     await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Cost & Finality' }));
+    fireEvent.click(screen.getByRole('button', { name: '成本与终态' }));
 
     await waitFor(() => {
       const html = container.textContent || '';
-      expect(html).toContain('Terminalcancelled_no_billable_output');
+      expect(html).toContain('终态cancelled_no_billable_output');
       expect(html).toContain('billing.cancelled.no_billable_output');
-      expect(html).not.toContain('Terminalsettled');
+      expect(html).not.toContain('终态settled');
     });
   });
 
@@ -414,14 +419,14 @@ describe('LogsPage', () => {
     await waitFor(() => {
       const html = container.textContent || '';
       expect(html).toContain('执行证据不可用');
-      expect(html).toContain('unavailable');
+      expect(html).toContain('不可用');
       expect(html).not.toContain('not captured');
     });
 
     fireEvent.click(screen.getByRole('button', { name: '重试证据' }));
     await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledTimes(2));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Decision' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '执行决策' })).toBeTruthy();
       expect(container.textContent || '').toContain('request accepted');
     });
   });
@@ -429,11 +434,11 @@ describe('LogsPage', () => {
   it('renders PRD5 structural trace evidence fields in detail view', async () => {
     const { container } = renderLogs();
     await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Provenance & Gaps' }));
+    fireEvent.click(screen.getByRole('button', { name: '来源与缺口' }));
 
     await waitFor(() => {
       const html = container.textContent || '';
-      expect(html).toContain('Provenance 摘要');
+      expect(html).toContain('来源证据摘要');
       expect(html).toContain('capture: native');
       expect(html).toContain('payload: metadata_only');
       expect(html).toContain('decision: admission / accepted / request accepted');
@@ -448,7 +453,7 @@ describe('LogsPage', () => {
   it('summarizes route attempts and failover without changing routing semantics', async () => {
     const { container } = renderLogs();
     await waitFor(() => expect(mockGetLogTrace).toHaveBeenCalledWith(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Attempts' }));
+    fireEvent.click(screen.getByRole('button', { name: '路由尝试' }));
 
     await waitFor(() => {
       const html = container.textContent || '';

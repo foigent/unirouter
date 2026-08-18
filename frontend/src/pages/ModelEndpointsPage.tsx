@@ -325,7 +325,7 @@ export default function ModelEndpointsPage() {
           title="模型"
           description="表格按公共模型聚合供应商端点。这里展示路由是否可用；项目、应用与 API Key 的最终调用权限只在高级诊断中判断。"
           actions={<Space>
-            <Input prefix={<IconSearch />} value={filter} onChange={setFilter} placeholder="搜索模型、供应商或上游 ID" style={{ width: 280 }} />
+            <Input aria-label="搜索模型与供应商端点" prefix={<IconSearch />} value={filter} onChange={setFilter} placeholder="搜索模型、供应商或上游 ID" style={{ width: 280 }} />
             <Button disabled={testableTargets.length === 0 || batchTesting} loading={batchTesting} onClick={confirmBatchTests}>补齐端点检测证据（{testableTargets.length}）</Button>
           </Space>}
         >

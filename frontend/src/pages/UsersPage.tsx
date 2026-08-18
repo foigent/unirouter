@@ -287,7 +287,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         <div className="ur-embedded-heading">
           <div>
             <Typography.Title heading={4} style={{ margin: 0 }}>账号与身份</Typography.Title>
-            <Typography.Text type="tertiary">当前客户：{customerContext.orgName || `组织 #${customerOrgID}`}。创建登录账号并设置组织角色；项目角色在“项目与成员”中按项目独立维护。</Typography.Text>
+		  <Typography.Text type="tertiary">当前客户：{customerContext.orgName || `组织 #${customerOrgID}`}。创建客户登录账号并设置组织角色；部署管理员不属于客户人员，不在此列表中。项目角色在“项目与成员”中按项目独立维护。</Typography.Text>
           </div>
 			{providerScope === 'local' && <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增本地用户</Button>}
         </div>
@@ -336,7 +336,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         width={480}
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
-          {editUser?.auth_provider !== 'local' && <Typography.Paragraph type="tertiary">
+          {editUser && editUser.auth_provider !== 'local' && <Typography.Paragraph type="tertiary">
             登录来源、外部 subject、用户名与邮箱由 OIDC / 企业目录提供；下面的组织角色与账号状态是 UniRouter 本地治理事实。
           </Typography.Paragraph>}
           <Form.Input
@@ -364,14 +364,16 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           />}
           <Form.Select
             field="organization_role"
-            label="组织角色"
+            label={<span id="user-organization-role-label">组织角色</span>}
+            aria-labelledby="user-organization-role-label"
             optionList={roleOptions}
             rules={[{ required: true, message: '必填' }]}
             extraText="普通账号使用“普通成员”；项目管理员、项目使用者和项目只读在具体项目中分配。"
           />
           <Form.Select
             field="status"
-            label="状态"
+            label={<span id="user-status-label">状态</span>}
+            aria-labelledby="user-status-label"
             optionList={[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]}
             initValue="active"
           />
@@ -394,7 +396,8 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         <Form getFormApi={setAccessFormApi} onSubmit={grantProjectAccess} initValues={{ role: 'project_user' }}>
           <Form.Select
             field="project_id"
-            label="项目"
+            label={<span id="user-project-access-project-label">项目</span>}
+            aria-labelledby="user-project-access-project-label"
             loading={accessLoading}
             optionList={accessProjects.map(project => ({ value: project.id, label: project.name }))}
             rules={[{ required: true, message: '请选择项目' }]}
@@ -402,7 +405,8 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           />
           <Form.Select
             field="role"
-            label="项目角色"
+            label={<span id="user-project-access-role-label">项目角色</span>}
+            aria-labelledby="user-project-access-role-label"
             optionList={[
               { value: 'project_user', label: '项目使用者（可创建凭证并调用）' },
               { value: 'project_viewer', label: '项目只读（不可调用）' },

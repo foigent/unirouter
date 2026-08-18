@@ -30,7 +30,6 @@ function actionColor(action: string): TagColor {
 }
 
 interface AuditFilters {
-  org_id?: string;
   project_id?: string;
   actor_id?: string;
   action?: string;
@@ -66,7 +65,6 @@ interface AuditLog {
 }
 
 const auditFilterKeys = [
-  'org_id',
   'project_id',
   'actor_id',
   'action',
@@ -321,18 +319,19 @@ export default function AuditLogsPage() {
       />
       <Surface title="筛选与保存视图" description="先编辑筛选草稿，再应用查询；命名视图只保存在当前浏览器，不上传审计内容。">
         <div className="ur-audit-filter-grid">
-          <Input prefix="组织" placeholder="组织 ID" value={draftFilters.org_id || ''} onChange={(v) => updateFilter('org_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input prefix="项目" placeholder="项目 ID" value={draftFilters.project_id || ''} onChange={(v) => updateFilter('project_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input prefix="操作者" placeholder="操作者 ID" value={draftFilters.actor_id || ''} onChange={(v) => updateFilter('actor_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input placeholder="动作" value={draftFilters.action || ''} onChange={(v) => updateFilter('action', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input placeholder="目标类型" value={draftFilters.resource || ''} onChange={(v) => updateFilter('resource', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input placeholder="目标 ID" value={draftFilters.resource_id || ''} onChange={(v) => updateFilter('resource_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input placeholder="操作 ID（Request ID）" value={draftFilters.request_id || ''} onChange={(v) => updateFilter('request_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Input placeholder="客户端请求 ID" value={draftFilters.client_request_id || ''} onChange={(v) => updateFilter('client_request_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
-          <Select placeholder="来源" value={draftFilters.source || undefined} onChange={(v) => updateFilter('source', v as string)} style={{ width: '100%' }} showClear>
+          <Input aria-label="项目 ID 筛选" prefix="项目" placeholder="项目 ID" value={draftFilters.project_id || ''} onChange={(v) => updateFilter('project_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label="操作者 ID 筛选" prefix="操作者" placeholder="操作者 ID" value={draftFilters.actor_id || ''} onChange={(v) => updateFilter('actor_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label="审计动作筛选" placeholder="动作" value={draftFilters.action || ''} onChange={(v) => updateFilter('action', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label="目标类型筛选" placeholder="目标类型" value={draftFilters.resource || ''} onChange={(v) => updateFilter('resource', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label="目标 ID 筛选" placeholder="目标 ID" value={draftFilters.resource_id || ''} onChange={(v) => updateFilter('resource_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label="操作 ID 筛选" placeholder="操作 ID（Request ID）" value={draftFilters.request_id || ''} onChange={(v) => updateFilter('request_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Input aria-label="客户端请求 ID 筛选" placeholder="客户端请求 ID" value={draftFilters.client_request_id || ''} onChange={(v) => updateFilter('client_request_id', v)} onEnterPress={() => commitFilters(draftFilters)} />
+          <Select aria-labelledby="audit-source-filter-label" insetLabel="来源" insetLabelId="audit-source-filter-label" placeholder="选择来源" value={draftFilters.source || undefined} onChange={(v) => updateFilter('source', v as string)} style={{ width: '100%' }} showClear>
             {auditSourceOptions.map(option => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}
           </Select>
           <DatePicker
+            aria-labelledby="audit-time-range-label"
+            insetLabel={<span id="audit-time-range-label">时间范围</span>}
             type="dateTimeRange"
             format="yyyy-MM-dd HH:mm:ss"
             placeholder={['开始时间', '结束时间']}
@@ -366,6 +365,9 @@ export default function AuditLogsPage() {
         <div className="ur-saved-view-bar">
           <div role="group" aria-label="已保存的审计视图">
             <Select
+              aria-labelledby="audit-saved-view-label"
+              insetLabel="视图"
+              insetLabelId="audit-saved-view-label"
               placeholder="已保存视图（此浏览器）"
               value={selectedSavedView}
               optionList={savedViews.map(view => ({ label: view.name, value: view.name }))}
@@ -396,7 +398,7 @@ export default function AuditLogsPage() {
               <Text className="ur-panel-hint">默认选择首条记录 · 详情始终在右侧</Text>
             </div>
             <Space>
-              <Tag size="small">{loading && logs.length === 0 ? '读取中' : `${total} events`}</Tag>
+              <Tag size="small">{loading && logs.length === 0 ? '读取中' : `${total} 条事件`}</Tag>
               <Button
                 size="small"
                 icon={<IconRefresh />}
@@ -455,7 +457,7 @@ export default function AuditLogsPage() {
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="审计事件检查器">
           <div className="ur-detail-header">
             <div>
-              <Text className="ur-panel-hint">Audit Event</Text>
+              <Text className="ur-panel-hint">审计事件</Text>
               <Typography.Title heading={5} style={{ margin: 0 }}>审计事件检查器</Typography.Title>
             </div>
             <Tag size="small" color={selectedLog ? 'blue' : undefined}>{selectedLog ? `AUD-${selectedLog.id}` : '等待事件'}</Tag>

@@ -81,7 +81,7 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
   const releasePageSizeRef = useRef(20);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedRef, setSelectedRef] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [transitioning, setTransitioning] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -144,7 +144,7 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
   const createRelease = async (values: Record<string, any>) => {
     const channel = releaseChannels.find(item => item.id === Number(values.channel_id));
     if (!channel) {
-      Toast.error('请选择当前可发布的通道快照');
+      Toast.error('请选择当前可发布的供应商端点');
       return;
     }
     const modelName = String(values.model_name || '').trim();
@@ -316,10 +316,12 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
       {recoveryRequested && <Banner
         type="warning"
         description={`恢复 ${requestedModel}：先释放连接 #${Number.isSafeInteger(requestedChannelID) && requestedChannelID > 0 ? requestedChannelID : '-'} 保留的全部运行时发布记录，再把连接转为“待发布”；补齐凭证并完成真实检测后，才能重新启用。该过程不会自动恢复流量。`}
+        closeIcon={null}
       />}
       <Banner
         type="info"
-        description="在线发布只覆盖通道准入、优先级和权重。Adapter 必须具备离线协议夹具，但夹具不代表供应商账号、网络或真实接口已经验证；请先在上游检测完成真实连通检查。紧急禁用始终高于任何发布。"
+        description="在线发布只覆盖供应商端点的准入、优先级和权重。协议夹具只证明请求格式兼容，不代表供应商账号、网络或真实接口已经验证；请先在“模型与端点”完成真实检测。紧急禁用始终高于任何发布。"
+        closeIcon={null}
       />
       <div className="ur-modelgov-summary">
 		<div><Typography.Text type="tertiary">全部发布记录</Typography.Text><strong>{releaseTotal}</strong></div>
@@ -341,7 +343,9 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
               <Button icon={<IconPlus />} type="primary" onClick={() => { formApi?.reset(); setDraftChannelID(undefined); setSheetOpen(true); }}>新建发布</Button>
             </Space>
           </div>
-          {loadError ? (
+          {loading && releases.length === 0 ? (
+            <EmptyState title="正在读取发布记录" description="正在核对发布历史、当前稳定路由和供应商端点版本，请稍候。" minHeight={320} />
+          ) : loadError ? (
             <EmptyState title="发布状态加载失败" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} />
           ) : (
             <div className="ur-table-shell">
@@ -354,16 +358,18 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
                 onPageChange: (page: number) => { void load(page, releasePageSize); },
                 onPageSizeChange: (pageSize: number) => { void load(1, pageSize); },
               }}
-                empty={<EmptyState title="暂无运行时发布" description="新 Provider 通道先保持 staged，再在这里生成模拟证据并灰度上线。" minHeight={300} />} />
+                empty={<EmptyState title="暂无运行时发布" description="新供应商端点先保持待发布，再在这里生成模拟证据并灰度上线。" minHeight={300} />} />
             </div>
           )}
         </main>
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="运行时发布检查器">
           <div className="ur-detail-header">
-			<div><Typography.Text className="ur-panel-hint">Release Inspector</Typography.Text><Typography.Title heading={5} style={{ margin: 0 }}>发布记录与当前状态</Typography.Title></div>
+			<div><Typography.Text className="ur-panel-hint">发布证据检查器</Typography.Text><Typography.Title heading={5} style={{ margin: 0 }}>发布记录与当前状态</Typography.Title></div>
             <Tag color={stageColor(selected?.stage || '')}>{selected ? stageLabels[selected.stage] || selected.stage : '未选择'}</Tag>
           </div>
-          {selected ? (
+			  {loading && releases.length === 0 ? (
+                <EmptyState title="正在读取发布证据" description="发布记录加载完成后，这里会显示状态权威、端点分配和允许的下一步。" minHeight={300} />
+              ) : selected ? (
             <>
               <dl className="ur-financial-truth-detail">
                 <dt>模型</dt><dd>{selected.model_name}</dd>
@@ -393,13 +399,13 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
                 </dl>
               </details>
               {selected.stage === 'shadow' && <Banner type="warning" description="这是待灰度的零流量状态：当前阶段不会发送真实请求，也没有生成供应商连通性、质量或流量验证证据。" />}
-              <Typography.Title heading={6}>通道覆盖</Typography.Title>
+              <Typography.Title heading={6}>供应商端点分配</Typography.Title>
               <div className="ur-release-overrides">
                 {selected.candidate.overrides.map(item => {
                   const channel = selectedChannel(item.channel_id);
                   return <div key={item.channel_id}>
-                    <strong>{channel?.name || `Channel #${item.channel_id}`}</strong>
-					<span>期望 epoch {item.expected_routing_epoch} / 当前 {channel?.routing_epoch ?? '-'} · {item.admission} · P{item.priority ?? channel?.priority ?? '-'} · W{item.weight ?? channel?.routing_weight ?? '-'}</span>
+                    <strong>{channel?.name || `供应商端点 #${item.channel_id}`}</strong>
+					<span>连接版本{channel?.routing_epoch === item.expected_routing_epoch ? '一致' : `已变化（发布 ${item.expected_routing_epoch} / 当前 ${channel?.routing_epoch ?? '-'}）`} · 准入{item.admission === 'allow' ? '允许' : item.admission === 'deny' ? '拒绝' : '继承'} · 优先级 {item.priority ?? channel?.priority ?? '-'} · 权重 {item.weight ?? channel?.routing_weight ?? '-'}</span>
                   </div>;
                 })}
               </div>
@@ -417,13 +423,17 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
       </div>
 
       <SideSheet title="新建运行时发布" visible={sheetOpen} onCancel={() => { setSheetOpen(false); setDraftChannelID(undefined); }} width={560}>
-        <Banner type="warning" description="新通道必须保持 staged。发布不会修改通道原始记录，只会创建可审计、可回滚的运行时覆盖。" style={{ marginBottom: 16 }} />
+        <Banner type="warning" description="新供应商端点必须保持待发布。发布不会改写端点原始配置，只会创建可审计、可回滚的路由分配。" style={{ marginBottom: 16 }} />
         <Form getFormApi={(next: any) => setFormApi(next)} onSubmit={createRelease} initValues={{ admission: 'allow' }}>
           <Typography.Paragraph type="tertiary">发布标识由服务器安全生成；创建后仅在右侧“高级标识与证据哈希”中显示。</Typography.Paragraph>
           <Form.Select
             field="channel_id"
-            label="通道快照"
-            optionList={releaseChannels.map(channel => ({ label: `${channel.name} · ${channel.provider} · ${channel.status} · epoch ${channel.routing_epoch}`, value: channel.id }))}
+            aria-label="供应商端点快照"
+            label="供应商端点快照"
+            optionList={releaseChannels.map(channel => ({
+              label: `${channel.name} · ${channel.provider} · ${(channel.effective_status || channel.status) === 'active' ? '稳定路由承载中' : '待发布'}`,
+              value: channel.id,
+            }))}
             onChange={(value) => {
               const channelID = Number(value);
               const channel = releaseChannels.find(item => item.id === channelID);
@@ -431,18 +441,19 @@ export default function RuntimeChangeControlWorkspace({ recoveryOnly = false, on
               setDraftChannelID(channelID);
               formApi?.setValue('model_name', models.length === 1 ? models[0] : undefined);
             }}
-            extraText={`仅显示 staged/active 且已声明模型的通道${excludedChannelCount > 0 ? `；已排除 ${excludedChannelCount} 个禁用或无模型通道` : ''}。凭证和网络就绪度请以上游检测结果为准。`}
-            rules={[{ required: true, message: '请选择通道' }]}
+            extraText={`仅显示待发布或已承载稳定路由且已声明模型的端点${excludedChannelCount > 0 ? `；已排除 ${excludedChannelCount} 个禁用或无模型端点` : ''}。凭证和网络状态以“模型与端点”的真实检测为准。`}
+            rules={[{ required: true, message: '请选择供应商端点' }]}
           />
           <Form.Select
             field="model_name"
+            aria-label="目标模型"
             label="目标模型"
             disabled={!draftChannel}
-            placeholder={draftChannel ? '选择该通道声明的模型' : '请先选择通道'}
+            placeholder={draftChannel ? '选择该端点声明的模型' : '请先选择供应商端点'}
             optionList={draftModelOptions.map(model => ({ label: model, value: model }))}
             rules={[{ required: true, message: '请选择目标模型' }]}
           />
-          <Form.Select field="admission" label="准入覆盖" optionList={[
+          <Form.Select field="admission" aria-label="准入覆盖" label="准入覆盖" optionList={[
             { label: '允许（仅 staged/active，绝不复活 disabled）', value: 'allow' },
             { label: '拒绝', value: 'deny' },
             { label: '继承基础状态', value: 'inherit' },

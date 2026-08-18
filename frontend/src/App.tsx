@@ -153,6 +153,7 @@ export default function App() {
           {canSearchLogs && (
             <Input
               className="ur-global-search"
+              aria-label="全局搜索执行请求"
               prefix={<IconSearch />}
               value={globalSearch}
               onChange={setGlobalSearch}
@@ -211,7 +212,7 @@ export default function App() {
             </Surface>
           </div>
         ) : (
-          <Suspense fallback={<div className="ur-route-loading" role="status" aria-label="正在加载页面"><Spin size="large" /></div>}>
+          <Suspense fallback={<div className="ur-route-loading" role="status" aria-label="正在加载页面"><Spin size="large" /><span>正在加载页面…</span></div>}>
             <Outlet />
           </Suspense>
         )}

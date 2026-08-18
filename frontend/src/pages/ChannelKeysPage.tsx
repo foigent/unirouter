@@ -120,10 +120,11 @@ export default function ChannelKeysPage({
         if (version !== channelRequestVersion.current) return;
         const list = d.data.map(c => {
           const effectiveStatus = c.effective_status || c.status;
+          const runtimePublished = c.status === 'staged' && effectiveStatus === 'active';
           return {
             id: c.id,
             name: c.name,
-            label: `${c.name} · ${channelStatusLabel(effectiveStatus)}${c.status === 'staged' && effectiveStatus === 'active' ? '（运行时发布）' : ''}`,
+            label: `${c.name} · ${runtimePublished || effectiveStatus === 'active' ? '稳定路由承载中' : channelStatusLabel(effectiveStatus)}`,
             value: c.id,
             base_status: c.status,
             status: effectiveStatus,
@@ -252,7 +253,7 @@ export default function ChannelKeysPage({
         channel_id: editing.channel_id,
         api_key: '',
         allowed_models: editing.allowed_models || '',
-        status: editing.status,
+        status: editing.channel_status === 'active' ? 'disabled' : editing.status,
       });
     } else if (focusedChannelID) {
       formApi.setValues({ channel_id: focusedChannelID, allowed_models: focusedModel });
@@ -283,14 +284,20 @@ export default function ChannelKeysPage({
   const draftChannel = draftChannelID ? channelByID.get(draftChannelID) : undefined;
   const focusedChannel = focusedChannelID ? channelByID.get(focusedChannelID) : undefined;
   const combinationLoading = loading || channelsLoading;
+  const eligibleCreateChannels = channels.filter(channel => channel.status !== 'active');
+  const noSafeCreateTarget = scoped
+    ? !focusedChannel || focusedChannel.status === 'active'
+    : eligibleCreateChannels.length === 0;
   const createDisabled = channelsLoading || Boolean(channelsLoadError)
-    || Boolean(scoped && focusedChannel?.status === 'active');
+    || noSafeCreateTarget;
   const createDisabledReason = channelsLoading
     ? '正在确认端点是否承载流量'
     : channelsLoadError
       ? '端点状态不可用，刷新成功前不能变更凭证'
-      : scoped && focusedChannel?.status === 'active'
-        ? '当前端点正在承载流量；请使用现有凭证旁的“轮换”操作'
+      : noSafeCreateTarget
+        ? scoped
+          ? '当前端点正在承载流量；请使用现有凭证旁的“轮换”操作'
+          : '所有端点都在承载流量；请在对应端点使用“轮换”，或先紧急暂停端点后再新增'
         : undefined;
 
   const draftModel = focusedModel || parseModelList(draftChannel?.models)[0] || '';
@@ -316,7 +323,7 @@ export default function ChannelKeysPage({
         const runtimePublished = channel.base_status === 'staged' && channel.status === 'active';
         return <div style={{ display: 'grid', gap: 4 }}>
           <span>{record.channel_name || '-'}</span>
-          <StatusTag status={channel.status}>{runtimePublished ? '运行时生效（配置待发布）' : channel.status === 'disabled' ? '端点暂停' : `端点${channelStatusLabel(channel.status)}`}</StatusTag>
+          <StatusTag status={channel.status}>{runtimePublished || channel.status === 'active' ? '稳定路由承载中' : channel.status === 'disabled' ? '端点暂停' : `端点${channelStatusLabel(channel.status)}`}</StatusTag>
         </div>;
       },
     },
@@ -350,7 +357,7 @@ export default function ChannelKeysPage({
         const channel = recordChannel(record);
         const state = evaluateCredentialCombination(record, channel);
         const label = state === 'route_candidate' && channel.base_status === 'staged'
-          ? '已进入路由（发布生效）'
+          ? '已可承载请求（稳定发布）'
           : combinationLabel[state];
         return <StatusTag status={combinationStatus[state]}>{label}</StatusTag>;
       },
@@ -367,7 +374,7 @@ export default function ChannelKeysPage({
       title: '操作', width: 160,
       render: (_: any, record: ChannelKey) => (
         <Space>
-          <Button aria-label={`编辑供应商凭证 ${record.channel_name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
+          <Button aria-label={`${recordChannel(record).status === 'active' ? '紧急停用' : '编辑'}供应商凭证 ${record.channel_name}`} icon={<IconEdit />} size="small" onClick={() => openEdit(record)} />
           <Button aria-label={`轮换供应商凭证 ${record.channel_name}`} icon={<IconRefresh />} size="small" disabled={record.status !== 'active'} onClick={() => openRotation(record)} />
           <Button aria-label={`删除供应商凭证 ${record.channel_name}`} icon={<IconDelete />} size="small" type="danger" disabled={recordChannel(record).status === 'active'} onClick={() => handleDelete(record.id)} />
         </Space>
@@ -460,7 +467,7 @@ export default function ChannelKeysPage({
       </Surface>}
 
       <SideSheet
-        title={editing ? '编辑供应商凭证' : '新增供应商凭证'}
+        title={editing?.channel_status === 'active' ? '紧急停用供应商凭证' : editing ? '编辑供应商凭证' : '新增供应商凭证'}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}
@@ -474,9 +481,9 @@ export default function ChannelKeysPage({
         {editing?.channel_status === 'active' && <div className="ur-playground-error" style={{ marginBottom: 16 }}><strong>当前端点正在承载路由</strong><span>普通编辑只允许紧急停用；更换 API Key 请使用列表中的“轮换”操作，先真实检测新 Key，再原子替换旧 Key，无需暂停。</span></div>}
         {submitError && <Banner type="danger" description={submitError} closeIcon={null} style={{ marginBottom: 16 }} />}
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
-          <Form.Select field="channel_id" label="供应商端点" rules={[{ required: true, message: '必填' }]}
+          <Form.Select field="channel_id" label={<span id="provider-credential-channel-label">供应商端点</span>} aria-labelledby="provider-credential-channel-label" rules={[{ required: true, message: '必填' }]}
             optionList={channels} disabled={editing?.channel_status === 'active'} onChange={(value) => setDraftChannelID(Number(value || 0) || undefined)} />
-          <PasswordField
+          {editing?.channel_status !== 'active' && <PasswordField
             field="api_key"
             label={editing ? '新的供应商 API Key（可选）' : '供应商 API Key'}
             rules={editing ? [] : [{ required: true, message: '必填' }]}
@@ -484,25 +491,25 @@ export default function ChannelKeysPage({
             extraText={editing ? '输入完整新 Key 后点击“保存修改”。保存成功后仍会置空，因为明文永不回显。' : undefined}
             autoComplete="new-password"
             visibilityResetKey={editing?.id || 'new'}
-            disabled={editing?.channel_status === 'active'}
-          />
-          <Form.Input
+          />}
+          {editing?.channel_status !== 'active' && <Form.Input
             field="allowed_models"
             label="允许模型（留空=全部）"
             placeholder="deepseek-chat,deepseek-reasoner"
             extraText="必须使用精确模型标识；可用中英文逗号、分号或换行分隔，保存时会去空格、去重并统一为英文逗号。"
-            disabled={editing?.channel_status === 'active'}
-          />
+          />}
           {editing && <Form.Select
             field="status"
-            label="状态"
+            label={<span id="provider-credential-status-label">状态</span>}
+            aria-labelledby="provider-credential-status-label"
             optionList={editing.channel_status === 'active' ? [{ label: '紧急停用', value: 'disabled' }] : [{ label: '启用（随 staged 通道发布）', value: 'active' }, { label: '停用', value: 'disabled' }]}
+            disabled={editing.channel_status === 'active'}
             rules={[{ required: true, message: '必填' }]}
           />}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             {!editing && draftChannel?.status === 'active' && draftModel && <Button onClick={() => navigate(`/channels?tab=models&model=${encodeURIComponent(draftModel)}`)}>返回端点并暂停</Button>}
             <Button onClick={closeDrawer}>取消</Button>
-            <Button type="primary" loading={submitting} disabled={submitting || (!editing && draftChannel?.status === 'active')} onClick={() => formApi?.submitForm()}>{editing ? '保存修改' : '创建'}</Button>
+            <Button type={editing?.channel_status === 'active' ? 'danger' : 'primary'} loading={submitting} disabled={submitting || (!editing && draftChannel?.status === 'active')} onClick={() => formApi?.submitForm()}>{editing?.channel_status === 'active' ? '确认紧急停用' : editing ? '保存修改' : '创建'}</Button>
           </div>
         </Form>
       </SideSheet>
@@ -523,7 +530,8 @@ export default function ChannelKeysPage({
         <Form getFormApi={setRotationFormApi} onSubmit={submitRotation}>
           <Form.Select
             field="model"
-            label="用于验证新 Key 的模型"
+            label={<span id="provider-credential-rotation-model-label">用于验证新 Key 的模型</span>}
+            aria-labelledby="provider-credential-rotation-model-label"
             optionList={rotationModels.map(item => ({ value: item, label: item }))}
             rules={[{ required: true, message: '请选择一个模型' }]}
             extraText="检测和新证据只绑定到这个精确公共模型及其上游映射；其他模型需要各自具备有效检测证据。"

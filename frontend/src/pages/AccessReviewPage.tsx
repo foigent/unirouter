@@ -177,7 +177,7 @@ export default function AccessReviewPage() {
         {projectsError ? <EmptyState title="项目范围暂时不可用" description={projectsError} actions={<Button onClick={loadProjects}>重试</Button>} /> : (
           projectsLoading ? <Text type="tertiary">正在读取审核范围…</Text> : projects.length === 1
             ? <Text strong>{projectDisplayName(projects[0])}</Text>
-            : <Select value={selectedProjectID} style={{ width: 320 }} placeholder="选择审核项目" optionList={projects.map(projectOption)} onChange={(value) => replaceProject(Number(value))} />
+            : <Select aria-label="审核项目" value={selectedProjectID} style={{ width: 320 }} placeholder="选择审核项目" optionList={projects.map(projectOption)} onChange={(value) => replaceProject(Number(value))} />
         )}
       </Surface>
       <Surface title="待审核申请" description="这里只显示真正需要你处理的申请；已处理或无权处理的项目不会混入队列。">

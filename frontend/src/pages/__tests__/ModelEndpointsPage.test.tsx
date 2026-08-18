@@ -129,6 +129,7 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     renderPage();
 
     expect(await screen.findByText('DeepSeek V4 Flash')).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '搜索模型与供应商端点' })).toBeTruthy();
     expect(screen.getByText(/deepseek · DeepSeek official/)).toBeTruthy();
     expect(screen.getByText(/openrouter · OpenRouter production/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '管理端点' }));
@@ -219,6 +220,18 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     expect(await screen.findByText('凭证内嵌视图')).toBeTruthy();
   });
 
+  it('keeps routing internals out of the primary endpoint summary', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
+
+    expect(await screen.findByText('OpenAI 兼容协议')).toBeTruthy();
+    expect(screen.getByText('健康')).toBeTruthy();
+    expect(screen.getByText('主端点')).toBeTruthy();
+    expect(screen.queryByText('主端点 · P100 / W100')).toBeNull();
+    fireEvent.click(screen.getByText('高级审计信息'));
+    expect(screen.getByText(/优先级 100，同级权重 100/)).toBeTruthy();
+  });
+
   it('creates a provider-specific upstream mapping for the selected public model', async () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
@@ -244,8 +257,11 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
     fireEvent.click(await screen.findByText('为此公共模型增加供应商端点'));
+    expect(await screen.findByRole('combobox', { name: '接入模板' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '路由角色' })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: '列表中没有？新增自定义兼容供应商' }));
 
+    expect(await screen.findByRole('combobox', { name: '兼容协议' })).toBeTruthy();
     fireEvent.change(await screen.findByLabelText('供应商标识'), { target: { value: 'another-aggregator' } });
     fireEvent.change(await screen.findByLabelText('Base URL'), { target: { value: 'https://api.example.test/v1' } });
     fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'vendor/deepseek-v4-flash' } });

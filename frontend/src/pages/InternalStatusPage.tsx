@@ -206,9 +206,34 @@ function componentStatusLabel(status?: string) {
       return '不可用';
     case 'unknown':
       return '未知';
+    case 'operational':
+      return '正常';
+    case 'redacted':
+      return '已隐藏敏感细节';
+    case 'not_observed':
+      return '未观测';
     default:
       return status || '-';
   }
+}
+
+function topologyKindLabel(kind?: string) {
+  if (kind === 'service') return '服务';
+  if (kind === 'dependency') return '依赖';
+  return kind || '-';
+}
+
+function topologyRoleLabel(role?: string) {
+  if (role === 'stable') return '稳定实例';
+  if (role === 'canary') return '灰度实例';
+  if (role === 'postgresql') return 'PostgreSQL 数据库';
+  if (role === 'redis') return 'Redis 缓存';
+  return role || '-';
+}
+
+function topologyRelationLabel(kind?: string) {
+  if (kind === 'uses' || kind === 'runtime_dependency') return '运行时依赖';
+  return kind || '-';
 }
 
 function integrationTone(status?: string): MetricTone {
@@ -239,10 +264,12 @@ function metricTone(metric?: RuntimeMetric): MetricTone {
 function integrationMeta(integration?: RuntimeIntegration): ReactNode {
   if (!integration) return '-';
   const details = [
-    integration.scrape_status ? `scrape ${integration.scrape_status}` : '',
+    integration.scrape_status
+      ? (integration.scrape_status === 'up' ? '抓取正常' : `抓取状态：${integration.scrape_status}`)
+      : '',
     integration.version ? `v${integration.version}` : '',
-    integration.latency_ms !== undefined ? `${integration.latency_ms} ms` : '',
-    integration.reason || '',
+    integration.latency_ms !== undefined ? `${integration.latency_ms} 毫秒` : '',
+    integration.reason === 'auth_required' ? '需要认证' : integration.reason || '',
   ].filter(Boolean);
   if (!integration.url) return details.join(' / ') || '-';
   return (
@@ -258,7 +285,7 @@ function dependencyProbeMeta(dependency?: { latency_ms?: number; reason?: string
   if (dependency.latency_ms !== undefined) {
     return (
       <span>
-        {dependency.latency_ms} ms
+        {dependency.latency_ms} 毫秒
         <br />
         本次健康探测往返耗时（状态快照最多缓存 5 秒）
       </span>
@@ -305,8 +332,8 @@ function metricValue(metric?: RuntimeMetric): ReactNode {
 function cpuMeta(metric?: RuntimeMetric) {
   if (!metric) return '-';
   const details = [
-    metric.logical_cores ? `${metric.logical_cores} cores` : '',
-    metric.sample_millis ? `sample ${metric.sample_millis}ms` : '',
+    metric.logical_cores ? `${metric.logical_cores} 个逻辑核心` : '',
+    metric.sample_millis ? `采样 ${metric.sample_millis} 毫秒` : '',
     metric.reason || '',
   ].filter(Boolean);
   return details.join(' / ') || '-';
@@ -315,7 +342,7 @@ function cpuMeta(metric?: RuntimeMetric) {
 function diskMeta(metric?: RuntimeMetric) {
   if (!metric) return '-';
   if (metric.total_bytes) {
-    return `${formatBytes(metric.used_bytes)} / ${formatBytes(metric.total_bytes)} used${metric.mount_point ? ` @ ${metric.mount_point}` : ''}`;
+    return `已用 ${formatBytes(metric.used_bytes)} / 总计 ${formatBytes(metric.total_bytes)}${metric.mount_point ? ` · 挂载点 ${metric.mount_point}` : ''}`;
   }
   return metric.reason || '-';
 }
@@ -323,9 +350,9 @@ function diskMeta(metric?: RuntimeMetric) {
 function networkMeta(metric?: RuntimeMetric) {
   if (!metric) return '-';
   const details = [
-    metric.interface_count !== undefined ? `active ${metric.active_interface_count ?? 0}/${metric.interface_count}` : '',
-    metric.rx_bytes ? `rx ${formatBytes(metric.rx_bytes)}` : '',
-    metric.tx_bytes ? `tx ${formatBytes(metric.tx_bytes)}` : '',
+    metric.interface_count !== undefined ? `活动网卡 ${metric.active_interface_count ?? 0}/${metric.interface_count}` : '',
+    metric.rx_bytes ? `接收 ${formatBytes(metric.rx_bytes)}` : '',
+    metric.tx_bytes ? `发送 ${formatBytes(metric.tx_bytes)}` : '',
     metric.reason || '',
   ].filter(Boolean);
   return details.join(' / ') || '-';
@@ -464,8 +491,8 @@ export default function InternalStatusPage() {
 					tone={data.attention_level === 'critical' ? 'red' : data.attention_level === 'warning' ? 'amber' : 'green'}
 					meta="仅基于未确认通知，不代表服务健康"
 				/>
-				<MetricTile label="未确认严重事件" value={data.open_critical} icon={<IconAlertTriangle />} tone={data.open_critical > 0 ? 'red' : 'slate'} meta="status = open 的严重通知" />
-				<MetricTile label="未确认预警事件" value={data.open_warning} icon={<IconBell />} tone={data.open_warning > 0 ? 'amber' : 'slate'} meta="status = open 的预警通知" />
+				<MetricTile label="未确认严重事件" value={data.open_critical} icon={<IconAlertTriangle />} tone={data.open_critical > 0 ? 'red' : 'slate'} meta="处理状态为未关闭的严重通知" />
+				<MetricTile label="未确认预警事件" value={data.open_warning} icon={<IconBell />} tone={data.open_warning > 0 ? 'amber' : 'slate'} meta="处理状态为未关闭的预警通知" />
 				<MetricTile label="事件处理" value={<a href={notificationCenterHref}>打开通知中心</a>} icon={<IconBell />} tone="blue" meta="查看详情、确认或解决事件" />
 			</div> : null : (
         <Surface title="通知关注摘要" description="运行状态保持可用；通知事件摘要需要当前商业授权包含通知中心。">
@@ -593,7 +620,7 @@ export default function InternalStatusPage() {
         <Surface title="请求保护策略" description="当前实例处理上游失败、限流和熔断时采用的保护参数。">
           <div className="ur-kpi-grid">
             <MetricTile
-              label="Provider 重试"
+              label="供应商重试"
               value={`${routingPolicy.max_retry_count} 次`}
               icon={<IconRefresh />}
               tone="blue"
@@ -618,14 +645,14 @@ export default function InternalStatusPage() {
               value={`${routingPolicy.rate_limit_cooldown_seconds} 秒`}
               icon={<IconBell />}
               tone="amber"
-              meta="Provider 限流后的暂停时间"
+              meta="供应商限流后的暂停时间"
             />
             <MetricTile
               label="鉴权失败冷却"
               value={`${routingPolicy.auth_failure_cooldown_seconds} 秒`}
               icon={<IconAlertTriangle />}
               tone="red"
-              meta="Provider 401/403 后的暂停时间"
+              meta="供应商返回 401/403 后的暂停时间"
             />
             <MetricTile
               label="密钥失效阈值"
@@ -802,8 +829,8 @@ export default function InternalStatusPage() {
               dataSource={runtimeData.topology.nodes}
               columns={[
                 { title: '逻辑节点', dataIndex: 'id', render: (value: string) => <Text code>{value}</Text> },
-                { title: '类型', dataIndex: 'kind', width: 140 },
-                { title: '角色', dataIndex: 'role', width: 180 },
+                { title: '类型', dataIndex: 'kind', width: 140, render: (value: string) => topologyKindLabel(value) },
+                { title: '角色', dataIndex: 'role', width: 180, render: (value: string) => topologyRoleLabel(value) },
                 { title: '状态', dataIndex: 'status', width: 140, render: (value: string) => <StatusTag status={value}>{componentStatusLabel(value)}</StatusTag> },
               ]}
             />
@@ -816,7 +843,7 @@ export default function InternalStatusPage() {
               dataSource={runtimeData.topology.edges}
               columns={[
                 { title: '来源', dataIndex: 'from', render: (value: string) => <Text code>{value}</Text> },
-                { title: '依赖关系', dataIndex: 'kind', width: 160 },
+                { title: '依赖关系', dataIndex: 'kind', width: 160, render: (value: string) => topologyRelationLabel(value) },
                 { title: '目标', dataIndex: 'to', render: (value: string) => <Text code>{value}</Text> },
                 { title: '状态', dataIndex: 'status', width: 140, render: (value: string) => <StatusTag status={value}>{componentStatusLabel(value)}</StatusTag> },
               ]}
@@ -830,5 +857,5 @@ export default function InternalStatusPage() {
 }
 
 function TagStatus({ label, value }: { label: string; value: string }) {
-  return <StatusTag status={value}>{label}: {componentStatusLabel(value)}</StatusTag>;
+  return <StatusTag status={value}>{label}：{componentStatusLabel(value)}</StatusTag>;
 }

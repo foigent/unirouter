@@ -55,7 +55,7 @@ describe('AuditLogsPage', () => {
     expect(screen.getByText('client-001')).toBeTruthy();
     expect(screen.getByLabelText('审计事件检查器')).toBeTruthy();
     expect(new URLSearchParams(window.location.search).get('audit_id')).toBe('1');
-    expect(container.querySelector('input[placeholder="组织 ID"]')).toBeTruthy();
+    expect(container.querySelector('input[placeholder="组织 ID"]')).toBeNull();
     expect(container.querySelector('input[placeholder="项目 ID"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="操作者 ID"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="动作"]')).toBeTruthy();
@@ -65,6 +65,9 @@ describe('AuditLogsPage', () => {
     expect(container.querySelector('input[placeholder="客户端请求 ID"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="开始时间"]')).toBeTruthy();
     expect(container.querySelector('input[placeholder="结束时间"]')).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '审计动作筛选' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '来源' })).toBeTruthy();
+    expect(screen.getByLabelText('时间范围')).toBeTruthy();
   });
 
   it('does not render zero events or an empty audit result before the request completes', async () => {
@@ -75,14 +78,14 @@ describe('AuditLogsPage', () => {
 
     expect(await screen.findByText('读取中')).toBeTruthy();
     expect(screen.getByRole('heading', { name: '正在加载审计记录' })).toBeTruthy();
-    expect(screen.queryByText('0 events')).toBeNull();
+    expect(screen.queryByText('0 条事件')).toBeNull();
     expect(screen.queryByRole('heading', { name: '暂无审计记录' })).toBeNull();
 
     await act(async () => {
       auditRequest.resolve({ data: [], total: 0 });
       await Promise.resolve();
     });
-    expect(await screen.findByText('0 events')).toBeTruthy();
+    expect(await screen.findByText('0 条事件')).toBeTruthy();
     expect(screen.getByRole('heading', { name: '暂无审计记录' })).toBeTruthy();
   });
 

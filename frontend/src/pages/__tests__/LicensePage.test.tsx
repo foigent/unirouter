@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import LicensePage from '../LicensePage';
 import { useAuthStore } from '../../store/auth';
+import { formatDateTime } from '../../utils/formatDate';
 
 const mockGetLicense = vi.fn();
 const mockUpdateLicense = vi.fn();
@@ -86,7 +87,8 @@ describe('LicensePage', () => {
     expect(mockGetLicense).toHaveBeenCalled();
     expect(await screen.findByText('Acme Corp')).toBeTruthy();
     expect(screen.getAllByText('有效')).toHaveLength(2);
-    expect(screen.getByText('enterprise')).toBeTruthy();
+    expect(screen.getByText('企业版（enterprise）')).toBeTruthy();
+    expect(screen.getByText(formatDateTime(ACTIVE_LICENSE.license.expires_at))).toBeTruthy();
     expect(screen.getByText('模型治理、内容安全、通知中心（有效授权自动包含）')).toBeTruthy();
     expect(screen.getByText('模型网关')).toBeTruthy();
     expect(screen.getByText('unirouter.license.v1')).toBeTruthy();
@@ -98,6 +100,7 @@ describe('LicensePage', () => {
 
     await screen.findByText('Acme Corp');
     const textarea = screen.getByPlaceholderText('{"schema_version":"unirouter.license.v1","key_id":"license-...","payload":{...},"signature":"..."}');
+    expect(screen.getByLabelText('商业授权文件内容（JSON）')).toBe(textarea);
     fireEvent.change(textarea, {
       target: { value: '{"payload":{"customer":"Acme Corp"},"signature":"sig"}' },
     });

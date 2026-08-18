@@ -137,6 +137,14 @@ describe('ConnectionModelPanel', () => {
     expect(mocks.createRuntimeChange).not.toHaveBeenCalled();
   });
 
+  it('labels the endpoint-only diagnosis consistently', () => {
+    const props = renderPanel();
+    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: '连接诊断' }));
+    expect(props.onDiagnose).toHaveBeenCalledWith('deepseek-v4-pro');
+    expect(within(row).queryByRole('button', { name: '调用诊断' })).toBeNull();
+  });
+
   it('preflights the authoritative slot and never shows initial activation for an existing route', async () => {
     mocks.getRuntimeChangeSlot.mockResolvedValueOnce({
       model_name: 'deepseek-v4-pro',

@@ -130,6 +130,8 @@ describe('CostOptimizationPage', () => {
     expect(within(inspector).getByText('已自动选中')).toBeTruthy();
     expect(within(inspector).getByText(/供应商 COGS 不进入/)).toBeTruthy();
     expect(within(inspector).getByRole('button', { name: /查看请求证据/ })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '项目 ID 筛选' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '模型筛选' })).toBeTruthy();
   });
 
   it('keeps organization admins on server-enforced tenant scope', async () => {

@@ -67,11 +67,14 @@ describe('UsageAnalyticsPage', () => {
     expect(await screen.findByText('用量分析')).toBeTruthy();
     expect(screen.getByText('未设置筛选表示当前权限范围内全部数据。供应商是 provider family 或 adapter 维度；上游通道是一个具体配置实例，包含 endpoint、凭证、权重/优先级和可用模型。')).toBeTruthy();
     expect(screen.getByText('用量范围')).toBeTruthy();
-    expect(screen.getByPlaceholderText('Owner 用户 ID')).toBeTruthy();
+    expect(screen.getByPlaceholderText('所有者用户 ID')).toBeTruthy();
     expect(screen.getByText('当前筛选口径 / 总览已包含全部匹配数据')).toBeTruthy();
     expect(screen.getByText('当前分组：总览（不分组）。请求内容：默认不存储明文 / 响应内容：默认不存储明文')).toBeTruthy();
     expect(screen.getByText('全部请求')).toBeTruthy();
     expect(screen.getAllByText('¥0.320000').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('combobox', { name: '分组' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '模型筛选' })).toBeTruthy();
+    expect(screen.getByLabelText('用量开始时间')).toBeTruthy();
   });
 
   it('adds the canonical customer to platform analytics requests without a selector', async () => {

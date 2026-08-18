@@ -6,11 +6,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/testutil"
 )
 
 func customerActorContext(role string, identityOrgID int64, customer customercontext.Snapshot) context.Context {
@@ -365,5 +368,41 @@ func TestListOrganizationsRejectsMismatchedCustomerIdentity(t *testing.T) {
 	handler.ListOrganizations(recorder, request)
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", recorder.Code)
+	}
+}
+
+func TestListUsersCustomerScopeExcludesDeploymentOperators(t *testing.T) {
+	var countQuery, listQuery string
+	database := &testutil.MockDB{
+		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			countQuery = sql
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 0
+				return nil
+			}}
+		},
+		QueryFn: func(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+			listQuery = sql
+			return &testutil.MockRows{}, nil
+		},
+	}
+	handler := NewHandler(database, "secret", nil, nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/users?auth_provider=local", nil)
+	request = request.WithContext(customerActorContext(
+		auth.RolePlatformAdmin,
+		99,
+		customercontext.Snapshot{State: customercontext.StateReady, OrganizationID: 22, OrganizationName: "Acme"},
+	))
+	recorder := httptest.NewRecorder()
+
+	handler.ListUsers(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	for label, sql := range map[string]string{"count": countQuery, "list": listQuery} {
+		if !strings.Contains(sql, "u.org_id = $1") || !strings.Contains(sql, "organization_role, ''), u.role) <> 'platform_admin'") {
+			t.Fatalf("%s query does not enforce canonical customer member scope: %s", label, sql)
+		}
 	}
 }

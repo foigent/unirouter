@@ -52,13 +52,14 @@ export default function ModelBillingPage() {
       <Banner
         type="info"
         description="严格模式启用后，只有完成独立复核并激活的 Rate Card 版本才参与请求计价；草稿和已批准但未激活版本均不生效。旧价格兼容模式仍使用原有价格权威；切换前必须通过预检。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
       <Tabs activeKey={activeTab} onChange={changeTab}>
         <TabPane tab="供应商基础费率" itemKey="base">
           {activeTab === 'base' ? (
             <>
-              <Banner type="warning" description="这里是全局基础费率兼容视图。当前请求是否仍使用它取决于企业 Rate Card 页显示的计价模式；严格模式启用后，请求只使用已激活的版本化 Rate Card。" style={{ marginBottom: 16 }} />
+              <Banner type="warning" description="这里是全局基础费率兼容视图。当前请求是否仍使用它取决于企业 Rate Card 页显示的计价模式；严格模式启用后，请求只使用已激活的版本化 Rate Card。" closeIcon={null} style={{ marginBottom: 16 }} />
               <ModelPricesPage embedded />
             </>
           ) : null}

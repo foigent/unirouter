@@ -346,6 +346,7 @@ export default function CostOptimizationPage() {
       <Banner
         type="info"
         description="Provider Prompt Cache、Exact Response Cache 和 Compression 分开计量：前两者的已实现客户节省来自终态客户计价证据，不等于供应商 COGS；Compression 的 Shadow 数字只表示预计 Token 变化，未进入 Canary 前不宣称真实金额节省。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
 
@@ -361,10 +362,10 @@ export default function CostOptimizationPage() {
             onChange={value => setGroupBy(String(value || 'model') as GroupKey)}
             style={{ width: 190 }}
           />
-          <Input prefix={<IconSearch />} value={projectID} onChange={setProjectID} placeholder="项目 ID" showClear style={{ width: 140 }} />
-          <Input prefix={<IconSearch />} value={model} onChange={setModel} placeholder="模型" showClear style={{ width: 180 }} />
-          <Input prefix={<IconServer />} value={provider} onChange={setProvider} placeholder="供应商" showClear style={{ width: 170 }} />
-          <Input prefix={<IconServer />} value={channel} onChange={setChannel} placeholder="上游通道" showClear style={{ width: 170 }} />
+          <Input aria-label="项目 ID 筛选" prefix={<IconSearch />} value={projectID} onChange={setProjectID} placeholder="项目 ID" showClear style={{ width: 140 }} />
+          <Input aria-label="模型筛选" prefix={<IconSearch />} value={model} onChange={setModel} placeholder="模型" showClear style={{ width: 180 }} />
+          <Input aria-label="供应商筛选" prefix={<IconServer />} value={provider} onChange={setProvider} placeholder="供应商" showClear style={{ width: 170 }} />
+          <Input aria-label="上游通道筛选" prefix={<IconServer />} value={channel} onChange={setChannel} placeholder="上游通道" showClear style={{ width: 170 }} />
           <Input aria-label="开始时间" value={startTime} onChange={setStartTime} type="datetime-local" style={{ width: 190 }} />
           <Input aria-label="结束时间" value={endTime} onChange={setEndTime} type="datetime-local" showClear style={{ width: 190 }} />
           <Button type="primary" icon={<IconSearch />} onClick={load} loading={loading}>应用筛选</Button>
@@ -492,7 +493,7 @@ export default function CostOptimizationPage() {
             <section className="ur-explorer-panel" aria-label="成本优化拆解与候选">
               <div className="ur-detail-header">
                 <div>
-                  <Text type="tertiary">Savings by driver</Text>
+                  <Text type="tertiary">按节省来源拆解</Text>
                   <Title heading={5}>节省归因与复核候选</Title>
                 </div>
                 <StatusTag status="ok">只读</StatusTag>
@@ -522,7 +523,7 @@ export default function CostOptimizationPage() {
               <div className="ur-cost-opportunities" aria-label="确定性优化候选">
                 <div className="ur-detail-header">
                   <div>
-                    <Text type="tertiary">Deterministic review candidates</Text>
+                    <Text type="tertiary">按确定性规则生成</Text>
                     <Title heading={6}>待复核项</Title>
                   </div>
                   <StatusTag status={opportunities.length > 0 ? 'warning' : 'ok'}>{opportunities.length} 项</StatusTag>
@@ -539,7 +540,7 @@ export default function CostOptimizationPage() {
             <aside className="ur-explorer-panel ur-explorer-detail" aria-label="成本优化证据检查器">
               <div className="ur-detail-header">
                 <div>
-                  <Text type="tertiary">Evidence Inspector</Text>
+                  <Text type="tertiary">证据检查器</Text>
                   <Title heading={5}>{selected?.key || '口径与边界'}</Title>
                 </div>
                 <StatusTag status={selected ? 'active' : 'pending'}>{selected ? '已自动选中' : '等待证据'}</StatusTag>

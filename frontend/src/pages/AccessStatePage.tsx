@@ -334,7 +334,7 @@ export default function AccessStatePage() {
 
       <Modal title="提交访问请求" visible={requestDrawer} onCancel={() => setRequestDrawer(false)} footer={null} closeOnEsc={!mutating}>
         <Form getFormApi={setRequestForm} onSubmit={submitRequest}>
-          <Form.Select field="project_role" label="请求的项目角色" initValue="project_user" optionList={[{ value: 'project_user', label: '项目使用者' }, { value: 'project_admin', label: '项目管理员（通常需要审核）' }]} rules={[{ required: true, message: '请选择项目角色' }]} style={{ width: '100%' }} />
+          <Form.Select field="project_role" aria-label="请求的项目角色" label="请求的项目角色" initValue="project_user" optionList={[{ value: 'project_user', label: '项目使用者' }, { value: 'project_admin', label: '项目管理员（通常需要审核）' }]} rules={[{ required: true, message: '请选择项目角色' }]} style={{ width: '100%' }} />
           <Text type="tertiary">默认请求动态项目模型目录与 chat / embeddings / models 端点。额外模型、端点或角色提升由策略进入审核。</Text>
           <div style={{ marginTop: 20, textAlign: 'right' }}><Button onClick={() => setRequestDrawer(false)}>取消</Button><Button type="primary" htmlType="submit" loading={mutating} style={{ marginLeft: 8 }}>提交</Button></div>
         </Form>

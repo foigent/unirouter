@@ -121,6 +121,10 @@ describe('NotificationCenterPage', () => {
     expect(screen.getAllByText('项目预算阈值').length).toBeGreaterThan(0);
     expect(screen.getByText('Budget reached')).toBeTruthy();
     expect(screen.getAllByText('投递失败').length).toBeGreaterThan(0);
+    expect(screen.getByRole('combobox', { name: '事件类型' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '级别' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '处理状态' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '投递状态' })).toBeTruthy();
   });
 
   it('does not present empty notification facts while the initial reads are pending', async () => {
@@ -218,6 +222,36 @@ describe('NotificationCenterPage', () => {
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
     await waitFor(() => expect(mockVerifyNotificationWebhookScope).toHaveBeenCalledWith(3, '2026-07-02T10:00:00Z'));
+  });
+
+  it('selects a named project for a webhook instead of asking for an internal project id', async () => {
+    mockGetProjects.mockResolvedValue({
+      data: [{ id: 9, name: '核心项目', current_user_membership_role: 'project_admin' }],
+      total: 1,
+    });
+    mockCreateNotificationWebhook.mockResolvedValue({ id: 4 });
+    render(<NotificationCenterPage />);
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Webhook' }));
+    fireEvent.click(screen.getByRole('button', { name: /新增 Webhook/ }));
+    expect(screen.queryByLabelText('项目 ID')).toBeNull();
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '核心项目告警' } });
+    fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://ops.example.com/core' } });
+    fireEvent.click(screen.getByRole('combobox', { name: '投递范围' }));
+    fireEvent.click(await screen.findByText('核心项目'));
+    fireEvent.click(screen.getByRole('button', { name: /保存/ }));
+
+    await waitFor(() => expect(mockCreateNotificationWebhook).toHaveBeenCalledWith(expect.objectContaining({
+      name: '核心项目告警',
+      project_id: 9,
+      url: 'https://ops.example.com/core',
+    })));
+    await act(async () => {
+      fireEvent.animationEnd(screen.getByRole('dialog'));
+      const mask = document.querySelector('.semi-sidesheet-mask');
+      if (mask) fireEvent.animationEnd(mask);
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('acknowledges events and drills into their delivery attempts', async () => {

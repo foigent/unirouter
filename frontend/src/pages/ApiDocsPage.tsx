@@ -16,6 +16,28 @@ import { loadAllPages } from '../utils/loadAllPages';
 
 const { Text } = Typography;
 
+const apiAreaLabels: Record<string, string> = {
+  Auth: '认证与会话',
+  Platform: '服务状态',
+  Gateway: '模型网关',
+  'Async Media': '异步媒体',
+  'Private Integration': '私有集成',
+  'Access Provisioning': '访问开通',
+  Admin: '平台管理',
+  'Model Governance': '模型治理',
+  Notifications: '通知',
+  'Error Docs': '错误说明',
+};
+
+function contractStateLabel(value?: string) {
+  if (value === 'runtime_supported') return '运行时支持';
+  if (value === 'protocol_compatible') return '协议兼容';
+  if (value === 'contract_only') return '仅合同声明';
+  if (value === 'verified') return '已独立验证';
+  if (value === 'unsupported') return '未支持';
+  return value || '-';
+}
+
 const endpointGroups = [
   {
     area: 'Auth',
@@ -532,8 +554,8 @@ export default function ApiDocsPage() {
   const compatibilityColumns = [
     { title: '客户端', dataIndex: 'display_name', width: 260 },
     { title: '协议路径', dataIndex: 'supported_endpoints', render: (value: string[]) => (value || []).map(path => <Tag key={path}>{path}</Tag>) },
-    { title: '运行时', dataIndex: 'runtime_state', width: 150, render: (value: string) => <Tag color={value === 'runtime_supported' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'orange'}>{value}</Tag> },
-    { title: '证据等级', dataIndex: 'evidence_level', width: 150, render: (value: string) => <Tag color={value === 'verified' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'red'}>{value}</Tag> },
+    { title: '运行时', dataIndex: 'runtime_state', width: 150, render: (value: string) => <Tag color={value === 'runtime_supported' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'orange'}>{contractStateLabel(value)}</Tag> },
+    { title: '证据等级', dataIndex: 'evidence_level', width: 150, render: (value: string) => <Tag color={value === 'verified' ? 'green' : value === 'protocol_compatible' ? 'blue' : 'red'}>{contractStateLabel(value)}</Tag> },
     { title: 'POC', dataIndex: 'recommended_for_poc', width: 80, render: (value: boolean) => value ? '推荐' : '不推荐' },
     { title: '配置边界', dataIndex: 'configuration_note' },
   ];
@@ -543,7 +565,7 @@ export default function ApiDocsPage() {
       <PageHeader
         eyebrow="系统与集成"
         title="API 与兼容性"
-        description="同时查看真实 Gateway API、Client Profile、证据等级与配置边界；协议兼容不等于已完成真实客户端认证。"
+        description="供开发者和集成管理员查看可用 API、客户端兼容性、证据等级与配置边界；协议兼容不等于已完成真实客户端认证。"
         actions={projects.length > 0 ? (
           <Select
             aria-label="API 文档项目范围"
@@ -564,6 +586,7 @@ export default function ApiDocsPage() {
             description={gatewayEndpoints.some(endpoint => endpoint.status === 'active' && endpoint.observed_status === 'ready')
               ? '存在已启用且独立验证通过的 Gateway Endpoint。'
               : '当前没有“已启用且独立验证通过”的 Gateway Endpoint；配置可以生成，但不能宣称现场可用。'}
+            closeIcon={null}
             style={{ marginBottom: 12 }}
           />
           <div className="ur-table-shell">
@@ -587,13 +610,12 @@ export default function ApiDocsPage() {
           </div>
         </Surface>
         {visibleEndpointGroups.map(group => (
-          <Surface
-            key={group.area}
-            title={group.area}
-            description={group.area === 'Gateway'
-              ? 'Gateway 使用项目 API Key 或 Agent 能力令牌鉴权；控制台 JWT 不适用于这些协议接口。'
-              : undefined}
-          >
+          <details key={group.area} className="ur-surface" open={group.area === 'Gateway'}>
+            <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '16px 20px' }}>
+              {apiAreaLabels[group.area] || group.area} · {group.endpoints.length} 个接口
+            </summary>
+            <div className="ur-surface-body">
+              {group.area === 'Gateway' && <Text type="tertiary">模型网关使用项目 API Key 或 Agent 能力令牌鉴权；控制台登录态不适用于这些协议接口。</Text>}
             <div className="ur-table-shell">
               <Table
                 columns={columns}
@@ -608,9 +630,10 @@ export default function ApiDocsPage() {
                 size="small"
               />
             </div>
-          </Surface>
+            </div>
+          </details>
         ))}
-        {canLoadErrorDocs && <Surface title="Error Docs" description="Gateway 错误响应中的 doc_url 指向本表锚点。">
+        {canLoadErrorDocs && <Surface title="错误说明" description="模型网关错误响应中的 doc_url 会指向本表锚点。">
           <div className="ur-table-shell">
             <Table
               columns={errorColumns}

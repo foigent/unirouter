@@ -113,11 +113,11 @@ interface TraceEvent {
 type ReceiptTab = 'decision' | 'attempts' | 'policy' | 'cost' | 'provenance';
 
 const receiptTabs: Array<{ key: ReceiptTab; label: string }> = [
-  { key: 'decision', label: 'Decision' },
-  { key: 'attempts', label: 'Attempts' },
-  { key: 'policy', label: 'Policy & Guardrail' },
-  { key: 'cost', label: 'Cost & Finality' },
-  { key: 'provenance', label: 'Provenance & Gaps' },
+  { key: 'decision', label: '执行决策' },
+  { key: 'attempts', label: '路由尝试' },
+  { key: 'policy', label: '策略与内容安全' },
+  { key: 'cost', label: '成本与终态' },
+  { key: 'provenance', label: '来源与缺口' },
 ];
 
 function filtersToParams(filters: LogFilters): string {
@@ -155,8 +155,8 @@ const filterLabels: Record<keyof LogFilters, string> = {
   agent_id: 'Agent ID',
   attempt_id: '尝试 ID',
   upstream_request_id: '上游 Request ID',
-  evidence_ref: 'Evidence Ref',
-  source_event_hash: 'Source Event Hash',
+  evidence_ref: '证据引用',
+  source_event_hash: '来源事件哈希',
   latency_min: '最小延迟',
   latency_max: '最大延迟',
   search: '搜索',
@@ -476,10 +476,10 @@ export default function LogsPage() {
 
   const hasActiveFilters = Object.values(filters).some(v => v);
   const timePresets = [
-    { label: '最近 15min', value: '15m' },
-    { label: '最近 1h', value: '1h' },
-    { label: '最近 24h', value: '24h' },
-    { label: '最近 7d', value: '7d' },
+    { label: '最近 15 分钟', value: '15m' },
+    { label: '最近 1 小时', value: '1h' },
+    { label: '最近 24 小时', value: '24h' },
+    { label: '最近 7 天', value: '7d' },
     { label: '自定义', value: 'custom' },
   ];
 
@@ -646,10 +646,19 @@ export default function LogsPage() {
     : billingTerminalStatus.includes('failed')
       ? 'failed'
       : 'warning';
+  const billingTerminalLabel = billingTerminalStatus === 'settled'
+    ? '已结算'
+    : billingTerminalStatus === 'cancelled_no_billable_output' || billingTerminalStatus === 'cancellation outcome captured'
+      ? '已取消（无可计费输出）'
+      : billingTerminalStatus === 'not captured'
+        ? '未捕获'
+        : billingTerminalStatus === 'unavailable'
+          ? '不可用'
+          : billingTerminalStatus;
   const authoritySummary = traceLoading
-    ? 'loading'
+    ? '加载中'
     : traceError
-    ? 'unavailable'
+    ? '不可用'
     : actorRefs.length > 0
     ? `${actorTypes[0] || 'unknown'}:${compactEvidenceValue(actorRefs[0], 20)}`
     : actorTypes[0] || '未捕获';
@@ -658,7 +667,7 @@ export default function LogsPage() {
     const blocker = customerContextBlockerCopy(customerContext.state as Exclude<typeof customerContext.state, 'ready'>);
     return (
       <div className="ur-page ur-page-wide">
-        <PageHeader eyebrow="Operations" title={blocker.title} description="执行请求、成本与证据必须绑定唯一客户；系统不会查询部署技术组织作为替代。" />
+        <PageHeader eyebrow="监控与用量" title={blocker.title} description="执行请求、成本与证据必须绑定唯一客户；系统不会查询部署技术组织作为替代。" />
         <Surface><EmptyState title={blocker.title} description={blocker.description} minHeight={260} /></Surface>
       </div>
     );
@@ -667,7 +676,7 @@ export default function LogsPage() {
   return (
     <div className="ur-page ur-page-wide">
       <PageHeader
-        eyebrow="Operations"
+        eyebrow="监控与用量"
         title="执行请求"
         description="以执行决策凭证定位权限、路由、策略、安全、成本终态和证据缺口。"
         actions={(
@@ -675,7 +684,7 @@ export default function LogsPage() {
             {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
             <Tag color="blue">{total} 条</Tag>
             <Tooltip content="刷新">
-              <Button icon={<IconRefresh />} size="small" onClick={() => fetchLogs()} />
+              <Button aria-label="刷新执行请求" icon={<IconRefresh />} size="small" onClick={() => fetchLogs()} />
             </Tooltip>
           </>
         )}
@@ -694,6 +703,7 @@ export default function LogsPage() {
             <Text className="ur-filter-label">搜索</Text>
             <Input
               ref={searchRef as any}
+              aria-label="搜索执行请求"
               prefix={<IconSearch />}
               placeholder="请求、模型、供应商或证据标识"
               onChange={(v) => updateFilter('search', v)}
@@ -720,8 +730,8 @@ export default function LogsPage() {
             </div>
             {selectedPreset === 'custom' && (
               <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-                <Input size="small" type="datetime-local" value={customTimeStart} onChange={setCustomTimeStart} />
-                <Input size="small" type="datetime-local" value={customTimeEnd} onChange={setCustomTimeEnd} />
+                <Input aria-label="自定义开始时间" size="small" type="datetime-local" value={customTimeStart} onChange={setCustomTimeStart} />
+                <Input aria-label="自定义结束时间" size="small" type="datetime-local" value={customTimeEnd} onChange={setCustomTimeEnd} />
                 <Button size="small" type="primary" onClick={() => handleTimePreset('custom')}>确定</Button>
               </div>
             )}
@@ -730,8 +740,9 @@ export default function LogsPage() {
           <Divider style={{ margin: '12px 0' }} />
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">供应商</Text>
+            <Text id="logs-provider-filter-label" className="ur-filter-label">供应商</Text>
             <Select
+              aria-labelledby="logs-provider-filter-label"
               size="small"
               placeholder="选择供应商"
               value={filters.provider || undefined}
@@ -745,8 +756,9 @@ export default function LogsPage() {
           </div>
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">模型</Text>
+            <Text id="logs-model-filter-label" className="ur-filter-label">模型</Text>
             <Select
+              aria-labelledby="logs-model-filter-label"
               size="small"
               placeholder="模型名称"
               value={filters.model || undefined}
@@ -760,8 +772,9 @@ export default function LogsPage() {
           </div>
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">状态码</Text>
+            <Text id="logs-status-filter-label" className="ur-filter-label">状态码</Text>
             <Select
+              aria-labelledby="logs-status-filter-label"
               size="small"
               placeholder="选择状态码"
               style={{ width: '100%' }}
@@ -776,8 +789,9 @@ export default function LogsPage() {
           </div>
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">计量来源</Text>
+            <Text id="logs-usage-source-filter-label" className="ur-filter-label">计量来源</Text>
             <Select
+              aria-labelledby="logs-usage-source-filter-label"
               size="small"
               placeholder="来源"
               style={{ width: '100%' }}
@@ -791,9 +805,10 @@ export default function LogsPage() {
           </div>
 
           <div className="ur-filter-group">
-            <Text className="ur-filter-label">延迟范围 (ms)</Text>
+            <Text className="ur-filter-label">延迟范围（毫秒）</Text>
             <Space>
               <Input
+                aria-label="最小延迟毫秒数"
                 size="small"
                 placeholder="最小"
                 style={{ width: 104 }}
@@ -802,6 +817,7 @@ export default function LogsPage() {
               />
               <Text type="tertiary">-</Text>
               <Input
+                aria-label="最大延迟毫秒数"
                 size="small"
                 placeholder="最大"
                 style={{ width: 104 }}
@@ -814,6 +830,7 @@ export default function LogsPage() {
           <div className="ur-filter-group">
             <Text className="ur-filter-label">操作 ID（Request ID）</Text>
             <Input
+              aria-label="操作 ID 精确匹配"
               size="small"
               placeholder="精确匹配"
               onChange={(v) => updateFilter('request_id', v)}
@@ -821,6 +838,7 @@ export default function LogsPage() {
               showClear
             />
             <Input
+              aria-label="客户端请求 ID 精确匹配"
               size="small"
               placeholder="客户端请求 ID（精确匹配）"
               onChange={(v) => updateFilter('client_request_id', v)}
@@ -835,13 +853,13 @@ export default function LogsPage() {
           <div className="ur-filter-group">
             <Text className="ur-filter-label">证据标识</Text>
             <div style={{ display: 'grid', gap: 6 }}>
-              <Input size="small" placeholder="Trace ID（精确匹配）" onChange={(v) => updateFilter('trace_id', v)} defaultValue={filters.trace_id || ''} showClear />
-              <Input size="small" placeholder="工作流 ID（精确匹配）" onChange={(v) => updateFilter('workflow_id', v)} defaultValue={filters.workflow_id || ''} showClear />
-              <Input size="small" placeholder="Agent ID（精确匹配）" onChange={(v) => updateFilter('agent_id', v)} defaultValue={filters.agent_id || ''} showClear />
-              <Input size="small" placeholder="尝试 ID（精确匹配）" onChange={(v) => updateFilter('attempt_id', v)} defaultValue={filters.attempt_id || ''} showClear />
-              <Input size="small" placeholder="上游 Request ID（精确匹配）" onChange={(v) => updateFilter('upstream_request_id', v)} defaultValue={filters.upstream_request_id || ''} showClear />
-              <Input size="small" placeholder="Evidence Ref（精确匹配）" onChange={(v) => updateFilter('evidence_ref', v)} defaultValue={filters.evidence_ref || ''} showClear />
-              <Input size="small" placeholder="Source Event Hash（精确匹配）" onChange={(v) => updateFilter('source_event_hash', v)} defaultValue={filters.source_event_hash || ''} showClear />
+              <Input aria-label="Trace ID 精确匹配" size="small" placeholder="Trace ID（精确匹配）" onChange={(v) => updateFilter('trace_id', v)} defaultValue={filters.trace_id || ''} showClear />
+              <Input aria-label="工作流 ID 精确匹配" size="small" placeholder="工作流 ID（精确匹配）" onChange={(v) => updateFilter('workflow_id', v)} defaultValue={filters.workflow_id || ''} showClear />
+              <Input aria-label="Agent ID 精确匹配" size="small" placeholder="Agent ID（精确匹配）" onChange={(v) => updateFilter('agent_id', v)} defaultValue={filters.agent_id || ''} showClear />
+              <Input aria-label="尝试 ID 精确匹配" size="small" placeholder="尝试 ID（精确匹配）" onChange={(v) => updateFilter('attempt_id', v)} defaultValue={filters.attempt_id || ''} showClear />
+              <Input aria-label="上游 Request ID 精确匹配" size="small" placeholder="上游 Request ID（精确匹配）" onChange={(v) => updateFilter('upstream_request_id', v)} defaultValue={filters.upstream_request_id || ''} showClear />
+              <Input aria-label="证据引用精确匹配" size="small" placeholder="证据引用（精确匹配）" onChange={(v) => updateFilter('evidence_ref', v)} defaultValue={filters.evidence_ref || ''} showClear />
+              <Input aria-label="来源事件哈希精确匹配" size="small" placeholder="来源事件哈希（精确匹配）" onChange={(v) => updateFilter('source_event_hash', v)} defaultValue={filters.source_event_hash || ''} showClear />
             </div>
           </div>
 
@@ -911,7 +929,7 @@ export default function LogsPage() {
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="执行决策凭证">
           <div className="ur-detail-header">
             <div>
-              <Text className="ur-panel-hint">Execution Decision Receipt</Text>
+              <Text className="ur-panel-hint">执行证据检查器</Text>
               <Title heading={5} style={{ margin: 0 }}>执行决策凭证</Title>
             </div>
             <Tag size="small" color={selectedLog ? 'blue' : undefined}>{selectedLog ? '常驻检查器' : '等待记录'}</Tag>
@@ -941,20 +959,20 @@ export default function LogsPage() {
 
               <div className="ur-receipt-summary" aria-label="执行凭证摘要">
                 <div>
-                  <Text type="tertiary" size="small">Authority</Text>
+                  <Text type="tertiary" size="small">权限主体</Text>
                   <Text strong size="small">{authoritySummary}</Text>
                 </div>
                 <div>
-                  <Text type="tertiary" size="small">Route</Text>
-                  <Text strong size="small">{traceLoading ? '加载中' : traceError ? 'unavailable' : `${routeAttempts.length} attempt${routeAttempts.length === 1 ? '' : 's'}`}</Text>
+                  <Text type="tertiary" size="small">路由尝试</Text>
+                  <Text strong size="small">{traceLoading ? '加载中' : traceError ? '不可用' : `${routeAttempts.length} 次`}</Text>
                 </div>
                 <div>
-                  <Text type="tertiary" size="small">Financial finality</Text>
-                  <StatusTag status={billingTerminalTone}>{traceLoading ? 'loading' : billingTerminalStatus}</StatusTag>
+                  <Text type="tertiary" size="small">财务终态</Text>
+                  <StatusTag status={billingTerminalTone}>{traceLoading ? '加载中' : billingTerminalLabel}</StatusTag>
                 </div>
                 <div>
-                  <Text type="tertiary" size="small">Declared gaps</Text>
-                  <StatusTag status={traceError ? 'warning' : gapEvents.length > 0 ? 'warning' : 'success'}>{traceLoading ? 'loading' : traceError ? 'unavailable' : gapEvents.length}</StatusTag>
+                  <Text type="tertiary" size="small">已声明缺口</Text>
+                  <StatusTag status={traceError ? 'warning' : gapEvents.length > 0 ? 'warning' : 'success'}>{traceLoading ? '加载中' : traceError ? '不可用' : gapEvents.length}</StatusTag>
                 </div>
               </div>
 
@@ -1026,9 +1044,9 @@ export default function LogsPage() {
                       row
                       size="small"
                       data={[
-                        { key: 'Actor type', value: actorTypes.length > 0 ? actorTypes.map(v => <Tag key={v} size="small">{v}</Tag>) : '未捕获' },
-                        { key: 'Actor ref', value: actorRefs.length > 0 ? actorRefs.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : '未捕获' },
-                        { key: 'On behalf of', value: onBehalfOf.length > 0 ? onBehalfOf.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : '未声明' },
+                        { key: '主体类型', value: actorTypes.length > 0 ? actorTypes.map(v => <Tag key={v} size="small">{v}</Tag>) : '未捕获' },
+                        { key: '主体标识', value: actorRefs.length > 0 ? actorRefs.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : '未捕获' },
+                        { key: '代表主体', value: onBehalfOf.length > 0 ? onBehalfOf.map(v => <Text key={v} code size="small">{compactEvidenceValue(v, 28)}</Text>) : '未声明' },
                         { key: 'IP', value: selectedLog.ip_address || '-' },
                       ]}
                     />
@@ -1123,7 +1141,7 @@ export default function LogsPage() {
                   {receiptTab === 'policy' && (
                 <>
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">Policy & Guardrail 决策</Text>
+                    <Text className="ur-detail-card-title">策略与内容安全决策</Text>
                     {traceLoading ? (
                       <Text type="tertiary" size="small">加载中</Text>
                     ) : policyEvents.length > 0 ? (
@@ -1141,7 +1159,7 @@ export default function LogsPage() {
                         ))}
                       </div>
                     ) : (
-                      <Text type="tertiary" size="small">本次 Trace 未捕获 Policy/Guardrail 决策；这不表示策略未执行，只表示当前凭证不能证明。</Text>
+                      <Text type="tertiary" size="small">本次 Trace 未捕获策略或内容安全决策；这不表示策略未执行，只表示当前凭证不能证明。</Text>
                     )}
                   </div>
 
@@ -1151,9 +1169,9 @@ export default function LogsPage() {
                       row
                       size="small"
                       data={[
-                        { key: 'Payload capture', value: payloadModes.length > 0 ? payloadModes.map(v => <Tag key={v} size="small" color="cyan">{v}</Tag>) : '未捕获' },
-                        { key: 'Payload ref', value: traceEvents.some(event => event.payload_ref) ? '已声明' : '未声明' },
-                        { key: 'Raw body', value: '不在此页面存储或展示' },
+                        { key: '请求体采集', value: payloadModes.length > 0 ? payloadModes.map(v => <Tag key={v} size="small" color="cyan">{v}</Tag>) : '未捕获' },
+                        { key: '请求体引用', value: traceEvents.some(event => event.payload_ref) ? '已声明' : '未声明' },
+                        { key: '原始请求体', value: '不在此页面存储或展示' },
                       ]}
                     />
                   </div>
@@ -1168,15 +1186,15 @@ export default function LogsPage() {
                       row
                       size="small"
                       data={[
-                        { key: 'Terminal', value: traceLoading ? '加载中' : <StatusTag status={billingTerminalTone}>{billingTerminalStatus}</StatusTag> },
-                        { key: 'Billing status', value: exactBillingStatus || '未捕获' },
-                        { key: 'Usage source', value: metadataString(billingTerminalEvent, 'usage_source') || '未捕获' },
-                        { key: 'Usage confidence', value: metadataString(billingTerminalEvent, 'usage_confidence') || '未捕获' },
-                        { key: 'Actual', value: metadataString(billingTerminalEvent, 'actual_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'actual_cost_micros')} precision={6} /> : '未捕获' },
-                        { key: 'Charged', value: metadataString(billingTerminalEvent, 'charged_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'charged_cost_micros')} precision={6} strong tone="cost" /> : '未捕获' },
-                        { key: 'Money schema', value: metadataString(billingTerminalEvent, 'money_schema') || '未捕获' },
-                        { key: 'Pricing version', value: metadataString(billingTerminalEvent, 'pricing_version') || '未捕获' },
-                        { key: 'Evidence event', value: billingTerminalEvent?.event_type || '未捕获' },
+                        { key: '终态', value: traceLoading ? '加载中' : <StatusTag status={billingTerminalTone}>{billingTerminalStatus}</StatusTag> },
+                        { key: '计费状态', value: exactBillingStatus || '未捕获' },
+                        { key: '计量来源', value: metadataString(billingTerminalEvent, 'usage_source') || '未捕获' },
+                        { key: '计量置信度', value: metadataString(billingTerminalEvent, 'usage_confidence') || '未捕获' },
+                        { key: '实际成本', value: metadataString(billingTerminalEvent, 'actual_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'actual_cost_micros')} precision={6} /> : '未捕获' },
+                        { key: '实际扣费', value: metadataString(billingTerminalEvent, 'charged_cost_micros') ? <MoneyText micros={metadataString(billingTerminalEvent, 'charged_cost_micros')} precision={6} strong tone="cost" /> : '未捕获' },
+                        { key: '金额合同', value: metadataString(billingTerminalEvent, 'money_schema') || '未捕获' },
+                        { key: '计价版本', value: metadataString(billingTerminalEvent, 'pricing_version') || '未捕获' },
+                        { key: '证据事件', value: billingTerminalEvent?.event_type || '未捕获' },
                       ]}
                     />
                     {!billingTerminalEvent && !traceLoading && (
@@ -1226,7 +1244,7 @@ export default function LogsPage() {
                   {receiptTab === 'provenance' && (
                 <>
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">Provenance 摘要</Text>
+                    <Text className="ur-detail-card-title">来源证据摘要</Text>
                     <Descriptions
                       row
                       size="small"
@@ -1236,9 +1254,9 @@ export default function LogsPage() {
                         { key: '来源组件', value: sourceComponents.length > 0 ? sourceComponents.map(v => <Tag key={v} size="small">{v}</Tag>) : '未捕获' },
                         { key: '采集模式', value: captureModes.length > 0 ? captureModes.map(v => <Tag key={v} size="small" color="blue">{v}</Tag>) : '未捕获' },
                         { key: '上游 ID', value: upstreamRequestIDs.length > 0 ? <Text code>{compactEvidenceValue(upstreamRequestIDs[0], 28)}</Text> : '未捕获' },
-                        { key: 'Evidence refs', value: evidenceRefs.length },
-                        { key: 'Source hashes', value: sourceEventHashes.length },
-                        { key: 'Declared gaps', value: <StatusTag status={gapEvents.length > 0 ? 'warning' : 'success'}>{gapEvents.length}</StatusTag> },
+                        { key: '证据引用', value: evidenceRefs.length },
+                        { key: '来源哈希', value: sourceEventHashes.length },
+                        { key: '已声明缺口', value: <StatusTag status={gapEvents.length > 0 ? 'warning' : 'success'}>{gapEvents.length}</StatusTag> },
                       ]}
                     />
                     {!traceLoading && gapEvents.length === 0 && (
@@ -1247,7 +1265,7 @@ export default function LogsPage() {
                   </div>
 
                   <div className="ur-detail-card">
-                    <Text className="ur-detail-card-title">Capture Gaps</Text>
+                    <Text className="ur-detail-card-title">采集缺口</Text>
                     {traceLoading ? (
                       <Text type="tertiary" size="small">加载中</Text>
                     ) : gapEvents.length > 0 ? (

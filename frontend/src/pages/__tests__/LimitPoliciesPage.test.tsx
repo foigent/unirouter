@@ -81,6 +81,11 @@ describe('LimitPoliciesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /新增策略/ }));
     expect(await screen.findByText(/影子观察（推荐先选）/)).toBeTruthy();
     expect(screen.getByText(/调用方不能通过请求头自行声明/)).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '项目（可选）' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '访问凭证（可选）' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '模型（可选）' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '运行状态' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Redis 无法确认额度时' })).toBeTruthy();
     expect(mocks.getOrganizations).not.toHaveBeenCalled();
     expect(mocks.getProjects).toHaveBeenCalledWith(1, 100, { org_id: 22 });
   });
