@@ -377,7 +377,7 @@ func Build(snapshot Snapshot, target TargetIdentity, currentSourceInstance, next
 		ExecutionPreconditions: []string{
 			"explicit_data_reset_delete_baton_bound_to_final_artifact_sha256_and_scope_sha256",
 			"target_runtime_exact_commit_tree_and_terminal_ci_green",
-			"tls_validity_strictly_greater_than_seven_days",
+			"tls_certificate_profile_aware_validity_and_renewal_gate_satisfied",
 			"model_workers_outbox_feed_and_external_consumers_quiesced",
 			"fresh_database_backup_sha256_recorded_and_isolated_restore_verified",
 			"final_preview_repeated_after_quiesce_and_backup_without_semantic_drift",
