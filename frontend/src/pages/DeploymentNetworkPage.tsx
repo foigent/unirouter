@@ -80,6 +80,7 @@ interface ObservedRuntimeStatus {
 
 const labels: Record<string, string> = {
   operational: '正常', warning: '需关注',
+  connected: '可用', local: '本地环境', stable: '稳定实例', 'docker-compose': 'Docker Compose', docker_compose: 'Docker Compose',
   active: '启用', disabled: '停用', ecs_development: 'ECS 开发联调', onprem_compose: '本地 Compose',
   onprem_kubernetes: '本地 Kubernetes', public: '公网', internal: '内网', external_load_balancer: '外部负载均衡',
   bundled_reverse_proxy: '内置反向代理', cluster_ingress: '集群 Ingress', public_dns: '公网 DNS',
@@ -208,14 +209,14 @@ export default function DeploymentNetworkPage() {
     try {
       if (editingEndpoint) {
         await api.updateGatewayEndpoint(editingEndpoint.endpoint_ref, { ...values, expected_revision: editingEndpoint.desired_revision });
-        Toast.success('Gateway Endpoint 期望状态已更新；未修改 Ingress');
+        Toast.success('网关入口期望状态已更新；未修改 Ingress');
       } else {
         await api.createGatewayEndpoint(values);
-        Toast.success('Gateway Endpoint 已登记，当前仍需独立验证');
+        Toast.success('网关入口已登记，当前仍需独立验证');
       }
       setEndpointDrawer(false);
       await load();
-    } catch (error: any) { Toast.error(error?.message || '保存 Gateway Endpoint 失败'); }
+    } catch (error: any) { Toast.error(error?.message || '保存网关入口失败'); }
   };
 
   const profileColumns = useMemo(() => [
@@ -228,8 +229,8 @@ export default function DeploymentNetworkPage() {
   ], []);
 
   const endpointColumns = useMemo(() => [
-    { title: 'Gateway Endpoint', render: (_: unknown, row: GatewayEndpoint) => <div className="ur-table-primary"><strong>{row.display_name}</strong><code>{row.endpoint_ref}</code></div> },
-    { title: 'Base URL', dataIndex: 'base_url', render: (value: string) => <code className="ur-mono-break">{value}</code> },
+    { title: '网关入口', render: (_: unknown, row: GatewayEndpoint) => <div className="ur-table-primary"><strong>{row.display_name}</strong><code>{row.endpoint_ref}</code></div> },
+    { title: '基础地址（Base URL）', dataIndex: 'base_url', render: (value: string) => <code className="ur-mono-break">{value}</code> },
     { title: '可见性', dataIndex: 'visibility', render: label },
     { title: 'TLS', dataIndex: 'tls_mode', render: (value: string) => label(value === 'disabled' ? 'disabled_tls' : value) },
     { title: '期望', dataIndex: 'status', render: (value: string) => <Tag color={stateColor(value)}>{label(value)}</Tag> },
@@ -249,14 +250,15 @@ export default function DeploymentNetworkPage() {
       <Banner
         type="info"
         description="上方“当前运行实例”来自服务自身的只读观测；下方登记只保存非秘密的说明与期望状态，不会创建服务器、修改 DNS、重启 Ingress 或保存 TLS 私钥。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
       <Surface title="当前运行实例（只读观测）" description="这里显示当前 UniRouter 进程实际报告的环境和依赖健康，不依赖下面的手工登记。">
         {loading && !runtime ? <EmptyState title="正在加载当前运行实例..." description="正在读取服务自身报告的运行版本与依赖健康。" minHeight={150} /> : runtime ? <div className="ur-kpi-grid ur-workload-kpis">
           <MetricTile label="服务状态" value={label(runtime.status)} tone={runtime.status === 'operational' || runtime.status === 'ready' ? 'green' : 'amber'} />
-          <MetricTile label="运行版本" value={runtime.runtime_environment?.version || '未声明'} meta={runtime.runtime_environment?.commit ? `commit ${runtime.runtime_environment.commit.slice(0, 12)}` : '未声明 commit'} />
-          <MetricTile label="部署形态" value={runtime.runtime_environment?.deployment_mode || '未声明'} meta={`${runtime.runtime_environment?.environment || '未知环境'} · ${runtime.runtime_environment?.deployment_role || '未知角色'}`} />
-          <MetricTile label="依赖健康" value={`DB ${runtime.capacity_health?.database?.status || '未知'} / Redis ${runtime.capacity_health?.redis?.status || '未知'}`} meta={`本次探测：DB ${runtime.capacity_health?.database?.latency_ms ?? '-'}ms · Redis ${runtime.capacity_health?.redis?.latency_ms ?? '-'}ms`} />
+          <MetricTile label="运行版本" value={runtime.runtime_environment?.version || '未声明'} meta={runtime.runtime_environment?.commit ? `代码提交 ${runtime.runtime_environment.commit.slice(0, 12)}` : '未声明代码提交'} />
+          <MetricTile label="部署形态" value={label(runtime.runtime_environment?.deployment_mode)} meta={`${label(runtime.runtime_environment?.environment) || '未知环境'} · ${label(runtime.runtime_environment?.deployment_role) || '未知角色'}`} />
+          <MetricTile label="依赖健康" value={`数据库 ${label(runtime.capacity_health?.database?.status)} / Redis ${label(runtime.capacity_health?.redis?.status)}`} meta={`本次探测：数据库 ${runtime.capacity_health?.database?.latency_ms ?? '-'} 毫秒 · Redis ${runtime.capacity_health?.redis?.latency_ms ?? '-'} 毫秒`} />
         </div> : <EmptyState title="当前运行实例观测不可用" description={runtimeError || '服务未返回运行状态。'} minHeight={150} />}
         {runtime?.generated_at && <Text type="tertiary">观测时间：{formatDateTime(runtime.generated_at)}。延迟是这一次健康探测的往返耗时，不是持续固定值。</Text>}
       </Surface>
@@ -278,10 +280,10 @@ export default function DeploymentNetworkPage() {
         </main>
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="部署与网络检查器">
           {selectedEndpoint ? <>
-            <div className="ur-detail-header"><div><Text className="ur-panel-hint">Gateway Endpoint Inspector</Text><Title heading={5} style={{ margin: 0 }}>{selectedEndpoint.display_name}</Title></div><Tag color={stateColor(selectedEndpoint.observed_status)}>{label(selectedEndpoint.observed_status)}</Tag></div>
+            <div className="ur-detail-header"><div><Text className="ur-panel-hint">网关入口检查器</Text><Title heading={5} style={{ margin: 0 }}>{selectedEndpoint.display_name}</Title></div><Tag color={stateColor(selectedEndpoint.observed_status)}>{label(selectedEndpoint.observed_status)}</Tag></div>
             <dl className="ur-financial-truth-detail">
               <dt>部署</dt><dd>{selectedEndpoint.deployment_name}</dd>
-              <dt>Base URL</dt><dd className="ur-mono-break">{selectedEndpoint.base_url}</dd>
+              <dt>基础地址（Base URL）</dt><dd className="ur-mono-break">{selectedEndpoint.base_url}</dd>
               <dt>可见性</dt><dd>{label(selectedEndpoint.visibility)}</dd>
               <dt>TLS 模式</dt><dd>{label(selectedEndpoint.tls_mode === 'disabled' ? 'disabled_tls' : selectedEndpoint.tls_mode)}</dd>
               <dt>证书引用</dt><dd className="ur-mono-break">{selectedEndpoint.certificate_ref || '未填写（不存私钥）'}</dd>
@@ -293,38 +295,38 @@ export default function DeploymentNetworkPage() {
               <dt>运行时变更</dt><dd>无</dd>
             </dl>
             <div className="ur-governance-actions"><Button onClick={() => openEndpoint(selectedEndpoint)}>编辑期望状态</Button>{selectedProfile && <Button onClick={() => openProfile(selectedProfile)}>编辑部署</Button>}</div>
-          </> : <EmptyState title="选择或登记 Gateway Endpoint" description="检查器会持续显示期望、运行时能力声明与独立观测，不用点击抽屉查看原因。" minHeight={300} />}
+          </> : <EmptyState title="选择或登记网关入口" description="检查器会持续显示期望、运行时能力声明与独立观测，不用点击抽屉查看原因。" minHeight={300} />}
         </aside>
       </div>
 
       <SideSheet title={editingProfile ? '编辑附加部署登记' : '登记附加部署'} visible={profileDrawer} onCancel={() => setProfileDrawer(false)} width={520}>
-        <Banner type="info" description="此表单只记录一个附加安装的预期形态，保存后不会构建镜像、创建主机或修改正在运行的 UniRouter。" style={{ marginBottom: 16 }} />
+        <Banner type="info" description="此表单只记录一个附加安装的预期形态，保存后不会构建镜像、创建主机或修改正在运行的 UniRouter。" closeIcon={null} style={{ marginBottom: 16 }} />
         <Form getFormApi={setProfileForm} onSubmit={submitProfile}>
           {!editingProfile && <Form.Input field="profile_ref" label="内部登记标识" placeholder="dep_ecs_poc" rules={[{ required: true }]} extraText="只用于引用这条登记，建议小写字母、数字和下划线；不是镜像 Tag 或云资源 ID。" />}
           <Form.Input field="display_name" label="显示名称" rules={[{ required: true }]} extraText="例如“客户生产 Compose”或“华北 ECS 联调”。" />
-          <Form.Select field="kind" label="部署形态" optionList={[{ value: 'ecs_development', label: 'ECS 开发联调' }, { value: 'onprem_compose', label: '客户本地 Compose' }, { value: 'onprem_kubernetes', label: '客户本地 Kubernetes' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="kind" aria-label="部署形态" label="部署形态" optionList={[{ value: 'ecs_development', label: 'ECS 开发联调' }, { value: 'onprem_compose', label: '客户本地 Compose' }, { value: 'onprem_kubernetes', label: '客户本地 Kubernetes' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.Input field="environment" label="环境标识" placeholder="poc / prod" rules={[{ required: true }]} extraText="用于区分测试、POC、预发布或生产，不会创建环境。" />
-          <Form.Select field="ingress_mode" label="入口管理" optionList={[{ value: 'external_load_balancer', label: '客户 / 云负载均衡' }, { value: 'bundled_reverse_proxy', label: '内置反向代理' }, { value: 'cluster_ingress', label: 'Kubernetes Ingress' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="dns_mode" label="名称解析" optionList={[{ value: 'public_dns', label: '公网 DNS' }, { value: 'private_dns', label: '内网 DNS' }, { value: 'ip_address', label: 'IP 地址' }, { value: 'customer_managed', label: '客户管理' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="outbound_mode" label="出站模式" optionList={[{ value: 'direct', label: '直接出站' }, { value: 'proxy', label: '企业代理' }, { value: 'restricted', label: '受限出站' }, { value: 'air_gapped', label: '离线隔离' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="ingress_mode" aria-label="入口管理" label="入口管理" optionList={[{ value: 'external_load_balancer', label: '客户 / 云负载均衡' }, { value: 'bundled_reverse_proxy', label: '内置反向代理' }, { value: 'cluster_ingress', label: 'Kubernetes Ingress' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="dns_mode" aria-label="名称解析" label="名称解析" optionList={[{ value: 'public_dns', label: '公网 DNS' }, { value: 'private_dns', label: '内网 DNS' }, { value: 'ip_address', label: 'IP 地址' }, { value: 'customer_managed', label: '客户管理' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="outbound_mode" aria-label="出站模式" label="出站模式" optionList={[{ value: 'direct', label: '直接出站' }, { value: 'proxy', label: '企业代理' }, { value: 'restricted', label: '受限出站' }, { value: 'air_gapped', label: '离线隔离' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.TextArea field="notes" label="部署说明" maxCount={2000} />
-          <Form.Select field="status" label="期望状态" optionList={[{ value: 'active', label: '启用' }, { value: 'disabled', label: '停用' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="status" aria-label="附加部署期望状态" label="期望状态" optionList={[{ value: 'active', label: '启用' }, { value: 'disabled', label: '停用' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <div className="ur-form-actions"><Button onClick={() => setProfileDrawer(false)}>取消</Button><Button type="primary" onClick={() => profileForm?.submitForm()}>保存登记</Button></div>
         </Form>
       </SideSheet>
 
-      <SideSheet title={editingEndpoint ? '编辑 Gateway Endpoint' : '登记 Gateway Endpoint'} visible={endpointDrawer} onCancel={() => setEndpointDrawer(false)} width={520}>
-        <Banner type="warning" description="不得粘贴证书或私钥；这里只接受证书引用，例如 secret://tls/gateway。" style={{ marginBottom: 16 }} />
+      <SideSheet title={editingEndpoint ? '编辑网关入口' : '登记网关入口'} visible={endpointDrawer} onCancel={() => setEndpointDrawer(false)} width={520}>
+        <Banner type="warning" description="不得粘贴证书或私钥；这里只接受证书引用，例如 secret://tls/gateway。" closeIcon={null} style={{ marginBottom: 16 }} />
         <Form getFormApi={setEndpointForm} onSubmit={submitEndpoint}>
-          {!editingEndpoint && <Form.Select field="deployment_profile_ref" label="所属部署" optionList={profiles.map(item => ({ value: item.profile_ref, label: item.display_name }))} rules={[{ required: true }]} style={{ width: '100%' }} />}
+          {!editingEndpoint && <Form.Select field="deployment_profile_ref" aria-label="所属部署" label="所属部署" optionList={profiles.map(item => ({ value: item.profile_ref, label: item.display_name }))} rules={[{ required: true }]} style={{ width: '100%' }} />}
           {!editingEndpoint && <Form.Input field="endpoint_ref" label="稳定入口标识" placeholder="gwe_ecs_poc" rules={[{ required: true }]} />}
           <Form.Input field="display_name" label="入口名称" rules={[{ required: true }]} />
-          <Form.Input field="base_url" label="Base URL" placeholder="https://gateway.example.internal" rules={[{ required: true }]} />
-          <Form.Select field="visibility" label="可见性" optionList={[{ value: 'public', label: '公网' }, { value: 'internal', label: '客户内网' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="tls_mode" label="TLS 模式" optionList={[{ value: 'external_termination', label: '外部 TLS 终止' }, { value: 'mounted_certificate', label: '挂载证书' }, { value: 'private_ca', label: '私有 CA' }, { value: 'disabled', label: '仅内网 HTTP' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Input field="base_url" label="基础地址（Base URL）" placeholder="https://gateway.example.internal" rules={[{ required: true }]} />
+          <Form.Select field="visibility" aria-label="网关入口可见性" label="可见性" optionList={[{ value: 'public', label: '公网' }, { value: 'internal', label: '客户内网' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="tls_mode" aria-label="TLS 模式" label="TLS 模式" optionList={[{ value: 'external_termination', label: '外部 TLS 终止' }, { value: 'mounted_certificate', label: '挂载证书' }, { value: 'private_ca', label: '私有 CA' }, { value: 'disabled', label: '仅内网 HTTP' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <Form.Input field="certificate_ref" label="证书引用（非秘密）" placeholder="secret://tls/gateway" />
-          <Form.Select field="endpoint_profile" label="Endpoint Profile" optionList={(contract?.endpoint_profiles || []).map(item => ({ value: item.profile_id, label: `${item.display_name} · ${label(item.evidence_level)}` }))} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="status" label="期望状态" optionList={[{ value: 'active', label: '启用' }, { value: 'disabled', label: '停用' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="endpoint_profile" aria-label="网关接口兼容配置" label="网关接口兼容配置" optionList={(contract?.endpoint_profiles || []).map(item => ({ value: item.profile_id, label: `${item.display_name} · ${label(item.evidence_level)}` }))} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <Form.Select field="status" aria-label="网关入口期望状态" label="期望状态" optionList={[{ value: 'active', label: '启用' }, { value: 'disabled', label: '停用' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
           <div className="ur-form-actions"><Button onClick={() => setEndpointDrawer(false)}>取消</Button><Button type="primary" onClick={() => endpointForm?.submitForm()}>保存期望状态</Button></div>
         </Form>
       </SideSheet>

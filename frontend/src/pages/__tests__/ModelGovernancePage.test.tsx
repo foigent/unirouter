@@ -206,6 +206,8 @@ describe('ModelGovernancePage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
     expect(await screen.findByText(/不会根据模型名称自动猜测文本、多模态或其他能力/)).toBeTruthy();
     expect(screen.getByText(/标签本身不会执行能力检测/)).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '模型生命周期' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '开发者目录可见' })).toBeTruthy();
     fireEvent.change(await screen.findByPlaceholderText('gpt-4o'), { target: { value: 'exact-context-model' } });
     const contextInput = await screen.findByPlaceholderText('128K / 1M / 131072');
     fireEvent.change(contextInput, { target: { value: '128K' } });
@@ -240,6 +242,8 @@ describe('ModelGovernancePage', () => {
       expect(mockGetProjects).toHaveBeenCalledWith(1, 100, { status: 'active' });
       expect(mockGetProjectModelSets).toHaveBeenCalledWith(7);
     });
+    expect(screen.getByRole('combobox', { name: '项目' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '模型集' })).toBeTruthy();
     fireEvent.click(await screen.findByText('保存分配'));
 
     await waitFor(() => {

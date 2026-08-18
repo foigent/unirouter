@@ -1048,6 +1048,7 @@ export default function DeveloperConsolePage() {
           {modelGovernanceLicensed ? (
             <Form.Select
               field="allowed_models"
+              aria-label="允许模型或别名"
               label="允许模型 / 别名"
               placeholder="留空表示继承项目模型集"
               multiple

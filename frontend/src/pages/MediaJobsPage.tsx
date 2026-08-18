@@ -340,13 +340,15 @@ export default function MediaJobsPage() {
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="异步执行控制面"
+        eyebrow="监控与用量"
         title="异步模型任务"
         description="异步模型执行的统一工作区；当前仅实现 Image V1 Endpoint Profile，不代表文字、语音或视频任务已经可用。右侧检查器始终可见。"
         actions={(
           <Space>
             <Select
-              aria-label="选择项目"
+              aria-labelledby="media-jobs-project-label"
+              insetLabel="项目"
+              insetLabelId="media-jobs-project-label"
               value={projectID}
               placeholder="选择项目"
               style={{ width: 220 }}

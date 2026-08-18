@@ -111,6 +111,7 @@ function DirectoryFoundation({ orgId }: { orgId?: number }) {
 
       <Banner
         type="info"
+        closeIcon={null}
         description="当前没有可用于验证的企业环境，因此不连接 SCIM、飞书、钉钉、Entra ID、AD 或 HCM，也不接收目录凭据。真实目录接入延后到客户 POC；此页只冻结来源边界和未来同步状态，不展示模拟人员或部门。"
       />
 
@@ -119,7 +120,7 @@ function DirectoryFoundation({ orgId }: { orgId?: number }) {
           <dl className="ur-financial-truth-detail">
             <dt>HCM / HRIS</dt><dd>人员、正式部门、经理、任职状态、成本中心和生效日期</dd>
             <dt>IdP / 企业目录</dt><dd>登录账号、认证状态和目录组</dd>
-            <dt>UniRouter</dt><dd>产品角色、项目成员、API Key、模型调用授权和共享限额</dd>
+            <dt>UniRouter</dt><dd>产品角色、项目成员、API Key、高级模型限制和共享限额</dd>
             <dt>其他 Gateway</dt><dd>Tool 与 MCP 权限保持在各自产品</dd>
           </dl>
         </Surface>
@@ -291,6 +292,7 @@ export default function OrganizationMembersPage() {
           <div style={{ marginTop: 16 }}>
             <Banner
               type="warning"
+              closeIcon={null}
               description="除非页面明确显示真实目录来源及同步版本，否则下方内容只是接入准备或离线校验，不能作为客户目录已连接、人员已同步或权限已实际撤销的证明。"
               style={{ marginBottom: 12 }}
             />

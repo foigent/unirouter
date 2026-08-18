@@ -111,6 +111,7 @@ describe('MediaJobsPage', () => {
     render(<MediaJobsPage />);
 
     expect(screen.getByLabelText('异步模型任务检查器')).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '项目' })).toBeTruthy();
     expect((await screen.findAllByText('company-image')).length).toBeGreaterThan(0);
     expect(screen.getByText('pricing_pending_media_rate_card')).toBeTruthy();
     expect(screen.getByText(/没有扣减钱包或推断金额/)).toBeTruthy();

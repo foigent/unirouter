@@ -198,18 +198,19 @@ function ProviderCOGSOfflineWorkspace() {
       <Banner
         type="info"
         description="当供应商没有实时账单连接器时，可把从供应商后台导出的 JSON 在这里做一次本地对账预览。内容只在当前浏览器内存中校验：不上传保存、不连接供应商、不接收凭据、不修改客户账。普通运营不需要使用本工具。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
       <div className="ur-context-explorer ur-financial-truth-explorer">
         <main className="ur-explorer-panel">
           <div className="ur-panel-title">
             <div>
-              <Typography.Title heading={5} style={{ margin: 0 }}>供应商账单导出 JSON</Typography.Title>
+              <Typography.Title heading={5} style={{ margin: 0 }}>供应商账单文件内容（JSON）</Typography.Title>
               <Typography.Text className="ur-panel-hint">
                 合同 unirouter.provider-cogs-offline.v1 · 原始 JSON 不写入浏览器存储
               </Typography.Text>
             </div>
-            <Tag color="blue">zero persistence</Tag>
+            <Tag color="blue">不持久化</Tag>
           </div>
           <TextArea
             aria-label="供应商成本离线证据 JSON"
@@ -221,7 +222,7 @@ function ProviderCOGSOfflineWorkspace() {
               setError('');
             }}
             autosize={{ minRows: 8, maxRows: 16 }}
-            placeholder="粘贴符合 unirouter.provider-cogs-offline.v1 的供应商账单导出 JSON，或从本机载入文件"
+            placeholder="粘贴符合当前合同的供应商账单 JSON，或从本机载入文件"
           />
           <div className="ur-financial-truth-actions">
             <label className="semi-button semi-button-tertiary semi-button-light" tabIndex={0}>
@@ -280,7 +281,7 @@ function ProviderCOGSOfflineWorkspace() {
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="供应商成本证据检查器">
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">Financial Truth Inspector</Typography.Text>
+              <Typography.Text className="ur-panel-hint">财务事实检查器</Typography.Text>
               <Typography.Title heading={5} style={{ margin: 0 }}>证据与权限边界</Typography.Title>
             </div>
             <Tag color={report?.customer_ledger_mutation === 'none' ? 'green' : 'red'}>
@@ -300,7 +301,7 @@ function ProviderCOGSOfflineWorkspace() {
               <dt>客户收入证据</dt><dd>{exactAmountLabel(selected.customer_revenue)}</dd>
               <dt>客户欠款动作</dt><dd>{selected.customer_debt_action}</dd>
               <dt>语义证据哈希</dt><dd className="ur-mono-break">{report?.import_semantic_hash}</dd>
-              <dt>Source Snapshot 哈希</dt><dd className="ur-mono-break">{report?.source_snapshot_hash}</dd>
+              <dt>来源快照哈希</dt><dd className="ur-mono-break">{report?.source_snapshot_hash}</dd>
             </dl>
           ) : (
             <EmptyState
@@ -360,7 +361,7 @@ export default function ReconciliationPage() {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
-    { title: 'Request ID', dataIndex: 'request_id', key: 'request_id', ellipsis: true },
+    { title: '操作 ID', dataIndex: 'request_id', key: 'request_id', ellipsis: true },
     { title: '模型', dataIndex: 'model', key: 'model', width: 150 },
     { title: '估算 Token', dataIndex: 'estimated_tokens', key: 'estimated_tokens', width: 120 },
     {
@@ -449,6 +450,7 @@ export default function ReconciliationPage() {
       <Banner
         type="info"
         description="当前已实现请求级对账、企业分摊运行、关账门禁、调整/冲销流水和离线供应商证据。ERP/总账导出仍未配置；跨期异常关联和深度调查继续由 X-Insight 承担。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
 	  <EnterpriseAllocationWorkspace orgId={targetOrgID} canManage={canManageEnterpriseFinance} />
@@ -456,6 +458,9 @@ export default function ReconciliationPage() {
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           {platform && <Typography.Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Typography.Text>}
           <Select
+            aria-labelledby="reconciliation-model-label"
+            insetLabel="模型"
+            insetLabelId="reconciliation-model-label"
             placeholder="模型筛选"
             style={{ width: 200 }}
             value={modelFilter || undefined}
@@ -466,6 +471,9 @@ export default function ReconciliationPage() {
             ]}
           />
           <Select
+            aria-labelledby="reconciliation-status-label"
+            insetLabel="状态"
+            insetLabelId="reconciliation-status-label"
             placeholder="状态筛选"
             style={{ width: 150 }}
             value={statusFilter || undefined}
@@ -477,6 +485,9 @@ export default function ReconciliationPage() {
             ]}
           />
           <Select
+            aria-labelledby="reconciliation-source-label"
+            insetLabel="计量来源"
+            insetLabelId="reconciliation-source-label"
             placeholder="来源筛选"
             style={{ width: 190 }}
             value={usageSourceFilter || undefined}

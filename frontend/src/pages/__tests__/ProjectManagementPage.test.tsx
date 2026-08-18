@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import ProjectManagementPage from '../ProjectManagementPage';
@@ -80,14 +80,34 @@ describe('ProjectManagementPage', () => {
     expect(await screen.findByText('项目概况')).toBeTruthy();
     expect(screen.getByText('成员与角色')).toBeTruthy();
     expect(screen.getByText('模型范围')).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '项目名称' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '项目状态' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '预算周期' })).toBeTruthy();
+    expect(screen.queryByLabelText('项目工作区名称')).toBeNull();
 
     fireEvent.click(screen.getByText('成员与角色'));
     expect(await screen.findByText('developer-a')).toBeTruthy();
     expect(mocks.getProjectMembers).toHaveBeenCalledWith(31, 1, 20, '');
+    expect(screen.getByRole('textbox', { name: '搜索项目成员候选人' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '账号' })).toBeTruthy();
 
     fireEvent.click(screen.getByText('模型范围'));
     expect(await screen.findByText('选择该项目允许使用的模型集合。模型集合本身在“模型治理”中维护。')).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '允许的模型集' })).toBeTruthy();
     expect(mocks.getModelSets).toHaveBeenCalled();
+  });
+
+  it('labels the new-project fields without exposing internal identifiers as required input', async () => {
+    render(<ProjectManagementPage />);
+    fireEvent.click(await screen.findByRole('button', { name: '新建项目' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('新建项目')).toBeTruthy();
+    expect(within(dialog).getByRole('textbox', { name: '项目名称' })).toBeTruthy();
+    expect(within(dialog).getByRole('textbox', { name: '项目标识（可留空自动生成）' })).toBeTruthy();
+    expect(within(dialog).getByRole('textbox', { name: '项目说明' })).toBeTruthy();
+    expect(within(dialog).getByRole('spinbutton', { name: '预算金额（元）' })).toBeTruthy();
+    expect(within(dialog).getByRole('combobox', { name: '预算周期' })).toBeTruthy();
   });
 
   it('keeps the persistent table and inspector stable under application StrictMode', async () => {

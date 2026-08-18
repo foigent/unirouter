@@ -488,7 +488,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
   };
 
   const submitCreate = async (values: any) => {
-    const budgetCents = centsFromYuan(values.budget_yuan);
+    const budgetCents = centsFromYuan(values.create_budget_yuan);
     if (budgetCents < 0) {
       Toast.error(`预算金额需在 0 至 ${maxProjectBudgetYuan.toFixed(2)} 元之间`);
       return;
@@ -500,11 +500,11 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
     try {
       await api.createProject({
         org_id: selectedOrgID,
-        name: values.name,
-        slug: values.slug,
-        description: values.description || '',
+        name: values.create_name,
+        slug: values.create_slug,
+        description: values.create_description || '',
         budget_cents: budgetCents,
-        budget_period: values.budget_period || 'monthly',
+        budget_period: values.create_budget_period || 'monthly',
       });
       Toast.success('项目已创建');
       setCreateSheet(false);
@@ -690,7 +690,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
           </div>
           <Space>
             <Button icon={<IconRefresh />} loading={projectLoading} onClick={() => setReloadVersion(version => version + 1)}>刷新</Button>
-            {canCreateProject && <Button type="primary" icon={<IconPlus />} onClick={() => setCreateSheet(true)}>新建项目</Button>}
+            {canCreateProject && <Button aria-label="新建项目" type="primary" icon={<IconPlus />} onClick={() => setCreateSheet(true)}>新建项目</Button>}
           </Space>
         </div>
       ) : <PageHeader
@@ -699,15 +699,16 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
         description="项目列表与工作区保持并列；首个项目自动进入检查器，无需再次打开详情。"
         actions={<Space>
           <Button icon={<IconRefresh />} loading={projectLoading} onClick={() => setReloadVersion(version => version + 1)}>刷新</Button>
-          {canCreateProject && <Button type="primary" icon={<IconPlus />} onClick={() => setCreateSheet(true)}>新建项目</Button>}
+          {canCreateProject && <Button aria-label="新建项目" type="primary" icon={<IconPlus />} onClick={() => setCreateSheet(true)}>新建项目</Button>}
         </Space>}
       />}
 
-      <Surface title="工作区视图" description={`当前客户：${customerContext.orgName || `组织 #${selectedOrgID}`}。项目、分页和当前 Tab 会写入 URL；命名视图只保存在当前浏览器。`}>
-        <div className="ur-project-view-bar">
+      <Surface title={projectTotal > 1 || savedViews.length > 0 ? '工作区视图' : '当前项目范围'} description={`当前客户：${customerContext.orgName || `组织 #${selectedOrgID}`}。${projectTotal > 1 || savedViews.length > 0 ? '项目、分页和当前 Tab 会写入 URL；命名视图只保存在当前浏览器。' : '只有一个项目时会自动进入，无需保存工作区视图。'}`}>
+        {(projectTotal > 1 || savedViews.length > 0) && <div className="ur-project-view-bar">
           <div className="ur-saved-view-bar">
             <div role="group" aria-label="已保存的项目工作区">
               <Select
+                aria-label="已保存工作区"
                 placeholder="已保存工作区（此浏览器）"
                 value={selectedSavedView}
                 optionList={savedViews.map(view => ({ label: view.name, value: view.name }))}
@@ -728,7 +729,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
             <Button onClick={saveCurrentProjectView}>保存 / 覆盖</Button>
             <Button disabled={!selectedSavedView} onClick={deleteProjectView}>删除</Button>
           </div>
-        </div>
+        </div>}
       </Surface>
 
       <div className="ur-context-explorer ur-project-explorer">
@@ -795,19 +796,20 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
               {(selectedProject.budget_cents === undefined || selectedProject.budget_period === undefined) && (
                 <Banner
                   type="info"
+                  closeIcon={null}
                   description="当前组织只读视图不包含预算和凭证统计；缺失值不会按 0 或“不限制”解释。"
                   style={{ marginBottom: 12 }}
                 />
               )}
               <Form getFormApi={setOverviewFormApi} onSubmit={submitOverview} style={{ maxWidth: 720 }}>
-                <Form.Input field="name" label="项目名称" disabled={!canEditProject} rules={[{ required: true, message: '必填' }]} />
-                <Form.Input field="slug" label="项目标识" disabled={!canEditProject} rules={[{ required: true, message: '必填' }]} />
-                <Form.TextArea field="description" label="项目说明" disabled={!canEditProject} />
-                <Form.Select field="status" label="项目状态" disabled={!canEditProject} optionList={[
+                <Form.Input field="name" label={<span id="project-overview-name-label">项目名称</span>} aria-labelledby="project-overview-name-label" disabled={!canEditProject} rules={[{ required: true, message: '必填' }]} />
+                <Form.Input field="slug" label={<span id="project-overview-slug-label">项目标识</span>} aria-labelledby="project-overview-slug-label" disabled={!canEditProject} rules={[{ required: true, message: '必填' }]} />
+                <Form.TextArea field="description" label={<span id="project-overview-description-label">项目说明</span>} aria-labelledby="project-overview-description-label" disabled={!canEditProject} />
+                <Form.Select field="status" label={<span id="project-overview-status-label">项目状态</span>} aria-labelledby="project-overview-status-label" disabled={!canEditProject} optionList={[
                   { label: '启用', value: 'active' }, { label: '停用', value: 'disabled' }, { label: '归档', value: 'archived' },
                 ]} />
-                <Form.InputNumber field="budget_yuan" label="预算金额（元）" disabled={!canEditProject} min={0} max={maxProjectBudgetYuan} precision={2} extraText="0 表示不限制；结算和告警以所选预算周期为准。" style={{ width: '100%' }} />
-                <Form.Select field="budget_period" label="预算周期" disabled={!canEditProject} optionList={periodOptions} style={{ width: '100%' }} />
+                <Form.InputNumber field="budget_yuan" label={<span id="project-overview-budget-label">预算金额（元）</span>} aria-labelledby="project-overview-budget-label" disabled={!canEditProject} min={0} max={maxProjectBudgetYuan} precision={2} extraText="0 表示不限制；结算和告警以所选预算周期为准。" style={{ width: '100%' }} />
+                <Form.Select field="budget_period" label={<span id="project-overview-budget-period-label">预算周期</span>} aria-labelledby="project-overview-budget-period-label" disabled={!canEditProject} optionList={periodOptions} style={{ width: '100%' }} />
                 {canEditProject && <Button type="primary" htmlType="submit">保存项目</Button>}
               </Form>
             </TabPane>
@@ -816,6 +818,7 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
               <TabPane tab="成员与角色" itemKey="members">
                 <div className="ur-project-member-controls">
                   <Input
+                    aria-label="搜索项目成员候选人"
                     value={candidateQuery}
                     placeholder="按用户名或邮箱搜索候选人"
                     onChange={setCandidateQuery}
@@ -824,6 +827,9 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                   />
                   <Button onClick={() => loadMembers(selectedProject.id, 1, memberPageSize, candidateQuery)}>搜索</Button>
                   <Select
+                    aria-labelledby="project-member-candidate-label"
+                    insetLabel="账号"
+                    insetLabelId="project-member-candidate-label"
                     value={selectedCandidateID}
                     placeholder="选择同组织的活跃账号"
                     optionList={candidateOptions}
@@ -832,7 +838,9 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                     className="ur-project-member-select"
                   />
                   <Select
-                    aria-label="将授予的项目角色"
+                    aria-labelledby="project-member-role-label"
+                    insetLabel="项目角色"
+                    insetLabelId="project-member-role-label"
                     value={selectedMembershipRole}
                     optionList={membershipOptions}
                     onChange={value => setSelectedMembershipRole(String(value))}
@@ -865,11 +873,14 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
                 {!licenseModelGovernance ? (
                   <EmptyState title="模型治理暂不可用" description="模型治理随有效商业授权自动包含；请刷新授权状态，若仍不可用请检查许可证有效性。" />
                 ) : modelError ? (
-                  <Banner type="danger" description={modelError} />
+                  <Banner type="danger" description={modelError} closeIcon={null} />
                 ) : (
                   <Space vertical align="start" spacing="medium" style={{ width: '100%' }}>
                     <Text>选择该项目允许使用的模型集合。模型集合本身在“模型治理”中维护。</Text>
                     <Select
+                      aria-labelledby="project-model-set-scope-label"
+                      insetLabel="允许的模型集"
+                      insetLabelId="project-model-set-scope-label"
                       multiple
                       filter
                       loading={modelsLoading}
@@ -902,11 +913,11 @@ export default function ProjectManagementPage({ embedded = false }: { embedded?:
 
       <SideSheet title="新建项目" visible={createSheet} onCancel={() => setCreateSheet(false)} width={520}>
         <Form getFormApi={setCreateFormApi} onSubmit={submitCreate}>
-          <Form.Input field="name" label="项目名称" rules={[{ required: true, message: '必填' }]} />
-          <Form.Input field="slug" label="项目标识（可留空自动生成）" />
-          <Form.TextArea field="description" label="项目说明" />
-          <Form.InputNumber field="budget_yuan" label="预算金额（元）" min={0} max={maxProjectBudgetYuan} precision={2} initValue={0} style={{ width: '100%' }} />
-          <Form.Select field="budget_period" label="预算周期" optionList={periodOptions} initValue="monthly" style={{ width: '100%' }} />
+          <Form.Input field="create_name" label="项目名称" rules={[{ required: true, message: '必填' }]} />
+          <Form.Input field="create_slug" label="项目标识（可留空自动生成）" />
+          <Form.TextArea field="create_description" label="项目说明" />
+          <Form.InputNumber field="create_budget_yuan" label="预算金额（元）" min={0} max={maxProjectBudgetYuan} precision={2} initValue={0} style={{ width: '100%' }} />
+          <Form.Select field="create_budget_period" aria-label="新项目预算周期" label="预算周期" optionList={periodOptions} initValue="monthly" style={{ width: '100%' }} />
           <Space style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
             <Button onClick={() => setCreateSheet(false)}>取消</Button>
             <Button type="primary" onClick={() => createFormApi?.submitForm()}>创建</Button>

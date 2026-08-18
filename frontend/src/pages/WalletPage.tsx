@@ -322,6 +322,7 @@ export default function WalletPage() {
 
       <Banner
         type="info"
+        closeIcon={null}
         description="请求结算、结算流水、兼容额度和项目预算继续按原语义运行；企业财务期间、成本中心和预算版本已作为独立控制层落地，默认仅报表且不冒充银行账户、ERP 总账或请求拦截策略。"
         style={{ marginBottom: 16 }}
       />
@@ -336,6 +337,7 @@ export default function WalletPage() {
           {!wallet.exists ? (
             <Banner
               type="warning"
+              closeIcon={null}
               description="当前组织尚未建立运行时结算钱包。零金额是未初始化事实，不会自动创建钱包；企业预算控制等独立财务读模型仍可查看。"
               style={{ marginBottom: 16 }}
             />
@@ -405,6 +407,7 @@ export default function WalletPage() {
             {modalType === 'recharge' ? '入账金额（元）' : '现金调整金额（元，正数增加，负数减少）'}
           </Text>
           <Input
+            aria-label={modalType === 'recharge' ? '入账金额（元）' : '现金调整金额（元）'}
             value={modalAmount}
             onChange={setModalAmount}
             placeholder="请输入金额，例如 100.00"
@@ -412,6 +415,7 @@ export default function WalletPage() {
           />
           <Text style={{ display: 'block', margin: '16px 0 8px' }}>操作原因</Text>
           <Input
+            aria-label="操作原因"
             value={modalDescription}
             onChange={setModalDescription}
             placeholder="请输入业务原因或工单号"

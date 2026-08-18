@@ -88,7 +88,8 @@ export default function ModelEndpointCreateSheet({ open, lockedPublicModel, mode
     <Form getFormApi={setFormApi} onSubmit={submit} initValues={{ preset: 'deepseek', base_url: providerPreset('deepseek').baseURL, public_model: lockedPublicModel, upstream_model: lockedPublicModel, route_role: 'primary' }}>
       <Form.Select
         field="preset"
-        label="接入模板"
+        label={<span id="endpoint-preset-label">接入模板</span>}
+        aria-labelledby="endpoint-preset-label"
         optionList={providerPresets.map(preset => ({ label: preset.label, value: preset.value }))}
         rules={[{ required: true, message: '请选择接入模板' }]}
         onChange={(value) => {
@@ -109,7 +110,7 @@ export default function ModelEndpointCreateSheet({ open, lockedPublicModel, mode
       }}>列表中没有？新增自定义兼容供应商</Button>}
       {selectedPreset === 'custom' && <div className="ur-model-endpoint-form-grid">
         <Form.Input field="provider" label="供应商标识" placeholder="例如 minimax、mimo、volcengine" rules={[{ required: true, message: '必填' }]} extraText="这是审计和运营使用的稳定名称，不限制必须属于内置供应商。" />
-        <Form.Select field="adapter_type" label="兼容协议" optionList={[
+        <Form.Select field="adapter_type" label={<span id="endpoint-adapter-label">兼容协议</span>} aria-labelledby="endpoint-adapter-label" optionList={[
           { label: 'OpenAI Chat Completions 兼容', value: 'openai_compatible' },
           { label: 'Anthropic Messages 兼容', value: 'anthropic_native' },
         ]} rules={[{ required: true, message: '必填' }]} extraText="选择供应商明确声明兼容的协议；UniRouter 不会仅凭 URL 猜测。" />
@@ -118,7 +119,8 @@ export default function ModelEndpointCreateSheet({ open, lockedPublicModel, mode
       <Form.Input field="base_url" label="Base URL" placeholder="https://..." rules={[{ required: true, message: '必填' }]} />
       {!lockedPublicModel && <Form.RadioGroup
         field="public_model_mode"
-        label="公共模型"
+        label={<span id="endpoint-public-model-mode-label">公共模型</span>}
+        aria-labelledby="endpoint-public-model-mode-label"
         initValue="new"
         type="button"
         buttonSize="middle"
@@ -142,7 +144,8 @@ export default function ModelEndpointCreateSheet({ open, lockedPublicModel, mode
           extraText="正在为当前公共模型增加另一个供应商端点，公共 ID 不可改变。"
         /> : publicModelMode === 'existing' ? <Form.Select
           field="public_model"
-          label="已有公共模型 ID"
+          label={<span id="endpoint-existing-model-label">已有公共模型 ID</span>}
+          aria-labelledby="endpoint-existing-model-label"
           placeholder="选择一个已有公共模型"
           filter
           optionList={models.filter(model => model.lifecycle !== 'retired').map(model => ({
@@ -167,7 +170,7 @@ export default function ModelEndpointCreateSheet({ open, lockedPublicModel, mode
         <Form.Input field="azure_api_version" label="API Version" placeholder="2024-10-21" rules={[{ required: true, message: '必填' }]} />
       </div>}
       <PasswordField field="api_key" label="供应商 API Key" rules={[{ required: true, message: '必填' }]} autoComplete="new-password" visibilityResetKey={open ? 'create-open' : 'closed'} />
-      <Form.Select field="route_role" label="路由角色" optionList={[
+      <Form.Select field="route_role" label={<span id="endpoint-route-role-label">路由角色</span>} aria-labelledby="endpoint-route-role-label" optionList={[
         { label: '主端点（优先使用）', value: 'primary' },
         { label: '备用端点（主端点不可用时使用）', value: 'backup' },
       ]} rules={[{ required: true, message: '请选择路由角色' }]} extraText="稍后可在高级发布中调整精确优先级和同级权重。" />

@@ -61,3 +61,22 @@ export function routeCandidateCopy(target: ModelEndpointTarget) {
     default: return target.route_exclusion_reason ? '暂不可用（查看高级诊断）' : '未进入候选';
   }
 }
+
+export function adapterLabel(adapter: string) {
+  switch (adapter) {
+    case 'openai_compatible': return 'OpenAI 兼容协议';
+    case 'anthropic_native': return 'Anthropic Messages 协议';
+    case 'azure_openai': return 'Azure OpenAI 协议';
+    default: return adapter || '未声明';
+  }
+}
+
+export function circuitStateLabel(state: string) {
+  switch (state) {
+    case 'healthy':
+    case 'closed': return '健康';
+    case 'half_open': return '恢复探测中';
+    case 'open': return '已熔断';
+    default: return state || '未知';
+  }
+}

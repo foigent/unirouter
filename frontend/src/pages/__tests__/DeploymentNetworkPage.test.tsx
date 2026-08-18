@@ -32,7 +32,7 @@ describe('DeploymentNetworkPage', () => {
     render(<DeploymentNetworkPage />);
     expect(await screen.findByRole('heading', { name: '部署与网络' })).toBeTruthy();
     expect(screen.getByText('1.1.25')).toBeTruthy();
-    expect(screen.getByText(/DB 1ms · Redis 2ms/)).toBeTruthy();
+    expect(screen.getByText(/本次探测：数据库 1 毫秒 · Redis 2 毫秒/)).toBeTruthy();
     expect((await screen.findAllByText('ECS Gateway')).length).toBeGreaterThan(0);
     expect(screen.getByLabelText('部署与网络检查器')).toBeTruthy();
     expect(screen.getAllByText('未独立验证').length).toBeGreaterThan(0);

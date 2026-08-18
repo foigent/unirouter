@@ -53,7 +53,7 @@ describe('ApiDocsPage', () => {
     expect(screen.getByText('API 与兼容性')).toBeTruthy();
     expect(screen.getByText(/协议兼容不等于已完成真实客户端认证/)).toBeTruthy();
     expect(screen.getByText('OpenAI SDK / Chat Completions')).toBeTruthy();
-    expect(screen.getByText(/Gateway 使用项目 API Key 或 Agent 能力令牌鉴权/)).toBeTruthy();
+    expect(screen.getByText(/模型网关使用项目 API Key 或 Agent 能力令牌鉴权/)).toBeTruthy();
     expect(screen.queryByText(/PRD1 API index/)).toBeNull();
     expect(screen.queryByText(/PRD2 当前可用接口索引/)).toBeNull();
 
@@ -193,7 +193,7 @@ describe('ApiDocsPage', () => {
     expect(screen.getByText('API 与兼容性')).toBeTruthy();
     expect(screen.getByText('Dashboard 聚合数据')).toBeTruthy();
     expect(await screen.findByText('auth_error.invalid_api_key')).toBeTruthy();
-    expect(screen.getByText('Error Docs')).toBeTruthy();
+    expect(screen.getByText('错误说明')).toBeTruthy();
     expect(mockGetErrorDocs).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('创建项目访问凭证')).toBeNull();
   });

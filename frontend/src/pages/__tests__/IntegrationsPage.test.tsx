@@ -11,11 +11,11 @@ describe('IntegrationsPage', () => {
     render(<MemoryRouter><IntegrationsPage /></MemoryRouter>);
 
     expect(screen.getByRole('heading', { name: '集成管理' })).toBeTruthy();
-    expect(screen.getByText('X-Insight completed-execution Feed')).toBeTruthy();
-    expect(screen.getByText(/首个 Reference Connector/)).toBeTruthy();
+    expect(screen.getByText('X-Insight 执行记录订阅')).toBeTruthy();
+    expect(screen.getByText(/只提供来源事实/)).toBeTruthy();
     expect(screen.getByText('飞书企业机器人')).toBeTruthy();
-    expect(screen.getByText(/不合并为高权限万能插件/)).toBeTruthy();
-    expect(screen.getAllByText(/不进入 UniRouter 网关进程/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/不会自动获得模型、管理员或财务权限/)).toBeTruthy();
+    expect(screen.getByText(/凭据与事件处理留在 Adapter/)).toBeTruthy();
     expect(screen.getByText('可配置')).toBeTruthy();
     expect(dataExchangeMount).not.toHaveBeenCalled();
 

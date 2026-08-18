@@ -284,7 +284,8 @@ export default function LimitPoliciesPage() {
           {platform ? (
             <Form.Select
               field="scope"
-              label="作用域"
+              label={<span id="limit-policy-scope-label">作用域</span>}
+              aria-labelledby="limit-policy-scope-label"
               optionList={[
                 { value: 'customer', label: `唯一客户（推荐）· ${customerContext.orgName || `组织 #${customerOrgID}`}` },
                 { value: 'deployment_global', label: '部署全局（当前部署全部请求）' },
@@ -301,14 +302,15 @@ export default function LimitPoliciesPage() {
               style={{ width: '100%' }}
             />
           ) : <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${customerOrgID}`}</Text>}
-          <Form.Select field="project_id" label="项目（可选）" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
+          <Form.Select field="project_id" label={<span id="limit-policy-project-label">项目（可选）</span>} aria-labelledby="limit-policy-project-label" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
           <Form.Select
             field="api_key_id"
-            label="访问凭证（可选）"
+            label={<span id="limit-policy-key-label">访问凭证（可选）</span>}
+            aria-labelledby="limit-policy-key-label"
             optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${projectDisplayName({ id: key.project_id || 0, name: key.project_name || '' })} · ${key.key_prefix}***` }))}
             showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }}
           />
-          <Form.Select field="model" label="模型（可选）" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />
+          <Form.Select field="model" label={<span id="limit-policy-model-label">模型（可选）</span>} aria-labelledby="limit-policy-model-label" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />
           <Form.Input field="policy_label" label="策略标签（可选）" placeholder="production" />
           <Text type="tertiary" size="small">已填写的客户、项目、凭证、模型和标签必须同时匹配；标签由管理员绑定到访问凭证，调用方不能通过请求头自行声明。</Text>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
@@ -319,7 +321,8 @@ export default function LimitPoliciesPage() {
           </div>
           <Form.Select
             field="mode"
-            label="运行状态"
+            label={<span id="limit-policy-mode-label">运行状态</span>}
+            aria-labelledby="limit-policy-mode-label"
             optionList={[
               { value: 'shadow', label: '影子观察（推荐先选）' },
               { value: 'enforce', label: '正式拦截' },
@@ -330,7 +333,8 @@ export default function LimitPoliciesPage() {
           />
           <Form.Select
             field="failure_mode"
-            label="Redis 无法确认额度时"
+            label={<span id="limit-policy-failure-mode-label">Redis 无法确认额度时</span>}
+            aria-labelledby="limit-policy-failure-mode-label"
             optionList={[
               { value: 'fail_closed', label: '立即拒绝并提示稍后重试（推荐）' },
               { value: 'last_known_safe', label: '只用健康期预发的短暂安全许可' },

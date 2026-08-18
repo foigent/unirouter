@@ -99,7 +99,8 @@ describe('App shell', () => {
   it('routes topbar search to existing logs search', async () => {
     renderApp();
 
-    const input = screen.getByPlaceholderText('搜索请求日志：请求、模型、供应商、错误或证据标识');
+    const input = screen.getByRole('textbox', { name: '全局搜索执行请求' });
+    expect(input).toHaveAttribute('placeholder', '搜索请求日志：请求、模型、供应商、错误或证据标识');
     fireEvent.change(input, { target: { value: 'req-123' } });
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', charCode: 13 });
 

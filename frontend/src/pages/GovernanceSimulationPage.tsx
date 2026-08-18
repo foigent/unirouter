@@ -239,6 +239,7 @@ export default function GovernanceSimulationPage() {
       <Banner
         type="info"
         description="这是零网络、零持久化的治理模拟。shadow / canary / enforced 仅表示被评估的目标模式；真正上线仍需独立外部授权。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
       <div className="ur-context-explorer ur-governance-explorer">
@@ -344,7 +345,7 @@ export default function GovernanceSimulationPage() {
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="治理变更检查器">
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">Governance Inspector</Typography.Text>
+              <Typography.Text className="ur-panel-hint">治理变更检查器</Typography.Text>
               <Typography.Title heading={5} style={{ margin: 0 }}>证据与上线边界</Typography.Title>
             </div>
             <RiskTag risk={report?.overall_risk || 'unchanged'} />

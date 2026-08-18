@@ -303,6 +303,8 @@ describe('ApplicationsV2Page', () => {
     expect(screen.queryByText('personal_development')).toBeNull();
     expect(screen.queryByText('interactive_client')).toBeNull();
     expect(screen.getByText('高级配置（可选）')).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '应用类型' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '环境（创建后不可变）' })).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '新服务' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -312,6 +314,19 @@ describe('ApplicationsV2Page', () => {
     const payload = clientMocks.createApplication.mock.calls[0][0];
     expect(payload).not.toHaveProperty('application_ref');
     expect(payload).not.toHaveProperty('logical_ref');
+  });
+
+  it('treats an archived application as read-only terminal history', async () => {
+    clientMocks.getApplications.mockResolvedValue({
+      data: [{ ...application, status: 'archived', can_manage: true, can_request_access: false }],
+      total: 1,
+    });
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    expect(await screen.findByText('已归档')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '编辑' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '申请应用访问' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '归档' })).toBeDisabled();
   });
 
   it('keeps an actor-scoped project_user project discoverable without granting workload writes', async () => {

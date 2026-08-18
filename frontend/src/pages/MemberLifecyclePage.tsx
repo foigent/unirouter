@@ -313,7 +313,7 @@ export default function MemberLifecyclePage({ embedded = false }: { embedded?: b
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="成员生命周期检查器">
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">Lifecycle Inspector</Typography.Text>
+              <Typography.Text className="ur-panel-hint">生命周期检查器</Typography.Text>
               <Typography.Title heading={5} style={{ margin: 0 }}>访问收敛证据</Typography.Title>
             </div>
             <Tag color={report?.state_status === 'deprovisioned' ? 'red' : report?.state_status === 'suspended' ? 'orange' : 'green'}>

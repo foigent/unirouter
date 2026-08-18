@@ -168,12 +168,13 @@ export default function UsageAnalyticsPage() {
       <PageHeader
         eyebrow="监控与用量"
         title="用量分析"
-          description="按总览、项目、访问凭证、Key Owner、凭证类型、模型、供应商、上游通道、请求状态和计量来源查看当前权限范围内的请求量、Token、费用与估算占比。"
+          description="按总览、项目、访问凭证、凭证所有者、凭证类型、模型、供应商、上游通道、请求状态和计量来源查看当前权限范围内的请求量、Token、费用与估算占比。"
         actions={<Button icon={<IconDownload />} onClick={downloadCSV}>导出 CSV</Button>}
       />
       <Banner
         type="info"
         description="当前可按项目、访问凭证和 Key Owner 等已证实维度分析；Key Owner 不等于实际调用人。部门、经理链和成本中心维度必须等待企业目录投影与请求时归属快照，当前不做猜测归因。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
 
@@ -183,18 +184,24 @@ export default function UsageAnalyticsPage() {
       >
         <div className="ur-inline-controls">
           {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${targetOrgID}`}</Text>}
-          <Select value={groupBy} optionList={usageAnalyticsGroupOptions} onChange={(value) => updateAnalyticsFilter(() => setGroupBy(String(value || 'overall')))} style={{ width: 190 }} />
+          <Select aria-labelledby="usage-group-label" insetLabel="分组" insetLabelId="usage-group-label" value={groupBy} optionList={usageAnalyticsGroupOptions} onChange={(value) => updateAnalyticsFilter(() => setGroupBy(String(value || 'overall')))} style={{ width: 190 }} />
           <Select
+            aria-labelledby="usage-scope-label"
+            insetLabel="范围"
+            insetLabelId="usage-scope-label"
             value={scope || undefined}
             placeholder="用量范围"
             optionList={usageScopeOptions}
             onChange={(value) => updateAnalyticsFilter(() => setScope(String(value || '')))}
             style={{ width: 160 }}
           />
-          <Input prefix={<IconSearch />} value={projectId} onChange={(value) => updateAnalyticsFilter(() => setProjectId(value))} placeholder="项目 ID" showClear style={{ width: 140 }} />
-          <Input prefix={<IconSearch />} value={keyId} onChange={(value) => updateAnalyticsFilter(() => setKeyId(value))} placeholder="访问凭证 ID" showClear style={{ width: 160 }} />
-          <Input prefix={<IconSearch />} value={ownerUserId} onChange={(value) => updateAnalyticsFilter(() => setOwnerUserId(value))} placeholder="Owner 用户 ID" showClear style={{ width: 170 }} />
+          <Input aria-label="项目 ID 筛选" prefix={<IconSearch />} value={projectId} onChange={(value) => updateAnalyticsFilter(() => setProjectId(value))} placeholder="项目 ID" showClear style={{ width: 140 }} />
+          <Input aria-label="访问凭证 ID 筛选" prefix={<IconSearch />} value={keyId} onChange={(value) => updateAnalyticsFilter(() => setKeyId(value))} placeholder="访问凭证 ID" showClear style={{ width: 160 }} />
+          <Input aria-label="凭证所有者用户 ID 筛选" prefix={<IconSearch />} value={ownerUserId} onChange={(value) => updateAnalyticsFilter(() => setOwnerUserId(value))} placeholder="所有者用户 ID" showClear style={{ width: 170 }} />
           <Select
+            aria-labelledby="usage-key-type-label"
+            insetLabel="凭证类型"
+            insetLabelId="usage-key-type-label"
             value={keyType || undefined}
             placeholder="凭证类型"
             optionList={keyTypeOptions}
@@ -202,6 +209,9 @@ export default function UsageAnalyticsPage() {
             style={{ width: 160 }}
           />
           <Select
+            aria-labelledby="usage-status-label"
+            insetLabel="请求状态"
+            insetLabelId="usage-status-label"
             value={status || undefined}
             placeholder="请求状态"
             optionList={requestStatusOptions}
@@ -209,18 +219,21 @@ export default function UsageAnalyticsPage() {
             style={{ width: 150 }}
           />
           <Select
+            aria-labelledby="usage-source-label"
+            insetLabel="计量来源"
+            insetLabelId="usage-source-label"
             value={usageSource || undefined}
             placeholder="计量来源"
             optionList={usageSourceOptions}
             onChange={(value) => updateAnalyticsFilter(() => setUsageSource(String(value || '')))}
             style={{ width: 190 }}
           />
-          <Input prefix={<IconSearch />} value={model} onChange={(value) => updateAnalyticsFilter(() => setModel(value))} placeholder="模型" showClear style={{ width: 180 }} />
-          <Input prefix={<IconSearch />} value={alias} onChange={(value) => updateAnalyticsFilter(() => setAlias(value))} placeholder="模型别名" showClear style={{ width: 180 }} />
-          <Input prefix={<IconServer />} value={provider} onChange={(value) => updateAnalyticsFilter(() => setProvider(value))} placeholder="供应商" showClear style={{ width: 180 }} />
-          <Input prefix={<IconServer />} value={channel} onChange={(value) => updateAnalyticsFilter(() => setChannel(value))} placeholder="上游通道" showClear style={{ width: 180 }} />
-          <Input value={startTime} onChange={(value) => updateAnalyticsFilter(() => setStartTime(value))} type="datetime-local" placeholder="开始时间" showClear style={{ width: 190 }} />
-          <Input value={endTime} onChange={(value) => updateAnalyticsFilter(() => setEndTime(value))} type="datetime-local" placeholder="结束时间" showClear style={{ width: 190 }} />
+          <Input aria-label="模型筛选" prefix={<IconSearch />} value={model} onChange={(value) => updateAnalyticsFilter(() => setModel(value))} placeholder="模型" showClear style={{ width: 180 }} />
+          <Input aria-label="模型别名筛选" prefix={<IconSearch />} value={alias} onChange={(value) => updateAnalyticsFilter(() => setAlias(value))} placeholder="模型别名" showClear style={{ width: 180 }} />
+          <Input aria-label="供应商筛选" prefix={<IconServer />} value={provider} onChange={(value) => updateAnalyticsFilter(() => setProvider(value))} placeholder="供应商" showClear style={{ width: 180 }} />
+          <Input aria-label="上游通道筛选" prefix={<IconServer />} value={channel} onChange={(value) => updateAnalyticsFilter(() => setChannel(value))} placeholder="上游通道" showClear style={{ width: 180 }} />
+          <Input aria-label="用量开始时间" value={startTime} onChange={(value) => updateAnalyticsFilter(() => setStartTime(value))} type="datetime-local" placeholder="开始时间" showClear style={{ width: 190 }} />
+          <Input aria-label="用量结束时间" value={endTime} onChange={(value) => updateAnalyticsFilter(() => setEndTime(value))} type="datetime-local" placeholder="结束时间" showClear style={{ width: 190 }} />
           <Button icon={<IconRefresh />} onClick={load} loading={loading}>刷新</Button>
         </div>
       </Surface>

@@ -166,6 +166,7 @@ describe('ReconciliationPage', () => {
     expect(screen.getByText(/读取费用 ¥0\.000030/)).toBeTruthy();
     expect(screen.getByText(/写入费用 ¥0\.000250/)).toBeTruthy();
     expect(await screen.findByText('企业成本分摊与关账')).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '财务期间' })).toBeTruthy();
     expect(screen.getByText('关账就绪')).toBeTruthy();
     expect(mockGetEnterpriseAllocationSummary).toHaveBeenCalledWith('FY26-P08', undefined);
   });
@@ -204,6 +205,9 @@ describe('ReconciliationPage', () => {
     render(<ReconciliationPage />);
 
     expect(await screen.findByText('来源筛选')).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '模型' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '状态' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '计量来源' })).toBeTruthy();
   });
 
   it('previews supplier evidence and auto-opens the persistent financial inspector', async () => {

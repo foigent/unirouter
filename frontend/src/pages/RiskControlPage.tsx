@@ -250,6 +250,7 @@ export default function RiskControlPage() {
       <Banner
         type="warning"
         description="当前只做离线 advice / shadow evidence。Assertion 未签发、不是生产信任输入；B10 tenant_ref 与 B11 Source org/project 的产品本地映射尚未验证，已生成独立人工复核项。提案不会自我晋级，也不会读取或修改运行时策略。P7-D04 的 KPI、阈值与试点范围确定前，不允许强制执行。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
 
@@ -317,7 +318,7 @@ export default function RiskControlPage() {
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="Risk Control 检查器">
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">Risk & Control Inspector</Typography.Text>
+              <Typography.Text className="ur-panel-hint">风险与控制检查器</Typography.Text>
               <Typography.Title heading={5} style={{ margin: 0 }}>Assertion、证据与晋级边界</Typography.Title>
             </div>
             <Tag color="orange">{report?.proposal.state || '等待审查'}</Tag>

@@ -142,7 +142,7 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
   const [readinessError, setReadinessError] = useState('');
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [selectedRef, setSelectedRef] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [mutating, setMutating] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [editing, setEditing] = useState<InvocationOptimizationPolicy | null | undefined>(undefined);
@@ -326,15 +326,15 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
       ),
     },
     { title: '阶段', dataIndex: 'stage', width: 112, render: (value: string) => <StatusTag status={value}>{stageLabels[value] || value}</StatusTag> },
-    { title: 'Exact Cache', key: 'cache', width: 120, render: (_: unknown, record: InvocationOptimizationPolicy) => percentLabel(record.response_cache_canary_basis_points) },
-    { title: 'Compression', key: 'compression', width: 120, render: (_: unknown, record: InvocationOptimizationPolicy) => percentLabel(record.compression_canary_basis_points) },
-    { title: '版本', dataIndex: 'revision', width: 72, render: (value: number) => `r${value}` },
+    { title: '精确缓存', key: 'cache', width: 120, render: (_: unknown, record: InvocationOptimizationPolicy) => percentLabel(record.response_cache_canary_basis_points) },
+    { title: '提示词压缩', key: 'compression', width: 120, render: (_: unknown, record: InvocationOptimizationPolicy) => percentLabel(record.compression_canary_basis_points) },
   ];
 
   return (
     <>
       <Banner
         type={contract?.response_cache_runtime_ready ? 'info' : 'warning'}
+        closeIcon={null}
         description={contract?.response_cache_runtime_ready
           ? 'Exact Cache 密钥与 Redis 运行时已就绪，但策略仍默认关闭。Shadow 不读写缓存；Canary 还要求足量零失败证据与请求显式 opt-in。'
           : 'Exact Cache 密钥运行时未配置，因此不能进入 Cache Canary；Compression Shadow 仍可独立评估。所有策略默认关闭，X-Insight 不在请求关键路径。'}
@@ -357,7 +357,9 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
               <Button icon={<IconPlus />} type="primary" onClick={() => setEditing(null)}>新建策略</Button>
             </Space>
           </div>
-          {loadError ? (
+          {loading && policies.length === 0 ? (
+            <EmptyState title="正在读取调用优化策略" description="正在核对策略、运行时合同和项目范围，请稍候。" minHeight={320} />
+          ) : loadError ? (
             <EmptyState title="调用优化策略加载失败" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} />
           ) : (
             <div className="ur-table-shell">
@@ -368,13 +370,15 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
         </main>
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="调用优化策略检查器">
           <div className="ur-detail-header">
-            <div><Typography.Text className="ur-panel-hint">Policy Inspector</Typography.Text><Typography.Title heading={5} style={{ margin: 0 }}>证据门禁与执行边界</Typography.Title></div>
+            <div><Typography.Text className="ur-panel-hint">策略检查器</Typography.Text><Typography.Title heading={5} style={{ margin: 0 }}>证据门禁与执行边界</Typography.Title></div>
             <StatusTag status={selected?.stage || 'disabled'}>{selected ? stageLabels[selected.stage] : '未选择'}</StatusTag>
           </div>
-          {selected ? (
+          {loading && policies.length === 0 ? (
+            <EmptyState title="正在读取策略证据" description="加载完成后会显示执行边界和 Canary 技术准备度。" minHeight={300} />
+          ) : selected ? (
             <>
               <dl className="ur-financial-truth-detail">
-                <dt>策略 / 版本</dt><dd className="ur-mono-break">{selected.policy_ref} / r{selected.revision}</dd>
+                <dt>策略标识</dt><dd className="ur-mono-break">{selected.policy_ref}</dd>
                 <dt>模型范围</dt><dd>{selected.model_selector}</dd>
                 <dt>组织 / 项目</dt><dd>{selected.org_id} / {selected.project_id || '全部项目'}</dd>
                 <dt>区域 / 驻留</dt><dd>{selected.region} / {selected.residency}</dd>
@@ -439,28 +443,28 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
       </div>
 
       <SideSheet title={editing ? '编辑调用优化策略' : '新建调用优化策略'} visible={editing !== undefined} onCancel={() => setEditing(undefined)} width={620}>
-        <Banner type="info" description="创建或编辑只保存草稿，不会启动 Shadow 或 Canary。两个驱动均没有绕过请求 opt-in 的开关。" style={{ marginBottom: 16 }} />
+        <Banner type="info" closeIcon={null} description="创建或编辑只保存草稿，不会启动 Shadow 或 Canary。两个驱动均没有绕过请求 opt-in 的开关。" style={{ marginBottom: 16 }} />
         <Form getFormApi={(next: any) => setFormApi(next)} onSubmit={savePolicy} initValues={policyFormValues(editing || undefined)}>
           <div className="ur-modelgov-form-grid">
             <Form.Input field="policy_ref" label="策略标识" placeholder="opt_company_chat" disabled={Boolean(editing)} rules={[{ required: true, message: '请输入策略标识' }]} />
             <Form.Input field="display_name" label="显示名称" placeholder="Company Chat 优化" rules={[{ required: true, message: '请输入显示名称' }]} />
-            <Form.Select field="project_id" label="项目范围（留空为组织级）" showClear optionList={projects.map(projectOption)} style={{ width: '100%' }} />
+            <Form.Select field="project_id" label={<span id="optimization-project-label">项目范围（留空为组织级）</span>} aria-labelledby="optimization-project-label" showClear optionList={projects.map(projectOption)} style={{ width: '100%' }} />
             <Form.Input field="model_selector" label="模型范围" placeholder="* 或 company-chat" rules={[{ required: true }]} />
             <Form.Input field="region" label="区域" rules={[{ required: true }]} />
             <Form.Input field="residency" label="数据驻留策略" rules={[{ required: true }]} />
-            <Form.Select field="response_cache_target" label="Exact Response Cache" optionList={[{ value: 'disabled', label: '关闭' }, { value: 'canary', label: '准备 Shadow / Canary' }]} style={{ width: '100%' }} />
+            <Form.Select field="response_cache_target" label={<span id="optimization-cache-target-label">精确响应缓存（Exact Cache）</span>} aria-labelledby="optimization-cache-target-label" optionList={[{ value: 'disabled', label: '关闭' }, { value: 'canary', label: '准备 Shadow / Canary' }]} style={{ width: '100%' }} />
             <Form.InputNumber field="response_cache_canary_basis_points" label="Cache Canary 基点（100 = 1%）" min={0} max={1000} style={{ width: '100%' }} />
             <Form.InputNumber field="response_cache_ttl_seconds" label="Cache TTL（60–86400 秒）" min={60} max={86400} style={{ width: '100%' }} />
-            <Form.Checkbox field="response_cache_persistence_allowed" label="Exact Cache 数据许可">
+            <Form.Checkbox field="response_cache_persistence_allowed" label="Exact Cache 数据许可" aria-label="允许加密持久化精确缓存响应">
               允许在该范围内以独立密钥加密持久化符合条件的响应（仍需请求显式 opt-in）
             </Form.Checkbox>
-            <Form.Select field="compression_target" label="Prompt Compression" optionList={[{ value: 'disabled', label: '关闭' }, { value: 'canary', label: '准备 Shadow / Canary' }]} style={{ width: '100%' }} />
+            <Form.Select field="compression_target" label={<span id="optimization-compression-target-label">提示词压缩（Prompt Compression）</span>} aria-labelledby="optimization-compression-target-label" optionList={[{ value: 'disabled', label: '关闭' }, { value: 'canary', label: '准备 Shadow / Canary' }]} style={{ width: '100%' }} />
             <Form.InputNumber field="compression_canary_basis_points" label="Compression Canary 基点" min={0} max={1000} style={{ width: '100%' }} />
             <Form.InputNumber field="compression_minimum_input_tokens" label="最小输入 Token" min={1} max={1000000} style={{ width: '100%' }} />
             <Form.InputNumber field="compression_minimum_saved_tokens" label="最小预计节省 Token" min={1} max={1000000} style={{ width: '100%' }} />
             <Form.InputNumber field="compression_maximum_reduction_basis_points" label="最大压缩比例基点" min={1} max={5000} style={{ width: '100%' }} />
             <Form.InputNumber field="minimum_shadow_samples" label="Shadow 最小样本" min={10} max={1000000} style={{ width: '100%' }} />
-            <Form.Select field="status" label="策略状态" optionList={[{ value: 'active', label: '可评估' }, { value: 'disabled', label: '停用' }]} style={{ width: '100%' }} />
+            <Form.Select field="status" label={<span id="optimization-status-label">策略状态</span>} aria-labelledby="optimization-status-label" optionList={[{ value: 'active', label: '可评估' }, { value: 'disabled', label: '停用' }]} style={{ width: '100%' }} />
           </div>
           <div className="ur-form-actions"><Button onClick={() => setEditing(undefined)}>取消</Button><Button htmlType="submit" type="primary" loading={mutating}>保存草稿</Button></div>
         </Form>
@@ -468,9 +472,9 @@ export default function InvocationOptimizationWorkspace({ orgId }: { orgId?: num
 
       <SideSheet title={transition ? transitionCopy[transition].title : ''} visible={Boolean(transition)} onCancel={() => setTransition(null)} width={480}>
         {transition && <>
-          <Banner type={transition === 'canary' || transition === 'rollback' ? 'warning' : 'info'} description={transitionCopy[transition].description} style={{ marginBottom: 16 }} />
-          <Typography.Paragraph>当前策略：<Typography.Text code>{selected?.policy_ref}</Typography.Text> · r{selected?.revision}</Typography.Paragraph>
-          <Input value={transitionReason} onChange={setTransitionReason} placeholder="填写可审计理由（必填）" maxLength={500} showClear />
+          <Banner type={transition === 'canary' || transition === 'rollback' ? 'warning' : 'info'} closeIcon={null} description={transitionCopy[transition].description} style={{ marginBottom: 16 }} />
+          <Typography.Paragraph>当前策略：<Typography.Text code>{selected?.policy_ref}</Typography.Text></Typography.Paragraph>
+          <Input aria-label="推进或回滚理由" value={transitionReason} onChange={setTransitionReason} placeholder="填写可审计理由（必填）" maxLength={500} showClear />
           {transition === 'canary' && <div className="ur-detail-card" style={{ marginTop: 16 }}><strong className="ur-detail-card-title">服务端将再次 fail-closed 校验</strong><Typography.Text>Shadow 样本、eligible 数量、质量失败、Cache 密钥运行时与乐观锁版本必须全部满足；UI 不能绕过。</Typography.Text></div>}
           <div className="ur-form-actions"><Button onClick={() => setTransition(null)}>取消</Button><Button type={transition === 'rollback' ? 'danger' : 'primary'} loading={mutating} onClick={() => void executeTransition()}>{transitionCopy[transition].label}</Button></div>
         </>}

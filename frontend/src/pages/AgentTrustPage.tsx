@@ -220,6 +220,7 @@ export function OfflineAgentTrustWorkspace() {
       <Banner
         type="info"
         description="离线 Agent 能力证据仍保留为人工审查工具：不接收签名私钥，不读取运行时能力，不同步依赖风险服务，也不会晋级策略或执行撤销。Fixture 公钥只证明密码学有效，不是生产信任根。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
 
@@ -280,7 +281,7 @@ export function OfflineAgentTrustWorkspace() {
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="Agent Trust 检查器">
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">Trust Inspector</Typography.Text>
+              <Typography.Text className="ur-panel-hint">信任证据检查器</Typography.Text>
               <Typography.Title heading={5} style={{ margin: 0 }}>权限与收据证据</Typography.Title>
             </div>
             <Tag color={selectedNode?.state === 'active' ? 'green' : 'red'}>

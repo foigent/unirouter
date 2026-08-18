@@ -19,11 +19,11 @@ export const roleLabels: Record<string, string> = {
 };
 
 export const userManagementOrganizationRoleOptions: SelectOption[] = [
-  { label: '平台管理员 (platform_admin)', value: 'platform_admin' },
-  { label: '组织管理员 (org_admin)', value: 'org_admin' },
-  { label: '账务管理员 (billing_admin)', value: 'billing_admin' },
-  { label: '组织只读 (org_viewer)', value: 'org_viewer' },
-  { label: '普通成员 (member)', value: 'member' },
+  { label: '平台管理员', value: 'platform_admin' },
+  { label: '组织管理员', value: 'org_admin' },
+  { label: '账务管理员', value: 'billing_admin' },
+  { label: '组织只读', value: 'org_viewer' },
+  { label: '普通成员', value: 'member' },
 ];
 
 // Retained for rolling frontend consumers. New account forms must use the
@@ -51,7 +51,7 @@ export const usageAnalyticsGroupOptions: SelectOption[] = [
   { label: '总览（不分组）', value: 'overall' },
   { label: '项目', value: 'project' },
   { label: '访问凭证', value: 'key' },
-  { label: 'Key Owner', value: 'owner' },
+  { label: '凭证所有者', value: 'owner' },
   { label: '凭证类型', value: 'key_type' },
   { label: '模型', value: 'model' },
   { label: '模型别名', value: 'alias' },

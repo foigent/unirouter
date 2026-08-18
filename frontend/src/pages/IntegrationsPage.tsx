@@ -30,7 +30,7 @@ function IntegrationCard({ title, state, description, boundary, action }: Integr
       <Paragraph>{description}</Paragraph>
       <dl className="ur-financial-truth-detail">
         <dt>权限边界</dt><dd>{boundary}</dd>
-        <dt>运行方式</dt><dd>隔离适配器 / Connector，不进入 UniRouter 网关进程</dd>
+        <dt>运行方式</dt><dd>独立连接服务，不在 UniRouter 模型网关进程内运行</dd>
         <dt>当前动作</dt><dd>{action || '等待具备真实企业环境后验证'}</dd>
       </dl>
     </Surface>
@@ -52,22 +52,23 @@ export default function IntegrationsPage() {
       <PageHeader
         eyebrow="系统与集成"
         title="集成管理"
-        description="统一查看 Connector 与隔离适配器的产品边界；每个产品继续拥有自己的 IAM、持久化和最终执行权限。"
+        description="统一查看可用或规划中的外部系统连接，以及每项连接能读取和写入什么；外部系统仍独立管理账号、数据和最终操作。"
       />
       <Banner
         type="info"
-        description="Integration Connector、Value Plugin 与 Enforcement Plugin 不合并为高权限万能插件。新增集成不能把 X-Insight、Tool Gateway 或 MCP Gateway 放进模型请求关键路径。"
+        description="所有集成都按最小权限隔离运行，不进入模型请求关键路径。连接 X-Insight、飞书或其他企业系统，不会自动获得模型、管理员或财务权限。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
       <Tabs activeKey={activeTab} onChange={changeTab} type="line">
         <TabPane tab="集成目录" itemKey="catalog">
           <div className="ur-integration-grid">
             <IntegrationCard
-              title="X-Insight completed-execution Feed"
+              title="X-Insight 执行记录订阅"
               state="available"
-              description="首个 Reference Connector：保留现有 Feed API、DTO、事件身份、凭据、数据、游标与 UI 兼容基线。"
-              boundary="UniRouter 提供来源事实与 Feed；X-Insight 独立拥有投影、分析与调查。"
-              action="在 X-Insight 标签页维护现有连接，不新增双边专用字段"
+              description="向 X-Insight 提供已完成请求的元数据订阅；不包含原始 Prompt、响应、供应商错误或管理员凭证。"
+              boundary="UniRouter 只提供来源事实；X-Insight 独立负责存储、分析与调查。"
+              action="在“X-Insight”页签查看连接状态和维护凭证"
             />
             <IntegrationCard
               title="飞书企业机器人"

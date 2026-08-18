@@ -48,7 +48,7 @@ export default function ModelGovernanceAssignment(props: ModelGovernanceAssignme
             />
           </div>
           <div>
-            <Text className="ur-filter-label">模型集</Text>
+            <Text id="model-governance-model-set-label" className="ur-filter-label">模型集</Text>
             <Select
               multiple
               value={props.assignedIds}
@@ -56,7 +56,7 @@ export default function ModelGovernanceAssignment(props: ModelGovernanceAssignme
               optionList={props.modelSets.map(set => ({ label: `${set.name} (${set.slug})`, value: set.id }))}
               style={{ width: '100%' }}
               placeholder="选择一个或多个模型集"
-              aria-label="选择模型集"
+              aria-labelledby="model-governance-model-set-label"
               disabled={props.loading || props.loadedProjectId !== props.selectedProjectId}
             />
           </div>

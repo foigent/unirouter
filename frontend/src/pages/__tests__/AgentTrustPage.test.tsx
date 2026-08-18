@@ -173,11 +173,19 @@ describe('AgentTrustPage', () => {
     expect(screen.getByRole('button', { name: '离线合同验证' })).toBeTruthy();
     expect((await screen.findAllByText('mca_project_company_chat')).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole('complementary', { name: '高级模型限制检查器' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '状态' })).toBeTruthy();
     expect(screen.getByText('这里的显式拒绝与允许交集只能进一步缩小已有权限', { exact: false })).toBeTruthy();
     expect(screen.getByText('客户范围：总部')).toBeTruthy();
+    expect(screen.queryByText('修订')).toBeNull();
     expect(screen.queryByLabelText('授权目标组织')).toBeNull();
     expect(mocks.getModelAuthorizations).toHaveBeenCalledWith(7, '');
     expect(mocks.getAgentTrustContract).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '新增限制策略' }));
+    expect(await screen.findByRole('combobox', { name: '主体类型' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '效果' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '端点范围' })).toBeTruthy();
+    expect(screen.getByText(/不能在这里创建主体/)).toBeTruthy();
   });
 
   it('fails closed and makes no authorization calls when the canonical customer is ambiguous', async () => {

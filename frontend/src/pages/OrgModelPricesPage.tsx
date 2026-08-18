@@ -187,7 +187,7 @@ export default function OrgModelPricesPage({ embedded = false }: { embedded?: bo
       >
         <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={editPrice ? handleUpdate : handleCreate}>
           <Typography.Paragraph type="tertiary">客户范围：{customerContext.orgName || `组织 #${selectedOrgID}`}</Typography.Paragraph>
-          <Form.Select field="model_name" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" disabled={!!editPrice} />
+          <Form.Select field="model_name" aria-label="组织计价模型" label="模型名称" rules={[{ required: true, message: '请选择模型' }]} filter optionList={modelNames.map(m => ({ label: m, value: m }))} placeholder="选择或搜索模型" disabled={!!editPrice} />
 		  <Form.Input field="multiplier" label="计费倍率" rules={[{ required: true, message: '必填' }]} placeholder="例如 1.2" />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>

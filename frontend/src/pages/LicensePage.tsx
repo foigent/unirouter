@@ -4,6 +4,7 @@ import { IconFile, IconRefresh, IconSave } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
+import { formatDateTime } from '../utils/formatDate';
 
 const { Text } = Typography;
 
@@ -102,6 +103,12 @@ function formatRecord(record?: Record<string, number | string>) {
   return Object.entries(record).map(([key, value]) => ({ key, label: labels[key] || key, value }));
 }
 
+function formatLicenseTier(value?: string) {
+  if (value === 'enterprise') return '企业版（enterprise）';
+  if (value === 'development') return '开发授权（development）';
+  return value || '-';
+}
+
 export default function LicensePage() {
   const [status, setStatus] = useState<LicenseStatus | null>(null);
   const [licenseText, setLicenseText] = useState('');
@@ -136,8 +143,8 @@ export default function LicensePage() {
     return [
       { key: '授权编号', value: license.license_id || '-' },
       { key: '绑定部署', value: license.deployment_id || '-' },
-      { key: '签发时间', value: license.issued_at || '-' },
-      { key: '生效时间', value: license.not_before || '-' },
+      { key: '签发时间', value: license.issued_at ? formatDateTime(license.issued_at) : '-' },
+      { key: '生效时间', value: license.not_before ? formatDateTime(license.not_before) : '-' },
     ];
   }, [status]);
 
@@ -177,7 +184,7 @@ export default function LicensePage() {
   };
 
   if (loading) {
-    return <div className="ur-page"><EmptyState title="加载中..." minHeight={360} /></div>;
+    return <div className="ur-page"><EmptyState title="正在加载商业授权" minHeight={360} /></div>;
   }
 
   if (loadError || !status) {
@@ -221,8 +228,8 @@ export default function LicensePage() {
               { key: '状态', value: <Tag color={statusColor(status?.status)}>{statusText(status?.status)}</Tag> },
               { key: '新模型流量', value: status?.enforceable ? <Tag color="green">允许</Tag> : <Tag color="red">拒绝</Tag> },
               { key: '授权客户', value: status?.license?.customer || '-' },
-              { key: '授权版本', value: status?.license?.tier || '-' },
-              { key: '到期时间', value: status?.license?.expires_at || '-' },
+              { key: '授权版本', value: formatLicenseTier(status?.license?.tier) },
+              { key: '到期时间', value: status?.license?.expires_at ? formatDateTime(status.license.expires_at) : '-' },
               { key: '剩余天数', value: status?.license ? String(status.days_until_expiry) : '-' },
               {
                 key: '核心管理功能',
@@ -262,7 +269,7 @@ export default function LicensePage() {
             { key: 'Schema', value: status?.schema_version || '-' },
             { key: '签名 Key ID', value: status?.key_id || '-' },
             { key: '当前部署标识', value: status?.expected_deployment_id || '-' },
-            { key: '最近校验时间', value: status?.checked_at || '-' },
+            { key: '最近校验时间', value: status?.checked_at ? formatDateTime(status.checked_at) : '-' },
           ]}
           row
         />
@@ -286,6 +293,7 @@ export default function LicensePage() {
             </Button>
           </Space>
           <TextArea
+            aria-label="商业授权文件内容（JSON）"
             value={licenseText}
             onChange={setLicenseText}
             autosize={{ minRows: 8, maxRows: 16 }}

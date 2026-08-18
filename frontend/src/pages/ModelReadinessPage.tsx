@@ -36,7 +36,7 @@ const platformLabels: Record<string, string> = {
 const projectLabels: Record<string, string> = {
   project: '项目', alias: '模型别名', model_set: '项目模型范围', wallet: '钱包', project_budget: '项目预算监控',
   application: '应用', grant: '访问授权', credential: '调用 API Key',
-  model_authorization: '模型调用授权', limit_policy: '限额策略',
+  model_authorization: '高级模型限制', limit_policy: '限额策略',
 };
 
 const reasonCopy: Record<string, string> = {
@@ -329,7 +329,8 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
         <Form layout="horizontal" getFormApi={setFormApi} onSubmit={submit}>
           {!connectionMode && projects.length > 1 && <Form.Select
             field="project_id"
-            label="项目"
+            label={<span id="readiness-project-label">项目</span>}
+            aria-labelledby="readiness-project-label"
             filter
             optionList={projects.map(projectOption)}
             rules={[{ required: true, message: '请选择项目' }]}
@@ -346,7 +347,8 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           </div>}
           <Form.Select
             field="model"
-            label="模型或 Alias"
+            label={<span id="readiness-model-label">模型或 Alias</span>}
+            aria-labelledby="readiness-model-label"
             filter
             optionList={modelOptions}
             placeholder="选择或搜索已录入模型"
@@ -355,7 +357,8 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           />
           <Form.Select
             field="endpoint"
-            label="调用类型"
+            label={<span id="readiness-endpoint-label">调用类型</span>}
+            aria-labelledby="readiness-endpoint-label"
             optionList={[
               { value: '/v1/chat/completions', label: '聊天 / 多模态对话' },
               { value: '/v1/embeddings', label: '文本向量（Embedding）' },
@@ -367,7 +370,8 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           />
           {!connectionMode && <Form.Select
             field="caller"
-            label="谁来调用"
+            label={<span id="readiness-caller-label">谁来调用</span>}
+            aria-labelledby="readiness-caller-label"
             optionList={[
 			  { value: 'self', label: '当前账号的个人 API Key' },
               { value: 'workload_application', label: '应用 / Agent' },
@@ -382,7 +386,8 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           />}
           {!connectionMode && draftCaller === 'workload_application' && <Form.Select
             field="application_ref"
-            label="应用 / Agent"
+            label={<span id="readiness-application-label">应用 / Agent</span>}
+            aria-labelledby="readiness-application-label"
             filter
             optionList={applicationOptions}
             placeholder={draftProjectID ? '选择所选项目中的应用' : '请先选择项目'}

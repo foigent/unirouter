@@ -201,4 +201,20 @@ describe('ModelReadinessPage', () => {
     expect(await screen.findByRole('combobox', { name: '应用 / Agent' })).toBeTruthy();
     expect(screen.queryByText('Application ref（Workload 时必填）')).toBeNull();
   });
+
+  it('gives every readiness selector a stable user-facing accessible name', async () => {
+    mocks.getProjects.mockResolvedValueOnce({
+      data: [
+        { id: 11, name: 'Core', status: 'active' },
+        { id: 12, name: 'Research', status: 'active' },
+      ],
+      total: 2,
+    });
+    render(<MemoryRouter initialEntries={['/model-readiness?project_id=11&model=company-chat&caller=self']}><ModelReadinessPage /></MemoryRouter>);
+
+    expect(await screen.findByRole('combobox', { name: '项目' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '模型或 Alias' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '调用类型' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '谁来调用' })).toBeTruthy();
+  });
 });

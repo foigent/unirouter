@@ -99,6 +99,16 @@ describe('RuntimeChangeControlWorkspace', () => {
     await waitFor(() => expect(mocks.validateRuntimeChange).toHaveBeenCalledWith('rcr_company_chat_openai_v2', 1));
   });
 
+  it('never presents an empty release history while the initial authority read is pending', async () => {
+    mocks.getRuntimeChanges.mockReturnValue(new Promise(() => {}));
+
+    render(<RuntimeChangeControlWorkspace />);
+
+    expect(await screen.findByRole('heading', { name: '正在读取发布记录' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '暂无运行时发布' })).toBeNull();
+    expect(screen.getByRole('heading', { name: '正在读取发布证据' })).toBeTruthy();
+  });
+
   it('derives the target model from an eligible channel and lets the server generate the release ref', async () => {
     mocks.getChannels.mockResolvedValue({
       data: [
@@ -121,10 +131,10 @@ describe('RuntimeChangeControlWorkspace', () => {
 
     expect(screen.queryByLabelText('发布标识')).toBeNull();
     expect(screen.getByText(/发布标识由服务器安全生成/)).toBeTruthy();
-    expect(screen.getByText(/已排除 1 个禁用或无模型通道/)).toBeTruthy();
+    expect(screen.getByText(/已排除 1 个禁用或无模型端点/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('combobox', { name: '通道快照' }));
-    fireEvent.click(await screen.findByText(/primary-cn · deepseek · staged/));
+    fireEvent.click(screen.getByRole('combobox', { name: '供应商端点快照' }));
+    fireEvent.click(await screen.findByText(/primary-cn · deepseek · 待发布/));
     fireEvent.click(screen.getByRole('combobox', { name: '目标模型' }));
     fireEvent.click(await screen.findByText('deepseek-v4-flash'));
     fireEvent.change(screen.getByRole('textbox', { name: '业务理由' }), { target: { value: '验证新通道' } });

@@ -274,6 +274,7 @@ export default function ProvenancePassportPage() {
       <Banner
         type="info"
         description="LiteLLM 是共享协议权威中的第二个异构 Connector，仅用于跨语言一致性证明；它没有进入 UniRouter 运行时 registry，也不由 UniRouter 持有其凭据、Cursor 或 Checkpoint。OpenInference 仍是元数据观察投影，不被误称为来源事实或 Connector 运行时。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
 
@@ -345,7 +346,7 @@ export default function ProvenancePassportPage() {
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="Provenance Passport 检查器">
           <div className="ur-detail-header">
             <div>
-              <Typography.Text className="ur-panel-hint">Passport Inspector</Typography.Text>
+              <Typography.Text className="ur-panel-hint">来源凭证检查器</Typography.Text>
               <Typography.Title heading={5} style={{ margin: 0 }}>来源、兼容性与隔离边界</Typography.Title>
             </div>
             <Tag color={selectedConnector?.runtime_registered ? 'green' : 'blue'}>

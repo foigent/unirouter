@@ -3,7 +3,7 @@ import { IconPlus } from '@douyinfe/semi-icons';
 import type { ModelEndpointModel, ModelEndpointTarget } from '../../api/modelEndpoints';
 import { LatencyText, StatusTag, Surface } from '../../ui';
 import { formatDateTime } from '../../utils/formatDate';
-import { routeCandidateCopy, stateHelp, stateLabel } from './presentation';
+import { adapterLabel, circuitStateLabel, routeCandidateCopy, stateHelp, stateLabel } from './presentation';
 
 const { Text } = Typography;
 
@@ -54,10 +54,10 @@ export default function ModelEndpointDetailsSheet(props: Props) {
       >
         <Descriptions row size="small" data={[
           { key: '端点地址', value: target.base_url },
-          { key: '协议适配', value: target.adapter_type },
-          { key: '路由角色', value: target.priority <= 100 ? `主端点 · P${target.priority} / W${target.weight}` : `备用端点 · P${target.priority} / W${target.weight}` },
+          { key: '兼容协议', value: adapterLabel(target.adapter_type) },
+          { key: '路由角色', value: target.priority <= 100 ? '主端点' : '备用端点' },
           { key: '凭证', value: target.eligible_credential_count > 0 ? `${target.eligible_credential_count} 个当前可用` : '缺少可用凭证' },
-          { key: '熔断状态', value: target.circuit_state },
+          { key: '连接保护', value: circuitStateLabel(target.circuit_state) },
           { key: '网关候选', value: routeCandidateCopy(target) },
         ]} />
         <div className="ur-model-endpoint-probe">
@@ -81,6 +81,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
         <summary style={{ cursor: 'pointer' }}>高级审计信息</summary>
         <div style={{ marginTop: 12 }}>
           <Text type="tertiary">稳定发布：{selected.stable_release_ref ? '已建立' : '无'}；历史记录 {selected.release_history_count} 条。旧发布是不可变审计记录，不是重复的当前模型。</Text>
+          {selected.targets.map(target => <div key={target.target_ref}><Text type="tertiary">{target.connection_name}：优先级 {target.priority}，同级权重 {target.weight}。</Text></div>)}
         </div>
       </details>
     </div>}

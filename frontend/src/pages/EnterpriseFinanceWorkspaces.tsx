@@ -348,6 +348,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
     <div>
       <Banner
         type="info"
+        closeIcon={null}
         description="企业预算、成本中心和财务期间已使用不可变版本与精确整数金额；预算默认只影响报表，不会自行阻断模型请求，也不会改写现有 wallet 结算。真实 ERP/HCM 主数据同步仍等待客户环境。"
         style={{ marginBottom: 16 }}
       />
@@ -393,6 +394,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
         onCancel={() => { setCreateMode(''); setForm({}); }}
         onOk={submitCreate}
         confirmLoading={submitting}
+        cancelText="取消"
         okText="保存"
       >
         {createMode === 'period' ? (
@@ -449,6 +451,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
         onCancel={() => { setTransitionTarget(null); setTransitionReason(''); }}
         onOk={transitionPeriod}
         confirmLoading={submitting}
+        cancelText="取消"
         okText="确认推进"
       >
         <Input
@@ -458,7 +461,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
           placeholder="填写月结工单、复核结论或退回原因"
         />
         {transitionTarget?.toState === 'closed' ? (
-          <Banner type="warning" description="关账前服务端会再次核对完整 Source 覆盖、零未分摊、零冲突和精确金额；失败时不会改变状态。" style={{ marginTop: 12 }} />
+          <Banner type="warning" closeIcon={null} description="关账前服务端会再次核对完整 Source 覆盖、零未分摊、零冲突和精确金额；失败时不会改变状态。" style={{ marginTop: 12 }} />
         ) : null}
       </Modal>
     </div>
@@ -752,6 +755,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
     <div>
       <Banner
         type={authority?.strict_active ? 'success' : 'warning'}
+        closeIcon={null}
         description={authority?.strict_active
           ? '当前已启用 Rate Card 严格模式：合同价优先于目录价；缺失或同优先级多供应商冲突时拒绝计价，绝不回退到旧 model_prices。账单有效价和内部费率不参与请求供应成本预测。'
           : '当前仍是旧价格兼容模式，用于避免现有部署升级后停流。请先生成或导入草稿、独立复核并激活，再用逐模型预检确认完整性；随后由运维显式切换 REQUEST_PRICING_AUTHORITY=rate_card。'}
@@ -759,6 +763,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       />
       <Banner
         type="info"
+        closeIcon={null}
         description="所谓官方价格同步是受控导入：记录来源 URL、修订、获取时间、原始载荷哈希和转换版本，并且只生成草稿。UniRouter 不承诺网络实时性，也不会自动批准或激活；证据过期时拒绝激活，导入或替换失败不会改写当前 active 费率。日内价只接受 UTC 明示时段和四项显式价格，不推断时区或折扣。"
         style={{ marginBottom: 16 }}
       />
@@ -796,14 +801,15 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       {bootstrapResult ? (
         <Banner
           type={bootstrapResult.skipped_model_count > 0 ? 'warning' : 'success'}
+          closeIcon={null}
           description={`迁移草稿：新建 ${bootstrapResult.created_draft_count}，已存在 ${bootstrapResult.existing_draft_count}，跳过 ${bootstrapResult.skipped_model_count}。这些记录仍须独立复核和激活；运行时没有因此自动切换。${bootstrapResult.skipped_models?.length ? ` 跳过项：${bootstrapResult.skipped_models.join('、')}` : ''}`}
           style={{ marginBottom: 16 }}
         />
       ) : null}
-      <Surface title="严格模式切换预检" description="粘贴实际会被路由的公开 model_ref；支持逗号、分号或换行。只有每个模型都唯一解析到完整 active Rate Card 才能切换。">
+      <Surface title="严格模式切换预检" description="粘贴实际会被路由的公共模型 ID；支持逗号、分号或换行。只有每个模型都唯一解析到完整的已激活 Rate Card 才能切换。">
         <Space vertical align="start" style={{ width: '100%' }}>
           <Input
-            aria-label="Rate Card 预检模型列表"
+            aria-label="预检公共模型 ID 列表"
             value={preflightModels}
             onChange={value => { setPreflightModels(value); setPreflightResult(null); }}
             placeholder="例如 deepseek-v4-pro, kimi-k3"
@@ -820,14 +826,15 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
           {preflightResult?.ready ? (
             <Banner
               type="success"
+              closeIcon={null}
               description={<span>预检已全部通过。由运维设置 <Typography.Text code copyable={{ content: 'REQUEST_PRICING_AUTHORITY=rate_card' }}>REQUEST_PRICING_AUTHORITY=rate_card</Typography.Text> 并重启；此页面不会自动修改环境或服务。</span>}
             />
           ) : null}
         </Space>
       </Surface>
-      <Surface title="请求计价证据" description="按 request_ref 查询未来授权生产者持久化的不可变快照；此页面不能创建或重算快照。">
+      <Surface title="请求计价证据" description="按操作 ID 查询已持久化的不可变计价快照；此页面不能创建或重算快照。">
         <Space style={{ marginBottom: 16 }}>
-          <Input value={requestRef} onChange={setRequestRef} placeholder="输入 request_ref" style={{ width: 320 }} />
+          <Input aria-label="操作 ID" value={requestRef} onChange={setRequestRef} placeholder="输入操作 ID（Request ID）" style={{ width: 320 }} />
           <Button icon={<IconSearch />} onClick={lookupSnapshot}>查询</Button>
         </Space>
         {snapshot ? (
@@ -845,11 +852,12 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
         onCancel={() => setApprovalTarget(null)}
         onOk={confirmApproval}
         confirmLoading={submitting}
+        cancelText="取消"
         okText="确认批准此版本"
       >
         {approvalTarget ? (
           <Space vertical align="start" style={{ width: '100%' }}>
-            <Banner type="warning" description={`你将以独立复核人批准 ${approvalTarget.card.rate_card_ref} v${approvalTarget.card.version}。请核对以下金额、单位、UTC 时段与来源证据；批准不会自动激活。`} />
+            <Banner type="warning" closeIcon={null} description={`你将以独立复核人批准 ${approvalTarget.card.rate_card_ref} v${approvalTarget.card.version}。请核对以下金额、单位、UTC 时段与来源证据；批准不会自动激活。`} />
             <RateCardReviewDetails record={approvalTarget} />
           </Space>
         ) : null}
@@ -860,11 +868,12 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
         onCancel={() => setActivationTarget(null)}
         onOk={confirmActivation}
         confirmLoading={submitting}
+        cancelText="取消"
         okText="确认激活此版本"
       >
         {activationTarget ? (
           <Space vertical align="start" style={{ width: '100%' }}>
-            <Banner type="warning" description={`将使 ${activationTarget.card.rate_card_ref} v${activationTarget.card.version} 进入 active。请再次核对实际生效价格、UTC 时段和来源证据。`} />
+            <Banner type="warning" closeIcon={null} description={`将使 ${activationTarget.card.rate_card_ref} v${activationTarget.card.version} 进入 active。请再次核对实际生效价格、UTC 时段和来源证据。`} />
             <RateCardReviewDetails record={activationTarget} />
           </Space>
         ) : null}
@@ -875,12 +884,14 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
         onCancel={() => setReplacementTarget(null)}
         onOk={confirmReplacement}
         confirmLoading={submitting}
+        cancelText="取消"
         okText="确认原子替换"
       >
         {replacementTarget ? (
           <Space vertical align="start" style={{ width: '100%' }}>
             <Banner
               type="warning"
+              closeIcon={null}
               description={`将精确替换 ${replacementTarget.current.card.rate_card_ref} v${replacementTarget.current.card.version}。后端会在同一事务中为旧 ref 追加 retired 版本，再激活 ${replacementTarget.candidate.card.rate_card_ref} v${replacementTarget.candidate.card.version}；任一步失败均全部回滚，已冻结请求仍绑定旧 active 版本。`}
             />
             <RateCardReviewDetails record={replacementTarget.current} label="当前生效价格" />
@@ -894,6 +905,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
         onCancel={() => { setCreateVisible(false); setForm({ layer: 'supplier_contracted' }); setPriceOverrides([]); }}
         onOk={createRateCard}
         confirmLoading={submitting}
+        cancelText="取消"
         okText="保存草稿"
       >
         <Space vertical align="start" style={{ width: '100%' }}>
@@ -941,9 +953,10 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
         onCancel={() => setBootstrapConfirmVisible(false)}
         onOk={bootstrapLegacyDrafts}
         confirmLoading={submitting}
+        cancelText="取消"
         okText="确认只生成草稿"
       >
-        <Banner type="warning" description="将当前 model_prices 与本客户组织倍率转换成带来源哈希的 provider_list 草稿。不会批准、激活、切换请求定价权威或重启服务；缺少稳定 provider 的模型会明确跳过。" />
+        <Banner type="warning" closeIcon={null} description="将当前 model_prices 与本客户组织倍率转换成带来源哈希的 provider_list 草稿。不会批准、激活、切换请求定价权威或重启服务；缺少稳定 provider 的模型会明确跳过。" />
       </Modal>
       <Modal
         title="导入可验证官方价格草稿"
@@ -951,10 +964,11 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
         onCancel={() => { setImportVisible(false); setImportForm({ transform_version: 'official-rate-import.v1' }); setImportPriceOverrides([]); }}
         onOk={importOfficialDraft}
         confirmLoading={submitting}
+        cancelText="取消"
         okText="导入草稿"
       >
         <Space vertical align="start" style={{ width: '100%' }}>
-          <Banner type="warning" description="此操作不联网抓取价格。请提交已获取的官方来源及原始载荷哈希；服务端只创建 provider_list 草稿，不会自动批准或激活。" />
+          <Banner type="warning" closeIcon={null} description="此操作不联网抓取价格。请提交已获取的官方来源及原始载荷哈希；服务端只创建 provider_list 草稿，不会自动批准或激活。" />
           <Input aria-label="官方价格供应商" value={importForm.provider_ref || ''} onChange={value => updateImportForm('provider_ref', value)} placeholder="稳定 provider_ref" />
           <Input aria-label="官方价格模型" value={importForm.model_ref || ''} onChange={value => updateImportForm('model_ref', value)} placeholder="与请求 model 完全一致的 model_ref" />
           {requestPriceMeters.map(item => (
@@ -1107,7 +1121,7 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
 
   const runColumns = [
     { title: '运行', render: (_: unknown, record: AllocationRun) => record.request.allocation_run_ref, width: 170 },
-    { title: 'Source 修订', render: (_: unknown, record: AllocationRun) => record.request.source_revision, width: 180 },
+    { title: '来源数据修订', render: (_: unknown, record: AllocationRun) => record.request.source_revision, width: 180 },
     { title: '规则修订', render: (_: unknown, record: AllocationRun) => `${record.request.rule_set_ref} / ${record.request.rule_set_revision}`, width: 190 },
     { title: '直接 / 规则', render: (_: unknown, record: AllocationRun) => `${record.direct_count} / ${record.rule_based_count}`, width: 120 },
     {
@@ -1117,7 +1131,7 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
         </StatusTag>
       ), width: 180,
     },
-    { title: 'Source 总额', render: (_: unknown, record: AllocationRun) => exactAmount(record.source_total), width: 140 },
+    { title: '来源总额', render: (_: unknown, record: AllocationRun) => exactAmount(record.source_total), width: 140 },
     { title: '创建时间', render: (_: unknown, record: AllocationRun) => formatDateTime(record.created_at), width: 180 },
   ];
 
@@ -1128,7 +1142,7 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
     { title: '归属', render: (_: unknown, record: JournalRecord) => `${record.journal.target.kind} / ${record.journal.target.ref}` },
     { title: '金额', render: (_: unknown, record: JournalRecord) => exactAmount(record.journal.amount), width: 140 },
     { title: '状态', render: (_: unknown, record: JournalRecord) => <StatusTag status={record.journal.state === 'approved' ? 'success' : 'pending'}>{record.journal.state === 'approved' ? '已批准' : '草稿'}</StatusTag>, width: 100 },
-    { title: 'GL 导出', render: () => <Tag color="grey">未配置</Tag>, width: 110 },
+    { title: '总账（GL）导出', render: () => <Tag color="grey">未配置</Tag>, width: 125 },
     {
       title: '操作', width: 110,
       render: (_: unknown, record: JournalRecord) => canManage && record.journal.state === 'draft'
@@ -1140,11 +1154,13 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
   return (
     <Surface
       title="企业成本分摊与关账"
-      description="分摊只改变内部报表归属，不产生客户欠款、不改请求结算；所有 Source 请求必须显式归为直接、规则、未分摊或冲突。"
+      description="分摊只改变内部报表归属，不产生客户欠款、不改请求结算；所有来源请求必须显式归为直接、规则、未分摊或冲突。"
       actions={(
         <Space>
           <Select
-            aria-label="企业财务期间"
+            aria-labelledby="enterprise-allocation-period-label"
+            insetLabel="财务期间"
+            insetLabelId="enterprise-allocation-period-label"
             placeholder="选择财务期间"
             value={periodRef || undefined}
             optionList={periodOptions}
@@ -1158,6 +1174,7 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
       <Banner
         type="info"
         description="期间有支出时，未分摊、冲突、漏项或金额不一致都会阻止关账。关账后只允许追加双人复核的调整/冲销版本；ERP/总账导出保持未配置。"
+        closeIcon={null}
         style={{ marginBottom: 16 }}
       />
       {error ? <Banner type="danger" description={error} style={{ marginBottom: 16 }} /> : null}
@@ -1166,15 +1183,15 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
       ) : (
         <>
           <div className="ur-kpi-grid">
-            <MetricTile label="Source 请求" value={summary?.source_record_count || 0} tone="blue" meta={exactAmount(summary?.source_total)} />
+            <MetricTile label="来源请求" value={summary?.source_record_count || 0} tone="blue" meta={exactAmount(summary?.source_total)} />
             <MetricTile label="覆盖状态" value={summary?.coverage_state || (loading ? '加载中' : '无运行')} tone={summary?.close_ready ? 'green' : 'amber'} />
             <MetricTile label="未分摊 / 冲突" value={`${summary?.latest_run?.unallocated_count || 0} / ${summary?.latest_run?.conflict_count || 0}`} tone={(summary?.latest_run?.unallocated_count || 0) + (summary?.latest_run?.conflict_count || 0) === 0 ? 'green' : 'red'} />
-            <MetricTile label="关账就绪" value={summary?.close_ready ? '是' : '否'} tone={summary?.close_ready ? 'green' : 'red'} meta="结算账与客户欠款动作均为 none" />
+            <MetricTile label="关账就绪" value={summary?.close_ready ? '是' : '否'} tone={summary?.close_ready ? 'green' : 'red'} meta="不修改请求结算账，也不产生客户欠款" />
           </div>
           <Surface title="不可变分摊运行">
             {loading || runs.length > 0
               ? <Table rowKey={(row?: AllocationRun) => row ? row.request.allocation_run_ref : 'missing'} columns={runColumns} dataSource={runs} loading={loading} pagination={false} scroll={{ x: 1160 }} />
-              : <EmptyState title="尚无分摊运行" description="不会自动猜测成本中心；须用完整期间 Source 事实和明确规则修订提交受控运行。" minHeight={180} />}
+              : <EmptyState title="尚无分摊运行" description="不会自动猜测成本中心；须用完整期间来源事实和明确规则修订提交受控运行。" minHeight={180} />}
           </Surface>
           <Surface
             title="关账后调整与冲销"
@@ -1195,6 +1212,7 @@ export function EnterpriseAllocationWorkspace({ orgId, canManage = false }: { or
         onCancel={() => { setJournalVisible(false); setJournalForm({ entry_type: 'adjustment', target_kind: 'cost_center' }); }}
         onOk={createJournal}
         confirmLoading={submitting}
+        cancelText="取消"
         okText="保存草稿"
       >
         <Space vertical align="start" style={{ width: '100%' }}>

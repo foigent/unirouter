@@ -124,7 +124,7 @@ export default function ProjectBudgetPanel() {
             extraText="0 表示不限制；最大值由当前数据库金额字段上限决定。"
             style={{ width: '100%' }}
           />
-          <Form.Select field="budget_period" label="预算周期" optionList={periodOptions} style={{ width: '100%' }} />
+          <Form.Select field="budget_period" aria-label="项目预算周期" label="预算周期" optionList={periodOptions} style={{ width: '100%' }} />
           <Button type="primary" htmlType="submit">保存预算</Button>
         </Form>
       </SideSheet>
