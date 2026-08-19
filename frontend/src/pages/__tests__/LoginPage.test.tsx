@@ -7,12 +7,13 @@ import LoginPage from '../../pages/LoginPage'
 // Mock the auth store
 const mocks = vi.hoisted(() => ({
   mockLogin: vi.fn(),
+  mockLoadProfile: vi.fn(),
   mockGetOIDCConfig: vi.fn(),
   mockGetOIDCStartURL: vi.fn(() => '/api/v1/auth/oidc/start?redirect=%2F'),
 }))
-const { mockLogin, mockGetOIDCConfig, mockGetOIDCStartURL } = mocks
+const { mockLogin, mockLoadProfile, mockGetOIDCConfig, mockGetOIDCStartURL } = mocks
 vi.mock('../../store/auth', () => ({
-  useAuthStore: (selector: any) => selector({ login: mocks.mockLogin }),
+  useAuthStore: (selector: any) => selector({ login: mocks.mockLogin, loadProfile: mocks.mockLoadProfile }),
 }))
 
 vi.mock('../../api/client', () => ({
@@ -43,6 +44,8 @@ function renderLoginPage() {
 describe('LoginPage', () => {
   beforeEach(() => {
     mockLogin.mockReset()
+    mockLoadProfile.mockReset()
+    mockLoadProfile.mockResolvedValue({ id: 1, username: 'admin', organization_role: 'org_admin', role: 'org_admin' })
     mockGetOIDCConfig.mockReset()
     mockGetOIDCStartURL.mockClear()
     mockGetOIDCStartURL.mockReturnValue('/api/v1/auth/oidc/start?redirect=%2F')
@@ -99,6 +102,7 @@ describe('LoginPage', () => {
 
   it('calls login and navigates on success', async () => {
     mockLogin.mockResolvedValueOnce({ id: 1, username: 'admin', role: 'org_admin' })
+    mockLoadProfile.mockResolvedValueOnce({ id: 1, username: 'admin', organization_role: 'org_admin', role: 'org_admin' })
     const user = userEvent.setup()
     renderLoginPage()
 
@@ -112,12 +116,22 @@ describe('LoginPage', () => {
 
     await waitFor(() => {
       expect(mockLogin).toHaveBeenCalledWith('admin', '***')
+      expect(mockLoadProfile).toHaveBeenCalledTimes(1)
       expect(mockNavigate).toHaveBeenCalledWith('/')
     })
   })
 
-  it('lands a login-only project identity on My Access until /me projects live membership', async () => {
+  it('waits for the authoritative profile before routing a live project member', async () => {
     mockLogin.mockResolvedValueOnce({ id: 2, username: 'dev', role: 'developer' })
+    mockLoadProfile.mockResolvedValueOnce({
+      id: 2, username: 'dev', organization_role: 'member', role: 'member',
+      navigation_capabilities: {
+        has_live_project_membership: true,
+        has_project_admin_membership: false,
+        can_discover_access_review: false,
+        can_discover_workloads: false,
+      },
+    })
     const user = userEvent.setup()
     renderLoginPage()
 
@@ -126,12 +140,14 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: /登录/i }))
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/access')
+      expect(mockLoadProfile).toHaveBeenCalledTimes(1)
+      expect(mockNavigate).toHaveBeenCalledWith('/developer')
     })
   })
 
   it('does not send org viewers to API docs after login', async () => {
     mockLogin.mockResolvedValueOnce({ id: 3, username: 'readonly', role: 'org_viewer' })
+    mockLoadProfile.mockResolvedValueOnce({ id: 3, username: 'readonly', organization_role: 'org_viewer', role: 'org_viewer' })
     const user = userEvent.setup()
     renderLoginPage()
 
@@ -142,6 +158,20 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith('/')
     })
+  })
+
+  it('hands a transient profile failure to the protected retry gate', async () => {
+    mockLogin.mockResolvedValueOnce({ id: 2, username: 'dev', role: 'member' })
+    mockLoadProfile.mockRejectedValueOnce(new Error('profile temporarily unavailable'))
+    const user = userEvent.setup()
+    renderLoginPage()
+
+    await user.type(screen.getByPlaceholderText('请输入用户名'), 'dev')
+    await user.type(screen.getByPlaceholderText('请输入密码'), '***')
+    await user.click(screen.getByRole('button', { name: /登录/i }))
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/'))
+    expect(screen.queryByText('profile temporarily unavailable')).toBeNull()
   })
 
   it('shows error message on login failure', async () => {

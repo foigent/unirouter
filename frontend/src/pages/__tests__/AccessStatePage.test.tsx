@@ -65,6 +65,14 @@ describe('AccessStatePage', () => {
     mocks.listCredentials.mockResolvedValue(page([]));
   });
 
+  it('routes an existing project member to the daily project workbench instead of offering a duplicate request', async () => {
+    render(<MemoryRouter initialEntries={['/access?project_id=11']}><AccessStatePage /></MemoryRouter>);
+
+    expect(await screen.findByText(/你已经是“Core”的项目成员/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '进入项目工作台' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /已加入项目/ })).toBeDisabled();
+  });
+
   it('keeps Grant facts visible when the independent request feed fails', async () => {
     mocks.listMyRequests.mockRejectedValue(new Error('request store unavailable'));
     render(<MemoryRouter initialEntries={['/access?project_id=11&grant_ref=grant-one']}><AccessStatePage /></MemoryRouter>);

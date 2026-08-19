@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Form, Modal, Select, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Form, Modal, Select, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconKeyStroked, IconPlus, IconRefresh } from '@douyinfe/semi-icons';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { accessApi, effectiveGrantStatus, isGrantCurrentlyActive, type AccessCredentialFamily, type AccessGrant, type AccessRequest, type IssuedCredential } from '../api/access';
 import { ApiError, api } from '../api/client';
 import { useAuthStore } from '../store/auth';
@@ -38,6 +38,7 @@ const errorText = (error: unknown, fallback: string) => {
 
 export default function AccessStatePage() {
   const user = useAuthStore((state) => state.user);
+  const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
   const intents = useRef(new IntentRequestIDs()).current;
   const [projects, setProjects] = useState<Project[]>([]);
@@ -67,6 +68,8 @@ export default function AccessStatePage() {
 
   const selectedGrant = grants.find((grant) => grant.grant_ref === selectedGrantRef);
   const selectedProject = projects.find((project) => project.id === selectedProjectID);
+  const selectedProjectMembershipRole = (selectedProject?.current_user_membership_role || '').trim();
+  const alreadyProjectMember = selectedProjectMembershipRole !== '';
   const visibleProjectName = (projectID: number) => {
     const project = projects.find((item) => item.id === projectID);
     return project ? projectDisplayName(project) : '历史或当前不可见项目';
@@ -301,15 +304,26 @@ export default function AccessStatePage() {
 
   return (
     <div className="ur-page">
-      <PageHeader eyebrow="访问与安全" title="我的访问与 API Key" description="申请项目使用权限，并在获批后创建、轮换或撤销自己的 API Key。密钥只会在创建或轮换成功时显示一次。" actions={<Button icon={<IconRefresh />} onClick={refreshAccess}>刷新</Button>} />
+      <PageHeader eyebrow="访问与安全" title="访问申请与授权" description="申请尚未加入的项目，并查看正式授权与 API Key 生命周期。已经加入项目的日常调用入口是“项目工作台”。" actions={<Button icon={<IconRefresh />} onClick={refreshAccess}>刷新</Button>} />
 
-      <Surface title="申请项目访问" description="仅显示当前账号已获准发现的项目；没有项目时不会扩大同组织项目枚举。">
+      {alreadyProjectMember ? (
+        <Banner
+          type="info"
+          closeIcon={null}
+          description={`你已经是“${projectDisplayName(selectedProject!)}”的项目成员，无需再次申请。创建个人 Key、调试调用和查看模型请使用项目工作台；本页保留申请、授权、轮换与撤销记录。`}
+          style={{ marginBottom: 16 }}
+        >
+          <Button size="small" onClick={() => navigate('/developer')}>进入项目工作台</Button>
+        </Banner>
+      ) : null}
+
+      <Surface title="申请项目访问" description="仅用于尚未加入的项目；页面只显示当前账号已获准发现的项目，不会扩大同组织项目枚举。">
         {projectError ? <EmptyState title="项目列表暂时不可用" description={projectError} actions={<Button onClick={loadProjects}>重试</Button>} /> : projects.length === 0 && !projectLoading ? (
           <EmptyState title="暂无可申请项目" description="请让管理员提供明确的项目加入路径；当前页面不会枚举同组织全部项目。" />
         ) : (
           <Space wrap>
             <Select loading={projectLoading} value={selectedProjectID} style={{ width: 280 }} placeholder="选择项目" optionList={projects.map(projectOption)} onChange={(value) => replaceSearch({ project_id: Number(value) })} />
-            <Button type="primary" icon={<IconPlus />} disabled={!selectedProject} onClick={() => setRequestDrawer(true)}>提交访问请求</Button>
+            <Button type="primary" icon={<IconPlus />} disabled={!selectedProject || alreadyProjectMember} onClick={() => setRequestDrawer(true)}>{alreadyProjectMember ? '已加入项目' : '提交访问请求'}</Button>
           </Space>
         )}
       </Surface>

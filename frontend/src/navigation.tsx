@@ -251,7 +251,7 @@ const taskNavItems: NavItem[] = [
 ];
 
 const projectOverviewItem: NavItem = { itemKey: '/developer', text: '项目工作台', icon: <IconTerminal /> };
-const accessStateItem: NavItem = { itemKey: '/access', text: '我的访问与 API Key', icon: <IconShieldStroked /> };
+const accessStateItem: NavItem = { itemKey: '/access', text: '访问申请与授权', icon: <IconShieldStroked /> };
 
 const platformRoutes = new Set(taskNavItems.flatMap(item => item.items?.map(child => child.itemKey) || [item.itemKey]));
 const compatibilityRoutes = new Set([
@@ -342,10 +342,12 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
   // rows exist in /me.
   const isEndUserIdentity = !organizationRole || organizationRole === 'member';
   const exposeProjectWorkbench = organizationRole === 'member' && authz.hasLiveProjectMembership;
-  if (exposeProjectWorkbench) items = [projectOverviewItem, ...items];
   if (organizationRole && organizationRole !== 'member') items = labelOverviewForRole(items, organizationRole);
 	const exposeAccessState = isEndUserIdentity;
-	if (exposeAccessState) items = [accessStateItem, ...items];
+	const endUserItems: NavItem[] = [];
+	if (exposeProjectWorkbench) endUserItems.push(projectOverviewItem);
+	if (exposeAccessState) endUserItems.push(accessStateItem);
+	if (endUserItems.length > 0) items = [...endUserItems, ...items];
   return applyLicenseState(items, licenseAccess);
 }
 
