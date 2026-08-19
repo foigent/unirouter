@@ -150,10 +150,15 @@ type TestResult struct {
 	StatusCode int
 	LatencyMs  int64
 	Model      string
-	TokensUsed int
-	Body       []byte
-	Error      string
-	RequestURL string
+	// ReportedModel is the exact top-level model identity returned by the
+	// provider. It is intentionally separate from Model, which is the identity
+	// UniRouter sent upstream. Some providers omit it; callers must represent
+	// that as unknown instead of pretending the requested identity was echoed.
+	ReportedModel string
+	TokensUsed    int
+	Body          []byte
+	Error         string
+	RequestURL    string
 }
 
 type Adapter interface {

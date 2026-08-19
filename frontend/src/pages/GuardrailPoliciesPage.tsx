@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Form, Modal, SideSheet, Space, Table, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Form, Modal, SideSheet, Space, Table, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { isBillingRole, isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
@@ -390,8 +390,9 @@ export default function GuardrailPoliciesPage() {
       </Surface>
 
       <SideSheet title={editing ? `编辑安全策略：${editing.name}` : '新增内容安全策略'} visible={drawerVisible} onCancel={closeDrawer} width={580}>
+        <Banner type="info" closeIcon={null} description="常用流程只需选择保护范围、检测内容、命中动作，并先用“影子观察”验证误报。接口阶段、凭证级范围和故障规则放在高级设置中。" style={{ marginBottom: 16 }} />
         <Form getFormApi={(instance: any) => setFormApi(instance)} onSubmit={submit}>
-          <Form.Input field="name" label="策略名称" placeholder="customer-pii-redaction" rules={[{ required: true, message: '请输入策略名称' }]} />
+          <Form.Input field="name" label="策略名称" placeholder="例如：客户数据脱敏" rules={[{ required: true, message: '请输入策略名称' }]} />
           {platform ? (
             <Form.Select
               field="scope"
@@ -413,29 +414,34 @@ export default function GuardrailPoliciesPage() {
               style={{ width: '100%' }}
             />
           ) : <Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${customerOrgID}`}</Text>}
-          <Form.Select field="project_id" label={<span id="guardrail-policy-project-label">项目（可选）</span>} aria-labelledby="guardrail-policy-project-label" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
-          <Form.Select field="api_key_id" label={<span id="guardrail-policy-key-label">访问凭证（可选）</span>} aria-labelledby="guardrail-policy-key-label" optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${projectDisplayName({ id: key.project_id || 0, name: key.project_name || '' })} · ${key.key_prefix}***` }))} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
+          <Form.Select field="project_id" label={<span id="guardrail-policy-project-label">仅保护某个项目（可选）</span>} aria-labelledby="guardrail-policy-project-label" optionList={projects} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} extraText="留空表示作用于所选客户范围中的全部项目。" />
           <Form.Select field="model" label={<span id="guardrail-policy-model-label">模型（可选）</span>} aria-labelledby="guardrail-policy-model-label" optionList={models.map((model) => ({ value: model, label: model }))} showClear filter style={{ width: '100%' }} />
-          <Form.Select field="stage" label={<span id="guardrail-policy-stage-label">检查阶段</span>} aria-labelledby="guardrail-policy-stage-label" optionList={[{ value: 'input', label: '请求输入（发往上游前）' }, { value: 'nonstream_output', label: '非流式输出（完整结果交付前）' }, { value: 'stream_output', label: '流式输出（每个模型数据帧写出前）' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="detector_ref" label={<span id="guardrail-policy-detector-label">检测器</span>} aria-labelledby="guardrail-policy-detector-label" optionList={detectors.map((value) => ({
+          <Form.Select field="detector_ref" label={<span id="guardrail-policy-detector-label">检测内容</span>} aria-labelledby="guardrail-policy-detector-label" optionList={detectors.map((value) => ({
             value,
             label: `${detectorLabels[value] || value}${streamCapabilities[value]?.synchronous ? '' : '（流式仅影子/审计）'}`,
-          }))} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="entities" label={<span id="guardrail-policy-entities-label">PII/密钥类别</span>} aria-labelledby="guardrail-policy-entities-label" multiple optionList={[
+          }))} rules={[{ required: true }]} style={{ width: '100%' }} extraText="默认在 UniRouter 本地检测，不会把正文发送到外部服务。" />
+          <Form.Select field="entities" label={<span id="guardrail-policy-entities-label">要识别的敏感数据</span>} aria-labelledby="guardrail-policy-entities-label" multiple optionList={[
             { value: 'email', label: '邮箱' }, { value: 'phone', label: '电话号码' },
             { value: 'credit_card', label: '银行卡号（含校验）' }, { value: 'secret', label: 'API Key / Token / Secret' },
           ]} style={{ width: '100%' }} />
           <Form.Select field="action" label={<span id="guardrail-policy-action-label">命中后动作</span>} aria-labelledby="guardrail-policy-action-label" optionList={[{ value: 'audit', label: '只审计，不改变内容' }, { value: 'redact', label: '脱敏后继续（仅支持可定位的 PII）' }, { value: 'block', label: '阻断，不交付内容' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="mode" label={<span id="guardrail-policy-mode-label">运行状态</span>} aria-labelledby="guardrail-policy-mode-label" optionList={[{ value: 'shadow', label: '影子观察（推荐先选）' }, { value: 'enforce', label: '正式执行' }, { value: 'disabled', label: '停用' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          <Form.Select field="failure_mode" label={<span id="guardrail-policy-failure-label">检测器不可用时</span>} aria-labelledby="guardrail-policy-failure-label" optionList={[{ value: 'degraded_allow', label: '记录降级后继续（适合普通审计）' }, { value: 'fail_closed', label: '安全拒绝（适合强制规则）' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
-          {platform ? <Form.Select field="mandatory" label={<span id="guardrail-policy-mandatory-label">是否为部署强制规则</span>} aria-labelledby="guardrail-policy-mandatory-label" optionList={[{ value: 'no', label: '否' }, { value: 'yes', label: '是（自动设为部署全局、正式执行、安全拒绝）' }]} onChange={(value: any) => {
-            if (value === 'yes') {
-              setPolicyScope('deployment_global');
-              formApi?.setValue('scope', 'deployment_global');
-              formApi?.setValue('project_id', undefined);
-              formApi?.setValue('api_key_id', undefined);
-            }
-          }} rules={[{ required: true }]} style={{ width: '100%' }} /> : null}
+          <Form.Select field="mode" label={<span id="guardrail-policy-mode-label">如何开始</span>} aria-labelledby="guardrail-policy-mode-label" optionList={[{ value: 'shadow', label: '先影子观察，不改变请求（推荐）' }, { value: 'enforce', label: '立即正式执行' }, { value: 'disabled', label: '保存但暂不运行' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+          <details className="ur-form-advanced">
+            <summary>高级设置（检查阶段、单个凭证和故障规则）</summary>
+            <div style={{ marginTop: 12 }}>
+              <Form.Select field="api_key_id" label={<span id="guardrail-policy-key-label">仅保护某个访问凭证（可选）</span>} aria-labelledby="guardrail-policy-key-label" optionList={keys.map((key) => ({ value: key.id, label: `${key.name} · ${projectDisplayName({ id: key.project_id || 0, name: key.project_name || '' })} · ${key.key_prefix}***` }))} showClear filter disabled={policyScope === 'deployment_global'} style={{ width: '100%' }} />
+              <Form.Select field="stage" label={<span id="guardrail-policy-stage-label">检查阶段</span>} aria-labelledby="guardrail-policy-stage-label" optionList={[{ value: 'input', label: '请求输入（发往上游前）' }, { value: 'nonstream_output', label: '非流式输出（完整结果交付前）' }, { value: 'stream_output', label: '流式输出（每个模型数据帧写出前）' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+              <Form.Select field="failure_mode" label={<span id="guardrail-policy-failure-label">检测器不可用时</span>} aria-labelledby="guardrail-policy-failure-label" optionList={[{ value: 'degraded_allow', label: '记录降级后继续（适合普通审计）' }, { value: 'fail_closed', label: '安全拒绝（适合强制规则）' }]} rules={[{ required: true }]} style={{ width: '100%' }} />
+              {platform ? <Form.Select field="mandatory" label={<span id="guardrail-policy-mandatory-label">是否为部署强制规则</span>} aria-labelledby="guardrail-policy-mandatory-label" optionList={[{ value: 'no', label: '否' }, { value: 'yes', label: '是（自动设为部署全局、正式执行、安全拒绝）' }]} onChange={(value: any) => {
+                if (value === 'yes') {
+                  setPolicyScope('deployment_global');
+                  formApi?.setValue('scope', 'deployment_global');
+                  formApi?.setValue('project_id', undefined);
+                  formApi?.setValue('api_key_id', undefined);
+                }
+              }} rules={[{ required: true }]} style={{ width: '100%' }} /> : null}
+            </div>
+          </details>
           <Space style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editing ? '保存并生成新版本' : '创建策略'}</Button>

@@ -36,6 +36,7 @@ SELECT COUNT(*)
    AND usage.column_name IN ('channel_id','public_model')`).Scan(&primaryKeyColumns))
 	require.Equal(t, 2, primaryKeyColumns)
 
+	execMigrationDown(t, ctx, pool, "000068_provider_reported_model_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000066_runtime_assignment_projection.down.sql")
 	execMigrationDown(t, ctx, pool, "000065_model_endpoint_projection.down.sql")

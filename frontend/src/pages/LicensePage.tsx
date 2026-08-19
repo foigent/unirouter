@@ -184,12 +184,12 @@ export default function LicensePage() {
   };
 
   if (loading) {
-    return <div className="ur-page"><EmptyState title="正在加载商业授权" minHeight={360} /></div>;
+    return <div className="ur-page ur-license-page"><EmptyState title="正在加载商业授权" minHeight={360} /></div>;
   }
 
   if (loadError || !status) {
     return (
-      <div className="ur-page">
+      <div className="ur-page ur-license-page">
         <PageHeader
           eyebrow="系统与集成"
           title="商业授权"
@@ -209,7 +209,7 @@ export default function LicensePage() {
   }
 
   return (
-    <div className="ur-page">
+    <div className="ur-page ur-license-page">
       <PageHeader
         eyebrow="系统与集成"
         title="商业授权"
@@ -222,7 +222,7 @@ export default function LicensePage() {
       />
 
       <div className="ur-settings-grid">
-        <Surface title="授权结论">
+        <Surface title="授权结论" className="ur-readable-descriptions">
           <Descriptions
             data={[
               { key: '状态', value: <Tag color={statusColor(status?.status)}>{statusText(status?.status)}</Tag> },
@@ -253,12 +253,12 @@ export default function LicensePage() {
           )}
         </Surface>
 
-        <Surface title="授权文件信息">
+        <Surface title="授权文件信息" className="ur-readable-descriptions">
           <Descriptions data={metadataRows} row />
         </Surface>
       </div>
 
-      <Surface title="验签与部署绑定详情" description="用于支持人员排查授权文件、公钥或部署标识问题；日常判断请以上方“授权结论”为准。">
+      <Surface className="ur-readable-descriptions" title="验签与部署绑定详情" description="用于支持人员排查授权文件、公钥或部署标识问题；日常判断请以上方“授权结论”为准。">
         <Descriptions
           data={[
             { key: '商业格式', value: status?.commercial ? '是' : '否' },

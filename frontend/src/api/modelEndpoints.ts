@@ -5,6 +5,7 @@ export type ModelEndpointProbe = {
   current: boolean;
   status_code: number;
   latency_ms: number;
+  reported_model?: string;
   error_summary?: string;
   tested_at: string;
 };
@@ -67,10 +68,27 @@ export type ModelEndpointTestResponse = {
   success: boolean;
   model?: string;
   upstream_model?: string;
+  reported_model?: string;
   error?: string;
   status_code?: number;
   latency_ms?: number;
   tokens_used?: number;
+};
+
+export type ProviderModelCatalogItem = {
+  id: string;
+  owned_by?: string;
+  context_length?: number;
+};
+
+export type ProviderModelCatalog = {
+  authority: 'live_provider_api';
+  provider: string;
+  channel_id: number;
+  endpoint: string;
+  fetched_at: string;
+  data: ProviderModelCatalogItem[];
+  total: number;
 };
 
 export const modelEndpointApi = {
@@ -80,6 +98,8 @@ export const modelEndpointApi = {
       method: 'POST',
       body: JSON.stringify({ model, prompt }),
     }),
+  getProviderModels: (channelId: number) =>
+    request<ProviderModelCatalog>(`/channels/${channelId}/provider-models`),
   activateModelEndpoint: (data: ModelEndpointActivationRequest) =>
     request<Record<string, unknown>>('/model-endpoints/activate', { method: 'POST', body: JSON.stringify(data) }),
   startModelEndpointCanary: (data: ModelEndpointActivationRequest & { canary_basis_points?: number }) =>

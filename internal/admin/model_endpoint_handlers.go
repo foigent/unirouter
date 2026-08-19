@@ -19,12 +19,13 @@ import (
 const modelEndpointProjectionVersion = "unirouter.model-endpoints.v2"
 
 type modelEndpointProbeView struct {
-	Success      bool      `json:"success"`
-	Current      bool      `json:"current"`
-	StatusCode   int       `json:"status_code"`
-	LatencyMS    int64     `json:"latency_ms"`
-	ErrorSummary string    `json:"error_summary,omitempty"`
-	TestedAt     time.Time `json:"tested_at"`
+	Success       bool      `json:"success"`
+	Current       bool      `json:"current"`
+	StatusCode    int       `json:"status_code"`
+	LatencyMS     int64     `json:"latency_ms"`
+	ReportedModel string    `json:"reported_model,omitempty"`
+	ErrorSummary  string    `json:"error_summary,omitempty"`
+	TestedAt      time.Time `json:"tested_at"`
 }
 
 type modelEndpointTargetView struct {

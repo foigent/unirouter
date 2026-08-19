@@ -220,7 +220,7 @@ func TestAzureOpenAIConnectivityTestOmitsOptionalTemperature(t *testing.T) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(`{"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"model":"gpt-4o-2026-08-06","usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)),
 			}, nil
 		}),
 	})
@@ -229,6 +229,9 @@ func TestAzureOpenAIConnectivityTestOmitsOptionalTemperature(t *testing.T) {
 	}
 	if !result.Success || result.TokensUsed != 2 {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+	if result.ReportedModel != "gpt-4o-2026-08-06" {
+		t.Fatalf("reported model = %q", result.ReportedModel)
 	}
 }
 

@@ -251,7 +251,7 @@ export const enterpriseFinanceApi = {
     request<ListResponse<BudgetRecord>>(appendParams('/enterprise-finance/budgets', { org_id: orgId })),
   getBudgetPositions: (orgId?: number) =>
     request<ListResponse<BudgetPosition>>(appendParams('/enterprise-finance/budget-positions', { org_id: orgId })),
-  createBudgetDraft: (data: { org_id?: number; budget_ref: string; scope: EnterpriseScope; fiscal_period_ref: string; amount: ExactAmount }) =>
+  createBudgetDraft: (data: { org_id?: number; budget_ref?: string; scope: EnterpriseScope; fiscal_period_ref: string; amount: ExactAmount }) =>
     request<BudgetRecord>('/enterprise-finance/budgets', { method: 'POST', body: JSON.stringify(data) }),
   approveBudget: (budgetRef: string, data: { org_id?: number; expected_version: number }) =>
     request<BudgetRecord>(`/enterprise-finance/budgets/${encodeURIComponent(budgetRef)}/approve`, { method: 'POST', body: JSON.stringify(data) }),

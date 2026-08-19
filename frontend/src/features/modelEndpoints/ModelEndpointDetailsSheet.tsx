@@ -13,6 +13,7 @@ type Props = {
   onClose: () => void;
   onTransitionCanary: (model: ModelEndpointModel, action: 'promote' | 'rollback') => void;
   onTest: (target: ModelEndpointTarget) => void;
+  onProviderCatalog: (target: ModelEndpointTarget) => void;
   onActivate: (model: ModelEndpointModel, target: ModelEndpointTarget) => void;
   onToggle: (target: ModelEndpointTarget) => void;
   onManageCredential: (target: ModelEndpointTarget) => void;
@@ -46,6 +47,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
         description={`${target.public_model} → ${target.upstream_model}`}
         actions={<Space wrap>
           <Button loading={workingTarget === target.target_ref} disabled={workingTarget !== '' || target.eligible_credential_count === 0} onClick={() => props.onTest(target)}>真实检测</Button>
+          <Button disabled={workingTarget !== '' || target.eligible_credential_count === 0 || target.adapter_type === 'azure_openai'} onClick={() => props.onProviderCatalog(target)}>核对供应商模型列表</Button>
           {target.state === 'ready' && selected.state !== 'governance_blocked' && <Button type="primary" loading={workingTarget === target.target_ref} onClick={() => props.onActivate(selected, target)}>{!selected.stable_release_ref ? '首次启用' : selected.route_available ? '加入 5% 灰度' : '替换失效路由'}</Button>}
           {target.config_status === 'disabled'
             ? <Button type="primary" disabled={!target.last_probe?.current || !target.last_probe.success} loading={workingTarget === target.target_ref} onClick={() => props.onToggle(target)}>恢复连接</Button>
@@ -68,6 +70,11 @@ export default function ModelEndpointDetailsSheet(props: Props) {
             </StatusTag>
             {target.last_probe.latency_ms > 0 && <LatencyText value={target.last_probe.latency_ms} />}
             <Text type="tertiary">HTTP {target.last_probe.status_code || '-'} · {formatDateTime(target.last_probe.tested_at)}</Text>
+            {target.last_probe.reported_model ? (
+              target.last_probe.reported_model === target.upstream_model
+                ? <Text type="success">供应商回报模型：{target.last_probe.reported_model}（一致）</Text>
+                : <Text type="warning">供应商回报模型：{target.last_probe.reported_model}（与发送的 {target.upstream_model} 不同）</Text>
+            ) : target.last_probe.success ? <Text type="tertiary">供应商响应未回报模型字段，无法据此确认身份</Text> : null}
             {target.last_probe.error_summary && <Text type="danger">{target.last_probe.error_summary}</Text>}
           </Space>}
         </div>

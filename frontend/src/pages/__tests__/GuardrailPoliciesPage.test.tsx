@@ -191,12 +191,13 @@ describe('GuardrailPoliciesPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /新增策略/ }));
     expect(await screen.findByRole('combobox', { name: '作用域' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: '检查阶段' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: '检测器' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '检测内容' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '命中后动作' })).toBeTruthy();
+    fireEvent.click(screen.getByText('高级设置（检查阶段、单个凭证和故障规则）'));
+    expect(screen.getByRole('combobox', { name: '检查阶段' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '检测器不可用时' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '是否为部署强制规则' })).toBeTruthy();
-    fireEvent.change(await screen.findByPlaceholderText('customer-pii-redaction'), { target: { value: 'customer-default' } });
+    fireEvent.change(await screen.findByPlaceholderText('例如：客户数据脱敏'), { target: { value: 'customer-default' } });
     fireEvent.click(screen.getByRole('button', { name: '创建策略' }));
     await waitFor(() => expect(mocks.createGuardrailPolicy).toHaveBeenCalledWith(expect.objectContaining({
       name: 'customer-default', org_id: 22, mandatory: false,

@@ -108,6 +108,7 @@ export const channelApi = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  get: (id: number) => request<ProviderChannel>(`/channels/${id}`),
   update: (id: number, input: UpdateProviderChannel) =>
     request<{ message: string }>(`/channels/${id}`, {
       method: 'PUT',

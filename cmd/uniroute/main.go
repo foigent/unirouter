@@ -848,6 +848,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">PUT</td><td><code>/api/v1/channels/{id}</code></td><td>Update channel</td></tr>
 <tr><td class="method">DELETE</td><td><code>/api/v1/channels/{id}</code></td><td>Delete channel</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/channels/{id}/test</code></td><td>Test channel</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/channels/{id}/provider-models</code></td><td>Read live provider model catalog without exposing credentials</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-endpoints</code></td><td>Canonical model, provider target, probe and runtime projection</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/activate</code></td><td>Activate a tested first provider target</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/canary</code></td><td>Add or replace a tested target through bounded canary</td></tr>
@@ -1158,6 +1159,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 
 	registerGlobalControlRoutes(mux, adminHandler, platformRoute, licensedRoute(licensing.FeatureGuardrails, platformRoute))
 	mux.Handle("POST /api/v1/channels/{id}/test", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.TestChannel))
+	mux.Handle("GET /api/v1/channels/{id}/provider-models", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.ListChannelProviderModels))
 	mux.Handle("GET /api/v1/wallet/transactions/export", billingRoute(adminHandler.ExportWalletTransactions))
 	metricsHandler := middleware.MetricsMiddleware(mux)
 	corsHandler := middleware.CORSWithOptions(middleware.CORSOptions{

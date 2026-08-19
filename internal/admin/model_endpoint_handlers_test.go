@@ -201,7 +201,7 @@ func TestPersistChannelModelProbePinsExactConnectionCredentialAndModelIdentity(t
 	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RolePlatformAdmin)
 	request = request.WithContext(ctx)
 	err := h.persistChannelModelProbe(request, channelModelProbeRecord{
-		ChannelID: 13, PublicModel: "company-fast", UpstreamModel: "deepseek/deepseek-v4-flash",
+		ChannelID: 13, PublicModel: "company-fast", UpstreamModel: "deepseek/deepseek-v4-flash", ReportedModel: "deepseek-v4-flash-202608",
 		RoutingEpoch: 4, CredentialID: 99, CredentialStateEpoch: 3,
 		Success: true, StatusCode: 200, LatencyMS: 18,
 	})
@@ -211,8 +211,8 @@ func TestPersistChannelModelProbePinsExactConnectionCredentialAndModelIdentity(t
 	if !strings.Contains(capturedSQL, "ON CONFLICT (channel_id,public_model) DO UPDATE") {
 		t.Fatalf("probe persistence is not a latest-state upsert: %s", capturedSQL)
 	}
-	want := []any{int64(13), "company-fast", "deepseek/deepseek-v4-flash", int64(4), int64(99), int64(3), true, 200, int64(18)}
-	if len(capturedArgs) != 11 {
+	want := []any{int64(13), "company-fast", "deepseek/deepseek-v4-flash", "deepseek-v4-flash-202608", int64(4), int64(99), int64(3), true, 200, int64(18)}
+	if len(capturedArgs) != 12 {
 		t.Fatalf("probe args = %#v", capturedArgs)
 	}
 	for index, value := range want {
@@ -220,7 +220,7 @@ func TestPersistChannelModelProbePinsExactConnectionCredentialAndModelIdentity(t
 			t.Fatalf("probe arg %d = %#v, want %#v", index, capturedArgs[index], value)
 		}
 	}
-	if capturedArgs[10] != int64(42) {
-		t.Fatalf("tested_by = %#v, want 42", capturedArgs[10])
+	if capturedArgs[11] != int64(42) {
+		t.Fatalf("tested_by = %#v, want 42", capturedArgs[11])
 	}
 }

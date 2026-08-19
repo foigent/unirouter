@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({
   previewAgentTrust: vi.fn(),
   getModelAuthorizationContract: vi.fn(),
   getModelAuthorizations: vi.fn(),
+  getUsers: vi.fn(),
+  getProjects: vi.fn(),
+  getKeys: vi.fn(),
+  getModelNames: vi.fn(),
   createModelAuthorization: vi.fn(),
   activateModelAuthorization: vi.fn(),
   revokeModelAuthorization: vi.fn(),
@@ -145,6 +149,10 @@ describe('AgentTrustPage', () => {
       }],
       total: 1,
     });
+    mocks.getUsers.mockResolvedValue({ data: [], total: 0 });
+    mocks.getProjects.mockResolvedValue({ data: [], total: 0 });
+    mocks.getKeys.mockResolvedValue({ data: [], total: 0 });
+    mocks.getModelNames.mockResolvedValue({ data: [{ model: 'company-chat' }] });
     mocks.getAgentTrustContract.mockResolvedValue({
       contract_version: 'unirouter.agent-trust-review.v1',
       report_version: 'unirouter.agent-trust-report.v1',
@@ -182,10 +190,13 @@ describe('AgentTrustPage', () => {
     expect(mocks.getAgentTrustContract).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: '新增限制策略' }));
-    expect(await screen.findByRole('combobox', { name: '主体类型' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: '效果' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: '端点范围' })).toBeTruthy();
-    expect(screen.getByText(/不能在这里创建主体/)).toBeTruthy();
+    expect(await screen.findByRole('combobox', { name: '限制对象类型' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '选择人员' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '只允许调用这些模型' })).toBeTruthy();
+    expect(screen.getByText(/这不是开通权限/)).toBeTruthy();
+    fireEvent.click(screen.getByText('高级规则（拒绝策略、环境和接口范围）'));
+    expect(screen.getByRole('combobox', { name: '规则方式' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '接口范围' })).toBeTruthy();
   });
 
   it('fails closed and makes no authorization calls when the canonical customer is ambiguous', async () => {

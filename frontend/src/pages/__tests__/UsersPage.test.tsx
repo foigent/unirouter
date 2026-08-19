@@ -124,12 +124,12 @@ describe('UsersPage enterprise identity presentation', () => {
     expect(await screen.findByRole('heading', { name: '暂无用户' })).toBeTruthy();
   });
 
-  it('creates a local user with an explicit organization', async () => {
+  it('creates a local user in the customer organization and grants the recommended project access', async () => {
     mocks.createUser.mockResolvedValue({ id: 10 });
     render(<UsersPage />);
 
-	await screen.findByText('local-user');
-    fireEvent.click(screen.getByText('新增本地用户'));
+    await screen.findByText('local-user');
+    fireEvent.click(screen.getByRole('button', { name: /新增本地用户/ }));
 
     expect(await screen.findByText('本地登录名在当前部署中全局唯一，忽略大小写和首尾空白。')).toBeTruthy();
     expect(screen.queryByText(/登录来源、外部 subject、用户名与邮箱由 OIDC/)).toBeNull();
@@ -147,6 +147,21 @@ describe('UsersPage enterprise identity presentation', () => {
       organization_role: 'member',
       status: 'active',
     }));
+    await waitFor(() => expect(mocks.upsertProjectMember).toHaveBeenCalledWith(31, 10, 'project_user'));
+  });
+
+  it('opens every new-user form with blank account credentials instead of retaining the previous draft', async () => {
+    render(<UsersPage />);
+
+    await screen.findByText('local-user');
+    fireEvent.click(screen.getByRole('button', { name: /新增本地用户/ }));
+    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'unfinished-user' } });
+    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'unfinished-password-123' } });
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /新增本地用户/ }));
+    expect(await screen.findByLabelText('用户名')).toHaveValue('');
+    expect(screen.getByLabelText('初始密码')).toHaveValue('');
   });
 
   it('grants normal model use through project membership instead of an advanced model grant', async () => {

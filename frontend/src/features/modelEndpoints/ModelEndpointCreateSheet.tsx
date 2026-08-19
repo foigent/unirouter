@@ -59,7 +59,10 @@ export default function ModelEndpointCreateSheet({ open, lockedPublicModel, mode
         provider,
         base_url: baseURL,
         models: publicModel,
-        model_mapping: upstreamModel !== publicModel ? { [publicModel]: upstreamModel } : {},
+        // Always persist the identity mapping explicitly, even when both
+        // strings currently match. An empty map used to make a display label
+        // silently become the provider API model ID.
+        model_mapping: { [publicModel]: upstreamModel },
         adapter_type: adapterType,
         adapter_config: adapterConfig,
         priority: values.route_role === 'backup' ? 200 : 100,
@@ -160,10 +163,16 @@ export default function ModelEndpointCreateSheet({ open, lockedPublicModel, mode
           field="public_model"
           label="新的公共模型 ID"
           placeholder="例如 deepseek-v4-flash"
-          rules={[{ required: true, message: '请输入新的公共模型 ID' }]}
-          extraText="这是应用请求 UniRouter 时使用的稳定 ID。建议使用小写字母、数字、点、短横线或下划线；不要把供应商名称重复写入同一模型的多个 ID。"
+          rules={[
+            { required: true, message: '请输入新的公共模型 ID' },
+            { validator: (_rule, value) => !value || /^[a-z0-9][a-z0-9._-]{0,159}$/.test(String(value).trim()), message: '请使用小写字母、数字、点、短横线或下划线；显示名称稍后在模型目录维护' },
+          ]}
+          extraText="这是应用请求 UniRouter 时使用的稳定 ID，不是展示标题。只使用小写字母、数字、点、短横线或下划线；供应商展示名与上游 ID 分开维护。"
         />}
-        <Form.Input field="upstream_model" label="上游模型 / 部署 ID" placeholder="供应商实际接受的精确 ID" rules={[{ required: true, message: '必填' }]} />
+        <Form.Input field="upstream_model" label="上游模型 / 部署 ID" placeholder="供应商实际接受的精确 ID，例如 kimi-k2.7-code" rules={[
+          { required: true, message: '必填' },
+          { validator: (_rule, value) => !value || (!/\s/u.test(String(value)) && String(value).trim().length <= 200), message: '请输入供应商返回的精确 ID，不能包含空格或换行' },
+        ]} extraText="必须来自供应商 API 文档或实时模型列表，不能填写 Kimi K2.7 Code 这类展示名称。保存后可在端点详情读取供应商实时列表核对。" />
       </div>
       {selectedPreset === 'azure' && <div className="ur-model-endpoint-form-grid">
         <Text type="tertiary">上面的“上游模型 / 部署 ID”就是 Azure 部署名，无需重复填写。</Text>

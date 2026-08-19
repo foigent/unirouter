@@ -37,6 +37,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const [showDrawer, setShowDrawer] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const [formApi, setFormApi] = useState<any>(null);
+	const [formInstance, setFormInstance] = useState(0);
 	const [accessUser, setAccessUser] = useState<any>(null);
 	const [accessFormApi, setAccessFormApi] = useState<any>(null);
 	const [accessProjects, setAccessProjects] = useState<any[]>([]);
@@ -76,7 +77,23 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
 	}, [customerOrgID, providerScope]);
   const roleOptions = userManagementOrganizationRoleOptions.filter(option => option.value !== 'platform_admin');
 
-  const closeDrawer = () => { setShowDrawer(false); setEditUser(null); };
+  const closeDrawer = () => { setShowDrawer(false); setEditUser(null); formApi?.reset(); };
+
+	const loadProjectOptions = async () => {
+		setAccessLoading(true);
+		try {
+			const projects = await loadAllPages<any>((nextPage, size) => api.getProjects(nextPage, size, { status: 'active' }));
+			const available = projects.filter(project => Number(project.org_id) === Number(customerOrgID) && project.status === 'active');
+			setAccessProjects(available);
+			return available;
+		} catch (error) {
+			setAccessProjects([]);
+			Toast.error(error instanceof ApiError ? error.message : '无法加载可授权项目');
+			return [];
+		} finally {
+			setAccessLoading(false);
+		}
+	};
 
   const mutationRestriction = (user: any) => {
     if (Number(user.id) === Number(currentUser?.id)) {
@@ -101,14 +118,24 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           Toast.error('无法确认客户组织，未创建用户');
           return;
         }
-        await api.createUser({
+        const created = await api.createUser({
           org_id: customerOrgID,
           username: v.username,
           password: v.password,
           organization_role: v.organization_role,
           status: v.status || 'active',
         });
-        Toast.success('用户创建成功');
+		const initialProjectID = Number(v.initial_project_id || 0);
+		if (initialProjectID > 0) {
+			try {
+				await api.upsertProjectMember(initialProjectID, Number(created.id), String(v.initial_project_role || 'project_user'));
+				Toast.success('用户已创建并获得项目访问；重新登录后可创建自己的 API Key');
+			} catch (membershipError) {
+				Toast.warning(`用户已创建，但项目访问未授予${membershipError instanceof Error && membershipError.message ? `：${membershipError.message}` : ''}。请在用户列表点击“授予项目访问”重试。`);
+			}
+		} else {
+			Toast.success('用户已创建；该账号尚不能调用模型，请继续授予项目访问');
+		}
       }
       closeDrawer();
       load(editUser ? page : 1, pageSize, providerScope);
@@ -148,7 +175,9 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
   const openCreate = () => {
 		if (providerScope !== 'local') return;
     setEditUser(null);
+	setFormInstance(current => current + 1);
     setShowDrawer(true);
+	void loadProjectOptions();
   };
 
   const openEdit = (u: any) => {
@@ -158,6 +187,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
       return;
     }
     setEditUser(u);
+	setFormInstance(current => current + 1);
     setShowDrawer(true);
   };
 
@@ -170,11 +200,9 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
     setAccessUser(u);
     setAccessLoading(true);
     try {
-      const projects = await loadAllPages<any>((nextPage, size) => api.getProjects(nextPage, size, { status: 'active' }));
-      setAccessProjects(projects.filter(project => Number(project.org_id) === Number(customerOrgID) && project.status === 'active'));
-    } catch (error) {
-      setAccessProjects([]);
-      Toast.error(error instanceof ApiError ? error.message : '无法加载可授权项目');
+	  await loadProjectOptions();
+    } catch {
+	  // loadProjectOptions already reports an actionable error.
     } finally {
       setAccessLoading(false);
     }
@@ -205,12 +233,15 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         status: editUser.status,
       });
     } else {
+	  const preferredProject = accessProjects.find(project => project.slug === 'default' || project.name === 'Default Project') || (accessProjects.length === 1 ? accessProjects[0] : undefined);
       formApi.setValues({
         organization_role: 'member',
         status: 'active',
+		initial_project_id: preferredProject?.id,
+		initial_project_role: 'project_user',
       });
     }
-  }, [editUser, formApi, showDrawer]);
+  }, [accessProjects, editUser, formApi, showDrawer]);
 
   if (customerContext.state !== 'ready') {
     const blocker = customerContextBlockerCopy(customerContext.state);
@@ -336,7 +367,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         onCancel={closeDrawer}
         width={480}
       >
-        <Form getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
+        <Form key={`user-form-${formInstance}-${editUser?.id || 'create'}`} getFormApi={(api: any) => setFormApi(api)} onSubmit={handleSubmit}>
           {editUser && editUser.auth_provider !== 'local' && <Typography.Paragraph type="tertiary">
             登录来源、外部 subject、用户名与邮箱由 OIDC / 企业目录提供；下面的组织角色与账号状态是 UniRouter 本地治理事实。
           </Typography.Paragraph>}
@@ -378,6 +409,29 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
             optionList={[{ label: '启用', value: 'active' }, { label: '禁用', value: 'disabled' }]}
             initValue="active"
           />
+		  {!editUser && <>
+			<Form.Select
+			  field="initial_project_id"
+			  label={<span id="user-initial-project-label">创建后加入项目（推荐）</span>}
+			  aria-labelledby="user-initial-project-label"
+			  loading={accessLoading}
+			  showClear
+			  optionList={accessProjects.map(project => ({ value: project.id, label: projectDisplayName(project) }))}
+			  emptyContent="当前没有启用项目；可先只创建账号"
+			  extraText="加入项目后，用户重新登录即可在项目工作台创建个人 API Key；不加入项目的账号不能调用模型。"
+			/>
+			<Form.Select
+			  field="initial_project_role"
+			  label={<span id="user-initial-project-role-label">初始项目角色</span>}
+			  aria-labelledby="user-initial-project-role-label"
+			  optionList={[
+				{ value: 'project_user', label: '项目使用者（可创建 API Key 并调用）' },
+				{ value: 'project_viewer', label: '项目只读（不可调用）' },
+				{ value: 'project_admin', label: '项目管理员' },
+			  ]}
+			  extraText="普通模型使用请选择“项目使用者”。"
+			/>
+		  </>}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
             <Button onClick={closeDrawer}>取消</Button>
             <Button type="primary" onClick={() => formApi?.submitForm()}>{editUser ? '更新' : '创建'}</Button>

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Banner,
   Button,
   Input,
   Modal,
+  Select,
   SideSheet,
   Space,
   Table,
@@ -14,7 +16,7 @@ import {
 import { IconPlus, IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import { useSearchParams } from 'react-router-dom';
 import { channelApi } from '../api/channels';
-import { modelEndpointApi, type ModelEndpointModel, type ModelEndpointProjection, type ModelEndpointTarget } from '../api/modelEndpoints';
+import { modelEndpointApi, type ModelEndpointModel, type ModelEndpointProjection, type ModelEndpointTarget, type ProviderModelCatalog } from '../api/modelEndpoints';
 import { routingApi } from '../api/routing';
 import ModelEndpointCreateSheet from '../features/modelEndpoints/ModelEndpointCreateSheet';
 import ModelEndpointDetailsSheet from '../features/modelEndpoints/ModelEndpointDetailsSheet';
@@ -47,6 +49,10 @@ export default function ModelEndpointsPage() {
   const [credentialTarget, setCredentialTarget] = useState<ModelEndpointTarget | null>(null);
   const [workingTarget, setWorkingTarget] = useState('');
   const [batchTesting, setBatchTesting] = useState(false);
+  const [catalogTarget, setCatalogTarget] = useState<ModelEndpointTarget | null>(null);
+  const [providerCatalog, setProviderCatalog] = useState<ProviderModelCatalog | null>(null);
+  const [providerCatalogLoading, setProviderCatalogLoading] = useState(false);
+  const [selectedUpstreamModel, setSelectedUpstreamModel] = useState('');
   const requestVersion = useRef(0);
 
   const load = useCallback(async (keepSelection = true) => {
@@ -144,7 +150,9 @@ export default function ModelEndpointsPage() {
       const response = await modelEndpointApi.testChannelModel(target.channel_id, target.public_model);
       const exact = exactTestSucceeded(target, response);
       if (notify) {
-        if (exact) Toast.success(`${target.connection_name} · ${target.public_model} 检测通过`);
+        if (exact && response.reported_model && response.reported_model !== target.upstream_model) {
+          Toast.warning(`请求成功，但供应商回报模型 ${response.reported_model} 与发送的 ${target.upstream_model} 不同；请核对供应商模型列表`);
+        } else if (exact) Toast.success(`${target.connection_name} · ${target.public_model} 检测通过${response.reported_model ? `；供应商回报 ${response.reported_model}` : ''}`);
         else Toast.error(response?.error || '供应商响应未通过精确模型身份校验');
       }
       await load();
@@ -194,6 +202,44 @@ export default function ModelEndpointsPage() {
     okText: '确认逐项检测',
     onOk: executeBatchTests,
   });
+
+  const openProviderCatalog = async (target: ModelEndpointTarget) => {
+    setCatalogTarget(target);
+    setProviderCatalog(null);
+    setSelectedUpstreamModel(target.upstream_model);
+    setProviderCatalogLoading(true);
+    try {
+      const catalog = await modelEndpointApi.getProviderModels(target.channel_id);
+      setProviderCatalog(catalog);
+      if (!catalog.data.some(item => item.id === target.upstream_model)) {
+        setSelectedUpstreamModel('');
+      }
+    } catch (error) {
+      Toast.error(endpointError(error, '供应商模型列表读取失败'));
+    } finally {
+      setProviderCatalogLoading(false);
+    }
+  };
+
+  const applyUpstreamModel = async () => {
+    if (!catalogTarget || !selectedUpstreamModel || selectedUpstreamModel === catalogTarget.upstream_model) return;
+    setProviderCatalogLoading(true);
+    try {
+      const channel = await channelApi.get(catalogTarget.channel_id);
+      await channelApi.update(catalogTarget.channel_id, {
+        model_mapping: { ...(channel.model_mapping || {}), [catalogTarget.public_model]: selectedUpstreamModel },
+        expected_routing_epoch: catalogTarget.routing_epoch,
+      });
+      Toast.success(`上游模型已改为 ${selectedUpstreamModel}；旧检测证据已失效，请重新真实检测`);
+      setCatalogTarget(null);
+      setProviderCatalog(null);
+      await load();
+    } catch (error) {
+      Toast.error(endpointError(error, '上游模型 ID 更新失败'));
+    } finally {
+      setProviderCatalogLoading(false);
+    }
+  };
 
   const activate = async (target: ModelEndpointTarget, mode: 'initial' | 'canary' | 'recover') => {
     setWorkingTarget(target.target_ref);
@@ -377,6 +423,7 @@ export default function ModelEndpointsPage() {
       onClose={closeSelectedModel}
       onTransitionCanary={transitionCanary}
       onTest={confirmTest}
+      onProviderCatalog={openProviderCatalog}
       onActivate={confirmActivate}
       onToggle={toggleConnection}
       onManageCredential={setCredentialTarget}
@@ -404,6 +451,49 @@ export default function ModelEndpointsPage() {
         scoped
       />}
     </SideSheet>
+    <Modal
+      title={catalogTarget ? `${catalogTarget.connection_name} · 供应商实时模型列表` : '供应商实时模型列表'}
+      visible={Boolean(catalogTarget)}
+      onCancel={() => { setCatalogTarget(null); setProviderCatalog(null); setSelectedUpstreamModel(''); }}
+      footer={null}
+      width={640}
+    >
+      {catalogTarget && <Space vertical align="start" style={{ width: '100%' }}>
+        <Typography.Paragraph>
+          当前配置：公共模型 <Text code>{catalogTarget.public_model}</Text> → 上游模型 <Text code>{catalogTarget.upstream_model}</Text>。
+        </Typography.Paragraph>
+        {providerCatalogLoading && !providerCatalog ? <EmptyState title="正在读取供应商实时模型列表" description="使用已保存的加密凭证调用供应商 /v1/models；不会回显凭证。" minHeight={180} /> : providerCatalog ? <>
+          <Banner
+            type={providerCatalog.data.some(item => item.id === catalogTarget.upstream_model) ? 'success' : 'warning'}
+            closeIcon={null}
+            description={providerCatalog.data.some(item => item.id === catalogTarget.upstream_model)
+              ? `供应商当前列表包含 ${catalogTarget.upstream_model}，配置一致。`
+              : `供应商当前列表不包含 ${catalogTarget.upstream_model}。请选择列表中的精确模型 ID；不要使用展示名称。`}
+          />
+          <Typography.Text type="tertiary">实时来源：{providerCatalog.endpoint} · 共 {providerCatalog.total} 个模型 · {new Date(providerCatalog.fetched_at).toLocaleString()}</Typography.Text>
+          <Typography.Text id="provider-upstream-model-label" strong>供应商上游模型 ID</Typography.Text>
+          <Select
+            aria-labelledby="provider-upstream-model-label"
+            filter
+            value={selectedUpstreamModel || undefined}
+            placeholder="选择供应商返回的精确模型 ID"
+            optionList={providerCatalog.data.map(item => ({ value: item.id, label: item.context_length ? `${item.id} · ${item.context_length.toLocaleString()} tokens` : item.id }))}
+            onChange={value => setSelectedUpstreamModel(String(value || ''))}
+            style={{ width: '100%' }}
+          />
+          <Banner type="info" closeIcon={null} description="修改只允许发生在待发布或已暂停连接；保存会提升连接版本并使旧检测证据失效，不会自动启用路由。" />
+          <div className="ur-form-actions">
+            <Button onClick={() => { setCatalogTarget(null); setProviderCatalog(null); }}>关闭</Button>
+            <Button
+              type="primary"
+              loading={providerCatalogLoading}
+              disabled={!selectedUpstreamModel || selectedUpstreamModel === catalogTarget.upstream_model || !['staged', 'disabled'].includes(catalogTarget.config_status)}
+              onClick={() => void applyUpstreamModel()}
+            >保存为上游模型 ID</Button>
+          </div>
+        </> : <EmptyState title="尚未取得供应商模型列表" description="请确认供应商支持 /v1/models，且已保存凭证拥有列出模型的权限。" minHeight={180} />}
+      </Space>}
+    </Modal>
   </div>;
 }
 

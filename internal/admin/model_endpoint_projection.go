@@ -61,7 +61,7 @@ SELECT configured.id,configured.name,configured.provider,configured.base_url,con
 	   COALESCE(canary_assignment.release_ref,''),COALESCE(canary_assignment.release_version,0),
 	   COALESCE(canary_assignment.expected_routing_epoch,0),
 	   canary_assignment.channel_id IS NOT NULL,
-       probe.success,probe.status_code,probe.latency_ms,probe.error_summary,probe.tested_at,
+       probe.success,probe.status_code,probe.latency_ms,probe.reported_model,probe.error_summary,probe.tested_at,
        CASE WHEN probe.channel_id IS NULL THEN FALSE ELSE
          probe.routing_epoch=configured.routing_epoch AND EXISTS (
            SELECT 1 FROM channel_keys probe_key
@@ -100,6 +100,7 @@ SELECT configured.id,configured.name,configured.provider,configured.base_url,con
 		var probeSuccess sql.NullBool
 		var probeStatus sql.NullInt64
 		var probeLatency sql.NullInt64
+		var probeReported sql.NullString
 		var probeError sql.NullString
 		var probeAt sql.NullTime
 		var probeCurrent bool
@@ -109,7 +110,7 @@ SELECT configured.id,configured.name,configured.provider,configured.base_url,con
 			&target.Weight, &target.CircuitState, &target.EligibleCredentialCount,
 			&stableRef, &stableVersion, &target.StableExpectedEpoch, &target.StableAssignment,
 			&canaryRef, &canaryVersion, &target.CanaryExpectedEpoch, &target.CanaryAssignment,
-			&probeSuccess, &probeStatus, &probeLatency, &probeError, &probeAt, &probeCurrent,
+			&probeSuccess, &probeStatus, &probeLatency, &probeReported, &probeError, &probeAt, &probeCurrent,
 		); err != nil {
 			return modelEndpointProjection{}, fmt.Errorf("scan configured model endpoint: %w", err)
 		}
@@ -118,7 +119,8 @@ SELECT configured.id,configured.name,configured.provider,configured.base_url,con
 			target.LastProbe = &modelEndpointProbeView{
 				Success: probeSuccess.Valid && probeSuccess.Bool, Current: probeCurrent,
 				StatusCode: int(probeStatus.Int64), LatencyMS: probeLatency.Int64,
-				ErrorSummary: probeError.String, TestedAt: probeAt.Time,
+				ReportedModel: probeReported.String,
+				ErrorSummary:  probeError.String, TestedAt: probeAt.Time,
 			}
 		}
 		model := modelEndpointModel(models, target.PublicModel)
