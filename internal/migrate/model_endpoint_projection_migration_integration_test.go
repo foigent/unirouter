@@ -57,7 +57,7 @@ SELECT to_regclass('public.channel_model_probes') IS NOT NULL,
 func TestModelEndpointProjectionMigrationRejectsOutOfOrderRollback(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	_, err := pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000068_future_contract')`)
+	_, err := pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000069_future_contract')`)
 	require.NoError(t, err)
 
 	downBytes, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000065_model_endpoint_projection.down.sql"))
