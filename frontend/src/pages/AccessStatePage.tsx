@@ -310,20 +310,20 @@ export default function AccessStatePage() {
         <Banner
           type="info"
           closeIcon={null}
-          description={`你已经是“${projectDisplayName(selectedProject!)}”的项目成员，无需再次申请。创建个人 Key、调试调用和查看模型请使用项目工作台；本页保留申请、授权、轮换与撤销记录。`}
+          description={`你已经是“${projectDisplayName(selectedProject!)}”的项目成员。创建个人 Key、调试调用和查看模型请使用项目工作台；如需留下正式访问申请记录或申请项目管理员权限，仍可在本页提交。`}
           style={{ marginBottom: 16 }}
         >
           <Button size="small" onClick={() => navigate('/developer')}>进入项目工作台</Button>
         </Banner>
       ) : null}
 
-      <Surface title="申请项目访问" description="仅用于尚未加入的项目；页面只显示当前账号已获准发现的项目，不会扩大同组织项目枚举。">
+      <Surface title="申请项目访问" description="用于建立正式访问记录或申请更高项目角色；页面只显示当前账号已获准发现的项目，不会扩大同组织项目枚举。">
         {projectError ? <EmptyState title="项目列表暂时不可用" description={projectError} actions={<Button onClick={loadProjects}>重试</Button>} /> : projects.length === 0 && !projectLoading ? (
           <EmptyState title="暂无可申请项目" description="请让管理员提供明确的项目加入路径；当前页面不会枚举同组织全部项目。" />
         ) : (
           <Space wrap>
             <Select loading={projectLoading} value={selectedProjectID} style={{ width: 280 }} placeholder="选择项目" optionList={projects.map(projectOption)} onChange={(value) => replaceSearch({ project_id: Number(value) })} />
-            <Button type="primary" icon={<IconPlus />} disabled={!selectedProject || alreadyProjectMember} onClick={() => setRequestDrawer(true)}>{alreadyProjectMember ? '已加入项目' : '提交访问请求'}</Button>
+            <Button type="primary" icon={<IconPlus />} disabled={!selectedProject} onClick={() => setRequestDrawer(true)}>提交访问请求</Button>
           </Space>
         )}
       </Surface>

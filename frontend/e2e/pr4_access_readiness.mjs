@@ -197,7 +197,7 @@ async function issuePersonalCredential(page, name) {
 async function preparePendingRequest(role) {
   const { context, page } = await login(role);
   try {
-    await gotoHeading(page, `/access?project_id=${fixture.project_a}`, '我的访问与 API Key');
+    await gotoHeading(page, `/access?project_id=${fixture.project_a}`, '访问申请与授权');
     const result = await submitPersonalRequest(page, '项目管理员（通常需要审核）');
     assert.equal(result.request.status, 'needs_review');
     return result.request;
@@ -211,7 +211,7 @@ try {
 
   const alice = await login('alice');
   try {
-    await gotoHeading(alice.page, `/access?project_id=${fixture.project_a}`, '我的访问与 API Key');
+    await gotoHeading(alice.page, `/access?project_id=${fixture.project_a}`, '访问申请与授权');
     const approved = await submitPersonalRequest(alice.page, '项目使用者');
     assert.equal(approved.request.status, 'approved');
     assert.equal(approved.grant.status, 'active');
@@ -446,7 +446,7 @@ try {
 
   const noMembership = await login('no_membership');
   try {
-    await gotoHeading(noMembership.page, '/access', '我的访问与 API Key');
+    await gotoHeading(noMembership.page, '/access', '访问申请与授权');
     await visible(noMembership.page.getByText('暂无可申请项目', { exact: true }));
     await visible(noMembership.page.getByText('当前页面不会枚举同组织全部项目', { exact: false }));
     assert.equal(await noMembership.page.locator('button').filter({ hasText: '提交访问请求' }).count(), 0);
