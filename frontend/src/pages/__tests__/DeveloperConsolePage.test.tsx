@@ -176,6 +176,8 @@ describe('DeveloperConsolePage', () => {
     expect(screen.getAllByText('¥0.780000').length).toBeGreaterThan(0);
     expect(screen.getByText('¥0.030000')).toBeTruthy();
     expect(screen.getByText('请求调试台')).toBeTruthy();
+    expect(screen.getByText('常用兼容接口')).toBeTruthy();
+    expect(screen.getByText('仅在项目有已启用向量模型时生成向量')).toBeTruthy();
     expect(screen.getByPlaceholderText('粘贴项目访问凭证')).toBeTruthy();
     expect(screen.getByText('创建项目访问凭证、停用本人拥有的凭证、查看已启用模型、调试调用并排查当前项目请求。')).toBeTruthy();
     const taskNav = screen.getByRole('navigation', { name: '项目工作台任务入口' });
