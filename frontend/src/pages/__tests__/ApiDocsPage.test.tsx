@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import ApiDocsPage from '../ApiDocsPage';
 import { useAuthStore } from '../../store/auth';
 
@@ -7,6 +8,7 @@ const mockGetErrorDocs = vi.fn();
 const mockGetWorkloadApplicationContract = vi.fn();
 const mockGetGatewayEndpoints = vi.fn();
 const mockGetProjects = vi.fn();
+const mockGetModelCatalog = vi.fn();
 
 vi.mock('../../api/client', () => ({
   api: {
@@ -14,8 +16,17 @@ vi.mock('../../api/client', () => ({
     getWorkloadApplicationContract: (...args: any[]) => mockGetWorkloadApplicationContract(...args),
     getGatewayEndpoints: (...args: any[]) => mockGetGatewayEndpoints(...args),
     getProjects: (...args: any[]) => mockGetProjects(...args),
+    getModelCatalog: (...args: any[]) => mockGetModelCatalog(...args),
   },
 }));
+
+function renderPage(initialEntry = '/docs') {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <ApiDocsPage />
+    </MemoryRouter>,
+  );
+}
 
 describe('ApiDocsPage', () => {
   beforeEach(() => {
@@ -41,10 +52,14 @@ describe('ApiDocsPage', () => {
     }] });
     mockGetGatewayEndpoints.mockResolvedValue({ data: [] });
     mockGetProjects.mockResolvedValue({ data: [], total: 0 });
+    mockGetModelCatalog.mockResolvedValue({
+      data: [{ model_name: 'company-chat', aliases: 'chat-default' }],
+      total: 1,
+    });
   });
 
   it('renders the current API contract index and post-PRD1 routes', async () => {
-    render(<ApiDocsPage />);
+    renderPage();
 
     await waitFor(() => {
       expect(mockGetErrorDocs).toHaveBeenCalled();
@@ -91,7 +106,7 @@ describe('ApiDocsPage', () => {
   it('shows organization model governance writes without platform-only financial operations', async () => {
     useAuthStore.setState({ user: { id: 2, username: 'org-admin', role: 'org_admin', org_id: 1 } });
 
-    render(<ApiDocsPage />);
+    renderPage();
 
     await screen.findByText('auth_error.invalid_api_key');
 
@@ -129,10 +144,11 @@ describe('ApiDocsPage', () => {
       total: 1,
     });
 
-    render(<ApiDocsPage />);
+    renderPage();
 
     await screen.findByText('auth_error.invalid_api_key');
 
+    expect(screen.getByText('项目 API 参考')).toBeTruthy();
     expect(screen.getByText('更新项目')).toBeTruthy();
     expect(screen.getByText('更新项目模型集合绑定')).toBeTruthy();
     expect(screen.getByText('查看项目成员与同组织可加入用户')).toBeTruthy();
@@ -141,25 +157,36 @@ describe('ApiDocsPage', () => {
     expect(screen.queryByText('内部状态与事件历史')).toBeNull();
     expect(screen.getByText('通知事件列表；项目管理员必须提供 project_id')).toBeTruthy();
     expect(screen.queryByText('在本组织创建模型注册记录；跨组织请求返回 403')).toBeNull();
+    expect(screen.queryByText('X-Insight 使用项目绑定、网络绑定且不可调用模型的专用 service key 拉取终态执行元数据')).toBeNull();
+    expect(screen.queryByText('读取 Prompt Cache 净节省、证据覆盖与未接入能力边界')).toBeNull();
   });
 
-  it('documents developer-owned key disable without exposing general key updates', async () => {
+  it('shows project users one quickstart instead of the control-plane reference', async () => {
     useAuthStore.setState({ user: { id: 5, username: 'developer', role: 'developer', organization_role: 'member', org_id: 1 } });
     mockGetProjects.mockResolvedValue({
       data: [{ id: 7, name: 'Core', current_user_membership_role: 'project_user' }],
       total: 1,
     });
 
-    render(<ApiDocsPage />);
+    renderPage();
 
-    expect(await screen.findByText('停用访问凭证；project_user 仅限本人 personal credential，project_admin 可管理本项目 active credential')).toBeTruthy();
-    expect(screen.queryByText('更新访问凭证')).toBeNull();
+    expect(await screen.findByText('API 快速接入')).toBeTruthy();
+    expect(await screen.findByText('company-chat')).toBeTruthy();
+    expect(screen.getByText('核心接口')).toBeTruthy();
+    expect(screen.getByText('/v1/chat/completions')).toBeTruthy();
+    expect(screen.getByText(/控制台登录会话不能替代项目 API Key/)).toBeTruthy();
+    expect(screen.getByText('常见错误与排查')).toBeTruthy();
+    expect(screen.queryByText('项目 API 参考')).toBeNull();
+    expect(screen.queryByText('私有集成')).toBeNull();
+    expect(screen.queryByText('成本优化')).toBeNull();
+    expect(screen.queryByText('上游通道列表')).toBeNull();
+    expect(mockGetModelCatalog).toHaveBeenCalledWith(1, 100, { project_id: 7, routable_only: true });
   });
 
   it('shows billing administrators the model price read contract but no price writes', async () => {
     useAuthStore.setState({ user: { id: 4, username: 'billing-admin', role: 'billing_admin', org_id: 1 } });
 
-    render(<ApiDocsPage />);
+    renderPage();
 
     await screen.findByText('auth_error.invalid_api_key');
 
@@ -178,19 +205,36 @@ describe('ApiDocsPage', () => {
       total: 1,
     });
 
-    render(<ApiDocsPage />);
+    mockGetErrorDocs.mockResolvedValue({
+      data: [
+        {
+          code: 'auth_error.invalid_api_key',
+          http_status: 401,
+          summary: 'Invalid API key',
+          resolution: 'Create a valid project API key.',
+        },
+        {
+          code: 'guardrail_error.blocked',
+          http_status: 400,
+          summary: 'Blocked by policy',
+          resolution: 'Review the request content.',
+        },
+      ],
+    });
 
-    expect(await screen.findByText('项目访问凭证列表')).toBeTruthy();
-    expect(screen.queryByText('创建项目访问凭证')).toBeNull();
-    expect(screen.queryByText('更新访问凭证')).toBeNull();
-    expect(screen.queryByText('停用访问凭证；project_user 仅限本人 personal credential，project_admin 可管理本项目 active credential')).toBeNull();
+    renderPage('/docs#error-guardrail_error.blocked');
+
+    expect(await screen.findByText('API 快速接入')).toBeTruthy();
+    expect(screen.getByText('当前项目角色为只读')).toBeTruthy();
+    expect(await screen.findByText('guardrail_error.blocked')).toBeTruthy();
+    expect(screen.queryByText('项目 API 参考')).toBeNull();
     expect(screen.queryByText('请求调试台直接使用项目访问凭证调用')).toBeNull();
   });
 
   it('uses organization role for organization-wide docs without inventing project membership', async () => {
     useAuthStore.setState({ user: { id: 3, username: 'reader', role: 'org_viewer', organization_role: 'org_viewer', org_id: 1 } });
 
-    render(<ApiDocsPage />);
+    renderPage();
 
     expect(screen.getByText('API 与兼容性')).toBeTruthy();
     expect(screen.getByText('Dashboard 聚合数据')).toBeTruthy();

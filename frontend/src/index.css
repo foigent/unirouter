@@ -1264,6 +1264,29 @@ body {
   white-space: pre;
 }
 
+.ur-api-endpoint-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ur-api-endpoint-list > div {
+  display: grid;
+  grid-template-columns: 64px minmax(180px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.ur-inline-details {
+  border-top: 1px solid var(--semi-color-border);
+  padding-top: 10px;
+}
+
+.ur-inline-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
 .ur-dev-model-name {
   display: grid;
   gap: 5px;
@@ -2909,6 +2932,12 @@ body {
   .ur-dev-code {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  .ur-api-endpoint-list > div {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+  .ur-api-endpoint-list > div > :last-child {
+    grid-column: 2;
   }
   .ur-modelgov-tabs {
     width: 100%;

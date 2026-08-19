@@ -180,7 +180,8 @@ describe('DeveloperConsolePage', () => {
     expect(screen.getByText('创建项目访问凭证、停用本人拥有的凭证、查看已启用模型、调试调用并排查当前项目请求。')).toBeTruthy();
     const taskNav = screen.getByRole('navigation', { name: '项目工作台任务入口' });
     expect(within(taskNav).getByRole('link', { name: '概览与用量' }).getAttribute('href')).toBe('#project-usage');
-    expect(within(taskNav).getByRole('link', { name: '凭证与接入' }).getAttribute('href')).toBe('#project-access');
+    expect(within(taskNav).getByRole('link', { name: '项目凭证' }).getAttribute('href')).toBe('#project-access');
+    expect(within(taskNav).getByRole('link', { name: 'API 快速接入' }).getAttribute('href')).toBe('#project-api');
     expect(within(taskNav).getByRole('link', { name: '调试与排障' }).getAttribute('href')).toBe('#project-debug');
     expect(within(taskNav).getByRole('link', { name: '已启用模型' }).getAttribute('href')).toBe('#project-models');
   });
@@ -414,7 +415,8 @@ describe('DeveloperConsolePage', () => {
     const taskNav = screen.getByRole('navigation', { name: '项目工作台任务入口' });
     expect(within(taskNav).queryByRole('link', { name: '调试与排障' })).toBeNull();
     expect(within(taskNav).getByRole('link', { name: '概览与用量' })).toBeTruthy();
-    expect(within(taskNav).getByRole('link', { name: '凭证与接入' })).toBeTruthy();
+    expect(within(taskNav).getByRole('link', { name: '项目凭证' })).toBeTruthy();
+    expect(within(taskNav).getByRole('link', { name: 'API 快速接入' })).toBeTruthy();
     expect(within(taskNav).getByRole('link', { name: '已启用模型' })).toBeTruthy();
   });
 

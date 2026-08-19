@@ -148,6 +148,7 @@ describe('App shell', () => {
 		const workbench = screen.getByText('项目工作台');
 		const access = screen.getByText('访问申请与授权');
 		expect(workbench.compareDocumentPosition(access) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(screen.queryByText('API 与兼容性')).toBeNull();
 	});
 
   it('routes empty topbar search to the logs overview', async () => {

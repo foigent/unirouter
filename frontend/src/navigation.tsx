@@ -270,7 +270,7 @@ const billingRoutes = new Set([
   '/wallet', '/model-prices', '/cost-optimization', '/reconciliation', '/docs',
 ]);
 const projectAdminRoutes = new Set(['/organization-members', '/access-review', '/applications', '/model-readiness', '/media-jobs', '/docs']);
-const developerRoutes = new Set(['/media-jobs', '/docs']);
+const developerRoutes = new Set(['/media-jobs']);
 const orgViewerRoutes = new Set(['/', '/organization-members', '/model-governance', '/docs']);
 
 function filterTaskNavigation(allowedRoutes: Set<string>) {
@@ -320,7 +320,7 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
   else if (isOrgAdminRole(organizationRole)) allowedRoutes = new Set(orgAdminRoutes);
   else if (isBillingRole(organizationRole)) allowedRoutes = new Set(billingRoutes);
   else if (isOrgViewerRole(organizationRole)) allowedRoutes = new Set(orgViewerRoutes);
-  else allowedRoutes = new Set(['/docs']);
+  else allowedRoutes = new Set<string>();
 
   if (authz.projectMembershipRole === 'project_admin') {
     projectAdminRoutes.forEach(route => allowedRoutes.add(route));
@@ -336,6 +336,17 @@ export function getNavItemsForAuthz(authz: AuthzContext, licenseAccess?: License
     items = items.map(item => item.itemKey === 'g-model-access'
       ? { ...item, items: item.items?.filter(child => child.itemKey === '/channels') }
       : item).filter(item => !item.items || item.items.length > 0);
+  }
+  if (organizationRole === 'member' && authz.projectMembershipRole === 'project_admin') {
+    items = items.map(item => item.itemKey === 'g-system-integration'
+      ? {
+        ...item,
+        text: '开发参考',
+        items: item.items?.map(child => child.itemKey === '/docs'
+          ? { ...child, text: '项目 API 参考' }
+          : child),
+      }
+      : item);
   }
   // End-user navigation belongs to customer member identities only. Management
   // accounts keep their management taxonomy even when stale project membership
@@ -470,6 +481,9 @@ export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
 	if (route === '/access-review') return isOrgAdminRole(authz.organizationRole) || authz.canDiscoverAccessReview || authz.hasProjectAdminMembership;
 	if (route === '/applications') return isOrgAdminRole(authz.organizationRole) || authz.canDiscoverWorkloads || authz.hasProjectAdminMembership;
 	if (route === '/model-readiness') return isOrgAdminRole(authz.organizationRole) || isOrgViewerRole(authz.organizationRole) || authz.hasLiveProjectMembership;
+  // Gateway errors link directly to /docs#error-<code>. Keep the route
+  // loadable for authenticated members, but do not advertise the management
+  // reference in their task navigation.
   if (route === '/docs') return true;
   if (route === '/settings') return true;
   if (route === '/license') return isPlatformAdminRole(authz.organizationRole);

@@ -1,19 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Banner, Typography, Table, Tag, Select } from '@douyinfe/semi-ui';
+import { Link, useLocation } from 'react-router-dom';
+import { Banner, Input, Typography, Table, Tag, Select } from '@douyinfe/semi-ui';
 import { api } from '../api/client';
-import { PageHeader, Surface } from '../ui';
+import { EmptyState, PageHeader, Surface } from '../ui';
 import {
-  type AuthzContext,
   authzContextForUser,
+  canInvokeProject,
   canonicalProjectMembershipRole,
-  isBillingRole,
+  hasLicensedFeature,
   isOrgAdminRole,
-  isOrgViewerRole,
-  isPlatformAdminRole,
+  licenseRestrictionMessage,
 } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { loadAllPages } from '../utils/loadAllPages';
+import { parseModelList } from '../utils/modelList';
 import { projectDisplayName } from '../utils/projectDisplay';
+import ProjectApiQuickstart from '../features/apiDocs/ProjectApiQuickstart';
+import {
+  type EndpointGroup,
+  visibleEndpointGroups as filterVisibleEndpointGroups,
+} from '../features/apiDocs/access';
 
 const { Text } = Typography;
 
@@ -39,7 +45,7 @@ function contractStateLabel(value?: string) {
   return value || '-';
 }
 
-const endpointGroups = [
+const endpointGroups: EndpointGroup[] = [
   {
     area: 'Auth',
     endpoints: [
@@ -364,21 +370,6 @@ const columns = [
   { title: '说明', dataIndex: 'description' },
 ];
 
-const organizationModelGovernanceWrites = new Set([
-  'POST /api/v1/model-registry',
-  'PUT /api/v1/model-registry/{id}',
-  'POST /api/v1/model-aliases',
-  'PUT /api/v1/model-aliases/{id}',
-  'POST /api/v1/model-sets',
-  'PUT /api/v1/model-sets/{id}/items',
-  'POST /api/v1/invocation-optimization/policies',
-  'PUT /api/v1/invocation-optimization/policies/{ref}',
-  'POST /api/v1/invocation-optimization/policies/{ref}/validate',
-  'POST /api/v1/invocation-optimization/policies/{ref}/shadow',
-  'POST /api/v1/invocation-optimization/policies/{ref}/canary',
-  'POST /api/v1/invocation-optimization/policies/{ref}/rollback',
-]);
-
 interface ProjectOption {
   id: number;
   name: string;
@@ -386,106 +377,41 @@ interface ProjectOption {
   current_user_membership_role?: string;
 }
 
-function endpointVisibleForAuthz(area: string, method: string, path: string, authz: AuthzContext) {
-  const organizationRole = authz.organizationRole;
-  const membershipRole = authz.projectMembershipRole;
-  const hasProjectRead = Boolean(membershipRole);
-  const hasProjectWrite = membershipRole === 'project_admin' || membershipRole === 'project_user';
-  const hasProjectAdmin = membershipRole === 'project_admin';
-
-  if (area === 'Auth' || area === 'Platform' || area === 'Gateway') return true;
-  if (area === 'Async Media') {
-    if (path.startsWith('/v1/')) return true;
-    if (isOrgAdminRole(organizationRole)) return true;
-    return method === 'GET' ? hasProjectRead : hasProjectWrite;
-  }
-  if (isPlatformAdminRole(organizationRole)) return true;
-
-  if (area === 'Access Provisioning') {
-    if (path.endsWith('/legacy-preview')) return isOrgAdminRole(organizationRole);
-    if (path.includes('/credentials')) {
-      return isOrgAdminRole(organizationRole) || hasProjectAdmin || membershipRole === 'project_user';
-    }
-    if (path.endsWith('/decision') || path.endsWith('/suspend') || path.endsWith('/resume') || path.endsWith('/revoke')) {
-      return isOrgAdminRole(organizationRole) || hasProjectAdmin;
-    }
-    return Boolean(organizationRole);
-  }
-
-  if (area === '项目工作台') {
-    const isMemberPath = path.includes('/members');
-    const isBudgetPath = path.endsWith('/budget');
-    if (isBillingRole(organizationRole) && isBudgetPath) return true;
-    if (isMemberPath || isBudgetPath) return isOrgAdminRole(organizationRole) || hasProjectAdmin;
-    if (isOrgAdminRole(organizationRole) || hasProjectAdmin) return true;
-    if (membershipRole === 'project_user') {
-      return method === 'GET' || (method === 'POST' && (
-        path === '/api/v1/keys' ||
-        path === '/api/v1/keys/{id}/disable' ||
-        path === '/v1/chat/completions'
-      ));
-    }
-    if (membershipRole === 'project_viewer') return method === 'GET';
-    if (isBillingRole(organizationRole)) return method === 'GET' && path === '/api/v1/projects';
-    return false;
-  }
-  if (area === '产品与运行状态') {
-    if (path.endsWith('/error-docs')) return isOrgAdminRole(organizationRole) || isBillingRole(organizationRole) || isOrgViewerRole(organizationRole) || hasProjectRead;
-    if (path.endsWith('/usage/analytics')) return isOrgAdminRole(organizationRole) || isBillingRole(organizationRole) || isOrgViewerRole(organizationRole) || hasProjectRead;
-    if (path.endsWith('/internal-status')) return isOrgAdminRole(organizationRole);
-    if (path.endsWith('/runtime/status')) return isOrgAdminRole(organizationRole);
-    return false;
-  }
-  if (area === 'Notifications') {
-    if (isBillingRole(organizationRole)) return !path.includes('/notification-webhooks');
-    if (isOrgAdminRole(organizationRole)) return true;
-    if (path.includes('/notification-webhooks')) return method === 'GET' ? hasProjectRead : hasProjectAdmin;
-    return method === 'GET' ? hasProjectRead : hasProjectAdmin;
-  }
-  if (area === 'Model Governance') {
-    if (isOrgAdminRole(organizationRole)) {
-      if (method === 'GET') {
-        return !path.includes('/provider-cost/') && !path.endsWith('/reconciliation');
-      }
-      return organizationModelGovernanceWrites.has(`${method} ${path}`);
-    }
-    if (isBillingRole(organizationRole)) {
-      return method === 'GET' && (
-        path.includes('/model-prices') || path.includes('/model-names') ||
-        path.includes('/org-model-prices') || path.endsWith('/reconciliation') ||
-        path.endsWith('/provider-cogs/offline-contract')
-      ) || (method === 'POST' && path.endsWith('/provider-cogs/offline-preview'));
-    }
-    if (isOrgViewerRole(organizationRole)) {
-      return method === 'GET' && (path === '/api/v1/model-catalog' || path === '/api/v1/model-sets');
-    }
-    if (hasProjectRead) return method === 'GET' && path === '/api/v1/model-sets';
-    return false;
-  }
-  if (area === 'Admin') {
-    if (isOrgViewerRole(organizationRole)) {
-      return method === 'GET' && (path.endsWith('/dashboard/stats') || path.includes('/projects'));
-    }
-    if (isOrgAdminRole(organizationRole)) {
-      return [
-        '/dashboard/stats', '/keys', '/limit-policies', '/guardrail-policies',
-        '/projects', '/logs', '/users', '/audit-logs',
-      ].some(fragment => path.includes(fragment)) && !path.includes('/wallet');
-    }
-    if (isBillingRole(organizationRole)) {
-      return ['/dashboard/stats', '/logs', '/wallet', '/grants'].some(fragment => path.includes(fragment));
-    }
-    if (hasProjectRead) return method === 'GET' && ['/keys', '/projects', '/logs'].some(fragment => path.includes(fragment));
-    return false;
-  }
-  return !isOrgViewerRole(organizationRole);
+interface CatalogModelOption {
+  model_name: string;
+  aliases?: string | string[];
 }
 
+interface ErrorDoc {
+  code: string;
+  http_status: number;
+  summary: string;
+  resolution: string;
+}
+
+const commonDeveloperErrors = new Set([
+  'validation_error.invalid_request',
+  'auth_error.invalid_api_key',
+  'auth_error.api_key_disabled',
+  'auth_error.ip_not_allowed',
+  'auth_error.model_not_allowed',
+  'limit_policy.rps_exceeded',
+  'limit_policy.rpm_exceeded',
+  'limit_policy.tpm_exceeded',
+  'billing_error.insufficient_balance',
+  'server_error.upstream_error',
+  'server_error.service_unavailable',
+]);
+
 export default function ApiDocsPage() {
+  const location = useLocation();
   const user = useAuthStore((state) => state.user);
+  const licenseAccess = user?.license_access;
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [selectedProjectID, setSelectedProjectID] = useState<number>();
-  const [errorDocs, setErrorDocs] = useState<any[]>([]);
+  const [errorDocs, setErrorDocs] = useState<ErrorDoc[]>([]);
+  const [catalogModels, setCatalogModels] = useState<CatalogModelOption[]>([]);
+  const [errorQuery, setErrorQuery] = useState('');
   const [clientProfiles, setClientProfiles] = useState<any[]>([]);
   const [gatewayEndpoints, setGatewayEndpoints] = useState<any[]>([]);
   const selectedProject = useMemo(
@@ -497,16 +423,34 @@ export default function ApiDocsPage() {
     selectedProject?.current_user_membership_role,
     selectedProjectID !== undefined,
   );
-  const canLoadErrorDocs = isOrgAdminRole(authz.organizationRole) ||
-    isBillingRole(authz.organizationRole) ||
-    isOrgViewerRole(authz.organizationRole) ||
-    Boolean(authz.projectMembershipRole);
-  const visibleEndpointGroups = endpointGroups
-    .map(group => ({
-      ...group,
-      endpoints: group.endpoints.filter(([method, path]) => endpointVisibleForAuthz(group.area, method, path, authz)),
-    }))
-    .filter(group => group.endpoints.length > 0);
+  const selectedMembershipRole = canonicalProjectMembershipRole(selectedProject?.current_user_membership_role);
+  const isMemberQuickstart = authz.organizationRole === 'member' && selectedMembershipRole !== 'project_admin';
+  const isProjectAdminReference = authz.organizationRole === 'member' && selectedMembershipRole === 'project_admin';
+  const gatewayAvailable = hasLicensedFeature(licenseAccess, 'gateway');
+  const modelGovernanceAvailable = hasLicensedFeature(licenseAccess, 'model_governance');
+  const agentCapabilitiesAvailable = hasLicensedFeature(licenseAccess, 'agent_capabilities');
+  const canLoadErrorDocs = Boolean(authz.organizationRole);
+  const visibleEndpointGroups = filterVisibleEndpointGroups(endpointGroups, authz, {
+    agentCapabilities: agentCapabilitiesAvailable,
+  });
+  const modelOptions = useMemo(() => Array.from(new Set(catalogModels.flatMap(model => [
+    model.model_name,
+    ...parseModelList(model.aliases),
+  ]).filter(Boolean))), [catalogModels]);
+  const targetErrorCode = useMemo(() => {
+    if (!location.hash.startsWith('#error-')) return '';
+    return decodeURIComponent(location.hash.slice('#error-'.length));
+  }, [location.hash]);
+  const memberErrorDocs = useMemo(() => {
+    const query = errorQuery.trim().toLowerCase();
+    return errorDocs.filter(doc => {
+      if (query) {
+        return [doc.code, doc.summary, doc.resolution, String(doc.http_status)]
+          .some(value => value.toLowerCase().includes(query));
+      }
+      return commonDeveloperErrors.has(doc.code) || doc.code === targetErrorCode;
+    }).slice(0, 20);
+  }, [errorDocs, errorQuery, targetErrorCode]);
 
   useEffect(() => {
     loadAllPages<ProjectOption>((page, size) => api.getProjects(page, size, { status: 'active' }))
@@ -519,6 +463,23 @@ export default function ApiDocsPage() {
         setSelectedProjectID(undefined);
       });
   }, []);
+
+  useEffect(() => {
+    if (!isMemberQuickstart || !selectedProjectID || !modelGovernanceAvailable) {
+      setCatalogModels([]);
+      return;
+    }
+    let active = true;
+    loadAllPages<CatalogModelOption>((page, size) => api.getModelCatalog(page, size, {
+      project_id: selectedProjectID,
+      routable_only: true,
+    })).then(items => {
+      if (active) setCatalogModels(items);
+    }).catch(() => {
+      if (active) setCatalogModels([]);
+    });
+    return () => { active = false; };
+  }, [isMemberQuickstart, modelGovernanceAvailable, selectedProjectID]);
 
   useEffect(() => {
     if (!canLoadErrorDocs) {
@@ -548,6 +509,12 @@ export default function ApiDocsPage() {
     });
   }, [authz.organizationRole]);
 
+  useEffect(() => {
+    if (!isMemberQuickstart || !targetErrorCode || memberErrorDocs.length === 0) return;
+    const target = document.getElementById(`error-${targetErrorCode}`);
+    if (target && 'scrollIntoView' in target) target.scrollIntoView({ block: 'center' });
+  }, [isMemberQuickstart, memberErrorDocs, targetErrorCode]);
+
   const errorColumns = [
     { title: 'Code', dataIndex: 'code', width: 250, render: (value: string) => <Text id={`error-${value}`} code>{value}</Text> },
     { title: 'HTTP', dataIndex: 'http_status', width: 90 },
@@ -563,24 +530,109 @@ export default function ApiDocsPage() {
     { title: '配置边界', dataIndex: 'configuration_note' },
   ];
 
+  const projectSelector = projects.length > 0 ? (
+    <Select
+      aria-label="API 文档项目范围"
+      value={selectedProjectID}
+      optionList={projects.map(project => ({
+        label: `${projectDisplayName(project)} · ${canonicalProjectMembershipRole(project.current_user_membership_role) || '无显式项目角色'}`,
+        value: project.id,
+      }))}
+      onChange={value => setSelectedProjectID(Number(value))}
+      style={{ width: 280 }}
+    />
+  ) : undefined;
+
+  if (isMemberQuickstart) {
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://your-unirouter.example';
+    const gatewayRestriction = licenseAccess && !gatewayAvailable
+      ? licenseRestrictionMessage(licenseAccess, 'gateway')
+      : '当前模型网关不可用。';
+    const modelWarning = licenseAccess && !modelGovernanceAvailable
+      ? `${licenseRestrictionMessage(licenseAccess, 'model_governance')} 请使用管理员提供的模型或别名。`
+      : undefined;
+
+    return (
+      <div className="ur-page">
+        <PageHeader
+          eyebrow="项目空间"
+          title="API 快速接入"
+          description="只展示当前项目调用所需的信息；供应商、部署、财务和组织管理接口不属于普通项目账号。"
+          actions={projectSelector}
+        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {!selectedProject ? (
+            <EmptyState
+              title="尚无可访问项目"
+              description="先提交访问申请或请项目管理员把你加入项目；获得项目成员关系后才能创建项目 API Key。"
+              actions={<Link to="/access">查看访问申请与授权</Link>}
+              minHeight={280}
+            />
+          ) : (
+            <>
+              <Banner
+                type="info"
+                description={`当前项目：${projectDisplayName(selectedProject)}。项目 API Key 在“项目工作台”创建；完整密钥只显示一次。`}
+                closeIcon={null}
+              />
+              <ProjectApiQuickstart
+                baseUrl={baseUrl}
+                modelOptions={modelOptions}
+                canInvoke={canInvokeProject(authz)}
+                gatewayAvailable={gatewayAvailable}
+                unavailableReason={gatewayRestriction}
+                modelWarning={modelWarning}
+                troubleshootingHref="#developer-errors"
+              />
+              <Surface title="继续操作" description="接入、凭证、调试和用量都在同一个项目工作台完成。">
+                <div className="ur-chip-row">
+                  <Link to="/developer#project-access">打开项目凭证</Link>
+                  {canInvokeProject(authz) && <Link to="/developer#project-debug">打开请求调试</Link>}
+                  <Link to="/developer#project-models">查看已启用模型</Link>
+                </div>
+              </Surface>
+            </>
+          )}
+          {canLoadErrorDocs && (
+            <Surface
+              title="常见错误与排查"
+              description="网关错误响应中的 doc_url 会打开这里；默认只列常见调用错误，可按错误码、HTTP 状态或说明搜索。"
+            >
+              <div id="developer-errors" className="ur-dev-docs">
+                <Input
+                  aria-label="搜索错误码"
+                  value={errorQuery}
+                  onChange={setErrorQuery}
+                  placeholder="搜索错误码、HTTP 状态或处理建议"
+                  showClear
+                />
+                <div className="ur-table-shell">
+                  <Table
+                    columns={errorColumns}
+                    dataSource={memberErrorDocs}
+                    pagination={false}
+                    rowKey="code"
+                    size="small"
+                    empty={<EmptyState title="没有匹配的错误说明" description="请核对完整错误码后重试。" minHeight={140} />}
+                  />
+                </div>
+              </div>
+            </Surface>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="ur-page">
       <PageHeader
-        eyebrow="系统与集成"
-        title="API 与兼容性"
-        description="供开发者和集成管理员查看可用 API、客户端兼容性、证据等级与配置边界；协议兼容不等于已完成真实客户端认证。"
-        actions={projects.length > 0 ? (
-          <Select
-            aria-label="API 文档项目范围"
-            value={selectedProjectID}
-            optionList={projects.map(project => ({
-              label: `${projectDisplayName(project)} · ${canonicalProjectMembershipRole(project.current_user_membership_role) || '无显式项目角色'}`,
-              value: project.id,
-            }))}
-            onChange={value => setSelectedProjectID(Number(value))}
-            style={{ width: 280 }}
-          />
-        ) : undefined}
+        eyebrow={isProjectAdminReference ? '项目管理' : '系统与集成'}
+        title={isProjectAdminReference ? '项目 API 参考' : 'API 与兼容性'}
+        description={isProjectAdminReference
+          ? '按当前项目管理员权限展示项目、访问、通知和模型调用合同；部署、供应商与财务接口不会在此展示。'
+          : '供管理人员查看其权限范围内的 API、客户端兼容性、证据等级与配置边界；协议兼容不等于已完成真实客户端认证。'}
+        actions={projectSelector}
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {isOrgAdminRole(authz.organizationRole) && <Surface title="Agent 客户端兼容矩阵" description="等级从代码合同返回；只有通过独立客户端或端到端证据的能力才标记 verified。">
@@ -605,13 +657,13 @@ export default function ApiDocsPage() {
             <Text><Text code>Idempotency-Key</Text>：Chat / Embeddings 使用 24 小时元数据去重；图像任务使用项目、API Key 与请求内容绑定的持久身份。两者都不会在准入响应中重放模型输出。</Text>
           </div>
         </Surface>
-        <Surface title="Agent 能力边界" description="UniRouter 只授予模型网关调用权，不授予 Tool、IAM、数据库或导出权限。">
+        {agentCapabilitiesAvailable && (isOrgAdminRole(authz.organizationRole) || isProjectAdminReference) && <Surface title="Agent 能力边界" description="UniRouter 只授予模型网关调用权，不授予 Tool、IAM、数据库或导出权限。">
           <div style={{ display: 'grid', gap: 8 }}>
             <Text>Supervisor 使用根 API Key 显式登记工作流；每个子 Agent 必须由父 Agent 调用委派接口登记，系统不会从普通流量中猜测子 Agent。</Text>
             <Text>能力令牌最长 <Text code>5 分钟</Text>，通常在第 3 分钟附近带抖动刷新；工作流时长、深度、扇出和预算独立计算。</Text>
             <Text>委派合同中的模型、接口、成本、Token、RPM、RPS 与并发上限只能保持或缩小；共享预算的运行时扣减由后续分布式策略批次接入。根权限变化最多 15 秒被所有实例重新核对；Redis 状态不可用时能力请求拒绝准入。</Text>
           </div>
-        </Surface>
+        </Surface>}
         {visibleEndpointGroups.map(group => (
           <details key={group.area} className="ur-surface" open={group.area === 'Gateway'}>
             <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '16px 20px' }}>

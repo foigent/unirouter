@@ -98,19 +98,19 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   },
   projectUser: {
     authz: context('member', 'project_user'),
-	routes: ['/access', '/developer', '/model-readiness', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/model-readiness', '/media-jobs'],
   },
   projectViewer: {
     authz: context('member', 'project_viewer'),
-	routes: ['/access', '/developer', '/model-readiness', '/media-jobs', '/docs'],
+	routes: ['/access', '/developer', '/model-readiness', '/media-jobs'],
   },
   memberWithoutMembership: {
     authz: context('member'),
-	routes: ['/access', '/docs'],
+	routes: ['/access'],
   },
   unknownLegacyIdentity: {
     authz: context(''),
-    routes: ['/access', '/docs'],
+    routes: ['/access'],
   },
 };
 
@@ -150,6 +150,19 @@ describe('two-axis navigation boundaries', () => {
     expect(canDisableProjectKey(projectA)).toBe(true);
     expect(canCreateProjectKey(projectB)).toBe(false);
     expect(canDisableProjectKey(projectB)).toBe(false);
+  });
+
+  it('keeps gateway error deep links loadable without advertising management docs to members', () => {
+    const projectUser = context('member', 'project_user');
+    expect(routeKeys(projectUser)).not.toContain('/docs');
+    expect(isRouteAllowedForAuthz('/docs#error-auth_error.invalid_api_key', projectUser)).toBe(true);
+  });
+
+  it('labels the project administrator reference consistently with its page', () => {
+    const items = getNavItemsForAuthz(context('member', 'project_admin'));
+    const referenceGroup = items.find(item => item.itemKey === 'g-system-integration');
+    expect(referenceGroup?.text).toBe('开发参考');
+    expect(referenceGroup?.items?.find(item => item.itemKey === '/docs')?.text).toBe('项目 API 参考');
   });
 
   it('does not turn a legacy v2 project shadow into organization or project authority', () => {
