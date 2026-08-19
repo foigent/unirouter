@@ -122,7 +122,7 @@ describe('App shell', () => {
 	it('hides end-user entries from a pure management identity', () => {
 		renderApp('platform_admin', { hasLiveProjectMembership: false });
 
-		expect(screen.queryByText('我的访问与 API Key')).toBeNull();
+		expect(screen.queryByText('访问申请与授权')).toBeNull();
 		expect(screen.queryByText('项目工作台')).toBeNull();
 		expect(screen.getByText('客户运营总览')).toBeTruthy();
 	});
@@ -130,16 +130,24 @@ describe('App shell', () => {
 	it('keeps end-user entries hidden when a management identity has project membership data', () => {
 		renderApp('platform_admin', { hasLiveProjectMembership: true });
 
-		expect(screen.queryByText('我的访问与 API Key')).toBeNull();
+		expect(screen.queryByText('访问申请与授权')).toBeNull();
 		expect(screen.queryByText('项目工作台')).toBeNull();
 		expect(screen.getByText('客户运营总览')).toBeTruthy();
 	});
 
-	it('keeps My Access but hides the project workbench for a member awaiting first membership', () => {
+	it('keeps access requests but hides the project workbench for a member awaiting first membership', () => {
 		renderApp('member', { hasLiveProjectMembership: false });
 
-		expect(screen.getByText('我的访问与 API Key')).toBeTruthy();
+		expect(screen.getByText('访问申请与授权')).toBeTruthy();
 		expect(screen.queryByText('项目工作台')).toBeNull();
+	});
+
+	it('places the project workbench before access history for a live member', () => {
+		renderApp('member', { hasLiveProjectMembership: true });
+
+		const workbench = screen.getByText('项目工作台');
+		const access = screen.getByText('访问申请与授权');
+		expect(workbench.compareDocumentPosition(access) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
   it('routes empty topbar search to the logs overview', async () => {

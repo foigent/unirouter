@@ -65,6 +65,15 @@ describe('AccessStatePage', () => {
     mocks.listCredentials.mockResolvedValue(page([]));
   });
 
+  it('routes an existing member to the daily workbench without removing formal access or elevation requests', async () => {
+    render(<MemoryRouter initialEntries={['/access?project_id=11']}><AccessStatePage /></MemoryRouter>);
+
+    expect(await screen.findByText(/你已经是“Core”的项目成员/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '进入项目工作台' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /提交访问请求/ })).toBeEnabled();
+    expect(screen.getByText(/申请项目管理员权限/)).toBeTruthy();
+  });
+
   it('keeps Grant facts visible when the independent request feed fails', async () => {
     mocks.listMyRequests.mockRejectedValue(new Error('request store unavailable'));
     render(<MemoryRouter initialEntries={['/access?project_id=11&grant_ref=grant-one']}><AccessStatePage /></MemoryRouter>);

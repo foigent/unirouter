@@ -197,7 +197,7 @@ describe('DataExchangePage', () => {
     expect(container.textContent).toContain('systemctl restart（不可 reload）');
     expect(container.textContent).toContain('receiver-generated credential');
     expect(container.textContent).toContain('Connector 状态');
-    expect(container.textContent).toContain('已连接');
+    await waitFor(() => expect(container.textContent).toContain('已连接'));
     expect(container.textContent).toContain('最旧待同步延迟');
     expect(container.textContent).toContain('connect · succeeded');
     expect(container.textContent).toContain('高级 Source / 凭证诊断');

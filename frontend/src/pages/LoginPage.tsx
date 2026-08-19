@@ -12,6 +12,7 @@ const { Title, Text } = Typography;
 export default function LoginPage() {
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
+  const loadProfile = useAuthStore((s) => s.loadProfile);
   const [loading, setLoading] = useState(false);
   const [oidcLoading, setOIDCLoading] = useState(false);
   const [oidcConfig, setOIDCConfig] = useState<{ enabled?: boolean; provider_name?: string } | null>(null);
@@ -46,8 +47,17 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      const user = await login(values.username, values.password);
-      navigate(getDefaultPathForAuthz(authzContextForUser(user)));
+      await login(values.username, values.password);
+      try {
+        const user = await loadProfile();
+        navigate(getDefaultPathForAuthz(authzContextForUser(user)));
+      } catch {
+        // The session exists, but protected routes must not choose an entry
+        // point from the intentionally incomplete login response. The root
+        // gate renders the existing retry state and redirects only after /me
+        // supplies the authoritative role, license and project projection.
+        navigate('/');
+      }
     } catch (e: any) {
       setError(e.message || '登录失败');
     } finally {
