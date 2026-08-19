@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Banner, Button, Form, Modal, SideSheet, Space, Table, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconEdit, IconPlus } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { modelEndpointApi } from '../api/modelEndpoints';
 import { isBillingRole, isOrgAdminRole, isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, Surface } from '../ui';
@@ -172,17 +173,16 @@ export default function GuardrailPoliciesPage() {
     if (!customerContextReady || !customerOrgID) return;
     void (async () => {
       try {
-        const [keyData, projectData, modelData] = await Promise.all([
+        const [keyData, projectData, endpointProjection] = await Promise.all([
           loadAllPages<KeyOption>((page, size) => api.getKeys(page, size)),
           loadAllPages<any>((page, size) => api.getProjects(page, size, { org_id: customerOrgID })),
-          api.getModelNames(),
+          modelEndpointApi.getModelEndpoints(),
         ]);
         setKeys((keyData || []).filter((key) => key.org_id === customerOrgID));
         setProjects((projectData || [])
           .filter((project: any) => project.org_id === customerOrgID)
           .map((project: any) => ({ value: project.id, label: projectDisplayName(project) })));
-        const source = Array.isArray(modelData?.data) ? modelData.data : modelData;
-        setModels((Array.isArray(source) ? source : []).map((item: any) => typeof item === 'string' ? item : item.model).filter(Boolean));
+        setModels((endpointProjection.models || []).map(item => item.public_model).filter(Boolean));
       } catch {
         Toast.error('安全策略选项加载失败，请刷新后重试');
       }

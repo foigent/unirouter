@@ -10,13 +10,16 @@ const mocks = vi.hoisted(() => ({
   getUsers: vi.fn(),
   getProjects: vi.fn(),
   getKeys: vi.fn(),
-  getModelNames: vi.fn(),
+  getModelEndpoints: vi.fn(),
   createModelAuthorization: vi.fn(),
   activateModelAuthorization: vi.fn(),
   revokeModelAuthorization: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({ api: mocks }));
+vi.mock('../../api/modelEndpoints', () => ({
+  modelEndpointApi: { getModelEndpoints: mocks.getModelEndpoints },
+}));
 
 describe('ModelAuthorizationWorkspace', () => {
   beforeEach(() => {
@@ -40,7 +43,14 @@ describe('ModelAuthorizationWorkspace', () => {
     }));
     mocks.getProjects.mockResolvedValue({ data: [{ id: 71, org_id: 7, name: 'Default Project', status: 'active' }], total: 1 });
     mocks.getKeys.mockResolvedValue({ data: [], total: 0 });
-    mocks.getModelNames.mockResolvedValue({ data: [{ model: 'deepseek-v4-flash' }, { model: 'kimi-k3' }] });
+    mocks.getModelEndpoints.mockResolvedValue({
+      contract_version: 'unirouter.model-endpoints.v1', generated_at: '2026-08-19T00:00:00Z',
+      summary: { total: 2, route_available: 2, attention: 0, canary: 0 },
+      models: [
+        { public_model: 'deepseek-v4-flash', display_name: 'DeepSeek V4 Flash', targets: [] },
+        { public_model: 'kimi-k3', display_name: 'Kimi K3', targets: [] },
+      ],
+    });
     mocks.createModelAuthorization.mockResolvedValue({ authorization_ref: 'mca_generated_by_server', status: 'draft' });
   });
 

@@ -374,6 +374,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           <Form.Input
             field="username"
             label="用户名"
+            autoComplete="off"
             disabled={!!editUser}
             rules={[{ required: true, message: '必填' }]}
             extraText={!editUser ? '本地登录名在当前部署中全局唯一，忽略大小写和首尾空白。' : undefined}
@@ -381,6 +382,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           {!editUser && <PasswordField
             field="password"
             label="初始密码"
+            autoComplete="new-password"
             rules={[
               { required: true, message: '必填' },
               {
