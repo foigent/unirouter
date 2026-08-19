@@ -33,8 +33,8 @@ import { roleLabel as formatRoleLabel } from '../utils/displayLabels';
 import { loadAllPages } from '../utils/loadAllPages';
 import { normalizeModelList, parseModelList } from '../utils/modelList';
 import { keyQuotaText } from '../utils/quota';
-import { buildChatCompletionsCurl } from '../utils/shell';
 import { projectDisplayName, projectOption } from '../utils/projectDisplay';
+import ProjectApiQuickstart from '../features/apiDocs/ProjectApiQuickstart';
 
 const { Text } = Typography;
 
@@ -252,7 +252,6 @@ export default function DeveloperConsolePage() {
   const effectivePlaygroundModel = playgroundModel || (modelGovernanceLicensed ? sampleModel : '');
   const sampleKey = createdKey?.key || '<YOUR_PROJECT_API_KEY>';
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://your-unirouter.example';
-  const quickstartCurl = buildChatCompletionsCurl(baseUrl, sampleKey, sampleModel);
 
   const usageSnapshot = useMemo(() => {
     if (usageSummary) {
@@ -749,7 +748,8 @@ export default function DeveloperConsolePage() {
       <Text strong>快速定位</Text>
       <div className="ur-dev-task-links">
         <a href="#project-usage">概览与用量</a>
-        <a href="#project-access">凭证与接入</a>
+        <a href="#project-access">项目凭证</a>
+        <a href="#project-api">API 快速接入</a>
         {mayRunPlayground && <a href="#project-debug">{gatewayLicensed ? '调试与排障' : '调试与排障（授权未包含）'}</a>}
         <a href="#project-models">{modelGovernanceLicensed ? '已启用模型' : '已启用模型（商业授权不可用）'}</a>
       </div>
@@ -848,26 +848,20 @@ export default function DeveloperConsolePage() {
           </div>
         </Surface>
 
-        <Surface title="项目接入示例" description="示例使用当前项目的已批准模型或别名。">
-          {gatewayLicensed ? (
-            <div className="ur-dev-docs">
-              <div>
-                <Text className="ur-filter-label">Base URL</Text>
-                <Text code>{baseUrl}/v1</Text>
-              </div>
-              <div>
-                <Text className="ur-filter-label">推荐模型</Text>
-                <Text code>{sampleModel}</Text>
-              </div>
-              {!modelGovernanceLicensed && (
-                <Text type="warning">{modelGovernanceRestriction} 请使用管理员提供的现有模型或别名替换示例占位符。</Text>
-              )}
-              <pre className="ur-dev-code">{quickstartCurl}</pre>
-            </div>
-          ) : (
-            <EmptyState title="模型接入暂不可用" description={gatewayRestriction} minHeight={180} />
-          )}
-        </Surface>
+        <div id="project-api" className="ur-dev-section-anchor">
+          <ProjectApiQuickstart
+            baseUrl={baseUrl}
+            modelOptions={modelOptions}
+            apiKey={sampleKey}
+            canInvoke={mayRunPlayground}
+            gatewayAvailable={gatewayLicensed}
+            unavailableReason={gatewayRestriction}
+            modelWarning={!modelGovernanceLicensed
+              ? `${modelGovernanceRestriction} 请使用管理员提供的现有模型或别名替换示例占位符。`
+              : undefined}
+            troubleshootingHref="/docs#developer-errors"
+          />
+        </div>
       </div>
 
       {mayRunPlayground && (
