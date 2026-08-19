@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   activateModelEndpoint: vi.fn(),
   startModelEndpointCanary: vi.fn(),
   recoverModelEndpoint: vi.fn(),
+  getProviderModels: vi.fn(),
+  getChannel: vi.fn(),
   updateChannel: vi.fn(),
   createChannel: vi.fn(),
   promoteRuntimeChange: vi.fn(),
@@ -18,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../api/channels', () => ({
   channelApi: {
+    get: mocks.getChannel,
     update: mocks.updateChannel,
     create: mocks.createChannel,
   },
@@ -29,6 +32,7 @@ vi.mock('../../api/modelEndpoints', () => ({
     activateModelEndpoint: mocks.activateModelEndpoint,
     startModelEndpointCanary: mocks.startModelEndpointCanary,
     recoverModelEndpoint: mocks.recoverModelEndpoint,
+    getProviderModels: mocks.getProviderModels,
   },
 }));
 vi.mock('../../api/routing', () => ({
@@ -109,6 +113,12 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
     mocks.startModelEndpointCanary.mockResolvedValue({ stage: 'canary' });
     mocks.recoverModelEndpoint.mockResolvedValue({ stage: 'active' });
     mocks.updateChannel.mockResolvedValue({ message: 'Channel updated' });
+    mocks.getChannel.mockResolvedValue({ id: 13, model_mapping: { 'deepseek-v4-flash': 'deepseek-v4-flash' } });
+    mocks.getProviderModels.mockResolvedValue({
+      authority: 'live_provider_api', provider: 'deepseek', channel_id: 13,
+      endpoint: 'https://api.deepseek.com/v1/models', fetched_at: '2026-08-19T04:00:00Z',
+      data: [{ id: 'deepseek-v4-flash' }, { id: 'deepseek-v4-pro' }], total: 2,
+    });
     mocks.createChannel.mockResolvedValue({ id: 21, credential_configured: true });
   });
 
@@ -167,6 +177,47 @@ describe('ModelEndpointsPage canonical model and provider target flow', () => {
 
     await waitFor(() => expect(mocks.testChannelModel).toHaveBeenCalledWith(13, 'deepseek-v4-flash'));
     expect(mocks.testChannelModel).not.toHaveBeenCalledWith(expect.anything(), 'kimi-k3');
+  });
+
+  it('shows the exact model identity reported by the provider response', async () => {
+    mocks.getModelEndpoints.mockResolvedValue(projection([target({
+      last_probe: {
+        success: true, current: true, status_code: 200, latency_ms: 18,
+        tested_at: '2026-08-19T04:00:00Z', upstream_model: 'deepseek-v4-flash', reported_model: 'deepseek-v4-flash-202608',
+      },
+      state: 'ready',
+    })]));
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
+    expect(await screen.findByText(/供应商回报模型：deepseek-v4-flash-202608/)).toBeTruthy();
+    expect(screen.getByText(/与发送的 deepseek-v4-flash 不同/)).toBeTruthy();
+  });
+
+  it('uses the live provider catalog to replace a display title with the exact upstream model ID', async () => {
+    mocks.getModelEndpoints.mockResolvedValue(projection([target({
+      target_ref: 'target:22:kimi-k2.7-code', channel_id: 22,
+      connection_name: 'Kimi official', provider: 'kimi', public_model: 'kimi-k2.7-code', upstream_model: 'Kimi K2.7 Code', routing_epoch: 6,
+    })], { public_model: 'kimi-k2.7-code', display_name: 'Kimi K2.7 Code' }));
+    mocks.getProviderModels.mockResolvedValue({
+      authority: 'live_provider_api', provider: 'kimi', channel_id: 22,
+      endpoint: 'https://api.moonshot.cn/v1/models', fetched_at: '2026-08-19T04:00:00Z',
+      data: [{ id: 'kimi-k2.7-code' }, { id: 'kimi-k3' }], total: 2,
+    });
+    mocks.getChannel.mockResolvedValue({ id: 22, model_mapping: {} });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
+    fireEvent.click(screen.getByRole('button', { name: '核对供应商模型列表' }));
+    expect(await screen.findByText(/供应商当前列表不包含 Kimi K2.7 Code/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('combobox', { name: '供应商上游模型 ID' }));
+    fireEvent.click(await within(screen.getByRole('listbox')).findByText('kimi-k2.7-code'));
+    fireEvent.click(screen.getByRole('button', { name: '保存为上游模型 ID' }));
+
+    await waitFor(() => expect(mocks.updateChannel).toHaveBeenCalledWith(22, {
+      model_mapping: { 'kimi-k2.7-code': 'kimi-k2.7-code' },
+      expected_routing_epoch: 6,
+    }));
   });
 
   it('batch tests every pending provider target instead of only the first row', async () => {

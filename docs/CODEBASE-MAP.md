@@ -13,7 +13,7 @@
 | Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata, stream transport, weighted workload admission and application-authoritative payload limits |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |
-| Migrations | `migrations/*.sql` | Ordered PostgreSQL schema history. The current supported ceiling is `000067`; `internal/schemaauthority/version.go` is the executable compatibility authority. Read later migrations directly instead of inferring current schema from early PRD ranges. |
+| Migrations | `migrations/*.sql` | Ordered PostgreSQL schema history. The current supported ceiling is `000068`; `internal/schemaauthority/version.go` is the executable compatibility authority. Read later migrations directly instead of inferring current schema from early PRD ranges. |
 
 ## Backend Packages
 

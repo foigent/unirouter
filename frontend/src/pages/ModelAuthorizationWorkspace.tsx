@@ -7,6 +7,8 @@ import { useAuthStore } from '../store/auth';
 import { EmptyState } from '../ui';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { parseModelList } from '../utils/modelList';
+import { loadAllPages } from '../utils/loadAllPages';
+import { projectDisplayName } from '../utils/projectDisplay';
 
 interface AuthorizationContract {
   contract_version: string;
@@ -40,7 +42,7 @@ interface ModelAuthorization {
   updated_at: string;
 }
 
-const subjectLabels: Record<string, string> = { api_key: '访问凭证', project: '项目', user: '人员', agent: 'Agent' };
+const subjectLabels: Record<string, string> = { api_key: 'API Key', access_credential: '应用访问凭证', project: '项目', user: '人员', agent: 'Agent' };
 const endpointLabels: Record<string, string> = {
   '/v1/chat/completions': 'Chat', '/v1/embeddings': 'Embeddings', '/v1/models': '模型目录', '/v1/media/jobs': '异步模型任务',
 };
@@ -70,6 +72,10 @@ export default function ModelAuthorizationWorkspace() {
   const [error, setError] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [formApi, setFormApi] = useState<any>(null);
+  const [subjectType, setSubjectType] = useState('user');
+  const [subjectOptions, setSubjectOptions] = useState<Record<string, Array<{ value: string; label: string }>>>({ user: [], project: [], api_key: [] });
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [optionLoading, setOptionLoading] = useState(false);
 
   const selected = policies.find(item => item.authorization_ref === selectedRef) || policies[0] || null;
 
@@ -97,6 +103,33 @@ export default function ModelAuthorizationWorkspace() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (!customerContextReady || !orgID) return;
+    setOptionLoading(true);
+    void Promise.all([
+      loadAllPages<any>((page, size) => api.getUsers(page, size, 'local')),
+      loadAllPages<any>((page, size) => api.getUsers(page, size, 'enterprise')),
+      loadAllPages<any>((page, size) => api.getProjects(page, size, { status: 'active', org_id: orgID })),
+      loadAllPages<any>((page, size) => api.getKeys(page, size)),
+      api.getModelNames(),
+    ]).then(([localUsers, enterpriseUsers, projects, keys, modelData]) => {
+      const people = [...localUsers, ...enterpriseUsers]
+        .filter(item => Number(item.org_id) === Number(orgID) && item.status === 'active')
+        .map(item => ({ value: String(item.id), label: `${item.username}${item.auth_provider === 'oidc' ? ' · OIDC' : ' · 本地账号'}` }));
+      setSubjectOptions({
+        user: people,
+        project: projects.filter(item => Number(item.org_id) === Number(orgID) && item.status === 'active')
+          .map(item => ({ value: String(item.id), label: projectDisplayName(item) })),
+        api_key: keys.filter(item => Number(item.org_id) === Number(orgID))
+          .map(item => ({ value: String(item.id), label: `${item.name || `API Key #${item.id}`} · ${item.key_prefix || ''}***` })),
+      });
+      const source = Array.isArray(modelData?.data) ? modelData.data : modelData;
+      setModelOptions((Array.isArray(source) ? source : []).map((item: any) => typeof item === 'string' ? item : item.model).filter(Boolean));
+    }).catch((optionError: any) => {
+      setError(optionError?.message || '无法加载人员、项目和模型选项');
+    }).finally(() => setOptionLoading(false));
+  }, [customerContextReady, orgID]);
+
   const stats = useMemo(() => ({
     active: policies.filter(item => item.status === 'active').length,
     draft: policies.filter(item => item.status === 'draft').length,
@@ -118,7 +151,6 @@ export default function ModelAuthorizationWorkspace() {
     try {
       const created = await api.createModelAuthorization({
         ...(platform ? { org_id: orgID } : {}),
-        authorization_ref: String(values.authorization_ref || '').trim().toLowerCase(),
         subject_type: String(values.subject_type || ''),
         subject_ref: String(values.subject_ref || '').trim(),
         environment: String(values.environment || '*').trim().toLowerCase(),
@@ -192,7 +224,7 @@ export default function ModelAuthorizationWorkspace() {
               {platform && <Typography.Text type="tertiary">客户范围：{customerContext.orgName || `组织 #${orgID}`}</Typography.Text>}
               <Select aria-labelledby="model-authorization-status-label" insetLabel="状态" insetLabelId="model-authorization-status-label" value={status} onChange={value => setStatus(String(value || ''))} showClear placeholder="全部" optionList={[{ label: '草稿', value: 'draft' }, { label: '生效', value: 'active' }, { label: '已撤销', value: 'revoked' }]} style={{ width: 140 }} />
               <Button icon={<IconRefresh />} loading={loading} onClick={() => void load()}>刷新</Button>
-              <Button aria-label="新增限制策略" icon={<IconPlus />} type="primary" onClick={() => setSheetOpen(true)}>新增限制策略</Button>
+              <Button aria-label="新增限制策略" icon={<IconPlus />} type="primary" onClick={() => { setSubjectType('user'); setSheetOpen(true); }}>新增限制策略</Button>
             </Space>
           </div>
           {loading && policies.length === 0 ? <EmptyState title="正在读取高级模型限制" description="正在核对当前客户范围和生效策略，请稍候。" minHeight={320} /> : error ? <EmptyState title="高级模型限制加载失败" description={error} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} /> : (
@@ -225,20 +257,45 @@ export default function ModelAuthorizationWorkspace() {
       </div>
 
       <SideSheet title="新增高级模型限制" visible={sheetOpen} onCancel={() => setSheetOpen(false)} width={560}>
-        <Banner type="warning" description="这不是项目访问授权。草稿不会影响请求；激活后只会收窄已有项目、应用 Key 或 Agent 权限。主体 ID 必须属于当前客户范围。" closeIcon={null} style={{ marginBottom: 16 }} />
-        <Form getFormApi={(next: any) => setFormApi(next)} onSubmit={create} initValues={{ environment: contract?.environment || '*', effect: 'allow', allowed_endpoints: contract?.endpoints || [] }}>
-          <Form.Input field="authorization_ref" label="策略标识" placeholder="mca_project_company_chat" rules={[{ required: true, message: '请输入策略标识' }]} />
-          <div className="ur-modelgov-form-grid">
-            <Form.Select field="subject_type" label={<span id="model-authorization-subject-type-label">主体类型</span>} aria-labelledby="model-authorization-subject-type-label" optionList={(contract?.subjects || ['api_key', 'project', 'user', 'agent']).map(value => ({ label: subjectLabels[value] || value, value }))} rules={[{ required: true, message: '请选择主体类型' }]} />
-            <Form.Input field="subject_ref" label="已存在主体标识（高级）" rules={[{ required: true, message: '请输入主体标识' }]} extraText="只用于对现有项目、人员、访问凭证或 Agent 进一步收窄；请从相应对象的高级审计信息复制，不能在这里创建主体。" />
-          </div>
-          <div className="ur-modelgov-form-grid">
-            <Form.Input field="environment" label="环境" placeholder="production 或 *" rules={[{ required: true, message: '请输入环境' }]} />
-            <Form.Select field="effect" label={<span id="model-authorization-effect-label">效果</span>} aria-labelledby="model-authorization-effect-label" optionList={[{ label: '允许范围（交集）', value: 'allow' }, { label: '显式拒绝', value: 'deny' }]} />
-          </div>
-          <Form.TextArea field="allowed_models" label="模型范围" placeholder={'company-chat\ngpt-4o'} rows={5} rules={[{ required: true, message: '请输入模型范围' }]} />
-          <Form.Select field="allowed_endpoints" label={<span id="model-authorization-endpoints-label">端点范围</span>} aria-labelledby="model-authorization-endpoints-label" multiple optionList={(contract?.endpoints || []).map(value => ({ label: endpointLabels[value] || value, value }))} rules={[{ required: true, message: '请选择端点范围' }]} />
-          <Form.TextArea field="reason" label="业务理由" rows={4} rules={[{ required: true, message: '请输入业务理由' }]} />
+        <Banner type="warning" description="这不是开通权限。先在“人员与权限”把用户加入项目；本表单只把该用户已有 API Key 的模型范围进一步缩小。策略标识由系统自动生成。" closeIcon={null} style={{ marginBottom: 16 }} />
+        <Form getFormApi={(next: any) => setFormApi(next)} onSubmit={create} initValues={{ subject_type: 'user', environment: contract?.environment || '*', effect: 'allow', allowed_endpoints: ['/v1/chat/completions'], reason: '管理员配置的模型调用范围' }}>
+          <Form.Select
+            field="subject_type"
+            label={<span id="model-authorization-subject-type-label">限制对象类型</span>}
+            aria-labelledby="model-authorization-subject-type-label"
+            optionList={(contract?.subjects || ['user', 'project', 'api_key', 'access_credential', 'agent']).map(value => ({ label: subjectLabels[value] || value, value }))}
+            onChange={value => { setSubjectType(String(value || 'user')); formApi?.setValue('subject_ref', undefined); }}
+            rules={[{ required: true, message: '请选择限制对象类型' }]}
+            extraText="限制单个账号请选择“人员”；只有审计或自动化场景才需要其他类型。"
+          />
+          {['user', 'project', 'api_key'].includes(subjectType) ? <Form.Select
+            field="subject_ref"
+            label={<span id="model-authorization-subject-label">选择{subjectLabels[subjectType]}</span>}
+            aria-labelledby="model-authorization-subject-label"
+            filter
+            loading={optionLoading}
+            optionList={subjectOptions[subjectType] || []}
+            rules={[{ required: true, message: `请选择${subjectLabels[subjectType]}` }]}
+            emptyContent={`没有可选择的${subjectLabels[subjectType]}`}
+          /> : <Form.Input field="subject_ref" label={`${subjectLabels[subjectType] || '主体'}标识（高级）`} rules={[{ required: true, message: '请输入已存在的主体标识' }]} extraText="只接受相应对象高级审计信息中的稳定标识。" />}
+          <Form.Select
+            field="allowed_models"
+            label={<span id="model-authorization-models-label">只允许调用这些模型</span>}
+            aria-labelledby="model-authorization-models-label"
+            multiple filter loading={optionLoading}
+            optionList={modelOptions.map(value => ({ label: value, value }))}
+            rules={[{ required: true, message: '请选择至少一个模型' }]}
+            extraText="这是与项目/API Key 原有范围的交集，不会凭空授予模型。"
+          />
+          <Form.TextArea field="reason" label="设置原因" rows={3} rules={[{ required: true, message: '请填写设置原因' }]} />
+          <details className="ur-form-advanced">
+            <summary>高级规则（拒绝策略、环境和接口范围）</summary>
+            <div className="ur-modelgov-form-grid" style={{ marginTop: 12 }}>
+              <Form.Input field="environment" label="环境" placeholder="production 或 *" rules={[{ required: true, message: '请输入环境' }]} />
+              <Form.Select field="effect" label={<span id="model-authorization-effect-label">规则方式</span>} aria-labelledby="model-authorization-effect-label" optionList={[{ label: '只允许所选模型（推荐）', value: 'allow' }, { label: '拒绝所选模型', value: 'deny' }]} />
+            </div>
+            <Form.Select field="allowed_endpoints" label={<span id="model-authorization-endpoints-label">接口范围</span>} aria-labelledby="model-authorization-endpoints-label" multiple optionList={(contract?.endpoints || []).map(value => ({ label: endpointLabels[value] || value, value }))} rules={[{ required: true, message: '请选择接口范围' }]} />
+          </details>
           <div className="ur-form-actions"><Button onClick={() => setSheetOpen(false)}>取消</Button><Button type="primary" loading={mutating} onClick={() => formApi?.submitForm()}>创建草稿</Button></div>
         </Form>
       </SideSheet>

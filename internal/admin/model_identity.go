@@ -4,10 +4,16 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/modellist"
+)
+
+var (
+	errInvalidPublicModelID = errors.New("invalid public model id")
+	publicModelIDPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,159}$`)
 )
 
 type modelIdentityStore interface {
@@ -16,6 +22,9 @@ type modelIdentityStore interface {
 
 func validatePublicModelIdentities(ctx context.Context, store modelIdentityStore, orgID int64, models string) error {
 	for _, model := range modellist.Parse(models) {
+		if !publicModelIDPattern.MatchString(model) {
+			return errInvalidPublicModelID
+		}
 		if _, err := modelgov.ActivatedIdentity(ctx, store, orgID, model); err != nil {
 			return err
 		}
@@ -25,6 +34,13 @@ func validatePublicModelIdentities(ctx context.Context, store modelIdentityStore
 
 func writePublicModelIdentityError(w http.ResponseWriter, requested string, err error) {
 	switch {
+	case errors.Is(err, errInvalidPublicModelID):
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":           "Invalid public model ID",
+			"code":            "invalid_public_model_id",
+			"message":         "公共模型 ID 只能使用小写字母、数字、点、短横线或下划线；展示名称请在模型目录单独维护。",
+			"requested_model": requested,
+		})
 	case errors.Is(err, modelgov.ErrModelIdentityConflict):
 		writeJSON(w, http.StatusConflict, map[string]interface{}{
 			"error":           "Public model identity already exists",

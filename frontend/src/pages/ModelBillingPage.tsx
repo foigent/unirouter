@@ -60,7 +60,7 @@ export default function ModelBillingPage() {
           {activeTab === 'base' ? (
             <>
               <Banner type="warning" description="这里是全局基础费率兼容视图。当前请求是否仍使用它取决于企业 Rate Card 页显示的计价模式；严格模式启用后，请求只使用已激活的版本化 Rate Card。" closeIcon={null} style={{ marginBottom: 16 }} />
-              <ModelPricesPage embedded />
+              <ModelPricesPage embedded onOpenRateCard={() => changeTab('enterprise')} />
             </>
           ) : null}
         </TabPane>

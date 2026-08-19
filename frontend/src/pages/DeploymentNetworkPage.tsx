@@ -195,14 +195,14 @@ export default function DeploymentNetworkPage() {
     try {
       if (editingProfile) {
         await api.updateDeploymentProfile(editingProfile.profile_ref, { ...values, expected_revision: editingProfile.desired_revision });
-        Toast.success('Deployment Profile 期望状态已更新；未修改运行时');
+        Toast.success('附加部署登记已更新；未修改运行时');
       } else {
         await api.createDeploymentProfile(values);
-        Toast.success('Deployment Profile 已创建');
+        Toast.success('附加部署登记已创建');
       }
       setProfileDrawer(false);
       await load();
-    } catch (error: any) { Toast.error(error?.message || '保存 Deployment Profile 失败'); }
+    } catch (error: any) { Toast.error(error?.message || '保存附加部署登记失败'); }
   };
 
   const submitEndpoint = async (values: Record<string, any>) => {
@@ -240,7 +240,7 @@ export default function DeploymentNetworkPage() {
   const endpointProfile = contract?.endpoint_profiles.find(item => item.profile_id === selectedEndpoint?.endpoint_profile);
 
   return (
-    <div className="ur-page ur-page-wide">
+    <div className="ur-page ur-page-wide ur-deployment-page">
       <PageHeader
         eyebrow="系统与集成"
         title="部署与网络"
@@ -272,10 +272,10 @@ export default function DeploymentNetworkPage() {
           </div>
           {loadError && <Banner type="danger" description={loadError} style={{ marginBottom: 14 }} />}
           <Surface title="附加部署登记" description="只在需要记录另一个 ECS、客户 Compose 或 Kubernetes 安装时使用；0 条不表示当前服务没有运行。" actions={<Button icon={<IconRefresh />} onClick={() => void load()}>刷新</Button>}>
-            <Table rowKey="profile_ref" columns={profileColumns} dataSource={profiles} loading={loading} pagination={false} empty={<EmptyState title="没有附加部署登记" description="当前实例仍以上方只读观测为准。" minHeight={150} />} onRow={(row?: DeploymentProfile) => ({ onClick: () => row && setSelectedProfile(row), 'aria-selected': row?.profile_ref === selectedProfile?.profile_ref })} />
+            <Table rowKey="profile_ref" columns={profileColumns} dataSource={profiles} loading={loading} pagination={false} scroll={{ x: 760 }} empty={<EmptyState title="没有附加部署登记" description="当前实例仍以上方只读观测为准。" minHeight={150} />} onRow={(row?: DeploymentProfile) => ({ onClick: () => row && setSelectedProfile(row), 'aria-selected': row?.profile_ref === selectedProfile?.profile_ref })} />
           </Surface>
           <Surface title="附加客户端入口登记" description="公开入口必须使用 HTTPS；登记描述预期访问方式，不会自动配置负载均衡、证书或 DNS。">
-            <Table rowKey="endpoint_ref" columns={endpointColumns} dataSource={endpoints} loading={loading} pagination={false} empty={<EmptyState title="没有附加入口登记" minHeight={160} />} onRow={(row?: GatewayEndpoint) => ({ onClick: () => row && setSelectedEndpoint(row), 'aria-selected': row?.endpoint_ref === selectedEndpoint?.endpoint_ref })} />
+            <Table rowKey="endpoint_ref" columns={endpointColumns} dataSource={endpoints} loading={loading} pagination={false} scroll={{ x: 820 }} empty={<EmptyState title="没有附加入口登记" minHeight={160} />} onRow={(row?: GatewayEndpoint) => ({ onClick: () => row && setSelectedEndpoint(row), 'aria-selected': row?.endpoint_ref === selectedEndpoint?.endpoint_ref })} />
           </Surface>
         </main>
         <aside className="ur-explorer-panel ur-explorer-detail" aria-label="部署与网络检查器">
@@ -287,7 +287,7 @@ export default function DeploymentNetworkPage() {
               <dt>可见性</dt><dd>{label(selectedEndpoint.visibility)}</dd>
               <dt>TLS 模式</dt><dd>{label(selectedEndpoint.tls_mode === 'disabled' ? 'disabled_tls' : selectedEndpoint.tls_mode)}</dd>
               <dt>证书引用</dt><dd className="ur-mono-break">{selectedEndpoint.certificate_ref || '未填写（不存私钥）'}</dd>
-              <dt>Endpoint Profile</dt><dd>{endpointProfile?.display_name || selectedEndpoint.endpoint_profile}</dd>
+              <dt>接口能力配置</dt><dd>{endpointProfile?.display_name || selectedEndpoint.endpoint_profile}</dd>
               <dt>运行时声明</dt><dd><Tag color={stateColor(endpointProfile?.runtime_state)}>{label(endpointProfile?.runtime_state)}</Tag></dd>
               <dt>兼容证据</dt><dd><Tag color={stateColor(endpointProfile?.evidence_level)}>{label(endpointProfile?.evidence_level)}</Tag></dd>
               <dt>观测 URL</dt><dd className="ur-mono-break">{selectedEndpoint.observed_base_url || '尚无独立观测'}</dd>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"unicode"
 
 	"github.com/uniroute/unirouter/internal/modellist"
 )
@@ -32,7 +33,8 @@ func normalizeModelMapping(raw json.RawMessage, models string) (json.RawMessage,
 		if _, ok := configured[publicModel]; !ok || publicModel == "" || upstreamModel == "" ||
 			len(publicModel) > 160 || len(upstreamModel) > 200 ||
 			strings.ContainsAny(publicModel, ",，;；\r\n\x00") ||
-			strings.ContainsAny(upstreamModel, ",，;；\r\n\x00") {
+			strings.ContainsAny(upstreamModel, ",，;；\r\n\x00") ||
+			strings.IndexFunc(upstreamModel, unicode.IsSpace) >= 0 {
 			return nil, errInvalidModelMapping
 		}
 		if _, duplicate := normalized[publicModel]; duplicate {

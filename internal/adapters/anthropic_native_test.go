@@ -553,6 +553,9 @@ func TestAnthropicNativeTest(t *testing.T) {
 	if !result.Success || result.TokensUsed != 7 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
+	if result.ReportedModel != "claude-3-5-sonnet-20241022" {
+		t.Fatalf("reported model = %q", result.ReportedModel)
+	}
 	if !strings.Contains(string(result.Body), `"chat.completion"`) {
 		t.Fatalf("expected OpenAI-compatible body, got %s", result.Body)
 	}

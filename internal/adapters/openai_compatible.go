@@ -142,15 +142,16 @@ func (a *OpenAICompatible) Test(ctx context.Context, in TestInput) (*TestResult,
 		errorMessage = normalized.Error.Message
 	}
 	return &TestResult{
-		Success:    success,
-		Status:     status,
-		StatusCode: resp.StatusCode,
-		LatencyMs:  latency,
-		Model:      in.Model,
-		TokensUsed: normalized.Usage.TotalTokens,
-		Body:       body,
-		Error:      errorMessage,
-		RequestURL: req.URL.String(),
+		Success:       success,
+		Status:        status,
+		StatusCode:    resp.StatusCode,
+		LatencyMs:     latency,
+		Model:         in.Model,
+		ReportedModel: responseModelIdentity(body),
+		TokensUsed:    normalized.Usage.TotalTokens,
+		Body:          body,
+		Error:         errorMessage,
+		RequestURL:    req.URL.String(),
 	}, nil
 }
 

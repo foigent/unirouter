@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Banner, Button, Input, Modal, Select, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import {
@@ -21,6 +21,9 @@ import RateCardPriceBandsEditor from '../components/RateCardPriceBandsEditor';
 import { EmptyState, MetricTile, StatusTag, Surface, formatMoney } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
 import { useAuthStore } from '../store/auth';
+import { api } from '../api/client';
+import { loadAllPages } from '../utils/loadAllPages';
+import { projectDisplayName } from '../utils/projectDisplay';
 import {
   buildRequestRateComponents,
   buildUTCOverridePriceBands,
@@ -120,10 +123,19 @@ function errorMessage(prefix: string, error: unknown) {
   return `${prefix}${error instanceof Error && error.message ? `：${error.message}` : ''}`;
 }
 
+function LabeledField({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
+  return <div className="ur-labelled-field">
+    <Typography.Text strong>{label}</Typography.Text>
+    {children}
+    {help ? <Typography.Text type="tertiary" size="small">{help}</Typography.Text> : null}
+  </div>;
+}
+
 export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number; canManage: boolean }) {
   const currentUser = useAuthStore(state => state.user);
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
   const [centers, setCenters] = useState<CostCenter[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<BudgetRecord[]>([]);
   const [positions, setPositions] = useState<BudgetPosition[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,21 +150,24 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
     setLoading(true);
     setError('');
     try {
-      const [periodResponse, centerResponse, budgetResponse, positionResponse] = await Promise.all([
+      const [periodResponse, centerResponse, budgetResponse, positionResponse, projectResponse] = await Promise.all([
         enterpriseFinanceApi.getFiscalPeriods(orgId),
         enterpriseFinanceApi.getCostCenters(orgId),
         enterpriseFinanceApi.getBudgets(orgId),
         enterpriseFinanceApi.getBudgetPositions(orgId),
+        loadAllPages<any>((page, size) => api.getProjects(page, size, { status: 'active', org_id: orgId })),
       ]);
       setPeriods(periodResponse?.data || []);
       setCenters(centerResponse?.data || []);
       setBudgets(budgetResponse?.data || []);
       setPositions(positionResponse?.data || []);
+      setProjects((projectResponse || []).filter(project => !orgId || Number(project.org_id) === Number(orgId)));
     } catch (loadError) {
       setPeriods([]);
       setCenters([]);
       setBudgets([]);
       setPositions([]);
+      setProjects([]);
       setError(errorMessage('企业预算控制数据加载失败', loadError));
     } finally {
       setLoading(false);
@@ -183,9 +198,13 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
   const openCreate = (mode: 'period' | 'center' | 'budget') => {
     setCreateMode(mode);
     setForm(mode === 'center'
-      ? { version: '1', source_ref: 'local-finance-master' }
+      ? {}
       : mode === 'budget'
-        ? { scope_kind: 'cost_center', fiscal_period_ref: periods[0]?.period_ref || '' }
+        ? {
+            scope_kind: centers.length > 0 ? 'cost_center' : 'project',
+            scope_ref: centers[0]?.cost_center_ref || String(projects[0]?.id || ''),
+            fiscal_period_ref: periods[0]?.period_ref || '',
+          }
         : {});
   };
 
@@ -203,33 +222,33 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
           end_at: `${form.end_date}T00:00:00.000000Z`,
         });
       } else if (createMode === 'center') {
-        const version = Number(form.version);
-        if (!Number.isSafeInteger(version) || version <= 0 || !form.cost_center_ref?.trim() || !form.name?.trim() || !form.legal_entity_ref?.trim() || !form.source_revision?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.valid_from || '')) {
-          throw new Error('请完整填写成本中心、法人实体、来源修订、生效日期与连续版本');
+        const existing = centers.find(item => item.cost_center_ref === form.cost_center_ref?.trim());
+        const version = Number(existing?.version || 0) + 1;
+        if (!form.cost_center_ref?.trim() || !form.name?.trim() || !form.legal_entity_ref?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.valid_from || '')) {
+          throw new Error('请完整填写成本中心代码、名称、法人实体与生效日期');
         }
         await enterpriseFinanceApi.createCostCenterVersion({
           org_id: orgId,
           cost_center_ref: form.cost_center_ref.trim(), version,
           name: form.name.trim(), legal_entity_ref: form.legal_entity_ref.trim(),
           owner_unit_ref: form.owner_unit_ref?.trim() || '',
-          source_ref: form.source_ref?.trim() || 'local-finance-master',
-          source_revision: form.source_revision.trim(),
+          source_ref: form.source_ref?.trim() || 'unirouter-manual-ui',
+          source_revision: form.source_revision?.trim() || `manual-${new Date().toISOString()}`,
           valid_from: `${form.valid_from}T00:00:00.000000Z`, valid_to: null,
         });
       } else if (createMode === 'budget') {
         const valueMinor = yuanToMicrosString(form.amount_yuan || '');
-        if (!valueMinor || !form.budget_ref?.trim() || !form.scope_ref?.trim() || !form.fiscal_period_ref?.trim()) {
-          throw new Error('请填写预算标识、归属范围、财务期间与最多六位小数的金额');
+        if (!valueMinor || !form.scope_ref?.trim() || !form.fiscal_period_ref?.trim()) {
+          throw new Error('请选择预算归属、财务期间，并填写最多六位小数的金额');
         }
         await enterpriseFinanceApi.createBudgetDraft({
           org_id: orgId,
-          budget_ref: form.budget_ref.trim(),
           scope: { kind: form.scope_kind || 'cost_center', ref: form.scope_ref.trim() },
           fiscal_period_ref: form.fiscal_period_ref.trim(),
           amount: { value_minor: valueMinor, currency: 'CNY', scale: 1_000_000 },
         });
       }
-      Toast.success(createMode === 'period' ? '财务期间已创建' : createMode === 'center' ? '成本中心版本已追加' : '预算草稿已创建');
+      Toast.success(createMode === 'period' ? '财务期间已创建' : createMode === 'center' ? '成本中心已保存，历史版本已保留' : '预算草稿已创建');
       setCreateMode('');
       setForm({});
       await load();
@@ -380,8 +399,8 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
       </Surface>
       <Surface
         title="成本中心主数据"
-        description="显示当前生效版本；历史版本保持不可变。"
-        actions={canManage ? <Button size="small" type="primary" onClick={() => openCreate('center')}>追加成本中心版本</Button> : undefined}
+        description="显示当前生效内容；保存同一成本中心代码时，系统自动追加不可变历史版本。"
+        actions={canManage ? <Button size="small" type="primary" onClick={() => openCreate('center')}>新建或更新成本中心</Button> : undefined}
       >
         {loading || centers.length > 0
           ? <Table rowKey={(row?: CostCenter) => row ? `${row.cost_center_ref}:${row.version}` : 'missing'} columns={centerColumns} dataSource={centers} loading={loading} pagination={false} scroll={{ x: 820 }} />
@@ -389,7 +408,7 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
       </Surface>
 
       <Modal
-        title={createMode === 'period' ? '新建财务期间' : createMode === 'center' ? '追加成本中心版本' : '新建预算草稿'}
+        title={createMode === 'period' ? '新建财务期间' : createMode === 'center' ? '新建或更新成本中心' : '新建预算草稿'}
         visible={Boolean(createMode)}
         onCancel={() => { setCreateMode(''); setForm({}); }}
         onOk={submitCreate}
@@ -399,48 +418,66 @@ export function EnterpriseBudgetWorkspace({ orgId, canManage }: { orgId?: number
       >
         {createMode === 'period' ? (
           <Space vertical align="start" style={{ width: '100%' }}>
-            <Input aria-label="财务期间标识" value={form.period_ref || ''} onChange={value => updateForm('period_ref', value)} placeholder="例如 FY26-P08" />
-            <Input aria-label="财务期间开始日期" type="date" value={form.start_date || ''} onChange={value => updateForm('start_date', value)} />
-            <Input aria-label="财务期间结束日期" type="date" value={form.end_date || ''} onChange={value => updateForm('end_date', value)} />
+            <LabeledField label="期间名称" help="企业财务使用的期间代码，例如 FY26-P08。">
+              <Input aria-label="财务期间标识" value={form.period_ref || ''} onChange={value => updateForm('period_ref', value)} placeholder="例如 FY26-P08" />
+            </LabeledField>
+            <LabeledField label="开始日期"><Input aria-label="财务期间开始日期" type="date" value={form.start_date || ''} onChange={value => updateForm('start_date', value)} /></LabeledField>
+            <LabeledField label="结束日期（不包含当天）"><Input aria-label="财务期间结束日期" type="date" value={form.end_date || ''} onChange={value => updateForm('end_date', value)} /></LabeledField>
             <Typography.Text type="tertiary">结束日期为排他边界；重叠期间会被服务端拒绝。</Typography.Text>
           </Space>
         ) : null}
         {createMode === 'center' ? (
           <Space vertical align="start" style={{ width: '100%' }}>
-            <Input aria-label="成本中心标识" value={form.cost_center_ref || ''} onChange={value => updateForm('cost_center_ref', value)} placeholder="例如 CC-RND" />
-            <Input aria-label="成本中心名称" value={form.name || ''} onChange={value => updateForm('name', value)} placeholder="成本中心名称" />
-            <Input aria-label="法人实体标识" value={form.legal_entity_ref || ''} onChange={value => updateForm('legal_entity_ref', value)} placeholder="例如 LE-CN" />
-            <Input aria-label="组织单元标识" value={form.owner_unit_ref || ''} onChange={value => updateForm('owner_unit_ref', value)} placeholder="可选：企业目录 unit_ref" />
-            <Input aria-label="成本中心版本" value={form.version || '1'} onChange={value => updateForm('version', value)} placeholder="连续版本号" />
-            <Input aria-label="成本中心来源" value={form.source_ref || ''} onChange={value => updateForm('source_ref', value)} placeholder="主数据来源" />
-            <Input aria-label="成本中心来源修订" value={form.source_revision || ''} onChange={value => updateForm('source_revision', value)} placeholder="权威来源修订" />
-            <Input aria-label="成本中心生效日期" type="date" value={form.valid_from || ''} onChange={value => updateForm('valid_from', value)} />
+            <Banner type="info" closeIcon={null} description="成本中心是费用归属标签，不会自动扣款。使用已有代码会追加一个新历史版本；版本号由系统计算。" />
+            <LabeledField label="成本中心代码" help="同一个成本中心长期保持不变，例如 CC-RND。">
+              <Input aria-label="成本中心标识" value={form.cost_center_ref || ''} onChange={value => updateForm('cost_center_ref', value)} placeholder="例如 CC-RND" />
+            </LabeledField>
+            <LabeledField label="显示名称"><Input aria-label="成本中心名称" value={form.name || ''} onChange={value => updateForm('name', value)} placeholder="例如 研发中心" /></LabeledField>
+            <LabeledField label="所属法人实体" help="企业内部法人代码；没有多法人时可填写当前公司简称。">
+              <Input aria-label="法人实体标识" value={form.legal_entity_ref || ''} onChange={value => updateForm('legal_entity_ref', value)} placeholder="例如 LE-CN" />
+            </LabeledField>
+            <LabeledField label="组织单元（可选）"><Input aria-label="组织单元标识" value={form.owner_unit_ref || ''} onChange={value => updateForm('owner_unit_ref', value)} placeholder="企业目录中的 unit_ref" /></LabeledField>
+            <LabeledField label="生效日期"><Input aria-label="成本中心生效日期" type="date" value={form.valid_from || ''} onChange={value => updateForm('valid_from', value)} /></LabeledField>
+            <details className="ur-form-advanced">
+              <summary>主数据来源（高级审计）</summary>
+              <div style={{ marginTop: 12 }}>
+                <LabeledField label="来源系统"><Input aria-label="成本中心来源" value={form.source_ref || ''} onChange={value => updateForm('source_ref', value)} placeholder="留空表示 UniRouter 手工录入" /></LabeledField>
+                <LabeledField label="来源修订"><Input aria-label="成本中心来源修订" value={form.source_revision || ''} onChange={value => updateForm('source_revision', value)} placeholder="留空由系统记录本次录入时间" /></LabeledField>
+              </div>
+            </details>
           </Space>
         ) : null}
         {createMode === 'budget' ? (
           <Space vertical align="start" style={{ width: '100%' }}>
-            <Input aria-label="预算标识" value={form.budget_ref || ''} onChange={value => updateForm('budget_ref', value)} placeholder="例如 BUDGET-RND-P08" />
-            <Select
-              aria-label="预算归属类型"
-              value={form.scope_kind || 'cost_center'}
-              onChange={value => updateForm('scope_kind', String(value || ''))}
-              optionList={[
-                { value: 'legal_entity', label: '法人实体' }, { value: 'business_unit', label: '事业部' },
-                { value: 'department', label: '部门' }, { value: 'cost_center', label: '成本中心' },
-                { value: 'project', label: '项目' },
-              ]}
-              style={{ width: '100%' }}
-            />
-            <Input aria-label="预算归属标识" value={form.scope_ref || ''} onChange={value => updateForm('scope_ref', value)} placeholder="填写对应的稳定 ref" />
-            <Select
-              aria-label="预算财务期间"
-              value={form.fiscal_period_ref || undefined}
-              onChange={value => updateForm('fiscal_period_ref', String(value || ''))}
-              optionList={periods.map(item => ({ value: item.period_ref, label: item.period_ref }))}
-              style={{ width: '100%' }}
-            />
-            <Input aria-label="预算金额元" value={form.amount_yuan || ''} onChange={value => updateForm('amount_yuan', value)} placeholder="CNY，最多六位小数" />
-            <Typography.Text type="tertiary">保存后为 report_only 草稿；必须由另一名财务角色复核。</Typography.Text>
+            <Banner type="info" closeIcon={null} description="这是预算报表计划，不会阻断模型请求或扣减钱包。预算内部标识和版本由系统生成。" />
+            <LabeledField label="预算归属类型">
+              <Select
+                aria-label="预算归属类型"
+                value={form.scope_kind || 'cost_center'}
+                onChange={value => {
+                  const kind = String(value || 'cost_center');
+                  updateForm('scope_kind', kind);
+                  updateForm('scope_ref', kind === 'cost_center' ? centers[0]?.cost_center_ref || '' : String(projects[0]?.id || ''));
+                }}
+                optionList={[{ value: 'cost_center', label: '成本中心' }, { value: 'project', label: '项目' }]}
+                style={{ width: '100%' }}
+              />
+            </LabeledField>
+            <LabeledField label={form.scope_kind === 'project' ? '选择项目' : '选择成本中心'}>
+              <Select
+                aria-label="预算归属标识"
+                value={form.scope_ref || undefined}
+                onChange={value => updateForm('scope_ref', String(value || ''))}
+                optionList={(form.scope_kind === 'project'
+                  ? projects.map(project => ({ value: String(project.id), label: projectDisplayName(project) }))
+                  : centers.map(center => ({ value: center.cost_center_ref, label: `${center.name} · ${center.cost_center_ref}` })))}
+                emptyContent={form.scope_kind === 'project' ? '没有启用项目' : '请先建立成本中心'}
+                style={{ width: '100%' }}
+              />
+            </LabeledField>
+            <LabeledField label="财务期间"><Select aria-label="预算财务期间" value={form.fiscal_period_ref || undefined} onChange={value => updateForm('fiscal_period_ref', String(value || ''))} optionList={periods.map(item => ({ value: item.period_ref, label: item.period_ref }))} style={{ width: '100%' }} /></LabeledField>
+            <LabeledField label="预算金额（人民币元）" help="最多六位小数；系统以精确整数微元保存，不使用浮点数。"><Input aria-label="预算金额元" value={form.amount_yuan || ''} onChange={value => updateForm('amount_yuan', value)} placeholder="例如 100000" /></LabeledField>
+            <Typography.Text type="tertiary">保存后为仅报表草稿，必须由另一名财务角色复核；批准后仍不会自动拦截请求。</Typography.Text>
           </Space>
         ) : null}
       </Modal>

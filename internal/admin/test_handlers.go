@@ -178,7 +178,8 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		ChannelID: id, PublicModel: reqBody.Model, UpstreamModel: upstreamModel,
 		RoutingEpoch: routingEpoch, CredentialID: keyID, CredentialStateEpoch: keyStateEpoch,
 		Success: result.Success, StatusCode: result.StatusCode, LatencyMS: result.LatencyMs,
-		ErrorSummary: auditErrorSummary(result.Error),
+		ReportedModel: result.ReportedModel,
+		ErrorSummary:  auditErrorSummary(result.Error),
 	}); persistErr != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Provider request completed but its test evidence could not be persisted; activation remains blocked"})
 		return
@@ -199,6 +200,7 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		"latency_ms":     result.LatencyMs,
 		"tokens_used":    result.TokensUsed,
 		"upstream_model": upstreamModel,
+		"reported_model": result.ReportedModel,
 		"error":          auditErrorSummary(result.Error),
 	})
 
@@ -211,6 +213,7 @@ func (h *Handler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		"latency_ms":     result.LatencyMs,
 		"model":          reqBody.Model,
 		"upstream_model": upstreamModel,
+		"reported_model": result.ReportedModel,
 		"tokens_used":    result.TokensUsed,
 		"models":         channelModels,
 		"error":          result.Error,

@@ -1529,6 +1529,51 @@ body {
   margin-top: 24px;
 }
 
+.ur-labelled-field {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ur-form-advanced {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.5);
+  padding: 12px;
+}
+
+.ur-form-advanced summary {
+  cursor: pointer;
+  color: var(--ur-text);
+  font-weight: 650;
+}
+
+.ur-readable-descriptions,
+.ur-readable-descriptions .semi-descriptions,
+.ur-readable-descriptions .semi-descriptions table {
+  width: 100%;
+  min-width: 0;
+}
+
+.ur-readable-descriptions .semi-descriptions table {
+  table-layout: fixed;
+}
+
+.ur-readable-descriptions .semi-descriptions-item-value,
+.ur-readable-descriptions .semi-descriptions-item-td,
+.ur-readable-descriptions code,
+.ur-license-page .semi-table-row-cell,
+.ur-deployment-page .semi-table-row-cell {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .ur-explorer {
   display: grid;
   grid-template-columns: 240px minmax(320px, 1fr) var(--ur-inspector-width);

@@ -323,7 +323,7 @@ func TestOpenAICompatibleTest(t *testing.T) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(`{"usage":{"prompt_tokens":6,"completion_tokens":5,"total_tokens":11}}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"model":"gpt-4o-2026-08-06","usage":{"prompt_tokens":6,"completion_tokens":5,"total_tokens":11}}`)),
 			}, nil
 		}),
 	})
@@ -332,5 +332,8 @@ func TestOpenAICompatibleTest(t *testing.T) {
 	}
 	if !result.Success || result.TokensUsed != 11 {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+	if result.ReportedModel != "gpt-4o-2026-08-06" {
+		t.Fatalf("reported model = %q", result.ReportedModel)
 	}
 }

@@ -382,6 +382,13 @@ func (h *Handler) CreateEnterpriseBudgetDraft(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusUnauthorized, map[string]interface{}{"error": "Authenticated finance actor required"})
 		return
 	}
+	if strings.TrimSpace(request.BudgetRef) == "" {
+		request.BudgetRef, err = newEnterpriseFinanceRef("budget")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Budget reference generation failed"})
+			return
+		}
+	}
 	store, _ := enterpriseFinanceStore(h)
 	record, err := store.CreateBudgetDraft(r.Context(), enterprisefinance.BudgetPlan{
 		ContractVersion: enterprisefinance.ContractVersion, BudgetRef: request.BudgetRef,

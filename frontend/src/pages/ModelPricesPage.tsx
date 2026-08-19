@@ -45,7 +45,7 @@ function mutationError(prefix: string, error: unknown) {
 	return error instanceof Error && error.message ? `${prefix}：${error.message}` : prefix;
 }
 
-export default function ModelPricesPage({ embedded = false }: { embedded?: boolean }) {
+export default function ModelPricesPage({ embedded = false, onOpenRateCard }: { embedded?: boolean; onOpenRateCard?: () => void }) {
   const user = useAuthStore((s) => s.user);
   const canMutate = isPlatformAdminRole(organizationRoleForUser(user));
   const [prices, setPrices] = useState<any[]>([]);
@@ -165,7 +165,7 @@ export default function ModelPricesPage({ embedded = false }: { embedded?: boole
         description={canMutate
           ? '仅维护旧版全天同价合同。需要峰谷时段或精确缓存命中价格时，请使用同页 Rate Card；未配置价格的模型拒绝计费与路由。'
           : '只读查看旧版全天同价合同；峰谷与精确缓存价格以已激活 Rate Card 为准。'}
-        actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button> : undefined}
+        actions={canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增全天基础价格（兼容）</Button> : undefined}
       />}
 
       <Surface
@@ -173,7 +173,10 @@ export default function ModelPricesPage({ embedded = false }: { embedded?: boole
         description={embedded ? (canMutate
           ? '旧版全天同价兼容入口；峰谷和四类精确价格请在 Rate Card 中维护。'
           : '只读查看旧版全天同价合同。') : undefined}
-        actions={embedded && canMutate ? <Button icon={<IconPlus />} type="primary" onClick={openCreate}>新增价格</Button> : undefined}
+        actions={embedded && canMutate ? <Space>
+          {onOpenRateCard ? <Button type="primary" onClick={onOpenRateCard}>配置分时 / 精确 Rate Card</Button> : null}
+          <Button icon={<IconPlus />} onClick={openCreate}>新增全天基础价格（兼容）</Button>
+        </Space> : undefined}
       >
         <PagedTable
           columns={columns}
@@ -192,7 +195,7 @@ export default function ModelPricesPage({ embedded = false }: { embedded?: boole
       </Surface>
 
       {canMutate && <SideSheet
-        title={editPrice ? '编辑价格' : '新增价格'}
+        title={editPrice ? '编辑全天基础价格（兼容）' : '新增全天基础价格（兼容）'}
         visible={showDrawer}
         onCancel={closeDrawer}
         width={480}

@@ -27,6 +27,7 @@ func TestNormalizeModelMappingRejectsAmbiguousOrUnconfiguredIdentity(t *testing.
 	cases := []json.RawMessage{
 		json.RawMessage(`{"unknown":"supplier-model"}`),
 		json.RawMessage(`{"company-fast":"supplier;other"}`),
+		json.RawMessage(`{"company-fast":"Kimi K2.7 Code"}`),
 		json.RawMessage(`{"company-fast":"supplier-a"," company-fast ":"supplier-b"}`),
 		json.RawMessage(`[]`),
 	}

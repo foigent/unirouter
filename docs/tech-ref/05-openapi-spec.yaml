@@ -772,6 +772,23 @@ paths:
         "200":
           $ref: "#/components/responses/JSON"
 
+  /api/v1/channels/{id}/provider-models:
+    get:
+      tags: [Admin]
+      summary: Read the live provider model catalog with the saved credential
+      description: Calls the configured provider GET /v1/models endpoint, returns only normalized model metadata, and never returns the credential or raw upstream payload.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          $ref: "#/components/responses/JSON"
+        "400":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+
   /api/v1/model-endpoints:
     x-unirouter-rbac:
       get: [platform_admin]

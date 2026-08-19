@@ -50,7 +50,7 @@ describe('pricing authority pages', () => {
     expect(screen.getByText('只读查看旧版全天同价合同；峰谷与精确缓存价格以已激活 Rate Card 为准。')).toBeTruthy();
     expect(screen.getByText('0.100×')).toBeTruthy();
     expect(screen.getByText('1.250×')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /新增价格/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /新增全天基础价格/ })).toBeNull();
     expect(screen.queryByText('操作')).toBeNull();
   });
 
@@ -59,7 +59,7 @@ describe('pricing authority pages', () => {
 
     render(<ModelPricesPage />);
 
-    expect(await screen.findByRole('button', { name: /新增价格/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /新增全天基础价格/ })).toBeTruthy();
     expect(screen.getByText('操作')).toBeTruthy();
   });
 

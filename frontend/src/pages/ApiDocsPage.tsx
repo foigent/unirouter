@@ -169,6 +169,7 @@ const endpointGroups = [
       ['PUT', '/api/v1/channels/{id}', '更新上游通道'],
       ['DELETE', '/api/v1/channels/{id}', '删除上游通道'],
       ['POST', '/api/v1/channels/{id}/test', '测试上游通道'],
+      ['GET', '/api/v1/channels/{id}/provider-models', '用已保存凭证读取供应商当前可用的模型 ID，不回显凭证'],
       ['GET', '/api/v1/model-endpoints', '读取模型、供应商端点、真实检测与当前路由的唯一权威投影'],
       ['POST', '/api/v1/model-endpoints/activate', '首次启用当前证据仍有效的供应商端点'],
       ['POST', '/api/v1/model-endpoints/canary', '通过受控灰度增加或替换已检测端点'],

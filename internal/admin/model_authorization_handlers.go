@@ -2,6 +2,8 @@ package admin
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -88,6 +90,13 @@ func (h *Handler) CreateModelAuthorization(w http.ResponseWriter, r *http.Reques
 		writeModelAuthorizationError(w, err)
 		return
 	}
+	if strings.TrimSpace(request.AuthorizationRef) == "" {
+		request.AuthorizationRef, err = newModelAuthorizationRef()
+		if err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Authorization identity generation unavailable"})
+			return
+		}
+	}
 	draft, err := modelauthz.NormalizeDraft(request.Draft)
 	if err != nil {
 		writeModelAuthorizationError(w, err)
@@ -149,6 +158,14 @@ RETURNING id`, orgID, draft.AuthorizationRef, draft.SubjectType, draft.SubjectRe
 		return
 	}
 	writeJSON(w, http.StatusCreated, item)
+}
+
+func newModelAuthorizationRef() (string, error) {
+	var entropy [12]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		return "", err
+	}
+	return "mca_" + hex.EncodeToString(entropy[:]), nil
 }
 
 func (h *Handler) ActivateModelAuthorization(w http.ResponseWriter, r *http.Request) {

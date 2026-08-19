@@ -68,6 +68,7 @@ func TestRuntimeAssignmentProjectionMigrationIsCanonicalAndReversible(t *testing
 	require.Equal(t, int64(5), releaseVersion)
 	require.Equal(t, int64(9), slotVersion)
 
+	execMigrationDown(t, ctx, pool, "000068_provider_reported_model_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000066_runtime_assignment_projection.down.sql")
 	var viewExists, ledgerExists bool

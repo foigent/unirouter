@@ -30,6 +30,7 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"PUT /api/v1/channels/{id}",
 		"DELETE /api/v1/channels/{id}",
 		"POST /api/v1/channels/{id}/test",
+		"GET /api/v1/channels/{id}/provider-models",
 		"GET /api/v1/provider-packs",
 		"GET /api/v1/keys",
 		"POST /api/v1/keys",
