@@ -172,8 +172,10 @@ describe('ApiDocsPage', () => {
 
     expect(await screen.findByText('API 快速接入')).toBeTruthy();
     expect(await screen.findByText('company-chat')).toBeTruthy();
-    expect(screen.getByText('核心接口')).toBeTruthy();
+    expect(screen.getByText('常用兼容接口')).toBeTruthy();
+    expect(screen.getByText('具体可用性取决于所选模型已验证的能力；系统不会按模型名称推断。')).toBeTruthy();
     expect(screen.getByText('/v1/chat/completions')).toBeTruthy();
+    expect(screen.getByText('仅在项目有已启用向量模型时生成向量')).toBeTruthy();
     expect(screen.getByText(/控制台登录会话不能替代项目 API Key/)).toBeTruthy();
     expect(screen.getByText('常见错误与排查')).toBeTruthy();
     expect(screen.queryByText('项目 API 参考')).toBeNull();

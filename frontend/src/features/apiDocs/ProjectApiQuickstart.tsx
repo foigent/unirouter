@@ -22,7 +22,7 @@ interface ProjectApiQuickstartProps {
 const coreEndpoints = [
   ['GET', '/v1/models', '查看当前项目可见模型'],
   ['POST', '/v1/chat/completions', '发送对话请求'],
-  ['POST', '/v1/embeddings', '生成向量'],
+  ['POST', '/v1/embeddings', '仅在项目有已启用向量模型时生成向量'],
 ] as const;
 
 export default function ProjectApiQuickstart({
@@ -81,7 +81,10 @@ export default function ProjectApiQuickstart({
           </div>
           {modelWarning && <Text type="warning">{modelWarning}</Text>}
           <div>
-            <Text className="ur-filter-label">核心接口</Text>
+            <Text className="ur-filter-label">常用兼容接口</Text>
+            <div>
+              <Text type="tertiary">具体可用性取决于所选模型已验证的能力；系统不会按模型名称推断。</Text>
+            </div>
             <div className="ur-api-endpoint-list">
               {coreEndpoints.map(([method, path, label]) => (
                 <div key={`${method}:${path}`}>
