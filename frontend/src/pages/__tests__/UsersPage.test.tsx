@@ -162,6 +162,8 @@ describe('UsersPage enterprise identity presentation', () => {
     fireEvent.click(screen.getByRole('button', { name: /新增本地用户/ }));
     expect(await screen.findByLabelText('用户名')).toHaveValue('');
     expect(screen.getByLabelText('初始密码')).toHaveValue('');
+    expect(screen.getByLabelText('用户名')).toHaveAttribute('autocomplete', 'off');
+    expect(screen.getByLabelText('初始密码')).toHaveAttribute('autocomplete', 'new-password');
   });
 
   it('grants normal model use through project membership instead of an advanced model grant', async () => {

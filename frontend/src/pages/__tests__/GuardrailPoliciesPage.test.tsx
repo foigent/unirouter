@@ -11,12 +11,13 @@ const mocks = vi.hoisted(() => ({
   getKeys: vi.fn(),
   getOrganizations: vi.fn(),
   getProjects: vi.fn(),
-  getModelNames: vi.fn(),
+  getModelEndpoints: vi.fn(),
   getSensitiveWords: vi.fn(),
   replaceSensitiveWords: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({ api: mocks }));
+vi.mock('../../api/modelEndpoints', () => ({ modelEndpointApi: { getModelEndpoints: mocks.getModelEndpoints } }));
 
 describe('GuardrailPoliciesPage', () => {
   beforeEach(() => {
@@ -56,7 +57,7 @@ describe('GuardrailPoliciesPage', () => {
     });
     mocks.getOrganizations.mockResolvedValue({ data: [{ id: 22, name: 'Acme', status: 'active' }], total: 1 });
     mocks.getProjects.mockResolvedValue({ data: [{ id: 9, org_id: 22, name: 'Customer API', status: 'active' }], total: 1 });
-    mocks.getModelNames.mockResolvedValue({ data: ['company-chat'] });
+    mocks.getModelEndpoints.mockResolvedValue({ models: [{ public_model: 'company-chat' }] });
     mocks.getSensitiveWords.mockResolvedValue({ data: ['blocked', 'restricted'] });
     mocks.replaceSensitiveWords.mockResolvedValue({ data: ['blocked', 'new-word'] });
   });
@@ -223,7 +224,7 @@ describe('GuardrailPoliciesPage', () => {
     expect(mocks.getKeys).not.toHaveBeenCalled();
     expect(mocks.getOrganizations).not.toHaveBeenCalled();
     expect(mocks.getProjects).not.toHaveBeenCalled();
-    expect(mocks.getModelNames).not.toHaveBeenCalled();
+    expect(mocks.getModelEndpoints).not.toHaveBeenCalled();
     expect(mocks.getSensitiveWords).not.toHaveBeenCalled();
   });
 });

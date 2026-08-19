@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   getUsers: vi.fn(),
   getProjects: vi.fn(),
   getKeys: vi.fn(),
-  getModelNames: vi.fn(),
+  getModelEndpoints: vi.fn(),
   createModelAuthorization: vi.fn(),
   activateModelAuthorization: vi.fn(),
   revokeModelAuthorization: vi.fn(),
@@ -22,6 +22,9 @@ vi.mock('../../api/client', async () => {
   const actual = await vi.importActual<any>('../../api/client');
   return { ...actual, api: mocks };
 });
+vi.mock('../../api/modelEndpoints', () => ({
+  modelEndpointApi: { getModelEndpoints: mocks.getModelEndpoints },
+}));
 
 const rootRef = `sha256:${'b'.repeat(64)}`;
 const revokedRef = `sha256:${'d'.repeat(64)}`;
@@ -152,7 +155,7 @@ describe('AgentTrustPage', () => {
     mocks.getUsers.mockResolvedValue({ data: [], total: 0 });
     mocks.getProjects.mockResolvedValue({ data: [], total: 0 });
     mocks.getKeys.mockResolvedValue({ data: [], total: 0 });
-    mocks.getModelNames.mockResolvedValue({ data: [{ model: 'company-chat' }] });
+    mocks.getModelEndpoints.mockResolvedValue({ models: [{ public_model: 'company-chat' }] });
     mocks.getAgentTrustContract.mockResolvedValue({
       contract_version: 'unirouter.agent-trust-review.v1',
       report_version: 'unirouter.agent-trust-report.v1',

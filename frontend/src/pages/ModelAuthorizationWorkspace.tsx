@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Banner, Button, Form, Popconfirm, Select, SideSheet, Space, Table, Tag, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconPlus, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { modelEndpointApi } from '../api/modelEndpoints';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState } from '../ui';
@@ -111,8 +112,8 @@ export default function ModelAuthorizationWorkspace() {
       loadAllPages<any>((page, size) => api.getUsers(page, size, 'enterprise')),
       loadAllPages<any>((page, size) => api.getProjects(page, size, { status: 'active', org_id: orgID })),
       loadAllPages<any>((page, size) => api.getKeys(page, size)),
-      api.getModelNames(),
-    ]).then(([localUsers, enterpriseUsers, projects, keys, modelData]) => {
+      modelEndpointApi.getModelEndpoints(),
+    ]).then(([localUsers, enterpriseUsers, projects, keys, endpointProjection]) => {
       const people = [...localUsers, ...enterpriseUsers]
         .filter(item => Number(item.org_id) === Number(orgID) && item.status === 'active')
         .map(item => ({ value: String(item.id), label: `${item.username}${item.auth_provider === 'oidc' ? ' · OIDC' : ' · 本地账号'}` }));
@@ -123,8 +124,10 @@ export default function ModelAuthorizationWorkspace() {
         api_key: keys.filter(item => Number(item.org_id) === Number(orgID))
           .map(item => ({ value: String(item.id), label: `${item.name || `API Key #${item.id}`} · ${item.key_prefix || ''}***` })),
       });
-      const source = Array.isArray(modelData?.data) ? modelData.data : modelData;
-      setModelOptions((Array.isArray(source) ? source : []).map((item: any) => typeof item === 'string' ? item : item.model).filter(Boolean));
+      setModelOptions((endpointProjection.models || [])
+        .map(item => item.public_model)
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)));
     }).catch((optionError: any) => {
       setError(optionError?.message || '无法加载人员、项目和模型选项');
     }).finally(() => setOptionLoading(false));
