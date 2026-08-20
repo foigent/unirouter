@@ -21,6 +21,17 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000079_canonical_connection_license_authority.down.sql",
+	"000078_atomic_model_release_authoring.down.sql",
+	"000077_public_model_execution_authority.down.sql",
+	"000076_model_deployment_lifecycle_receipts.down.sql",
+	"000075_model_operation_production_qualification.down.sql",
+	"000074_model_deployment_create_idempotency.down.sql",
+	"000073_model_execution_dispatch_fence.down.sql",
+	"000072_execution_evidence_projection.down.sql",
+	"000071_model_execution_evidence.down.sql",
+	"000070_runtime_deployment_route_manifest.down.sql",
+	"000069_model_deployment_expand.down.sql",
 	"000068_provider_reported_model_identity.down.sql",
 	"000067_call_log_route_identity.down.sql",
 	"000066_runtime_assignment_projection.down.sql",
@@ -48,9 +59,20 @@ var enterpriseDirectoryDownMigrations = []string{
 func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 	t.Helper()
 	ctx := context.Background()
-	orderedNames := make([]string, 0, len(names)+3)
-	seen := make(map[string]struct{}, len(names)+3)
+	orderedNames := make([]string, 0, len(names)+4)
+	seen := make(map[string]struct{}, len(names)+4)
 	for _, name := range []string{
+		"000079_canonical_connection_license_authority.down.sql",
+		"000078_atomic_model_release_authoring.down.sql",
+		"000077_public_model_execution_authority.down.sql",
+		"000076_model_deployment_lifecycle_receipts.down.sql",
+		"000075_model_operation_production_qualification.down.sql",
+		"000074_model_deployment_create_idempotency.down.sql",
+		"000073_model_execution_dispatch_fence.down.sql",
+		"000072_execution_evidence_projection.down.sql",
+		"000071_model_execution_evidence.down.sql",
+		"000070_runtime_deployment_route_manifest.down.sql",
+		"000069_model_deployment_expand.down.sql",
 		"000068_provider_reported_model_identity.down.sql",
 		"000067_call_log_route_identity.down.sql",
 		"000066_runtime_assignment_projection.down.sql",

@@ -32,8 +32,16 @@ const (
 
 type evidenceSpanStateKey struct{}
 type attemptIDContextKey struct{}
+type providerAttemptStageContextKey struct{}
 type routeAttemptContextKey struct{}
 type telemetryOperationKindKey struct{}
+
+type providerAttemptStage string
+
+const (
+	providerAttemptStagePreDispatch providerAttemptStage = "pre_dispatch"
+	providerAttemptStageDurable     providerAttemptStage = "durable"
+)
 
 type routeAttemptContext struct {
 	Sequence int
@@ -61,6 +69,29 @@ func contextWithAttemptID(ctx context.Context, attemptID string) context.Context
 		return ctx
 	}
 	return context.WithValue(ctx, attemptIDContextKey{}, attemptID)
+}
+
+func contextWithPreDispatchProviderAttempt(ctx context.Context, attemptID string) context.Context {
+	ctx = contextWithAttemptID(ctx, attemptID)
+	if ctx == nil || strings.TrimSpace(attemptID) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, providerAttemptStageContextKey{}, providerAttemptStagePreDispatch)
+}
+
+func contextWithDurableProviderAttempt(ctx context.Context) context.Context {
+	if ctx == nil || strings.TrimSpace(attemptIDFromContext(ctx)) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, providerAttemptStageContextKey{}, providerAttemptStageDurable)
+}
+
+func providerAttemptStageFromContext(ctx context.Context) providerAttemptStage {
+	if ctx == nil {
+		return ""
+	}
+	stage, _ := ctx.Value(providerAttemptStageContextKey{}).(providerAttemptStage)
+	return stage
 }
 
 func attemptIDFromContext(ctx context.Context) string {
@@ -145,23 +176,13 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 		return
 	}
 	projectID := middleware.GetProjectIDFromContext(ctx)
-	var projectIDArg interface{}
-	if projectID > 0 {
-		projectIDArg = projectID
-	}
 	keyID := middleware.GetKeyIDFromContext(ctx)
-	var keyIDArg interface{}
-	if keyID > 0 {
-		keyIDArg = keyID
-	}
-	var ownerUserIDArg interface{}
 	var ownerUserID int64
 	keyType := "unknown"
 	actorType := "unknown"
 	var actorRefArg interface{}
 	if apiKey := middleware.GetAPIKeyFromContext(ctx); apiKey != nil {
 		if apiKey.OwnerUserID != nil && *apiKey.OwnerUserID > 0 {
-			ownerUserIDArg = *apiKey.OwnerUserID
 			ownerUserID = *apiKey.OwnerUserID
 		}
 		if apiKey.KeyType == "shared" || apiKey.KeyType == "personal" || apiKey.KeyType == "service" {
@@ -202,9 +223,11 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	}
 	provider := ""
 	channel := ""
+	var channelID int64
 	if route != nil {
 		provider = route.Channel.Provider
 		channel = route.Channel.Name
+		channelID = route.Channel.ID
 	}
 	var statusCodeArg interface{}
 	if statusCode > 0 {
@@ -246,46 +269,53 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 	decisionKind, decisionResult, decisionReason := decisionEvidence(eventType, sanitizedMetadata)
 	occurredAt := time.Now().UTC()
 	payload := traceOutboxPayload{
-		RequestID:          requestID,
-		ClientRequestID:    requestIdentity.ClientRequestID,
-		IdempotencyKeyHash: requestIdentity.IdempotencyKeyHash,
-		OrgID:              orgID,
-		ProjectID:          int64Pointer(projectID),
-		APIKeyID:           int64Pointer(keyID),
-		OwnerUserID:        int64Pointer(ownerUserID),
-		KeyType:            keyType,
-		EventType:          eventType,
-		Stage:              stage,
-		Severity:           severity,
-		Model:              model,
-		RequestedModel:     requestedModel,
-		Provider:           provider,
-		Channel:            channel,
-		StatusCode:         intPointer(statusCode),
-		LatencyMS:          latencyMs,
-		Metadata:           json.RawMessage(metadataJSON),
-		TraceID:            traceID,
-		SpanID:             spanID,
-		ParentSpanID:       parentSpanID,
-		SchemaVersion:      evidenceSchemaVersion,
-		SourceComponent:    sourceComponent,
-		CaptureMode:        evidenceCaptureModeNative,
-		CaptureGap:         captureGap,
-		EvidenceRef:        evidenceRef,
-		UpstreamRequestID:  upstreamRequestID,
-		DecisionKind:       decisionKind,
-		DecisionResult:     decisionResult,
-		DecisionReason:     decisionReason,
-		ActorType:          actorType,
-		ActorRef:           stringFromNullable(actorRefArg),
-		OnBehalfOf:         evidenceContext.OnBehalfOf,
-		SessionID:          evidenceContext.SessionID,
-		WorkflowID:         evidenceContext.WorkflowID,
-		AgentID:            evidenceContext.AgentID,
-		AttemptID:          attemptID,
-		PayloadCaptureMode: payloadCaptureMode,
-		SourceEventHash:    sourceEventHash,
-		OccurredAt:         occurredAt,
+		RequestID:            requestID,
+		ClientRequestID:      requestIdentity.ClientRequestID,
+		IdempotencyKeyHash:   requestIdentity.IdempotencyKeyHash,
+		OrgID:                orgID,
+		ProjectID:            int64Pointer(projectID),
+		APIKeyID:             int64Pointer(keyID),
+		OwnerUserID:          int64Pointer(ownerUserID),
+		KeyType:              keyType,
+		EventType:            eventType,
+		Stage:                stage,
+		Severity:             severity,
+		Model:                model,
+		RequestedModel:       requestedModel,
+		Provider:             provider,
+		Channel:              channel,
+		ChannelID:            channelID,
+		StatusCode:           intPointer(statusCode),
+		LatencyMS:            latencyMs,
+		Metadata:             json.RawMessage(metadataJSON),
+		TraceID:              traceID,
+		SpanID:               spanID,
+		ParentSpanID:         parentSpanID,
+		SchemaVersion:        evidenceSchemaVersion,
+		SourceComponent:      sourceComponent,
+		CaptureMode:          evidenceCaptureModeNative,
+		CaptureGap:           captureGap,
+		EvidenceRef:          evidenceRef,
+		UpstreamRequestID:    upstreamRequestID,
+		DecisionKind:         decisionKind,
+		DecisionResult:       decisionResult,
+		DecisionReason:       decisionReason,
+		ActorType:            actorType,
+		ActorRef:             stringFromNullable(actorRefArg),
+		OnBehalfOf:           evidenceContext.OnBehalfOf,
+		SessionID:            evidenceContext.SessionID,
+		WorkflowID:           evidenceContext.WorkflowID,
+		AgentID:              evidenceContext.AgentID,
+		AttemptID:            attemptID,
+		ProviderAttemptStage: string(providerAttemptStageFromContext(ctx)),
+		PayloadCaptureMode:   payloadCaptureMode,
+		SourceEventHash:      sourceEventHash,
+		OccurredAt:           occurredAt,
+	}
+	payload, err = relay.prepareTraceMaterialization(ctx, payload)
+	if err != nil {
+		logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to prepare trace execution evidence %s: %v", eventType, err)
+		return
 	}
 	if relay.outbox != nil {
 		if created, err := relay.enqueueTraceOutbox(ctx, payload); err == nil {
@@ -297,37 +327,7 @@ func (relay *Relay) recordTraceEvent(ctx context.Context, requestID, eventType, 
 			logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to enqueue trace event %s; falling back to synchronous insert: %v", eventType, err)
 		}
 	}
-	if _, err := relay.db.Exec(ctx,
-		`INSERT INTO request_trace_events (
-			request_id, client_request_id, idempotency_key_hash,
-			org_id, project_id, api_key_id, owner_user_id, key_type,
-			event_type, stage, severity, model, requested_model, provider, channel,
-			status_code, latency_ms, metadata,
-			trace_id, span_id, parent_span_id, schema_version, source_component, capture_mode,
-			capture_gap, evidence_ref, upstream_request_id, decision_kind, decision_result, decision_reason,
-			actor_type, actor_ref, on_behalf_of, session_id, workflow_id, agent_id, attempt_id,
-			payload_capture_mode, source_event_hash
-		)
-		 VALUES (
-			$1, $2, $3,
-			$4, $5, $6, $7, $8,
-			$9, $10, $11, $12, $13, $14, $15,
-			$16, $17, $18,
-			$19, $20, $21, $22, $23, $24,
-			$25, $26, $27, $28, $29, $30,
-			$31, $32, $33, $34, $35, $36, $37,
-			$38, $39
-		)`,
-		requestID, nullableString(requestIdentity.ClientRequestID), nullableString(requestIdentity.IdempotencyKeyHash),
-		orgID, projectIDArg, keyIDArg, ownerUserIDArg, keyType,
-		eventType, stage, severity, model, requestedModel, provider, channel,
-		statusCodeArg, latencyMs, string(metadataJSON),
-		traceID, spanID, nullableString(parentSpanID), evidenceSchemaVersion, sourceComponent, evidenceCaptureModeNative,
-		nullableString(captureGap), evidenceRef, nullableString(upstreamRequestID), nullableString(decisionKind), nullableString(decisionResult), nullableString(decisionReason),
-		actorType, actorRefArg, nullableString(evidenceContext.OnBehalfOf), nullableString(evidenceContext.SessionID),
-		nullableString(evidenceContext.WorkflowID), nullableString(evidenceContext.AgentID), nullableString(attemptID),
-		payloadCaptureMode, sourceEventHash,
-	); err != nil {
+	if err := relay.materializeTrace(ctx, payload, ""); err != nil {
 		logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "trace"}).Warn("Failed to record trace event %s: %v", eventType, err)
 	}
 }

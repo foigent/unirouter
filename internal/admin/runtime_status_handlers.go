@@ -40,14 +40,15 @@ var errMonitoringResponseTooLarge = errors.New("monitoring response too large")
 var errRuntimeStatusRefreshSaturated = errors.New("runtime status refresh concurrency exhausted")
 
 type RuntimeStatusOptions struct {
-	Environment     string
-	DeploymentMode  string
-	DeploymentRole  string
-	Version         string
-	Commit          string
-	PrometheusURL   string
-	GrafanaURL      string
-	EffectiveConfig runtimeconfig.Snapshot
+	Environment      string
+	DeploymentMode   string
+	DeploymentRole   string
+	Version          string
+	Commit           string
+	SchemaMigrations []string
+	PrometheusURL    string
+	GrafanaURL       string
+	EffectiveConfig  runtimeconfig.Snapshot
 }
 
 type runtimeStatusResponse struct {

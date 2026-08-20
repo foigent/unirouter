@@ -67,7 +67,7 @@ func TestStreamGuardrailDuplicateRejectionPreservesUniqueAndAdvisoryBehavior(t *
 	inspection, err := inspectGuardedStreamBatch(
 		t.Context(), nil, guardrail.StreamProfile{Advisory: true}, [][]byte{duplicate}, map[string]string{},
 	)
-	if err != nil || len(inspection.Frames) != 1 || !bytes.Equal(inspection.Frames[0].Data, duplicate) {
-		t.Fatalf("advisory-only policy unexpectedly became preventive: inspection=%+v err=%v", inspection, err)
+	if err == nil || len(inspection.Frames) != 1 || len(inspection.Frames[0].Data) != 0 {
+		t.Fatalf("advisory-only duplicate frame was not withheld: inspection=%+v err=%v", inspection, err)
 	}
 }

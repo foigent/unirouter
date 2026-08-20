@@ -15,6 +15,8 @@ import (
 	"github.com/uniroute/unirouter/internal/licensing"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
+	"github.com/uniroute/unirouter/internal/modelrouteauthority"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/oidc"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -26,6 +28,13 @@ import (
 type routingController interface {
 	Preview(context.Context, string) (routingpolicy.Preview, error)
 	Invalidate()
+}
+
+// modelRoutePlanner is the narrow, read-only routing authority used by admin
+// projections. It deliberately excludes Router preview/cache mutation so an
+// admin read cannot silently fall back to the legacy channel authority.
+type modelRoutePlanner interface {
+	Plan(context.Context, modelrouting.Request) (modelrouting.Plan, error)
 }
 
 type providerCostReconciler interface {
@@ -79,10 +88,28 @@ type Handler struct {
 	xInsightConnectorIntake      xInsightConnectorInvitationIntake
 	modelAuthorizationEvaluator  *modelauthz.Evaluator
 	runtimeChangeManager         *runtimechange.Manager
+	deploymentLifecycleManager   deploymentLifecycleApplication
 	invocationOptimization       *invocationopt.Manager
 	responseCacheRuntimeReady    bool
 	requestPricingAuthority      string
 	billingMode                  billing.BillingMode
+	modelDeploymentProbeHTTPDoer modelDeploymentProbeHTTPDoer
+	modelRouteSafetyController   *modelrouteauthority.Service
+	modelRouteAuthorityMode      modelrouting.Mode
+	modelRoutePlanner            modelRoutePlanner
+}
+
+func (h *Handler) SetModelRouteSafetyController(controller *modelrouteauthority.Service, mode modelrouting.Mode) {
+	if h != nil {
+		h.modelRouteSafetyController = controller
+		h.modelRouteAuthorityMode = mode
+	}
+}
+
+func (h *Handler) SetModelRoutePlanner(planner modelRoutePlanner) {
+	if h != nil {
+		h.modelRoutePlanner = planner
+	}
 }
 
 func (h *Handler) SetInvocationOptimization(manager *invocationopt.Manager, responseCacheReady bool) {
@@ -121,6 +148,7 @@ func (h *Handler) SetModelAuthorizationEvaluator(evaluator *modelauthz.Evaluator
 func (h *Handler) SetRuntimeChangeManager(manager *runtimechange.Manager) {
 	if h != nil {
 		h.runtimeChangeManager = manager
+		h.deploymentLifecycleManager = manager
 	}
 }
 

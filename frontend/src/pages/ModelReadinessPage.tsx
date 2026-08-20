@@ -3,22 +3,46 @@ import { Button, Form, Space, Tag, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { accessApi, type ModelReadiness, type ReadinessAxis } from '../api/access';
-import { channelApi, type ProviderChannel } from '../api/channels';
 import { api } from '../api/client';
+import {
+  canonicalOperationPaths,
+  modelDeploymentApi,
+  type CanonicalModelApplication,
+  type CanonicalOperationID,
+} from '../api/modelDeployments';
 import { ApiError } from '../api/transport';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
-import { parseChannelModels } from '../utils/channelReadiness';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 import { projectOption } from '../utils/projectDisplay';
 
 const { Text, Title } = Typography;
 
 type Project = { id: number; name: string; slug?: string; status: string; current_user_membership_role?: string };
-type Channel = Pick<ProviderChannel, 'models'>;
 type ModelAlias = { alias: string; target_model: string; display_name?: string; status: string };
 type WorkloadApplication = { application_ref: string; display_name: string; project_id: number; environment?: string; status: string };
 type ModelOption = { value: string; label: string };
+
+const canonicalReadinessEndpoints: Array<{ value: string; label: string; operationID: CanonicalOperationID }> = [
+  { value: canonicalOperationPaths['openai.chat_completions.v1'], label: '聊天 / 多模态对话', operationID: 'openai.chat_completions.v1' },
+  { value: canonicalOperationPaths['openai.embeddings.v1'], label: '文本向量（Embedding）', operationID: 'openai.embeddings.v1' },
+  { value: canonicalOperationPaths['openai.responses.v1'], label: 'OpenAI Responses', operationID: 'openai.responses.v1' },
+  { value: canonicalOperationPaths['anthropic.messages.v1'], label: 'Anthropic Messages', operationID: 'anthropic.messages.v1' },
+];
+
+function canonicalOperationForEndpoint(endpoint: string): CanonicalOperationID | undefined {
+  return canonicalReadinessEndpoints.find(option => option.value === endpoint)?.operationID;
+}
+
+function canonicalApplicationMatches(
+  application: CanonicalModelApplication,
+  model: string,
+  endpoint: string,
+) {
+  const operationID = canonicalOperationForEndpoint(endpoint);
+  return Boolean(model && operationID && application.public_model.model_name === model &&
+    application.operations.some(operation => operation.operation_id === operationID));
+}
 
 const statePresentation: Record<ReadinessAxis['state'], { label: string; color: 'green' | 'red' | 'orange' | 'grey' | 'blue' }> = {
   ready: { label: '就绪', color: 'green' },
@@ -31,7 +55,7 @@ const statePresentation: Record<ReadinessAxis['state'], { label: string; color: 
 const platformLabels: Record<string, string> = {
   gateway_license: '模型网关授权',
   registration: '模型记录', lifecycle: '生命周期', catalog: '目录可见', price_authority: '计价信息',
-  channel: '供应商连接', provider_credential: '供应商凭证', base_route: '可用路由', runtime_slot: '当前路由版本',
+  deployment: '模型部署', provider_credential: '供应商凭证', operation: '调用操作', base_route: '可用路由', runtime_slot: '当前路由版本',
 };
 const projectLabels: Record<string, string> = {
   project: '项目', alias: '模型别名', model_set: '项目模型范围', wallet: '钱包', project_budget: '项目预算监控',
@@ -43,7 +67,19 @@ const reasonCopy: Record<string, string> = {
 	model_unregistered: '模型尚未加入模型目录',
 	model_retired: '模型已经退役，不能继续调用',
 	catalog_not_published: '模型尚未对项目目录开放',
-	channel_missing: '没有连接声明这个精确模型 ID',
+	canonical_deployment_missing: '没有匹配这个模型与调用操作的部署',
+	canonical_deployment_present: '已找到精确模型部署',
+	canonical_model_operation_missing: '所选部署没有声明这个精确调用操作',
+	canonical_model_operation_unverified: '调用操作尚缺少当前有效验证',
+	canonical_model_operation_verified: '调用操作已有当前有效验证',
+	canonical_provider_credential_unavailable: '没有可用于所选部署的供应商凭证',
+	canonical_provider_credential_available: '供应商凭证可用于所选部署',
+	canonical_runtime_membership_missing: '该部署操作尚未进入当前运行发布',
+	canonical_runtime_membership_present: '该部署操作已进入当前运行发布',
+	canonical_deployment_operation_unavailable: '所选部署操作当前还不能承载请求',
+	canonical_deployment_operation_ready: '所选部署操作当前可以承载请求',
+	canonical_route_plan_available: 'canonical Planner 已生成当前可用路由',
+	canonical_route_unavailable: 'canonical Planner 当前没有可用路由',
 	provider_credential_unavailable: '没有可用于该模型的供应商凭证',
 	base_route_unavailable: '当前没有可实际承载请求的连接',
 	project_inactive: '所选项目未启用',
@@ -53,7 +89,8 @@ const reasonCopy: Record<string, string> = {
 	model_registered: '已有模型目录记录',
 	model_callable_lifecycle: '模型未退役',
 	catalog_published: '项目目录可以看到该模型',
-	channel_configured: '已有供应商连接',
+	deployment_configured: '已有精确模型部署',
+	operation_configured: '所选部署已声明这个调用操作',
 	provider_credential_available: '供应商凭证可用于该模型',
 	base_route_active: '当前至少有一条可用路由',
 	runtime_slot_configured: '已有稳定发布记录',
@@ -118,10 +155,13 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
   const [projectsError, setProjectsError] = useState('');
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelOptionsError, setModelOptionsError] = useState('');
+  const [modelApplications, setModelApplications] = useState<CanonicalModelApplication[]>([]);
   const [applications, setApplications] = useState<WorkloadApplication[]>([]);
   const [applicationsError, setApplicationsError] = useState('');
   const [draftProjectID, setDraftProjectID] = useState(0);
   const [draftCaller, setDraftCaller] = useState<'self' | 'workload_application'>('self');
+  const [draftModel, setDraftModel] = useState('');
+  const [draftEndpoint, setDraftEndpoint] = useState<string>(canonicalOperationPaths['openai.chat_completions.v1']);
   const [readiness, setReadiness] = useState<ModelReadiness | null>(null);
   const [readinessScopeKey, setReadinessScopeKey] = useState('');
   const [loading, setLoading] = useState(false);
@@ -129,20 +169,26 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
   const readinessGeneration = useRef(0);
   const applicationGeneration = useRef(0);
 
-  const query = useMemo(() => ({
-    mode: connectionMode ? 'connection' as const : 'caller' as const,
-    project_id: Number(search.get('project_id') || 0),
-    model: search.get('model') || '',
-    endpoint: search.get('endpoint') || '/v1/chat/completions',
-    caller: connectionMode ? undefined : (search.get('caller') || 'self') as 'self' | 'workload_application',
-    application_ref: connectionMode ? undefined : search.get('application_ref') || undefined,
-  }), [connectionMode, search]);
+  const query = useMemo(() => {
+    const endpoint = search.get('endpoint') || canonicalOperationPaths['openai.chat_completions.v1'];
+    return {
+      mode: connectionMode ? 'connection' as const : 'caller' as const,
+      project_id: Number(search.get('project_id') || 0),
+      deployment_id: connectionMode ? Number(search.get('deployment_id') || 0) : 0,
+      model: search.get('model') || '',
+      endpoint,
+      operation_id: search.get('operation_id') || canonicalOperationForEndpoint(endpoint) || '',
+      caller: connectionMode ? undefined : (search.get('caller') || 'self') as 'self' | 'workload_application',
+      application_ref: connectionMode ? undefined : search.get('application_ref') || undefined,
+    };
+  }, [connectionMode, search]);
   const queryScopeKey = useMemo(() => JSON.stringify(query), [query]);
 
   const responseMatchesQuery = useCallback((result: ModelReadiness) => {
     const resultMode = result.scope.mode || 'caller';
-    if (resultMode !== query.mode || result.scope.requested_model !== query.model || result.scope.endpoint !== query.endpoint) return false;
-    if (query.mode === 'connection') return result.scope.project_id === 0 && !result.scope.caller;
+    if (resultMode !== query.mode || result.scope.requested_model !== query.model || result.scope.endpoint !== query.endpoint ||
+      result.scope.model_operation_id !== query.operation_id) return false;
+    if (query.mode === 'connection') return result.scope.project_id === 0 && result.scope.deployment_id === query.deployment_id && !result.scope.caller;
     return result.scope.project_id === query.project_id && result.scope.caller === query.caller &&
       (result.scope.application_ref || undefined) === query.application_ref;
   }, [query]);
@@ -164,17 +210,21 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
 
   const loadModelOptions = useCallback(async () => {
     setModelOptionsError('');
-    const [channelResult, aliasResult] = await Promise.allSettled([
-      loadAllPages<Channel>((page, size) => channelApi.list(page, size)),
+    const [deploymentResult, aliasResult] = await Promise.allSettled([
+      modelDeploymentApi.list(),
       connectionMode
         ? Promise.resolve([] as ModelAlias[])
         : loadAllPages<ModelAlias>((page, size) => api.getModelAliases(page, size)),
     ]);
     const options = new Map<string, string>();
-    if (channelResult.status === 'fulfilled') {
-      for (const channel of channelResult.value) {
-        for (const model of parseChannelModels(channel.models)) options.set(model, model);
+    if (deploymentResult.status === 'fulfilled') {
+      const canonicalApplications = deploymentResult.value.applications || [];
+      setModelApplications(canonicalApplications);
+      for (const application of canonicalApplications) {
+        options.set(application.public_model.model_name, application.public_model.display_name || application.public_model.model_name);
       }
+    } else {
+      setModelApplications([]);
     }
     if (aliasResult.status === 'fulfilled') {
       for (const alias of aliasResult.value) {
@@ -185,11 +235,11 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
     setModelOptions([...options.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label)));
-    if (connectionMode && channelResult.status === 'rejected') {
-      setModelOptionsError('模型连接列表暂时不可用，无法安全选择诊断模型。');
-    } else if (channelResult.status === 'rejected' && aliasResult.status === 'rejected') {
-      setModelOptionsError('模型连接和 Alias 列表均暂时不可用，无法安全选择诊断模型。');
-    } else if (channelResult.status === 'rejected' || aliasResult.status === 'rejected') {
+    if (connectionMode && deploymentResult.status === 'rejected') {
+      setModelOptionsError('模型部署列表暂时不可用，无法安全选择诊断模型。');
+    } else if (deploymentResult.status === 'rejected' && aliasResult.status === 'rejected') {
+      setModelOptionsError('模型部署和 Alias 列表均暂时不可用，无法安全选择诊断模型。');
+    } else if (deploymentResult.status === 'rejected' || aliasResult.status === 'rejected') {
       setModelOptionsError('部分模型来源暂时不可用；当前下拉只显示已成功读取的模型。');
     }
   }, [connectionMode, query.model]);
@@ -215,9 +265,11 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
     setReadiness(null);
     setReadinessScopeKey('');
     setError('');
+    const operationMatchesEndpoint = query.operation_id === canonicalOperationForEndpoint(query.endpoint);
     const missingScope = query.mode === 'connection'
-      ? !query.model || !query.endpoint
-      : !query.project_id || !query.model || !query.endpoint || (query.caller === 'workload_application' && !query.application_ref);
+      ? !query.deployment_id || !query.model || !query.endpoint || !operationMatchesEndpoint
+      : !query.project_id || !query.model || !query.endpoint || !operationMatchesEndpoint ||
+        (query.caller === 'workload_application' && !query.application_ref);
     if (missingScope) {
       setLoading(false);
       return;
@@ -225,7 +277,7 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
     setLoading(true);
     try {
       const result = await accessApi.modelReadiness(query.mode === 'connection'
-        ? { mode: 'connection', model: query.model, endpoint: query.endpoint }
+        ? { mode: 'connection', deployment_id: query.deployment_id, model: query.model, endpoint: query.endpoint }
         : {
             project_id: query.project_id,
             model: query.model,
@@ -262,22 +314,22 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
   useEffect(() => {
     setDraftProjectID(query.project_id);
     setDraftCaller(query.caller || 'self');
+    setDraftModel(query.model);
+    setDraftEndpoint(query.endpoint);
     if (formApi) formApi.setValues(query);
   }, [formApi, query]);
 
   const submit = (values: Record<string, any>) => {
-    const next = new URLSearchParams(search);
+    const next = new URLSearchParams();
     next.set('model', String(values.model).trim());
     next.set('endpoint', values.endpoint);
+    next.set('operation_id', canonicalOperationForEndpoint(values.endpoint) || '');
     if (connectionMode) {
       next.set('mode', 'connection');
       next.set('tab', 'advanced');
       next.set('view', 'diagnostics');
-      next.delete('project_id');
-      next.delete('caller');
-      next.delete('application_ref');
+      next.set('deployment_id', String(Number(values.deployment_id || 0)));
     } else {
-      next.delete('mode');
       const projectID = projects.length === 1 ? projects[0].id : Number(values.project_id || 0);
       next.set('project_id', String(projectID));
       next.set('caller', values.caller);
@@ -285,15 +337,13 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
     }
     if (search.get('from') === 'connections') {
       next.set('from', 'connections');
-      const channelID = search.get('channel_id');
-      if (channelID) next.set('channel_id', channelID);
     }
     setSearch(next);
   };
 
   const scopedReadiness = readinessScopeKey === queryScopeKey ? readiness : null;
   const platformAxes = scopedReadiness ? Object.entries(scopedReadiness.platform_model)
-    .filter(([key]) => !connectionMode || ['gateway_license', 'channel', 'provider_credential', 'base_route'].includes(key)) : [];
+    .filter(([key]) => !connectionMode || ['gateway_license', 'deployment', 'provider_credential', 'operation', 'base_route'].includes(key)) : [];
   const projectAxes = scopedReadiness && !connectionMode ? Object.entries(scopedReadiness.project_caller) : [];
   const applicationOptions = applications.map(application => ({
     value: application.application_ref,
@@ -302,6 +352,12 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
   if (query.application_ref && !applicationOptions.some(option => option.value === query.application_ref)) {
     applicationOptions.push({ value: query.application_ref, label: query.application_ref });
   }
+  const deploymentOptions = modelApplications
+    .filter(application => canonicalApplicationMatches(application, draftModel, draftEndpoint))
+    .map(application => ({
+      value: application.deployment.id,
+      label: `${application.connection.name} · ${application.connection.provider} · ${canonicalOperationForEndpoint(draftEndpoint)}`,
+    }));
 
   return (
     <div className={embedded ? 'ur-embedded-page' : 'ur-page'}>
@@ -354,20 +410,42 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
             placeholder="选择或搜索已录入模型"
             rules={[{ required: true, message: '请选择模型' }]}
             style={{ width: 250 }}
+            onChange={(value) => {
+              const model = String(value || '');
+              setDraftModel(model);
+              const selectedDeploymentID = Number(formApi?.getValue('deployment_id') || 0);
+              const selectedStillMatches = modelApplications.some(application =>
+                application.deployment.id === selectedDeploymentID && canonicalApplicationMatches(application, model, draftEndpoint));
+              if (!selectedStillMatches) formApi?.setValue('deployment_id', undefined);
+            }}
           />
           <Form.Select
             field="endpoint"
             label={<span id="readiness-endpoint-label">调用类型</span>}
             aria-labelledby="readiness-endpoint-label"
-            optionList={[
-              { value: '/v1/chat/completions', label: '聊天 / 多模态对话' },
-              { value: '/v1/embeddings', label: '文本向量（Embedding）' },
-              { value: '/v1/models', label: '读取模型列表' },
-              { value: '/v1/media/jobs', label: '异步媒体任务' },
-            ]}
+            optionList={canonicalReadinessEndpoints.map(({ value, label }) => ({ value, label }))}
             rules={[{ required: true, message: '请选择调用类型' }]}
             style={{ width: 230 }}
+            onChange={(value) => {
+              const endpoint = String(value || '');
+              setDraftEndpoint(endpoint);
+              const selectedDeploymentID = Number(formApi?.getValue('deployment_id') || 0);
+              const selectedStillMatches = modelApplications.some(application =>
+                application.deployment.id === selectedDeploymentID && canonicalApplicationMatches(application, draftModel, endpoint));
+              if (!selectedStillMatches) formApi?.setValue('deployment_id', undefined);
+            }}
           />
+          {connectionMode && <Form.Select
+            field="deployment_id"
+            label={<span id="readiness-deployment-label">模型部署</span>}
+            aria-labelledby="readiness-deployment-label"
+            filter
+            optionList={deploymentOptions}
+            placeholder={draftModel ? '选择支持该调用操作的精确部署' : '请先选择模型'}
+            disabled={!draftModel}
+            rules={[{ required: true, message: '请选择模型部署' }]}
+            style={{ width: 300 }}
+          />}
           {!connectionMode && <Form.Select
             field="caller"
             label={<span id="readiness-caller-label">谁来调用</span>}
@@ -409,8 +487,9 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           <div className="ur-readiness-summary-grid">
             {connectionMode ? <>
 			  <ReadinessSummaryCard label="模型网关授权" state={scopedReadiness.platform_model.gateway_license.state} reasonCode={scopedReadiness.platform_model.gateway_license.reason_code} />
-			  <ReadinessSummaryCard label="供应商连接" state={scopedReadiness.platform_model.channel.state} reasonCode={scopedReadiness.platform_model.channel.reason_code} />
+			  <ReadinessSummaryCard label="模型部署" state={scopedReadiness.platform_model.deployment.state} reasonCode={scopedReadiness.platform_model.deployment.reason_code} />
 			  <ReadinessSummaryCard label="供应商凭证" state={scopedReadiness.platform_model.provider_credential.state} reasonCode={scopedReadiness.platform_model.provider_credential.reason_code} />
+			  <ReadinessSummaryCard label="调用操作" state={scopedReadiness.platform_model.operation.state} reasonCode={scopedReadiness.platform_model.operation.reason_code} />
 			  <ReadinessSummaryCard label="当前可用路由" state={scopedReadiness.platform_model.base_route.state} reasonCode={scopedReadiness.platform_model.base_route.reason_code} />
             </> : <>
 			  <ReadinessSummaryCard label="模型记录" state={scopedReadiness.summary.registered.state} reasonCode={scopedReadiness.summary.registered.reason_code} />

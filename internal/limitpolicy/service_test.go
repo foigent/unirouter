@@ -2,6 +2,8 @@ package limitpolicy
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sync"
@@ -297,6 +299,684 @@ func TestMediaAndModelCallsShareLogicalCredentialAndGrantBuckets(t *testing.T) {
 	otherFamilyRate.Subject = otherFamily
 	if _, err := service.Reserve(context.Background(), otherFamilyRate); !errors.Is(err, ErrRPSExceeded) {
 		t.Fatalf("second family escaped shared Grant rate bucket: %v", err)
+	}
+}
+
+func TestModelExecutionAdmissionProjectsOnlyRateLimits(t *testing.T) {
+	t.Parallel()
+	consumedPolicy := Policy{
+		Ref: "policy:model-execution", Name: "model execution", Version: 1,
+		Mode: ModeEnforce, FailureMode: FailureFailClosed,
+		RPSLimit: 2, RPMLimit: 20, TPMLimit: 2_000, ConcurrencyLimit: 3,
+	}
+	canonicalOnly := Policy{
+		Ref: "policy:canonical-only", Name: "canonical rate", Version: 1,
+		Mode: ModeEnforce, FailureMode: FailureFailClosed, RPSLimit: 1, RPMLimit: 10,
+	}
+	consumedContract := rateAdmissionContractForPolicy(consumedPolicy, consumedPolicy.Ref, rateAdmissionKindRedis)
+	projected, valid := projectPoliciesForAdmission(
+		[]Policy{consumedPolicy, canonicalOnly}, AdmissionPhaseModelExecution, []rateAdmissionContract{consumedContract},
+	)
+	if !valid {
+		t.Fatal("exact consumed rate contract was rejected")
+	}
+	if len(projected) != 2 {
+		t.Fatalf("projected policies=%d, want 2", len(projected))
+	}
+	if projected[0].RPSLimit != 0 || projected[0].RPMLimit != 0 ||
+		projected[0].TPMLimit != consumedPolicy.TPMLimit || projected[0].ConcurrencyLimit != consumedPolicy.ConcurrencyLimit {
+		t.Fatalf("model execution projection=%+v", projected[0].limits())
+	}
+	if projected[1].RPSLimit != canonicalOnly.RPSLimit || projected[1].RPMLimit != canonicalOnly.RPMLimit {
+		t.Fatalf("unconsumed canonical rate was projected out: %+v", projected[1].limits())
+	}
+	if !admissionPhaseIncludesTokens(AdmissionPhaseModelExecution) ||
+		admissionPhaseIncludesRate(AdmissionPhaseModelExecution) {
+		t.Fatal("model execution phase must retain tokens and exclude rate")
+	}
+}
+
+func TestModelExecutionRejectsSameBucketRateContractDrift(t *testing.T) {
+	t.Parallel()
+	orgID := int64(7)
+	base := Policy{
+		Ref: "policy:contract", Name: "contract", Version: 1, OrgID: &orgID,
+		Mode: ModeEnforce, FailureMode: FailureFailClosed, RPSLimit: 10, RPMLimit: 100,
+		RuntimeBucket: "runtime:stable",
+	}
+	contract := rateAdmissionContractForPolicy(base, base.RuntimeBucket, rateAdmissionKindRedis)
+	for _, test := range []struct {
+		name   string
+		mutate func(*Policy)
+	}{
+		{name: "policy ref", mutate: func(value *Policy) { value.Ref += "-other" }},
+		{name: "version", mutate: func(value *Policy) { value.Version++ }},
+		{name: "selector", mutate: func(value *Policy) { model := "other-model"; value.Model = model }},
+		{name: "rps", mutate: func(value *Policy) { value.RPSLimit++ }},
+		{name: "rpm", mutate: func(value *Policy) { value.RPMLimit++ }},
+		{name: "mode", mutate: func(value *Policy) { value.Mode = ModeShadow }},
+		{name: "failure mode", mutate: func(value *Policy) { value.FailureMode = FailureLastKnownSafe }},
+		{name: "builtin", mutate: func(value *Policy) { value.Builtin = true }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			current := base
+			test.mutate(&current)
+			if projected, valid := projectPoliciesForAdmission(
+				[]Policy{current}, AdmissionPhaseModelExecution, []rateAdmissionContract{contract},
+			); valid || projected != nil {
+				t.Fatalf("same-bucket %s drift was accepted: %+v", test.name, projected)
+			}
+		})
+	}
+}
+
+func TestModelExecutionRetainsBuiltinZeroRateForReceiptDrift(t *testing.T) {
+	t.Parallel()
+	service := &Service{}
+	findRuntime := func(t *testing.T, policies []Policy, runtimeRef string) Policy {
+		t.Helper()
+		for _, policy := range policies {
+			if policy.RuntimeBucket == runtimeRef {
+				return policy
+			}
+		}
+		t.Fatalf("runtime policy %q was omitted", runtimeRef)
+		return Policy{}
+	}
+
+	t.Run("credential positive to explicit deny", func(t *testing.T) {
+		earlySubject := Subject{
+			OrgID: 7, ProjectID: 11, APIKeyID: 13,
+			AccessCredentialID: 17, CredentialRef: "credential-family-17",
+			BaseRPSLimit: 20, BaseRPMLimit: 200, Model: "canonical-model",
+		}
+		const runtimeRef = "builtin:access-credential:credential-family-17"
+		earlyPolicy := findRuntime(t, service.matchingPoliciesForModels(earlySubject, nil, false), runtimeRef)
+		contract := rateAdmissionContractForPolicy(earlyPolicy, runtimeRef, rateAdmissionKindRedis)
+
+		currentSubject := earlySubject
+		currentSubject.BaseRPSLimit = 0
+		currentSubject.BaseRPMLimit = 0
+		current := service.matchingPoliciesForModels(currentSubject, []string{"public-alias"}, true)
+		if projected, valid := projectPoliciesForAdmission(current, AdmissionPhaseModelExecution, []rateAdmissionContract{contract}); valid || projected != nil {
+			t.Fatalf("credential explicit deny drift was accepted: %+v", projected)
+		}
+	})
+
+	t.Run("grant positive to explicit deny", func(t *testing.T) {
+		rps, rpm := int64(20), int64(200)
+		earlySubject := Subject{
+			OrgID: 7, ProjectID: 11, APIKeyID: 13, AccessGrantID: 19,
+			BaseRPSLimit: 100, BaseRPMLimit: 1_000,
+			GrantRPSLimit: &rps, GrantRPMLimit: &rpm, Model: "canonical-model",
+		}
+		const runtimeRef = "builtin:access-grant:19"
+		earlyPolicy := findRuntime(t, service.matchingPoliciesForModels(earlySubject, nil, false), runtimeRef)
+		contract := rateAdmissionContractForPolicy(earlyPolicy, runtimeRef, rateAdmissionKindRedis)
+
+		zeroRPS, zeroRPM := int64(0), int64(0)
+		currentSubject := earlySubject
+		currentSubject.GrantRPSLimit = &zeroRPS
+		currentSubject.GrantRPMLimit = &zeroRPM
+		current := service.matchingPoliciesForModels(currentSubject, []string{"public-alias"}, true)
+		if projected, valid := projectPoliciesForAdmission(current, AdmissionPhaseModelExecution, []rateAdmissionContract{contract}); valid || projected != nil {
+			t.Fatalf("grant explicit deny drift was accepted: %+v", projected)
+		}
+	})
+}
+
+func TestUnscopedRateExcludesModelSelectorsWithoutSentinel(t *testing.T) {
+	t.Parallel()
+	orgID := int64(7)
+	global := Policy{
+		Ref: "policy:org-rate", Name: "organization rate", Version: 1, OrgID: &orgID,
+		Mode: ModeEnforce, FailureMode: FailureFailClosed,
+		RPSLimit: 2, RPMLimit: 20, TPMLimit: 2_000, ConcurrencyLimit: 3,
+	}
+	modelSpecific := global
+	modelSpecific.Ref = "policy:model-rate"
+	modelSpecific.Model = "a-real-public-model"
+	subject := Subject{OrgID: orgID, ProjectID: 11, APIKeyID: 13, Model: ""}
+	if !global.Matches(subject) || modelSpecific.Matches(subject) {
+		t.Fatal("empty unscoped model did not exclude model-specific selector")
+	}
+	service := &Service{}
+	service.snapshot.Store(buildPolicySnapshot([]Policy{global, modelSpecific}, nil, false, time.Now()))
+	for _, matched := range service.matchingPoliciesForModels(subject, nil, false) {
+		if matched.Ref == modelSpecific.Ref {
+			t.Fatal("unscoped matcher selected a caller-model policy")
+		}
+	}
+	projected, valid := projectPoliciesForAdmission([]Policy{global}, AdmissionPhaseUnscopedRate, nil)
+	if !valid {
+		t.Fatal("unscoped rate projection was rejected")
+	}
+	if len(projected) != 1 || projected[0].RPSLimit != global.RPSLimit || projected[0].RPMLimit != global.RPMLimit ||
+		projected[0].TPMLimit != 0 || projected[0].ConcurrencyLimit != 0 {
+		t.Fatalf("unscoped rate projection=%+v", projected)
+	}
+	if !admissionPhaseIncludesRate(AdmissionPhaseUnscopedRate) || admissionPhaseIncludesTokens(AdmissionPhaseUnscopedRate) {
+		t.Fatal("unscoped rate phase must retain rate and exclude token/concurrency execution")
+	}
+}
+
+func TestAuthorizedAliasAndCanonicalSelectorsUnionExactlyOnce(t *testing.T) {
+	t.Parallel()
+	orgID := int64(7)
+	aliasPolicy := Policy{
+		Ref: "policy:public-alias", Name: "alias", Version: 1, OrgID: &orgID,
+		Model: "public-alias", Mode: ModeEnforce, FailureMode: FailureFailClosed, TPMLimit: 1_000,
+		RuntimeBucket: "runtime:alias",
+	}
+	canonicalPolicy := Policy{
+		Ref: "policy:canonical", Name: "canonical", Version: 1, OrgID: &orgID,
+		Model: "canonical-model", Mode: ModeEnforce, FailureMode: FailureFailClosed, ConcurrencyLimit: 2,
+		RuntimeBucket: "runtime:canonical",
+	}
+	service := &Service{}
+	service.snapshot.Store(buildPolicySnapshot([]Policy{aliasPolicy, canonicalPolicy}, nil, false, time.Now()))
+	matched := service.matchingPoliciesForModels(Subject{
+		OrgID: orgID, ProjectID: 11, APIKeyID: 13, Model: "canonical-model",
+		BaseRPSLimit: 100, BaseRPMLimit: 1_000,
+	}, []string{"public-alias"}, true)
+	counts := make(map[string]int)
+	for _, policy := range matched {
+		counts[policy.Ref]++
+	}
+	if counts[aliasPolicy.Ref] != 1 || counts[canonicalPolicy.Ref] != 1 {
+		t.Fatalf("alias/canonical selector union was not exact: %#v", counts)
+	}
+}
+
+func TestUnscopedRateFingerprintDoesNotPersistCallerModel(t *testing.T) {
+	t.Parallel()
+	request := AdmissionRequest{
+		OperationID: "op_neutral_fingerprint:rate",
+		Subject: Subject{
+			OrgID: 7, ProjectID: 11, APIKeyID: 13,
+			BaseRPSLimit: 100, BaseRPMLimit: 1_000,
+		},
+		RequestedModel: "private-model-a",
+		Phase:          AdmissionPhaseUnscopedRate,
+	}
+	first := operationFingerprint(request, "builtin:api-key-rate:13")
+	request.RequestedModel = "private-model-b"
+	second := operationFingerprint(request, "builtin:api-key-rate:13")
+	if first != second {
+		t.Fatal("unscoped operation state retained a caller-model-derived fingerprint")
+	}
+}
+
+func TestRateAdmissionReceiptTrustBoundary(t *testing.T) {
+	t.Parallel()
+	service := &Service{nodeID: "receipt-node-a"}
+	otherService := &Service{nodeID: "receipt-node-b"}
+	const mainOperationID = "op_receipt_binding"
+	rateOperationID, valid := RateAdmissionOperationID(mainOperationID)
+	if !valid {
+		t.Fatal("invalid test operation identity")
+	}
+	subject := Subject{
+		OrgID: 7, ProjectID: 11, APIKeyID: 13,
+		AccessCredentialID: 17, CredentialRef: "credential-family-17",
+		AccessGrantID: 19, Model: "canonical-model",
+	}
+	policy := Policy{
+		Ref: "policy:shared", Name: "shared", Version: 3,
+		Mode: ModeEnforce, FailureMode: FailureFailClosed, RPSLimit: 7, RPMLimit: 70,
+	}
+	contract := rateAdmissionContractForPolicy(policy, "runtime:shared", rateAdmissionKindRedis)
+	receipt := service.newRateAdmissionReceipt(rateOperationID, "public-alias", subject, []rateAdmissionContract{contract})
+	if receipt.isZero() {
+		t.Fatal("service did not mint a receipt")
+	}
+
+	validRequest := AdmissionRequest{
+		OperationID: mainOperationID, Subject: subject,
+		RequestedModel: "public-alias",
+		EstimatedInput: 1, ReservedOutput: 1,
+		Phase: AdmissionPhaseModelExecution, RateReceipt: receipt,
+	}
+	if !service.validateRateAdmissionReceipt(&validRequest) {
+		t.Fatal("valid service-authenticated receipt was rejected")
+	}
+
+	cloneReceipt := func(source RateAdmissionReceipt) RateAdmissionReceipt {
+		clone := source
+		clone.contracts = append([]rateAdmissionContract(nil), source.contracts...)
+		clone.authenticator = append([]byte(nil), source.authenticator...)
+		return clone
+	}
+	requestWith := func(candidate RateAdmissionReceipt) AdmissionRequest {
+		request := validRequest
+		request.RateReceipt = candidate
+		return request
+	}
+
+	zero := requestWith(RateAdmissionReceipt{})
+	if service.validateRateAdmissionReceipt(&zero) {
+		t.Fatal("zero receipt was accepted")
+	}
+	forgedReceipt := cloneReceipt(receipt)
+	forgedReceipt.authenticator = make([]byte, sha256.Size)
+	forged := requestWith(forgedReceipt)
+	if service.validateRateAdmissionReceipt(&forged) {
+		t.Fatal("manually constructed receipt was accepted")
+	}
+	otherOperation := requestWith(cloneReceipt(receipt))
+	otherOperation.OperationID = "op_receipt_other"
+	if service.validateRateAdmissionReceipt(&otherOperation) {
+		t.Fatal("receipt crossed main operation identity")
+	}
+	tamperedRateOperation := cloneReceipt(receipt)
+	tamperedRateOperation.rateOperationID = "op_receipt_other:rate"
+	tamperedOperationRequest := requestWith(tamperedRateOperation)
+	if service.validateRateAdmissionReceipt(&tamperedOperationRequest) {
+		t.Fatal("receipt crossed rate operation identity")
+	}
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*Subject)
+	}{
+		{name: "organization", mutate: func(candidate *Subject) { candidate.OrgID++ }},
+		{name: "project", mutate: func(candidate *Subject) { candidate.ProjectID++ }},
+		{name: "api key", mutate: func(candidate *Subject) { candidate.APIKeyID++ }},
+		{name: "credential", mutate: func(candidate *Subject) { candidate.AccessCredentialID++ }},
+		{name: "credential ref", mutate: func(candidate *Subject) { candidate.CredentialRef += "-other" }},
+		{name: "grant", mutate: func(candidate *Subject) { candidate.AccessGrantID++ }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := requestWith(cloneReceipt(receipt))
+			test.mutate(&request.Subject)
+			if service.validateRateAdmissionReceipt(&request) {
+				t.Fatalf("receipt crossed %s identity", test.name)
+			}
+		})
+	}
+
+	otherNode := requestWith(cloneReceipt(receipt))
+	if otherService.validateRateAdmissionReceipt(&otherNode) {
+		t.Fatal("receipt crossed service authenticator identity")
+	}
+	tamperedContracts := cloneReceipt(receipt)
+	tamperedContracts.contracts = append(tamperedContracts.contracts, rateAdmissionContract{
+		runtimeRef: "runtime:canonical-only", policyRef: "policy:canonical-only", version: 1,
+		selectorHash: "selector", rpsLimit: 1, mode: ModeEnforce, failureMode: FailureFailClosed,
+		kind: rateAdmissionKindRedis,
+	})
+	tamperedContractsRequest := requestWith(tamperedContracts)
+	if service.validateRateAdmissionReceipt(&tamperedContractsRequest) {
+		t.Fatal("receipt accepted a caller-added rate bucket")
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*rateAdmissionContract)
+	}{
+		{name: "runtime ref", mutate: func(value *rateAdmissionContract) { value.runtimeRef += "-other" }},
+		{name: "policy ref", mutate: func(value *rateAdmissionContract) { value.policyRef += "-other" }},
+		{name: "version", mutate: func(value *rateAdmissionContract) { value.version++ }},
+		{name: "selector", mutate: func(value *rateAdmissionContract) { value.selectorHash += "a" }},
+		{name: "rps", mutate: func(value *rateAdmissionContract) { value.rpsLimit++ }},
+		{name: "rpm", mutate: func(value *rateAdmissionContract) { value.rpmLimit++ }},
+		{name: "mode", mutate: func(value *rateAdmissionContract) { value.mode = ModeShadow }},
+		{name: "failure mode", mutate: func(value *rateAdmissionContract) { value.failureMode = FailureLastKnownSafe }},
+		{name: "builtin", mutate: func(value *rateAdmissionContract) { value.builtin = !value.builtin }},
+		{name: "admission kind", mutate: func(value *rateAdmissionContract) { value.kind = rateAdmissionKindFallback }},
+	} {
+		t.Run("contract "+test.name, func(t *testing.T) {
+			candidate := cloneReceipt(receipt)
+			test.mutate(&candidate.contracts[0])
+			request := requestWith(candidate)
+			if service.validateRateAdmissionReceipt(&request) {
+				t.Fatalf("receipt accepted tampered %s", test.name)
+			}
+		})
+	}
+	tamperedRequestedModel := requestWith(cloneReceipt(receipt))
+	tamperedRequestedModel.RequestedModel = "other-public-model"
+	if service.validateRateAdmissionReceipt(&tamperedRequestedModel) {
+		t.Fatal("receipt crossed requested public model identity")
+	}
+	nonModelExecution := requestWith(cloneReceipt(receipt))
+	nonModelExecution.Phase = AdmissionPhaseFull
+	if service.validateRateAdmissionReceipt(&nonModelExecution) {
+		t.Fatal("receipt was accepted outside model execution")
+	}
+}
+
+func TestRateAdmissionReceiptIssuedOnlyAfterMatchingFinalize(t *testing.T) {
+	t.Parallel()
+	service := &Service{nodeID: "receipt-finalize-node"}
+	const mainOperationID = "op_receipt_finalize"
+	rateOperationID, valid := RateAdmissionOperationID(mainOperationID)
+	if !valid {
+		t.Fatal("invalid test operation identity")
+	}
+	subject := Subject{OrgID: 7, ProjectID: 11, APIKeyID: 13, Model: "canonical-model"}
+	policy := Policy{Ref: "policy:shared", Name: "shared", Version: 1, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPSLimit: 1}
+	reservation := &Reservation{
+		OperationID: rateOperationID,
+		rateReceipt: service.newRateAdmissionReceipt(rateOperationID, "public-alias", subject,
+			[]rateAdmissionContract{rateAdmissionContractForPolicy(policy, "runtime:shared", rateAdmissionKindRedis)}),
+	}
+	if _, issued := reservation.rateAdmissionReceiptFor(mainOperationID); issued {
+		t.Fatal("receipt was issued before finalization")
+	}
+	if _, err := service.FinalizeRateAdmission(context.Background(), reservation, "op_receipt_other"); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("cross-operation finalize error=%v", err)
+	}
+	if reservation.rateFinalized {
+		t.Fatal("failed finalize authorized the receipt")
+	}
+	receipt, err := service.FinalizeRateAdmission(context.Background(), reservation, mainOperationID)
+	if err != nil || receipt.isZero() {
+		t.Fatalf("matching finalize receipt=%+v err=%v", receipt, err)
+	}
+	receipt.contracts[0].runtimeRef = "runtime:caller-mutation"
+	receipt.authenticator[0] ^= 0xff
+	second, issued := reservation.rateAdmissionReceiptFor(mainOperationID)
+	if !issued || len(second.contracts) != 1 || second.contracts[0].runtimeRef != "runtime:shared" ||
+		hmac.Equal(second.authenticator, receipt.authenticator) {
+		t.Fatal("issued receipt did not use defensive copies")
+	}
+}
+
+func TestSplitGatewayAdmissionCountsRateOnceAndRetainsExecutionLimits(t *testing.T) {
+	service, _ := newPolicyTestService(t, testOptions())
+	subject := Subject{
+		OrgID: 7, ProjectID: 11, APIKeyID: 13, Model: "public-chat",
+		BaseRPSLimit: 1, BaseRPMLimit: 100,
+	}
+	const operationID = "op_split_gateway"
+	rateOperationID, valid := RateAdmissionOperationID(operationID)
+	if !valid {
+		t.Fatal("invalid test operation identity")
+	}
+	earlySubject := subject
+	earlySubject.Model = ""
+	rate, err := service.Reserve(context.Background(), AdmissionRequest{
+		OperationID: rateOperationID, Subject: earlySubject,
+		RequestedModel: subject.Model, Phase: AdmissionPhaseUnscopedRate,
+	})
+	if err != nil {
+		t.Fatalf("early rate admission: %v", err)
+	}
+	receipt, err := service.FinalizeRateAdmission(context.Background(), rate, operationID)
+	if err != nil {
+		t.Fatalf("finalize early rate admission: %v", err)
+	}
+
+	execution, err := service.Reserve(context.Background(), AdmissionRequest{
+		OperationID: operationID, Subject: subject,
+		RequestedModel: subject.Model,
+		EstimatedInput: 10, ReservedOutput: 10, LeaseTTL: time.Minute,
+		Phase: AdmissionPhaseModelExecution, RateReceipt: receipt,
+	})
+	if err != nil {
+		t.Fatalf("model execution double-counted rate or conflicted: %v", err)
+	}
+	secondRate := AdmissionRequest{
+		OperationID: "op_split_gateway_second:rate", Subject: earlySubject,
+		RequestedModel: subject.Model, Phase: AdmissionPhaseUnscopedRate,
+	}
+	if _, err := service.Reserve(context.Background(), secondRate); !errors.Is(err, ErrRPSExceeded) {
+		t.Fatalf("next HTTP attempt did not observe consumed RPS: %v", err)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), execution); err != nil {
+		t.Fatalf("release model execution admission: %v", err)
+	}
+}
+
+func TestAliasCannotBypassCanonicalModelRatePolicy(t *testing.T) {
+	canonicalModel := "canonical-chat"
+	service, _ := newPolicyTestService(t, testOptions(), Policy{
+		ID: 77, Ref: "policy:canonical-chat-rate", Name: "canonical chat rate", Version: 1,
+		Model: canonicalModel, Mode: ModeEnforce, FailureMode: FailureFailClosed, RPSLimit: 1,
+	})
+	aliasSubject := Subject{
+		OrgID: 7, ProjectID: 11, APIKeyID: 13, Model: "public-chat-alias",
+		BaseRPSLimit: 2, BaseRPMLimit: 100,
+	}
+
+	var firstExecution *Reservation
+	for attempt := 1; attempt <= 2; attempt++ {
+		operationID := fmt.Sprintf("op_alias_canonical_%d", attempt)
+		earlySubject := aliasSubject
+		earlySubject.Model = ""
+		rate, err := service.Reserve(context.Background(), AdmissionRequest{
+			OperationID: operationID + ":rate", Subject: earlySubject,
+			RequestedModel: aliasSubject.Model, Phase: AdmissionPhaseUnscopedRate,
+		})
+		if err != nil {
+			t.Fatalf("attempt %d early alias rate: %v", attempt, err)
+		}
+		receipt, err := service.FinalizeRateAdmission(context.Background(), rate, operationID)
+		if err != nil {
+			t.Fatalf("attempt %d finalize early rate: %v", attempt, err)
+		}
+		canonicalSubject := aliasSubject
+		canonicalSubject.Model = canonicalModel
+		execution, err := service.Reserve(context.Background(), AdmissionRequest{
+			OperationID: operationID, Subject: canonicalSubject,
+			RequestedModel: aliasSubject.Model,
+			EstimatedInput: 10, ReservedOutput: 10, LeaseTTL: time.Minute,
+			Phase: AdmissionPhaseModelExecution, RateReceipt: receipt,
+		})
+		if attempt == 1 {
+			if err != nil {
+				t.Fatalf("first canonical execution double-counted shared rate: %v", err)
+			}
+			firstExecution = execution
+			if err := service.CancelBeforeDispatch(context.Background(), firstExecution); err != nil {
+				t.Fatalf("release first canonical execution: %v", err)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrRPSExceeded) || execution != nil {
+			t.Fatalf("canonical model-specific rate was bypassed through alias: reservation=%+v err=%v", execution, err)
+		}
+	}
+}
+
+func TestUnscopedGatewayRateNeverConsumesRequestedModelPolicy(t *testing.T) {
+	modelPolicy := Policy{
+		ID: 78, Ref: "policy:unauthorized-model", Name: "unauthorized model", Version: 1,
+		Model: "private-model", Mode: ModeEnforce, FailureMode: FailureFailClosed, RPSLimit: 1,
+	}
+	service, _ := newPolicyTestService(t, testOptions(), modelPolicy)
+	subject := Subject{OrgID: 7, ProjectID: 11, APIKeyID: 13, BaseRPSLimit: 100, BaseRPMLimit: 1_000}
+	for attempt := 1; attempt <= 2; attempt++ {
+		operationID := fmt.Sprintf("op_unauthorized_neutral_%d", attempt)
+		rate, err := service.Reserve(context.Background(), AdmissionRequest{
+			OperationID: operationID + ":rate", Subject: subject,
+			RequestedModel: "private-model", Phase: AdmissionPhaseUnscopedRate,
+		})
+		if err != nil {
+			t.Fatalf("attempt %d touched model policy during neutral admission: %v", attempt, err)
+		}
+		if _, err := service.FinalizeRateAdmission(context.Background(), rate, operationID); err != nil {
+			t.Fatalf("attempt %d finalize neutral admission: %v", attempt, err)
+		}
+	}
+	count, err := service.rdb.ZCard(context.Background(), runtimeKeys(modelPolicy.Ref)[0]).Result()
+	if err != nil || count != 0 {
+		t.Fatalf("unauthorized model RPS population=%d err=%v, want untouched", count, err)
+	}
+}
+
+func TestAuthorizedAliasEnforcesEveryLimitDimension(t *testing.T) {
+	tests := []struct {
+		name      string
+		policy    Policy
+		wantErr   error
+		denyFirst bool
+		holdFirst bool
+	}{
+		{name: "rps", policy: Policy{RPSLimit: 1}, wantErr: ErrRPSExceeded},
+		{name: "rpm", policy: Policy{RPMLimit: 1}, wantErr: ErrRPMExceeded},
+		{name: "tpm", policy: Policy{TPMLimit: 1}, wantErr: ErrTPMExceeded, denyFirst: true},
+		{name: "concurrency", policy: Policy{ConcurrencyLimit: 1}, wantErr: ErrConcurrencyExceeded, holdFirst: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			policy := test.policy
+			policy.ID = 80
+			policy.Ref = "policy:alias-" + test.name
+			policy.Name = "alias " + test.name
+			policy.Version = 1
+			policy.Model = "public-alias"
+			policy.Mode = ModeEnforce
+			policy.FailureMode = FailureFailClosed
+			service, _ := newPolicyTestService(t, testOptions(), policy)
+
+			first, firstErr := reserveSplitGatewayModel(t, service, "op_alias_"+test.name+"_first", "public-alias", "canonical-model")
+			if test.denyFirst {
+				if !errors.Is(firstErr, test.wantErr) || first != nil {
+					t.Fatalf("first alias admission reservation=%+v err=%v, want %v", first, firstErr, test.wantErr)
+				}
+				return
+			}
+			if firstErr != nil || first == nil {
+				t.Fatalf("first alias admission reservation=%+v err=%v", first, firstErr)
+			}
+			if !test.holdFirst {
+				if err := service.CancelBeforeDispatch(context.Background(), first); err != nil {
+					t.Fatalf("release first alias admission: %v", err)
+				}
+			}
+
+			second, secondErr := reserveSplitGatewayModel(t, service, "op_alias_"+test.name+"_second", "public-alias", "canonical-model")
+			if !errors.Is(secondErr, test.wantErr) || second != nil {
+				t.Fatalf("second alias admission reservation=%+v err=%v, want %v", second, secondErr, test.wantErr)
+			}
+			if test.holdFirst {
+				if err := service.CancelBeforeDispatch(context.Background(), first); err != nil {
+					t.Fatalf("release held alias admission: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestModelExecutionUnionsAliasAndCanonicalPoliciesOnce(t *testing.T) {
+	aliasPolicy := Policy{
+		ID: 84, Ref: "policy:alias-tpm", Name: "alias tpm", Version: 1,
+		Model: "public-alias", Mode: ModeEnforce, FailureMode: FailureFailClosed, TPMLimit: 100,
+	}
+	canonicalPolicy := Policy{
+		ID: 85, Ref: "policy:canonical-concurrency", Name: "canonical concurrency", Version: 1,
+		Model: "canonical-model", Mode: ModeEnforce, FailureMode: FailureFailClosed, ConcurrencyLimit: 2,
+	}
+	service, _ := newPolicyTestService(t, testOptions(), aliasPolicy, canonicalPolicy)
+	reservation, err := reserveSplitGatewayModel(t, service, "op_alias_canonical_union", "public-alias", "canonical-model")
+	if err != nil || reservation == nil {
+		t.Fatalf("union admission reservation=%+v err=%v", reservation, err)
+	}
+	counts := make(map[string]int)
+	for _, item := range reservation.Items {
+		counts[item.PolicyRef]++
+	}
+	if counts[aliasPolicy.Ref] != 1 || counts[canonicalPolicy.Ref] != 1 {
+		t.Fatalf("alias/canonical policy union was not exact: %#v", counts)
+	}
+	if err := service.CancelBeforeDispatch(context.Background(), reservation); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRateReceiptPolicyDriftFailsBeforeAnySecondReservation(t *testing.T) {
+	orgID := int64(7)
+	runtimeBucket := "policy:drift:selector:stable"
+	firstPolicy := Policy{
+		ID: 86, Ref: "policy:drift", Name: "drift", Version: 1, OrgID: &orgID,
+		Mode: ModeShadow, FailureMode: FailureLastKnownSafe, RPSLimit: 100, RuntimeBucket: runtimeBucket,
+	}
+	service, _ := newPolicyTestService(t, testOptions(), firstPolicy)
+	subject := Subject{OrgID: orgID, ProjectID: 11, APIKeyID: 13, BaseRPSLimit: 100, BaseRPMLimit: 1_000}
+	const operationID = "op_rate_contract_drift"
+	rate, err := service.Reserve(context.Background(), AdmissionRequest{
+		OperationID: operationID + ":rate", Subject: subject,
+		RequestedModel: "public-alias", Phase: AdmissionPhaseUnscopedRate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := service.FinalizeRateAdmission(context.Background(), rate, operationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	currentPolicy := firstPolicy
+	currentPolicy.Version = 2
+	currentPolicy.Mode = ModeEnforce
+	currentPolicy.FailureMode = FailureFailClosed
+	currentPolicy.RPSLimit = 1
+	service.snapshot.Store(buildPolicySnapshot([]Policy{currentPolicy}, nil, false, time.Now()))
+	lateSubject := subject
+	lateSubject.Model = "canonical-model"
+	reservation, err := service.Reserve(context.Background(), AdmissionRequest{
+		OperationID: operationID, Subject: lateSubject, RequestedModel: "public-alias",
+		EstimatedInput: 1, ReservedOutput: 1, LeaseTTL: time.Minute,
+		Phase: AdmissionPhaseModelExecution, RateReceipt: receipt,
+	})
+	if !errors.Is(err, ErrStateUnavailable) || reservation != nil {
+		t.Fatalf("drift reservation=%+v err=%v, want fail-closed", reservation, err)
+	}
+	count, countErr := service.rdb.ZCard(context.Background(), runtimeKeys(runtimeBucket)[0]).Result()
+	if countErr != nil || count != 1 {
+		t.Fatalf("same-bucket drift RPS population=%d err=%v, want one early member", count, countErr)
+	}
+	exists, existsErr := service.rdb.Exists(context.Background(), operationRuntimeKeys(runtimeBucket, operationID)[6]).Result()
+	if existsErr != nil || exists != 0 {
+		t.Fatalf("drift created a second operation reservation: exists=%d err=%v", exists, existsErr)
+	}
+}
+
+func reserveSplitGatewayModel(t *testing.T, service *Service, operationID, requestedModel, canonicalModel string) (*Reservation, error) {
+	t.Helper()
+	earlySubject := Subject{
+		OrgID: 7, ProjectID: 11, APIKeyID: 13,
+		BaseRPSLimit: 100, BaseRPMLimit: 1_000,
+	}
+	rate, err := service.Reserve(context.Background(), AdmissionRequest{
+		OperationID: operationID + ":rate", Subject: earlySubject,
+		RequestedModel: requestedModel, Phase: AdmissionPhaseUnscopedRate,
+	})
+	if err != nil {
+		t.Fatalf("early neutral admission: %v", err)
+	}
+	receipt, err := service.FinalizeRateAdmission(context.Background(), rate, operationID)
+	if err != nil {
+		t.Fatalf("finalize early neutral admission: %v", err)
+	}
+	lateSubject := earlySubject
+	lateSubject.Model = canonicalModel
+	return service.Reserve(context.Background(), AdmissionRequest{
+		OperationID: operationID, Subject: lateSubject, RequestedModel: requestedModel,
+		EstimatedInput: 1, ReservedOutput: 1, LeaseTTL: time.Minute,
+		Phase: AdmissionPhaseModelExecution, RateReceipt: receipt,
+	})
+}
+
+func TestDecisionCollectorComposesSplitAdmissionVersions(t *testing.T) {
+	t.Parallel()
+	ctx, collector := ContextWithDecisionCollector(context.Background())
+	recordDecision(ctx, Decision{PolicyRef: "rate"}, "rate-version")
+	recordDecision(ctx, Decision{PolicyRef: "rate-second"}, "rate-version")
+	_, version := collector.Snapshot()
+	if version != "rate-version" {
+		t.Fatalf("single phase version=%q", version)
+	}
+	recordDecision(ctx, Decision{PolicyRef: "execution"}, "execution-version")
+	_, combined := collector.Snapshot()
+	if combined == "" || combined == "rate-version" || combined == "execution-version" {
+		t.Fatalf("split phase version was not composed: %q", combined)
+	}
+	if got := composedDecisionVersion(map[string]struct{}{
+		"execution-version": {}, "rate-version": {},
+	}); got != combined {
+		t.Fatalf("composed version is not order invariant: %q vs %q", got, combined)
 	}
 }
 

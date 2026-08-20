@@ -16,11 +16,66 @@ build version/commit and vendor License/upgrade public trust roots. Runtime
 environment variables cannot replace those embedded roots. A stable deployment
 identity remains mandatory configuration.
 
+`MODEL_ROUTE_AUTHORITY` is a process-level cutover gate. The binary and the
+Compose fallback default to `canonical`, with
+`MODEL_ROUTE_COMPATIBILITY_ENABLED=false`. The formal fresh-install
+`.env.example` deliberately overrides that fallback with `legacy` plus an
+explicit compatibility `true`: a newly migrated database has only the partner
+platform shell, not the root customer or canonical route inventory that the
+canonical startup gate must prove. Canonical therefore fails before HTTP bind
+until bootstrap and authoring are complete; there is no bootstrap exception in
+the database truth or startup gate.
+
+The initial legacy process is a full runtime, not a bootstrap-only listener.
+Deployment orchestration must keep customer Gateway traffic blocked while the
+platform administrator creates the sole customer root and canonical
+deployment/release/slot. The separate compatibility switch is strict:
+`legacy` and `verify` require an explicit `true`, while `canonical` rejects
+`true`. For either non-legacy mode the binary performs a read-only PostgreSQL
+authority check after migrations and single-customer baseline resolution but
+before Redis, background workers or HTTP bind. The check covers the sole root
+customer, every configured live legacy model and current stable/canary slot,
+sealed release manifests, operations, connections, deployments, credential
+bindings and their latest revision-bound probes. There is no automatic
+fallback among modes, and changing the environment variable alone is not an
+approved cutover.
+
+Prepare verify authority and inspect the exact customer explicitly while the
+current process is still in the approved maintenance window:
+
+```bash
+./uniroute model-route-authority apply --customer-org-id <customer-org-id>
+./uniroute model-route-authority check --customer-org-id <customer-org-id>
+```
+
+`apply` is accepted only when `MODEL_ROUTE_AUTHORITY=verify` and every current
+assignment is still v1; it calls the formal idempotent legacy reconciliation
+and compatibility seal paths. Once any v2 release is current, apply fails
+before projection writes and the operator uses read-only `check`. It does not
+change `MODEL_ROUTE_AUTHORITY`, publish a v2 release or move a slot. In
+`canonical`, use `check` only: apply is rejected before database access so
+legacy state can never overwrite canonical pause, revoke or configuration.
+Fresh installs author and activate an initial canonical v2 release under the
+traffic-blocked legacy process, then run a one-off canonical `check`; they do
+not use legacy reconciliation `apply` to manufacture a v1 assignment.
+`check` is one Repeatable Read, read-only transaction and does not advance
+sequences. Before starting verify/canonical, separately drain every old
+binary that can still write legacy model state. A non-legacy process rejects
+legacy channel, channel-key, v1 runtime-change and model-endpoint lifecycle
+writes with stable HTTP 410 while retaining their read surfaces. Canonical
+model-deployment creation/probing remains the supported write path.
+
+The asynchronous Image V1 worker still resolves legacy channels and keys, so
+`ASYNC_MEDIA_ENABLED=true` is rejected with canonical authority. It may run
+only in an explicitly authorized legacy/verify compatibility process until a
+canonical media operation and receipt contract exists.
+
 Before first start:
 
 1. verify the complete signed release with the separately bootstrapped
    `uniroute-upgrade` verifier and vendor-published public-key ring;
-2. copy `.env.example` to `.env`, replace every placeholder (including the
+2. copy `.env.example` to `.env`, retain its explicit one-time fresh-install
+   `legacy` plus compatibility `true`, replace every placeholder (including the
    `JWT_SECRET`, `API_KEY_HASH_SECRET` and deployment-wide notification Webhook
    signing secret with independent values of at least 32 bytes, and
    `ENCRYPTION_KEY` with exactly 32 bytes), keep the file out of
@@ -44,9 +99,10 @@ Before first start:
    substitute for step 1's signed-manifest verification;
 6. make the exact independently verified release package available at an
    approved, readable absolute host path;
-7. start the stack and, before admitting customer traffic, copy that same
-   package into the healthy backend, re-verify it with the running release
-   binary and record the initial installed release:
+7. with customer Gateway traffic still blocked, start the full legacy
+   compatibility stack and copy that same package into the healthy backend,
+   re-verify it with the running release binary and record the initial
+   installed release:
 
    ```bash
    : "${UNIROUTER_SIGNED_PACKAGE:?Set the absolute path to the exact verified release package}"
@@ -85,9 +141,55 @@ Before first start:
 
    An operator at an approved interactive TTY may instead omit
    `--password-stdin`; the CLI prompts twice without echo. It rejects the old
-   value-bearing `--password` before database access. After rotation, import
-   the customer-bound V1 License through the local platform-admin recovery
-   surface.
+   value-bearing `--password` before database access;
+9. log in once as the rotated local administrator, then use
+   `POST /api/v1/bootstrap/first-customer` through the authenticated
+   platform-admin surface to create exactly one root customer. The endpoint
+   accepts either the exact strict post-reset shell or the exact current-
+   migration fresh seed. In this formal `production` flow, the fresh checkpoint
+   also requires the unique non-zero `release_state` and matching
+   `release_history` written in step 7, with the current target schema. The one
+   logical login audit may still be a durable pending Outbox event or may already
+   be materialized in `audit_logs`; a linked materialized event is not counted
+   twice.
+
+   After every invariant matches, the same `SERIALIZABLE` transaction deletes
+   only the exact seeded partner zero wallet, `Default Project`, and optional
+   default-admin `project_admin` membership before creating the active customer
+   and its zero wallet. Any extra row, field drift, missing/mismatched release
+   evidence, or concurrent change returns `409` and rolls back all normalization
+   and creation. The endpoint does not create a customer user, project,
+   Provider/Feed credential, application key, policy or traffic. Import the
+   customer's customer-bound V1 License through the local
+   platform-admin recovery surface, then create the single reviewed customer
+   project with `slug=default` (the canonical restart reuses this project and
+   must not consume a second active-project License seat), provider
+   connection/credential, canonical model deployment and operation evidence,
+   sealed v2 release and initial stable slot. Admit no customer Gateway traffic
+   during this phase; only separately authorized bootstrap, authoring and
+   provider-probe actions are permitted;
+10. prove the exact target authority from the still-running backend with a
+    one-off canonical, read-only process environment (replace the customer ID):
+
+    ```bash
+    : "${UNIROUTER_CUSTOMER_ORG_ID:?Set the created root customer organization ID}"
+    compose=(docker compose --env-file ./.env -f ./docker-compose.yml)
+    "${compose[@]}" exec \
+      -e MODEL_ROUTE_AUTHORITY=canonical \
+      -e MODEL_ROUTE_COMPATIBILITY_ENABLED=false \
+      -e ASYNC_MEDIA_ENABLED=false \
+      backend ./uniroute model-route-authority check \
+      --customer-org-id "${UNIROUTER_CUSTOMER_ORG_ID}"
+    ```
+
+    Require `ready: true`, retain the secret-free report, and confirm that no
+    other legacy writer process exists. Stop the backend, change `.env` to
+    `MODEL_ROUTE_AUTHORITY=canonical` and
+    `MODEL_ROUTE_COMPATIBILITY_ENABLED=false`, rerun
+    `bash ./preflight.sh ./.env`, recreate the backend and require its readiness
+    check to pass. Only that canonical restart may admit customer Gateway
+    traffic. A failed check or restart leaves traffic blocked and must not be
+    bypassed by returning to the sample values.
 
 The formal customer HTTP bind remains `127.0.0.1:3000`; expose it through an
 approved TLS reverse proxy. PostgreSQL, Redis, Prometheus and Grafana have no

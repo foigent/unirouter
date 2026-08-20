@@ -16,6 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/redisx"
 	"github.com/uniroute/unirouter/internal/resetexec"
 	"github.com/uniroute/unirouter/internal/resetplan"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 const (
@@ -60,6 +61,10 @@ func runResetPreviewCLI(ctx context.Context, args []string, cfg *config.Config) 
 	if strings.TrimSpace(*output) == "" {
 		return fmt.Errorf("--output must be a new file path or -")
 	}
+	expectedSchemaLedger, err := resetExpectedSchemaLedger(cfg)
+	if err != nil {
+		return err
+	}
 
 	postgres, redisClient, closeRuntime, err := openResetRuntime(cfg)
 	if err != nil {
@@ -70,6 +75,7 @@ func runResetPreviewCLI(ctx context.Context, args []string, cfg *config.Config) 
 		ctx,
 		postgres.Pool,
 		redisClient.Client,
+		expectedSchemaLedger,
 		resetplan.TargetIdentity{
 			RuntimeVersion: cfg.RuntimeVersion,
 			RuntimeCommit:  cfg.RuntimeCommit,
@@ -135,6 +141,10 @@ func runResetApplyCLI(ctx context.Context, args []string, cfg *config.Config) er
 	if confirmationTime.After(now.Add(5*time.Minute)) || now.Sub(confirmationTime) > resetAuthorizationWindow {
 		return fmt.Errorf("DATA_RESET authorization timestamp is outside the supported window")
 	}
+	expectedSchemaLedger, err := resetExpectedSchemaLedger(cfg)
+	if err != nil {
+		return err
+	}
 
 	planPayload, err := resetexec.VerifyFileSHA256(*planFile, *planSHA, resetPlanMaximumBytes)
 	if err != nil {
@@ -178,6 +188,7 @@ func runResetApplyCLI(ctx context.Context, args []string, cfg *config.Config) er
 		ctx,
 		postgres.Pool,
 		redisClient.Client,
+		expectedSchemaLedger,
 		plan,
 		effectiveTarget,
 		cfg.CompletedExecutionFeedSourceInstance,
@@ -191,6 +202,21 @@ func runResetApplyCLI(ctx context.Context, args []string, cfg *config.Config) er
 	}
 	fmt.Println(string(encoded))
 	return nil
+}
+
+func resetExpectedSchemaLedger(cfg *config.Config) ([]string, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("reset runtime configuration is required")
+	}
+	migrationsDir := strings.TrimSpace(cfg.MigrationsDir)
+	if migrationsDir == "" {
+		migrationsDir = findMigrationsDir()
+	}
+	expected, err := schemaauthority.ExpectedLedger(migrationsDir)
+	if err != nil {
+		return nil, fmt.Errorf("load reset schema authority: %w", err)
+	}
+	return expected, nil
 }
 
 func openResetRuntime(cfg *config.Config) (*db.Postgres, *redisx.Redis, func(), error) {

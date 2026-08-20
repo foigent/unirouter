@@ -39,9 +39,13 @@ const activeAPIKeySeatCountSQL = `SELECT COUNT(*) FROM (
 	WHERE legacy_key.status='active' AND legacy_key.access_credential_id IS NULL
 ) commercial_api_key_seats`
 
+const activeCanonicalConnectionCountSQL = `SELECT COUNT(*)
+FROM provider_connections
+WHERE admin_state='enabled'`
+
 var commercialResources = []commercialResource{
 	{name: licensing.LimitActiveAPIKeys, table: "api_keys"},
-	{name: licensing.LimitActiveChannels, table: "channels"},
+	{name: licensing.LimitActiveChannels, table: "provider_connections"},
 	{name: licensing.LimitActiveProjects, table: "projects"},
 	{name: licensing.LimitActiveUsers, table: "users"},
 }
@@ -117,8 +121,11 @@ func replaceCommercialEntitlements(ctx context.Context, tx pgx.Tx, status licens
 
 func countCommercialResourceUsage(ctx context.Context, tx pgx.Tx, resource commercialResource) (int64, error) {
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE status = 'active'", resource.table)
-	if resource.name == licensing.LimitActiveAPIKeys {
+	switch resource.name {
+	case licensing.LimitActiveAPIKeys:
 		query = activeAPIKeySeatCountSQL
+	case licensing.LimitActiveChannels:
+		query = activeCanonicalConnectionCountSQL
 	}
 	var current int64
 	if err := tx.QueryRow(ctx, query).Scan(&current); err != nil {

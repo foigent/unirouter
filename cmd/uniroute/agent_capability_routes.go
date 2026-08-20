@@ -20,7 +20,7 @@ type agentCapabilityRouteGuards struct {
 // enforce whether a root key or parent capability is required.
 func registerAgentCapabilityRoutes(mux *http.ServeMux, handler *capapi.Handler, guards agentCapabilityRouteGuards) {
 	guard := func(endpoint http.HandlerFunc) http.Handler {
-		return guards.authorize(guards.authenticate(guards.rateLimit(endpoint)))
+		return guards.authenticate(guards.authorize(guards.rateLimit(endpoint)))
 	}
 	mux.Handle("POST /v1/agent-capabilities/exchange", guard(handler.Exchange))
 	mux.Handle("POST /v1/agent-capabilities/delegate", guard(handler.Delegate))

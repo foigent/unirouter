@@ -10,16 +10,21 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-func TestEnsureBaselineAdoptsSoleRootAndPreservesExistingState(t *testing.T) {
+func TestEnsureBaselineAdoptsSoleRootAndPreservesExistingStateIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 	orgID := testutil.NewTestOrg(t, pool)
-	var userID int64
+	var userID, orgAdminID int64
 	require.NoError(t, pool.QueryRow(ctx, `
 		INSERT INTO users (
 			org_id,username,password_hash,organization_role,role,status,auth_provider)
 		VALUES ($1,'single-customer-admin','fixture','platform_admin','platform_admin','active','local')
 		RETURNING id`, orgID).Scan(&userID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO users (
+			org_id,username,password_hash,organization_role,role,status,auth_provider)
+		VALUES ($1,'single-customer-org-admin','fixture','org_admin','org_admin','active','local')
+		RETURNING id`, orgID).Scan(&orgAdminID))
 	var channelID, releaseID int64
 	require.NoError(t, pool.QueryRow(ctx, `
 		INSERT INTO channels (name,provider,base_url,models,status)
@@ -47,6 +52,11 @@ func TestEnsureBaselineAdoptsSoleRootAndPreservesExistingState(t *testing.T) {
 		  model_name,stable_release_id,canary_release_id,canary_basis_points,slot_version)
 		VALUES ('legacy-kimi-model',$1,NULL,0,1)`, releaseID)
 	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO commercial_license_entitlements (
+		singleton,license_id,deployment_id,key_id,expires_at,features,active_projects
+	) VALUES (TRUE,'baseline-license','baseline-deployment','baseline-license-key',
+		NOW()+INTERVAL '1 year','[]'::jsonb,1)`)
+	require.NoError(t, err)
 
 	type baselineResult struct {
 		baseline Baseline
@@ -69,13 +79,19 @@ func TestEnsureBaselineAdoptsSoleRootAndPreservesExistingState(t *testing.T) {
 	require.Equal(t, orgID, baseline.Customer.OrganizationID)
 	require.Positive(t, baseline.ProjectID)
 
-	var walletCount, membershipCount int
+	var walletCount, platformMembershipCount, orgAdminMembershipCount, activeProjectCount int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM wallets WHERE org_id=$1`, orgID).Scan(&walletCount))
 	require.NoError(t, pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM project_members
-		WHERE project_id=$1 AND user_id=$2 AND role='project_admin'`, baseline.ProjectID, userID).Scan(&membershipCount))
+		WHERE project_id=$1 AND user_id=$2 AND role='project_admin'`, baseline.ProjectID, userID).Scan(&platformMembershipCount))
+	require.NoError(t, pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM project_members
+		WHERE project_id=$1 AND user_id=$2 AND role='project_admin'`, baseline.ProjectID, orgAdminID).Scan(&orgAdminMembershipCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM projects WHERE status='active'`).Scan(&activeProjectCount))
 	require.Equal(t, 1, walletCount)
-	require.Equal(t, 1, membershipCount)
+	require.Zero(t, platformMembershipCount)
+	require.Equal(t, 1, orgAdminMembershipCount)
+	require.Equal(t, 1, activeProjectCount, "concurrent baselines must consume exactly one active-project License seat")
 	var modelLifecycle, providerFamily string
 	var approvedCatalog bool
 	require.NoError(t, pool.QueryRow(ctx, `

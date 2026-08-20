@@ -16,6 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/guardrail"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -80,6 +81,8 @@ type Config struct {
 	RuntimeDeploymentRole                string
 	RuntimeVersion                       string
 	RuntimeCommit                        string
+	ModelRouteAuthority                  modelrouting.Mode
+	ModelRouteCompatibilityEnabled       bool
 	PrometheusURL                        string
 	GrafanaURL                           string
 	CompletedExecutionFeedEnabled        bool
@@ -354,6 +357,25 @@ func (c *Config) Validate() error {
 	}
 	if err := c.TelemetryExportConfig().Validate(); err != nil {
 		return err
+	}
+	modelRouteAuthority := c.ModelRouteAuthority
+	if modelRouteAuthority == "" {
+		modelRouteAuthority = modelrouting.ModeCanonical
+	}
+	switch modelRouteAuthority {
+	case modelrouting.ModeLegacy, modelrouting.ModeVerify, modelrouting.ModeCanonical:
+	default:
+		return fmt.Errorf("MODEL_ROUTE_AUTHORITY must be exactly legacy, verify, or canonical, got %q", modelRouteAuthority)
+	}
+	if modelRouteAuthority == modelrouting.ModeCanonical {
+		if c.ModelRouteCompatibilityEnabled {
+			return fmt.Errorf("MODEL_ROUTE_COMPATIBILITY_ENABLED must be false when MODEL_ROUTE_AUTHORITY=canonical")
+		}
+		if c.AsyncMediaEnabled {
+			return fmt.Errorf("ASYNC_MEDIA_ENABLED is incompatible with MODEL_ROUTE_AUTHORITY=canonical until async media uses canonical model execution")
+		}
+	} else if !c.ModelRouteCompatibilityEnabled {
+		return fmt.Errorf("MODEL_ROUTE_COMPATIBILITY_ENABLED must be explicitly true when MODEL_ROUTE_AUTHORITY=%s", modelRouteAuthority)
 	}
 	if c.AsyncMediaAdmissionEnabled && !c.AsyncMediaEnabled {
 		return fmt.Errorf("ASYNC_MEDIA_ADMISSION_ENABLED requires ASYNC_MEDIA_ENABLED=true")
@@ -635,6 +657,10 @@ func Load() (*Config, error) {
 	jwtSecret := getEnvStr("JWT_SECRET", "")
 	logRetentionDays := getEnvInt("LOG_RETENTION_DAYS", 30)
 	asyncMediaEnabled := getEnvBool("ASYNC_MEDIA_ENABLED", false)
+	modelRouteCompatibilityEnabled, err := getEnvBoolStrict("MODEL_ROUTE_COMPATIBILITY_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
 	xInsightConnectorAgentEnabled, err := getEnvBoolStrict("XINSIGHT_CONNECTOR_AGENT_ENABLED", false)
 	if err != nil {
 		return nil, err
@@ -699,6 +725,8 @@ func Load() (*Config, error) {
 		RuntimeDeploymentRole:                getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
 		RuntimeVersion:                       getEnvStr("RUNTIME_VERSION", ""),
 		RuntimeCommit:                        getEnvStr("RUNTIME_COMMIT", ""),
+		ModelRouteAuthority:                  modelrouting.Mode(getEnvStr("MODEL_ROUTE_AUTHORITY", string(modelrouting.ModeCanonical))),
+		ModelRouteCompatibilityEnabled:       modelRouteCompatibilityEnabled,
 		PrometheusURL:                        strings.TrimRight(getEnvStr("PROMETHEUS_URL", ""), "/"),
 		GrafanaURL:                           strings.TrimRight(getEnvStr("GRAFANA_URL", ""), "/"),
 		CompletedExecutionFeedEnabled:        getEnvBool("COMPLETED_EXECUTION_FEED_ENABLED", false),

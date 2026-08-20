@@ -90,6 +90,10 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"GET /api/v1/model-registry",
 		"POST /api/v1/model-registry",
 		"PUT /api/v1/model-registry/{id}",
+		"GET /api/v1/model-deployments",
+		"GET /api/v1/model-deployments/{deploymentID}",
+		"POST /api/v1/model-deployments",
+		"POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes",
 		"GET /api/v1/model-catalog",
 		"GET /api/v1/model-aliases",
 		"POST /api/v1/model-aliases",
@@ -162,6 +166,18 @@ func TestMainRegistersExtractedPricingRoutes(t *testing.T) {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("main.go pricing route wiring missing %q", fragment)
 		}
+	}
+}
+
+func TestMainInjectsProductionPlannerIntoLegacyCutoverLedger(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	const wiring = `runtimechange.NewManagerWithLegacyCutoverVerifier(
+		postgres.Pool, router, effectiveConfig.RoutingPolicy.Config, executionPlanner,`
+	if !strings.Contains(string(src), wiring) {
+		t.Fatalf("production runtime-change manager must receive the server-owned execution planner")
 	}
 }
 
@@ -312,8 +328,9 @@ func TestMainRegistersExtractedModelGovernanceRoutes(t *testing.T) {
 	mainSource := string(src)
 	for _, fragment := range []string{
 		"registerModelGovernanceRoutes(mux, adminHandler",
-		"organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute)",
-		"projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)",
+		"organizationRead: licensedRoute(licensing.FeatureModelGovernance",
+		"organizationWrite: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute)",
+		"projectRead:       licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)",
 		"modelSetRead: licensedRoute(licensing.FeatureModelGovernance",
 		`mux.Handle("GET /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance, projectReadRoute)(adminHandler.ListProjectModelSets))`,
 		`mux.Handle("PUT /api/v1/projects/{id}/model-sets", licensedRoute(licensing.FeatureModelGovernance`,
@@ -321,6 +338,45 @@ func TestMainRegistersExtractedModelGovernanceRoutes(t *testing.T) {
 		if !strings.Contains(mainSource, fragment) {
 			t.Fatalf("main.go model-governance registrar wiring missing %q", fragment)
 		}
+	}
+}
+
+func TestMainRegistersCanonicalModelDeploymentRoutes(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	mainSource := string(src)
+	for _, fragment := range []string{
+		"registerModelDeploymentRoutes(mux, adminHandler",
+		"return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer)",
+		"write:   licensedRoute(licensing.FeatureGateway, orgAdminRoute)",
+		"approve: licensedRoute(licensing.FeatureGateway, platformRoute)",
+		"safety:  orgAdminRoute",
+	} {
+		if !strings.Contains(mainSource, fragment) {
+			t.Fatalf("main.go canonical model-deployment authority missing %q", fragment)
+		}
+	}
+	routes, err := os.ReadFile("model_deployment_routes.go")
+	if err != nil {
+		t.Fatalf("read model_deployment_routes.go: %v", err)
+	}
+	for _, registration := range []string{
+		`mux.Handle("GET /api/v1/model-deployments", guards.read(handler.ListCanonicalModelApplications))`,
+		`mux.Handle("GET /api/v1/model-deployments/{deploymentID}", guards.read(handler.GetCanonicalModelApplication))`,
+		`mux.Handle("POST /api/v1/model-deployments", guards.write(handler.CreateCanonicalModelApplication))`,
+		`mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes", guards.write(handler.ProbeCanonicalModelOperation))`,
+		`mux.Handle("POST /api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals", guards.approve(handler.ApproveCanonicalModelOperationProduction))`,
+		`mux.Handle("POST /api/v1/provider-connections/{connectionID}/pause", guards.safety(handler.PauseProviderConnection))`,
+		`mux.Handle("POST /api/v1/provider-credential-bindings/{bindingID}/revoke", guards.safety(handler.RevokeProviderCredentialBinding))`,
+	} {
+		if !strings.Contains(string(routes), registration) {
+			t.Fatalf("canonical model-deployment route missing %q", registration)
+		}
+	}
+	if strings.Contains(productionRouteSource(t), "/api/v1/model-applications") {
+		t.Fatal("production routes must not expose the unpublished model-applications alias")
 	}
 }
 
@@ -335,7 +391,6 @@ func TestMainRegistersCommercialFeatureGates(t *testing.T) {
 		`mux.Handle("GET /api/v1/auth/oidc/start", licenseRuntime.Gate(licensing.FeatureOIDC)`,
 		`mux.Handle("GET /api/v1/auth/oidc/callback", licenseRuntime.Gate(licensing.FeatureOIDC)`,
 		"licenseRuntime.Gate(licensing.FeatureOIDC)",
-		"licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.TestChannel)",
 		"licensedRoute(licensing.FeatureNotifications",
 		`mux.Handle("GET /api/v1/internal-status", licensedRoute(licensing.FeatureNotifications, orgAdminRoute)(adminHandler.InternalStatus))`,
 		"licensedRoute(licensing.FeatureDataExchange",
@@ -355,10 +410,10 @@ func TestPublicMediaRoutesOnlySubmitExecutionWork(t *testing.T) {
 	}
 	mainSource := string(src)
 	for _, registration := range []string{
-		`mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(http.HandlerFunc(mediaHandler.Submit))))`,
-		`mux.Handle("GET /v1/media/jobs/{id}", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Get))))`,
-		`mux.Handle("POST /v1/media/jobs/{id}/cancel", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Cancel))))`,
-		`mux.Handle("GET /v1/media/jobs/{id}/content", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Content))))`,
+		`mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Submit))))`,
+		`mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Get))))`,
+		`mux.Handle("POST /v1/media/jobs/{id}/cancel", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Cancel))))`,
+		`mux.Handle("GET /v1/media/jobs/{id}/content", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Content))))`,
 	} {
 		if !strings.Contains(mainSource, registration) {
 			t.Fatalf("public media route wiring missing %q", registration)
@@ -376,6 +431,85 @@ func TestPublicMediaRoutesOnlySubmitExecutionWork(t *testing.T) {
 	}
 }
 
+func TestGatewayAuthenticationPrecedesLicenseDisclosure(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainSource := string(src)
+	for _, registration := range []string{
+		`mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(gatewayLicenseGate(`,
+		`mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(gatewayLicenseGate(`,
+		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(`,
+		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(`,
+		`mux.Handle("GET /v1/models", gatewayAuth(gatewayLicenseGate(`,
+	} {
+		if !strings.Contains(mainSource, registration) {
+			t.Fatalf("gateway authentication must wrap license admission: missing %q", registration)
+		}
+	}
+	for _, forbidden := range []string{
+		`gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)`,
+		`gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)`,
+		`gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)`,
+		`gatewayLicenseGate(gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels))))`,
+	} {
+		if strings.Contains(mainSource, forbidden) {
+			t.Fatalf("gateway license admission still exposes state before authentication: %q", forbidden)
+		}
+	}
+}
+
+func TestGatewayRateAdmissionPrecedesIdempotencyAndBusinessHandlers(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainSource := string(src)
+	for _, registration := range []string{
+		`sharedPolicyBilling.SetEarlyRateAdmissionEvidenceSink(relay)`,
+		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler)))`,
+		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler)))`,
+		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler)))`,
+		`middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler)))`,
+	} {
+		if !strings.Contains(mainSource, registration) {
+			t.Fatalf("early distributed rate admission wiring missing %q", registration)
+		}
+	}
+}
+
+func TestPublicNonStreamRoutesUseExactProductionPipeline(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainSource := string(src)
+	for _, fragment := range []string{
+		`responsesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDResponses, outboxSvc)`,
+		`messagesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDMessages, outboxSvc)`,
+		`publicNonStreamPayloadGuard := payloadpolicy.RequestMiddlewareWithMax(payloadBudget, 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)`,
+		`mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))`,
+		`mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))`,
+	} {
+		if !strings.Contains(mainSource, fragment) {
+			t.Fatalf("public non-stream production pipeline missing %q", fragment)
+		}
+	}
+	for _, forbidden := range []string{
+		`relay.HandleChatCompletion(w, governedRequest)`,
+		`relay.HandleEmbeddings(w, governedRequest)`,
+		`middleware.AdmissionFromContext(admissionCtrl)(responsesHandler)`,
+		`middleware.AdmissionFromContext(admissionCtrl)(messagesHandler)`,
+		`rateLimiter(responsesHandler)`,
+		`rateLimiter(messagesHandler)`,
+	} {
+		if strings.Contains(mainSource, forbidden) {
+			t.Fatalf("public non-stream route uses forbidden legacy path %q", forbidden)
+		}
+	}
+}
+
 func TestOpenAPISpecCoversRegisteredRoutes(t *testing.T) {
 	routes := registeredMuxRoutes(t)
 	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
@@ -388,6 +522,62 @@ func TestOpenAPISpecCoversRegisteredRoutes(t *testing.T) {
 		if !openAPIHasOperation(spec, route) {
 			t.Fatalf("OpenAPI spec missing registered route: %s %s", route.Method, route.Path)
 		}
+	}
+}
+
+func TestOpenAPICanonicalAdminAndRetiredMutationContractsRemainExplicit(t *testing.T) {
+	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
+	if err != nil {
+		t.Fatalf("read OpenAPI spec: %v", err)
+	}
+	spec := string(specBytes)
+	pathBlock := func(path string) string {
+		t.Helper()
+		pathLine := "  " + path + ":"
+		start := strings.Index(spec, pathLine)
+		if start < 0 {
+			t.Fatalf("OpenAPI path missing: %s", path)
+		}
+		block := spec[start+len(pathLine):]
+		if next := regexp.MustCompile(`\n  /[^:\n]*:`).FindStringIndex(block); next != nil {
+			block = block[:next[0]]
+		}
+		return block
+	}
+
+	if got := strings.Count(spec, "*operation_legacy_model_mutation_retired"); got != 19 {
+		t.Fatalf("OpenAPI retired legacy model mutation count = %d, want 19", got)
+	}
+	for _, fragment := range []string{
+		"legacy_model_mutation_retired",
+		"before License admission, request-body parsing, any business-data query, secret access",
+		"contract_version: { type: string, enum: [unirouter.model-readiness.v2] }",
+		"required: [mode, org_id, project_id, requested_model, resolved_model, endpoint, model_operation_id, caller]",
+		"required: [gateway_license, registration, lifecycle, catalog, price_authority, deployment, provider_credential, operation, base_route, runtime_slot]",
+		"contract_version: { type: string, enum: [unirouter.model-endpoints.canonical-compat.v3] }",
+		"schema M79 counts enabled canonical provider_connections, not legacy channels",
+		"API zero is accepted only as non-authorable staging state",
+	} {
+		if !strings.Contains(spec, fragment) {
+			t.Fatalf("OpenAPI canonical/retirement contract missing %q", fragment)
+		}
+	}
+
+	readiness := pathBlock("/api/v1/model-readiness")
+	for _, fragment := range []string{
+		"Contract `unirouter.model-readiness.v2`",
+		"- name: deployment_id",
+		"channel_id is rejected",
+		"no legacy Router preview is used",
+	} {
+		if !strings.Contains(readiness, fragment) {
+			t.Fatalf("OpenAPI readiness v2 contract missing %q", fragment)
+		}
+	}
+	modelEndpoints := pathBlock("/api/v1/model-endpoints")
+	if !strings.Contains(modelEndpoints, "CanonicalModelEndpointProjection") ||
+		strings.Contains(modelEndpoints, "get: *operation_list") {
+		t.Fatal("OpenAPI model-endpoints GET must use the explicit canonical compat v3 response")
 	}
 }
 

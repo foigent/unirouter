@@ -8,6 +8,29 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
+The executable PostgreSQL compatibility ceiling is `000079`. After running
+migrations or honoring `SKIP_MIGRATION`, every backend reads the migration
+ledger and requires its maximum version to equal the binary ceiling before
+customer-baseline initialization or HTTP bind; older, future and empty ledgers
+all fail closed. M79 is therefore a non-rolling schema switch: the M78 stable
+and M79 canary cannot be ready against one shared database. Operators drain and
+stop the old fleet, let one migration owner advance the database to M79, and
+only then start M79 stable/canary. A secondary may use `SKIP_MIGRATION=true`
+only after the shared database is already exactly M79. M78 adds atomic
+sealed-release authoring provenance and the explicit v1-to-v2 lifecycle bridge;
+M79 moves the commercial `active_channels` count authority to enabled canonical
+provider connections. M79 takes the shared model-execution migration advisory
+lock, then the provider-connection/channel/schema relation locks, then the
+`active_channels` resource advisory lock, and only then the entitlement-table
+lock; this ordering matches both activation and License renewal without a lock
+cycle. Its guarded down is permitted only after later migrations are gone and
+every enabled canonical connection has one exact active legacy projection whose
+count still fits the signed limit. The down restores only the legacy count
+trigger/function and retains canonical tables, credentials and history. Neither
+migration reinterprets the M77 Responses/Messages public-execution chain, and
+legacy tables remain available only for history and explicit compatibility
+operation.
+
 The supported customer topology is:
 
 - one deployment;
@@ -40,7 +63,7 @@ flowchart LR
   C["Provider endpoint\nprotocol, base URL, upstream model mapping"] --> K["Upstream credential"]
   K --> P["Live probe\ncredential + model + routing epoch"]
   C --> P
-  R --> L["Release candidate\npublic model + endpoint + revision"]
+  R --> L["M78 sealed release\nserver baseline + selected operations"]
   P --> L
   L --> S["Runtime slot\nstable or canary"]
   S --> G["Gateway route plan"]
@@ -50,13 +73,21 @@ flowchart LR
 | Concept | Durable authority | Important projections/consumers |
 |---|---|---|
 | Public model identity | model registry and aliases | model catalog, project model sets, readiness, `/v1/models` |
-| Provider endpoint | `channels` plus explicit public-to-upstream mapping | endpoint UI, probe service, routing candidates |
-| Credential | `channel_keys`; plaintext is accepted once and encrypted | probe service and gateway credential selection |
-| Connectivity evidence | `channel_model_probes`, bound to credential and routing epoch | endpoint status, release admission, readiness |
-| Release history | runtime releases; append-only operational history | release queue, rollback evidence, audit |
-| Current traffic authority | runtime stable/canary slots and assignments | gateway route plan, route preview, readiness |
-| Endpoint operational state | channel status plus routing epoch | credential mutation guard, routing candidate eligibility |
-| Per-request endpoint attribution | immutable `call_logs.route_channel_id` written from the selected gateway route | Dashboard endpoint health, recent requests, audit/operations analysis |
+| Provider connection | canonical `provider_connections` plus deployment operation/profile and public-to-upstream mapping | canonical deployment UI, operation probe, Planner candidates, License `active_channels` usage |
+| Credential | canonical `provider_credential_bindings` plus exact deployment link; plaintext is accepted once and encrypted | operation probe and Coordinator credential selection |
+| Legacy endpoint history | `channels`, `channel_keys` and `channel_model_probes` | read-only migration/audit compatibility and explicit legacy/verify planning; never canonical readiness or current Dashboard authority |
+| Canonical operation probe evidence | append-only `model_deployment_probes`, bound to exact deployment, operation, protocol profile, connection/deployment/credential revisions and credential-deployment link epoch | canonical route admission and operation evidence; never capability inference |
+| Responses/Messages execution support | immutable M75 binding plus compiled `modelqualification` tuple: operation, public path, protocol profile/version and executor contract | probe availability and structural production qualification; it cannot by itself authorize public dispatch |
+| Responses/Messages production qualification | append-only platform approval of one current exact live probe; `model_operation_execution_qualifications` is the only mutable current structural qualification truth | canonical read DTO and M77 public-binding creation; qualification alone is never online/traffic proof |
+| Public execution support extension | immutable M77 extension references the exact M75 five-field support tuple and adds delivery, charge and idempotency contract versions | the sole exact eight-field public executor registry lookup |
+| Per-item public execution binding | immutable M77 binding freezes customer, public model, deployment, connection, operation/profile, M75 approval structural lineage, approved revisions, origin, release ID/ordinal and exact eight-field support identity | required selected manifest item join in qualification, Planner snapshot and Coordinator revalidation; old sealed M75 items never auto-upgrade |
+| Public execution evidence | `executionevidence.EvidenceV2` plus the V2 compact projection and exact provider-attempt columns | Planner snapshot hash, owner-fenced billing attempt, terminal health, call log and trace; V1 digest semantics remain unchanged |
+| Release authoring | M78 `model_deployment_release_authoring_receipts`, its exact audit/events and the receipt-linked sealed v2 release/items/bindings | release workspace collection, exact replay and provenance; the command ends at `validated` and never assigns traffic |
+| Release history | runtime releases plus append-only operational history; M77 historical sealed v2 rows may have no M78 authoring receipt | release queue, stable-parent lineage, rollback evidence, audit |
+| Release lifecycle | M76/M78 immutable lifecycle receipts, frozen qualification/release images and `runtime_change_slots` CAS | seven server-described actions; five canonical actions plus `cutover_legacy` and no-License `rollback_legacy` |
+| Current traffic authority | sealed runtime stable/canary slots and assignments | canonical Planner, readiness and release workspace |
+| Connection operational state | canonical connection state/revision, credential/link state and latest own operation probe | Planner/Coordinator eligibility, readiness and Dashboard current health |
+| Per-request route attribution | immutable execution-evidence projection including `route_deployment_id`, `route_connection_id`, `route_model_operation_id`, credential binding and runtime release | Dashboard canonical health and recent requests; `route_channel_id` remains legacy history only |
 
 Rules:
 
@@ -66,6 +97,226 @@ Rules:
 4. Historical releases remain visible as audit history, but only the current slot is traffic authority.
 5. Readiness is a read-only explanation of existing authorities. It must never introduce another status or require users to re-enter identifiers already known by the selected model/project/application.
 6. Endpoint display names are mutable and may repeat. No request, health, or cost projection may infer endpoint identity from `channels.name`; legacy rows without provable route identity remain unattributed.
+7. A canonical live probe addresses exactly `deployment_id + operation_id + credential_binding_id`. All four supported operations use distinct bounded requests. Responses and Messages additionally resolve their exact endpoint-protocol profile and execute its real network request/response contract; a local conformance fixture is never live evidence. A successful response advances only that operation while tools, vision and every other capability remain unchanged unless separately exercised and evidenced.
+
+For Responses and Messages, M75 and M77 form this control chain:
+
+```mermaid
+flowchart LR
+  P["Exact endpoint-protocol live probe"] --> A["Platform approval\nappend-only receipt"]
+  A --> Q["Current qualification view\nM75 sole truth"]
+  Q --> B["Per-release-item M77 binding\nexact eight-field support"]
+  B --> M["Sealed M77 manifest item\nand EvidenceV2 Planner snapshot"]
+  C["Current credential + link\nlatest own live probe"] --> R["Attempt-first Coordinator\nsame-transaction revalidation"]
+  M --> R
+  R --> X["Strict public non-stream executor\ndelivery + settlement receipts"]
+```
+
+The approval receipt freezes the exact probe credential identity and link epoch
+and revalidates their currentness when the receipt is appended. Later credential
+rotation, revoke, unlink, or cooldown remains a separate operational binding
+axis: it requires a current selectable binding and latest own probe at planning
+and Coordinator revalidation, but does not rewrite the historical human
+approval, M77 structural binding or qualification lineage. Structural authority
+still fails closed on customer/release item, connection, deployment, operation,
+profile, immutable support, origin or approved-revision drift.
+
+M78 adds the authoring and compatibility-transition control chain without
+replacing any M77 public-executor authority above:
+
+```mermaid
+flowchart LR
+  O["GET release collection\ntenant snapshot"] --> B["Server-owned baseline\nand eligible operation choices"]
+  B --> A["POST atomic authoring\nstrict JSON + Idempotency-Key"]
+  A --> R["Durable author receipt\nsealed validated v2 release"]
+  R --> I["GET release detail\nslot + parent + action descriptors"]
+  I --> C["Five canonical actions\nor exact legacy bridge actions"]
+  V1["Sealed active v1 parent\nraw slot public_model_id = NULL"] --> C
+  C --> T["Lifecycle receipt + audit + events\nrelease pair and slot CAS"]
+  T --> S["Current stable slot\ntraffic authority"]
+```
+
+- The collection read is the only UI authoring preflight. It returns each
+  tenant-owned public model, the exact server-derived `initial`, `stable` or
+  `legacy_cutover` baseline, the raw-slot projection after ownership proof,
+  eligible deployment/operation selections and existing actionable v2 release
+  summaries. Ambiguous identity, a live canary, a retired public model or no
+  eligible operation remains visible with an unavailable reason and no usable
+  baseline; the client must not invent revisions, hashes, parent IDs, profiles,
+  bindings or a release reference.
+- `POST /api/v1/model-deployment-releases` is the sole M78 v2 authoring writer.
+  One repeatable-read transaction claims a durable receipt, locks the exact
+  baseline and selected authority, creates the release/items/public bindings,
+  appends create and validate events plus audit, seals the manifest and returns
+  a `validated` release. It does not activate, start a canary or move a slot.
+  A new commit returns 201 and `Location`; a later exact winner replay returns
+  200 with the same `Location`, `X-UniRouter-Idempotency-Replayed: true` and the
+  original server operation ID. An ACK-recovery inside the same operation is
+  not labelled as a later replay.
+- The lifecycle detail exposes either the normal five actions or, for an exact
+  sealed v1 stable parent, only `cutover_legacy` and `rollback_legacy`; the UI
+  follows these server descriptors. `assigned_public_model_id` is absent/null
+  for the raw v1 slot while the logical `public_model_id` remains the owned
+  public model. Every write revalidates versions and authority under locks.
+- `cutover_legacy` changes a stable slot from raw v1 identity
+  (`public_model_id IS NULL`) to canonical v2 identity only when the sealed v2
+  target preserves the complete established Gateway operation set—Chat
+  Completions and Embeddings—and the two currently executable plans have the
+  same secret-free hash. It atomically advances both releases and the slot and
+  freezes the two plan hashes in the immutable lifecycle receipt.
+- `rollback_legacy` is the inverse emergency contraction. It is available to
+  organization write roles without a Gateway License and deliberately ignores
+  target v2 route health, qualification and parity; exact target/slot lineage
+  plus the retained sealed v1 parent's current executable Chat+Embeddings
+  authority still must pass. It atomically restores the raw v1 slot identity
+  and retains the immutable evidence chain.
+- Collection/detail reads allow `platform_admin`, `org_admin` and `org_viewer`
+  without a Gateway License. Authoring, normal expansion and legacy cutover
+  allow only `platform_admin`/`org_admin` and require the Gateway feature.
+  Canary cancellation and legacy rollback keep the same write RBAC but no
+  License gate. Authentication and RBAC run before License admission.
+- All authoring and lifecycle request bodies are one strict JSON object no
+  larger than 16 KiB. Unknown/duplicate members and trailing values fail before
+  durable receipt access. A 409 means the client must refresh server truth; no
+  UI action silently retries against a changed baseline.
+
+### Current live Gateway execution boundary
+
+- The binary, ordinary Compose and runtime config default
+  `MODEL_ROUTE_AUTHORITY` to exactly `canonical` with
+  `MODEL_ROUTE_COMPATIBILITY_ENABLED=false`. There is no automatic fallback.
+  `legacy` and `verify` require compatibility to be explicitly enabled. The
+  formal customer fresh-install package starts once in `legacy + compatibility`
+  only because an empty installation does not yet have a customer root or a
+  sealed current slot; it must remain traffic-isolated while the customer and
+  first canonical release are authored, then pass the read-only authority check,
+  switch to `canonical + false`, and restart before serving traffic.
+- For `verify` and `canonical`, process startup performs
+  `unirouter.model-route-authority-check.v1` from one Repeatable Read, read-only
+  PostgreSQL snapshot before Redis, background workers or HTTP bind. Its
+  inventory is the union of live configured legacy model names and every
+  current stable/canary slot. A sole root customer, registry/slot identity,
+  sealed manifest, operation/profile, connection/deployment revisions,
+  credential binding/link and latest own probe must agree. Operational disable,
+  cooldown and breaker state may make a route temporarily unroutable; one
+  healthy route never hides a structurally stale sibling in the same manifest.
+  Because v1 exposes `legacy.any.v1`, verify additionally proves both published
+  project-default paid envelopes (Chat Completions and Embeddings) against every
+  selectable adapter; a chat-only adapter blocks startup.
+- `uniroute model-route-authority apply --customer-org-id <id>` is the only
+  explicit compatibility preparation command and is accepted only in `verify`.
+  It reuses the idempotent legacy reconcile and seals every current v1 stable
+  and canary compatibility manifest before running the same read-only check. It
+  does not promote, rollback, switch mode, publish a v2 release or move a slot.
+  Reconciliation and v2 lifecycle take release/slot authority locks in one
+  fixed order; any current v2 stable/canary makes apply fail before projection
+  writes, including from a verify process during a rolling cutover.
+  `legacy`/`canonical` apply is rejected before database access; canonical uses
+  read-only `check`, so legacy projection cannot overwrite its state. Canonical
+  readiness accepts a sealed parentless native v2 assignment; only verify
+  requires legacy/canonical parity and a v1 compatibility parent.
+- Exactly 19 legacy channel/key, v1 runtime-change and model-endpoint lifecycle
+  writes are permanently retired in every authority mode: four channel writes,
+  four channel-key writes, three model-endpoint lifecycle writes and eight
+  runtime-change writes. Their routes authenticate and enforce platform RBAC,
+  then return `410 legacy_model_mutation_retired` before License admission,
+  body parsing, secret access or any retirement-handler/business-data query;
+  authentication and customer/RBAC context may still read their own security
+  state. No compatibility flag re-enables the retired handler or its SQL writer.
+  Historical reads remain available, while canonical model-deployment creation,
+  probing, release authoring and descriptor-driven lifecycle remain writable. Two
+  authenticated organization-admin safety contractions remain available even
+  without a valid Gateway License: connection pause changes only the connection
+  axis (verify mirrors only legacy channel status), while credential revoke is
+  terminal and scrubs canonical and verify-side legacy ciphertext in one
+  audited transaction. Each revalidates the sole root customer and active
+  authoritative organization role in that same transaction. Fleet drain is
+  still a deployment responsibility because the database has no live-process
+  registry or writer lease.
+- Production startup always injects `modelrouting.Planner` and
+  `modelexecution.Coordinator` into Chat Completions and Embeddings, including
+  in explicit compatibility modes. Their handlers require that complete runtime
+  before guardrail, cache, secret resolution, Freeze or provider I/O and contain
+  no legacy Router/attempt fallback. Canonical execution also bypasses the
+  legacy response cache. The old Gateway `Router` remains only for explicit
+  compatibility and historical consumers; canonical startup rejects async media
+  until that separate operation has canonical execution authority.
+- In explicit `legacy` mode, Planner reads the existing channel/key and v1
+  runtime-slot authorities. The canonical provider-connection, deployment,
+  credential-binding and operation rows are a migration/proof projection, not
+  the live read authority. `verify` compares the two projections atomically;
+  `canonical` selects only the sealed v2 projection.
+- Planner fixes one operation- and capability-specific route snapshot and
+  locally builds every usable candidate before billing Freeze. After Freeze,
+  only an `Applied` Coordinator decision may dispatch provider HTTP; that same
+  transaction owns the immutable provider-attempt evidence and health fence.
+- Before Freeze, Chat conservatively measures the complete supported envelope
+  (including tool/function/structured controls), while Embeddings accepts only
+  bounded string or integer token-ID shapes. Unknown semantics fail before
+  Planner, Freeze and network. Public context and each candidate's `MaxContext`
+  are hard admission evidence. `DefaultMaxOutput` is not a hard maximum:
+  omitted canonical/verify output is reserved and injected from the immutable
+  public limit only for an exact supported wire profile; the legacy adapter
+  contract uses its versioned 1000-token compatibility ceiling. The legacy
+  probe profile never authorizes a wire field. The deliberate pre-catalog
+  legacy case has no public registry limit and retains the channel `MaxContext`
+  as its context bound.
+  Commit ambiguity is recovered only with the same ephemeral owner. If local
+  processing fails before network dispatch, the owned attempt becomes the
+  financially resolved `released_undispatched` terminal even when its route was
+  subsequently disabled, revised, or lost a half-open lease.
+- `/v1/responses` and `/v1/messages` are registered only for the exact M77
+  non-stream text contract. The Gateway runtime fence requires an installed
+  public registry and narrow Coordinator; the pre-secret plan fence requires
+  the selected item, EvidenceV2 base, profile and all three public contract
+  versions to match exactly. Ordinary Coordinator `Authorize` continues to
+  reject public evidence; only narrow `AuthorizePublic` can execute the exact
+  M77 plan and it revalidates release item, binding, current credential/link and
+  latest own probe after opening the owner-fenced attempt and before network.
+- The public executor bypasses legacy Router/adapters/response-cache and never
+  uses V1 evidence or the old provider-attempt API. It prepares and input-guards
+  the provider-independent document, strictly re-prepares any transformation,
+  builds all candidates locally, freezes once, dispatches only an `Applied`
+  authorization, strictly parses a whitelisted customer body, completes the
+  attempt and terminal health, then records delivery before settlement. Guarded
+  output retains only canonical usage as provider-liability evidence and is
+  never delivered. Retry-authorized known rejection may fall back only after
+  durable completion and terminal health; non-retryable or exhausted rejection
+  cancels. Transport ambiguity or unusable 2xx remains settlement-pending
+  without fallback or cancellation.
+- M75 `production_qualified` alone still must not be presented as “online” or
+  Production traffic evidence. Online execution additionally requires the
+  selected active M77 release item, exact eight-field binding, current
+  credential/probe authority, funding, provider outcome, health, guard and
+  delivery/settlement terminals for that request.
+- The customer-package preflight validates the selected mode and compatibility
+  pair but is deliberately not a readiness proof. `verify` preparation is
+  explicit and bounded to current v1 assignments; `canonical` is read-only
+  `check` only. In both non-legacy modes the backend database startup gate is the
+  authority that proves readiness before any listener or worker starts. Draining
+  older binaries remains a deployment responsibility; the database intentionally
+  retains legacy read evidence and does not pretend to be a live-process lease.
+
+Canonical administrative projections use the same identities as execution:
+
+- `unirouter.model-readiness.v2` derives an exact model operation from the
+  selected public endpoint. Connection mode requires `deployment_id` and
+  reports `deployment_id + model_operation_id`; caller mode explains the
+  canonical Planner/current application projection rather than invoking a
+  legacy Router preview.
+- Dashboard current health and current-window call facts join canonical
+  `route_deployment_id + route_model_operation_id` to the canonical application
+  projection. `route_channel_id` is retained and labelled only as historical
+  attribution; it cannot create a current health row.
+- `GET /api/v1/model-endpoints` is the
+  `unirouter.model-endpoints.canonical-compat.v3` selector projection. Its
+  legacy-shaped `channel_id` and `routing_epoch` fields are fixed at zero while
+  `deployment_id`, `connection_id` and `model_operation_id` carry current
+  identity; it reads no legacy current authority and performs no Router preview.
+- Canonical cost/readiness responses explicitly report
+  `response_cache_runtime=canonical_bypass`. Historical request cost and cache
+  facts remain immutable evidence; bypassing future canonical cache reads and
+  writes does not rewrite them.
 
 ## 4. Access truth
 
@@ -131,16 +382,17 @@ Use this table before changing any listed concept.
 
 | Change | Required writers/checks | Required consumers to verify |
 |---|---|---|
-| Add/edit provider endpoint | channel handler, mapping normalization, credential rules, audit | model endpoints, probe, route preview, readiness, Dashboard |
-| Rotate upstream credential | live preflight, atomic credential swap, probe evidence, audit, routing invalidation | gateway selection, endpoint detail, credential bulk view, readiness |
+| Add provider connection/deployment | canonical deployment create receipt, explicit public/deployment limits, credential binding, operation identity and audit. The ordinary UI requires all four limits to be positive: public `context_length`/`output_limit` and deployment `max_context`/`default_max_output`; the API may retain zero only as non-authorable staging state | model endpoints, release authoring options, operation probe, readiness and License usage |
+| Pause/revoke canonical authority | connection safety contraction or terminal credential-binding revoke, exact revision/role proof and audit | Planner/Coordinator selection, endpoint detail, readiness and Dashboard |
+| Probe canonical model operation | exact deployment/operation/credential binding, server-side secret resolution, bounded adapter request/response, append-only evidence and atomic audit | operation evidence, canonical route admission, endpoint detail; no capability projection |
 | Change public model identity | registry uniqueness/canonicalization, aliases, release conflict checks | catalog, model sets, releases, `/v1/models`, pricing |
-| Activate/pause endpoint | routing epoch/CAS and release ownership | route slots, preview, credential mutation rules, Dashboard, readiness |
+| Publish or roll back a deployment | atomic M78 author receipt followed by a server-described lifecycle receipt, release/item/event/audit proof and slot CAS | Planner/Coordinator, release workspace, Dashboard and readiness |
 | Add customer user | canonical customer scope | people, project membership, access requests, audit |
 | Grant project access | membership transaction and role validation | project workspace, applications, effective access, audit |
 | Issue/rotate application key | access grant and scope snapshot | gateway admission, credential list, usage attribution |
 | Enable a person to call models | customer user plus project membership; the person creates the one-time personal secret | project workspace, personal key list, gateway ownership and usage attribution |
 | Change price | authority mode, Rate Card maker-checker and immutable schedule | freeze/settle, readiness, cost preview, reports |
-| Change License | one verified license authority | navigation, route gates, page availability, runtime status |
+| Change License | one verified license authority plus resource advisory locks; `active_channels` counts enabled canonical connections from M79 | navigation, route gates, page availability, runtime status and canonical connection activation |
 | Change deployment record | manual registry only | deployment/network page; never infer live process mutation |
 | Change API audience or error documentation | backend route authorization and error registry | project quickstart, direct `/docs#error-*` links, project-admin reference, management reference, navigation |
 
@@ -148,9 +400,9 @@ Use this table before changing any listed concept.
 
 These are cross-layer acceptance contracts, not mock-page demonstrations.
 
-1. **J1 - First usable model:** create provider endpoint -> add credential -> probe selected model -> first activation -> route preview selects endpoint -> real gateway request succeeds -> call log and cost evidence appear.
-2. **J2 - Second endpoint for same public model:** add aggregator endpoint with a different upstream model ID -> probe -> canary -> promote or roll back without duplicating the public model.
-3. **J3 - Zero-downtime credential rotation:** submit new secret -> prove it against the selected upstream model -> atomically activate it and retire the old secret -> existing route stays callable.
+1. **J1 - First usable model:** create a canonical connection/deployment with positive public `context_length`/`output_limit` and deployment `max_context`/`default_max_output` -> bind a credential -> probe the exact operation -> atomically author a sealed release -> execute `activate_initial` -> canonical Planner selects it -> a real gateway request succeeds -> route evidence, call log and cost evidence appear. API-created zero-limit rows remain non-authorable staging records and cannot substitute for this journey.
+2. **J2 - Second deployment for the same public model:** add an aggregator deployment with a different upstream model ID -> probe -> author an exact child release -> start canary -> promote or roll back without duplicating the public model.
+3. **J3 - Credential safety:** bind and prove a replacement credential against the exact deployment/operation before a future rotation surface changes selection; terminal revoke and connection pause fail closed immediately and existing immutable evidence remains attributable.
 4. **J4 - Customer user access:** create customer user -> add to project -> issue a personal project credential, or create a workload Application/Grant credential -> permitted model succeeds and unpermitted model fails clearly.
 5. **J5 - Price authority:** draft complete cache-aware/peak schedule -> independent review -> activate -> calls in representative bands freeze and settle with the selected four meter prices.
 6. **J6 - License and integration presentation:** licensed pages load; unavailable features explain the exact missing claim; unconfigured connectors remain local neutral states.
@@ -169,9 +421,9 @@ These are cross-layer acceptance contracts, not mock-page demonstrations.
 - Deployment/network separates observed runtime health from manually registered topology, and no registration form claims to deploy or reconfigure the running service.
 - Runtime release history has server pagination and current/history separation; revision counters remain internal CAS evidence rather than a user-facing model version.
 - This fact map is the canonical entity/authority/consumer impact map, and the codebase map now tracks the current migration ceiling.
-- A real-backend browser journey now proves endpoint creation, encrypted credential storage, exact mapped-model probing, first activation, gateway dispatch, usage logging, and audit evidence in one isolated test.
-- Dashboard channel health now consumes the canonical model-endpoint operational projection instead of reinterpreting channel, credential and release rows. A key for one configured model cannot make another published model look callable, and stale routing epochs are surfaced consistently across Dashboard, model endpoints and Readiness.
-- Gateway call evidence now stores the immutable selected endpoint ID. Dashboard window metrics join that ID instead of the non-unique endpoint display name, so two same-named provider endpoints cannot inherit each other's requests or success rate. Historical evidence is backfilled only from exact provider-attempt identity; ambiguous rows stay unattributed.
+- The required real-backend browser journey uses only canonical deployment, exact operation probe, atomic release authoring and receipt-backed first activation; retired channel/runtime-change writers are never mounted by the test server.
+- Dashboard current health and Readiness now consume canonical deployment+operation authority instead of reinterpreting channel, credential and v1 release rows. A credential for one deployment cannot make another operation look callable, and each repair link carries the exact deployment/operation identity.
+- Gateway call evidence stores the immutable selected deployment, connection, credential, operation and release identity. Dashboard current-window metrics join deployment+operation instead of display names or legacy channel identity; `route_channel_id` remains labelled historical evidence only.
 - Application identities are generated by the server in the ordinary create flow and shown only as advanced audit evidence. Access-review rows resolve the person or Application display name on the server instead of requiring administrators to interpret database IDs.
 - Shared tables and the Application access panel show an explicit loading state until their authoritative requests complete; an in-flight read is no longer presented as an empty credential, Request, or Grant set.
 
@@ -180,23 +432,38 @@ These are cross-layer acceptance contracts, not mock-page demonstrations.
 - The retired `ChannelsPage` compatibility implementation and its isolated test were deleted; `/channels` continues to resolve only to the supported Model Endpoints workspace.
 - Model Endpoints is now a page orchestrator with separate create/detail surfaces and presentation helpers. Its API contract has a typed domain module instead of page-local response assertions.
 - Model endpoint reads now live in one canonical projection file, while endpoint lifecycle writes remain in their handler. Model-governance registry mutations, catalog reads, and shared scope/scanning helpers are separate review and test seams.
-- Dashboard did not retain a second channel/release SQL authority: it consumes the canonical endpoint projection. Readiness route eligibility calls the gateway routing controller, while access, pricing and policy decisions now come from their owning services or bounded read models.
+- Dashboard did not retain a second legacy channel/release SQL authority: current health consumes the canonical deployment/operation application projection. Readiness route eligibility calls the narrow canonical Planner, while access, pricing and policy decisions come from their owning services or bounded read models.
 - GitHub-maintained JavaScript actions used by active workflows run on the current Node 24 action generations. Compose no longer declares the obsolete top-level `version` field.
 - Commit-addressed release worktrees now have a read-only retention report and an explicit, revalidated apply path. Only old, detached, clean, canonical worktrees absent from running-container and keep-file protection can become candidates; no timer or automatic deletion is installed.
 - Development Target backend builds keep the truthful new runtime commit while reusing persistent Go module and build caches. Reusing an old backend image under a new release identity remains forbidden.
 - PostgreSQL-backed tests run only in the integration gate and reuse a migrated template per package. The sensitive-word database contract no longer makes the ordinary Go unit gate create and migrate a temporary database; its source-order assertion remains in the unit gate.
 - Readiness no longer owns copied pricing, grant/key, registry or model-set admission SQL inside the HTTP handler. Pricing and wallet evidence comes from the billing service used by `Freeze`; credentials are rechecked through the gateway's live access-grant boundary; model authorization alternatives share one bounded policy read; governance and explanatory reads live behind the `modelreadiness` read model.
-- Dashboard current/previous window metrics are each read from one organization-scoped PostgreSQL snapshot instead of ten separate aggregate queries. Route availability still comes from the canonical endpoint projection and gateway preview, not from those observation aggregates.
+- Dashboard current/previous window metrics are each read from one organization-scoped PostgreSQL snapshot instead of ten separate aggregate queries. Current route availability comes from the canonical deployment/operation application projection; the observation aggregates join only canonical route-deployment/operation evidence and never infer current state from `route_channel_id`.
 - Provider channels/credentials, model endpoints, runtime routing/releases, Dashboard, enterprise finance and access/Readiness use named typed frontend API modules. The remaining aggregate compatibility calls are explicitly counted by a non-increasing build gate, so a new feature cannot silently add another `any` response seam. The unused legacy channel editor and its duplicate status helpers were removed.
 - API documentation is audience-specific: ordinary members receive one project quickstart and common or deep-linked errors, project administrators receive a project-scoped reference, and management identities receive an authority-filtered control-plane reference. Undeclared API areas fail closed in the UI catalog, while direct error links remain compatible and backend authorization remains the only security authority.
 
-### P0 - correctness and access
+### Current-batch blockers and release gates
 
-- No known P0 remains in the model-endpoint lifecycle scope. A newly discovered P0 must include its broken authority or golden-journey invariant rather than being recorded as a page-local symptom.
+- This map does not make an unbounded "no P0" claim. Non-legacy startup now
+  uses the process-level database proof above rather than relying on a later
+  per-request 503. A production cutover still requires reconciled route data,
+  sealed manifests, a drained legacy-writer fleet and evidence from the exact
+  release artifact.
+- Release verification must also demonstrate that an Applied decision released
+  before provider dispatch is terminal and cannot remain an unresolved billing
+  liability, and must bind the deployed artifact to one unambiguous commit.
+  These are cross-authority correctness gates, not page-local UI symptoms.
+- The ordinary binary and source Compose default is already
+  `canonical + compatibility=false`. A formal fresh customer package may run
+  `legacy + true` only as a traffic-isolated bootstrap process; customer root,
+  first canonical release/slot and the read-only authority check must complete
+  before a restart in `canonical + false`. Final artifact/Target evidence for
+  that exact transition remains a release gate and does not turn bootstrap mode
+  into the customer serving default.
 
 ### P1 - recurring product inconsistency
 
-- Readiness composes model, access, pricing and policy authorities from their owners and remains a read-only explanation rather than a mutable status. Its route axis, Dashboard channel health and model endpoints are locked by shared gateway/projection tests; every future authority change must retain that cross-surface gate.
+- Readiness composes model, access, pricing and policy authorities from their owners and remains a read-only explanation rather than a mutable status. Its deployment/operation route axis, Dashboard canonical health and model-endpoints v3 projection are locked by shared Planner/projection tests; every future authority change must retain that cross-surface gate.
 - Finance and access still contain advanced audit/workflow surfaces. The changed pages now explain and separate them, but a future information-architecture batch may move them out of the ordinary task path; that is not required for the current golden journeys.
 - The canonical-customer projection fix is covered on the changed people and endpoint paths. Remaining customer-domain pages stay under the existing access/readiness browser journey and must keep that gate when their scope logic changes.
 

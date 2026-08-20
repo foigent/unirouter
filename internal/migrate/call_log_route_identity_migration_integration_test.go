@@ -15,6 +15,9 @@ func TestCallLogRouteIdentityMigrationBackfillsOnlyAuthoritativeAttempts(t *test
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
 
+	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
+	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
+	execMigrationDown(t, ctx, pool, "000069_model_deployment_expand.down.sql")
 	execMigrationDown(t, ctx, pool, "000068_provider_reported_model_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 

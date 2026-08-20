@@ -239,13 +239,61 @@ func (m *mockBilling) Cancel(ctx context.Context, requestID string, orgID int64)
 // --- Helper to create Relay with mocks ---
 
 func newTestRelay(db *testutil.MockDB, b *mockBilling) *Relay {
-	return &Relay{
+	relay := &Relay{
 		db:                   db,
 		router:               NewRouter(db),
 		billing:              b,
 		traceEventsEnabled:   true,
 		traceEventSampleRate: 1,
 	}
+	installLegacyHandlerTestRuntime(relay)
+	return relay
+}
+
+func newRoutableTestRelay(t *testing.T, model string, b *mockBilling) *Relay {
+	t.Helper()
+	encKey := []byte("0123456789abcdef01234567")
+	encryptedKey, err := auth.EncryptKey([]byte("sk-test-route"), encKey)
+	if err != nil {
+		t.Fatalf("encrypt test route key: %v", err)
+	}
+	db := &testutil.MockDB{QueryFn: func(context.Context, string, ...any) (pgx.Rows, error) {
+		return &testutil.MockRows{Rows: []func(...any) error{func(dest ...any) error {
+			*dest[0].(*int64) = 1
+			*dest[1].(*string) = "billing-boundary"
+			*dest[2].(*string) = "openai"
+			*dest[3].(*string) = "https://provider.invalid"
+			*dest[4].(*string) = model
+			*dest[5].(*json.RawMessage) = json.RawMessage(`{}`)
+			*dest[6].(*string) = adapters.TypeOpenAICompatible
+			*dest[7].(*json.RawMessage) = json.RawMessage(`{}`)
+			*dest[8].(*int) = 128000
+			*dest[9].(*int) = 4096
+			*dest[10].(*int) = 1
+			*dest[11].(*string) = "active"
+			*dest[12].(*string) = "healthy"
+			*dest[13].(**time.Time) = nil
+			*dest[14].(*int) = 0
+			*dest[15].(*int64) = 1
+			*dest[16].(*string) = encryptedKey
+			*dest[17].(*string) = "active"
+			*dest[18].(**time.Time) = nil
+			*dest[19].(*int) = 3
+			*dest[20].(*int) = 100
+			*dest[21].(*int64) = 1
+			*dest[22].(*int64) = 1
+			*dest[23].(**time.Time) = nil
+			*dest[24].(*string) = ""
+			*dest[25].(*int64) = 1
+			*dest[26].(*string) = ""
+			*dest[27].(**time.Time) = nil
+			*dest[28].(*time.Time) = time.Now().UTC()
+			return nil
+		}}}, nil
+	}}
+	relay := newTestRelay(db, b)
+	relay.encKey = encKey
+	return relay
 }
 
 // --- HandleModels tests ---
@@ -651,6 +699,7 @@ func TestRecordRequest_Success(t *testing.T) {
 	ownerUserID := int64(42)
 	ctx := context.WithValue(context.Background(), middleware.CtxProjectID, int64(7))
 	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{OwnerUserID: &ownerUserID, KeyType: "personal"})
+	ctx = contextWithAttemptID(ctx, "att_req_001")
 	relay.recordRequest(ctx, "req-001", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "upstream-req-001")
 
 	if !execCalled {
@@ -686,7 +735,7 @@ func TestRecordRequest_Success(t *testing.T) {
 	if capturedArgs[callLogArgUpstreamRequestID] != "upstream-req-001" {
 		t.Fatalf("expected upstream_request_id, got %#v", capturedArgs[callLogArgUpstreamRequestID])
 	}
-	if capturedArgs[callLogArgWorkflowID] != nil || capturedArgs[callLogArgAgentID] != nil || capturedArgs[callLogArgAttemptID] != nil {
+	if capturedArgs[callLogArgWorkflowID] != nil || capturedArgs[callLogArgAgentID] != nil || capturedArgs[callLogArgAttemptID] != "att_req_001" {
 		t.Fatalf("unexpected workflow/agent/attempt args: %#v", capturedArgs[callLogArgWorkflowID:callLogArgAttemptID+1])
 	}
 	if capturedArgs[callLogArgActorType] != "human" || capturedArgs[callLogArgActorRef] != "user:42" || capturedArgs[callLogArgOnBehalfOf] != nil || capturedArgs[callLogArgPayloadCaptureMode] != evidencePayloadMetadata {
@@ -711,7 +760,7 @@ func TestRecordRequest_UsesConfiguredPayloadCaptureMode(t *testing.T) {
 	relay := newTestRelay(db, &mockBilling{})
 	relay.SetPayloadCaptureMode(traceutil.PayloadCaptureModeDisabled)
 
-	relay.recordRequest(context.Background(), "req-disabled", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
+	relay.recordRequest(contextWithAttemptID(context.Background(), "att_req_disabled"), "req-disabled", 1, 1, 1, "openai", "ch1", "gpt-4o", "gpt-4o", "127.0.0.1", 100, 50, 10, 200, 123, 0, false, metering.UsageSourceUpstream, 180, "")
 
 	if len(capturedArgs) != callLogInsertArgCount {
 		t.Fatalf("expected %d insert args, got %d", callLogInsertArgCount, len(capturedArgs))
@@ -781,6 +830,7 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	ctx = context.WithValue(ctx, middleware.CtxProjectID, int64(7))
 	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(9))
 	ctx = context.WithValue(ctx, middleware.CtxAPIKey, &models.ApiKey{OwnerUserID: &ownerUserID, KeyType: "personal"})
+	ctx = contextWithAttemptID(ctx, "att_req_trace_accepted")
 	route := &RouteResult{
 		Channel:     models.Channel{Provider: "openai", Name: "primary"},
 		ChannelKey:  models.ChannelKey{ID: 11},
@@ -792,8 +842,8 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 		"request_body":     `{"messages":[{"content":"secret"}]}`,
 	}, "upstream-trace-001")
 
-	if len(capturedArgs) != 39 {
-		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != traceInsertArgCount {
+		t.Fatalf("expected %d trace insert args, got %d", traceInsertArgCount, len(capturedArgs))
 	}
 	if capturedArgs[4] != int64(7) || capturedArgs[5] != int64(9) || capturedArgs[6] != ownerUserID || capturedArgs[7] != "personal" {
 		t.Fatalf("unexpected project/key/owner args: %#v", capturedArgs[4:8])
@@ -832,7 +882,7 @@ func TestRecordTraceEvent_SanitizesMetadataAndSnapshotsOwner(t *testing.T) {
 	if capturedArgs[30] != "human" || capturedArgs[31] != "user:42" || capturedArgs[32] != nil || capturedArgs[33] != nil {
 		t.Fatalf("unexpected trace actor/session args: %#v", capturedArgs[30:34])
 	}
-	if capturedArgs[34] != nil || capturedArgs[35] != nil || capturedArgs[36] != nil || capturedArgs[37] != traceutil.PayloadCaptureModeDisabled {
+	if capturedArgs[34] != nil || capturedArgs[35] != nil || capturedArgs[36] != "att_req_trace_accepted" || capturedArgs[37] != traceutil.PayloadCaptureModeDisabled {
 		t.Fatalf("unexpected trace workflow/agent/attempt/payload args: %#v", capturedArgs[34:38])
 	}
 	if hash, ok := capturedArgs[38].(string); !ok || len(hash) != 64 {
@@ -853,6 +903,7 @@ func TestRecordTraceEvent_ProviderResponseMissingUpstreamRequestIDCaptureGap(t *
 	}
 	relay := newTestRelay(db, &mockBilling{})
 	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = contextWithAttemptID(ctx, "att_req_trace_missing_upstream")
 	route := &RouteResult{
 		Channel:     models.Channel{Provider: "openai", Name: "primary"},
 		ChannelKey:  models.ChannelKey{ID: 11},
@@ -861,8 +912,8 @@ func TestRecordTraceEvent_ProviderResponseMissingUpstreamRequestIDCaptureGap(t *
 
 	relay.recordTraceEvent(ctx, "req-trace", "provider.response_accepted", "provider", "info", "company-chat", "company-chat", route, http.StatusOK, 25, map[string]interface{}{}, "")
 
-	if len(capturedArgs) != 39 {
-		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != traceInsertArgCount {
+		t.Fatalf("expected %d trace insert args, got %d", traceInsertArgCount, len(capturedArgs))
 	}
 	if capturedArgs[24] != evidenceCaptureGapProvider {
 		t.Fatalf("expected provider_not_returned capture_gap, got %#v", capturedArgs[24])
@@ -891,6 +942,7 @@ func TestRecordTraceEvent_ProviderResponseRedactionGapTakesPriority(t *testing.T
 	}
 	relay := newTestRelay(db, &mockBilling{})
 	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = contextWithAttemptID(ctx, "att_req_trace_redacted")
 	route := &RouteResult{
 		Channel:     models.Channel{Provider: "openai", Name: "primary"},
 		ChannelKey:  models.ChannelKey{ID: 11},
@@ -901,8 +953,8 @@ func TestRecordTraceEvent_ProviderResponseRedactionGapTakesPriority(t *testing.T
 		"api_key": "sk-secret",
 	}, "")
 
-	if len(capturedArgs) != 39 {
-		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != traceInsertArgCount {
+		t.Fatalf("expected %d trace insert args, got %d", traceInsertArgCount, len(capturedArgs))
 	}
 	if capturedArgs[24] != "redacted" {
 		t.Fatalf("expected redacted capture_gap to take priority, got %#v", capturedArgs[24])
@@ -925,6 +977,7 @@ func TestRecordTraceEvent_ProviderFailureMissingUpstreamRequestIDCaptureGap(t *t
 	}
 	relay := newTestRelay(db, &mockBilling{})
 	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = contextWithAttemptID(ctx, "att_req_trace_failed")
 	route := &RouteResult{
 		Channel:     models.Channel{Provider: "openai", Name: "primary"},
 		ChannelKey:  models.ChannelKey{ID: 11},
@@ -935,8 +988,8 @@ func TestRecordTraceEvent_ProviderFailureMissingUpstreamRequestIDCaptureGap(t *t
 		"failure_kind": string(adapters.FailureChannel),
 	})
 
-	if len(capturedArgs) != 39 {
-		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != traceInsertArgCount {
+		t.Fatalf("expected %d trace insert args, got %d", traceInsertArgCount, len(capturedArgs))
 	}
 	if capturedArgs[24] != evidenceCaptureGapSource {
 		t.Fatalf("expected not_available_from_source capture_gap, got %#v", capturedArgs[24])
@@ -965,6 +1018,7 @@ func TestRecordTraceEvent_ProviderFailureRedactionGapTakesPriority(t *testing.T)
 	}
 	relay := newTestRelay(db, &mockBilling{})
 	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = contextWithAttemptID(ctx, "att_req_trace_build_failed")
 	route := &RouteResult{
 		Channel:     models.Channel{Provider: "openai", Name: "primary"},
 		ChannelKey:  models.ChannelKey{ID: 11},
@@ -976,8 +1030,8 @@ func TestRecordTraceEvent_ProviderFailureRedactionGapTakesPriority(t *testing.T)
 		"api_key":      "sk-secret",
 	})
 
-	if len(capturedArgs) != 39 {
-		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
+	if len(capturedArgs) != traceInsertArgCount {
+		t.Fatalf("expected %d trace insert args, got %d", traceInsertArgCount, len(capturedArgs))
 	}
 	if capturedArgs[24] != "redacted" {
 		t.Fatalf("expected redacted capture_gap to take priority, got %#v", capturedArgs[24])
@@ -1008,7 +1062,7 @@ func TestRecordTraceEvent_ModelNotAllowedCaptureGapAndDecision(t *testing.T) {
 		"error_code": "auth_error.model_not_allowed",
 	})
 
-	if len(capturedArgs) != 39 {
+	if len(capturedArgs) != traceInsertArgCount {
 		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[8] != "auth.model_not_allowed" || capturedArgs[9] != "auth" || capturedArgs[22] != "auth" {
@@ -1051,7 +1105,7 @@ func TestRecordTraceEvent_UsesTrustedEvidenceContext(t *testing.T) {
 
 	relay.recordTraceEvent(ctx, "req-trace", "gateway.request.accepted", "gateway", "info", "company-chat", "company-chat", nil, http.StatusOK, 25, nil)
 
-	if len(capturedArgs) != 39 {
+	if len(capturedArgs) != traceInsertArgCount {
 		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[18] != "trace-internal-1" || capturedArgs[20] != "parent-span-1" {
@@ -1131,7 +1185,7 @@ func TestRecordPayloadPolicyDecision_DisabledMode(t *testing.T) {
 
 	relay.recordPayloadPolicyDecision(ctx, "req-payload", "company-chat", "company-chat", 12)
 
-	if len(capturedArgs) != 39 {
+	if len(capturedArgs) != traceInsertArgCount {
 		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
 	if capturedArgs[8] != "payload.policy.applied" || capturedArgs[9] != "payload_policy" || capturedArgs[22] != "payload_policy" {
@@ -1174,7 +1228,7 @@ func TestRecordPayloadPolicyDecision_MetadataOnlyMode(t *testing.T) {
 
 	relay.recordPayloadPolicyDecision(ctx, "req-payload", "company-chat", "company-chat", 12)
 
-	if len(capturedArgs) != 39 {
+	if len(capturedArgs) != traceInsertArgCount {
 		t.Fatalf("expected 39 trace insert args, got %d", len(capturedArgs))
 	}
 	var metadata map[string]interface{}
@@ -1407,7 +1461,7 @@ func TestHandleChatCompletion_NoModel(t *testing.T) {
 func TestGatewayPropagatesTransportLifetimeToAgentConcurrencyLease(t *testing.T) {
 	t.Run("stream chat", func(t *testing.T) {
 		var captured time.Duration
-		relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+		relay := newRoutableTestRelay(t, "gpt-4o", &mockBilling{
 			freezeFn: func(ctx context.Context, _ billing.FreezeRequest) (*billing.FreezeResult, error) {
 				captured = agentcap.InvocationLeaseTTLFromContext(ctx)
 				return &billing.FreezeResult{Success: false, ErrorCode: capbilling.ErrorCodeCostBudgetExceeded}, nil
@@ -1431,7 +1485,7 @@ func TestGatewayPropagatesTransportLifetimeToAgentConcurrencyLease(t *testing.T)
 
 	t.Run("embeddings", func(t *testing.T) {
 		var captured time.Duration
-		relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+		relay := newRoutableTestRelay(t, "text-embedding-3-small", &mockBilling{
 			freezeFn: func(ctx context.Context, _ billing.FreezeRequest) (*billing.FreezeResult, error) {
 				captured = agentcap.InvocationLeaseTTLFromContext(ctx)
 				return &billing.FreezeResult{Success: false, ErrorCode: capbilling.ErrorCodeCostBudgetExceeded}, nil
@@ -1447,6 +1501,65 @@ func TestGatewayPropagatesTransportLifetimeToAgentConcurrencyLease(t *testing.T)
 			t.Fatalf("status=%d lease=%s, want 403/120s", recorder.Code, captured)
 		}
 	})
+}
+
+func TestHandleChatCompletion_MaxCompletionTokensPinsFinancialReservation(t *testing.T) {
+	var captured billing.FreezeRequest
+	var streamState streamReservationState
+	relay := newRoutableTestRelay(t, "gpt-4o", &mockBilling{
+		freezeFn: func(ctx context.Context, request billing.FreezeRequest) (*billing.FreezeResult, error) {
+			captured = request
+			streamState = streamReservationFromContext(ctx)
+			return &billing.FreezeResult{Success: false, ErrorCode: capbilling.ErrorCodeCostBudgetExceeded}, nil
+		},
+	})
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}],"stream":true,"max_tokens":321,"max_completion_tokens":321}`
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	ctx := context.WithValue(request.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-max-completion-tokens")
+	recorder := httptest.NewRecorder()
+	relay.HandleChatCompletion(recorder, request.WithContext(ctx))
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s, want 403", recorder.Code, recorder.Body.String())
+	}
+	if captured.ReservedCompletionTokens != 321 || captured.EstimatedTokens != captured.EstimatedInputTokens+321 {
+		t.Fatalf("unexpected financial reservation: %+v", captured)
+	}
+	if streamState.ReservedCompletionTokens != 321 || streamState.AllowExtension {
+		t.Fatalf("unexpected stream reservation: %+v", streamState)
+	}
+}
+
+func TestHandleChatCompletion_ConflictingCompletionTokenLimitsFailClosed(t *testing.T) {
+	freezeCalled := false
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+		freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
+			freezeCalled = true
+			return &billing.FreezeResult{Success: true}, nil
+		},
+	})
+	body := `{"model":"private-model-marker","messages":[{"role":"user","content":"private-payload-marker"}],"max_tokens":100,"max_completion_tokens":200}`
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	ctx := context.WithValue(request.Context(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-conflicting-token-limits")
+	recorder := httptest.NewRecorder()
+	relay.HandleChatCompletion(recorder, request.WithContext(ctx))
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s, want 400", recorder.Code, recorder.Body.String())
+	}
+	if freezeCalled {
+		t.Fatal("contradictory token limits reached billing")
+	}
+	if strings.Contains(recorder.Body.String(), "private-model-marker") || strings.Contains(recorder.Body.String(), "private-payload-marker") {
+		t.Fatalf("validation error echoed request payload: %s", recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "max_tokens and max_completion_tokens must match") {
+		t.Fatalf("validation error did not identify contradictory fields: %s", recorder.Body.String())
+	}
 }
 
 func TestHandleChatCompletion_NoMessages(t *testing.T) {
@@ -1472,9 +1585,10 @@ func TestHandleChatCompletion_NoMessages(t *testing.T) {
 
 	relay.HandleChatCompletion(rec, req)
 
-	// No messages is valid (handler doesn't check), but no route → 503
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+	// The bounded admission contract rejects a missing messages array before
+	// routing or billing can be reached.
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -1525,7 +1639,7 @@ func TestHandleChatCompletion_NoRoute(t *testing.T) {
 }
 
 func TestHandleChatCompletion_FreezeInsufficientBalance(t *testing.T) {
-	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+	relay := newRoutableTestRelay(t, "gpt-4o", &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{Success: false, ErrorCode: "insufficient_balance", ErrorDetail: "balance too low"}, nil
 		},
@@ -1548,7 +1662,7 @@ func TestHandleChatCompletion_FreezeInsufficientBalance(t *testing.T) {
 }
 
 func TestHandleChatCompletion_FreezeError(t *testing.T) {
-	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+	relay := newRoutableTestRelay(t, "gpt-4o", &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return nil, fmt.Errorf("billing service down")
 		},
@@ -1682,7 +1796,7 @@ func TestHandleEmbeddings_ModelNotAllowed(t *testing.T) {
 	if freezeCalled {
 		t.Fatal("expected model permission denial before billing freeze")
 	}
-	if len(capturedArgs) != 39 {
+	if len(capturedArgs) != traceInsertArgCount {
 		t.Fatalf("expected model denial trace insert, got %d args", len(capturedArgs))
 	}
 	if capturedArgs[8] != "auth.model_not_allowed" || capturedArgs[9] != "auth" || capturedArgs[22] != "auth" {
@@ -1698,7 +1812,7 @@ func TestHandleEmbeddings_ModelNotAllowed(t *testing.T) {
 
 func TestHandleEmbeddings_ModelAllowedByRequestedAlias(t *testing.T) {
 	freezeCalled := false
-	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+	relay := newRoutableTestRelay(t, "text-embedding-3-small", &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			freezeCalled = true
 			return &billing.FreezeResult{Success: false, ErrorCode: "insufficient_balance"}, nil
@@ -1732,7 +1846,7 @@ func TestHandleEmbeddings_ModelAllowedByRequestedAlias(t *testing.T) {
 }
 
 func TestHandleEmbeddings_FreezeInsufficientBalance(t *testing.T) {
-	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+	relay := newRoutableTestRelay(t, "text-embedding-3-small", &mockBilling{
 		freezeFn: func(ctx context.Context, req billing.FreezeRequest) (*billing.FreezeResult, error) {
 			return &billing.FreezeResult{Success: false, ErrorCode: "insufficient_balance"}, nil
 		},
@@ -1862,7 +1976,7 @@ func TestRelayNonStreamRequest_SettleRetrySuccess(t *testing.T) {
 	}
 	relay := newTestRelay(db, b)
 
-	respBody := `{"usage":{"prompt_tokens":10,"completion_tokens":5}}`
+	respBody := `{"id":"chatcmpl-retry","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":10,"completion_tokens":5}}`
 	resp := &http.Response{
 		StatusCode: 200,
 		Body:       io.NopCloser(strings.NewReader(respBody)),
@@ -1906,7 +2020,7 @@ func TestRelayNonStreamRequest_PostDeliverySettleErrorRetainsRecovery(t *testing
 	}
 	relay := newTestRelay(db, b)
 
-	respBody := `{"usage":{"prompt_tokens":10,"completion_tokens":5}}`
+	respBody := `{"id":"chatcmpl-recovery","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":10,"completion_tokens":5}}`
 	resp := &http.Response{
 		StatusCode: 200,
 		Body:       io.NopCloser(strings.NewReader(respBody)),
@@ -2688,6 +2802,7 @@ func TestP6F40BHandleChatCompletionProviderAttemptPrecedesNonStreamDispatch(t *t
 		billing: b,
 		encKey:  encKey,
 	}
+	installLegacyHandlerTestRuntime(relay)
 
 	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
@@ -2801,7 +2916,7 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 			if strings.Contains(sql, "INSERT INTO call_logs") {
 				callLogArgs = append([]any(nil), args...)
 			}
-			if strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == 39 && args[8] == "billing.settle.succeeded" {
+			if strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == traceInsertArgCount && args[8] == "billing.settle.succeeded" {
 				if err := json.Unmarshal([]byte(args[17].(string)), &settledTraceMetadata); err != nil {
 					t.Fatalf("decode settled trace metadata: %v", err)
 				}
@@ -2837,6 +2952,7 @@ func TestHandleChatCompletion_AnthropicNativeNonStream(t *testing.T) {
 		db: db, router: NewRouter(db), billing: b, encKey: encKey,
 		traceEventsEnabled: true, traceEventSampleRate: 1,
 	}
+	installLegacyHandlerTestRuntime(relay)
 
 	body := `{"model":"company-chat","messages":[{"role":"system","content":"Be direct."},{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
@@ -2992,6 +3108,7 @@ func TestHandleChatCompletion_AnthropicNativeStream(t *testing.T) {
 		},
 	}
 	relay := &Relay{db: db, router: NewRouter(db), billing: b, encKey: encKey}
+	installLegacyHandlerTestRuntime(relay)
 
 	body := `{"model":"company-chat","stream":true,"messages":[{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
@@ -3126,7 +3243,7 @@ func TestHandleChatCompletion_RetryClassification(t *testing.T) {
 				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					switch {
-					case strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == 39 && args[8] == "provider.response_rejected":
+					case strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == traceInsertArgCount && args[8] == "provider.response_rejected":
 						if err := json.Unmarshal([]byte(args[17].(string)), &rejectedMetadata); err != nil {
 							t.Fatalf("decode rejected trace metadata: %v", err)
 						}
@@ -3158,6 +3275,7 @@ func TestHandleChatCompletion_RetryClassification(t *testing.T) {
 				},
 			}
 			relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
+			installLegacyHandlerTestRuntime(relay)
 
 			body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`
 			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
@@ -3305,6 +3423,7 @@ func TestP6F40BHandleChatCompletionRejectedThenAmbiguousTransportStops(t *testin
 		billing: b,
 		encKey:  encKey,
 	}
+	installLegacyHandlerTestRuntime(relay)
 
 	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
@@ -3380,7 +3499,7 @@ func TestHandleChatCompletion_ModelNotAllowed(t *testing.T) {
 	if freezeCalled {
 		t.Fatal("expected model permission denial to return before billing freeze")
 	}
-	if len(capturedArgs) != 39 {
+	if len(capturedArgs) != traceInsertArgCount {
 		t.Fatalf("expected model denial trace insert, got %d args", len(capturedArgs))
 	}
 	if capturedArgs[8] != "auth.model_not_allowed" || capturedArgs[9] != "auth" || capturedArgs[22] != "auth" {
@@ -3407,8 +3526,9 @@ func TestHandleChatCompletion_SensitiveContent(t *testing.T) {
 	}
 
 	relay := &Relay{db: db, router: NewRouter(db), billing: b, encKey: encKey, filter: f}
+	installLegacyHandlerTestRuntime(relay)
 
-	body := `{"model":"gpt-4o","messages":[{"role":"user","content":"我想赌博"}]}`
+	body := `{"model":"gpt-4o","messages":[{"role":"user","content":[{"type":"text","text":"我想赌博"},{"type":"image_url","image_url":{"url":"https://example.com/image.png"}}]}]}`
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))
@@ -3677,10 +3797,30 @@ func TestP6F10InputBlockRunsBeforeBilling(t *testing.T) {
 	}
 }
 
+func p6f10TransformResultForPath(t *testing.T, body []byte, path, replacement string) guardrail.Result {
+	t.Helper()
+	inspection, err := inspectChatInputGuardrail(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := append([]guardrail.Text(nil), inspection.texts...)
+	found := false
+	for index := range texts {
+		if texts[index].Path == path {
+			texts[index].Content = replacement
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("guardrail path %q was not inspected", path)
+	}
+	return guardrail.Result{Transformed: true, Texts: texts}
+}
+
 func TestP6F10InputRedactionPreservesUnknownEnvelopeFields(t *testing.T) {
 	body := []byte(`{"model":"gpt-4o","temperature":0.25,"vendor_extension":{"keep":true},"messages":[{"role":"user","content":"alice@example.com"}]}`)
 	req := ChatCompletionRequest{Model: "gpt-4o", Messages: []Message{{Role: "user", Content: "alice@example.com"}}}
-	result := guardrail.Result{Transformed: true, Texts: []guardrail.Text{{Path: "messages[0].content", Content: "[REDACTED]"}}}
+	result := p6f10TransformResultForPath(t, body, "messages[0].content", "[REDACTED]")
 	rewritten, err := applyChatGuardrailTransform(body, &req, result)
 	if err != nil {
 		t.Fatal(err)
@@ -3691,6 +3831,31 @@ func TestP6F10InputRedactionPreservesUnknownEnvelopeFields(t *testing.T) {
 	}
 	if payload["temperature"] != 0.25 || payload["vendor_extension"].(map[string]interface{})["keep"] != true || req.Messages[0].Content != "[REDACTED]" {
 		t.Fatalf("content envelope lost fields: %s", rewritten)
+	}
+}
+
+func TestP6F10InputRedactionPreservesMultimodalAndToolEnvelope(t *testing.T) {
+	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":[{"type":"text","text":"alice@example.com"},{"type":"image_url","image_url":{"url":"https://example.com/image.png"}}]}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"parallel_tool_calls":true}`)
+	var req ChatCompletionRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	result := p6f10TransformResultForPath(t, body, "messages[0].content[0].text", "[REDACTED]")
+	rewritten, err := applyChatGuardrailTransform(body, &req, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rewritten, &payload); err != nil {
+		t.Fatal(err)
+	}
+	messages := payload["messages"].([]interface{})
+	parts := messages[0].(map[string]interface{})["content"].([]interface{})
+	if parts[0].(map[string]interface{})["text"] != "[REDACTED]" ||
+		parts[1].(map[string]interface{})["image_url"].(map[string]interface{})["url"] != "https://example.com/image.png" ||
+		payload["parallel_tool_calls"] != true || len(payload["tools"].([]interface{})) != 1 ||
+		req.Messages[0].Content != "[REDACTED]" {
+		t.Fatalf("multimodal/tool envelope was not preserved: %s", rewritten)
 	}
 }
 
@@ -3867,7 +4032,8 @@ func TestNonStreamUnsupportedKnownTextShapeIsWithheld(t *testing.T) {
 
 	relay.relayNonStreamRequest(ctx, rec, resp, route, "req-reasoning-shape", 1, 2, "gpt-4o", "gpt-4o", "127.0.0.1", logger.New(logger.Fields{}), time.Now(), adapters.NewOpenAICompatible(), 2, 3, "upstream-reasoning-shape")
 
-	if rec.Code != http.StatusForbidden || deliveryPrepared || holdReason != "guardrail_withheld" {
+	if rec.Code != http.StatusBadGateway || deliveryPrepared || holdReason != billing.OutputHoldReasonProviderResponseUnusable ||
+		strings.Contains(rec.Body.String(), "alice@example.com") {
 		t.Fatalf("unsupported modeled text shape was delivered: status=%d prepared=%t hold=%q body=%s", rec.Code, deliveryPrepared, holdReason, rec.Body.String())
 	}
 }
@@ -3894,22 +4060,31 @@ func TestP6F10OutputTransformRejectsChangedContentPath(t *testing.T) {
 func TestP6F10StructuredOutputTextAndToolArgumentsAreInspectable(t *testing.T) {
 	response := map[string]interface{}{
 		"choices": []interface{}{map[string]interface{}{
+			"index": json.Number("0"),
 			"message": map[string]interface{}{
+				"role":    "assistant",
 				"content": []interface{}{map[string]interface{}{"type": "text", "text": "alice@example.com"}},
 				"tool_calls": []interface{}{map[string]interface{}{
+					"id": "call_1", "type": "function",
 					"function": map[string]interface{}{"name": "lookup", "arguments": `{"email":"alice@example.com"}`},
 				}},
 			},
 		}},
 	}
 	texts, refs := nonStreamOutputTexts(response)
-	if len(texts) != 2 || len(refs) != 2 {
+	if len(texts) != len(refs) || len(texts) < 2 {
 		t.Fatalf("structured output content was skipped: texts=%+v refs=%+v", texts, refs)
 	}
-	result := guardrail.Result{Transformed: true, Texts: []guardrail.Text{
-		{Path: texts[0].Path, Content: "[REDACTED]"},
-		{Path: texts[1].Path, Content: `{"email":"[REDACTED]"}`},
-	}}
+	transformed := append([]guardrail.Text(nil), texts...)
+	for index := range transformed {
+		switch transformed[index].Path {
+		case "choices[0].message.content[0].text":
+			transformed[index].Content = "[REDACTED]"
+		case "choices[0].message.tool_calls[0].function.arguments":
+			transformed[index].Content = `{"email":"[REDACTED]"}`
+		}
+	}
+	result := guardrail.Result{Transformed: true, Texts: transformed}
 	if err := applyOutputGuardrailTransform(result, refs); err != nil {
 		t.Fatal(err)
 	}

@@ -124,6 +124,7 @@ describe('ModelGovernancePage helpers', () => {
 describe('ModelGovernancePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState(null, '', '/model-governance');
     auth.user = null;
     setupMocks();
   });
@@ -142,6 +143,23 @@ describe('ModelGovernancePage', () => {
     expect(await screen.findByText('Company Chat')).toBeTruthy();
     expect(screen.getByText('gpt-4o')).toBeTruthy();
     expect(screen.getByText('Migrate to gpt-4.1-mini')).toBeTruthy();
+  });
+
+  it('does not mount or advertise the retired runtime-change workspace for its former deep link', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+      identity_scope: 'deployment_operator',
+    };
+    window.history.replaceState(null, '', '/model-governance?tab=releases');
+
+    render(<ModelGovernancePage />);
+
+    await waitFor(() => expect(mockGetModelRegistry).toHaveBeenCalled());
+    expect(screen.queryByRole('tab', { name: '运行时发布' })).toBeNull();
+    expect(screen.getByRole('tab', { name: '模型目录' })).toHaveAttribute('aria-selected', 'true');
+    expect(window.location.search).toBe('?tab=releases');
   });
 
 	it('separates lifecycle totals from project visibility and flags duplicate test records', async () => {

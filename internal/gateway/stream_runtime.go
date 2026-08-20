@@ -16,6 +16,7 @@ import (
 )
 
 type streamReservationContextKey struct{}
+type admissionInputEstimateContextKey struct{}
 
 const streamAdvisoryGapRecordWait = 2 * time.Second
 
@@ -38,6 +39,18 @@ func streamReservationFromContext(ctx context.Context) streamReservationState {
 		}
 	}
 	return streamReservationState{ReservedCompletionTokens: 1000, AllowExtension: true}
+}
+
+func contextWithAdmissionInputEstimate(ctx context.Context, tokens int) context.Context {
+	return context.WithValue(ctx, admissionInputEstimateContextKey{}, max(tokens, 0))
+}
+
+func admissionInputEstimateFromContext(ctx context.Context) (int, bool) {
+	if ctx == nil {
+		return 0, false
+	}
+	tokens, ok := ctx.Value(admissionInputEstimateContextKey{}).(int)
+	return tokens, ok
 }
 
 var processStreamLeaseOwner = buildStreamLeaseOwner()

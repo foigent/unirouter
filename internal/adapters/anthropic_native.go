@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/eventconnector"
 	"github.com/uniroute/unirouter/internal/metering"
 )
 
@@ -30,16 +31,16 @@ func (a *AnthropicNative) BuildRequest(ctx context.Context, in RequestInput) (*h
 		return nil, fmt.Errorf("anthropic_native does not support endpoint %s", in.Endpoint)
 	}
 
-	var downstream struct {
-		Model       string                   `json:"model"`
-		Messages    []anthropicOpenAIMessage `json:"messages"`
-		MaxTokens   int                      `json:"max_tokens"`
-		Temperature *float64                 `json:"temperature,omitempty"`
-		TopP        *float64                 `json:"top_p,omitempty"`
-		Stream      bool                     `json:"stream"`
+	downstream, err := parseAnthropicCompatibilityRequest(in.DownstreamBody)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(in.DownstreamBody, &downstream); err != nil {
-		return nil, fmt.Errorf("decode downstream body: %w", err)
+	cfg, err := parseAnthropicConfig(in.Channel.AdapterConfig)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Beta != "" {
+		return nil, fmt.Errorf("anthropic_native cannot preserve anthropic_beta without a declared beta protocol profile")
 	}
 
 	mappedModel := strings.TrimSpace(in.MappedModel)
@@ -53,15 +54,23 @@ func (a *AnthropicNative) BuildRequest(ctx context.Context, in RequestInput) (*h
 		return nil, fmt.Errorf("model is required")
 	}
 
-	maxTokens := downstream.MaxTokens
-	if maxTokens <= 0 {
+	maxTokens := 0
+	if downstream.MaxCompletionTokens != nil {
+		maxTokens = *downstream.MaxCompletionTokens
+	} else if downstream.MaxTokens != nil {
+		maxTokens = *downstream.MaxTokens
+	}
+	if maxTokens == 0 {
 		maxTokens = in.Channel.DefaultMaxOutput
 	}
 	if maxTokens <= 0 {
 		maxTokens = 1024
 	}
 
-	messages, system := convertAnthropicMessages(downstream.Messages)
+	messages, system, err := convertAnthropicMessages(downstream.Messages)
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]interface{}{
 		"model":      mappedModel,
 		"max_tokens": maxTokens,
@@ -89,13 +98,9 @@ func (a *AnthropicNative) BuildRequest(ctx context.Context, in RequestInput) (*h
 		return nil, err
 	}
 
-	cfg := parseAnthropicConfig(in.Channel.AdapterConfig)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", in.APIKey)
 	req.Header.Set("anthropic-version", cfg.Version)
-	if cfg.Beta != "" {
-		req.Header.Set("anthropic-beta", cfg.Beta)
-	}
 	if in.RequestID != "" {
 		req.Header.Set("X-Request-ID", in.RequestID)
 	}
@@ -151,6 +156,15 @@ func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (
 	if model == "" {
 		model = parsed.Model
 	}
+	content, err := joinAnthropicText(parsed.Content)
+	if err != nil {
+		return nil, err
+	}
+	switch parsed.StopReason {
+	case "", "end_turn", "max_tokens", "stop_sequence":
+	default:
+		return nil, fmt.Errorf("anthropic_native cannot preserve response stop_reason %q", parsed.StopReason)
+	}
 	body, err := json.Marshal(map[string]interface{}{
 		"id":      firstNonEmpty(parsed.ID, "chatcmpl-anthropic"),
 		"object":  "chat.completion",
@@ -162,7 +176,7 @@ func (a *AnthropicNative) ParseResponse(ctx context.Context, in ResponseInput) (
 				"finish_reason": normalizeAnthropicStopReason(parsed.StopReason),
 				"message": map[string]interface{}{
 					"role":    "assistant",
-					"content": joinAnthropicText(parsed.Content),
+					"content": content,
 				},
 			},
 		},
@@ -224,14 +238,28 @@ func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChu
 		}
 		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{"role": "assistant"}, nil)
 	case "content_block_start":
-		if event.ContentBlock == nil || event.ContentBlock.Type != "text" || event.ContentBlock.Text == "" {
+		if event.ContentBlock == nil {
+			result.Skip = true
+			return result, nil
+		}
+		if event.ContentBlock.Type != "text" {
+			return nil, fmt.Errorf("anthropic_native cannot preserve streaming content block type %q", event.ContentBlock.Type)
+		}
+		if event.ContentBlock.Text == "" {
 			result.Skip = true
 			return result, nil
 		}
 		result.TextDelta = event.ContentBlock.Text
 		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{"content": event.ContentBlock.Text}, nil)
 	case "content_block_delta":
-		if event.Delta == nil || event.Delta.Type != "text_delta" || event.Delta.Text == "" {
+		if event.Delta == nil {
+			result.Skip = true
+			return result, nil
+		}
+		if event.Delta.Type != "text_delta" {
+			return nil, fmt.Errorf("anthropic_native cannot preserve streaming delta type %q", event.Delta.Type)
+		}
+		if event.Delta.Text == "" {
 			result.Skip = true
 			return result, nil
 		}
@@ -256,11 +284,16 @@ func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChu
 			result.Skip = true
 			return result, nil
 		}
+		switch event.Delta.StopReason {
+		case "end_turn", "max_tokens", "stop_sequence":
+		default:
+			return nil, fmt.Errorf("anthropic_native cannot preserve streaming stop_reason %q", event.Delta.StopReason)
+		}
 		result.Data = marshalOpenAIStreamChunk(in.State, model, map[string]interface{}{}, normalizeAnthropicStopReason(event.Delta.StopReason))
 	case "message_stop":
 		result.Skip = true
 		result.Done = true
-	case "ping":
+	case "content_block_stop", "ping":
 		result.Skip = true
 	case "error":
 		body, err := json.Marshal(map[string]interface{}{
@@ -275,7 +308,7 @@ func (a *AnthropicNative) NormalizeStreamChunk(ctx context.Context, in StreamChu
 		result.Data = body
 		result.Done = true
 	default:
-		result.Skip = true
+		return nil, fmt.Errorf("anthropic_native cannot preserve streaming event type %q", event.Type)
 	}
 	return result, nil
 }
@@ -381,21 +414,36 @@ type anthropicConfig struct {
 	Beta    string `json:"anthropic_beta"`
 }
 
-func parseAnthropicConfig(raw []byte) anthropicConfig {
+func parseAnthropicConfig(raw []byte) (anthropicConfig, error) {
 	cfg := anthropicConfig{Version: defaultAnthropicVersion}
-	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &cfg)
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if strictErr := eventconnector.ValidateStrictJSON(raw, eventconnector.StrictJSONOptions{}); strictErr != nil {
+			return anthropicConfig{}, fmt.Errorf("anthropic_native adapter config is invalid: %s", strictErr.Code)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&cfg); err != nil {
+			return anthropicConfig{}, fmt.Errorf("anthropic_native adapter config is invalid")
+		}
 	}
 	if strings.TrimSpace(cfg.Version) == "" {
 		cfg.Version = defaultAnthropicVersion
 	}
+	if strings.ContainsAny(cfg.Version, "\r\n") {
+		return anthropicConfig{}, fmt.Errorf("anthropic_native anthropic_version is invalid")
+	}
 	cfg.Beta = strings.TrimSpace(cfg.Beta)
-	return cfg
+	return cfg, nil
 }
 
-type anthropicOpenAIMessage struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
+type anthropicCompatibilityRequest struct {
+	Model               string            `json:"model"`
+	Messages            []json.RawMessage `json:"messages"`
+	MaxTokens           *int              `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *int              `json:"max_completion_tokens,omitempty"`
+	Temperature         *float64          `json:"temperature,omitempty"`
+	TopP                *float64          `json:"top_p,omitempty"`
+	Stream              bool              `json:"stream"`
 }
 
 type anthropicMessage struct {
@@ -403,49 +451,149 @@ type anthropicMessage struct {
 	Content string `json:"content"`
 }
 
-func convertAnthropicMessages(messages []anthropicOpenAIMessage) ([]anthropicMessage, string) {
+func parseAnthropicCompatibilityRequest(raw []byte) (anthropicCompatibilityRequest, error) {
+	if strictErr := eventconnector.ValidateStrictJSON(raw, eventconnector.StrictJSONOptions{}); strictErr != nil {
+		return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native downstream JSON is invalid: %s", strictErr.Code)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native downstream body must be a JSON object")
+	}
+	allowed := map[string]struct{}{
+		"model": {}, "messages": {}, "max_tokens": {}, "max_completion_tokens": {},
+		"temperature": {}, "top_p": {}, "stream": {},
+	}
+	for field := range fields {
+		if _, ok := allowed[field]; ok {
+			continue
+		}
+		switch field {
+		case "function_call", "functions", "parallel_tool_calls", "tool_choice", "tools":
+			return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native cannot preserve tools or tool choice")
+		case "response_format":
+			return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native cannot preserve structured output")
+		case "reasoning", "reasoning_effort":
+			return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native cannot preserve reasoning controls")
+		case "audio", "modalities":
+			return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native cannot preserve non-text output")
+		case "prompt_cache_key", "prompt_cache_retention":
+			return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native cannot preserve cache controls")
+		default:
+			return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native cannot preserve downstream field %q", field)
+		}
+	}
+	var downstream anthropicCompatibilityRequest
+	if err := json.Unmarshal(raw, &downstream); err != nil {
+		return anthropicCompatibilityRequest{}, fmt.Errorf("decode downstream body: %w", err)
+	}
+	if downstream.MaxTokens != nil && *downstream.MaxTokens <= 0 {
+		return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native max_tokens must be positive")
+	}
+	if downstream.MaxCompletionTokens != nil && *downstream.MaxCompletionTokens <= 0 {
+		return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native max_completion_tokens must be positive")
+	}
+	if downstream.MaxTokens != nil && downstream.MaxCompletionTokens != nil && *downstream.MaxTokens != *downstream.MaxCompletionTokens {
+		return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native max_tokens and max_completion_tokens must match")
+	}
+	if downstream.Temperature != nil && (*downstream.Temperature < 0 || *downstream.Temperature > 1) {
+		return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native temperature must be between 0 and 1")
+	}
+	if downstream.TopP != nil && (*downstream.TopP < 0 || *downstream.TopP > 1) {
+		return anthropicCompatibilityRequest{}, fmt.Errorf("anthropic_native top_p must be between 0 and 1")
+	}
+	return downstream, nil
+}
+
+func convertAnthropicMessages(messages []json.RawMessage) ([]anthropicMessage, string, error) {
 	result := make([]anthropicMessage, 0, len(messages))
 	var systemParts []string
-	for _, message := range messages {
-		role := strings.TrimSpace(message.Role)
-		content := openAIContentToText(message.Content)
+	conversationStarted := false
+	for _, raw := range messages {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+			return nil, "", fmt.Errorf("anthropic_native chat message must be an object")
+		}
+		for _, field := range []string{"function_call", "tool_call_id", "tool_calls"} {
+			if _, exists := fields[field]; exists {
+				return nil, "", fmt.Errorf("anthropic_native cannot preserve tool messages")
+			}
+		}
+		if len(fields) != 2 {
+			return nil, "", fmt.Errorf("anthropic_native cannot preserve chat message fields")
+		}
+		var role string
+		if err := json.Unmarshal(fields["role"], &role); err != nil {
+			return nil, "", fmt.Errorf("anthropic_native chat message role is invalid")
+		}
+		role = strings.TrimSpace(role)
+		if role == "tool" || role == "function" {
+			return nil, "", fmt.Errorf("anthropic_native cannot preserve tool messages")
+		}
+		if role != "system" && role != "assistant" && role != "user" {
+			return nil, "", fmt.Errorf("anthropic_native cannot preserve chat message role %q", role)
+		}
+		content, err := openAIContentToText(fields["content"])
+		if err != nil {
+			return nil, "", err
+		}
 		if content == "" {
-			continue
+			return nil, "", fmt.Errorf("anthropic_native cannot preserve empty chat message content")
 		}
 		switch role {
 		case "system":
+			if conversationStarted {
+				return nil, "", fmt.Errorf("anthropic_native cannot preserve a system message after conversation messages")
+			}
 			systemParts = append(systemParts, content)
 		case "assistant":
+			conversationStarted = true
 			result = append(result, anthropicMessage{Role: "assistant", Content: content})
-		default:
+		case "user":
+			conversationStarted = true
 			result = append(result, anthropicMessage{Role: "user", Content: content})
 		}
 	}
-	return result, strings.Join(systemParts, "\n\n")
+	if len(result) == 0 {
+		return nil, "", fmt.Errorf("anthropic_native requires at least one user or assistant message")
+	}
+	return result, strings.Join(systemParts, "\n\n"), nil
 }
 
-func openAIContentToText(raw json.RawMessage) string {
+func openAIContentToText(raw json.RawMessage) (string, error) {
 	if len(raw) == 0 {
-		return ""
+		return "", fmt.Errorf("anthropic_native chat message content is required")
 	}
 	var text string
 	if json.Unmarshal(raw, &text) == nil {
-		return strings.TrimSpace(text)
+		return strings.TrimSpace(text), nil
 	}
-	var parts []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
+	var parts []json.RawMessage
 	if json.Unmarshal(raw, &parts) == nil {
 		values := make([]string, 0, len(parts))
-		for _, part := range parts {
-			if part.Type == "text" && strings.TrimSpace(part.Text) != "" {
-				values = append(values, strings.TrimSpace(part.Text))
+		for _, partRaw := range parts {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(partRaw, &fields) != nil || fields == nil {
+				return "", fmt.Errorf("anthropic_native cannot preserve non-text content")
 			}
+			if _, exists := fields["cache_control"]; exists {
+				return "", fmt.Errorf("anthropic_native cannot preserve prompt cache controls or beta semantics")
+			}
+			var contentType string
+			if json.Unmarshal(fields["type"], &contentType) != nil || contentType != "text" || len(fields) != 2 {
+				if contentType == "tool_use" || contentType == "tool_result" {
+					return "", fmt.Errorf("anthropic_native cannot preserve tool content")
+				}
+				return "", fmt.Errorf("anthropic_native cannot preserve non-text content")
+			}
+			var partText string
+			if json.Unmarshal(fields["text"], &partText) != nil || strings.TrimSpace(partText) == "" {
+				return "", fmt.Errorf("anthropic_native cannot preserve empty or invalid text content")
+			}
+			values = append(values, strings.TrimSpace(partText))
 		}
-		return strings.Join(values, "\n")
+		return strings.Join(values, "\n"), nil
 	}
-	return ""
+	return "", fmt.Errorf("anthropic_native cannot preserve non-text content")
 }
 
 type anthropicUsageWire struct {
@@ -522,14 +670,11 @@ func validateAnthropicUsageWire(wire anthropicUsageWire) error {
 }
 
 type anthropicMessageResponse struct {
-	ID         string `json:"id"`
-	Model      string `json:"model"`
-	StopReason string `json:"stop_reason"`
-	Content    []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	Usage *anthropicUsageWire `json:"usage"`
+	ID         string              `json:"id"`
+	Model      string              `json:"model"`
+	StopReason string              `json:"stop_reason"`
+	Content    []json.RawMessage   `json:"content"`
+	Usage      *anthropicUsageWire `json:"usage"`
 }
 
 type anthropicStreamEvent struct {
@@ -580,17 +725,24 @@ func marshalOpenAIStreamChunk(state *StreamState, model string, delta map[string
 	return body
 }
 
-func joinAnthropicText(content []struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}) string {
+func joinAnthropicText(content []json.RawMessage) (string, error) {
 	parts := make([]string, 0, len(content))
-	for _, item := range content {
-		if item.Type == "text" && item.Text != "" {
-			parts = append(parts, item.Text)
+	for _, raw := range content {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil || fields == nil {
+			return "", fmt.Errorf("anthropic_native response content block is invalid")
 		}
+		var contentType string
+		if json.Unmarshal(fields["type"], &contentType) != nil || contentType != "text" || len(fields) != 2 {
+			return "", fmt.Errorf("anthropic_native cannot preserve response content type %q", contentType)
+		}
+		var text string
+		if json.Unmarshal(fields["text"], &text) != nil {
+			return "", fmt.Errorf("anthropic_native response text content is invalid")
+		}
+		parts = append(parts, text)
 	}
-	return strings.Join(parts, "")
+	return strings.Join(parts, ""), nil
 }
 
 func normalizeAnthropicStopReason(reason string) string {
@@ -601,8 +753,6 @@ func normalizeAnthropicStopReason(reason string) string {
 		return "length"
 	case "stop_sequence":
 		return "stop"
-	case "tool_use":
-		return "tool_calls"
 	default:
 		return "stop"
 	}

@@ -1,4 +1,4 @@
-import type { ModelEndpointTarget, ModelEndpointTestResponse } from '../../api/modelEndpoints';
+import type { ModelEndpointTarget } from '../../api/modelEndpoints';
 import { ApiError } from '../../api/transport';
 
 const stateCopy: Record<string, { label: string; help: string }> = {
@@ -35,11 +35,6 @@ export function endpointError(error: unknown, fallback: string) {
     return error.message;
   }
   return error instanceof Error && error.message ? error.message : fallback;
-}
-
-export function exactTestSucceeded(target: ModelEndpointTarget, response: ModelEndpointTestResponse) {
-  return response.success === true && response.model === target.public_model &&
-    String(response.upstream_model || target.upstream_model) === target.upstream_model;
 }
 
 export function providerSummary(targets: ModelEndpointTarget[]) {

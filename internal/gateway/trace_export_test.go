@@ -55,6 +55,7 @@ func TestRecordTraceEventExportsOnlyAfterDurableOutboxEnqueue(t *testing.T) {
 	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(42))
 	ctx = context.WithValue(ctx, middleware.CtxProjectID, int64(7))
 	ctx = contextWithTelemetryOperationKind(ctx, telemetryexport.OperationChatCompletion)
+	ctx = contextWithAttemptID(ctx, "att_trace_export")
 	relay.recordTraceEvent(
 		ctx,
 		"op_00000000000000000000000000000001",

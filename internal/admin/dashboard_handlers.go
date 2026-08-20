@@ -229,7 +229,8 @@ func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) ([]map[s
 	rows, err := h.db.Query(ctx,
 		`SELECT request_id,
 		        COALESCE(NULLIF(BTRIM(requested_model),''),NULLIF(BTRIM(model),''),'(unknown)'),
-		        COALESCE(NULLIF(BTRIM(model),''),''),COALESCE(route_channel_id,0),
+		        COALESCE(NULLIF(BTRIM(model),''),''),COALESCE(route_deployment_id,0),
+		        COALESCE(NULLIF(BTRIM(route_model_operation_id),''),''),COALESCE(route_channel_id,0),
 		        provider,channel,status_code,latency_ms,cost_micros,created_at
 		 FROM call_logs WHERE org_id = $1 ORDER BY created_at DESC LIMIT 10`, orgID)
 	if err != nil {
@@ -238,17 +239,26 @@ func (h *Handler) dashboardRecentLogs(ctx context.Context, orgID int64) ([]map[s
 	defer rows.Close()
 	logs := make([]map[string]interface{}, 0)
 	for rows.Next() {
-		var requestID, model, routingModel, provider, channel string
-		var routeChannelID int64
+		var requestID, model, routingModel, operationID, provider, channel string
+		var routeDeploymentID, routeChannelID int64
 		var statusCode, latencyMs int
 		var costMicros int64
 		var createdAt time.Time
-		if err := rows.Scan(&requestID, &model, &routingModel, &routeChannelID, &provider, &channel, &statusCode, &latencyMs, &costMicros, &createdAt); err != nil {
+		if err := rows.Scan(&requestID, &model, &routingModel, &routeDeploymentID, &operationID,
+			&routeChannelID, &provider, &channel, &statusCode, &latencyMs, &costMicros, &createdAt); err != nil {
 			return nil, err
+		}
+		routeIdentity := ""
+		if routeDeploymentID > 0 && operationID != "" {
+			routeIdentity = "canonical_deployment_operation"
+		} else if routeChannelID > 0 {
+			routeIdentity = "legacy_history"
 		}
 		logs = append(logs, map[string]interface{}{
 			"request_id": requestID, "model": model, "routing_model": routingModel,
-			"route_channel_id": routeChannelID, "provider": provider, "channel": channel, "status_code": statusCode,
+			"route_deployment_id": routeDeploymentID, "route_model_operation_id": operationID,
+			"route_channel_id": routeChannelID, "route_identity": routeIdentity,
+			"provider": provider, "channel": channel, "status_code": statusCode,
 			"latency_ms": latencyMs, "cost_micros": strconv.FormatInt(costMicros, 10), "created_at": createdAt,
 		})
 	}
@@ -431,121 +441,131 @@ func (h *Handler) dashboardModelDistribution(ctx context.Context, orgID int64, s
 	return dist, nil
 }
 
-// dashboardChannelHealth separates current routability from historical window
-// results. A staged channel may be enabled by a stable runtime release, while a
-// published channel without an eligible credential is not currently routable.
+// dashboardChannelHealth preserves the historical response key while making
+// each live row a canonical deployment+operation projection. Window counts are
+// joined only by route_deployment_id+route_model_operation_id. A legacy
+// route_channel_id remains available in recent_logs as history, but can never
+// make a current deployment appear healthy.
 func (h *Handler) dashboardChannelHealth(ctx context.Context, orgID int64, startTime, endTime string) ([]map[string]interface{}, error) {
-	endpointProjection, err := h.loadModelEndpointProjection(ctx, orgID)
+	projection, err := h.loadCanonicalModelApplications(ctx, orgID, 0, "")
 	if err != nil {
-		return nil, fmt.Errorf("load canonical model endpoint projection: %w", err)
+		return nil, fmt.Errorf("load canonical deployment health projection: %w", err)
 	}
-	operational := dashboardChannelOperationalStates(endpointProjection)
-
+	type routeIdentity struct {
+		deploymentID int64
+		operationID  string
+	}
+	type historicalCounts struct {
+		success int
+		failure int
+	}
 	rows, err := h.db.Query(ctx,
-		`SELECT c.id,c.name,c.provider,c.base_url,c.status,c.circuit_state,
-		        COALESCE(SUM(CASE WHEN cl.status_code >= 200 AND cl.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
-		        COALESCE(SUM(CASE WHEN cl.status_code >= 400 OR cl.status_code = 0 THEN 1 ELSE 0 END), 0) as fail_count
-		 FROM channels c
-		 LEFT JOIN call_logs cl ON cl.route_channel_id = c.id AND cl.org_id = $1 AND cl.created_at >= $2 AND cl.created_at < $3
-		 GROUP BY c.id,c.name,c.provider,c.base_url,c.status,c.circuit_state
-		 ORDER BY c.id`, orgID, startTime, endTime)
+		`SELECT route_deployment_id,route_model_operation_id,
+		        COUNT(*) FILTER (WHERE status_code >= 200 AND status_code < 300)::int,
+		        COUNT(*) FILTER (WHERE status_code < 200 OR status_code >= 300)::int
+		   FROM call_logs
+		  WHERE org_id=$1 AND created_at >= $2 AND created_at < $3
+		    AND route_deployment_id IS NOT NULL
+		    AND COALESCE(NULLIF(BTRIM(route_model_operation_id),''),'') <> ''
+		  GROUP BY route_deployment_id,route_model_operation_id
+		  ORDER BY route_deployment_id,route_model_operation_id`, orgID, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	health := make([]map[string]interface{}, 0)
+	counts := make(map[routeIdentity]historicalCounts)
 	for rows.Next() {
-		var id int
-		var name, provider, baseURL, chStatus, circuitState string
-		var successCount, failCount int
-		if err := rows.Scan(&id, &name, &provider, &baseURL, &chStatus, &circuitState, &successCount, &failCount); err != nil {
+		var identity routeIdentity
+		var item historicalCounts
+		if err := rows.Scan(&identity.deploymentID, &identity.operationID, &item.success, &item.failure); err != nil {
 			return nil, err
 		}
-		state := operational[int64(id)]
-		publicModels := make([]string, 0, len(state.publicModels))
-		for publicModel := range state.publicModels {
-			publicModels = append(publicModels, publicModel)
-		}
-		sort.Strings(publicModels)
-		runtimePublished := state.runtimePublished
-		credentialReady := state.credentialReady
-		effectiveEnabled := chStatus == "active" || (chStatus == "staged" && runtimePublished)
-		available := state.available
-		status := "healthy"
-		if chStatus == "disabled" {
-			status = "disabled"
-		} else if state.staleAssignment {
-			status = "stale_release"
-		} else if state.projectionUnavailable {
-			status = "projection_unavailable"
-		} else if !effectiveEnabled {
-			status = "awaiting_release"
-		} else if !credentialReady {
-			status = "no_credential"
-		} else if circuitState != "healthy" {
-			status = "circuit_unavailable"
-		} else if !available {
-			status = "standby"
-		} else if failCount > 0 && successCount == 0 {
-			status = "error"
-		} else if failCount > 0 {
-			status = "warning"
-		} else if state.degraded {
-			status = "degraded"
-		}
-		health = append(health, map[string]interface{}{
-			"id": id, "name": name, "provider": provider, "base_url": baseURL,
-			"public_models": publicModels,
-			"base_status":   chStatus, "runtime_published": runtimePublished,
-			"enabled": effectiveEnabled, "credential_ready": credentialReady,
-			"available": available, "circuit_state": circuitState, "status": status,
-			"projection_version": endpointProjection.ContractVersion,
-			"success_count":      successCount, "fail_count": failCount,
-		})
+		counts[identity] = item
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
+	health := make([]map[string]interface{}, 0)
+	for _, application := range projection.Applications {
+		for _, operation := range application.Operations {
+			identity := routeIdentity{deploymentID: application.Deployment.ID, operationID: operation.OperationID}
+			history := counts[identity]
+			runtimePublished := operation.Runtime.State == "stable" || operation.Runtime.State == "canary"
+			credentialReady := application.Credential.EligibleCount > 0
+			effectiveEnabled := application.Connection.AdminState == "enabled" &&
+				application.Deployment.AdminState == "enabled" &&
+				application.Connection.RetiredAt == nil && application.Deployment.RetiredAt == nil
+			operationReady := canonicalReadinessOperationVerified(operation)
+			available := effectiveEnabled && credentialReady && runtimePublished && operationReady &&
+				application.Deployment.CircuitState == "healthy" && application.PublicModel.Lifecycle != "retired"
+			status := canonicalDashboardDeploymentStatus(application, operation, effectiveEnabled, credentialReady, runtimePublished, operationReady, available, history.success, history.failure)
+			health = append(health, map[string]interface{}{
+				"id":                            application.Deployment.ID,
+				"deployment_id":                 application.Deployment.ID,
+				"connection_id":                 application.Connection.ID,
+				"name":                          application.Connection.Name,
+				"provider":                      application.Connection.Provider,
+				"base_url":                      application.Connection.BaseURL,
+				"public_model":                  application.PublicModel.ModelName,
+				"public_models":                 []string{application.PublicModel.ModelName},
+				"model_operation_id":            operation.OperationID,
+				"base_status":                   application.Deployment.AdminState,
+				"runtime_published":             runtimePublished,
+				"enabled":                       effectiveEnabled,
+				"credential_ready":              credentialReady,
+				"operation_ready":               operationReady,
+				"available":                     available,
+				"circuit_state":                 application.Deployment.CircuitState,
+				"status":                        status,
+				"projection_version":            canonicalModelApplicationContractVersion,
+				"historical_identity_authority": "route_deployment_id+route_model_operation_id",
+				"success_count":                 history.success,
+				"fail_count":                    history.failure,
+			})
+		}
+	}
+	sort.Slice(health, func(i, j int) bool {
+		leftID, _ := health[i]["deployment_id"].(int64)
+		rightID, _ := health[j]["deployment_id"].(int64)
+		if leftID != rightID {
+			return leftID < rightID
+		}
+		leftOperation, _ := health[i]["model_operation_id"].(string)
+		rightOperation, _ := health[j]["model_operation_id"].(string)
+		return leftOperation < rightOperation
+	})
 	return health, nil
 }
 
-type dashboardChannelOperationalState struct {
-	runtimePublished      bool
-	credentialReady       bool
-	available             bool
-	staleAssignment       bool
-	projectionUnavailable bool
-	degraded              bool
-	publicModels          map[string]struct{}
-}
-
-func dashboardChannelOperationalStates(projection modelEndpointProjection) map[int64]dashboardChannelOperationalState {
-	states := make(map[int64]dashboardChannelOperationalState)
-	for _, model := range projection.Models {
-		for _, target := range model.Targets {
-			state := states[target.ChannelID]
-			if state.publicModels == nil {
-				state.publicModels = make(map[string]struct{})
-			}
-			state.publicModels[model.PublicModel] = struct{}{}
-			stableCurrent := target.StableAssignment && target.StableExpectedEpoch == target.RoutingEpoch
-			canaryCurrent := target.CanaryAssignment && target.CanaryExpectedEpoch == target.RoutingEpoch
-			state.runtimePublished = state.runtimePublished || stableCurrent || canaryCurrent
-			currentRouteTarget := stableCurrent || canaryCurrent || target.RouteCandidate
-			state.credentialReady = state.credentialReady || (currentRouteTarget && target.EligibleCredentialCount > 0)
-			state.staleAssignment = state.staleAssignment || target.State == "stale"
-			state.projectionUnavailable = state.projectionUnavailable || model.ReasonCode == "routing_projection_unavailable"
-			state.degraded = state.degraded || model.State == "degraded"
-			if model.RouteAvailable && target.CircuitState == "healthy" {
-				switch target.State {
-				case "active", "canary", "legacy_active":
-					state.available = true
-				}
-			}
-			states[target.ChannelID] = state
-		}
+func canonicalDashboardDeploymentStatus(
+	application canonicalModelApplication,
+	operation canonicalOperationAxis,
+	effectiveEnabled, credentialReady, runtimePublished, operationReady, available bool,
+	successCount, failureCount int,
+) string {
+	switch {
+	case application.PublicModel.Lifecycle == "retired" || application.Deployment.AdminState == "retired":
+		return "retired"
+	case !effectiveEnabled:
+		return "disabled"
+	case !runtimePublished:
+		return "awaiting_release"
+	case !credentialReady:
+		return "no_credential"
+	case !operationReady:
+		return "operation_unverified"
+	case application.Deployment.CircuitState != "healthy":
+		return "circuit_unavailable"
+	case !available:
+		return "standby"
+	case failureCount > 0 && successCount == 0:
+		return "error"
+	case failureCount > 0:
+		return "warning"
+	default:
+		return "healthy"
 	}
-	return states
 }
 
 // dashboardPreviousPeriodDelta compares the selected range with the immediately

@@ -70,6 +70,7 @@ func TestP6F08ProbeLeaseContentionReturnsRetryable503WithoutDispatch(t *testing.
 			return &billing.SettleResult{SettleID: 1, Success: true}, nil
 		},
 	}, nil, encKey)
+	installLegacyHandlerTestRuntime(relay)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-route-plan","messages":[{"role":"user","content":"hello"}]}`))
 	ctx := context.WithValue(req.Context(), middleware.CtxOrgID, int64(1))

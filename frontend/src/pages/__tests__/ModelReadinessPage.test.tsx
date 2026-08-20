@@ -6,7 +6,7 @@ import { ApiError } from '../../api/transport';
 
 const mocks = vi.hoisted(() => ({
   getProjects: vi.fn(),
-  getChannels: vi.fn(),
+  listModelDeployments: vi.fn(),
   getModelAliases: vi.fn(),
   getWorkloadApplications: vi.fn(),
   modelReadiness: vi.fn(),
@@ -20,9 +20,15 @@ vi.mock('../../api/client', () => ({
   },
 }));
 
-vi.mock('../../api/channels', () => ({
-  channelApi: {
-    list: (...args: unknown[]) => mocks.getChannels(...args),
+vi.mock('../../api/modelDeployments', () => ({
+  canonicalOperationPaths: {
+    'openai.chat_completions.v1': '/v1/chat/completions',
+    'openai.embeddings.v1': '/v1/embeddings',
+    'openai.responses.v1': '/v1/responses',
+    'anthropic.messages.v1': '/v1/messages',
+  },
+  modelDeploymentApi: {
+    list: (...args: unknown[]) => mocks.listModelDeployments(...args),
   },
 }));
 
@@ -33,8 +39,8 @@ const axis = (state: string, reason: string, fixRoute?: string) => ({
 });
 
 const readiness = {
-  contract_version: 'unirouter.model-readiness.v1',
-  scope: { mode: 'caller', org_id: 1, project_id: 11, requested_model: 'company-chat', resolved_model: 'gpt-5', endpoint: '/v1/chat/completions', caller: 'self' },
+  contract_version: 'unirouter.model-readiness.v2',
+  scope: { mode: 'caller', org_id: 1, project_id: 11, requested_model: 'company-chat', resolved_model: 'gpt-5', endpoint: '/v1/chat/completions', model_operation_id: 'openai.chat_completions.v1', caller: 'self' },
   summary: {
     registered: { value: false, state: 'blocked', reason_code: 'model_unregistered' },
     catalog_visible: { value: false, state: 'blocked', reason_code: 'catalog_hidden' },
@@ -45,8 +51,8 @@ const readiness = {
     gateway_license: axis('ready', 'gateway_license_authorized'),
     registration: axis('blocked', 'model_unregistered', '/model-governance?tab=registry&model=company-chat'), lifecycle: axis('ready', 'lifecycle_active'),
     catalog: axis('blocked', 'catalog_hidden'), price_authority: axis('ready', 'price_authority_ready'),
-    channel: axis('ready', 'channel_ready'), provider_credential: axis('ready', 'provider_credential_ready'),
-    base_route: axis('ready', 'route_available'), runtime_slot: axis('not_applicable', 'runtime_slot_optional'),
+    deployment: axis('ready', 'deployment_configured'), provider_credential: axis('ready', 'provider_credential_ready'),
+    operation: axis('ready', 'operation_configured'), base_route: axis('ready', 'route_available'), runtime_slot: axis('not_applicable', 'runtime_slot_optional'),
   },
   project_caller: {
     project: axis('ready', 'project_active'), alias: axis('not_applicable', 'alias_not_used'), model_set: axis('ready', 'project_default_catalog'),
@@ -77,7 +83,28 @@ describe('ModelReadinessPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getProjects.mockResolvedValue({ data: [{ id: 11, name: 'Core', status: 'active' }], total: 1 });
-    mocks.getChannels.mockResolvedValue({ data: [{ models: 'company-chat,deepseek-v4-pro' }], total: 1 });
+    mocks.listModelDeployments.mockResolvedValue({
+      contract_version: 'unirouter.model-deployments.v1',
+      generated_at: '2026-08-10T00:00:00Z',
+      summary: {},
+      applications: [
+        {
+          public_model: { id: 21, model_name: 'deepseek-v4-pro', display_name: 'DeepSeek V4 Pro' },
+          deployment: { id: 12 },
+          connection: { id: 31, name: 'DeepSeek production', provider: 'deepseek' },
+          operations: [{ operation_id: 'openai.chat_completions.v1' }],
+        },
+        {
+          public_model: { id: 22, model_name: 'company-chat', display_name: 'Company Chat' },
+          deployment: { id: 13 },
+          connection: { id: 32, name: 'Company production', provider: 'openai' },
+          operations: [
+            { operation_id: 'openai.chat_completions.v1' },
+            { operation_id: 'openai.embeddings.v1' },
+          ],
+        },
+      ],
+    });
     mocks.getModelAliases.mockResolvedValue({ data: [{ alias: 'chat-default', target_model: 'company-chat', status: 'active' }], total: 1 });
     mocks.getWorkloadApplications.mockResolvedValue({ data: [{ application_ref: 'app_core', display_name: 'Core App', project_id: 11, environment: 'production', status: 'active' }] });
     mocks.modelReadiness.mockResolvedValue(readiness);
@@ -141,18 +168,19 @@ describe('ModelReadinessPage', () => {
   it('diagnoses a model connection without loading or requiring project and caller scope', async () => {
     mocks.modelReadiness.mockResolvedValueOnce({
       ...readiness,
-      scope: { mode: 'connection', org_id: 1, project_id: 0, requested_model: 'deepseek-v4-pro', resolved_model: 'deepseek-v4-pro', endpoint: '/v1/chat/completions' },
+      scope: { mode: 'connection', org_id: 1, project_id: 0, deployment_id: 12, requested_model: 'deepseek-v4-pro', resolved_model: 'deepseek-v4-pro', endpoint: '/v1/chat/completions', model_operation_id: 'openai.chat_completions.v1', caller: '' },
       summary: { ...readiness.summary, current_project_caller_callable: { state: 'not_applicable', reason_code: 'connection_mode_has_no_caller' } },
     });
-    render(<MemoryRouter initialEntries={['/model-readiness?from=connections&channel_id=12&model=deepseek-v4-pro']}><ModelReadinessPage /></MemoryRouter>);
+    render(<MemoryRouter initialEntries={['/model-readiness?from=connections&deployment_id=12&operation_id=openai.chat_completions.v1&model=deepseek-v4-pro']}><ModelReadinessPage /></MemoryRouter>);
 
     expect(await screen.findByRole('heading', { name: '模型连接诊断' })).toBeTruthy();
     await waitFor(() => expect(mocks.modelReadiness).toHaveBeenCalledWith({
-      mode: 'connection', model: 'deepseek-v4-pro', endpoint: '/v1/chat/completions',
+      mode: 'connection', deployment_id: 12, model: 'deepseek-v4-pro', endpoint: '/v1/chat/completions',
     }));
     expect(mocks.getProjects).not.toHaveBeenCalled();
     expect(screen.queryByRole('combobox', { name: '项目' })).toBeNull();
     expect(screen.queryByRole('combobox', { name: '谁来调用' })).toBeNull();
+    expect(screen.getByRole('combobox', { name: '模型部署' })).toHaveTextContent('DeepSeek production');
     expect(screen.getAllByText('模型网关授权').length).toBeGreaterThan(0);
     expect(screen.queryByText('项目、应用与权限')).toBeNull();
   });
@@ -177,7 +205,14 @@ describe('ModelReadinessPage', () => {
     const scopeA = deferred<typeof readiness>();
     const scopeB = {
       ...readiness,
-      scope: { ...readiness.scope, project_id: 12, requested_model: 'project-b-model', resolved_model: 'project-b-resolved', endpoint: '/v1/embeddings' },
+      scope: {
+        ...readiness.scope,
+        project_id: 12,
+        requested_model: 'project-b-model',
+        resolved_model: 'project-b-resolved',
+        endpoint: '/v1/embeddings',
+        model_operation_id: 'openai.embeddings.v1',
+      },
     };
     mocks.modelReadiness.mockImplementation((input: { project_id: number }) => input.project_id === 11 ? scopeA.promise : Promise.resolve(scopeB));
 

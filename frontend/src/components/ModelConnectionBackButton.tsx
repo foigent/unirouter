@@ -4,12 +4,12 @@ export function modelConnectionReturnPath(search = window.location.search) {
   const source = new URLSearchParams(search);
   if (source.get('from') !== 'connections') return '';
   const target = new URLSearchParams();
-  const channelID = Number(source.get('channel_id'));
-  const model = String(source.get('model') || '').trim();
-  if (Number.isSafeInteger(channelID) && channelID > 0) target.set('channel_id', String(channelID));
-  if (model) target.set('model', model);
+  const deploymentID = Number(source.get('deployment_id'));
+  const operationID = String(source.get('operation_id') || '').trim();
+  if (Number.isSafeInteger(deploymentID) && deploymentID > 0) target.set('deployment_id', String(deploymentID));
+  if (operationID) target.set('operation_id', operationID);
   const query = target.toString();
-  return `/channels${query ? `?${query}` : ''}`;
+  return `/model-endpoints${query ? `?${query}` : ''}`;
 }
 
 export default function ModelConnectionBackButton() {
@@ -18,5 +18,5 @@ export default function ModelConnectionBackButton() {
   return <Button onClick={() => {
     window.history.pushState(null, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
-  }}>返回模型连接</Button>;
+  }}>返回模型部署</Button>;
 }

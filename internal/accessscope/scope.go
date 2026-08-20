@@ -3,9 +3,10 @@
 package accessscope
 
 import (
-	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
 const (
@@ -19,21 +20,6 @@ const (
 	ProjectDefaultRPMLimit = 60
 	ProjectDefaultRPSLimit = 10
 )
-
-var projectDefaultEndpoints = []string{
-	"/v1/chat/completions",
-	"/v1/embeddings",
-	"/v1/models",
-}
-
-var supportedExecutionEndpoints = []string{
-	"/v1/chat/completions",
-	"/v1/embeddings",
-	"/v1/models",
-	"/v1/media/jobs",
-}
-
-var mediaJobIDPattern = regexp.MustCompile(`^mediajob_[0-9a-fA-F]{32}$`)
 
 var capabilityManagementEndpoints = []string{
 	"/v1/agent-capabilities/exchange",
@@ -73,7 +59,8 @@ func Validate(mode string, models, endpoints []string) bool {
 // capability control endpoints remain identity-management operations outside
 // this execution envelope.
 func IsSupportedEndpoint(endpoint string) bool {
-	return slices.Contains(supportedExecutionEndpoints, strings.TrimSpace(endpoint))
+	_, ok := modeloperation.Lookup(strings.TrimSpace(endpoint))
+	return ok
 }
 
 // CanonicalExecutionEndpoint maps an exact runtime path to the stable endpoint
@@ -82,16 +69,7 @@ func IsSupportedEndpoint(endpoint string) bool {
 // suffixes; unknown paths are returned unchanged so they cannot inherit media
 // authority through a broad prefix match.
 func CanonicalExecutionEndpoint(path string) string {
-	path = strings.TrimSpace(path)
-	parts := strings.Split(path, "/")
-	if len(parts) < 5 || parts[0] != "" || parts[1] != "v1" || parts[2] != "media" || parts[3] != "jobs" ||
-		!mediaJobIDPattern.MatchString(parts[4]) {
-		return path
-	}
-	if len(parts) == 5 || (len(parts) == 6 && (parts[5] == "cancel" || parts[5] == "content")) {
-		return "/v1/media/jobs"
-	}
-	return path
+	return modeloperation.CanonicalPath(path)
 }
 
 func allSupportedEndpoints(endpoints []string) bool {
@@ -104,11 +82,52 @@ func allSupportedEndpoints(endpoints []string) bool {
 }
 
 func ProjectDefaultEndpoints() []string {
-	return slices.Clone(projectDefaultEndpoints)
+	return modeloperation.ProjectDefaultPaths()
 }
 
 func IsProjectDefaultEndpoint(endpoint string) bool {
-	return slices.Contains(projectDefaultEndpoints, strings.TrimSpace(endpoint))
+	definition, ok := modeloperation.Lookup(strings.TrimSpace(endpoint))
+	return ok && definition.ProjectDefault
+}
+
+// RequiresExplicitScope identifies operations which may only be admitted from
+// an explicit Grant envelope. It does not independently decide whether an
+// established operation retains legacy-unbound compatibility.
+func RequiresExplicitScope(endpoint string) bool {
+	definition, ok := modeloperation.Lookup(strings.TrimSpace(endpoint))
+	return ok && definition.RequiresExplicitScope
+}
+
+// ExecutionEndpointAllowed applies the effective endpoint boundary shared by
+// root API-key admission, Agent capability issuance, and offline trust review.
+// Unknown paths fail closed. Legacy-unbound authority is limited to operations
+// that explicitly retain that compatibility contract. A bound Grant must name
+// the exact operation, and newly introduced operations additionally require an
+// explicit Grant rather than project-default inheritance.
+func ExecutionEndpointAllowed(
+	grantBound bool,
+	scopeMode string,
+	endpointDenied bool,
+	allowedEndpoints []string,
+	path string,
+) bool {
+	endpoint := modeloperation.CanonicalPath(path)
+	definition, known := modeloperation.Lookup(endpoint)
+	if !known {
+		return false
+	}
+	if !grantBound {
+		return definition.LegacyUnboundAllowed
+	}
+	if endpointDenied || (definition.RequiresExplicitScope && scopeMode != ModeExplicit) {
+		return false
+	}
+	for _, allowed := range allowedEndpoints {
+		if strings.TrimSpace(allowed) == endpoint {
+			return true
+		}
+	}
+	return false
 }
 
 // IsCapabilityManagementEndpoint identifies the separate control surface that

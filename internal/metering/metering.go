@@ -45,6 +45,11 @@ const (
 	UsageContractVersionV2          = "unirouter.usage.v2"
 	ConservativeEstimateVersionV1   = "unirouter.token-ceiling.v1"
 	GatewayCounterEstimateVersionV2 = "unirouter.stream-counter.v2"
+
+	// MaxPersistedTokenCount is the common upper bound for every final usage
+	// contract that can be materialized by billing's INTEGER-backed receipts.
+	// Protocol parsers must enforce it before accepting provider liability.
+	MaxPersistedTokenCount = 1<<31 - 1
 )
 
 func NormalizeUsageSource(source string) string {

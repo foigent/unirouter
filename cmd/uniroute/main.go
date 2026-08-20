@@ -38,7 +38,11 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/modelauthz"
+	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modelgov"
+	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelrouteauthority"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/oidc"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
@@ -48,6 +52,7 @@ import (
 	"github.com/uniroute/unirouter/internal/responsecache"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/telemetryexport"
 	"github.com/uniroute/unirouter/internal/xinsightconnector"
 )
@@ -85,18 +90,28 @@ func main() {
 	defer postgres.Close()
 	log.Println("Connected to PostgreSQL")
 
+	// Resolve and validate the exact artifact ledger for both migration owners
+	// and migration-skipping replicas sharing the same database.
+	migrationsDir := cfg.MigrationsDir
+	if migrationsDir == "" {
+		migrationsDir = findMigrationsDir()
+	}
+	expectedSchemaLedger, err := schemaauthority.ExpectedLedger(migrationsDir)
+	if err != nil {
+		log.Fatalf("Failed to load schema authority: %v", err)
+	}
+
 	// Run migrations (skip for canary instances sharing the same DB)
 	if cfg.SkipMigration {
 		log.Println("SKIP_MIGRATION=true, skipping database migrations")
 	} else {
-		migrationsDir := cfg.MigrationsDir
-		if migrationsDir == "" {
-			migrationsDir = findMigrationsDir()
-		}
 		if err := migrate.Run(context.Background(), postgres.Pool, migrationsDir); err != nil {
 			log.Fatalf("Migration failed: %v", err)
 		}
 		log.Println("Migrations complete")
+	}
+	if err := requireExactRuntimeSchema(context.Background(), postgres.Pool, expectedSchemaLedger); err != nil {
+		log.Fatalf("Schema authority startup gate failed: %v", err)
 	}
 	baseline, err := customercontext.EnsureBaseline(context.Background(), postgres.Pool)
 	if err != nil {
@@ -106,6 +121,19 @@ func main() {
 		log.Printf("Single-customer baseline ready: org_id=%d project_id=%d", baseline.Customer.OrganizationID, baseline.ProjectID)
 	} else {
 		log.Printf("Single-customer baseline not applied: state=%s", baseline.Customer.State)
+	}
+	authorityReport, err := enforceModelRouteAuthorityStartup(
+		context.Background(), cfg, postgres.Pool, baseline.Customer.OrganizationID,
+	)
+	if err != nil {
+		log.Fatalf("Model route authority startup gate failed: %v", err)
+	}
+	if cfg.ModelRouteAuthority != modelrouting.ModeLegacy {
+		log.Printf(
+			"Model route authority ready: mode=%s models=%d releases=%d contract=%s",
+			authorityReport.Mode, authorityReport.ModelsChecked,
+			authorityReport.ReleasesChecked, authorityReport.ContractVersion,
+		)
 	}
 
 	// Initialize Redis
@@ -178,11 +206,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("Invalid effective routing configuration: %v", err)
 	}
+	executionPlanner, err := modelrouting.NewPlanner(postgres.Pool, effectiveConfig.RoutingPolicy.Config)
+	if err != nil {
+		log.Fatalf("Failed to initialize model route planner: %v", err)
+	}
 	modelAuthorizationEvaluator, err := modelauthz.NewEvaluator(postgres.Pool, cfg.RuntimeEnvironment)
 	if err != nil {
 		log.Fatalf("Failed to initialize model-call authorization: %v", err)
 	}
-	runtimeChangeManager, err := runtimechange.NewManager(postgres.Pool, router, effectiveConfig.RoutingPolicy.Config)
+	runtimeChangeManager, err := runtimechange.NewManagerWithLegacyCutoverVerifier(
+		postgres.Pool, router, effectiveConfig.RoutingPolicy.Config, executionPlanner,
+	)
 	if err != nil {
 		log.Fatalf("Failed to initialize runtime change control: %v", err)
 	}
@@ -356,6 +390,14 @@ func main() {
 	billingSvc := billing.NewBilling(postgres.Pool, redisClient.Client).
 		WithMode(cfg.BillingMode).
 		WithRequestPricingAuthority(cfg.RequestPricingAuthority)
+	executionConfig, err := modelexecution.ConfigFromRoutingPolicy(effectiveConfig.RoutingPolicy.Config)
+	if err != nil {
+		log.Fatalf("Failed to initialize model execution configuration: %v", err)
+	}
+	executionCoordinator, err := modelexecution.New(postgres.Pool, billingSvc, executionConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize model execution coordinator: %v", err)
+	}
 	log.Printf(
 		"Request pricing authority: mode=%s legacy_is_upgrade_compatibility=%t",
 		cfg.RequestPricingAuthority,
@@ -439,6 +481,13 @@ func main() {
 		log.Fatalf("Invalid payload safety configuration: %v", err)
 	}
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
+	sharedPolicyBilling.SetEarlyRateAdmissionEvidenceSink(relay)
+	if err := relay.SetModelExecutionRuntime(
+		cfg.ModelRouteAuthority, executionPlanner, executionCoordinator, effectiveConfig.RoutingPolicy.Config,
+	); err != nil {
+		log.Fatalf("Failed to bind model execution runtime: %v", err)
+	}
+	log.Printf("Model route authority: %s", cfg.ModelRouteAuthority)
 	if err := relay.SetBillingFreezePolicy(cfg.FreezeSafetyFactor, cfg.MinFreezeCents); err != nil {
 		log.Fatalf("Invalid billing freeze policy: %v", err)
 	}
@@ -477,6 +526,12 @@ func main() {
 	relay.SetEventService(eventSvc)
 
 	adminHandler := admin.NewHandlerWithAPIKeyHashSecret(postgres.Pool, cfg.JWTSecret, cfg.APIKeyHashSecret, encKey, sensitiveFilter)
+	modelRouteAuthorityService, err := modelrouteauthority.New(postgres.Pool, cfg.RoutingPolicyConfig())
+	if err != nil {
+		log.Fatalf("Failed to initialize model route safety control: %v", err)
+	}
+	adminHandler.SetModelRouteSafetyController(modelRouteAuthorityService, cfg.ModelRouteAuthority)
+	adminHandler.SetModelRoutePlanner(executionPlanner)
 	adminHandler.SetOutbox(outboxSvc)
 	adminHandler.SetCompletedFeedController(completedFeedSvc)
 	xInsightConnectorManager, err := xinsightconnector.NewManager(
@@ -545,14 +600,15 @@ func main() {
 	adminHandler.SetRequestPricingAuthority(string(cfg.RequestPricingAuthority))
 	adminHandler.SetRedisClient(redisClient.Client)
 	adminHandler.SetRuntimeStatusOptions(admin.RuntimeStatusOptions{
-		Environment:     cfg.RuntimeEnvironment,
-		DeploymentMode:  cfg.RuntimeDeploymentMode,
-		DeploymentRole:  cfg.RuntimeDeploymentRole,
-		Version:         cfg.RuntimeVersion,
-		Commit:          cfg.RuntimeCommit,
-		PrometheusURL:   cfg.PrometheusURL,
-		GrafanaURL:      cfg.GrafanaURL,
-		EffectiveConfig: effectiveConfig,
+		Environment:      cfg.RuntimeEnvironment,
+		DeploymentMode:   cfg.RuntimeDeploymentMode,
+		DeploymentRole:   cfg.RuntimeDeploymentRole,
+		Version:          cfg.RuntimeVersion,
+		Commit:           cfg.RuntimeCommit,
+		SchemaMigrations: expectedSchemaLedger,
+		PrometheusURL:    cfg.PrometheusURL,
+		GrafanaURL:       cfg.GrafanaURL,
+		EffectiveConfig:  effectiveConfig,
 	})
 	for _, registration := range []struct {
 		eventType string
@@ -692,20 +748,25 @@ func main() {
 
 	chatHandler := newGatewayChatHandler(postgres.Pool, relay, outboxSvc)
 	embeddingsHandler := newGatewayEmbeddingsHandler(postgres.Pool, relay, outboxSvc)
+	responsesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDResponses, outboxSvc)
+	messagesHandler := newGatewayPublicNonStreamHandler(postgres.Pool, relay, modeloperation.IDMessages, outboxSvc)
 	chatPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileChatRequest, middleware.GetOrgIDFromContext)
 	embeddingsPayloadGuard := payloadpolicy.RequestMiddleware(payloadBudget, payloadpolicy.ProfileEmbeddingsRequest, middleware.GetOrgIDFromContext)
+	publicNonStreamPayloadGuard := payloadpolicy.RequestMiddlewareWithMax(payloadBudget, 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)
 	mediaPayloadGuard := payloadpolicy.RequestMiddlewareWithMax(payloadBudget, mediajob.MaxRequestBytes, middleware.GetOrgIDFromContext)
 
 	// Repeat live authentication after the complete body is retained. A slow
 	// upload cannot carry a pre-revocation Grant, Credential, membership,
 	// capability, endpoint, or provider-liability snapshot into paid admission.
-	mux.Handle("POST /v1/chat/completions", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(idempotencyGuard(chatHandler))))
-	mux.Handle("POST /v1/embeddings", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(idempotencyGuard(embeddingsHandler))))
-	mux.Handle("GET /v1/models", gatewayLicenseGate(gatewayAuth(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
-	mux.Handle("POST /v1/media/jobs", gatewayLicenseGate(middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(http.HandlerFunc(mediaHandler.Submit))))
-	mux.Handle("GET /v1/media/jobs/{id}", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Get))))
-	mux.Handle("POST /v1/media/jobs/{id}/cancel", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Cancel))))
-	mux.Handle("GET /v1/media/jobs/{id}/content", gatewayLicenseGate(mediaAuth(http.HandlerFunc(mediaHandler.Content))))
+	mux.Handle("POST /v1/chat/completions", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, chatPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(chatHandler))))))
+	mux.Handle("POST /v1/embeddings", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, embeddingsPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(embeddingsHandler))))))
+	mux.Handle("POST /v1/responses", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(responsesHandler))))))
+	mux.Handle("POST /v1/messages", middleware.GatewayAuthAcrossBufferedBody(gatewayAuth, publicNonStreamPayloadGuard)(gatewayLicenseGate(middleware.StrictJSONIngress(sharedPolicyBilling.GatewayRateAdmission(idempotencyGuard(messagesHandler))))))
+	mux.Handle("GET /v1/models", gatewayAuth(gatewayLicenseGate(admissionMiddleware(http.HandlerFunc(relay.HandleModels)))))
+	mux.Handle("POST /v1/media/jobs", middleware.GatewayAuthAcrossBufferedBody(mediaAuth, mediaPayloadGuard)(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Submit))))
+	mux.Handle("GET /v1/media/jobs/{id}", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Get))))
+	mux.Handle("POST /v1/media/jobs/{id}/cancel", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Cancel))))
+	mux.Handle("GET /v1/media/jobs/{id}/content", mediaAuth(gatewayLicenseGate(http.HandlerFunc(mediaHandler.Content))))
 	mux.Handle(
 		"GET /api/v1/integrations/xinsight/completed-executions",
 		completedFeedAuth(completedFeedSvc.Handler()),
@@ -809,9 +870,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 </head>
 <body>
 <h1>UniRouter API Documentation</h1>
-<p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. Gateway model APIs accept UniRouter API keys or endpoint-scoped Agent capabilities. The private completed-execution feed accepts only its project- and network-bound feed service key.</p>
+<p class="muted">Current API contract index. Admin APIs use JWT Bearer auth. OpenAI-family Gateway APIs use Bearer UniRouter keys or endpoint-scoped Agent capabilities; Anthropic Messages uses x-api-key plus exact anthropic-version 2023-06-01 and rejects Authorization. The private completed-execution feed accepts only its project- and network-bound feed service key.</p>
 <p>Admin Base URL: <code>/api/v1</code> &nbsp; Gateway Base URL: <code>/v1</code></p>
-<p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat and Embeddings accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication. Async image admission requires it for a persistent project/key/payload-bound job identity. Admission responses never replay model output bytes.</p>
+<p><code>X-Request-ID</code> in every response is a server operation ID. Send caller correlation in <code>X-UniRouter-Client-Request-ID</code>. Chat, Embeddings, Responses and Messages accept <code>Idempotency-Key</code> for tenant/key/payload-bound metadata-only deduplication; model output bytes are never stored or replayed. Async image admission requires the key for a persistent project/key/payload-bound job identity. Canonical model-deployment creation, atomic sealed-release authoring and every canonical release lifecycle write also require it. Authoring and lifecycle mutations accept one strict JSON object up to 16384 bytes. Authoring atomically commits a durable receipt, server-projected route evidence and one sealed validated release, but never activates it; a fresh author response is 201 with <code>Location</code>, while an exact later replay is 200 with the same <code>Location</code> and replay headers. Lifecycle writes atomically retain their release, slot, event, qualification, audit and frozen replay receipt; canary cancellation and legacy rollback remain no-License safety contractions.</p>
 <p>Image V1 is an isolated job plane using <code>unirouter.openai.images.gpt-image.v1</code>. Output is available only through authenticated proxy routes for exactly seven days after durable persistence. Provider success plus durable output records an observed charge-eligibility fact; the current text-token rate table is not reused and no wallet amount is invented.</p>
 <p>Agent discovery is explicit: a supervisor exchanges its root API key, then registers each child with an attenuation-only capability. Capabilities last at most five minutes, normally refresh near minute three, grant model-gateway authority only, and never grant Tool, IAM, database or export authority. Model calls reserve cost, tokens, rolling rate, and concurrency on every signed ancestor before any upstream dispatch; Redis uncertainty denies new capability admission.</p>
 <table>
@@ -825,6 +886,8 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/v1/models</code></td><td>OpenAI-compatible model list</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/chat/completions</code></td><td>OpenAI-compatible chat completions</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/embeddings</code></td><td>OpenAI-compatible embeddings</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/responses</code></td><td>Strict OpenAI Responses non-stream text subset; Bearer auth, metadata-only at-most-once idempotency, cache bypass</td></tr>
+<tr><td class="method">POST</td><td><code>/v1/messages</code></td><td>Strict Anthropic Messages non-stream text subset; x-api-key plus anthropic-version 2023-06-01, metadata-only at-most-once idempotency, cache bypass</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/media/jobs</code></td><td>Submit one asynchronous GPT Image V1 job using a project root API key</td></tr>
 <tr><td class="method">GET</td><td><code>/v1/media/jobs/{id}</code></td><td>Read tenant-scoped image job metadata</td></tr>
 <tr><td class="method">POST</td><td><code>/v1/media/jobs/{id}/cancel</code></td><td>Request cancellation without refund semantics</td></tr>
@@ -843,23 +906,40 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">PUT</td><td><code>/api/v1/me/password</code></td><td>Change current password</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/dashboard/stats</code></td><td>Dashboard statistics</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channels</code></td><td>List channels</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/channels</code></td><td>Create channel</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/channels</code></td><td>Retired legacy mutation; returns 410, use canonical model deployments</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channels/{id}</code></td><td>Get channel</td></tr>
-<tr><td class="method">PUT</td><td><code>/api/v1/channels/{id}</code></td><td>Update channel</td></tr>
-<tr><td class="method">DELETE</td><td><code>/api/v1/channels/{id}</code></td><td>Delete channel</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/channels/{id}/test</code></td><td>Test channel</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/channels/{id}</code></td><td>Retired legacy mutation; returns 410, use canonical model deployments</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/channels/{id}</code></td><td>Retired legacy mutation; returns 410, use canonical model deployments</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/channels/{id}/test</code></td><td>Retired legacy mutation; returns 410, use canonical deployment probes</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channels/{id}/provider-models</code></td><td>Read live provider model catalog without exposing credentials</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-endpoints</code></td><td>Canonical model, provider target, probe and runtime projection</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/activate</code></td><td>Activate a tested first provider target</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/canary</code></td><td>Add or replace a tested target through bounded canary</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/recover</code></td><td>Replace a retained but unavailable stable route with a tested target</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-deployments</code></td><td>List canonical deployment identities and five independent truth axes without a Gateway License</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-deployments/{deploymentID}</code></td><td>Read one exact deployment and operation without fallback</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployments</code></td><td>Transactionally create or exactly replay one deployment operation; requires a Gateway License and Idempotency-Key (24-hour actor-scoped receipt)</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes</code></td><td>Run one bounded real provider probe for Chat Completions, Embeddings, Responses or Messages; the latter two require the exact endpointprotocol profile and immutable public path</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals</code></td><td>Platform-admin append-only approval of one exact current Responses or Messages HTTPS probe; qualification only, with no public route or provider dispatch</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/provider-connections/{connectionID}/pause</code></td><td>Emergency-pause one provider connection without changing sibling deployment states; available without a Gateway License</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/provider-credential-bindings/{bindingID}/revoke</code></td><td>Irreversibly retire and scrub one provider credential binding; available without a Gateway License</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-deployment-releases</code></td><td>Read tenant-scoped public models, exact server-owned authoring baselines/options and actionable canonical v2 releases without a Gateway License</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases</code></td><td>Atomically author one sealed validated canonical v2 release from an exact server baseline; 201 on create, 200 on exact replay, Gateway License required; authoring does not activate</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-deployment-releases/{releaseRef}</code></td><td>Read one canonical v2 release, live slot and server-owned action descriptors without a Gateway License</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/activate-initial</code></td><td>Idempotently activate a parentless validated release as the first stable assignment; Gateway License required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/start-canary</code></td><td>Idempotently start the exact sealed child as a bounded canary; Gateway License required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/promote</code></td><td>Idempotently promote the exact active canary after current qualification; Gateway License required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/cancel-canary</code></td><td>Remove the exact canary as a no-License safety contraction; organization write role and Idempotency-Key remain required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/rollback-stable</code></td><td>Idempotently restore the retained qualified stable parent; Gateway License required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/cutover-legacy</code></td><td>Atomically replace the exact sealed v1 stable parent only after full Chat+Embeddings executable-plan parity; Gateway License required</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployment-releases/{releaseRef}/rollback-legacy</code></td><td>Restore the exact sealed and currently executable v1 parent as a no-License safety contraction; broken v2 health does not block rollback</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/activate</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/canary</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-endpoints/recover</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/provider-packs</code></td><td>List immutable fixture-verified Provider Conformance Packs</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/routing/preview</code></td><td>Preview routing candidates and exclusions</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/channel-keys</code></td><td>List upstream credentials</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/channel-keys</code></td><td>Create upstream credential</td></tr>
-<tr><td class="method">PUT</td><td><code>/api/v1/channel-keys/{id}</code></td><td>Update upstream credential</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/channel-keys/{id}/rotate</code></td><td>Probe and atomically rotate an upstream credential without pausing the route</td></tr>
-<tr><td class="method">DELETE</td><td><code>/api/v1/channel-keys/{id}</code></td><td>Delete upstream credential</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/channel-keys</code></td><td>Retired legacy mutation; returns 410, use canonical credential bindings</td></tr>
+<tr><td class="method">PUT</td><td><code>/api/v1/channel-keys/{id}</code></td><td>Retired legacy mutation; returns 410, use canonical credential bindings</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/channel-keys/{id}/rotate</code></td><td>Retired legacy mutation; returns 410, use canonical credential bindings</td></tr>
+<tr><td class="method">DELETE</td><td><code>/api/v1/channel-keys/{id}</code></td><td>Retired legacy mutation; returns 410, use canonical credential safety actions</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/keys</code></td><td>List API keys</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/keys</code></td><td>Create API key</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/keys/{id}</code></td><td>Get API key</td></tr>
@@ -925,7 +1005,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">PUT</td><td><code>/api/v1/license</code></td><td>Import offline license (platform admin)</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/users</code></td><td>List users</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/users</code></td><td>Create user</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/bootstrap/first-customer</code></td><td>Create first customer organization and zero wallet from a strict empty baseline</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/bootstrap/first-customer</code></td><td>Create first customer and zero wallet from an exact post-reset or current fresh-migration checkpoint; fresh production requires recorded release evidence</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/users/{id}</code></td><td>Update user</td></tr>
 <tr><td class="method">DELETE</td><td><code>/api/v1/users/{id}</code></td><td>Delete user</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-prices</code></td><td>List model prices (platform, organization, or billing admin)</td></tr>
@@ -966,16 +1046,16 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">GET</td><td><code>/api/v1/governance-simulation/offline-contract</code></td><td>Read the zero-persistence route/policy and Provider Change Firewall contract</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/governance-simulation/offline-preview</code></td><td>Compare immutable route, policy and Provider Pack snapshots without runtime promotion</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/runtime-changes</code></td><td>List bounded route-assignment releases</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes</code></td><td>Create an epoch- and Provider-Pack-pinned release draft</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes</code></td><td>Retired legacy mutation; returns 410, use canonical model-deployment releases</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/runtime-changes/slot</code></td><td>Read stable and canary assignment for one model</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/runtime-changes/{ref}</code></td><td>Read release evidence and lifecycle</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/validate</code></td><td>Revalidate same-clock snapshots and block breaking changes</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/activate-initial</code></td><td>Activate the first stable route when no stable or canary assignment exists</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/shadow</code></td><td>Advance a validated release to zero-traffic shadow</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/canary</code></td><td>Start a deterministic bounded canary</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/promote</code></td><td>Promote the current canary to stable</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/rollback</code></td><td>Restore the parent stable assignment</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/reject</code></td><td>Terminate a zero-traffic candidate while retaining evidence</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/validate</code></td><td>Retired legacy mutation; returns 410, use canonical model-deployment releases</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/activate-initial</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/shadow</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/canary</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/promote</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/rollback</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/runtime-changes/{ref}/reject</code></td><td>Retired legacy mutation; returns 410, use canonical release lifecycle actions</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-call-authorizations/contract</code></td><td>Read narrow-only model-call authorization semantics</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-call-authorizations</code></td><td>List tenant-scoped model-call authorization policies</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-call-authorizations</code></td><td>Create a non-enforcing authorization draft</td></tr>
@@ -1017,14 +1097,14 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	})
 
 	mux.Handle("GET /api/v1/channels", platformRoute(adminHandler.ListChannels))
-	mux.Handle("POST /api/v1/channels", platformRoute(adminHandler.CreateChannel))
+	mux.Handle("POST /api/v1/channels", platformRoute(legacyModelMutationRetired))
 	mux.Handle("GET /api/v1/channels/{id}", platformRoute(adminHandler.GetChannel))
-	mux.Handle("PUT /api/v1/channels/{id}", platformRoute(adminHandler.UpdateChannel))
-	mux.Handle("DELETE /api/v1/channels/{id}", platformRoute(adminHandler.DeleteChannel))
+	mux.Handle("PUT /api/v1/channels/{id}", platformRoute(legacyModelMutationRetired))
+	mux.Handle("DELETE /api/v1/channels/{id}", platformRoute(legacyModelMutationRetired))
 	mux.Handle("GET /api/v1/model-endpoints", platformRoute(adminHandler.ListModelEndpoints))
-	mux.Handle("POST /api/v1/model-endpoints/activate", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.ActivateModelEndpoint))
-	mux.Handle("POST /api/v1/model-endpoints/canary", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.StartModelEndpointCanary))
-	mux.Handle("POST /api/v1/model-endpoints/recover", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.RecoverModelEndpoint))
+	mux.Handle("POST /api/v1/model-endpoints/activate", platformRoute(legacyModelMutationRetired))
+	mux.Handle("POST /api/v1/model-endpoints/canary", platformRoute(legacyModelMutationRetired))
+	mux.Handle("POST /api/v1/model-endpoints/recover", platformRoute(legacyModelMutationRetired))
 	mux.Handle("GET /api/v1/provider-packs", platformRoute(adminHandler.ListProviderPacks))
 	mux.Handle("GET /api/v1/routing/preview", platformRoute(adminHandler.PreviewRouting))
 
@@ -1051,10 +1131,10 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("PUT /api/v1/projects/{id}/budget", projectBudgetRoute(adminHandler.UpdateProjectBudget))
 
 	mux.Handle("GET /api/v1/channel-keys", platformRoute(adminHandler.ListChannelKeys))
-	mux.Handle("POST /api/v1/channel-keys", platformRoute(adminHandler.CreateChannelKey))
-	mux.Handle("PUT /api/v1/channel-keys/{id}", platformRoute(adminHandler.UpdateChannelKey))
-	mux.Handle("POST /api/v1/channel-keys/{id}/rotate", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.RotateChannelKey))
-	mux.Handle("DELETE /api/v1/channel-keys/{id}", platformRoute(adminHandler.DeleteChannelKey))
+	mux.Handle("POST /api/v1/channel-keys", platformRoute(legacyModelMutationRetired))
+	mux.Handle("PUT /api/v1/channel-keys/{id}", platformRoute(legacyModelMutationRetired))
+	mux.Handle("POST /api/v1/channel-keys/{id}/rotate", platformRoute(legacyModelMutationRetired))
+	mux.Handle("DELETE /api/v1/channel-keys/{id}", platformRoute(legacyModelMutationRetired))
 
 	mux.Handle("GET /api/v1/wallet", billingRoute(adminHandler.GetWallet))
 	mux.Handle("POST /api/v1/wallet/topup", billingRoute(adminHandler.TopUp))
@@ -1075,7 +1155,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	registerProviderCostRoutes(mux, adminHandler, platformRoute)
 	registerProviderCOGSOfflineRoutes(mux, adminHandler, billingRoute)
 	registerGovernanceSimulationRoutes(mux, adminHandler, platformRoute)
-	registerRuntimeChangeRoutes(mux, adminHandler, platformRoute)
+	registerRuntimeChangeRoutes(mux, adminHandler, platformRoute, legacyModelMutationRetired)
 	registerModelAuthorizationRoutes(mux, adminHandler, orgAdminRoute)
 	registerWorkloadApplicationRoutes(mux, adminHandler, adminRoute)
 	registerAccessProvisioningRoutes(mux, adminHandler, adminRoute, orgAdminRoute)
@@ -1089,11 +1169,22 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	registerProvenancePassportRoutes(mux, adminHandler, orgAdminRoute)
 	registerRiskControlRoutes(mux, adminHandler, orgAdminRoute)
 	registerModelGovernanceRoutes(mux, adminHandler, modelGovernanceRouteGuards{
-		organization: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
-		projectRead:  licensedRoute(licensing.FeatureModelGovernance, projectReadRoute),
+		organizationRead: licensedRoute(licensing.FeatureModelGovernance, func(h http.HandlerFunc) http.Handler {
+			return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer)
+		}),
+		organizationWrite: licensedRoute(licensing.FeatureModelGovernance, orgAdminRoute),
+		projectRead:       licensedRoute(licensing.FeatureModelGovernance, projectReadRoute),
 		modelSetRead: licensedRoute(licensing.FeatureModelGovernance, func(h http.HandlerFunc) http.Handler {
 			return adminRoute(h)
 		}),
+	})
+	registerModelDeploymentRoutes(mux, adminHandler, modelDeploymentRouteGuards{
+		read: func(h http.HandlerFunc) http.Handler {
+			return organizationRoleRoute(h, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer)
+		},
+		write:   licensedRoute(licensing.FeatureGateway, orgAdminRoute),
+		approve: licensedRoute(licensing.FeatureGateway, platformRoute),
+		safety:  orgAdminRoute,
 	})
 	registerInvocationOptimizationRoutes(
 		mux,
@@ -1158,7 +1249,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	})
 
 	registerGlobalControlRoutes(mux, adminHandler, platformRoute, licensedRoute(licensing.FeatureGuardrails, platformRoute))
-	mux.Handle("POST /api/v1/channels/{id}/test", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.TestChannel))
+	mux.Handle("POST /api/v1/channels/{id}/test", platformRoute(legacyModelMutationRetired))
 	mux.Handle("GET /api/v1/channels/{id}/provider-models", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.ListChannelProviderModels))
 	mux.Handle("GET /api/v1/wallet/transactions/export", billingRoute(adminHandler.ExportWalletTransactions))
 	metricsHandler := middleware.MetricsMiddleware(mux)
@@ -1318,10 +1409,12 @@ func findMigrationsDir() string {
 			return dir
 		}
 	}
-	// Try relative to CWD
-	dir := "migrations"
-	if info, e := os.Stat(dir); e == nil && info.IsDir() {
-		return dir
+	// Try relative to CWD. Package tests run with cmd/uniroute as their CWD,
+	// while source-checkout invocations run from the repository root.
+	for _, dir := range []string{"migrations", filepath.Join("..", "..", "migrations")} {
+		if info, e := os.Stat(dir); e == nil && info.IsDir() {
+			return dir
+		}
 	}
 	return "./migrations"
 }

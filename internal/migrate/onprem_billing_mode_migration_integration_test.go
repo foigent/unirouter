@@ -67,6 +67,9 @@ func TestOnPremBillingModeMigrationCleanRollbackAndReapply(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
 
+	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
+	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
+	execMigrationDown(t, ctx, pool, "000069_model_deployment_expand.down.sql")
 	execMigrationDown(t, ctx, pool, "000068_provider_reported_model_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000066_runtime_assignment_projection.down.sql")
@@ -144,6 +147,9 @@ INSERT INTO freeze_idempotency (
 VALUES (
     'op_billing_mode_observation',960002,'frozen','observation-price-v1','cost_observation')`)
 	require.NoError(t, err)
+	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
+	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
+	execMigrationDown(t, ctx, pool, "000069_model_deployment_expand.down.sql")
 	execMigrationDown(t, ctx, pool, "000068_provider_reported_model_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000067_call_log_route_identity.down.sql")
 	execMigrationDown(t, ctx, pool, "000066_runtime_assignment_projection.down.sql")
@@ -181,6 +187,103 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	// Migration 79 changes only the active_channels License count authority.
+	// Ordered rollback helpers restore its guarded M78 counter contract before
+	// exercising any older down migration; M79's own tests execute it directly.
+	if name != "000079_canonical_connection_license_authority.down.sql" {
+		var connectionLicenseAuthorityApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000079_canonical_connection_license_authority')`).Scan(&connectionLicenseAuthorityApplied))
+		if connectionLicenseAuthorityApplied {
+			execMigrationDown(t, ctx, pool, "000079_canonical_connection_license_authority.down.sql")
+		}
+	}
+	// Migration 78 is the immediate child of M77. Shared rollback helpers first
+	// remove its empty authoring authority; M78's own tests execute its down SQL
+	// directly to prove durable-evidence and future-migration refusal.
+	if name != "000079_canonical_connection_license_authority.down.sql" &&
+		name != "000078_atomic_model_release_authoring.down.sql" {
+		var authoringApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000078_atomic_model_release_authoring')`).Scan(&authoringApplied))
+		if authoringApplied {
+			execMigrationDown(t, ctx, pool, "000078_atomic_model_release_authoring.down.sql")
+		}
+	}
+	// Migration 77 is the immediate child of M76. Ordered rollback helpers
+	// remove its empty public-execution authority before exercising 76 and
+	// below; M77's own tests execute its down SQL directly.
+	if name != "000079_canonical_connection_license_authority.down.sql" &&
+		name != "000078_atomic_model_release_authoring.down.sql" &&
+		name != "000077_public_model_execution_authority.down.sql" {
+		var publicExecutionApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000077_public_model_execution_authority')`).Scan(&publicExecutionApplied))
+		if publicExecutionApplied {
+			execMigrationDown(t, ctx, pool, "000077_public_model_execution_authority.down.sql")
+		}
+	}
+	// Migration 76 is the immediate child of M75. Shared rollback helpers remove
+	// its empty lifecycle-receipt contract before exercising 75 and below;
+	// M76's own tests execute its down SQL directly to prove refusal semantics.
+	if name != "000079_canonical_connection_license_authority.down.sql" &&
+		name != "000078_atomic_model_release_authoring.down.sql" &&
+		name != "000077_public_model_execution_authority.down.sql" &&
+		name != "000076_model_deployment_lifecycle_receipts.down.sql" {
+		var lifecycleReceiptApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000076_model_deployment_lifecycle_receipts')`).Scan(&lifecycleReceiptApplied))
+		if lifecycleReceiptApplied {
+			execMigrationDown(t, ctx, pool, "000076_model_deployment_lifecycle_receipts.down.sql")
+		}
+	}
+	// Migration 75 is the immediate child of the deployment-create receipt.
+	// Shared ordered rollback helpers remove its empty production-qualification
+	// contract before exercising 74 and below; M75's own tests still execute its
+	// down SQL directly to prove future-version and durable-evidence refusal.
+	if name != "000079_canonical_connection_license_authority.down.sql" &&
+		name != "000078_atomic_model_release_authoring.down.sql" &&
+		name != "000077_public_model_execution_authority.down.sql" &&
+		name != "000076_model_deployment_lifecycle_receipts.down.sql" &&
+		name != "000075_model_operation_production_qualification.down.sql" {
+		var qualificationApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000075_model_operation_production_qualification')`).Scan(&qualificationApplied))
+		if qualificationApplied {
+			execMigrationDown(t, ctx, pool, "000075_model_operation_production_qualification.down.sql")
+		}
+	}
+	// Migration 74 is the immediate child of the model-execution dispatch
+	// fence. Ordered rollback tests for 73 and below remove the empty admin
+	// mutation-receipt contract first; direct down-SQL tests still exercise its
+	// own later-migration and durable-row guards.
+	if name == "000073_model_execution_dispatch_fence.down.sql" {
+		var createReceiptApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000074_model_deployment_create_idempotency')`).Scan(&createReceiptApplied))
+		if createReceiptApplied {
+			execMigrationDown(t, ctx, pool, "000074_model_deployment_create_idempotency.down.sql")
+		}
+	}
+	// Migration 72 is an expand-only consumer of migration 71. Older rollback
+	// tests that intentionally exercise 71 and below first remove this immediate
+	// dependent while direct down-SQL tests still verify the ordered guard.
+	if name == "000071_model_execution_evidence.down.sql" {
+		var projectionApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000072_execution_evidence_projection')`).Scan(&projectionApplied))
+		if projectionApplied {
+			execMigrationDown(t, ctx, pool, "000073_model_execution_dispatch_fence.down.sql")
+			execMigrationDown(t, ctx, pool, "000072_execution_evidence_projection.down.sql")
+		}
+	}
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))

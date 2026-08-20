@@ -12,13 +12,14 @@ func TestCatalogCoversEveryFixedProfileWithImmutableEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Catalog failed: %v", err)
 	}
-	if len(profiles) != 3 {
-		t.Fatalf("profiles=%d want 3", len(profiles))
+	if len(profiles) != 4 {
+		t.Fatalf("profiles=%d want 4", len(profiles))
 	}
 	wantRuntimeState := map[string]string{
-		ProfileOpenAIResponsesText: RuntimeContractOnly,
-		ProfileCohereRerankV2:      RuntimeContractOnly,
-		ProfileOpenAIImageGPT:      RuntimeRepositoryImageV1,
+		ProfileOpenAIResponsesText:   RuntimeContractOnly,
+		ProfileAnthropicMessagesText: RuntimeContractOnly,
+		ProfileCohereRerankV2:        RuntimeContractOnly,
+		ProfileOpenAIImageGPT:        RuntimeRepositoryImageV1,
 	}
 	var schemaDigest string
 	for _, profile := range profiles {
@@ -60,9 +61,9 @@ func TestOfflineConformanceMatchesGoldenDeterministically(t *testing.T) {
 	if !bytes.Equal(firstJSON, secondJSON) {
 		t.Fatalf("offline report is not deterministic\nfirst=%s\nsecond=%s", firstJSON, secondJSON)
 	}
-	if first.Summary.Profiles != 3 ||
-		first.Summary.Cases != 25 ||
-		first.Summary.Passed != 25 ||
+	if first.Summary.Profiles != 4 ||
+		first.Summary.Cases != 41 ||
+		first.Summary.Passed != 41 ||
 		first.Summary.Failed != 0 {
 		t.Fatalf("summary=%+v", first.Summary)
 	}
@@ -78,4 +79,18 @@ func TestOfflineConformanceMatchesGoldenDeterministically(t *testing.T) {
 	if !bytes.Equal(formatted, golden) {
 		t.Fatalf("golden report drifted\nactual=%s\ngolden=%s", formatted, golden)
 	}
+}
+
+func TestOfflineConformanceResolvesManifestExactProfileVersion(t *testing.T) {
+	v1 := openAIResponsesProfile{}
+	v2Descriptor := v1.Descriptor()
+	v2Descriptor.ProfileVersion = "2.0.0"
+	registry := newRegistry(
+		descriptorOverrideProfile{Profile: v1, descriptor: v2Descriptor},
+		anthropicMessagesProfile{},
+		cohereRerankProfile{},
+		openAIImageProfile{},
+	)
+	_, err := RunOffline(context.Background(), registry)
+	assertProtocolConfigurationError(t, err, "unknown_profile_version")
 }

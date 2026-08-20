@@ -3,12 +3,13 @@ package payloadpolicy
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"sync"
+
+	"github.com/uniroute/unirouter/internal/gatewayerror"
 )
 
 const (
@@ -248,7 +249,7 @@ func requestMiddleware(
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			maxBytes, err := maximum()
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Payload policy is unavailable")
+				writeError(w, r, http.StatusInternalServerError, "server_error.internal_error", "Payload policy is unavailable")
 				return
 			}
 			id := int64(0)
@@ -257,7 +258,7 @@ func requestMiddleware(
 			}
 			body, lease, err := budget.ReadAll(r.Body, id, maxBytes)
 			if err != nil {
-				writeReadError(w, err)
+				writeReadError(w, r, err)
 				return
 			}
 			defer lease.Release()
@@ -302,24 +303,18 @@ func ReplaceRequestBody(r *http.Request, body []byte) (*http.Request, error) {
 	return r, nil
 }
 
-func writeReadError(w http.ResponseWriter, err error) {
+func writeReadError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrPayloadTooLarge):
-		writeError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "validation_error.payload_too_large", "Request payload exceeds the endpoint safety limit")
+		writeError(w, r, http.StatusRequestEntityTooLarge, "validation_error.payload_too_large", "Request payload exceeds the endpoint safety limit")
 	case errors.Is(err, ErrBudgetExceeded):
 		w.Header().Set("Retry-After", "1")
-		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.payload_capacity_exceeded", "Payload capacity is temporarily unavailable")
+		writeError(w, r, http.StatusServiceUnavailable, "server_error.payload_capacity_exceeded", "Payload capacity is temporarily unavailable")
 	default:
-		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "Failed to read request body")
+		writeError(w, r, http.StatusBadRequest, "validation_error.invalid_request", "Failed to read request body")
 	}
 }
 
-func writeError(w http.ResponseWriter, status int, errorType, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"error": map[string]interface{}{
-			"type": errorType, "code": code, "message": message, "param": nil,
-		},
-	})
+func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	gatewayerror.WriteRequest(w, r, status, code, message)
 }

@@ -2,12 +2,15 @@ package limitpolicy
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -341,11 +344,18 @@ func (s *Service) BuiltinLimits() map[string]int64 {
 func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reservation, error) {
 	request.Phase = normalizedAdmissionPhase(request.Phase)
 	if s == nil || s.rdb == nil || request.OperationID == "" || len(request.OperationID) > 64 ||
-		request.Subject.OrgID <= 0 || request.Subject.APIKeyID <= 0 || request.Subject.Model == "" ||
+		request.Subject.OrgID <= 0 || request.Subject.APIKeyID <= 0 ||
+		(request.Phase == AdmissionPhaseUnscopedRate && request.Subject.Model != "") ||
+		(request.Phase != AdmissionPhaseUnscopedRate && request.Subject.Model == "") ||
+		request.Subject.Model != strings.TrimSpace(request.Subject.Model) ||
+		!validRequestedModelForPhase(request.Phase, request.RequestedModel) ||
 		request.EstimatedInput < 0 || request.ReservedOutput < 0 ||
 		request.Phase == "" ||
-		(request.Phase == AdmissionPhaseFull && request.EstimatedInput+request.ReservedOutput <= 0) ||
-		(request.Phase != AdmissionPhaseFull && request.EstimatedInput+request.ReservedOutput != 0) {
+		(admissionPhaseIncludesTokens(request.Phase) && request.EstimatedInput+request.ReservedOutput <= 0) ||
+		(!admissionPhaseIncludesTokens(request.Phase) && request.EstimatedInput+request.ReservedOutput != 0) {
+		return nil, ErrInvalidRequest
+	}
+	if !s.validateRateAdmissionReceipt(&request) {
 		return nil, ErrInvalidRequest
 	}
 	if !validOptionalLimit(request.Subject.GrantRPSLimit) ||
@@ -359,23 +369,23 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 	}
 	// A configured zero is an exact deny, not an omitted limit. Positive grant
 	// limits are enforced by the shared grant bucket below.
-	if request.Phase != AdmissionPhaseExecution && request.Subject.GrantRPSLimit != nil && *request.Subject.GrantRPSLimit == 0 {
+	if admissionPhaseIncludesRate(request.Phase) && request.Subject.GrantRPSLimit != nil && *request.Subject.GrantRPSLimit == 0 {
 		return nil, ErrRPSExceeded
 	}
-	if request.Phase != AdmissionPhaseExecution && request.Subject.GrantRPMLimit != nil && *request.Subject.GrantRPMLimit == 0 {
+	if admissionPhaseIncludesRate(request.Phase) && request.Subject.GrantRPMLimit != nil && *request.Subject.GrantRPMLimit == 0 {
 		return nil, ErrRPMExceeded
 	}
-	if request.Phase != AdmissionPhaseRate && request.Subject.GrantConcurrencyLimit != nil && *request.Subject.GrantConcurrencyLimit == 0 {
+	if admissionPhaseIncludesConcurrency(request.Phase) && request.Subject.GrantConcurrencyLimit != nil && *request.Subject.GrantConcurrencyLimit == 0 {
 		return nil, ErrConcurrencyExceeded
 	}
 	if request.Subject.AccessCredentialID > 0 {
-		if request.Phase != AdmissionPhaseExecution && request.Subject.BaseRPSLimit == 0 {
+		if admissionPhaseIncludesRate(request.Phase) && request.Subject.BaseRPSLimit == 0 {
 			return nil, ErrRPSExceeded
 		}
-		if request.Phase != AdmissionPhaseExecution && request.Subject.BaseRPMLimit == 0 {
+		if admissionPhaseIncludesRate(request.Phase) && request.Subject.BaseRPMLimit == 0 {
 			return nil, ErrRPMExceeded
 		}
-		if request.Phase != AdmissionPhaseRate && request.Subject.CredentialConcurrencyLimit != nil && *request.Subject.CredentialConcurrencyLimit == 0 {
+		if admissionPhaseIncludesConcurrency(request.Phase) && request.Subject.CredentialConcurrencyLimit != nil && *request.Subject.CredentialConcurrencyLimit == 0 {
 			return nil, ErrConcurrencyExceeded
 		}
 	}
@@ -407,7 +417,17 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 		request.WorkloadClass = workloadadmission.ClassInteractive
 	}
 
-	policies := projectPoliciesForAdmission(s.matchingPolicies(request.Subject), request.Phase)
+	requestedModels := []string(nil)
+	if request.Phase == AdmissionPhaseModelExecution {
+		requestedModels = []string{request.RequestedModel}
+	}
+	policies, projectionValid := projectPoliciesForAdmission(
+		s.matchingPoliciesForModels(request.Subject, requestedModels, request.Phase == AdmissionPhaseModelExecution),
+		request.Phase, request.RateReceipt.contracts,
+	)
+	if !projectionValid {
+		return nil, ErrStateUnavailable
+	}
 	version := runtimePolicySetVersion(policies, s.workload.Version())
 	if len(policies)+1 > s.options.MaxMatchingPolicies {
 		decision := Decision{
@@ -440,7 +460,8 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 					ReservedTokens: request.EstimatedInput + request.ReservedOutput,
 					TPMLimit:       policy.TPMLimit,
 					Fallback:       true, Mode: policy.Mode,
-					Tokenless: request.Phase != AdmissionPhaseFull,
+					Tokenless:    !admissionPhaseIncludesTokens(request.Phase),
+					rateContract: rateAdmissionContractForPolicy(policy, runtimeRef, rateAdmissionKindFallback),
 				})
 				continue
 			}
@@ -475,10 +496,14 @@ func (s *Service) Reserve(ctx context.Context, request AdmissionRequest) (*Reser
 			ReservedTokens: request.EstimatedInput + request.ReservedOutput,
 			TPMLimit:       policy.TPMLimit,
 			Fallback:       false, Mode: policy.Mode,
-			Tokenless: request.Phase != AdmissionPhaseFull,
+			Tokenless:    !admissionPhaseIncludesTokens(request.Phase),
+			rateContract: rateAdmissionContractForPolicy(policy, runtimeRef, rateAdmissionKindRedis),
 		})
 	}
-	if request.Phase == AdmissionPhaseRate {
+	if request.Phase == AdmissionPhaseRate || request.Phase == AdmissionPhaseUnscopedRate {
+		reservation.rateReceipt = s.newRateAdmissionReceipt(
+			request.OperationID, request.RequestedModel, request.Subject, consumedRateContractsFromReservation(reservation),
+		)
 		return reservation, nil
 	}
 	workloadReservation, workloadDecision, workloadErr := s.workload.Reserve(ctx, workloadadmission.Request{
@@ -539,7 +564,34 @@ func (s *Service) Finalize(ctx context.Context, reservation *Reservation, actual
 			terminalErrors = append(terminalErrors, err)
 		}
 	}
-	return errors.Join(terminalErrors...)
+	err := errors.Join(terminalErrors...)
+	if err == nil && !reservation.rateReceipt.isZero() {
+		reservation.rateFinalized = true
+	}
+	return err
+}
+
+// FinalizeRateAdmission settles a successful rate-only reservation and returns
+// the opaque authority required by the matching model-execution phase. Receipt
+// issuance is inseparable from successful finalization and the exact derived
+// main operation identity.
+func (s *Service) FinalizeRateAdmission(ctx context.Context, reservation *Reservation, mainOperationID string) (RateAdmissionReceipt, error) {
+	if s == nil || reservation == nil || reservation.rateReceipt.isZero() {
+		return RateAdmissionReceipt{}, ErrInvalidRequest
+	}
+	expectedRateOperationID, valid := RateAdmissionOperationID(mainOperationID)
+	if !valid || expectedRateOperationID != reservation.OperationID ||
+		reservation.rateReceipt.rateOperationID != reservation.OperationID {
+		return RateAdmissionReceipt{}, ErrInvalidRequest
+	}
+	if err := s.Finalize(ctx, reservation, 0); err != nil {
+		return RateAdmissionReceipt{}, err
+	}
+	receipt, valid := reservation.rateAdmissionReceiptFor(mainOperationID)
+	if !valid {
+		return RateAdmissionReceipt{}, ErrInvalidRequest
+	}
+	return receipt, nil
 }
 
 // Extend reserves another bounded output-token step across every matched TPM
@@ -659,14 +711,25 @@ func parseStoreResult(result interface{}) (storeResult, error) {
 }
 
 func (s *Service) matchingPolicies(subject Subject) []Policy {
+	return s.matchingPoliciesForModels(subject, nil, false)
+}
+
+// matchingPoliciesForModels applies topology-neutral selectors once and unions
+// the server-authorized public alias with the resolved canonical model. The
+// additional models are accepted only from model_execution after receipt and
+// Gateway marker validation; early unscoped admission always passes nil.
+// Model execution also preserves explicit built-in zero limits in this
+// read-only contract view so a positive-to-deny change cannot disappear or be
+// reinterpreted as a default before receipt drift is checked.
+func (s *Service) matchingPoliciesForModels(subject Subject, additionalModels []string, preserveExplicitRateDeny bool) []Policy {
 	subject = materializeGrantRateDefaults(subject)
 	snapshot := s.snapshot.Load()
 	baseRPS := subject.BaseRPSLimit
-	if baseRPS <= 0 {
+	if baseRPS <= 0 && !(preserveExplicitRateDeny && subject.AccessCredentialID > 0 && baseRPS == 0) {
 		baseRPS = 10
 	}
 	baseRPM := subject.BaseRPMLimit
-	if baseRPM <= 0 {
+	if baseRPM <= 0 && !(preserveExplicitRateDeny && subject.AccessCredentialID > 0 && baseRPM == 0) {
 		baseRPM = 60
 	}
 	// Count every authenticated model-call attempt against its API-key window
@@ -674,6 +737,18 @@ func (s *Service) matchingPolicies(subject Subject) []Policy {
 	// preserves the historical middleware contract and prevents rejected-work
 	// amplification from bypassing the caller's own rate boundary.
 	policies := make([]Policy, 0, 3)
+	seenRuntimeRefs := make(map[string]struct{})
+	appendPolicy := func(policy Policy) {
+		runtimeRef := policy.RuntimeBucket
+		if runtimeRef == "" {
+			runtimeRef = policy.Ref
+		}
+		if _, exists := seenRuntimeRefs[runtimeRef]; exists {
+			return
+		}
+		seenRuntimeRefs[runtimeRef] = struct{}{}
+		policies = append(policies, policy)
+	}
 	orgID := subject.OrgID
 	if subject.AccessCredentialID > 0 {
 		credentialID := subject.AccessCredentialID
@@ -686,7 +761,7 @@ func (s *Service) matchingPolicies(subject Subject) []Policy {
 			ConcurrencyLimit: optionalLimitValue(subject.CredentialConcurrencyLimit), Builtin: true,
 			RuntimeBucket: "builtin:access-credential:" + subject.CredentialRef,
 		}
-		policies = append(policies, credentialPolicy)
+		appendPolicy(credentialPolicy)
 	} else {
 		keyID := subject.APIKeyID
 		apiKeyRate := Policy{
@@ -695,7 +770,7 @@ func (s *Service) matchingPolicies(subject Subject) []Policy {
 			RPSLimit: baseRPS, RPMLimit: baseRPM, Builtin: true,
 			RuntimeBucket: fmt.Sprintf("builtin:api-key-rate:%d", subject.APIKeyID),
 		}
-		policies = append(policies, apiKeyRate)
+		appendPolicy(apiKeyRate)
 	}
 	if subject.AccessGrantID > 0 {
 		grantID := subject.AccessGrantID
@@ -714,8 +789,8 @@ func (s *Service) matchingPolicies(subject Subject) []Policy {
 			ConcurrencyLimit: optionalLimitValue(subject.GrantConcurrencyLimit),
 			Builtin:          true, RuntimeBucket: fmt.Sprintf("builtin:access-grant:%d", grantID),
 		}
-		if grantPolicy.RPSLimit > 0 || grantPolicy.RPMLimit > 0 || grantPolicy.ConcurrencyLimit > 0 {
-			policies = append(policies, grantPolicy)
+		if grantPolicy.RPSLimit > 0 || grantPolicy.RPMLimit > 0 || grantPolicy.ConcurrencyLimit > 0 || preserveExplicitRateDeny {
+			appendPolicy(grantPolicy)
 		}
 	}
 	if snapshot == nil {
@@ -724,13 +799,36 @@ func (s *Service) matchingPolicies(subject Subject) []Policy {
 	candidates := snapshot.index.candidates(subject)
 	if candidates == nil && len(snapshot.policies) > 0 {
 		candidates = snapshot.policies
+	} else {
+		for _, model := range additionalModels {
+			if model != "" && model != subject.Model {
+				candidates = append(candidates, snapshot.index.byModel[model]...)
+			}
+		}
 	}
 	for _, policy := range candidates {
-		if policy.Matches(subject) {
-			policies = append(policies, policy)
+		if policyMatchesAnyModel(policy, subject, additionalModels) {
+			appendPolicy(policy)
 		}
 	}
 	return policies
+}
+
+func policyMatchesAnyModel(policy Policy, subject Subject, additionalModels []string) bool {
+	model := policy.Model
+	policy.Model = ""
+	if !policy.Matches(subject) {
+		return false
+	}
+	if model == "" || model == subject.Model {
+		return true
+	}
+	for _, candidate := range additionalModels {
+		if model == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func materializeGrantRateDefaults(subject Subject) Subject {
@@ -748,27 +846,185 @@ func materializeGrantRateDefaults(subject Subject) Subject {
 	return subject
 }
 
-func projectPoliciesForAdmission(policies []Policy, phase string) []Policy {
+func projectPoliciesForAdmission(policies []Policy, phase string, consumedRateContracts []rateAdmissionContract) ([]Policy, bool) {
 	if phase == AdmissionPhaseFull {
-		return policies
+		return policies, true
+	}
+	contracts, valid := normalizeConsumedRateContracts(consumedRateContracts)
+	if !valid {
+		return nil, false
+	}
+	consumedByRuntimeRef := make(map[string]rateAdmissionContract, len(contracts))
+	for _, contract := range contracts {
+		consumedByRuntimeRef[contract.runtimeRef] = contract
 	}
 	projected := make([]Policy, 0, len(policies))
 	for _, policy := range policies {
 		switch phase {
-		case AdmissionPhaseRate:
+		case AdmissionPhaseRate, AdmissionPhaseUnscopedRate:
 			policy.TPMLimit = 0
 			policy.ConcurrencyLimit = 0
 		case AdmissionPhaseExecution:
 			policy.RPSLimit = 0
 			policy.RPMLimit = 0
 			policy.TPMLimit = 0
+		case AdmissionPhaseModelExecution:
+			runtimeRef := policy.RuntimeBucket
+			if runtimeRef == "" {
+				runtimeRef = policy.Ref
+			}
+			if contract, consumed := consumedByRuntimeRef[runtimeRef]; consumed {
+				if !rateAdmissionContractMatchesPolicy(contract, policy, runtimeRef) {
+					return nil, false
+				}
+				policy.RPSLimit = 0
+				policy.RPMLimit = 0
+			}
 		}
 		if policy.RPSLimit == 0 && policy.RPMLimit == 0 && policy.TPMLimit == 0 && policy.ConcurrencyLimit == 0 {
 			continue
 		}
 		projected = append(projected, policy)
 	}
-	return projected
+	return projected, true
+}
+
+func normalizeConsumedRateContracts(contracts []rateAdmissionContract) ([]rateAdmissionContract, bool) {
+	if len(contracts) == 0 {
+		return nil, true
+	}
+	if len(contracts) > 128 {
+		return nil, false
+	}
+	unique := make(map[string]rateAdmissionContract, len(contracts))
+	for _, contract := range contracts {
+		if contract.runtimeRef == "" || contract.runtimeRef != strings.TrimSpace(contract.runtimeRef) || len(contract.runtimeRef) > 512 ||
+			contract.policyRef == "" || contract.policyRef != strings.TrimSpace(contract.policyRef) || len(contract.policyRef) > 512 ||
+			contract.version <= 0 || contract.selectorHash == "" || contract.selectorHash != strings.TrimSpace(contract.selectorHash) ||
+			contract.rpsLimit < 0 || contract.rpmLimit < 0 || (contract.rpsLimit == 0 && contract.rpmLimit == 0) ||
+			(contract.mode != ModeShadow && contract.mode != ModeEnforce) ||
+			(contract.failureMode != FailureFailClosed && contract.failureMode != FailureLastKnownSafe) ||
+			(contract.kind != rateAdmissionKindRedis && contract.kind != rateAdmissionKindFallback) {
+			return nil, false
+		}
+		if existing, duplicate := unique[contract.runtimeRef]; duplicate && existing != contract {
+			return nil, false
+		}
+		unique[contract.runtimeRef] = contract
+	}
+	result := make([]rateAdmissionContract, 0, len(unique))
+	for _, contract := range unique {
+		result = append(result, contract)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].runtimeRef == result[right].runtimeRef {
+			return result[left].policyRef < result[right].policyRef
+		}
+		return result[left].runtimeRef < result[right].runtimeRef
+	})
+	return result, true
+}
+
+func rateAdmissionContractForPolicy(policy Policy, runtimeRef, kind string) rateAdmissionContract {
+	if policy.RPSLimit <= 0 && policy.RPMLimit <= 0 {
+		return rateAdmissionContract{}
+	}
+	return rateAdmissionContract{
+		runtimeRef: runtimeRef, policyRef: policy.Ref, version: policy.Version,
+		selectorHash: policy.selectorHash(), rpsLimit: policy.RPSLimit, rpmLimit: policy.RPMLimit,
+		mode: policy.Mode, failureMode: policy.FailureMode, builtin: policy.Builtin, kind: kind,
+	}
+}
+
+func rateAdmissionContractMatchesPolicy(contract rateAdmissionContract, policy Policy, runtimeRef string) bool {
+	return contract.runtimeRef == runtimeRef && contract.policyRef == policy.Ref && contract.version == policy.Version &&
+		contract.selectorHash == policy.selectorHash() && contract.rpsLimit == policy.RPSLimit && contract.rpmLimit == policy.RPMLimit &&
+		contract.mode == policy.Mode && contract.failureMode == policy.FailureMode && contract.builtin == policy.Builtin
+}
+
+func consumedRateContractsFromReservation(reservation *Reservation) []rateAdmissionContract {
+	if reservation == nil {
+		return nil
+	}
+	contracts := make([]rateAdmissionContract, 0, len(reservation.Items))
+	for _, item := range reservation.Items {
+		if item.rateContract.runtimeRef != "" {
+			contracts = append(contracts, item.rateContract)
+		}
+	}
+	contracts, _ = normalizeConsumedRateContracts(contracts)
+	return contracts
+}
+
+func (s *Service) newRateAdmissionReceipt(rateOperationID, requestedModel string, subject Subject, contracts []rateAdmissionContract) RateAdmissionReceipt {
+	mainOperationID, valid := mainOperationIDFromRateAdmission(rateOperationID)
+	if !valid || s == nil || strings.TrimSpace(s.nodeID) == "" || requestedModel != strings.TrimSpace(requestedModel) {
+		return RateAdmissionReceipt{}
+	}
+	contracts, valid = normalizeConsumedRateContracts(contracts)
+	if !valid {
+		return RateAdmissionReceipt{}
+	}
+	receipt := RateAdmissionReceipt{
+		rateOperationID: rateOperationID, mainOperationID: mainOperationID,
+		requestedModel: requestedModel,
+		orgID:          subject.OrgID, projectID: subject.ProjectID, apiKeyID: subject.APIKeyID,
+		credentialID: subject.AccessCredentialID, credentialRef: subject.CredentialRef,
+		grantID: subject.AccessGrantID, nodeID: s.nodeID, contracts: contracts,
+	}
+	receipt.authenticator = s.rateAdmissionReceiptAuthenticator(receipt)
+	return receipt
+}
+
+func (s *Service) validateRateAdmissionReceipt(request *AdmissionRequest) bool {
+	if request == nil || s == nil {
+		return false
+	}
+	if request.Phase != AdmissionPhaseModelExecution {
+		return request.RateReceipt.isZero()
+	}
+	receipt := request.RateReceipt
+	if receipt.isZero() || receipt.mainOperationID != request.OperationID {
+		return false
+	}
+	expectedRateOperationID, valid := RateAdmissionOperationID(request.OperationID)
+	if !valid || receipt.rateOperationID != expectedRateOperationID ||
+		receipt.requestedModel != request.RequestedModel || receipt.nodeID != s.nodeID ||
+		receipt.orgID != request.Subject.OrgID || receipt.projectID != request.Subject.ProjectID ||
+		receipt.apiKeyID != request.Subject.APIKeyID || receipt.credentialID != request.Subject.AccessCredentialID ||
+		receipt.credentialRef != request.Subject.CredentialRef || receipt.grantID != request.Subject.AccessGrantID {
+		return false
+	}
+	contracts, valid := normalizeConsumedRateContracts(receipt.contracts)
+	if !valid {
+		return false
+	}
+	receipt.contracts = contracts
+	expectedAuthenticator := s.rateAdmissionReceiptAuthenticator(receipt)
+	if len(receipt.authenticator) != sha256.Size || !hmac.Equal(receipt.authenticator, expectedAuthenticator) {
+		return false
+	}
+	request.RateReceipt = receipt
+	return true
+}
+
+func (s *Service) rateAdmissionReceiptAuthenticator(receipt RateAdmissionReceipt) []byte {
+	if s == nil || strings.TrimSpace(s.nodeID) == "" {
+		return nil
+	}
+	mac := hmac.New(sha256.New, []byte(s.nodeID))
+	_, _ = fmt.Fprintf(
+		mac, "unirouter.rate-admission-receipt.v2|%q|%q|%q|%d|%d|%d|%d|%q|%d|%q",
+		receipt.rateOperationID, receipt.mainOperationID, receipt.requestedModel,
+		receipt.orgID, receipt.projectID, receipt.apiKeyID, receipt.credentialID,
+		receipt.credentialRef, receipt.grantID, receipt.nodeID,
+	)
+	for _, contract := range receipt.contracts {
+		_, _ = fmt.Fprintf(mac, "|%q|%q|%d|%q|%d|%d|%q|%q|%t|%q",
+			contract.runtimeRef, contract.policyRef, contract.version, contract.selectorHash,
+			contract.rpsLimit, contract.rpmLimit, contract.mode, contract.failureMode, contract.builtin, contract.kind)
+	}
+	return mac.Sum(nil)
 }
 
 func (s *Service) authoritativeSubject(ctx context.Context, subject Subject) (Subject, error) {

@@ -32,7 +32,7 @@ func TestAnthropicNativeBuildRequest_ConvertsOpenAIChat(t *testing.T) {
 		Channel: models.Channel{
 			BaseURL:       "https://api.anthropic.com/v1",
 			AdapterType:   TypeAnthropicNative,
-			AdapterConfig: json.RawMessage(`{"anthropic_version":"2023-06-01","anthropic_beta":"prompt-caching-2024-07-31"}`),
+			AdapterConfig: json.RawMessage(`{"anthropic_version":"2023-06-01"}`),
 		},
 		APIKey:    "sk-ant-test",
 		RequestID: "req-ant-1",
@@ -52,7 +52,7 @@ func TestAnthropicNativeBuildRequest_ConvertsOpenAIChat(t *testing.T) {
 	if got := req.Header.Get("anthropic-version"); got != "2023-06-01" {
 		t.Fatalf("unexpected anthropic-version %q", got)
 	}
-	if got := req.Header.Get("anthropic-beta"); got != "prompt-caching-2024-07-31" {
+	if got := req.Header.Get("anthropic-beta"); got != "" {
 		t.Fatalf("unexpected anthropic-beta %q", got)
 	}
 
@@ -91,6 +91,71 @@ func TestAnthropicNativeBuildRequest_RejectsUnsupportedEndpoints(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not support endpoint") {
 		t.Fatalf("expected endpoint error, got %v", err)
+	}
+}
+
+func TestAnthropicNativeBuildRequest_RejectsLossyCompatibilitySemantics(t *testing.T) {
+	adapter := NewAnthropicNative()
+	base := func(body string) RequestInput {
+		return RequestInput{
+			Endpoint:       EndpointChatCompletions,
+			DownstreamBody: []byte(body),
+			RequestedModel: "company-chat",
+			MappedModel:    "claude-sonnet",
+			Channel:        models.Channel{BaseURL: "https://api.anthropic.com"},
+			APIKey:         "sk",
+		}
+	}
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "tools", body: `{"model":"company-chat","messages":[{"role":"user","content":"hello"}],"tools":[]}`, want: "tools"},
+		{name: "tool choice", body: `{"model":"company-chat","messages":[{"role":"user","content":"hello"}],"tool_choice":"auto"}`, want: "tool"},
+		{name: "tool message", body: `{"model":"company-chat","messages":[{"role":"tool","content":"result","tool_call_id":"call"}]}`, want: "tool messages"},
+		{name: "image content", body: `{"model":"company-chat","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.com/x"}}]}]}`, want: "non-text"},
+		{name: "structured output", body: `{"model":"company-chat","messages":[{"role":"user","content":"hello"}],"response_format":{"type":"json_object"}}`, want: "structured output"},
+		{name: "reasoning", body: `{"model":"company-chat","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"high"}`, want: "reasoning"},
+		{name: "cache control", body: `{"model":"company-chat","messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}]}`, want: "cache"},
+		{name: "unknown field", body: `{"model":"company-chat","messages":[{"role":"user","content":"hello"}],"provider_extension":true}`, want: "provider_extension"},
+		{name: "temperature range", body: `{"model":"company-chat","messages":[{"role":"user","content":"hello"}],"temperature":1.1}`, want: "temperature"},
+		{name: "top p range", body: `{"model":"company-chat","messages":[{"role":"user","content":"hello"}],"top_p":-0.1}`, want: "top_p"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := adapter.BuildRequest(context.Background(), base(tt.body))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error=%v want marker=%q", err, tt.want)
+			}
+		})
+	}
+
+	in := base(`{"model":"company-chat","messages":[{"role":"user","content":"hello"}]}`)
+	in.Channel.AdapterConfig = json.RawMessage(`{"anthropic_version":"2023-06-01","anthropic_beta":"prompt-caching-2024-07-31"}`)
+	if _, err := adapter.BuildRequest(context.Background(), in); err == nil || !strings.Contains(err.Error(), "anthropic_beta") {
+		t.Fatalf("beta config was not rejected: %v", err)
+	}
+}
+
+func TestAnthropicNativeBuildRequest_MapsMaxCompletionTokensWithoutLoss(t *testing.T) {
+	req, err := NewAnthropicNative().BuildRequest(context.Background(), RequestInput{
+		Endpoint:       EndpointChatCompletions,
+		DownstreamBody: []byte(`{"model":"company-chat","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":77}`),
+		RequestedModel: "company-chat",
+		MappedModel:    "claude-sonnet",
+		Channel:        models.Channel{BaseURL: "https://api.anthropic.com"},
+		APIKey:         "sk",
+	})
+	if err != nil {
+		t.Fatalf("BuildRequest failed: %v", err)
+	}
+	body, _ := io.ReadAll(req.Body)
+	var payload struct {
+		MaxTokens int `json:"max_tokens"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || payload.MaxTokens != 77 {
+		t.Fatalf("max_completion_tokens was lost: body=%s err=%v", body, err)
 	}
 }
 
@@ -174,6 +239,18 @@ func TestAnthropicNativeParseResponse_ConvertsToOpenAICompatibleBody(t *testing.
 	}
 	if body.Usage.TotalTokens != 12 {
 		t.Fatalf("unexpected body usage: %+v", body.Usage)
+	}
+}
+
+func TestAnthropicNativeParseResponse_RejectsUnsupportedContent(t *testing.T) {
+	adapter := NewAnthropicNative()
+	for _, body := range []string{
+		`{"id":"msg_tool","content":[{"type":"tool_use","id":"tool","name":"lookup","input":{}}],"stop_reason":"tool_use","usage":{"input_tokens":1,"output_tokens":1}}`,
+		`{"id":"msg_thinking","content":[{"type":"thinking","thinking":"private"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`,
+	} {
+		if _, err := adapter.ParseResponse(context.Background(), ResponseInput{StatusCode: http.StatusOK, Body: []byte(body)}); err == nil || !strings.Contains(err.Error(), "cannot preserve") {
+			t.Fatalf("unsupported response was not rejected: body=%s err=%v", body, err)
+		}
 	}
 }
 
@@ -388,6 +465,41 @@ func TestAnthropicNativeNormalizeStreamChunk(t *testing.T) {
 	}
 	if !chunk.Done || !chunk.Skip {
 		t.Fatalf("expected done skip chunk, got %+v", chunk)
+	}
+}
+
+func TestAnthropicNativeNormalizeStreamChunk_RejectsUnsupportedContent(t *testing.T) {
+	adapter := NewAnthropicNative()
+	for _, event := range []string{
+		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool","name":"lookup","input":{}}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"private"}}`,
+		`{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}`,
+	} {
+		_, err := adapter.NormalizeStreamChunk(context.Background(), StreamChunkInput{
+			Data:  []byte(event),
+			State: &StreamState{},
+		})
+		if err == nil || !strings.Contains(err.Error(), "cannot preserve") {
+			t.Fatalf("unsupported stream event was not rejected: event=%s err=%v", event, err)
+		}
+	}
+}
+
+func TestAnthropicNativeNormalizeStreamChunk_RejectsUnknownEventType(t *testing.T) {
+	_, err := NewAnthropicNative().NormalizeStreamChunk(context.Background(), StreamChunkInput{
+		Data:  []byte(`{"type":"future_semantic_event","payload":{"private":"must-not-drop"}}`),
+		State: &StreamState{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "event type") {
+		t.Fatalf("unknown stream event was silently ignored: %v", err)
+	}
+
+	chunk, err := NewAnthropicNative().NormalizeStreamChunk(context.Background(), StreamChunkInput{
+		Data:  []byte(`{"type":"content_block_stop","index":0}`),
+		State: &StreamState{},
+	})
+	if err != nil || chunk == nil || !chunk.Skip {
+		t.Fatalf("known empty content_block_stop must remain compatible: chunk=%+v err=%v", chunk, err)
 	}
 }
 

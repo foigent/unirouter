@@ -12,9 +12,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uniroute/unirouter/internal/admin"
 	"github.com/uniroute/unirouter/internal/gateway"
+	"github.com/uniroute/unirouter/internal/gatewayerror"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/modelgov"
+	"github.com/uniroute/unirouter/internal/modellist"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
@@ -46,6 +49,106 @@ func newGatewayEmbeddingsHandler(pool *pgxpool.Pool, relay *gateway.Relay, outbo
 		}
 		relay.HandleEmbeddings(w, governedRequest)
 	}
+}
+
+func newGatewayPublicNonStreamHandler(
+	pool *pgxpool.Pool,
+	relay *gateway.Relay,
+	operation modeloperation.ID,
+	outboxServices ...*outbox.Service,
+) http.HandlerFunc {
+	var outboxService *outbox.Service
+	if len(outboxServices) > 0 {
+		outboxService = outboxServices[0]
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		governedRequest, ok := prepareGatewayPublicModelRequest(w, r, pool, relay, outboxService)
+		if !ok {
+			return
+		}
+		relay.HandlePublicNonStream(w, governedRequest, operation)
+	}
+}
+
+// prepareGatewayPublicModelRequest binds authorization to the caller's public
+// model while preserving the retained request bytes exactly. Alias resolution
+// remains internal planning/governance evidence and is never written into the
+// Responses or Messages document sent through the public protocol profile.
+func prepareGatewayPublicModelRequest(
+	w http.ResponseWriter,
+	r *http.Request,
+	pool *pgxpool.Pool,
+	relay *gateway.Relay,
+	outboxService *outbox.Service,
+) (*http.Request, bool) {
+	requestID := middleware.GetRequestIDFromContext(r.Context())
+	writeError := func(status int, code, message string) {
+		gatewayerror.Write(w, r.URL.Path, requestID, status, code, message)
+	}
+	apiKey := middleware.GetAPIKeyFromContext(r.Context())
+	if apiKey == nil {
+		writeError(http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
+		return nil, false
+	}
+	body, retained := payloadpolicy.BodyFromContext(r.Context())
+	if !retained {
+		writeError(http.StatusServiceUnavailable, "server_error.public_execution_unavailable", "Public model execution is temporarily unavailable")
+		return nil, false
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(body, &document); err != nil || document == nil {
+		writeError(http.StatusBadRequest, "validation_error.invalid_request", "Invalid request")
+		return nil, false
+	}
+	var requestedModel string
+	modelJSON, exists := document["model"]
+	if !exists || json.Unmarshal(modelJSON, &requestedModel) != nil || requestedModel == "" ||
+		requestedModel != strings.TrimSpace(requestedModel) {
+		writeError(http.StatusBadRequest, "validation_error.invalid_request", "A non-empty model string is required")
+		return nil, false
+	}
+	if !apiKeyAllowsRequestedModel(apiKey, requestedModel) {
+		writeError(http.StatusForbidden, "auth_error.model_not_allowed", "The requested model is not allowed for this API key")
+		return nil, false
+	}
+	if relay == nil {
+		writeError(http.StatusServiceUnavailable, "server_error.public_execution_unavailable", "Public model execution is temporarily unavailable")
+		return nil, false
+	}
+
+	projectID := int64(0)
+	if apiKey.ProjectID != nil {
+		projectID = *apiKey.ProjectID
+	}
+	access, err := modelgov.CheckAccess(r.Context(), pool, apiKey.OrgID, projectID, requestedModel)
+	if errors.Is(err, modelgov.ErrModelRetired) || errors.Is(err, modelgov.ErrModelDenied) {
+		writeError(http.StatusForbidden, "auth_error.model_not_allowed", "The requested model is not available for this project")
+		return nil, false
+	}
+	if err != nil && !errors.Is(err, modelgov.ErrModelRequired) {
+		writeError(http.StatusServiceUnavailable, "server_error.model_governance_unavailable", "Model governance is temporarily unavailable")
+		return nil, false
+	}
+	if access.Lifecycle == "" {
+		recordUnregisteredModelAudit(r.Context(), pool, outboxService, apiKey, requestedModel, projectID)
+	}
+	resolvedModel := strings.TrimSpace(access.ResolvedModel)
+	if resolvedModel == "" {
+		resolvedModel = requestedModel
+	}
+	decision, decisionErr := relay.EvaluateModelAuthorization(r.Context(), r.URL.Path, requestedModel, resolvedModel)
+	if decisionErr != nil {
+		writeError(http.StatusServiceUnavailable, "server_error.model_authorization_unavailable", "Model authorization is temporarily unavailable")
+		return nil, false
+	}
+	if !decision.Allowed {
+		recordModelAuthorizationDenial(r.Context(), pool, outboxService, apiKey, decision)
+		writeError(http.StatusForbidden, "auth_error.model_call_not_authorized", "Model call is outside the active enterprise authorization policy")
+		return nil, false
+	}
+	r = r.WithContext(modelauthz.WithDecision(r.Context(), decision))
+	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, requestedModel))
+	return r, true
 }
 
 func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, relay *gateway.Relay, outboxService *outbox.Service) (*http.Request, bool) {
@@ -81,14 +184,19 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 	_ = json.Unmarshal(bodyBytes, &req)
 
 	if req.Model != "" {
+		requestedModel := strings.TrimSpace(req.Model)
+		if !apiKeyAllowsRequestedModel(apiKey, requestedModel) {
+			writeGatewayModelScopeDenied(w)
+			return nil, false
+		}
 		var ok bool
 		var resolvedModel string
-		r, bodyBytes, resolvedModel, ok = applyModelGovernance(w, r, pool, outboxService, apiKey, req.Model, bodyBytes)
+		r, bodyBytes, resolvedModel, ok = applyModelGovernance(w, r, pool, outboxService, apiKey, requestedModel, bodyBytes)
 		if !ok {
 			return nil, false
 		}
 		if relay != nil {
-			decision, decisionErr := relay.EvaluateModelAuthorization(r.Context(), r.URL.Path, req.Model, resolvedModel)
+			decision, decisionErr := relay.EvaluateModelAuthorization(r.Context(), r.URL.Path, requestedModel, resolvedModel)
 			if decisionErr != nil {
 				http.Error(w, `{"error":{"type":"server_error.model_authorization_unavailable","message":"Model authorization is temporarily unavailable"}}`, http.StatusServiceUnavailable)
 				return nil, false
@@ -99,12 +207,16 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 				w.WriteHeader(http.StatusForbidden)
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]interface{}{
 					"type": "auth_error.model_call_not_authorized", "message": "Model call is outside the active enterprise authorization policy",
-					"model": req.Model, "reason": decision.Reason, "policy_refs": decision.PolicyRefs,
+					"model": requestedModel, "reason": decision.Reason, "policy_refs": decision.PolicyRefs,
 				}})
 				return nil, false
 			}
 			r = r.WithContext(modelauthz.WithDecision(r.Context(), decision))
 		}
+		// This context identity is written only after API-key scope, governance,
+		// and enterprise authorization have all accepted the normalized public
+		// model. Freeze compares it with the private early receipt marker.
+		r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, requestedModel))
 	}
 
 	// Relay owns API-key model denial so correlation and decision evidence are emitted.
@@ -115,6 +227,42 @@ func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pg
 		return nil, false
 	}
 	return r, true
+}
+
+// apiKeyAllowsRequestedModel is the first model-specific authority boundary.
+// It deliberately evaluates only the caller-supplied public identity before
+// any alias, catalog, project-policy, audit, or enterprise-authorization read.
+// The resolved target is subsequently constrained by those server-owned
+// authorities and must never be disclosed by this denial path.
+func apiKeyAllowsRequestedModel(apiKey *models.ApiKey, requestedModel string) bool {
+	if apiKey == nil || apiKey.ModelScopeDenied {
+		return false
+	}
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return false
+	}
+	if strings.TrimSpace(apiKey.AllowedModels) == "" {
+		return true
+	}
+	for _, allowed := range modellist.Parse(apiKey.AllowedModels) {
+		if allowed == "*" || allowed == requestedModel {
+			return true
+		}
+	}
+	return false
+}
+
+func writeGatewayModelScopeDenied(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": map[string]interface{}{
+			"type":    "permission_error",
+			"code":    "auth_error.model_not_allowed",
+			"message": "The requested model is not allowed for this API key",
+		},
+	})
 }
 
 func recordModelAuthorizationDenial(ctx context.Context, pool *pgxpool.Pool, outboxService *outbox.Service, apiKey *models.ApiKey, decision modelauthz.Decision) {
@@ -181,22 +329,36 @@ func applyModelGovernance(w http.ResponseWriter, r *http.Request, pool *pgxpool.
 		recordUnregisteredModelAudit(r.Context(), pool, outboxService, apiKey, requestedModel, projectID)
 	}
 
-	resolvedModel := access.ResolvedModel
-	if resolvedModel == "" || resolvedModel == requestedModel {
-		return r, bodyBytes, resolvedModel, true
+	resolvedModel := strings.TrimSpace(access.ResolvedModel)
+	if resolvedModel == "" {
+		resolvedModel = requestedModel
 	}
 
-	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, requestedModel))
-	var payload map[string]interface{}
-	if json.Unmarshal(bodyBytes, &payload) != nil {
-		return r, bodyBytes, resolvedModel, true
-	}
-	payload["model"] = resolvedModel
-	rewritten, err := json.Marshal(payload)
+	rewritten, err := rewriteGovernedModel(bodyBytes, resolvedModel)
 	if err != nil {
-		return r, bodyBytes, resolvedModel, true
+		http.Error(w, `{"error":{"type":"server_error","message":"Model governance rewrite failed"}}`, http.StatusInternalServerError)
+		return nil, nil, "", false
 	}
 	return r, rewritten, resolvedModel, true
+}
+
+// rewriteGovernedModel changes only the server-governed model field. Every
+// other request member stays as raw JSON so alias resolution cannot erase
+// newer OpenAI fields or round provider extension numbers through float64.
+func rewriteGovernedModel(body []byte, resolvedModel string) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		return nil, errors.New("gateway request must be a JSON object")
+	}
+	modelJSON, err := json.Marshal(resolvedModel)
+	if err != nil {
+		return nil, err
+	}
+	payload["model"] = modelJSON
+	return json.Marshal(payload)
 }
 
 func recordUnregisteredModelAudit(ctx context.Context, pool *pgxpool.Pool, outboxService *outbox.Service, apiKey *models.ApiKey, requestedModel string, projectID int64) {

@@ -58,6 +58,7 @@ function renderApp(
           <Route path="notifications" element={<div>Notifications</div>} />
           <Route path="settings" element={<div>Account Settings</div>} />
           <Route path="license" element={<div>License Page</div>} />
+          <Route path="channels" element={<div>Model Endpoint Safety Surface</div>} />
           <Route path="guardrail-policies" element={<div>Restricted Child Page</div>} />
           <Route path="data-exchange" element={<div>Data Exchange Safety Surface</div>} />
         </Route>
@@ -243,6 +244,18 @@ describe('App shell', () => {
     expect(screen.getAllByText(/当前商业授权已过期/).length).toBeGreaterThan(0);
     expect(screen.queryByText('Restricted Child Page')).toBeNull();
     expect(screen.queryByRole('button', { name: '查看或更新商业授权' })).toBeNull();
+  });
+
+  it('keeps the model endpoint safety surface mounted when the gateway License is invalid', () => {
+    renderApp('platform_admin', {
+      initialEntry: '/channels?tab=credentials',
+      licenseAccess: { ...PARTIAL_LICENSE, status: 'invalid', enforceable: false },
+    });
+
+    expect(screen.getByText('Model Endpoint Safety Surface')).toBeTruthy();
+    expect(screen.queryByText('模型网关暂不可用')).toBeNull();
+    expect(screen.getByText('模型与端点')).toBeTruthy();
+    expect(screen.queryByText('模型与端点（未授权）')).toBeNull();
   });
 
   it('gives platform administrators a direct path to repair a restricted license', async () => {

@@ -23,6 +23,11 @@ func TestProjectDefaultEndpointContract(t *testing.T) {
 	if !IsSupportedEndpoint("/v1/media/jobs") || IsProjectDefaultEndpoint("/v1/media/jobs") {
 		t.Fatal("media must be supported only as an explicitly reviewed endpoint family")
 	}
+	for _, endpoint := range []string{"/v1/responses", "/v1/messages"} {
+		if !IsSupportedEndpoint(endpoint) || IsProjectDefaultEndpoint(endpoint) || !RequiresExplicitScope(endpoint) {
+			t.Fatalf("new operation %q must be supported only by explicit scope", endpoint)
+		}
+	}
 }
 
 func TestProjectDefaultRateContract(t *testing.T) {
@@ -44,10 +49,40 @@ func TestValidateRequiresExplicitSupportedScope(t *testing.T) {
 	if !Validate(ModeExplicit, []string{"model"}, []string{"/v1/media/jobs"}) {
 		t.Fatal("explicit media endpoint family must be supported")
 	}
+	if !Validate(ModeExplicit, []string{"model"}, []string{"/v1/responses", "/v1/messages"}) {
+		t.Fatal("explicit new operation scope must be supported")
+	}
 	for _, endpoint := range []string{"/v1/agent-capabilities/exchange", "/unknown"} {
 		if Validate(ModeExplicit, []string{"model"}, []string{endpoint}) {
 			t.Fatalf("explicit unsupported endpoint %q must fail closed", endpoint)
 		}
+	}
+}
+
+func TestExecutionEndpointAllowedFailsClosedAndPreservesExplicitBoundary(t *testing.T) {
+	for _, endpoint := range []string{"/v1/chat/completions", "/v1/embeddings", "/v1/models", "/v1/media/jobs"} {
+		if !ExecutionEndpointAllowed(false, "", false, nil, endpoint) {
+			t.Fatalf("legacy-unbound compatibility lost for %q", endpoint)
+		}
+	}
+	for _, endpoint := range []string{"/v1/responses", "/v1/messages", "/v1/unknown", "/v1/media/jobs/not-a-job"} {
+		if ExecutionEndpointAllowed(false, "", false, []string{"*", endpoint}, endpoint) {
+			t.Fatalf("legacy-unbound authority obtained %q", endpoint)
+		}
+	}
+	for _, endpoint := range []string{"/v1/responses", "/v1/messages"} {
+		if ExecutionEndpointAllowed(true, ModeProjectDefault, false, []string{endpoint}, endpoint) {
+			t.Fatalf("project-default Grant obtained %q", endpoint)
+		}
+		if ExecutionEndpointAllowed(true, ModeExplicit, false, []string{"*"}, endpoint) {
+			t.Fatalf("wildcard Grant obtained %q", endpoint)
+		}
+		if !ExecutionEndpointAllowed(true, ModeExplicit, false, []string{endpoint}, endpoint) {
+			t.Fatalf("exact explicit Grant could not obtain %q", endpoint)
+		}
+	}
+	if ExecutionEndpointAllowed(true, ModeExplicit, true, []string{"/v1/responses"}, "/v1/responses") {
+		t.Fatal("endpoint-denied Grant admitted an operation")
 	}
 }
 

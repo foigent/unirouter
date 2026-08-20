@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -533,9 +534,11 @@ func TestPaidGatewayEndpointIncludesAsyncMediaSubmissionOnly(t *testing.T) {
 	for _, path := range []string{
 		"/v1/chat/completions",
 		"/v1/embeddings",
+		"/v1/responses",
+		"/v1/messages",
 		"/v1/media/jobs",
 	} {
-		if !isPaidGatewayEndpoint(path) {
+		if !isPaidGatewayEndpoint(http.MethodPost, path) {
 			t.Fatalf("paid endpoint %q was not admission-blocked", path)
 		}
 	}
@@ -545,8 +548,60 @@ func TestPaidGatewayEndpointIncludesAsyncMediaSubmissionOnly(t *testing.T) {
 		"/v1/media/jobs/mediajob_0123456789abcdef0123456789abcdef/cancel",
 		"/v1/media/jobs/mediajob_0123456789abcdef0123456789abcdef/content",
 	} {
-		if isPaidGatewayEndpoint(path) {
+		if isPaidGatewayEndpoint(http.MethodGet, path) {
 			t.Fatalf("non-submission endpoint %q was treated as a new paid request", path)
+		}
+	}
+}
+
+func TestNewOperationsRequireExplicitGrantScope(t *testing.T) {
+	for _, endpoint := range []string{"/v1/responses", "/v1/messages"} {
+		for _, legacyWildcard := range []string{"", "*"} {
+			if endpointAllowedForGrant(&models.ApiKey{AllowedEndpoints: legacyWildcard}, endpoint) {
+				t.Fatalf("legacy-unbound wildcard %q obtained new operation %q", legacyWildcard, endpoint)
+			}
+		}
+		if endpointAllowedForGrant(&models.ApiKey{
+			GrantBound: true, GrantScopeMode: accessscope.ModeProjectDefault,
+			AllowedEndpoints: endpoint,
+		}, endpoint) {
+			t.Fatalf("project-default grant obtained explicit operation %q", endpoint)
+		}
+		if endpointAllowedForGrant(&models.ApiKey{
+			GrantBound: true, GrantScopeMode: accessscope.ModeExplicit,
+			AllowedEndpoints: "*",
+		}, endpoint) {
+			t.Fatalf("historical grant wildcard obtained new operation %q", endpoint)
+		}
+		if !endpointAllowedForGrant(&models.ApiKey{
+			GrantBound: true, GrantScopeMode: accessscope.ModeExplicit,
+			AllowedEndpoints: endpoint,
+		}, endpoint) {
+			t.Fatalf("exact explicit grant could not obtain operation %q", endpoint)
+		}
+	}
+}
+
+func TestEstablishedEndpointCompatibilityIsPreserved(t *testing.T) {
+	legacy := &models.ApiKey{AllowedEndpoints: "*"}
+	for _, endpoint := range []string{
+		"/v1/chat/completions", "/v1/embeddings", "/v1/models", "/v1/media/jobs",
+	} {
+		if !endpointAllowedForGrant(legacy, endpoint) {
+			t.Fatalf("established legacy endpoint %q was tightened", endpoint)
+		}
+	}
+}
+
+func TestUnknownExecutionEndpointFailsClosed(t *testing.T) {
+	legacy := &models.ApiKey{AllowedEndpoints: "*"}
+	for _, endpoint := range []string{
+		"/v1/unknown",
+		"/v1/media/jobs/not-a-job",
+		"/v1/media/jobs/mediajob_0123456789abcdef0123456789abcdef/delete",
+	} {
+		if endpointAllowedForGrant(legacy, endpoint) {
+			t.Fatalf("unknown execution endpoint %q inherited legacy authority", endpoint)
 		}
 	}
 }

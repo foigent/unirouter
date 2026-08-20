@@ -80,10 +80,14 @@ describe('ApiDocsPage', () => {
       '/api/v1/model-registry',
       '/api/v1/notification-webhooks',
       '/api/v1/license',
+      '/api/v1/model-deployment-releases/{releaseRef}/cutover-legacy',
+      '/api/v1/model-deployment-releases/{releaseRef}/rollback-legacy',
       '/v1/embeddings',
     ].forEach((path) => {
       expect(screen.getAllByText(path).length).toBeGreaterThan(0);
     });
+    expect(screen.getAllByText('/api/v1/model-deployment-releases').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('已退役：固定返回 HTTP 410（legacy_model_mutation_retired）；请使用 canonical 模型部署与发布 API')).toHaveLength(19);
 
     [
       '部署级设置（仅平台管理员）',
@@ -94,6 +98,10 @@ describe('ApiDocsPage', () => {
       '更新本组织别名；越权组织参数返回 403，越权或不存在的 ID 返回 404',
       '原子创建本组织模型集合及其全部初始条目',
       '原子替换本组织模型集合条目；不会暴露部分结果',
+      '按组织读取公共模型、服务端权威 baseline/候选项和可操作 canonical v2 release；platform_admin、org_admin、org_viewer 可读且不要求 Gateway License',
+      '以服务端 baseline、精确 deployment/operation 选择和 Idempotency-Key 原子编写 sealed validated release；要求组织写角色与 Gateway License，但编写不会激活或改变流量',
+      '仅在 Chat 与 Embeddings 可执行计划完整同等后原子替换精确 sealed v1 stable parent；要求组织写角色、Gateway License 和 Idempotency-Key',
+      '安全收缩到精确 sealed 且当前仍可执行的 v1 parent；v2 健康失败不阻断，仍要求组织写角色和 Idempotency-Key，但不要求 Gateway License',
     ].forEach((description) => {
       expect(screen.getByText(description)).toBeTruthy();
     });
@@ -118,6 +126,9 @@ describe('ApiDocsPage', () => {
       '原子创建本组织模型集合及其全部初始条目',
       '原子替换本组织模型集合条目；不会暴露部分结果',
       '查看 CNY/百万 tokens 基础价格与供应商 Prompt Cache 倍率（平台、组织或账务管理员）',
+      '以服务端 baseline、精确 deployment/operation 选择和 Idempotency-Key 原子编写 sealed validated release；要求组织写角色与 Gateway License，但编写不会激活或改变流量',
+      '仅在 Chat 与 Embeddings 可执行计划完整同等后原子替换精确 sealed v1 stable parent；要求组织写角色、Gateway License 和 Idempotency-Key',
+      '安全收缩到精确 sealed 且当前仍可执行的 v1 parent；v2 健康失败不阻断，仍要求组织写角色和 Idempotency-Key，但不要求 Gateway License',
     ].forEach((description) => {
       expect(screen.getByText(description)).toBeTruthy();
     });
@@ -242,6 +253,10 @@ describe('ApiDocsPage', () => {
     expect(screen.getByText('Dashboard 聚合数据')).toBeTruthy();
     expect(await screen.findByText('auth_error.invalid_api_key')).toBeTruthy();
     expect(screen.getByText('错误说明')).toBeTruthy();
+    expect(screen.getByText('按组织读取公共模型、服务端权威 baseline/候选项和可操作 canonical v2 release；platform_admin、org_admin、org_viewer 可读且不要求 Gateway License')).toBeTruthy();
+    expect(screen.queryByText(/原子编写 sealed validated release/)).toBeNull();
+    expect(screen.queryByText(/原子替换精确 sealed v1 stable parent/)).toBeNull();
+    expect(screen.queryByText(/安全收缩到精确 sealed 且当前仍可执行的 v1 parent/)).toBeNull();
     expect(mockGetErrorDocs).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('创建项目访问凭证')).toBeNull();
   });

@@ -37,9 +37,11 @@ const (
 	DecisionDeny      = "deny"
 	DecisionWouldDeny = "would_deny"
 
-	AdmissionPhaseFull      = "full"
-	AdmissionPhaseRate      = "rate"
-	AdmissionPhaseExecution = "execution"
+	AdmissionPhaseFull           = "full"
+	AdmissionPhaseRate           = "rate"
+	AdmissionPhaseUnscopedRate   = "unscoped_rate"
+	AdmissionPhaseExecution      = "execution"
+	AdmissionPhaseModelExecution = "model_execution"
 
 	ReadinessReady       = "ready"
 	ReadinessBlocked     = "blocked"
@@ -102,16 +104,30 @@ type Subject struct {
 }
 
 type AdmissionRequest struct {
-	OperationID    string
-	Subject        Subject
+	OperationID string
+	Subject     Subject
+	// RequestedModel is the normalized public model identity authorized by the
+	// Gateway before model_execution. During unscoped_rate it is receipt binding
+	// only and must never participate in policy selection.
+	RequestedModel string
 	EstimatedInput int64
 	ReservedOutput int64
 	LeaseTTL       time.Duration
 	WorkloadClass  string
+	// RateReceipt is an opaque, service-authenticated receipt from the
+	// preceding finalized rate phase. Model execution skips only an unchanged,
+	// exactly signed RPS/RPM policy contract; alias and canonical model selectors
+	// discovered after authorization still run in full.
+	RateReceipt RateAdmissionReceipt
 	// Phase projects the same policy population and runtime buckets onto one
 	// execution boundary. Empty is the historical full model-call admission.
-	// Media submission uses rate; the worker uses execution immediately before
-	// Provider dispatch so queued durable work does not occupy concurrency.
+	// Media submission uses rate; authenticated Gateway attempts whose body has
+	// no usable public model use unscoped_rate, which excludes model selectors
+	// without inventing a sentinel model. The worker uses execution immediately
+	// before Provider dispatch so queued durable work does not occupy concurrency.
+	// Synchronous Gateway calls use unscoped_rate before governance and
+	// model_execution at Freeze, retaining TPM, concurrency, and workload without
+	// exposing caller-controlled model topology to the early boundary.
 	Phase string
 }
 
@@ -170,6 +186,7 @@ type policyReservation struct {
 	Fallback       bool
 	Mode           string
 	Tokenless      bool
+	rateContract   rateAdmissionContract
 }
 
 // Reservation is a server-owned terminal handle. It is not a bearer token and
@@ -181,6 +198,91 @@ type Reservation struct {
 	ExtensionSequence   int
 	LastExtensionTokens int64
 	workload            *workloadadmission.Reservation
+	rateReceipt         RateAdmissionReceipt
+	rateFinalized       bool
+}
+
+const (
+	rateAdmissionKindRedis    = "redis"
+	rateAdmissionKindFallback = "fallback"
+)
+
+// rateAdmissionContract is the exact rate authority consumed by the early
+// phase. RuntimeRef alone is only rolling-population identity and deliberately
+// remains stable across limit changes, so it is never sufficient skip proof.
+type rateAdmissionContract struct {
+	runtimeRef   string
+	policyRef    string
+	version      int64
+	selectorHash string
+	rpsLimit     int64
+	rpmLimit     int64
+	mode         string
+	failureMode  string
+	builtin      bool
+	kind         string
+}
+
+// RateAdmissionReceipt is intentionally opaque outside limitpolicy. Its
+// unexported binding and authenticator prevent internal callers from inventing
+// rate contracts to skip during model execution.
+type RateAdmissionReceipt struct {
+	rateOperationID string
+	mainOperationID string
+	requestedModel  string
+	orgID           int64
+	projectID       int64
+	apiKeyID        int64
+	credentialID    int64
+	credentialRef   string
+	grantID         int64
+	nodeID          string
+	contracts       []rateAdmissionContract
+	authenticator   []byte
+}
+
+// rateAdmissionReceiptFor returns a defensive, main-operation-bound receipt
+// only after the rate reservation was finalized successfully. Receipt issuance
+// remains owned by Service.FinalizeRateAdmission so callers cannot turn an
+// arbitrary terminal reservation into split-phase authority.
+func (r *Reservation) rateAdmissionReceiptFor(mainOperationID string) (RateAdmissionReceipt, bool) {
+	if r == nil || !r.rateFinalized {
+		return RateAdmissionReceipt{}, false
+	}
+	rateOperationID, valid := RateAdmissionOperationID(mainOperationID)
+	if !valid || rateOperationID != r.rateReceipt.rateOperationID {
+		return RateAdmissionReceipt{}, false
+	}
+	receipt := r.rateReceipt
+	receipt.mainOperationID = mainOperationID
+	receipt.contracts = append([]rateAdmissionContract(nil), receipt.contracts...)
+	receipt.authenticator = append([]byte(nil), receipt.authenticator...)
+	return receipt, true
+}
+
+// RateAdmissionOperationID derives the only supported split-phase relation.
+func RateAdmissionOperationID(mainOperationID string) (string, bool) {
+	const suffix = ":rate"
+	if mainOperationID == "" || strings.TrimSpace(mainOperationID) != mainOperationID || len(mainOperationID) > 64-len(suffix) {
+		return "", false
+	}
+	return mainOperationID + suffix, true
+}
+
+func mainOperationIDFromRateAdmission(rateOperationID string) (string, bool) {
+	const suffix = ":rate"
+	if !strings.HasSuffix(rateOperationID, suffix) {
+		return "", false
+	}
+	mainOperationID := strings.TrimSuffix(rateOperationID, suffix)
+	expected, valid := RateAdmissionOperationID(mainOperationID)
+	return mainOperationID, valid && expected == rateOperationID
+}
+
+func (r RateAdmissionReceipt) isZero() bool {
+	return r.rateOperationID == "" && r.mainOperationID == "" && r.requestedModel == "" && r.orgID == 0 && r.projectID == 0 &&
+		r.apiKeyID == 0 && r.credentialID == 0 && r.credentialRef == "" && r.grantID == 0 &&
+		r.nodeID == "" && len(r.contracts) == 0 && len(r.authenticator) == 0
 }
 
 func (p Policy) Validate() error {
@@ -270,14 +372,14 @@ func runtimePolicySetVersion(policies []Policy, workloadVersion string) string {
 func operationFingerprint(request AdmissionRequest, runtimeRef string) string {
 	labels := append([]string(nil), request.Subject.PolicyLabels...)
 	sort.Strings(labels)
-	canonical := fmt.Sprintf("%s|%s|%s|%d|%d|%d|%d|%s|%d|%s|%s|%d|%d|%s|%s|%s|%s",
+	canonical := fmt.Sprintf("%s|%s|%s|%d|%d|%d|%d|%s|%d|%s|%s|%d|%d|%s|%s|%s|%s|%s",
 		request.OperationID, runtimeRef, normalizedAdmissionPhase(request.Phase), request.Subject.OrgID, request.Subject.ProjectID,
 		request.Subject.APIKeyID, request.Subject.AccessCredentialID, request.Subject.CredentialRef,
 		request.Subject.AccessGrantID, request.Subject.Model, strings.Join(labels, ","),
 		request.EstimatedInput, request.ReservedOutput,
 		optionalInt64(request.Subject.CredentialConcurrencyLimit),
 		optionalInt64(request.Subject.GrantRPSLimit), optionalInt64(request.Subject.GrantRPMLimit),
-		optionalInt64(request.Subject.GrantConcurrencyLimit))
+		optionalInt64(request.Subject.GrantConcurrencyLimit), hex.EncodeToString(request.RateReceipt.authenticator))
 	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:])
 }
@@ -288,10 +390,40 @@ func normalizedAdmissionPhase(phase string) string {
 		return AdmissionPhaseFull
 	case AdmissionPhaseRate:
 		return AdmissionPhaseRate
+	case AdmissionPhaseUnscopedRate:
+		return AdmissionPhaseUnscopedRate
 	case AdmissionPhaseExecution:
 		return AdmissionPhaseExecution
+	case AdmissionPhaseModelExecution:
+		return AdmissionPhaseModelExecution
 	default:
 		return ""
+	}
+}
+
+func admissionPhaseIncludesRate(phase string) bool {
+	return phase == AdmissionPhaseFull || phase == AdmissionPhaseRate || phase == AdmissionPhaseUnscopedRate
+}
+
+func admissionPhaseIncludesTokens(phase string) bool {
+	return phase == AdmissionPhaseFull || phase == AdmissionPhaseModelExecution
+}
+
+func admissionPhaseIncludesConcurrency(phase string) bool {
+	return phase == AdmissionPhaseFull || phase == AdmissionPhaseExecution || phase == AdmissionPhaseModelExecution
+}
+
+func validRequestedModelForPhase(phase, requestedModel string) bool {
+	if requestedModel != strings.TrimSpace(requestedModel) {
+		return false
+	}
+	switch phase {
+	case AdmissionPhaseUnscopedRate:
+		return true
+	case AdmissionPhaseModelExecution:
+		return requestedModel != ""
+	default:
+		return requestedModel == ""
 	}
 }
 

@@ -378,8 +378,10 @@ func (h *Handler) cleanupOldData(ctx context.Context, retentionDays, traceRetent
 		log.Printf("Cleanup: deleted %d old call_logs (older than %d days)", result.RowsAffected(), retentionDays)
 
 		result, err = h.db.Exec(ctx,
-			`DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '1 day' * $1`,
-			retentionDays*2)
+			`DELETE FROM audit_logs
+			 WHERE created_at < NOW() - INTERVAL '1 day' * $1
+			   AND action<>$2`,
+			retentionDays*2, firstCustomerBootstrapAction)
 		if err != nil {
 			return fmt.Errorf("cleanup audit_logs: %w", err)
 		}
@@ -474,6 +476,17 @@ func (h *Handler) cleanupOldData(ctx context.Context, retentionDays, traceRetent
 		return fmt.Errorf("cleanup request_idempotency: %w", err)
 	}
 	log.Printf("Cleanup: deleted %d expired request_idempotency receipts", result.RowsAffected())
+
+	// Canonical model-deployment create receipts use the same 24-hour replay
+	// window as request idempotency, but remain a separate control-plane
+	// contract. Their trigger permits deletion only after expires_at.
+	result, err = h.db.Exec(ctx,
+		`DELETE FROM model_deployment_create_receipts WHERE expires_at < NOW()`,
+	)
+	if err != nil {
+		return fmt.Errorf("cleanup model_deployment_create_receipts: %w", err)
+	}
+	log.Printf("Cleanup: deleted %d expired model_deployment_create receipts", result.RowsAffected())
 
 	expiryResult, err := billing.ExpireGrants(ctx, h.db, 1000)
 	if err != nil {

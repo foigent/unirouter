@@ -47,8 +47,8 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 	if first.Summary.ReviewRequiredCount != 0 || first.Summary.ProtectedCount != len(protectedTables) {
 		t.Fatalf("unexpected classification summary: %+v", first.Summary)
 	}
-	if first.Summary.TableCount != 102 || first.Summary.ResetCandidateCount != 94 ||
-		first.Summary.ProtectedCount != 6 || first.Summary.ProtectedPartialCount != 1 ||
+	if first.Summary.TableCount != 119 || first.Summary.ResetCandidateCount != 109 ||
+		first.Summary.ProtectedCount != 8 || first.Summary.ProtectedPartialCount != 1 ||
 		first.Summary.SchemaLedgerCount != 1 {
 		t.Fatalf("reset classification cardinality drifted: %+v", first.Summary)
 	}
@@ -84,20 +84,20 @@ func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T)
 	}
 }
 
-func TestBuildSupportsExactSchema68AndRejectsPreviousOrFutureMax(t *testing.T) {
+func TestBuildSupportsExactSchema79AndRejectsPreviousOrFutureMax(t *testing.T) {
 	current := completeSnapshot()
 	plan, err := Build(current, testTarget(), "source-a", "source-b", time.Unix(0, 0))
 	if err != nil {
-		t.Fatalf("Build schema 68: %v", err)
+		t.Fatalf("Build schema 79: %v", err)
 	}
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
 		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
-	if plan.Summary.TableCount != 102 || plan.Summary.ResetCandidateCount != 94 || plan.Summary.ReviewRequiredCount != 0 {
-		t.Fatalf("schema 68 changed reviewed table classification: %+v", plan.Summary)
+	if plan.Summary.TableCount != 119 || plan.Summary.ResetCandidateCount != 109 || plan.Summary.ReviewRequiredCount != 0 {
+		t.Fatalf("schema 79 changed reviewed table classification: %+v", plan.Summary)
 	}
-	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+4 {
-		t.Fatalf("schema 68 compatibility trigger missing from reset contract: %+v", plan.Schema)
+	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+5 {
+		t.Fatalf("schema 79 compatibility trigger missing from reset contract: %+v", plan.Schema)
 	}
 	if plan.SelectedAdmin.OrganizationRole != "platform_admin" || plan.SelectedAdmin.Role != "platform_admin" {
 		t.Fatalf("selected admin identity axes drifted: %+v", plan.SelectedAdmin)
@@ -110,15 +110,109 @@ func TestBuildSupportsExactSchema68AndRejectsPreviousOrFutureMax(t *testing.T) {
 	}
 
 	future := completeSnapshot()
-	future.MigrationVersions = append(future.MigrationVersions, "000069_future_contract")
+	future.MigrationVersions = append(future.MigrationVersions, "000080_future_contract")
 	if _, err := Build(future, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
 		t.Fatalf("future migration error = %v", err)
+	}
+
+	missingMiddle := completeSnapshot()
+	missingMiddle.MigrationVersions = []string{
+		missingMiddle.MigrationVersions[0],
+		missingMiddle.MigrationVersions[len(missingMiddle.MigrationVersions)-1],
+	}
+	if _, err := Build(missingMiddle, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "missing=") {
+		t.Fatalf("missing middle migration error = %v", err)
+	}
+
+	extraBeforeCeiling := completeSnapshot()
+	extraBeforeCeiling.MigrationVersions = []string{
+		extraBeforeCeiling.MigrationVersions[0],
+		extraBeforeCeiling.MigrationVersions[1],
+		"000078_unexpected_reset_contract",
+		extraBeforeCeiling.MigrationVersions[2],
+	}
+	if _, err := Build(extraBeforeCeiling, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "extra=") {
+		t.Fatalf("extra pre-ceiling migration error = %v", err)
+	}
+
+	duplicate := completeSnapshot()
+	duplicate.MigrationVersions = append(duplicate.MigrationVersions[:2], duplicate.MigrationVersions[1:]...)
+	if _, err := Build(duplicate, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "duplicate migration") {
+		t.Fatalf("duplicate migration error = %v", err)
+	}
+
+	reordered := completeSnapshot()
+	reordered.MigrationVersions[0], reordered.MigrationVersions[1] = reordered.MigrationVersions[1], reordered.MigrationVersions[0]
+	if _, err := Build(reordered, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "not strictly ordered") {
+		t.Fatalf("reordered migration error = %v", err)
 	}
 
 	wrongAdminAxis := completeSnapshot()
 	wrongAdminAxis.Admin.OrganizationRole = "member"
 	if _, err := Build(wrongAdminAxis, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "selected_admin") {
 		t.Fatalf("wrong selected admin organization role error = %v", err)
+	}
+}
+
+func TestBuildOrdersCanonicalEvidenceBeforeReleaseAndDeploymentParents(t *testing.T) {
+	snapshot := completeSnapshot()
+	snapshot.ForeignKeys = append(snapshot.ForeignKeys,
+		ForeignKey{Name: "release_authoring_receipt", ChildTable: "runtime_change_releases", ParentTable: "model_deployment_release_authoring_receipts", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "lifecycle_qualification_release", ChildTable: "model_deployment_lifecycle_receipt_qualifications", ParentTable: "model_deployment_lifecycle_receipt_releases", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "lifecycle_release_receipt", ChildTable: "model_deployment_lifecycle_receipt_releases", ParentTable: "model_deployment_lifecycle_receipts", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "lifecycle_release_runtime", ChildTable: "model_deployment_lifecycle_receipt_releases", ParentTable: "runtime_change_releases", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "lifecycle_receipt_runtime", ChildTable: "model_deployment_lifecycle_receipts", ParentTable: "runtime_change_releases", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "create_receipt_deployment", ChildTable: "model_deployment_create_receipts", ParentTable: "model_deployments", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "create_receipt_operation", ChildTable: "model_deployment_create_receipts", ParentTable: "model_deployment_operations", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "route_release", ChildTable: "runtime_route_revision_items", ParentTable: "runtime_change_releases", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "route_deployment", ChildTable: "runtime_route_revision_items", ParentTable: "model_deployments", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "route_operation", ChildTable: "runtime_route_revision_items", ParentTable: "model_deployment_operations", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "probe_deployment", ChildTable: "model_deployment_probes", ParentTable: "model_deployments", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "probe_operation", ChildTable: "model_deployment_probes", ParentTable: "model_deployment_operations", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "probe_credential", ChildTable: "model_deployment_probes", ParentTable: "provider_credential_bindings", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "capability_operation", ChildTable: "model_deployment_capabilities", ParentTable: "model_deployment_operations", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "operation_deployment", ChildTable: "model_deployment_operations", ParentTable: "model_deployments", DeleteAction: "CASCADE"},
+		ForeignKey{Name: "binding_deployment_binding", ChildTable: "credential_binding_deployments", ParentTable: "provider_credential_bindings", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "binding_deployment_deployment", ChildTable: "credential_binding_deployments", ParentTable: "model_deployments", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "call_log_deployment", ChildTable: "call_logs", ParentTable: "model_deployments", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "provider_attempt_deployment", ChildTable: "billing_provider_attempts", ParentTable: "model_deployments", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "binding_connection", ChildTable: "provider_credential_bindings", ParentTable: "provider_connections", DeleteAction: "RESTRICT"},
+		ForeignKey{Name: "deployment_connection", ChildTable: "model_deployments", ParentTable: "provider_connections", DeleteAction: "RESTRICT"},
+	)
+	plan, err := Build(snapshot, testTarget(), "source-a", "source-b", time.Unix(0, 0))
+	if err != nil {
+		t.Fatalf("Build canonical delete order: %v", err)
+	}
+	positions := make(map[string]int, len(plan.DeleteOrder))
+	for _, step := range plan.DeleteOrder {
+		positions[step.Table] = step.Position
+	}
+	for _, relation := range [][2]string{
+		{"runtime_change_releases", "model_deployment_release_authoring_receipts"},
+		{"model_deployment_lifecycle_receipt_qualifications", "model_deployment_lifecycle_receipt_releases"},
+		{"model_deployment_lifecycle_receipt_releases", "model_deployment_lifecycle_receipts"},
+		{"model_deployment_lifecycle_receipt_releases", "runtime_change_releases"},
+		{"model_deployment_lifecycle_receipts", "runtime_change_releases"},
+		{"model_deployment_create_receipts", "model_deployment_operations"},
+		{"model_deployment_create_receipts", "model_deployments"},
+		{"runtime_route_revision_items", "runtime_change_releases"},
+		{"runtime_route_revision_items", "model_deployment_operations"},
+		{"runtime_route_revision_items", "model_deployments"},
+		{"model_deployment_probes", "model_deployments"},
+		{"model_deployment_probes", "model_deployment_operations"},
+		{"model_deployment_probes", "provider_credential_bindings"},
+		{"model_deployment_capabilities", "model_deployment_operations"},
+		{"model_deployment_operations", "model_deployments"},
+		{"credential_binding_deployments", "provider_credential_bindings"},
+		{"credential_binding_deployments", "model_deployments"},
+		{"call_logs", "model_deployments"},
+		{"billing_provider_attempts", "model_deployments"},
+		{"provider_credential_bindings", "provider_connections"},
+		{"model_deployments", "provider_connections"},
+	} {
+		if positions[relation[0]] >= positions[relation[1]] {
+			t.Fatalf("delete order must place child %s before parent %s: %+v", relation[0], relation[1], plan.DeleteOrder)
+		}
 	}
 }
 
@@ -136,6 +230,50 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 	missingTrigger.Triggers = missingTrigger.Triggers[1:]
 	if _, err := Build(missingTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "guarded_delete_trigger") {
 		t.Fatalf("missing guarded trigger error = %v", err)
+	}
+
+	missingCanonicalLifecycleTrigger := completeSnapshot()
+	missingCanonicalLifecycleTrigger.Triggers = slices.DeleteFunc(missingCanonicalLifecycleTrigger.Triggers, func(trigger TriggerState) bool {
+		return trigger.Name == "model_deployments_identity_immutable"
+	})
+	if _, err := Build(missingCanonicalLifecycleTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "guarded_delete_trigger_model_deployments_model_deployments_identity_immutable") {
+		t.Fatalf("missing canonical lifecycle trigger error = %v", err)
+	}
+
+	missingP3QualificationTrigger := completeSnapshot()
+	missingP3QualificationTrigger.Triggers = slices.DeleteFunc(missingP3QualificationTrigger.Triggers, func(trigger TriggerState) bool {
+		return trigger.Name == "runtime_route_revision_items_p3_qualification_guard"
+	})
+	if _, err := Build(missingP3QualificationTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil ||
+		!strings.Contains(err.Error(), "guarded_delete_trigger_runtime_route_revision_items_runtime_route_revision_items_p3_qualification_guard") {
+		t.Fatalf("missing P3 qualification reset trigger error = %v", err)
+	}
+
+	missingLifecycleReceiptTrigger := completeSnapshot()
+	missingLifecycleReceiptTrigger.Triggers = slices.DeleteFunc(missingLifecycleReceiptTrigger.Triggers, func(trigger TriggerState) bool {
+		return trigger.Name == "model_deployment_lifecycle_receipts_immutable"
+	})
+	if _, err := Build(missingLifecycleReceiptTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil ||
+		!strings.Contains(err.Error(), "guarded_delete_trigger_model_deployment_lifecycle_receipts_model_deployment_lifecycle_receipts_immutable") {
+		t.Fatalf("missing lifecycle receipt reset trigger error = %v", err)
+	}
+
+	missingAuthoringReceiptTrigger := completeSnapshot()
+	missingAuthoringReceiptTrigger.Triggers = slices.DeleteFunc(missingAuthoringReceiptTrigger.Triggers, func(trigger TriggerState) bool {
+		return trigger.Name == "model_deployment_release_authoring_receipts_immutable"
+	})
+	if _, err := Build(missingAuthoringReceiptTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil ||
+		!strings.Contains(err.Error(), "guarded_delete_trigger_model_deployment_release_authoring_receipts_model_deployment_release_authoring_receipts_immutable") {
+		t.Fatalf("missing authoring receipt reset trigger error = %v", err)
+	}
+
+	missingRuntimeEventTrigger := completeSnapshot()
+	missingRuntimeEventTrigger.Triggers = slices.DeleteFunc(missingRuntimeEventTrigger.Triggers, func(trigger TriggerState) bool {
+		return trigger.Name == "runtime_change_events_append_only"
+	})
+	if _, err := Build(missingRuntimeEventTrigger, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil ||
+		!strings.Contains(err.Error(), "guarded_delete_trigger_runtime_change_events_runtime_change_events_append_only") {
+		t.Fatalf("missing runtime event reset trigger error = %v", err)
 	}
 
 	missingCompatibilityTrigger := completeSnapshot()
@@ -282,6 +420,18 @@ func completeSnapshot() Snapshot {
 			" BEFORE INSERT OR UPDATE ON public.project_members EXECUTE FUNCTION " + projectMemberRoleCompatibilityFunction + "()",
 		Enabled: "O",
 	})
+	triggers = append(triggers, TriggerState{
+		Table: "billing_provider_attempts",
+		Name:  "billing_provider_attempts_dispatch_fence_immutable",
+		Definition: "CREATE TRIGGER billing_provider_attempts_dispatch_fence_immutable " +
+			"BEFORE UPDATE ON public.billing_provider_attempts EXECUTE FUNCTION preserve_provider_attempt_dispatch_fence()",
+		Enabled: "O",
+	})
+	migrationVersions := []string{
+		"000056_prd8_invocation_optimization",
+		"000057_second_integration_reset_support",
+		schemaauthority.LatestSupportedMigration,
+	}
 	return Snapshot{
 		Tables: tables,
 		Admin: AdminSelection{
@@ -297,11 +447,8 @@ func completeSnapshot() Snapshot {
 			TargetValueSHA256: "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
 			AlreadyAtTarget:   true,
 		}},
-		MigrationVersions: []string{
-			"000056_prd8_invocation_optimization",
-			"000057_second_integration_reset_support",
-			schemaauthority.LatestSupportedMigration,
-		},
+		MigrationVersions:         slices.Clone(migrationVersions),
+		ExpectedMigrationVersions: slices.Clone(migrationVersions),
 		Sequences: []SequenceState{{
 			Name: "users_id_seq", OwnedTable: "users", OwnedColumn: "id",
 			IncrementBy: 1, LastValue: 10, IsCalled: true, NextValue: 11, MaxObservedValue: 1,

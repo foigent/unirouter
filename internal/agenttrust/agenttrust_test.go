@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+
+	"github.com/uniroute/unirouter/internal/accessscope"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
 func TestFixtureEvaluatesAndVerifiesSignedReceipt(t *testing.T) {
@@ -98,6 +101,45 @@ func TestAuthorityReviewUsesCurrentAgentEndpointBoundary(t *testing.T) {
 	encoded, _ := json.Marshal(request)
 	if _, err := Evaluate(encoded); errorCode(err) != "authority_endpoint_invalid" {
 		t.Fatalf("expected current model-gateway endpoint rejection, got %v", err)
+	}
+}
+
+func TestAuthorityReviewRequiresExactExplicitRootScopeForNewOperations(t *testing.T) {
+	body, err := SampleRequestBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture ReviewRequest
+	if err := json.Unmarshal(body, &fixture); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, endpoint := range []string{modeloperation.PathResponses, modeloperation.PathMessages} {
+		request := cloneRequest(fixture)
+		for index := range request.Authority.Nodes {
+			request.Authority.Nodes[index].Limits.AllowedEndpoints = []string{endpoint}
+		}
+		if _, err := BuildReceiptPayload(request); errorCode(err) != "authority_root_scope_invalid" {
+			t.Fatalf("legacy-unbound root obtained %q: %v", endpoint, err)
+		}
+
+		request.Authority.RootGrantBound = true
+		request.Authority.RootGrantScopeMode = accessscope.ModeProjectDefault
+		request.Authority.RootAllowedEndpoints = []string{endpoint}
+		if _, err := BuildReceiptPayload(request); errorCode(err) != "authority_root_scope_invalid" {
+			t.Fatalf("project-default root obtained %q: %v", endpoint, err)
+		}
+
+		request.Authority.RootGrantScopeMode = accessscope.ModeExplicit
+		request.Authority.RootAllowedEndpoints = []string{"*"}
+		if _, err := BuildReceiptPayload(request); errorCode(err) != "authority_root_scope_invalid" {
+			t.Fatalf("wildcard root obtained %q: %v", endpoint, err)
+		}
+
+		request.Authority.RootAllowedEndpoints = []string{endpoint}
+		if _, err := BuildReceiptPayload(request); err != nil {
+			t.Fatalf("exact explicit root could not prove %q: %v", endpoint, err)
+		}
 	}
 }
 

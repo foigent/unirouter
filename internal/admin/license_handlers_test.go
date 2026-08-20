@@ -320,6 +320,27 @@ func TestUpdateLicense_RejectsLimitBelowCurrentUsage(t *testing.T) {
 	}
 }
 
+func TestActiveChannelsCommercialUsageCountsCanonicalEnabledConnections(t *testing.T) {
+	var query string
+	tx := &testutil.MockTx{QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+		query = sql
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			*dest[0].(*int64) = 3
+			return nil
+		}}
+	}}
+	current, err := countCommercialResourceUsage(t.Context(), tx, commercialResource{
+		name: licensing.LimitActiveChannels, table: "provider_connections",
+	})
+	if err != nil || current != 3 {
+		t.Fatalf("canonical active connection count = %d, %v", current, err)
+	}
+	if !strings.Contains(query, "FROM provider_connections") || !strings.Contains(query, "admin_state='enabled'") ||
+		strings.Contains(query, "FROM channels") {
+		t.Fatalf("active_channels must use only canonical enabled connections: %s", query)
+	}
+}
+
 func TestWriteCommercialLimitViolationUsesConsistentHTTPStatus(t *testing.T) {
 	tests := []struct {
 		name       string

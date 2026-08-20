@@ -13,7 +13,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/migrate"
+	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/resetplan"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -60,6 +63,192 @@ func TestFirstCustomerBootstrapCreatesOnlyOrganizationZeroWalletAndAuditIntegrat
 	require.Equal(t, http.StatusConflict, mismatch.Code)
 	second := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-client-002", "Second Customer")
 	require.Equal(t, http.StatusConflict, second.Code)
+}
+
+func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotationIntegration(t *testing.T) {
+	pool := testutil.SetupIsolatedTestDB(t)
+	migrationsDir := testutil.MigrationsDir(t)
+	require.NoError(t, migrate.Run(t.Context(), pool, migrationsDir))
+	baseline, err := customercontext.EnsureBaseline(t.Context(), pool)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, baseline.Customer.OrganizationID)
+
+	var adminID, adminOrgID int64
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT id,org_id FROM users
+		 WHERE public.normalize_local_login_id(username)='admin'`).Scan(&adminID, &adminOrgID))
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("fresh-bootstrap-password"), bcrypt.MinCost)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `
+		WITH changed AS (
+			UPDATE users SET password_hash=$1,auth_epoch=auth_epoch+1,updated_at=NOW()
+			 WHERE id=$2 AND org_id=$3 RETURNING id,org_id
+		)
+		INSERT INTO audit_logs (
+			org_id,user_id,action,resource,resource_id,detail,source,
+			before_state,after_state,created_at
+		)
+		SELECT org_id,id,'user.password_reset','user',id::text,
+		       '{"reason":"recovery_cli","sessions_revoked":"all"}'::jsonb,'system',
+		       '{}'::jsonb,'{"password_reset":true,"sessions_revoked":"all"}'::jsonb,NOW()
+		  FROM changed`, string(passwordHash), adminID, adminOrgID)
+	require.NoError(t, err)
+	expectedLedger, err := schemaauthority.ExpectedLedger(migrationsDir)
+	require.NoError(t, err)
+
+	const jwtSecret = "fresh-bootstrap-jwt"
+	handler := NewHandler(pool, jwtSecret, []byte("0123456789abcdef01234567"), nil)
+	handler.SetRuntimeStatusOptions(RuntimeStatusOptions{
+		Environment:      "production",
+		SchemaMigrations: expectedLedger,
+	})
+	outboxService, err := outbox.New(pool, outbox.DefaultOptions())
+	require.NoError(t, err)
+	handler.SetOutbox(outboxService)
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login",
+		bytes.NewBufferString(`{"username":"admin","password":"fresh-bootstrap-password"}`))
+	loginResponse := httptest.NewRecorder()
+	middleware.OperationIdentity(http.HandlerFunc(handler.Login)).ServeHTTP(loginResponse, loginRequest)
+	require.Equal(t, http.StatusOK, loginResponse.Code, loginResponse.Body.String())
+	var login struct {
+		Token string `json:"token"`
+	}
+	require.NoError(t, json.Unmarshal(loginResponse.Body.Bytes(), &login))
+	require.NotEmpty(t, login.Token)
+
+	protected := middleware.OperationIdentity(middleware.AdminAuth(pool, jwtSecret)(http.HandlerFunc(handler.BootstrapFirstCustomer)))
+	serve := func(clientRequestID string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/first-customer",
+			bytes.NewBufferString(`{"organization_name":"Fresh Customer"}`))
+		request.Header.Set("Authorization", "Bearer "+login.Token)
+		request.Header.Set(middleware.ClientRequestIDHeader, clientRequestID)
+		response := httptest.NewRecorder()
+		protected.ServeHTTP(response, request)
+		return response
+	}
+
+	missingRelease := serve("fresh-bootstrap-client-001")
+	require.Equal(t, http.StatusConflict, missingRelease.Code, missingRelease.Body.String())
+	var unchangedOrgs, unchangedWallets, unchangedProjects int64
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT
+		(SELECT COUNT(*) FROM orgs),
+		(SELECT COUNT(*) FROM wallets),
+		(SELECT COUNT(*) FROM projects)`).Scan(&unchangedOrgs, &unchangedWallets, &unchangedProjects))
+	require.EqualValues(t, 1, unchangedOrgs)
+	require.EqualValues(t, 1, unchangedWallets)
+	require.EqualValues(t, 1, unchangedProjects)
+
+	seedFreshBootstrapReleaseEvidence(t, pool)
+	response := serve("fresh-bootstrap-client-001")
+	require.Equal(t, http.StatusCreated, response.Code, response.Body.String())
+	var created firstCustomerBootstrapResult
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &created))
+	require.Equal(t, "Fresh Customer", created.OrganizationName)
+
+	var orgs, wallets, projects, members, bootstrapAudits, pendingLoginAudits int64
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT
+		  (SELECT COUNT(*) FROM orgs),
+		  (SELECT COUNT(*) FROM wallets),
+		  (SELECT COUNT(*) FROM projects),
+		  (SELECT COUNT(*) FROM project_members),
+		  (SELECT COUNT(*) FROM audit_logs WHERE action=$1),
+		  (SELECT COUNT(*) FROM internal_outbox_events
+		    WHERE event_type='evidence.audit.v1' AND payload->>'action'='login')`, firstCustomerBootstrapAction).
+		Scan(&orgs, &wallets, &projects, &members, &bootstrapAudits, &pendingLoginAudits))
+	require.EqualValues(t, 2, orgs)
+	require.EqualValues(t, 1, wallets, "the platform seed wallet must be removed before the customer wallet is created")
+	require.Zero(t, projects, "the platform seed project must not consume a customer License seat")
+	require.Zero(t, members)
+	require.EqualValues(t, 1, bootstrapAudits)
+	require.EqualValues(t, 1, pendingLoginAudits, "bootstrap must preserve the durable login audit evidence")
+	replay := serve("fresh-bootstrap-client-001")
+	require.Equal(t, http.StatusOK, replay.Code, replay.Body.String())
+	var replayed firstCustomerBootstrapResult
+	require.NoError(t, json.Unmarshal(replay.Body.Bytes(), &replayed))
+	require.True(t, replayed.Idempotent)
+	require.Equal(t, created.OrganizationID, replayed.OrganizationID)
+
+	_, err = pool.Exec(t.Context(), `INSERT INTO commercial_license_entitlements (
+		singleton,license_id,deployment_id,key_id,expires_at,features,active_projects
+	) VALUES (TRUE,'fresh-bootstrap-license','fresh-bootstrap-deployment',
+		'fresh-bootstrap-license-key',NOW()+INTERVAL '1 year','[]'::jsonb,1)`)
+	require.NoError(t, err)
+	var reviewedProjectID int64
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO projects (
+		org_id,name,slug,description,status,budget_cents,budget_period
+	) VALUES ($1,'Reviewed Customer Project','default','Reviewed during isolated first install',
+		'active',NULL,'monthly') RETURNING id`, created.OrganizationID).Scan(&reviewedProjectID))
+	type baselineResult struct {
+		baseline customercontext.Baseline
+		err      error
+	}
+	restarts := make(chan baselineResult, 2)
+	for range 2 {
+		go func() {
+			baseline, baselineErr := customercontext.EnsureBaseline(t.Context(), pool)
+			restarts <- baselineResult{baseline: baseline, err: baselineErr}
+		}()
+	}
+	for range 2 {
+		restarted := <-restarts
+		require.NoError(t, restarted.err)
+		require.Equal(t, reviewedProjectID, restarted.baseline.ProjectID)
+	}
+	var activeProjects int64
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM projects WHERE status='active'`).Scan(&activeProjects))
+	require.EqualValues(t, 1, activeProjects, "canonical restart must not consume a second active-project License seat")
+
+	_, err = pool.Exec(t.Context(), `UPDATE wallets SET
+		balance_micros=17,granted_balance_micros=23,total_spent_micros=5
+		WHERE org_id=$1`, created.OrganizationID)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `UPDATE orgs SET name='Renamed Customer',status='disabled'
+		WHERE id=$1`, created.OrganizationID)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `UPDATE audit_logs SET created_at=NOW()-INTERVAL '100 days'
+		WHERE action=$1 AND client_request_id='fresh-bootstrap-client-001'`, firstCustomerBootstrapAction)
+	require.NoError(t, err)
+	require.NoError(t, handler.CleanupOldData(t.Context(), 30))
+	durableReplay := serve("fresh-bootstrap-client-001")
+	require.Equal(t, http.StatusOK, durableReplay.Code, durableReplay.Body.String())
+	var durableResult firstCustomerBootstrapResult
+	require.NoError(t, json.Unmarshal(durableReplay.Body.Bytes(), &durableResult))
+	require.Equal(t, created.OrganizationID, durableResult.OrganizationID)
+	require.Equal(t, "Fresh Customer", durableResult.OrganizationName)
+	require.Zero(t, durableResult.WalletBalance)
+	require.True(t, durableResult.Idempotent)
+}
+
+func seedFreshBootstrapReleaseEvidence(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	const (
+		sequence = int64(1)
+		version  = "v5-fresh-bootstrap-fixture"
+		commit   = "0123456789abcdef0123456789abcdef01234567"
+		sha256   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		keyID    = "fresh-bootstrap-fixture-key"
+	)
+	manifest := `{"contract_version":"unirouter.upgrade-bundle.v1","release_sequence":1,"version":"v5-fresh-bootstrap-fixture","commit":"0123456789abcdef0123456789abcdef01234567","target_schema":"` + schemaauthority.LatestSupportedMigration + `"}`
+	tx, err := pool.Begin(t.Context())
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(t.Context()) }()
+	_, err = tx.Exec(t.Context(), `
+		INSERT INTO release_history (
+			release_sequence,version,commit,package_sha256,trusted_key_id,
+			target_schema,manifest,recorded_by
+		) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,'fresh-bootstrap-integration')`,
+		sequence, version, commit, sha256, keyID,
+		schemaauthority.LatestSupportedMigration, manifest)
+	require.NoError(t, err)
+	result, err := tx.Exec(t.Context(), `UPDATE release_state SET
+			release_sequence=$1,version=$2,commit=$3,package_sha256=$4,
+			trusted_key_id=$5,target_schema=$6,manifest=$7::jsonb,updated_at=NOW()
+		WHERE singleton`, sequence, version, commit, sha256, keyID,
+		schemaauthority.LatestSupportedMigration, manifest)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.RowsAffected())
+	require.NoError(t, tx.Commit(t.Context()))
 }
 
 func TestFirstCustomerBootstrapRejectsCommittedExactSessionLogoutIntegration(t *testing.T) {
@@ -150,7 +339,7 @@ func TestFirstCustomerBootstrapFailsClosedOnSchemaDriftIntegration(t *testing.T)
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
-		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000069_future_contract')`)
+		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000080_future_contract')`)
 		require.NoError(t, err)
 
 		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-002", "First Customer")
@@ -199,6 +388,10 @@ func seedFirstCustomerBootstrapAdmin(t *testing.T, pool *pgxpool.Pool) (int64, i
 }
 
 func serveFirstCustomerBootstrap(t *testing.T, handler *Handler, userID, orgID int64, role, clientRequestID, organizationName string) *httptest.ResponseRecorder {
+	return serveFirstCustomerBootstrapAtEpoch(t, handler, userID, orgID, 0, role, clientRequestID, organizationName)
+}
+
+func serveFirstCustomerBootstrapAtEpoch(t *testing.T, handler *Handler, userID, orgID, authEpoch int64, role, clientRequestID, organizationName string) *httptest.ResponseRecorder {
 	t.Helper()
 	payload, err := json.Marshal(firstCustomerBootstrapRequest{OrganizationName: organizationName})
 	require.NoError(t, err)
@@ -208,7 +401,7 @@ func serveFirstCustomerBootstrap(t *testing.T, handler *Handler, userID, orgID i
 	ctx = context.WithValue(ctx, middleware.CtxOrgID, orgID)
 	ctx = context.WithValue(ctx, middleware.CtxUserRole, role)
 	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, role)
-	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, int64(0))
+	ctx = context.WithValue(ctx, middleware.CtxAuthEpoch, authEpoch)
 	ctx = context.WithValue(ctx, middleware.CtxAdminSessionHash, bytes.Repeat([]byte{0xcd}, 32))
 	request = request.WithContext(ctx)
 	recorder := httptest.NewRecorder()

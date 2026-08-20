@@ -51,7 +51,7 @@
       "description": "Delegated strict validation by Agent Trust V1; no copied semantics.",
       "x-authoritative-schema": {
         "path": "internal/agenttrust/artifacts/agent-trust-review.v1.schema.json",
-        "sha256": "sha256:1e375c8febfd93e9972cdaab88c15c1aecf08537fc56ee1a2dfc5e6b037c6a37"
+        "sha256": "sha256:c5751ba5648004889526f638cbabeb1eedda1993c28f13112c3c220113a1a6af"
       }
     },
     "provenance_passport": {

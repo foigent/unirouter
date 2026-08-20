@@ -7,15 +7,15 @@
     "requested_model": "company-text",
     "mapped_model": "gpt-5.2",
     "request_id": "fixture-responses-1",
-    "body": "{\"model\":\"company-text\",\"input\":\"synthetic fixture\",\"max_output_tokens\":64}",
+    "body": "{\"model\":\"company-text\",\"input\":\"synthetic fixture\",\"max_output_tokens\":64,\"metadata\":{\"suite\":\"responses\"},\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"low\"}}",
     "expected_method": "POST",
     "expected_url": "https://api.openai.example/v1/responses",
     "expected_request_id_header": "fixture-responses-1",
-    "expected_body": "{\"model\":\"gpt-5.2\",\"input\":\"synthetic fixture\",\"max_output_tokens\":64,\"store\":false,\"stream\":false}"
+    "expected_body": "{\"input\":\"synthetic fixture\",\"max_output_tokens\":64,\"metadata\":{\"suite\":\"responses\"},\"model\":\"gpt-5.2\",\"store\":false,\"stream\":false,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"low\"}}"
   },
   "response": {
     "status_code": 200,
-    "body": "{\"id\":\"resp_fixture\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5.2\",\"error\":null,\"incomplete_details\":null,\"output\":[{\"id\":\"msg_fixture\",\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"fixture response\"}]}],\"usage\":{\"input_tokens\":12,\"input_tokens_details\":{\"cached_tokens\":4,\"cache_write_tokens\":2},\"output_tokens\":3,\"total_tokens\":15}}",
+    "body": "{\"id\":\"resp_fixture\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5.2\",\"error\":null,\"incomplete_details\":null,\"output_text\":\"fixture response\",\"output\":[{\"id\":\"rs_fixture\",\"type\":\"reasoning\",\"status\":\"completed\",\"summary\":[]},{\"id\":\"msg_fixture\",\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"fixture response\",\"future_response_field\":{\"n\":92233720368547758081234567890}}]}],\"usage\":{\"input_tokens\":12,\"input_tokens_details\":{\"cached_tokens\":4,\"cache_write_tokens\":2},\"output_tokens\":3,\"output_tokens_details\":{\"reasoning_tokens\":null},\"total_tokens\":15},\"future_response_field\":{\"n\":92233720368547758081234567890}}",
     "expected_outcome": {
       "contract_version": "unirouter.endpoint-protocol.v1",
       "profile_id": "unirouter.openai.responses.text.v1",
@@ -70,6 +70,16 @@
       "case_id": "nested-duplicate-rejected",
       "body": "{\"model\":\"company-text\",\"input\":\"synthetic fixture\",\"metadata\":{\"nested\":{\"x\":1,\"x\":2}}}",
       "expected_code": "duplicate_json_key"
+    },
+    {
+      "case_id": "unknown-semantic-field-rejected",
+      "body": "{\"model\":\"company-text\",\"input\":\"synthetic fixture\",\"future_provider_field\":{\"n\":92233720368547758081234567890}}",
+      "expected_code": "unsupported_unknown_provider_field"
+    },
+    {
+      "case_id": "reasoning-control-rejected",
+      "body": "{\"model\":\"company-text\",\"input\":\"synthetic fixture\",\"reasoning\":{\"effort\":\"low\"}}",
+      "expected_code": "unsupported_reasoning_controls"
     }
   ],
   "negative_responses": [
@@ -80,8 +90,18 @@
     },
     {
       "case_id": "usage-mismatch-rejected",
-      "body": "{\"id\":\"resp_bad\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5.2\",\"error\":null,\"incomplete_details\":null,\"output\":[{\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"x\"}]}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":3}}",
+      "body": "{\"id\":\"resp_bad\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5.2\",\"error\":null,\"incomplete_details\":null,\"output\":[{\"id\":\"msg_bad\",\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"x\"}]}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":3}}",
       "expected_code": "usage_total_mismatch"
+    },
+    {
+      "case_id": "reasoning-usage-partition-rejected",
+      "body": "{\"id\":\"resp_reasoning_bad\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5.2\",\"error\":null,\"incomplete_details\":null,\"output\":[{\"id\":\"msg_reasoning_bad\",\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"x\"}]}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"output_tokens_details\":{\"reasoning_tokens\":2},\"total_tokens\":2}}",
+      "expected_code": "reasoning_tokens_invalid"
+    },
+    {
+      "case_id": "failed-terminal-rejected",
+      "body": "{\"id\":\"resp_failed\",\"object\":\"response\",\"status\":\"failed\",\"model\":\"gpt-5.2\",\"error\":{\"code\":\"server_error\",\"message\":\"provider failure\"},\"incomplete_details\":null,\"output\":[],\"usage\":null}",
+      "expected_code": "response_failed"
     }
   ],
   "status_cases": [

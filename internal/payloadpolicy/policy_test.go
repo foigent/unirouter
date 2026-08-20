@@ -3,6 +3,7 @@ package payloadpolicy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -26,6 +27,9 @@ func TestDefaultLimitsMatchAcceptedProfiles(t *testing.T) {
 
 func TestReadAllUsesActualBytesAndReleasesBudget(t *testing.T) {
 	limits := DefaultLimits()
+	limits.ChatRequestBytes = 4
+	limits.EmbeddingsRequestBytes = 4
+	limits.NonStreamResponseBytes = 4
 	limits.NodeInFlightBytes = 8
 	limits.OrgInFlightBytes = 8
 	limits.ChatRequestBytes = 8
@@ -129,6 +133,39 @@ func TestRequestMiddlewareReturns413ForChunkedOversize(t *testing.T) {
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"code":"validation_error.payload_too_large"`)) {
 		t.Fatalf("missing stable error code: %s", rec.Body.String())
+	}
+}
+
+func TestRequestMiddlewareUsesMessagesProtocolErrorEnvelope(t *testing.T) {
+	limits := DefaultLimits()
+	limits.ChatRequestBytes = 4
+	limits.EmbeddingsRequestBytes = 4
+	limits.NonStreamResponseBytes = 4
+	limits.NodeInFlightBytes = 8
+	limits.OrgInFlightBytes = 8
+	budget := MustNewBudget(limits)
+	handler := RequestMiddlewareWithMax(budget, 4, func(context.Context) int64 { return 1 })(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("oversize Messages request reached handler")
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewBufferString("12345"))
+	request.ContentLength = -1
+	recorder := httptest.NewRecorder()
+	recorder.Header().Set("X-Request-ID", "op_payload_messages")
+	handler.ServeHTTP(recorder, request)
+
+	var body struct {
+		Type      string `json:"type"`
+		RequestID string `json:"request_id"`
+		Error     struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusRequestEntityTooLarge || body.Type != "error" ||
+		body.Error.Type != "request_too_large" || body.RequestID != "op_payload_messages" {
+		t.Fatalf("status=%d body=%+v raw=%s", recorder.Code, body, recorder.Body.String())
 	}
 }
 

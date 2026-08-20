@@ -106,7 +106,7 @@ func TestConformanceDependenciesPinExactB8B10B11Artifacts(t *testing.T) {
 	}
 	expected := map[string]string{
 		"internal/governancesim/artifacts/governance-simulation.v1.schema.json":    "sha256:02e00f49039d813b7ef2a739c2c0f32200a7f9df68e0bd0356a84c1927d4e123",
-		"internal/agenttrust/artifacts/agent-trust-review.v1.schema.json":          "sha256:1e375c8febfd93e9972cdaab88c15c1aecf08537fc56ee1a2dfc5e6b037c6a37",
+		"internal/agenttrust/artifacts/agent-trust-review.v1.schema.json":          "sha256:c5751ba5648004889526f638cbabeb1eedda1993c28f13112c3c220113a1a6af",
 		"internal/provenancepassport/artifacts/provenance-passport.v1.schema.json": "sha256:4b577521cc5b7ce2a2e5ff6f38e21c34e367e7bde04153da399f02304fafe4db",
 	}
 	for _, dependency := range dependencies {

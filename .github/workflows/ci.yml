@@ -264,6 +264,7 @@ jobs:
         env:
           REQUIRE_TEST_DATABASE: "1"
         # Integration test names are enforced by TestAdminIntegrationFilesUseIntegrationSuffix.
+        # This lane includes TestCanonicalDeploymentLifecycleHTTPApplicationIntegration.
         # Avoid rerunning the ordinary admin unit suite already covered above.
         run: go test -tags=integration -race ./internal/admin -run 'Integration$' -count=1 -timeout=20m
 
@@ -288,6 +289,15 @@ jobs:
           test_pattern+='|Test(RoutingPolicyPostgresStateTransitions|P6F08RoutingPolicyV1).*'
           test_pattern+='|TestEventService_CheckProjectBudgetTenantScope_Integration'
           test_pattern+='|TestAgentCapabilityPostgresAuthorityAndRevocationIntegration'
+          test_pattern+='|TestModelOperation(HTTPSOriginGoSQLGoldenVectors|ProductionQualification(DatabaseGuards|DownRejects(FrozenEvidence|FutureM76)))Integration'
+          test_pattern+='|Test(ModelDeploymentLifecycleReceipt|DeploymentLifecycleReceipt|InitialDeploymentLifecycleReceipt).*Integration'
+          test_pattern+='|TestAtomicModelReleaseAuthoring.*Integration'
+          test_pattern+='|TestEnsureBaseline.*Integration'
+          test_pattern+='|TestCanonicalConnectionLicenseAuthority.*Integration'
+          test_pattern+='|TestApply(AndCheckLegacyCompatibilityAuthorityAreIdempotentAndReadOnly|SealsCurrentLegacyStableAndCanaryBeforeVerifyCheck|FailsClosedWhenCurrentLegacyCanaryProjectionDrifts|AtExactCanonicalConnectionLimitRemainsIdempotentIntegration)'
+          test_pattern+='|TestPublicModelExecutionAuthority.*Integration'
+          test_pattern+='|TestPublicCoordinator.*Integration'
+          test_pattern+='|TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe'
           test_pattern+='|TestP6F(06|07|08|09|10|11|20|21|40|41).*)$'
           readonly test_pattern
 
@@ -295,7 +305,8 @@ jobs:
             ./internal/xinsightconnector ./internal/migrate \
             ./internal/resetexec ./cmd/uniroute \
             ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange \
-            ./internal/billing ./internal/middleware ./internal/completedfeed \
+            ./internal/customercontext ./internal/modelrouteauthority \
+            ./internal/billing ./internal/modelexecution ./internal/middleware ./internal/completedfeed \
             ./internal/gateway ./internal/outbox ./internal/terminalhook \
             -run "$test_pattern" -count=1 -timeout=20m
 
@@ -608,6 +619,10 @@ jobs:
             (.published | tostring) == "8081" and
             (.target | tostring) == "8080"
           )] | length' <<< "$internal_target_compose_json")" -eq 1
+          test "$(jq '[.services.backend, .services["backend-canary"]] | all(
+            .environment.MODEL_ROUTE_AUTHORITY == "canonical" and
+            .environment.MODEL_ROUTE_COMPATIBILITY_ENABLED == "false"
+          )' <<< "$internal_target_compose_json")" = true
 
           customer_compose="$(docker compose -f deploy/customer/docker-compose.yml config)"
           customer_compose_json="$(docker compose -f deploy/customer/docker-compose.yml config --format json)"
@@ -624,11 +639,21 @@ jobs:
           grep -F 'image: grafana/grafana@sha256:4444444444444444444444444444444444444444444444444444444444444444' <<< "$customer_compose"
           grep -F 'ipv4_address: 172.30.250.10' <<< "$customer_compose"
           grep -F 'TRUSTED_PROXY_CIDRS: 172.30.250.10/32,172.30.250.1/32' <<< "$customer_compose"
+          grep -F 'MODEL_ROUTE_AUTHORITY: canonical' <<< "$customer_compose"
+          grep -F 'MODEL_ROUTE_COMPATIBILITY_ENABLED: "false"' <<< "$customer_compose"
+          grep -Fx 'MODEL_ROUTE_AUTHORITY=legacy' deploy/customer/.env.example
+          grep -Fx 'MODEL_ROUTE_COMPATIBILITY_ENABLED=true' deploy/customer/.env.example
           if grep -Fq 'build:' <<< "$customer_compose"; then
             echo 'customer Compose must not contain build contexts' >&2
             exit 1
           fi
           deploy/customer/preflight.sh /dev/null
+          for invalid_runtime_environment in local dev test; do
+            if RUNTIME_ENVIRONMENT="${invalid_runtime_environment}" deploy/customer/preflight.sh /dev/null; then
+              echo "formal customer preflight must reject RUNTIME_ENVIRONMENT=${invalid_runtime_environment}" >&2
+              exit 1
+            fi
+          done
           RESPONSE_CACHE_INDEX_KEY=iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii \
           RESPONSE_CACHE_ENCRYPTION_KEY=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee \
           RESPONSE_CACHE_KEY_VERSION=cache-key-v1 \
@@ -652,6 +677,36 @@ jobs:
             echo 'customer preflight must reject an invalid Docker log file count' >&2
             exit 1
           fi
+          if MODEL_ROUTE_AUTHORITY=auto deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject an unknown model route authority' >&2
+            exit 1
+          fi
+          if MODEL_ROUTE_AUTHORITY=verify deploy/customer/preflight.sh /dev/null; then
+            echo 'verify authority must require the explicit compatibility switch' >&2
+            exit 1
+          fi
+          verify_route_authority_preflight="$(MODEL_ROUTE_AUTHORITY=verify MODEL_ROUTE_COMPATIBILITY_ENABLED=true deploy/customer/preflight.sh /dev/null 2>&1)"
+          grep -F 'backend database startup gate (this config preflight is not readiness)' <<< "$verify_route_authority_preflight"
+          if MODEL_ROUTE_AUTHORITY=legacy deploy/customer/preflight.sh /dev/null; then
+            echo 'legacy authority must require the explicit compatibility switch' >&2
+            exit 1
+          fi
+          fresh_bootstrap_route_authority_preflight="$(MODEL_ROUTE_AUTHORITY=legacy MODEL_ROUTE_COMPATIBILITY_ENABLED=true deploy/customer/preflight.sh /dev/null 2>&1)"
+          grep -F 'full legacy runtime, not a bootstrap-only listener' <<< "$fresh_bootstrap_route_authority_preflight"
+          if MODEL_ROUTE_COMPATIBILITY_ENABLED=yes deploy/customer/preflight.sh /dev/null; then
+            echo 'customer preflight must reject a non-exact compatibility boolean' >&2
+            exit 1
+          fi
+          if MODEL_ROUTE_AUTHORITY=canonical MODEL_ROUTE_COMPATIBILITY_ENABLED=true deploy/customer/preflight.sh /dev/null; then
+            echo 'canonical authority must reject the legacy compatibility runtime' >&2
+            exit 1
+          fi
+          if MODEL_ROUTE_AUTHORITY=canonical ASYNC_MEDIA_ENABLED=true deploy/customer/preflight.sh /dev/null; then
+            echo 'canonical authority must reject legacy async-media routing' >&2
+            exit 1
+          fi
+          canonical_route_authority_preflight="$(MODEL_ROUTE_AUTHORITY=canonical MODEL_ROUTE_COMPATIBILITY_ENABLED=false ASYNC_MEDIA_ENABLED=false deploy/customer/preflight.sh /dev/null 2>&1)"
+          grep -F 'backend database startup gate (this config preflight is not readiness)' <<< "$canonical_route_authority_preflight"
           if JWT_SECRET=short deploy/customer/preflight.sh /dev/null; then
             echo 'customer preflight must reject a short JWT secret' >&2
             exit 1

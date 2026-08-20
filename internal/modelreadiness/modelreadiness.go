@@ -5,7 +5,7 @@ package modelreadiness
 
 import "time"
 
-const ContractVersion = "unirouter.model-readiness.v1"
+const ContractVersion = "unirouter.model-readiness.v2"
 
 const (
 	ModeCaller     = "caller"
@@ -37,14 +37,16 @@ type Fact struct {
 }
 
 type Scope struct {
-	Mode           string `json:"mode"`
-	OrgID          int64  `json:"org_id"`
-	ProjectID      int64  `json:"project_id"`
-	RequestedModel string `json:"requested_model"`
-	ResolvedModel  string `json:"resolved_model"`
-	Endpoint       string `json:"endpoint"`
-	Caller         string `json:"caller"`
-	ApplicationRef string `json:"application_ref,omitempty"`
+	Mode             string `json:"mode"`
+	OrgID            int64  `json:"org_id"`
+	ProjectID        int64  `json:"project_id"`
+	DeploymentID     int64  `json:"deployment_id,omitempty"`
+	RequestedModel   string `json:"requested_model"`
+	ResolvedModel    string `json:"resolved_model"`
+	Endpoint         string `json:"endpoint"`
+	ModelOperationID string `json:"model_operation_id"`
+	Caller           string `json:"caller"`
+	ApplicationRef   string `json:"application_ref,omitempty"`
 }
 
 type Summary struct {
@@ -60,8 +62,9 @@ type PlatformModel struct {
 	Lifecycle          Axis `json:"lifecycle"`
 	Catalog            Axis `json:"catalog"`
 	PriceAuthority     Axis `json:"price_authority"`
-	Channel            Axis `json:"channel"`
+	Deployment         Axis `json:"deployment"`
 	ProviderCredential Axis `json:"provider_credential"`
+	Operation          Axis `json:"operation"`
 	BaseRoute          Axis `json:"base_route"`
 	RuntimeSlot        Axis `json:"runtime_slot"`
 }
@@ -147,7 +150,9 @@ func factFromAxis(axis Axis) Fact {
 
 func callableFact(platform PlatformModel, project ProjectCaller) Fact {
 	required := []Axis{
-		platform.GatewayLicense, platform.Lifecycle, platform.PriceAuthority, platform.BaseRoute,
+		platform.GatewayLicense, platform.Lifecycle, platform.PriceAuthority,
+		platform.Deployment, platform.ProviderCredential, platform.Operation,
+		platform.BaseRoute, platform.RuntimeSlot,
 		project.Project, project.Alias, project.ModelSet, project.Wallet, project.Grant,
 		project.Credential, project.ModelAuthorization, project.LimitPolicy,
 	}

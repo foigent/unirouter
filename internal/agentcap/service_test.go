@@ -16,6 +16,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/uniroute/unirouter/internal/accessscope"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
@@ -159,6 +161,63 @@ func TestValidateRootLimitsUsesMaterializedGrantDefaultsAndExplicitZero(t *testi
 	}
 }
 
+func TestAgentEndpointsFollowCatalogAndRequireExactRootScope(t *testing.T) {
+	limitsFor := func(endpoint string) Limits {
+		return Limits{
+			MaxDepth: 1, MaxChildren: 1, MaxDescendants: 1,
+			CostBudgetCents: 1, TokenBudget: 1,
+			RPMLimit: 1, RPSLimit: 1, ConcurrencyLimit: 1,
+			AllowedModels: []string{"model"}, AllowedEndpoints: []string{endpoint},
+		}
+	}
+	for _, endpoint := range modeloperation.AgentCapabilityPaths() {
+		if err := validateEndpoints([]string{endpoint}); err != nil {
+			t.Fatalf("catalog Agent endpoint %q rejected: %v", endpoint, err)
+		}
+	}
+	for _, endpoint := range []string{modeloperation.PathMediaJobs, "/v1/unknown"} {
+		if err := validateEndpoints([]string{endpoint}); !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("non-Agent endpoint %q error = %v, want ErrInvalidRequest", endpoint, err)
+		}
+	}
+
+	unbound := authoritySnapshot{APIKey: models.ApiKey{ID: 1}}
+	for _, endpoint := range []string{modeloperation.PathChatCompletions, modeloperation.PathEmbeddings, modeloperation.PathModels} {
+		if err := validateRootLimits(limitsFor(endpoint), unbound); err != nil {
+			t.Fatalf("legacy-unbound root lost %q: %v", endpoint, err)
+		}
+	}
+	for _, endpoint := range []string{modeloperation.PathResponses, modeloperation.PathMessages} {
+		if err := validateRootLimits(limitsFor(endpoint), unbound); !errors.Is(err, ErrLimitExceeded) {
+			t.Fatalf("unbound root obtained %q: %v", endpoint, err)
+		}
+
+		projectDefault := authoritySnapshot{APIKey: models.ApiKey{
+			ID: 1, GrantBound: true, GrantScopeMode: accessscope.ModeProjectDefault,
+			AllowedEndpoints: endpoint,
+		}}
+		if err := validateRootLimits(limitsFor(endpoint), projectDefault); !errors.Is(err, ErrLimitExceeded) {
+			t.Fatalf("project-default root obtained %q: %v", endpoint, err)
+		}
+
+		wildcard := authoritySnapshot{APIKey: models.ApiKey{
+			ID: 1, GrantBound: true, GrantScopeMode: accessscope.ModeExplicit,
+			AllowedEndpoints: "*",
+		}}
+		if err := validateRootLimits(limitsFor(endpoint), wildcard); !errors.Is(err, ErrLimitExceeded) {
+			t.Fatalf("wildcard root obtained %q: %v", endpoint, err)
+		}
+
+		explicit := authoritySnapshot{APIKey: models.ApiKey{
+			ID: 1, GrantBound: true, GrantScopeMode: accessscope.ModeExplicit,
+			AllowedEndpoints: endpoint,
+		}}
+		if err := validateRootLimits(limitsFor(endpoint), explicit); err != nil {
+			t.Fatalf("exact explicit root could not obtain %q: %v", endpoint, err)
+		}
+	}
+}
+
 func rootLimits(maxDepth, maxChildren, maxDescendants int) Limits {
 	return Limits{
 		MaxDepth:         maxDepth,
@@ -185,6 +244,48 @@ func exchangeRoot(t *testing.T, service *Service, fixture *authorityFixture, lim
 		t.Fatalf("exchange root capability: %v", err)
 	}
 	return response
+}
+
+func TestNewAgentOperationsRecheckLiveRootAcrossCapabilityLifecycle(t *testing.T) {
+	base := time.Now().UTC().Truncate(time.Second)
+	fixture := defaultAuthorityFixture()
+	clock := newTestClock(base)
+	service, _, _ := newTestService(t, fixture, clock)
+
+	for _, endpoint := range []string{modeloperation.PathResponses, modeloperation.PathMessages} {
+		limits := rootLimits(2, 2, 4)
+		limits.AllowedEndpoints = []string{endpoint}
+		if _, err := service.Exchange(context.Background(), rootKey(fixture), ExchangeRequest{
+			RootAgentID: "agent:unbound-root", WorkflowTTLSeconds: 3600, Limits: limits,
+		}); !errors.Is(err, ErrLimitExceeded) {
+			t.Fatalf("unbound Exchange obtained %q: %v", endpoint, err)
+		}
+	}
+
+	root := exchangeRoot(t, service, fixture, rootLimits(2, 2, 4))
+	authenticated, err := service.Authenticate(context.Background(), root.CapabilityToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, endpoint := range []string{modeloperation.PathResponses, modeloperation.PathMessages} {
+		forged := *authenticated.Claims
+		forged.Limits = authenticated.Claims.Limits
+		forged.Limits.AllowedEndpoints = []string{endpoint}
+		if _, err := service.Delegate(context.Background(), &forged, DelegateRequest{
+			ChildAgentID: "agent:child-" + strings.TrimPrefix(endpoint, "/v1/"),
+			Limits:       forged.Limits,
+		}); !errors.Is(err, ErrLimitExceeded) {
+			t.Fatalf("unbound Delegate obtained %q: %v", endpoint, err)
+		}
+	}
+
+	clock.Set(base.Add(3 * time.Minute))
+	refreshed := *authenticated.Claims
+	refreshed.Limits = authenticated.Claims.Limits
+	refreshed.Limits.AllowedEndpoints = []string{modeloperation.PathResponses}
+	if _, err := service.Refresh(context.Background(), &refreshed); !errors.Is(err, ErrLimitExceeded) {
+		t.Fatalf("unbound Refresh obtained Responses: %v", err)
+	}
 }
 
 func TestExchangeAuthenticateAndTamperResistance(t *testing.T) {

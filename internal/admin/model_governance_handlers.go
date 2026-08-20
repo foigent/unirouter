@@ -380,6 +380,12 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeModelGovernanceLookupError(w, err, "Model")
 		return
 	}
+	if req.ModelName != nil {
+		if err := validateCanonicalPublicModelRename(beforeAuditState.ModelName, *req.ModelName); err != nil {
+			writeCanonicalApplicationError(w, err)
+			return
+		}
+	}
 	sets = append(sets, "updated_at = NOW()")
 	args = append(args, id, beforeAuditState.OrgID)
 	query := fmt.Sprintf("UPDATE model_registry SET %s WHERE id = $%d AND org_id = $%d", strings.Join(sets, ", "), argIdx, argIdx+1)

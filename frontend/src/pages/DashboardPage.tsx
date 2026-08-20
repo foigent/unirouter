@@ -120,7 +120,7 @@ function endpointHost(baseURL?: string): string {
   }
 }
 
-function channelHealthView(ch: NonNullable<DashboardStats['channel_health']>[number]) {
+function deploymentHealthView(ch: NonNullable<DashboardStats['channel_health']>[number]) {
   if (ch.status === 'disabled') return { tone: 'disabled', label: '禁用', icon: <IconMinusCircle /> };
   if (ch.status === 'stale_release') return { tone: 'error', label: '发布记录已过期', icon: <IconAlertTriangle /> };
   if (ch.status === 'projection_unavailable') return { tone: 'error', label: '路由状态不可判定', icon: <IconAlertTriangle /> };
@@ -147,17 +147,17 @@ function notificationAttentionLabel(level?: string) {
   }
 }
 
-function ChannelHealthCard({ ch, onOpen }: { ch: NonNullable<DashboardStats['channel_health']>[number]; onOpen: () => void }) {
+function DeploymentHealthCard({ ch, onOpen }: { ch: NonNullable<DashboardStats['channel_health']>[number]; onOpen: () => void }) {
   const total = ch.success_count + ch.fail_count;
   const rate = total > 0 ? (ch.success_count / total * 100) : 0;
   const hasWindowSample = total > 0;
   const providerLabel = providerDisplayName(ch.provider, ch.name);
-  const health = channelHealthView(ch);
+  const health = deploymentHealthView(ch);
   const models = ch.public_models || [];
   const host = endpointHost(ch.base_url);
 
   return (
-    <button type="button" className="ur-channel-card" onClick={onOpen} aria-label={`查看模型连接 ${ch.name}`}>
+    <button type="button" className="ur-channel-card" onClick={onOpen} aria-label={`查看模型部署 ${ch.name}`}>
       <div style={{ minWidth: 0 }}>
         <Text className="ur-channel-name" title={ch.name}>{ch.name}</Text>
         {providerLabel && <Text className="ur-channel-provider" title={ch.provider}>供应商：{providerLabel}</Text>}
@@ -342,19 +342,19 @@ export default function DashboardPage() {
   const avgLatency = stats?.avg_latency_ms || 0;
   const p95Latency = stats?.p95_latency_ms ?? avgLatency;
   const p99Latency = stats?.p99_latency_ms ?? p95Latency;
-  const healthyChannels = (stats?.channel_health || []).filter(ch => ch.available ?? channelHealthView(ch).tone === 'healthy').length;
-  const channelTotal = (stats?.channel_health || []).length;
-  const enabledUnhealthyChannels = (stats?.channel_health || []).filter(ch => {
-    const tone = channelHealthView(ch).tone;
+  const healthyDeployments = (stats?.channel_health || []).filter(ch => ch.available ?? deploymentHealthView(ch).tone === 'healthy').length;
+  const deploymentTotal = (stats?.channel_health || []).length;
+  const enabledUnhealthyDeployments = (stats?.channel_health || []).filter(ch => {
+    const tone = deploymentHealthView(ch).tone;
     return ch.enabled && (tone === 'warning' || tone === 'error');
   }).length;
-  const recentChannelFailures = (stats?.channel_health || []).reduce((total, ch) => total + ch.fail_count, 0);
+  const recentDeploymentFailures = (stats?.channel_health || []).reduce((total, ch) => total + ch.fail_count, 0);
   const hasWindowSample = (stats?.total_requests || 0) > 0 || (stats?.channel_health || []).some(ch => ch.success_count + ch.fail_count > 0);
-  const windowNeedsAttention = hasWindowSample && (enabledUnhealthyChannels > 0 || (stats?.success_rate || 0) < 0.99);
+  const windowNeedsAttention = hasWindowSample && (enabledUnhealthyDeployments > 0 || (stats?.success_rate || 0) < 0.99);
   const openNotificationCount = (attention?.open_critical || 0) + (attention?.open_warning || 0);
   const canOpenNotifications = notificationsLicensed && isRouteAllowedForAuthz('/notifications', authz);
   const canReadWallet = platform || isBillingRole(organizationRole);
-  const canReadChannelHealth = platform;
+  const canReadDeploymentHealth = platform;
   const canOpenRecentRequests = isRouteAllowedForAuthz('/logs', authz);
   const dashboardTitle = isPlatformAdminRole(organizationRole)
     ? '客户运营总览'
@@ -364,7 +364,7 @@ export default function DashboardPage() {
         ? '组织只读总览'
         : '组织运营总览';
   const dashboardDescription = isPlatformAdminRole(organizationRole)
-    ? '统一观察当前客户的请求量、成功率、延迟、成本和通道健康状态。'
+    ? '统一观察当前客户的请求量、成功率、延迟、成本和模型部署健康状态。'
     : isBillingRole(organizationRole)
       ? '统一观察用量、费用、余额和近期请求状态。'
       : '统一观察当前组织的请求量、成功率、延迟和费用。';
@@ -386,11 +386,21 @@ export default function DashboardPage() {
       render: (v: string) => <Tag size="small">{v}</Tag>,
     },
     {
-      title: '端点',
+      title: '路由身份',
       key: 'endpoint',
-      render: (_: unknown, row: NonNullable<DashboardStats['recent_logs']>[number]) => row.route_channel_id
-        ? <Tooltip content={[row.provider, row.channel].filter(Boolean).join(' · ')}><Text>{row.channel || `端点 #${row.route_channel_id}`}</Text></Tooltip>
-        : <Text type="tertiary">未选择路由</Text>,
+      render: (_: unknown, row: NonNullable<DashboardStats['recent_logs']>[number]) => {
+        if (row.route_identity === 'canonical_deployment_operation' && row.route_deployment_id && row.route_model_operation_id) {
+          return <Tooltip content={[row.provider, row.channel].filter(Boolean).join(' · ')}>
+            <Text>{`部署 #${row.route_deployment_id} · ${row.route_model_operation_id}`}</Text>
+          </Tooltip>;
+        }
+        if (row.route_identity === 'legacy_history' && row.route_channel_id) {
+          return <Tooltip content="历史 route_channel_id，仅用于旧请求归档展示">
+            <Text type="tertiary">{`历史连接：${row.channel || `#${row.route_channel_id}`}`}</Text>
+          </Tooltip>;
+        }
+        return <Text type="tertiary">未选择路由</Text>;
+      },
     },
     {
       title: '状态码',
@@ -501,13 +511,13 @@ export default function DashboardPage() {
                 <strong>{lastUpdated.toLocaleTimeString()}</strong>
               </div>
             </div>
-            {canReadChannelHealth && (
+            {canReadDeploymentHealth && (
               <div className="ur-dashboard-status-card">
                 <IconServer />
                 <div>
-                  <Text>当前可路由连接</Text>
-                  <strong>{healthyChannels}/{channelTotal || 0}</strong>
-                  <Text type="tertiary" size="small">按模型端点与网关当前路由判定</Text>
+                  <Text>当前可路由部署操作</Text>
+                  <strong>{healthyDeployments}/{deploymentTotal || 0}</strong>
+                  <Text type="tertiary" size="small">按 canonical deployment + operation 判定</Text>
                 </div>
               </div>
             )}
@@ -587,7 +597,7 @@ export default function DashboardPage() {
                       {!hasWindowSample ? '暂无可判定样本' : windowNeedsAttention ? '需要关注' : '当前窗口正常'}
                     </StatusTag>
                   </strong>
-                  <Text>{hasWindowSample ? `异常通道 ${enabledUnhealthyChannels} · 失败请求 ${formatCompactNumber(recentChannelFailures)}` : '等待真实请求后评估成功率与通道窗口状态'}</Text>
+                  <Text>{hasWindowSample ? `异常部署操作 ${enabledUnhealthyDeployments} · 失败请求 ${formatCompactNumber(recentDeploymentFailures)}` : '等待真实请求后评估成功率与部署操作窗口状态'}</Text>
                 </div>
               </div>
               <div className="ur-dashboard-status-card">
@@ -724,7 +734,7 @@ export default function DashboardPage() {
           </Surface>
         </div>
 
-        <div className={canReadChannelHealth ? 'ur-split-grid' : undefined}>
+        <div className={canReadDeploymentHealth ? 'ur-split-grid' : undefined}>
           <Surface title="模型运行状态" description="逐公共模型展示当前窗口请求、成功率和 P95；模型身份直接来自网关已解析的请求记录，不按名称猜测合并。">
             {modelData.length > 0 ? (
               <Table
@@ -756,16 +766,20 @@ export default function DashboardPage() {
             )}
           </Surface>
 
-          {canReadChannelHealth && (
-            <Surface title="连接可用状态" description="当前是否可路由与窗口成功率分开显示；点击连接可进入处理。">
+          {canReadDeploymentHealth && (
+            <Surface title="模型部署可用状态" description="当前 canonical deployment + operation 是否可路由与窗口成功率分开显示；点击部署可进入处理。">
               {(stats?.channel_health || []).length > 0 ? (
                 <div className="ur-channel-list">
                   {(stats?.channel_health || []).map(ch => (
-                    <ChannelHealthCard key={ch.id} ch={ch} onOpen={() => navigate(`/channels?channel_id=${ch.id}`)} />
+                    <DeploymentHealthCard
+                      key={`${ch.deployment_id}:${ch.model_operation_id}`}
+                      ch={ch}
+                      onOpen={() => navigate(`/model-endpoints?deployment_id=${ch.deployment_id}&operation_id=${encodeURIComponent(ch.model_operation_id)}`)}
+                    />
                   ))}
                 </div>
               ) : (
-                <EmptyState title="暂无通道数据" />
+                <EmptyState title="暂无模型部署数据" />
               )}
             </Surface>
           )}

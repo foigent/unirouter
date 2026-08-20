@@ -1,0 +1,48 @@
+{
+  "schema_version": "unirouter.endpoint-profile-manifest.v1",
+  "profile_id": "unirouter.anthropic.messages.text.v1",
+  "profile_version": "1.0.0",
+  "provider": "anthropic",
+  "runtime_state": "local_contract_only",
+  "conformance_level": "fixture_verified",
+  "network_verified": false,
+  "descriptor": {
+    "contract_version": "unirouter.endpoint-protocol.v1",
+    "profile_id": "unirouter.anthropic.messages.text.v1",
+    "profile_version": "1.0.0",
+    "provider": "anthropic",
+    "endpoint_kind": "messages",
+    "downstream_endpoint": "/v1/messages",
+    "upstream_endpoint": "/v1/messages",
+    "authentication": "x-api-key+anthropic-version",
+    "runtime_state": "local_contract_only",
+    "provider_finality": "synchronous_terminal_message_with_provider_usage",
+    "customer_charge_state": "provider_observed_not_customer_chargeable",
+    "supported_modalities": [
+      "text"
+    ],
+    "observed_unit_classes": [
+      "input_tokens",
+      "cache_write_tokens",
+      "cache_read_tokens",
+      "output_tokens"
+    ],
+    "unsupported_semantics": [
+      "anthropic_beta_features",
+      "cache_control",
+      "citations_or_documents",
+      "extended_or_adaptive_thinking",
+      "multimodal_content",
+      "server_or_client_tools",
+      "streaming",
+      "structured_output"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "anthropic-messages-text.v1",
+      "path": "fixtures/anthropic-messages-text.v1.json",
+      "sha256": "sha256:8e78029f110f44595d79ea4b1d3de91984cb00bd52c01aea89e501c4abb1744c"
+    }
+  ]
+}

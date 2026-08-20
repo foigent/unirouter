@@ -365,6 +365,66 @@ func TestChatCompletionRequest_Parse_ExtraFields(t *testing.T) {
 	}
 }
 
+func TestChatCompletionRequest_Parse_OpenAICompatibilityEnvelope(t *testing.T) {
+	data := []byte(`{
+		"model":"deepseek-v4-flash",
+		"messages":[
+			{"role":"user","content":[
+				{"type":"text","text":"Use the image to answer"},
+				{"type":"image_url","image_url":{"url":"https://example.com/image.png"}}
+			]},
+			{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"id\":1}"}}]}
+		],
+		"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],
+		"tool_choice":"auto",
+		"parallel_tool_calls":true,
+		"response_format":{"type":"json_schema","json_schema":{"name":"answer","schema":{"type":"object"}}},
+		"stream":true,
+		"stream_options":{"include_usage":true},
+		"reasoning_effort":"high",
+		"max_completion_tokens":2048
+	}`)
+	var request ChatCompletionRequest
+	if err := json.Unmarshal(data, &request); err != nil {
+		t.Fatalf("OpenAI-compatible envelope should parse: %v", err)
+	}
+	if request.Model != "deepseek-v4-flash" || !request.Stream {
+		t.Fatalf("unexpected routing envelope: %+v", request)
+	}
+	if got := request.Messages[0].Content; got != "Use the image to answer" {
+		t.Fatalf("multimodal text projection = %q", got)
+	}
+	if request.Messages[0].nonTextParts != 1 {
+		t.Fatalf("expected one non-text part, got %d", request.Messages[0].nonTextParts)
+	}
+	if limit := request.completionTokenLimit(); limit == nil || *limit != 2048 {
+		t.Fatalf("max_completion_tokens was not recognized: %#v", limit)
+	}
+	assistantJSON, err := json.Marshal(request.Messages[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var assistant map[string]json.RawMessage
+	if err := json.Unmarshal(assistantJSON, &assistant); err != nil {
+		t.Fatal(err)
+	}
+	if string(assistant["content"]) != "null" || len(assistant["tool_calls"]) == 0 {
+		t.Fatalf("assistant tool-call envelope was not retained: %s", assistantJSON)
+	}
+}
+
+func TestChatCompletionRequest_MaxCompletionTokensDrivesReservation(t *testing.T) {
+	data := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":700}`)
+	var request ChatCompletionRequest
+	if err := json.Unmarshal(data, &request); err != nil {
+		t.Fatal(err)
+	}
+	_, reserved := estimateTokenReservation(request.Messages, request.completionTokenLimit())
+	if reserved != 700 || !request.hasCompletionTokenLimit() {
+		t.Fatalf("reservation=%d has_limit=%t, want 700/true", reserved, request.hasCompletionTokenLimit())
+	}
+}
+
 func TestChatCompletionRequest_Parse_EmptyMessages(t *testing.T) {
 	data := []byte(`{"model": "gpt-4o", "messages": []}`)
 	var decoded ChatCompletionRequest

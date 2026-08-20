@@ -9,6 +9,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
@@ -98,6 +99,100 @@ func TestValidate_RequestPricingAuthorityMigrationGate(t *testing.T) {
 	base.RequestPricingAuthority = "auto"
 	if err := base.Validate(); err == nil || !strings.Contains(err.Error(), "REQUEST_PRICING_AUTHORITY") {
 		t.Fatalf("unknown authority must fail startup validation, got %v", err)
+	}
+}
+
+func TestValidate_ModelRouteAuthority(t *testing.T) {
+	base := Config{
+		JWTSecret: "secret", APIKeyHashSecret: "api-key-secret",
+		EncryptionKey: "0123456789abcdef0123456789abcdef", FreezeSafetyFactor: "1",
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("empty direct construction should use canonical route authority: %v", err)
+	}
+	for _, mode := range []modelrouting.Mode{modelrouting.ModeLegacy, modelrouting.ModeVerify} {
+		base.ModelRouteAuthority = mode
+		base.ModelRouteCompatibilityEnabled = true
+		if err := base.Validate(); err != nil {
+			t.Fatalf("mode %q should validate: %v", mode, err)
+		}
+	}
+	base.ModelRouteAuthority = modelrouting.ModeCanonical
+	base.ModelRouteCompatibilityEnabled = false
+	if err := base.Validate(); err != nil {
+		t.Fatalf("canonical mode should validate with compatibility disabled: %v", err)
+	}
+	base.ModelRouteCompatibilityEnabled = true
+	if err := base.Validate(); err == nil || !strings.Contains(err.Error(), "MODEL_ROUTE_COMPATIBILITY_ENABLED") {
+		t.Fatalf("canonical mode must reject compatibility runtime, got %v", err)
+	}
+	for _, mode := range []modelrouting.Mode{modelrouting.ModeLegacy, modelrouting.ModeVerify} {
+		base.ModelRouteAuthority = mode
+		base.ModelRouteCompatibilityEnabled = false
+		if err := base.Validate(); err == nil || !strings.Contains(err.Error(), "MODEL_ROUTE_COMPATIBILITY_ENABLED") {
+			t.Fatalf("mode %q must require explicit compatibility runtime, got %v", mode, err)
+		}
+	}
+	base.ModelRouteCompatibilityEnabled = false
+	for _, invalid := range []modelrouting.Mode{"auto", "Canonical", " canonical"} {
+		base.ModelRouteAuthority = invalid
+		if err := base.Validate(); err == nil || !strings.Contains(err.Error(), "MODEL_ROUTE_AUTHORITY") {
+			t.Fatalf("route authority %q must fail exact startup validation, got %v", invalid, err)
+		}
+	}
+}
+
+func TestLoadModelRouteCompatibilityIsStrictAndCanonicalByDefault(t *testing.T) {
+	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load canonical defaults: %v", err)
+	}
+	if cfg.ModelRouteAuthority != modelrouting.ModeCanonical || cfg.ModelRouteCompatibilityEnabled {
+		t.Fatalf("unexpected model-route defaults: authority=%q compatibility=%t", cfg.ModelRouteAuthority, cfg.ModelRouteCompatibilityEnabled)
+	}
+
+	t.Setenv("MODEL_ROUTE_COMPATIBILITY_ENABLED", "yes")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MODEL_ROUTE_COMPATIBILITY_ENABLED") {
+		t.Fatalf("non-exact compatibility boolean must fail startup, got %v", err)
+	}
+}
+
+func TestValidateCanonicalRejectsAsyncMedia(t *testing.T) {
+	cfg := &Config{
+		JWTSecret: "secret", APIKeyHashSecret: "api-key-secret",
+		EncryptionKey: "0123456789abcdef0123456789abcdef", FreezeSafetyFactor: "1",
+		ModelRouteAuthority: modelrouting.ModeCanonical,
+		AsyncMediaEnabled:   true,
+		AsyncMediaS3Region:  "us-east-1", AsyncMediaS3Bucket: "canonical-media",
+		AsyncMediaS3Prefix: "media", AsyncMediaLeaseSeconds: 300,
+		AsyncMediaPurgeLeaseSeconds: 60, AsyncMediaPollMilliseconds: 500,
+		AsyncMediaProviderTimeoutSecs: 180, AsyncMediaMaxAttempts: 3,
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "ASYNC_MEDIA_ENABLED") {
+		t.Fatalf("canonical authority must reject legacy async-media routing, got %v", err)
+	}
+}
+
+func TestLoadRejectsUnknownModelRouteAuthority(t *testing.T) {
+	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("MODEL_ROUTE_AUTHORITY", "auto")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MODEL_ROUTE_AUTHORITY") {
+		t.Fatalf("unknown environment route authority must fail startup, got %v", err)
+	}
+}
+
+func TestLoadRejectsNonExactModelRouteAuthority(t *testing.T) {
+	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("API_KEY_HASH_SECRET", "api-key-secret")
+	t.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("MODEL_ROUTE_AUTHORITY", "Canonical")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MODEL_ROUTE_AUTHORITY") {
+		t.Fatalf("non-exact environment route authority must fail startup, got %v", err)
 	}
 }
 
@@ -745,20 +840,22 @@ func TestValidateAsyncMediaImageV1IsDefaultOffAndFailClosed(t *testing.T) {
 	base := func() *Config {
 		return &Config{
 			JWTSecret: "secret", APIKeyHashSecret: "api-key-secret",
-			EncryptionKey:                 "0123456789abcdef0123456789abcdef",
-			FreezeSafetyFactor:            "1",
-			RuntimeEnvironment:            "production",
-			AsyncMediaEnabled:             true,
-			AsyncMediaAdmissionEnabled:    true,
-			AsyncMediaS3Region:            "us-east-1",
-			AsyncMediaS3Bucket:            "unirouter-media-prod",
-			AsyncMediaS3Endpoint:          "https://s3.example.test",
-			AsyncMediaS3Prefix:            "unirouter-media",
-			AsyncMediaLeaseSeconds:        300,
-			AsyncMediaPurgeLeaseSeconds:   60,
-			AsyncMediaPollMilliseconds:    500,
-			AsyncMediaProviderTimeoutSecs: 180,
-			AsyncMediaMaxAttempts:         3,
+			EncryptionKey:                  "0123456789abcdef0123456789abcdef",
+			FreezeSafetyFactor:             "1",
+			RuntimeEnvironment:             "production",
+			AsyncMediaEnabled:              true,
+			ModelRouteAuthority:            modelrouting.ModeLegacy,
+			ModelRouteCompatibilityEnabled: true,
+			AsyncMediaAdmissionEnabled:     true,
+			AsyncMediaS3Region:             "us-east-1",
+			AsyncMediaS3Bucket:             "unirouter-media-prod",
+			AsyncMediaS3Endpoint:           "https://s3.example.test",
+			AsyncMediaS3Prefix:             "unirouter-media",
+			AsyncMediaLeaseSeconds:         300,
+			AsyncMediaPurgeLeaseSeconds:    60,
+			AsyncMediaPollMilliseconds:     500,
+			AsyncMediaProviderTimeoutSecs:  180,
+			AsyncMediaMaxAttempts:          3,
 		}
 	}
 	if err := base().Validate(); err != nil {
@@ -822,6 +919,8 @@ func TestLoadAsyncMediaDefaultsAndOverrides(t *testing.T) {
 	}
 
 	t.Setenv("ASYNC_MEDIA_ENABLED", "true")
+	t.Setenv("MODEL_ROUTE_AUTHORITY", "legacy")
+	t.Setenv("MODEL_ROUTE_COMPATIBILITY_ENABLED", "true")
 	t.Setenv("ASYNC_MEDIA_S3_REGION", "us-west-2")
 	t.Setenv("ASYNC_MEDIA_S3_BUCKET", "unirouter-media-fixture")
 	t.Setenv("ASYNC_MEDIA_S3_ENDPOINT", "https://s3.example.test")
@@ -864,6 +963,12 @@ func TestLoadAsyncMediaDefaultsAndOverrides(t *testing.T) {
 	}
 	if !cfg.AsyncMediaEnabled || cfg.AsyncMediaAdmissionEnabled {
 		t.Fatalf("runtime cleanup must remain enabled while admission is paused: %+v", cfg)
+	}
+
+	t.Setenv("MODEL_ROUTE_AUTHORITY", "canonical")
+	t.Setenv("MODEL_ROUTE_COMPATIBILITY_ENABLED", "false")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "ASYNC_MEDIA_ENABLED") {
+		t.Fatalf("canonical Load must reject the legacy async-media runtime, got %v", err)
 	}
 }
 
@@ -1234,7 +1339,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"WORKLOAD_INTERACTIVE_WEIGHT", "WORKLOAD_STREAM_WEIGHT", "WORKLOAD_EMBEDDING_WEIGHT",
 		"WORKLOAD_INTERACTIVE_MAX_WAIT_MS", "WORKLOAD_STREAM_MAX_WAIT_MS", "WORKLOAD_EMBEDDING_MAX_WAIT_MS",
 		"GUARDRAIL_ORG_ACTIVE_POLICY_LIMIT", "GUARDRAIL_PLATFORM_ACTIVE_POLICY_LIMIT", "GUARDRAIL_CACHED_POLICY_LIMIT", "GUARDRAIL_CACHED_TENANT_LIMIT",
-		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE", "TRUSTED_PROXY_CIDRS",
+		"RUNTIME_ENVIRONMENT", "RUNTIME_DEPLOYMENT_MODE", "MODEL_ROUTE_AUTHORITY", "MODEL_ROUTE_COMPATIBILITY_ENABLED", "TRUSTED_PROXY_CIDRS",
 		"RUNTIME_DEPLOYMENT_ROLE", "RUNTIME_VERSION", "RUNTIME_COMMIT", "PROMETHEUS_URL", "GRAFANA_URL",
 		"COMPLETED_EXECUTION_FEED_ENABLED", "COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE", "COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
 		"XINSIGHT_CONNECTOR_AGENT_ENABLED", "XINSIGHT_CONNECTOR_CONTROL_ORIGIN", "XINSIGHT_CONNECTOR_POLL_MILLISECONDS",
@@ -1268,6 +1373,8 @@ func TestLoad_Defaults(t *testing.T) {
 		RuntimeEnvironment:               getEnvStr("RUNTIME_ENVIRONMENT", "unspecified"),
 		RuntimeDeploymentMode:            getEnvStr("RUNTIME_DEPLOYMENT_MODE", "single-node"),
 		RuntimeDeploymentRole:            getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
+		ModelRouteAuthority:              modelrouting.Mode(getEnvStr("MODEL_ROUTE_AUTHORITY", string(modelrouting.ModeCanonical))),
+		ModelRouteCompatibilityEnabled:   getEnvBool("MODEL_ROUTE_COMPATIBILITY_ENABLED", false),
 		CompletedExecutionFeedReferenceMode: getEnvStr(
 			"COMPLETED_EXECUTION_FEED_REFERENCE_MODE",
 			CompletedExecutionFeedReferenceModeLegacy,
@@ -1323,6 +1430,9 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.RequestPricingAuthority != billing.RequestPricingAuthorityLegacy {
 		t.Fatalf("expected legacy request-pricing upgrade default, got %q", cfg.RequestPricingAuthority)
+	}
+	if cfg.ModelRouteAuthority != modelrouting.ModeCanonical || cfg.ModelRouteCompatibilityEnabled {
+		t.Fatalf("expected canonical model-route authority with compatibility disabled, got %q/%t", cfg.ModelRouteAuthority, cfg.ModelRouteCompatibilityEnabled)
 	}
 	if cfg.FreezeSafetyFactor != "1.5" {
 		t.Fatalf("expected exact 1.5 safety factor, got %q", cfg.FreezeSafetyFactor)

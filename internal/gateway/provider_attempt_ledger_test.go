@@ -78,11 +78,12 @@ func TestP6F40BProviderAttemptLedgerFailurePreventsDispatch(t *testing.T) {
 		},
 	}
 	relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
+	installLegacyHandlerTestRuntime(relay)
 	recorder := httptest.NewRecorder()
 
 	relay.HandleChatCompletion(recorder, p6f40bChatRequest("op_p6f40b_begin_fail"))
 
-	if recorder.Code != http.StatusInternalServerError || upstreamCalls.Load() != 0 || beginCalls != billingSettleMaxAttempts || cancelCalls != 1 {
+	if recorder.Code != http.StatusServiceUnavailable || upstreamCalls.Load() != 0 || beginCalls != billingSettleMaxAttempts || cancelCalls != 1 {
 		t.Fatalf("pre-dispatch ledger barrier failed: status=%d upstream=%d begin=%d cancel=%d body=%s", recorder.Code, upstreamCalls.Load(), beginCalls, cancelCalls, recorder.Body.String())
 	}
 }
@@ -123,6 +124,7 @@ func TestP6F40BAcceptedResponseLedgerFailureWithholdsOutputWithoutCancel(t *test
 		},
 	}
 	relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
+	installLegacyHandlerTestRuntime(relay)
 	recorder := httptest.NewRecorder()
 
 	relay.HandleChatCompletion(recorder, p6f40bChatRequest("op_p6f40b_complete_fail"))

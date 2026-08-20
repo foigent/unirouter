@@ -19,7 +19,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/agentcap"
-	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/capbilling"
 	"github.com/uniroute/unirouter/internal/db"
@@ -31,8 +30,10 @@ import (
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
+	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/modellist"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
@@ -102,6 +103,8 @@ type Relay struct {
 	runtimeVersion             string
 	runtimeCommit              string
 	runtimeEnvironment         string
+	modelExecution             *modelExecutionRuntime
+	providerHTTPDoer           adapters.HTTPDoer
 }
 
 func (relay *Relay) SetModelAuthorization(evaluator *modelauthz.Evaluator) {
@@ -739,21 +742,7 @@ func (relay *Relay) persistSettlementUsageWithRetry(req billing.SettleRequest, r
 	return fmt.Errorf("persist settlement usage failed after %d attempts: %w", billingSettleMaxAttempts, lastErr)
 }
 
-// ChatCompletionRequest represents an incoming chat completion request.
-type ChatCompletionRequest struct {
-	Model     string    `json:"model"`
-	Messages  []Message `json:"messages"`
-	Stream    bool      `json:"stream"`
-	MaxTokens *int      `json:"max_tokens,omitempty"`
-}
-
 const maxChatCompletionTokens = 1<<31 - 1
-
-// Message represents a chat message.
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
 
 func modelAllowedForAPIKey(apiKey *models.ApiKey, model, requestedModel string) bool {
 	if apiKey == nil {
@@ -779,6 +768,16 @@ func (relay *Relay) rejectModelNotAllowed(w http.ResponseWriter, ctx context.Con
 	})
 	writeError(w, http.StatusForbidden, "permission_error", "auth_error.model_not_allowed",
 		fmt.Sprintf("Model '%s' is not allowed for this API key", model))
+}
+
+func (relay *Relay) requireModelExecutionRuntime(w http.ResponseWriter) bool {
+	if relay != nil && relay.modelExecution != nil && relay.modelExecution.planner != nil &&
+		relay.modelExecution.coordinator != nil && relay.modelExecution.registry != nil {
+		return true
+	}
+	w.Header().Set("Retry-After", "1")
+	writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Model execution is temporarily unavailable")
+	return false
 }
 
 // HandleChatCompletion handles POST /v1/chat/completions.
@@ -817,13 +816,36 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "model is required")
 		return
 	}
-	if req.MaxTokens != nil && (*req.MaxTokens < 0 || *req.MaxTokens > maxChatCompletionTokens) {
-		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "max_tokens is outside the supported range")
+	for _, tokenLimit := range []struct {
+		field string
+		limit *int
+	}{
+		{field: "max_tokens", limit: req.MaxTokens},
+		{field: "max_completion_tokens", limit: req.MaxCompletionTokens},
+	} {
+		if tokenLimit.limit != nil && (*tokenLimit.limit < 0 || *tokenLimit.limit > maxChatCompletionTokens) {
+			writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", tokenLimit.field+" is outside the supported range")
+			return
+		}
+	}
+	if req.MaxTokens != nil && req.MaxCompletionTokens != nil && *req.MaxTokens != *req.MaxCompletionTokens {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.invalid_request", "max_tokens and max_completion_tokens must match when both are provided")
 		return
 	}
 	requestedModel := middleware.GetModelAliasFromContext(ctx)
 	if requestedModel == "" {
 		requestedModel = req.Model
+	}
+	// Caller model authorization is an ingress boundary. It must run before
+	// guardrail evaluation or receipt emission so a denied principal cannot
+	// cause policy-side work for a model it is not allowed to invoke.
+	callerAPIKey := middleware.GetAPIKeyFromContext(ctx)
+	if !modelAllowedForAPIKey(callerAPIKey, req.Model, requestedModel) {
+		relay.rejectModelNotAllowed(w, ctx, requestID, req.Model, requestedModel, requestStart)
+		return
+	}
+	if !relay.requireModelExecutionRuntime(w) {
+		return
 	}
 
 	// Pin one immutable policy set for both input and non-stream output. Existing
@@ -831,7 +853,8 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	// behavior for compatibility in repository tests and staged rollouts.
 	pinnedGuardrail := relay.pinGuardrail(ctx, req.Model, "chat")
 	if pinnedGuardrail != nil {
-		guardrailResult := pinnedGuardrail.Evaluate(ctx, guardrail.StageInput, chatGuardrailTexts(req.Messages))
+		inputInspection, inspectionErr := inspectChatInputGuardrail(body)
+		guardrailResult := pinnedGuardrail.EvaluateWithCompleteness(ctx, guardrail.StageInput, inputInspection.texts, inspectionErr == nil && inputInspection.complete())
 		relay.recordGuardrailResult(ctx, requestID, req.Model, requestedModel, normalizedGuardrailStage(guardrail.StageInput), guardrailResult, nil, 0, "")
 		if guardrailResult.Decision == guardrail.DecisionBlock {
 			writeInputGuardrailBlock(w, guardrailBlockedByUnavailable(guardrailResult))
@@ -851,20 +874,19 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		}
 		ctx = contextWithGuardrailPin(ctx, pinnedGuardrail)
 	} else if relay.filter != nil && relay.filter.WordCount() > 0 {
-		for _, msg := range req.Messages {
-			if matched, _ := relay.filter.IsSensitive(msg.Content); matched {
+		inputInspection, inspectionErr := inspectChatInputGuardrail(body)
+		if inspectionErr != nil || !inputInspection.complete() {
+			writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.unsupported_semantics", "Request contains input that cannot be inspected safely")
+			return
+		}
+		for _, text := range inputInspection.texts {
+			if matched, _ := relay.filter.IsSensitive(text.Content); matched {
 				writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.sensitive_word_detected", "Request contains prohibited content")
 				return
 			}
 		}
 	}
 
-	// Check model permission before billing
-	callerAPIKey := middleware.GetAPIKeyFromContext(ctx)
-	if !modelAllowedForAPIKey(callerAPIKey, req.Model, requestedModel) {
-		relay.rejectModelNotAllowed(w, ctx, requestID, req.Model, requestedModel, requestStart)
-		return
-	}
 	optimizationState := relay.evaluateCompression(ctx, r.Header, requestID, requestedModel, callerAPIKey, req.Model, body)
 	if !bytes.Equal(optimizationState.effectiveBody, body) {
 		body = optimizationState.effectiveBody
@@ -877,11 +899,27 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		w.Header().Set(compressionOptInHeader, strings.ToUpper(optimizationState.compression.EffectiveMode))
 	}
 
-	// Reserve both estimated input and the allowed output ceiling. P6-F07
-	// settles this reservation to actual usage at the same terminal boundary as
-	// billing; P6-F11 will add long-stream incremental extension.
-	estimatedInputTokens, reservedCompletionTokens := estimateTokenReservation(req.Messages, req.MaxTokens)
-	estimatedTokens := estimatedInputTokens + reservedCompletionTokens
+	admission, admissionErr := estimateChatAdmission(body)
+	if admissionErr != nil {
+		relay.recordTraceEvent(ctx, requestID, "gateway.admission_rejected", "admission", "warning", req.Model, requestedModel, nil, http.StatusBadRequest, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "validation_error.unsupported_semantics", "pre_freeze": true,
+		})
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.unsupported_semantics", "Request contains input that cannot be bounded safely")
+		return
+	}
+	completionTokenLimit := req.completionTokenLimit()
+	estimatedInputTokens := admission.InputTokens
+	// The planner supplies the immutable public hard cap below. Zero here is
+	// intentional: no heuristic default may enter route admission or Freeze.
+	reservedCompletionTokens := 0
+	if completionTokenLimit != nil {
+		reservedCompletionTokens = *completionTokenLimit
+	}
+	estimatedTokens, estimateErr := checkedAdmissionInt(int64(estimatedInputTokens), int64(reservedCompletionTokens))
+	if estimateErr != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.context_length_exceeded", "Estimated request tokens exceed the supported range")
+		return
+	}
 	orgID := middleware.GetOrgIDFromContext(ctx)
 	keyID := middleware.GetKeyIDFromContext(ctx)
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "chat"})
@@ -892,11 +930,6 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		}
 		compressionReceiptRecorded = relay.recordCompressionReceipt(ctx, optimizationState, route, reqLog)
 	}
-	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-		"stream":           req.Stream,
-		"estimated_tokens": estimatedTokens,
-	})
-	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 	providerTimeout := 300 * time.Second
 	if req.Stream {
 		providerTimeout = relay.currentStreamPolicy().MaxDuration()
@@ -907,8 +940,55 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		workloadClass = workloadadmission.ClassStream
 	}
 	ctx = workloadadmission.ContextWithClass(ctx, workloadClass)
-	ctx = contextWithStreamReservation(ctx, reservedCompletionTokens, req.MaxTokens == nil)
 	ctx, limitPolicyCollector := contextWithLimitPolicyCollector(ctx)
+	requiredCapabilities, capabilityErr := requiredCapabilitiesForChat(body)
+	if capabilityErr != nil {
+		relay.recordTraceEvent(ctx, requestID, "routing.capability_rejected", "routing", "warning", req.Model, requestedModel, nil, http.StatusBadRequest, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "validation_error.unsupported_semantics",
+		})
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.unsupported_semantics", capabilityErr.Error())
+		return
+	}
+	executionBatch, err := relay.prepareModelExecutionRoutes(
+		ctx, modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		req.Model, requestedModel, requestID, requiredCapabilities,
+		modelExecutionRequestLimits{
+			EstimatedInputTokens: estimatedInputTokens, ExplicitOutputTokens: completionTokenLimit,
+			EstimateVersion: admission.Version,
+		},
+		body, requestStart,
+	)
+	if err != nil {
+		if code, message, limitError := modelExecutionLimitErrorDetails(err); limitError {
+			relay.recordTraceEvent(ctx, requestID, "routing.request_limit_rejected", "routing", "warning", req.Model, requestedModel, nil, http.StatusBadRequest, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"error_code": code, "pre_freeze": true,
+			})
+			writeError(w, http.StatusBadRequest, "invalid_request_error", code, message)
+			return
+		}
+		recordCompressionReceipt(nil)
+		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, http.StatusServiceUnavailable, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"route_count": 0, "pre_freeze": true,
+		})
+		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, http.StatusServiceUnavailable, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, estimatedTokens, "")
+		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
+		return
+	}
+	estimatedInputTokens = executionBatch.limits.EstimatedInputTokens
+	reservedCompletionTokens = executionBatch.limits.EstimatedOutputTokens
+	estimatedTokens, estimateErr = checkedAdmissionInt(int64(estimatedInputTokens), int64(reservedCompletionTokens))
+	if estimateErr != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.context_length_exceeded", "Estimated request tokens exceed the supported range")
+		return
+	}
+	// A published public limit is a hard cap, including streams.
+	ctx = contextWithStreamReservation(ctx, reservedCompletionTokens, false)
+	ctx = contextWithAdmissionInputEstimate(ctx, estimatedInputTokens)
+	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"stream": req.Stream, "estimated_tokens": estimatedTokens,
+		"admission_estimate_version": admission.Version,
+	})
+	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 
 	// Freeze balance once (before trying any upstream)
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
@@ -958,21 +1038,10 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		"currency":             "CNY", "amount_scale": money.MicrosPerCNY,
 	})
 
-	// Get all available routes for failover
-	routes, err := relay.router.RouteAllWithKey(ctx, req.Model, requestID)
-	if err != nil {
-		recordCompressionReceipt(nil)
-		relay.billing.Cancel(ctx, requestID, orgID)
-		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
-		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, 503, elapsedMilliseconds(requestStart), map[string]interface{}{
-			"route_count": 0,
-		})
-		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, estimatedTokens, "")
-		return
-	}
-	client := &http.Client{Timeout: providerTimeout}
-	adapterRegistry := adapters.DefaultRegistry()
-	routingPolicy := relay.router.Policy()
+	// Every candidate was planned, decrypted and built before Freeze.
+	routes := executionBatch.routes
+	client := relay.providerClient(providerTimeout)
+	routingPolicy := relay.modelExecution.policy
 	providerAttempts := 0
 
 	// Failover loop: try each route until one succeeds
@@ -982,49 +1051,15 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	var lastRoute *RouteResult
 	lastAttemptCtx := ctx
 	for routeIndex := range routes {
-		route := &routes[routeIndex]
-		attemptCtx := contextWithAttemptID(ctx, newAttemptID())
-		attemptCtx = contextWithRouteAttempt(attemptCtx, routeIndex+1, len(routes))
+		preparedRoute := &routes[routeIndex]
+		route := &preparedRoute.compat
+		attemptCtx := contextWithRouteAttempt(ctx, routeIndex+1, len(routes))
 		lastAttemptCtx = attemptCtx
 		lastStatusCode = 0
 		lastUpstreamRequestID = ""
 		routeForTrace := *route
-		apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, relay.encKey)
-		if err != nil {
-			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to decrypt key: %v", err)
-			relay.recordTraceEvent(attemptCtx, requestID, "provider.key_decrypt_failed", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"failure_kind": "auth",
-			})
-			lastErr = err
-			continue
-		}
-
-		adapter, err := adapterRegistry.Get(route.Channel.AdapterType)
-		if err != nil {
-			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Unknown adapter_type %q: %v", route.Channel.AdapterType, err)
-			relay.recordTraceEvent(attemptCtx, requestID, "provider.adapter_unknown", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"failure_kind": "configuration",
-			})
-			lastErr = err
-			continue
-		}
-		upstreamReq, err := adapter.BuildRequest(attemptCtx, adapters.RequestInput{
-			Endpoint:       adapters.EndpointChatCompletions,
-			DownstreamBody: body,
-			RequestedModel: requestedModel,
-			MappedModel:    route.MappedModel,
-			Channel:        route.Channel,
-			APIKey:         apiKey,
-			RequestID:      requestID,
-		})
-		if err != nil {
-			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to create upstream request: %v", err)
-			relay.recordTraceEvent(attemptCtx, requestID, "provider.request_build_failed", "provider", "error", req.Model, requestedModel, &routeForTrace, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"failure_kind": "request_build",
-			})
-			lastErr = err
-			continue
-		}
+		adapter := preparedRoute.adapter
+		upstreamReq := preparedRoute.upstreamRequest
 		cacheDecision := relay.evaluateResponseCache(
 			attemptCtx, r.Header, requestID, requestedModel, callerAPIKey, optimizationState,
 			route, upstreamReq, freezeResult.PricingVersion, reqLog,
@@ -1054,42 +1089,31 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		} else if cacheDecision.reason != "" {
 			w.Header().Set(responseCacheOptInHeader, "BYPASS")
 		}
-		prepared, err := relay.router.PrepareRoute(attemptCtx, route)
+		var status modelexecution.Status
+		attemptCtx, status, err = relay.authorizePreparedModelRoute(
+			attemptCtx, executionBatch, preparedRoute, routeIndex+1, len(routes), adapters.EndpointChatCompletions,
+		)
 		if err != nil {
 			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
-			lastErr = err
-			relay.recordTraceEvent(attemptCtx, requestID, "routing.probe_claim_failed", "routing", "warning", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
-			continue
+			relay.billing.Cancel(context.WithoutCancel(attemptCtx), requestID, orgID)
+			reqLog.Error("Model execution authorization failed: %v", err)
+			relay.recordTraceEvent(attemptCtx, requestID, "routing.dispatch_authority_failed", "routing", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"status": status})
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing authority is temporarily unavailable")
+			return
 		}
-		if !prepared {
+		if status != modelexecution.Applied {
 			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
-			lastErr = fmt.Errorf("half-open probe lease unavailable")
-			relay.recordTraceEvent(attemptCtx, requestID, "routing.probe_lease_unavailable", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
+			lastErr = fmt.Errorf("route dispatch authority: %s", status)
+			relay.recordTraceEvent(attemptCtx, requestID, "routing.dispatch_authority_changed", "routing", "warning", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"status": status})
 			continue
 		}
+		dispatchCtx, stopProbeLease := relay.maintainExecutionLease(attemptCtx, reqLog)
+		upstreamReq = upstreamReq.Clone(dispatchCtx)
 		relay.recordResponseCacheDecision(attemptCtx, cacheDecision, reqLog)
 		lastRoute = route
 		routeForTrace = *route
 		relay.recordTraceEvent(attemptCtx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
-		stopProbeLease := relay.router.MaintainProbeLease(attemptCtx, route)
-
-		attemptStart := providerAttemptStartFromRoute(attemptCtx, requestID, orgID, keyID, adapters.EndpointChatCompletions, route)
-		if err := relay.beginProviderAttemptWithRetry(attemptCtx, attemptStart, reqLog); err != nil {
-			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
-			stopProbeLease()
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if cancelErr := relay.billing.Cancel(cleanupCtx, requestID, orgID); cancelErr != nil {
-				reqLog.Error("Failed to close reservation after pre-dispatch attempt-ledger failure: %v", cancelErr)
-			}
-			cleanupCancel()
-			relay.recordTraceEvent(attemptCtx, requestID, "billing.provider_attempt.begin_failed", "billing", "critical", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"error_code": "provider_attempt_begin_failed",
-			})
-			if attemptCtx.Err() == nil {
-				writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to establish durable provider attempt")
-			}
-			return
-		}
+		lastAttemptCtx = attemptCtx
 
 		recordCompressionReceipt(route)
 		providerAttempts++
@@ -1101,13 +1125,17 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			relay.releaseResponseCacheMiss(attemptCtx, reqLog)
 			stopProbeLease()
 			classified := adapters.ClassifyTransportError(attemptCtx, err)
+			healthAuthorityFailed := false
 			completionErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 				attemptCtx, requestID, orgID, billing.ProviderAttemptOutcomeUnknown, false, 0,
 				string(classified.FailureKind), "",
 			), reqLog)
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream transport failed: kind=%s retryable=%t", classified.FailureKind, classified.Retryable)
 			if classified.Retryable {
-				relay.router.MarkRouteFailure(context.WithoutCancel(attemptCtx), *route)
+				if healthErr := relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthProviderFailure); healthErr != nil {
+					reqLog.Error("Failed to record provider transport health: %v", healthErr)
+					healthAuthorityFailed = relay.recordExecutionHealthFailure(attemptCtx, requestID, req.Model, requestedModel, route, 0, int(upstreamDuration.Milliseconds()), executionHealthProviderFailure, healthErr)
+				}
 				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, 0, string(classified.FailureKind), providerFailureEventMessage(0, classified.FailureKind))
 			}
 			ledgerStatus := "recorded"
@@ -1126,7 +1154,12 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 			cleanupCtx := context.WithoutCancel(attemptCtx)
 			relay.recordRequest(cleanupCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 0, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, estimatedTokens, "")
 			if attemptCtx.Err() == nil {
-				writeNonRetryableProviderError(w, 0, classified.FailureKind)
+				if healthAuthorityFailed {
+					w.Header().Set("Retry-After", "1")
+					writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+				} else {
+					writeNonRetryableProviderError(w, 0, classified.FailureKind)
+				}
 			}
 			return
 		}
@@ -1151,18 +1184,29 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream rejected response: status=%d kind=%s retryable=%t", resp.StatusCode, classified.FailureKind, classified.Retryable)
+			var healthErr error
 			switch classified.FailureKind {
 			case adapters.FailureChannel:
-				relay.router.MarkRouteFailure(ctx, *route)
+				healthErr = relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthProviderFailure)
 				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
 			case adapters.FailureAuth:
-				relay.router.MarkRouteKeyAuthFailure(ctx, *route)
+				healthErr = relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthCredentialAuthFailure)
 				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
 			case adapters.FailureRateLimit:
-				relay.router.MarkRouteKeyRateLimited(ctx, *route)
+				healthErr = relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthCredentialRateLimited)
 				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
 			default:
 				// 4xx client errors (400, 404, etc.) — don't mark as failure
+			}
+			if healthErr != nil {
+				reqLog.Error("Failed to record provider rejection health: %v", healthErr)
+				if relay.recordExecutionHealthFailure(attemptCtx, requestID, req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), healthActionForFailureKind(classified.FailureKind), healthErr) {
+					resp.Body.Close()
+					relay.billing.Cancel(context.WithoutCancel(attemptCtx), requestID, orgID)
+					w.Header().Set("Retry-After", "1")
+					writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+					return
+				}
 			}
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_rejected", "provider", "warning", req.Model, requestedModel, &routeForTrace, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
 				"failure_kind":   string(classified.FailureKind),
@@ -1228,11 +1272,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	if lastRoute != nil {
 		relay.recordRequest(lastAttemptCtx, requestID, orgID, keyID, lastRoute.Channel.ID, lastRoute.Channel.Provider, lastRoute.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, lastStatusCode, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, estimatedTokens, lastUpstreamRequestID)
 	}
-	if lastStatusCode > 0 {
-		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", fmt.Sprintf("All upstream channels failed (last status: %d)", lastStatusCode))
-	} else {
-		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "All upstream channels failed")
-	}
+	writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Upstream request failed")
 }
 
 // relayNonStreamRequest handles non-streaming responses.
@@ -1253,8 +1293,12 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		status, errorType, errorCode, message, failureKind := payloadReadFailure(err)
 		reqLog.Error("Failed to read bounded response body: %v", err)
 		stopProbeLease()
+		healthAuthorityFailed := false
 		if !errors.Is(err, payloadpolicy.ErrPayloadTooLarge) && !errors.Is(err, payloadpolicy.ErrBudgetExceeded) {
-			relay.router.MarkRouteFailure(context.WithoutCancel(ctx), *route)
+			if healthErr := relay.applyRouteHealth(context.WithoutCancel(ctx), route, executionHealthProviderFailure); healthErr != nil {
+				reqLog.Error("Failed to record unusable provider response health: %v", healthErr)
+				healthAuthorityFailed = relay.recordExecutionHealthFailure(ctx, requestID, model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
+			}
 		}
 		if ledgerErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 			ctx, requestID, orgID, billing.ProviderAttemptOutcomeResponseUnusable,
@@ -1265,6 +1309,11 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		relay.recordTraceEvent(ctx, requestID, "provider.response_unusable", "provider", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"failure_kind": failureKind,
 		}, upstreamRequestID)
+		if healthAuthorityFailed {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+			return
+		}
 		if errors.Is(err, payloadpolicy.ErrBudgetExceeded) {
 			w.Header().Set("Retry-After", "1")
 		}
@@ -1288,12 +1337,21 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	if err != nil {
 		reqLog.Error("Failed to parse adapter response: %v", err)
 		stopProbeLease()
-		relay.router.MarkRouteFailure(context.WithoutCancel(ctx), *route)
+		healthAuthorityFailed := false
+		if healthErr := relay.applyRouteHealth(context.WithoutCancel(ctx), route, executionHealthProviderFailure); healthErr != nil {
+			reqLog.Error("Failed to record provider parse health: %v", healthErr)
+			healthAuthorityFailed = relay.recordExecutionHealthFailure(ctx, requestID, model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
+		}
 		if ledgerErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 			ctx, requestID, orgID, billing.ProviderAttemptOutcomeResponseUnusable,
 			false, resp.StatusCode, "response_parse", upstreamRequestID,
 		), reqLog); ledgerErr != nil {
 			reqLog.Error("Failed to retain unusable provider response authority: %v", ledgerErr)
+		}
+		if healthAuthorityFailed {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+			return
 		}
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
 		return
@@ -1322,21 +1380,27 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		responseBody = body
 	}
 	var responseMap map[string]interface{}
-	if err := json.Unmarshal(responseBody, &responseMap); err != nil || responseMap == nil {
+	if err := decodeJSONUseNumber(responseBody, &responseMap); err != nil || responseMap == nil {
 		stopProbeLease()
-		relay.router.MarkRouteFailure(context.WithoutCancel(ctx), *route)
+		healthAuthorityFailed := false
+		if healthErr := relay.applyRouteHealth(context.WithoutCancel(ctx), route, executionHealthProviderFailure); healthErr != nil {
+			reqLog.Error("Failed to record malformed provider response health: %v", healthErr)
+			healthAuthorityFailed = relay.recordExecutionHealthFailure(ctx, requestID, model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
+		}
 		if ledgerErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 			ctx, requestID, orgID, billing.ProviderAttemptOutcomeResponseUnusable,
 			false, resp.StatusCode, "response_parse", upstreamRequestID,
 		), reqLog); ledgerErr != nil {
 			reqLog.Error("Failed to retain unusable provider response authority: %v", ledgerErr)
 		}
+		if healthAuthorityFailed {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
 		return
 	}
-	stopProbeLease()
-	relay.router.MarkRouteSuccess(context.WithoutCancel(ctx), route)
-	relay.recordTraceEvent(ctx, requestID, "provider.response_accepted", "provider", "info", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{}, upstreamRequestID)
 	holdUndeliveredOutput := func(status int, reason string) error {
 		holdReq := settleRequestFromUsage(requestID, attemptIDFromContext(ctx), orgID, normalized.Usage)
 		holdReq.UsagePurpose = metering.UsagePurposeProviderEvidence
@@ -1351,6 +1415,45 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 			evidenceUsage, 0, status, elapsedMilliseconds(requestStart), 0, false, estimatedTokens, upstreamRequestID, nil)
 		return nil
 	}
+	deliveryInspection := inspectNonStreamOutputTexts(responseMap)
+	if !deliveryInspection.complete() {
+		stopProbeLease()
+		healthAuthorityFailed := false
+		if healthErr := relay.applyRouteHealth(context.WithoutCancel(ctx), route, executionHealthProviderFailure); healthErr != nil {
+			reqLog.Error("Failed to record unsupported provider response health: %v", healthErr)
+			healthAuthorityFailed = relay.recordExecutionHealthFailure(ctx, requestID, model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
+		}
+		if err := holdUndeliveredOutput(http.StatusBadGateway, billing.OutputHoldReasonProviderResponseUnusable); err != nil {
+			reqLog.Error("Failed to retain unsupported provider response usage: %v", err)
+			writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
+			return
+		}
+		relay.recordTraceEvent(ctx, requestID, "provider.response_unusable", "provider", "warning", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"failure_kind": "unsupported_response_shape", "delivery_profile": chatDeliveryWhitelistVersion,
+		}, upstreamRequestID)
+		if healthAuthorityFailed {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Upstream response could not be delivered safely")
+		return
+	}
+	stopProbeLease()
+	if healthErr := relay.applyRouteHealth(context.WithoutCancel(ctx), route, executionHealthSuccess); healthErr != nil {
+		reqLog.Error("Failed to record provider success health: %v", healthErr)
+		if relay.recordExecutionHealthFailure(ctx, requestID, model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthSuccess, healthErr) {
+			if holdErr := holdUndeliveredOutput(http.StatusServiceUnavailable, billing.OutputHoldReasonProviderAttemptUnresolved); holdErr != nil {
+				reqLog.Error("Failed to retain provider usage after routing health failure: %v", holdErr)
+				writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
+				return
+			}
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+			return
+		}
+	}
+	relay.recordTraceEvent(ctx, requestID, "provider.response_accepted", "provider", "info", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{}, upstreamRequestID)
 	if pinnedGuardrail := guardrailPinFromContext(ctx); pinnedGuardrail != nil {
 		guardrailResult, outputRefs := evaluateNonStreamOutputGuardrail(ctx, pinnedGuardrail, responseMap)
 		guardrailEvidenceCtx, cancelGuardrailEvidence := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
@@ -1362,7 +1465,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 			if unavailable {
 				status = http.StatusServiceUnavailable
 			}
-			if err := holdUndeliveredOutput(status, "guardrail_withheld"); err != nil {
+			if err := holdUndeliveredOutput(status, billing.OutputHoldReasonGuardrailWithheld); err != nil {
 				reqLog.Error("Failed to retain guardrail-withheld provider usage: %v", err)
 				relay.recordTraceEvent(ctx, requestID, "billing.guardrail_hold.failed", "billing", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
 					"error_code": "guardrail_output_hold_failed",
@@ -1374,7 +1477,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 			return
 		}
 		if err := applyOutputGuardrailTransform(guardrailResult, outputRefs); err != nil {
-			if holdErr := holdUndeliveredOutput(http.StatusInternalServerError, "guardrail_withheld"); holdErr != nil {
+			if holdErr := holdUndeliveredOutput(http.StatusInternalServerError, billing.OutputHoldReasonGuardrailWithheld); holdErr != nil {
 				reqLog.Error("Failed to retain transform-failed provider usage: %v", holdErr)
 				relay.recordTraceEvent(ctx, requestID, "billing.guardrail_hold.failed", "billing", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
 					"error_code": "guardrail_transform_hold_failed",
@@ -1392,7 +1495,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	basePayload, responseMaxBytes, err := relay.marshalNonStreamResponseBase(responseMap)
 	if err != nil {
 		if errors.Is(err, payloadpolicy.ErrPayloadTooLarge) {
-			if holdErr := holdUndeliveredOutput(http.StatusBadGateway, "response_too_large"); holdErr != nil {
+			if holdErr := holdUndeliveredOutput(http.StatusBadGateway, billing.OutputHoldReasonResponseTooLarge); holdErr != nil {
 				reqLog.Error("Failed to retain oversized provider response usage: %v", holdErr)
 				writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
 				return
@@ -1676,11 +1779,15 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}()
 
 	deliveredCounter := tokenutil.NewStreamTokenCounter()
-	var msgPairs []struct{ Role, Content string }
-	for _, message := range messages {
-		msgPairs = append(msgPairs, struct{ Role, Content string }{Role: message.Role, Content: message.Content})
+	if admittedInput, exists := admissionInputEstimateFromContext(ctx); exists {
+		deliveredCounter.SetEstimatedInputTokens(admittedInput)
+	} else {
+		deliveredCounter.SetEstimatedInputTokens(estimateChatInputTokens(messages))
 	}
-	deliveredCounter.SetEstimatedInputTokens(tokenutil.EstimateRequestTokens(msgPairs))
+	// The customer counter remains a best-effort settlement estimate for an
+	// interrupted stream. This independent byte upper bound is the authority for
+	// admission and the explicit/public output cap.
+	admittedOutputTokens := 0
 	usedUpstreamUsage := false
 	streamUsage, _ := adapters.NewUsage(0, 0, 0, metering.UsageSourceCounterV2)
 	var deliveredBytes int64
@@ -1701,7 +1808,12 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		if additionalTokens <= 0 {
 			return true
 		}
-		projected := deliveredCounter.OutputTokens() + additionalTokens
+		projected64, safe := checkedAdmissionAdd(int64(admittedOutputTokens), int64(additionalTokens))
+		if !safe || projected64 > int64(maxChatCompletionTokens) {
+			streamTerminationCode = "stream_output_limit_exceeded"
+			return false
+		}
+		projected := int(projected64)
 		if !reservationState.AllowExtension {
 			if projected <= reservationState.ReservedCompletionTokens {
 				return true
@@ -1749,7 +1861,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 		if !force && time.Since(lastCheckpointAt) < streampolicy.CheckpointInterval &&
 			deliveredBytes-checkpointBytes < streampolicy.CheckpointDeliveredBytes &&
-			deliveredCounter.OutputTokens()-checkpointTokens < streampolicy.CheckpointCompletionTokens {
+			admittedOutputTokens-checkpointTokens < streampolicy.CheckpointCompletionTokens {
 			return true
 		}
 		checkpointCtx, checkpointCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -1757,7 +1869,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			RequestID: requestID, AttemptID: leaseStart.AttemptID, OwnerID: leaseStart.OwnerID, OrgID: orgID,
 			Generation:     leaseStart.Generation,
 			DeliveredBytes: deliveredBytes, DeliveredChunks: deliveredChunks,
-			PromptTokens: deliveredCounter.InputTokens(), CompletionTokens: deliveredCounter.OutputTokens(),
+			PromptTokens: deliveredCounter.InputTokens(), CompletionTokens: admittedOutputTokens,
 			PolicySetVersion: streamGuardrailProfile.PolicySetVersion,
 			LeaseTTL:         streampolicy.CheckpointLeaseDuration,
 		})
@@ -1771,7 +1883,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 		lastCheckpointAt = time.Now()
 		checkpointBytes = deliveredBytes
-		checkpointTokens = deliveredCounter.OutputTokens()
+		checkpointTokens = admittedOutputTokens
 		return true
 	}
 	ttftMs := 0
@@ -1783,20 +1895,28 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	}
 	streamState := &adapters.StreamState{}
 	routeHealthRecorded := false
+	routeHealthAuthorityFailed := false
 	streamPayloadInvalid := false
-	markRouteHealthy := func() {
+	providerStreamErrorObserved := false
+	providerFrameObserved := false
+	providerTerminalObserved := false
+	recordRouteHealth := func(action executionHealthAction) {
 		if routeHealthRecorded {
 			return
 		}
+		routeHealthRecorded = true
 		stopProbeLease()
 		healthCtx, healthCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		err := relay.router.MarkRouteSuccess(healthCtx, route)
+		err := relay.applyRouteHealth(healthCtx, route, action)
 		healthCancel()
 		if err != nil {
-			reqLog.Warn("Failed to record valid upstream stream health: %v", err)
+			reqLog.Warn("Failed to record terminal upstream stream health: action=%d error=%v", action, err)
+			routeHealthAuthorityFailed = relay.recordExecutionHealthFailure(ctx, requestID, model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), action, err)
+			return
 		}
-		routeHealthRecorded = true
-		relay.recordTraceEvent(ctx, requestID, "provider.response_accepted", "provider", "info", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{}, upstreamRequestID)
+		if action == executionHealthSuccess {
+			relay.recordTraceEvent(ctx, requestID, "provider.response_accepted", "provider", "info", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{}, upstreamRequestID)
+		}
 	}
 
 	done := false
@@ -1866,12 +1986,17 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			relay.recordGuardrailResult(ctx, requestID, model, requestedModel, guardrail.StageStreamOutput, inspection.Result, route, http.StatusOK, upstreamRequestID)
 		}
 		if inspectErr != nil {
-			streamTerminationCode = "guardrail_stream_invalid_shape"
-			if errors.Is(inspectErr, errStreamGuardrailCrossBoundary) || errors.Is(inspectErr, errStreamGuardrailArguments) {
-				streamTerminationCode = "guardrail_stream_transform_unsafe"
-			}
-			if errors.Is(inspectErr, errStreamGuardrailBufferExceeded) {
-				streamTerminationCode = "guardrail_stream_buffer_exceeded"
+			if streamGuardrailProfile.Enforced {
+				streamTerminationCode = "guardrail_stream_invalid_shape"
+				if errors.Is(inspectErr, errStreamGuardrailCrossBoundary) || errors.Is(inspectErr, errStreamGuardrailArguments) {
+					streamTerminationCode = "guardrail_stream_transform_unsafe"
+				}
+				if errors.Is(inspectErr, errStreamGuardrailBufferExceeded) {
+					streamTerminationCode = "guardrail_stream_buffer_exceeded"
+				}
+			} else {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
 			}
 			return false
 		}
@@ -1884,9 +2009,12 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 		additionalTokens := 0
 		for _, frame := range inspection.Frames {
-			if frame.Text != "" {
-				additionalTokens += tokenutil.EstimateTokens(frame.Text)
+			frameTokens := len([]byte(frame.Text))
+			if frameTokens > maxChatCompletionTokens-additionalTokens {
+				streamTerminationCode = "stream_output_limit_exceeded"
+				return false
 			}
+			additionalTokens += frameTokens
 		}
 		if !ensureStreamBudgetTokens(additionalTokens) {
 			return false
@@ -1905,6 +2033,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				deliveredBytes += int64(written)
 				deliveredChunks++
 				if frame.Text != "" {
+					admittedOutputTokens += len([]byte(frame.Text))
 					deliveredCounter.AddOutputDelta(frame.Text)
 				}
 				if !checkpointDelivery(!deliveryPartialRecorded) {
@@ -1932,9 +2061,14 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		return true
 	}
 	enqueueGuardedFrame := func(data []byte, doneAfter bool) bool {
-		_, parseErr := parseGuardedStreamFrame(data)
-		if parseErr != nil && streamGuardrailProfile.Enforced {
-			streamTerminationCode = "guardrail_stream_invalid_shape"
+		parsed, parseErr := parseGuardedStreamFrame(data)
+		if parseErr != nil || parsed.unsupported {
+			if streamGuardrailProfile.Enforced {
+				streamTerminationCode = "guardrail_stream_invalid_shape"
+			} else {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+			}
 			return false
 		}
 		frameBufferBytes := len(data)
@@ -2022,9 +2156,7 @@ streamLoop:
 			}
 			data := field.value
 			if data == "[DONE]" {
-				if !streamPayloadInvalid {
-					markRouteHealthy()
-				}
+				providerTerminalObserved = true
 				if !flushGuardrailBuffer() {
 					done = true
 					continue
@@ -2049,7 +2181,22 @@ streamLoop:
 			if chunk == nil {
 				continue
 			}
-			markRouteHealthy()
+			if !chunk.Skip && len(chunk.Data) > 0 {
+				providerError, classifyErr := providerStreamErrorFrame(chunk.Data)
+				if classifyErr != nil {
+					streamPayloadInvalid = true
+					streamTerminationCode = "upstream_stream_invalid_frame"
+					done = true
+					continue
+				}
+				if providerError {
+					providerStreamErrorObserved = true
+					streamTerminationCode = "upstream_stream_provider_error"
+					done = true
+					continue
+				}
+			}
+			providerFrameObserved = true
 			if chunk.HasUsage {
 				streamUsage = chunk.Usage
 				usedUpstreamUsage = true
@@ -2060,7 +2207,7 @@ streamLoop:
 				}
 			}
 			if chunk.Done {
-				markRouteHealthy()
+				providerTerminalObserved = true
 				if !flushGuardrailBuffer() {
 					done = true
 				}
@@ -2081,9 +2228,7 @@ streamLoop:
 		}
 
 		if hasField && field.name == "data" && field.value == "[DONE]" {
-			if !streamPayloadInvalid {
-				markRouteHealthy()
-			}
+			providerTerminalObserved = true
 			if !flushGuardrailBuffer() {
 				done = true
 				continue
@@ -2099,6 +2244,19 @@ streamLoop:
 				done = true
 				continue
 			}
+			providerError, classifyErr := providerStreamErrorFrame([]byte(data))
+			if classifyErr != nil {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+				done = true
+				continue
+			}
+			if providerError {
+				providerStreamErrorObserved = true
+				streamTerminationCode = "upstream_stream_provider_error"
+				done = true
+				continue
+			}
 			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleUsage([]byte(data), adapters.EndpointChatCompletions, metering.UsageSourceUpstream)
 			if usageErr != nil {
 				reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to normalize final stream usage: %v", usageErr)
@@ -2111,7 +2269,7 @@ streamLoop:
 				streamUsage = parsedUsage
 				usedUpstreamUsage = true
 			}
-			markRouteHealthy()
+			providerFrameObserved = true
 			skipRawEventSeparator = true
 			if !enqueueGuardedFrame([]byte(data), false) {
 				done = true
@@ -2119,19 +2277,15 @@ streamLoop:
 			continue
 		}
 
-		// Preserve non-data SSE ordering by closing any pending model-data batch
-		// before forwarding its event label, comment or separator.
-		if !flushGuardrailBuffer() {
-			done = true
+		// Provider comments and event labels are not part of the modeled Chat
+		// delta protocol. Blank separators and comments are ignored; any other
+		// SSE field fails closed before disclosure.
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, ":") {
 			continue
 		}
-		payload := line + "\n"
-		_, writeOK := writeSSECount("%s", payload)
-		if !writeOK {
-			streamTerminationCode = "downstream_stream_write_failed"
-			done = true
-			continue
-		}
+		streamPayloadInvalid = true
+		streamTerminationCode = "upstream_stream_invalid_frame"
+		done = true
 	}
 	stopGuardrailBufferTimer()
 	pendingFrames = nil
@@ -2174,13 +2328,19 @@ streamLoop:
 	if !done && streamTerminationCode == "" && !preOutputBillingFailure {
 		streamTerminationCode = "upstream_stream_read_failed"
 	}
-	if (scanErr != nil || streamPayloadInvalid || (!done && !preOutputBillingFailure)) && streamTerminationCode != "downstream_stream_write_failed" {
-		stopProbeLease()
-		healthCtx, healthCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := relay.router.MarkRouteFailure(healthCtx, *route); err != nil {
-			reqLog.Warn("Failed to record invalid upstream stream health: %v", err)
-		}
-		healthCancel()
+	providerStreamFailed := scanErr != nil || streamPayloadInvalid || providerStreamErrorObserved || (!providerTerminalObserved && streamTerminationCode == "upstream_stream_read_failed")
+	switch {
+	case providerStreamFailed:
+		recordRouteHealth(executionHealthProviderFailure)
+	case providerTerminalObserved || providerFrameObserved:
+		// Local delivery, policy and budget termination do not make a provider
+		// unhealthy once the provider has supplied a syntactically valid frame.
+		// Success is deliberately terminal here, after all upstream parsing and
+		// synchronous output guardrails, rather than on the first valid chunk.
+		recordRouteHealth(executionHealthSuccess)
+	}
+	if routeHealthAuthorityFailed && streamTerminationCode == "" {
+		streamTerminationCode = "routing_health_transition_failed"
 	}
 	select {
 	case writeErr := <-streamWriteFailures:
@@ -2241,6 +2401,8 @@ streamLoop:
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.frame_too_large\",\"message\":\"Upstream stream frame exceeded the configured safety limit\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "upstream_stream_invalid_frame":
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.invalid_frame\",\"message\":\"Upstream returned an invalid stream frame\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case "upstream_stream_provider_error":
+			writeSSE("data: {\"error\":{\"type\":\"upstream_error\",\"code\":\"upstream_error.stream_failed\",\"message\":\"Upstream failed while producing the stream\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "guardrail_stream_blocked":
 			writeSSE("data: {\"error\":{\"type\":\"guardrail_error\",\"code\":\"guardrail_error.stream_output_blocked\",\"message\":\"Stream output was stopped by content policy\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "guardrail_stream_detector_unavailable", "guardrail_stream_invalid_shape", "guardrail_stream_transform_unsafe", "guardrail_stream_buffer_exceeded":
@@ -2251,6 +2413,8 @@ streamLoop:
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.output_limit_exceeded\",\"message\":\"Stream exceeded its explicit output limit\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		case "stream_lease_lost", "stream_checkpoint_unpersisted":
 			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.delivery_state_unavailable\",\"message\":\"Durable stream delivery state is unavailable\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
+		case "routing_health_transition_failed":
+			writeSSE("data: {\"error\":{\"type\":\"stream_error\",\"code\":\"stream_error.routing_health_unavailable\",\"message\":\"Routing health authority is temporarily unavailable\",\"request_id\":%q,\"billing_status\":%q}}\n\n", requestID, billingStatus)
 		}
 	}
 
@@ -2563,68 +2727,73 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		estimatedTokens, usageConfidence, upstreamRequestID, traceID, evidenceContext.SessionID,
 		evidenceContext.WorkflowID, evidenceContext.AgentID, attemptID, actorType, stringFromNullable(actorRefArg),
 		evidenceContext.OnBehalfOf, payloadCaptureMode)
+	payload := callLogOutboxPayload{
+		RequestID:                               requestID,
+		ClientRequestID:                         requestIdentity.ClientRequestID,
+		IdempotencyKeyHash:                      requestIdentity.IdempotencyKeyHash,
+		OrgID:                                   orgID,
+		ProjectID:                               int64Pointer(projectID),
+		APIKeyID:                                keyID,
+		OwnerUserID:                             ownerUserID,
+		KeyType:                                 keyType,
+		Model:                                   model,
+		RequestedModel:                          requestedModel,
+		Provider:                                provider,
+		Channel:                                 channelName,
+		ChannelID:                               channelID,
+		PromptTokens:                            usage.PromptTokens,
+		UncachedPromptTokens:                    usage.UncachedPromptTokens,
+		CacheReadTokens:                         usage.CacheReadTokens,
+		CacheCreationTokens:                     usage.CacheCreationTokens,
+		CompletionTokens:                        usage.CompletionTokens,
+		MoneySchema:                             outbox.MoneyVersion,
+		Currency:                                "CNY",
+		AmountScale:                             money.MicrosPerCNY,
+		CostMicros:                              microsText(costMicros),
+		StatusCode:                              statusCode,
+		LatencyMS:                               latencyMs,
+		TTFTMS:                                  ttftMs,
+		UsageSource:                             usageSource,
+		UsageAuthority:                          string(usage.Authority),
+		UsagePurpose:                            string(usage.Purpose),
+		UsageFinality:                           string(usage.Finality),
+		UsageContractVersion:                    usage.ContractVersion,
+		UsageEstimateVersion:                    usage.EstimateVersion,
+		CacheUsageSchema:                        usage.CacheUsageSchema,
+		CacheUsageStatus:                        usage.CacheUsageStatus,
+		PricingVersion:                          pricingVersion,
+		EffectiveInputPriceMicrosPerMillion:     microsText(effectiveInputPrice),
+		EffectiveCacheReadPriceMicrosPerMillion: microsText(effectiveCacheReadPrice),
+		EffectiveCacheCreatePriceMicrosPerMillion: microsText(effectiveCacheCreationPrice),
+		EffectiveOutputPriceMicrosPerMillion:      microsText(effectiveOutputPrice),
+		CacheReadCostMicros:                       microsText(cacheReadCost),
+		CacheCreationCostMicros:                   microsText(cacheCreationCost),
+		IsStream:                                  isStream,
+		IPAddress:                                 clientIP,
+		EstimatedTokens:                           estimatedTokens,
+		UsageConfidence:                           usageConfidence,
+		TraceID:                                   traceID,
+		SessionID:                                 evidenceContext.SessionID,
+		SchemaVersion:                             evidenceSchemaVersion,
+		CaptureMode:                               evidenceCaptureModeNative,
+		EvidenceRef:                               fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
+		UpstreamRequestID:                         upstreamRequestID,
+		WorkflowID:                                evidenceContext.WorkflowID,
+		AgentID:                                   evidenceContext.AgentID,
+		AttemptID:                                 attemptID,
+		ActorType:                                 actorType,
+		ActorRef:                                  stringFromNullable(actorRefArg),
+		OnBehalfOf:                                evidenceContext.OnBehalfOf,
+		PayloadCaptureMode:                        payloadCaptureMode,
+		SourceEventHash:                           sourceEventHash,
+		OccurredAt:                                time.Now().UTC(),
+	}
+	payload, err := relay.prepareCallLogMaterialization(ctx, payload)
+	if err != nil {
+		reqLog.Error("Failed to prepare request execution evidence: %v", err)
+		return
+	}
 	if relay.outbox != nil {
-		payload := callLogOutboxPayload{
-			RequestID:                               requestID,
-			ClientRequestID:                         requestIdentity.ClientRequestID,
-			IdempotencyKeyHash:                      requestIdentity.IdempotencyKeyHash,
-			OrgID:                                   orgID,
-			ProjectID:                               int64Pointer(projectID),
-			APIKeyID:                                keyID,
-			OwnerUserID:                             ownerUserID,
-			KeyType:                                 keyType,
-			Model:                                   model,
-			RequestedModel:                          requestedModel,
-			Provider:                                provider,
-			Channel:                                 channelName,
-			ChannelID:                               channelID,
-			PromptTokens:                            usage.PromptTokens,
-			UncachedPromptTokens:                    usage.UncachedPromptTokens,
-			CacheReadTokens:                         usage.CacheReadTokens,
-			CacheCreationTokens:                     usage.CacheCreationTokens,
-			CompletionTokens:                        usage.CompletionTokens,
-			MoneySchema:                             outbox.MoneyVersion,
-			Currency:                                "CNY",
-			AmountScale:                             money.MicrosPerCNY,
-			CostMicros:                              microsText(costMicros),
-			StatusCode:                              statusCode,
-			LatencyMS:                               latencyMs,
-			TTFTMS:                                  ttftMs,
-			UsageSource:                             usageSource,
-			UsageAuthority:                          string(usage.Authority),
-			UsagePurpose:                            string(usage.Purpose),
-			UsageFinality:                           string(usage.Finality),
-			UsageContractVersion:                    usage.ContractVersion,
-			UsageEstimateVersion:                    usage.EstimateVersion,
-			CacheUsageSchema:                        usage.CacheUsageSchema,
-			CacheUsageStatus:                        usage.CacheUsageStatus,
-			PricingVersion:                          pricingVersion,
-			EffectiveInputPriceMicrosPerMillion:     microsText(effectiveInputPrice),
-			EffectiveCacheReadPriceMicrosPerMillion: microsText(effectiveCacheReadPrice),
-			EffectiveCacheCreatePriceMicrosPerMillion: microsText(effectiveCacheCreationPrice),
-			EffectiveOutputPriceMicrosPerMillion:      microsText(effectiveOutputPrice),
-			CacheReadCostMicros:                       microsText(cacheReadCost),
-			CacheCreationCostMicros:                   microsText(cacheCreationCost),
-			IsStream:                                  isStream,
-			IPAddress:                                 clientIP,
-			EstimatedTokens:                           estimatedTokens,
-			UsageConfidence:                           usageConfidence,
-			TraceID:                                   traceID,
-			SessionID:                                 evidenceContext.SessionID,
-			SchemaVersion:                             evidenceSchemaVersion,
-			CaptureMode:                               evidenceCaptureModeNative,
-			EvidenceRef:                               fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
-			UpstreamRequestID:                         upstreamRequestID,
-			WorkflowID:                                evidenceContext.WorkflowID,
-			AgentID:                                   evidenceContext.AgentID,
-			AttemptID:                                 attemptID,
-			ActorType:                                 actorType,
-			ActorRef:                                  stringFromNullable(actorRefArg),
-			OnBehalfOf:                                evidenceContext.OnBehalfOf,
-			PayloadCaptureMode:                        payloadCaptureMode,
-			SourceEventHash:                           sourceEventHash,
-			OccurredAt:                                time.Now().UTC(),
-		}
 		if err := relay.enqueueCallLogOutbox(ctx, payload); err == nil {
 			relay.recordTraceEvent(ctx, requestID, "logging.call_log.queued", "logging", "info", model, requestedModel, nil, statusCode, latencyMs, map[string]interface{}{
 				"prompt_tokens":           usage.PromptTokens,
@@ -2641,61 +2810,7 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 			reqLog.Error("Failed to enqueue request log; falling back to synchronous insert: %v", err)
 		}
 	}
-	_, err := relay.db.Exec(ctx,
-		`INSERT INTO call_logs (
-			request_id, client_request_id, idempotency_key_hash,
-			org_id, project_id, api_key_id, owner_user_id, key_type,
-			model, requested_model, provider, channel, route_channel_id,
-			prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
-			completion_tokens, total_tokens, cost_micros, status_code, upstream_status_code, latency_ms, ttft_ms, usage_source,
-			usage_authority, usage_purpose, usage_finality, usage_contract_version, usage_estimate_version,
-			cache_usage_schema, cache_usage_status, pricing_version,
-			effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
-			effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
-			cache_read_cost_micros, cache_creation_cost_micros,
-			is_stream, ip_address, estimated_tokens, usage_confidence,
-			trace_id, session_id, schema_version, capture_mode, evidence_ref, upstream_request_id,
-			workflow_id, agent_id, attempt_id,
-			actor_type, actor_ref, on_behalf_of, payload_capture_mode, source_event_hash
-		)
-		 VALUES (
-			$1, $2, $3,
-			$4, $5, $6, $7, $8,
-			$9, $10, $11, $12, NULLIF($13, 0),
-			$14, $15, $16, $17,
-			$18, $19, $20, $21,
-			(SELECT provider_attempt.http_status
-			   FROM billing_provider_attempts provider_attempt
-			  WHERE provider_attempt.org_id = $4::bigint
-			    AND provider_attempt.request_id = $1::varchar(64)
-			    AND provider_attempt.attempt_id = $51::varchar(64)
-			  LIMIT 1),
-			$22, $23, $24,
-			$25, $26, $27, $28, $29,
-			$30, $31, $32,
-			$33, $34, $35, $36,
-			$37, $38,
-			$39, $40, $41, $42,
-			$43, $44, $45, $46, $47, $48,
-			$49, $50, $51,
-			$52, $53, $54, $55, $56
-		)`,
-		requestID, nullableString(requestIdentity.ClientRequestID), nullableString(requestIdentity.IdempotencyKeyHash),
-		orgID, projectIDArg, keyID, ownerUserIDArg, keyType,
-		model, requestedModel, provider, channelName, channelID,
-		usage.PromptTokens, usage.UncachedPromptTokens, usage.CacheReadTokens, usage.CacheCreationTokens,
-		usage.CompletionTokens, usage.PromptTokens+usage.CompletionTokens,
-		costMicros, statusCode, latencyMs, ttftMs, usageSource,
-		usage.Authority, usage.Purpose, usage.Finality, usage.ContractVersion, usage.EstimateVersion,
-		usage.CacheUsageSchema, usage.CacheUsageStatus, pricingVersion,
-		effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice,
-		cacheReadCost, cacheCreationCost,
-		isStream, clientIP, estimatedTokens, usageConfidence,
-		traceID, nullableString(evidenceContext.SessionID), evidenceSchemaVersion, evidenceCaptureModeNative, fmt.Sprintf("%s:call_logs:request_id:%s", evidenceTraceRefSourceType, requestID),
-		nullableString(upstreamRequestID), nullableString(evidenceContext.WorkflowID), nullableString(evidenceContext.AgentID), nullableString(attemptID),
-		actorType, actorRefArg, nullableString(evidenceContext.OnBehalfOf), payloadCaptureMode, sourceEventHash,
-	)
-	if err != nil {
+	if err := relay.materializeCallLog(ctx, outbox.EventCallLog, payload, ""); err != nil {
 		reqLog.Error("Failed to record request log: %v", err)
 		return
 	}
@@ -2730,16 +2845,21 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 
 // estimateTokens provides a CJK-aware estimate of tokens needed for the request.
 func estimateTokenReservation(messages []Message, maxTokens *int) (inputTokens, reservedCompletionTokens int) {
-	inputTokens = 0
-	for _, msg := range messages {
-		inputTokens += tokenutil.EstimateTokens(msg.Content) + 4 // overhead per message
-	}
-	inputTokens += 2 // reply priming
+	inputTokens = estimateChatInputTokens(messages)
 	reservedCompletionTokens = 1000
 	if maxTokens != nil {
 		reservedCompletionTokens = *maxTokens
 	}
 	return inputTokens, reservedCompletionTokens
+}
+
+func estimateChatInputTokens(messages []Message) int {
+	inputTokens := 0
+	for _, msg := range messages {
+		inputTokens += msg.estimatedInputTokens() + 4 // overhead per message
+	}
+	inputTokens += 2 // reply priming
+	return inputTokens
 }
 
 func estimateTokens(messages []Message, maxTokens *int) int {
@@ -2808,6 +2928,17 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if requestedModel == "" {
 		requestedModel = req.Model
 	}
+	// Keep the authorization boundary ahead of guardrail evaluation for the
+	// same reason as Chat: denied callers must have no policy or routing side
+	// effects beyond the explicit authorization-denial evidence.
+	callerAPIKey := middleware.GetAPIKeyFromContext(ctx)
+	if !modelAllowedForAPIKey(callerAPIKey, req.Model, requestedModel) {
+		relay.rejectModelNotAllowed(w, ctx, requestID, req.Model, requestedModel, requestStart)
+		return
+	}
+	if !relay.requireModelExecutionRuntime(w) {
+		return
+	}
 	pinnedGuardrail := relay.pinGuardrail(ctx, req.Model, "embeddings")
 	if pinnedGuardrail != nil {
 		guardrailResult := pinnedGuardrail.Evaluate(ctx, guardrail.StageInput, embeddingsGuardrailTexts(req.Input))
@@ -2830,40 +2961,61 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx = contextWithGuardrailPin(ctx, pinnedGuardrail)
 	}
-	callerAPIKey := middleware.GetAPIKeyFromContext(ctx)
-	if !modelAllowedForAPIKey(callerAPIKey, req.Model, requestedModel) {
-		relay.rejectModelNotAllowed(w, ctx, requestID, req.Model, requestedModel, requestStart)
-		return
-	}
-
 	orgID := middleware.GetOrgIDFromContext(ctx)
 	keyID := middleware.GetKeyIDFromContext(ctx)
 	reqLog := logger.New(logger.Fields{RequestID: requestID, OrgID: uint(orgID), Module: "embeddings"})
 
-	// Estimate tokens (embeddings are typically input-only)
-	inputTokens := 500
-	if s, ok := req.Input.(string); ok {
-		inputTokens = tokenutil.EstimateTokens(s)
+	admission, admissionErr := estimateEmbeddingsAdmission(body)
+	if admissionErr != nil {
+		relay.recordTraceEvent(ctx, requestID, "gateway.admission_rejected", "admission", "warning", req.Model, requestedModel, nil, http.StatusBadRequest, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "validation_error.unsupported_semantics", "pre_freeze": true,
+		})
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.unsupported_semantics", "Embeddings input must be text, text arrays, token ID arrays, or token ID matrixes")
+		return
 	}
-	if arr, ok := req.Input.([]interface{}); ok {
-		inputTokens = 0
-		for _, item := range arr {
-			if s, ok := item.(string); ok {
-				inputTokens += tokenutil.EstimateTokens(s)
-			} else {
-				inputTokens += 100
-			}
-		}
+	inputTokens := admission.InputTokens
+	estimateVersion := admission.Version
+	responseExpectation, expectationErr := embeddingsResponseExpectationFromRequest(body)
+	if expectationErr != nil {
+		relay.recordTraceEvent(ctx, requestID, "gateway.admission_rejected", "admission", "warning", req.Model, requestedModel, nil, http.StatusBadRequest, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"error_code": "validation_error.unsupported_semantics", "pre_freeze": true,
+		})
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "validation_error.unsupported_semantics", "Embeddings encoding, dimensions, or input count is unsupported")
+		return
 	}
-	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-		"estimated_tokens": inputTokens,
-		"stream":           false,
-	})
-	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 	const providerTimeout = 120 * time.Second
 	ctx = agentcap.ContextWithInvocationLeaseTTL(ctx, providerTimeout)
 	ctx = workloadadmission.ContextWithClass(ctx, workloadadmission.ClassEmbedding)
 	ctx, limitPolicyCollector := contextWithLimitPolicyCollector(ctx)
+	zeroOutputTokens := 0
+	executionBatch, err := relay.prepareModelExecutionRoutes(
+		ctx, modeloperation.IDEmbeddings, adapters.EndpointEmbeddings,
+		req.Model, requestedModel, requestID, nil,
+		modelExecutionRequestLimits{EstimatedInputTokens: inputTokens, ExplicitOutputTokens: &zeroOutputTokens, EstimateVersion: admission.Version},
+		body, requestStart,
+	)
+	if err != nil {
+		if code, message, limitError := modelExecutionLimitErrorDetails(err); limitError {
+			relay.recordTraceEvent(ctx, requestID, "routing.request_limit_rejected", "routing", "warning", req.Model, requestedModel, nil, http.StatusBadRequest, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"error_code": code, "pre_freeze": true,
+			})
+			writeError(w, http.StatusBadRequest, "invalid_request_error", code, message)
+			return
+		}
+		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, http.StatusServiceUnavailable, elapsedMilliseconds(requestStart), map[string]interface{}{
+			"route_count": 0, "pre_freeze": true,
+		})
+		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, http.StatusServiceUnavailable, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, inputTokens, "")
+		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
+		return
+	}
+	inputTokens = executionBatch.limits.EstimatedInputTokens
+	estimateVersion = executionBatch.limits.EstimateVersion
+	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+		"estimated_tokens": inputTokens, "stream": false,
+		"admission_estimate_version": estimateVersion,
+	})
+	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 
 	freezeResult, err := relay.billing.Freeze(ctx, billing.FreezeRequest{
 		RequestID:                requestID,
@@ -2909,21 +3061,10 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		"currency":             "CNY", "amount_scale": money.MicrosPerCNY,
 	})
 
-	// Get all eligible routes so Embeddings follows the same bounded failover
-	// contract as Chat.
-	routes, err := relay.router.RouteAllWithKey(ctx, req.Model, requestID)
-	if err != nil {
-		relay.billing.Cancel(ctx, requestID, orgID)
-		writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", fmt.Sprintf("No available channel for model: %s", req.Model))
-		relay.recordTraceEvent(ctx, requestID, "routing.no_route", "routing", "error", req.Model, requestedModel, nil, 503, elapsedMilliseconds(requestStart), map[string]interface{}{
-			"route_count": 0,
-		})
-		relay.recordRequest(ctx, requestID, orgID, keyID, 0, "", "", req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 503, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceNoRoute, inputTokens, "")
-		return
-	}
-	client := &http.Client{Timeout: providerTimeout}
-	adapterRegistry := adapters.DefaultRegistry()
-	routingPolicy := relay.router.Policy()
+	// Every candidate was planned, decrypted and built before Freeze.
+	routes := executionBatch.routes
+	client := relay.providerClient(providerTimeout)
+	routingPolicy := relay.modelExecution.policy
 	providerAttempts := 0
 	var lastErr error
 	var lastStatusCode int
@@ -2932,77 +3073,36 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	lastAttemptCtx := ctx
 
 	for routeIndex := range routes {
-		route := &routes[routeIndex]
-		attemptCtx := contextWithAttemptID(ctx, newAttemptID())
-		attemptCtx = contextWithRouteAttempt(attemptCtx, routeIndex+1, len(routes))
+		preparedRoute := &routes[routeIndex]
+		route := &preparedRoute.compat
+		attemptCtx := contextWithRouteAttempt(ctx, routeIndex+1, len(routes))
 		lastAttemptCtx = attemptCtx
 		lastStatusCode = 0
 		lastUpstreamRequestID = ""
 
-		apiKey, err := auth.DecryptKey(route.ChannelKey.KeyEnc, relay.encKey)
+		adapter := preparedRoute.adapter
+		upstreamReq := preparedRoute.upstreamRequest
+		var status modelexecution.Status
+		attemptCtx, status, err = relay.authorizePreparedModelRoute(
+			attemptCtx, executionBatch, preparedRoute, routeIndex+1, len(routes), adapters.EndpointEmbeddings,
+		)
 		if err != nil {
-			relay.recordTraceEvent(attemptCtx, requestID, "provider.key_decrypt_failed", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"failure_kind": "auth",
-			})
-			lastErr = fmt.Errorf("provider key decrypt failed")
-			continue
-		}
-
-		adapter, err := adapterRegistry.Get(route.Channel.AdapterType)
-		if err != nil {
-			relay.recordTraceEvent(attemptCtx, requestID, "provider.adapter_unknown", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"failure_kind": "configuration",
-			})
-			lastErr = fmt.Errorf("provider adapter unavailable")
-			continue
-		}
-		upstreamReq, err := adapter.BuildRequest(attemptCtx, adapters.RequestInput{
-			Endpoint:       adapters.EndpointEmbeddings,
-			DownstreamBody: body,
-			RequestedModel: requestedModel,
-			MappedModel:    route.MappedModel,
-			Channel:        route.Channel,
-			APIKey:         apiKey,
-			RequestID:      requestID,
-		})
-		if err != nil {
-			relay.recordTraceEvent(attemptCtx, requestID, "provider.request_build_failed", "provider", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"failure_kind": "request_build",
-			})
-			lastErr = fmt.Errorf("provider request build failed")
-			continue
-		}
-		prepared, err := relay.router.PrepareRoute(attemptCtx, route)
-		if err != nil {
-			lastErr = err
-			relay.recordTraceEvent(attemptCtx, requestID, "routing.probe_claim_failed", "routing", "warning", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
-			continue
-		}
-		if !prepared {
-			lastErr = fmt.Errorf("half-open probe lease unavailable")
-			relay.recordTraceEvent(attemptCtx, requestID, "routing.probe_lease_unavailable", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
-			continue
-		}
-		lastRoute = route
-		relay.recordTraceEvent(attemptCtx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
-		stopProbeLease := relay.router.MaintainProbeLease(attemptCtx, route)
-
-		attemptStart := providerAttemptStartFromRoute(attemptCtx, requestID, orgID, keyID, adapters.EndpointEmbeddings, route)
-		if err := relay.beginProviderAttemptWithRetry(attemptCtx, attemptStart, reqLog); err != nil {
-			stopProbeLease()
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if cancelErr := relay.billing.Cancel(cleanupCtx, requestID, orgID); cancelErr != nil {
-				reqLog.Error("Failed to close embeddings reservation after pre-dispatch attempt-ledger failure: %v", cancelErr)
-			}
-			cleanupCancel()
-			relay.recordTraceEvent(attemptCtx, requestID, "billing.provider_attempt.begin_failed", "billing", "critical", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
-				"error_code": "provider_attempt_begin_failed",
-			})
-			if attemptCtx.Err() == nil {
-				writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to establish durable provider attempt")
-			}
+			relay.billing.Cancel(context.WithoutCancel(attemptCtx), requestID, orgID)
+			reqLog.Error("Embeddings execution authorization failed: %v", err)
+			relay.recordTraceEvent(attemptCtx, requestID, "routing.dispatch_authority_failed", "routing", "error", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"status": status})
+			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing authority is temporarily unavailable")
 			return
 		}
+		if status != modelexecution.Applied {
+			lastErr = fmt.Errorf("route dispatch authority: %s", status)
+			relay.recordTraceEvent(attemptCtx, requestID, "routing.dispatch_authority_changed", "routing", "warning", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"status": status})
+			continue
+		}
+		dispatchCtx, stopProbeLease := relay.maintainExecutionLease(attemptCtx, reqLog)
+		upstreamReq = upstreamReq.Clone(dispatchCtx)
+		lastRoute = route
+		relay.recordTraceEvent(attemptCtx, requestID, "routing.route_selected", "routing", "info", req.Model, requestedModel, route, 0, elapsedMilliseconds(requestStart), routingPolicyTraceMetadata(routingPolicy, route, len(routes), routeIndex+1))
+		lastAttemptCtx = attemptCtx
 
 		providerAttempts++
 		upstreamStart := time.Now()
@@ -3012,13 +3112,17 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			stopProbeLease()
 			classified := adapters.ClassifyTransportError(attemptCtx, err)
+			healthAuthorityFailed := false
 			completionErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 				attemptCtx, requestID, orgID, billing.ProviderAttemptOutcomeUnknown, false, 0,
 				string(classified.FailureKind), "",
 			), reqLog)
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream embeddings transport failed: kind=%s retryable=%t", classified.FailureKind, classified.Retryable)
 			if classified.Retryable {
-				relay.router.MarkRouteFailure(context.WithoutCancel(attemptCtx), *route)
+				if healthErr := relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthProviderFailure); healthErr != nil {
+					reqLog.Error("Failed to record embeddings transport health: %v", healthErr)
+					healthAuthorityFailed = relay.recordExecutionHealthFailure(attemptCtx, requestID, req.Model, requestedModel, route, 0, int(upstreamDuration.Milliseconds()), executionHealthProviderFailure, healthErr)
+				}
 				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, 0, string(classified.FailureKind), providerFailureEventMessage(0, classified.FailureKind))
 			}
 			ledgerStatus := "recorded"
@@ -3037,7 +3141,12 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			cleanupCtx := context.WithoutCancel(attemptCtx)
 			relay.recordRequest(cleanupCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr, 0, 0, 0, 0, elapsedMilliseconds(requestStart), 0, false, metering.UsageSourceUpstreamFailed, inputTokens, "")
 			if attemptCtx.Err() == nil {
-				writeNonRetryableProviderError(w, 0, classified.FailureKind)
+				if healthAuthorityFailed {
+					w.Header().Set("Retry-After", "1")
+					writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+				} else {
+					writeNonRetryableProviderError(w, 0, classified.FailureKind)
+				}
 			}
 			return
 		}
@@ -3059,16 +3168,27 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Upstream embeddings rejected response: status=%d kind=%s retryable=%t", resp.StatusCode, classified.FailureKind, classified.Retryable)
+			var healthErr error
 			switch classified.FailureKind {
 			case adapters.FailureChannel:
-				relay.router.MarkRouteFailure(ctx, *route)
+				healthErr = relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthProviderFailure)
 				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
 			case adapters.FailureAuth:
-				relay.router.MarkRouteKeyAuthFailure(ctx, *route)
+				healthErr = relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthCredentialAuthFailure)
 				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
 			case adapters.FailureRateLimit:
-				relay.router.MarkRouteKeyRateLimited(ctx, *route)
+				healthErr = relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthCredentialRateLimited)
 				relay.emitProviderChannelFailure(attemptCtx, *route, requestID, requestedModel, resp.StatusCode, string(classified.FailureKind), providerFailureEventMessage(resp.StatusCode, classified.FailureKind))
+			}
+			if healthErr != nil {
+				reqLog.Error("Failed to record embeddings provider rejection health: %v", healthErr)
+				if relay.recordExecutionHealthFailure(attemptCtx, requestID, req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), healthActionForFailureKind(classified.FailureKind), healthErr) {
+					resp.Body.Close()
+					relay.billing.Cancel(context.WithoutCancel(attemptCtx), requestID, orgID)
+					w.Header().Set("Retry-After", "1")
+					writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+					return
+				}
 			}
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_rejected", "provider", "warning", req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{
 				"failure_kind":   string(classified.FailureKind),
@@ -3109,8 +3229,12 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		if readErr != nil {
 			status, errorType, errorCode, message, failureKind := payloadReadFailure(readErr)
 			stopProbeLease()
+			healthAuthorityFailed := false
 			if !errors.Is(readErr, payloadpolicy.ErrPayloadTooLarge) && !errors.Is(readErr, payloadpolicy.ErrBudgetExceeded) {
-				relay.router.MarkRouteFailure(context.WithoutCancel(attemptCtx), *route)
+				if healthErr := relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthProviderFailure); healthErr != nil {
+					reqLog.Error("Failed to record unusable embeddings response health: %v", healthErr)
+					healthAuthorityFailed = relay.recordExecutionHealthFailure(attemptCtx, requestID, req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
+				}
 			}
 			if ledgerErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 				attemptCtx, requestID, orgID, billing.ProviderAttemptOutcomeResponseUnusable,
@@ -3121,6 +3245,11 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
 				"failure_kind": failureKind,
 			}, upstreamRequestID)
+			if healthAuthorityFailed {
+				w.Header().Set("Retry-After", "1")
+				writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+				return
+			}
 			if errors.Is(readErr, payloadpolicy.ErrBudgetExceeded) {
 				w.Header().Set("Retry-After", "1")
 			}
@@ -3141,7 +3270,11 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			reqLog.Error("Failed to parse adapter response")
 			stopProbeLease()
-			relay.router.MarkRouteFailure(context.WithoutCancel(attemptCtx), *route)
+			healthAuthorityFailed := false
+			if healthErr := relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthProviderFailure); healthErr != nil {
+				reqLog.Error("Failed to record embeddings parse health: %v", healthErr)
+				healthAuthorityFailed = relay.recordExecutionHealthFailure(attemptCtx, requestID, req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
+			}
 			if ledgerErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 				attemptCtx, requestID, orgID, billing.ProviderAttemptOutcomeResponseUnusable,
 				false, resp.StatusCode, "response_parse", upstreamRequestID,
@@ -3151,6 +3284,11 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
 				"failure_kind": "response_parse",
 			}, upstreamRequestID)
+			if healthAuthorityFailed {
+				w.Header().Set("Retry-After", "1")
+				writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
 			return
 		}
@@ -3176,9 +3314,13 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		// Validate the normalized response before charging or adding the
 		// UniRouter extension. A malformed 200 response must not panic or settle.
 		var responseMap map[string]interface{}
-		if err := json.Unmarshal(normalized.Body, &responseMap); err != nil || responseMap == nil {
+		if err := decodeJSONUseNumber(normalized.Body, &responseMap); err != nil || responseMap == nil {
 			stopProbeLease()
-			relay.router.MarkRouteFailure(context.WithoutCancel(attemptCtx), *route)
+			healthAuthorityFailed := false
+			if healthErr := relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthProviderFailure); healthErr != nil {
+				reqLog.Error("Failed to record malformed embeddings response health: %v", healthErr)
+				healthAuthorityFailed = relay.recordExecutionHealthFailure(attemptCtx, requestID, req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
+			}
 			if ledgerErr := relay.completeProviderAttemptWithRetry(providerAttemptCompletion(
 				attemptCtx, requestID, orgID, billing.ProviderAttemptOutcomeResponseUnusable,
 				false, resp.StatusCode, "response_parse", upstreamRequestID,
@@ -3188,18 +3330,73 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_parse_failed", "provider", "error", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
 				"failure_kind": "response_parse",
 			}, upstreamRequestID)
+			if healthAuthorityFailed {
+				w.Header().Set("Retry-After", "1")
+				writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to parse upstream response")
 			return
 		}
+		holdUndeliveredOutput := func(status int, reason string) error {
+			holdReq := settleRequestFromUsage(requestID, attemptIDFromContext(attemptCtx), orgID, normalized.Usage)
+			holdReq.UsagePurpose = metering.UsagePurposeProviderEvidence
+			if err := relay.holdNonStreamOutputWithRetry(attemptCtx, holdReq, reason, reqLog); err != nil {
+				return err
+			}
+			evidenceUsage := normalized.Usage
+			evidenceUsage.Purpose = metering.UsagePurposeProviderEvidence
+			evidenceCtx, cancelEvidence := context.WithTimeout(context.WithoutCancel(attemptCtx), 10*time.Second)
+			defer cancelEvidence()
+			relay.recordRequestWithUsage(evidenceCtx, requestID, orgID, keyID, route.Channel.ID, route.Channel.Provider, route.Channel.Name, req.Model, requestedModel, r.RemoteAddr,
+				evidenceUsage, 0, status, elapsedMilliseconds(requestStart), 0, false, inputTokens, upstreamRequestID, nil)
+			return nil
+		}
+		deliveryInspection := inspectEmbeddingsResponseEnvelope(responseMap, responseExpectation)
+		if !deliveryInspection.complete() {
+			stopProbeLease()
+			healthAuthorityFailed := false
+			if healthErr := relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthProviderFailure); healthErr != nil {
+				reqLog.Error("Failed to record unsupported embeddings response health: %v", healthErr)
+				healthAuthorityFailed = relay.recordExecutionHealthFailure(attemptCtx, requestID, req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), executionHealthProviderFailure, healthErr)
+			}
+			if holdErr := holdUndeliveredOutput(http.StatusBadGateway, billing.OutputHoldReasonProviderResponseUnusable); holdErr != nil {
+				reqLog.Error("Failed to retain unsupported embeddings response usage: %v", holdErr)
+				writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
+				return
+			}
+			relay.recordTraceEvent(attemptCtx, requestID, "provider.response_unusable", "provider", "warning", req.Model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
+				"failure_kind": "unsupported_response_shape", "delivery_profile": embeddingsDeliveryWhitelistVersion,
+			}, upstreamRequestID)
+			if healthAuthorityFailed {
+				w.Header().Set("Retry-After", "1")
+				writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+				return
+			}
+			writeError(w, http.StatusBadGateway, "server_error", "server_error.upstream_error", "Upstream response could not be delivered safely")
+			return
+		}
 		stopProbeLease()
-		relay.router.MarkRouteSuccess(context.WithoutCancel(attemptCtx), route)
+		if healthErr := relay.applyRouteHealth(context.WithoutCancel(attemptCtx), route, executionHealthSuccess); healthErr != nil {
+			reqLog.Error("Failed to record embeddings success health: %v", healthErr)
+			if relay.recordExecutionHealthFailure(attemptCtx, requestID, req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), executionHealthSuccess, healthErr) {
+				if holdErr := holdUndeliveredOutput(http.StatusServiceUnavailable, billing.OutputHoldReasonProviderAttemptUnresolved); holdErr != nil {
+					reqLog.Error("Failed to retain embeddings provider usage after routing health failure: %v", holdErr)
+					writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")
+					return
+				}
+				w.Header().Set("Retry-After", "1")
+				writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.service_unavailable", "Routing health authority is temporarily unavailable")
+				return
+			}
+		}
 		relay.recordTraceEvent(attemptCtx, requestID, "provider.response_accepted", "provider", "info", req.Model, requestedModel, route, resp.StatusCode, int(upstreamDuration.Milliseconds()), map[string]interface{}{}, upstreamRequestID)
 		basePayload, responseMaxBytes, err := relay.marshalNonStreamResponseBase(responseMap)
 		if err != nil {
 			if errors.Is(err, payloadpolicy.ErrPayloadTooLarge) {
 				holdReq := settleRequestFromUsage(requestID, attemptIDFromContext(attemptCtx), orgID, normalized.Usage)
 				holdReq.UsagePurpose = metering.UsagePurposeProviderEvidence
-				holdErr := relay.holdNonStreamOutputWithRetry(attemptCtx, holdReq, "response_too_large", reqLog)
+				holdErr := relay.holdNonStreamOutputWithRetry(attemptCtx, holdReq, billing.OutputHoldReasonResponseTooLarge, reqLog)
 				if holdErr != nil {
 					reqLog.Error("Failed to retain oversized embeddings response usage: %v", holdErr)
 					writeError(w, http.StatusInternalServerError, "server_error", "billing_error.provider_attempt_failed", "Failed to retain provider cost authority")

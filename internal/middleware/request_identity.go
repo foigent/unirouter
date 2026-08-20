@@ -6,11 +6,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"strings"
 
-	"github.com/uniroute/unirouter/internal/errdocs"
+	"github.com/uniroute/unirouter/internal/gatewayerror"
 )
 
 const (
@@ -18,6 +17,7 @@ const (
 	ClientRequestIDHeader   = "X-UniRouter-Client-Request-ID"
 	OriginalOperationHeader = "X-UniRouter-Original-Request-ID"
 	IdempotencyKeyHeader    = "Idempotency-Key"
+	IdempotencyReplayHeader = "X-UniRouter-Idempotency-Replayed"
 )
 
 // RequestIdentity separates the server-owned operation identity from caller
@@ -63,7 +63,7 @@ func ensureRequestIdentity(w http.ResponseWriter, r *http.Request, idempotencyHa
 
 	operationID, err := newOperationID()
 	if err != nil {
-		writeRequestIdentityError(w, http.StatusInternalServerError, "server_error.internal_error", "Failed to generate request identity")
+		writeRequestIdentityError(w, r, http.StatusInternalServerError, "server_error.internal_error", "Failed to generate request identity")
 		return r, false
 	}
 	identity := RequestIdentity{OperationID: operationID}
@@ -72,7 +72,7 @@ func ensureRequestIdentity(w http.ResponseWriter, r *http.Request, idempotencyHa
 	rawClientID := strings.TrimSpace(r.Header.Get(ClientRequestIDHeader))
 	legacyClientID := strings.TrimSpace(r.Header.Get(OperationIDHeader))
 	if rawClientID != "" && legacyClientID != "" && rawClientID != legacyClientID {
-		writeRequestIdentityError(w, http.StatusBadRequest, "validation_error.invalid_request", "Conflicting client request identity headers")
+		writeRequestIdentityError(w, r, http.StatusBadRequest, "validation_error.invalid_request", "Conflicting client request identity headers")
 		return r, false
 	}
 	if rawClientID == "" {
@@ -81,7 +81,7 @@ func ensureRequestIdentity(w http.ResponseWriter, r *http.Request, idempotencyHa
 	if rawClientID != "" {
 		clientID, valid := sanitizeIdentityValue(rawClientID, 128)
 		if !valid {
-			writeRequestIdentityError(w, http.StatusBadRequest, "validation_error.invalid_request", "Invalid client request identity header")
+			writeRequestIdentityError(w, r, http.StatusBadRequest, "validation_error.invalid_request", "Invalid client request identity header")
 			return r, false
 		}
 		identity.ClientRequestID = clientID
@@ -90,11 +90,11 @@ func ensureRequestIdentity(w http.ResponseWriter, r *http.Request, idempotencyHa
 	if rawIdempotencyKey := r.Header.Get(IdempotencyKeyHeader); strings.TrimSpace(rawIdempotencyKey) != "" {
 		idempotencyKey, valid := sanitizeIdentityValue(rawIdempotencyKey, 255)
 		if !valid {
-			writeRequestIdentityError(w, http.StatusBadRequest, "validation_error.invalid_request", "Invalid Idempotency-Key header")
+			writeRequestIdentityError(w, r, http.StatusBadRequest, "validation_error.invalid_request", "Invalid Idempotency-Key header")
 			return r, false
 		}
 		if strings.TrimSpace(idempotencyHashSecret) == "" {
-			writeRequestIdentityError(w, http.StatusInternalServerError, "server_error.internal_error", "Idempotency hashing is not configured")
+			writeRequestIdentityError(w, r, http.StatusInternalServerError, "server_error.internal_error", "Idempotency hashing is not configured")
 			return r, false
 		}
 		identity.IdempotencyKeyPresent = true
@@ -168,20 +168,6 @@ func sanitizeIdentityValue(value string, maxLen int) (string, bool) {
 	return value, true
 }
 
-func writeRequestIdentityError(w http.ResponseWriter, status int, code, message string) {
-	errType := "invalid_request_error"
-	if status >= http.StatusInternalServerError {
-		errType = "server_error"
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"error": map[string]interface{}{
-			"type":    errType,
-			"code":    code,
-			"message": message,
-			"doc_url": errdocs.URLForCode(code),
-			"param":   nil,
-		},
-	})
+func writeRequestIdentityError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	gatewayerror.WriteRequest(w, r, status, code, message)
 }

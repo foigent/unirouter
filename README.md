@@ -19,21 +19,72 @@ cp .env.example .env
 # 源码 Compose 仅用于开发；可选 LICENSE_PUBLIC_KEYS/UPGRADE_PUBLIC_KEYS 也是开发验签输入。
 # 正式商业镜像把两类公钥信任根嵌入二进制，运行时环境变量不能替换。
 openssl rand -hex 32  # 生成密钥
+```
 
-# 3. 启动服务
+已有数据库若已经完成 canonical authoring/inventory，可保持源码 Compose 的正式
+默认值 `MODEL_ROUTE_AUTHORITY=canonical`、
+`MODEL_ROUTE_COMPATIBILITY_ENABLED=false` 普通启动：
+
+```bash
 docker compose up -d
-
-# 4. 验证
 curl http://localhost:8080/health/ready
-# {"status":"ok","db":"ok","redis":"ok"}
+```
 
-# 5. 数据库迁移会在后端启动时自动执行；也可以手动补跑
-docker compose exec backend ./uniroute migrate up
+全新空库会在 HTTP bind 前被 canonical startup gate 拒绝，不能把上面的普通启动
+当成 fresh bootstrap。仅在没有外部反代、负载均衡或客户 Gateway 流量的隔离开发
+环境中，才可临时把 `.env` 改为
+`MODEL_ROUTE_AUTHORITY=legacy`、
+`MODEL_ROUTE_COMPATIBILITY_ENABLED=true`、`ASYNC_MEDIA_ENABLED=false`，然后启动
+bootstrap backend。此时 `/health/ready` 只证明 bootstrap 进程及依赖健康，不代表
+可接入客户流量。
 
-# 6. 首次部署后必须立刻轮换默认管理员密码。
+启动后应立即轮换默认管理员密码、用该 local admin 成功登录一次，并经 authenticated
+platform-admin 控制面依次创建唯一 root customer、导入 customer-bound License、创建唯一且经过
+审核的 `slug=default` customer project，再完成 canonical
+connection/deployment（四个执行限额均为正数）、credential binding、exact operation
+probe、M78 atomic sealed release authoring 与 `activate_initial`。完整、可审计的顺序见
+[部署与升级手册 §10.2](docs/ops/deployment-runbook.md#102-启动首装登记与读回)。
+
+```bash
 # 在交互终端中会无回显输入并确认两次；不要把密码放在命令参数或环境变量中。
 docker compose exec backend ./uniroute admin set-password \
-    --username admin --org-id 1
+  --username admin --org-id 1
+
+# authoring 完成后，用 one-off canonical 进程只读检查同一数据库；不要运行 legacy apply。
+: "${UNIROUTER_CUSTOMER_ORG_ID:?Set the created root customer organization ID}"
+docker compose exec \
+  -e MODEL_ROUTE_AUTHORITY=canonical \
+  -e MODEL_ROUTE_COMPATIBILITY_ENABLED=false \
+  -e ASYNC_MEDIA_ENABLED=false \
+  backend ./uniroute model-route-authority check \
+  --customer-org-id "${UNIROUTER_CUSTOMER_ORG_ID}"
+
+# 只有 check 返回 ready=true 才停止 bootstrap backend。
+docker compose stop backend
+```
+
+首客户端点接受两个互斥且精确的 checkpoint：已有 second-integration reset
+产生的严格 post-reset 空壳，或当前完整迁移链产生、默认管理员已轮换密码并成功登录一次的
+fresh seed。源码 `local`/`development` fresh seed 只接受尚未登记发布的零值 release
+基线；正式 `staging`/`production` fresh seed 还必须先有唯一、非零且与当前 target
+schema 完全一致的 `release_state`/`release_history` 登记。登录的审计证据可以仍在 durable
+Outbox 待物化，也可以已经进入 `audit_logs`，关联的同一事件只算一次。
+
+只有全部事实匹配后，`POST /api/v1/bootstrap/first-customer` 才会在同一个
+`SERIALIZABLE` 事务内删除迁移种子中精确的 partner 零余额钱包、`Default Project`
+以及可选的默认管理员 `project_admin` membership，再创建唯一 active customer 和它的
+零余额钱包。任一额外数据、字段漂移或并发变化都返回 `409` 并回滚整个事务；该端点不创建
+License、客户用户、客户项目、Provider/Feed 凭据、application key、policy 或流量。
+
+确认 backend 已停止后，手工把 `.env` 恢复为
+`MODEL_ROUTE_AUTHORITY=canonical`、
+`MODEL_ROUTE_COMPATIBILITY_ENABLED=false`，保持 `ASYNC_MEDIA_ENABLED=false`；复核后
+重启并再次读取 readiness。只有此后的成功结果才允许解除流量隔离：
+
+```bash
+docker compose up -d --no-deps --force-recreate backend
+curl http://localhost:8080/health/ready
+# {"status":"ok","db":"ok","redis":"ok"}
 ```
 
 服务可以在缺少商业 License 时启动，以保留本地登录、健康检查和 License

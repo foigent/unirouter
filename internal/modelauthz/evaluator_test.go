@@ -43,6 +43,51 @@ func TestNormalizeDraftRejectsWideningOrAmbiguousShapes(t *testing.T) {
 	}
 }
 
+func TestNormalizeDraftAcceptsAllCanonicalPublicExecutionEndpoints(t *testing.T) {
+	for _, endpoint := range []string{"/v1/responses", "/v1/messages"} {
+		t.Run(endpoint, func(t *testing.T) {
+			draft, err := NormalizeDraft(Draft{
+				AuthorizationRef: "mca_public_endpoint",
+				SubjectType:      SubjectAPIKey, SubjectRef: "42", Environment: "production",
+				Effect: EffectAllow, AllowedModels: []string{"company-public"},
+				AllowedEndpoints: []string{endpoint}, Reason: "approved public execution",
+			})
+			if err != nil || len(draft.AllowedEndpoints) != 1 || draft.AllowedEndpoints[0] != endpoint {
+				t.Fatalf("NormalizeDraft(%q)=%#v err=%v", endpoint, draft, err)
+			}
+		})
+	}
+}
+
+func TestEvaluatePoliciesNarrowsResponsesAndMessages(t *testing.T) {
+	for _, endpoint := range []string{"/v1/responses", "/v1/messages"} {
+		t.Run(endpoint, func(t *testing.T) {
+			input := Input{
+				Environment: "production", Endpoint: endpoint,
+				RequestedModel: "company-public", ResolvedModel: "catalog-public",
+			}
+			allow := Policy{
+				AuthorizationRef: "mca_public_allow", SubjectType: SubjectAPIKey, SubjectRef: "42",
+				Effect: EffectAllow, AllowedModels: []string{"catalog-public"},
+				AllowedEndpoints: []string{endpoint}, Status: StatusActive,
+			}
+			decision := EvaluatePolicies(input, []Policy{allow})
+			if !decision.Allowed || decision.Reason != "explicit_allow_intersection" ||
+				decision.RequestedModel != input.RequestedModel || decision.ResolvedModel != input.ResolvedModel {
+				t.Fatalf("allow decision=%#v", decision)
+			}
+			deny := allow
+			deny.AuthorizationRef = "mca_public_deny"
+			deny.Effect = EffectDeny
+			decision = EvaluatePolicies(input, []Policy{allow, deny})
+			if decision.Allowed || decision.Reason != "explicit_deny" ||
+				len(decision.PolicyRefs) != 1 || decision.PolicyRefs[0] != deny.AuthorizationRef {
+				t.Fatalf("deny decision=%#v", decision)
+			}
+		})
+	}
+}
+
 func TestEvaluatePoliciesIntersectsAllowScopesAndDenyWins(t *testing.T) {
 	input := Input{
 		OrgID: 7, APIKeyID: 11, ProjectID: 22, OwnerUserID: 33,

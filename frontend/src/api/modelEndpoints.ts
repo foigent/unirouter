@@ -58,23 +58,6 @@ export type ModelEndpointProjection = {
   summary: { total: number; route_available: number; attention: number; canary: number };
 };
 
-export type ModelEndpointActivationRequest = {
-  channel_id: number;
-  model: string;
-  expected_routing_epoch: number;
-};
-
-export type ModelEndpointTestResponse = {
-  success: boolean;
-  model?: string;
-  upstream_model?: string;
-  reported_model?: string;
-  error?: string;
-  status_code?: number;
-  latency_ms?: number;
-  tokens_used?: number;
-};
-
 export type ProviderModelCatalogItem = {
   id: string;
   owned_by?: string;
@@ -93,17 +76,6 @@ export type ProviderModelCatalog = {
 
 export const modelEndpointApi = {
   getModelEndpoints: () => request<ModelEndpointProjection>('/model-endpoints'),
-  testChannelModel: (channelId: number, model: string, prompt = 'Reply with exactly: OK') =>
-    request<ModelEndpointTestResponse>(`/channels/${channelId}/test`, {
-      method: 'POST',
-      body: JSON.stringify({ model, prompt }),
-    }),
   getProviderModels: (channelId: number) =>
     request<ProviderModelCatalog>(`/channels/${channelId}/provider-models`),
-  activateModelEndpoint: (data: ModelEndpointActivationRequest) =>
-    request<Record<string, unknown>>('/model-endpoints/activate', { method: 'POST', body: JSON.stringify(data) }),
-  startModelEndpointCanary: (data: ModelEndpointActivationRequest & { canary_basis_points?: number }) =>
-    request<Record<string, unknown>>('/model-endpoints/canary', { method: 'POST', body: JSON.stringify(data) }),
-  recoverModelEndpoint: (data: ModelEndpointActivationRequest) =>
-    request<Record<string, unknown>>('/model-endpoints/recover', { method: 'POST', body: JSON.stringify(data) }),
 };

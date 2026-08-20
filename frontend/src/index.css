@@ -74,6 +74,15 @@
   gap: 12px;
 }
 
+.ur-canonical-binding-row {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--ur-border-soft);
+  border-radius: 10px;
+  background: var(--ur-bg-subtle);
+}
+
 @media (max-width: 900px) {
   .ur-model-endpoint-kpis,
   .ur-model-endpoint-sheet-summary,

@@ -78,10 +78,14 @@ type ReviewRequest struct {
 }
 
 type AuthoritySnapshot struct {
-	SnapshotRef  string             `json:"snapshot_ref"`
-	RootAgentRef string             `json:"root_agent_ref"`
-	Nodes        []AuthorityNode    `json:"nodes"`
-	Revocations  []RevocationRecord `json:"revocations"`
+	SnapshotRef          string             `json:"snapshot_ref"`
+	RootAgentRef         string             `json:"root_agent_ref"`
+	RootGrantBound       bool               `json:"root_grant_bound,omitempty"`
+	RootGrantScopeMode   string             `json:"root_grant_scope_mode,omitempty"`
+	RootEndpointDenied   bool               `json:"root_endpoint_denied,omitempty"`
+	RootAllowedEndpoints []string           `json:"root_allowed_endpoints,omitempty"`
+	Nodes                []AuthorityNode    `json:"nodes"`
+	Revocations          []RevocationRecord `json:"revocations"`
 }
 
 type AuthorityNode struct {
