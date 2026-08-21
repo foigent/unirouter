@@ -581,7 +581,24 @@ SELECT name,provider,base_url,models,model_mapping,
 	if err != nil {
 		return "", err
 	}
-	if status != "active" {
+	effectiveStatus := status
+	if request.evidence.AuthorityMode == executionevidence.ModeLegacy && runtime.legacyOverride != nil {
+		switch runtime.legacyOverride.Admission {
+		case routingpolicy.AdmissionAllow:
+			// The selected v1 release is the legacy administrative authority.
+			// It may promote a staged channel, but it must never resurrect an
+			// explicitly disabled channel.
+			if status != "disabled" {
+				effectiveStatus = "active"
+			}
+		case routingpolicy.AdmissionDeny:
+			effectiveStatus = "disabled"
+		case routingpolicy.AdmissionInherit:
+		default:
+			return Stale, nil
+		}
+	}
+	if effectiveStatus != "active" {
 		return Disabled, nil
 	}
 	if routingRevision != evidence.LegacyRoutingRevision || circuitRevision != evidence.LegacyCircuitRevision ||
@@ -593,9 +610,6 @@ SELECT name,provider,base_url,models,model_mapping,
 	}
 	effectivePriority, effectiveWeight := priority, weight
 	if request.evidence.AuthorityMode == executionevidence.ModeLegacy && runtime.legacyOverride != nil {
-		if runtime.legacyOverride.Admission == routingpolicy.AdmissionDeny {
-			return Disabled, nil
-		}
 		if runtime.legacyOverride.Priority != nil {
 			effectivePriority = *runtime.legacyOverride.Priority
 		}

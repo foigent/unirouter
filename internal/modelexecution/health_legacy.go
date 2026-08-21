@@ -14,6 +14,14 @@ type legacyHealthState struct {
 	credential *credentialSnapshot
 }
 
+func legacyHealthAllowsStaged(evidence executionevidence.EvidenceV1) bool {
+	return evidence.AuthorityMode == executionevidence.ModeLegacy
+}
+
+func legacyChannelHealthEligible(evidence executionevidence.EvidenceV1, status string) bool {
+	return status == "active" || (legacyHealthAllowsStaged(evidence) && status == "staged")
+}
+
 func lockLegacyHealth(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -143,7 +151,7 @@ SELECT id,status,routing_epoch,circuit_state,circuit_epoch,fail_count,degradatio
 	if err != nil {
 		return breakerSnapshot{}, "", err
 	}
-	if value.adminState != "active" {
+	if !legacyChannelHealthEligible(evidence, value.adminState) {
 		return breakerSnapshot{}, Disabled, nil
 	}
 	if value.configRevision != evidence.LegacyRoutingRevision || value.circuitRevision != evidence.LegacyCircuitRevision {
@@ -165,7 +173,8 @@ UPDATE channels
    SET fail_count=$5,circuit_state=$6,half_open_until=$7,
        half_open_probe_until=$8,half_open_probe_token=NULLIF($9,''),
        circuit_epoch=$10,updated_at=NOW()
- WHERE id=$1 AND status='active' AND routing_epoch=$2 AND circuit_epoch=$3
+ WHERE id=$1 AND (status='active' OR ($16 AND status='staged'))
+   AND routing_epoch=$2 AND circuit_epoch=$3
    AND circuit_state=$4 AND fail_count=$11 AND degradation_threshold=$12
    AND half_open_until IS NOT DISTINCT FROM $13
    AND half_open_probe_until IS NOT DISTINCT FROM $14
@@ -174,7 +183,7 @@ UPDATE channels
 		request.evidence.LegacyCircuitRevision, current.circuitState,
 		next.failCount, next.circuitState, next.halfOpenUntil, next.probeUntil, next.probeToken,
 		next.circuitRevision, current.failCount, current.degradationThreshold, current.halfOpenUntil,
-		current.probeUntil, current.probeToken,
+		current.probeUntil, current.probeToken, legacyHealthAllowsStaged(request.evidence),
 	)
 	if err != nil {
 		return "", err
@@ -223,13 +232,15 @@ func (c *Coordinator) renewLegacyLease(
 	tag, err := tx.Exec(ctx, `
 UPDATE channels
    SET half_open_probe_until=$6,updated_at=NOW()
- WHERE id=$1 AND status='active' AND routing_epoch=$2 AND circuit_epoch=$3
+ WHERE id=$1 AND (status='active' OR ($8 AND status='staged'))
+   AND routing_epoch=$2 AND circuit_epoch=$3
    AND circuit_state='half_open' AND half_open_until<=$4
    AND half_open_probe_token=$5 AND half_open_probe_until>$4
    AND half_open_probe_until<$6
    AND half_open_probe_until IS NOT DISTINCT FROM $7`,
 		request.evidence.LegacyChannelID, request.evidence.LegacyRoutingRevision,
 		request.evidence.LegacyCircuitRevision, dbNow, request.token, target, current.probeUntil,
+		legacyHealthAllowsStaged(request.evidence),
 	)
 	if err != nil {
 		return "", err
@@ -262,15 +273,17 @@ func (c *Coordinator) releaseLegacyLease(
 	arguments := []any{
 		request.evidence.LegacyChannelID, request.evidence.LegacyRoutingRevision,
 		request.evidence.LegacyCircuitRevision, request.token, current.probeUntil,
+		legacyHealthAllowsStaged(request.evidence),
 	}
 	if requireLive {
-		predicate = " AND half_open_probe_until>$6"
+		predicate = " AND half_open_probe_until>$7"
 		arguments = append(arguments, request.databaseTime)
 	}
 	tag, err := tx.Exec(ctx, `
 UPDATE channels
    SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=NOW()
- WHERE id=$1 AND status='active' AND routing_epoch=$2 AND circuit_epoch=$3
+ WHERE id=$1 AND (status='active' OR ($6 AND status='staged'))
+   AND routing_epoch=$2 AND circuit_epoch=$3
    AND circuit_state='half_open' AND half_open_probe_token=$4
    AND half_open_probe_until IS NOT DISTINCT FROM $5`+predicate,
 		arguments...,
@@ -329,12 +342,14 @@ UPDATE channel_keys AS key
  WHERE key.id=$1 AND key.channel_id=$2 AND key.status='active' AND key.state_epoch=$3
    AND key.fail_count=$4 AND key.last_used_at IS NOT DISTINCT FROM $9
    AND key.cooldown_until IS NOT DISTINCT FROM $10
-   AND channel.id=key.channel_id AND channel.status='active'
+   AND channel.id=key.channel_id
+   AND (channel.status='active' OR ($13 AND channel.status='staged'))
    AND channel.routing_epoch=$11 AND channel.circuit_epoch=$12`,
 		request.evidence.LegacyChannelKeyID, request.evidence.LegacyChannelID,
 		request.evidence.LegacyCredentialStateRevision, current.failCount,
 		nextFailCount, nextLastUsed, nextCooldown, nextRevision, current.lastUsedAt, current.cooldownUntil,
 		request.evidence.LegacyRoutingRevision, channelCircuitRevision,
+		legacyHealthAllowsStaged(request.evidence),
 	)
 	if err != nil {
 		return "", err
@@ -359,7 +374,7 @@ SELECT status,routing_epoch,circuit_epoch
 	if err != nil {
 		return "", err
 	}
-	if state != "active" {
+	if !legacyChannelHealthEligible(evidence, state) {
 		return Disabled, nil
 	}
 	if routingRevision != evidence.LegacyRoutingRevision || circuitRevision != evidence.LegacyCircuitRevision {

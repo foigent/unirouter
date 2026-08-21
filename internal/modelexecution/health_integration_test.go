@@ -88,6 +88,62 @@ func TestHealthActionsStayWithinTheirAuthorityAndFailureDomain(t *testing.T) {
 	}
 }
 
+func TestLegacyReleaseAdmissionAllowExecutesStagedChannelIntegration(t *testing.T) {
+	t.Run("terminal success preserves raw state", func(t *testing.T) {
+		fixture := newExecutionFixture(t, false, false)
+		_, err := fixture.pool.Exec(t.Context(), `UPDATE channels SET status='staged' WHERE id=$1`, fixture.channelID)
+		require.NoError(t, err)
+
+		coordinator, decision := fixture.authorizedDecision(t, modelrouting.ModeLegacy, "legacy-staged-release-allow")
+		fixture.completeAcceptedAttempt(t, decision)
+		result, err := coordinator.MarkSuccess(t.Context(), decision)
+		require.NoError(t, err)
+		require.Equal(t, Applied, result.Status)
+
+		var channelStatus string
+		var lastUsedAt *time.Time
+		require.NoError(t, fixture.pool.QueryRow(t.Context(), `
+SELECT channel.status,key.last_used_at
+  FROM channels AS channel
+  JOIN channel_keys AS key ON key.channel_id=channel.id
+ WHERE channel.id=$1 AND key.id=$2`, fixture.channelID, fixture.legacyKeyID).Scan(&channelStatus, &lastUsedAt))
+		require.Equal(t, "staged", channelStatus, "release admission must not rewrite the raw admin state")
+		require.NotNil(t, lastUsedAt, "successful staged legacy dispatch must persist credential health")
+	})
+
+	t.Run("half-open lease lifecycle preserves raw state", func(t *testing.T) {
+		fixture := newExecutionFixture(t, false, true)
+		_, err := fixture.pool.Exec(t.Context(), `UPDATE channels SET status='staged' WHERE id=$1`, fixture.channelID)
+		require.NoError(t, err)
+
+		coordinator, decision := fixture.authorizedDecision(t, modelrouting.ModeLegacy, "legacy-staged-release-probe")
+		renewed, err := coordinator.RenewLease(t.Context(), decision)
+		require.NoError(t, err)
+		require.Equal(t, Applied, renewed.Status)
+		released, err := coordinator.ReleaseUndispatched(t.Context(), decision)
+		require.NoError(t, err)
+		require.Equal(t, Applied, released.Status)
+
+		legacy, _ := fixture.breakers(t)
+		require.Equal(t, "staged", legacy.adminState)
+		require.Empty(t, legacy.probeToken)
+		require.Nil(t, legacy.probeUntil)
+	})
+
+	t.Run("disabled channel is never resurrected", func(t *testing.T) {
+		fixture := newExecutionFixture(t, false, false)
+		plan, route := fixture.plan(t, modelrouting.ModeLegacy, "legacy-disabled-release-allow")
+		identity := fixture.freeze(t, "legacy-disabled-release-allow")
+		_, err := fixture.pool.Exec(t.Context(), `UPDATE channels SET status='disabled' WHERE id=$1`, fixture.channelID)
+		require.NoError(t, err)
+		coordinator, err := New(fixture.pool, fixture.billing, DefaultConfig())
+		require.NoError(t, err)
+		decision, err := coordinator.Authorize(t.Context(), plan, route, identity)
+		require.NoError(t, err)
+		require.Equal(t, Disabled, decision.Status)
+	})
+}
+
 func TestVerifySuccessKeepsLegacyAndCanonicalRowsByteEquivalent(t *testing.T) {
 	fixture := newExecutionFixture(t, true, false)
 	fixture.setMirroredFailures(t, 3, 2)
