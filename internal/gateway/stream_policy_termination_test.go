@@ -159,6 +159,18 @@ func TestP6F11EnforcedStreamRejectsUnknownContentShapeButAllowsUsageMetadata(t *
 	if err != nil || len(terminal.Frames) != 1 {
 		t.Fatalf("nullable terminal logprobs metadata was incorrectly blocked: batch=%+v err=%v", terminal, err)
 	}
+	choiceUsageTerminal, err := inspectGuardedStreamBatch(t.Context(), pinned, profile, [][]byte{
+		[]byte(`{"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":19,"completion_tokens":13,"total_tokens":32,"completion_tokens_details":{"reasoning_tokens":10}}}]}`),
+	}, make(map[string]string))
+	if err != nil || len(choiceUsageTerminal.Frames) != 1 {
+		t.Fatalf("bounded choice-level terminal usage was incorrectly blocked: batch=%+v err=%v", choiceUsageTerminal, err)
+	}
+	_, err = inspectGuardedStreamBatch(t.Context(), pinned, profile, [][]byte{
+		[]byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"provider_note":"hidden"}}]}`),
+	}, make(map[string]string))
+	if !errors.Is(err, errStreamGuardrailUnsupportedText) {
+		t.Fatalf("choice-level nonnumeric metadata bypassed the stream guardrail: %v", err)
+	}
 	_, err = inspectGuardedStreamBatch(t.Context(), pinned, profile, [][]byte{
 		[]byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop","logprobs":{"content":[{"token":"hidden"}]}}]}`),
 	}, make(map[string]string))
@@ -248,7 +260,7 @@ func p6f11StreamContext(pinned *guardrail.Pinned, requestID string) context.Cont
 	return contextWithStreamReservation(ctx, 1_000, false)
 }
 
-func TestRelayStreamRequestAcceptsKimiNullableTerminalLogprobs(t *testing.T) {
+func TestRelayStreamRequestAcceptsKimiTerminalChoiceUsage(t *testing.T) {
 	var settled billing.SettleRequest
 	var terminal billing.DeliveryEvent
 	var leaseState string
@@ -272,23 +284,24 @@ func TestRelayStreamRequestAcceptsKimiNullableTerminalLogprobs(t *testing.T) {
 	}
 	relay := newTestRelay(p6f11RelayDB(), b)
 	stream := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"KIMI_OK\"},\"finish_reason\":null}]}\n\n" +
-		"data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\",\"logprobs\":null}],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17,\"cached_tokens\":13,\"completion_tokens_details\":{\"reasoning_tokens\":0}}}\n\n" +
+		"data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\",\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17,\"completion_tokens_details\":{\"reasoning_tokens\":0}}}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17,\"completion_tokens_details\":{\"reasoning_tokens\":0}}}\n\n" +
 		"data: [DONE]\n\n"
 	rec := httptest.NewRecorder()
 	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(stream))}
 	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "Kimi K2.6", Provider: "kimi"}}
-	requestID := "req-kimi-nullable-terminal-logprobs"
+	requestID := "req-kimi-terminal-choice-usage"
 
 	relay.relayStreamRequest(p6f11StreamContext(nil, requestID), rec, resp, route,
 		requestID, 1, 2, "Kimi K2.6", "Kimi K2.6", "127.0.0.1", nil,
 		logger.New(logger.Fields{RequestID: requestID, OrgID: 1}), time.Now(), 1_000, nil, "")
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "KIMI_OK") || !strings.Contains(body, `"logprobs":null`) || strings.Count(body, "data: [DONE]") != 1 {
+	if !strings.Contains(body, "KIMI_OK") || !strings.Contains(body, `"finish_reason":"stop","usage":`) || strings.Count(body, "data: [DONE]") != 1 {
 		t.Fatalf("Kimi stream did not reach its exact terminal marker: %s", body)
 	}
 	if strings.Contains(body, "stream_error.invalid_frame") {
-		t.Fatalf("nullable terminal logprobs was rejected as an invalid frame: %s", body)
+		t.Fatalf("choice-level terminal usage was rejected as an invalid frame: %s", body)
 	}
 	if settled.PromptTokens != 13 || settled.CompletionTokens != 4 {
 		t.Fatalf("provider usage was not settled exactly: %+v", settled)

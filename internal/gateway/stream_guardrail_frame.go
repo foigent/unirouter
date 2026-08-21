@@ -93,7 +93,7 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 			frame.unsupported = true
 			continue
 		}
-		if !streamMapKeysSupported(choice, "index", "delta", "text", "finish_reason", "logprobs") {
+		if !streamMapKeysSupported(choice, "index", "delta", "text", "finish_reason", "logprobs", "usage") {
 			frame.unsupported = true
 		}
 		// OpenAI-compatible providers can include a nullable logprobs member on
@@ -101,6 +101,13 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 		// A non-null value can contain provider-generated token text and remains
 		// unsupported until it is modeled by the output guardrail.
 		if logprobs, exists := choice["logprobs"]; exists && logprobs != nil {
+			frame.unsupported = true
+		}
+		// Kimi can repeat bounded numeric usage metadata on the terminal choice
+		// before emitting the standard top-level usage-only frame. It is safe to
+		// disclose but does not become charging authority here; the existing
+		// top-level usage parser remains the only settlement source.
+		if usage, exists := choice["usage"]; exists && usage != nil && !streamUsageShapeSupported(usage) {
 			frame.unsupported = true
 		}
 		if finish, exists := choice["finish_reason"]; exists && finish != nil {
