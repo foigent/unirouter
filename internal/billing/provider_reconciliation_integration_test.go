@@ -4,11 +4,142 @@ package billing
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/metering"
 )
+
+func TestP6F40CObservationProviderCostRefundCreatesReceiptWithoutFinancialMutationIntegration(t *testing.T) {
+	pool, orgID, model := newReservationFixture(t, 1_000, 0)
+	b := NewBilling(pool, nil).
+		WithPriceProvider(billingModeTestPriceProvider()).
+		WithMode(BillingModeCostObservation)
+	const requestID = "op_observation_provider_cost_refund"
+	const attemptID = "att_observation_provider_cost_refund"
+
+	frozen, err := b.Freeze(t.Context(), FreezeRequest{
+		RequestID: requestID, OrgID: orgID, Model: model,
+		EstimatedTokens: 100, SafetyFactor: "1", MinFreezeCents: 10,
+	})
+	require.NoError(t, err)
+	require.True(t, frozen.Success)
+	require.Equal(t, BillingModeCostObservation, frozen.BillingMode)
+	require.Zero(t, frozen.AmountMicros)
+	require.NoError(t, b.BeginProviderAttempt(t.Context(), ProviderAttemptStart{
+		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
+		APIKeyID: 77, ChannelID: 88, ChannelKeyID: 99,
+		RouteSequence: 1, RouteTotal: 1, Endpoint: "/v1/chat/completions",
+		Provider: "test", Channel: "observation-provider-cost",
+	}))
+	require.NoError(t, b.CompleteProviderAttempt(t.Context(), ProviderAttemptCompletion{
+		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
+		Outcome: ProviderAttemptOutcomeResponseAccepted, HTTPStatus: 200,
+	}))
+	require.NoError(t, b.HoldNonStreamOutput(t.Context(), SettleRequest{
+		RequestID: requestID, AttemptID: attemptID, OrgID: orgID,
+		PromptTokens: 53, UncachedPromptTokens: 53, CompletionTokens: 16,
+		UsageSource:          metering.UsageSourceUpstream,
+		UsageAuthority:       metering.UsageAuthorityProviderReported,
+		UsagePurpose:         metering.UsagePurposeProviderEvidence,
+		UsageFinality:        metering.UsageFinalityFinal,
+		UsageContractVersion: metering.UsageContractVersion,
+		CacheUsageStatus:     cacheUsageStatusNotReported,
+	}, OutputHoldReasonProviderResponseUnusable))
+
+	var balanceBefore, frozenBefore, spentBefore int64
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT balance_micros,frozen_micros,total_spent_micros
+		FROM wallets WHERE org_id=$1`, orgID,
+	).Scan(&balanceBefore, &frozenBefore, &spentBefore))
+	_, err = b.ReconcileProviderAttempt(t.Context(), ProviderReconciliationRequest{
+		OrgID: orgID, RequestID: requestID, AttemptID: attemptID,
+		Action: ProviderReconciliationCollect, ActorUserID: 8001,
+		Reason: "observation cannot collect", EvidenceRef: "case://observation-collect",
+	})
+	require.ErrorIs(t, err, ErrProviderReconciliationUnsafe)
+
+	reconciliation := ProviderReconciliationRequest{
+		OrgID: orgID, RequestID: requestID, AttemptID: attemptID,
+		Action: ProviderReconciliationRefund, ActorUserID: 8001,
+		Reason:      "provider cost reviewed with no customer delivery",
+		EvidenceRef: "case://observation-refund",
+	}
+	result, err := b.ReconcileProviderAttempt(t.Context(), reconciliation)
+	require.NoError(t, err)
+	require.Equal(t, BillingModeCostObservation, result.BillingMode)
+	require.Zero(t, result.TerminalTransactionID)
+	require.Positive(t, result.TerminalObservationReceiptID)
+	require.Equal(t, "0", result.CustomerChargedMicros)
+	require.Equal(t, "0", result.CustomerRefundMicros)
+	require.Equal(t, "reconciled", result.State)
+
+	replayed, err := b.ReconcileProviderAttempt(t.Context(), reconciliation)
+	require.NoError(t, err)
+	require.Equal(t, result, replayed)
+	conflict := reconciliation
+	conflict.EvidenceRef = "case://different-evidence"
+	_, err = b.ReconcileProviderAttempt(t.Context(), conflict)
+	require.ErrorIs(t, err, ErrProviderReconciliationConflict)
+
+	var reservationStatus, reservationMode, attemptState, receiptStatus string
+	var reservationReceiptID, receiptCalculated, receiptCharged int64
+	var attemptTransactionID sql.NullInt64
+	var financialResolved bool
+	var balanceAfter, frozenAfter, spentAfter int64
+	var transactionCount, receiptCount, evidenceCount, unresolvedCount int
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT status,billing_mode,terminal_observation_receipt_id
+		FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
+	).Scan(&reservationStatus, &reservationMode, &reservationReceiptID))
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT state,terminal_transaction_id,financial_resolved_at IS NOT NULL
+		FROM billing_provider_attempts
+		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attemptID,
+	).Scan(&attemptState, &attemptTransactionID, &financialResolved))
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT terminal_status,calculated_cost_micros,charged_cost_micros
+		FROM billing_observation_receipts
+		WHERE org_id=$1 AND request_id=$2 AND id=$3`, orgID, requestID, result.TerminalObservationReceiptID,
+	).Scan(&receiptStatus, &receiptCalculated, &receiptCharged))
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT balance_micros,frozen_micros,total_spent_micros
+		FROM wallets WHERE org_id=$1`, orgID,
+	).Scan(&balanceAfter, &frozenAfter, &spentAfter))
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&transactionCount))
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM billing_observation_receipts WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&receiptCount))
+	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM provider_cost_reconciliations WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&evidenceCount))
+	require.NoError(t, pool.QueryRow(t.Context(), `
+		SELECT COUNT(*) FROM billing_provider_attempts
+		WHERE org_id=$1 AND api_key_id=$2
+		  AND state IN ('dispatch_started','response_accepted','outcome_unknown','response_unusable',
+		                'funding_pending','delivery_pending','delivery_failed','output_withheld')`, orgID, int64(77),
+	).Scan(&unresolvedCount))
+
+	require.Equal(t, "cancelled", reservationStatus)
+	require.Equal(t, string(BillingModeCostObservation), reservationMode)
+	require.Equal(t, result.TerminalObservationReceiptID, reservationReceiptID)
+	require.Equal(t, "reconciled", attemptState)
+	require.False(t, attemptTransactionID.Valid)
+	require.True(t, financialResolved)
+	require.Equal(t, "cancelled", receiptStatus)
+	require.Positive(t, receiptCalculated)
+	require.Zero(t, receiptCharged)
+	require.Equal(t, balanceBefore, balanceAfter)
+	require.Equal(t, frozenBefore, frozenAfter)
+	require.Equal(t, spentBefore, spentAfter)
+	require.Zero(t, transactionCount)
+	require.Equal(t, 1, receiptCount)
+	require.Equal(t, 2, evidenceCount)
+	require.Zero(t, unresolvedCount)
+
+	_, err = pool.Exec(t.Context(), `
+		UPDATE provider_cost_reconciliations SET reason='mutated'
+		WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
+	require.ErrorContains(t, err, "append-only")
+}
 
 func TestP6F40CCollectReplaysStoredAuthoritativeUsageWithoutCallerAmount(t *testing.T) {
 	pool, orgID, model := newReservationFixture(t, 100, 0)
@@ -89,14 +220,19 @@ func TestP6F40CRefundReleasesOnlyExistingHoldAndConflictingActionFails(t *testin
 		Outcome: ProviderAttemptOutcomeUnknown, FailureKind: "transport",
 	}))
 
-	result, err := b.ReconcileProviderAttempt(t.Context(), ProviderReconciliationRequest{
+	reconciliation := ProviderReconciliationRequest{
 		OrgID: orgID, RequestID: requestID, AttemptID: attempt.AttemptID,
 		Action: ProviderReconciliationRefund, ActorUserID: 9002,
 		Reason: "provider confirmed no customer delivery", EvidenceRef: "case://refund-1",
-	})
+	}
+	result, err := b.ReconcileProviderAttempt(t.Context(), reconciliation)
 	require.NoError(t, err)
 	require.Equal(t, "1000000", result.CustomerRefundMicros)
 	require.Equal(t, "0", result.CustomerChargedMicros)
+	require.Equal(t, "reconciled", result.State)
+	replayed, err := b.ReconcileProviderAttempt(t.Context(), reconciliation)
+	require.NoError(t, err)
+	require.Equal(t, result, replayed)
 
 	_, err = b.ReconcileProviderAttempt(t.Context(), ProviderReconciliationRequest{
 		OrgID: orgID, RequestID: requestID, AttemptID: attempt.AttemptID,

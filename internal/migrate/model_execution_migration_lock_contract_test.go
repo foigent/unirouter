@@ -103,6 +103,26 @@ func TestModelExecutionMigrationsJoinSharedLifecycleLockBeforeTableLocks(t *test
 				"provider_connections", "channels", "schema_migrations",
 			},
 		},
+		{
+			name:           "80 up",
+			file:           "000080_observation_provider_cost_reconciliation.up.sql",
+			firstProtected: "ALTER TABLE billing_observation_receipts",
+			lockedTables: []string{
+				"freeze_idempotency", "billing_provider_attempts",
+				"provider_cost_reconciliations", "billing_observation_receipts",
+				"schema_migrations",
+			},
+		},
+		{
+			name:           "80 down",
+			file:           "000080_observation_provider_cost_reconciliation.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"freeze_idempotency", "billing_provider_attempts",
+				"provider_cost_reconciliations", "billing_observation_receipts",
+				"schema_migrations",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -148,6 +168,7 @@ func TestModelExecutionGuardedDownsLockBeforeLedgerAndEvidenceChecks(t *testing.
 		"000071_model_execution_evidence.down.sql",
 		"000072_execution_evidence_projection.down.sql",
 		"000079_canonical_connection_license_authority.down.sql",
+		"000080_observation_provider_cost_reconciliation.down.sql",
 	} {
 		t.Run(file, func(t *testing.T) {
 			body, err := os.ReadFile("../../migrations/" + file)

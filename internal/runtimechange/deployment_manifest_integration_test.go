@@ -681,10 +681,16 @@ SELECT
 func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := t.Context()
+	observationDown, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(observationDown))
+	require.NoError(t, err)
 	// These legacy-bridge fixtures intentionally use distinct display names for
 	// their two projections. Normalize only the legacy source immediately before
 	// the M79 down proof; production rollback never performs reconciliation.
-	_, err := pool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 UPDATE channels legacy
 	SET status='active',
 		name=connection.name,

@@ -70,14 +70,16 @@ writes remain supported. Draining old binaries is still an orchestration
 responsibility; no environment value or database check proves that a separate
 old process has exited.
 
-The executable schema ceiling is `000079`. After either normal migration or
-`SKIP_MIGRATION`, the backend requires the database migration-ledger maximum to
-equal that exact binary ceiling before customer-baseline initialization or HTTP
-bind. Older, future and empty ledgers fail closed. M79 is consequently a
-non-rolling schema switch: an M78 stable and M79 canary cannot both be ready on
-one database. Drain and stop the old fleet, let one migration owner advance the
-database to M79, then start M79 stable/canary; a secondary may skip migrations
-only when the database is already exactly M79. M79 retains the signed License v1
+The executable schema ceiling is `000080`. After either normal migration or
+`SKIP_MIGRATION`, the backend requires the complete ordered database migration
+ledger to equal the binary artifact ledger before customer-baseline
+initialization or HTTP bind. Missing, extra, future, duplicate, reordered and
+empty ledgers fail closed. Ceiling changes are consequently non-rolling: an M79
+stable and M80 canary cannot both be ready on one database. Drain and stop the
+old fleet, let one migration owner advance the database to M80, then start M80
+stable/canary; a secondary may skip migrations only when the database is already
+exact M80. M80 terminalizes cost-observation provider reconciliation with an
+append-only zero-charge receipt and never with a wallet transaction. M79 retains the signed License v1
 field name `active_channels` but counts enabled `provider_connections`. Up and
 down take the model-execution migration advisory lock, the canonical/legacy
 resource plus migration-ledger relation locks, the `active_channels` advisory

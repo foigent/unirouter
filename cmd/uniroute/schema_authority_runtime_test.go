@@ -41,9 +41,9 @@ func TestRuntimeSchemaAuthorityRequiresExactArtifactLedgerBeforeStartup(t *testi
 		},
 		{
 			name:        "future migration",
-			actual:      append(append([]string(nil), expected...), "000080_future_contract"),
+			actual:      append(append([]string(nil), expected...), "000081_future_contract"),
 			wantErr:     "does not match migration artifact",
-			wantDetails: "000080_future_contract",
+			wantDetails: "000081_future_contract",
 		},
 		{
 			name:        "duplicate migration",

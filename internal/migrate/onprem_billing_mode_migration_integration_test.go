@@ -187,6 +187,23 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	// Migration 80 extends the existing provider-cost reconciliation evidence
+	// with an observation receipt terminal. Older rollback fixtures remove this
+	// empty extension before exercising their own historical down contracts.
+	if name == "000080_observation_provider_cost_reconciliation.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
+	var observationReconciliationApplied bool
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000080_observation_provider_cost_reconciliation')`).Scan(&observationReconciliationApplied))
+	if observationReconciliationApplied {
+		execMigrationDown(t, ctx, pool, "000080_observation_provider_cost_reconciliation.down.sql")
+	}
 	// Migration 79 changes only the active_channels License count authority.
 	// Ordered rollback helpers restore its guarded M78 counter contract before
 	// exercising any older down migration; M79's own tests execute it directly.

@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000079_canonical_connection_license_authority"
+const LatestSupportedMigration = "000080_observation_provider_cost_reconciliation"

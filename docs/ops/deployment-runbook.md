@@ -941,15 +941,15 @@ M79 只切换商业 License v1 的 `active_channels` 计数权威：字段名和
 legacy `channels.status='active'`。升级前必须 drain 所有仍能写 legacy/verify model
 state 的旧进程；migration 本身不会安装 legacy DML seal，也不能证明 fleet 已退出。
 这是非滚动 schema 切换。M79 binary 无论执行 migration 还是设置
-`SKIP_MIGRATION=true`，都会在 customer baseline 与 HTTP bind 前要求
-`MAX(schema_migrations.version)` 精确等于
-`000079_canonical_connection_license_authority`；M78、future 或空 ledger 全部拒绝。
+`SKIP_MIGRATION=true`，都会在 customer baseline 与 HTTP bind 前要求完整、有序
+database migration ledger 与 M79 binary artifact ledger 完全一致；missing、extra、
+future、duplicate、reordered 或空 ledger 全部拒绝。
 因此不能让 M78 stable 与 M79 canary 共享 M78 数据库并声称 ready。顺序固定为：
 
 1. 阻断入口，drain 并停止所有 M78 stable、canary 和其他 backend 副本；
 2. 只允许一个批准的 M79 migration owner 在 `SKIP_MIGRATION=false` 下升级数据库；
-3. 只读确认 ledger 最大值精确为 M79，再启动 M79 stable；
-4. 仅在同一数据库已精确为 M79 后，才可用 `SKIP_MIGRATION=true` 启动 M79
+3. 只读确认完整 ledger 与 M79 artifact 完全一致，再启动 M79 stable；
+4. 仅在同一数据库已有 exact M79 ledger 后，才可用 `SKIP_MIGRATION=true` 启动 M79
    canary/secondary，并分别读取 readiness。
 
 在维护窗口内先只读对比：
@@ -1018,6 +1018,40 @@ SELECT COUNT(*) AS enabled_without_exact_active_legacy_projection
 M79 ledger；canonical connections、deployments、credential bindings、release 和
 execution evidence 均保留。若旧 binary 无法理解这些 retained schema/data，停止并
 roll forward，不得删除 canonical 证据来制造可启动假象。
+
+### 3.17 `000080` observation provider-cost reconciliation 与 guarded down
+
+M80 只修复 `cost_observation` 请求已形成 provider-cost hold 后无法通过正式接口终结
+的死路。`collect` 在 observation 模式仍然拒绝；平台管理员只能在现有
+`refund`/`subsidy` 权威下释放 hold。成功操作会：
+
+- 保留 provider reported usage、冻结价格与 calculated cost；
+- 将 reservation 终结为 `cancelled`，provider attempt 终结为 `reconciled`；
+- 写一条 append-only `billing_observation_receipts` 零收费收据；
+- 在 `provider_cost_reconciliations` 写 requested/completed 两阶段证据；
+- 不创建 `transactions`，不修改 wallet balance/frozen/spent。
+
+M80 将 completed reconciliation 的终态权威冻结为 XOR：预付费模式引用
+`terminal_transaction_id`，observation 模式引用
+`terminal_observation_receipt_id`。deferred database guard 会复核 requested
+action/actor/reason/evidence、reservation、attempt 和 terminal receipt 精确一致；禁止
+手工补零金额 transaction、直接 UPDATE evidence 或绕过 pending-key admission。
+
+M79→M80 仍按 schema-ceiling 非滚动顺序执行：停止旧 fleet，由唯一 migration owner
+升级，确认数据库完整有序 ledger 与 M80 artifact ledger 完全一致，再启动 M80
+stable/canary。不能只看 `MAX(version)`。M80 down 在 schema mutation 前拒绝任一 later
+migration 或任一 observation reconciliation terminal evidence；安全 down 只恢复 M79
+terminal check，不删除既有 prepaid reconciliation。可先只读检查：
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT COUNT(*) AS observation_reconciliation_terminals
+  FROM provider_cost_reconciliations
+ WHERE terminal_observation_receipt_id IS NOT NULL;
+```
+
+第二项非零时必须 roll forward，不得删除 append-only receipt/reconciliation 来迁就旧
+binary。
 
 ---
 
@@ -1442,8 +1476,9 @@ staging 或已授权的非生产测试目标。不得把本章命令当作客户
 stable 与 canary 必须读取同一个
 `UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET`；Compose/CI 会检查两者配置一致。
 本章的流量 canary 只允许两个 binary 的 exact schema ceiling 相同且共享数据库已经
-位于该 ceiling 时使用。任何改变 ceiling 的发布（包括 M78→M79）必须先按 3.16
-完成非滚动 schema 切换，不能保留旧 stable 再启动新 canary。
+位于该 ceiling 时使用。任何改变 ceiling 的发布（包括当前 M79→M80）必须先按
+对应 migration 小节（当前为 3.17）完成非滚动 schema 切换，不能保留旧 stable 再
+启动新 canary。
 
 ### 9.1 前置条件：Nginx 配置
 
@@ -1502,7 +1537,7 @@ backend 处理大部分请求；两者必须声明相同的 exact schema ceiling
 - canary 实例可设置 `SKIP_MIGRATION=true`，但这只跳过 migration 执行，不跳过
   exact runtime-schema gate；共享数据库必须已经由唯一 migration owner 升到两个
   binary 共同声明的 ceiling
-- schema ceiling 不同的 stable/canary 禁止共存；M78→M79 使用 3.16 的非滚动流程
+- schema ceiling 不同的 stable/canary 禁止共存；当前 M79→M80 使用 3.17 的非滚动流程
 - 健康检查和 Prometheus 指标 **只走 stable**
 
 ### 9.3 启动 Canary
@@ -1617,7 +1652,7 @@ done | sort | uniq -c
 
 只有 stable/canary binary 声明相同 schema ceiling、且数据库已经精确位于该 ceiling
 时，canary 验证通过后才可按本节升级 stable。若 candidate 提高 ceiling（包括
-M78→M79），不要执行本节命令；按 3.16 停止整个旧 fleet、由唯一 migration owner
+M79→M80），不要执行本节命令；按 3.17 停止整个旧 fleet、由唯一 migration owner
 升级，再启动新 stable/canary。
 
 ```bash

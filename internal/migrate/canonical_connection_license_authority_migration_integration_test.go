@@ -19,6 +19,7 @@ import (
 
 func TestCanonicalConnectionLicenseAuthoritySplitLockOrderIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
+	downgradeObservationProviderCostReconciliationForM79Test(t, pool)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	downBody, err := os.ReadFile(filepath.Join(
@@ -65,6 +66,7 @@ VALUES ('m79-lock-writer','custom','https://m79-lock-writer.invalid',
 	})
 
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	downgradeObservationProviderCostReconciliationForM79Test(t, pool)
 	_, err = pool.Exec(ctx, `
 INSERT INTO commercial_license_entitlements (
   singleton,license_id,deployment_id,key_id,expires_at,features,active_channels)
@@ -113,6 +115,7 @@ UPDATE commercial_license_entitlements
 
 func TestCanonicalConnectionLicenseAuthorityConcurrentActivationIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
+	downgradeObservationProviderCostReconciliationForM79Test(t, pool)
 	ctx := t.Context()
 	_, err := pool.Exec(ctx, `
 INSERT INTO commercial_license_entitlements (
@@ -161,6 +164,7 @@ SELECT COUNT(*) FROM provider_connections WHERE admin_state='enabled'`).Scan(&en
 
 func TestCanonicalConnectionLicenseAuthorityMigrationAndSafeRollbackIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
+	downgradeObservationProviderCostReconciliationForM79Test(t, pool)
 	ctx := t.Context()
 	require.NoError(t, func() error {
 		_, err := pool.Exec(ctx, `
@@ -273,6 +277,16 @@ UPDATE provider_connections
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
 	assertCommercialLimitTrigger(t, pool, "channels", "channels_commercial_limit", false)
 	assertCommercialLimitTrigger(t, pool, "provider_connections", "provider_connections_commercial_limit", true)
+}
+
+func downgradeObservationProviderCostReconciliationForM79Test(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	down, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(down))
+	require.NoError(t, err)
 }
 
 func assertCommercialLimitTrigger(t *testing.T, pool *pgxpool.Pool, table, trigger string, want bool) {
