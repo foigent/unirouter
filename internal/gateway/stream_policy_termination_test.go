@@ -153,6 +153,18 @@ func TestP6F11EnforcedStreamRejectsUnknownContentShapeButAllowsUsageMetadata(t *
 	if err != nil || len(usageOnly.Frames) != 1 {
 		t.Fatalf("bounded usage-only metadata was incorrectly blocked: batch=%+v err=%v", usageOnly, err)
 	}
+	terminal, err := inspectGuardedStreamBatch(t.Context(), pinned, profile, [][]byte{
+		[]byte(`{"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":19,"completion_tokens":13,"total_tokens":32,"cached_tokens":12,"completion_tokens_details":{"reasoning_tokens":10}}}`),
+	}, make(map[string]string))
+	if err != nil || len(terminal.Frames) != 1 {
+		t.Fatalf("nullable terminal logprobs metadata was incorrectly blocked: batch=%+v err=%v", terminal, err)
+	}
+	_, err = inspectGuardedStreamBatch(t.Context(), pinned, profile, [][]byte{
+		[]byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"stop","logprobs":{"content":[{"token":"hidden"}]}}]}`),
+	}, make(map[string]string))
+	if !errors.Is(err, errStreamGuardrailUnsupportedText) {
+		t.Fatalf("non-null logprobs output bypassed the stream guardrail: %v", err)
+	}
 }
 
 func TestP6F11StreamGuardrailInspectsReasoningContent(t *testing.T) {
@@ -234,6 +246,59 @@ func p6f11StreamContext(pinned *guardrail.Pinned, requestID string) context.Cont
 	ctx = contextWithRouteAttempt(ctx, 1, 1)
 	ctx = contextWithAttemptID(ctx, "att_"+requestID)
 	return contextWithStreamReservation(ctx, 1_000, false)
+}
+
+func TestRelayStreamRequestAcceptsKimiNullableTerminalLogprobs(t *testing.T) {
+	var settled billing.SettleRequest
+	var terminal billing.DeliveryEvent
+	var leaseState string
+	var leaseReason string
+	b := &mockBilling{
+		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settled = req
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
+		},
+		recordDeliveryFn: func(_ context.Context, event billing.DeliveryEvent) error {
+			if event.Outcome == billing.DeliveryOutcomeCompleted || event.Outcome == billing.DeliveryOutcomeInterrupted {
+				terminal = event
+			}
+			return nil
+		},
+		finishStreamFn: func(_ context.Context, _ billing.StreamDeliveryStart, state, reason string) error {
+			leaseState = state
+			leaseReason = reason
+			return nil
+		},
+	}
+	relay := newTestRelay(p6f11RelayDB(), b)
+	stream := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"KIMI_OK\"},\"finish_reason\":null}]}\n\n" +
+		"data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\",\"logprobs\":null}],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17,\"cached_tokens\":13,\"completion_tokens_details\":{\"reasoning_tokens\":0}}}\n\n" +
+		"data: [DONE]\n\n"
+	rec := httptest.NewRecorder()
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(stream))}
+	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "Kimi K2.6", Provider: "kimi"}}
+	requestID := "req-kimi-nullable-terminal-logprobs"
+
+	relay.relayStreamRequest(p6f11StreamContext(nil, requestID), rec, resp, route,
+		requestID, 1, 2, "Kimi K2.6", "Kimi K2.6", "127.0.0.1", nil,
+		logger.New(logger.Fields{RequestID: requestID, OrgID: 1}), time.Now(), 1_000, nil, "")
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "KIMI_OK") || !strings.Contains(body, `"logprobs":null`) || strings.Count(body, "data: [DONE]") != 1 {
+		t.Fatalf("Kimi stream did not reach its exact terminal marker: %s", body)
+	}
+	if strings.Contains(body, "stream_error.invalid_frame") {
+		t.Fatalf("nullable terminal logprobs was rejected as an invalid frame: %s", body)
+	}
+	if settled.PromptTokens != 13 || settled.CompletionTokens != 4 {
+		t.Fatalf("provider usage was not settled exactly: %+v", settled)
+	}
+	if terminal.Outcome != billing.DeliveryOutcomeCompleted || terminal.ErrorCode != "" {
+		t.Fatalf("stream delivery was not completed: %+v", terminal)
+	}
+	if leaseState != billing.StreamLeaseStateCompleted || leaseReason != "stream_completed" {
+		t.Fatalf("stream lease terminal state = %q/%q", leaseState, leaseReason)
+	}
 }
 
 func TestP6F11ExplicitZeroOutputReservationIsNotReplacedByDefault(t *testing.T) {

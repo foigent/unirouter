@@ -93,7 +93,14 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 			frame.unsupported = true
 			continue
 		}
-		if !streamMapKeysSupported(choice, "index", "delta", "text", "finish_reason") {
+		if !streamMapKeysSupported(choice, "index", "delta", "text", "finish_reason", "logprobs") {
+			frame.unsupported = true
+		}
+		// OpenAI-compatible providers can include a nullable logprobs member on
+		// the terminal choice even when log probabilities were not requested.
+		// A non-null value can contain provider-generated token text and remains
+		// unsupported until it is modeled by the output guardrail.
+		if logprobs, exists := choice["logprobs"]; exists && logprobs != nil {
 			frame.unsupported = true
 		}
 		if finish, exists := choice["finish_reason"]; exists && finish != nil {
