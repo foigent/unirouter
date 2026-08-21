@@ -1890,8 +1890,10 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	streamStart := time.Now()
 	firstTokenReceived := false
 	var streamNormalizer adapters.StreamNormalizer
+	var streamFrameNormalizer adapters.StreamFrameNormalizer
 	if adapter != nil {
 		streamNormalizer, _ = adapter.(adapters.StreamNormalizer)
+		streamFrameNormalizer, _ = adapter.(adapters.StreamFrameNormalizer)
 	}
 	streamState := &adapters.StreamState{}
 	routeHealthRecorded := false
@@ -2244,7 +2246,24 @@ streamLoop:
 				done = true
 				continue
 			}
-			providerError, classifyErr := providerStreamErrorFrame([]byte(data))
+			frameData := []byte(data)
+			if streamFrameNormalizer != nil {
+				var normalizeErr error
+				frameData, normalizeErr = streamFrameNormalizer.NormalizeStreamFrame(ctx, adapters.StreamChunkInput{
+					Data:           frameData,
+					Channel:        route.Channel,
+					RequestedModel: requestedModel,
+					UpstreamModel:  route.MappedModel,
+					State:          streamState,
+				})
+				if normalizeErr != nil || !json.Valid(frameData) {
+					streamPayloadInvalid = true
+					streamTerminationCode = "upstream_stream_invalid_frame"
+					done = true
+					continue
+				}
+			}
+			providerError, classifyErr := providerStreamErrorFrame(frameData)
 			if classifyErr != nil {
 				streamPayloadInvalid = true
 				streamTerminationCode = "upstream_stream_invalid_frame"
@@ -2257,7 +2276,7 @@ streamLoop:
 				done = true
 				continue
 			}
-			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleUsage([]byte(data), adapters.EndpointChatCompletions, metering.UsageSourceUpstream)
+			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleUsage(frameData, adapters.EndpointChatCompletions, metering.UsageSourceUpstream)
 			if usageErr != nil {
 				reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to normalize final stream usage: %v", usageErr)
 				streamPayloadInvalid = true
@@ -2271,7 +2290,7 @@ streamLoop:
 			}
 			providerFrameObserved = true
 			skipRawEventSeparator = true
-			if !enqueueGuardedFrame([]byte(data), false) {
+			if !enqueueGuardedFrame(frameData, false) {
 				done = true
 			}
 			continue

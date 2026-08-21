@@ -132,6 +132,14 @@ type StreamNormalizer interface {
 	NormalizeStreamChunk(ctx context.Context, in StreamChunkInput) (*NormalizedStreamChunk, error)
 }
 
+// StreamFrameNormalizer applies provider-specific, content-preserving wire
+// normalization to an OpenAI-compatible SSE data frame. It is intentionally
+// narrower than StreamNormalizer: the gateway retains ownership of SSE event
+// parsing, usage authority, output inspection, and delivery.
+type StreamFrameNormalizer interface {
+	NormalizeStreamFrame(ctx context.Context, in StreamChunkInput) ([]byte, error)
+}
+
 type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }

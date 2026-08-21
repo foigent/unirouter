@@ -64,17 +64,24 @@ func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*
 func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error) {
 	_ = ctx
 	usage := NewMissingUsage()
+	responseBody := in.Body
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
 		var err error
 		usage, _, err = ParseOpenAICompatibleUsage(in.Body, in.Endpoint, metering.UsageSourceUpstream)
 		if err != nil {
 			return nil, err
 		}
+		if in.Endpoint == EndpointChatCompletions {
+			responseBody, err = normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, in.Body)
+			if err != nil {
+				return nil, fmt.Errorf("normalize MiniMax response: %w", err)
+			}
+		}
 	}
 	normalized := &NormalizedResponse{
 		StatusCode: in.StatusCode,
 		Header:     in.Header,
-		Body:       in.Body,
+		Body:       responseBody,
 		Usage:      usage,
 		Meta: ProviderMeta{
 			Provider:       in.Channel.Provider,
@@ -90,6 +97,152 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 		normalized.Error = a.ClassifyHTTPStatus(in.StatusCode, in.Body)
 	}
 	return normalized, nil
+}
+
+// NormalizeStreamFrame strips only documented, non-model MiniMax control
+// metadata. The gateway still validates every resulting OpenAI-compatible
+// frame and fails closed on unknown or unsafe fields.
+func (a *OpenAICompatible) NormalizeStreamFrame(ctx context.Context, in StreamChunkInput) ([]byte, error) {
+	_ = ctx
+	return normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, in.Data)
+}
+
+func normalizeMiniMaxOpenAIEnvelope(provider string, body []byte) ([]byte, error) {
+	if !strings.EqualFold(strings.TrimSpace(provider), "minimax") {
+		return body, nil
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
+		return body, nil
+	}
+
+	changed := false
+	for _, field := range []string{"input_sensitive", "output_sensitive"} {
+		if raw, exists := envelope[field]; exists && rawJSONBoolIs(raw, false) {
+			delete(envelope, field)
+			changed = true
+		}
+	}
+	for _, field := range []string{"input_sensitive_type", "output_sensitive_type", "output_sensitive_int"} {
+		if raw, exists := envelope[field]; exists && rawJSONInt64Is(raw, 0) {
+			delete(envelope, field)
+			changed = true
+		}
+	}
+	if raw, exists := envelope["base_resp"]; exists && miniMaxBaseResponseIsSuccess(raw) {
+		delete(envelope, "base_resp")
+		changed = true
+	}
+
+	if rawChoices, exists := envelope["choices"]; exists {
+		choices, choicesChanged, err := normalizeMiniMaxChoices(rawChoices)
+		if err != nil {
+			return nil, err
+		}
+		if choicesChanged {
+			envelope["choices"] = choices
+			changed = true
+		}
+	}
+	if !changed {
+		return body, nil
+	}
+	normalized, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, err
+	}
+	return normalized, nil
+}
+
+func normalizeMiniMaxChoices(raw json.RawMessage) (json.RawMessage, bool, error) {
+	var choices []json.RawMessage
+	if err := json.Unmarshal(raw, &choices); err != nil {
+		return raw, false, nil
+	}
+	changed := false
+	for index, rawChoice := range choices {
+		var choice map[string]json.RawMessage
+		if err := json.Unmarshal(rawChoice, &choice); err != nil || choice == nil {
+			continue
+		}
+		rawMessage, exists := choice["message"]
+		if !exists {
+			continue
+		}
+		var message map[string]json.RawMessage
+		if err := json.Unmarshal(rawMessage, &message); err != nil || message == nil {
+			continue
+		}
+		messageChanged := false
+		if rawName, exists := message["name"]; exists && rawJSONStringIs(rawName, "MiniMax AI") {
+			delete(message, "name")
+			messageChanged = true
+		}
+		if rawAudio, exists := message["audio_content"]; exists && (rawJSONStringIs(rawAudio, "") || string(rawAudio) == "null") {
+			delete(message, "audio_content")
+			messageChanged = true
+		}
+		if !messageChanged {
+			continue
+		}
+		normalizedMessage, err := json.Marshal(message)
+		if err != nil {
+			return nil, false, err
+		}
+		choice["message"] = normalizedMessage
+		normalizedChoice, err := json.Marshal(choice)
+		if err != nil {
+			return nil, false, err
+		}
+		choices[index] = normalizedChoice
+		changed = true
+	}
+	if !changed {
+		return raw, false, nil
+	}
+	normalized, err := json.Marshal(choices)
+	if err != nil {
+		return nil, false, err
+	}
+	return normalized, true, nil
+}
+
+func miniMaxBaseResponseIsSuccess(raw json.RawMessage) bool {
+	var base map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &base); err != nil || base == nil || len(base) == 0 || len(base) > 2 {
+		return false
+	}
+	statusCode, exists := base["status_code"]
+	if !exists || !rawJSONInt64Is(statusCode, 0) {
+		return false
+	}
+	if statusMessage, exists := base["status_msg"]; exists {
+		var message string
+		if err := json.Unmarshal(statusMessage, &message); err != nil {
+			return false
+		}
+	}
+	for field := range base {
+		if field != "status_code" && field != "status_msg" {
+			return false
+		}
+	}
+	return true
+}
+
+func rawJSONBoolIs(raw json.RawMessage, want bool) bool {
+	var value bool
+	return json.Unmarshal(raw, &value) == nil && value == want
+}
+
+func rawJSONInt64Is(raw json.RawMessage, want int64) bool {
+	var value int64
+	return json.Unmarshal(raw, &value) == nil && value == want
+}
+
+func rawJSONStringIs(raw json.RawMessage, want string) bool {
+	var value string
+	return json.Unmarshal(raw, &value) == nil && value == want
 }
 
 func (a *OpenAICompatible) Test(ctx context.Context, in TestInput) (*TestResult, error) {

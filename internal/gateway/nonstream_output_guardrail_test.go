@@ -1,12 +1,39 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"reflect"
 	"testing"
 
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/guardrail"
+	"github.com/uniroute/unirouter/internal/models"
 )
+
+func TestMiniMaxNormalizedResponseMeetsStrictChatDeliveryContract(t *testing.T) {
+	response, err := adapters.NewOpenAICompatible().ParseResponse(context.Background(), adapters.ResponseInput{
+		Endpoint:   adapters.EndpointChatCompletions,
+		StatusCode: http.StatusOK,
+		Channel:    models.Channel{Provider: "minimax", AdapterType: adapters.TypeOpenAICompatible},
+		Body:       []byte(`{"id":"chatcmpl-minimax","object":"chat.completion","created":1780152150,"model":"MiniMax-M3","choices":[{"finish_reason":"stop","index":0,"message":{"content":"safe answer","role":"assistant","name":"MiniMax AI","audio_content":""}}],"usage":{"total_tokens":9,"total_characters":0,"prompt_tokens":5,"completion_tokens":4,"prompt_tokens_details":{"cached_tokens":0}},"input_sensitive":false,"output_sensitive":false,"input_sensitive_type":0,"output_sensitive_type":0,"output_sensitive_int":0,"base_resp":{"status_code":0,"status_msg":"success"}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope map[string]interface{}
+	if err := decodeJSONUseNumber(response.Body, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	inspection := inspectNonStreamOutputTexts(envelope)
+	if !inspection.complete() {
+		t.Fatalf("documented safe MiniMax response did not meet strict delivery contract: %v body=%s", inspection.incompletePaths, response.Body)
+	}
+	if len(inspection.texts) != 1 || inspection.texts[0].Content != "safe answer" {
+		t.Fatalf("MiniMax model output was not preserved exactly: %+v", inspection.texts)
+	}
+}
 
 func TestNonStreamOutputInspectionCollectsModeledMessageTextValues(t *testing.T) {
 	response := map[string]interface{}{

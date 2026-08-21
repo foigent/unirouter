@@ -108,6 +108,98 @@ func TestOpenAICompatibleParseResponse_Usage(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleParseResponse_NormalizesOnlySafeMiniMaxControlFields(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"id":"chatcmpl-minimax","object":"chat.completion","created":1780152150,"model":"MiniMax-M3","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hello","name":"MiniMax AI","audio_content":""}}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"total_characters":0},"input_sensitive":false,"output_sensitive":false,"input_sensitive_type":0,"output_sensitive_type":0,"output_sensitive_int":0,"base_resp":{"status_code":0,"status_msg":"success"}}`)
+	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint:   EndpointChatCompletions,
+		StatusCode: http.StatusOK,
+		Body:       body,
+		Channel:    models.Channel{Provider: "MiniMax", AdapterType: TypeOpenAICompatible},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var normalized map[string]json.RawMessage
+	if err := json.Unmarshal(resp.Body, &normalized); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"input_sensitive", "output_sensitive", "input_sensitive_type", "output_sensitive_type", "output_sensitive_int", "base_resp"} {
+		if _, exists := normalized[field]; exists {
+			t.Fatalf("safe MiniMax control field %q was not removed: %s", field, resp.Body)
+		}
+	}
+	var choices []struct {
+		Message map[string]json.RawMessage `json:"message"`
+	}
+	if err := json.Unmarshal(normalized["choices"], &choices); err != nil || len(choices) != 1 {
+		t.Fatalf("decode normalized choices: choices=%v err=%v", choices, err)
+	}
+	for _, field := range []string{"name", "audio_content"} {
+		if _, exists := choices[0].Message[field]; exists {
+			t.Fatalf("safe MiniMax message control field %q was not removed: %s", field, resp.Body)
+		}
+	}
+	if got := string(choices[0].Message["content"]); got != `"hello"` {
+		t.Fatalf("model content changed during normalization: %s", got)
+	}
+	if resp.Usage.PromptTokens != 3 || resp.Usage.CompletionTokens != 4 || resp.Usage.TotalTokens != 7 {
+		t.Fatalf("usage changed during normalization: %+v", resp.Usage)
+	}
+}
+
+func TestOpenAICompatibleParseResponse_LeavesUnsafeOrUnknownMiniMaxFieldsForFailClosedDelivery(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"hidden","name":"unexpected","audio_content":"audio"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},"input_sensitive":true,"output_sensitive":true,"input_sensitive_type":1,"output_sensitive_type":2,"output_sensitive_int":3,"base_resp":{"status_code":1001,"status_msg":"blocked"},"unknown_provider_field":"opaque"}`)
+	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint:   EndpointChatCompletions,
+		StatusCode: http.StatusOK,
+		Body:       body,
+		Channel:    models.Channel{Provider: "minimax", AdapterType: TypeOpenAICompatible},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var normalized map[string]json.RawMessage
+	if err := json.Unmarshal(resp.Body, &normalized); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"input_sensitive", "output_sensitive", "input_sensitive_type", "output_sensitive_type", "output_sensitive_int", "base_resp", "unknown_provider_field"} {
+		if _, exists := normalized[field]; !exists {
+			t.Fatalf("unsafe or unknown field %q was silently removed: %s", field, resp.Body)
+		}
+	}
+}
+
+func TestOpenAICompatibleNormalizeStreamFrame_NormalizesSafeMiniMaxEnvelopeOnly(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	input := []byte(`{"id":"chunk-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hello"}}],"input_sensitive":false,"output_sensitive":false,"base_resp":{"status_code":0,"status_msg":""}}`)
+	got, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
+		Data: input, Channel: models.Channel{Provider: "minimax"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var normalized map[string]json.RawMessage
+	if err := json.Unmarshal(got, &normalized); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"input_sensitive", "output_sensitive", "base_resp"} {
+		if _, exists := normalized[field]; exists {
+			t.Fatalf("safe stream control field %q was not removed: %s", field, got)
+		}
+	}
+	if _, exists := normalized["choices"]; !exists {
+		t.Fatalf("stream choices were lost: %s", got)
+	}
+	unchanged, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
+		Data: input, Channel: models.Channel{Provider: "openai"},
+	})
+	if err != nil || string(unchanged) != string(input) {
+		t.Fatalf("non-MiniMax stream frame changed: got=%s err=%v", unchanged, err)
+	}
+}
+
 func TestP6F41OpenAICompatibleExplicitZeroAndMissingUsageRemainDistinct(t *testing.T) {
 	explicitZero, present, err := ParseOpenAICompatibleUsage(
 		[]byte(`{"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}`),
