@@ -113,7 +113,7 @@ func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest
 	if err := updateRequestIdempotencyUsageTx(ctx, tx, req); err != nil {
 		return err
 	}
-	if err := enqueueUsageJournalTx(ctx, tx, b.outbox, outbox.EventBillingUsagePrepared, reason, record, req, calculatedCost, 0, 0); err != nil {
+	if err := enqueueUsageJournalTx(ctx, tx, b.outbox, outbox.EventBillingUsagePrepared, "usage_prepared", record, req, calculatedCost, 0, 0); err != nil {
 		return fmt.Errorf("enqueue output hold usage: %w", err)
 	}
 	return tx.Commit(ctx)

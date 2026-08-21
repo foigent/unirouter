@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -153,8 +152,9 @@ func (h *Handler) ReconcileProviderCost(w http.ResponseWriter, r *http.Request) 
 	}
 	h.recordAuditForOrgProjectFromRequest(r, result.OrgID, 0,
 		"provider_cost."+strings.TrimSpace(result.Action), "provider_cost_reconciliation",
-		fmt.Sprintf("%s/%s", result.RequestID, result.AttemptID), map[string]interface{}{
+		result.RequestID, map[string]interface{}{
 			"action": result.Action, "api_key_id": result.APIKeyID,
+			"request_id": result.RequestID, "attempt_id": result.AttemptID,
 			"terminal_transaction_id":         result.TerminalTransactionID,
 			"terminal_observation_receipt_id": result.TerminalObservationReceiptID,
 			"billing_mode":                    result.BillingMode,
