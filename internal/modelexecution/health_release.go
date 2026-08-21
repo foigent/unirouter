@@ -81,12 +81,14 @@ UPDATE model_deployments
 		tag, execErr := tx.Exec(ctx, `
 UPDATE channels
    SET half_open_probe_until=NULL,half_open_probe_token=NULL,updated_at=clock_timestamp()
- WHERE id=$1 AND status='active' AND routing_epoch=$2 AND circuit_epoch=$3
+ WHERE id=$1 AND (status='active' OR ($7 AND status='staged'))
+   AND routing_epoch=$2 AND circuit_epoch=$3
    AND circuit_state='half_open' AND half_open_until<=$4
    AND half_open_probe_token=$5 AND half_open_probe_until IS NOT DISTINCT FROM $6
    AND half_open_probe_until>$4`,
 			request.evidence.LegacyChannelID, request.evidence.LegacyRoutingRevision,
 			request.evidence.LegacyCircuitRevision, dbNow, request.token, legacy.probeUntil,
+			legacyHealthAllowsStaged(request.evidence),
 		)
 		if execErr != nil {
 			return time.Time{}, execErr
@@ -212,7 +214,7 @@ func canonicalLeaseIsLive(current releasableCanonicalLease, request healthReques
 }
 
 func legacyLeaseIsLive(current *breakerSnapshot, request healthRequest, now time.Time) bool {
-	return current != nil && current.adminState == "active" &&
+	return current != nil && legacyChannelHealthEligible(request.evidence, current.adminState) &&
 		current.configRevision == request.evidence.LegacyRoutingRevision &&
 		current.circuitRevision == request.evidence.LegacyCircuitRevision &&
 		current.circuitState == "half_open" && current.halfOpenUntil != nil && !current.halfOpenUntil.After(now) &&

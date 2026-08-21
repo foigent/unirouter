@@ -128,14 +128,15 @@ func claimLegacyProbe(
 	tag, err := tx.Exec(ctx, `
 UPDATE channels
    SET half_open_probe_token=$9,half_open_probe_until=$10,updated_at=NOW()
- WHERE id=$1 AND status='active' AND routing_epoch=$2 AND circuit_epoch=$3
+ WHERE id=$1 AND (status='active' OR ($11 AND status='staged'))
+   AND routing_epoch=$2 AND circuit_epoch=$3
    AND circuit_state=$4 AND half_open_until IS NOT DISTINCT FROM $5
    AND half_open_until<=$6 AND half_open_probe_until IS NOT DISTINCT FROM $7
    AND COALESCE(half_open_probe_token,'')=$8
    AND (half_open_probe_until IS NULL OR half_open_probe_until<=$6)`,
 		evidence.LegacyChannelID, evidence.LegacyRoutingRevision, evidence.LegacyCircuitRevision,
 		current.circuitState, current.halfOpenUntil, dbNow, current.probeUntil,
-		current.probeToken, probeToken, target,
+		current.probeToken, probeToken, target, legacyHealthAllowsStaged(evidence),
 	)
 	if err != nil {
 		return "", err
