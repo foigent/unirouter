@@ -314,6 +314,54 @@ func TestRelayStreamRequestAcceptsKimiTerminalChoiceUsage(t *testing.T) {
 	}
 }
 
+func TestRelayStreamRequestNormalizesSafeMiniMaxControlMetadata(t *testing.T) {
+	var settled billing.SettleRequest
+	var terminal billing.DeliveryEvent
+	b := &mockBilling{
+		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settled = req
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
+		},
+		recordDeliveryFn: func(_ context.Context, event billing.DeliveryEvent) error {
+			if event.Outcome == billing.DeliveryOutcomeCompleted || event.Outcome == billing.DeliveryOutcomeInterrupted {
+				terminal = event
+			}
+			return nil
+		},
+	}
+	relay := newTestRelay(p6f11RelayDB(), b)
+	stream := "data: {\"id\":\"minimax-chunk\",\"object\":\"chat.completion.chunk\",\"created\":1780152150,\"model\":\"MiniMax-M2.7\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"MINIMAX_OK\",\"name\":\"MiniMax AI\",\"audio_content\":\"\"},\"finish_reason\":null}],\"input_sensitive\":false,\"output_sensitive\":false,\"input_sensitive_type\":0,\"output_sensitive_type\":0,\"output_sensitive_int\":0,\"base_resp\":{\"status_code\":0,\"status_msg\":\"\"}}\n\n" +
+		"data: {\"id\":\"minimax-chunk\",\"object\":\"chat.completion.chunk\",\"created\":1780152150,\"model\":\"MiniMax-M2.7\",\"choices\":[{\"index\":0,\"delta\":{\"name\":\"MiniMax AI\",\"audio_content\":null},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17,\"total_characters\":0,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"input_sensitive\":false,\"output_sensitive\":false,\"base_resp\":{\"status_code\":0,\"status_msg\":\"success\"}}\n\n" +
+		"data: [DONE]\n\n"
+	rec := httptest.NewRecorder()
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(stream))}
+	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "MiniMax Token Plan", Provider: "minimax", AdapterType: adapters.TypeOpenAICompatible}}
+	requestID := "req-minimax-safe-stream-metadata"
+
+	relay.relayStreamRequest(p6f11StreamContext(nil, requestID), rec, resp, route,
+		requestID, 1, 2, "MiniMax-M2.7", "MiniMax-M2.7", "127.0.0.1", nil,
+		logger.New(logger.Fields{RequestID: requestID, OrgID: 1}), time.Now(), 1_000, adapters.NewOpenAICompatible(), "")
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "MINIMAX_OK") || strings.Count(body, "data: [DONE]") != 1 {
+		t.Fatalf("MiniMax stream did not reach its terminal marker: %s", body)
+	}
+	for _, field := range []string{"input_sensitive", "output_sensitive", "base_resp", "audio_content", `\"name\"`} {
+		if strings.Contains(body, field) {
+			t.Fatalf("safe MiniMax stream control metadata %q escaped: %s", field, body)
+		}
+	}
+	if strings.Contains(body, "stream_error.invalid_frame") {
+		t.Fatalf("safe MiniMax stream metadata was rejected: %s", body)
+	}
+	if settled.PromptTokens != 13 || settled.CompletionTokens != 4 {
+		t.Fatalf("provider usage was not settled exactly: %+v", settled)
+	}
+	if terminal.Outcome != billing.DeliveryOutcomeCompleted || terminal.ErrorCode != "" {
+		t.Fatalf("stream delivery was not completed: %+v", terminal)
+	}
+}
+
 func TestP6F11ExplicitZeroOutputReservationIsNotReplacedByDefault(t *testing.T) {
 	state := streamReservationFromContext(contextWithStreamReservation(t.Context(), 0, false))
 	if state.ReservedCompletionTokens != 0 || state.AllowExtension {

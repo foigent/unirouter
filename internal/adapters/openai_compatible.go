@@ -165,31 +165,38 @@ func normalizeMiniMaxChoices(raw json.RawMessage) (json.RawMessage, bool, error)
 		if err := json.Unmarshal(rawChoice, &choice); err != nil || choice == nil {
 			continue
 		}
-		rawMessage, exists := choice["message"]
-		if !exists {
+		choiceChanged := false
+		for _, payloadField := range []string{"message", "delta"} {
+			rawPayload, exists := choice[payloadField]
+			if !exists {
+				continue
+			}
+			var payload map[string]json.RawMessage
+			if err := json.Unmarshal(rawPayload, &payload); err != nil || payload == nil {
+				continue
+			}
+			payloadChanged := false
+			if rawName, exists := payload["name"]; exists && rawJSONStringIs(rawName, "MiniMax AI") {
+				delete(payload, "name")
+				payloadChanged = true
+			}
+			if rawAudio, exists := payload["audio_content"]; exists && (rawJSONStringIs(rawAudio, "") || string(rawAudio) == "null") {
+				delete(payload, "audio_content")
+				payloadChanged = true
+			}
+			if !payloadChanged {
+				continue
+			}
+			normalizedPayload, err := json.Marshal(payload)
+			if err != nil {
+				return nil, false, err
+			}
+			choice[payloadField] = normalizedPayload
+			choiceChanged = true
+		}
+		if !choiceChanged {
 			continue
 		}
-		var message map[string]json.RawMessage
-		if err := json.Unmarshal(rawMessage, &message); err != nil || message == nil {
-			continue
-		}
-		messageChanged := false
-		if rawName, exists := message["name"]; exists && rawJSONStringIs(rawName, "MiniMax AI") {
-			delete(message, "name")
-			messageChanged = true
-		}
-		if rawAudio, exists := message["audio_content"]; exists && (rawJSONStringIs(rawAudio, "") || string(rawAudio) == "null") {
-			delete(message, "audio_content")
-			messageChanged = true
-		}
-		if !messageChanged {
-			continue
-		}
-		normalizedMessage, err := json.Marshal(message)
-		if err != nil {
-			return nil, false, err
-		}
-		choice["message"] = normalizedMessage
 		normalizedChoice, err := json.Marshal(choice)
 		if err != nil {
 			return nil, false, err

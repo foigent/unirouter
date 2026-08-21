@@ -173,7 +173,7 @@ func TestOpenAICompatibleParseResponse_LeavesUnsafeOrUnknownMiniMaxFieldsForFail
 
 func TestOpenAICompatibleNormalizeStreamFrame_NormalizesSafeMiniMaxEnvelopeOnly(t *testing.T) {
 	adapter := NewOpenAICompatible()
-	input := []byte(`{"id":"chunk-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hello"}}],"input_sensitive":false,"output_sensitive":false,"base_resp":{"status_code":0,"status_msg":""}}`)
+	input := []byte(`{"id":"chunk-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"hello","name":"MiniMax AI","audio_content":""}}],"input_sensitive":false,"output_sensitive":false,"base_resp":{"status_code":0,"status_msg":""}}`)
 	got, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
 		Data: input, Channel: models.Channel{Provider: "minimax"},
 	})
@@ -191,6 +191,28 @@ func TestOpenAICompatibleNormalizeStreamFrame_NormalizesSafeMiniMaxEnvelopeOnly(
 	}
 	if _, exists := normalized["choices"]; !exists {
 		t.Fatalf("stream choices were lost: %s", got)
+	}
+	var choices []struct {
+		Delta map[string]json.RawMessage `json:"delta"`
+	}
+	if err := json.Unmarshal(normalized["choices"], &choices); err != nil || len(choices) != 1 {
+		t.Fatalf("decode normalized stream choices: choices=%v err=%v", choices, err)
+	}
+	for _, field := range []string{"name", "audio_content"} {
+		if _, exists := choices[0].Delta[field]; exists {
+			t.Fatalf("safe MiniMax stream delta field %q was not removed: %s", field, got)
+		}
+	}
+	if gotContent := string(choices[0].Delta["content"]); gotContent != `"hello"` {
+		t.Fatalf("stream content changed during normalization: %s", gotContent)
+	}
+
+	unsafe := []byte(`{"choices":[{"delta":{"content":"hidden","name":"unexpected","audio_content":"audio"}}]}`)
+	unsafeGot, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
+		Data: unsafe, Channel: models.Channel{Provider: "minimax"},
+	})
+	if err != nil || string(unsafeGot) != string(unsafe) {
+		t.Fatalf("unsafe MiniMax stream metadata was removed: got=%s err=%v", unsafeGot, err)
 	}
 	unchanged, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
 		Data: input, Channel: models.Channel{Provider: "openai"},
