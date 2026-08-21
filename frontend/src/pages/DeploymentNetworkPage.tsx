@@ -88,7 +88,7 @@ const labels: Record<string, string> = {
   proxy: '出站代理', restricted: '受限出站', air_gapped: '离线隔离', external_termination: '外部 TLS 终止',
   mounted_certificate: '挂载证书', private_ca: '私有 CA', disabled_tls: '未启用 TLS', unverified: '未独立验证',
   ready: '已验证可用', degraded: '降级', unreachable: '不可达', runtime_supported: '运行时支持',
-  contract_only: '仅合同', verified: '已验证', unsupported: '未支持',
+  contract_only: '仅合同', verified: '已验证', repository_runtime_verified: '仓库运行时已验证', unsupported: '未支持',
 };
 
 function label(value?: string) {
@@ -98,7 +98,7 @@ function label(value?: string) {
 }
 
 function stateColor(value?: string) {
-  if (value === 'active' || value === 'ready' || value === 'runtime_supported' || value === 'verified') return 'green';
+  if (value === 'active' || value === 'ready' || value === 'runtime_supported' || value === 'verified' || value === 'repository_runtime_verified') return 'green';
   if (value === 'disabled' || value === 'unreachable' || value === 'unsupported') return 'red';
   return 'orange';
 }
@@ -274,7 +274,7 @@ export default function DeploymentNetworkPage() {
           <Surface title="附加部署登记" description="只在需要记录另一个 ECS、客户 Compose 或 Kubernetes 安装时使用；0 条不表示当前服务没有运行。" actions={<Button icon={<IconRefresh />} onClick={() => void load()}>刷新</Button>}>
             <Table rowKey="profile_ref" columns={profileColumns} dataSource={profiles} loading={loading} pagination={false} scroll={{ x: 760 }} empty={<EmptyState title="没有附加部署登记" description="当前实例仍以上方只读观测为准。" minHeight={150} />} onRow={(row?: DeploymentProfile) => ({ onClick: () => row && setSelectedProfile(row), 'aria-selected': row?.profile_ref === selectedProfile?.profile_ref })} />
           </Surface>
-          <Surface title="附加客户端入口登记" description="公开入口必须使用 HTTPS；登记描述预期访问方式，不会自动配置负载均衡、证书或 DNS。">
+          <Surface title="附加客户端入口登记" description="公开入口必须使用 HTTPS；接口能力只声明仓库运行时支持，现场可用性仍以独立观测为准。登记不会自动配置负载均衡、证书或 DNS。">
             <Table rowKey="endpoint_ref" columns={endpointColumns} dataSource={endpoints} loading={loading} pagination={false} scroll={{ x: 820 }} empty={<EmptyState title="没有附加入口登记" minHeight={160} />} onRow={(row?: GatewayEndpoint) => ({ onClick: () => row && setSelectedEndpoint(row), 'aria-selected': row?.endpoint_ref === selectedEndpoint?.endpoint_ref })} />
           </Surface>
         </main>
@@ -288,8 +288,8 @@ export default function DeploymentNetworkPage() {
               <dt>TLS 模式</dt><dd>{label(selectedEndpoint.tls_mode === 'disabled' ? 'disabled_tls' : selectedEndpoint.tls_mode)}</dd>
               <dt>证书引用</dt><dd className="ur-mono-break">{selectedEndpoint.certificate_ref || '未填写（不存私钥）'}</dd>
               <dt>接口能力配置</dt><dd>{endpointProfile?.display_name || selectedEndpoint.endpoint_profile}</dd>
-              <dt>运行时声明</dt><dd><Tag color={stateColor(endpointProfile?.runtime_state)}>{label(endpointProfile?.runtime_state)}</Tag></dd>
-              <dt>兼容证据</dt><dd><Tag color={stateColor(endpointProfile?.evidence_level)}>{label(endpointProfile?.evidence_level)}</Tag></dd>
+              <dt>运行时能力（仓库）</dt><dd><Tag color={stateColor(endpointProfile?.runtime_state)}>{label(endpointProfile?.runtime_state)}</Tag></dd>
+              <dt>能力证据（仓库）</dt><dd><Tag color={stateColor(endpointProfile?.evidence_level)}>{label(endpointProfile?.evidence_level)}</Tag></dd>
               <dt>观测 URL</dt><dd className="ur-mono-break">{selectedEndpoint.observed_base_url || '尚无独立观测'}</dd>
               <dt>观测时间</dt><dd>{selectedEndpoint.observed_at ? formatDateTime(selectedEndpoint.observed_at) : '尚未验证'}</dd>
               <dt>运行时变更</dt><dd>无</dd>

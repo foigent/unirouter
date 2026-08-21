@@ -2,13 +2,12 @@ package admin
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/accessgrantboundary"
 	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/auth"
@@ -17,7 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelreadiness"
-	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -41,7 +40,7 @@ func TestModelReadinessRejectsNonCanonicalOrUnboundedQueriesBeforeLookup(t *test
 		{"model too long", "project_id=1&model=" + strings.Repeat("m", maxReadinessModelLength+1) + "&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self"},
 		{"model control", "project_id=1&model=m%0Aother&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self"},
 		{"dynamic endpoint", "project_id=1&model=m&endpoint=%2Fv1%2Fmedia%2Fjobs%2F42&caller=self"},
-		{"unsupported endpoint", "project_id=1&model=m&endpoint=%2Fv1%2Fresponses&caller=self"},
+		{"unsupported endpoint", "project_id=1&model=m&endpoint=%2Fv1%2Funknown&caller=self"},
 		{"unknown caller", "project_id=1&model=m&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=other"},
 		{"self application", "project_id=1&model=m&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=self&application_ref=app_one"},
 		{"workload application missing", "project_id=1&model=m&endpoint=%2Fv1%2Fchat%2Fcompletions&caller=workload_application"},
@@ -64,31 +63,62 @@ func TestModelReadinessRejectsNonCanonicalOrUnboundedQueriesBeforeLookup(t *test
 	}
 }
 
-func TestModelReadinessConnectionModeDoesNotRequireOrReadProjectScope(t *testing.T) {
-	database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
-		return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
-	}}
-	handler := NewHandler(database, "jwt", []byte("0123456789abcdef01234567"), nil)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness?mode=connection&model=deepseek-v4-pro&endpoint=%2Fv1%2Fchat%2Fcompletions", nil)
+func TestModelReadinessConnectionModeRequiresCanonicalDeploymentIdentity(t *testing.T) {
+	handler := NewHandler(&testutil.MockDB{}, "jwt", []byte("0123456789abcdef01234567"), nil)
+	for _, query := range []string{
+		"mode=connection&model=deepseek-v4-pro&endpoint=%2Fv1%2Fchat%2Fcompletions",
+		"mode=connection&channel_id=102&model=deepseek-v4-pro&endpoint=%2Fv1%2Fchat%2Fcompletions",
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness?"+query, nil)
+		ctx := context.WithValue(request.Context(), middleware.CtxOrgID, int64(7))
+		ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+		response := httptest.NewRecorder()
+		handler.GetModelReadiness(response, request.WithContext(ctx))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("query=%s status=%d body=%s", query, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestModelReadinessConnectionModeRequiresOrganizationOperationsRole(t *testing.T) {
+	handler := NewHandler(&testutil.MockDB{}, "jwt", []byte("0123456789abcdef01234567"), nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness?mode=connection&deployment_id=102&model=deepseek-v4-pro&endpoint=%2Fv1%2Fchat%2Fcompletions", nil)
 	ctx := context.WithValue(request.Context(), middleware.CtxOrgID, int64(7))
-	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, auth.RoleMember)
 	request = request.WithContext(ctx)
 	response := httptest.NewRecorder()
 
 	handler.GetModelReadiness(response, request)
 
-	if response.Code != http.StatusOK {
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"reason":"forbidden"`) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	var payload modelreadiness.Response
-	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
-		t.Fatal(err)
+}
+
+func TestReadinessConnectionScopeUsesExactCanonicalDeployment(t *testing.T) {
+	handler := NewHandler(&testutil.MockDB{}, "jwt", []byte("0123456789abcdef01234567"), nil)
+	response := &modelreadiness.Response{Scope: modelreadiness.Scope{
+		Mode: modelreadiness.ModeConnection, OrgID: 7, DeploymentID: 102,
+		ResolvedModel: "deepseek-v4-pro", ModelOperationID: "openai.chat_completions.v1",
+	}}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
+	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
+	request = request.WithContext(ctx)
+	handler.readinessCanonicalRouteAxes(request, response, []canonicalModelApplication{{
+		Deployment: canonicalDeployment{ID: 102, AdminState: "enabled", CircuitState: "healthy"},
+		Connection: canonicalConnectionAxis{AdminState: "enabled"},
+		Credential: canonicalCredentialAxis{EligibleCount: 0},
+		Operations: []canonicalOperationAxis{{OperationID: "openai.chat_completions.v1"}},
+	}})
+
+	if response.PlatformModel.Deployment.State != modelreadiness.StateReady {
+		t.Fatalf("selected deployment was not recognized: %#v", response.PlatformModel.Deployment)
 	}
-	if payload.Scope.Mode != modelreadiness.ModeConnection || payload.Scope.OrgID != 7 || payload.Scope.ProjectID != 0 || payload.Scope.Caller != "" {
-		t.Fatalf("unexpected connection scope: %#v", payload.Scope)
+	if response.PlatformModel.ProviderCredential.State != modelreadiness.StateBlocked || response.PlatformModel.BaseRoute.State != modelreadiness.StateBlocked {
+		t.Fatalf("deployment blockers were masked: credential=%#v route=%#v", response.PlatformModel.ProviderCredential, response.PlatformModel.BaseRoute)
 	}
-	if payload.Summary.CurrentProjectCallerCallable.State != modelreadiness.StateNotApplicable || payload.ExternalRequests != "none" {
-		t.Fatalf("unexpected connection summary: %#v", payload)
+	if got := response.PlatformModel.BaseRoute.SafeEvidence["deployment_id"]; got != int64(102) {
+		t.Fatalf("base route evidence deployment_id=%#v", got)
 	}
 }
 
@@ -100,7 +130,7 @@ func TestReadinessGatewayLicenseAxisBlocksBeforeProviderRepair(t *testing.T) {
 	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
 	request = request.WithContext(ctx)
 
-	handler.readinessPlatformAxes(request, 7, response, billing.AdmissionReadiness{
+	handler.readinessPlatformAxes(request, 7, response, nil, billing.AdmissionReadiness{
 		BillingMode: billing.BillingModePrepaidEnforced, PricingAuthority: billing.RequestPricingAuthorityLegacy,
 	}, nil)
 
@@ -110,52 +140,68 @@ func TestReadinessGatewayLicenseAxisBlocksBeforeProviderRepair(t *testing.T) {
 	}
 }
 
-func TestReadinessProviderCredentialFixTargetsTheExactConnection(t *testing.T) {
-	database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
-		return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
+func TestReadinessProviderCredentialFixTargetsCanonicalModelEndpoints(t *testing.T) {
+	handler := NewHandler(&testutil.MockDB{}, "jwt", []byte("0123456789abcdef01234567"), nil)
+	response := &modelreadiness.Response{Scope: modelreadiness.Scope{
+		Mode: modelreadiness.ModeConnection, DeploymentID: 102,
+		ResolvedModel: "deepseek-v4-pro", ModelOperationID: "openai.chat_completions.v1",
 	}}
-	handler := NewHandler(database, "jwt", []byte("0123456789abcdef01234567"), nil)
-	handler.SetRoutingController(&routingControllerStub{preview: routingpolicy.Preview{
-		Candidates: []routingpolicy.PreviewCandidate{{ChannelID: 102, ChannelName: "DeepSeek", EligibleKeyCount: 0}},
-	}})
-	response := &modelreadiness.Response{Scope: modelreadiness.Scope{ResolvedModel: "deepseek-v4-pro"}}
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
 	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
 	request = request.WithContext(ctx)
-
-	handler.readinessPlatformAxes(request, 7, response, billing.AdmissionReadiness{
-		BillingMode: billing.BillingModePrepaidEnforced, PricingAuthority: billing.RequestPricingAuthorityLegacy,
-	}, nil)
+	handler.readinessCanonicalRouteAxes(request, response, []canonicalModelApplication{{
+		Deployment: canonicalDeployment{ID: 102, AdminState: "enabled", CircuitState: "healthy"},
+		Connection: canonicalConnectionAxis{AdminState: "enabled"},
+		Operations: []canonicalOperationAxis{{OperationID: "openai.chat_completions.v1"}},
+	}})
 
 	axis := response.PlatformModel.ProviderCredential
-	want := "/channel-keys?from=connections&channel_id=102&model=deepseek-v4-pro"
+	want := "/model-endpoints?model=deepseek-v4-pro&operation_id=openai.chat_completions.v1&deployment_id=102"
 	if axis.State != modelreadiness.StateBlocked || axis.FixRoute != want {
 		t.Fatalf("provider credential axis=%#v want_fix=%q", axis, want)
 	}
 }
 
-func TestReadinessCountsEligibleCredentialOnAStagedExcludedEndpoint(t *testing.T) {
-	database := &testutil.MockDB{QueryRowFn: func(context.Context, string, ...any) pgx.Row {
-		return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
+type readinessPlannerStub struct {
+	request modelrouting.Request
+	plan    modelrouting.Plan
+	err     error
+}
+
+func (p *readinessPlannerStub) Plan(_ context.Context, request modelrouting.Request) (modelrouting.Plan, error) {
+	p.request = request
+	return p.plan, p.err
+}
+
+func TestReadinessCallerUsesExactCanonicalPlannerOperation(t *testing.T) {
+	planner := &readinessPlannerStub{plan: modelrouting.Plan{
+		AuthorityMode: modelrouting.ModeCanonical, ModelOperationID: "openai.embeddings.v1",
+		RuntimeReleaseRef: "release-1", RuntimeStage: "active", SlotVersion: 3,
+		Routes: []modelrouting.Route{{}},
 	}}
-	handler := NewHandler(database, "jwt", []byte("0123456789abcdef01234567"), nil)
-	handler.SetRoutingController(&routingControllerStub{preview: routingpolicy.Preview{
-		Exclusions: []routingpolicy.PreviewCandidate{{
-			ChannelID: 102, ChannelName: "DeepSeek", EligibleKeyCount: 1, Reason: "channel_inactive",
-		}},
-	}})
-	response := &modelreadiness.Response{Scope: modelreadiness.Scope{ResolvedModel: "deepseek-v4-pro"}}
+	handler := NewHandler(&testutil.MockDB{}, "jwt", []byte("0123456789abcdef01234567"), nil)
+	handler.SetModelRoutePlanner(planner)
+	response := &modelreadiness.Response{Scope: modelreadiness.Scope{
+		Mode: modelreadiness.ModeCaller, OrgID: 7, ResolvedModel: "deepseek-v4-pro",
+		ModelOperationID: "openai.embeddings.v1",
+	}}
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/model-readiness", nil)
 	ctx := context.WithValue(request.Context(), middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
 	request = request.WithContext(ctx)
-
-	handler.readinessPlatformAxes(request, 7, response, billing.AdmissionReadiness{
-		BillingMode: billing.BillingModePrepaidEnforced, PricingAuthority: billing.RequestPricingAuthorityLegacy,
-	}, nil)
-
-	axis := response.PlatformModel.ProviderCredential
-	if axis.State != modelreadiness.StateReady || axis.ReasonCode != "provider_credential_available" {
-		t.Fatalf("staged endpoint credential was mistaken for missing: %#v", axis)
+	verified := time.Now().UTC()
+	handler.readinessCanonicalRouteAxes(request, response, []canonicalModelApplication{{
+		Deployment: canonicalDeployment{ID: 102, AdminState: "enabled", CircuitState: "healthy"},
+		Connection: canonicalConnectionAxis{AdminState: "enabled"},
+		Credential: canonicalCredentialAxis{EligibleCount: 1},
+		Operations: []canonicalOperationAxis{{
+			OperationID: "openai.embeddings.v1", SupportState: "enabled", EvidenceState: "live_probed",
+			VerifiedAt: &verified, ProbeState: "ready",
+			Runtime: canonicalOperationRuntimeAxis{State: "stable", StableMembership: &canonicalRuntimeMembership{}},
+		}},
+	}})
+	if planner.request.Mode != modelrouting.ModeCanonical || planner.request.ModelOperationID != "openai.embeddings.v1" ||
+		response.PlatformModel.BaseRoute.State != modelreadiness.StateReady {
+		t.Fatalf("request=%+v base_route=%+v", planner.request, response.PlatformModel.BaseRoute)
 	}
 }
 

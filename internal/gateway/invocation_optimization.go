@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 	"github.com/uniroute/unirouter/internal/invocationopt"
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/promptcompression"
@@ -355,6 +355,15 @@ func (relay *Relay) evaluateResponseCache(
 	if relay == nil || relay.invocationOptimization == nil || !state.found || apiKey == nil || route == nil {
 		return result
 	}
+	// Exact Response Cache v1 is intentionally keyed by legacy channel/key
+	// epochs. A canonical route has no such IDs, so it must bypass until a
+	// deployment/binding-aware cache identity is introduced. Never manufacture
+	// legacy IDs merely to make an optimization eligible.
+	if route.SnapshotSource == string(modelrouting.ModeCanonical) ||
+		route.Channel.ID <= 0 || route.ChannelKey.ID <= 0 {
+		result.reason = responsecache.ReasonInvalidConfiguration
+		return result
+	}
 	mode := state.policy.EffectiveMode(invocationopt.DriverResponseCache)
 	if mode == invocationopt.EffectiveDisabled {
 		return result
@@ -473,7 +482,12 @@ func (relay *Relay) serveResponseCacheHit(
 	reqLog *logger.Logger,
 ) {
 	var responseMap map[string]any
-	if hit == nil || json.Unmarshal(hit.SourceResponse, &responseMap) != nil || responseMap == nil {
+	if hit == nil || decodeJSONUseNumber(hit.SourceResponse, &responseMap) != nil || responseMap == nil {
+		relay.billing.Cancel(context.WithoutCancel(ctx), requestID, orgID)
+		writeError(w, http.StatusInternalServerError, "server_error", "response_cache.integrity_error", "Cached response failed validation")
+		return
+	}
+	if inspection := inspectNonStreamOutputTexts(responseMap); !inspection.complete() {
 		relay.billing.Cancel(context.WithoutCancel(ctx), requestID, orgID)
 		writeError(w, http.StatusInternalServerError, "server_error", "response_cache.integrity_error", "Cached response failed validation")
 		return

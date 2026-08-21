@@ -1,11 +1,42 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const sourceRoot = join(root, 'src');
 const clientPath = join(sourceRoot, 'api', 'client.ts');
 const transportPath = join(sourceRoot, 'api', 'transport.ts');
+const routingPath = join(sourceRoot, 'api', 'routing.ts');
+const channelsPath = join(sourceRoot, 'api', 'channels.ts');
+const modelEndpointsPath = join(sourceRoot, 'api', 'modelEndpoints.ts');
+const retiredChannelKeysPagePath = join(sourceRoot, 'pages', 'ChannelKeysPage.tsx');
+const dormantConnectionPanelPath = join(sourceRoot, 'components', 'ConnectionModelPanel.tsx');
 const maxLegacyRequests = 152;
+const retiredRuntimeWriterNames = [
+  'create',
+  'validate',
+  'activate',
+  'shadow',
+  'canary',
+  'promote',
+  'rollback',
+  'reject',
+  'createRelease',
+  'validateRelease',
+  'activateInitialRelease',
+  'markReleaseShadow',
+  'startReleaseCanary',
+  'promoteRelease',
+  'rollbackRelease',
+  'rejectRelease',
+];
+const retiredChannelWriterNames = ['create', 'update', 'remove'];
+const retiredCredentialWriterNames = ['create', 'update', 'rotate', 'remove'];
+const retiredModelEndpointWriterNames = [
+  'testChannelModel',
+  'activateModelEndpoint',
+  'startModelEndpointCanary',
+  'recoverModelEndpoint',
+];
 
 function sourceFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
@@ -18,6 +49,9 @@ function sourceFiles(directory) {
 const failures = [];
 const transport = readFileSync(transportPath, 'utf8');
 const client = readFileSync(clientPath, 'utf8');
+const routing = readFileSync(routingPath, 'utf8');
+const channels = readFileSync(channelsPath, 'utf8');
+const modelEndpoints = readFileSync(modelEndpointsPath, 'utf8');
 const apiSources = sourceFiles(join(sourceRoot, 'api'));
 const productSources = sourceFiles(sourceRoot);
 
@@ -30,6 +64,48 @@ for (const path of productSources) {
   if (/\bapi\.request\s*\(/.test(source)) {
     failures.push(`${relative(root, path)} exposes or consumes the aggregate generic request escape hatch`);
   }
+  const retiredWriterCall = retiredRuntimeWriterNames.find(name => new RegExp(`\\broutingApi\\.${name}\\s*\\(`).test(source));
+  if (retiredWriterCall) {
+    failures.push(`${relative(root, path)} calls retired routingApi.${retiredWriterCall}`);
+  }
+  const retiredChannelWriterCall = retiredChannelWriterNames.find(name => new RegExp(`\\bchannelApi\\.${name}\\s*\\(`).test(source));
+  if (retiredChannelWriterCall) {
+    failures.push(`${relative(root, path)} calls retired channelApi.${retiredChannelWriterCall}`);
+  }
+  const retiredCredentialWriterCall = retiredCredentialWriterNames.find(name => new RegExp(`\\bproviderCredentialApi\\.${name}\\s*\\(`).test(source));
+  if (retiredCredentialWriterCall) {
+    failures.push(`${relative(root, path)} calls retired providerCredentialApi.${retiredCredentialWriterCall}`);
+  }
+  const retiredModelEndpointWriterCall = retiredModelEndpointWriterNames.find(name => new RegExp(`\\bmodelEndpointApi\\.${name}\\s*\\(`).test(source));
+  if (retiredModelEndpointWriterCall) {
+    failures.push(`${relative(root, path)} calls retired modelEndpointApi.${retiredModelEndpointWriterCall}`);
+  }
+  if (/\bRuntimeChangeControlWorkspace\b/.test(source)) {
+    failures.push(`${relative(root, path)} references the retired RuntimeChangeControlWorkspace`);
+  }
+  if (path !== dormantConnectionPanelPath && /\bConnectionModelPanel\b/.test(source)) {
+    failures.push(`${relative(root, path)} revives the dormant legacy connection model panel`);
+  }
+}
+
+if (existsSync(retiredChannelKeysPagePath)) {
+  failures.push('pages/ChannelKeysPage.tsx revives the retired credential mutation workspace');
+}
+
+const retiredRoutingExport = retiredRuntimeWriterNames.find(name => new RegExp(`\\b${name}\\s*:`).test(routing));
+if (retiredRoutingExport || /\/runtime-changes(?:\/|['"`])/.test(routing)) {
+  failures.push('api/routing.ts exposes the retired runtime-change writer surface');
+}
+
+const retiredChannelExport = retiredChannelWriterNames.find(name => new RegExp(`\\b${name}\\s*:`).test(channels));
+const retiredCredentialExport = retiredCredentialWriterNames.find(name => new RegExp(`\\b${name}\\s*:`).test(channels));
+if (retiredChannelExport || retiredCredentialExport) {
+  failures.push('api/channels.ts exposes a retired channel or credential writer');
+}
+
+const retiredModelEndpointExport = retiredModelEndpointWriterNames.find(name => new RegExp(`\\b${name}\\s*:`).test(modelEndpoints));
+if (retiredModelEndpointExport) {
+  failures.push(`api/modelEndpoints.ts exposes retired modelEndpointApi.${retiredModelEndpointExport}`);
 }
 
 for (const path of apiSources) {

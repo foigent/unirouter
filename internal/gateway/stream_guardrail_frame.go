@@ -14,6 +14,8 @@ import (
 	"github.com/uniroute/unirouter/internal/guardrail"
 )
 
+const chatDeliveryWhitelistVersion = "chat-completion-delivery.v1"
+
 var (
 	errStreamGuardrailUnsupportedText = errors.New("stream frame contains unsupported text shape")
 	errStreamGuardrailCrossBoundary   = errors.New("stream redaction crosses already delivered context")
@@ -42,15 +44,41 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 		return nil, fmt.Errorf("stream frame has ambiguous JSON members: %w", err)
 	}
 	var envelope map[string]interface{}
-	if err := json.Unmarshal(data, &envelope); err != nil {
+	if err := decodeJSONUseNumber(data, &envelope); err != nil {
 		return nil, err
 	}
 	frame := &guardedStreamFrame{raw: append([]byte(nil), data...), envelope: envelope}
 	if !streamTopLevelShapeSupported(envelope) {
 		frame.unsupported = true
 	}
+	for _, key := range []string{"id", "object", "model", "system_fingerprint", "service_tier"} {
+		if value, exists := envelope[key]; exists && value != nil {
+			if _, ok := value.(string); !ok {
+				frame.unsupported = true
+			}
+		}
+	}
+	if value, exists := envelope["created"]; exists && value != nil {
+		number, ok := value.(json.Number)
+		if !ok {
+			frame.unsupported = true
+		} else if created, err := number.Int64(); err != nil || created < 0 {
+			frame.unsupported = true
+		}
+	}
+	if usage, exists := envelope["usage"]; exists && usage != nil && !streamUsageShapeSupported(usage) {
+		frame.unsupported = true
+	}
 	rawChoices, exists := envelope["choices"]
-	if !exists || rawChoices == nil {
+	if !exists {
+		// OpenAI-compatible providers may emit a final usage-only frame. It is
+		// measurable metadata and contains no model text to disclose.
+		if _, hasUsage := envelope["usage"]; !hasUsage {
+			frame.unsupported = true
+		}
+		return frame, nil
+	}
+	if rawChoices == nil {
 		frame.unsupported = true
 		return frame, nil
 	}
@@ -68,6 +96,12 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 		if !streamMapKeysSupported(choice, "index", "delta", "text", "finish_reason") {
 			frame.unsupported = true
 		}
+		if finish, exists := choice["finish_reason"]; exists && finish != nil {
+			value, ok := finish.(string)
+			if !ok || !streamFinishReasonSupported(value) {
+				frame.unsupported = true
+			}
+		}
 		choiceIndex, ok = streamEnvelopeIndex(choice, choiceIndex)
 		if !ok {
 			frame.unsupported = true
@@ -77,7 +111,8 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 				frame.unsupported = true
 			}
 			if role, exists := delta["role"]; exists && role != nil {
-				if _, ok := role.(string); !ok {
+				value, ok := role.(string)
+				if !ok || (value != "assistant" && value != "tool" && value != "function") {
 					frame.unsupported = true
 				}
 			}
@@ -90,11 +125,7 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 					if !streamMapKeysSupported(function, "name", "arguments") {
 						frame.unsupported = true
 					}
-					if name, exists := function["name"]; exists && name != nil {
-						if _, ok := name.(string); !ok {
-							frame.unsupported = true
-						}
-					}
+					frame.collectString(function, "name", fmt.Sprintf("choices[%d].function_call.name", choiceIndex))
 					frame.collectString(function, "arguments", fmt.Sprintf("choices[%d].function_call.arguments", choiceIndex))
 				} else {
 					frame.unsupported = true
@@ -118,11 +149,11 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 						if !ok {
 							frame.unsupported = true
 						}
-						for _, metadataKey := range []string{"id", "type"} {
-							if value, exists := tool[metadataKey]; exists && value != nil {
-								if _, ok := value.(string); !ok {
-									frame.unsupported = true
-								}
+						frame.collectString(tool, "id", fmt.Sprintf("choices[%d].tool_calls[%d].id", choiceIndex, toolIndex))
+						if value, exists := tool["type"]; exists && value != nil {
+							typeName, ok := value.(string)
+							if !ok || typeName != "function" {
+								frame.unsupported = true
 							}
 						}
 						functionValue, exists := tool["function"]
@@ -137,11 +168,7 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 						if !streamMapKeysSupported(function, "name", "arguments") {
 							frame.unsupported = true
 						}
-						if name, exists := function["name"]; exists && name != nil {
-							if _, ok := name.(string); !ok {
-								frame.unsupported = true
-							}
-						}
+						frame.collectString(function, "name", fmt.Sprintf("choices[%d].tool_calls[%d].function.name", choiceIndex, toolIndex))
 						frame.collectString(function, "arguments", fmt.Sprintf("choices[%d].tool_calls[%d].function.arguments", choiceIndex, toolIndex))
 					}
 				}
@@ -152,6 +179,37 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 		frame.collectTextValue(choice, "text", fmt.Sprintf("choices[%d].text", choiceIndex))
 	}
 	return frame, nil
+}
+
+// providerStreamErrorFrame recognizes a typed provider failure before the
+// generic model-delta parser. Error envelopes are never forwarded as model
+// output and never establish customer delivery.
+func providerStreamErrorFrame(data []byte) (bool, error) {
+	if err := rejectDuplicateJSONMembers(data); err != nil {
+		return false, err
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(data, &envelope); err != nil || envelope == nil {
+		return false, fmt.Errorf("provider stream frame must be an object")
+	}
+	raw, exists := envelope["error"]
+	if !exists || isJSONNull(raw) {
+		return false, nil
+	}
+	var providerError map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &providerError); err != nil || providerError == nil {
+		return false, fmt.Errorf("provider stream error must be an object")
+	}
+	return true, nil
+}
+
+func streamFinishReasonSupported(value string) bool {
+	switch value {
+	case "stop", "length", "tool_calls", "function_call", "content_filter":
+		return true
+	default:
+		return false
+	}
 }
 
 func rejectDuplicateJSONMembers(data []byte) error {
@@ -228,6 +286,23 @@ func streamTopLevelShapeSupported(envelope map[string]interface{}) bool {
 	return streamMapKeysSupported(envelope, "id", "object", "created", "model", "system_fingerprint", "service_tier", "choices", "usage")
 }
 
+func streamUsageShapeSupported(value interface{}) bool {
+	switch typed := value.(type) {
+	case json.Number:
+		_, err := typed.Int64()
+		return err == nil
+	case map[string]interface{}:
+		for _, nested := range typed {
+			if nested != nil && !streamUsageShapeSupported(nested) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
 func streamMapKeysSupported(container map[string]interface{}, allowed ...string) bool {
 	for key := range container {
 		matched := false
@@ -249,11 +324,15 @@ func streamEnvelopeIndex(container map[string]interface{}, fallback int) (int, b
 	if !exists || value == nil {
 		return fallback, true
 	}
-	number, ok := value.(float64)
-	if !ok || number < 0 || number > 1_000_000 || number != float64(int(number)) {
+	number, ok := value.(json.Number)
+	if !ok {
 		return fallback, false
 	}
-	return int(number), true
+	parsed, err := number.Int64()
+	if err != nil || parsed < 0 || parsed > 1_000_000 {
+		return fallback, false
+	}
+	return int(parsed), true
 }
 
 func (frame *guardedStreamFrame) collectString(container map[string]interface{}, key, path string) {
@@ -433,21 +512,15 @@ func inspectGuardedStreamBatch(ctx context.Context, pinned *guardrail.Pinned, pr
 	for index, raw := range data {
 		frame, err := parseGuardedStreamFrame(raw)
 		if err != nil {
-			if profile.Enforced {
-				return batch, err
-			}
-			batch.Frames[index] = guardedStreamInspection{Data: append([]byte(nil), raw...)}
-			continue
+			return batch, err
 		}
 		parsed = append(parsed, frame)
 		parsedByIndex[index] = frame
 		batch.BufferedBytes += len(raw)
 	}
-	if profile.Enforced {
-		for _, frame := range parsed {
-			if frame.unsupported {
-				return batch, errStreamGuardrailUnsupportedText
-			}
+	for _, frame := range parsed {
+		if frame.unsupported {
+			return batch, errStreamGuardrailUnsupportedText
 		}
 	}
 	if profile.Enforced && batch.BufferedBytes > 0 {

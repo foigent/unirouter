@@ -11,18 +11,31 @@ import (
 
 const ProviderAttemptStateOutputWithheld = "output_withheld"
 
+const (
+	OutputHoldReasonGuardrailWithheld         = "guardrail_withheld"
+	OutputHoldReasonResponseTooLarge          = "response_too_large"
+	OutputHoldReasonProviderResponseUnusable  = "provider_response_unusable"
+	OutputHoldReasonProviderAttemptUnresolved = "provider_attempt_unresolved"
+)
+
 // HoldNonStreamOutput retains provider-reported usage and the frozen customer
-// price when a parseable response cannot be delivered because of a content
-// policy or the final response safety limit. It creates no delivery receipt
-// and no customer charge. The affected key remains on the existing
-// provider-cost reconciliation path until an explicit refund or subsidy action
-// resolves the upstream liability.
+// price when a parseable response with bounded usage cannot be delivered
+// because of content policy, the final response safety contract, or a missing
+// routing-health authority. It creates no delivery receipt and no customer
+// charge. The affected key remains on the existing provider-cost reconciliation
+// path until an explicit refund or subsidy action resolves the upstream
+// liability.
 func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest, reason string) error {
 	if b == nil || b.db == nil {
 		return fmt.Errorf("billing database is unavailable")
 	}
 	reason = strings.TrimSpace(reason)
-	if reason != "guardrail_withheld" && reason != "response_too_large" {
+	switch reason {
+	case OutputHoldReasonGuardrailWithheld,
+		OutputHoldReasonResponseTooLarge,
+		OutputHoldReasonProviderResponseUnusable,
+		OutputHoldReasonProviderAttemptUnresolved:
+	default:
 		return fmt.Errorf("unsupported output hold reason %q", reason)
 	}
 	req, err := normalizeProviderEvidenceUsage(request)

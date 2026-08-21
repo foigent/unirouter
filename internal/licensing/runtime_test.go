@@ -148,6 +148,35 @@ func TestRuntimeGateDeniesBeforeNextHandler(t *testing.T) {
 	}
 }
 
+func TestRuntimeGateUsesOperationProtocolEnvelope(t *testing.T) {
+	runtime := NewRuntime(NewCommercialVerifier(nil, nil, 30, "prod-cn-1"))
+	for _, path := range []string{"/v1/responses", "/v1/messages"} {
+		t.Run(path, func(t *testing.T) {
+			called := false
+			handler := runtime.Gate(FeatureGateway)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+			recorder := httptest.NewRecorder()
+			recorder.Header().Set("X-Request-ID", "op_license_protocol")
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path, nil))
+			if called || recorder.Code != http.StatusForbidden || recorder.Header().Get("Cache-Control") != "no-store" ||
+				recorder.Header().Get("X-UniRouter-License-Status") != StatusMissing {
+				t.Fatalf("path=%s called=%t status=%d headers=%v body=%s", path, called, recorder.Code, recorder.Header(), recorder.Body.String())
+			}
+			var body map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if path == "/v1/messages" {
+				if body["type"] != "error" || body["request_id"] != "op_license_protocol" || body["idempotency"] != nil ||
+					recorder.Header().Get("request-id") != "op_license_protocol" {
+					t.Fatalf("Anthropic license body=%v headers=%v", body, recorder.Header())
+				}
+			} else if body["error"] == nil || body["type"] != nil {
+				t.Fatalf("OpenAI license body=%v", body)
+			}
+		})
+	}
+}
+
 func TestRuntimeExpiryTakesEffectWithoutLicenseReload(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

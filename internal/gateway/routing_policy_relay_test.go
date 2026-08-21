@@ -13,6 +13,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimeconfig"
@@ -71,7 +72,7 @@ func TestHandleChatCompletion_UsesEffectiveRetryBudgetAndTracePolicy(t *testing.
 					}}
 				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-					if routeMetadata == nil && strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == 39 && args[8] == "routing.route_selected" {
+					if routeMetadata == nil && strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == traceInsertArgCount && args[8] == "routing.route_selected" {
 						if err := json.Unmarshal([]byte(args[17].(string)), &routeMetadata); err != nil {
 							t.Fatalf("decode route metadata: %v", err)
 						}
@@ -108,6 +109,7 @@ func TestHandleChatCompletion_UsesEffectiveRetryBudgetAndTracePolicy(t *testing.
 				},
 			}
 			relay := NewRelay(db, nil, router, b, nil, encKey)
+			installLegacyHandlerTestRuntime(relay)
 
 			body := `{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}`
 			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
@@ -128,7 +130,7 @@ func TestHandleChatCompletion_UsesEffectiveRetryBudgetAndTracePolicy(t *testing.
 				}
 			}
 			if routeMetadata["effective_config_version"] != runtimeconfig.Version || routeMetadata["routing_config_version"] != routingpolicy.Version ||
-				routeMetadata["routing_policy_version"] != routingpolicy.SelectionVersion || routeMetadata["routing_snapshot_source"] != "live" ||
+				routeMetadata["routing_policy_version"] != routingpolicy.SelectionVersion || routeMetadata["routing_snapshot_source"] != string(modelrouting.ModeLegacy) ||
 				routeMetadata["routing_snapshot_version"] == "" || routeMetadata["routing_candidate_count"] != float64(3) || routeMetadata["routing_excluded_count"] != float64(0) ||
 				routeMetadata["routing_priority"] != float64(1) || routeMetadata["routing_weight"] != float64(100) || routeMetadata["routing_selection_reason"] != "priority_failover" ||
 				routeMetadata["max_retry_count"] != float64(test.maxRetries) ||

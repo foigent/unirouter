@@ -188,7 +188,7 @@ var ErrSettlementFundingPending = errors.New("billing settlement requires additi
 
 const (
 	cacheUsageStatusNotReported = "not_reported"
-	maxPersistedTokenCount      = 1<<31 - 1
+	maxPersistedTokenCount      = metering.MaxPersistedTokenCount
 )
 
 // Billing handles the freeze/settle/cancel state machine.

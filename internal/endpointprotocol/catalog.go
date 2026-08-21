@@ -74,15 +74,17 @@ type fixtureDocument struct {
 }
 
 type fixtureRequest struct {
-	BaseURL                 string `json:"base_url"`
-	RequestedModel          string `json:"requested_model"`
-	MappedModel             string `json:"mapped_model"`
-	RequestID               string `json:"request_id"`
-	Body                    string `json:"body"`
-	ExpectedMethod          string `json:"expected_method"`
-	ExpectedURL             string `json:"expected_url"`
-	ExpectedRequestIDHeader string `json:"expected_request_id_header"`
-	ExpectedBody            string `json:"expected_body"`
+	BaseURL                  string `json:"base_url"`
+	RequestedModel           string `json:"requested_model"`
+	MappedModel              string `json:"mapped_model"`
+	RequestID                string `json:"request_id"`
+	Body                     string `json:"body"`
+	ExpectedMethod           string `json:"expected_method"`
+	ExpectedURL              string `json:"expected_url"`
+	ExpectedAuthentication   string `json:"expected_authentication,omitempty"`
+	ExpectedAnthropicVersion string `json:"expected_anthropic_version_header,omitempty"`
+	ExpectedRequestIDHeader  string `json:"expected_request_id_header"`
+	ExpectedBody             string `json:"expected_body"`
 }
 
 type fixtureResponse struct {
@@ -153,7 +155,7 @@ func Catalog() ([]ArtifactProfile, error) {
 	}
 	sort.Strings(manifestPaths)
 	registry := NewRegistry()
-	seen := make(map[string]struct{}, len(manifestPaths))
+	seen := make(map[profileIdentity]struct{}, len(manifestPaths))
 	profiles := make([]ArtifactProfile, 0, len(manifestPaths))
 	for _, manifestPath := range manifestPaths {
 		raw, readErr := artifactFS.ReadFile(manifestPath)
@@ -164,11 +166,12 @@ func Catalog() ([]ArtifactProfile, error) {
 		if decodeErr := decodeStrictArtifact(raw, &manifest); decodeErr != nil {
 			return nil, fmt.Errorf("decode %s: %w", manifestPath, decodeErr)
 		}
-		if _, duplicate := seen[manifest.ProfileID]; duplicate {
-			return nil, fmt.Errorf("duplicate profile %q", manifest.ProfileID)
+		identity := profileIdentity{profileID: manifest.ProfileID, profileVersion: manifest.ProfileVersion}
+		if _, duplicate := seen[identity]; duplicate {
+			return nil, fmt.Errorf("duplicate profile %q version %q", manifest.ProfileID, manifest.ProfileVersion)
 		}
-		seen[manifest.ProfileID] = struct{}{}
-		profile, getErr := registry.Get(manifest.ProfileID)
+		seen[identity] = struct{}{}
+		profile, getErr := registry.Resolve(manifest.ProfileID, manifest.ProfileVersion)
 		if getErr != nil {
 			return nil, fmt.Errorf("manifest %s: %w", manifest.ProfileID, getErr)
 		}
@@ -190,6 +193,9 @@ func Catalog() ([]ArtifactProfile, error) {
 		return nil, fmt.Errorf("artifact profiles=%d registry profiles=%d", len(profiles), len(registry.Descriptors()))
 	}
 	sort.Slice(profiles, func(left, right int) bool {
+		if profiles[left].Manifest.ProfileID == profiles[right].Manifest.ProfileID {
+			return profiles[left].Manifest.ProfileVersion < profiles[right].Manifest.ProfileVersion
+		}
 		return profiles[left].Manifest.ProfileID < profiles[right].Manifest.ProfileID
 	})
 	return profiles, nil
@@ -232,7 +238,7 @@ func RunOffline(ctx context.Context, registry *Registry) (ConformanceReport, err
 		Profiles:      make([]ConformanceProfileResult, 0, len(profiles)),
 	}
 	for _, artifact := range profiles {
-		profile, getErr := registry.Get(artifact.Manifest.ProfileID)
+		profile, getErr := registry.Resolve(artifact.Manifest.ProfileID, artifact.Manifest.ProfileVersion)
 		if getErr != nil {
 			return ConformanceReport{}, getErr
 		}
@@ -333,6 +339,15 @@ func validateFixture(manifest Manifest, ref FixtureRef) (fixtureDocument, error)
 		fixture.Request.MappedModel == "" ||
 		fixture.Request.ExpectedURL == "" {
 		return fixtureDocument{}, fmt.Errorf("fixture %s request evidence is incomplete", ref.Path)
+	}
+	if fixture.Request.ExpectedAuthentication != "" &&
+		fixture.Request.ExpectedAuthentication != "bearer" &&
+		fixture.Request.ExpectedAuthentication != "anthropic_x_api_key" {
+		return fixtureDocument{}, fmt.Errorf("fixture %s authentication evidence is invalid", ref.Path)
+	}
+	if fixture.Request.ExpectedAuthentication == "anthropic_x_api_key" &&
+		fixture.Request.ExpectedAnthropicVersion == "" {
+		return fixtureDocument{}, fmt.Errorf("fixture %s Anthropic version evidence is missing", ref.Path)
 	}
 	for name, body := range map[string]string{
 		"request":       fixture.Request.Body,
@@ -457,10 +472,22 @@ func validateBuiltRequest(request *http.Request, buildErr error, expected fixtur
 	if request == nil || request.Method != expected.ExpectedMethod || request.URL.String() != expected.ExpectedURL {
 		return errors.New("request method or URL mismatch")
 	}
-	if request.Header.Get("Authorization") != "Bearer fixture-secret" ||
-		request.Header.Get("Content-Type") != "application/json" ||
+	if request.Header.Get("Content-Type") != "application/json" ||
 		request.Header.Get("X-Client-Request-Id") != expected.ExpectedRequestIDHeader {
 		return errors.New("request headers mismatch")
+	}
+	switch expected.ExpectedAuthentication {
+	case "anthropic_x_api_key":
+		if request.Header.Get("x-api-key") != "fixture-secret" ||
+			request.Header.Get("anthropic-version") != expected.ExpectedAnthropicVersion ||
+			request.Header.Get("Authorization") != "" {
+			return errors.New("request Anthropic authentication headers mismatch")
+		}
+	case "", "bearer":
+		if request.Header.Get("Authorization") != "Bearer fixture-secret" ||
+			request.Header.Get("x-api-key") != "" {
+			return errors.New("request bearer authentication headers mismatch")
+		}
 	}
 	body, err := io.ReadAll(request.Body)
 	if err != nil {

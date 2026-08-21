@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -77,4 +78,36 @@ func TestPRD8GatewayModelAuthorizationPEPDeniesBeforeProviderDispatch(t *testing
 		WHERE org_id=$1 AND action='model_authorization.deny'
 		  AND request_id='prd8-model-authz-pep-deny'`, orgID).Scan(&auditCount))
 	require.Equal(t, 1, auditCount)
+}
+
+func TestGatewayDirectCanonicalModelPublishesTrustedNormalizedIdentity(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	var orgID, projectID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO orgs (name,status,org_type)
+		VALUES ('gateway-direct-canonical','active','standard') RETURNING id`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO projects (org_id,name,slug,status)
+		VALUES ($1,'Direct Canonical','direct-canonical','active') RETURNING id`, orgID).Scan(&projectID))
+
+	apiKey := &models.ApiKey{ID: 91, OrgID: orgID, ProjectID: &projectID, AllowedModels: "direct-model"}
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		strings.NewReader(`{"model":"  direct-model  ","messages":[]}`))
+	requestContext := context.WithValue(request.Context(), middleware.CtxAPIKey, apiKey)
+	requestContext = context.WithValue(requestContext, middleware.CtxOrgID, orgID)
+	requestContext = context.WithValue(requestContext, middleware.CtxProjectID, projectID)
+	requestContext = context.WithValue(requestContext, middleware.CtxKeyID, apiKey.ID)
+	request = request.WithContext(requestContext)
+	response := httptest.NewRecorder()
+
+	governed, allowed := prepareGatewayModelRequest(response, request, pool, nil, nil)
+	require.True(t, allowed, response.Body.String())
+	require.NotNil(t, governed)
+	require.Equal(t, "direct-model", middleware.GetModelAliasFromContext(governed.Context()))
+	var body struct {
+		Model string `json:"model"`
+	}
+	require.NoError(t, json.NewDecoder(governed.Body).Decode(&body))
+	require.Equal(t, "direct-model", body.Model)
 }

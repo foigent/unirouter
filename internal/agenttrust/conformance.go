@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/eventconnector"
 	"github.com/uniroute/unirouter/internal/governancesim"
 )
@@ -230,6 +231,18 @@ func runNegativeCases(fixture loadedFixture) []ConformanceCase {
 	invalidTwin := cloneRequest(fixture.value.Request)
 	invalidTwin.DigitalTwin.EvaluationMode = "remote"
 	_, invalidTwinErr := Evaluate(mustMarshal(invalidTwin))
+	unboundNewOperation := cloneRequest(fixture.value.Request)
+	setAuthorityEndpoints(&unboundNewOperation, "/v1/responses")
+	_, unboundNewOperationErr := Evaluate(mustMarshal(unboundNewOperation))
+	projectDefaultNewOperation := cloneRequest(unboundNewOperation)
+	projectDefaultNewOperation.Authority.RootGrantBound = true
+	projectDefaultNewOperation.Authority.RootGrantScopeMode = accessscope.ModeProjectDefault
+	projectDefaultNewOperation.Authority.RootAllowedEndpoints = []string{"/v1/responses"}
+	_, projectDefaultNewOperationErr := Evaluate(mustMarshal(projectDefaultNewOperation))
+	wildcardNewOperation := cloneRequest(projectDefaultNewOperation)
+	wildcardNewOperation.Authority.RootGrantScopeMode = accessscope.ModeExplicit
+	wildcardNewOperation.Authority.RootAllowedEndpoints = []string{"*"}
+	_, wildcardNewOperationErr := Evaluate(mustMarshal(wildcardNewOperation))
 
 	return []ConformanceCase{
 		conformanceCase("negative/duplicate-key", []string{"negative", "strict_json"}, errorCode(duplicateErr) == "duplicate_json_key", "duplicate_rejected", errorCode(duplicateErr)),
@@ -243,6 +256,15 @@ func runNegativeCases(fixture loadedFixture) []ConformanceCase {
 		conformanceCase("negative/audience", []string{"audience", "negative"}, errorCode(audienceErr) == "audience_invalid", "wrong_audience_rejected", errorCode(audienceErr)),
 		conformanceCase("negative/submicrosecond-time", []string{"negative", "precision", "time"}, errorCode(subMicroErr) == "evaluated_at_invalid", "submicrosecond_rejected", errorCode(subMicroErr)),
 		conformanceCase("negative/digital-twin-mode", []string{"digital_twin", "negative"}, errorCode(invalidTwinErr) == "digital_twin_invalid", "invalid_twin_rejected", errorCode(invalidTwinErr)),
+		conformanceCase("negative/new-operation-unbound-root", []string{"authority", "negative", "scope"}, errorCode(unboundNewOperationErr) == "authority_root_scope_invalid", "unbound_root_rejected", errorCode(unboundNewOperationErr)),
+		conformanceCase("negative/new-operation-project-default", []string{"authority", "negative", "scope"}, errorCode(projectDefaultNewOperationErr) == "authority_root_scope_invalid", "project_default_rejected", errorCode(projectDefaultNewOperationErr)),
+		conformanceCase("negative/new-operation-wildcard", []string{"authority", "negative", "scope"}, errorCode(wildcardNewOperationErr) == "authority_root_scope_invalid", "wildcard_rejected", errorCode(wildcardNewOperationErr)),
+	}
+}
+
+func setAuthorityEndpoints(request *ReviewRequest, endpoint string) {
+	for index := range request.Authority.Nodes {
+		request.Authority.Nodes[index].Limits.AllowedEndpoints = []string{endpoint}
 	}
 }
 

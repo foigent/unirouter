@@ -470,12 +470,14 @@ try {
     await visible(modelSetAxis.getByText('unrestricted_optional', { exact: true }));
     const runtimeSlotAxis = readiness.page.locator('section[aria-label="当前路由版本诊断"]');
     await runtimeSlotAxis.locator('summary').click();
-    await visible(runtimeSlotAxis.getByText('runtime_slot_not_configured_optional', { exact: true }));
+		await visible(runtimeSlotAxis.getByText('canonical_runtime_membership_missing', { exact: true }));
     const facts = readiness.page.locator('.ur-readiness-summary-grid');
     await visible(facts);
     await visible(facts.getByText('已有模型目录记录', { exact: true }));
     await visible(facts.getByText('项目目录可以看到该模型', { exact: true }));
-    await visible(facts.getByText('当前至少有一条可用路由', { exact: true }));
+		await visible(facts.getByText('canonical Planner 当前没有可用路由', { exact: true }));
+		assert.equal(await facts.getByText('当前至少有一条可用路由', { exact: true }).count(), 0,
+			'legacy channel inventory must not be presented as a canonical route');
     await visible(facts.getByText('当前部署的模型网关商业授权未就绪，请由平台管理员检查许可证', { exact: true }));
 
     const runtimePath = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.runtime_only_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
@@ -489,23 +491,25 @@ try {
     const runtimeFacts = readiness.page.locator('.ur-readiness-summary-grid');
     await visible(runtimeFacts);
     await visible(runtimeFacts.getByText('当前流程不要求', { exact: true }).first());
-    await visible(runtimeFacts.getByText('当前至少有一条可用路由', { exact: true }));
+		await visible(runtimeFacts.getByText('canonical Planner 当前没有可用路由', { exact: true }));
     journeys.push('readiness_four_facts_optional_states');
   } finally {
     await readiness.context.close();
   }
 
-  const unavailable = await login('alice', fixture.unavailable_base_url);
-  try {
-    const path = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.ready_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
-    await gotoHeading(unavailable.page, path, '调用条件诊断');
-    await visible(unavailable.page.getByText('暂时无法判断', { exact: true }).first());
-    await unavailable.page.getByText('查看高级诊断证据', { exact: true }).click();
-    const unavailableRouteAxis = unavailable.page.locator('section[aria-label="可用路由诊断"]');
-    await visible(unavailableRouteAxis.getByText('证据源暂时不可用', { exact: true }));
-    await unavailableRouteAxis.locator('summary').click();
-    await visible(unavailableRouteAxis.getByText('routing_preview_unavailable', { exact: true }));
-    journeys.push('readiness_unavailable_not_blocked');
+	const unavailable = await login('alice', fixture.unavailable_base_url);
+	try {
+		const path = `/model-readiness?project_id=${fixture.project_a}&model=${encodeURIComponent(fixture.ready_model)}&endpoint=${encodeURIComponent('/v1/chat/completions')}&caller=self`;
+		await gotoHeading(unavailable.page, path, '调用条件诊断');
+		await visible(unavailable.page.getByText('canonical Planner 当前没有可用路由', { exact: true }).first());
+		assert.equal(await unavailable.page.getByText('暂时无法判断', { exact: true }).count(), 0,
+			'removing the legacy Router must not turn canonical absence into unavailable evidence');
+		await unavailable.page.getByText('查看高级诊断证据', { exact: true }).click();
+		const unavailableRouteAxis = unavailable.page.locator('section[aria-label="可用路由诊断"]');
+		await visible(unavailableRouteAxis.getByText('canonical Planner 当前没有可用路由', { exact: true }));
+		await unavailableRouteAxis.locator('summary').click();
+		await visible(unavailableRouteAxis.getByText('canonical_route_unavailable', { exact: true }));
+		journeys.push('readiness_legacy_router_absence_preserves_canonical_facts');
   } finally {
     await unavailable.context.close();
   }

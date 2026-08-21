@@ -1,12 +1,11 @@
 package licensing
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"sync/atomic"
 
-	"github.com/uniroute/unirouter/internal/errdocs"
+	"github.com/uniroute/unirouter/internal/gatewayerror"
 )
 
 const (
@@ -178,7 +177,7 @@ func (r *Runtime) GateAll(features ...string) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, req)
 				return
 			}
-			writeLicenseError(w, decision)
+			writeLicenseError(w, req, decision)
 		})
 	}
 }
@@ -214,18 +213,8 @@ func denialForStatus(status Status) (string, string) {
 	}
 }
 
-func writeLicenseError(w http.ResponseWriter, decision Decision) {
-	w.Header().Set("Content-Type", "application/json")
+func writeLicenseError(w http.ResponseWriter, req *http.Request, decision Decision) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-UniRouter-License-Status", decision.Status.Status)
-	w.WriteHeader(http.StatusForbidden)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"error": map[string]interface{}{
-			"type":    "permission_error",
-			"code":    decision.Code,
-			"message": decision.Message,
-			"doc_url": errdocs.URLForCode(decision.Code),
-			"param":   nil,
-		},
-	})
+	gatewayerror.WriteRequest(w, req, http.StatusForbidden, decision.Code, decision.Message)
 }

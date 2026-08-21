@@ -47,6 +47,21 @@ const organizationModelGovernanceWrites = new Set([
   'POST /api/v1/invocation-optimization/policies/{ref}/rollback',
 ]);
 
+const organizationModelRouteSafetyWrites = new Set([
+  'POST /api/v1/provider-connections/{connectionID}/pause',
+  'POST /api/v1/provider-credential-bindings/{bindingID}/revoke',
+]);
+
+const organizationModelDeploymentLifecycleWrites = new Set([
+  'POST /api/v1/model-deployment-releases/{releaseRef}/activate-initial',
+  'POST /api/v1/model-deployment-releases/{releaseRef}/start-canary',
+  'POST /api/v1/model-deployment-releases/{releaseRef}/promote',
+  'POST /api/v1/model-deployment-releases/{releaseRef}/cancel-canary',
+  'POST /api/v1/model-deployment-releases/{releaseRef}/rollback-stable',
+  'POST /api/v1/model-deployment-releases/{releaseRef}/cutover-legacy',
+  'POST /api/v1/model-deployment-releases/{releaseRef}/rollback-legacy',
+]);
+
 function isAgentCapabilityPath(path: string) {
   return path.startsWith('/v1/agent-capabilities/');
 }
@@ -144,11 +159,29 @@ export function endpointVisibleForAuthz(
     return false;
   }
   if (area === 'Admin') {
+    const isCanonicalModelDeploymentRead = method === 'GET' && (
+      path === '/api/v1/model-deployments' ||
+      path === '/api/v1/model-deployments/{deploymentID}' ||
+      path === '/api/v1/model-deployment-releases' ||
+      path === '/api/v1/model-deployment-releases/{releaseRef}'
+    );
     if (isOrgViewerRole(organizationRole)) {
-      return method === 'GET' && (path.endsWith('/dashboard/stats') || path.includes('/projects'));
+      return isCanonicalModelDeploymentRead || (
+        method === 'GET' && (path.endsWith('/dashboard/stats') || path.includes('/projects'))
+      );
     }
     if (isOrgAdminRole(organizationRole)) {
-      return [
+      const isCanonicalModelDeploymentCreate = method === 'POST' && path === '/api/v1/model-deployments';
+      const isCanonicalModelDeploymentReleaseAuthor = method === 'POST' &&
+        path === '/api/v1/model-deployment-releases';
+      const isCanonicalModelDeploymentProbe = method === 'POST' &&
+        path === '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes';
+      const isCanonicalModelDeploymentLifecycleWrite =
+        organizationModelDeploymentLifecycleWrites.has(`${method} ${path}`);
+      const isModelRouteSafetyWrite = organizationModelRouteSafetyWrites.has(`${method} ${path}`);
+      return isCanonicalModelDeploymentRead || isCanonicalModelDeploymentCreate ||
+        isCanonicalModelDeploymentReleaseAuthor || isCanonicalModelDeploymentProbe ||
+        isCanonicalModelDeploymentLifecycleWrite || isModelRouteSafetyWrite || [
         '/dashboard/stats', '/keys', '/limit-policies', '/guardrail-policies',
         '/projects', '/logs', '/users', '/audit-logs',
       ].some(fragment => path.includes(fragment)) && !path.includes('/wallet');

@@ -67,10 +67,12 @@ type TerminalHooks interface {
 // Billing joins shared capacity/token admission to the existing durable wallet
 // and Agent-ancestor billing chain. It does not change financial truth.
 type Billing struct {
-	inner         Provider
-	runtime       Runtime
-	terminalHooks TerminalHooks
-	reservations  sync.Map
+	inner                 Provider
+	runtime               Runtime
+	terminalHooks         TerminalHooks
+	reservations          sync.Map
+	earlyEvidenceMu       sync.RWMutex
+	earlyRateEvidenceSink EarlyRateAdmissionEvidenceSink
 }
 
 type trackedReservation struct {
@@ -118,19 +120,17 @@ func (b *Billing) Freeze(ctx context.Context, req billing.FreezeRequest) (*billi
 	if apiKey.AccessGrantID != nil {
 		req.AccessGrantID = *apiKey.AccessGrantID
 	}
+	phase, requestedModel, rateReceipt, validAdmissionPhase := admissionPhaseFromContext(ctx, apiKey, req.RequestID)
+	if !validAdmissionPhase {
+		return rejectedResult(limitpolicy.ErrStateUnavailable), nil
+	}
 	reservation, reserveErr := b.runtime.Reserve(ctx, limitpolicy.AdmissionRequest{
-		OperationID: req.RequestID,
-		Subject: limitpolicy.Subject{
-			OrgID: middleware.GetOrgIDFromContext(ctx), ProjectID: middleware.GetProjectIDFromContext(ctx),
-			APIKeyID: middleware.GetKeyIDFromContext(ctx), AccessCredentialID: req.AccessCredentialID,
-			CredentialRef: req.CredentialRef, AccessGrantID: req.AccessGrantID, Model: req.Model,
-			BaseRPSLimit: int64(apiKey.QPSLimit), BaseRPMLimit: int64(apiKey.RPMLimit),
-			CredentialConcurrencyLimit: intPointer64(apiKey.CredentialConcurrencyLimit),
-			GrantRPSLimit:              intPointer64(apiKey.GrantRPSLimit), GrantRPMLimit: intPointer64(apiKey.GrantRPMLimit),
-			GrantConcurrencyLimit: intPointer64(apiKey.GrantConcurrencyLimit),
-		},
+		OperationID:    req.RequestID,
+		Subject:        admissionSubject(ctx, apiKey, req.Model),
+		RequestedModel: requestedModel,
 		EstimatedInput: int64(inputTokens), ReservedOutput: int64(reservedOutput),
 		LeaseTTL: agentcap.InvocationLeaseTTLFromContext(ctx), WorkloadClass: workloadadmission.ClassFromContext(ctx),
+		Phase: phase, RateReceipt: rateReceipt,
 	})
 	if reserveErr != nil {
 		return rejectedResult(reserveErr), nil

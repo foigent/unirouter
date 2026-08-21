@@ -193,9 +193,11 @@ export type ModelReadiness = {
     mode: 'caller' | 'connection';
     org_id: number;
     project_id: number;
+    deployment_id?: number;
     requested_model: string;
     resolved_model: string;
     endpoint: string;
+    model_operation_id: string;
     caller?: 'self' | 'workload_application';
     application_ref?: string;
   };
@@ -205,7 +207,7 @@ export type ModelReadiness = {
     routable: { value?: boolean; state: ReadinessAxis['state']; reason_code: string };
     current_project_caller_callable: { value?: boolean; state: ReadinessAxis['state']; reason_code: string };
   };
-  platform_model: Record<'gateway_license' | 'registration' | 'lifecycle' | 'catalog' | 'price_authority' | 'channel' | 'provider_credential' | 'base_route' | 'runtime_slot', ReadinessAxis>;
+  platform_model: Record<'gateway_license' | 'registration' | 'lifecycle' | 'catalog' | 'price_authority' | 'deployment' | 'provider_credential' | 'operation' | 'base_route' | 'runtime_slot', ReadinessAxis>;
   project_caller: Record<'project' | 'alias' | 'model_set' | 'wallet' | 'project_budget' | 'application' | 'grant' | 'credential' | 'model_authorization' | 'limit_policy', ReadinessAxis>;
   runtime_mutation: 'none';
   external_requests: 'none';
@@ -295,12 +297,13 @@ export const accessApi = {
   previewLegacy: (orgID?: number) =>
     request<{ mutation: false; data: LegacyAccessClassification[]; total: number }>(`/access-provisioning/legacy-preview${orgID ? `?org_id=${orgID}` : ''}`),
   modelReadiness: (input: (
-    { mode: 'connection'; model: string; endpoint: string } |
+    { mode: 'connection'; deployment_id: number; model: string; endpoint: string } |
     { mode?: 'caller'; project_id: number; model: string; endpoint: string; caller: 'self' | 'workload_application'; application_ref?: string }
   )) => {
     const search = new URLSearchParams({ model: input.model, endpoint: input.endpoint });
     if (input.mode === 'connection') {
       search.set('mode', 'connection');
+      search.set('deployment_id', String(input.deployment_id));
     } else {
       search.set('project_id', String(input.project_id));
       search.set('caller', input.caller);

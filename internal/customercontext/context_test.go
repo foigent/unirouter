@@ -70,14 +70,31 @@ func TestResolveCustomerContextUnavailable(t *testing.T) {
 
 func TestEnsureBaselineKeepsDeploymentOperatorsOutOfProjectMembership(t *testing.T) {
 	var executed []string
+	var queried []string
 	tx := &testutil.MockTx{
 		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
 			executed = append(executed, sql)
 			return pgconn.CommandTag{}, nil
 		},
-		QueryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
+		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			queried = append(queried, sql)
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*(dest[0].(*int64)) = 37
+				switch {
+				case strings.Contains(sql, "WITH roots AS"):
+					*(dest[0].(*int64)) = 1
+					*(dest[1].(*int64)) = 1
+					*(dest[2].(*string)) = "Platform Admin"
+					*(dest[3].(*string)) = "active"
+				case strings.Contains(sql, "array_agg(id ORDER BY id)"):
+					*(dest[0].(*[]int64)) = []int64{11}
+				case strings.Contains(sql, "SELECT name,status FROM orgs"):
+					*(dest[0].(*string)) = "Platform Admin"
+					*(dest[1].(*string)) = "active"
+				case strings.Contains(sql, "SELECT EXISTS"):
+					*(dest[0].(*bool)) = true
+				default:
+					*(dest[0].(*int64)) = 37
+				}
 				return nil
 			}}
 		},
@@ -103,10 +120,142 @@ func TestEnsureBaselineKeepsDeploymentOperatorsOutOfProjectMembership(t *testing
 		t.Fatalf("ProjectID = %d, want 37", baseline.ProjectID)
 	}
 	joined := strings.Join(executed, "\n")
+	queriedSQL := strings.Join(queried, "\n")
+	if strings.Contains(joined, "LOCK TABLE users") ||
+		strings.Contains(joined, "unirouter.commercial_limit.active_projects") ||
+		!strings.Contains(joined, "SELECT pg_advisory_xact_lock($1)") ||
+		!strings.Contains(queriedSQL, "array_agg(id ORDER BY id)") ||
+		!strings.Contains(queriedSQL, "SELECT id FROM projects") ||
+		!strings.Contains(queriedSQL, "FOR SHARE") || strings.Contains(queriedSQL, "INSERT INTO projects") {
+		t.Fatalf("baseline did not reuse the existing default project before any insert: exec=%s query=%s", joined, queriedSQL)
+	}
 	if !strings.Contains(joined, "DELETE FROM project_members") || !strings.Contains(joined, "u.organization_role='platform_admin'") {
 		t.Fatalf("baseline did not remove deployment operator membership: %s", joined)
 	}
 	if !strings.Contains(joined, "u.organization_role='org_admin'") || strings.Contains(joined, "IN ('platform_admin','org_admin')") {
 		t.Fatalf("baseline still assigns deployment operators to the default project: %s", joined)
+	}
+}
+
+func TestEnsureBaselineLocksUsersThenRechecksAbsentProjectUnderLicenseAuthority(t *testing.T) {
+	var trace []string
+	projectReads := 0
+	tx := &testutil.MockTx{
+		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+			switch {
+			case strings.Contains(sql, "SELECT pg_advisory_xact_lock($1)"):
+				trace = append(trace, "principal-lock")
+			case strings.Contains(sql, "unirouter.commercial_limit.active_projects"):
+				trace = append(trace, "license-advisory")
+			}
+			return pgconn.CommandTag{}, nil
+		},
+		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				switch {
+				case strings.Contains(sql, "WITH roots AS"):
+					trace = append(trace, "customer-confirm")
+					*(dest[0].(*int64)) = 1
+					*(dest[1].(*int64)) = 9
+					*(dest[2].(*string)) = "Customer"
+					*(dest[3].(*string)) = "active"
+					return nil
+				case strings.Contains(sql, "array_agg(id ORDER BY id)"):
+					trace = append(trace, "user-inventory")
+					*(dest[0].(*[]int64)) = []int64{11}
+					return nil
+				case strings.Contains(sql, "SELECT name,status FROM orgs"):
+					trace = append(trace, "customer-lock")
+					*(dest[0].(*string)) = "Customer"
+					*(dest[1].(*string)) = "active"
+					return nil
+				case strings.Contains(sql, "SELECT id FROM projects"):
+					projectReads++
+					trace = append(trace, "project-read")
+					return pgx.ErrNoRows
+				case strings.Contains(sql, "INSERT INTO projects"):
+					trace = append(trace, "project-insert")
+					*(dest[0].(*int64)) = 41
+					return nil
+				case strings.Contains(sql, "SELECT EXISTS"):
+					trace = append(trace, "wallet-read")
+					*(dest[0].(*bool)) = true
+					return nil
+				default:
+					return nil
+				}
+			}}
+		},
+	}
+	database := &testutil.MockDB{
+		QueryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*(dest[0].(*int64)) = 1
+				*(dest[1].(*int64)) = 9
+				*(dest[2].(*string)) = "Customer"
+				*(dest[3].(*string)) = "active"
+				return nil
+			}}
+		},
+		BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil },
+	}
+
+	baseline, err := EnsureBaseline(context.Background(), database)
+	if err != nil {
+		t.Fatalf("EnsureBaseline() error = %v", err)
+	}
+	if baseline.ProjectID != 41 || projectReads != 2 {
+		t.Fatalf("baseline=%+v projectReads=%d", baseline, projectReads)
+	}
+	want := []string{"user-inventory", "principal-lock", "customer-confirm", "customer-lock", "project-read", "license-advisory", "project-read", "project-insert", "wallet-read"}
+	if strings.Join(trace, ",") != strings.Join(want, ",") {
+		t.Fatalf("lock order = %v, want %v", trace, want)
+	}
+}
+
+func TestEnsureBaselineRejectsCustomerContextDriftAfterPrincipalWait(t *testing.T) {
+	projectTouched := false
+	tx := &testutil.MockTx{
+		ExecFn: func(_ context.Context, _ string, _ ...any) (pgconn.CommandTag, error) {
+			return pgconn.CommandTag{}, nil
+		},
+		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				switch {
+				case strings.Contains(sql, "array_agg(id ORDER BY id)"):
+					*(dest[0].(*[]int64)) = []int64{11}
+					return nil
+				case strings.Contains(sql, "WITH roots AS"):
+					*(dest[0].(*int64)) = 1
+					*(dest[1].(*int64)) = 22
+					*(dest[2].(*string)) = "Fresh Customer"
+					*(dest[3].(*string)) = "active"
+					return nil
+				case strings.Contains(sql, "FROM projects"):
+					projectTouched = true
+				}
+				return nil
+			}}
+		},
+	}
+	database := &testutil.MockDB{
+		QueryRowFn: func(_ context.Context, _ string, _ ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*(dest[0].(*int64)) = 1
+				*(dest[1].(*int64)) = 1
+				*(dest[2].(*string)) = "Platform Admin"
+				*(dest[3].(*string)) = "active"
+				return nil
+			}}
+		},
+		BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil },
+	}
+
+	baseline, err := EnsureBaseline(context.Background(), database)
+	if err == nil || !strings.Contains(err.Error(), "customer context changed") {
+		t.Fatalf("EnsureBaseline() = %+v, err=%v", baseline, err)
+	}
+	if baseline.Customer.OrganizationID != 22 || projectTouched {
+		t.Fatalf("drift result = %+v, projectTouched=%v", baseline, projectTouched)
 	}
 }

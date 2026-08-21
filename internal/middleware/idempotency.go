@@ -18,7 +18,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/errdocs"
+	"github.com/uniroute/unirouter/internal/gatewayerror"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
+	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
 const DefaultIdempotencyTTL = 24 * time.Hour
@@ -295,7 +298,7 @@ func IdempotencyGuard(store IdempotencyStore, fingerprintSecret string, next htt
 			return
 		}
 		if store == nil || strings.TrimSpace(fingerprintSecret) == "" {
-			writeRequestIdentityError(w, http.StatusInternalServerError, "server_error.internal_error", "Idempotency is not configured")
+			writeRequestIdentityError(w, r, http.StatusInternalServerError, "server_error.internal_error", "Idempotency is not configured")
 			return
 		}
 
@@ -303,12 +306,12 @@ func IdempotencyGuard(store IdempotencyStore, fingerprintSecret string, next htt
 		apiKeyID := GetKeyIDFromContext(r.Context())
 		accessCredentialID := GetAccessCredentialIDFromContext(r.Context())
 		if orgID <= 0 || apiKeyID <= 0 {
-			writeRequestIdentityError(w, http.StatusInternalServerError, "server_error.internal_error", "Authenticated idempotency scope is unavailable")
+			writeRequestIdentityError(w, r, http.StatusInternalServerError, "server_error.internal_error", "Authenticated idempotency scope is unavailable")
 			return
 		}
 		fingerprint, err := fingerprintRequest(r, fingerprintSecret)
 		if err != nil {
-			writeRequestIdentityError(w, http.StatusBadRequest, "validation_error.invalid_request", "Failed to fingerprint request body")
+			writeRequestIdentityError(w, r, http.StatusBadRequest, "validation_error.invalid_request", "Failed to fingerprint request body")
 			return
 		}
 
@@ -325,11 +328,11 @@ func IdempotencyGuard(store IdempotencyStore, fingerprintSecret string, next htt
 			ExpiresAt:          now.Add(DefaultIdempotencyTTL),
 		})
 		if err != nil {
-			writeRequestIdentityError(w, http.StatusInternalServerError, "server_error.internal_error", "Failed to reserve idempotent request")
+			writeRequestIdentityError(w, r, http.StatusInternalServerError, "server_error.internal_error", "Failed to reserve idempotent request")
 			return
 		}
 		if !claim.Claimed {
-			writeIdempotencyConflict(w, fingerprint, claim.Record)
+			writeIdempotencyConflict(w, r, fingerprint, claim.Record)
 			return
 		}
 
@@ -372,13 +375,12 @@ func fingerprintRequest(r *http.Request, secret string) (string, error) {
 		r.Body = io.NopCloser(bytes.NewReader(body))
 	}
 
-	canonicalBody := body
-	if json.Valid(body) {
-		var value any
-		if err := json.Unmarshal(body, &value); err == nil {
-			if encoded, marshalErr := json.Marshal(value); marshalErr == nil {
-				canonicalBody = encoded
-			}
+	canonicalBody, admitted := strictJSONCanonicalBodyFromContext(r.Context())
+	if !admitted {
+		var err error
+		canonicalBody, err = strictjson.Canonicalize(body)
+		if err != nil {
+			return "", err
 		}
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
@@ -391,7 +393,7 @@ func fingerprintRequest(r *http.Request, secret string) (string, error) {
 	return hex.EncodeToString(mac.Sum(nil)), nil
 }
 
-func writeIdempotencyConflict(w http.ResponseWriter, fingerprint string, record IdempotencyRecord) {
+func writeIdempotencyConflict(w http.ResponseWriter, r *http.Request, fingerprint string, record IdempotencyRecord) {
 	code := "idempotency_error.request_in_progress"
 	message := "An identical request is already in progress"
 	if record.RequestFingerprint != fingerprint {
@@ -410,8 +412,12 @@ func writeIdempotencyConflict(w http.ResponseWriter, fingerprint string, record 
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set(OriginalOperationHeader, record.OperationID)
+	if definition, known := modeloperation.Lookup(modeloperation.CanonicalPath(r.URL.Path)); known && definition.ErrorEnvelope == modeloperation.ErrorEnvelopeAnthropicV1 {
+		gatewayerror.WriteRequest(w, r, http.StatusConflict, code, message)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusConflict)
 	receipt := map[string]any{
 		"original_request_id": record.OperationID,

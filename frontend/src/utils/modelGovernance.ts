@@ -15,7 +15,7 @@ export const approvedOptions = [
   { label: '仅内部可见', value: 'false' },
 ];
 
-export type TabKey = 'registry' | 'aliases' | 'sets' | 'assignments' | 'optimization' | 'releases';
+export type TabKey = 'registry' | 'aliases' | 'sets' | 'assignments' | 'optimization';
 
 export interface ModelRegistryItem {
   id: number;

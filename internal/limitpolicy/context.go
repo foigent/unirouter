@@ -2,6 +2,10 @@ package limitpolicy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -11,6 +15,7 @@ type DecisionCollector struct {
 	mu        sync.Mutex
 	decisions []Decision
 	version   string
+	versions  map[string]struct{}
 }
 
 func ContextWithDecisionCollector(ctx context.Context) (context.Context, *DecisionCollector) {
@@ -36,8 +41,30 @@ func recordDecision(ctx context.Context, decision Decision, version string) {
 	}
 	collector.mu.Lock()
 	collector.decisions = append(collector.decisions, decision)
-	collector.version = version
+	if version != "" {
+		if collector.versions == nil {
+			collector.versions = make(map[string]struct{}, 2)
+		}
+		collector.versions[version] = struct{}{}
+		collector.version = composedDecisionVersion(collector.versions)
+	}
 	collector.mu.Unlock()
+}
+
+func composedDecisionVersion(versions map[string]struct{}) string {
+	if len(versions) == 0 {
+		return ""
+	}
+	ordered := make([]string, 0, len(versions))
+	for version := range versions {
+		ordered = append(ordered, version)
+	}
+	sort.Strings(ordered)
+	if len(ordered) == 1 {
+		return ordered[0]
+	}
+	sum := sha256.Sum256([]byte("unirouter.limit-policy-phases.v1\x00" + strings.Join(ordered, "\x00")))
+	return hex.EncodeToString(sum[:8])
 }
 
 // RecordSupplementalDecision appends a server-owned runtime decision without

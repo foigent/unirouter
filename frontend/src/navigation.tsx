@@ -195,7 +195,7 @@ const taskNavItems: NavItem[] = [
     text: '模型接入',
     icon: <IconSendStroked />,
     items: [
-	  { itemKey: '/channels', text: '模型与端点', icon: <IconRoute />, licenseFeature: 'gateway' },
+	  { itemKey: '/channels', text: '模型与端点', icon: <IconRoute /> },
 	  { itemKey: '/model-governance', text: '模型治理', icon: <IconBranch />, licenseFeature: 'model_governance' },
 	  { itemKey: '/model-readiness', text: '调用条件诊断', icon: <IconTestScoreStroked /> },
     ],
@@ -260,7 +260,7 @@ const compatibilityRoutes = new Set([
 	'/connectors', '/channel-keys', '/model-governance',
 ]);
 const orgAdminRoutes = new Set([
-	'/', '/model-governance', '/model-readiness', '/risk-control', '/access-review', '/applications', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
+	'/', '/channels', '/model-governance', '/model-readiness', '/risk-control', '/access-review', '/applications', '/organization-members', '/project-management', '/member-lifecycle', '/agent-trust', '/agent-trust-evidence', '/limit-policies', '/guardrail-policies', '/users',
   '/logs', '/provenance-passport', '/usage-analytics', '/notifications', '/status', '/audit-logs',
   '/media-jobs',
   '/model-prices', '/cost-optimization', '/docs',
@@ -271,7 +271,7 @@ const billingRoutes = new Set([
 ]);
 const projectAdminRoutes = new Set(['/organization-members', '/access-review', '/applications', '/model-readiness', '/media-jobs', '/docs']);
 const developerRoutes = new Set(['/media-jobs']);
-const orgViewerRoutes = new Set(['/', '/organization-members', '/model-governance', '/docs']);
+const orgViewerRoutes = new Set(['/', '/channels', '/organization-members', '/model-governance', '/docs']);
 
 function filterTaskNavigation(allowedRoutes: Set<string>) {
   return taskNavItems.flatMap(item => {
@@ -376,7 +376,6 @@ function firstSegmentPath(path: string) {
 }
 
 const routeLicenseFeatures: Partial<Record<string, LicenseFeature>> = {
-  '/channels': 'gateway',
   '/model-governance': 'model_governance',
   '/test': 'gateway',
   '/guardrail-policies': 'guardrails',
@@ -496,6 +495,7 @@ export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
   if (isOrgAdminRole(authz.organizationRole)) {
     return [
       '/',
+		'/channels',
 		'/access-review',
       '/applications',
 		'/model-readiness',
@@ -530,7 +530,7 @@ export function isRouteAllowedForAuthz(path: string, authz: AuthzContext) {
   }
 
   if (isOrgViewerRole(authz.organizationRole)) {
-    if (['/', '/organization-members', '/project-management', '/model-governance'].includes(route)) return true;
+    if (['/', '/channels', '/organization-members', '/project-management', '/model-governance'].includes(route)) return true;
     return projectRouteAllowed(path, authz);
   }
 

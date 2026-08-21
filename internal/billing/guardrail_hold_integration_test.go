@@ -100,3 +100,41 @@ func TestP6F10FinalResponseSizeHoldUsesTheSameNoDeliveryCostBoundary(t *testing.
 	require.Zero(t, totalSpentMicros)
 	require.Zero(t, deliveryReceipts)
 }
+
+func TestP6F10PostAcceptanceSafetyHoldsUseExistingProviderLiabilityReasons(t *testing.T) {
+	for _, reason := range []string{
+		OutputHoldReasonProviderResponseUnusable,
+		OutputHoldReasonProviderAttemptUnresolved,
+	} {
+		t.Run(reason, func(t *testing.T) {
+			requestID := "op_p6f10_" + reason
+			b, orgID, _, attemptID := newP6F41DeliveryFixture(t, requestID)
+			req := p6f41ProviderUsage(requestID, attemptID, orgID)
+			req.UsagePurpose = metering.UsagePurposeProviderEvidence
+
+			require.NoError(t, b.HoldNonStreamOutput(t.Context(), req, reason))
+			require.NoError(t, b.HoldNonStreamOutput(t.Context(), req, reason), "exact replay must be idempotent")
+
+			var reservationState, pendingReason, attemptState, attemptCertainty string
+			var deliveryReceipts, settleTransactions int
+			require.NoError(t, b.db.QueryRow(t.Context(), `
+				SELECT status, settlement_pending_reason
+				FROM freeze_idempotency WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
+			).Scan(&reservationState, &pendingReason))
+			require.NoError(t, b.db.QueryRow(t.Context(), `
+				SELECT state, outcome_certainty
+				FROM billing_provider_attempts
+				WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attemptID,
+			).Scan(&attemptState, &attemptCertainty))
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM request_delivery_receipts WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&deliveryReceipts))
+			require.NoError(t, b.db.QueryRow(t.Context(), `SELECT COUNT(*) FROM transactions WHERE org_id=$1 AND request_id=$2 AND type='settle'`, orgID, requestID).Scan(&settleTransactions))
+
+			require.Equal(t, "settlement_pending", reservationState)
+			require.Equal(t, reason, pendingReason)
+			require.Equal(t, ProviderAttemptStateOutputWithheld, attemptState)
+			require.Equal(t, providerAttemptCertaintyKnownUsage, attemptCertainty)
+			require.Zero(t, deliveryReceipts)
+			require.Zero(t, settleTransactions)
+		})
+	}
+}

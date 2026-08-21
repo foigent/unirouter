@@ -6,10 +6,13 @@ package customercontext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/modelgov"
+	"github.com/uniroute/unirouter/internal/principallock"
 )
 
 // State describes whether a deployment has one unambiguous customer context.
@@ -39,6 +42,10 @@ type Baseline struct {
 	ProjectID int64
 }
 
+type customerQueryRower interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 func (s Snapshot) Ready() bool {
 	return s.State == StateReady && s.OrganizationID > 0
 }
@@ -47,7 +54,7 @@ func (s Snapshot) Ready() bool {
 // legacy/local installations that have no explicit customer row, the sole root
 // organization is the customer. Multiple roots remain ambiguous; UniRouter
 // never selects one by database ordering.
-func Resolve(ctx context.Context, q db.DBQuerier) (Snapshot, error) {
+func Resolve(ctx context.Context, q customerQueryRower) (Snapshot, error) {
 	if q == nil {
 		return Snapshot{State: StateUnavailable}, fmt.Errorf("customer context database is unavailable")
 	}
@@ -109,25 +116,79 @@ func EnsureBaseline(ctx context.Context, q db.DBQuerier) (Baseline, error) {
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO wallets (org_id)
-		VALUES ($1)
-		ON CONFLICT (org_id) DO NOTHING`, snapshot.OrganizationID); err != nil {
-		return Baseline{Customer: snapshot}, fmt.Errorf("ensure customer wallet: %w", err)
+	// Project and user mutations acquire the principal lane before project rows
+	// and the commercial-limit advisory. Snapshot the current customer users,
+	// lock only those identities in the same deterministic lane, and use that
+	// fixed set below. A concurrently created user is intentionally reconciled by
+	// the next baseline pass instead of being discovered after project locks.
+	var baselineUserIDs []int64
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(array_agg(id ORDER BY id),ARRAY[]::bigint[])
+		FROM users
+		WHERE org_id=$1
+		  AND (organization_role='platform_admin'
+		       OR (organization_role='org_admin' AND status='active'))`, snapshot.OrganizationID).Scan(&baselineUserIDs); err != nil {
+		return Baseline{Customer: snapshot}, fmt.Errorf("read baseline user inventory: %w", err)
+	}
+	if err := principallock.LockUsers(ctx, tx, baselineUserIDs...); err != nil {
+		return Baseline{Customer: snapshot}, fmt.Errorf("lock baseline user inventory: %w", err)
+	}
+	confirmed, err := Resolve(ctx, tx)
+	if err != nil || confirmed.State != snapshot.State ||
+		confirmed.OrganizationID != snapshot.OrganizationID ||
+		confirmed.OrganizationName != snapshot.OrganizationName {
+		return Baseline{Customer: confirmed}, fmt.Errorf("customer context changed while ensuring baseline")
+	}
+	var lockedOrganizationName, lockedOrganizationStatus string
+	if err := tx.QueryRow(ctx, `SELECT name,status FROM orgs WHERE id=$1 FOR SHARE`, snapshot.OrganizationID).Scan(
+		&lockedOrganizationName, &lockedOrganizationStatus,
+	); err != nil || lockedOrganizationName != snapshot.OrganizationName || lockedOrganizationStatus != "active" {
+		return Baseline{Customer: snapshot}, fmt.Errorf("customer organization changed while ensuring baseline")
 	}
 
+	// A BEFORE INSERT commercial-limit trigger runs before ON CONFLICT can
+	// discard a duplicate. Lock and reuse an existing row without entering the
+	// advisory domain. Only the absent branch takes the advisory and rechecks,
+	// which serializes stable/canary starts without reversing project-writer
+	// row-lock order.
 	var projectID int64
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO projects (org_id, name, slug, description, status)
-		VALUES ($1, 'Default Project', 'default', 'Default project for this UniRouter deployment', 'active')
-		ON CONFLICT (org_id, slug) DO NOTHING`, snapshot.OrganizationID); err != nil {
+	err = tx.QueryRow(ctx,
+		`SELECT id FROM projects WHERE org_id=$1 AND slug='default' FOR SHARE`,
+		snapshot.OrganizationID,
+	).Scan(&projectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if _, lockErr := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(
+			hashtextextended('unirouter.commercial_limit.active_projects',0))`); lockErr != nil {
+			return Baseline{Customer: snapshot}, fmt.Errorf("lock default project authority: %w", lockErr)
+		}
+		err = tx.QueryRow(ctx,
+			`SELECT id FROM projects WHERE org_id=$1 AND slug='default' FOR SHARE`,
+			snapshot.OrganizationID,
+		).Scan(&projectID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO projects (org_id, name, slug, description, status)
+				VALUES ($1, 'Default Project', 'default', 'Default project for this UniRouter deployment', 'active')
+				RETURNING id`, snapshot.OrganizationID).Scan(&projectID)
+		}
+	}
+	if err != nil {
 		return Baseline{Customer: snapshot}, fmt.Errorf("ensure default project: %w", err)
 	}
-	if err := tx.QueryRow(ctx,
-		`SELECT id FROM projects WHERE org_id=$1 AND slug='default'`,
-		snapshot.OrganizationID,
-	).Scan(&projectID); err != nil {
-		return Baseline{Customer: snapshot}, fmt.Errorf("read default project: %w", err)
+
+	// Fresh bootstrap and customer setup order their writes user -> project ->
+	// wallet. Preserve that order, and avoid an unnecessary INSERT statement on
+	// every restart because the micro-ledger evidence trigger is statement-level.
+	var walletExists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM wallets WHERE org_id=$1)`, snapshot.OrganizationID).Scan(&walletExists); err != nil {
+		return Baseline{Customer: snapshot}, fmt.Errorf("read customer wallet: %w", err)
+	}
+	if !walletExists {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO wallets (org_id)
+			VALUES ($1)
+			ON CONFLICT (org_id) DO NOTHING`, snapshot.OrganizationID); err != nil {
+			return Baseline{Customer: snapshot}, fmt.Errorf("ensure customer wallet: %w", err)
+		}
 	}
 
 	// Deployment operators have organization-wide break-glass authority and are
@@ -139,8 +200,9 @@ func EnsureBaseline(ctx context.Context, q db.DBQuerier) (Baseline, error) {
 		 WHERE pm.project_id=p.id
 		   AND p.org_id=$1
 		   AND pm.user_id=u.id
+		   AND u.id=ANY($2::bigint[])
 		   AND u.org_id=p.org_id
-		   AND u.organization_role='platform_admin'`, snapshot.OrganizationID); err != nil {
+		   AND u.organization_role='platform_admin'`, snapshot.OrganizationID, baselineUserIDs); err != nil {
 		return Baseline{Customer: snapshot}, fmt.Errorf("remove deployment operators from customer projects: %w", err)
 	}
 
@@ -148,10 +210,11 @@ func EnsureBaseline(ctx context.Context, q db.DBQuerier) (Baseline, error) {
 		INSERT INTO project_members (project_id, user_id, role)
 		SELECT $1, u.id, 'project_admin'
 		  FROM users u
-		 WHERE u.org_id=$2
+		 WHERE u.id=ANY($2::bigint[])
+		   AND u.org_id=$3
 		   AND u.status='active'
 		   AND u.organization_role='org_admin'
-		ON CONFLICT (project_id, user_id) DO NOTHING`, projectID, snapshot.OrganizationID); err != nil {
+		ON CONFLICT (project_id, user_id) DO NOTHING`, projectID, baselineUserIDs, snapshot.OrganizationID); err != nil {
 		return Baseline{Customer: snapshot}, fmt.Errorf("ensure default project administrators: %w", err)
 	}
 

@@ -144,8 +144,8 @@ func TestP6F11EnforcedStreamRejectsUnknownContentShapeButAllowsUsageMetadata(t *
 	advisoryOnly, err := inspectGuardedStreamBatch(t.Context(), pinned, guardrail.StreamProfile{Advisory: true}, [][]byte{
 		[]byte(`{"output_text":"compatibility passthrough"}`),
 	}, make(map[string]string))
-	if err != nil || len(advisoryOnly.Frames) != 1 || string(advisoryOnly.Frames[0].Data) != `{"output_text":"compatibility passthrough"}` {
-		t.Fatalf("non-enforced unknown shape lost compatibility passthrough: batch=%+v err=%v", advisoryOnly, err)
+	if !errors.Is(err, errStreamGuardrailUnsupportedText) || len(advisoryOnly.Frames) != 1 {
+		t.Fatalf("non-enforced unknown shape was not withheld: batch=%+v err=%v", advisoryOnly, err)
 	}
 	usageOnly, err := inspectGuardedStreamBatch(t.Context(), pinned, profile, [][]byte{
 		[]byte(`{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`),

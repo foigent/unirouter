@@ -211,7 +211,9 @@ func inspectProtectedActorReferences(ctx context.Context, q queryer, selectedUse
 func inspectProtectedState(ctx context.Context, q queryer) (resetplan.ProtectedState, error) {
 	protectedNames := []string{
 		"commercial_license_entitlements", "deployment_profiles", "gateway_endpoints",
-		"micro_ledger_runtime_state", "release_history", "release_state",
+		"micro_ledger_runtime_state", "model_operation_execution_support_bindings",
+		"model_operation_public_execution_contract_extensions",
+		"release_history", "release_state",
 	}
 	protected := resetplan.ProtectedState{SettingKeys: resetplan.ProtectedSettingKeys()}
 	for _, name := range protectedNames {

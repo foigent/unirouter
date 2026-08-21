@@ -222,6 +222,7 @@ func TestP6F41AEmbeddingsMissingUsageUsesInputOnlyConservativeEstimate(t *testin
 			return &billing.SettleResult{SettleID: 1, Success: true}, nil
 		},
 	}, nil, encKey)
+	installLegacyHandlerTestRuntime(relay)
 	recorder := httptest.NewRecorder()
 	relay.HandleEmbeddings(recorder, embeddingsRequest("op_p6f41_embeddings"))
 	if recorder.Code != http.StatusOK {
@@ -274,6 +275,7 @@ func TestP6F41BEmbeddingsWriterFailureHasNoCustomerCharge(t *testing.T) {
 			return &billing.SettleResult{Success: true}, nil
 		},
 	}, nil, encKey)
+	installLegacyHandlerTestRuntime(relay)
 	writer := &failAfterWritesResponseWriter{header: make(http.Header), failAt: 1}
 	relay.HandleEmbeddings(writer, embeddingsRequest("op_p6f41_embeddings_write_fail"))
 	if got, want := strings.Join(outcomes, ","), "write_started,write_failed"; got != want {

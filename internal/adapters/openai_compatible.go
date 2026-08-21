@@ -28,12 +28,22 @@ func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*
 	if mappedModel == "" {
 		mappedModel = in.RequestedModel
 	}
-	var payload map[string]interface{}
+	// Keep every field other than model as raw JSON. Chat Completions clients
+	// regularly send provider extensions and newer OpenAI fields that the
+	// gateway must not round through float64 or a stale request struct.
+	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(in.DownstreamBody, &payload); err != nil {
 		return nil, fmt.Errorf("decode downstream body: %w", err)
 	}
+	if payload == nil {
+		return nil, fmt.Errorf("decode downstream body: JSON object is required")
+	}
 	if mappedModel != "" {
-		payload["model"] = mappedModel
+		modelJSON, err := json.Marshal(mappedModel)
+		if err != nil {
+			return nil, fmt.Errorf("encode upstream model: %w", err)
+		}
+		payload["model"] = modelJSON
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

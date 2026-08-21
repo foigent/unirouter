@@ -3,7 +3,7 @@
   "contract_version": "unirouter.agent-trust-review.v1",
   "schema": {
     "path": "agent-trust-review.v1.schema.json",
-    "sha256": "sha256:1e375c8febfd93e9972cdaab88c15c1aecf08537fc56ee1a2dfc5e6b037c6a37"
+    "sha256": "sha256:c5751ba5648004889526f638cbabeb1eedda1993c28f13112c3c220113a1a6af"
   },
   "fixtures": [
     {
@@ -219,12 +219,42 @@
       ],
       "passed": true,
       "result": "invalid_twin_rejected"
+    },
+    {
+      "case_id": "negative/new-operation-unbound-root",
+      "case_classes": [
+        "authority",
+        "negative",
+        "scope"
+      ],
+      "passed": true,
+      "result": "unbound_root_rejected"
+    },
+    {
+      "case_id": "negative/new-operation-project-default",
+      "case_classes": [
+        "authority",
+        "negative",
+        "scope"
+      ],
+      "passed": true,
+      "result": "project_default_rejected"
+    },
+    {
+      "case_id": "negative/new-operation-wildcard",
+      "case_classes": [
+        "authority",
+        "negative",
+        "scope"
+      ],
+      "passed": true,
+      "result": "wildcard_rejected"
     }
   ],
   "summary": {
     "fixtures": 1,
-    "cases": 22,
-    "passed": 22,
+    "cases": 25,
+    "passed": 25,
     "failed": 0
   }
 }

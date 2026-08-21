@@ -18,14 +18,9 @@ import (
 
 	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/models"
 )
-
-var supportedModelEndpoints = []string{
-	"/v1/chat/completions",
-	"/v1/embeddings",
-	"/v1/models",
-}
 
 type ServiceOptions struct {
 	Now               func() time.Time
@@ -195,6 +190,9 @@ func (s *Service) Delegate(ctx context.Context, parent *Claims, request Delegate
 	if !authority.active() || authority.Version != parent.RootAuthorityVersion {
 		return TokenResponse{}, ErrAuthorityChanged
 	}
+	if err := validateRootLimits(limits, authority); err != nil {
+		return TokenResponse{}, err
+	}
 	lineage := append(slices.Clone(parent.Lineage), request.ChildAgentID)
 	workflowExpiresAt := time.Unix(parent.WorkflowExpiresAt, 0).UTC()
 	claims, response, err := s.newClaims(authority, parent.WorkflowID, parent.WorkflowGeneration, workflowExpiresAt, parent.RootAgentID, parent.AgentID, lineage, depth, limits)
@@ -242,6 +240,9 @@ func (s *Service) Refresh(ctx context.Context, current *Claims) (TokenResponse, 
 	}
 	if !authority.active() || authority.Version != current.RootAuthorityVersion {
 		return TokenResponse{}, ErrAuthorityChanged
+	}
+	if err := validateRootLimits(current.Limits, authority); err != nil {
+		return TokenResponse{}, err
 	}
 	if !grantExists {
 		grant, err = s.reserveRefreshGrant(ctx, current)
@@ -462,15 +463,24 @@ func validateRootLimits(limits Limits, authority authoritySnapshot) error {
 		return fmt.Errorf("%w: capability models exceed the root API key", ErrLimitExceeded)
 	}
 	rootEndpoints := normalizedSet(strings.Split(root.AllowedEndpoints, ","))
-	if root.GrantBound && (root.EndpointDenied || !setSubset(limits.AllowedEndpoints, rootEndpoints)) {
-		return fmt.Errorf("%w: capability endpoints exceed the live access grant", ErrLimitExceeded)
+	for _, endpoint := range limits.AllowedEndpoints {
+		if !accessscope.ExecutionEndpointAllowed(
+			root.GrantBound,
+			root.GrantScopeMode,
+			root.EndpointDenied,
+			rootEndpoints,
+			endpoint,
+		) {
+			return fmt.Errorf("%w: capability endpoints exceed the live access grant", ErrLimitExceeded)
+		}
 	}
 	return nil
 }
 
 func validateEndpoints(endpoints []string) error {
+	supported := modeloperation.AgentCapabilityPaths()
 	for _, endpoint := range endpoints {
-		if !slices.Contains(supportedModelEndpoints, endpoint) {
+		if !slices.Contains(supported, endpoint) {
 			return fmt.Errorf("%w: unsupported model-gateway endpoint %q", ErrInvalidRequest, endpoint)
 		}
 	}

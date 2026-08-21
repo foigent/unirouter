@@ -27,8 +27,11 @@ const (
 	TLSPrivateCA           = "private_ca"
 	TLSDisabled            = "disabled"
 
-	EndpointOpenAIChat      = "endpoint.openai-chat.v1"
-	EndpointOpenAIResponses = "endpoint.openai-responses.contract.v1"
+	EndpointOpenAIChat        = "endpoint.openai-chat.v1"
+	EndpointOpenAIResponses   = "endpoint.openai-responses.contract.v1"
+	EndpointAnthropicMessages = "endpoint.anthropic-messages.v1"
+
+	EvidenceRepositoryRuntimeVerified = "repository_runtime_verified"
 )
 
 var (
@@ -71,7 +74,8 @@ type EndpointProfile struct {
 func EndpointProfiles() []EndpointProfile {
 	return []EndpointProfile{
 		{ProfileID: EndpointOpenAIChat, DisplayName: "OpenAI Chat Completions", Paths: []string{"/v1/chat/completions", "/v1/models"}, RuntimeState: "runtime_supported", EvidenceLevel: "verified", Streaming: true},
-		{ProfileID: EndpointOpenAIResponses, DisplayName: "OpenAI Responses", Paths: []string{"/v1/responses"}, RuntimeState: "contract_only", EvidenceLevel: "unsupported", Streaming: false},
+		{ProfileID: EndpointOpenAIResponses, DisplayName: "OpenAI Responses (strict non-stream text)", Paths: []string{"/v1/responses"}, RuntimeState: "runtime_supported", EvidenceLevel: EvidenceRepositoryRuntimeVerified, Streaming: false},
+		{ProfileID: EndpointAnthropicMessages, DisplayName: "Anthropic Messages (strict non-stream text)", Paths: []string{"/v1/messages"}, RuntimeState: "runtime_supported", EvidenceLevel: EvidenceRepositoryRuntimeVerified, Streaming: false},
 	}
 }
 

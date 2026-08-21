@@ -1,27 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { ComponentProps } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ConnectionModelPanel, { exactModelTestResult, type ModelConnectionChannel } from '../ConnectionModelPanel';
-
-const mocks = vi.hoisted(() => ({
-  testChannelModel: vi.fn(),
-  createRuntimeChange: vi.fn(),
-  validateRuntimeChange: vi.fn(),
-  activateInitialRuntimeChange: vi.fn(),
-  getRuntimeChangeSlot: vi.fn(),
-}));
-
-vi.mock('../../api/modelEndpoints', () => ({
-  modelEndpointApi: { testChannelModel: mocks.testChannelModel },
-}));
-vi.mock('../../api/routing', () => ({
-  routingApi: {
-    createRelease: mocks.createRuntimeChange,
-    validateRelease: mocks.validateRuntimeChange,
-    activateInitialRelease: mocks.activateInitialRuntimeChange,
-    getSlot: mocks.getRuntimeChangeSlot,
-  },
-}));
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import ConnectionModelPanel, { modelIsPublished, type ModelConnectionChannel } from '../ConnectionModelPanel';
 
 const channel: ModelConnectionChannel = {
   id: 12,
@@ -32,149 +11,48 @@ const channel: ModelConnectionChannel = {
   routing_epoch: 4,
 };
 
-const credentials = [{ channel_id: 12, status: 'active', allowed_models: 'deepseek-v4-flash,deepseek-v4-pro' }];
-
-function renderPanel(modelsPublishedElsewhere = new Set<string>(), selectedChannel = channel, overrides: Partial<ComponentProps<typeof ConnectionModelPanel>> = {}) {
+function renderPanel(selectedChannel = channel, modelsPublishedElsewhere = new Set<string>()) {
   const props = {
     channel: selectedChannel,
-    credentials,
-    credentialLoadState: 'ready' as const,
     modelsPublishedElsewhere,
-    onModelEnabled: vi.fn(),
-    onManageCredentials: vi.fn(),
     onOpenRouteManagement: vi.fn(),
     onDiagnose: vi.fn(),
-    ...overrides,
   };
   render(<ConnectionModelPanel {...props} />);
   return props;
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  mocks.testChannelModel.mockImplementation((_channelId: number, model: string) => {
-    return Promise.resolve({ success: true, channel_id: 12, model, upstream_model: model, status_code: 200, latency_ms: 12, tokens_used: 3 });
-  });
-  mocks.createRuntimeChange.mockResolvedValue({ release_ref: 'rcr_deepseek', version: 1 });
-  mocks.validateRuntimeChange.mockResolvedValue({ release_ref: 'rcr_deepseek', version: 2 });
-  mocks.activateInitialRuntimeChange.mockResolvedValue({ release_ref: 'rcr_deepseek', version: 3 });
-  mocks.getRuntimeChangeSlot.mockResolvedValue({ model_name: 'deepseek-v4-pro', runtime_mutation: 'none' });
-});
-
 describe('ConnectionModelPanel', () => {
-  it('detects every model on the selected connection and never switches to another provider', async () => {
+  it('is a read-only retirement notice with no legacy detection or credential action', () => {
     renderPanel();
-    fireEvent.click(screen.getByRole('button', { name: '检测当前连接全部模型（2）' }));
-    fireEvent.click(await screen.findByText('确认检测全部模型'));
 
-    await waitFor(() => expect(mocks.testChannelModel).toHaveBeenCalledTimes(2));
-    expect(mocks.testChannelModel.mock.calls.map((call) => ({
-      channelId: call[0],
-      model: call[1],
-    }))).toEqual([
-      { channelId: 12, model: 'deepseek-v4-flash' },
-      { channelId: 12, model: 'deepseek-v4-pro' },
-    ]);
-    expect(mocks.testChannelModel.mock.calls.some(call => call[1].includes('kimi'))).toBe(false);
+    expect(screen.getByText(/旧连接检测、端点启用和凭证写入口已退役并固定返回 410/)).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: '前往模型发布工作台' })).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /检测/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /凭证/ })).toBeNull();
   });
 
-  it('blocks every real detection before the API call when the gateway license is unavailable', async () => {
-    const onOpenLicense = vi.fn();
-    renderPanel(new Set(), channel, {
-      gatewayLicensed: false,
-      gatewayRestrictionMessage: '当前商业授权未通过校验，因此「模型网关」不可用。',
-      onOpenLicense,
-    });
+  it('forwards replacement and retained-release recovery intents to the canonical workspace', () => {
+    const replacement = renderPanel(channel, new Set(['deepseek-v4-pro']));
+    const replacementRow = screen.getByText('deepseek-v4-pro').closest('tr')!;
+    fireEvent.click(within(replacementRow).getByRole('button', { name: '前往模型发布工作台' }));
+    expect(replacement.onOpenRouteManagement).toHaveBeenCalledWith('deepseek-v4-pro', 'replace');
 
-    expect(screen.getByText(/当前商业授权未通过校验/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: '检测当前连接全部模型（2）' })).toBeDisabled();
-    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
-    expect(within(row).getByRole('button', { name: '检测' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: '查看商业授权' }));
-    expect(onOpenLicense).toHaveBeenCalledTimes(1);
-    expect(mocks.testChannelModel).not.toHaveBeenCalled();
-  });
-
-  it('fails closed when the response model differs from the exact requested model', async () => {
-    expect(exactModelTestResult('deepseek-v4-pro', {
-      success: true,
-      model: 'deepseek-v4-flash',
-      upstream_model: 'deepseek-v4-flash',
-    }).success).toBe(false);
-
-    mocks.testChannelModel.mockResolvedValueOnce({ success: true, model: 'deepseek-v4-flash', status_code: 200, latency_ms: 8 });
-    renderPanel();
-    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: '检测' }));
-
-    expect((await screen.findAllByText(/请求 deepseek-v4-pro，返回 deepseek-v4-flash/)).length).toBeGreaterThan(0);
-    expect(within(row).queryByRole('button', { name: '启用此模型' })).toBeNull();
-  });
-
-  it('binds activation to the successful deepseek-v4-pro result', async () => {
-    renderPanel();
-    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: '检测' }));
-    expect(await within(row).findByRole('button', { name: '启用此模型' })).toBeTruthy();
-
-    fireEvent.click(within(row).getByRole('button', { name: '启用此模型' }));
-    expect(await screen.findByText('启用 deepseek-v4-pro？')).toBeTruthy();
-    fireEvent.click(screen.getByText('确认启用此模型'));
-
-    await waitFor(() => expect(mocks.createRuntimeChange).toHaveBeenCalledWith({
-      model_name: 'deepseek-v4-pro',
-      reason: '启用已通过真实上游检测的模型连接',
-      overrides: [{ channel_id: 12, expected_routing_epoch: 4, admission: 'allow' }],
-    }));
-  });
-
-  it('offers route replacement instead of direct activation when another connection already serves the model', async () => {
-    const props = renderPanel(new Set(['deepseek-v4-pro']));
-    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: '检测' }));
-    fireEvent.click(await within(row).findByRole('button', { name: '替换现有连接' }));
-    expect(props.onOpenRouteManagement).toHaveBeenCalledWith('deepseek-v4-pro', 'replace');
-    expect(mocks.createRuntimeChange).not.toHaveBeenCalled();
-  });
-
-  it('labels the endpoint-only diagnosis consistently', () => {
-    const props = renderPanel();
-    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: '连接诊断' }));
-    expect(props.onDiagnose).toHaveBeenCalledWith('deepseek-v4-pro');
-    expect(within(row).queryByRole('button', { name: '调用诊断' })).toBeNull();
-  });
-
-  it('preflights the authoritative slot and never shows initial activation for an existing route', async () => {
-    mocks.getRuntimeChangeSlot.mockResolvedValueOnce({
-      model_name: 'deepseek-v4-pro',
-      stable_release_ref: 'rcr_existing',
-      runtime_mutation: 'bounded_route_assignment',
-    });
-    renderPanel();
-    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: '检测' }));
-    fireEvent.click(await within(row).findByRole('button', { name: '启用此模型' }));
-
-    expect(await within(row).findByRole('button', { name: '替换现有连接' })).toBeTruthy();
-    expect(screen.queryByRole('dialog', { name: '启用 deepseek-v4-pro？' })).toBeNull();
-    expect(mocks.createRuntimeChange).not.toHaveBeenCalled();
-  });
-
-  it('does not call a disabled retained release enabled and provides the recovery path', async () => {
-    const props = renderPanel(new Set(), {
+    const retainedChannel = {
       ...channel,
       status: 'disabled',
       effective_status: 'disabled',
-      published_models: 'deepseek-v4-pro',
-    });
+      published_models: 'deepseek-v4-flash',
+    };
+    const retained = renderPanel(retainedChannel);
+    const retainedRows = screen.getAllByText('deepseek-v4-flash');
+    const retainedRow = retainedRows[retainedRows.length - 1].closest('tr')!;
+    fireEvent.click(within(retainedRow).getByRole('button', { name: '前往模型发布工作台' }));
+    expect(retained.onOpenRouteManagement).toHaveBeenCalledWith('deepseek-v4-flash', 'recover');
+  });
 
-    const row = screen.getByText('deepseek-v4-pro').closest('tr')!;
-    expect(within(row).getByText('当前不可调用（发布记录保留）')).toBeTruthy();
-    expect(screen.getByText(/保留的发布记录只用于审计，不代表模型仍可调用/)).toBeTruthy();
-    expect(screen.getByText(/先结束这些历史发布并将连接转为待发布/)).toBeTruthy();
-    expect(screen.queryByText(/占位/)).toBeNull();
-    fireEvent.click(within(row).getByRole('button', { name: '查看恢复步骤' }));
-    expect(props.onOpenRouteManagement).toHaveBeenCalledWith('deepseek-v4-pro', 'recover');
+  it('keeps legacy publication detection as a read-only parser only', () => {
+    expect(modelIsPublished({ published_models: 'deepseek-v4-flash' }, 'deepseek-v4-flash')).toBe(true);
+    expect(modelIsPublished({ published_models: 'deepseek-v4-flash' }, 'deepseek-v4-pro')).toBe(false);
   });
 });

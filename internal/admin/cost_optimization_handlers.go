@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/money"
 )
 
@@ -296,7 +297,9 @@ WHERE org_id=$1
 	if err != nil {
 		return err
 	}
-	result.ResponseCacheRuntime = invocationOptimizationRuntimeLabel(responseStage, h.responseCacheRuntimeReady)
+	result.ResponseCacheRuntime = responseCacheRuntimeLabel(
+		h.modelRouteAuthorityMode, responseStage, h.responseCacheRuntimeReady,
+	)
 	result.CompressionRuntime = invocationOptimizationRuntimeLabel(compressionStage, true)
 
 	receiptWhere, receiptArgs := invocationOptimizationReceiptScope(r, orgID, projectID, "ior", "c")
@@ -360,6 +363,16 @@ func invocationOptimizationRuntimeLabel(stage int, runtimeReady bool) string {
 	default:
 		return "ready_default_off"
 	}
+}
+
+func responseCacheRuntimeLabel(authorityMode modelrouting.Mode, stage int, runtimeReady bool) string {
+	if authorityMode == modelrouting.ModeCanonical {
+		// Canonical execution deliberately bypasses the legacy response-cache
+		// runtime. Historical cache receipts remain queryable by the caller; they
+		// are cost facts, not evidence that cache is current traffic authority.
+		return "canonical_bypass"
+	}
+	return invocationOptimizationRuntimeLabel(stage, runtimeReady)
 }
 
 func invocationOptimizationReceiptScope(r *http.Request, orgID, projectID int64, receiptAlias, channelAlias string) (string, []interface{}) {

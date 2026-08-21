@@ -1,21 +1,23 @@
 // Package endpointprotocol defines strict, fixture-verifiable provider wire
 // contracts. GPT Image V1 is wired only into UniRouter's repository-local
-// asynchronous image job plane; the Responses and rerank profiles remain
-// contract-only.
+// asynchronous image job plane; the Responses, Anthropic Messages, and rerank
+// profiles remain contract-only.
 package endpointprotocol
 
 import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 )
 
 const (
 	ContractVersion = "unirouter.endpoint-protocol.v1"
 
-	ProfileOpenAIResponsesText = "unirouter.openai.responses.text.v1"
-	ProfileCohereRerankV2      = "unirouter.cohere.rerank.v2"
-	ProfileOpenAIImageGPT      = "unirouter.openai.images.gpt-image.v1"
+	ProfileOpenAIResponsesText   = "unirouter.openai.responses.text.v1"
+	ProfileAnthropicMessagesText = "unirouter.anthropic.messages.text.v1"
+	ProfileCohereRerankV2        = "unirouter.cohere.rerank.v2"
+	ProfileOpenAIImageGPT        = "unirouter.openai.images.gpt-image.v1"
 
 	RuntimeContractOnly      = "local_contract_only"
 	RuntimeRepositoryImageV1 = "repository_local_image_v1"
@@ -27,6 +29,7 @@ type EndpointKind string
 
 const (
 	EndpointResponses       EndpointKind = "responses"
+	EndpointMessages        EndpointKind = "messages"
 	EndpointRerank          EndpointKind = "rerank"
 	EndpointImageGeneration EndpointKind = "image_generation"
 )
@@ -109,6 +112,7 @@ type BuildInput struct {
 // request semantics without becoming a log or API payload.
 type Binding struct {
 	profileID      string
+	profileVersion string
 	requestedModel string
 	mappedModel    string
 	documentCount  int
@@ -141,43 +145,110 @@ type Profile interface {
 	ClassifyHTTPStatus(statusCode int) (failureKind string, retryable bool)
 }
 
+type profileIdentity struct {
+	profileID      string
+	profileVersion string
+}
+
 type Registry struct {
-	profiles map[string]Profile
+	profiles map[profileIdentity]Profile
+	byID     map[string][]profileIdentity
+	order    []profileIdentity
+	invalid  bool
 }
 
 func NewRegistry() *Registry {
-	profiles := []Profile{
+	return newRegistry(
 		openAIResponsesProfile{},
+		anthropicMessagesProfile{},
 		cohereRerankProfile{},
 		openAIImageProfile{},
+	)
+}
+
+func newRegistry(profiles ...Profile) *Registry {
+	registry := &Registry{
+		profiles: make(map[profileIdentity]Profile, len(profiles)),
+		byID:     make(map[string][]profileIdentity, len(profiles)),
+		order:    make([]profileIdentity, 0, len(profiles)),
 	}
-	registry := &Registry{profiles: make(map[string]Profile, len(profiles))}
 	for _, profile := range profiles {
-		registry.profiles[profile.Descriptor().ProfileID] = profile
+		if profile == nil {
+			registry.invalid = true
+			continue
+		}
+		descriptor := profile.Descriptor()
+		identity := profileIdentity{
+			profileID:      descriptor.ProfileID,
+			profileVersion: descriptor.ProfileVersion,
+		}
+		if strings.TrimSpace(identity.profileID) == "" || strings.TrimSpace(identity.profileVersion) == "" {
+			registry.invalid = true
+			continue
+		}
+		if _, duplicate := registry.profiles[identity]; duplicate {
+			registry.invalid = true
+			continue
+		}
+		registry.profiles[identity] = profile
+		registry.byID[identity.profileID] = append(registry.byID[identity.profileID], identity)
+		registry.order = append(registry.order, identity)
 	}
 	return registry
 }
 
+// Resolve selects one executable profile by its exact immutable identity. It
+// never performs a latest-version lookup or version fallback.
+func (r *Registry) Resolve(profileID, profileVersion string) (Profile, error) {
+	if r == nil {
+		return nil, protocolError(ErrInvalidConfiguration, "registry_unavailable")
+	}
+	if r.invalid {
+		return nil, protocolError(ErrInvalidConfiguration, "registry_invalid")
+	}
+	if strings.TrimSpace(profileID) == "" || strings.TrimSpace(profileVersion) == "" {
+		return nil, protocolError(ErrInvalidConfiguration, "profile_identity_invalid")
+	}
+	profile, exists := r.profiles[profileIdentity{profileID: profileID, profileVersion: profileVersion}]
+	if exists {
+		return profile, nil
+	}
+	if len(r.byID[profileID]) != 0 {
+		return nil, protocolError(ErrInvalidConfiguration, "unknown_profile_version")
+	}
+	return nil, protocolError(ErrInvalidConfiguration, "unknown_profile")
+}
+
+// Get is the compatibility lookup for callers whose profile ID currently has
+// exactly one registered version. It fails closed once an ID has more than one
+// version; callers needing executable behavior must then use Resolve.
 func (r *Registry) Get(profileID string) (Profile, error) {
 	if r == nil {
 		return nil, protocolError(ErrInvalidConfiguration, "registry_unavailable")
 	}
-	profile, exists := r.profiles[profileID]
-	if !exists {
+	if r.invalid {
+		return nil, protocolError(ErrInvalidConfiguration, "registry_invalid")
+	}
+	if strings.TrimSpace(profileID) == "" {
+		return nil, protocolError(ErrInvalidConfiguration, "profile_identity_invalid")
+	}
+	identities := r.byID[profileID]
+	if len(identities) == 0 {
 		return nil, protocolError(ErrInvalidConfiguration, "unknown_profile")
 	}
-	return profile, nil
+	if len(identities) != 1 {
+		return nil, protocolError(ErrInvalidConfiguration, "ambiguous_profile_version")
+	}
+	return r.profiles[identities[0]], nil
 }
 
 func (r *Registry) Descriptors() []Descriptor {
-	order := []string{
-		ProfileOpenAIResponsesText,
-		ProfileCohereRerankV2,
-		ProfileOpenAIImageGPT,
+	if r == nil || r.invalid {
+		return nil
 	}
-	result := make([]Descriptor, 0, len(order))
-	for _, profileID := range order {
-		if profile, exists := r.profiles[profileID]; exists {
+	result := make([]Descriptor, 0, len(r.order))
+	for _, identity := range r.order {
+		if profile, exists := r.profiles[identity]; exists {
 			result = append(result, cloneDescriptor(profile.Descriptor()))
 		}
 	}

@@ -31,7 +31,9 @@
       "background",
       "conversation_state",
       "function_or_hosted_tools",
+      "include_expansions",
       "multimodal_or_structured_input",
+      "reasoning_controls",
       "streaming",
       "stored_response_state",
       "structured_output"
@@ -41,7 +43,7 @@
     {
       "fixture_id": "openai-responses-text.v1",
       "path": "fixtures/openai-responses-text.v1.json",
-      "sha256": "sha256:005c126da2d47bab7fdd4056d5e0c343fb74d5983c8d8c6288f943566b44d4c9"
+      "sha256": "sha256:53fce9ef3cb26508d3a8ee5394407edf6c38ce7cf381223c0a95fec98495ff21"
     }
   ]
 }

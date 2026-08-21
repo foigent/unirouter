@@ -48,6 +48,42 @@ func TestOpenAICompatibleBuildRequest_RewritesModelAndURL(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleBuildRequest_PreservesOpenAIAndProviderFields(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"https://example.com/image.png"}}]}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"tool_choice":"auto","parallel_tool_calls":true,"response_format":{"type":"json_object"},"stream_options":{"include_usage":true},"reasoning":{"effort":"high"},"reasoning_effort":"high","provider_counter":9223372036854775807}`)
+	req, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint:       EndpointChatCompletions,
+		DownstreamBody: body,
+		RequestedModel: "public-model",
+		MappedModel:    "upstream-model",
+		Channel:        models.Channel{BaseURL: "https://api.example.com/v1"},
+		APIKey:         "sk-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstreamBody, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(upstreamBody, &payload); err != nil {
+		t.Fatal(err)
+	}
+	var model string
+	if err := json.Unmarshal(payload["model"], &model); err != nil || model != "upstream-model" {
+		t.Fatalf("model rewrite failed: model=%q err=%v body=%s", model, err, upstreamBody)
+	}
+	for _, field := range []string{"messages", "tools", "tool_choice", "parallel_tool_calls", "response_format", "stream_options", "reasoning", "reasoning_effort", "provider_counter"} {
+		if len(payload[field]) == 0 {
+			t.Fatalf("field %q was dropped: %s", field, upstreamBody)
+		}
+	}
+	if string(payload["provider_counter"]) != "9223372036854775807" {
+		t.Fatalf("provider extension number lost precision: %s", payload["provider_counter"])
+	}
+}
+
 func TestOpenAICompatibleParseResponse_Usage(t *testing.T) {
 	adapter := NewOpenAICompatible()
 	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{

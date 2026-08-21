@@ -28,18 +28,7 @@ describe('routingApi', () => {
       expect.objectContaining({ headers: expect.any(Object) }),
     );
   });
-
-  it('binds every release transition to the server revision', async () => {
-    response({ release_ref: 'rcr_company_fast', version: 8, stage: 'canary' });
-
-    await routingApi.startReleaseCanary('rcr_company_fast', 7, 500);
-
-    expect(mockFetch).toHaveBeenCalledWith(
-      '/api/v1/runtime-changes/rcr_company_fast/canary',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ expected_version: 7, canary_basis_points: 500 }),
-      }),
-    );
+  it('does not expose the retired runtime-change writer surface', () => {
+    expect(Object.keys(routingApi)).toEqual(['preview']);
   });
 });

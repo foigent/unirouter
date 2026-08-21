@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 )
 
@@ -51,104 +50,36 @@ func (h *Handler) GetRuntimeChangeSlot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, item)
 }
 
-func (h *Handler) CreateRuntimeChange(w http.ResponseWriter, r *http.Request) {
-	if h.runtimeChangeManager == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime change control unavailable"})
-		return
-	}
-	var request runtimechange.DraftRequest
-	if err := decodeStrictJSONBody(r, &request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid runtime change request"})
-		return
-	}
-	item, err := h.runtimeChangeManager.CreateDraft(r.Context(), request, middleware.GetUserIDFromContext(r.Context()))
-	if err != nil {
-		writeRuntimeChangeError(w, err)
-		return
-	}
-	h.recordAuditEntry(r.Context(), "runtime_change.create", "runtime_change", item.ReleaseRef,
-		map[string]interface{}{"stage": item.Stage, "candidate_hash": item.CandidateHash, "runtime_mutation": "none"},
-		requestAuditMeta(r, 0, 0))
-	writeJSON(w, http.StatusCreated, item)
+func (h *Handler) CreateRuntimeChange(w http.ResponseWriter, _ *http.Request) {
+	writeLegacyModelMutationRetired(w)
 }
 
-func (h *Handler) ValidateRuntimeChange(w http.ResponseWriter, r *http.Request) {
-	h.transitionRuntimeChange(w, r, "validate")
+func (h *Handler) ValidateRuntimeChange(w http.ResponseWriter, _ *http.Request) {
+	writeLegacyModelMutationRetired(w)
 }
 
-func (h *Handler) AdvanceRuntimeChangeShadow(w http.ResponseWriter, r *http.Request) {
-	h.transitionRuntimeChange(w, r, "shadow")
+func (h *Handler) AdvanceRuntimeChangeShadow(w http.ResponseWriter, _ *http.Request) {
+	writeLegacyModelMutationRetired(w)
 }
 
-func (h *Handler) ActivateInitialRuntimeChange(w http.ResponseWriter, r *http.Request) {
-	h.transitionRuntimeChange(w, r, "activate_initial")
+func (h *Handler) ActivateInitialRuntimeChange(w http.ResponseWriter, _ *http.Request) {
+	writeLegacyModelMutationRetired(w)
 }
 
-func (h *Handler) StartRuntimeChangeCanary(w http.ResponseWriter, r *http.Request) {
-	h.transitionRuntimeChange(w, r, "canary")
+func (h *Handler) StartRuntimeChangeCanary(w http.ResponseWriter, _ *http.Request) {
+	writeLegacyModelMutationRetired(w)
 }
 
-func (h *Handler) PromoteRuntimeChange(w http.ResponseWriter, r *http.Request) {
-	h.transitionRuntimeChange(w, r, "promote")
+func (h *Handler) PromoteRuntimeChange(w http.ResponseWriter, _ *http.Request) {
+	writeLegacyModelMutationRetired(w)
 }
 
-func (h *Handler) RollbackRuntimeChange(w http.ResponseWriter, r *http.Request) {
-	h.transitionRuntimeChange(w, r, "rollback")
+func (h *Handler) RollbackRuntimeChange(w http.ResponseWriter, _ *http.Request) {
+	writeLegacyModelMutationRetired(w)
 }
 
-func (h *Handler) RejectRuntimeChange(w http.ResponseWriter, r *http.Request) {
-	h.transitionRuntimeChange(w, r, "reject")
-}
-
-func (h *Handler) transitionRuntimeChange(w http.ResponseWriter, r *http.Request, action string) {
-	if h.runtimeChangeManager == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime change control unavailable"})
-		return
-	}
-	var request runtimechange.TransitionRequest
-	if err := decodeStrictJSONBody(r, &request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid transition request"})
-		return
-	}
-	actor := middleware.GetUserIDFromContext(r.Context())
-	ref := r.PathValue("ref")
-	var (
-		item runtimechange.Release
-		err  error
-	)
-	switch action {
-	case "validate":
-		item, err = h.runtimeChangeManager.Validate(r.Context(), ref, request.ExpectedVersion, actor)
-	case "shadow":
-		item, err = h.runtimeChangeManager.AdvanceShadow(r.Context(), ref, request.ExpectedVersion, actor)
-	case "activate_initial":
-		var customerOrgID int64
-		customerOrgID, err = resolveActorOrganization(r.Context(), 0)
-		if err != nil {
-			writeOrganizationScopeError(w, err)
-			return
-		}
-		item, err = h.runtimeChangeManager.ActivateInitial(r.Context(), ref, request.ExpectedVersion, actor, customerOrgID)
-	case "canary":
-		item, err = h.runtimeChangeManager.StartCanary(r.Context(), ref, request.ExpectedVersion, request.CanaryBasisPoints, actor)
-	case "promote":
-		item, err = h.runtimeChangeManager.Promote(r.Context(), ref, request.ExpectedVersion, actor)
-	case "rollback":
-		item, err = h.runtimeChangeManager.Rollback(r.Context(), ref, request.ExpectedVersion, actor)
-	case "reject":
-		item, err = h.runtimeChangeManager.Reject(r.Context(), ref, request.ExpectedVersion, actor, request.Reason)
-	default:
-		err = runtimechange.ErrInvalid
-	}
-	if err != nil {
-		writeRuntimeChangeError(w, err)
-		return
-	}
-	h.invalidateRoutingSnapshots()
-	h.recordAuditEntry(r.Context(), "runtime_change."+action, "runtime_change", item.ReleaseRef,
-		map[string]interface{}{"stage": item.Stage, "version": item.Version, "runtime_mutation": runtimeChangeMutation(item.Stage)},
-		requestAuditMeta(r, 0, 0))
-	writeJSON(w, http.StatusOK, item)
+func (h *Handler) RejectRuntimeChange(w http.ResponseWriter, _ *http.Request) {
+	writeLegacyModelMutationRetired(w)
 }
 
 func writeRuntimeChangeError(w http.ResponseWriter, err error) {
@@ -162,13 +93,6 @@ func writeRuntimeChangeError(w http.ResponseWriter, err error) {
 	default:
 		writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"error": "Runtime change control unavailable"})
 	}
-}
-
-func runtimeChangeMutation(stage string) string {
-	if stage == "canary" || stage == "active" || stage == "rolled_back" {
-		return "bounded_route_assignment"
-	}
-	return "none"
 }
 
 func decodeStrictJSONBody(r *http.Request, target interface{}) error {

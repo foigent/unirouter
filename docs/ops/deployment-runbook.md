@@ -125,6 +125,8 @@ openssl rand -base64 24  # 用于 GRAFANA_ADMIN_PASSWORD
 | `LOG_RETENTION_DAYS` | `30` | call logs、settle/cancel transactions 和相关清理的保留窗口；audit logs 保留该值的 2 倍 |
 | `RUNTIME_ENVIRONMENT` | `unspecified`（docker-compose 默认 `local`） | Runtime Status Center 展示的环境标签，如 `dev`、`staging`、`prod` |
 | `VITE_DEPLOY_ENV` | 空 | 前端镜像构建时写入的环境标签；支持 `development`、`staging`、`canary`、`production` 等值，并应与 `RUNTIME_ENVIRONMENT` 保持一致。修改后必须重建 frontend 镜像，仅重启容器不会生效 |
+| `MODEL_ROUTE_AUTHORITY` | `canonical` | Chat/Embeddings 的进程级路由权威。二进制与普通 Compose 默认 `canonical` 且不会自动回退；`legacy`/`verify` 只允许显式兼容阶段。仅当全部当前 assignment 仍为 v1 时，准备 `verify` 才显式运行 `uniroute model-route-authority apply --customer-org-id <id>`（逐项准备当前 v1 stable/canary，但不 promote/rollback），再运行只读 `check`；任一 v2 成为当前 stable/canary 后（包括仍在 verify 的滚动窗口）apply 会在投影写入前拒绝。准备 `canonical` 时只运行 `check`，`apply` 会在访问数据库前被拒绝，防止 legacy 反向覆盖 canonical pause/revoke/config。reconcile 与 v2 lifecycle 以固定 releases→slots 表锁顺序串行。切换前必须完成全 fleet drain；backend 会在 Redis、后台任务和 HTTP bind 前再次从 PostgreSQL fail-closed 校验，不能只改环境变量。旧 channel/key/v1 runtime-change/model-endpoint mutation 已在所有模式永久返回 410，不再由模式开关恢复；组织管理员仍可在缺少/过期 Gateway License 时调用 canonical connection pause 与 terminal credential revoke 两个止损动作。修改后必须重启 backend |
+| `MODEL_ROUTE_COMPATIBILITY_ENABLED` | `false` | `canonical` 必须为 `false`；`legacy`/`verify` 必须显式为 `true`。正式 customer fresh install 的样例仅在隔离流量的一次性 bootstrap/authoring 阶段使用 `legacy + true`，完成 customer root、首个 sealed release/slot 和只读 authority check 后改为 `canonical + false` 并重启。它不是旧写面开关，也不能绕过 startup authority |
 | `RUNTIME_DEPLOYMENT_MODE` | `single-node` | Runtime Status Center 展示的部署形态，如 `docker-compose`、`kubernetes` |
 | `RUNTIME_DEPLOYMENT_ROLE` | `stable` | 当前实例角色，如 `stable`、`canary` |
 | `RUNTIME_VERSION` | 空 | 仅 source/dev 构建的 fallback；正式镜像始终以不可变 Docker build `-ldflags` 注入值为准 |
@@ -166,7 +168,8 @@ Studio.app` 生成两套独立密钥和严格 `unirouter.license.v1` 文档；�
    feature 和 limit；
 6. 仅用 mock/无付费路径证明授权后 admission，再进行另外批准的真实用户测试。
 
-License 导入会同时锁定并核对 active API keys/users/projects/channels；低于
+License 导入会同时锁定并核对 active API keys/users/projects 以及 enabled canonical
+provider connections（License 字段名仍为 `active_channels`）；低于
 当前使用量的续期返回 `409`，不会写入一半状态。严禁直接修改
 `settings.license.offline` 或 `commercial_license_entitlements` 绕过该事务。
 
@@ -231,6 +234,13 @@ chmod 600 .env .env.production
 
 ### 2.2 启动服务
 
+下面的普通启动只适用于已完成 canonical authoring/inventory、且 migration ledger 与
+当前 binary ceiling 精确一致的数据库。全新空库不能用默认
+`canonical + compatibility=false` 直接启动；必须先按根
+[`README` 的隔离 bootstrap 流程](../../README.md#快速开始) 完成 author/check、停止
+bootstrap backend、恢复 canonical 默认并重启。bootstrap 期间不得接入外部代理、
+负载均衡或客户 Gateway 流量。
+
 ```bash
 docker compose up -d
 ```
@@ -267,20 +277,23 @@ docker compose logs -f backend
 
 1. 从厂商官方文档和当前凭证的只读模型列表核对精确 supplier model ID；不得把
    历史别名或营销名称当作长期 API 合同，也不得在日志中输出凭证；
-2. channel 和 channel-key allowlist 使用同一个 UniRouter public model ID，
-   `model_mapping` 只负责把该 public ID 映射到精确 supplier ID；
-3. 当前 channel API/UI 尚不支持安全编辑 `model_mapping`。V1 只能按批准的
-   单次目标变更计划执行：精确前置条件、单行/单模型范围、before/after 审计及
-   失败即停止；不得猜测、批量归一化或顺带添加其他模型；
-4. stable/canary 路由预览都必须显示预期唯一候选、可用 key 数和零意外排除；
+2. 创建 canonical provider connection/deployment，设置四个正的执行限额并绑定
+   credential；public model 与 upstream model 必须保留各自的精确身份；
+3. 对 endpoint 对应的 exact `model_operation_id` 执行受支持 probe，并保存 revision、
+   credential binding 和成功证据；不得通过 legacy channel/key 或 Router preview
+   猜测当前路由；
+4. 经 M78 release workspace 原子 author sealed release，执行 server-described
+   `activate_initial`；用 Readiness v2 和 canonical Model Endpoints v3 读回同一个
+   `deployment_id + model_operation_id` 当前身份；
 5. 单独核对客户价格的来源、币种、生效日期和批准的加价规则。模型映射变更不
    授权修改价格；客户售价与供应商 COGS 不一致时必须先取得商业定价决定；
 6. 只有取得具体模型、次数和费用上限授权后才发真实请求。使用最小合成输入，
-   读回 route/attempt/call-log/trace/钱包守恒，随后禁用临时凭证并确认无 pending
-   attempt、reservation 或 outbox。
+   读回 canonical deployment/operation 的 route/attempt/call-log/trace/钱包守恒，
+   随后禁用临时凭证并确认无 pending attempt、reservation 或 outbox。
 
-路由预览通过只证明当前配置可以选路；至少一个同范围真实 HTTP 200 请求才证明
-对应上游可调通。单次成功仍不能替代容量、HA、供应商账单或 Production 证据。
+Probe、Readiness 和管理投影只证明其各自的控制面事实；至少一个同范围真实 HTTP
+200 请求才证明对应上游可调通。单次成功仍不能替代容量、HA、供应商账单或
+Production 证据。
 
 ### 2.4 初始化管理员
 
@@ -769,6 +782,243 @@ constraint、function 或 ledger。只有不存在这类重叠时，成功 down 
 本 migration ledger，从而重新引入本地身份歧义风险。一旦新版本承接登录或用户管理
 流量，优先保留身份合同并 roll-forward，不为迁就旧二进制删除账户或约束。
 
+### 3.14 `000078` 原子 sealed-candidate authoring 非滚动切换
+
+升级前先 drain 并停止所有 M77 deployment authoring writer，固定仍可回退启动的
+M77 image digest，再只读检查 canonical v2 draft：
+
+```sql
+SELECT COUNT(*) AS unsealed_v2_drafts
+  FROM runtime_change_releases
+ WHERE candidate_version='unirouter.runtime-change-candidate.v2'
+   AND (route_items_sealed_at IS NULL OR stage='draft');
+```
+
+计数必须为零才可启动 M78 migration。`000078` 会在取得迁移表锁后、任何 schema
+mutation 前重复检查；发现一行就整事务拒绝，因此数据库和 ledger 仍保持 M77。此时
+不要启动 M78 runtime，也不要用 SQL 补 receipt、改 stage、删 event 或禁用 trigger。
+使用刚才固定的 M77 artifact，通过其正式控制面调用 `SealDeploymentDraft`，逐条完成
+draft 的 current revision/evidence 复核和 validate event；全部成功后再次运行只读检查，
+再用 M78 artifact 执行一次 `migrate up`。升级后的这些 historical sealed v2 release
+保持 `authoring_receipt_id IS NULL`；只有 M78 新 authoring 才必须绑定 durable receipt。
+
+若任一 M77 draft 已无法通过正式 Seal，M78 不会替它制造 provenance。只有目标本来就
+在已批准的全量数据重置范围内，才能继续使用同一个 M77 artifact，按
+`docs/runbooks/SECOND-INTEGRATION-POC.md` 的 exact reset preview、备份、独立恢复证明、
+typed confirmation 和 apply 全流程清空后再升级/re-author；该 reset 会删除产品数据，
+不是单条 release 的修复工具。生产或其他未获全量 reset 授权的目标必须停在 M77，
+从备份恢复或另行审批处置，禁止手工 DELETE/UPDATE 绕过。当前 M78 binary 的 legacy
+`PrepareDeploymentDraft` / `SealDeploymentDraft` 仅 fail closed，不能替代旧 artifact。
+
+### 3.15 M78 release workspace、legacy cutover 与止损回退
+
+M78 只支持新的原子 authoring 面。先以 `platform_admin`、`org_admin` 或
+`org_viewer` 读取：
+
+```http
+GET /api/v1/model-deployment-releases
+Authorization: Bearer <admin-jwt>
+```
+
+该读取不要求 Gateway License，并在同一个只读 Repeatable Read snapshot 中返回每个
+public model 的 server-owned `authoring.baseline`、slot、stable release、可选择的
+deployment/operation 以及已有 actionable v2 release。`authoring.available=false` 时只按
+`reason_code` 处理；不得在客户端猜测 slot/release revision、parent、hash、profile、
+binding 或 release ref。`assigned_public_model_id` 未赋值表示仍是 raw v1 slot，不等于
+找不到逻辑 public model。存在 identity ambiguity、canary transition、retired model 或
+没有 eligible operation 时禁止 author。
+
+`platform_admin`/`org_admin` 且 Gateway License 有效时，使用一个新的、非秘密的
+`Idempotency-Key`，把 collection 返回的 baseline 原样回送，并只选择允许的
+deployment/operation：
+
+```http
+POST /api/v1/model-deployment-releases
+Authorization: Bearer <admin-jwt>
+Idempotency-Key: <unique-authoring-key>
+Content-Type: application/json
+
+{
+  "public_model_id": 123,
+  "baseline": {
+    "kind": "stable",
+    "expected_slot_version": 7,
+    "stable_release_ref": "rcr_example-stable",
+    "expected_stable_release_version": 4
+  },
+  "selections": [
+    {"deployment_id": 456, "operation_id": "openai.chat_completions.v1"},
+    {"deployment_id": 456, "operation_id": "openai.embeddings.v1"}
+  ],
+  "reason": "prepare the reviewed canonical release"
+}
+```
+
+这里的数字和 ref 只是 payload 形状示例，实际值必须来自刚读取的同一 server
+snapshot。`initial` baseline 的其余 revision/ref 字段必须为零或省略；`stable` 和
+`legacy_cutover` 必须完整回送三个 optimistic baseline 字段。请求体必须是单个、最多
+16384 bytes 的 strict JSON object；duplicate/unknown member 和 trailing JSON 会在
+receipt access 前拒绝。
+
+首次成功返回 `201 Created`、`Location: /api/v1/model-deployment-releases/{releaseRef}`
+和 immutable authoring receipt。相同 authoring scope、actor、key 与 normalized payload 的
+后续 exact replay 返回 `200 OK`、相同 `Location`、
+`X-UniRouter-Idempotency-Replayed: true` 和
+`X-UniRouter-Original-Request-ID`。另一个 payload 复用同一 key 返回 409。Authoring
+只在一个事务内创建并 seal 到 `validated`；它不会 activate、启动 canary 或修改 slot。
+
+随后读取 `Location`，以返回的 `actions[]` 作为唯一 UI/运维动作事实：
+
+```http
+GET /api/v1/model-deployment-releases/{releaseRef}
+Authorization: Bearer <admin-jwt>
+```
+
+普通 canonical lineage 返回五个动作描述符：`activate_initial`、`start_canary`、
+`promote`、`cancel_canary`、`rollback_stable`。精确 sealed v1 stable parent lineage 只返回
+`cutover_legacy`、`rollback_legacy`，不同时展示普通 canary/rollback 按钮。每个写操作
+都使用新的 action-scoped `Idempotency-Key`，只提交 descriptor 的 `required_fields`。
+409 后重新 GET collection/detail 并由人复核；不得自动重试陈旧 baseline。
+
+legacy cutover 请求形状为：
+
+```json
+{
+  "expected_release_version": 2,
+  "expected_slot_version": 7,
+  "reason": "switch the reviewed legacy stable route to its canonical equivalent"
+}
+```
+
+`POST .../{releaseRef}/cutover-legacy` 是 Gateway License 扩张操作。事务必须证明：slot
+仍指向该 release 的精确 sealed v1 parent；v2 manifest 的 operation set 精确为 Chat
+Completions 与 Embeddings；legacy 与 canonical 当前全部可执行候选、provider/upstream、
+adapter、routing、breaker、credential eligibility、probe/revision 等计划事实相同，且
+secret-free plan hash 完全一致。成功后 v1 parent、v2 target、raw slot、events、audit、
+qualification snapshot 和 lifecycle receipt 一起提交；该动作不修改
+`MODEL_ROUTE_AUTHORITY`，fleet drain 与进程模式切换仍按独立发布边界执行。
+
+`POST .../{releaseRef}/rollback-legacy` 使用相同三个必填字段，是
+`platform_admin`/`org_admin` 可在 Gateway License 缺失或过期时执行的止损收缩。它故意
+不检查已经损坏的 v2 target health、qualification 或 parity；但必须重新证明 exact
+target/slot lineage、保留的 sealed v1 parent 以及该 v1 parent 当前完整 Chat+Embeddings
+计划仍可执行。成功后 slot 的 assigned public model 从 canonical ID 原子恢复为 raw v1
+`NULL`，v2 target 回到 validated，v1 parent 恢复 active，receipt 保留原始 plan/evidence
+链。不要用 SQL 手改 slot/release stage 来模拟 rollback。
+
+M78 downgrade 不是常规回滚路径。执行任何 down 前至少只读核对：
+
+```sql
+SELECT COUNT(*) AS legacy_lifecycle_receipts
+  FROM model_deployment_lifecycle_receipts
+ WHERE action IN ('cutover_legacy','rollback_legacy');
+SELECT COUNT(*) AS authoring_receipts
+  FROM model_deployment_release_authoring_receipts;
+SELECT COUNT(*) AS receipt_linked_releases
+  FROM runtime_change_releases
+ WHERE authoring_receipt_id IS NOT NULL;
+SELECT COUNT(*) AS public_execution_bindings
+  FROM model_operation_public_execution_bindings;
+SELECT version
+  FROM schema_migrations
+ WHERE version > '000078_atomic_model_release_authoring'
+ ORDER BY version;
+```
+
+任一 legacy lifecycle receipt、任一 M78 authoring receipt/link、任一 public execution
+binding 或任一更高 migration ledger 都会让 `000078` down 在 schema mutation 前原子
+拒绝；不得删除 immutable evidence 来迁就旧 binary，应保留 M78 schema 并 roll
+forward。已获完整 second-integration reset 授权时，现有 exact reset v3 合同已把
+`model_deployment_release_authoring_receipts`、lifecycle receipt 三表、release/items/
+bindings/events/audit 纳入 reset candidate 和 trigger-safe 删除顺序；仍必须遵循
+`docs/runbooks/SECOND-INTEGRATION-POC.md` 的 preview、backup、独立恢复证明、typed
+confirmation、apply 与 bootstrap readback，不能把全量 reset 当作单条 release 清理。
+
+### 3.16 `000079` canonical connection License authority 与 guarded down
+
+M79 只切换商业 License v1 的 `active_channels` 计数权威：字段名和签名 payload
+保持不变，运行时改为统计 `provider_connections.admin_state='enabled'`，不再统计
+legacy `channels.status='active'`。升级前必须 drain 所有仍能写 legacy/verify model
+state 的旧进程；migration 本身不会安装 legacy DML seal，也不能证明 fleet 已退出。
+这是非滚动 schema 切换。M79 binary 无论执行 migration 还是设置
+`SKIP_MIGRATION=true`，都会在 customer baseline 与 HTTP bind 前要求
+`MAX(schema_migrations.version)` 精确等于
+`000079_canonical_connection_license_authority`；M78、future 或空 ledger 全部拒绝。
+因此不能让 M78 stable 与 M79 canary 共享 M78 数据库并声称 ready。顺序固定为：
+
+1. 阻断入口，drain 并停止所有 M78 stable、canary 和其他 backend 副本；
+2. 只允许一个批准的 M79 migration owner 在 `SKIP_MIGRATION=false` 下升级数据库；
+3. 只读确认 ledger 最大值精确为 M79，再启动 M79 stable；
+4. 仅在同一数据库已精确为 M79 后，才可用 `SKIP_MIGRATION=true` 启动 M79
+   canary/secondary，并分别读取 readiness。
+
+在维护窗口内先只读对比：
+
+```sql
+SELECT COUNT(*) AS enabled_canonical_connections
+  FROM provider_connections
+ WHERE admin_state='enabled';
+SELECT active_channels AS signed_limit
+  FROM commercial_license_entitlements
+ WHERE singleton=TRUE;
+```
+
+`signed_limit` 非空且小于 enabled canonical count 时，M79 会在任何 trigger
+切换前以 `commercial_license_active_channels` 原子拒绝。成功 migration 的锁序是：
+
+1. shared model-execution migration advisory lock；
+2. `provider_connections`、`channels`、`schema_migrations` 的
+   `SHARE ROW EXCLUSIVE` relation locks；
+3. `unirouter.commercial_limit.active_channels` resource advisory lock；
+4. `commercial_license_entitlements` 的 `SHARE ROW EXCLUSIVE` relation lock；
+5. preflight 后删除 legacy channel trigger、替换 resource function，并创建
+   canonical provider-connection trigger。
+
+relation/resource lock 被刻意拆开：connection activation 先取得 resource-table
+RowExclusive lock 再取 resource advisory lock，License renewal 则先取 advisory lock
+再写 entitlement；上述 migration 顺序同时等待两者而不制造反向 lock cycle。禁止
+为了“解除卡住”而手工 disable trigger、删除 entitlement 或跳过 migration ledger。
+
+M79 down 不是普通模式回退。它使用同一锁序，并在 trigger mutation 前同时拒绝：
+
+- 任一高于 `000079_canonical_connection_license_authority` 的 migration；
+- 任一 enabled canonical connection 没有一条 exact active legacy projection；
+- 任一 projection 的 name/provider/base URL/adapter/config/config revision 与 legacy
+  routing epoch 不一致；
+- 恢复后的 active legacy channel count 超过签名 `active_channels`。
+
+可用下列只读检查提前暴露前两类数据阻塞；最终权威仍是 down transaction 内的
+重复校验：
+
+```sql
+SELECT version
+  FROM schema_migrations
+ WHERE version > '000079_canonical_connection_license_authority'
+ ORDER BY version;
+
+SELECT COUNT(*) AS enabled_without_exact_active_legacy_projection
+  FROM provider_connections connection
+  LEFT JOIN channels legacy ON legacy.id=connection.legacy_channel_id
+ WHERE connection.admin_state='enabled'
+   AND (
+     connection.legacy_channel_id IS NULL OR legacy.id IS NULL OR
+     legacy.status<>'active' OR
+     connection.name IS DISTINCT FROM legacy.name OR
+     connection.provider IS DISTINCT FROM legacy.provider OR
+     connection.base_url IS DISTINCT FROM legacy.base_url OR
+     connection.adapter_type IS DISTINCT FROM
+       COALESCE(NULLIF(BTRIM(legacy.adapter_type),''),'openai_compatible') OR
+     connection.adapter_config IS DISTINCT FROM
+       COALESCE(legacy.adapter_config,'{}'::jsonb) OR
+     connection.config_revision IS DISTINCT FROM legacy.routing_epoch
+   );
+```
+
+通过 guarded down 只会恢复 M59 `channels_commercial_limit` function/trigger 并移除
+M79 ledger；canonical connections、deployments、credential bindings、release 和
+execution evidence 均保留。若旧 binary 无法理解这些 retained schema/data，停止并
+roll forward，不得删除 canonical 证据来制造可启动假象。
+
 ---
 
 ## 四、备份与恢复
@@ -1191,6 +1441,9 @@ GOPROXY=https://goproxy.cn,direct docker compose build backend
 staging 或已授权的非生产测试目标。不得把本章命令当作客户正式安装/升级路径。
 stable 与 canary 必须读取同一个
 `UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET`；Compose/CI 会检查两者配置一致。
+本章的流量 canary 只允许两个 binary 的 exact schema ceiling 相同且共享数据库已经
+位于该 ceiling 时使用。任何改变 ceiling 的发布（包括 M78→M79）必须先按 3.16
+完成非滚动 schema 切换，不能保留旧 stable 再启动新 canary。
 
 ### 9.1 前置条件：Nginx 配置
 
@@ -1234,7 +1487,9 @@ docker compose -f docker-compose.yml -f docker-compose.canary.yml \
 
 ### 9.2 架构说明
 
-Canary 测试通过外层 Nginx 将部分流量路由到新版（canary）后端实例，同时保持旧版（stable）实例处理大部分请求。
+Canary 测试通过外层 Nginx 将部分流量路由到 candidate backend，同时由 stable
+backend 处理大部分请求；两者必须声明相同的 exact schema ceiling，且该 ceiling
+必须与共享数据库 migration ledger 精确相等。
 
 ```
 客户端 → Nginx:80 (HTTP)
@@ -1244,7 +1499,10 @@ Canary 测试通过外层 Nginx 将部分流量路由到新版（canary）后端
 
 关键约束：
 - canary 实例 **共享** stable 的 PostgreSQL 和 Redis
-- canary 实例 **跳过** 数据库迁移（`SKIP_MIGRATION=true`），由 stable 实例负责迁移
+- canary 实例可设置 `SKIP_MIGRATION=true`，但这只跳过 migration 执行，不跳过
+  exact runtime-schema gate；共享数据库必须已经由唯一 migration owner 升到两个
+  binary 共同声明的 ceiling
+- schema ceiling 不同的 stable/canary 禁止共存；M78→M79 使用 3.16 的非滚动流程
 - 健康检查和 Prometheus 指标 **只走 stable**
 
 ### 9.3 启动 Canary
@@ -1355,9 +1613,12 @@ for _ in $(seq 1 20); do
 done | sort | uniq -c
 ```
 
-### 9.8 升级 stable
+### 9.8 同一 schema ceiling 下升级 stable
 
-canary 验证通过后，将 stable 升级到 canary 版本：
+只有 stable/canary binary 声明相同 schema ceiling、且数据库已经精确位于该 ceiling
+时，canary 验证通过后才可按本节升级 stable。若 candidate 提高 ceiling（包括
+M78→M79），不要执行本节命令；按 3.16 停止整个旧 fleet、由唯一 migration owner
+升级，再启动新 stable/canary。
 
 ```bash
 # 1. 停止 canary
@@ -1385,8 +1646,10 @@ PRD2 HA readiness 的最小验收目标是：两个 UniRouter 应用实例连接
 
 关键约束：
 
-- stable 实例负责迁移。
-- canary/secondary 实例必须设置 `SKIP_MIGRATION=true`。
+- 唯一 stable/migration-owner 实例负责迁移。
+- canary/secondary 实例设置 `SKIP_MIGRATION=true` 时仍会执行 exact
+  runtime-schema gate；只有共享数据库已精确等于其 binary ceiling 才能 ready。
+- schema ceiling 变化必须非滚动切换，不能用旧 stable 加新 canary 做 HA smoke。
 - PostgreSQL 和 Redis 是共享状态源。
 - in-process admission controller 是单实例容量保护，不是全局分布式 semaphore。
 
@@ -1646,7 +1909,11 @@ bash ./payload/deploy/preflight.sh payload/deploy/.env
 
 preflight 必须拒绝短密钥或示例占位符，找到恰好六个 digest 镜像且没有
 `build:`。它不会判断 digest 是否由 UniRouter 批准；该授权事实只来自已经验证的
-签名 manifest 和逐文件 hash/size。
+签名 manifest 和逐文件 hash/size。正式 fresh-install 样例此时明确是一次性的
+`MODEL_ROUTE_AUTHORITY=legacy` 与
+`MODEL_ROUTE_COMPATIBILITY_ENABLED=true`；这会启动完整 legacy runtime，不是安全的
+bootstrap-only listener。外层 TLS proxy、负载均衡和任何客户 Gateway 入口必须继续
+断开，只允许经批准的 loopback/bootstrap 管理、License 导入、authoring 和 probe。
 
 ### 10.2 启动、首装登记与读回
 
@@ -1679,13 +1946,77 @@ docker compose --env-file payload/deploy/.env \
 docker compose --env-file payload/deploy/.env \
   -f payload/deploy/docker-compose.yml exec backend \
   rm -f /tmp/unirouter-initial-release.tar.gz
+
+# 轮换 seed admin 密码；密码文件合同见 deploy/customer/README.md，禁止把值放入参数。
+: "${UNIROUTER_ADMIN_PASSWORD_FILE:?Set the approved administrator password file}"
+test -r "${UNIROUTER_ADMIN_PASSWORD_FILE}"
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec -T backend \
+  ./uniroute admin set-password --username admin --org-id 1 --password-stdin \
+  < "${UNIROUTER_ADMIN_PASSWORD_FILE}"
+
+# 使用轮换后的 local admin 成功登录一次，再调用 POST /api/v1/bootstrap/first-customer。
+# 在客户 Gateway 流量仍被阻断时，通过受支持的 authenticated platform-admin
+# 控制面依次创建唯一 root customer、导入 customer-bound License，并完成：
+# canonical connection/deployment（四个执行限额均为正数）→ credential binding →
+# exact operation probe → M78 atomic sealed release authoring → activate_initial。
+
+# 用 one-off canonical 环境读取同一 DB authority；不要运行 legacy reconcile apply。
+: "${UNIROUTER_CUSTOMER_ORG_ID:?Set the created root customer organization ID}"
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec \
+  -e MODEL_ROUTE_AUTHORITY=canonical \
+  -e MODEL_ROUTE_COMPATIBILITY_ENABLED=false \
+  -e ASYNC_MEDIA_ENABLED=false \
+  backend ./uniroute model-route-authority check \
+  --customer-org-id "${UNIROUTER_CUSTOMER_ORG_ID}"
+
+# 必须读到 ready=true 并保留 secret-free report，随后停止 bootstrap backend。
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml stop backend
+```
+
+`first-customer` 有两个互斥 checkpoint。一个是已获授权的 second-integration reset
+产生的严格 post-reset 空壳：保留 active local platform admin 与组织壳，其余 reset-owned
+产品表为空。另一个是当前完整迁移链的精确 fresh seed：seed admin 已轮换密码、仅有一个
+有效登录 session，且恰有一个逻辑 login 审计；该证据可以仍是 durable Outbox pending
+event，也可以已经物化为 `audit_logs`，关联的同一事件只计一次。正式
+`RUNTIME_ENVIRONMENT=production`（`staging` 同样 fail closed）的 fresh 路径还要求
+步骤 10.2 先写入唯一、非零、与当前 target schema 精确匹配的
+`release_state`/`release_history`；未登记、重复或不匹配均返回 `409`。
+
+fresh checkpoint 的全部表、字段和证据先在同一个 `SERIALIZABLE` 事务中匹配。只有匹配
+完成后，服务才删除精确的 partner 零余额 seed wallet、`Default Project` 和可选的 seed
+admin `project_admin` membership，再创建唯一 active customer 及其零余额钱包。任何额外
+数据、字段漂移、并发变化或删除行数不符都会返回 `409`，并回滚清理、客户创建和审计；
+不会顺带创建客户用户、客户项目、Provider/Feed 凭据、application key、policy 或流量。
+随后导入 customer-bound License 时，首装唯一的 reviewed customer project 必须使用
+`slug=default`；最终 canonical 重启会复用该项目，不得再自动占用第二个 active-project
+License seat。
+
+确认 backend 已停止后，手工把 `payload/deploy/.env` 的
+`MODEL_ROUTE_AUTHORITY` 改为 `canonical`、
+`MODEL_ROUTE_COMPATIBILITY_ENABLED` 改为 `false`；保持
+`ASYNC_MEDIA_ENABLED=false`。保存并复核精确 diff 后，再从新命令块执行 preflight
+和 recreate，避免整段复制时跳过人工切换：
+
+```bash
+bash ./payload/deploy/preflight.sh payload/deploy/.env
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml up -d --no-deps --force-recreate backend
+docker compose --env-file payload/deploy/.env \
+  -f payload/deploy/docker-compose.yml exec backend \
+  wget -qO- http://localhost:8080/health/ready
 ```
 
 启动日志必须读回 `Release trust mode: release`、非零 License/upgrade key 数量、
 签名版本/commit 和批准的部署标识。出现 `development`、mutable tag、缺失签名
 密钥或镜像不符都应停止切换。`upgrade status` 还必须读回与同一签名包一致的
 非零 sequence、package SHA-256、runtime version/commit 和 target schema；在此
-之前不得接入客户流量。受控宿主原包继续保留，容器只删除上述明确临时文件。
+之前不得接入客户流量。只有 canonical restart 的启动数据库 gate、readiness 和
+release readback 全部通过，且确认没有其他 legacy writer process，才可连接客户
+Gateway 入口；失败时保持隔离，不能恢复 sample 的 legacy 值继续对外服务。受控宿主
+原包继续保留，容器只删除上述明确临时文件。
 
 ### 10.3 HTTPS 边界
 

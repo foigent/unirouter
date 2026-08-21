@@ -6,15 +6,46 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/uniroute/unirouter/internal/executionprojection"
 )
 
 // MockDB implements db.DBQuerier for unit tests.
 // Each field is an optional function override; nil fields use zero-value defaults.
 type MockDB struct {
-	QueryFn    func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRowFn func(ctx context.Context, sql string, args ...any) pgx.Row
-	ExecFn     func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	BeginFn    func(ctx context.Context) (pgx.Tx, error)
+	QueryFn               func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRowFn            func(ctx context.Context, sql string, args ...any) pgx.Row
+	ExecFn                func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	BeginFn               func(ctx context.Context) (pgx.Tx, error)
+	ExecutionProjectionFn func(context.Context, executionprojection.ResolveInput) (executionprojection.Projection, error)
+}
+
+// ResolveExecutionProjection models the durable provider-attempt boundary for
+// gateway unit tests. Tests for canonical/verify evidence override the hook;
+// legacy gateway tests explicitly simulate the current pre-contract writer.
+func (m *MockDB) ResolveExecutionProjection(ctx context.Context, input executionprojection.ResolveInput) (executionprojection.Projection, error) {
+	if m.ExecutionProjectionFn != nil {
+		return m.ExecutionProjectionFn(ctx, input)
+	}
+	if input.NoAttemptSource == executionprojection.SourceResponseCache {
+		return executionprojection.Projection{Source: executionprojection.SourceResponseCache}, nil
+	}
+	if !input.AttemptRequired {
+		return executionprojection.Projection{Source: executionprojection.SourceNoProviderAttempt}, nil
+	}
+	if input.AttemptID == "" {
+		return executionprojection.Projection{}, executionprojection.ErrExpectedAttemptMissing
+	}
+	legacyChannelID := input.ExpectedLegacyChannelID
+	if legacyChannelID <= 0 {
+		// Older trace-focused unit fixtures carry an exact attempt ID without a
+		// selected route object. The production resolver never invents this ID;
+		// this test double only models the pre-contract row those fixtures imply.
+		legacyChannelID = 1
+	}
+	return executionprojection.Projection{
+		Source:          executionprojection.SourcePrecontractProviderAttempt,
+		LegacyChannelID: legacyChannelID,
+	}, nil
 }
 
 func (m *MockDB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {

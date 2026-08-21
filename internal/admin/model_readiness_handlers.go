@@ -20,7 +20,9 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/modelgov"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelreadiness"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 )
 
 const (
@@ -36,16 +38,26 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 	requestedModel := strings.TrimSpace(r.URL.Query().Get("model"))
 	rawEndpoint := strings.TrimSpace(r.URL.Query().Get("endpoint"))
 	endpoint := accessscope.CanonicalExecutionEndpoint(rawEndpoint)
+	operation, operationKnown := modeloperation.Lookup(endpoint)
 	caller := strings.TrimSpace(r.URL.Query().Get("caller"))
 	applicationRef := strings.TrimSpace(r.URL.Query().Get("application_ref"))
 	if requestedModel == "" || len(requestedModel) > maxReadinessModelLength ||
-		strings.ContainsAny(requestedModel, "\x00\r\n") || endpoint != rawEndpoint || !accessscope.IsSupportedEndpoint(endpoint) ||
+		strings.ContainsAny(requestedModel, "\x00\r\n") || endpoint != rawEndpoint || !accessscope.IsSupportedEndpoint(endpoint) || !operationKnown ||
 		!slices.Contains([]string{modelreadiness.ModeCaller, modelreadiness.ModeConnection}, mode) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid model readiness request", "reason": "invalid_request"})
 		return
 	}
 	if mode == modelreadiness.ModeConnection {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) != "" || caller != "" || applicationRef != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid model readiness request", "reason": "invalid_request"})
+			return
+		}
+		if !auth.IsOrgAdmin(actorOrganizationRole(r.Context())) {
+			writeJSON(w, http.StatusForbidden, map[string]any{"error": "Connection readiness requires organization operations access", "reason": "forbidden"})
+			return
+		}
+		deploymentID, deploymentErr := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("deployment_id")), 10, 64)
+		if deploymentErr != nil || deploymentID <= 0 || strings.TrimSpace(r.URL.Query().Get("channel_id")) != "" {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid model readiness request", "reason": "invalid_request"})
 			return
 		}
@@ -56,8 +68,8 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 		}
 		response := modelreadiness.Response{
 			ContractVersion: modelreadiness.ContractVersion,
-			Scope: modelreadiness.Scope{Mode: mode, OrgID: orgID, RequestedModel: requestedModel,
-				ResolvedModel: requestedModel, Endpoint: endpoint},
+			Scope: modelreadiness.Scope{Mode: mode, OrgID: orgID, DeploymentID: deploymentID, RequestedModel: requestedModel,
+				ResolvedModel: requestedModel, Endpoint: endpoint, ModelOperationID: string(operation.ID)},
 			RuntimeMutation: "none", ExternalRequests: "none", AsOf: time.Now().UTC(),
 		}
 		connectionOnly := modelreadiness.Optional("connection_mode_not_applicable", nil)
@@ -67,8 +79,13 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 			Grant: connectionOnly, Credential: connectionOnly,
 			ModelAuthorization: connectionOnly, LimitPolicy: connectionOnly,
 		}
+		applications, projectionErr := h.loadReadinessCanonicalApplications(r.Context(), orgID, deploymentID, response.Scope.ResolvedModel, response.Scope.ModelOperationID)
+		if projectionErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "Model readiness unavailable", "reason": "canonical_projection_unavailable"})
+			return
+		}
 		billingState, billingErr := h.inspectBillingReadiness(r.Context(), orgID, response.Scope.ResolvedModel)
-		h.readinessPlatformAxes(r, orgID, &response, billingState, billingErr)
+		h.readinessPlatformAxes(r, orgID, &response, applications, billingState, billingErr)
 		response.Summary = modelreadiness.Summarize(response.PlatformModel, response.ProjectCaller)
 		response.Summary.CurrentProjectCallerCallable = modelreadiness.Fact{
 			State: modelreadiness.StateNotApplicable, ReasonCode: "connection_mode_has_no_caller",
@@ -108,7 +125,7 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 	response := modelreadiness.Response{
 		ContractVersion: modelreadiness.ContractVersion,
 		Scope: modelreadiness.Scope{Mode: mode, OrgID: orgID, ProjectID: projectID, RequestedModel: requestedModel,
-			ResolvedModel: requestedModel, Endpoint: endpoint, Caller: caller, ApplicationRef: applicationRef},
+			ResolvedModel: requestedModel, Endpoint: endpoint, ModelOperationID: string(operation.ID), Caller: caller, ApplicationRef: applicationRef},
 		RuntimeMutation: "none", ExternalRequests: "none", AsOf: time.Now().UTC(),
 	}
 	projectRoute := "/organization-members?section=projects&project_id=" + strconv.FormatInt(projectID, 10)
@@ -122,8 +139,13 @@ func (h *Handler) GetModelReadiness(w http.ResponseWriter, r *http.Request) {
 		response.Scope.ResolvedModel = requestedModel
 	}
 	response.ProjectCaller.Alias, response.ProjectCaller.ModelSet = h.readinessGovernanceAxes(r, orgID, projectID, governance)
+	applications, projectionErr := h.loadReadinessCanonicalApplications(r.Context(), orgID, 0, response.Scope.ResolvedModel, response.Scope.ModelOperationID)
+	if projectionErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "Model readiness unavailable", "reason": "canonical_projection_unavailable"})
+		return
+	}
 	billingState, billingErr := h.inspectBillingReadiness(r.Context(), orgID, response.Scope.ResolvedModel)
-	h.readinessPlatformAxes(r, orgID, &response, billingState, billingErr)
+	h.readinessPlatformAxes(r, orgID, &response, applications, billingState, billingErr)
 	h.readinessWalletAxis(&response, billingState, billingErr)
 	h.readinessCallerAxes(r, orgID, projectID, caller, applicationRef, &response)
 	response.Summary = modelreadiness.Summarize(response.PlatformModel, response.ProjectCaller)
@@ -192,7 +214,14 @@ func (h *Handler) readinessGovernanceAxes(r *http.Request, orgID, projectID int6
 	return aliasAxis, modelreadiness.Ready("project_model_set_allowed", modelreadiness.Evidence("assigned_model_set_count", snapshot.AssignedModelSetCount))
 }
 
-func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *modelreadiness.Response, billingState billing.AdmissionReadiness, billingErr error) {
+func (h *Handler) readinessPlatformAxes(
+	r *http.Request,
+	orgID int64,
+	response *modelreadiness.Response,
+	applications []canonicalModelApplication,
+	billingState billing.AdmissionReadiness,
+	billingErr error,
+) {
 	model := response.Scope.ResolvedModel
 	if h.licenseRuntime == nil {
 		response.PlatformModel.GatewayLicense = modelreadiness.Optional(
@@ -243,61 +272,201 @@ func (h *Handler) readinessPlatformAxes(r *http.Request, orgID int64, response *
 	}
 
 	response.PlatformModel.PriceAuthority = h.readinessPriceAuthorityAxis(r, model, billingState, billingErr)
+	h.readinessCanonicalRouteAxes(r, response, applications)
+}
 
-	if h.routingController == nil {
-		response.PlatformModel.Channel = modelreadiness.Unavailable("routing_preview_unavailable")
-		response.PlatformModel.ProviderCredential = modelreadiness.Unavailable("routing_preview_unavailable")
-		response.PlatformModel.BaseRoute = modelreadiness.Unavailable("routing_preview_unavailable")
-	} else if preview, err := h.routingController.Preview(r.Context(), model); err != nil {
-		response.PlatformModel.Channel = modelreadiness.Unavailable("routing_preview_unavailable")
-		response.PlatformModel.ProviderCredential = modelreadiness.Unavailable("routing_preview_unavailable")
-		response.PlatformModel.BaseRoute = modelreadiness.Unavailable("routing_preview_unavailable")
-	} else {
-		eligibleKeys := 0
-		for _, candidate := range preview.Candidates {
-			eligibleKeys += candidate.EligibleKeyCount
-		}
-		for _, exclusion := range preview.Exclusions {
-			eligibleKeys += exclusion.EligibleKeyCount
-		}
-		routeFix := h.readinessFixRoute(r, "/channels?model="+url.QueryEscape(model), actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin)
-		credentialFix := routeFix
-		credentialChannelID := int64(0)
-		if len(preview.Candidates) > 0 {
-			credentialChannelID = preview.Candidates[0].ChannelID
-		} else if len(preview.Exclusions) > 0 {
-			credentialChannelID = preview.Exclusions[0].ChannelID
-		}
-		if credentialChannelID > 0 {
-			credentialFix = h.readinessFixRoute(r,
-				"/channel-keys?from=connections&channel_id="+strconv.FormatInt(credentialChannelID, 10)+"&model="+url.QueryEscape(model),
-				actorOrganizationRole(r.Context()) == auth.RolePlatformAdmin)
-		}
-		if len(preview.Candidates)+len(preview.Exclusions) > 0 {
-			response.PlatformModel.Channel = modelreadiness.Ready("channel_configured", modelreadiness.Evidence("candidate_count", len(preview.Candidates), "exclusion_count", len(preview.Exclusions)))
-		} else {
-			response.PlatformModel.Channel = modelreadiness.Blocked("channel_missing", modelreadiness.Evidence("candidate_count", 0, "exclusion_count", 0), routeFix, "platform_admin")
-		}
-		if eligibleKeys > 0 {
-			response.PlatformModel.ProviderCredential = modelreadiness.Ready("provider_credential_available", modelreadiness.Evidence("eligible_credential_count", eligibleKeys))
-		} else {
-			response.PlatformModel.ProviderCredential = modelreadiness.Blocked("provider_credential_unavailable", modelreadiness.Evidence("eligible_credential_count", 0), credentialFix, "platform_admin")
-		}
-		if len(preview.Candidates) > 0 && eligibleKeys > 0 {
-			response.PlatformModel.BaseRoute = modelreadiness.Ready("base_route_active", modelreadiness.Evidence("candidate_count", len(preview.Candidates), "degraded", preview.Degraded))
-		} else {
-			response.PlatformModel.BaseRoute = modelreadiness.Blocked("base_route_unavailable", modelreadiness.Evidence("candidate_count", len(preview.Candidates), "exclusion_count", len(preview.Exclusions)), routeFix, "platform_admin")
+func (h *Handler) loadReadinessCanonicalApplications(
+	ctx context.Context,
+	orgID, deploymentID int64,
+	model, operationID string,
+) ([]canonicalModelApplication, error) {
+	projection, err := h.loadCanonicalModelApplications(ctx, orgID, deploymentID, operationID)
+	if errors.Is(err, errCanonicalApplicationNotFound) {
+		return []canonicalModelApplication{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	model = strings.TrimSpace(model)
+	applications := make([]canonicalModelApplication, 0, len(projection.Applications))
+	for _, application := range projection.Applications {
+		if application.PublicModel.ModelName == model && (deploymentID == 0 || application.Deployment.ID == deploymentID) {
+			applications = append(applications, application)
 		}
 	}
+	return applications, nil
+}
 
-	if h.runtimeChangeManager == nil {
-		response.PlatformModel.RuntimeSlot = modelreadiness.Optional("runtime_slot_not_configured_optional", modelreadiness.Evidence("configured", false))
-	} else if slot, err := h.runtimeChangeManager.Slot(r.Context(), model); err != nil {
-		response.PlatformModel.RuntimeSlot = modelreadiness.Unavailable("runtime_slot_unavailable")
-	} else if slot.StableReleaseRef == "" && slot.CanaryReleaseRef == "" {
-		response.PlatformModel.RuntimeSlot = modelreadiness.Optional("runtime_slot_not_configured_optional", modelreadiness.Evidence("configured", false))
+func (h *Handler) readinessCanonicalRouteAxes(
+	r *http.Request,
+	response *modelreadiness.Response,
+	applications []canonicalModelApplication,
+) {
+	fixTarget := "/model-endpoints?model=" + url.QueryEscape(response.Scope.ResolvedModel) +
+		"&operation_id=" + url.QueryEscape(response.Scope.ModelOperationID)
+	if response.Scope.DeploymentID > 0 {
+		fixTarget += "&deployment_id=" + strconv.FormatInt(response.Scope.DeploymentID, 10)
+	}
+	fixRoute := h.readinessFixRoute(r, fixTarget, auth.IsOrgAdmin(actorOrganizationRole(r.Context())))
+
+	if len(applications) == 0 {
+		missingEvidence := modelreadiness.Evidence(
+			"deployment_id", response.Scope.DeploymentID,
+			"model_operation_id", response.Scope.ModelOperationID,
+			"deployment_count", 0,
+		)
+		response.PlatformModel.Deployment = modelreadiness.Blocked("canonical_deployment_missing", missingEvidence, fixRoute, "organization_admin")
+		response.PlatformModel.ProviderCredential = modelreadiness.Blocked("canonical_provider_credential_unavailable", missingEvidence, fixRoute, "organization_admin")
+		response.PlatformModel.Operation = modelreadiness.Blocked("canonical_model_operation_missing", missingEvidence, fixRoute, "organization_admin")
+		response.PlatformModel.RuntimeSlot = modelreadiness.Blocked("canonical_runtime_membership_missing", missingEvidence, fixRoute, "organization_admin")
+		response.PlatformModel.BaseRoute = modelreadiness.Blocked("canonical_route_unavailable", missingEvidence, fixRoute, "organization_admin")
+		return
+	}
+
+	eligibleCredentials := 0
+	operationCount := 0
+	operationReadyCount := 0
+	runtimeMembershipCount := 0
+	connectionReadyCount := 0
+	for _, application := range applications {
+		eligibleCredentials += application.Credential.EligibleCount
+		if application.Connection.AdminState == "enabled" && application.Deployment.AdminState == "enabled" &&
+			application.Deployment.RetiredAt == nil && application.Connection.RetiredAt == nil {
+			connectionReadyCount++
+		}
+		for _, operation := range application.Operations {
+			if operation.OperationID != response.Scope.ModelOperationID {
+				continue
+			}
+			operationCount++
+			if canonicalReadinessOperationVerified(operation) {
+				operationReadyCount++
+			}
+			if operation.Runtime.State == "stable" || operation.Runtime.State == "canary" {
+				runtimeMembershipCount++
+			}
+		}
+	}
+	response.PlatformModel.Deployment = modelreadiness.Ready("canonical_deployment_present", modelreadiness.Evidence(
+		"deployment_id", response.Scope.DeploymentID,
+		"deployment_count", len(applications),
+		"enabled_count", connectionReadyCount,
+	))
+	if eligibleCredentials > 0 {
+		response.PlatformModel.ProviderCredential = modelreadiness.Ready("canonical_provider_credential_available", modelreadiness.Evidence(
+			"deployment_id", response.Scope.DeploymentID,
+			"eligible_credential_count", eligibleCredentials,
+		))
 	} else {
-		response.PlatformModel.RuntimeSlot = modelreadiness.Ready("runtime_slot_configured", modelreadiness.Evidence("configured", true, "canary_basis_points", slot.CanaryBasisPoints))
+		response.PlatformModel.ProviderCredential = modelreadiness.Blocked("canonical_provider_credential_unavailable", modelreadiness.Evidence(
+			"deployment_id", response.Scope.DeploymentID,
+			"eligible_credential_count", 0,
+		), fixRoute, "organization_admin")
+	}
+	if operationCount == 0 {
+		response.PlatformModel.Operation = modelreadiness.Blocked("canonical_model_operation_missing", modelreadiness.Evidence(
+			"model_operation_id", response.Scope.ModelOperationID,
+		), fixRoute, "organization_admin")
+	} else if operationReadyCount == 0 {
+		response.PlatformModel.Operation = modelreadiness.Blocked("canonical_model_operation_unverified", modelreadiness.Evidence(
+			"model_operation_id", response.Scope.ModelOperationID,
+			"operation_count", operationCount,
+			"verified_count", 0,
+		), fixRoute, "organization_admin")
+	} else {
+		response.PlatformModel.Operation = modelreadiness.Ready("canonical_model_operation_verified", modelreadiness.Evidence(
+			"model_operation_id", response.Scope.ModelOperationID,
+			"operation_count", operationCount,
+			"verified_count", operationReadyCount,
+		))
+	}
+	if runtimeMembershipCount == 0 {
+		response.PlatformModel.RuntimeSlot = modelreadiness.Blocked("canonical_runtime_membership_missing", modelreadiness.Evidence(
+			"model_operation_id", response.Scope.ModelOperationID,
+			"membership_count", 0,
+		), fixRoute, "organization_admin")
+	} else {
+		response.PlatformModel.RuntimeSlot = modelreadiness.Ready("canonical_runtime_membership_present", modelreadiness.Evidence(
+			"model_operation_id", response.Scope.ModelOperationID,
+			"membership_count", runtimeMembershipCount,
+		))
+	}
+
+	if response.Scope.Mode == modelreadiness.ModeConnection {
+		callable := connectionReadyCount > 0 && eligibleCredentials > 0 && operationReadyCount > 0 && runtimeMembershipCount > 0
+		if callable {
+			response.PlatformModel.BaseRoute = modelreadiness.Ready("canonical_deployment_operation_ready", modelreadiness.Evidence(
+				"deployment_id", response.Scope.DeploymentID,
+				"model_operation_id", response.Scope.ModelOperationID,
+			))
+		} else {
+			response.PlatformModel.BaseRoute = modelreadiness.Blocked("canonical_deployment_operation_unavailable", modelreadiness.Evidence(
+				"deployment_id", response.Scope.DeploymentID,
+				"model_operation_id", response.Scope.ModelOperationID,
+			), fixRoute, "organization_admin")
+		}
+		return
+	}
+
+	if h == nil || h.modelRoutePlanner == nil {
+		response.PlatformModel.BaseRoute = modelreadiness.Unavailable("canonical_route_planner_unavailable")
+		return
+	}
+	plan, err := h.modelRoutePlanner.Plan(r.Context(), modelrouting.Request{
+		Mode:             modelrouting.ModeCanonical,
+		CustomerOrgID:    response.Scope.OrgID,
+		PublicModel:      response.Scope.ResolvedModel,
+		ModelOperationID: response.Scope.ModelOperationID,
+		SelectionKey: "admin-readiness:" + strconv.FormatInt(response.Scope.OrgID, 10) + ":" +
+			response.Scope.ResolvedModel + ":" + response.Scope.ModelOperationID,
+	})
+	if err != nil {
+		if errors.Is(err, modelrouting.ErrUnavailable) {
+			response.PlatformModel.BaseRoute = modelreadiness.Unavailable("canonical_route_snapshot_unavailable")
+			return
+		}
+		response.PlatformModel.BaseRoute = modelreadiness.Blocked(canonicalReadinessRouteReason(err), modelreadiness.Evidence(
+			"model_operation_id", response.Scope.ModelOperationID,
+			"exclusion_count", len(plan.Exclusions),
+		), fixRoute, "organization_admin")
+		return
+	}
+	response.PlatformModel.BaseRoute = modelreadiness.Ready("canonical_route_plan_available", modelreadiness.Evidence(
+		"authority_mode", string(plan.AuthorityMode),
+		"model_operation_id", plan.ModelOperationID,
+		"route_count", len(plan.Routes),
+		"runtime_release_ref", plan.RuntimeReleaseRef,
+		"runtime_stage", plan.RuntimeStage,
+		"slot_version", plan.SlotVersion,
+	))
+}
+
+func canonicalReadinessOperationVerified(operation canonicalOperationAxis) bool {
+	if operation.SupportState != "enabled" || operation.VerifiedAt == nil || operation.ProbeState != "ready" {
+		return false
+	}
+	switch modeloperation.ID(operation.OperationID) {
+	case modeloperation.IDResponses, modeloperation.IDMessages:
+		return operation.EvidenceState == "production_approved" &&
+			operation.ProductionQualification.Qualified &&
+			operation.ProductionQualification.State == "production_qualified"
+	default:
+		return slices.Contains([]string{"live_probed", "conformance_verified", "production_approved"}, operation.EvidenceState)
+	}
+}
+
+func canonicalReadinessRouteReason(err error) string {
+	switch {
+	case errors.Is(err, modelrouting.ErrManifestStale):
+		return "canonical_runtime_manifest_stale"
+	case errors.Is(err, modelrouting.ErrManifestUnsealed):
+		return "canonical_runtime_manifest_unsealed"
+	case errors.Is(err, modelrouting.ErrAuthorityNotReady):
+		return "canonical_route_authority_not_ready"
+	case errors.Is(err, modelrouting.ErrNoRoute):
+		return "canonical_route_unavailable"
+	default:
+		return "canonical_route_plan_rejected"
 	}
 }
 

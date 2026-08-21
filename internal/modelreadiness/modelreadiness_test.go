@@ -49,9 +49,9 @@ func TestCallableFactUsesEveryRuntimeAuthorityWithoutCollapsingOptionalFacts(t *
 	ready := Ready("ready", nil)
 	optional := Optional("optional", nil)
 	basePlatform := PlatformModel{
-		Registration: Ready("registered", nil), Lifecycle: ready,
+		GatewayLicense: ready, Registration: Ready("registered", nil), Lifecycle: ready,
 		Catalog: Ready("catalog", nil), PriceAuthority: ready,
-		Channel: ready, ProviderCredential: ready, BaseRoute: ready,
+		Deployment: ready, ProviderCredential: ready, Operation: ready, BaseRoute: ready,
 		RuntimeSlot: optional,
 	}
 	baseProject := ProjectCaller{
@@ -77,6 +77,12 @@ func TestCallableFactUsesEveryRuntimeAuthorityWithoutCollapsingOptionalFacts(t *
 			p.GatewayLicense = Blocked("license_error.invalid", nil, "/license", "platform_admin")
 		}, StateBlocked, "license_error.invalid", true},
 		{"price", func(p *PlatformModel, _ *ProjectCaller) { p.PriceAuthority = Blocked("price_missing", nil, "", "") }, StateBlocked, "price_missing", true},
+		{"deployment", func(p *PlatformModel, _ *ProjectCaller) { p.Deployment = Blocked("deployment_missing", nil, "", "") }, StateBlocked, "deployment_missing", true},
+		{"provider credential", func(p *PlatformModel, _ *ProjectCaller) {
+			p.ProviderCredential = Blocked("provider_credential_missing", nil, "", "")
+		}, StateBlocked, "provider_credential_missing", true},
+		{"operation", func(p *PlatformModel, _ *ProjectCaller) { p.Operation = Blocked("operation_missing", nil, "", "") }, StateBlocked, "operation_missing", true},
+		{"runtime membership", func(p *PlatformModel, _ *ProjectCaller) { p.RuntimeSlot = Blocked("runtime_missing", nil, "", "") }, StateBlocked, "runtime_missing", true},
 		{"base route", func(p *PlatformModel, _ *ProjectCaller) { p.BaseRoute = Blocked("route_missing", nil, "", "") }, StateBlocked, "route_missing", true},
 		{"project", func(_ *PlatformModel, p *ProjectCaller) { p.Project = Blocked("project_inactive", nil, "", "") }, StateBlocked, "project_inactive", true},
 		{"alias", func(_ *PlatformModel, p *ProjectCaller) { p.Alias = Blocked("alias_inactive", nil, "", "") }, StateBlocked, "alias_inactive", true},

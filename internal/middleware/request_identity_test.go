@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,6 +90,32 @@ func TestOperationIdentityRejectsMalformedIdempotencyKey(t *testing.T) {
 	}
 	if !strings.HasPrefix(rec.Header().Get(OperationIDHeader), "op_") {
 		t.Fatal("rejected requests still need a server operation ID")
+	}
+}
+
+func TestOperationIdentityInvalidIdempotencyKeyUsesMessagesEnvelope(t *testing.T) {
+	handler := OperationIdentityWithSecret("identity-test-secret")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("malformed Messages identity reached handler")
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	request.Header.Set(IdempotencyKeyHeader, strings.Repeat("x", 256))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	var body struct {
+		Type      string `json:"type"`
+		RequestID string `json:"request_id"`
+		Error     struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	operationID := recorder.Header().Get(OperationIDHeader)
+	if recorder.Code != http.StatusBadRequest || body.Type != "error" || body.Error.Type != "invalid_request_error" ||
+		operationID == "" || body.RequestID != operationID || recorder.Header().Get("request-id") != operationID {
+		t.Fatalf("status=%d headers=%v body=%+v", recorder.Code, recorder.Header(), body)
 	}
 }
 

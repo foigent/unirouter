@@ -18,9 +18,19 @@ vi.mock('../../api/client', () => ({ api: {
 describe('DeploymentNetworkPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.contract.mockResolvedValue({ contract_version: 'unirouter.deployment-profile.v1', tls_private_key_storage: 'forbidden', apply_authority: 'operator_cli_compose_or_helm', runtime_mutation: 'none', endpoint_profiles: [{ profile_id: 'endpoint.openai-chat.v1', display_name: 'OpenAI Chat Completions', paths: ['/v1/chat/completions'], runtime_state: 'runtime_supported', evidence_level: 'verified', streaming: true }] });
+    mocks.contract.mockResolvedValue({
+      contract_version: 'unirouter.deployment-profile.v1',
+      tls_private_key_storage: 'forbidden',
+      apply_authority: 'operator_cli_compose_or_helm',
+      runtime_mutation: 'none',
+      endpoint_profiles: [
+        { profile_id: 'endpoint.openai-chat.v1', display_name: 'OpenAI Chat Completions', paths: ['/v1/chat/completions', '/v1/models'], runtime_state: 'runtime_supported', evidence_level: 'verified', streaming: true },
+        { profile_id: 'endpoint.openai-responses.contract.v1', display_name: 'OpenAI Responses (strict non-stream text)', paths: ['/v1/responses'], runtime_state: 'runtime_supported', evidence_level: 'repository_runtime_verified', streaming: false },
+        { profile_id: 'endpoint.anthropic-messages.v1', display_name: 'Anthropic Messages (strict non-stream text)', paths: ['/v1/messages'], runtime_state: 'runtime_supported', evidence_level: 'repository_runtime_verified', streaming: false },
+      ],
+    });
     mocks.profiles.mockResolvedValue({ data: [{ id: 1, profile_ref: 'dep_ecs_poc', display_name: 'ECS POC', kind: 'ecs_development', environment: 'poc', ingress_mode: 'bundled_reverse_proxy', dns_mode: 'ip_address', outbound_mode: 'direct', notes: '', status: 'active', desired_revision: 1, updated_at: '2026-08-02T08:00:00Z' }] });
-    mocks.endpoints.mockResolvedValue({ data: [{ id: 2, deployment_profile_id: 1, deployment_profile_ref: 'dep_ecs_poc', deployment_name: 'ECS POC', endpoint_ref: 'gwe_ecs_poc', display_name: 'ECS Gateway', base_url: 'https://gateway.example.com', visibility: 'public', tls_mode: 'external_termination', certificate_ref: 'secret://tls/gateway', endpoint_profile: 'endpoint.openai-chat.v1', status: 'active', desired_revision: 1, observed_status: 'unverified', observed_base_url: '', observed_evidence: {}, updated_at: '2026-08-02T08:00:00Z' }] });
+    mocks.endpoints.mockResolvedValue({ data: [{ id: 2, deployment_profile_id: 1, deployment_profile_ref: 'dep_ecs_poc', deployment_name: 'ECS POC', endpoint_ref: 'gwe_ecs_poc', display_name: 'ECS Gateway', base_url: 'https://gateway.example.com', visibility: 'public', tls_mode: 'external_termination', certificate_ref: 'secret://tls/gateway', endpoint_profile: 'endpoint.anthropic-messages.v1', status: 'active', desired_revision: 1, observed_status: 'unverified', observed_base_url: '', observed_evidence: {}, updated_at: '2026-08-02T08:00:00Z' }] });
     mocks.runtime.mockResolvedValue({
       status: 'operational', generated_at: '2026-08-17T00:00:00Z',
       runtime_environment: { version: '1.1.25', commit: 'abcdef1234567890', deployment_mode: 'customer_compose', environment: 'test', deployment_role: 'single_customer' },
@@ -36,6 +46,9 @@ describe('DeploymentNetworkPage', () => {
     expect((await screen.findAllByText('ECS Gateway')).length).toBeGreaterThan(0);
     expect(screen.getByLabelText('部署与网络检查器')).toBeTruthy();
     expect(screen.getAllByText('未独立验证').length).toBeGreaterThan(0);
+    expect(screen.getByText('Anthropic Messages (strict non-stream text)')).toBeTruthy();
+    expect(screen.getByText('仓库运行时已验证')).toBeTruthy();
+    expect(screen.getByText('运行时能力（仓库）')).toBeTruthy();
     expect(screen.getByText('secret://tls/gateway')).toBeTruthy();
     expect(screen.getByText('无')).toBeTruthy();
     expect(screen.getByText(/TLS 私钥/)).toBeTruthy();

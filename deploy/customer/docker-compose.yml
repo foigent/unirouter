@@ -71,6 +71,8 @@ services:
       RUNTIME_ENVIRONMENT: ${RUNTIME_ENVIRONMENT:-production}
       RUNTIME_DEPLOYMENT_MODE: ${RUNTIME_DEPLOYMENT_MODE:-docker-compose}
       RUNTIME_DEPLOYMENT_ROLE: stable
+      MODEL_ROUTE_AUTHORITY: ${MODEL_ROUTE_AUTHORITY:-canonical}
+      MODEL_ROUTE_COMPATIBILITY_ENABLED: ${MODEL_ROUTE_COMPATIBILITY_ENABLED:-false}
       BILLING_MODE: ${BILLING_MODE:-cost_observation}
       # Upgrade compatibility only. After complete Rate Cards are reviewed,
       # activated and preflighted, set rate_card; strict mode never falls back.

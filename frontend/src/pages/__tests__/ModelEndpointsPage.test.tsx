@@ -1,384 +1,523 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { Modal } from '@douyinfe/semi-ui';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Modal, Toast } from '@douyinfe/semi-ui';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelEndpointsPage from '../ModelEndpointsPage';
+import {
+  canonicalOperationBaseURLForPreset,
+  canonicalOperationOriginError,
+} from '../../features/modelEndpoints/ModelEndpointCreateSheet';
+import { useAuthStore } from '../../store/auth';
 
 const mocks = vi.hoisted(() => ({
-  getModelEndpoints: vi.fn(),
-  testChannelModel: vi.fn(),
-  activateModelEndpoint: vi.fn(),
-  startModelEndpointCanary: vi.fn(),
-  recoverModelEndpoint: vi.fn(),
-  getProviderModels: vi.fn(),
-  getChannel: vi.fn(),
-  updateChannel: vi.fn(),
-  createChannel: vi.fn(),
-  promoteRuntimeChange: vi.fn(),
-  rollbackRuntimeChange: vi.fn(),
+  list: vi.fn(),
+  get: vi.fn(),
+  create: vi.fn(),
+  probe: vi.fn(),
+  releaseList: vi.fn(),
+  authorRelease: vi.fn(),
+  lifecycleCurrent: vi.fn(),
+  activateInitial: vi.fn(),
+  startCanary: vi.fn(),
+  promote: vi.fn(),
+  cancelCanary: vi.fn(),
+  rollbackStable: vi.fn(),
+  cutoverLegacy: vi.fn(),
+  rollbackLegacy: vi.fn(),
 }));
 
-vi.mock('../../api/channels', () => ({
-  channelApi: {
-    get: mocks.getChannel,
-    update: mocks.updateChannel,
-    create: mocks.createChannel,
-  },
-}));
-vi.mock('../../api/modelEndpoints', () => ({
-  modelEndpointApi: {
-    getModelEndpoints: mocks.getModelEndpoints,
-    testChannelModel: mocks.testChannelModel,
-    activateModelEndpoint: mocks.activateModelEndpoint,
-    startModelEndpointCanary: mocks.startModelEndpointCanary,
-    recoverModelEndpoint: mocks.recoverModelEndpoint,
-    getProviderModels: mocks.getProviderModels,
-  },
-}));
-vi.mock('../../api/routing', () => ({
-  routingApi: {
-    promoteRelease: mocks.promoteRuntimeChange,
-    rollbackRelease: mocks.rollbackRuntimeChange,
-  },
-}));
-
-vi.mock('../ChannelKeysPage', () => ({ default: () => <div>凭证内嵌视图</div> }));
-vi.mock('../ModelGovernancePage', () => ({ default: () => <div>目录内嵌视图</div> }));
-vi.mock('../ModelReadinessPage', () => ({ default: () => <div>诊断内嵌视图</div> }));
-vi.mock('../RuntimeChangeControlWorkspace', () => ({ default: () => <div>发布证据内嵌视图</div> }));
-
-function target(overrides: Record<string, unknown>) {
+vi.mock('../../api/modelDeploymentReleases', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../api/modelDeploymentReleases')>();
   return {
-    target_ref: 'target:13:deepseek-v4-flash',
-    channel_id: 13,
-    connection_name: 'DeepSeek official',
-    provider: 'deepseek',
-    base_url: 'https://api.deepseek.com',
-    adapter_type: 'openai_compatible',
-    public_model: 'deepseek-v4-flash',
-    upstream_model: 'deepseek-v4-flash',
-    config_status: 'staged',
-    routing_epoch: 4,
-    priority: 100,
-    weight: 100,
-    circuit_state: 'healthy',
-    eligible_credential_count: 1,
-    stable_assignment: false,
-    canary_assignment: false,
-    route_candidate: false,
-    state: 'needs_test',
-    reason_code: 'no_current_probe',
+    ...actual,
+    modelDeploymentReleaseApi: {
+      list: mocks.releaseList,
+      author: mocks.authorRelease,
+    },
+  };
+});
+
+vi.mock('../../api/modelDeploymentLifecycle', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../api/modelDeploymentLifecycle')>();
+  return {
+    ...actual,
+    modelDeploymentLifecycleApi: {
+      current: mocks.lifecycleCurrent,
+      activateInitial: mocks.activateInitial,
+      startCanary: mocks.startCanary,
+      promote: mocks.promote,
+      cancelCanary: mocks.cancelCanary,
+      rollbackStable: mocks.rollbackStable,
+      cutoverLegacy: mocks.cutoverLegacy,
+      rollbackLegacy: mocks.rollbackLegacy,
+    },
+  };
+});
+
+vi.mock('../../api/modelDeployments', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../api/modelDeployments')>();
+  return {
+    ...actual,
+    modelDeploymentApi: {
+      list: mocks.list,
+      get: mocks.get,
+      create: mocks.create,
+      probe: mocks.probe,
+    },
+  };
+});
+
+function application(overrides: Record<string, unknown> = {}) {
+  return {
+    contract_version: 'unirouter.model-deployment.v1',
+    public_model: {
+      id: 7,
+      model_name: 'deepseek-v4-flash',
+      display_name: 'DeepSeek V4 Flash',
+      provider_family: 'deepseek',
+      lifecycle: 'ga',
+      context_length: 128000,
+      output_limit: 8192,
+      approved_catalog: true,
+    },
+    deployment: {
+      id: 41,
+      upstream_model: 'deepseek-v4-flash-202608',
+      admin_state: 'enabled',
+      config_revision: 4,
+      priority: 100,
+      routing_weight: 100,
+      max_context: 128000,
+      default_max_output: 4096,
+      degradation_threshold: 10,
+      circuit_state: 'healthy',
+      circuit_revision: 2,
+      fail_count: 0,
+    },
+    connection: {
+      id: 13,
+      name: 'DeepSeek official',
+      provider: 'deepseek',
+      base_url: 'https://api.deepseek.com',
+      adapter_type: 'openai_compatible',
+      admin_state: 'enabled',
+      config_revision: 5,
+    },
+    credential: {
+      state: 'ready',
+      reason_code: 'eligible_credential_bound',
+      bound_count: 1,
+      eligible_count: 1,
+      bindings: [{ id: 91, status: 'active', state_revision: 3, fail_count: 0, eligible: true }],
+    },
+    operations: [{
+      operation_id: 'openai.responses.v1',
+      protocol_profile_id: 'openai.responses.text',
+      protocol_profile_version: '1.0.0',
+      support_state: 'enabled',
+      evidence_state: 'declared',
+      revision: 2,
+      circuit_state: 'closed',
+      circuit_revision: 1,
+      circuit_fail_count: 0,
+      probed_binding_count: 0,
+      current_success_count: 0,
+      current_failure_count: 0,
+      stale_probed_binding_count: 1,
+      probe_state: 'stale',
+      probe_reason_code: 'binding_probe_revision_stale',
+      probe_available: true,
+      probe_availability_reason_code: 'exact_probe_contract_available',
+      execution_support: {
+        operation_id: 'openai.responses.v1',
+        public_path: '/v1/responses',
+        protocol_profile_id: 'openai.responses.text',
+        protocol_profile_version: '1.0.0',
+        executor_contract_version: 'responses.executor.v1',
+      },
+      production_qualification: {
+        required: true,
+        qualified: false,
+        state: 'missing_approval',
+      },
+      runtime: { state: 'unassigned', reason_code: 'no_runtime_membership' },
+    }],
+    runtime: { state: 'empty', reason_code: 'runtime_slot_has_no_release', slot_version: 6 },
+    callability: { evaluated: false, state: 'not_evaluated', reason_code: 'caller_context_absent' },
+    actions: {
+      identity_type: 'deployment_id+operation_id',
+      required_fields: ['deployment_id', 'operation_id', 'expected_release_version', 'expected_slot_version'],
+      lifecycle_writer: 'runtimechange.v2_only',
+      license_middleware: 'route_owned',
+      rbac_middleware: 'route_owned',
+    },
     ...overrides,
   };
 }
 
-function projection(targets = [target({})], modelOverrides: Record<string, unknown> = {}) {
+function projection(applications = [application()]) {
   return {
-    contract_version: 'unirouter.model-endpoints.v2',
-    generated_at: '2026-08-16T01:00:00Z',
-    summary: { total: 1, route_available: 0, attention: 1, canary: 0 },
-    models: [{
-      public_model: 'deepseek-v4-flash',
-      display_name: 'DeepSeek V4 Flash',
-      lifecycle: 'ga',
-      catalog_approved: true,
-      state: 'needs_test',
-      reason_code: 'provider_probe_required',
-      canary_basis_points: 0,
-      release_history_count: 7,
-      targets,
-      ...modelOverrides,
-    }],
+    contract_version: 'unirouter.model-deployment.v1',
+    generated_at: '2026-08-20T01:00:00Z',
+    applications,
+    summary: {
+      deployments: applications.length,
+      connections_paused: 0,
+      credentials_ready: applications.length,
+      probes_ready: 0,
+      runtime_assigned_operations: 0,
+    },
   };
+}
+
+const activeLicense = {
+  status: 'active',
+  enforceable: true,
+  features: {
+    gateway: true,
+    agent_capabilities: true,
+    oidc: true,
+    guardrails: true,
+    notifications: true,
+    model_governance: true,
+    data_exchange: true,
+  },
+};
+
+function setRole(role: 'platform_admin' | 'org_admin' | 'org_viewer' | 'member') {
+  useAuthStore.setState({
+    user: {
+      id: 1,
+      username: role,
+      role,
+      organization_role: role,
+      license_access: activeLicense,
+    },
+  });
 }
 
 function renderPage(entry = '/channels') {
   return render(<MemoryRouter initialEntries={[entry]}><ModelEndpointsPage /></MemoryRouter>);
 }
 
-describe('ModelEndpointsPage canonical model and provider target flow', () => {
-  afterEach(() => { Modal.destroyAll(); });
+async function chooseSelectOption(label: string, option: string | RegExp) {
+  fireEvent.click(screen.getByRole('combobox', { name: label }));
+  const choice = await screen.findByRole('option', { name: option });
+  fireEvent.click(choice);
+  return choice;
+}
+
+describe('ModelEndpointsPage canonical deployment UI', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Modal.destroyAll();
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getModelEndpoints.mockResolvedValue(projection());
-    mocks.testChannelModel.mockResolvedValue({
+    setRole('org_admin');
+    mocks.list.mockResolvedValue(projection());
+    mocks.releaseList.mockResolvedValue({
+      contract_version: 'unirouter.model-deployment-release-authoring-options.v1',
+      generated_at: '2026-08-20T01:00:00Z',
+      models: [],
+      releases: [],
+    });
+    mocks.get.mockResolvedValue(application());
+    mocks.probe.mockResolvedValue({
+      probe_id: 301,
+      deployment_id: 41,
+      operation_id: 'openai.responses.v1',
+      credential_binding_id: 91,
       success: true,
-      model: 'deepseek-v4-flash',
-      upstream_model: 'deepseek-v4-flash',
+      provider_success: true,
+      current: true,
+      stale: false,
+      operation_advanced: true,
+      reason_code: 'probe_current_success',
+      provider_reason_code: 'provider_success',
       status_code: 200,
-      latency_ms: 18,
+      latency_ms: 21,
     });
-    mocks.activateModelEndpoint.mockResolvedValue({ stage: 'active' });
-    mocks.startModelEndpointCanary.mockResolvedValue({ stage: 'canary' });
-    mocks.recoverModelEndpoint.mockResolvedValue({ stage: 'active' });
-    mocks.updateChannel.mockResolvedValue({ message: 'Channel updated' });
-    mocks.getChannel.mockResolvedValue({ id: 13, model_mapping: { 'deepseek-v4-flash': 'deepseek-v4-flash' } });
-    mocks.getProviderModels.mockResolvedValue({
-      authority: 'live_provider_api', provider: 'deepseek', channel_id: 13,
-      endpoint: 'https://api.deepseek.com/v1/models', fetched_at: '2026-08-19T04:00:00Z',
-      data: [{ id: 'deepseek-v4-flash' }, { id: 'deepseek-v4-pro' }], total: 2,
+    mocks.create.mockResolvedValue({
+      application: application(),
+      idempotency_replay: false,
+      reused: { connection: false, public_model: false, deployment: false, credential: false, operation: false },
     });
-    mocks.createChannel.mockResolvedValue({ id: 21, credential_configured: true });
   });
 
-  it('groups several provider targets under one public model and keeps immutable history in advanced audit copy', async () => {
-    mocks.getModelEndpoints.mockResolvedValue(projection([
-      target({}),
-      target({
-        target_ref: 'target:14:deepseek-v4-flash',
-        channel_id: 14,
-        connection_name: 'OpenRouter production',
-        provider: 'openrouter',
-        base_url: 'https://openrouter.ai/api/v1',
-        upstream_model: 'deepseek/deepseek-v4-flash',
-        priority: 200,
-      }),
-    ]));
+  it('derives the OpenAI Responses origin and rejects pathful public operation connections before submit', () => {
+    expect(canonicalOperationBaseURLForPreset('openai', 'openai.responses.v1')).toBe('https://api.openai.com');
+    expect(canonicalOperationBaseURLForPreset('openai', 'openai.chat_completions.v1')).toBe('https://api.openai.com/v1');
+    expect(canonicalOperationOriginError('openai.responses.v1', 'https://api.openai.com')).toBe('');
+    expect(canonicalOperationOriginError('openai.responses.v1', 'https://api.openai.com/v1')).toMatch(/path-free HTTPS origin/);
+    expect(canonicalOperationOriginError('anthropic.messages.v1', 'https://api.anthropic.com\u00a0')).toMatch(/ASCII/);
+    expect(canonicalOperationOriginError('openai.chat_completions.v1', 'https://api.openai.com/v1')).toBe('');
+  });
 
+  it('flattens the list by exact deployment_id and operation_id and reads detail through the exact route', async () => {
     renderPage();
 
     expect(await screen.findByText('DeepSeek V4 Flash')).toBeTruthy();
-    expect(screen.getByRole('textbox', { name: '搜索模型与供应商端点' })).toBeTruthy();
-    expect(screen.getByText(/deepseek · DeepSeek official/)).toBeTruthy();
-    expect(screen.getByText(/openrouter · OpenRouter production/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '管理端点' }));
-    expect(await screen.findByText('DeepSeek official · deepseek')).toBeTruthy();
-    expect(screen.getByText('OpenRouter production · openrouter')).toBeTruthy();
-    expect(screen.queryByText(/rcr_/)).toBeNull();
-    fireEvent.click(screen.getByText('高级审计信息'));
-    expect(screen.getByText(/历史记录 7 条。旧发布是不可变审计记录，不是重复的当前模型/)).toBeTruthy();
+    expect(screen.getByText('deployment_id=41')).toBeTruthy();
+    expect(screen.getByText('openai.responses.v1')).toBeTruthy();
+    expect(screen.getByText('/v1/responses')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看详情' }));
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(41, 'openai.responses.v1'));
+    expect(await screen.findByText('精确持久身份')).toBeTruthy();
+    expect(screen.getAllByText('deployment_id=41').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('operation_id=openai.responses.v1').length).toBeGreaterThan(0);
   });
 
-  it('does not present a false empty state while the initial projection is loading', async () => {
-    let resolveProjection!: (value: ReturnType<typeof projection>) => void;
-    mocks.getModelEndpoints.mockReturnValueOnce(new Promise((resolve) => {
-      resolveProjection = resolve;
-    }));
+  it('preserves an exact deployment operation deep link without falling back by model or connection', async () => {
+    renderPage('/channels?deployment_id=41&operation_id=openai.responses.v1');
 
-    renderPage();
-
-    expect(await screen.findByText('正在加载模型端点')).toBeTruthy();
-    expect(screen.queryByText('还没有模型端点')).toBeNull();
-
-    resolveProjection(projection());
-
-    expect(await screen.findByText('DeepSeek V4 Flash')).toBeTruthy();
-    expect(screen.queryByText('正在加载模型端点')).toBeNull();
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(41, 'openai.responses.v1'));
+    expect(await screen.findByText('1 · 配置与管理状态')).toBeTruthy();
+    expect(screen.queryByText(/旧 channel_id\/public_model 深链/)).toBeNull();
   });
 
-  it('tests the exact selected DeepSeek target and never substitutes a Kimi target', async () => {
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
-    const endpointSurface = screen.getByText('DeepSeek official · deepseek').closest('section');
-    expect(endpointSurface).toBeTruthy();
-    fireEvent.click(within(endpointSurface!).getByRole('button', { name: '真实检测' }));
-    fireEvent.click(await screen.findByText('发起真实检测'));
+  it('refuses to infer a canonical identity from a legacy channel deep link', async () => {
+    renderPage('/channels?channel_id=13&model=deepseek-v4-flash');
 
-    await waitFor(() => expect(mocks.testChannelModel).toHaveBeenCalledWith(13, 'deepseek-v4-flash'));
-    expect(mocks.testChannelModel).not.toHaveBeenCalledWith(expect.anything(), 'kimi-k3');
+    expect(await screen.findByText(/旧 channel_id\/public_model 深链不是 canonical deployment 身份/)).toBeTruthy();
+    expect(mocks.get).not.toHaveBeenCalled();
   });
 
-  it('shows the exact model identity reported by the provider response', async () => {
-    mocks.getModelEndpoints.mockResolvedValue(projection([target({
-      last_probe: {
-        success: true, current: true, status_code: 200, latency_ms: 18,
-        tested_at: '2026-08-19T04:00:00Z', upstream_model: 'deepseek-v4-flash', reported_model: 'deepseek-v4-flash-202608',
-      },
-      state: 'ready',
+  it('renders five independent axes and never turns probe, runtime or caller state into one ready flag', async () => {
+    renderPage('/channels?deployment_id=41&operation_id=openai.responses.v1');
+
+    expect(await screen.findByText('1 · 配置与管理状态')).toBeTruthy();
+    expect(screen.getByText('2 · 凭证状态')).toBeTruthy();
+    expect(screen.getByText('3 · Operation 支持与探测证据')).toBeTruthy();
+    expect(screen.getByText('4 · Canonical Runtime')).toBeTruthy();
+    expect(screen.getByText('5 · 调用者可调用性')).toBeTruthy();
+    expect(screen.getByText(/binding_probe_revision_stale/)).toBeTruthy();
+    expect(screen.getByText(/exact_probe_contract_available/)).toBeTruthy();
+    expect(screen.getByText(/responses\.executor\.v1/)).toBeTruthy();
+    expect(screen.getByText(/missing_approval/)).toBeTruthy();
+    expect(screen.getByText(/未分配到任何 canonical runtime release/)).toBeTruthy();
+    expect(screen.getByText(/未针对调用者评估/)).toBeTruthy();
+    expect(screen.getAllByText(/^ready$/i)).toHaveLength(1);
+  });
+
+  it('links exact runtime membership from deployment detail into the canonical release workspace', async () => {
+    const base = application();
+    const withStableMembership = application({
+      operations: [{
+        ...base.operations[0],
+        runtime: {
+          state: 'stable',
+          reason_code: 'assigned_to_stable_release',
+          slot_version: 8,
+          stable_membership: {
+            release_ref: 'rcr_v2-candidate',
+            release_stage: 'active',
+            release_version: 3,
+            route_items_hash: 'sha256:routes',
+            ordinal: 1,
+            admission: 'allow',
+            expected_connection_revision: 5,
+            expected_deployment_revision: 4,
+            expected_operation_revision: 2,
+            protocol_profile_id: 'openai.responses.text',
+            protocol_profile_version: '1.0.0',
+          },
+        },
+      }],
+    });
+    mocks.list.mockResolvedValue(projection([withStableMembership]));
+    mocks.get.mockResolvedValue(withStableMembership);
+    renderPage('/channels?deployment_id=41&operation_id=openai.responses.v1');
+
+    const button = await screen.findByRole('button', { name: '查看 Stable Release' });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(screen.queryByText('1 · 配置与管理状态')).toBeNull());
+    expect(screen.getByText('Canonical Release Workspace')).toBeTruthy();
+  });
+
+  it('keeps connection and deployment administration state distinct in the list configuration axis', async () => {
+    const base = application();
+    mocks.list.mockResolvedValue(projection([application({
+      deployment: { ...base.deployment, admin_state: 'paused' },
     })]));
 
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
-    expect(await screen.findByText(/供应商回报模型：deepseek-v4-flash-202608/)).toBeTruthy();
-    expect(screen.getByText(/与发送的 deepseek-v4-flash 不同/)).toBeTruthy();
+
+    expect(await screen.findByText('连接 enabled')).toBeTruthy();
+    expect(screen.getByText('Deployment paused')).toBeTruthy();
+    expect(screen.queryByText('Deployment enabled')).toBeNull();
   });
 
-  it('uses the live provider catalog to replace a display title with the exact upstream model ID', async () => {
-    mocks.getModelEndpoints.mockResolvedValue(projection([target({
-      target_ref: 'target:22:kimi-k2.7-code', channel_id: 22,
-      connection_name: 'Kimi official', provider: 'kimi', public_model: 'kimi-k2.7-code', upstream_model: 'Kimi K2.7 Code', routing_epoch: 6,
-    })], { public_model: 'kimi-k2.7-code', display_name: 'Kimi K2.7 Code' }));
-    mocks.getProviderModels.mockResolvedValue({
-      authority: 'live_provider_api', provider: 'kimi', channel_id: 22,
-      endpoint: 'https://api.moonshot.cn/v1/models', fetched_at: '2026-08-19T04:00:00Z',
-      data: [{ id: 'kimi-k2.7-code' }, { id: 'kimi-k3' }], total: 2,
+  it('probes only the selected deployment operation and exact credential binding', async () => {
+    let confirmationConfig: any;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      confirmationConfig = config;
+      return { destroy: vi.fn(), update: vi.fn() } as any;
     });
-    mocks.getChannel.mockResolvedValue({ id: 22, model_mapping: {} });
+    renderPage('/channels?deployment_id=41&operation_id=openai.responses.v1');
 
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
-    fireEvent.click(screen.getByRole('button', { name: '核对供应商模型列表' }));
-    expect(await screen.findByText(/供应商当前列表不包含 Kimi K2.7 Code/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('combobox', { name: '供应商上游模型 ID' }));
-    fireEvent.click(await within(screen.getByRole('listbox')).findByText('kimi-k2.7-code'));
-    fireEvent.click(screen.getByRole('button', { name: '保存为上游模型 ID' }));
+    const button = await screen.findByRole('button', { name: '用此绑定探测精确 Operation' });
+    fireEvent.click(button);
+    expect(confirmationConfig.title).toBe('探测 Deployment #41？');
+    expect(confirmationConfig.okText).toBe('发起精确探测');
+    await act(async () => { await confirmationConfig.onOk(); });
 
-    await waitFor(() => expect(mocks.updateChannel).toHaveBeenCalledWith(22, {
-      model_mapping: { 'kimi-k2.7-code': 'kimi-k2.7-code' },
-      expected_routing_epoch: 6,
+    await waitFor(() => expect(mocks.probe).toHaveBeenCalledWith(41, 'openai.responses.v1', {
+      credential_binding_id: 91,
     }));
   });
 
-  it('batch tests every pending provider target instead of only the first row', async () => {
-    mocks.getModelEndpoints.mockResolvedValue(projection([
-      target({}),
-      target({
-        target_ref: 'target:14:deepseek-v4-flash',
-        channel_id: 14,
-        connection_name: 'OpenRouter production',
-        provider: 'openrouter',
-        upstream_model: 'deepseek/deepseek-v4-flash',
-      }),
-    ]));
-    mocks.testChannelModel
-      .mockResolvedValueOnce({ success: true, model: 'deepseek-v4-flash', upstream_model: 'deepseek-v4-flash' })
-      .mockResolvedValueOnce({ success: true, model: 'deepseek-v4-flash', upstream_model: 'deepseek/deepseek-v4-flash' });
+  it('keeps org_viewer on canonical list/detail while hiding create, probe and credential binding identity', async () => {
+    setRole('org_viewer');
+    renderPage('/channels?deployment_id=41&operation_id=openai.responses.v1');
 
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '补齐端点检测证据（2）' }));
-    fireEvent.click(await screen.findByText('确认逐项检测'));
-
-    await waitFor(() => expect(mocks.testChannelModel).toHaveBeenCalledTimes(2));
-    expect(mocks.testChannelModel).toHaveBeenNthCalledWith(1, 13, 'deepseek-v4-flash');
-    expect(mocks.testChannelModel).toHaveBeenNthCalledWith(2, 14, 'deepseek-v4-flash');
+    expect(await screen.findByText(/当前为组织只读视图/)).toBeTruthy();
+    expect(await screen.findByText('1 · 配置与管理状态')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '新增 Deployment' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '用此绑定探测精确 Operation' })).toBeNull();
+    expect(screen.queryByText('binding_id=91')).toBeNull();
+    expect(screen.getByText(/只读角色仅查看聚合凭证状态/)).toBeTruthy();
   });
 
-  it('separates route availability from missing endpoint evidence', async () => {
-    mocks.getModelEndpoints.mockResolvedValue(projection([
-      target({ state: 'active', route_candidate: true, stable_assignment: true }),
-    ], { state: 'active', route_available: true }));
-
+  it('does not fetch or reveal provider and credential state to an ordinary project identity', async () => {
+    setRole('member');
     renderPage();
 
-    expect(await screen.findByText('路由可用')).toBeTruthy();
-    expect(screen.getByText('补齐端点检测证据（1）')).toBeTruthy();
-    expect(screen.getByText('需要处理')).toBeTruthy();
+    expect(await screen.findByText('当前身份无权读取供应商部署')).toBeTruthy();
+    expect(screen.queryByText('DeepSeek official')).toBeNull();
+    expect(screen.queryByText('binding_id=91')).toBeNull();
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.releaseList).not.toHaveBeenCalled();
   });
 
-  it('clears the selected model URL state before changing top-level tabs', async () => {
+  it('mounts the canonical release workspace and exposes no old inferred release action', async () => {
+    renderPage('/channels?deployment_id=41&operation_id=openai.responses.v1');
+
+    expect(await screen.findByText('Canonical Release Workspace')).toBeTruthy();
+    expect(mocks.releaseList).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /首次启用|灰度|提升为稳定|回滚/ })).toBeNull();
+  });
+
+  it('disables a zero-limit existing public model and rejects a stale selection after its limits regress', async () => {
+    const current = application();
+    const toast = vi.spyOn(Toast, 'error');
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
-    const sheetTitle = await screen.findByText('DeepSeek V4 Flash · 供应商端点');
-    const sheet = sheetTitle.closest<HTMLElement>('[role="dialog"]');
-    expect(sheet).toBeTruthy();
 
-    fireEvent.click(within(sheet!).getByRole('button', { name: 'close' }));
-    await waitFor(() => expect(screen.queryByText('DeepSeek V4 Flash · 供应商端点')).toBeNull());
-    fireEvent.click(screen.getByRole('tab', { name: '凭证' }));
+    fireEvent.click((await screen.findByText('新增 Deployment')).closest('button')!);
+    fireEvent.click(screen.getByText('复用现有公共模型', { exact: true }));
+    await chooseSelectOption('现有公共模型', /DeepSeek V4 Flash/);
 
-    await waitFor(() => expect(screen.queryByText('DeepSeek V4 Flash · 供应商端点')).toBeNull());
-    expect(await screen.findByText('凭证内嵌视图')).toBeTruthy();
+    mocks.list.mockResolvedValue(projection([application({
+      public_model: { ...current.public_model, context_length: 0, output_limit: 0 },
+    })]));
+    fireEvent.click(screen.getByRole('button', { name: /刷新$/ }));
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole('combobox', { name: '现有公共模型' }));
+    const unavailable = await screen.findByRole('option', { name: /缺少 context\/output 执行边界/ });
+    expect(unavailable).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText(/请先在公共模型目录修复执行边界/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('combobox', { name: '现有公共模型' }));
+
+    fireEvent.change(screen.getByLabelText('连接名称'), { target: { value: 'DeepSeek second deployment' } });
+    fireEvent.change(screen.getByLabelText('上游模型 / 部署 ID'), { target: { value: 'deepseek-v4-flash-second' } });
+    fireEvent.change(screen.getByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
+    fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
+    fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建 Deployment' }));
+
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('请先在公共模型目录修复后再复用')));
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 
-  it('opens the model sheet when a dashboard deep link identifies a channel', async () => {
-    renderPage('/channels?channel_id=13');
-
-    expect(await screen.findByText('DeepSeek V4 Flash · 供应商端点')).toBeTruthy();
-    expect(screen.getByText('DeepSeek official · deepseek')).toBeTruthy();
-  });
-
-  it('keeps routing internals out of the primary endpoint summary', async () => {
+  it('hard-blocks a pathful existing connection for Responses in both the rendered button and submit guard', async () => {
+    const current = application();
+    const pathful = application({
+      connection: {
+        ...current.connection,
+        id: 29,
+        name: 'Pathful OpenAI connection',
+        provider: 'openai',
+        base_url: 'https://api.openai.com/v1',
+      },
+    });
+    mocks.list.mockResolvedValue(projection([pathful]));
+    const toast = vi.spyOn(Toast, 'error');
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
 
-    expect(await screen.findByText('OpenAI 兼容协议')).toBeTruthy();
-    expect(screen.getByText('健康')).toBeTruthy();
-    expect(screen.getByText('主端点')).toBeTruthy();
-    expect(screen.queryByText('主端点 · P100 / W100')).toBeNull();
-    fireEvent.click(screen.getByText('高级审计信息'));
-    expect(screen.getByText(/优先级 100，同级权重 100/)).toBeTruthy();
+    fireEvent.click((await screen.findByText('新增 Deployment')).closest('button')!);
+    fireEvent.click(screen.getByText('复用现有连接', { exact: true }));
+    await chooseSelectOption('现有连接', /Pathful OpenAI connection/);
+    await chooseSelectOption('Operation', /Responses · POST \/v1\/responses/);
+
+    expect(await screen.findByText(/该 operation 要求 path-free HTTPS origin/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('公共模型 ID'), { target: { value: 'pathful-response-model' } });
+    fireEvent.change(screen.getByLabelText('公共模型上下文上限（Token）'), { target: { value: '128000' } });
+    fireEvent.change(screen.getByLabelText('公共模型单次输出上限（Token）'), { target: { value: '8192' } });
+    fireEvent.change(screen.getByLabelText('上游模型 / 部署 ID'), { target: { value: 'response-upstream' } });
+    fireEvent.change(screen.getByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
+    fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
+    fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
+
+    const createButton = screen.getByRole('button', { name: '创建 Deployment' });
+    expect(createButton).toBeDisabled();
+    fireEvent.click(createButton);
+    expect(mocks.create).not.toHaveBeenCalled();
+
+    fireEvent.submit(createButton.closest('form')!);
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('path-free HTTPS origin')));
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 
-  it('creates a provider-specific upstream mapping for the selected public model', async () => {
+  it('creates through the canonical transaction with one retained idempotency key for an uncertain retry', async () => {
+    mocks.create
+      .mockRejectedValueOnce(new TypeError('network unavailable'))
+      .mockResolvedValueOnce({
+        application: application(),
+        idempotency_replay: true,
+        reused: { connection: true, public_model: true, deployment: true, credential: true, operation: true },
+      });
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
-    await screen.findByText('DeepSeek V4 Flash · 供应商端点');
-    fireEvent.click(await screen.findByText('为此公共模型增加供应商端点'));
-    await screen.findByText('公共模型 ID 是应用调用 UniRouter 时使用的名字；上游模型 ID 是这个供应商实际接受的模型或部署名。相同公共模型可以绑定多个供应商端点。');
-    fireEvent.change(await screen.findByLabelText('连接名称（可选）'), { target: { value: 'OpenRouter DeepSeek' } });
-    const publicModelField = await screen.findByLabelText('公共模型 ID') as HTMLInputElement;
-    await waitFor(() => expect(publicModelField.value).toBe('deepseek-v4-flash'));
-    expect(publicModelField).toBeDisabled();
-    fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'deepseek/deepseek-v4-flash' } });
+
+    const createButton = (await screen.findByText('新增 Deployment')).closest('button');
+    expect(createButton).toBeTruthy();
+    fireEvent.click(createButton!);
+    fireEvent.change(await screen.findByLabelText('连接名称'), { target: { value: 'DeepSeek new production' } });
+    fireEvent.change(await screen.findByLabelText('公共模型 ID'), { target: { value: 'deepseek-v5' } });
+    fireEvent.change(await screen.findByLabelText('公共模型上下文上限（Token）'), { target: { value: '128000' } });
+    fireEvent.change(await screen.findByLabelText('公共模型单次输出上限（Token）'), { target: { value: '8192' } });
+    fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'deepseek-v5-202608' } });
+    fireEvent.change(await screen.findByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
+    fireEvent.change(await screen.findByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
     fireEvent.change(await screen.findByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存端点与凭证' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建 Deployment' }));
 
-    await waitFor(() => expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({
-      models: 'deepseek-v4-flash',
-      model_mapping: { 'deepseek-v4-flash': 'deepseek/deepseek-v4-flash' },
-      api_key: 'sk-test-only',
-    })));
-  });
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: '创建 Deployment' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
 
-  it('makes an unlisted OpenAI-compatible provider a first-class creation path', async () => {
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
-    fireEvent.click(await screen.findByText('为此公共模型增加供应商端点'));
-    expect(await screen.findByRole('combobox', { name: '接入模板' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: '路由角色' })).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: '列表中没有？新增自定义兼容供应商' }));
-
-    expect(await screen.findByRole('combobox', { name: '兼容协议' })).toBeTruthy();
-    fireEvent.change(await screen.findByLabelText('供应商标识'), { target: { value: 'another-aggregator' } });
-    fireEvent.change(await screen.findByLabelText('Base URL'), { target: { value: 'https://api.example.test/v1' } });
-    fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'vendor/deepseek-v4-flash' } });
-    fireEvent.change(await screen.findByLabelText('供应商 API Key'), { target: { value: 'sk-custom-test-only' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存端点与凭证' }));
-
-    await waitFor(() => expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'another-aggregator',
-      base_url: 'https://api.example.test/v1',
-      adapter_type: 'openai_compatible',
-      model_mapping: { 'deepseek-v4-flash': 'vendor/deepseek-v4-flash' },
-    })));
+    const firstKey = mocks.create.mock.calls[0][1];
+    const secondKey = mocks.create.mock.calls[1][1];
+    expect(firstKey).toMatch(/^ui-model-deployment-/);
+    expect(secondKey).toBe(firstKey);
+    expect(mocks.create.mock.calls[0][0]).toEqual(expect.objectContaining({
+      public_model: expect.objectContaining({
+        model_name: 'deepseek-v5',
+        context_length: 128000,
+        output_limit: 8192,
+      }),
+      deployment: expect.objectContaining({
+        upstream_model: 'deepseek-v5-202608',
+        max_context: 128000,
+        default_max_output: 4096,
+      }),
+      operation: { operation_id: 'openai.chat_completions.v1' },
+    }));
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(41, 'openai.responses.v1'));
   }, 20_000);
-
-  it('uses the server workflow for first activation after a current successful probe', async () => {
-    const readyTarget = target({
-      state: 'ready',
-      reason_code: 'probe_passed_not_routed',
-      last_probe: { success: true, current: true, status_code: 200, latency_ms: 12, tested_at: '2026-08-16T01:00:00Z' },
-    });
-    mocks.getModelEndpoints.mockResolvedValue(projection([readyTarget], { state: 'ready', reason_code: 'tested_target_ready_to_enable' }));
-
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
-    fireEvent.click(await screen.findByRole('button', { name: '首次启用' }));
-    fireEvent.click(await screen.findByText('确认首次启用'));
-
-    await waitFor(() => expect(mocks.activateModelEndpoint).toHaveBeenCalledWith({
-      channel_id: 13,
-      model: 'deepseek-v4-flash',
-      expected_routing_epoch: 4,
-    }));
-  });
-
-  it('replaces a retained stable release when it has no gateway candidate', async () => {
-    const readyTarget = target({
-      state: 'ready',
-      reason_code: 'probe_passed_not_routed',
-      last_probe: { success: true, current: true, status_code: 200, latency_ms: 12, tested_at: '2026-08-16T01:00:00Z' },
-    });
-    mocks.getModelEndpoints.mockResolvedValue(projection([readyTarget], {
-      state: 'degraded',
-      reason_code: 'stable_route_unavailable',
-      route_available: false,
-      stable_release_ref: 'rcr_old_stable',
-      stable_release_version: 3,
-    }));
-
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: '管理端点' }));
-    fireEvent.click(await screen.findByRole('button', { name: '替换失效路由' }));
-    expect(await screen.findByText(/旧发布保留为“已回滚”历史/)).toBeTruthy();
-    const dialogs = screen.getAllByRole('dialog');
-    fireEvent.click(within(dialogs[dialogs.length - 1]).getByRole('button', { name: 'confirm' }));
-
-    await waitFor(() => expect(mocks.recoverModelEndpoint).toHaveBeenCalledWith({
-      channel_id: 13,
-      model: 'deepseek-v4-flash',
-      expected_routing_epoch: 4,
-    }));
-  });
 });

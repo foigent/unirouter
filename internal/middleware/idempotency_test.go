@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
 const idempotencyTestSecret = "p6f17-idempotency-test-secret"
@@ -180,7 +182,8 @@ func TestP6F11InterruptedStreamReplayReturnsBoundedDeliveryReceipt(t *testing.T)
 	status := http.StatusOK
 	updatedAt := time.Date(2026, 7, 13, 8, 30, 0, 0, time.UTC)
 	recorder := httptest.NewRecorder()
-	writeIdempotencyConflict(recorder, "same-fingerprint", IdempotencyRecord{
+	request := httptest.NewRequest(http.MethodPost, modeloperation.PathResponses, nil)
+	writeIdempotencyConflict(recorder, request, "same-fingerprint", IdempotencyRecord{
 		RequestFingerprint: "same-fingerprint",
 		OperationID:        "op_p6f11_interrupted_replay",
 		State:              IdempotencyStateFailed,
@@ -211,6 +214,42 @@ func TestP6F11InterruptedStreamReplayReturnsBoundedDeliveryReceipt(t *testing.T)
 	}
 }
 
+func TestIdempotencyConflictUsesMessagesEnvelope(t *testing.T) {
+	createdAt := time.Date(2026, 8, 20, 1, 2, 3, 0, time.UTC)
+	tests := []struct {
+		name        string
+		fingerprint string
+		record      IdempotencyRecord
+		wantRetry   bool
+	}{
+		{name: "different request", fingerprint: "new", record: IdempotencyRecord{
+			RequestFingerprint: "original", OperationID: "op_original_mismatch", State: IdempotencyStateCompleted, CreatedAt: createdAt,
+		}},
+		{name: "in progress", fingerprint: "same", wantRetry: true, record: IdempotencyRecord{
+			RequestFingerprint: "same", OperationID: "op_original_progress", State: IdempotencyStateInProgress, CreatedAt: createdAt,
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			recorder.Header().Set(OperationIDHeader, "op_messages_replay")
+			request := httptest.NewRequest(http.MethodPost, modeloperation.PathMessages, nil)
+			writeIdempotencyConflict(recorder, request, test.fingerprint, test.record)
+			var body map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			errorBody, _ := body["error"].(map[string]any)
+			if recorder.Code != http.StatusConflict || body["type"] != "error" || body["request_id"] != "op_messages_replay" ||
+				errorBody["type"] != "invalid_request_error" || body["idempotency"] != nil ||
+				recorder.Header().Get(OriginalOperationHeader) != test.record.OperationID ||
+				(recorder.Header().Get("Retry-After") != "") != test.wantRetry {
+				t.Fatalf("status=%d headers=%v body=%v", recorder.Code, recorder.Header(), body)
+			}
+		})
+	}
+}
+
 func TestIdempotencyGuardChangedPayloadReturnsMismatch(t *testing.T) {
 	store := newMemoryIdempotencyStore()
 	dispatches := 0
@@ -228,6 +267,60 @@ func TestIdempotencyGuardChangedPayloadReturnsMismatch(t *testing.T) {
 	}
 	if dispatches != 1 {
 		t.Fatalf("changed payload dispatched unexpectedly: %d", dispatches)
+	}
+}
+
+func TestIdempotencyGuardLargeIntegerExtensionReturnsMismatch(t *testing.T) {
+	store := newMemoryIdempotencyStore()
+	dispatches := 0
+	handler := scopedIdempotencyHandler(store, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		dispatches++
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	const key = "large-integer-extension-key"
+	firstBody := `{"model":"gpt-4o","provider_counter":9007199254740992}`
+	secondBody := `{"model":"gpt-4o","provider_counter":9007199254740993}`
+	handler.ServeHTTP(httptest.NewRecorder(), newIdempotentRequest(firstBody, key))
+	second := httptest.NewRecorder()
+	handler.ServeHTTP(second, newIdempotentRequest(secondBody, key))
+
+	if second.Code != http.StatusConflict || !strings.Contains(second.Body.String(), "key_reused_with_different_request") {
+		t.Fatalf("expected large-integer payload mismatch, got %d: %s", second.Code, second.Body.String())
+	}
+	if dispatches != 1 {
+		t.Fatalf("large-integer changed payload dispatched unexpectedly: %d", dispatches)
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.claims) != 2 || store.claims[0].RequestFingerprint == store.claims[1].RequestFingerprint {
+		t.Fatalf("distinct large integer payloads shared a fingerprint: %#v", store.claims)
+	}
+}
+
+func TestIdempotencyGuardRejectsDuplicateJSONBeforeClaimOrDispatch(t *testing.T) {
+	store := newMemoryIdempotencyStore()
+	dispatches := 0
+	handler := scopedIdempotencyHandler(store, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		dispatches++
+	}))
+	const secret = "private-duplicate-value"
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newIdempotentRequest(
+		`{"model":"gpt-4o","metadata":{"value":"`+secret+`","value":"other"}}`,
+		"duplicate-json",
+	))
+
+	if recorder.Code != http.StatusBadRequest || dispatches != 0 {
+		t.Fatalf("status=%d dispatches=%d body=%s", recorder.Code, dispatches, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), secret) || !strings.Contains(recorder.Body.String(), `"code":"validation_error.invalid_request"`) {
+		t.Fatalf("unsafe or incompatible error: %s", recorder.Body.String())
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if len(store.claims) != 0 {
+		t.Fatalf("duplicate JSON created idempotency claims: %#v", store.claims)
 	}
 }
 

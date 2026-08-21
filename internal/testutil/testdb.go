@@ -349,9 +349,16 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 		"invocation_optimization_receipts",
 		"invocation_optimization_policy_revisions",
 		"invocation_optimization_policies",
+		"model_deployment_lifecycle_receipt_qualifications",
+		"model_deployment_lifecycle_receipt_releases",
+		"model_deployment_lifecycle_receipts",
+		"model_deployment_release_authoring_receipts",
+		"model_operation_public_execution_bindings",
+		"runtime_route_revision_items",
 		"runtime_change_events",
 		"runtime_change_slots",
 		"runtime_change_releases",
+		"model_deployment_create_receipts",
 		"model_call_authorizations",
 		"async_media_charge_facts",
 		"async_media_jobs",
@@ -389,6 +396,14 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 		"notification_events",
 		"request_idempotency",
 		"call_logs",
+		"model_operation_production_approvals",
+		"model_deployment_probes",
+		"model_deployment_capabilities",
+		"model_deployment_operations",
+		"credential_binding_deployments",
+		"provider_credential_bindings",
+		"model_deployments",
+		"provider_connections",
 		"freeze_idempotency",
 		"transactions",
 		"audit_logs",
@@ -443,8 +458,54 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 	if len(quotedTables) == 0 {
 		return
 	}
+	testResetTriggers := []struct {
+		table string
+		name  string
+	}{
+		{table: "runtime_change_events", name: "runtime_change_events_append_only"},
+		{table: "model_operation_production_approvals", name: "model_operation_production_approvals_append_only"},
+		{table: "model_operation_public_execution_bindings", name: "model_operation_public_execution_bindings_append_only"},
+		{table: "model_deployment_probes", name: "model_deployment_probes_truncate_guard"},
+		{table: "model_deployment_lifecycle_receipt_qualifications", name: "model_deployment_lifecycle_receipt_qualifications_truncate_guard"},
+		{table: "model_deployment_lifecycle_receipt_releases", name: "model_deployment_lifecycle_receipt_releases_truncate_guard"},
+		{table: "model_deployment_lifecycle_receipts", name: "model_deployment_lifecycle_receipts_truncate_guard"},
+		{table: "model_deployment_release_authoring_receipts", name: "model_deployment_release_authoring_receipts_truncate_guard"},
+	}
+	disabled := make([]struct {
+		table string
+		name  string
+	}, 0, len(testResetTriggers))
+	for _, trigger := range testResetTriggers {
+		if _, tableExists := existing[trigger.table]; !tableExists {
+			continue
+		}
+		var triggerExists bool
+		if err := pool.QueryRow(ctx, `
+SELECT EXISTS (
+  SELECT 1 FROM pg_catalog.pg_trigger trigger_row
+  JOIN pg_catalog.pg_class table_row ON table_row.oid=trigger_row.tgrelid
+  JOIN pg_catalog.pg_namespace namespace_row ON namespace_row.oid=table_row.relnamespace
+ WHERE namespace_row.nspname='public' AND table_row.relname=$1
+   AND trigger_row.tgname=$2 AND NOT trigger_row.tgisinternal
+)`, trigger.table, trigger.name).Scan(&triggerExists); err != nil || !triggerExists {
+			continue
+		}
+		statement := "ALTER TABLE " + quoteIdent(trigger.table) + " DISABLE TRIGGER " + quoteIdent(trigger.name)
+		if _, err := pool.Exec(ctx, statement); err != nil {
+			t.Logf("test truncate trigger disable warning for %s.%s: %v", trigger.table, trigger.name, err)
+			continue
+		}
+		disabled = append(disabled, trigger)
+	}
 	if _, err := pool.Exec(ctx, "TRUNCATE TABLE "+strings.Join(quotedTables, ", ")+" CASCADE"); err != nil {
 		t.Logf("truncate warning: %v", err)
+	}
+	for index := len(disabled) - 1; index >= 0; index-- {
+		trigger := disabled[index]
+		statement := "ALTER TABLE " + quoteIdent(trigger.table) + " ENABLE TRIGGER " + quoteIdent(trigger.name)
+		if _, err := pool.Exec(ctx, statement); err != nil {
+			t.Fatalf("restore test truncate trigger %s.%s: %v", trigger.table, trigger.name, err)
+		}
 	}
 }
 

@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	ContractVersion = "unirouter.second-integration-reset.v2"
+	ContractVersion = "unirouter.second-integration-reset.v3"
 	Profile         = "second_integration_fresh_customer"
 	PreservedLogin  = "admin"
 )
@@ -50,12 +50,14 @@ var (
 	identifierPattern     = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
 	protectedTables = map[string]string{
-		"commercial_license_entitlements": "verified commercial entitlement is deployment-scoped operability state",
-		"deployment_profiles":             "desired deployment topology is host-operability state",
-		"gateway_endpoints":               "gateway and TLS references are host-operability state",
-		"micro_ledger_runtime_state":      "database-owned ledger unit-contract and downgrade-safety marker must remain intact",
-		"release_history":                 "installed release provenance remains append-only",
-		"release_state":                   "installed release and rollback state remains intact",
+		"commercial_license_entitlements":                      "verified commercial entitlement is deployment-scoped operability state",
+		"deployment_profiles":                                  "desired deployment topology is host-operability state",
+		"gateway_endpoints":                                    "gateway and TLS references are host-operability state",
+		"micro_ledger_runtime_state":                           "database-owned ledger unit-contract and downgrade-safety marker must remain intact",
+		"model_operation_execution_support_bindings":           "migration-owned compiled execution support must remain exact",
+		"model_operation_public_execution_contract_extensions": "migration-owned public delivery, charge and idempotency support must remain exact",
+		"release_history":                                      "installed release provenance remains append-only",
+		"release_state":                                        "installed release and rollback state remains intact",
 	}
 	resetCandidateTables = stringSet(
 		"access_credentials", "access_grant_revisions", "access_grants", "access_operations", "access_requests",
@@ -82,14 +84,23 @@ var (
 		"integration_exchanges", "internal_outbox_events", "invocation_optimization_policies",
 		"invocation_optimization_policy_revisions", "invocation_optimization_receipts",
 		"model_aliases", "model_call_authorizations",
-		"model_prices", "model_registry", "model_set_items", "model_sets",
+		"model_deployment_create_receipts",
+		"model_deployment_lifecycle_receipt_qualifications",
+		"model_deployment_lifecycle_receipt_releases",
+		"model_deployment_lifecycle_receipts",
+		"model_deployment_release_authoring_receipts",
+		"model_deployment_capabilities", "model_deployment_operations", "model_deployment_probes",
+		"model_operation_production_approvals",
+		"model_operation_public_execution_bindings",
+		"model_deployments", "model_prices", "model_registry", "model_set_items", "model_sets",
 		"notification_deliveries", "notification_events", "notification_webhooks",
 		"org_model_prices", "orgs", "project_budget_usage", "project_members",
 		"project_model_sets", "projects", "provider_cost_reconciliations",
 		"request_delivery_receipt_quarantine", "request_delivery_receipts",
+		"provider_connections", "provider_credential_bindings", "credential_binding_deployments",
 		"request_idempotency", "request_trace_events", "response_cache_commercial_receipts",
 		"response_cache_delivery_receipts", "runtime_change_events", "runtime_change_releases",
-		"runtime_change_slots", "runtime_terminal_hooks", "stream_delivery_checkpoints",
+		"runtime_change_slots", "runtime_route_revision_items", "runtime_terminal_hooks", "stream_delivery_checkpoints",
 		"stream_delivery_leases", "transactions", "usage_finalization_journal", "users",
 		"wallets", "workload_application_client_profiles", "workload_applications",
 		"xinsight_connector_control_bindings", "xinsight_connector_installations",
@@ -113,6 +124,20 @@ var (
 		{Table: "billing_reservation_extensions", Name: "billing_reservation_extensions_micro_ledger_evidence"},
 		{Table: "billing_reservation_grant_allocations", Name: "billing_reservation_grants_micro_ledger_evidence"},
 		{Table: "call_logs", Name: "call_logs_micro_ledger_evidence"},
+		{Table: "provider_connections", Name: "provider_connections_identity_immutable"},
+		{Table: "model_deployments", Name: "model_deployments_identity_immutable"},
+		{Table: "model_deployment_create_receipts", Name: "model_deployment_create_receipts_immutable"},
+		{Table: "model_deployment_lifecycle_receipt_qualifications", Name: "model_deployment_lifecycle_receipt_qualifications_append_only"},
+		{Table: "model_deployment_lifecycle_receipt_releases", Name: "model_deployment_lifecycle_receipt_releases_append_only"},
+		{Table: "model_deployment_lifecycle_receipts", Name: "model_deployment_lifecycle_receipts_immutable"},
+		{Table: "model_deployment_release_authoring_receipts", Name: "model_deployment_release_authoring_receipts_immutable"},
+		{Table: "runtime_change_events", Name: "runtime_change_events_append_only"},
+		{Table: "model_operation_production_approvals", Name: "model_operation_production_approvals_append_only"},
+		{Table: "model_operation_public_execution_bindings", Name: "model_operation_public_execution_bindings_append_only"},
+		{Table: "provider_credential_bindings", Name: "provider_credential_bindings_identity_immutable"},
+		{Table: "model_deployment_probes", Name: "model_deployment_probes_append_only"},
+		{Table: "runtime_route_revision_items", Name: "runtime_route_revision_items_seal_guard"},
+		{Table: "runtime_route_revision_items", Name: "runtime_route_revision_items_p3_qualification_guard"},
 		{Table: "freeze_idempotency", Name: "freeze_idempotency_micro_ledger_evidence"},
 		{Table: "grants", Name: "grants_micro_ledger_evidence"},
 		{Table: "invocation_optimization_receipts", Name: "invocation_optimization_receipts_append_only"},
@@ -276,15 +301,16 @@ type RedisObservation struct {
 }
 
 type Snapshot struct {
-	Tables            []TableInventory
-	Admin             AdminSelection
-	Protected         ProtectedState
-	SettingResets     []SettingReset
-	MigrationVersions []string
-	Sequences         []SequenceState
-	ForeignKeys       []ForeignKey
-	Triggers          []TriggerState
-	Redis             RedisObservation
+	Tables                    []TableInventory
+	Admin                     AdminSelection
+	Protected                 ProtectedState
+	SettingResets             []SettingReset
+	MigrationVersions         []string
+	ExpectedMigrationVersions []string
+	Sequences                 []SequenceState
+	ForeignKeys               []ForeignKey
+	Triggers                  []TriggerState
+	Redis                     RedisObservation
 }
 
 type Summary struct {
@@ -661,9 +687,8 @@ func scopeDigest(plan Plan) (string, error) {
 
 func buildSchemaEvidence(snapshot Snapshot) (SchemaEvidence, error) {
 	migrations := slices.Clone(snapshot.MigrationVersions)
-	slices.Sort(migrations)
-	if len(migrations) == 0 || migrations[len(migrations)-1] != schemaauthority.LatestSupportedMigration {
-		return SchemaEvidence{}, fmt.Errorf("%w: reset_support_migration", ErrInvalid)
+	if err := schemaauthority.VerifyLedger(snapshot.ExpectedMigrationVersions, migrations); err != nil {
+		return SchemaEvidence{}, fmt.Errorf("%w: reset_support_migration: %v", ErrInvalid, err)
 	}
 	foreignKeys := slices.Clone(snapshot.ForeignKeys)
 	slices.SortFunc(foreignKeys, compareForeignKey)

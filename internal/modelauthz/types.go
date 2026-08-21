@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
 const (
@@ -40,11 +42,15 @@ var (
 	environmentPat   = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 )
 
-var supportedEndpoints = []string{
-	"/v1/chat/completions",
-	"/v1/embeddings",
-	"/v1/models",
-	"/v1/media/jobs",
+var supportedEndpoints = modelAuthorizationEndpoints()
+
+func modelAuthorizationEndpoints() []string {
+	definitions := modeloperation.All()
+	endpoints := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		endpoints = append(endpoints, definition.Path)
+	}
+	return endpoints
 }
 
 type Policy struct {

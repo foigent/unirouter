@@ -61,4 +61,164 @@ describe('API reference audience projection', () => {
     expect(visibleEndpointGroups(groups, platform, { agentCapabilities: true })[0].endpoints)
       .toHaveLength(2);
   });
+
+  it('shows canonical model deployment reads to both organization read roles', () => {
+    const organizationAdmin = authzContextForUser({ organization_role: 'org_admin' });
+    const organizationViewer = authzContextForUser({ organization_role: 'org_viewer' });
+    const projectUser = authzContextForUser(
+      { organization_role: 'member' },
+      'project_user',
+      true,
+    );
+
+    for (const authz of [organizationAdmin, organizationViewer]) {
+      expect(endpointVisibleForAuthz(
+        'Admin',
+        'GET',
+        '/api/v1/model-deployment-releases',
+        authz,
+        { agentCapabilities: false },
+      )).toBe(true);
+      expect(endpointVisibleForAuthz(
+        'Admin',
+        'GET',
+        '/api/v1/model-deployments',
+        authz,
+        { agentCapabilities: false },
+      )).toBe(true);
+      expect(endpointVisibleForAuthz(
+        'Admin',
+        'GET',
+        '/api/v1/model-deployments/{deploymentID}',
+        authz,
+        { agentCapabilities: false },
+      )).toBe(true);
+    }
+
+    expect(endpointVisibleForAuthz(
+      'Admin',
+      'POST',
+      '/api/v1/model-deployments',
+      organizationAdmin,
+      { agentCapabilities: false },
+    )).toBe(true);
+
+    expect(endpointVisibleForAuthz(
+      'Admin',
+      'POST',
+      '/api/v1/model-deployments',
+      organizationViewer,
+      { agentCapabilities: false },
+    )).toBe(false);
+    expect(endpointVisibleForAuthz(
+      'Admin',
+      'POST',
+      '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes',
+      organizationAdmin,
+      { agentCapabilities: false },
+    )).toBe(true);
+    expect(endpointVisibleForAuthz(
+      'Admin',
+      'POST',
+      '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes',
+      organizationViewer,
+      { agentCapabilities: false },
+    )).toBe(false);
+    expect(endpointVisibleForAuthz(
+      'Admin',
+      'GET',
+      '/api/v1/model-deployments',
+      projectUser,
+      { agentCapabilities: false },
+    )).toBe(false);
+
+    for (const authz of [organizationAdmin, organizationViewer]) {
+      expect(endpointVisibleForAuthz(
+        'Admin',
+        'GET',
+        '/api/v1/model-deployment-releases/{releaseRef}',
+        authz,
+        { agentCapabilities: false },
+      )).toBe(true);
+    }
+    expect(endpointVisibleForAuthz(
+      'Admin',
+      'POST',
+      '/api/v1/model-deployment-releases',
+      organizationAdmin,
+      { agentCapabilities: false },
+    )).toBe(true);
+    expect(endpointVisibleForAuthz(
+      'Admin',
+      'POST',
+      '/api/v1/model-deployment-releases',
+      organizationViewer,
+      { agentCapabilities: false },
+    )).toBe(false);
+    for (const action of [
+      'activate-initial', 'start-canary', 'promote', 'cancel-canary', 'rollback-stable',
+      'cutover-legacy', 'rollback-legacy',
+    ]) {
+      const path = `/api/v1/model-deployment-releases/{releaseRef}/${action}`;
+      expect(endpointVisibleForAuthz(
+        'Admin', 'POST', path, organizationAdmin, { agentCapabilities: false },
+      )).toBe(true);
+      expect(endpointVisibleForAuthz(
+        'Admin', 'POST', path, organizationViewer, { agentCapabilities: false },
+      )).toBe(false);
+    }
+    expect(endpointVisibleForAuthz(
+      'Admin',
+      'POST',
+      '/api/v1/model-deployment-releases/{releaseRef}/future-expansion',
+      organizationAdmin,
+      { agentCapabilities: false },
+    )).toBe(false);
+  });
+
+  it('keeps Responses and Messages production qualification approval platform-only', () => {
+    const path = '/api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals';
+    expect(endpointVisibleForAuthz(
+      'Admin',
+      'POST',
+      path,
+      authzContextForUser({ organization_role: 'platform_admin' }),
+      { agentCapabilities: false },
+    )).toBe(true);
+    for (const organizationRole of ['org_admin', 'org_viewer', 'billing_admin'] as const) {
+      expect(endpointVisibleForAuthz(
+        'Admin',
+        'POST',
+        path,
+        authzContextForUser({ organization_role: organizationRole }),
+        { agentCapabilities: false },
+      )).toBe(false);
+    }
+  });
+
+  it('shows License-independent model route safety actions only to organization admins', () => {
+    const organizationAdmin = authzContextForUser({ organization_role: 'org_admin' });
+    const organizationViewer = authzContextForUser({ organization_role: 'org_viewer' });
+    const billing = authzContextForUser({ organization_role: 'billing_admin' });
+    const projectAdmin = authzContextForUser(
+      { organization_role: 'member' },
+      'project_admin',
+      true,
+    );
+    const safetyEndpoints = [
+      '/api/v1/provider-connections/{connectionID}/pause',
+      '/api/v1/provider-credential-bindings/{bindingID}/revoke',
+    ];
+
+    for (const path of safetyEndpoints) {
+      expect(endpointVisibleForAuthz(
+        'Admin', 'POST', path, organizationAdmin, { agentCapabilities: false },
+      )).toBe(true);
+      for (const authz of [organizationViewer, billing, projectAdmin]) {
+        expect(endpointVisibleForAuthz(
+          'Admin', 'POST', path, authz, { agentCapabilities: false },
+        )).toBe(false);
+      }
+    }
+  });
 });

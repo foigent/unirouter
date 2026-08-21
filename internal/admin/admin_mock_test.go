@@ -1679,67 +1679,6 @@ func TestCreateUser_DefaultRole(t *testing.T) {
 }
 
 // ===================================================================
-// DeleteChannel tests
-// ===================================================================
-
-func TestDeleteChannel_Success(t *testing.T) {
-	execCalled := false
-	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			execCalled = true
-			return pgconn.NewCommandTag("DELETE 1"), nil
-		},
-	}
-	h := newTestHandler(db)
-
-	req := httptest.NewRequest("DELETE", "/channels/1", nil)
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.DeleteChannel(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !execCalled {
-		t.Fatal("expected exec to be called")
-	}
-}
-
-func TestDeleteChannel_InvalidID(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	req := httptest.NewRequest("DELETE", "/channels/abc", nil)
-	req.SetPathValue("id", "abc")
-	rec := httptest.NewRecorder()
-
-	h.DeleteChannel(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestDeleteChannel_DBError(t *testing.T) {
-	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, fmt.Errorf("foreign key violation")
-		},
-	}
-	h := newTestHandler(db)
-
-	req := httptest.NewRequest("DELETE", "/channels/1", nil)
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.DeleteChannel(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", rec.Code)
-	}
-}
-
-// ===================================================================
 // recordAudit tests
 // ===================================================================
 
@@ -1814,10 +1753,54 @@ func TestCleanupOldData_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Includes call/audit/transaction/trace retention, freeze-idempotency
-	// retention and request-idempotency receipt expiry. Grant expiry now uses a
+	// retention, request-idempotency expiry, and model-deployment create receipt
+	// expiry. Grant expiry now uses a
 	// bounded transaction through Begin rather than independent Exec calls.
 	if execCount < 6 {
 		t.Fatalf("expected at least 6 exec calls, got %d", execCount)
+	}
+}
+
+func TestCleanupOldDataExpiresBothIdempotencyReceiptKinds(t *testing.T) {
+	seen := map[string]bool{}
+	db := &testutil.MockDB{
+		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
+			for _, table := range []string{"request_idempotency", "model_deployment_create_receipts"} {
+				if strings.Contains(sql, "DELETE FROM "+table) && strings.Contains(sql, "expires_at < NOW()") {
+					seen[table] = true
+				}
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	if err := newTestHandler(db).CleanupOldData(context.Background(), 30); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	for _, table := range []string{"request_idempotency", "model_deployment_create_receipts"} {
+		if !seen[table] {
+			t.Fatalf("expected bounded expiry cleanup for %s", table)
+		}
+	}
+}
+
+func TestCleanupOldDataPreservesDurableFirstCustomerBootstrapReceipt(t *testing.T) {
+	seen := false
+	db := &testutil.MockDB{
+		ExecFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "DELETE FROM audit_logs") {
+				seen = true
+				if !strings.Contains(sql, "action<>$2") || len(args) != 2 || args[1] != firstCustomerBootstrapAction {
+					t.Fatalf("bootstrap receipt is not excluded from audit retention: sql=%s args=%#v", sql, args)
+				}
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	if err := newTestHandler(db).CleanupOldData(context.Background(), 30); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if !seen {
+		t.Fatal("expected audit retention cleanup")
 	}
 }
 
@@ -2123,183 +2106,6 @@ func TestCreateAPIKey_InvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestTestChannel_Upstream401IsFailureAndAppliesModelMapping(t *testing.T) {
-	var gotPath string
-	var gotMethod string
-	var gotModel string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotMethod = r.Method
-		var body struct {
-			Model string `json:"model"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		gotModel = body.Model
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"invalid api key"}`))
-	}))
-	defer upstream.Close()
-
-	keyEnc, err := auth.EncryptKey([]byte("bad-upstream-key"), []byte("0123456789abcdef01234567"))
-	if err != nil {
-		t.Fatalf("encrypt key: %v", err)
-	}
-
-	queryCount := 0
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			queryCount++
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					switch queryCount {
-					case 1:
-						*dest[0].(*string) = upstream.URL
-						*dest[1].(*string) = "company-chat"
-						*dest[2].(*string) = "openai_compatible"
-						*dest[3].(*json.RawMessage) = json.RawMessage(`{}`)
-						*dest[4].(*json.RawMessage) = json.RawMessage(`{"company-chat":"mimo-v2.5"}`)
-						*dest[5].(*int64) = 3
-					case 2:
-						*dest[0].(*int64) = 8
-						*dest[1].(*string) = keyEnc
-						*dest[2].(*int64) = 4
-					default:
-						t.Fatalf("unexpected query count %d", queryCount)
-					}
-					return nil
-				},
-			}
-		},
-	}
-	h := newTestHandler(db)
-
-	body := `{"model":"company-chat","prompt":"ping"}`
-	req := httptest.NewRequest("POST", "/channels/1/test", strings.NewReader(body))
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.TestChannel(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected handler 200 wrapper, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if resp["success"] != false {
-		t.Fatalf("expected success=false for upstream 401, got %v: %s", resp["success"], rec.Body.String())
-	}
-	if int(resp["status_code"].(float64)) != http.StatusUnauthorized {
-		t.Fatalf("expected status_code=401, got %v", resp["status_code"])
-	}
-	if gotMethod != http.MethodPost || gotPath != "/v1/chat/completions" {
-		t.Fatalf("expected POST /v1/chat/completions, got %s %s", gotMethod, gotPath)
-	}
-	if gotModel != "mimo-v2.5" {
-		t.Fatalf("expected mapped upstream model mimo-v2.5, got %q", gotModel)
-	}
-	if resp["model"] != "company-chat" || resp["upstream_model"] != "mimo-v2.5" {
-		t.Fatalf("expected requested and upstream model identities, got %s", rec.Body.String())
-	}
-}
-
-func TestTestChannel_AnthropicNativeUsesMessagesEndpoint(t *testing.T) {
-	var gotPath string
-	var gotAPIKey string
-	var gotModel string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotAPIKey = r.Header.Get("x-api-key")
-		var body struct {
-			Model string `json:"model"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		gotModel = body.Model
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{
-			"id":"msg_test",
-			"model":"claude-3-5-sonnet-20241022",
-			"content":[{"type":"text","text":"ok"}],
-			"stop_reason":"end_turn",
-			"usage":{"input_tokens":4,"output_tokens":3}
-		}`))
-	}))
-	defer upstream.Close()
-
-	keyEnc, err := auth.EncryptKey([]byte("sk-ant-test"), []byte("0123456789abcdef01234567"))
-	if err != nil {
-		t.Fatalf("encrypt key: %v", err)
-	}
-
-	queryCount := 0
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			queryCount++
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					switch queryCount {
-					case 1:
-						*dest[0].(*string) = upstream.URL
-						*dest[1].(*string) = "claude-3-5-sonnet-20241022"
-						*dest[2].(*string) = "anthropic_native"
-						*dest[3].(*json.RawMessage) = json.RawMessage(`{"anthropic_version":"2023-06-01"}`)
-						*dest[4].(*json.RawMessage) = json.RawMessage(`{}`)
-						*dest[5].(*int64) = 2
-					case 2:
-						*dest[0].(*int64) = 9
-						*dest[1].(*string) = keyEnc
-						*dest[2].(*int64) = 1
-					default:
-						t.Fatalf("unexpected query count %d", queryCount)
-					}
-					return nil
-				},
-			}
-		},
-	}
-	h := newTestHandler(db)
-
-	body := `{"model":"claude-3-5-sonnet-20241022","prompt":"ping"}`
-	req := httptest.NewRequest("POST", "/channels/1/test", strings.NewReader(body))
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.TestChannel(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected handler 200 wrapper, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if resp["success"] != true {
-		t.Fatalf("expected success=true, got %v: %s", resp["success"], rec.Body.String())
-	}
-	if resp["adapter_type"] != "anthropic_native" {
-		t.Fatalf("expected adapter_type anthropic_native, got %v", resp["adapter_type"])
-	}
-	if int(resp["tokens_used"].(float64)) != 7 {
-		t.Fatalf("expected 7 tokens, got %v", resp["tokens_used"])
-	}
-	if gotPath != "/v1/messages" {
-		t.Fatalf("expected POST /v1/messages, got %s", gotPath)
-	}
-	if gotAPIKey != "sk-ant-test" {
-		t.Fatalf("expected x-api-key header, got %q", gotAPIKey)
-	}
-	if gotModel != "claude-3-5-sonnet-20241022" {
-		t.Fatalf("expected model claude-3-5-sonnet-20241022, got %q", gotModel)
-	}
-	if !strings.Contains(resp["response"].(string), "chat.completion") {
-		t.Fatalf("expected normalized OpenAI-compatible response, got %v", resp["response"])
-	}
-	if !strings.Contains(resp["curl_example"].(string), "x-api-key") || strings.Contains(resp["curl_example"].(string), "Authorization: Bearer") {
-		t.Fatalf("expected anthropic-native curl example, got %v", resp["curl_example"])
 	}
 }
 
@@ -4000,12 +3806,14 @@ func TestDashboardStats_Success(t *testing.T) {
 							*dest[1].(*string) = "gpt-4o"
 							*dest[2].(*string) = "gpt-4o"
 							*dest[3].(*int64) = 1
-							*dest[4].(*string) = "openai"
-							*dest[5].(*string) = "channel-1"
-							*dest[6].(*int) = 200
-							*dest[7].(*int) = 350
-							*dest[8].(*int64) = 50_000
-							*dest[9].(*time.Time) = now
+							*dest[4].(*string) = "openai.chat_completions.v1"
+							*dest[5].(*int64) = 0
+							*dest[6].(*string) = "openai"
+							*dest[7].(*string) = "channel-1"
+							*dest[8].(*int) = 200
+							*dest[9].(*int) = 350
+							*dest[10].(*int64) = 50_000
+							*dest[11].(*time.Time) = now
 						}
 						return nil
 					},
@@ -4197,91 +4005,6 @@ func TestDashboardWindowMetrics_UsesOneConsistentOrgTimeRangeSnapshot(t *testing
 	}
 	if queryCount != 1 || len(firstArgs) != 3 {
 		t.Fatalf("expected org/start/end args, got %d", len(firstArgs))
-	}
-}
-
-// ===================================================================
-// CreateChannel tests
-// ===================================================================
-
-func TestCreateChannel_Success(t *testing.T) {
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 42
-					return nil
-				},
-			}
-		},
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, nil
-		},
-	}
-	h := newTestHandler(db)
-
-	body := `{"name":"test-channel","provider":"openai","base_url":"https://api.openai.com","models":"gpt-4o"}`
-	req := httptest.NewRequest("POST", "/channels", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestCreateChannel_MissingFields(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	body := `{"name":"test-channel"}`
-	req := httptest.NewRequest("POST", "/channels", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestCreateChannel_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	req := httptest.NewRequest("POST", "/channels", strings.NewReader("not json"))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestCreateChannel_DBError(t *testing.T) {
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					return fmt.Errorf("duplicate key")
-				},
-			}
-		},
-	}
-	h := newTestHandler(db)
-
-	body := `{"name":"test","provider":"openai","base_url":"https://api.openai.com","models":"gpt-4o"}`
-	req := httptest.NewRequest("POST", "/channels", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", rec.Code)
 	}
 }
 
@@ -4628,62 +4351,6 @@ func TestDeleteModelPrice_DBError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	h.DeleteModelPrice(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", rec.Code)
-	}
-}
-
-// ===================================================================
-// DeleteChannelKey tests
-// ===================================================================
-
-func TestDeleteChannelKey_Success(t *testing.T) {
-	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.NewCommandTag("DELETE 1"), nil
-		},
-	}
-	h := newTestHandler(db)
-
-	req := httptest.NewRequest("DELETE", "/channel-keys/1", nil)
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.DeleteChannelKey(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestDeleteChannelKey_InvalidID(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	req := httptest.NewRequest("DELETE", "/channel-keys/abc", nil)
-	req.SetPathValue("id", "abc")
-	rec := httptest.NewRecorder()
-
-	h.DeleteChannelKey(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestDeleteChannelKey_DBError(t *testing.T) {
-	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, fmt.Errorf("fk violation")
-		},
-	}
-	h := newTestHandler(db)
-
-	req := httptest.NewRequest("DELETE", "/channel-keys/1", nil)
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.DeleteChannelKey(rec, req)
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", rec.Code)
@@ -5054,126 +4721,6 @@ func TestUpdateSensitiveWords_DBError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", rec.Code)
-	}
-}
-
-// ===================================================================
-// UpdateChannel tests
-// ===================================================================
-
-func TestUpdateChannel_Success(t *testing.T) {
-	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.NewCommandTag("UPDATE 1"), nil
-		},
-	}
-	h := newTestHandler(db)
-
-	body := `{"name":"updated-name","priority":200}`
-	req := httptest.NewRequest("PUT", "/channels/1", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.UpdateChannel(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestUpdateChannel_InvalidID(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	body := `{"name":"test"}`
-	req := httptest.NewRequest("PUT", "/channels/abc", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", "abc")
-	rec := httptest.NewRecorder()
-
-	h.UpdateChannel(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestUpdateChannel_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	req := httptest.NewRequest("PUT", "/channels/1", strings.NewReader("not json"))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.UpdateChannel(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestUpdateChannel_NoFields(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	body := `{}`
-	req := httptest.NewRequest("PUT", "/channels/1", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.UpdateChannel(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestUpdateChannel_DBError(t *testing.T) {
-	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, fmt.Errorf("db error")
-		},
-	}
-	h := newTestHandler(db)
-
-	body := `{"name":"test"}`
-	req := httptest.NewRequest("PUT", "/channels/1", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", "1")
-	rec := httptest.NewRecorder()
-
-	h.UpdateChannel(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", rec.Code)
-	}
-}
-
-func TestUpdateChannel_NotFound(t *testing.T) {
-	db := &testutil.MockDB{
-		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
-			if strings.Contains(sql, "binding.published_models") {
-				return &testutil.MockRow{ScanFn: func(...any) error { return pgx.ErrNoRows }}
-			}
-			return &testutil.MockRow{}
-		},
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, nil // RowsAffected=0
-		},
-	}
-	h := newTestHandler(db)
-
-	body := `{"name":"test"}`
-	req := httptest.NewRequest("PUT", "/channels/999", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", "999")
-	rec := httptest.NewRecorder()
-
-	h.UpdateChannel(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -6038,142 +5585,6 @@ func TestExportWalletTransactions_QueryError(t *testing.T) {
 }
 
 // ===================================================================
-// CreateChannelKey tests
-// ===================================================================
-
-func TestCreateChannelKey_Success(t *testing.T) {
-	// encKey must be 16, 24, or 32 bytes for AES
-	encKey := []byte("0123456789abcdef01234567") // 24 bytes
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 42
-					return nil
-				},
-			}
-		},
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, nil
-		},
-	}
-	h := &Handler{db: db, jwtSecret: "test", encKey: encKey}
-
-	body := `{"channel_id":1,"key":"sk-test-key-12345","allowed_models":"gpt-4o"}`
-	req := httptest.NewRequest("POST", "/channel-keys", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannelKey(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestCreateChannelKey_MissingFields(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	body := `{"channel_id":1}`
-	req := httptest.NewRequest("POST", "/channel-keys", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannelKey(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestCreateChannelKey_InvalidJSON(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	req := httptest.NewRequest("POST", "/channel-keys", strings.NewReader("not json"))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannelKey(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rec.Code)
-	}
-}
-
-func TestCreateChannelKey_DBError(t *testing.T) {
-	encKey := []byte("0123456789abcdef01234567")
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					return fmt.Errorf("duplicate key")
-				},
-			}
-		},
-	}
-	h := &Handler{db: db, jwtSecret: "test", encKey: encKey}
-
-	body := `{"channel_id":1,"key":"sk-test"}`
-	req := httptest.NewRequest("POST", "/channel-keys", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannelKey(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", rec.Code)
-	}
-}
-
-func TestUpdateChannelKey_KeyResetsCooldown(t *testing.T) {
-	encKey := []byte("0123456789abcdef01234567")
-	var updateSQL string
-	var updateArgs []any
-	db := &testutil.MockDB{
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			if strings.HasPrefix(sql, "UPDATE channel_keys") {
-				updateSQL = sql
-				updateArgs = append([]any(nil), args...)
-				return pgconn.NewCommandTag("UPDATE 1"), nil
-			}
-			return pgconn.NewCommandTag("INSERT 1"), nil
-		},
-	}
-	h := &Handler{db: db, jwtSecret: "test", encKey: encKey}
-
-	body := `{"channel_id":8,"key":"sk-new-mimo","status":"active","allowed_models":"mimo-v2.5"}`
-	req := httptest.NewRequest("PUT", "/channel-keys/9", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", "9")
-	rec := httptest.NewRecorder()
-
-	h.UpdateChannelKey(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	for _, want := range []string{"channel_id =", "key_enc =", "fail_count = 0", "cooldown_until = NULL", "last_used_at = NULL", "status =", "allowed_models ="} {
-		if !strings.Contains(updateSQL, want) {
-			t.Fatalf("expected update SQL to contain %q, got %s", want, updateSQL)
-		}
-	}
-	if len(updateArgs) < 5 {
-		t.Fatalf("expected update args, got %v", updateArgs)
-	}
-	encryptedKey, ok := updateArgs[1].(string)
-	if !ok || encryptedKey == "" {
-		t.Fatalf("expected encrypted key arg, got %#v", updateArgs[1])
-	}
-	decrypted, err := auth.DecryptKey(encryptedKey, encKey)
-	if err != nil {
-		t.Fatalf("decrypt updated key: %v", err)
-	}
-	if decrypted != "sk-new-mimo" {
-		t.Fatalf("expected decrypted key sk-new-mimo, got %s", decrypted)
-	}
-}
-
-// ===================================================================
 // CreateGrant tests
 // ===================================================================
 
@@ -6386,61 +5797,6 @@ func TestNormalizeModels(t *testing.T) {
 				t.Errorf("normalizeModels(%q) = %q, want %q", c.input, got, c.expect)
 			}
 		})
-	}
-}
-
-func TestCreateChannel_NormalizesModels(t *testing.T) {
-	var capturedModels string
-	db := &testutil.MockDB{
-		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
-			// args: name(0), provider(1), base_url(2), models(3), priority(4), degradation_threshold(5)
-			if len(args) > 3 {
-				if m, ok := args[3].(string); ok {
-					capturedModels = m
-				}
-			}
-			return &testutil.MockRow{
-				ScanFn: func(dest ...any) error {
-					*dest[0].(*int64) = 1
-					return nil
-				},
-			}
-		},
-		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-			return pgconn.CommandTag{}, nil
-		},
-	}
-	h := newTestHandler(db)
-
-	// Mixed separators, spaces, and duplicates use one canonical storage form.
-	body := `{"name":"test","provider":"openai","base_url":"https://api.openai.com","models":" gpt-4o ； gpt-4o ; gpt-4o-mini\n gpt-4o-mini "}`
-	req := httptest.NewRequest("POST", "/channels", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if capturedModels != "gpt-4o,gpt-4o-mini" {
-		t.Errorf("expected normalized models %q, got %q", "gpt-4o,gpt-4o-mini", capturedModels)
-	}
-}
-
-func TestCreateChannel_NormalizesAllEmpty_Rejected(t *testing.T) {
-	h := newTestHandler(&testutil.MockDB{})
-
-	// All full-width commas + whitespace should normalize to empty => rejected
-	body := `{"name":"test","provider":"openai","base_url":"https://api.openai.com","models":" ， ， "}`
-	req := httptest.NewRequest("POST", "/channels", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for empty-after-normalize models, got %d", rec.Code)
 	}
 }
 

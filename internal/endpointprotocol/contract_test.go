@@ -11,14 +11,24 @@ import (
 	"testing"
 )
 
+type descriptorOverrideProfile struct {
+	Profile
+	descriptor Descriptor
+}
+
+func (profile descriptorOverrideProfile) Descriptor() Descriptor {
+	return cloneDescriptor(profile.descriptor)
+}
+
 func TestRegistryIsFixedAndDescriptorsAreDefensive(t *testing.T) {
 	registry := NewRegistry()
 	descriptors := registry.Descriptors()
-	if len(descriptors) != 3 {
-		t.Fatalf("descriptors=%d want 3", len(descriptors))
+	if len(descriptors) != 4 {
+		t.Fatalf("descriptors=%d want 4", len(descriptors))
 	}
 	want := []string{
 		ProfileOpenAIResponsesText,
+		ProfileAnthropicMessagesText,
 		ProfileCohereRerankV2,
 		ProfileOpenAIImageGPT,
 	}
@@ -30,8 +40,8 @@ func TestRegistryIsFixedAndDescriptorsAreDefensive(t *testing.T) {
 			t.Fatalf("profile became charge authority: %+v", descriptor)
 		}
 	}
-	if descriptors[2].RuntimeState != RuntimeRepositoryImageV1 {
-		t.Fatalf("image runtime evidence drifted: %+v", descriptors[2])
+	if descriptors[3].RuntimeState != RuntimeRepositoryImageV1 {
+		t.Fatalf("image runtime evidence drifted: %+v", descriptors[3])
 	}
 	descriptors[0].SupportedModalities[0] = "mutated"
 	if NewRegistry().Descriptors()[0].SupportedModalities[0] != "text" {
@@ -40,6 +50,70 @@ func TestRegistryIsFixedAndDescriptorsAreDefensive(t *testing.T) {
 	if _, err := registry.Get("vendor.dynamic"); !errors.Is(err, ErrInvalidConfiguration) {
 		t.Fatalf("unknown profile error=%v", err)
 	}
+}
+
+func TestRegistryResolveRequiresExactProfileIdentity(t *testing.T) {
+	registry := NewRegistry()
+	for _, descriptor := range registry.Descriptors() {
+		profile, err := registry.Resolve(descriptor.ProfileID, descriptor.ProfileVersion)
+		if err != nil {
+			t.Fatalf("Resolve(%q, %q): %v", descriptor.ProfileID, descriptor.ProfileVersion, err)
+		}
+		if got := profile.Descriptor(); got.ProfileID != descriptor.ProfileID || got.ProfileVersion != descriptor.ProfileVersion {
+			t.Fatalf("resolved descriptor=%+v want identity=%s/%s", got, descriptor.ProfileID, descriptor.ProfileVersion)
+		}
+		if _, err := registry.Get(descriptor.ProfileID); err != nil {
+			t.Fatalf("single-version compatibility Get(%q): %v", descriptor.ProfileID, err)
+		}
+	}
+
+	tests := []struct {
+		name      string
+		profileID string
+		version   string
+		code      string
+	}{
+		{name: "empty id", profileID: "", version: "1.0.0", code: "profile_identity_invalid"},
+		{name: "empty version", profileID: ProfileOpenAIResponsesText, version: "", code: "profile_identity_invalid"},
+		{name: "whitespace version", profileID: ProfileOpenAIResponsesText, version: " ", code: "profile_identity_invalid"},
+		{name: "malformed version", profileID: ProfileOpenAIResponsesText, version: "v1", code: "unknown_profile_version"},
+		{name: "unknown version", profileID: ProfileOpenAIResponsesText, version: "2.0.0", code: "unknown_profile_version"},
+		{name: "unknown id", profileID: "vendor.dynamic", version: "1.0.0", code: "unknown_profile"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := registry.Resolve(test.profileID, test.version)
+			assertProtocolConfigurationError(t, err, test.code)
+		})
+	}
+	var unavailable *Registry
+	_, err := unavailable.Resolve(ProfileOpenAIResponsesText, "1.0.0")
+	assertProtocolConfigurationError(t, err, "registry_unavailable")
+}
+
+func TestRegistryNeverImplicitlySelectsLatestVersion(t *testing.T) {
+	v1 := openAIResponsesProfile{}
+	v2Descriptor := v1.Descriptor()
+	v2Descriptor.ProfileVersion = "2.0.0"
+	v2 := descriptorOverrideProfile{Profile: v1, descriptor: v2Descriptor}
+	registry := newRegistry(v1, v2)
+
+	_, err := registry.Get(ProfileOpenAIResponsesText)
+	assertProtocolConfigurationError(t, err, "ambiguous_profile_version")
+	for _, version := range []string{"1.0.0", "2.0.0"} {
+		profile, err := registry.Resolve(ProfileOpenAIResponsesText, version)
+		if err != nil || profile.Descriptor().ProfileVersion != version {
+			t.Fatalf("exact version %s resolved profile=%v err=%v", version, profile, err)
+		}
+	}
+	if descriptors := registry.Descriptors(); len(descriptors) != 2 ||
+		descriptors[0].ProfileVersion != "1.0.0" || descriptors[1].ProfileVersion != "2.0.0" {
+		t.Fatalf("multi-version descriptors=%+v", descriptors)
+	}
+
+	duplicate := newRegistry(v1, v1)
+	_, err = duplicate.Resolve(ProfileOpenAIResponsesText, "1.0.0")
+	assertProtocolConfigurationError(t, err, "registry_invalid")
 }
 
 func TestOpenAIResponsesTextProfileStrictRequestAndFinalUsage(t *testing.T) {
@@ -134,11 +208,6 @@ func TestOpenAIResponsesRejectsSemanticDegradationAndNonFinalEvidence(t *testing
 			name: "stream",
 			body: `{"model":"company-text","input":"secret","stream":true}`,
 			kind: ErrUnsupportedSemantics,
-		},
-		{
-			name: "unknown field",
-			body: `{"model":"company-text","input":"secret","vendor_magic":true}`,
-			kind: ErrInvalidRequest,
 		},
 		{
 			name: "nested duplicate",
@@ -386,6 +455,31 @@ func TestConfigurationAndBindingFailClosed(t *testing.T) {
 	}
 	if _, err := profile.ParseResponse(context.Background(), nil, http.StatusOK, []byte(`{}`)); !errors.Is(err, ErrInvalidConfiguration) {
 		t.Fatalf("nil binding error=%v", err)
+	}
+	_, binding := mustBuild(t, profile, baseResponsesInput())
+	if binding.profileID != profile.Descriptor().ProfileID || binding.profileVersion != profile.Descriptor().ProfileVersion {
+		t.Fatalf("binding identity=%q/%q descriptor=%+v", binding.profileID, binding.profileVersion, profile.Descriptor())
+	}
+	for _, version := range []string{"", "2.0.0"} {
+		wrongVersion := *binding
+		wrongVersion.profileVersion = version
+		if _, err := profile.ParseResponse(context.Background(), &wrongVersion, http.StatusOK, []byte(`{}`)); !errors.Is(err, ErrInvalidConfiguration) {
+			t.Fatalf("binding version %q error=%v", version, err)
+		}
+	}
+}
+
+func assertProtocolConfigurationError(t *testing.T, err error, code string) {
+	t.Helper()
+	if !errors.Is(err, ErrInvalidConfiguration) {
+		t.Fatalf("error=%v want ErrInvalidConfiguration", err)
+	}
+	var protocolErr *ProtocolError
+	if !errors.As(err, &protocolErr) {
+		t.Fatalf("error=%v is not a ProtocolError", err)
+	}
+	if protocolErr.Code != code {
+		t.Fatalf("error=%v code=%q want %q", err, protocolErr.Code, code)
 	}
 }
 

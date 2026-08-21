@@ -58,7 +58,9 @@ const MOCK_STATS = {
       request_id: 'req-abc-123',
       model: 'gpt-4o',
       routing_model: 'gpt-4o',
-      route_channel_id: 1,
+      route_deployment_id: 1,
+      route_model_operation_id: 'openai.chat_completions.v1',
+      route_identity: 'canonical_deployment_operation',
       provider: 'openai',
       channel: 'OpenAI Main',
       status_code: 200,
@@ -81,9 +83,9 @@ const MOCK_STATS = {
     { model: 'claude-3.5-sonnet', requests: 4345, success_count: 4200, fail_count: 145, success_rate: 0.9666, p95_latency_ms: 980 },
   ],
   channel_health: [
-    { id: 1, name: 'OpenAI Main', provider: 'openai', base_url: 'https://api.openai.com/v1', public_models: ['gpt-4o'], enabled: true, available: true, credential_ready: true, status: 'healthy', success_count: 10000, fail_count: 50 },
-    { id: 2, name: 'Azure Backup', provider: 'azure', enabled: true, available: true, credential_ready: true, status: 'warning', success_count: 2000, fail_count: 300 },
-    { id: 3, name: 'Disabled CH', provider: 'custom', enabled: false, available: false, credential_ready: false, status: 'disabled', success_count: 0, fail_count: 0 },
+    { id: 1, deployment_id: 1, model_operation_id: 'openai.chat_completions.v1', name: 'OpenAI Main', provider: 'openai', base_url: 'https://api.openai.com/v1', public_model: 'gpt-4o', public_models: ['gpt-4o'], enabled: true, available: true, credential_ready: true, status: 'healthy', success_count: 10000, fail_count: 50 },
+    { id: 2, deployment_id: 2, model_operation_id: 'openai.chat_completions.v1', name: 'Azure Backup', provider: 'azure', public_model: 'gpt-4o', enabled: true, available: true, credential_ready: true, status: 'warning', success_count: 2000, fail_count: 300 },
+    { id: 3, deployment_id: 3, model_operation_id: 'openai.chat_completions.v1', name: 'Disabled CH', provider: 'custom', public_model: 'gpt-4o', enabled: false, available: false, credential_ready: false, status: 'disabled', success_count: 0, fail_count: 0 },
   ],
   delta_vs_yesterday: { cost_micros: '5000000', latency_ms: -20, success_rate: 0.005 },
 };
@@ -140,7 +142,7 @@ describe('DashboardPage', () => {
     expect(html).toContain('概览');
     expect(html).toContain('客户运营总览');
     expect(html).toContain('数据范围：北区组织');
-    expect(html).toContain('统一观察当前客户的请求量、成功率、延迟、成本和通道健康状态。');
+    expect(html).toContain('统一观察当前客户的请求量、成功率、延迟、成本和模型部署健康状态。');
     expect(html).not.toContain('Gateway overview');
     expect(html).not.toContain('AI Gateway 控制台');
   });
@@ -152,7 +154,7 @@ describe('DashboardPage', () => {
     expect(mockGetInternalStatus).toHaveBeenCalledWith({ org_id: 1 });
     expect(screen.getByText('运行信号')).toBeTruthy();
     expect(screen.getByText('需要关注')).toBeTruthy();
-    expect(screen.getByText(/异常通道 1 · 失败请求 350/)).toBeTruthy();
+    expect(screen.getByText(/异常部署操作 1 · 失败请求 350/)).toBeTruthy();
     expect(screen.getByText('预警 · 3')).toBeTruthy();
     expect(screen.getByText('严重 1 · 预警 2')).toBeTruthy();
     expect(screen.getByText('结算风险')).toBeTruthy();
@@ -228,8 +230,8 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('button', { name: '上游通道' })).toBeNull();
     expect(screen.queryByRole('button', { name: '用户管理' })).toBeNull();
     expect(screen.getByText('结算可用额度')).toBeTruthy();
-    expect(screen.queryByText('当前可路由连接')).toBeNull();
-    expect(screen.queryByText('连接可用状态')).toBeNull();
+    expect(screen.queryByText('当前可路由部署操作')).toBeNull();
+    expect(screen.queryByText('模型部署可用状态')).toBeNull();
     expect(screen.queryByText('运行关注与待处理动作')).toBeNull();
     expect(mockGetInternalStatus).not.toHaveBeenCalled();
   });
@@ -329,14 +331,14 @@ describe('DashboardPage', () => {
 
   it('renders channel health data', async () => {
     renderDashboard();
-    const openAIConnection = await screen.findByRole('button', { name: '查看模型连接 OpenAI Main' });
+    const openAIConnection = await screen.findByRole('button', { name: '查看模型部署 OpenAI Main' });
     expect(openAIConnection).toBeTruthy();
     expect(screen.getByText('Azure Backup')).toBeTruthy();
     expect(screen.getByText('模型：gpt-4o · api.openai.com')).toBeTruthy();
-    expect(screen.getByText('当前可路由连接')).toBeTruthy();
+    expect(screen.getByText('当前可路由部署操作')).toBeTruthy();
     expect(screen.getByText('2/3')).toBeTruthy();
     fireEvent.click(openAIConnection);
-    expect(mockNavigate).toHaveBeenCalledWith('/channels?channel_id=1');
+    expect(mockNavigate).toHaveBeenCalledWith('/model-endpoints?deployment_id=1&operation_id=openai.chat_completions.v1');
   });
 
   it('shows no sample instead of a zero success rate for a healthy idle connection', async () => {
@@ -344,8 +346,11 @@ describe('DashboardPage', () => {
       ...MOCK_STATS,
       channel_health: [{
         id: 4,
+        deployment_id: 4,
+        model_operation_id: 'openai.chat_completions.v1',
         name: 'Idle healthy endpoint',
         provider: 'deepseek',
+        public_model: 'deepseek-chat',
         enabled: true,
         available: true,
         credential_ready: true,
@@ -357,24 +362,44 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    const card = await screen.findByRole('button', { name: '查看模型连接 Idle healthy endpoint' });
+    const card = await screen.findByRole('button', { name: '查看模型部署 Idle healthy endpoint' });
     expect(card.textContent).toContain('暂无样本');
     expect(card.textContent).not.toContain('0.0%');
     expect(card.textContent).toContain('健康');
   });
 
-  it('shows the immutable selected endpoint on each recent request', async () => {
+  it('shows the immutable canonical deployment operation on each recent request', async () => {
     renderDashboard();
 
-    expect((await screen.findAllByText('OpenAI Main')).length).toBeGreaterThanOrEqual(2);
+    expect(await screen.findByText('部署 #1 · openai.chat_completions.v1')).toBeTruthy();
     expect(screen.queryByText('未选择路由')).toBeNull();
+  });
+
+  it('labels route_channel_id as legacy history instead of current deployment identity', async () => {
+    mockGetDashboardStats.mockResolvedValue({
+      ...MOCK_STATS,
+      recent_logs: [{
+        ...MOCK_STATS.recent_logs[0],
+        route_deployment_id: undefined,
+        route_model_operation_id: undefined,
+        route_identity: 'legacy_history',
+        route_channel_id: 77,
+        channel: 'Archived channel',
+      }],
+    });
+
+    renderDashboard();
+
+    expect(await screen.findByText('历史连接：Archived channel')).toBeTruthy();
+    expect(screen.queryByText(/部署 #77/)).toBeNull();
   });
 
   it('separates current route readiness from historical window results', async () => {
     mockGetDashboardStats.mockResolvedValue({
       ...MOCK_STATS,
       channel_health: [{
-        id: 9, name: 'Kimi', provider: 'kimi', enabled: true, available: false,
+        id: 9, deployment_id: 9, model_operation_id: 'openai.chat_completions.v1',
+        name: 'Kimi', provider: 'kimi', public_model: 'kimi-k3', enabled: true, available: false,
         credential_ready: false, runtime_published: true, status: 'no_credential',
         success_count: 1, fail_count: 0,
       }],
@@ -385,7 +410,7 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('缺少凭证')).toBeTruthy();
     expect(screen.getByText('0/1')).toBeTruthy();
     expect(screen.getByText('100.0%')).toBeTruthy();
-    expect(screen.getByText('按模型端点与网关当前路由判定')).toBeTruthy();
+    expect(screen.getByText('按 canonical deployment + operation 判定')).toBeTruthy();
   });
 
   it('explains stale and unavailable route projections instead of showing healthy', async () => {
@@ -393,12 +418,14 @@ describe('DashboardPage', () => {
       ...MOCK_STATS,
       channel_health: [
         {
-          id: 9, name: 'Kimi stale', provider: 'kimi', enabled: false, available: false,
+          id: 9, deployment_id: 9, model_operation_id: 'openai.chat_completions.v1',
+          name: 'Kimi stale', provider: 'kimi', public_model: 'kimi-k3', enabled: false, available: false,
           credential_ready: true, runtime_published: false, status: 'stale_release',
           success_count: 1, fail_count: 0,
         },
         {
-          id: 10, name: 'DeepSeek unknown', provider: 'deepseek', enabled: true, available: false,
+          id: 10, deployment_id: 10, model_operation_id: 'openai.chat_completions.v1',
+          name: 'DeepSeek unknown', provider: 'deepseek', public_model: 'deepseek-chat', enabled: true, available: false,
           credential_ready: true, runtime_published: true, status: 'projection_unavailable',
           success_count: 3, fail_count: 0,
         },
@@ -416,8 +443,8 @@ describe('DashboardPage', () => {
     mockGetDashboardStats.mockResolvedValue({
       ...MOCK_STATS,
       channel_health: [
-        { id: 1, name: 'deepseek', provider: 'deepseek', enabled: true, available: true, status: 'healthy', success_count: 10, fail_count: 0 },
-        { id: 2, name: 'Mimo Token Plan', provider: 'openai', enabled: true, available: true, status: 'healthy', success_count: 5, fail_count: 0 },
+        { id: 1, deployment_id: 1, model_operation_id: 'openai.chat_completions.v1', name: 'deepseek', provider: 'deepseek', public_model: 'deepseek-chat', enabled: true, available: true, status: 'healthy', success_count: 10, fail_count: 0 },
+        { id: 2, deployment_id: 2, model_operation_id: 'openai.chat_completions.v1', name: 'Mimo Token Plan', provider: 'openai', public_model: 'mimo-chat', enabled: true, available: true, status: 'healthy', success_count: 5, fail_count: 0 },
       ],
     });
 
@@ -479,8 +506,8 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('组织只读总览')).toBeTruthy();
     expect(screen.getByText(/当前只读角色不提供日志明细入口/)).toBeTruthy();
     expect(screen.queryByText('结算可用额度')).toBeNull();
-    expect(screen.queryByText('当前可路由连接')).toBeNull();
-    expect(screen.queryByText('连接可用状态')).toBeNull();
+    expect(screen.queryByText('当前可路由部署操作')).toBeNull();
+    expect(screen.queryByText('模型部署可用状态')).toBeNull();
     fireEvent.click(screen.getByText(/req-abc-123/));
     expect(mockNavigate).not.toHaveBeenCalled();
   });

@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/uniroute/unirouter/internal/accessscope"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/models"
 )
 
@@ -176,7 +177,7 @@ func (l Limits) ValidateShape() error {
 	if len(l.AllowedModels) == 0 || len(l.AllowedEndpoints) == 0 {
 		return fmt.Errorf("%w: allowed_models and allowed_endpoints are required", ErrInvalidRequest)
 	}
-	if len(l.AllowedModels) > 128 || len(l.AllowedEndpoints) > len(supportedModelEndpoints) {
+	if len(l.AllowedModels) > 128 || len(l.AllowedEndpoints) > len(modeloperation.AgentCapabilityPaths()) {
 		return fmt.Errorf("%w: too many models or endpoints", ErrInvalidRequest)
 	}
 	for _, value := range append(slices.Clone(l.AllowedModels), l.AllowedEndpoints...) {

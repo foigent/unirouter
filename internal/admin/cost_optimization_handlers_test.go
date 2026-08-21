@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -179,5 +180,14 @@ func TestCostOptimizationOpportunitiesRemainEvidenceBounded(t *testing.T) {
 		if strings.Contains(strings.ToLower(opportunity.Rationale), "prompt text") || opportunity.NextAction == "" {
 			t.Fatalf("opportunity escaped evidence boundary: %#v", opportunity)
 		}
+	}
+}
+
+func TestCanonicalAuthorityReportsResponseCacheBypassWithoutErasingHistoricalFacts(t *testing.T) {
+	if got := responseCacheRuntimeLabel(modelrouting.ModeCanonical, 5, true); got != "canonical_bypass" {
+		t.Fatalf("canonical response cache runtime=%q", got)
+	}
+	if got := responseCacheRuntimeLabel(modelrouting.ModeLegacy, 5, true); got != "canary_active" {
+		t.Fatalf("legacy historical runtime label=%q", got)
 	}
 }

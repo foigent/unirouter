@@ -2,7 +2,6 @@ package admin
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -87,138 +85,6 @@ func TestPreviewRoutingExplainsStaleRuntimeAssignment(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"code":"runtime_assignment_stale"`) ||
 		!strings.Contains(rec.Body.String(), "处理该连接保留的旧发布记录") {
 		t.Fatalf("missing actionable stale-assignment contract: %s", rec.Body.String())
-	}
-}
-
-func TestP6F08ChannelUpdateUsesOptionalRoutingEpochCASAndInvalidatesSnapshot(t *testing.T) {
-	controller := &routingControllerStub{}
-	var updateSQL string
-	currentRoutingEpoch := int64(10)
-	publishedModels := ""
-	releaseRefs := ""
-	db := &testutil.MockDB{
-		QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
-			if !strings.Contains(sql, "binding.published_models") {
-				return &testutil.MockRow{}
-			}
-			return &testutil.MockRow{ScanFn: func(dest ...any) error {
-				*dest[0].(*int64) = currentRoutingEpoch
-				*dest[1].(*string) = publishedModels
-				*dest[2].(*string) = releaseRefs
-				return nil
-			}}
-		},
-		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
-			if strings.HasPrefix(sql, "UPDATE channels") {
-				updateSQL = sql
-			}
-			return pgconn.NewCommandTag("UPDATE 1"), nil
-		},
-	}
-	h := &Handler{db: db, routingController: controller}
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/7", strings.NewReader(`{"routing_weight":250,"expected_routing_epoch":9}`))
-	req.SetPathValue("id", "7")
-	rec := httptest.NewRecorder()
-	h.UpdateChannel(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(updateSQL, "routing_weight") || !strings.Contains(updateSQL, "routing_epoch = routing_epoch + 1") || !strings.Contains(updateSQL, "AND routing_epoch = $") {
-		t.Fatalf("routing update did not use epoch CAS: %s", updateSQL)
-	}
-	if !controller.invalidated {
-		t.Fatal("successful channel update did not invalidate local routing snapshots")
-	}
-
-	controller.invalidated = false
-	db.ExecFn = func(context.Context, string, ...any) (pgconn.CommandTag, error) {
-		return pgconn.NewCommandTag("UPDATE 0"), nil
-	}
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPut, "/api/v1/channels/7", strings.NewReader(`{"priority":20,"expected_routing_epoch":9}`))
-	req.SetPathValue("id", "7")
-	h.UpdateChannel(rec, req)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("stale epoch expected 409, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var payload map[string]interface{}
-	_ = json.Unmarshal(rec.Body.Bytes(), &payload)
-	if payload["code"] != "stale_routing_epoch" || payload["current_routing_epoch"] != float64(10) || controller.invalidated {
-		t.Fatalf("stale update contract violated: payload=%#v invalidated=%t", payload, controller.invalidated)
-	}
-}
-
-func TestChannelStatusRestorePreservesRetainedReleaseEpoch(t *testing.T) {
-	var updateSQL string
-	db := &testutil.MockDB{
-		ExecFn: func(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
-			if strings.HasPrefix(sql, "UPDATE channels") {
-				updateSQL = sql
-			}
-			return pgconn.NewCommandTag("UPDATE 1"), nil
-		},
-	}
-	h := &Handler{db: db}
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/14", strings.NewReader(`{"status":"staged","expected_routing_epoch":3}`))
-	req.SetPathValue("id", "14")
-	rec := httptest.NewRecorder()
-
-	h.UpdateChannel(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status restore expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(updateSQL, "routing_epoch = routing_epoch + 1") {
-		t.Fatalf("status-only restore must not stale the retained release pin: %s", updateSQL)
-	}
-	if strings.Contains(updateSQL, "runtime_change_slots") || !strings.Contains(updateSQL, "routing_epoch = $") {
-		t.Fatalf("status-only restore must retain CAS without an active-release exclusion: %s", updateSQL)
-	}
-}
-
-func TestChannelUpdateValidatesSupportedStatusBeforeDatabaseAccess(t *testing.T) {
-	for _, status := range []string{"active", "disabled"} {
-		t.Run(status, func(t *testing.T) {
-			var updateArgs []any
-			db := &testutil.MockDB{
-				ExecFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-					if strings.HasPrefix(sql, "UPDATE channels") {
-						updateArgs = append([]any(nil), args...)
-					}
-					return pgconn.NewCommandTag("UPDATE 1"), nil
-				},
-			}
-			h := &Handler{db: db}
-			req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/7", strings.NewReader(fmt.Sprintf(`{"status":%q}`, status)))
-			req.SetPathValue("id", "7")
-			rec := httptest.NewRecorder()
-
-			h.UpdateChannel(rec, req)
-
-			if rec.Code != http.StatusOK {
-				t.Fatalf("expected 200 for %q, got %d: %s", status, rec.Code, rec.Body.String())
-			}
-			if len(updateArgs) == 0 || updateArgs[0] != status {
-				t.Fatalf("status %q was not passed to the channel update: %#v", status, updateArgs)
-			}
-		})
-	}
-
-	databaseAccessed := false
-	h := &Handler{db: &testutil.MockDB{
-		ExecFn: func(context.Context, string, ...any) (pgconn.CommandTag, error) {
-			databaseAccessed = true
-			return pgconn.NewCommandTag("UPDATE 1"), nil
-		},
-	}}
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/7", strings.NewReader(`{"status":"paused"}`))
-	req.SetPathValue("id", "7")
-	rec := httptest.NewRecorder()
-
-	h.UpdateChannel(rec, req)
-
-	if rec.Code != http.StatusBadRequest || databaseAccessed {
-		t.Fatalf("unsupported status must fail before database access: status=%d database_accessed=%t body=%s", rec.Code, databaseAccessed, rec.Body.String())
 	}
 }
 

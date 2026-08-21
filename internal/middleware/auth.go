@@ -18,7 +18,9 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/errdocs"
+	"github.com/uniroute/unirouter/internal/gatewayerror"
 	"github.com/uniroute/unirouter/internal/ipallowlist"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/traceutil"
 )
@@ -49,6 +51,87 @@ func extractAPIKey(r *http.Request) (string, error) {
 		return "", &AuthError{Code: "auth_error.invalid_api_key", Message: "Empty API key", Status: http.StatusUnauthorized}
 	}
 	return rawKey, nil
+}
+
+const anthropicMessagesVersion = "2023-06-01"
+
+// extractGatewayCredential applies only the public model-operation credential
+// contract. Admin and completed-feed surfaces deliberately keep their existing
+// Authorization parser.
+func extractGatewayCredential(r *http.Request) (string, error) {
+	definition, known := modeloperation.Lookup(modeloperation.CanonicalPath(r.URL.Path))
+	if !known {
+		return extractAPIKey(r)
+	}
+	switch definition.ProtocolFamily {
+	case "anthropic":
+		return extractAnthropicCredential(r)
+	case "openai":
+		if headerPresent(r.Header, "x-api-key") {
+			return "", &AuthError{Code: "auth_error.invalid_api_key", Message: "Conflicting API credential headers", Status: http.StatusUnauthorized}
+		}
+		if definition.ID == modeloperation.IDResponses &&
+			(headerPresent(r.Header, "anthropic-version") || headerPresent(r.Header, "anthropic-beta")) {
+			return "", &AuthError{Code: "validation_error.invalid_request", Message: "Anthropic protocol headers are not supported", Status: http.StatusBadRequest}
+		}
+		return extractUniqueBearerCredential(r)
+	default:
+		return extractAPIKey(r)
+	}
+}
+
+func extractAnthropicCredential(r *http.Request) (string, error) {
+	if headerPresent(r.Header, "Authorization") {
+		return "", &AuthError{Code: "auth_error.invalid_api_key", Message: "Conflicting API credential headers", Status: http.StatusUnauthorized}
+	}
+	values := exactHeaderValues(r.Header, "x-api-key")
+	if len(values) != 1 || strings.Contains(values[0], ",") || strings.TrimSpace(values[0]) == "" ||
+		values[0] != strings.TrimSpace(values[0]) {
+		return "", &AuthError{Code: "auth_error.invalid_api_key", Message: "Missing or invalid x-api-key header", Status: http.StatusUnauthorized}
+	}
+	versions := exactHeaderValues(r.Header, "anthropic-version")
+	if len(versions) != 1 || versions[0] != anthropicMessagesVersion {
+		return "", &AuthError{Code: "validation_error.invalid_request", Message: "Invalid anthropic-version header", Status: http.StatusBadRequest}
+	}
+	if headerPresent(r.Header, "anthropic-beta") {
+		return "", &AuthError{Code: "validation_error.invalid_request", Message: "anthropic-beta is not supported", Status: http.StatusBadRequest}
+	}
+	return values[0], nil
+}
+
+func extractUniqueBearerCredential(r *http.Request) (string, error) {
+	values := exactHeaderValues(r.Header, "Authorization")
+	if len(values) != 1 || strings.Contains(values[0], ",") {
+		return "", &AuthError{Code: "auth_error.invalid_api_key", Message: "Missing or invalid Authorization header", Status: http.StatusUnauthorized}
+	}
+	authHeader := values[0]
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return "", &AuthError{Code: "auth_error.invalid_api_key", Message: "Invalid Authorization header format", Status: http.StatusUnauthorized}
+	}
+	rawKey := strings.TrimPrefix(authHeader, "Bearer ")
+	if strings.TrimSpace(rawKey) == "" || rawKey != strings.TrimSpace(rawKey) {
+		return "", &AuthError{Code: "auth_error.invalid_api_key", Message: "Empty API key", Status: http.StatusUnauthorized}
+	}
+	return rawKey, nil
+}
+
+func exactHeaderValues(header http.Header, name string) []string {
+	values := make([]string, 0, 1)
+	for key, current := range header {
+		if strings.EqualFold(key, name) {
+			values = append(values, current...)
+		}
+	}
+	return values
+}
+
+func headerPresent(header http.Header, name string) bool {
+	for key := range header {
+		if strings.EqualFold(key, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // validateKeyAndOrgStatus checks if the API key and organization are active.
@@ -158,7 +241,9 @@ func GetAdminSessionHashFromContext(ctx context.Context) []byte {
 	return append([]byte(nil), v...)
 }
 
-// GetModelAliasFromContext retrieves the original requested model when the gateway resolves an alias.
+// GetModelAliasFromContext retrieves the normalized public model identity after
+// Gateway scope, governance, and enterprise authorization have accepted it.
+// The value may equal the canonical model when no alias rewrite was needed.
 func GetModelAliasFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(CtxModelAlias).(string)
 	return v
@@ -253,10 +338,8 @@ func splitScope(raw string) map[string]struct{} {
 	return result
 }
 
-func isPaidGatewayEndpoint(path string) bool {
-	return path == "/v1/chat/completions" ||
-		path == "/v1/embeddings" ||
-		path == "/v1/media/jobs"
+func isPaidGatewayEndpoint(method, path string) bool {
+	return modeloperation.IsPaidSubmission(method, path)
 }
 
 func providerCostAdmissionBlocked(ctx context.Context, q db.DBQuerier, orgID, apiKeyID, accessCredentialID int64) (bool, error) {
@@ -279,14 +362,16 @@ func providerCostAdmissionBlocked(ctx context.Context, q db.DBQuerier, orgID, ap
 }
 
 func endpointAllowedForGrant(apiKey *models.ApiKey, path string) bool {
-	if apiKey == nil || !apiKey.GrantBound {
-		return true
-	}
-	if apiKey.EndpointDenied || strings.TrimSpace(apiKey.AllowedEndpoints) == "" {
+	if apiKey == nil {
 		return false
 	}
-	_, allowed := splitScope(apiKey.AllowedEndpoints)[accessscope.CanonicalExecutionEndpoint(path)]
-	return allowed
+	return accessscope.ExecutionEndpointAllowed(
+		apiKey.GrantBound,
+		apiKey.GrantScopeMode,
+		apiKey.EndpointDenied,
+		strings.Split(apiKey.AllowedEndpoints, ","),
+		path,
+	)
 }
 
 func applyLiveAccessGrantBoundary(ctx context.Context, q db.DBQuerier, apiKey *models.ApiKey) error {
@@ -333,8 +418,8 @@ func GatewayAuthAcrossBufferedBody(
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if authenticate == nil || retainBody == nil {
-			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				writeGatewayAuthError(w, http.StatusInternalServerError, "server_error.internal_error", "Gateway authorization is unavailable")
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeGatewayRequestError(w, r, http.StatusInternalServerError, "server_error.internal_error", "Gateway authorization is unavailable")
 			})
 		}
 		return authenticate(retainBody(authenticate(next)))
@@ -347,11 +432,11 @@ func GatewayAuthAcrossBufferedBody(
 func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecret string, capabilities *agentcap.Service, clientIPResolver ClientIPResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rawCredential, err := extractAPIKey(r)
+			rawCredential, err := extractGatewayCredential(r)
 			if err != nil {
 				var authErr *AuthError
 				if errors.As(err, &authErr) {
-					writeGatewayAuthError(w, authErr.Status, authErr.Code, authErr.Message)
+					writeGatewayRequestError(w, r, authErr.Status, authErr.Code, authErr.Message)
 				}
 				return
 			}
@@ -361,12 +446,12 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 			authKind := AuthKindAPIKey
 			if strings.HasPrefix(rawCredential, agentcap.TokenPrefix) {
 				if capabilities == nil {
-					writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_agent_capability", "Invalid Agent capability")
+					writeGatewayRequestError(w, r, http.StatusUnauthorized, "auth_error.invalid_agent_capability", "Invalid Agent capability")
 					return
 				}
 				authentication, authErr := capabilities.Authenticate(r.Context(), rawCredential)
 				if authErr != nil {
-					writeAgentCapabilityAuthError(w, authErr)
+					writeAgentCapabilityAuthError(w, r, authErr)
 					return
 				}
 				apiKey = authentication.APIKey
@@ -376,7 +461,7 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 				// this request. Reusing that exact snapshot avoids a second query
 				// whose later read could disagree inside one admission decision.
 				if !agentcap.IsControlEndpoint(r.URL.Path) && !capabilityClaims.AllowsEndpoint(r.URL.Path) {
-					writeGatewayAuthError(w, http.StatusForbidden, "auth_error.agent_capability_endpoint_not_allowed", "Agent capability does not allow this model-gateway endpoint")
+					writeGatewayRequestError(w, r, http.StatusForbidden, "auth_error.agent_capability_endpoint_not_allowed", "Agent capability does not allow this model-gateway endpoint")
 					return
 				}
 			} else {
@@ -384,18 +469,18 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 				var orgStatus string
 				apiKey, orgStatus, err = resolveAPIKey(r.Context(), q, keyHash)
 				if err != nil {
-					writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
+					writeGatewayRequestError(w, r, http.StatusUnauthorized, "auth_error.invalid_api_key", "Invalid API key")
 					return
 				}
 				if apiKey.Purpose != "" {
 					completedFeedAuthDenials.WithLabelValues("non_feed_route").Inc()
-					writeGatewayAuthError(w, http.StatusForbidden, "auth_error.api_key_purpose_not_allowed", "API key purpose does not allow this model-gateway endpoint")
+					writeGatewayRequestError(w, r, http.StatusForbidden, "auth_error.api_key_purpose_not_allowed", "API key purpose does not allow this model-gateway endpoint")
 					return
 				}
 				if err := validateKeyAndOrgStatus(apiKey, orgStatus); err != nil {
 					var typed *AuthError
 					if errors.As(err, &typed) {
-						writeGatewayAuthError(w, typed.Status, typed.Code, typed.Message)
+						writeGatewayRequestError(w, r, typed.Status, typed.Code, typed.Message)
 					}
 					return
 				}
@@ -403,35 +488,37 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 
 			if capabilityClaims != nil && apiKey.Purpose != "" {
 				completedFeedAuthDenials.WithLabelValues("non_feed_route").Inc()
-				writeGatewayAuthError(w, http.StatusForbidden, "auth_error.api_key_purpose_not_allowed", "API key purpose does not allow this model-gateway endpoint")
+				writeGatewayRequestError(w, r, http.StatusForbidden, "auth_error.api_key_purpose_not_allowed", "API key purpose does not allow this model-gateway endpoint")
 				return
 			}
 			if !accessscope.IsCapabilityManagementEndpoint(r.URL.Path) && !endpointAllowedForGrant(apiKey, r.URL.Path) {
-				writeGatewayAuthError(w, http.StatusForbidden, "auth_error.access_grant_endpoint_not_allowed", "Access grant does not allow this endpoint")
+				writeGatewayRequestError(w, r, http.StatusForbidden, "auth_error.access_grant_endpoint_not_allowed", "Access grant does not allow this endpoint")
 				return
 			}
 
-			if isPaidGatewayEndpoint(r.URL.Path) {
+			// Resolve the caller network boundary before querying any paid-admission
+			// state. A valid credential presented from a disallowed address must not
+			// be able to distinguish pending provider liability from a healthy key.
+			clientIP := clientIPResolver.Resolve(r)
+			if !checkIPWhitelist(clientIP, apiKey.IPWhitelist) {
+				writeGatewayRequestError(w, r, http.StatusForbidden, "auth_error.ip_not_allowed", "Client IP is not in the API key's allowed list")
+				return
+			}
+
+			if isPaidGatewayEndpoint(r.Method, r.URL.Path) {
 				accessCredentialID := int64(0)
 				if apiKey.AccessCredentialID != nil {
 					accessCredentialID = *apiKey.AccessCredentialID
 				}
 				blocked, blockErr := providerCostAdmissionBlocked(r.Context(), q, apiKey.OrgID, apiKey.ID, accessCredentialID)
 				if blockErr != nil {
-					writeGatewayAuthError(w, http.StatusServiceUnavailable, "billing_error.provider_cost_state_unavailable", "Provider cost admission state is temporarily unavailable")
+					writeGatewayRequestError(w, r, http.StatusServiceUnavailable, "billing_error.provider_cost_state_unavailable", "Provider cost admission state is temporarily unavailable")
 					return
 				}
 				if blocked {
-					writeGatewayAuthError(w, http.StatusConflict, "billing_error.provider_cost_pending", "This API key has an unresolved provider cost and is temporarily blocked from new paid requests")
+					writeGatewayRequestError(w, r, http.StatusConflict, "billing_error.provider_cost_pending", "This API key has an unresolved provider cost and is temporarily blocked from new paid requests")
 					return
 				}
-			}
-
-			// Check IP whitelist
-			clientIP := clientIPResolver.Resolve(r)
-			if !checkIPWhitelist(clientIP, apiKey.IPWhitelist) {
-				writeGatewayAuthError(w, http.StatusForbidden, "auth_error.ip_not_allowed", "Client IP is not in the API key's allowed list")
-				return
 			}
 
 			// Ensure the server-owned operation identity exists even when this
@@ -467,15 +554,28 @@ func GatewayAuthWithAgentCapabilitiesAndClientIP(q db.DBQuerier, apiKeyHashSecre
 	}
 }
 
-func writeAgentCapabilityAuthError(w http.ResponseWriter, err error) {
+func writeAgentCapabilityAuthError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, agentcap.ErrUnavailable):
-		writeGatewayAuthError(w, http.StatusServiceUnavailable, "auth_error.agent_capability_state_unavailable", "Agent capability state is temporarily unavailable")
+		writeGatewayRequestError(w, r, http.StatusServiceUnavailable, "auth_error.agent_capability_state_unavailable", "Agent capability state is temporarily unavailable")
 	case errors.Is(err, agentcap.ErrRevoked), errors.Is(err, agentcap.ErrSuperseded), errors.Is(err, agentcap.ErrAuthorityChanged), errors.Is(err, agentcap.ErrInactiveRoot):
-		writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.agent_capability_revoked", "Agent capability is expired, superseded, or revoked")
+		writeGatewayRequestError(w, r, http.StatusUnauthorized, "auth_error.agent_capability_revoked", "Agent capability is expired, superseded, or revoked")
 	default:
-		writeGatewayAuthError(w, http.StatusUnauthorized, "auth_error.invalid_agent_capability", "Invalid Agent capability")
+		writeGatewayRequestError(w, r, http.StatusUnauthorized, "auth_error.invalid_agent_capability", "Invalid Agent capability")
 	}
+}
+
+func writeGatewayRequestError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	requestID := ""
+	path := ""
+	if r != nil {
+		requestID = GetRequestIDFromContext(r.Context())
+		path = r.URL.Path
+	}
+	if requestID == "" {
+		requestID, _ = newOperationID()
+	}
+	gatewayerror.Write(w, path, requestID, status, code, message)
 }
 
 func writeGatewayAuthError(w http.ResponseWriter, status int, code, message string) {

@@ -7,7 +7,6 @@ import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, parseExactTokenCount, Surface } from '../ui';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
-import RuntimeChangeControlWorkspace from './RuntimeChangeControlWorkspace';
 import InvocationOptimizationWorkspace from './InvocationOptimizationWorkspace';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 import ModelGovernanceAssignment from '../components/ModelGovernanceAssignment';
@@ -38,7 +37,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
   const customerContext = resolveCustomerContext(user);
   const requestedTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState<TabKey>(
-    ['registry', 'aliases', 'sets', 'assignments', 'optimization', ...(!embedded && platform ? ['releases'] : [])].includes(requestedTab || '')
+    ['registry', 'aliases', 'sets', 'assignments', 'optimization'].includes(requestedTab || '')
       ? requestedTab as TabKey
       : 'registry',
   );
@@ -96,7 +95,6 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     { key: 'sets' as const, label: '模型集' },
     { key: 'assignments' as const, label: '项目分配' },
     { key: 'optimization' as const, label: '调用优化' },
-    ...(!embedded && platform ? [{ key: 'releases' as const, label: '运行时发布' }] : []),
   ];
   const targetOrgID = platform ? effectiveCustomerOrgID(user) : undefined;
   const customerContextReady = !platform || customerContext.state === 'ready';
@@ -536,7 +534,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
           <Space>
             <ModelConnectionBackButton />
             {platform && <Text type="tertiary">客户范围：{customerContext.orgName || `客户 #${targetOrgID}`}</Text>}
-            {!['optimization', 'releases'].includes(activeTab) && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
+            {activeTab !== 'optimization' && <Button icon={<IconRefresh />} onClick={() => activeTab === 'assignments' ? loadAssignmentBase() : activeTab === 'sets' ? loadModelSets() : activeTab === 'aliases' ? loadAliases() : loadRegistry()}>刷新</Button>}
           </Space>
         )}
       />}
@@ -655,8 +653,6 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
           onSave={handleAssignmentSubmit}
         />
       )}
-
-      {activeTab === 'releases' && platform && <RuntimeChangeControlWorkspace />}
 
       {activeTab === 'optimization' && <InvocationOptimizationWorkspace orgId={targetOrgID} />}
 

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/uniroute/unirouter/internal/resetplan"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 )
 
 var ErrPlanDrift = errors.New("RESET_PLAN_DRIFT_DETECTED")
@@ -32,6 +33,7 @@ func Preview(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	redisClient *redis.Client,
+	expectedSchemaLedger []string,
 	target resetplan.TargetIdentity,
 	currentSourceInstance string,
 	nextSourceInstance string,
@@ -53,6 +55,7 @@ func Preview(
 	if err != nil {
 		return resetplan.Plan{}, err
 	}
+	snapshot.ExpectedMigrationVersions = slices.Clone(expectedSchemaLedger)
 	plan, err := resetplan.Build(snapshot, target, currentSourceInstance, nextSourceInstance, now)
 	if err != nil {
 		return resetplan.Plan{}, err
@@ -71,6 +74,7 @@ func Apply(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	redisClient *redis.Client,
+	expectedSchemaLedger []string,
 	plan resetplan.Plan,
 	effectiveTarget resetplan.TargetIdentity,
 	effectiveSourceInstance string,
@@ -81,6 +85,9 @@ func Apply(
 	}
 	if err := resetplan.Validate(plan); err != nil {
 		return result, err
+	}
+	if err := schemaauthority.VerifyLedger(expectedSchemaLedger, plan.Schema.MigrationVersions); err != nil {
+		return result, fmt.Errorf("%w: reviewed reset plan schema ledger: %v", ErrPlanDrift, err)
 	}
 	if effectiveTarget != plan.Target {
 		return result, fmt.Errorf("%w: target runtime identity changed", ErrPlanDrift)
@@ -93,7 +100,7 @@ func Apply(
 	if err != nil {
 		return result, err
 	}
-	if err := compareCurrentScope(ctx, pool, redisObservation, plan); err != nil {
+	if err := compareCurrentScope(ctx, pool, redisObservation, expectedSchemaLedger, plan); err != nil {
 		return result, err
 	}
 
@@ -116,6 +123,7 @@ func Apply(
 	if err != nil {
 		return result, err
 	}
+	lockedSnapshot.ExpectedMigrationVersions = slices.Clone(expectedSchemaLedger)
 	lockedPlan, err := resetplan.Build(
 		lockedSnapshot,
 		plan.Target,
@@ -155,6 +163,7 @@ func Apply(
 	if err != nil {
 		return result, fmt.Errorf("inspect post-reset baseline: %w", err)
 	}
+	postSnapshot.ExpectedMigrationVersions = slices.Clone(expectedSchemaLedger)
 	if err := verifyPostconditions(plan, postSnapshot); err != nil {
 		return result, err
 	}
@@ -224,6 +233,7 @@ func compareCurrentScope(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	redisObservation resetplan.RedisObservation,
+	expectedSchemaLedger []string,
 	plan resetplan.Plan,
 ) error {
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
@@ -235,6 +245,7 @@ func compareCurrentScope(
 	if err != nil {
 		return err
 	}
+	snapshot.ExpectedMigrationVersions = slices.Clone(expectedSchemaLedger)
 	current, err := resetplan.Build(snapshot, plan.Target, plan.CurrentSourceInstance, plan.NextSourceInstance, time.Now())
 	if err != nil {
 		return fmt.Errorf("%w: rebuild preflight plan: %v", ErrPlanDrift, err)

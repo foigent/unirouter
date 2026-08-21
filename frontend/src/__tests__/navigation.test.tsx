@@ -79,7 +79,7 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   organizationAdmin: {
 	authz: context('org_admin'),
 	routes: [
-		'/', '/model-governance', '/model-readiness', '/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
+		'/', '/channels', '/model-governance', '/model-readiness', '/access-review', '/applications', '/organization-members', '/agent-trust', '/limit-policies', '/guardrail-policies', '/audit-logs',
       '/logs', '/media-jobs', '/usage-analytics', '/notifications', '/status',
       '/model-prices', '/cost-optimization', '/docs',
     ],
@@ -90,7 +90,7 @@ const scenarios: Record<string, { authz: AuthzContext; routes: string[] }> = {
   },
   organizationViewer: {
     authz: context('org_viewer'),
-	routes: ['/', '/model-governance', '/model-readiness', '/organization-members', '/docs'],
+	routes: ['/', '/channels', '/model-governance', '/model-readiness', '/organization-members', '/docs'],
   },
   projectAdmin: {
     authz: context('member', 'project_admin'),
@@ -312,6 +312,12 @@ describe('two-axis navigation boundaries', () => {
     expect(licenseRestrictionMessage(missing, 'gateway')).toContain('尚未导入有效商业授权');
     expect(licenseRestrictionMessage(expired, 'notifications')).toContain('已过期');
     expect(isRouteLicensed('/test', expired)).toBe(false);
+    expect(isRouteLicensed('/channels?tab=models', expired)).toBe(true);
+    const channelsItem = getNavItemsForAuthz(context('platform_admin'), expired)
+      .flatMap(item => item.items || [])
+      .find(item => item.itemKey === '/channels');
+    expect(channelsItem?.licenseLocked).toBeUndefined();
+    expect(channelsItem?.disabled).toBeUndefined();
     expect(hasLicensedFeature(null, 'gateway')).toBe(true);
   });
 });

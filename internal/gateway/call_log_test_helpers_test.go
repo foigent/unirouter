@@ -4,7 +4,7 @@ package gateway
 // the durable evidence schema grows. The production statement is intentionally
 // explicit and ordered; tests should refer to semantic names, not magic numbers.
 const (
-	callLogInsertArgCount        = 56
+	callLogInsertArgCount        = 73
 	callLogArgProjectID          = 4
 	callLogArgOwnerUserID        = 6
 	callLogArgKeyType            = 7
@@ -44,4 +44,22 @@ const (
 	callLogArgOnBehalfOf         = 53
 	callLogArgPayloadCaptureMode = 54
 	callLogArgSourceEventHash    = 55
+	callLogArgOutboxEventKey     = 56
+	callLogArgOccurredAt         = 57
+	callLogArgRouteSource        = 58
+	callLogArgRouteVersion       = 59
+	callLogArgRouteAuthority     = 60
+	callLogArgRouteEvidenceHash  = 61
+	callLogArgRoutePublicModel   = 62
+	callLogArgRouteDeployment    = 63
+	callLogArgRouteConnection    = 64
+	callLogArgRouteCredential    = 65
+	callLogArgRouteOperation     = 66
+	callLogArgRouteRelease       = 67
+	callLogArgRouteSnapshot      = 68
+	callLogArgRouteBinding       = 69
+	callLogArgDeliveryContract   = 70
+	callLogArgChargeContract     = 71
+	callLogArgIdempotency        = 72
+	traceInsertArgCount          = 57
 )

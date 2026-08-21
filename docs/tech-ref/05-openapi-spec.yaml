@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: UniRouter API
-  version: 1.4.0
+  version: 1.5.0
   description: |
     Current UniRouter API contract snapshot for active backend routes.
 
@@ -9,7 +9,8 @@ info:
     Route parity guard: `cmd/uniroute/route_parity_test.go`.
 
     Authentication:
-    - Gateway model calls: `Authorization: Bearer ur-XXXX-...` or a scoped `urc_...` Agent capability.
+    - OpenAI-family Gateway calls: `Authorization: Bearer ur-XXXX-...` or a scoped `urc_...` Agent capability. `/v1/responses` rejects Anthropic credential/version headers.
+    - Anthropic Messages: exactly one `x-api-key` containing a UniRouter API key or scoped `urc_...` Agent capability, plus exactly `anthropic-version: 2023-06-01`. `Authorization` and `anthropic-beta` are rejected.
     - Async image jobs: project-bound root UniRouter API key only; Agent capabilities are rejected.
     - Agent capability exchange/revoke: root UniRouter API key only.
     - Agent capability delegate/refresh: authenticated parent/current Agent capability only.
@@ -19,7 +20,10 @@ info:
     Request identity:
     - Response `X-Request-ID` is a server-generated operation ID and cannot be overridden by a caller.
     - Caller correlation belongs in `X-UniRouter-Client-Request-ID`; inbound `X-Request-ID` remains a legacy alias only.
-    - `Idempotency-Key` enables tenant/API-key/payload-bound metadata-only deduplication for Chat, Embeddings, and async image-job admission. Image jobs return the same job identity but never replay output bytes in the admission response.
+    - `Idempotency-Key` enables tenant/API-key/payload-bound metadata-only deduplication for Chat, Embeddings, Responses, Messages, and async image-job admission. Model response bytes are never stored or replayed; public non-stream calls implement `unirouter.public-at-most-once.v1`.
+    - Canonical model-deployment creation requires `Idempotency-Key`; its separate 24-hour actor-scoped mutation receipt stores no request body, provider secret, or response body. Exact replay returns 200 and `X-UniRouter-Idempotency-Replayed: true`; reuse with another normalized payload returns 409.
+    - Canonical sealed-release authoring and lifecycle writes require `Idempotency-Key`. Authoring accepts only a public model, exact server-derived baseline, deployment/operation selections and reason, then commits its immutable receipt, server-projected evidence/events/audit and one sealed validated release in one repeatable-read transaction; it never activates traffic. A fresh author returns 201 plus `Location`; a later exact replay returns 200, the same `Location`, and replay headers.
+    - Lifecycle writes commit the release pair when applicable, runtime slot, lifecycle events, qualification snapshot, immutable receipt and audit in one repeatable-read transaction. Authoring and lifecycle bodies are each one strict JSON object limited to 16384 bytes; duplicate or unknown members and trailing values are rejected before receipt access. Lifecycle exact replay returns the original 200 status and frozen receipt. Canary cancellation and legacy rollback are no-License safety contractions; authoring and every expansion require the Gateway feature.
 
 servers:
   - url: http://localhost:8080
@@ -72,7 +76,8 @@ x-unirouter-operation-templates:
         $ref: "#/components/responses/JSON"
   ListChannels: &operation_list_channels
     tags: [Admin]
-    summary: List channels
+    summary: List legacy channel history for migration diagnostics
+    description: Read-only compatibility projection. It is not canonical current route, readiness, Dashboard or License authority.
     security:
       - bearerAuth: []
     parameters:
@@ -152,6 +157,15 @@ x-unirouter-operation-templates:
         $ref: "#/components/responses/JSON"
       "204":
         description: Deleted
+  RetiredLegacyModelMutation: &operation_legacy_model_mutation_retired
+    tags: [Admin]
+    summary: Legacy model mutation is permanently retired
+    description: Authenticated platform RBAC is evaluated first. Authentication and customer/RBAC context may read their own security state, but the retirement handler then fails before License admission, request-body parsing, any business-data query, secret access, probe execution, or runtime mutation. No MODEL_ROUTE_AUTHORITY or compatibility setting re-enables this operation; use the canonical model-deployment and release APIs.
+    security:
+      - bearerAuth: []
+    responses:
+      "410":
+        $ref: "#/components/responses/LegacyModelMutationRetired"
 
 paths:
   /:
@@ -323,6 +337,89 @@ paths:
           $ref: "#/components/responses/Error"
         "503":
           $ref: "#/components/responses/Error"
+
+  /v1/responses:
+    post:
+      tags: [Gateway]
+      summary: Strict OpenAI Responses non-stream text execution
+      description: |
+        Executes only the exact M77-qualified `unirouter.openai.responses.text.v1` public profile. The caller's public model remains the downstream identity; provider mapping is private. The retained request budget is 8 MiB and the endpoint-protocol document is limited to 2 MiB. Only string `input`, optional string `instructions`, bounded metadata/plain-text controls, `store=false`, and `stream=false` are admitted. Tools, state, background work, reasoning controls, structured or multimodal input/output, include expansions, prompt templates, and unknown root or nested members fail before provider dispatch. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
+      security:
+        - gatewayKey: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/ClientRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicResponsesRequest"
+      responses:
+        "200":
+          description: Completed, guard-approved canonical Responses body with the caller's public model and exact provider-reported usage. Unknown provider fields are never delivered.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/OperationId"
+            X-UniRouter-Client-Request-ID:
+              $ref: "#/components/headers/ClientRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicResponsesResponse"
+        "400": { $ref: "#/components/responses/PublicOpenAIError" }
+        "401": { $ref: "#/components/responses/PublicOpenAIError" }
+        "403": { $ref: "#/components/responses/PublicOpenAIError" }
+        "409": { $ref: "#/components/responses/PublicOpenAIIdempotencyConflict" }
+        "413": { $ref: "#/components/responses/PublicOpenAIError" }
+        "429": { $ref: "#/components/responses/PublicOpenAIRateLimited" }
+        "500": { $ref: "#/components/responses/PublicOpenAIError" }
+        "502": { $ref: "#/components/responses/PublicOpenAIError" }
+        "503": { $ref: "#/components/responses/PublicOpenAIRetryableError" }
+
+  /v1/messages:
+    post:
+      tags: [Gateway]
+      summary: Strict Anthropic Messages non-stream text execution
+      description: |
+        Executes only the exact M77-qualified `unirouter.anthropic.messages.text.v1` public profile. The caller's public model remains the downstream identity; provider mapping is private. The retained request budget is 8 MiB and the endpoint-protocol document is limited to 2 MiB. Messages are exact `user` or `assistant` string-content objects with an optional string system prompt. Tools, cache controls, beta features, thinking, structured or multimodal content, streaming, and unknown root or nested members fail before provider dispatch. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
+      security:
+        - anthropicGatewayKey: []
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/ClientRequestId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/AnthropicVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicMessagesRequest"
+      responses:
+        "200":
+          description: Completed, guard-approved canonical Anthropic message with the caller's public model and exact provider-reported usage. Unknown provider fields are never delivered.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/OperationId"
+            request-id:
+              $ref: "#/components/headers/OperationId"
+            X-UniRouter-Client-Request-ID:
+              $ref: "#/components/headers/ClientRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicMessagesResponse"
+        "400": { $ref: "#/components/responses/PublicAnthropicError" }
+        "401": { $ref: "#/components/responses/PublicAnthropicError" }
+        "403": { $ref: "#/components/responses/PublicAnthropicError" }
+        "409": { $ref: "#/components/responses/PublicAnthropicIdempotencyConflict" }
+        "413": { $ref: "#/components/responses/PublicAnthropicError" }
+        "429": { $ref: "#/components/responses/PublicAnthropicRateLimited" }
+        "500": { $ref: "#/components/responses/PublicAnthropicError" }
+        "502": { $ref: "#/components/responses/PublicAnthropicError" }
+        "503": { $ref: "#/components/responses/PublicAnthropicRetryableError" }
 
   /v1/models:
     get:
@@ -752,31 +849,40 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/channels:
+    x-unirouter-rbac:
+      get: [platform_admin]
+      post: [platform_admin]
+    description: Legacy channel compatibility surface. GET is retained only for migration/audit diagnosis and must not be presented as current canonical route truth; POST is permanently retired.
     get: *operation_list_channels
-    post: *operation_create_channel
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/channels/{id}:
+    x-unirouter-rbac:
+      get: [platform_admin]
+      put: [platform_admin]
+      delete: [platform_admin]
+    description: Legacy channel compatibility detail. GET is read-only migration/audit diagnosis; mutations are permanently retired.
+    parameters:
+      - $ref: "#/components/parameters/Id"
     get: *operation_get_by_id
-    put: *operation_update_by_id
-    delete: *operation_delete_by_id
+    put: *operation_legacy_model_mutation_retired
+    delete: *operation_legacy_model_mutation_retired
 
   /api/v1/channels/{id}/test:
-    post:
-      tags: [Admin]
-      summary: Test channel connectivity
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/Id"
-      responses:
-        "200":
-          $ref: "#/components/responses/JSON"
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Permanently retired legacy probe mutation; use the exact canonical deployment-operation probe route.
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/channels/{id}/provider-models:
+    x-unirouter-rbac:
+      get: [platform_admin]
     get:
       tags: [Admin]
       summary: Read the live provider model catalog with the saved credential
-      description: Calls the configured provider GET /v1/models endpoint, returns only normalized model metadata, and never returns the credential or raw upstream payload.
+      description: Compatibility-only migration discovery. Calls the configured provider GET /v1/models endpoint, returns only normalized model metadata, and never returns the credential or raw upstream payload. It is not current canonical route, readiness, probe or capability authority.
       security:
         - bearerAuth: []
       parameters:
@@ -792,26 +898,545 @@ paths:
   /api/v1/model-endpoints:
     x-unirouter-rbac:
       get: [platform_admin]
-    description: Canonical read projection combining public models, provider targets, current credentials, persisted real probes, runtime slots and the gateway routing evaluator. It contains no credential secret.
-    get: *operation_list
+    description: Canonical compatibility read contract v3 derived only from canonical deployment/connection/operation, credential/probe and runtime-slot authorities. Legacy-shaped required fields remain for existing selectors, but channel_id and routing_epoch are zero and must not be interpreted as current legacy identity. It contains no credential secret and performs no legacy Router preview.
+    get:
+      tags: [Admin]
+      summary: List the canonical-only model-endpoint compatibility projection
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Canonical compatibility projection with explicit deployment, connection and model-operation identity.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CanonicalModelEndpointProjection" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+      post: [platform_admin, org_admin]
+    description: Canonical persistent model-deployment contract. Connection, credential, operation probe/circuit, exact runtime membership and caller callability are reported as independent axes. Responses never contain credential secrets.
+    get:
+      tags: [Admin]
+      summary: List organization-scoped canonical model deployments
+      description: Safe administrative truth read; it does not require a Gateway License.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: operation, in: query, required: false, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Admin]
+      summary: Transactionally create or exactly reuse one model deployment and operation
+      description: "Requires an active Gateway License and Idempotency-Key. Existing IDs are explicit selectors and extra fields are exact assertions; no name-based connection lookup or fallback-to-first deployment occurs. Responses and Messages require the effective connection base_url to be a path-free HTTPS origin before any receipt or canonical row is written; invalid new input returns 400 and an incompatible selected connection returns 409 with code canonical_application_https_origin_required. The first committed mutation returns 201. An exact actor-scoped replay within 24 hours returns the current projection with the original reused-result, status 200, X-UniRouter-Idempotency-Replayed true, and X-UniRouter-Original-Request-ID. The receipt stores no raw key, request body, provider API key, or response body; using the same key with another normalized payload returns 409."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Actor-scoped 24-hour canonical model-deployment mutation identity; 1-255 printable ASCII characters after trimming. Reuse with another normalized payload returns 409.
+          schema: { type: string, minLength: 1, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [connection, public_model, deployment, credential, operation]
+              properties:
+                connection:
+                  type: object
+                  additionalProperties: false
+                  anyOf:
+                    - required: [id]
+                    - required: [name, provider, base_url, adapter_type]
+                  properties:
+                    id: { type: integer, format: int64, minimum: 1 }
+                    name: { type: string, maxLength: 255 }
+                    provider: { type: string, maxLength: 50 }
+                    base_url: { type: string, format: uri, maxLength: 512, description: "Responses and Messages require an exact path-free HTTPS origin; Chat Completions and Embeddings retain their adapter-owned base-path contract." }
+                    adapter_type: { type: string, maxLength: 50 }
+                    adapter_config: { type: object, description: "Canonical JSON object limited to 65536 bytes; duplicate members, arrays and scalar roots are rejected. The complete request body is limited to 131072 bytes." }
+                public_model:
+                  type: object
+                  additionalProperties: false
+                  anyOf:
+                    - required: [id]
+                    - required: [model_name]
+                  properties:
+                    id: { type: integer, format: int64, minimum: 1 }
+                    model_name: { type: string, maxLength: 100 }
+                    display_name: { type: string, maxLength: 255 }
+                    provider_family: { type: string, maxLength: 50 }
+                    lifecycle: { type: string, enum: [staging, ga, deprecated] }
+                    context_length: { type: integer, minimum: 0, description: "Public context execution limit. The ordinary create UI requires a positive value. API zero is accepted only as non-authorable staging state; release selection remains unavailable until this and output_limit are positive." }
+                    output_limit: { type: integer, minimum: 0, description: "Public output execution limit. The ordinary create UI requires a positive value. API zero is accepted only as non-authorable staging state; release selection remains unavailable until this and context_length are positive." }
+                    approved_catalog: { type: boolean }
+                deployment:
+                  type: object
+                  additionalProperties: false
+                  required: [upstream_model]
+                  properties:
+                    upstream_model: { type: string, maxLength: 200 }
+                    priority: { type: integer, minimum: 1, maximum: 10000, default: 100 }
+                    routing_weight: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+                    max_context: { type: integer, minimum: 0, default: 0, description: "Deployment context execution limit. The ordinary create UI requires a positive value; API zero records non-authorable staging state." }
+                    default_max_output: { type: integer, minimum: 0, default: 0, description: "Deployment default output execution limit. The ordinary create UI requires a positive value; API zero records non-authorable staging state." }
+                    degradation_threshold: { type: integer, minimum: 1, maximum: 100, default: 10 }
+                credential:
+                  type: object
+                  additionalProperties: false
+                  oneOf:
+                    - required: [binding_id]
+                    - required: [api_key]
+                  properties:
+                    binding_id: { type: integer, format: int64, minimum: 1 }
+                    api_key: { type: string, minLength: 1, writeOnly: true }
+                operation:
+                  type: object
+                  additionalProperties: false
+                  required: [operation_id]
+                  properties:
+                    operation_id: { type: string }
+      responses:
+        "200":
+          description: Exact idempotent replay of the committed mutation
+          headers:
+            X-UniRouter-Idempotency-Replayed:
+              description: Always true for this replay response.
+              schema: { type: string, enum: ["true"] }
+            X-UniRouter-Original-Request-ID:
+              description: Server operation ID that committed the original mutation.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { type: object }
+        "201": { $ref: "#/components/responses/JSON" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+    get:
+      tags: [Admin]
+      summary: Read one exact deployment and operation without fallback
+      description: Safe administrative truth read; it does not require a Gateway License.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operation, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/JSON" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Probe one exact canonical model operation with one exact credential binding
+      description: "Requires an active Gateway License. The server resolves only the supplied deployment ID, operation ID and credential binding ID and decrypts the saved credential server-side. Chat Completions and Embeddings use their configured adapter contract. Responses and Messages must resolve the exact operation-owned endpointprotocol profile and version, build the protocol-native request on the immutable public path, execute a bounded HTTPS network request, and pass that same profile's terminal response-and-usage parser; local fixtures never satisfy this probe. It never falls back to another deployment, operation, profile or credential and never infers capabilities from a model name. Every attempt appends sanitized evidence. Only a successful response whose connection, deployment, operation, profile, credential and binding-link identity remain current can advance operation evidence to live_probed. A successful Responses or Messages probe is structural qualification input only; by itself it cannot create the per-release-item M77 public-execution binding, select an active route, authorize provider dispatch, or prove Production traffic. Responses and audit records contain no API key, prompt body, provider response body, curl command or full provider URL."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [credential_binding_id]
+              properties:
+                credential_binding_id: { type: integer, format: int64, minimum: 1 }
+                probe_text: { type: string, maxLength: 256, x-unirouter-max-utf8-bytes: 256, description: Optional bounded UTF-8 text used only for this live request and never persisted or returned. }
+      responses:
+        "200":
+          description: Sanitized persisted probe result. provider_success reports the bounded upstream response. success is true only when that provider success remains usable for the exact unchanged routing inputs. current is false when any snapshotted identity or revision changed; all such stale results persist success=false and never advance operation evidence. provider_reason_code preserves the provider outcome independently of stale classification.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [probe_id, deployment_id, operation_id, credential_binding_id, success, provider_success, current, stale, operation_advanced, reason_code, provider_reason_code, status_code, latency_ms]
+                properties:
+                  probe_id: { type: integer, format: int64, minimum: 1 }
+                  deployment_id: { type: integer, format: int64, minimum: 1 }
+                  operation_id: { type: string, enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1] }
+                  credential_binding_id: { type: integer, format: int64, minimum: 1 }
+                  success: { type: boolean, description: "True only when the provider succeeded and the exact routing inputs, actor and root-customer authority remained usable." }
+                  provider_success: { type: boolean, description: Result of the bounded provider request before current-state classification. }
+                  current: { type: boolean, description: True only when every snapshotted identity and revision still matches after the network request. }
+                  stale: { type: boolean, description: Exact inverse of current. }
+                  operation_advanced: { type: boolean, description: True only when this transaction advanced a lower operation evidence state to live_probed. }
+                  reason_code: { type: string, description: Stable sanitized final classification; never a raw provider error. }
+                  provider_reason_code: { type: string, description: Stable sanitized provider classification retained even when the final result is stale. }
+                  status_code: { type: integer, minimum: 0, maximum: 599 }
+                  latency_ms: { type: integer, format: int64, minimum: 0 }
+                  reported_model: { type: string, maxLength: 200, description: Sanitized top-level provider model identity when present. }
+                  evidence_ref: { type: string, description: "Server-generated append-only probe reference, present only for usable successful evidence." }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Admin]
+      summary: Append an exact Responses or Messages production-qualification approval
+      description: Requires an active Gateway License and a current platform administrator. This control-plane action accepts only one exact successful Responses or Messages endpointprotocol HTTPS network probe that is still bound to the same customer organization, deployment, connection, operation, immutable public path, profile ID/version, executor contract, HTTPS origin and source revisions. The approval receipt is append-only and advances the operation from live_probed to production_approved in the same transaction. An exact replay by the same actor returns the historical receipt and the qualification view's current state, which may be qualified false after structural revision drift; it never appends another approval. A changed reason, revision, executor contract, operation or actor conflicts. Approval is M75 structural lineage only. Public dispatch additionally requires a selected active M77 release item carrying its own exact public-execution binding, current credential/link/latest-own-probe authority, funding and a successful per-request Coordinator decision; approval alone is not online or Production traffic evidence.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.responses.v1, anthropic.messages.v1] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [probe_id, expected_connection_revision, expected_deployment_revision, expected_operation_revision, expected_executor_contract_version, reason]
+              properties:
+                probe_id: { type: integer, format: int64, minimum: 1 }
+                expected_connection_revision: { type: integer, format: int64, minimum: 1 }
+                expected_deployment_revision: { type: integer, format: int64, minimum: 1 }
+                expected_operation_revision: { type: integer, format: int64, minimum: 1, description: Current live_probed operation revision derived from the exact probe receipt. }
+                expected_executor_contract_version: { type: string, enum: [unirouter.endpoint-profile-nonstream-executor.v1] }
+                reason: { type: string, minLength: 1, maxLength: 512, description: Trimmed UTF-8 administrative reason; NUL and line breaks are rejected. }
+      responses:
+        "200":
+          description: Exact replay of the existing append-only approval receipt; replayed is true and qualified plus qualification_state report current structural truth.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelOperationProductionApproval" }
+        "201":
+          description: Newly committed append-only approval receipt.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelOperationProductionApproval" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/provider-connections/{connectionID}/pause:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Emergency-pause one exact canonical provider connection
+      description: Safe contraction available even when the Gateway License is missing or expired. The transaction revalidates the sole active customer root, active actor, exact connection revision, and every live sibling deployment. It changes only ProviderConnection.admin_state. Verify mode mirrors only the legacy channel status in the same transaction; sibling ModelDeployment administrative states and revisions remain unchanged. No runtime manifest is rewritten.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: connectionID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_config_revision]
+              properties:
+                expected_config_revision: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Applied pause or exact no-change replay; the audit record commits in the same transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelRouteSafetyResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/v1/provider-credential-bindings/{bindingID}/revoke:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Irreversibly revoke and scrub one exact provider credential binding
+      description: Safe contraction available even when the Gateway License is missing or expired. The binding is authorized through its immutable connection and all live deployments, so an unlinked leaked binding remains revocable. A successful mutation atomically sets status to retired, records retired_at, increments state_revision once, clears cooldown, and scrubs key_enc while retaining identity and evidence links. Verify mode applies the equivalent terminal status, revision increment, and secret scrub to the legacy channel key in the same transaction. The original expected revision can exactly replay the terminal result; stale or different revisions return 409.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: bindingID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_state_revision]
+              properties:
+                expected_state_revision: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Applied terminal revoke or exact no-change replay; the audit record commits in the same transaction.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelRouteSafetyResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployment-releases:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+      post: [platform_admin, org_admin]
+    get:
+      tags: [Admin]
+      summary: Read canonical release authoring options and actionable releases
+      description: Organization-scoped, License-independent Repeatable Read projection. Each public-model entry includes a server-owned optimistic baseline, raw-slot and stable-release facts only after ownership proof, eligible deployment/operation selections, and an availability reason. A missing/ambiguous/transitional baseline cannot be authored against. The client must never invent release references, revisions, hashes, parents, profiles or public-execution bindings.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Server-owned authoring options and canonical v2 release summaries. Authoring descriptors separate structural availability, caller authorization and current Gateway License state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelDeploymentReleaseCollectionView" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Admin]
+      summary: Atomically author one sealed validated canonical v2 release
+      description: Expansion requiring the Gateway License. The caller echoes one exact server-derived baseline and chooses eligible deployment/operation pairs; every revision, parent, hash, route profile, binding and release reference remains server-owned. One Repeatable Read transaction creates and seals the release, immutable route items and public bindings, create/validate events, audit and durable authoring receipt. Authoring ends at validated and never activates, starts a canary or moves a runtime slot. The request is one strict JSON object limited to 16384 bytes.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseAuthoringIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelDeploymentReleaseAuthoringRequest" }
+      responses:
+        "200":
+          description: Exact later replay of the original 201 result. The immutable body retains original_http_status 201 and idempotency_replay is true.
+          headers:
+            Location:
+              description: Original canonical release detail path.
+              schema: { type: string }
+            X-UniRouter-Idempotency-Replayed: { schema: { type: string, enum: ["true"] } }
+            X-UniRouter-Original-Request-ID: { $ref: "#/components/headers/OperationId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelDeploymentReleaseAuthoringReceipt" }
+        "201":
+          description: Newly committed immutable authoring receipt and sealed validated release.
+          headers:
+            Location:
+              description: Canonical release detail path created by the server.
+              required: true
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelDeploymentReleaseAuthoringReceipt" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployment-releases/{releaseRef}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+    get:
+      tags: [Admin]
+      summary: Read one canonical release, live slot and server-owned lifecycle actions
+      description: Safe organization-scoped truth read that does not require a Gateway License. The slot exposes the logical public model plus nullable/omitted assigned_public_model_id so a proven raw v1 slot is distinguishable from canonical assignment; stable_parent is nullable/omitted. Action descriptors separate structural availability, caller authorization and current License state; every write still revalidates under database locks. Normal lineage exposes five canonical actions, while exact sealed-v1 lineage exposes only cutover_legacy and rollback_legacy.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
+      responses:
+        "200":
+          description: Transactionally consistent release, runtime slot, optional stable parent and the server-owned stage-specific action descriptor set.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelDeploymentLifecycleView" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployment-releases/{releaseRef}/activate-initial:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Activate a parentless validated release as the first stable assignment
+      description: Expansion requiring the Gateway License. The release must be sealed canonical v2, parentless and validated, and the tenant slot must not exist. The immutable M76 receipt and audit row commit with the slot, release and lifecycle event.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
+        - $ref: "#/components/parameters/ModelDeploymentLifecycleIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelDeploymentLifecycleActivateInitialRequest" }
+      responses: &model_deployment_lifecycle_mutation_responses
+        "200":
+          description: Newly committed or exactly replayed immutable lifecycle receipt. Exact replay sets X-UniRouter-Idempotency-Replayed and X-UniRouter-Original-Request-ID.
+          headers:
+            X-UniRouter-Idempotency-Replayed: { schema: { type: string, enum: ["true"] } }
+            X-UniRouter-Original-Request-ID: { $ref: "#/components/headers/OperationId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelDeploymentLifecycleReceipt" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployment-releases/{releaseRef}/start-canary:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Start a bounded canary for a sealed child release
+      description: Expansion requiring the Gateway License. The target must be the exact validated child of the slot's current stable release; canary_basis_points is bounded to 1..5000.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
+        - $ref: "#/components/parameters/ModelDeploymentLifecycleIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelDeploymentLifecycleStartCanaryRequest" }
+      responses: *model_deployment_lifecycle_mutation_responses
+
+  /api/v1/model-deployment-releases/{releaseRef}/promote:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Promote the exact active canary to stable
+      description: Expansion requiring the Gateway License and current production qualification for every required target operation.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
+        - $ref: "#/components/parameters/ModelDeploymentLifecycleIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelDeploymentLifecycleSlotRequest" }
+      responses: *model_deployment_lifecycle_mutation_responses
+
+  /api/v1/model-deployment-releases/{releaseRef}/cancel-canary:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Remove the exact active canary and retain its stable parent
+      description: Safety contraction available without a Gateway License, including when target production qualification or execution support has drifted. Authentication and organization RBAC still apply before the handler. The receipt freezes current qualification truth without treating an unqualified target as expansion authority.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
+        - $ref: "#/components/parameters/ModelDeploymentLifecycleIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelDeploymentLifecycleSlotRequest" }
+      responses: *model_deployment_lifecycle_mutation_responses
+
+  /api/v1/model-deployment-releases/{releaseRef}/rollback-stable:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Restore the retained stable parent of the current active release
+      description: Expansion requiring the Gateway License and current production qualification for every required stable-parent operation. It is distinct from canary cancellation and cannot target an arbitrary historical release.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
+        - $ref: "#/components/parameters/ModelDeploymentLifecycleIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelDeploymentLifecycleSlotRequest" }
+      responses: *model_deployment_lifecycle_mutation_responses
+
+  /api/v1/model-deployment-releases/{releaseRef}/cutover-legacy:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Replace the exact sealed v1 stable parent with its canonical v2 child
+      description: Expansion requiring the Gateway License. The target must be a sealed validated v2 child of the exact active sealed v1 slot assignment. Inside the slot-CAS transaction UniRouter proves that the v2 manifest contains exactly the established Chat Completions and Embeddings operation set and that every currently executable legacy/canonical candidate produces the same secret-free full-plan hash. Both release transitions, the raw slot public-model identity change, events, audit, qualification images and immutable lifecycle receipt commit atomically. This action does not switch MODEL_ROUTE_AUTHORITY or drain a fleet.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
+        - $ref: "#/components/parameters/ModelDeploymentLifecycleIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelDeploymentLegacyLifecycleRequest" }
+      responses: *model_deployment_lifecycle_mutation_responses
+
+  /api/v1/model-deployment-releases/{releaseRef}/rollback-legacy:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Restore the retained exact sealed v1 stable parent
+      description: Emergency safety contraction available without a Gateway License. It revalidates exact target/slot lineage and the retained sealed v1 parent's currently executable complete Chat Completions and Embeddings authority, then atomically restores the raw v1 slot identity and both release stages. Broken v2 target health, qualification and legacy/canonical parity deliberately cannot block rollback. Authentication and organization RBAC still reject before the handler.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
+        - $ref: "#/components/parameters/ModelDeploymentLifecycleIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelDeploymentLegacyLifecycleRequest" }
+      responses: *model_deployment_lifecycle_mutation_responses
 
   /api/v1/model-endpoints/activate:
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Activates the first stable target only when its latest real provider probe still matches the connection routing epoch, model mapping and credential state.
-    post: *operation_create
+    description: Permanently retired legacy mutation. Use atomic canonical release authoring and its activate-initial action descriptor.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/model-endpoints/canary:
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Adds or replaces a tested provider target through the existing validated, shadow and bounded-canary runtime lifecycle.
-    post: *operation_create
+    description: Permanently retired legacy mutation. Use a canonical sealed child release and its start-canary action descriptor.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/model-endpoints/recover:
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Replaces a retained stable assignment only when the gateway currently has no candidate for the model. The old release is rolled back as immutable history, then the current tested endpoint follows the first-activation lifecycle. A working route must use canary instead.
-    post: *operation_create
+    description: Permanently retired legacy mutation. Use canonical release lifecycle rollback/canary actions and server-owned baselines.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/provider-packs:
     get:
@@ -888,8 +1513,27 @@ paths:
       post: [platform_admin]
     post:
       tags: [Admin]
-      summary: Create the first customer organization and a zero-value wallet from the strict post-reset baseline
-      description: Requires exactly the preserved active local admin and organization shell. Every reset-owned product table must remain empty; only post-reset admin login sessions and login audit/outbox state are tolerated. This operation never creates a user, project, Provider or Feed credential, application key, policy, or traffic.
+      summary: Create the first customer organization and zero wallet from one exact bootstrap checkpoint
+      description: |
+        Accepts one of two mutually exclusive checkpoints: the exact strict
+        post-reset shell left by an authorized second-integration reset, or the
+        exact seed produced by the current complete migration chain after the
+        default local platform administrator has rotated its password and logged
+        in once. The one logical fresh login audit may still be a durable pending
+        Outbox event or may already be materialized in audit_logs; a linked
+        materialized event counts only once. A staging or production fresh seed
+        additionally requires one non-zero release_state and one exactly matching
+        release_history entry for the current target schema.
+
+        After every fresh-seed invariant matches, the same SERIALIZABLE
+        transaction removes only the exact partner zero wallet, Default Project,
+        and optional default-admin project_admin membership before creating the
+        active customer and its zero-value wallet. Any extra data, field drift,
+        missing or mismatched release evidence, concurrent change, or unexpected
+        normalization count returns 409 and rolls back the entire transaction.
+        The strict post-reset path performs no seed normalization. Neither path
+        creates a customer user, customer project, Provider or Feed credential,
+        application key, policy, License, or traffic.
       security:
         - bearerAuth: []
       parameters:
@@ -1187,15 +1831,30 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
 
   /api/v1/channel-keys:
+    x-unirouter-rbac:
+      get: [platform_admin]
+      post: [platform_admin]
+    description: Legacy credential compatibility surface. GET is a redacted read retained only for migration/audit diagnosis and never returns secret material; POST is permanently retired.
     get: *operation_list
-    post: *operation_create
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/channel-keys/{id}:
-    put: *operation_update_by_id
-    delete: *operation_delete_by_id
+    x-unirouter-rbac:
+      put: [platform_admin]
+      delete: [platform_admin]
+    description: Permanently retired legacy credential mutations; canonical credentials are managed through provider credential bindings.
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put: *operation_legacy_model_mutation_retired
+    delete: *operation_legacy_model_mutation_retired
 
   /api/v1/channel-keys/{id}/rotate:
-    post: *operation_update_by_id
+    x-unirouter-rbac:
+      post: [platform_admin]
+    description: Permanently retired legacy credential rotation; canonical credentials use provider credential-binding authority.
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/wallet:
     get:
@@ -2072,9 +2731,9 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin]
       post: [platform_admin]
-    description: Paginated product-local runtime release history for channel admission, priority and weight. The response summary distinguishes the current stable assignment from retained active-stage audit records; lifecycle revision remains an internal optimistic-concurrency field. Provider Pack pins and deterministic simulation are mandatory; credentials, IAM, billing, retry and breaker policy are outside this hot-release surface.
+    description: Paginated read-only legacy runtime release history. The mutation method is permanently retired; current publication uses canonical sealed-release authoring and descriptor-driven lifecycle receipts.
     get: *operation_list
-    post: *operation_create
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/runtime-changes/slot:
     x-unirouter-rbac:
@@ -2083,52 +2742,68 @@ paths:
     get: *operation_list
 
   /api/v1/runtime-changes/{ref}:
+    parameters:
+      - $ref: "#/components/parameters/LegacyRuntimeChangeRef"
     x-unirouter-rbac:
       get: [platform_admin]
     description: Reads one immutable candidate, Provider Pack pins, simulation evidence and lifecycle revision.
     get: *operation_list
 
   /api/v1/runtime-changes/{ref}/validate:
+    parameters:
+      - $ref: "#/components/parameters/LegacyRuntimeChangeRef"
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Rebuilds same-clock snapshots, verifies channel epochs and exact Provider Packs, and blocks breaking candidates using optimistic revision control.
-    post: *operation_create
+    description: Permanently retired legacy mutation; retained release evidence remains readable.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/runtime-changes/{ref}/activate-initial:
+    parameters:
+      - $ref: "#/components/parameters/LegacyRuntimeChangeRef"
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Promotes a validated candidate directly to the first stable route only when the model has no stable or canary assignment. Replacement routes must use shadow and canary.
-    post: *operation_create
+    description: Permanently retired legacy mutation; use canonical activate-initial.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/runtime-changes/{ref}/shadow:
+    parameters:
+      - $ref: "#/components/parameters/LegacyRuntimeChangeRef"
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Advances a validated candidate into a zero-traffic shadow stage; it does not change runtime routing.
-    post: *operation_create
+    description: Permanently retired legacy mutation; canonical authoring directly produces a sealed validated no-traffic release.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/runtime-changes/{ref}/canary:
+    parameters:
+      - $ref: "#/components/parameters/LegacyRuntimeChangeRef"
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Activates a deterministic server-selection-key canary from 1 to 5000 basis points. Emergency disabled channels cannot be resurrected.
-    post: *operation_create
+    description: Permanently retired legacy mutation; use canonical start-canary.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/runtime-changes/{ref}/promote:
+    parameters:
+      - $ref: "#/components/parameters/LegacyRuntimeChangeRef"
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Atomically promotes the current canary assignment to the stable slot after exact revision and channel-epoch checks.
-    post: *operation_create
+    description: Permanently retired legacy mutation; use canonical promote.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/runtime-changes/{ref}/rollback:
+    parameters:
+      - $ref: "#/components/parameters/LegacyRuntimeChangeRef"
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Atomically removes a canary or restores the recorded parent stable assignment. It does not overwrite emergency channel disable state.
-    post: *operation_create
+    description: Permanently retired legacy mutation; use canonical cancel-canary, rollback-stable, or rollback-legacy as described by the release.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/runtime-changes/{ref}/reject:
+    parameters:
+      - $ref: "#/components/parameters/LegacyRuntimeChangeRef"
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Terminates a draft, validated or zero-traffic shadow candidate as rejected while retaining its immutable evidence. Canary and active releases must use rollback.
-    post: *operation_create
+    description: Permanently retired legacy mutation; canonical authoring/lifecycle evidence is immutable and has no direct reject writer.
+    post: *operation_legacy_model_mutation_retired
 
   /api/v1/model-call-authorizations/contract:
     x-unirouter-rbac:
@@ -2709,7 +3384,7 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin]
       put: [platform_admin]
-    description: Platform recovery and commercial License surface. The response never returns the raw signed document or signature. Only enforceable=true authorizes commercial runtime.
+    description: Platform recovery and commercial License surface. The response never returns the raw signed document or signature. Only enforceable=true authorizes commercial runtime. The signed V1 limit field remains named active_channels, while schema M79 enforces and reports its current usage from enabled canonical provider_connections rather than legacy channels.
     get:
       tags: [Admin]
       summary: Get verified commercial License status
@@ -2749,7 +3424,7 @@ paths:
         "400":
           $ref: "#/components/responses/JSON"
         "409":
-          description: Signed resource limit is below current active inventory
+          description: Signed resource limit is below current active inventory. For active_channels, current inventory means enabled canonical provider connections under schema M79.
           content:
             application/json:
               schema:
@@ -3248,9 +3923,9 @@ paths:
   /api/v1/model-readiness:
     get:
       tags: [Admin]
-      summary: Explain either model-connection or current-project caller readiness without runtime mutation or external traffic
+      summary: Explain exact canonical deployment-operation or current-project caller readiness without runtime mutation or external traffic
       description: |
-        `mode=connection` checks gateway License, provider connection, provider credential and routing without requiring a project. The default `mode=caller` also evaluates the selected project's caller, AccessGrant, API key, model authorization and distributed-limit evidence. It never claims a half-open route lease and sends no Provider, Feed, health-check or upstream request. Unavailable evidence remains `unavailable` rather than being reported as a business blocker. Non-platform responses contain only safe aggregates.
+        Contract `unirouter.model-readiness.v2`. `mode=connection` requires one canonical `deployment_id` and checks the endpoint-derived exact `model_operation_id`, Gateway License, provider connection, provider credential and current runtime assignment without requiring a project. `channel_id` is forbidden and no legacy Router preview is used. The default `mode=caller` explains the current canonical Planner/application projection and also evaluates the selected project's caller, AccessGrant, API key, model authorization and distributed-limit evidence. It never claims a half-open route lease and sends no Provider, Feed, health-check or upstream request. Unavailable evidence remains `unavailable` rather than being reported as a business blocker. Non-platform responses contain only safe aggregates.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: mode
@@ -3260,6 +3935,10 @@ paths:
           in: query
           description: Required for mode=caller and forbidden for mode=connection.
           schema: { type: integer, format: int64, minimum: 1 }
+        - name: deployment_id
+          in: query
+          description: Required for mode=connection and omitted for mode=caller. This is the canonical deployment identity; channel_id is rejected.
+          schema: { type: integer, format: int64, minimum: 1 }
         - name: model
           in: query
           required: true
@@ -3267,7 +3946,7 @@ paths:
         - name: endpoint
           in: query
           required: true
-          schema: { type: string, enum: [/v1/chat/completions, /v1/embeddings, /v1/models, /v1/media/jobs] }
+          schema: { type: string, enum: [/v1/chat/completions, /v1/embeddings, /v1/responses, /v1/messages, /v1/models, /v1/media/jobs] }
         - name: caller
           in: query
           description: Required for mode=caller and forbidden for mode=connection.
@@ -3301,6 +3980,11 @@ components:
       type: http
       scheme: bearer
       description: Long-lived UniRouter API key; Agent capabilities are rejected.
+    anthropicGatewayKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: UniRouter API key or a scoped urc_ Agent capability for the Anthropic Messages route. Authorization is forbidden and anthropic-version must be supplied separately.
     agentCapability:
       type: http
       scheme: bearer
@@ -3357,6 +4041,40 @@ components:
       schema:
         type: string
         maxLength: 255
+    AnthropicVersion:
+      name: anthropic-version
+      in: header
+      required: true
+      description: Exact supported Anthropic Messages protocol version. Multiple values, comma-joined values, other versions, and anthropic-beta are rejected before database access.
+      schema:
+        type: string
+        enum: [2023-06-01]
+    ModelDeploymentReleaseRef:
+      name: releaseRef
+      in: path
+      required: true
+      description: Globally unique canonical v2 release reference; the server still applies exact customer-organization ownership before returning any fact.
+      schema:
+        type: string
+        pattern: '^rcr_[a-z0-9][a-z0-9._-]{2,63}$'
+    ModelDeploymentLifecycleIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Durable, non-expiring lifecycle mutation identity scoped to the customer organization, actor and lifecycle action. Only a keyed digest is stored; an exact normalized replay in the same action scope returns the frozen receipt and another payload in that same scope returns 409. The same key may be used independently for another lifecycle action.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    ModelDeploymentReleaseAuthoringIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Durable, non-expiring atomic release-authoring identity scoped to the customer organization and actor. Only a keyed digest is stored. A later operation with the exact normalized payload returns the frozen original receipt as HTTP 200 while preserving original_http_status 201 and Location; another normalized payload under the same scope returns 409. Commit-ACK recovery inside the same server operation is not labelled as a later replay.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
     ResponseCacheOptIn:
       name: X-UniRouter-Response-Cache
       in: header
@@ -3387,6 +4105,14 @@ components:
       schema:
         type: string
         pattern: '^opt_[a-z0-9][a-z0-9._-]{2,59}$'
+    LegacyRuntimeChangeRef:
+      name: ref
+      in: path
+      required: true
+      description: Immutable legacy runtime release reference retained for read-only history and retired-route compatibility.
+      schema:
+        type: string
+        pattern: '^rcr_[a-z0-9][a-z0-9._-]{2,63}$'
     MediaJobId:
       name: id
       in: path
@@ -3509,6 +4235,27 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    LegacyModelMutationRetired:
+      description: Legacy model mutation ingress is permanently retired after authentication and platform RBAC.
+      headers:
+        Cache-Control:
+          description: Always `no-store`.
+          schema: { type: string, enum: [no-store] }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error:
+                type: object
+                additionalProperties: false
+                required: [type, code, message]
+                properties:
+                  type: { type: string, enum: [gone_error] }
+                  code: { type: string, enum: [legacy_model_mutation_retired] }
+                  message: { type: string }
     RateLimited:
       description: A request, token, concurrency, or weighted workload limit was reached.
       headers:
@@ -3535,6 +4282,84 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    PublicOpenAIError:
+      description: Topology-neutral OpenAI-family public execution error. Provider identity, URL, status, and response body are never exposed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicOpenAIErrorEnvelope"
+    PublicOpenAIRetryableError:
+      description: Retryable topology-neutral OpenAI-family public execution error.
+      headers:
+        Retry-After:
+          description: Whole seconds before retry.
+          schema: { type: string }
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicOpenAIErrorEnvelope"
+    PublicOpenAIRateLimited:
+      description: OpenAI-family public request or workload rate limit.
+      headers:
+        Retry-After:
+          description: Whole seconds before retry.
+          schema: { type: string }
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicOpenAIErrorEnvelope"
+    PublicOpenAIIdempotencyConflict:
+      description: Metadata-only at-most-once conflict. The original model response is never stored or replayed.
+      headers:
+        X-UniRouter-Original-Request-ID:
+          description: Original server operation ID that owns the key.
+          schema: { type: string }
+        Retry-After:
+          description: Present only while the original request is in progress.
+          schema: { type: string }
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicOpenAIIdempotencyConflictEnvelope"
+    PublicAnthropicError:
+      description: Topology-neutral Anthropic error. Provider identity, URL, status, and response body are never exposed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicAnthropicErrorEnvelope"
+    PublicAnthropicRetryableError:
+      description: Retryable topology-neutral Anthropic error.
+      headers:
+        Retry-After:
+          description: Whole seconds before retry.
+          schema: { type: string }
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicAnthropicErrorEnvelope"
+    PublicAnthropicRateLimited:
+      description: Anthropic public request or workload rate limit.
+      headers:
+        Retry-After:
+          description: Whole seconds before retry.
+          schema: { type: string }
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicAnthropicErrorEnvelope"
+    PublicAnthropicIdempotencyConflict:
+      description: Metadata-only at-most-once conflict. The original model response is never stored or replayed.
+      headers:
+        X-UniRouter-Original-Request-ID:
+          description: Original server operation ID that owns the key.
+          schema: { type: string }
+        Retry-After:
+          description: Present only while the original request is in progress.
+          schema: { type: string }
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicAnthropicErrorEnvelope"
     CompletedExecutionFeedError:
       description: Bounded completed-execution feed error
       content:
@@ -3543,6 +4368,429 @@ components:
             $ref: "#/components/schemas/CompletedExecutionFeedError"
 
   schemas:
+    ModelDeploymentReleaseBaseline:
+      type: object
+      additionalProperties: false
+      description: Exact server-derived optimistic baseline. `initial` requires expected_slot_version 0 and no stable fields. `stable` and `legacy_cutover` require a positive slot version, stable release reference and stable release version. Clients echo this object from the collection and never construct it.
+      required: [kind, expected_slot_version]
+      properties:
+        kind: { type: string, enum: [initial, stable, legacy_cutover] }
+        expected_slot_version: { type: integer, format: int64, minimum: 0 }
+        stable_release_ref: { type: string, pattern: '^rcr_[a-z0-9][a-z0-9._-]{2,63}$' }
+        expected_stable_release_version: { type: integer, format: int64, minimum: 1 }
+    ModelDeploymentReleaseSelection:
+      type: object
+      additionalProperties: false
+      required: [deployment_id, operation_id]
+      properties:
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id:
+          type: string
+          enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1]
+    ModelDeploymentReleaseAuthoringRequest:
+      type: object
+      additionalProperties: false
+      description: Complete caller-owned authoring payload. Every baseline and selection must come from the latest collection response. The server derives all revisions, profiles, paths, public bindings, hashes, parent identities and the release reference. Authoring does not activate the result.
+      required: [public_model_id, baseline, selections, reason]
+      properties:
+        public_model_id: { type: integer, format: int64, minimum: 1 }
+        baseline: { $ref: "#/components/schemas/ModelDeploymentReleaseBaseline" }
+        selections:
+          type: array
+          minItems: 1
+          maxItems: 256
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ModelDeploymentReleaseSelection" }
+        reason: { type: string, minLength: 1, maxLength: 500, pattern: '^[^\x00\r\n]+$' }
+    ModelDeploymentReleasePublicModelSummary:
+      type: object
+      additionalProperties: false
+      required: [id, model_name, display_name, lifecycle]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        model_name: { type: string }
+        display_name: { type: string }
+        lifecycle: { type: string }
+    ModelDeploymentReleaseSelectionOption:
+      type: object
+      additionalProperties: false
+      description: Tenant-scoped operation that may be selected for authoring. Responses and Messages appear only when their exact current structural qualification exists.
+      required: [deployment_id, operation_id]
+      properties:
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id: { type: string, enum: [openai.chat_completions.v1, openai.embeddings.v1, openai.responses.v1, anthropic.messages.v1] }
+        upstream_model: { type: string }
+        connection_name: { type: string }
+    ModelDeploymentReleaseSummary:
+      type: object
+      additionalProperties: false
+      description: Bounded release index/parent projection. It may identify a sealed v1 compatibility parent or canonical v2 release; immutable candidate detail remains on the exact v2 release endpoint.
+      required: [id, release_ref, public_model_id, model_name, candidate_version, candidate_hash, route_items_hash, route_items_count, stage, version, updated_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        release_ref: { type: string, pattern: '^rcr_[a-z0-9][a-z0-9._-]{2,63}$' }
+        public_model_id: { type: integer, format: int64, minimum: 1 }
+        model_name: { type: string }
+        candidate_version: { type: string, enum: [unirouter.runtime-change-candidate.v1, unirouter.runtime-change-candidate.v2] }
+        candidate_hash: { type: string }
+        route_items_hash: { type: string }
+        route_items_count: { type: integer, minimum: 0 }
+        route_items_sealed_at: { type: string, format: date-time }
+        stage: { type: string, enum: [validated, canary, active, rolled_back] }
+        version: { type: integer, format: int64, minimum: 1 }
+        parent_stable_release_id: { type: integer, format: int64, minimum: 1 }
+        updated_at: { type: string, format: date-time }
+    ModelDeploymentReleaseAuthoringDescriptor:
+      type: object
+      additionalProperties: false
+      description: Server-owned authoring preflight for one public model. Available means the current caller may submit the displayed baseline now; POST still revalidates under locks.
+      required: [available, reason_code, structurally_available, authorized, licensed, license_feature, method, path, idempotency_required, required_fields, slot]
+      properties:
+        available: { type: boolean }
+        reason_code: { type: string }
+        structurally_available: { type: boolean }
+        authorized: { type: boolean }
+        licensed: { type: boolean }
+        license_feature: { type: string, enum: [gateway] }
+        method: { type: string, enum: [POST] }
+        path: { type: string, enum: [/api/v1/model-deployment-releases] }
+        idempotency_required: { type: boolean, enum: [true] }
+        required_fields:
+          type: array
+          minItems: 4
+          maxItems: 4
+          uniqueItems: true
+          items: { type: string, enum: [public_model_id, baseline, selections, reason] }
+        baseline:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/ModelDeploymentReleaseBaseline" }]
+        slot: { $ref: "#/components/schemas/ModelDeploymentLifecycleSlotState" }
+        stable_release:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/ModelDeploymentReleaseSummary" }]
+    ModelDeploymentReleaseAuthoringModelView:
+      type: object
+      additionalProperties: false
+      required: [public_model, authoring, selection_options]
+      properties:
+        public_model: { $ref: "#/components/schemas/ModelDeploymentReleasePublicModelSummary" }
+        authoring: { $ref: "#/components/schemas/ModelDeploymentReleaseAuthoringDescriptor" }
+        selection_options:
+          type: array
+          items: { $ref: "#/components/schemas/ModelDeploymentReleaseSelectionOption" }
+    ModelDeploymentReleaseCollectionView:
+      type: object
+      additionalProperties: false
+      required: [contract_version, generated_at, models, releases]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-deployment-release-authoring-options.v1] }
+        generated_at: { type: string, format: date-time }
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/ModelDeploymentReleaseAuthoringModelView" }
+        releases:
+          type: array
+          items: { $ref: "#/components/schemas/ModelDeploymentReleaseSummary" }
+    ModelDeploymentReleaseAuthoringReceipt:
+      type: object
+      additionalProperties: false
+      description: Immutable result of the atomic draft-to-validated command. Same-operation commit-ACK recovery keeps idempotency_replay false; only a later operation observing the winner sets it true.
+      required: [contract_version, receipt_id, customer_org_id, server_operation_id, original_http_status, original_location, idempotency_replay, baseline, selections, release, created_at, completed_at]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-deployment-release-authoring-receipt.v1] }
+        receipt_id: { type: integer, format: int64, minimum: 1 }
+        customer_org_id: { type: integer, format: int64, minimum: 1 }
+        actor_user_id: { type: integer, format: int64, minimum: 1 }
+        server_operation_id: { type: string, maxLength: 80 }
+        original_http_status: { type: integer, enum: [201] }
+        original_location: { type: string, pattern: '^/api/v1/model-deployment-releases/rcr_[a-z0-9][a-z0-9._-]{2,63}$' }
+        idempotency_replay: { type: boolean }
+        baseline: { $ref: "#/components/schemas/ModelDeploymentReleaseBaseline" }
+        selections:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items: { $ref: "#/components/schemas/ModelDeploymentReleaseSelection" }
+        release: { $ref: "#/components/schemas/ModelDeploymentLifecycleRelease" }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+    ModelDeploymentLifecycleActivateInitialRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_release_version]
+      properties:
+        expected_release_version: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, maxLength: 1000, pattern: '^[^\x00\r\n]*$' }
+    ModelDeploymentLifecycleSlotRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_release_version, expected_slot_version]
+      properties:
+        expected_release_version: { type: integer, format: int64, minimum: 1 }
+        expected_slot_version: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, maxLength: 1000, pattern: '^[^\x00\r\n]*$' }
+    ModelDeploymentLifecycleStartCanaryRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_release_version, expected_slot_version, canary_basis_points]
+      properties:
+        expected_release_version: { type: integer, format: int64, minimum: 1 }
+        expected_slot_version: { type: integer, format: int64, minimum: 1 }
+        canary_basis_points: { type: integer, minimum: 1, maximum: 5000 }
+        reason: { type: string, maxLength: 1000, pattern: '^[^\x00\r\n]*$' }
+    ModelDeploymentLegacyLifecycleRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_release_version, expected_slot_version, reason]
+      properties:
+        expected_release_version: { type: integer, format: int64, minimum: 1 }
+        expected_slot_version: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, minLength: 1, maxLength: 1000, pattern: '^[^\x00\r\n]+$' }
+    ModelDeploymentLifecycleRoute:
+      type: object
+      additionalProperties: false
+      description: Sealed server-owned route evidence. The four public-execution binding fields are emitted together only for a Responses or Messages route qualified under M77; they are absent for Chat, Embeddings and older sealed evidence and are never lifecycle request input.
+      required: [deployment_id, model_operation_id, expected_connection_revision, expected_deployment_revision, expected_operation_revision, protocol_profile_id, protocol_profile_version, admission]
+      properties:
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        model_operation_id: { type: string }
+        expected_connection_revision: { type: integer, format: int64, minimum: 1 }
+        expected_deployment_revision: { type: integer, format: int64, minimum: 1 }
+        expected_operation_revision: { type: integer, format: int64, minimum: 1 }
+        protocol_profile_id: { type: string }
+        protocol_profile_version: { type: string }
+        public_path: { type: string }
+        executor_contract_version: { type: string }
+        public_execution_binding_id: { type: integer, format: int64, minimum: 1 }
+        delivery_contract_version: { type: string, enum: [unirouter.public-nonstream-delivery.v1] }
+        charge_contract_version: { type: string, enum: [unirouter.provider-final-token-charge.v1] }
+        idempotency_contract_version: { type: string, enum: [unirouter.public-at-most-once.v1] }
+        admission: { type: string, enum: [allow] }
+        priority: { type: integer, minimum: 1, maximum: 10000 }
+        weight: { type: integer, minimum: 1, maximum: 1000 }
+    ModelDeploymentLifecycleRelease:
+      type: object
+      additionalProperties: false
+      required: [id, release_ref, public_model_id, model_name, candidate_version, candidate_hash, baseline_hash, route_items_hash, route_items_count, candidate, stage, version, canary_basis_points, reason, created_by, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        release_ref: { type: string, pattern: '^rcr_[a-z0-9][a-z0-9._-]{2,63}$' }
+        public_model_id: { type: integer, format: int64, minimum: 1 }
+        model_name: { type: string }
+        candidate_version: { type: string, enum: [unirouter.runtime-change-candidate.v2] }
+        candidate_hash: { type: string }
+        baseline_hash: { type: string }
+        route_items_hash: { type: string }
+        route_items_count: { type: integer, minimum: 1 }
+        route_items_sealed_at: { type: string, format: date-time }
+        candidate:
+          type: object
+          additionalProperties: false
+          required: [contract_version, public_model_id, model_name, deployment_routes]
+          properties:
+            contract_version: { type: string, enum: [unirouter.runtime-change-candidate.v2] }
+            public_model_id: { type: integer, format: int64, minimum: 1 }
+            model_name: { type: string }
+            deployment_routes:
+              type: array
+              minItems: 1
+              items: { $ref: "#/components/schemas/ModelDeploymentLifecycleRoute" }
+        stage: { type: string, enum: [draft, validated, canary, active, rolled_back, rejected] }
+        version: { type: integer, format: int64, minimum: 1 }
+        parent_stable_release_id: { type: integer, format: int64, minimum: 1 }
+        canary_basis_points: { type: integer, minimum: 0, maximum: 5000 }
+        reason: { type: string }
+        created_by: { type: integer, format: int64, minimum: 1 }
+        validated_by: { type: integer, format: int64, minimum: 1 }
+        activated_by: { type: integer, format: int64, minimum: 1 }
+        created_at: { type: string, format: date-time }
+        validated_at: { type: string, format: date-time }
+        activated_at: { type: string, format: date-time }
+        rolled_back_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ModelDeploymentLifecycleSlotState:
+      type: object
+      additionalProperties: false
+      required: [exists, public_model_id, model_name, canary_basis_points, version]
+      properties:
+        exists: { type: boolean }
+        public_model_id: { type: integer, format: int64, minimum: 1, description: Logical tenant-owned public model used to scope the projection. }
+        assigned_public_model_id:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+          description: Raw runtime-slot public_model_id. Null or omitted for a proven v1 compatibility slot; equal to public_model_id for canonical assignment.
+        model_name: { type: string }
+        stable_release_id: { type: integer, format: int64, minimum: 1 }
+        canary_release_id: { type: integer, format: int64, minimum: 1 }
+        canary_basis_points: { type: integer, minimum: 0, maximum: 5000 }
+        version: { type: integer, format: int64, minimum: 0 }
+    ModelDeploymentLifecycleActionDescriptor:
+      type: object
+      additionalProperties: false
+      required: [action, method, path, available, reason_code, structurally_available, authorized, licensed, idempotency_required, required_fields, safety_direction]
+      properties:
+        action: { type: string, enum: [activate_initial, start_canary, promote, cancel_canary, rollback_stable, cutover_legacy, rollback_legacy] }
+        method: { type: string, enum: [POST] }
+        path: { type: string }
+        available: { type: boolean }
+        reason_code: { type: string }
+        structurally_available: { type: boolean }
+        authorized: { type: boolean }
+        licensed: { type: boolean }
+        license_feature: { type: string, enum: [gateway] }
+        idempotency_required: { type: boolean, enum: [true] }
+        required_fields: { type: array, uniqueItems: true, items: { type: string } }
+        safety_direction: { type: string, enum: [expansion, contraction] }
+    ModelDeploymentLifecycleView:
+      type: object
+      additionalProperties: false
+      required: [contract_version, release, slot, actions]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-deployment-lifecycle-receipt.v1] }
+        release: { $ref: "#/components/schemas/ModelDeploymentLifecycleRelease" }
+        slot: { $ref: "#/components/schemas/ModelDeploymentLifecycleSlotState" }
+        stable_parent:
+          nullable: true
+          description: Retained stable parent summary. Null or omitted for a parentless release.
+          allOf: [{ $ref: "#/components/schemas/ModelDeploymentReleaseSummary" }]
+        actions:
+          type: array
+          description: The normal five-action descriptor set, or exactly the two legacy bridge descriptors for a release with a sealed v1 stable parent.
+          items: { $ref: "#/components/schemas/ModelDeploymentLifecycleActionDescriptor" }
+          oneOf:
+            - { minItems: 5, maxItems: 5 }
+            - { minItems: 2, maxItems: 2 }
+    ModelDeploymentLifecycleReleaseReceipt:
+      type: object
+      additionalProperties: false
+      required: [role, release_id, release_ref, candidate_hash, route_items_hash, before_stage, before_version, after_stage, after_version]
+      properties:
+        role: { type: string, enum: [target, stable_parent] }
+        release_id: { type: integer, format: int64, minimum: 1 }
+        release_ref: { type: string }
+        candidate_hash: { type: string }
+        route_items_hash: { type: string }
+        before_stage: { type: string }
+        before_version: { type: integer, format: int64, minimum: 1 }
+        after_stage: { type: string }
+        after_version: { type: integer, format: int64, minimum: 1 }
+    ModelDeploymentLifecycleQualificationReceipt:
+      type: object
+      additionalProperties: false
+      required: [release_id, release_role, ordinal, deployment_id, operation_id, qualification_required, qualified, qualification_state, expected_connection_revision, expected_deployment_revision, expected_operation_revision]
+      properties:
+        release_id: { type: integer, format: int64, minimum: 1 }
+        release_role: { type: string, enum: [target, stable_parent] }
+        ordinal: { type: integer, minimum: 1 }
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id: { type: string }
+        qualification_required: { type: boolean }
+        qualified: { type: boolean }
+        qualification_state: { type: string }
+        approval_id: { type: integer, format: int64, minimum: 1 }
+        probe_id: { type: integer, format: int64, minimum: 1 }
+        connection_id: { type: integer, format: int64, minimum: 1 }
+        https_origin: { type: string, format: uri }
+        public_path: { type: string }
+        executor_contract_version: { type: string }
+        expected_connection_revision: { type: integer, format: int64, minimum: 1 }
+        expected_deployment_revision: { type: integer, format: int64, minimum: 1 }
+        expected_operation_revision: { type: integer, format: int64, minimum: 1 }
+        current_connection_revision: { type: integer, format: int64, minimum: 1 }
+        current_deployment_revision: { type: integer, format: int64, minimum: 1 }
+        current_operation_revision: { type: integer, format: int64, minimum: 1 }
+        approved_connection_revision: { type: integer, format: int64, minimum: 1 }
+        approved_deployment_revision: { type: integer, format: int64, minimum: 1 }
+        approved_operation_revision: { type: integer, format: int64, minimum: 1 }
+    ModelDeploymentLifecycleReceipt:
+      type: object
+      additionalProperties: false
+      required: [contract_version, receipt_id, action, target_release_ref, customer_org_id, server_operation_id, original_http_status, idempotency_replay, slot, releases, qualifications, created_at, completed_at]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-deployment-lifecycle-receipt.v1] }
+        receipt_id: { type: integer, format: int64, minimum: 1 }
+        action: { type: string, enum: [activate_initial, start_canary, promote, cancel_canary, rollback_stable, cutover_legacy, rollback_legacy] }
+        target_release_ref: { type: string }
+        customer_org_id: { type: integer, format: int64, minimum: 1 }
+        actor_user_id: { type: integer, format: int64, minimum: 1 }
+        server_operation_id: { type: string, maxLength: 80 }
+        original_http_status: { type: integer, enum: [200] }
+        idempotency_replay: { type: boolean }
+        reason: { type: string, maxLength: 1000 }
+        legacy_plan_hash: { type: string, pattern: '^sha256:[a-f0-9]{64}$', description: Frozen current v1 executable-plan hash for legacy bridge actions. }
+        deployment_plan_hash: { type: string, pattern: '^sha256:[a-f0-9]{64}$', description: Equal canonical executable-plan hash for cutover_legacy; omitted for rollback_legacy. }
+        slot:
+          type: object
+          additionalProperties: false
+          required: [public_model_id, model_name, before_canary_basis_points, before_version, after_canary_basis_points, after_version]
+          properties:
+            public_model_id: { type: integer, format: int64, minimum: 1, description: Logical tenant-owned public model. }
+            model_name: { type: string }
+            before_public_model_id: { type: integer, format: int64, minimum: 1, nullable: true, description: Raw slot identity before the action; null or omitted for legacy authority. }
+            before_stable_release_id: { type: integer, format: int64, minimum: 1 }
+            before_canary_release_id: { type: integer, format: int64, minimum: 1 }
+            before_canary_basis_points: { type: integer, minimum: 0, maximum: 5000 }
+            before_version: { type: integer, format: int64, minimum: 0 }
+            after_public_model_id: { type: integer, format: int64, minimum: 1, nullable: true, description: Raw slot identity after the action; null or omitted when legacy authority is restored. }
+            after_stable_release_id: { type: integer, format: int64, minimum: 1 }
+            after_canary_release_id: { type: integer, format: int64, minimum: 1 }
+            after_canary_basis_points: { type: integer, minimum: 0, maximum: 5000 }
+            after_version: { type: integer, format: int64, minimum: 1 }
+        releases:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items: { $ref: "#/components/schemas/ModelDeploymentLifecycleReleaseReceipt" }
+        qualifications:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/ModelDeploymentLifecycleQualificationReceipt" }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+    ModelOperationProductionApproval:
+      type: object
+      additionalProperties: false
+      required: [approval_id, probe_id, customer_org_id, deployment_id, operation_id, public_path, protocol_profile_id, protocol_profile_version, executor_contract_version, https_origin, source_connection_revision, source_deployment_revision, probe_operation_revision, source_operation_revision, approved_operation_revision, approved_by, approved_at, reason, replayed, qualified, qualification_state, current_connection_revision, current_deployment_revision, current_operation_revision]
+      properties:
+        approval_id: { type: integer, format: int64, minimum: 1 }
+        probe_id: { type: integer, format: int64, minimum: 1 }
+        customer_org_id: { type: integer, format: int64, minimum: 1 }
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id: { type: string, enum: [openai.responses.v1, anthropic.messages.v1] }
+        public_path: { type: string, enum: [/v1/responses, /v1/messages] }
+        protocol_profile_id: { type: string }
+        protocol_profile_version: { type: string }
+        executor_contract_version: { type: string, enum: [unirouter.endpoint-profile-nonstream-executor.v1] }
+        https_origin: { type: string, format: uri, description: "Normalized exact HTTPS origin; paths, queries, fragments and userinfo are forbidden." }
+        source_connection_revision: { type: integer, format: int64, minimum: 1 }
+        source_deployment_revision: { type: integer, format: int64, minimum: 1 }
+        probe_operation_revision: { type: integer, format: int64, minimum: 1 }
+        source_operation_revision: { type: integer, format: int64, minimum: 1 }
+        approved_operation_revision: { type: integer, format: int64, minimum: 1 }
+        approved_by: { type: integer, format: int64, minimum: 1 }
+        approved_at: { type: string, format: date-time }
+        reason: { type: string, minLength: 1, maxLength: 512 }
+        replayed: { type: boolean }
+        qualified: { type: boolean, description: Current result from the sole M75 qualification authority; an old receipt can replay with false after revision drift. }
+        qualification_state: { type: string }
+        current_connection_revision: { type: integer, format: int64, minimum: 1 }
+        current_deployment_revision: { type: integer, format: int64, minimum: 1 }
+        current_operation_revision: { type: integer, format: int64, minimum: 1 }
+    ModelRouteSafetyResult:
+      type: object
+      additionalProperties: false
+      required: [contract_version, action, mode, resource_id, state, revision, changed, applied_at]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-route-safety-control.v1] }
+        action: { type: string, enum: [pause_connection, revoke_credential] }
+        mode: { type: string, enum: [verify, canonical] }
+        resource_id: { type: integer, format: int64, minimum: 1 }
+        state: { type: string, enum: [disabled, retired] }
+        revision: { type: integer, format: int64, minimum: 1 }
+        changed: { type: boolean }
+        applied_at: { type: string, format: date-time }
     OrganizationRole:
       type: string
       enum: [platform_admin, org_admin, billing_admin, org_viewer, member]
@@ -3758,7 +5006,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [/v1/chat/completions, /v1/embeddings, /v1/models, /v1/media/jobs]
+            enum: [/v1/chat/completions, /v1/embeddings, /v1/responses, /v1/messages, /v1/models, /v1/media/jobs]
         rpm_limit: { type: integer, minimum: 0, maximum: 2147483647, nullable: true }
         rps_limit: { type: integer, minimum: 0, maximum: 2147483647, nullable: true }
         concurrency_limit: { type: integer, minimum: 0, maximum: 2147483647, nullable: true }
@@ -3982,6 +5230,87 @@ components:
         data: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/AccessGrant" } }
         pagination: { $ref: "#/components/schemas/AccessPageInfo" }
         scope: { type: string, enum: [my, project] }
+    CanonicalModelEndpointProbe:
+      type: object
+      additionalProperties: false
+      required: [success, current, status_code, latency_ms, tested_at]
+      properties:
+        success: { type: boolean }
+        current: { type: boolean }
+        status_code: { type: integer, minimum: 0, maximum: 599 }
+        latency_ms: { type: integer, format: int64, minimum: 0 }
+        reported_model: { type: string }
+        error_summary: { type: string, description: Sanitized summary only; no raw provider body or secret. }
+        tested_at: { type: string, format: date-time }
+    CanonicalModelEndpointTarget:
+      type: object
+      additionalProperties: false
+      required: [target_ref, channel_id, deployment_id, connection_id, model_operation_id, connection_name, provider, base_url, adapter_type, public_model, upstream_model, config_status, routing_epoch, priority, weight, circuit_state, eligible_credential_count, stable_assignment, canary_assignment, route_candidate, state, reason_code]
+      properties:
+        target_ref: { type: string, description: Stable compatibility selector composed from canonical deployment and model-operation identity. }
+        channel_id: { type: integer, format: int64, enum: [0], description: Retained shape only; never current identity. }
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        connection_id: { type: integer, format: int64, minimum: 1 }
+        model_operation_id: { type: string }
+        connection_name: { type: string }
+        provider: { type: string }
+        base_url: { type: string, format: uri }
+        adapter_type: { type: string }
+        public_model: { type: string }
+        upstream_model: { type: string }
+        config_status: { type: string }
+        routing_epoch: { type: integer, format: int64, enum: [0], description: Retained shape only; canonical revisions are not projected as a legacy epoch. }
+        priority: { type: integer }
+        weight: { type: integer }
+        circuit_state: { type: string }
+        eligible_credential_count: { type: integer, minimum: 0 }
+        stable_assignment: { type: boolean }
+        canary_assignment: { type: boolean }
+        route_candidate: { type: boolean }
+        route_exclusion_reason: { type: string }
+        state: { type: string }
+        reason_code: { type: string }
+        last_probe: { $ref: "#/components/schemas/CanonicalModelEndpointProbe" }
+    CanonicalModelEndpointModel:
+      type: object
+      additionalProperties: false
+      required: [public_model, display_name, catalog_approved, state, reason_code, route_available, canary_basis_points, release_history_count, targets]
+      properties:
+        public_model: { type: string }
+        display_name: { type: string }
+        lifecycle: { type: string }
+        catalog_approved: { type: boolean }
+        state: { type: string }
+        reason_code: { type: string }
+        route_available: { type: boolean }
+        stable_release_ref: { type: string }
+        stable_release_version: { type: integer, format: int64, minimum: 1 }
+        canary_release_ref: { type: string }
+        canary_release_version: { type: integer, format: int64, minimum: 1 }
+        canary_basis_points: { type: integer, minimum: 0, maximum: 10000 }
+        release_history_count: { type: integer, minimum: 0 }
+        targets:
+          type: array
+          items: { $ref: "#/components/schemas/CanonicalModelEndpointTarget" }
+    CanonicalModelEndpointProjection:
+      type: object
+      additionalProperties: false
+      required: [contract_version, generated_at, models, summary]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-endpoints.canonical-compat.v3] }
+        generated_at: { type: string, format: date-time }
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/CanonicalModelEndpointModel" }
+        summary:
+          type: object
+          additionalProperties: false
+          required: [total, route_available, attention, canary]
+          properties:
+            total: { type: integer, minimum: 0 }
+            route_available: { type: integer, minimum: 0 }
+            attention: { type: integer, minimum: 0 }
+            canary: { type: integer, minimum: 0 }
     ModelReadinessAxis:
       type: object
       additionalProperties: false
@@ -4003,15 +5332,17 @@ components:
     ModelReadinessScope:
       type: object
       additionalProperties: false
-      required: [mode, org_id, project_id, requested_model, resolved_model, endpoint]
+      required: [mode, org_id, project_id, requested_model, resolved_model, endpoint, model_operation_id, caller]
       properties:
         mode: { type: string, enum: [caller, connection] }
         org_id: { type: integer, format: int64, minimum: 1 }
         project_id: { type: integer, format: int64, minimum: 0, description: Zero only in connection mode. }
+        deployment_id: { type: integer, format: int64, minimum: 1, description: Present only in connection mode and identifies the exact canonical deployment. }
         requested_model: { type: string }
         resolved_model: { type: string }
         endpoint: { type: string }
-        caller: { type: string, enum: [self, workload_application] }
+        model_operation_id: { type: string, description: Exact operation derived by the server from endpoint. }
+        caller: { type: string, enum: ['', self, workload_application], description: Empty only in connection mode. }
         application_ref: { type: string, description: Present only for a Workload caller. }
     ModelReadinessSummary:
       type: object
@@ -4025,15 +5356,16 @@ components:
     ModelReadinessPlatformModel:
       type: object
       additionalProperties: false
-      required: [gateway_license, registration, lifecycle, catalog, price_authority, channel, provider_credential, base_route, runtime_slot]
+      required: [gateway_license, registration, lifecycle, catalog, price_authority, deployment, provider_credential, operation, base_route, runtime_slot]
       properties:
         gateway_license: { $ref: "#/components/schemas/ModelReadinessAxis" }
         registration: { $ref: "#/components/schemas/ModelReadinessAxis" }
         lifecycle: { $ref: "#/components/schemas/ModelReadinessAxis" }
         catalog: { $ref: "#/components/schemas/ModelReadinessAxis" }
         price_authority: { $ref: "#/components/schemas/ModelReadinessAxis" }
-        channel: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        deployment: { $ref: "#/components/schemas/ModelReadinessAxis" }
         provider_credential: { $ref: "#/components/schemas/ModelReadinessAxis" }
+        operation: { $ref: "#/components/schemas/ModelReadinessAxis" }
         base_route: { $ref: "#/components/schemas/ModelReadinessAxis" }
         runtime_slot: { $ref: "#/components/schemas/ModelReadinessAxis" }
     ModelReadinessProjectCaller:
@@ -4056,7 +5388,7 @@ components:
       additionalProperties: false
       required: [contract_version, scope, summary, platform_model, project_caller, runtime_mutation, external_requests, as_of]
       properties:
-        contract_version: { type: string, enum: [unirouter.model-readiness.v1] }
+        contract_version: { type: string, enum: [unirouter.model-readiness.v2] }
         scope: { $ref: "#/components/schemas/ModelReadinessScope" }
         summary: { $ref: "#/components/schemas/ModelReadinessSummary" }
         platform_model: { $ref: "#/components/schemas/ModelReadinessPlatformModel" }
@@ -4081,7 +5413,7 @@ components:
         allowed_endpoints:
           type: array
           uniqueItems: true
-          items: { type: string, enum: [/v1/chat/completions, /v1/embeddings, /v1/models, /v1/media/jobs] }
+          items: { type: string, enum: [/v1/chat/completions, /v1/embeddings, /v1/responses, /v1/messages, /v1/models, /v1/media/jobs] }
         rpm_limit: { type: integer, minimum: 0, maximum: 2147483647 }
         rps_limit: { type: integer, minimum: 0, maximum: 2147483647 }
         concurrency_limit: { type: integer, minimum: 0, maximum: 2147483647 }
@@ -4811,11 +6143,12 @@ components:
         limits:
           type: object
           additionalProperties: false
+          description: Optional signed positive ceilings. Missing fields are unlimited by this document; zero is not a valid signed limit.
           properties:
-            active_api_keys: { type: integer, format: int64, minimum: 1 }
-            active_users: { type: integer, format: int64, minimum: 1 }
-            active_projects: { type: integer, format: int64, minimum: 1 }
-            active_channels: { type: integer, format: int64, minimum: 1 }
+            active_api_keys: { type: integer, format: int64, minimum: 1, description: Active logical access-credential families plus active unbound legacy API keys. }
+            active_users: { type: integer, format: int64, minimum: 1, description: Active user accounts. }
+            active_projects: { type: integer, format: int64, minimum: 1, description: Active projects. }
+            active_channels: { type: integer, format: int64, minimum: 1, description: "Commercial field name retained for License v1 compatibility; schema M79 counts enabled canonical provider_connections, not legacy channels." }
         metadata:
           type: object
           maxProperties: 32
@@ -4847,7 +6180,12 @@ components:
         schema_version: { type: string }
         key_id: { type: string }
         expected_deployment_id: { type: string }
-        license: { type: object, additionalProperties: true, description: Signed payload metadata. Commercial responses follow CommercialLicensePayload; historical non-enforceable PRD2 evidence may contain legacy keys. }
+        license:
+          description: Non-secret signed payload metadata; never the document signature. Commercial=true responses follow CommercialLicensePayload, whose active_channels field counts enabled canonical provider connections under M79. Historical non-enforceable PRD2 evidence may contain legacy keys.
+          oneOf:
+            - $ref: "#/components/schemas/CommercialLicensePayload"
+            - type: object
+              additionalProperties: true
         error: { type: string }
     CanonicalMicros:
       type: string
@@ -5041,7 +6379,7 @@ components:
           description: Agent capability v1 is limited to synchronous model-gateway endpoints. Async media jobs require durable workflow/Agent attribution and lifecycle semantics and are therefore not attenuable by this capability contract.
           items:
             type: string
-            enum: [/v1/chat/completions, /v1/embeddings, /v1/models]
+            enum: [/v1/chat/completions, /v1/embeddings, /v1/responses, /v1/messages, /v1/models]
     AgentCapabilityExchangeRequest:
       type: object
       additionalProperties: false
@@ -5081,6 +6419,194 @@ components:
           type: array
           items:
             type: string
+    PublicResponsesRequest:
+      type: object
+      additionalProperties: false
+      required: [model, input, max_output_tokens]
+      properties:
+        model: { type: string, minLength: 1 }
+        input: { type: string, minLength: 1 }
+        instructions: { type: string }
+        max_output_tokens: { type: integer, format: int64, minimum: 16 }
+        metadata:
+          type: object
+          maxProperties: 16
+          propertyNames: { minLength: 1, maxLength: 64 }
+          additionalProperties: { type: string, maxLength: 512 }
+        temperature: { type: number, minimum: 0, maximum: 2 }
+        top_p: { type: number, minimum: 0, maximum: 1 }
+        store: { type: boolean, enum: [false], default: false }
+        stream: { type: boolean, enum: [false], default: false }
+        text:
+          type: object
+          additionalProperties: false
+          properties:
+            format:
+              type: object
+              additionalProperties: false
+              required: [type]
+              properties:
+                type: { type: string, enum: [text] }
+            verbosity: { type: string, enum: [low, medium, high] }
+    PublicResponsesResponse:
+      type: object
+      additionalProperties: false
+      required: [id, object, status, model, error, incomplete_details, output_text, output, usage]
+      properties:
+        id: { type: string, minLength: 1 }
+        object: { type: string, enum: [response] }
+        status: { type: string, enum: [completed] }
+        model: { type: string, minLength: 1, description: Caller-visible public model; private provider mapping is never delivered. }
+        error: { nullable: true, enum: [null] }
+        incomplete_details: { nullable: true, enum: [null] }
+        output_text: { type: string }
+        output:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, type, status, role, content]
+            properties:
+              id: { type: string, minLength: 1 }
+              type: { type: string, enum: [message] }
+              status: { type: string, enum: [completed] }
+              role: { type: string, enum: [assistant] }
+              content:
+                type: array
+                minItems: 1
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [type, text]
+                  properties:
+                    type: { type: string, enum: [output_text] }
+                    text: { type: string }
+        usage:
+          type: object
+          additionalProperties: false
+          required: [input_tokens, output_tokens, total_tokens]
+          properties:
+            input_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+            output_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+            total_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647, description: Exact input_tokens plus output_tokens. }
+            input_tokens_details:
+              type: object
+              additionalProperties: false
+              properties:
+                cached_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+                cache_write_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+            output_tokens_details:
+              type: object
+              additionalProperties: false
+              properties:
+                reasoning_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+    PublicMessagesRequest:
+      type: object
+      additionalProperties: false
+      required: [model, max_tokens, messages]
+      properties:
+        model: { type: string, minLength: 1 }
+        max_tokens: { type: integer, format: int64, minimum: 1 }
+        messages:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              content: { type: string, minLength: 1 }
+        system: { type: string, minLength: 1 }
+        temperature: { type: number, minimum: 0, maximum: 1 }
+        top_p: { type: number, minimum: 0, maximum: 1 }
+        stream: { type: boolean, enum: [false], default: false }
+    PublicMessagesResponse:
+      type: object
+      additionalProperties: false
+      required: [id, type, role, model, content, stop_reason, stop_sequence, usage]
+      properties:
+        id: { type: string, minLength: 1 }
+        type: { type: string, enum: [message] }
+        role: { type: string, enum: [assistant] }
+        model: { type: string, minLength: 1, description: Caller-visible public model; private provider mapping is never delivered. }
+        content:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, text]
+            properties:
+              type: { type: string, enum: [text] }
+              text: { type: string }
+        stop_reason: { type: string, enum: [end_turn, max_tokens, stop_sequence] }
+        stop_sequence: { type: string, nullable: true }
+        usage:
+          type: object
+          additionalProperties: false
+          required: [input_tokens, output_tokens]
+          properties:
+            input_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+            cache_creation_input_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+            cache_read_input_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+            output_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+            cache_creation:
+              type: object
+              additionalProperties: false
+              required: [ephemeral_5m_input_tokens, ephemeral_1h_input_tokens]
+              properties:
+                ephemeral_5m_input_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+                ephemeral_1h_input_tokens: { type: integer, format: int64, minimum: 0, maximum: 2147483647 }
+    PublicOpenAIErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [type, code, message, doc_url, param]
+          properties:
+            type: { type: string, enum: [authentication_error, permission_error, rate_limit_error, invalid_request_error, server_error] }
+            code: { type: string }
+            message: { type: string }
+            doc_url: { type: string }
+            param: { nullable: true, enum: [null] }
+    PublicOpenAIIdempotencyConflictEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error, idempotency]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [type, code, message, doc_url, param]
+          properties:
+            type: { type: string, enum: [idempotency_error] }
+            code: { type: string }
+            message: { type: string }
+            doc_url: { type: string }
+            param: { nullable: true, enum: [null] }
+        idempotency:
+          type: object
+          description: Secret-free original-operation receipt. It contains no request or response body and is not a replay payload.
+          additionalProperties: true
+    PublicAnthropicErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [type, error, request_id]
+      properties:
+        type: { type: string, enum: [error] }
+        error:
+          type: object
+          additionalProperties: false
+          required: [type, message]
+          properties:
+            type: { type: string, enum: [authentication_error, permission_error, not_found_error, request_too_large, rate_limit_error, overloaded_error, api_error, invalid_request_error] }
+            message: { type: string }
+        request_id: { type: string, description: Same server operation ID returned in request-id and X-Request-ID. }
     ChatCompletionRequest:
       type: object
       required: [model, messages]

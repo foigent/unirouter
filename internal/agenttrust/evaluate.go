@@ -17,9 +17,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/accessscope"
 	"github.com/uniroute/unirouter/internal/agentcap"
 	"github.com/uniroute/unirouter/internal/eventconnector"
 	"github.com/uniroute/unirouter/internal/governancesim"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/signing"
 )
 
@@ -254,6 +256,9 @@ func evaluateAuthority(snapshot AuthoritySnapshot, subjectRef string, evaluatedA
 			if node.AgentRef != snapshot.RootAgentRef || node.ParentAgentRef != "" || node.Depth != 0 {
 				return authorityAnalysis{}, contractError(ErrInvalid, "authority_root_invalid")
 			}
+			if !rootScopeAllows(snapshot, node.Limits.AllowedEndpoints) {
+				return authorityAnalysis{}, contractError(ErrInvalid, "authority_root_scope_invalid")
+			}
 			lineage = []string{node.AgentRef}
 		} else {
 			parent, exists := nodeByRef[node.ParentAgentRef]
@@ -361,12 +366,48 @@ func evaluateAuthority(snapshot AuthoritySnapshot, subjectRef string, evaluatedA
 }
 
 func supportedAgentEndpoint(endpoint string) bool {
-	switch endpoint {
-	case "/v1/chat/completions", "/v1/embeddings", "/v1/models":
-		return true
-	default:
-		return false
+	return slices.Contains(modeloperation.AgentCapabilityPaths(), endpoint)
+}
+
+func rootScopeAllows(snapshot AuthoritySnapshot, requested []string) bool {
+	if !snapshot.RootGrantBound {
+		if snapshot.RootGrantScopeMode != "" || snapshot.RootEndpointDenied || len(snapshot.RootAllowedEndpoints) != 0 {
+			return false
+		}
+	} else {
+		if snapshot.RootGrantScopeMode != accessscope.ModeProjectDefault && snapshot.RootGrantScopeMode != accessscope.ModeExplicit {
+			return false
+		}
+		if len(snapshot.RootAllowedEndpoints) == 0 || len(snapshot.RootAllowedEndpoints) > len(modeloperation.All()) {
+			return false
+		}
+		seen := make(map[string]struct{}, len(snapshot.RootAllowedEndpoints))
+		for index, endpoint := range snapshot.RootAllowedEndpoints {
+			definition, known := modeloperation.Lookup(endpoint)
+			if !known || (index > 0 && snapshot.RootAllowedEndpoints[index-1] >= endpoint) {
+				return false
+			}
+			if snapshot.RootGrantScopeMode == accessscope.ModeProjectDefault && !definition.ProjectDefault {
+				return false
+			}
+			if _, duplicate := seen[endpoint]; duplicate {
+				return false
+			}
+			seen[endpoint] = struct{}{}
+		}
 	}
+	for _, endpoint := range requested {
+		if !accessscope.ExecutionEndpointAllowed(
+			snapshot.RootGrantBound,
+			snapshot.RootGrantScopeMode,
+			snapshot.RootEndpointDenied,
+			snapshot.RootAllowedEndpoints,
+			endpoint,
+		) {
+			return false
+		}
+	}
+	return true
 }
 
 func attenuationDiff(parent, child AuthorityNode) AttenuationChange {

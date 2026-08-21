@@ -183,6 +183,7 @@ func TestP6StreamTransportFinalWriteFailurePreservesSettlementWithoutDone(t *tes
 	response := &http.Response{StatusCode: http.StatusOK, Body: body}
 	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "openai", Provider: "openai"}}
 	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = contextWithDurableProviderAttempt(contextWithAttemptID(ctx, "att_req-final-write-failure"))
 	relay.relayStreamRequest(ctx, writer, response, route, "req-final-write-failure", 1, 1, "gpt-4o", "gpt-4o", "127.0.0.1", []Message{{Role: "user", Content: "hello"}}, logger.New(logger.Fields{RequestID: "req-final-write-failure", OrgID: 1}), time.Now(), 1000, nil, "")
 
 	if markCalls != 1 || persistCalls != 1 || settleCalls != 1 {

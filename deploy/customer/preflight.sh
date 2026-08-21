@@ -82,6 +82,13 @@ require_release_secret API_KEY_HASH_SECRET
 require_release_secret UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET
 require_exact_bytes ENCRYPTION_KEY 32
 
+load_effective_value RUNTIME_ENVIRONMENT true
+runtime_environment="${effective_value:-production}"
+if [[ "${runtime_environment}" != "production" ]]; then
+  echo "customer preflight: formal customer deployments require RUNTIME_ENVIRONMENT=production so fresh bootstrap cannot bypass recorded release evidence" >&2
+  exit 1
+fi
+
 load_effective_value BILLING_MODE true
 billing_mode="${effective_value:-cost_observation}"
 case "${billing_mode}" in
@@ -92,6 +99,58 @@ case "${billing_mode}" in
     ;;
   *)
     echo "customer preflight: BILLING_MODE must be cost_observation or prepaid_enforced" >&2
+    exit 1
+    ;;
+esac
+
+load_effective_value MODEL_ROUTE_AUTHORITY true
+model_route_authority="${effective_value:-canonical}"
+load_effective_value MODEL_ROUTE_COMPATIBILITY_ENABLED true
+model_route_compatibility_enabled="${effective_value:-false}"
+case "${model_route_compatibility_enabled}" in
+  true|false) ;;
+  *)
+    echo "customer preflight: MODEL_ROUTE_COMPATIBILITY_ENABLED must be exact true or false" >&2
+    exit 1
+    ;;
+esac
+load_effective_value ASYNC_MEDIA_ENABLED true
+async_media_enabled="${effective_value:-false}"
+case "${async_media_enabled}" in
+  true|false) ;;
+  *)
+    echo "customer preflight: ASYNC_MEDIA_ENABLED must be exact true or false" >&2
+    exit 1
+    ;;
+esac
+case "${model_route_authority}" in
+  legacy)
+    if [[ "${model_route_compatibility_enabled}" != "true" ]]; then
+      echo "customer preflight: MODEL_ROUTE_AUTHORITY=legacy requires MODEL_ROUTE_COMPATIBILITY_ENABLED=true" >&2
+      exit 1
+    fi
+    echo "customer preflight: MODEL_ROUTE_AUTHORITY=legacy compatibility selected; on a fresh install this is one-time bootstrap/authoring authority and exposes the full legacy runtime, not a bootstrap-only listener; keep customer traffic blocked, create the customer root and canonical deployment/release/slot, prove a one-off canonical check, then switch to canonical with compatibility=false and restart" >&2
+    ;;
+  verify)
+    if [[ "${model_route_compatibility_enabled}" != "true" ]]; then
+      echo "customer preflight: MODEL_ROUTE_AUTHORITY=verify requires MODEL_ROUTE_COMPATIBILITY_ENABLED=true" >&2
+      exit 1
+    fi
+    echo "customer preflight: MODEL_ROUTE_AUTHORITY=verify; while every current assignment is v1 run 'uniroute model-route-authority apply --customer-org-id <id>' and then 'check' before restart (after v2 assignment use check only), drain old legacy writers, and rely on the backend database startup gate (this config preflight is not readiness)" >&2
+    ;;
+  canonical)
+    if [[ "${model_route_compatibility_enabled}" != "false" ]]; then
+      echo "customer preflight: MODEL_ROUTE_AUTHORITY=canonical requires MODEL_ROUTE_COMPATIBILITY_ENABLED=false" >&2
+      exit 1
+    fi
+    if [[ "${async_media_enabled}" != "false" ]]; then
+      echo "customer preflight: MODEL_ROUTE_AUTHORITY=canonical requires ASYNC_MEDIA_ENABLED=false until async media uses canonical model execution" >&2
+      exit 1
+    fi
+    echo "customer preflight: MODEL_ROUTE_AUTHORITY=canonical; run read-only 'uniroute model-route-authority check --customer-org-id <id>' before restart, drain old legacy writers, and rely on the backend database startup gate (this config preflight is not readiness); apply is verify-preparation only and is rejected in canonical mode" >&2
+    ;;
+  *)
+    echo "customer preflight: MODEL_ROUTE_AUTHORITY must be legacy, verify, or canonical" >&2
     exit 1
     ;;
 esac

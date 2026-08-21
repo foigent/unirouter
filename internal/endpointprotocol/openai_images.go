@@ -169,6 +169,7 @@ func (profile openAIImageProfile) BuildRequest(
 	}
 	return request, &Binding{
 		profileID:      profile.Descriptor().ProfileID,
+		profileVersion: profile.Descriptor().ProfileVersion,
 		requestedModel: input.RequestedModel,
 		mappedModel:    input.MappedModel,
 		outputCount:    1,
@@ -181,7 +182,7 @@ func (profile openAIImageProfile) ParseResponse(
 	statusCode int,
 	body []byte,
 ) (Outcome, error) {
-	if err := requireBinding(binding, profile.Descriptor().ProfileID); err != nil {
+	if err := requireBinding(binding, profile.Descriptor()); err != nil {
 		return Outcome{}, err
 	}
 	if err := rejectNonSuccess(statusCode); err != nil {

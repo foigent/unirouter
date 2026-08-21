@@ -4,7 +4,7 @@
   "dependencies": [
     {
       "path": "internal/agenttrust/artifacts/agent-trust-review.v1.schema.json",
-      "sha256": "sha256:1e375c8febfd93e9972cdaab88c15c1aecf08537fc56ee1a2dfc5e6b037c6a37"
+      "sha256": "sha256:c5751ba5648004889526f638cbabeb1eedda1993c28f13112c3c220113a1a6af"
     },
     {
       "path": "internal/agenttrust/artifacts/fixtures/trust-firewall-review.v1.json",
@@ -12,7 +12,7 @@
     },
     {
       "path": "internal/agenttrust/artifacts/reports/core.v1.json",
-      "sha256": "sha256:032dd42f8ed7971d19f6f921838cd5efac432bcbde2266d4222095c7732e1653"
+      "sha256": "sha256:cfc071a3877103ae6c5c233076c57b89fd137e35198d29ca1c2a466bde9e1ed5"
     },
     {
       "path": "internal/governancesim/artifacts/fixtures/route-pack-review.v1.json",

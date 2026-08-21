@@ -26,6 +26,9 @@ SELECT EXISTS (
 	require.True(t, columnExists)
 	require.True(t, ledgerExists)
 
+	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
+	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
+	execMigrationDown(t, ctx, pool, "000069_model_deployment_expand.down.sql")
 	execMigrationDown(t, ctx, pool, "000068_provider_reported_model_identity.down.sql")
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT EXISTS (

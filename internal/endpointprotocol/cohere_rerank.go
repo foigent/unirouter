@@ -139,6 +139,7 @@ func (profile cohereRerankProfile) BuildRequest(
 	}
 	return request, &Binding{
 		profileID:      profile.Descriptor().ProfileID,
+		profileVersion: profile.Descriptor().ProfileVersion,
 		requestedModel: input.RequestedModel,
 		mappedModel:    input.MappedModel,
 		documentCount:  len(downstream.Documents),
@@ -152,7 +153,7 @@ func (profile cohereRerankProfile) ParseResponse(
 	statusCode int,
 	body []byte,
 ) (Outcome, error) {
-	if err := requireBinding(binding, profile.Descriptor().ProfileID); err != nil {
+	if err := requireBinding(binding, profile.Descriptor()); err != nil {
 		return Outcome{}, err
 	}
 	if err := rejectNonSuccess(statusCode); err != nil {

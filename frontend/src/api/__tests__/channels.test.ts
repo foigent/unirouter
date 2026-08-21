@@ -29,25 +29,15 @@ describe('channelApi', () => {
     );
   });
 
-  it('keeps credential rotation bound to one credential and one probe model', async () => {
-    response({ id: 12, channel_id: 3, model: 'deepseek-v4-flash', probe: { success: true, status_code: 200, latency_ms: 9 } }, 201);
+  it('keeps the retired credential surface read-only', async () => {
+    response({ data: [], total: 0 });
 
-    await providerCredentialApi.rotate(7, {
-      key: 'test-only-secret',
-      model: 'deepseek-v4-flash',
-      allowed_models: 'deepseek-v4-flash',
-    });
+    await providerCredentialApi.list(1, 20, 7);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      '/api/v1/channel-keys/7/rotate',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          key: 'test-only-secret',
-          model: 'deepseek-v4-flash',
-          allowed_models: 'deepseek-v4-flash',
-        }),
-      }),
+      '/api/v1/channel-keys?page=1&page_size=20&channel_id=7',
+      expect.objectContaining({ headers: expect.any(Object) }),
     );
+    expect(Object.keys(providerCredentialApi)).toEqual(['list']);
   });
 });

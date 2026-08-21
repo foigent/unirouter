@@ -119,7 +119,7 @@ func TestHandleEmbeddings_RetryClassificationAndFailover(t *testing.T) {
 				},
 				ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 					switch {
-					case strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == 39 && args[8] == "provider.response_rejected":
+					case strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == traceInsertArgCount && args[8] == "provider.response_rejected":
 						if err := json.Unmarshal([]byte(args[17].(string)), &rejectedMetadata); err != nil {
 							t.Fatalf("decode rejected metadata: %v", err)
 						}
@@ -148,6 +148,7 @@ func TestHandleEmbeddings_RetryClassificationAndFailover(t *testing.T) {
 				},
 			}
 			relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
+			installLegacyHandlerTestRuntime(relay)
 			rec := httptest.NewRecorder()
 
 			relay.HandleEmbeddings(rec, embeddingsRequest("req-embeddings-retry"))
@@ -229,7 +230,7 @@ func TestHandleEmbeddings_AllRoutesFailBounded(t *testing.T) {
 		},
 		ExecFn: func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
 			switch {
-			case strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == 39 && args[8] == "provider.response_rejected":
+			case strings.Contains(sql, "INSERT INTO request_trace_events") && len(args) == traceInsertArgCount && args[8] == "provider.response_rejected":
 				var metadata map[string]interface{}
 				if err := json.Unmarshal([]byte(args[17].(string)), &metadata); err != nil {
 					t.Fatalf("decode rejected metadata: %v", err)
@@ -252,6 +253,7 @@ func TestHandleEmbeddings_AllRoutesFailBounded(t *testing.T) {
 		},
 	}
 	relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
+	installLegacyHandlerTestRuntime(relay)
 	rec := httptest.NewRecorder()
 
 	relay.HandleEmbeddings(rec, embeddingsRequest("req-embeddings-bounded"))
@@ -318,6 +320,7 @@ func TestP6F40BHandleEmbeddingsSkipsUnsupportedAdapterButHoldsAmbiguousTransport
 		},
 	}
 	relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
+	installLegacyHandlerTestRuntime(relay)
 	rec := httptest.NewRecorder()
 
 	relay.HandleEmbeddings(rec, embeddingsRequest("req-embeddings-transport"))
@@ -370,6 +373,7 @@ func TestP6F40BHandleEmbeddingsMalformedSuccessRetainsProviderLiability(t *testi
 		},
 	}
 	relay := NewRelay(db, nil, NewRouter(db), b, nil, encKey)
+	installLegacyHandlerTestRuntime(relay)
 	rec := httptest.NewRecorder()
 
 	relay.HandleEmbeddings(rec, embeddingsRequest("req-embeddings-malformed"))

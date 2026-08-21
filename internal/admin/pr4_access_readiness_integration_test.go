@@ -22,32 +22,43 @@ import (
 	"github.com/uniroute/unirouter/internal/accessprovisioning"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/billing"
+	"github.com/uniroute/unirouter/internal/gateway"
+	"github.com/uniroute/unirouter/internal/integrationfixture"
 	"github.com/uniroute/unirouter/internal/limitpolicy"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelreadiness"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
-type pr4RoutingPreview struct {
-	mu       sync.Mutex
-	previews map[string]routingpolicy.Preview
-	calls    int
+type pr4CanonicalPlanner struct {
+	mu    sync.Mutex
+	calls int
 }
 
-func (p *pr4RoutingPreview) Preview(_ context.Context, model string) (routingpolicy.Preview, error) {
+func (p *pr4CanonicalPlanner) Plan(_ context.Context, request modelrouting.Request) (modelrouting.Plan, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls++
-	preview := p.previews[model]
-	preview.Model = model
-	return preview, nil
+	if request.PublicModel == "pr4-key-missing" {
+		return modelrouting.Plan{}, modelrouting.ErrNoRoute
+	}
+	return modelrouting.Plan{
+		AuthorityMode:     modelrouting.ModeCanonical,
+		PublicModel:       request.PublicModel,
+		ModelOperationID:  request.ModelOperationID,
+		RuntimeReleaseRef: "pr4-readiness-release",
+		RuntimeStage:      "active",
+		SlotVersion:       1,
+		Routes:            []modelrouting.Route{{}},
+	}, nil
 }
 
-func (*pr4RoutingPreview) Invalidate() {}
-
-func (p *pr4RoutingPreview) callCount() int {
+func (p *pr4CanonicalPlanner) callCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.calls
@@ -314,7 +325,8 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 	require.NoError(t, pool.QueryRow(ctx, `
 		INSERT INTO orgs (name,status,org_type) VALUES ('pr4-readiness','active','customer') RETURNING id`).Scan(&orgID))
 	require.NoError(t, pool.QueryRow(ctx, `
-		INSERT INTO orgs (name,status,org_type) VALUES ('pr4-readiness-foreign','active','customer') RETURNING id`).Scan(&foreignOrgID))
+		INSERT INTO orgs (name,status,org_type,parent_id)
+		VALUES ('pr4-readiness-foreign','active','customer',$1) RETURNING id`, orgID).Scan(&foreignOrgID))
 	require.NoError(t, pool.QueryRow(ctx, `
 		INSERT INTO projects (org_id,name,slug,status)
 		VALUES ($1,'PR4 Readiness','pr4-readiness','active') RETURNING id`, orgID).Scan(&projectID))
@@ -366,8 +378,8 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 	} {
 		_, err := pool.Exec(ctx, `
 			INSERT INTO model_registry
-			(org_id,model_name,display_name,provider_family,lifecycle,pricing_model_name,approved_catalog)
-			VALUES ($1,$2,$2,'test',$3,$2,$4)`, orgID, model.name, model.lifecycle, model.catalog)
+			(org_id,model_name,display_name,provider_family,lifecycle,pricing_model_name,approved_catalog,context_length,output_limit)
+			VALUES ($1,$2,$2,'test',$3,$2,$4,128000,8192)`, orgID, model.name, model.lifecycle, model.catalog)
 		require.NoError(t, err)
 	}
 	_, err := pool.Exec(ctx, `
@@ -389,21 +401,6 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 		VALUES ($1,1000000,0,0,0)`, orgID)
 	require.NoError(t, err)
 
-	routing := &pr4RoutingPreview{previews: map[string]routingpolicy.Preview{}}
-	for _, model := range []string{"pr4-ready-model", "pr4-runtime-only", "pr4-hidden-model", "pr4-alias-target", "pr4-retired-model"} {
-		routing.previews[model] = routingpolicy.Preview{
-			PolicyVersion: "unirouter.routing-policy.v1",
-			Candidates: []routingpolicy.PreviewCandidate{{
-				ChannelID: 101, ChannelName: "safe-aggregate", EligibleKeyCount: 1,
-			}},
-		}
-	}
-	routing.previews["pr4-key-missing"] = routingpolicy.Preview{
-		PolicyVersion: "unirouter.routing-policy.v1",
-		Candidates: []routingpolicy.PreviewCandidate{{
-			ChannelID: 102, ChannelName: "missing-provider-key", EligibleKeyCount: 0,
-		}},
-	}
 	evaluator, err := modelauthz.NewEvaluator(pool, "development")
 	require.NoError(t, err)
 	redisAddress := os.Getenv("REDIS_ADDR")
@@ -418,10 +415,83 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 	require.NoError(t, policyService.Refresh(ctx))
 
 	handler := NewHandlerWithAPIKeyHashSecret(pool, "pr4-readiness-jwt", "pr4-readiness-key-hash", []byte("0123456789abcdef01234567"), nil)
-	handler.SetRoutingController(routing)
 	handler.SetModelAuthorizationEvaluator(evaluator)
 	handler.SetLimitPolicyReloader(policyService)
 	handler.SetBillingReadinessProvider(billing.NewBilling(pool, nil))
+	planner := &pr4CanonicalPlanner{}
+	handler.SetModelRoutePlanner(planner)
+
+	routePolicy := routingpolicy.Default()
+	router, err := gateway.NewRouterWithPolicy(pool, routePolicy)
+	require.NoError(t, err)
+	releaseManager, err := runtimechange.NewManager(pool, router, routePolicy)
+	require.NoError(t, err)
+	canonicalAuthorized := canonicalApplicationAuthorizedRequest(orgID, adminID)
+	seedCanonicalApplication := func(model string, publish, revokeCredential bool) {
+		t.Helper()
+		var publicModelID int64
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT id FROM model_registry WHERE org_id=$1 AND model_name=$2`, orgID, model,
+		).Scan(&publicModelID))
+		created := createCanonicalApplicationForTest(t, handler, canonicalAuthorized, canonicalModelApplicationCreateRequest{
+			Connection: canonicalConnectionInput{
+				Name: model + " canonical", Provider: "openai", BaseURL: "https://" + model + ".invalid/v1",
+				AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{}`),
+			},
+			PublicModel: canonicalPublicModelInput{ID: publicModelID},
+			Deployment: canonicalDeploymentInput{
+				UpstreamModel: model + "-upstream", MaxContext: canonicalTestPtr(128000),
+				DefaultMaxOutput: canonicalTestPtr(8192),
+			},
+			Credential: canonicalCredentialInput{APIKey: model + "-provider-secret"},
+			Operation:  canonicalOperationInput{OperationID: string(modeloperation.IDChatCompletions)},
+		}, http.StatusCreated).Application
+		require.Len(t, created.Credential.Bindings, 1)
+		binding := created.Credential.Bindings[0]
+		var probeID int64
+		var testedAt time.Time
+		require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO model_deployment_probes (
+  deployment_id,connection_id,operation_id,probe_profile_id,probe_profile_version,
+  upstream_model,reported_model,connection_revision,deployment_revision,
+  credential_binding_id,credential_state_revision,success,status_code,source_kind,source_ref,
+  source_fingerprint,tested_by,tested_at)
+VALUES ($1,$2,$3,'openai.chat_completions','1.0.0',$4,$4,$5,$6,$7,$8,TRUE,200,
+		'integration',$10,'sha256:' || repeat('a',64),$9,NOW())
+RETURNING probe_id,tested_at`,
+			created.Deployment.ID, created.Connection.ID, string(modeloperation.IDChatCompletions),
+			created.Deployment.UpstreamModel, created.Connection.ConfigRevision, created.Deployment.ConfigRevision,
+			binding.ID, binding.StateRevision, adminID, "pr4-canonical-readiness:"+model,
+		).Scan(&probeID, &testedAt))
+		_, err := pool.Exec(ctx, `
+UPDATE model_deployment_operations
+   SET evidence_state='production_approved',evidence_ref='probe:' || $3::bigint::text,
+       verified_at=$4,revision=revision+1,updated_at=NOW()
+ WHERE deployment_id=$1 AND operation_id=$2`,
+			created.Deployment.ID, string(modeloperation.IDChatCompletions), probeID, testedAt)
+		require.NoError(t, err)
+		if publish {
+			fixture := integrationfixture.AtomicRelease{
+				PublicModelID: publicModelID, CustomerOrgID: orgID, ActorUserID: adminID, ActorOrgID: orgID,
+				Selections: []runtimechange.DeploymentReleaseSelection{{
+					DeploymentID: created.Deployment.ID, OperationID: string(modeloperation.IDChatCompletions),
+				}},
+				Reason: "PR4 canonical readiness fixture",
+			}
+			sealed := integrationfixture.AuthorSealedDeploymentRelease(t, pool, releaseManager, fixture)
+			integrationfixture.ActivateInitialDeploymentRelease(t, releaseManager, fixture, sealed)
+		}
+		if revokeCredential {
+			_, err := pool.Exec(ctx, `
+UPDATE provider_credential_bindings
+   SET status='disabled',state_revision=state_revision+1,updated_at=NOW()
+ WHERE id=$1`, binding.ID)
+			require.NoError(t, err)
+		}
+	}
+	seedCanonicalApplication("pr4-ready-model", true, false)
+	seedCanonicalApplication("pr4-hidden-model", true, false)
+	seedCanonicalApplication("pr4-key-missing", false, true)
 
 	createHumanGrant := func(userID int64, clientID string, validUntil *time.Time) accessprovisioning.ProvisionResult {
 		t.Helper()
@@ -493,7 +563,7 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 	require.Equal(t, "direct_model_optional", ready.ProjectCaller.Alias.ReasonCode)
 	require.Equal(t, modelreadiness.StateNotApplicable, ready.ProjectCaller.ModelSet.State)
 	require.Equal(t, "unrestricted_optional", ready.ProjectCaller.ModelSet.ReasonCode)
-	require.Equal(t, modelreadiness.StateNotApplicable, ready.PlatformModel.RuntimeSlot.State)
+	require.Equal(t, modelreadiness.StateReady, ready.PlatformModel.RuntimeSlot.State)
 	require.Equal(t, "none", ready.RuntimeMutation)
 	require.Equal(t, "none", ready.ExternalRequests)
 	require.NotContains(t, readyHTTP.Body.String(), humanCredential.Key)
@@ -508,7 +578,7 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 	require.Equal(t, http.StatusOK, runtimeOnlyHTTP.Code, runtimeOnlyHTTP.Body.String())
 	require.False(t, *runtimeOnly.Summary.Registered.Value)
 	require.False(t, *runtimeOnly.Summary.CatalogVisible.Value)
-	require.True(t, *runtimeOnly.Summary.Routable.Value)
+	require.False(t, *runtimeOnly.Summary.Routable.Value)
 	require.False(t, *runtimeOnly.Summary.CurrentProjectCallerCallable.Value)
 	require.Equal(t, "model_price_missing", runtimeOnly.Summary.CurrentProjectCallerCallable.ReasonCode)
 
@@ -532,17 +602,17 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 	require.Equal(t, http.StatusOK, retiredHTTP.Code, retiredHTTP.Body.String())
 	require.Equal(t, modelreadiness.StateBlocked, retired.PlatformModel.Lifecycle.State)
 	require.True(t, *retired.Summary.Registered.Value)
-	require.True(t, *retired.Summary.Routable.Value)
+	require.False(t, *retired.Summary.Routable.Value)
 	require.False(t, *retired.Summary.CurrentProjectCallerCallable.Value)
 
 	routeMissingHTTP, routeMissing := readiness(actorID, projectID, "pr4-route-missing", "self", "")
 	require.Equal(t, http.StatusOK, routeMissingHTTP.Code, routeMissingHTTP.Body.String())
-	require.Equal(t, modelreadiness.StateBlocked, routeMissing.PlatformModel.Channel.State)
+	require.Equal(t, modelreadiness.StateBlocked, routeMissing.PlatformModel.Deployment.State)
 	require.Equal(t, modelreadiness.StateBlocked, routeMissing.PlatformModel.ProviderCredential.State)
 	require.Equal(t, modelreadiness.StateBlocked, routeMissing.PlatformModel.BaseRoute.State)
 	keyMissingHTTP, keyMissing := readiness(actorID, projectID, "pr4-key-missing", "self", "")
 	require.Equal(t, http.StatusOK, keyMissingHTTP.Code, keyMissingHTTP.Body.String())
-	require.Equal(t, modelreadiness.StateReady, keyMissing.PlatformModel.Channel.State)
+	require.Equal(t, modelreadiness.StateReady, keyMissing.PlatformModel.Deployment.State)
 	require.Equal(t, modelreadiness.StateBlocked, keyMissing.PlatformModel.ProviderCredential.State)
 	require.Equal(t, modelreadiness.StateBlocked, keyMissing.PlatformModel.BaseRoute.State)
 
@@ -647,7 +717,7 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 	modelSetDeniedHTTP, modelSetDenied := readiness(actorID, projectID, "pr4-runtime-only", "self", "")
 	require.Equal(t, http.StatusOK, modelSetDeniedHTTP.Code, modelSetDeniedHTTP.Body.String())
 	require.Equal(t, modelreadiness.StateBlocked, modelSetDenied.ProjectCaller.ModelSet.State)
-	require.True(t, *modelSetDenied.Summary.Routable.Value)
+	require.False(t, *modelSetDenied.Summary.Routable.Value)
 	require.False(t, *modelSetDenied.Summary.CurrentProjectCallerCallable.Value)
 
 	policyBody := fmt.Sprintf(`{
@@ -825,7 +895,7 @@ func TestPR4ModelReadinessUsesLiveAuthoritiesWithoutMutationOrExternalTrafficInt
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM internal_outbox_events`).Scan(&outboxAfter))
 	require.Equal(t, auditBefore, auditAfter)
 	require.Equal(t, outboxBefore, outboxAfter)
-	require.Greater(t, routing.callCount(), 0)
+	require.Greater(t, planner.callCount(), 0)
 
 	revokeResponse := pr4InvokePool(t, pool, adminID, http.MethodPost,
 		"/api/v1/access-grants/"+human.Grant.GrantRef+"/revoke",

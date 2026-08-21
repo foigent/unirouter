@@ -4,7 +4,6 @@ package admin
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/auth"
-	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -338,140 +336,6 @@ func TestCreateAPIKey_RequiresOrganization_Integration(t *testing.T) {
 	var after int
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM api_keys`).Scan(&after))
 	require.Equal(t, before, after)
-}
-
-// --- CreateChannel handler tests ---
-
-func TestCreateChannel_Success_Integration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-
-	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
-
-	body := `{"name":"test-channel","provider":"openai","base_url":"https://api.openai.com","models":"gpt-4,gpt-3.5"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
-
-	var resp map[string]interface{}
-	err := json.Unmarshal(rec.Body.Bytes(), &resp)
-	require.NoError(t, err)
-	require.NotZero(t, resp["id"])
-
-	// Verify channel in DB
-	var name, status string
-	err = pool.QueryRow(t.Context(),
-		`SELECT name, status FROM channels WHERE id = $1`,
-		int64(resp["id"].(float64)),
-	).Scan(&name, &status)
-	require.NoError(t, err)
-	require.Equal(t, "test-channel", name)
-	require.Equal(t, "staged", status, "new channels must pass the runtime release gate before activation")
-}
-
-func TestCreateChannelCanAtomicallyPersistEncryptedProviderCredentialIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	orgID := testutil.NewTestOrg(t, pool)
-	var userID int64
-	require.NoError(t, pool.QueryRow(t.Context(), `
-		INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
-		VALUES ($1,'connected-model-admin','fixture','platform_admin','platform_admin','active') RETURNING id`, orgID).Scan(&userID))
-	encryptionKey := []byte("0123456789abcdef01234567")
-	h := NewHandler(pool, "test-secret", encryptionKey, nil)
-
-	body := `{"name":"connected-model","provider":"kimi","base_url":"https://provider.invalid","models":"model-a;model-b","api_key":"provider-secret-value"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels", bytes.NewBufferString(body))
-	requestContext := context.WithValue(req.Context(), middleware.CtxUserID, userID)
-	requestContext = context.WithValue(requestContext, middleware.CtxOrgID, orgID)
-	requestContext = context.WithValue(requestContext, middleware.CtxUserRole, auth.RolePlatformAdmin)
-	requestContext = context.WithValue(requestContext, middleware.CtxOrganizationRole, auth.RolePlatformAdmin)
-	req = req.WithContext(requestContext)
-	rec := httptest.NewRecorder()
-	h.CreateChannel(rec, req)
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-
-	var response struct {
-		ID                   int64 `json:"id"`
-		CredentialConfigured bool  `json:"credential_configured"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
-	require.True(t, response.CredentialConfigured)
-	require.Positive(t, response.ID)
-
-	var encrypted, allowedModels string
-	require.NoError(t, pool.QueryRow(t.Context(), `
-		SELECT key_enc,allowed_models FROM channel_keys WHERE channel_id=$1`, response.ID).Scan(&encrypted, &allowedModels))
-	require.NotEqual(t, "provider-secret-value", encrypted)
-	plain, err := auth.DecryptKey(encrypted, encryptionKey)
-	require.NoError(t, err)
-	require.Equal(t, "provider-secret-value", plain)
-	require.Equal(t, "model-a,model-b", allowedModels)
-	var auditCount int
-	require.NoError(t, pool.QueryRow(t.Context(), `
-		SELECT COUNT(*) FROM audit_logs
-		WHERE resource_id IN ($1::bigint::text,(SELECT id::text FROM channel_keys WHERE channel_id=$1::bigint))
-		  AND action IN ('channel.create','channelkey.create')`, response.ID).Scan(&auditCount))
-	require.Equal(t, 2, auditCount)
-}
-
-func TestCreateChannel_MissingFields_Integration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-
-	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
-
-	body := `{"name":""}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	require.Equal(t, http.StatusBadRequest, rec.Code)
-}
-
-func TestCreateChannel_DefaultPriority_Integration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-
-	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
-
-	// priority = 0 should default to 100
-	body := `{"name":"default-pri-channel","provider":"openai","base_url":"https://api.openai.com","models":"gpt-4","priority":0}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	require.Equal(t, http.StatusCreated, rec.Code, "body: %s", rec.Body.String())
-
-	var resp map[string]interface{}
-	json.Unmarshal(rec.Body.Bytes(), &resp)
-
-	// Verify priority in DB is 100
-	var priority int
-	err := pool.QueryRow(t.Context(),
-		`SELECT priority FROM channels WHERE id = $1`,
-		int64(resp["id"].(float64)),
-	).Scan(&priority)
-	require.NoError(t, err)
-	require.Equal(t, 100, priority)
-}
-
-func TestCreateChannel_InvalidJSON_Integration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-
-	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels", bytes.NewBufferString("bad json"))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	h.CreateChannel(rec, req)
-
-	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestCleanupOldData_ReleasesStaleFrozen_Integration(t *testing.T) {

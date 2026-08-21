@@ -22,10 +22,11 @@ import (
 )
 
 type Manager struct {
-	db      db.DBQuerier
-	builder SnapshotBuilder
-	policy  routingpolicy.Config
-	now     func() time.Time
+	db                    db.DBQuerier
+	builder               SnapshotBuilder
+	policy                routingpolicy.Config
+	now                   func() time.Time
+	legacyCutoverVerifier CutoverParityVerifier
 }
 
 func NewManager(database db.DBQuerier, builder SnapshotBuilder, policy routingpolicy.Config) (*Manager, error) {
@@ -38,78 +39,28 @@ func NewManager(database db.DBQuerier, builder SnapshotBuilder, policy routingpo
 	return &Manager{db: database, builder: builder, policy: policy, now: time.Now}, nil
 }
 
+// NewManagerWithLegacyCutoverVerifier binds the one server-owned executable
+// plan verifier used by the receipt-ledger legacy bridge. The verifier is not
+// request data and therefore never participates in JSON or idempotency hashes.
+func NewManagerWithLegacyCutoverVerifier(
+	database db.DBQuerier,
+	builder SnapshotBuilder,
+	policy routingpolicy.Config,
+	verifier CutoverParityVerifier,
+) (*Manager, error) {
+	if verifier == nil {
+		return nil, fmt.Errorf("legacy cutover verifier is required")
+	}
+	manager, err := NewManager(database, builder, policy)
+	if err != nil {
+		return nil, err
+	}
+	manager.legacyCutoverVerifier = verifier
+	return manager, nil
+}
+
 func (m *Manager) CreateDraft(ctx context.Context, request DraftRequest, actorUserID int64) (Release, error) {
-	request, err := NormalizeDraft(request)
-	if err != nil {
-		return Release{}, err
-	}
-	if actorUserID <= 0 {
-		return Release{}, fmt.Errorf("%w: actor", ErrInvalid)
-	}
-	if request.ReleaseRef == "" {
-		request.ReleaseRef, err = automaticReleaseRef(request.ModelName, m.now())
-		if err != nil {
-			return Release{}, fmt.Errorf("%w: generate release_ref: %v", ErrUnavailable, err)
-		}
-	}
-	if err := m.validateChannelPins(ctx, m.db, request.ModelName, request.Overrides); err != nil {
-		return Release{}, err
-	}
-	baseline, parentID, err := m.stableCandidate(ctx, request.ModelName)
-	if err != nil {
-		return Release{}, err
-	}
-	candidateOverrides := mergeOverrides(baseline.Overrides, request.Overrides)
-	candidate := Candidate{ContractVersion: CandidateVersion, ModelName: request.ModelName, Overrides: candidateOverrides}
-	pins, report, baselineHash, candidateHash, err := m.evaluateCandidate(ctx, request.ReleaseRef, request.Reason, actorUserID, baseline, candidate)
-	if err != nil {
-		return Release{}, err
-	}
-	candidateJSON, _ := json.Marshal(candidate)
-	pinsJSON, _ := json.Marshal(pins)
-	reportJSON, _ := json.Marshal(report)
-	tx, err := m.db.Begin(ctx)
-	if err != nil {
-		return Release{}, fmt.Errorf("%w: begin create: %v", ErrUnavailable, err)
-	}
-	defer tx.Rollback(ctx)
-	var release Release
-	err = tx.QueryRow(ctx, `
-INSERT INTO runtime_change_releases (
-    release_ref, model_name, candidate_version, candidate_hash, baseline_hash,
-    candidate, provider_pack_pins, simulation_report, overall_risk, stage,
-    version, parent_stable_release_id, canary_basis_points, reason, created_by)
-VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,'draft',1,$10,0,$11,$12)
-RETURNING id, created_at, updated_at`,
-		request.ReleaseRef, request.ModelName, CandidateVersion, candidateHash, baselineHash,
-		string(candidateJSON), string(pinsJSON), string(reportJSON), report.OverallRisk,
-		parentID, request.Reason, actorUserID,
-	).Scan(&release.ID, &release.CreatedAt, &release.UpdatedAt)
-	if err != nil {
-		return Release{}, classifyWriteError(err)
-	}
-	_, err = tx.Exec(ctx, `
-INSERT INTO runtime_change_events (
-    release_id, sequence, action, from_stage, to_stage, actor_user_id,
-    expected_version, resulting_version, detail)
-VALUES ($1,1,'create','none','draft',$2,0,1,$3::jsonb)`,
-		release.ID, actorUserID, `{"runtime_mutation":"none"}`)
-	if err != nil {
-		return Release{}, fmt.Errorf("%w: create event: %v", ErrUnavailable, err)
-	}
-	created, err := scanRelease(tx.QueryRow(ctx, `
-SELECT id, release_ref, model_name, candidate_version, candidate_hash, baseline_hash,
-       candidate, provider_pack_pins, simulation_report, overall_risk, stage, version,
-       parent_stable_release_id, canary_basis_points, reason, created_by, validated_by,
-       activated_by, created_at, validated_at, activated_at, rolled_back_at, updated_at
-  FROM runtime_change_releases WHERE release_ref=$1`, request.ReleaseRef))
-	if err != nil {
-		return Release{}, fmt.Errorf("%w: read created release before commit: %v", ErrUnavailable, err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return Release{}, fmt.Errorf("%w: commit create: %v", ErrUnavailable, err)
-	}
-	return created, nil
+	return Release{}, ErrLegacyRuntimeChangeRetired
 }
 
 func (m *Manager) ListPage(ctx context.Context, modelName string, page, pageSize int) (ReleasePage, error) {

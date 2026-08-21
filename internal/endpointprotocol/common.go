@@ -210,8 +210,10 @@ func observedUnit(class UnitClass, quantity string) UnitObservation {
 	}
 }
 
-func requireBinding(binding *Binding, profileID string) error {
-	if binding == nil || binding.profileID != profileID {
+func requireBinding(binding *Binding, descriptor Descriptor) error {
+	if binding == nil ||
+		binding.profileID != descriptor.ProfileID ||
+		binding.profileVersion != descriptor.ProfileVersion {
 		return protocolError(ErrInvalidConfiguration, "response_binding_invalid")
 	}
 	return nil
