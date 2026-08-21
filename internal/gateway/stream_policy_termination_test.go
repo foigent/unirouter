@@ -314,7 +314,7 @@ func TestRelayStreamRequestAcceptsKimiTerminalChoiceUsage(t *testing.T) {
 	}
 }
 
-func TestRelayStreamRequestNormalizesSafeMiniMaxControlMetadata(t *testing.T) {
+func TestRelayStreamRequestNormalizesSafeMiniMaxControlMetadataAndAcceptsTerminalChoiceEOF(t *testing.T) {
 	var settled billing.SettleRequest
 	var terminal billing.DeliveryEvent
 	b := &mockBilling{
@@ -331,8 +331,7 @@ func TestRelayStreamRequestNormalizesSafeMiniMaxControlMetadata(t *testing.T) {
 	}
 	relay := newTestRelay(p6f11RelayDB(), b)
 	stream := "data: {\"id\":\"minimax-chunk\",\"object\":\"chat.completion.chunk\",\"created\":1780152150,\"model\":\"MiniMax-M2.7\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"MINIMAX_OK\",\"name\":\"MiniMax AI\",\"audio_content\":\"\"},\"finish_reason\":null}],\"input_sensitive\":false,\"output_sensitive\":false,\"input_sensitive_type\":0,\"output_sensitive_type\":0,\"output_sensitive_int\":0,\"base_resp\":{\"status_code\":0,\"status_msg\":\"\"}}\n\n" +
-		"data: {\"id\":\"minimax-chunk\",\"object\":\"chat.completion.chunk\",\"created\":1780152150,\"model\":\"MiniMax-M2.7\",\"choices\":[{\"index\":0,\"delta\":{\"name\":\"MiniMax AI\",\"audio_content\":null},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17,\"total_characters\":0,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"input_sensitive\":false,\"output_sensitive\":false,\"base_resp\":{\"status_code\":0,\"status_msg\":\"success\"}}\n\n" +
-		"data: [DONE]\n\n"
+		"data: {\"id\":\"minimax-chunk\",\"object\":\"chat.completion.chunk\",\"created\":1780152150,\"model\":\"MiniMax-M2.7\",\"choices\":[{\"index\":0,\"delta\":{\"name\":\"MiniMax AI\",\"audio_content\":null},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17,\"total_characters\":0,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"input_sensitive\":false,\"output_sensitive\":false,\"base_resp\":{\"status_code\":0,\"status_msg\":\"success\"}}\n\n"
 	rec := httptest.NewRecorder()
 	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(stream))}
 	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "MiniMax Token Plan", Provider: "minimax", AdapterType: adapters.TypeOpenAICompatible}}

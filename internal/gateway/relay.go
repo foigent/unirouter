@@ -1902,6 +1902,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	providerStreamErrorObserved := false
 	providerFrameObserved := false
 	providerTerminalObserved := false
+	providerFinishReasonObserved := false
 	recordRouteHealth := func(action executionHealthAction) {
 		if routeHealthRecorded {
 			return
@@ -2072,6 +2073,9 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 				streamTerminationCode = "upstream_stream_invalid_frame"
 			}
 			return false
+		}
+		if parsed.choiceFrame {
+			providerFinishReasonObserved = parsed.terminal
 		}
 		frameBufferBytes := len(data)
 		if streamGuardrailProfile.Enforced && frameBufferBytes > streampolicy.EnforceBufferMaxBytes {
@@ -2336,6 +2340,16 @@ streamLoop:
 	// connection immediately. closeUpstream is idempotent for early returns.
 	closeUpstream()
 	scannerWg.Wait()
+	// Some OpenAI-compatible providers, including MiniMax, close a clean SSE
+	// connection after a fully terminated choice instead of emitting [DONE].
+	// Do not stop on the finish frame itself because a provider usage frame may
+	// still follow it. Only a clean EOF after every choice has a supported
+	// finish_reason becomes terminal; a truncated stream without that proof
+	// continues to fail closed below.
+	if scanErr == nil && providerFinishReasonObserved && streamTerminationCode == "" {
+		providerTerminalObserved = true
+		done = true
+	}
 	if scanErr != nil && !preOutputBillingFailure {
 		reqLog.Error("Upstream stream ended with a read error: %v", scanErr)
 		if errors.Is(scanErr, bufio.ErrTooLong) {
