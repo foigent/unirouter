@@ -187,6 +187,23 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	// Migration 81 adds only defaulted execution-profile identity columns.
+	// Historical rollback fixtures remove the empty/default profile extension
+	// before exercising any earlier migration's own down contract.
+	if name == "000081_versioned_model_execution_profiles.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
+	var modelExecutionProfilesApplied bool
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000081_versioned_model_execution_profiles')`).Scan(&modelExecutionProfilesApplied))
+	if modelExecutionProfilesApplied {
+		execMigrationDown(t, ctx, pool, "000081_versioned_model_execution_profiles.down.sql")
+	}
 	// Migration 80 extends the existing provider-cost reconciliation evidence
 	// with an observation receipt terminal. Older rollback fixtures remove this
 	// empty extension before exercising their own historical down contracts.

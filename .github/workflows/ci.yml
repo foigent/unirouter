@@ -295,6 +295,7 @@ jobs:
           test_pattern+='|TestEnsureBaseline.*Integration'
           test_pattern+='|TestCanonicalConnectionLicenseAuthority.*Integration'
           test_pattern+='|TestObservationProviderCostReconciliationMigrationIntegration'
+          test_pattern+='|TestVersionedModelExecutionProfilesMigrationIntegration'
           test_pattern+='|TestApply(AndCheckLegacyCompatibilityAuthorityAreIdempotentAndReadOnly|SealsCurrentLegacyStableAndCanaryBeforeVerifyCheck|FailsClosedWhenCurrentLegacyCanaryProjectionDrifts|AtExactCanonicalConnectionLimitRemainsIdempotentIntegration)'
           test_pattern+='|TestPublicModelExecutionAuthority.*Integration'
           test_pattern+='|TestPublicCoordinator.*Integration'

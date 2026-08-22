@@ -36,21 +36,28 @@ type Request struct {
 }
 
 type Plan struct {
-	AuthorityMode        Mode
-	PublicModelID        int64
-	PublicModel          string
-	ModelOperationID     string
-	RequiredCapabilities []string
-	PublicContextLimit   int
-	PublicOutputLimit    int
-	SnapshotHash         string
-	DatabaseTime         time.Time
-	RuntimeReleaseID     int64
-	RuntimeReleaseRef    string
-	RuntimeStage         string
-	SlotVersion          int64
-	Routes               []Route
-	Exclusions           []Exclusion
+	AuthorityMode           Mode
+	PublicModelID           int64
+	PublicModel             string
+	ModelOperationID        string
+	RequiredCapabilities    []string
+	PublicContextLimit      int
+	PublicOutputLimit       int
+	ExecutionProfileID      string
+	ExecutionProfileVersion string
+	TokenizerProfileID      string
+	TokenizerProfileVersion string
+	ReasoningProfile        string
+	CacheUsageProfile       string
+	ModelProtocolProfile    string
+	SnapshotHash            string
+	DatabaseTime            time.Time
+	RuntimeReleaseID        int64
+	RuntimeReleaseRef       string
+	RuntimeStage            string
+	SlotVersion             int64
+	Routes                  []Route
+	Exclusions              []Exclusion
 }
 
 // Route contains the execution material required after a route is selected.
@@ -276,23 +283,25 @@ type canonicalCandidate struct {
 }
 
 type snapshot struct {
-	Mode                 Mode
-	DBNow                time.Time
-	CustomerOrgID        int64
-	PublicModelID        int64
-	PublicModel          string
-	PublicModelLifecycle string
-	PublicContextLimit   int
-	PublicOutputLimit    int
-	RequestedOperationID string
-	RequiredCapabilities []string
-	Slot                 slotSnapshot
-	Manifest             []manifestItem
-	LegacyRelease        releaseSnapshot
-	LegacyManifest       []manifestItem
-	LegacyOverrides      []legacyOverride
-	Legacy               []legacyCandidate
-	Canonical            []canonicalCandidate
+	Mode                    Mode
+	DBNow                   time.Time
+	CustomerOrgID           int64
+	PublicModelID           int64
+	PublicModel             string
+	PublicModelLifecycle    string
+	PublicContextLimit      int
+	PublicOutputLimit       int
+	ExecutionProfileID      string
+	ExecutionProfileVersion string
+	RequestedOperationID    string
+	RequiredCapabilities    []string
+	Slot                    slotSnapshot
+	Manifest                []manifestItem
+	LegacyRelease           releaseSnapshot
+	LegacyManifest          []manifestItem
+	LegacyOverrides         []legacyOverride
+	Legacy                  []legacyCandidate
+	Canonical               []canonicalCandidate
 }
 
 type legacyOverride struct {

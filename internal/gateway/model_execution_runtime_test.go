@@ -26,6 +26,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -199,6 +200,8 @@ func executionTestPlan(t *testing.T, mode modelrouting.Mode, operation modeloper
 	plan := modelrouting.Plan{
 		AuthorityMode: mode, PublicModelID: evidence.PublicModelID, PublicModel: "public-model",
 		ModelOperationID: string(operation), PublicContextLimit: 128000, PublicOutputLimit: 8192,
+		ExecutionProfileID: modelprofile.UnverifiedProfileID, ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
+		TokenizerProfileID: modelprofile.TokenizerByteUpperID, TokenizerProfileVersion: modelprofile.TokenizerByteUpperVersion,
 		SnapshotHash:     evidence.SnapshotHash,
 		RuntimeReleaseID: evidence.RuntimeReleaseID, RuntimeReleaseRef: evidence.RuntimeReleaseRef,
 		RuntimeStage: evidence.RuntimeStage, SlotVersion: evidence.SlotVersion, Routes: []modelrouting.Route{route},

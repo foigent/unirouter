@@ -281,6 +281,7 @@ UPDATE provider_connections
 
 func downgradeObservationProviderCostReconciliationForM79Test(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
+	execMigrationDown(t, t.Context(), pool, "000081_versioned_model_execution_profiles.down.sql")
 	down, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
 	))

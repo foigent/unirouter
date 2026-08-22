@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ModelGovernancePage, { comparableModelIdentity, formatModelSetItems, parseModelSetItems } from '../ModelGovernancePage';
 
 const mockGetModelRegistry = vi.fn();
+const mockGetModelExecutionProfiles = vi.fn();
 const mockCreateModelRegistry = vi.fn();
 const mockUpdateModelRegistry = vi.fn();
 const mockGetModelAliases = vi.fn();
@@ -43,6 +44,12 @@ vi.mock('../../api/client', () => ({
   },
 }));
 
+vi.mock('../../api/modelExecutionProfiles', () => ({
+  modelExecutionProfileApi: {
+    list: (...args: any[]) => mockGetModelExecutionProfiles(...args),
+  },
+}));
+
 vi.mock('../../store/auth', () => ({
   useAuthStore: (selector: any) => selector({ user: auth.user }),
 }));
@@ -64,6 +71,47 @@ const REGISTRY = {
     },
   ],
   total: 1,
+};
+
+const EXECUTION_PROFILES = {
+  data: [
+    {
+      id: 'unverified.chat',
+      version: '1.0.0',
+      label: '自定义 / 未验证模型',
+      tokenizer_profile_id: 'tokenizer.byte-upper',
+      tokenizer_profile_version: '1.0.0',
+      reasoning_profile: 'reasoning.unverified.v1',
+      cache_usage_profile: 'cache-usage.unverified.v1',
+      protocol_profile: 'protocol.openai-compatible.unverified.v1',
+      provider_context_window: 0,
+      provider_max_output: 0,
+      default_context_window: 0,
+      default_output_limit: 0,
+      provider_capabilities: [],
+      capabilities: [],
+      aliases: [],
+      evidence_refs: [],
+    },
+    {
+      id: 'minimax.m3.token-plan',
+      version: '1.0.0',
+      label: 'MiniMax M3 Token Plan',
+      tokenizer_profile_id: 'tokenizer.byte-upper',
+      tokenizer_profile_version: '1.0.0',
+      reasoning_profile: 'reasoning.minimax-m3.v1',
+      cache_usage_profile: 'cache-usage.minimax-m3.v1',
+      protocol_profile: 'protocol.minimax-openai-chat.v2',
+      provider_context_window: 1_000_000,
+      provider_max_output: 524_288,
+      default_context_window: 1_000_000,
+      default_output_limit: 131_072,
+      provider_capabilities: ['reasoning', 'tools', 'vision', 'video', 'prompt_cache'],
+      capabilities: ['reasoning', 'tools'],
+      aliases: ['MiniMax M3', 'MiniMax-M3'],
+      evidence_refs: ['https://platform.minimaxi.com/docs/api-reference/text-chat-openai'],
+    },
+  ],
 };
 
 const ALIASES = {
@@ -89,6 +137,7 @@ const PROJECTS = {
 
 function setupMocks() {
   mockGetModelRegistry.mockResolvedValue(REGISTRY);
+  mockGetModelExecutionProfiles.mockResolvedValue(EXECUTION_PROFILES);
   mockCreateModelRegistry.mockResolvedValue({ id: 3 });
   mockUpdateModelRegistry.mockResolvedValue({ success: true });
   mockGetModelAliases.mockResolvedValue(ALIASES);
@@ -222,7 +271,7 @@ describe('ModelGovernancePage', () => {
     render(<ModelGovernancePage />);
 
     fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
-    expect(await screen.findByText(/不会根据模型名称自动猜测文本、多模态或其他能力/)).toBeTruthy();
+    expect(await screen.findByText(/自动匹配只接受 Profile 中的精确别名/)).toBeTruthy();
     expect(screen.getByText(/标签本身不会执行能力检测/)).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '模型生命周期' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '开发者目录可见' })).toBeTruthy();
@@ -235,6 +284,28 @@ describe('ModelGovernancePage', () => {
     await waitFor(() => expect(mockCreateModelRegistry).toHaveBeenCalledWith(expect.objectContaining({
       model_name: 'exact-context-model',
       context_length: 128_000,
+    })));
+  });
+
+  it('auto-matches a verified MiniMax profile without advertising unimplemented multimodal execution', async () => {
+    render(<ModelGovernancePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
+    fireEvent.change(await screen.findByPlaceholderText('gpt-4o'), { target: { value: 'MiniMax-M3' } });
+
+    expect(await screen.findByText('协议：protocol.minimax-openai-chat.v2')).toBeTruthy();
+    expect(screen.getByText(/UniRouter 已验证：reasoning、tools/)).toBeTruthy();
+    expect(screen.getByText(/供应商另有声明但网关尚未放行：vision、video、prompt_cache/)).toBeTruthy();
+    expect(await screen.findByText(/规范化：1000000 → 1,000,000 tokens/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(mockCreateModelRegistry).toHaveBeenCalledWith(expect.objectContaining({
+      model_name: 'MiniMax-M3',
+      context_length: 1_000_000,
+      output_limit: 131_072,
+      capability_tags: 'reasoning,tools',
+      execution_profile_id: 'minimax.m3.token-plan',
+      execution_profile_version: '1.0.0',
     })));
   });
 

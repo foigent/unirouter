@@ -1,0 +1,238 @@
+// Package modelprofile owns the immutable, repository-reviewed model execution
+// profile catalog. A profile describes provider capability; customer model
+// registry limits remain explicit policy and may only narrow those maxima.
+package modelprofile
+
+import (
+	"fmt"
+	"strings"
+	"unicode"
+)
+
+const (
+	UnverifiedProfileID      = "unverified.chat"
+	UnverifiedProfileVersion = "1.0.0"
+
+	TokenizerByteUpperID       = "tokenizer.byte-upper"
+	TokenizerByteUpperVersion  = "1.0.0"
+	TokenizerMiniMaxM27ID      = "tokenizer.minimax-m2.7"
+	TokenizerMiniMaxM27Version = "1.0.0"
+)
+
+// Profile is one immutable execution-contract bundle. Individual component
+// identities remain explicit so evidence can say which axis is verified and
+// future profiles may safely share a tokenizer without sharing reasoning or
+// protocol behavior.
+type Profile struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	Label   string `json:"label"`
+
+	TokenizerProfileID      string `json:"tokenizer_profile_id"`
+	TokenizerProfileVersion string `json:"tokenizer_profile_version"`
+	ReasoningProfile        string `json:"reasoning_profile"`
+	CacheUsageProfile       string `json:"cache_usage_profile"`
+	ProtocolProfile         string `json:"protocol_profile"`
+
+	ProviderContextWindow int `json:"provider_context_window"`
+	ProviderMaxOutput     int `json:"provider_max_output"`
+	DefaultContextWindow  int `json:"default_context_window"`
+	DefaultOutputLimit    int `json:"default_output_limit"`
+
+	// ProviderCapabilities records what the provider documents. Capabilities is
+	// the narrower set that UniRouter has verified end-to-end and may safely
+	// apply to a model registry record. Keeping the two sets distinct prevents a
+	// provider feature such as URL-based vision from bypassing gateway admission
+	// and guardrail support merely because the upstream API advertises it.
+	ProviderCapabilities []string `json:"provider_capabilities"`
+	Capabilities         []string `json:"capabilities"`
+	Aliases              []string `json:"aliases"`
+	EvidenceRefs         []string `json:"evidence_refs"`
+}
+
+var catalog = []Profile{
+	{
+		ID: UnverifiedProfileID, Version: UnverifiedProfileVersion, Label: "自定义 / 未验证模型",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.unverified.v1", CacheUsageProfile: "cache-usage.unverified.v1",
+		ProtocolProfile: "protocol.openai-compatible.unverified.v1",
+	},
+	{
+		ID: "deepseek.v4-flash.api", Version: "1.0.0", Label: "DeepSeek V4 Flash 官方 API",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.deepseek-thinking-toggle.v1", CacheUsageProfile: "cache-usage.deepseek-v4.v1",
+		ProtocolProfile:       "protocol.deepseek-openai-chat.v1",
+		ProviderContextWindow: 1_000_000, ProviderMaxOutput: 384_000,
+		DefaultContextWindow: 1_000_000, DefaultOutputLimit: 32_768,
+		Capabilities:         []string{"reasoning", "tools", "json_output", "prompt_cache"},
+		ProviderCapabilities: []string{"reasoning", "tools", "json_output", "prompt_cache"},
+		Aliases:              []string{"DeepSeek V4 Flash", "DeepSeek-V4-Flash", "deepseek-v4-flash"},
+		EvidenceRefs:         []string{"https://api-docs.deepseek.com/quick_start/pricing/"},
+	},
+	{
+		ID: "deepseek.v4-pro.api", Version: "1.0.0", Label: "DeepSeek V4 Pro 官方 API",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.deepseek-thinking-toggle.v1", CacheUsageProfile: "cache-usage.deepseek-v4.v1",
+		ProtocolProfile:       "protocol.deepseek-openai-chat.v1",
+		ProviderContextWindow: 1_000_000, ProviderMaxOutput: 384_000,
+		DefaultContextWindow: 1_000_000, DefaultOutputLimit: 32_768,
+		Capabilities:         []string{"reasoning", "tools", "json_output", "prompt_cache"},
+		ProviderCapabilities: []string{"reasoning", "tools", "json_output", "prompt_cache"},
+		Aliases:              []string{"DeepSeek V4 Pro", "DeepSeek-V4-Pro", "deepseek-v4-pro"},
+		EvidenceRefs:         []string{"https://api-docs.deepseek.com/quick_start/pricing/"},
+	},
+	{
+		ID: "kimi.k2.6.api", Version: "1.0.0", Label: "Kimi K2.6 官方 API",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.kimi-k2.6-thinking-toggle.v1", CacheUsageProfile: "cache-usage.kimi-platform.v1",
+		ProtocolProfile:       "protocol.kimi-openai-chat.v1",
+		ProviderContextWindow: 262_144, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
+		ProviderCapabilities: []string{"reasoning", "tools", "vision", "prompt_cache"},
+		Capabilities:         []string{"reasoning", "tools", "prompt_cache"},
+		Aliases:              []string{"Kimi K2.6", "kimi-k2.6", "kimi-k2.6-preview"},
+		EvidenceRefs:         []string{"https://platform.moonshot.ai/docs"},
+	},
+	{
+		ID: "kimi.k2.7-code.api", Version: "1.0.0", Label: "Kimi K2.7 Code",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.kimi-k2.7-thinking-required.v1", CacheUsageProfile: "cache-usage.kimi-coding.v1",
+		ProtocolProfile:       "protocol.kimi-coding-openai-chat.v1",
+		ProviderContextWindow: 262_144, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
+		ProviderCapabilities: []string{"reasoning", "tools", "vision", "video", "prompt_cache"},
+		Capabilities:         []string{"reasoning", "tools", "prompt_cache"},
+		Aliases:              []string{"Kimi K2.7 Code", "kimi-for-coding", "kimi-for-coding-highspeed"},
+		EvidenceRefs:         []string{"https://www.kimi.com/code/docs/en/kimi-code/models.html"},
+	},
+	{
+		ID: "kimi.k3.api", Version: "1.0.0", Label: "Kimi K3（套餐上限受权益约束）",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.kimi-k3-effort.v1", CacheUsageProfile: "cache-usage.kimi-coding.v1",
+		ProtocolProfile:       "protocol.kimi-coding-openai-chat.v1",
+		ProviderContextWindow: 1_048_576, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
+		ProviderCapabilities: []string{"reasoning", "tools", "vision", "video", "prompt_cache"},
+		Capabilities:         []string{"reasoning", "tools", "prompt_cache"},
+		Aliases:              []string{"Kimi K3", "k3", "k3-256k"},
+		EvidenceRefs:         []string{"https://www.kimi.com/code/docs/en/kimi-code/models.html"},
+	},
+	{
+		ID: "minimax.m2.7.token-plan", Version: "1.0.0", Label: "MiniMax M2.7 Token Plan",
+		TokenizerProfileID: TokenizerMiniMaxM27ID, TokenizerProfileVersion: TokenizerMiniMaxM27Version,
+		ReasoningProfile: "reasoning.minimax-m2-thinking.v1", CacheUsageProfile: "cache-usage.minimax-m2.v1",
+		ProtocolProfile:       "protocol.minimax-openai-chat.v2",
+		ProviderContextWindow: 204_800, ProviderMaxOutput: 204_800,
+		DefaultContextWindow: 204_800, DefaultOutputLimit: 65_536,
+		ProviderCapabilities: []string{"reasoning", "tools", "prompt_cache"},
+		Capabilities:         []string{"reasoning", "tools"},
+		Aliases:              []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed"},
+		EvidenceRefs: []string{
+			"https://platform.minimaxi.com/docs/api-reference/api-overview",
+			"https://platform.minimaxi.com/docs/api-reference/text-chat-openai",
+			"https://platform.minimaxi.com/docs/token-plan/intro",
+			"https://huggingface.co/MiniMaxAI/MiniMax-M2.7/commit/d494266a4affc0d2995ba1fa35c8481cbd84294b",
+		},
+	},
+	{
+		ID: "minimax.m2.5-highspeed.token-plan", Version: "1.0.0", Label: "MiniMax M2.5 Highspeed Token Plan",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.minimax-m2-thinking.v1", CacheUsageProfile: "cache-usage.minimax-m2.v1",
+		ProtocolProfile:       "protocol.minimax-openai-chat.v2",
+		ProviderContextWindow: 204_800, ProviderMaxOutput: 204_800,
+		DefaultContextWindow: 204_800, DefaultOutputLimit: 65_536,
+		ProviderCapabilities: []string{"reasoning", "tools", "prompt_cache"},
+		Capabilities:         []string{"reasoning", "tools"},
+		Aliases:              []string{"MiniMax-M2.5-highspeed"},
+		EvidenceRefs: []string{
+			"https://platform.minimaxi.com/docs/api-reference/api-overview",
+			"https://platform.minimaxi.com/docs/api-reference/text-chat-openai",
+			"https://platform.minimaxi.com/docs/token-plan/intro",
+		},
+	},
+	{
+		ID: "minimax.m3.token-plan", Version: "1.0.0", Label: "MiniMax M3 Token Plan",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.minimax-m3.v1", CacheUsageProfile: "cache-usage.minimax-m3.v1",
+		ProtocolProfile:       "protocol.minimax-openai-chat.v2",
+		ProviderContextWindow: 1_000_000, ProviderMaxOutput: 524_288,
+		DefaultContextWindow: 1_000_000, DefaultOutputLimit: 131_072,
+		ProviderCapabilities: []string{"reasoning", "tools", "vision", "video", "prompt_cache"},
+		Capabilities:         []string{"reasoning", "tools"},
+		Aliases:              []string{"MiniMax M3", "MiniMax-M3"},
+		EvidenceRefs: []string{
+			"https://platform.minimaxi.com/docs/api-reference/api-overview",
+			"https://platform.minimaxi.com/docs/api-reference/text-chat-openai",
+			"https://platform.minimaxi.com/docs/token-plan/intro",
+			"https://platform.minimaxi.com/docs/token-plan/openclaw",
+		},
+	},
+}
+
+func All() []Profile {
+	result := make([]Profile, len(catalog))
+	for index := range catalog {
+		result[index] = clone(catalog[index])
+	}
+	return result
+}
+
+func Lookup(id, version string) (Profile, bool) {
+	id = strings.TrimSpace(id)
+	version = strings.TrimSpace(version)
+	for _, profile := range catalog {
+		if profile.ID == id && profile.Version == version {
+			return clone(profile), true
+		}
+	}
+	return Profile{}, false
+}
+
+func Match(modelName string) (Profile, bool) {
+	identity := normalizeIdentity(modelName)
+	if identity == "" {
+		return Profile{}, false
+	}
+	for _, profile := range catalog[1:] {
+		for _, alias := range profile.Aliases {
+			if normalizeIdentity(alias) == identity {
+				return clone(profile), true
+			}
+		}
+	}
+	return Profile{}, false
+}
+
+// ValidateEffectiveLimits ensures customer policy narrows provider capability.
+// The unverified profile has no provider maxima but still requires positive
+// effective limits before it can be used by canonical execution.
+func ValidateEffectiveLimits(profile Profile, contextWindow, outputLimit int) error {
+	if contextWindow <= 0 || outputLimit <= 0 {
+		return fmt.Errorf("model execution limits must be positive")
+	}
+	if profile.ProviderContextWindow > 0 && contextWindow > profile.ProviderContextWindow {
+		return fmt.Errorf("context window %d exceeds profile maximum %d", contextWindow, profile.ProviderContextWindow)
+	}
+	if profile.ProviderMaxOutput > 0 && outputLimit > profile.ProviderMaxOutput {
+		return fmt.Errorf("output limit %d exceeds profile maximum %d", outputLimit, profile.ProviderMaxOutput)
+	}
+	if outputLimit > contextWindow {
+		return fmt.Errorf("output limit %d exceeds effective context window %d", outputLimit, contextWindow)
+	}
+	return nil
+}
+
+func clone(profile Profile) Profile {
+	profile.ProviderCapabilities = append([]string(nil), profile.ProviderCapabilities...)
+	profile.Capabilities = append([]string(nil), profile.Capabilities...)
+	profile.Aliases = append([]string(nil), profile.Aliases...)
+	profile.EvidenceRefs = append([]string(nil), profile.EvidenceRefs...)
+	return profile
+}
+
+func normalizeIdentity(value string) string {
+	var builder strings.Builder
+	for _, char := range strings.ToLower(strings.TrimSpace(value)) {
+		if unicode.IsLetter(char) || unicode.IsDigit(char) {
+			builder.WriteRune(char)
+		}
+	}
+	return builder.String()
+}

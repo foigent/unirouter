@@ -1,3 +1,7 @@
+import type { ModelExecutionProfile } from '../api/modelExecutionProfiles';
+
+export type { ModelExecutionProfile } from '../api/modelExecutionProfiles';
+
 export const lifecycleOptions = [
   { label: 'Staging', value: 'staging' },
   { label: 'GA', value: 'ga' },
@@ -30,6 +34,12 @@ export interface ModelRegistryItem {
   pricing_model_name?: string;
   approved_catalog?: boolean;
   migration_recommendation?: string;
+  execution_profile_id?: string;
+  execution_profile_version?: string;
+}
+
+export function modelExecutionProfileKey(profile: Pick<ModelExecutionProfile, 'id' | 'version'>) {
+  return `${profile.id}@${profile.version}`;
 }
 
 export interface ModelAlias {

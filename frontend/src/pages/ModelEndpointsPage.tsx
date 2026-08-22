@@ -15,6 +15,8 @@ import {
 import ModelEndpointCreateSheet from '../features/modelEndpoints/ModelEndpointCreateSheet';
 import ModelEndpointDetailsSheet from '../features/modelEndpoints/ModelEndpointDetailsSheet';
 import ModelReleaseWorkspace from '../features/modelEndpoints/ModelReleaseWorkspace';
+import ModelGovernancePage from './ModelGovernancePage';
+import ModelReadinessPage from './ModelReadinessPage';
 import { endpointError } from '../features/modelEndpoints/presentation';
 import {
   hasLicensedFeature,
@@ -76,10 +78,12 @@ export default function ModelEndpointsPage() {
   const deploymentID = positiveInteger(search.get('deployment_id'));
   const operationID = canonicalOperationID(search.get('operation_id'));
   const selectedReleaseRef = String(search.get('release_ref') || '').trim();
+  const selectedView = search.get('view');
+  const auxiliaryView = selectedView === 'catalog' || selectedView === 'diagnostics';
   const hasLegacyIdentity = Boolean(search.get('channel_id') || search.get('model')) && !(deploymentID && operationID);
 
   const load = useCallback(async () => {
-    if (!canRead) {
+    if (!canRead || auxiliaryView) {
       setProjection(null);
       setLoading(false);
       return;
@@ -97,12 +101,12 @@ export default function ModelEndpointsPage() {
     } finally {
       if (version === listVersion.current) setLoading(false);
     }
-  }, [canRead]);
+  }, [auxiliaryView, canRead]);
 
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    if (!canRead || !deploymentID || !operationID) {
+    if (!canRead || auxiliaryView || !deploymentID || !operationID) {
       setDetail(null);
       setDetailError('');
       setDetailLoading(false);
@@ -121,7 +125,27 @@ export default function ModelEndpointsPage() {
     }).finally(() => {
       if (version === detailVersion.current) setDetailLoading(false);
     });
-  }, [canRead, deploymentID, operationID]);
+  }, [auxiliaryView, canRead, deploymentID, operationID]);
+
+  const selectView = (view?: 'catalog' | 'diagnostics') => {
+    const next = new URLSearchParams(search);
+    if (view) next.set('view', view);
+    else next.delete('view');
+    next.delete('deployment_id');
+    next.delete('operation_id');
+    next.delete('release_ref');
+    next.delete('channel_id');
+    next.delete('model');
+    next.delete('from');
+    next.delete('tab');
+    setSearch(next, { replace: true });
+  };
+
+  const viewNavigation = <Space>
+    <Button type={!auxiliaryView ? 'primary' : 'tertiary'} onClick={() => selectView()}>Canonical Deployments</Button>
+    <Button type={selectedView === 'catalog' ? 'primary' : 'tertiary'} onClick={() => selectView('catalog')}>公共模型目录</Button>
+    <Button type={selectedView === 'diagnostics' ? 'primary' : 'tertiary'} onClick={() => selectView('diagnostics')}>执行诊断</Button>
+  </Space>;
 
   const rows = useMemo<ApplicationOperationRow[]>(() => (projection?.applications || []).flatMap(application =>
     application.operations.map(operation => ({
@@ -302,12 +326,37 @@ export default function ModelEndpointsPage() {
     </div>;
   }
 
+  if (selectedView === 'catalog') {
+    return <div className="ur-page ur-page-wide">
+      <PageHeader
+        eyebrow="模型接入"
+        title="公共模型目录"
+        description="维护经过验证的模型执行边界、企业别名和项目可见范围；不会修改 canonical runtime。"
+        actions={viewNavigation}
+      />
+      <ModelGovernancePage embedded />
+    </div>;
+  }
+
+  if (selectedView === 'diagnostics') {
+    return <div className="ur-page ur-page-wide">
+      <PageHeader
+        eyebrow="模型接入"
+        title="执行诊断"
+        description="按 deployment_id + operation_id 检查调用者、路由、凭证、探测、运行时与授权事实。"
+        actions={viewNavigation}
+      />
+      <ModelReadinessPage embedded forceConnectionMode />
+    </div>;
+  }
+
   return <div className="ur-page ur-page-wide">
     <PageHeader
       eyebrow="模型接入"
       title="Canonical Deployments"
       description="以 deployment_id + operation_id 管理一个精确执行目标；配置、凭证、探测、运行时和调用授权保持为五个独立事实轴。"
       actions={<Space>
+        {viewNavigation}
         <Button icon={<IconRefresh />} loading={loading} onClick={() => void load()}>刷新</Button>
         {canManage && <Button
           icon={<IconPlus />}

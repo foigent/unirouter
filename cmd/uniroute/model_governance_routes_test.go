@@ -58,6 +58,7 @@ func TestRegisterModelGovernanceRoutesEnforcesProductionRoleBoundary(t *testing.
 		{http.MethodPut, "/api/v1/model-sets/1/items", "not-json"},
 	}
 	organizationReadRoutes := []string{
+		"/api/v1/model-execution-profiles",
 		"/api/v1/model-registry",
 		"/api/v1/model-aliases",
 		"/api/v1/model-sets/1/items",

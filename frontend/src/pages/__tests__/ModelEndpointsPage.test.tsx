@@ -67,6 +67,16 @@ vi.mock('../../api/modelDeployments', async importOriginal => {
   };
 });
 
+vi.mock('../ModelGovernancePage', () => ({
+  default: ({ embedded }: { embedded?: boolean }) => <div>模型目录嵌入视图 · embedded={String(Boolean(embedded))}</div>,
+}));
+
+vi.mock('../ModelReadinessPage', () => ({
+  default: ({ embedded, forceConnectionMode }: { embedded?: boolean; forceConnectionMode?: boolean }) => (
+    <div>执行诊断嵌入视图 · embedded={String(Boolean(embedded))} · connection={String(Boolean(forceConnectionMode))}</div>
+  ),
+}));
+
 function application(overrides: Record<string, unknown> = {}) {
   return {
     contract_version: 'unirouter.model-deployment.v1',
@@ -277,6 +287,26 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(41, 'openai.responses.v1'));
     expect(await screen.findByText('1 · 配置与管理状态')).toBeTruthy();
     expect(screen.queryByText(/旧 channel_id\/public_model 深链/)).toBeNull();
+  });
+
+  it('honors the platform catalog redirect and does not load canonical deployment facts behind it', async () => {
+    setRole('platform_admin');
+    renderPage('/channels?tab=advanced&view=catalog');
+
+    expect(await screen.findByText('模型目录嵌入视图 · embedded=true')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '公共模型目录' })).toBeTruthy();
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.releaseList).not.toHaveBeenCalled();
+  });
+
+  it('honors the platform diagnostics redirect and keeps the exact connection-oriented view', async () => {
+    setRole('platform_admin');
+    renderPage('/channels?tab=advanced&view=diagnostics');
+
+    expect(await screen.findByText('执行诊断嵌入视图 · embedded=true · connection=true')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '执行诊断' })).toBeTruthy();
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect(mocks.releaseList).not.toHaveBeenCalled();
   });
 
   it('refuses to infer a canonical identity from a legacy channel deep link', async () => {

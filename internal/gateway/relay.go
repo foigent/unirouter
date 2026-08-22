@@ -986,7 +986,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	ctx = contextWithAdmissionInputEstimate(ctx, estimatedInputTokens)
 	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
 		"stream": req.Stream, "estimated_tokens": estimatedTokens,
-		"admission_estimate_version": admission.Version,
+		"admission_estimate_version": executionBatch.limits.EstimateVersion,
 	})
 	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 

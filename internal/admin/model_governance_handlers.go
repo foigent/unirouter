@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/modelgov"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 type modelSetItemRequest struct {
@@ -71,6 +72,8 @@ type modelRegistryAuditState struct {
 	PricingModelName        string
 	ApprovedCatalog         bool
 	MigrationRecommendation string
+	ExecutionProfileID      string
+	ExecutionProfileVersion string
 }
 
 func scanModelRegistryAuditState(row pgx.Row) (modelRegistryAuditState, error) {
@@ -80,6 +83,7 @@ func scanModelRegistryAuditState(row pgx.Row) (modelRegistryAuditState, error) {
 		&state.Lifecycle, &state.ContextLength, &state.OutputLimit, &state.CapabilityTags,
 		&state.DataResidency, &state.PricingModelName, &state.ApprovedCatalog,
 		&state.MigrationRecommendation,
+		&state.ExecutionProfileID, &state.ExecutionProfileVersion,
 	)
 	return state, err
 }
@@ -93,7 +97,40 @@ func (state modelRegistryAuditState) auditMap(id int64) map[string]interface{} {
 		"data_residency": state.DataResidency, "pricing_model_name": state.PricingModelName,
 		"approved_catalog":         state.ApprovedCatalog,
 		"migration_recommendation": state.MigrationRecommendation,
+		"execution_profile_id":     state.ExecutionProfileID, "execution_profile_version": state.ExecutionProfileVersion,
 	}
+}
+
+func (h *Handler) ListModelExecutionProfiles(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"contract_version": "unirouter.model-execution-profiles.v1",
+		"data":             modelprofile.All(),
+	})
+}
+
+func resolveModelExecutionProfile(modelName, profileID, profileVersion string) (modelprofile.Profile, error) {
+	profileID = strings.TrimSpace(profileID)
+	profileVersion = strings.TrimSpace(profileVersion)
+	if profileID == "" && profileVersion == "" {
+		if matched, ok := modelprofile.Match(modelName); ok {
+			return matched, nil
+		}
+		profileID, profileVersion = modelprofile.UnverifiedProfileID, modelprofile.UnverifiedProfileVersion
+	} else if profileID == "" || profileVersion == "" {
+		return modelprofile.Profile{}, fmt.Errorf("execution profile id and version are both required")
+	}
+	profile, ok := modelprofile.Lookup(profileID, profileVersion)
+	if !ok {
+		return modelprofile.Profile{}, fmt.Errorf("unknown model execution profile %s@%s", profileID, profileVersion)
+	}
+	return profile, nil
+}
+
+func validateModelExecutionProfileSelection(profile modelprofile.Profile, contextLength, outputLimit int) error {
+	if profile.ID == modelprofile.UnverifiedProfileID && profile.Version == modelprofile.UnverifiedProfileVersion {
+		return nil
+	}
+	return modelprofile.ValidateEffectiveLimits(profile, contextLength, outputLimit)
 }
 
 func (h *Handler) ListModelRegistry(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +175,7 @@ func (h *Handler) ListModelRegistry(w http.ResponseWriter, r *http.Request) {
 		`SELECT id, org_id, model_name, display_name, provider_family, lifecycle,
 		        context_length, output_limit, capability_tags, data_residency,
 		        pricing_model_name, approved_catalog, migration_recommendation,
+		        execution_profile_id, execution_profile_version,
 		        created_at, updated_at
 		 FROM model_registry %s
 		 ORDER BY model_name ASC
@@ -182,6 +220,8 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		PricingModelName        string             `json:"pricing_model_name"`
 		ApprovedCatalog         bool               `json:"approved_catalog"`
 		MigrationRecommendation string             `json:"migration_recommendation"`
+		ExecutionProfileID      string             `json:"execution_profile_id"`
+		ExecutionProfileVersion string             `json:"execution_profile_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if errors.Is(err, errInvalidContextLength) {
@@ -215,6 +255,24 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "output_limit must be >= 0"})
 		return
 	}
+	profile, err := resolveModelExecutionProfile(req.ModelName, req.ExecutionProfileID, req.ExecutionProfileVersion)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_model_execution_profile"})
+		return
+	}
+	if int(req.ContextLength) == 0 && profile.DefaultContextWindow > 0 {
+		req.ContextLength = contextLengthInput(profile.DefaultContextWindow)
+	}
+	if req.OutputLimit == 0 && profile.DefaultOutputLimit > 0 {
+		req.OutputLimit = profile.DefaultOutputLimit
+	}
+	if strings.TrimSpace(req.CapabilityTags) == "" && len(profile.Capabilities) > 0 {
+		req.CapabilityTags = strings.Join(profile.Capabilities, ",")
+	}
+	if err := validateModelExecutionProfileSelection(profile, int(req.ContextLength), req.OutputLimit); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_model_execution_profile_limits"})
+		return
+	}
 	req.CapabilityTags = modelgov.NormalizeCSV(req.CapabilityTags)
 	if req.PricingModelName == "" {
 		req.PricingModelName = req.ModelName
@@ -233,13 +291,15 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		    org_id, model_name, display_name, provider_family, lifecycle,
 		    context_length, output_limit, capability_tags, data_residency,
 		    pricing_model_name, approved_catalog, migration_recommendation,
+		    execution_profile_id, execution_profile_version,
 		    created_at, updated_at
 		 )
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
 		 RETURNING id`,
 		orgID, req.ModelName, req.DisplayName, req.ProviderFamily, req.Lifecycle,
 		int(req.ContextLength), req.OutputLimit, req.CapabilityTags, req.DataResidency,
 		req.PricingModelName, req.ApprovedCatalog, req.MigrationRecommendation,
+		profile.ID, profile.Version,
 	).Scan(&id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
@@ -257,6 +317,7 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		"capability_tags": req.CapabilityTags, "data_residency": req.DataResidency,
 		"pricing_model_name": req.PricingModelName, "approved_catalog": req.ApprovedCatalog,
 		"migration_recommendation": req.MigrationRecommendation,
+		"execution_profile_id":     profile.ID, "execution_profile_version": profile.Version,
 	}
 	if err := insertAuditEntry(r.Context(), tx, "model_registry.create", "model_registry", strconv.FormatInt(id, 10),
 		map[string]interface{}{"org_id": orgID, "model_name": req.ModelName, "lifecycle": req.Lifecycle, "after": afterState},
@@ -294,6 +355,8 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		PricingModelName        *string             `json:"pricing_model_name"`
 		ApprovedCatalog         *bool               `json:"approved_catalog"`
 		MigrationRecommendation *string             `json:"migration_recommendation"`
+		ExecutionProfileID      *string             `json:"execution_profile_id"`
+		ExecutionProfileVersion *string             `json:"execution_profile_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		if errors.Is(err, errInvalidContextLength) {
@@ -354,7 +417,11 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	addString("migration_recommendation", req.MigrationRecommendation)
-	if len(sets) == 0 {
+	if (req.ExecutionProfileID == nil) != (req.ExecutionProfileVersion == nil) {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "execution profile id and version are both required", "code": "invalid_model_execution_profile"})
+		return
+	}
+	if len(sets) == 0 && req.ExecutionProfileID == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "No fields to update"})
 		return
 	}
@@ -367,7 +434,7 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 
 	beforeQuery := `SELECT org_id, model_name, display_name, provider_family, lifecycle,
 		context_length, output_limit, capability_tags, data_residency, pricing_model_name,
-		approved_catalog, migration_recommendation
+		approved_catalog, migration_recommendation, execution_profile_id, execution_profile_version
 		FROM model_registry WHERE id = $1`
 	beforeArgs := []interface{}{id}
 	if scope.constrained {
@@ -379,6 +446,48 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeModelGovernanceLookupError(w, err, "Model")
 		return
+	}
+	selectedProfileID := beforeAuditState.ExecutionProfileID
+	selectedProfileVersion := beforeAuditState.ExecutionProfileVersion
+	if req.ExecutionProfileID != nil {
+		selectedProfileID = *req.ExecutionProfileID
+		selectedProfileVersion = *req.ExecutionProfileVersion
+	}
+	profile, err := resolveModelExecutionProfile(beforeAuditState.ModelName, selectedProfileID, selectedProfileVersion)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_model_execution_profile"})
+		return
+	}
+	effectiveContext := beforeAuditState.ContextLength
+	if req.ContextLength != nil {
+		effectiveContext = int(*req.ContextLength)
+	} else if req.ExecutionProfileID != nil && effectiveContext == 0 && profile.DefaultContextWindow > 0 {
+		effectiveContext = profile.DefaultContextWindow
+	}
+	effectiveOutput := beforeAuditState.OutputLimit
+	if req.OutputLimit != nil {
+		effectiveOutput = *req.OutputLimit
+	} else if req.ExecutionProfileID != nil && effectiveOutput == 0 && profile.DefaultOutputLimit > 0 {
+		effectiveOutput = profile.DefaultOutputLimit
+	}
+	if err := validateModelExecutionProfileSelection(profile, effectiveContext, effectiveOutput); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_model_execution_profile_limits"})
+		return
+	}
+	if req.ExecutionProfileID != nil {
+		sets = append(sets, fmt.Sprintf("execution_profile_id = $%d", argIdx), fmt.Sprintf("execution_profile_version = $%d", argIdx+1))
+		args = append(args, profile.ID, profile.Version)
+		argIdx += 2
+		if req.ContextLength == nil && beforeAuditState.ContextLength == 0 && effectiveContext > 0 {
+			sets = append(sets, fmt.Sprintf("context_length = $%d", argIdx))
+			args = append(args, effectiveContext)
+			argIdx++
+		}
+		if req.OutputLimit == nil && beforeAuditState.OutputLimit == 0 && effectiveOutput > 0 {
+			sets = append(sets, fmt.Sprintf("output_limit = $%d", argIdx))
+			args = append(args, effectiveOutput)
+			argIdx++
+		}
 	}
 	if req.ModelName != nil {
 		if err := validateCanonicalPublicModelRename(beforeAuditState.ModelName, *req.ModelName); err != nil {
@@ -401,7 +510,7 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 	afterAuditState, err := scanModelRegistryAuditState(tx.QueryRow(r.Context(),
 		`SELECT org_id, model_name, display_name, provider_family, lifecycle,
 		        context_length, output_limit, capability_tags, data_residency, pricing_model_name,
-		        approved_catalog, migration_recommendation
+		        approved_catalog, migration_recommendation, execution_profile_id, execution_profile_version
 		 FROM model_registry WHERE id = $1 AND org_id = $2`, id, beforeAuditState.OrgID,
 	))
 	if err != nil {

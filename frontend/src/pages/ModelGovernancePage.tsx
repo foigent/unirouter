@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Modal, Space, Toast, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
+import { modelExecutionProfileApi } from '../api/modelExecutionProfiles';
 import { isPlatformAdminRole, organizationRoleForUser } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { EmptyState, PageHeader, parseExactTokenCount, Surface } from '../ui';
@@ -18,14 +19,15 @@ import {
   isApproved,
   parseModelSetItems,
   slugify,
-  toList,
   toNumber,
   type ModelAlias,
+  type ModelExecutionProfile,
   type ModelRegistryItem,
   type ModelSet,
   type ModelSetItem,
   type Project,
   type TabKey,
+  modelExecutionProfileKey,
 } from '../utils/modelGovernance';
 export { comparableModelIdentity, formatModelSetItems, parseModelSetItems } from '../utils/modelGovernance';
 
@@ -53,6 +55,10 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
   const [registryApprovedOnly, setRegistryApprovedOnly] = useState(false);
   const [registrySheet, setRegistrySheet] = useState<{ mode: 'create' | 'edit'; record?: ModelRegistryItem } | null>(null);
   const [registryFormApi, setRegistryFormApi] = useState<any>(null);
+  const [executionProfiles, setExecutionProfiles] = useState<ModelExecutionProfile[]>([]);
+  const [executionProfilesLoading, setExecutionProfilesLoading] = useState(false);
+  const [executionProfilesError, setExecutionProfilesError] = useState('');
+  const [selectedExecutionProfileKey, setSelectedExecutionProfileKey] = useState('auto');
 
   const [aliases, setAliases] = useState<ModelAlias[]>([]);
   const [aliasTotal, setAliasTotal] = useState(0);
@@ -84,6 +90,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
   const [assignmentLoadError, setAssignmentLoadError] = useState('');
   const [loadedAssignmentProjectId, setLoadedAssignmentProjectId] = useState<number>();
   const registryRequestVersion = useRef(0);
+  const executionProfilesRequestVersion = useRef(0);
   const aliasRequestVersion = useRef(0);
   const modelSetRequestVersion = useRef(0);
   const assignmentBaseRequestVersion = useRef(0);
@@ -123,6 +130,26 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
       if (version === registryRequestVersion.current) setRegistryLoading(false);
     }
   }, [registryApprovedOnly, registryLifecycle, registryPage, registryPageSize, registrySearch, targetOrgID]);
+
+  const loadExecutionProfiles = useCallback(async () => {
+    const version = ++executionProfilesRequestVersion.current;
+    setExecutionProfilesLoading(true);
+    setExecutionProfilesError('');
+    try {
+      const response = await modelExecutionProfileApi.list();
+      if (version !== executionProfilesRequestVersion.current) return;
+      const profiles = Array.isArray(response?.data) ? response.data as ModelExecutionProfile[] : [];
+      if (profiles.length === 0) throw new Error('empty execution profile catalog');
+      setExecutionProfiles(profiles);
+    } catch {
+      if (version !== executionProfilesRequestVersion.current) return;
+      setExecutionProfiles([]);
+      setExecutionProfilesError('无法加载版本化执行 Profile；为避免保存未绑定的模型能力，编辑已禁用。');
+      Toast.error('模型执行 Profile 加载失败');
+    } finally {
+      if (version === executionProfilesRequestVersion.current) setExecutionProfilesLoading(false);
+    }
+  }, []);
 
   const loadAliases = useCallback(async (page = aliasPage, pageSize = aliasPageSize) => {
     const version = ++aliasRequestVersion.current;
@@ -230,42 +257,20 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 
   useEffect(() => {
     if (!customerContextReady) return;
-    if (activeTab === 'registry') loadRegistry();
+    if (activeTab === 'registry') {
+      loadRegistry();
+      loadExecutionProfiles();
+    }
     if (activeTab === 'aliases') loadAliases();
     if (activeTab === 'sets') loadModelSets();
     if (activeTab === 'assignments') loadAssignmentBase();
-  }, [activeTab, customerContextReady, loadAliases, loadAssignmentBase, loadModelSets, loadRegistry]);
+  }, [activeTab, customerContextReady, loadAliases, loadAssignmentBase, loadExecutionProfiles, loadModelSets, loadRegistry]);
 
   useEffect(() => {
     if (activeTab === 'assignments' && selectedProjectId) {
       loadProjectAssignment(selectedProjectId);
     }
   }, [activeTab, loadProjectAssignment, selectedProjectId]);
-
-  useEffect(() => {
-    if (!registrySheet || !registryFormApi) return;
-    const record = registrySheet.record;
-    setTimeout(() => {
-      registryFormApi.setValues(record ? {
-        model_name: record.model_name,
-        display_name: record.display_name || record.model_name,
-        provider_family: record.provider_family || '',
-        lifecycle: record.lifecycle || 'staging',
-        context_length: record.context_length || 0,
-        output_limit: record.output_limit || 0,
-        capability_tags: toList(record.capability_tags).join(','),
-        data_residency: record.data_residency || '',
-        pricing_model_name: record.pricing_model_name || record.model_name,
-        approved_catalog: String(Boolean(record.approved_catalog)),
-        migration_recommendation: record.migration_recommendation || '',
-      } : {
-        lifecycle: 'staging',
-        context_length: 0,
-        output_limit: 0,
-        approved_catalog: 'false',
-      });
-    }, 0);
-  }, [registryFormApi, registrySheet]);
 
   useEffect(() => {
     if (!aliasSheet || !aliasFormApi) return;
@@ -303,11 +308,22 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 	}, [registry]);
 
   const openCreateRegistry = () => {
+    if (executionProfilesLoading || executionProfilesError || executionProfiles.length === 0) {
+      Toast.error('执行 Profile 目录尚未就绪，暂不能新增模型');
+      return;
+    }
+    setSelectedExecutionProfileKey('auto');
     setRegistrySheet({ mode: 'create' });
-    setTimeout(() => registryFormApi?.reset(), 0);
   };
 
   const openEditRegistry = (record: ModelRegistryItem) => {
+    if (executionProfilesLoading || executionProfilesError || executionProfiles.length === 0) {
+      Toast.error('执行 Profile 目录尚未就绪，暂不能编辑模型');
+      return;
+    }
+    setSelectedExecutionProfileKey(record.execution_profile_id && record.execution_profile_version
+      ? `${record.execution_profile_id}@${record.execution_profile_version}`
+      : 'unverified.chat@1.0.0');
     setRegistrySheet({ mode: 'edit', record });
   };
 
@@ -315,6 +331,26 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     setRegistrySheet(null);
     registryFormApi?.reset();
   };
+
+  const applyExecutionProfile = useCallback((key: string) => {
+    setSelectedExecutionProfileKey(key);
+    registryFormApi?.setValue('execution_profile_key', key);
+    if (key === 'auto') return;
+    const profile = executionProfiles.find(item => modelExecutionProfileKey(item) === key);
+    if (!profile) return;
+    registryFormApi?.setValue('context_length', profile.default_context_window || 0);
+    registryFormApi?.setValue('output_limit', profile.default_output_limit || 0);
+    registryFormApi?.setValue('capability_tags', profile.capabilities.join(','));
+  }, [executionProfiles, registryFormApi]);
+
+  const matchExecutionProfileForModel = useCallback((modelName: string) => {
+    if (registrySheet?.mode !== 'create') return;
+    const current = registryFormApi?.getValue('execution_profile_key');
+    if (current && current !== 'auto') return;
+    const identity = comparableModelIdentity(modelName);
+    const matched = executionProfiles.find(profile => profile.aliases.some(alias => comparableModelIdentity(alias) === identity));
+    if (matched) applyExecutionProfile(modelExecutionProfileKey(matched));
+  }, [applyExecutionProfile, executionProfiles, registryFormApi, registrySheet?.mode]);
 
 	const retireRegistry = (record: ModelRegistryItem) => {
 		Modal.confirm({
@@ -338,6 +374,12 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
       Toast.error('模型上下文窗口上限必须是 0..2147483647 的整数 Token、十进制整数 K/M，或留空');
       return;
     }
+    const profileKey = String(values.execution_profile_key || selectedExecutionProfileKey || 'auto');
+    const profile = executionProfiles.find(item => modelExecutionProfileKey(item) === profileKey);
+    if (profileKey !== 'auto' && !profile) {
+      Toast.error('所选执行 Profile 已变化，请刷新后重试');
+      return;
+    }
     const payload = {
       model_name: String(values.model_name || '').trim(),
       display_name: String(values.display_name || values.model_name || '').trim(),
@@ -350,6 +392,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
       pricing_model_name: String(values.pricing_model_name || values.model_name || '').trim(),
       approved_catalog: isApproved(values.approved_catalog),
       migration_recommendation: String(values.migration_recommendation || '').trim(),
+      ...(profile ? { execution_profile_id: profile.id, execution_profile_version: profile.version } : {}),
       ...(targetOrgID ? { org_id: targetOrgID } : {}),
     };
     try {
@@ -662,6 +705,12 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
         setRegistryFormApi={setRegistryFormApi}
         onRegistrySubmit={handleRegistrySubmit}
         closeRegistrySheet={closeRegistrySheet}
+        executionProfiles={executionProfiles}
+        executionProfilesLoading={executionProfilesLoading}
+        executionProfilesError={executionProfilesError}
+        selectedExecutionProfileKey={selectedExecutionProfileKey}
+        onExecutionProfileChange={applyExecutionProfile}
+        onRegistryModelNameChange={matchExecutionProfileForModel}
         aliasSheet={aliasSheet}
         aliasFormApi={aliasFormApi}
         setAliasFormApi={setAliasFormApi}

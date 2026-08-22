@@ -21,7 +21,8 @@ func TestObservationProviderCostReconciliationMigrationIntegration(t *testing.T)
 			testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
 		))
 		require.NoError(t, err)
-		_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000081_future_contract')`)
+		execMigrationDown(t, ctx, pool, "000081_versioned_model_execution_profiles.down.sql")
+		_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000082_future_contract')`)
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.ErrorContains(t, err, "later migrations must be reversed first")
@@ -31,11 +32,11 @@ func TestObservationProviderCostReconciliationMigrationIntegration(t *testing.T)
 			  (SELECT COUNT(*) FROM schema_migrations
 			    WHERE version='000080_observation_provider_cost_reconciliation'),
 			  (SELECT COUNT(*) FROM schema_migrations
-			    WHERE version='000081_future_contract')`,
+			    WHERE version='000082_future_contract')`,
 		).Scan(&currentLedger, &futureLedger))
 		require.Equal(t, 1, currentLedger)
 		require.Equal(t, 1, futureLedger)
-		_, err = pool.Exec(ctx, `DELETE FROM schema_migrations WHERE version='000081_future_contract'`)
+		_, err = pool.Exec(ctx, `DELETE FROM schema_migrations WHERE version='000082_future_contract'`)
 		require.NoError(t, err)
 		_, err = pool.Exec(ctx, string(down))
 		require.NoError(t, err)
@@ -222,6 +223,7 @@ func TestObservationProviderCostReconciliationMigrationIntegration(t *testing.T)
 			testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
 		))
 		require.NoError(t, err)
+		execMigrationDown(t, ctx, pool, "000081_versioned_model_execution_profiles.down.sql")
 		_, err = pool.Exec(ctx, string(down))
 		require.ErrorContains(t, err, "durable observation reconciliation evidence exists")
 

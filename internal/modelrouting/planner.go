@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
@@ -68,11 +69,20 @@ func buildPlan(snapshot snapshot, request Request, policy routingpolicy.Config) 
 	snapshot.Mode = request.Mode
 	snapshot.RequestedOperationID = request.ModelOperationID
 	snapshot.RequiredCapabilities = slices.Clone(request.RequiredCapabilities)
+	profile, ok := modelprofile.Lookup(snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion)
+	if !ok {
+		return Plan{}, fmt.Errorf("%w: unknown model execution profile %s@%s", ErrManifestStale, snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion)
+	}
+	if profile.ID != modelprofile.UnverifiedProfileID {
+		if err := modelprofile.ValidateEffectiveLimits(profile, snapshot.PublicContextLimit, snapshot.PublicOutputLimit); err != nil {
+			return Plan{}, fmt.Errorf("%w: model execution profile limits: %v", ErrManifestStale, err)
+		}
+	}
 	hash, err := snapshotDigest(snapshot)
 	if err != nil {
 		return Plan{}, fmt.Errorf("%w: hash route snapshot: %v", ErrUnavailable, err)
 	}
-	base := planMetadata(snapshot, hash)
+	base := planMetadata(snapshot, profile, hash)
 	if modelqualification.IsQualificationRequired(request.ModelOperationID) && request.Mode != ModeCanonical {
 		base.Exclusions = []Exclusion{{Reason: "public_execution_requires_canonical_authority"}}
 		return base, ErrNoRoute
@@ -168,7 +178,7 @@ func normalizeRequest(request Request) (Request, error) {
 	return request, nil
 }
 
-func planMetadata(value snapshot, hash string) Plan {
+func planMetadata(value snapshot, profile modelprofile.Profile, hash string) Plan {
 	selected := value.Slot.Selected
 	return Plan{
 		AuthorityMode:        value.Mode,
@@ -178,6 +188,10 @@ func planMetadata(value snapshot, hash string) Plan {
 		RequiredCapabilities: slices.Clone(value.RequiredCapabilities),
 		PublicContextLimit:   value.PublicContextLimit,
 		PublicOutputLimit:    value.PublicOutputLimit,
+		ExecutionProfileID:   value.ExecutionProfileID, ExecutionProfileVersion: value.ExecutionProfileVersion,
+		TokenizerProfileID: profile.TokenizerProfileID, TokenizerProfileVersion: profile.TokenizerProfileVersion,
+		ReasoningProfile: profile.ReasoningProfile, CacheUsageProfile: profile.CacheUsageProfile,
+		ModelProtocolProfile: profile.ProtocolProfile,
 		SnapshotHash:         hash,
 		DatabaseTime:         value.DBNow,
 		RuntimeReleaseID:     selected.ID,

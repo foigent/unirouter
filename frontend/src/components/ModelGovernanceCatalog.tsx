@@ -78,6 +78,7 @@ export function ModelRegistryPanel({
       },
     },
     { title: '上下文 / 输出', key: 'limits', render: (_: unknown, record: ModelRegistryItem) => `${compactNumber(record.context_length)} / ${compactNumber(record.output_limit)}` },
+    { title: '执行 Profile', key: 'execution_profile', render: (_: unknown, record: ModelRegistryItem) => record.execution_profile_id ? `${record.execution_profile_id}@${record.execution_profile_version}` : 'unverified.chat@1.0.0' },
     { title: '能力', dataIndex: 'capability_tags', key: 'capability_tags', render: (value: string[] | string) => toList(value).slice(0, 4).join(', ') || '-' },
     { title: '数据驻留', dataIndex: 'data_residency', key: 'data_residency', render: (value: string) => value || '-' },
     {

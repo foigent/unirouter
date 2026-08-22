@@ -249,6 +249,8 @@ func modelGovernanceAtomicityRow(state *modelGovernanceAtomicityState, sql strin
 			*dest[9].(*string) = "model-a"
 			*dest[10].(*bool) = false
 			*dest[11].(*string) = ""
+			*dest[12].(*string) = "unverified.chat"
+			*dest[13].(*string) = "1.0.0"
 			if state.mutatedInTx {
 				*dest[4].(*string) = "deprecated"
 				*dest[10].(*bool) = true

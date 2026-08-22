@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 type sqlSnapshotLoader struct{}
@@ -34,18 +35,21 @@ func loadSQLSnapshot(ctx context.Context, tx pgx.Tx, request Request, forcedRele
 	value := snapshot{
 		Mode: request.Mode, CustomerOrgID: request.CustomerOrgID,
 		PublicModel: request.PublicModel, RequestedOperationID: request.ModelOperationID,
-		RequiredCapabilities: append([]string(nil), request.RequiredCapabilities...),
+		RequiredCapabilities:    append([]string(nil), request.RequiredCapabilities...),
+		ExecutionProfileID:      modelprofile.UnverifiedProfileID,
+		ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
 	}
 	if err := tx.QueryRow(ctx, `SELECT NOW()`).Scan(&value.DBNow); err != nil {
 		return snapshot{}, fmt.Errorf("%w: read database clock: %v", ErrUnavailable, err)
 	}
 	value.DBNow = value.DBNow.UTC()
 	if err := tx.QueryRow(ctx, `
-SELECT id,lifecycle,context_length,output_limit
+SELECT id,lifecycle,context_length,output_limit,execution_profile_id,execution_profile_version
   FROM model_registry
  WHERE org_id=$1 AND model_name=$2`, request.CustomerOrgID, request.PublicModel).Scan(
 		&value.PublicModelID, &value.PublicModelLifecycle,
 		&value.PublicContextLimit, &value.PublicOutputLimit,
+		&value.ExecutionProfileID, &value.ExecutionProfileVersion,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			if request.Mode != ModeLegacy {

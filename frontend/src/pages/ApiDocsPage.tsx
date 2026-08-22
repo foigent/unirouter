@@ -301,6 +301,7 @@ const endpointGroups: EndpointGroup[] = [
       ['PUT', '/api/v1/model-prices/{id}', '更新 CNY/百万 tokens 基础价格与 Prompt Cache 倍率（仅平台管理员）'],
       ['DELETE', '/api/v1/model-prices/{id}', '删除基础模型价格（仅平台管理员）'],
       ['GET', '/api/v1/model-names', '模型名称列表'],
+      ['GET', '/api/v1/model-execution-profiles', '读取版本冻结的 Tokenizer、上下文、输出、推理、缓存与协议 Profile；供应商声明能力和 UniRouter 已验证能力分开返回，不自动创建价格或凭证'],
       ['GET', '/api/v1/model-registry', '唯一客户的模型注册表；部署管理员也自动绑定该客户上下文'],
       ['POST', '/api/v1/model-registry', '在本组织创建模型注册记录；跨组织请求返回 403'],
       ['PUT', '/api/v1/model-registry/{id}', '更新本组织记录；越权组织参数返回 403，越权或不存在的 ID 返回 404'],

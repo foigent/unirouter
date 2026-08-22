@@ -87,6 +87,7 @@ func TestAdminRoutesRegisteredForFrontendClient(t *testing.T) {
 		"POST /api/v1/model-prices",
 		"PUT /api/v1/model-prices/{id}",
 		"DELETE /api/v1/model-prices/{id}",
+		"GET /api/v1/model-execution-profiles",
 		"GET /api/v1/model-registry",
 		"POST /api/v1/model-registry",
 		"PUT /api/v1/model-registry/{id}",

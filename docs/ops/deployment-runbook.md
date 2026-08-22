@@ -1,8 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.20
-> **日期**：2026-08-17
+> **版本**：v1.21
+> **日期**：2026-08-22
 > **用途**：运维人员部署和维护 UniRouter 的操作手册
+> **变更记录**：v1.21 增加 `000081` 版本化模型执行 Profile、历史模型不推断、guarded down 与非滚动升级边界。
 > **变更记录**：v1.20 增加 release worktree 的 N/N-1/N-2 只读报告、非规范/dirty/attached fail-closed 分类和显式 apply 边界，并补充精确版本构建的 BuildKit Go 缓存约束；v1.19 增加 ECS 不可变标签构建复用、构建前磁盘 fail-closed、可注入 Go module proxy、全服务 Docker 日志轮转、N-1/N-2 schema 兼容门禁和需显式授权的按需镜像/BuildKit 清理；v1.18 增加 development/test Target 单次构建复用、两代已验证回滚保留和只读镜像生命周期报告；v1.17 增加默认关闭的 Exact Response Cache 三段式密钥注入、客户 preflight all-or-none 校验、冷失效轮换边界和迁移 `000056` 运维约束；v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
@@ -1053,6 +1054,34 @@ SELECT COUNT(*) AS observation_reconciliation_terminals
 第二项非零时必须 roll forward，不得删除 append-only receipt/reconciliation 来迁就旧
 binary。
 
+### 3.18 `000081` versioned model execution profiles 与 guarded down
+
+M81 为 `model_registry` 增加精确的 `execution_profile_id` 与
+`execution_profile_version`。升级只给历史记录写入
+`unverified.chat@1.0.0`，不会按 `model_name` 猜测 MiniMax、Kimi、DeepSeek、
+Tokenizer、上下文上限或供应商能力。只有操作员在控制台或 API 选择仓库审核过的
+Profile，模型才获得对应的 Tokenizer、reasoning、cache-usage、protocol 身份与供应商
+最大值；客户 `context_length`/`output_limit` 仍是可修改的生效策略，但不能超过该
+Profile。
+
+M80→M81 是 schema-ceiling 变化，必须停止旧 fleet，由唯一 migration owner 升级并
+确认完整 ledger 精确等于 M81 artifact，再启动 M81 stable/canary。不能让 M80 stable
+和 M81 canary 共用数据库。升级后先检查历史行仍为 unverified，再由人工逐模型选择
+已核验 Profile：
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT id, model_name, context_length, output_limit,
+       execution_profile_id, execution_profile_version
+  FROM model_registry
+ ORDER BY id;
+```
+
+M81 down 在任何 schema mutation 前拒绝 later migration，也拒绝任一非
+`unverified.chat@1.0.0` 的持久 Profile 选择。若需要回滚 binary，优先 roll forward；
+不得删除或伪造模型 Profile 证据来迁就旧 binary。只有确认所有模型仍是 unverified、
+且没有 later migration 时，guarded down 才会移除两列并恢复 M80 schema。
+
 ---
 
 ## 四、备份与恢复
@@ -1476,8 +1505,8 @@ staging 或已授权的非生产测试目标。不得把本章命令当作客户
 stable 与 canary 必须读取同一个
 `UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET`；Compose/CI 会检查两者配置一致。
 本章的流量 canary 只允许两个 binary 的 exact schema ceiling 相同且共享数据库已经
-位于该 ceiling 时使用。任何改变 ceiling 的发布（包括当前 M79→M80）必须先按
-对应 migration 小节（当前为 3.17）完成非滚动 schema 切换，不能保留旧 stable 再
+位于该 ceiling 时使用。任何改变 ceiling 的发布（包括当前 M80→M81）必须先按
+对应 migration 小节（当前为 3.18）完成非滚动 schema 切换，不能保留旧 stable 再
 启动新 canary。
 
 ### 9.1 前置条件：Nginx 配置
@@ -1537,7 +1566,7 @@ backend 处理大部分请求；两者必须声明相同的 exact schema ceiling
 - canary 实例可设置 `SKIP_MIGRATION=true`，但这只跳过 migration 执行，不跳过
   exact runtime-schema gate；共享数据库必须已经由唯一 migration owner 升到两个
   binary 共同声明的 ceiling
-- schema ceiling 不同的 stable/canary 禁止共存；当前 M79→M80 使用 3.17 的非滚动流程
+- schema ceiling 不同的 stable/canary 禁止共存；当前 M80→M81 使用 3.18 的非滚动流程
 - 健康检查和 Prometheus 指标 **只走 stable**
 
 ### 9.3 启动 Canary
@@ -1652,7 +1681,7 @@ done | sort | uniq -c
 
 只有 stable/canary binary 声明相同 schema ceiling、且数据库已经精确位于该 ceiling
 时，canary 验证通过后才可按本节升级 stable。若 candidate 提高 ceiling（包括
-M79→M80），不要执行本节命令；按 3.17 停止整个旧 fleet、由唯一 migration owner
+M80→M81），不要执行本节命令；按 3.18 停止整个旧 fleet、由唯一 migration owner
 升级，再启动新 stable/canary。
 
 ```bash

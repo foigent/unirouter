@@ -114,6 +114,7 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 		`SELECT mr.id, mr.org_id, mr.model_name, mr.display_name, mr.provider_family, mr.lifecycle,
 		        mr.context_length, mr.output_limit, mr.capability_tags, mr.data_residency,
 		        mr.pricing_model_name, mr.approved_catalog, mr.migration_recommendation,
+		        mr.execution_profile_id, mr.execution_profile_version,
 		        mr.created_at, mr.updated_at, COALESCE(string_agg(DISTINCT ma.alias, ','), '') AS aliases
 		 FROM model_registry mr
 		 LEFT JOIN model_aliases ma ON ma.org_id = mr.org_id AND ma.target_model = mr.model_name AND ma.status = 'active'

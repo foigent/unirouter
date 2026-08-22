@@ -681,6 +681,12 @@ SELECT
 func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := t.Context()
+	profileDown, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(profileDown))
+	require.NoError(t, err)
 	observationDown, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
 	))

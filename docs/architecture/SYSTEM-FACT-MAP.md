@@ -8,22 +8,26 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable PostgreSQL compatibility ceiling is `000080`. After running
+The executable PostgreSQL compatibility ceiling is `000081`. After running
 migrations or honoring `SKIP_MIGRATION`, every backend reads the complete,
 ordered migration ledger and requires it to equal the binary artifact ledger
 before customer-baseline initialization or HTTP bind; missing, extra, future,
 duplicate, reordered and empty ledgers all fail closed. Schema-ceiling changes
-are therefore non-rolling: an M79 process and an M80 process cannot be ready
+are therefore non-rolling: an M80 process and an M81 process cannot be ready
 against one shared database. Operators drain and stop the old fleet, let one
-migration owner advance the database to M80, and only then start M80
+migration owner advance the database to M81, and only then start M81
 stable/canary. A secondary may use `SKIP_MIGRATION=true` only after the shared
-database already has the exact M80 ledger. M78 adds atomic
+database already has the exact M81 ledger. M78 adds atomic
 sealed-release authoring provenance and the explicit v1-to-v2 lifecycle bridge;
 M79 moves the commercial `active_channels` count authority to enabled canonical
 provider connections. M80 gives cost-observation provider reconciliation an
 append-only zero-charge terminal receipt instead of manufacturing a financial
 transaction; its terminal transaction and observation receipt identities are
-mutually exclusive and database-guarded. M79 takes the shared model-execution migration advisory
+mutually exclusive and database-guarded. M81 freezes the exact versioned model
+execution profile selected by the customer: tokenizer, reasoning, cache-usage and
+protocol identities are repository-reviewed evidence, while context/output values
+remain customer policy bounded by provider maxima. Historical rows are deliberately
+`unverified.chat@1.0.0`; no migration infers authority from a model name. M79 takes the shared model-execution migration advisory
 lock, then the provider-connection/channel/schema relation locks, then the
 `active_channels` resource advisory lock, and only then the entitlement-table
 lock; this ordering matches both activation and License renewal without a lock

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/executionevidence"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
@@ -527,6 +528,7 @@ func verifyFixture() snapshot {
 		DBNow: now, CustomerOrgID: 41, PublicModelID: 71, PublicModel: "company-chat",
 		PublicModelLifecycle: "production", RequestedOperationID: "openai.chat_completions.v1",
 		RequiredCapabilities: []string{"tools"}, PublicContextLimit: 128000, PublicOutputLimit: 8192,
+		ExecutionProfileID: modelprofile.UnverifiedProfileID, ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
 	}
 	for index, id := range []int64{11, 22} {
 		legacyKeyID := id*10 + 1

@@ -2437,9 +2437,30 @@ paths:
   /api/v1/model-names:
     get: *operation_get
 
+  /api/v1/model-execution-profiles:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+    description: |
+      Returns the immutable, repository-reviewed execution profile catalog used by
+      model-registry authoring and runtime admission. provider_capabilities are upstream
+      claims; capabilities are the narrower features verified end-to-end by UniRouter.
+      Customer context_length and output_limit remain explicit policy and may only narrow
+      a verified provider maximum. No price record or provider credential is created.
+    get:
+      tags: [Admin]
+      summary: List versioned model execution profiles
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Immutable execution profile catalog.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelExecutionProfileCatalog" }
+        "403": { $ref: "#/components/responses/Error" }
+
   /api/v1/model-registry:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
+      get: [platform_admin, org_admin, org_viewer]
       post: [platform_admin, org_admin]
     description: |
       Organization-scoped model registry. Organization administrators always use the
@@ -6297,6 +6318,8 @@ components:
         pricing_model_name: { type: string }
         approved_catalog: { type: boolean }
         migration_recommendation: { type: string }
+        execution_profile_id: { type: string, description: "Immutable catalog profile identity. Omit both profile fields to exact-match a reviewed model alias, otherwise the unverified profile is used." }
+        execution_profile_version: { type: string, description: "Required together with execution_profile_id." }
       additionalProperties: true
     ModelRegistryCreateRequest:
       allOf:
@@ -6305,6 +6328,42 @@ components:
           required: [model_name]
           properties:
             org_id: { type: integer, format: int64, minimum: 1 }
+    ModelExecutionProfile:
+      type: object
+      additionalProperties: false
+      required: [id, version, label, tokenizer_profile_id, tokenizer_profile_version, reasoning_profile, cache_usage_profile, protocol_profile, provider_context_window, provider_max_output, default_context_window, default_output_limit, provider_capabilities, capabilities, aliases, evidence_refs]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        label: { type: string }
+        tokenizer_profile_id: { type: string }
+        tokenizer_profile_version: { type: string }
+        reasoning_profile: { type: string }
+        cache_usage_profile: { type: string }
+        protocol_profile: { type: string }
+        provider_context_window: { type: integer, minimum: 0 }
+        provider_max_output: { type: integer, minimum: 0 }
+        default_context_window: { type: integer, minimum: 0 }
+        default_output_limit: { type: integer, minimum: 0 }
+        provider_capabilities:
+          type: array
+          uniqueItems: true
+          description: Provider-documented capabilities; not execution authority by themselves.
+          items: { type: string }
+        capabilities:
+          type: array
+          uniqueItems: true
+          description: Capabilities verified through UniRouter's current end-to-end execution path.
+          items: { type: string }
+        aliases: { type: array, uniqueItems: true, items: { type: string } }
+        evidence_refs: { type: array, uniqueItems: true, items: { type: string, format: uri } }
+    ModelExecutionProfileCatalog:
+      type: object
+      additionalProperties: false
+      required: [contract_version, data]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-execution-profiles.v1] }
+        data: { type: array, items: { $ref: "#/components/schemas/ModelExecutionProfile" } }
     ModelPriceMutation:
       type: object
       properties:

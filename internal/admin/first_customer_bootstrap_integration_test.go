@@ -339,7 +339,7 @@ func TestFirstCustomerBootstrapFailsClosedOnSchemaDriftIntegration(t *testing.T)
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
-		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000081_future_contract')`)
+		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000082_future_contract')`)
 		require.NoError(t, err)
 
 		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-002", "First Customer")
