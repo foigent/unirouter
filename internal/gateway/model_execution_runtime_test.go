@@ -507,6 +507,9 @@ func TestModelExecutionLimitsRejectBeforeFreezeAttemptAndNetwork(t *testing.T) {
 			operation: modeloperation.IDChatCompletions, path: "/v1/chat/completions",
 			body:     `{"model":"public-model","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"high"}`,
 			wantCode: "validation_error.output_limit_required", handle: (*Relay).HandleChatCompletion,
+			editPlan: func(plan *modelrouting.Plan) {
+				setExecutionTestProfile(t, plan, "deepseek.v4-pro.api", "1.0.0")
+			},
 		},
 		{
 			name:      "K3 invalid reasoning effort",

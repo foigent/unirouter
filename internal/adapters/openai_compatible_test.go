@@ -318,15 +318,16 @@ func TestOpenAICompatibleInvalidPresentCounterStillFails(t *testing.T) {
 func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 	adapter := NewOpenAICompatible()
 	tests := []struct {
-		name     string
-		body     string
-		prompt   int
-		uncached int
-		read     int
-		creation int
-		schema   string
-		status   string
-		wantErr  bool
+		name         string
+		body         string
+		prompt       int
+		uncached     int
+		read         int
+		creation     int
+		schema       string
+		status       string
+		cacheProfile string
+		wantErr      bool
 	}{
 		{
 			name:   "OpenAI cached-token subset",
@@ -351,6 +352,13 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`,
 			prompt: 100, uncached: 20, read: 80,
 			schema: CacheUsageSchemaDeepSeekV1, status: CacheUsageStatusHitMissReported,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+		},
+		{
+			name:   "unmodeled DeepSeek counters are not billing truth",
+			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`,
+			prompt: 100, uncached: 100, read: 0,
+			status: CacheUsageStatusNotReported,
 		},
 		{
 			name:   "authoritative zero hit",
@@ -375,19 +383,34 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "DeepSeek partition must match prompt total",
-			body:    `{"usage":{"prompt_tokens":100,"completion_tokens":1,"total_tokens":101,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":19}}`,
-			wantErr: true,
+			name:         "DeepSeek partition must match prompt total",
+			body:         `{"usage":{"prompt_tokens":100,"completion_tokens":1,"total_tokens":101,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":19}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
 		},
 		{
-			name:    "DeepSeek partial hit-only contract is rejected",
-			body:    `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_cache_hit_tokens":80}}`,
-			wantErr: true,
+			name:         "DeepSeek partial hit-only contract is rejected",
+			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_cache_hit_tokens":80}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
 		},
 		{
-			name:    "DeepSeek partial miss-only contract is rejected",
-			body:    `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_cache_miss_tokens":80}}`,
-			wantErr: true,
+			name:         "DeepSeek partial miss-only contract is rejected",
+			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_cache_miss_tokens":80}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
+		},
+		{
+			name:         "DeepSeek profile rejects OpenAI nested cache wire",
+			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_tokens_details":{"cached_tokens":80}}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
+		},
+		{
+			name:         "DeepSeek profile rejects Kimi top-level cache wire",
+			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"cached_tokens":80}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
 		},
 		{
 			name:    "provider token count above persisted integer limit is rejected",
@@ -398,10 +421,11 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
-				Endpoint:   EndpointChatCompletions,
-				StatusCode: http.StatusOK,
-				Body:       []byte(tt.body),
-				Channel:    models.Channel{Provider: "fixture", AdapterType: TypeOpenAICompatible},
+				Endpoint:          EndpointChatCompletions,
+				StatusCode:        http.StatusOK,
+				Body:              []byte(tt.body),
+				Channel:           models.Channel{Provider: "fixture", AdapterType: TypeOpenAICompatible},
+				CacheUsageProfile: tt.cacheProfile,
 			})
 			if tt.wantErr {
 				if err == nil {

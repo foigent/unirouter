@@ -68,6 +68,16 @@ SELECT id,lifecycle,context_length,output_limit,execution_profile_id,execution_p
 		return snapshot{}, err
 	}
 	value.Slot = slot
+	if request.Mode != ModeLegacy && slot.Selected.CandidateVersion == canonicalCandidateVersion {
+		if slot.Selected.ExecutionProfileID == "" || slot.Selected.ExecutionProfileVersion == "" ||
+			slot.Selected.PublicContextLimit <= 0 || slot.Selected.PublicOutputLimit <= 0 {
+			return snapshot{}, fmt.Errorf("%w: sealed model execution contract", ErrManifestStale)
+		}
+		value.ExecutionProfileID = slot.Selected.ExecutionProfileID
+		value.ExecutionProfileVersion = slot.Selected.ExecutionProfileVersion
+		value.PublicContextLimit = slot.Selected.PublicContextLimit
+		value.PublicOutputLimit = slot.Selected.PublicOutputLimit
+	}
 	if request.Mode != ModeCanonical {
 		legacy, loadErr := loadLegacyCandidates(ctx, tx, value.PublicModel)
 		if loadErr != nil {
@@ -146,13 +156,17 @@ SELECT s.public_model_id,s.slot_version,s.canary_basis_points,
        COALESCE(stable.route_items_hash,''),COALESCE(stable.route_items_count,0),
        stable.route_items_sealed_at,COALESCE(stable.stage,''),COALESCE(stable.version,0),
        COALESCE(stable.public_model_id,0),
+	   COALESCE(stable.execution_profile_id,''),COALESCE(stable.execution_profile_version,''),
+	   COALESCE(stable.public_context_limit,0),COALESCE(stable.public_output_limit,0),
 	   COALESCE(stable.parent_stable_release_id,0),
        COALESCE(stable.candidate,'{}'::jsonb),
        COALESCE(canary.id,0),COALESCE(canary.release_ref,''),
        COALESCE(canary.candidate_version,''),COALESCE(canary.candidate_hash,''),
        COALESCE(canary.route_items_hash,''),COALESCE(canary.route_items_count,0),
-       canary.route_items_sealed_at,COALESCE(canary.stage,''),COALESCE(canary.version,0),
+	   canary.route_items_sealed_at,COALESCE(canary.stage,''),COALESCE(canary.version,0),
 	   COALESCE(canary.public_model_id,0),COALESCE(canary.parent_stable_release_id,0),
+	   COALESCE(canary.execution_profile_id,''),COALESCE(canary.execution_profile_version,''),
+	   COALESCE(canary.public_context_limit,0),COALESCE(canary.public_output_limit,0),
 	   COALESCE(canary.candidate,'{}'::jsonb)
   FROM runtime_change_slots s
   LEFT JOIN runtime_change_releases stable ON stable.id=s.stable_release_id
@@ -166,6 +180,8 @@ SELECT s.public_model_id,s.slot_version,s.canary_basis_points,
 		&result.Stable.CandidateHash, &result.Stable.RouteItemsHash,
 		&result.Stable.RouteItemsCount, &result.Stable.RouteItemsSealed,
 		&result.Stable.Stage, &result.Stable.Revision, &result.Stable.PublicModelID,
+		&result.Stable.ExecutionProfileID, &result.Stable.ExecutionProfileVersion,
+		&result.Stable.PublicContextLimit, &result.Stable.PublicOutputLimit,
 		&result.Stable.ParentStableReleaseID,
 		&result.Stable.CandidateJSON,
 		&result.Canary.ID, &result.Canary.Ref, &result.Canary.CandidateVersion,
@@ -173,6 +189,8 @@ SELECT s.public_model_id,s.slot_version,s.canary_basis_points,
 		&result.Canary.RouteItemsCount, &result.Canary.RouteItemsSealed,
 		&result.Canary.Stage, &result.Canary.Revision, &result.Canary.PublicModelID,
 		&result.Canary.ParentStableReleaseID,
+		&result.Canary.ExecutionProfileID, &result.Canary.ExecutionProfileVersion,
+		&result.Canary.PublicContextLimit, &result.Canary.PublicOutputLimit,
 		&result.Canary.CandidateJSON,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -224,12 +242,17 @@ func loadRelease(ctx context.Context, tx pgx.Tx, releaseID int64) (releaseSnapsh
 	if err := tx.QueryRow(ctx, `
 SELECT id,release_ref,candidate_version,candidate_hash,COALESCE(route_items_hash,''),
        COALESCE(route_items_count,0),route_items_sealed_at,stage,version,
-       COALESCE(public_model_id,0),COALESCE(parent_stable_release_id,0),candidate
+       COALESCE(public_model_id,0),
+	   COALESCE(execution_profile_id,''),COALESCE(execution_profile_version,''),
+	   COALESCE(public_context_limit,0),COALESCE(public_output_limit,0),
+	   COALESCE(parent_stable_release_id,0),candidate
   FROM runtime_change_releases
  WHERE id=$1`, releaseID).Scan(
 		&result.ID, &result.Ref, &result.CandidateVersion, &result.CandidateHash,
 		&result.RouteItemsHash, &result.RouteItemsCount, &result.RouteItemsSealed,
 		&result.Stage, &result.Revision, &result.PublicModelID,
+		&result.ExecutionProfileID, &result.ExecutionProfileVersion,
+		&result.PublicContextLimit, &result.PublicOutputLimit,
 		&result.ParentStableReleaseID, &result.CandidateJSON,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

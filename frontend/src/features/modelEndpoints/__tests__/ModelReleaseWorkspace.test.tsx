@@ -39,6 +39,10 @@ const summary = {
   release_ref: 'rcr_v2-candidate',
   public_model_id: 7,
   model_name: 'deepseek-v4-flash',
+  execution_profile_id: 'deepseek.v4-flash.api',
+  execution_profile_version: '1.0.0',
+  public_context_limit: 1000000,
+  public_output_limit: 32768,
   candidate_version: 'unirouter.deployment-candidate.v2',
   candidate_hash: 'sha256:candidate',
   route_items_hash: 'sha256:routes',
@@ -221,6 +225,11 @@ function lifecycleReceipt(action: string) {
 }
 
 function authoringReceipt() {
+  const authoringRelease: Partial<typeof release> = { ...release };
+  delete authoringRelease.execution_profile_id;
+  delete authoringRelease.execution_profile_version;
+  delete authoringRelease.public_context_limit;
+  delete authoringRelease.public_output_limit;
   return {
     contract_version: 'unirouter.model-deployment-release-authoring-receipt.v1',
     receipt_id: 401,
@@ -231,7 +240,7 @@ function authoringReceipt() {
     idempotency_replay: false,
     baseline: collection.models[0].authoring.baseline,
     selections: [{ deployment_id: 41, operation_id: 'openai.responses.v1' }],
-    release,
+    release: authoringRelease,
     created_at: '2026-08-20T01:00:00Z',
     completed_at: '2026-08-20T01:00:01Z',
   };
@@ -308,6 +317,14 @@ describe('ModelReleaseWorkspace', () => {
     fireEvent.click(button);
     expect(mocks.activateInitial).not.toHaveBeenCalled();
     expect(await screen.findByText('activate_initial: server_says_no')).toBeTruthy();
+  });
+
+  it('shows the M82 execution contract pinned to the exact release', async () => {
+    renderWorkspace();
+
+    expect(await screen.findByText(
+      'deepseek.v4-flash.api@1.0.0 · context=1000000 · output=32768',
+    )).toBeTruthy();
   });
 
   it('renders canonical receipt logical identity without inventing legacy raw public-model IDs', async () => {

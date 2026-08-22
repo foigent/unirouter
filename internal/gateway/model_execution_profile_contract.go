@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
@@ -17,6 +18,8 @@ type modelExecutionProfileEvidence struct {
 	ReasoningRequest          string
 	ReasoningProviderDefault  string
 	ReasoningDefaultAuthority string
+	ReasoningToggleRequest    string
+	ReasoningEffortRequest    string
 	CacheUsageProfile         string
 }
 
@@ -29,6 +32,8 @@ func (e modelExecutionProfileEvidence) metadata() map[string]interface{} {
 		"reasoning_request":           e.ReasoningRequest,
 		"reasoning_provider_default":  e.ReasoningProviderDefault,
 		"reasoning_default_authority": e.ReasoningDefaultAuthority,
+		"reasoning_toggle_request":    e.ReasoningToggleRequest,
+		"reasoning_effort_request":    e.ReasoningEffortRequest,
 		"cache_usage_profile":         e.CacheUsageProfile,
 	}
 }
@@ -58,56 +63,72 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 
 	contract, modeled := modelprofile.ResolveReasoningContract(plan.ReasoningProfile)
 	if !modeled {
-		if hasNonNullJSONField(envelope, "thinking") {
+		if hasAnyNonNullJSONField(envelope, "thinking", "reasoning_effort", "reasoning") {
 			return modelExecutionProfileEvidence{}, fmt.Errorf("reasoning control is not supported by profile %s", plan.ReasoningProfile)
 		}
 		return evidence, nil
 	}
 	evidence.ReasoningMode = contract.Mode
-	evidence.ReasoningProviderDefault = contract.ProviderDefault
+	evidence.ReasoningProviderDefault = reasoningControlSummary(
+		contract.ToggleControl.ProviderDefault,
+		contract.EffortControl.ProviderDefault,
+	)
 	evidence.ReasoningDefaultAuthority = contract.DefaultAuthority
 
 	reasoningActive := contract.Mode == modelprofile.ReasoningModeAlwaysOn || contract.Mode == modelprofile.ReasoningModeRequired
-	switch contract.RequestField {
-	case "reasoning_effort":
-		if hasNonNullJSONField(envelope, "thinking") || hasNonNullJSONField(envelope, "reasoning") {
-			return modelExecutionProfileEvidence{}, fmt.Errorf("K3 accepts reasoning_effort, not K2.x thinking or generic reasoning")
+	for _, field := range []string{"thinking", "reasoning_effort", "reasoning"} {
+		if hasNonNullJSONField(envelope, field) &&
+			field != contract.ToggleControl.Field && field != contract.EffortControl.Field {
+			return modelExecutionProfileEvidence{}, fmt.Errorf("profile %s does not accept %s", plan.ReasoningProfile, field)
 		}
-		value, present, err := optionalJSONString(envelope["reasoning_effort"], "reasoning_effort")
+	}
+
+	toggleRequest := ""
+	if contract.ToggleControl.Field != "" {
+		value, present, err := reasoningControlValue(envelope[contract.ToggleControl.Field], contract.ToggleControl)
 		if err != nil {
 			return modelExecutionProfileEvidence{}, err
 		}
+		toggleRequest = "omitted"
+		reasoningActive = contract.ToggleControl.ProviderDefault == "enabled"
 		if present {
-			if !slices.Contains(contract.AllowedValues, value) {
-				return modelExecutionProfileEvidence{}, fmt.Errorf("reasoning_effort must be one of low, high, or max")
-			}
-			evidence.ReasoningRequest = value
-		} else {
-			evidence.ReasoningRequest = "omitted"
-		}
-	case "thinking":
-		if hasNonNullJSONField(envelope, "reasoning_effort") || hasNonNullJSONField(envelope, "reasoning") {
-			return modelExecutionProfileEvidence{}, fmt.Errorf("K2.6 accepts thinking, not reasoning_effort or generic reasoning")
-		}
-		value, present, err := optionalThinkingType(envelope["thinking"])
-		if err != nil {
-			return modelExecutionProfileEvidence{}, err
-		}
-		if present {
-			if !slices.Contains(contract.AllowedValues, value) {
-				return modelExecutionProfileEvidence{}, fmt.Errorf("thinking.type must be enabled or disabled")
-			}
-			evidence.ReasoningRequest = value
+			toggleRequest = value
 			reasoningActive = value == "enabled"
-		} else {
-			evidence.ReasoningRequest = "omitted"
-			reasoningActive = contract.ProviderDefault == "enabled"
 		}
-	default:
-		if hasNonNullJSONField(envelope, "thinking") || hasNonNullJSONField(envelope, "reasoning_effort") || hasNonNullJSONField(envelope, "reasoning") {
-			return modelExecutionProfileEvidence{}, fmt.Errorf("profile %s does not accept a reasoning control field", plan.ReasoningProfile)
+		evidence.ReasoningToggleRequest = toggleRequest
+	}
+
+	effortRequest := ""
+	if contract.EffortControl.Field != "" {
+		value, present, err := reasoningControlValue(envelope[contract.EffortControl.Field], contract.EffortControl)
+		if err != nil {
+			return modelExecutionProfileEvidence{}, err
 		}
+		effortRequest = "omitted"
+		if present {
+			if !reasoningActive {
+				return modelExecutionProfileEvidence{}, fmt.Errorf("%s requires active reasoning for profile %s", contract.EffortControl.Field, plan.ReasoningProfile)
+			}
+			effortRequest = value
+		}
+		evidence.ReasoningEffortRequest = effortRequest
+	}
+
+	evidence.ReasoningRequest = reasoningControlSummary(toggleRequest, effortRequest)
+	if evidence.ReasoningRequest == "" {
 		evidence.ReasoningRequest = "required"
+	}
+	if reasoningActive {
+		for _, field := range contract.UnsupportedRequestFieldsWhileActive {
+			if hasNonNullJSONField(envelope, field) {
+				return modelExecutionProfileEvidence{}, fmt.Errorf("%s is not supported while reasoning is active for profile %s", field, plan.ReasoningProfile)
+			}
+		}
+		for _, field := range contract.ForbiddenRequestFieldsWhileActive {
+			if hasNonNullJSONField(envelope, field) {
+				return modelExecutionProfileEvidence{}, fmt.Errorf("%s is ineffective while reasoning is active for profile %s", field, plan.ReasoningProfile)
+			}
+		}
 	}
 
 	choice, err := executionToolChoice(envelope["tool_choice"])
@@ -126,6 +147,44 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 		}
 	}
 	return evidence, nil
+}
+
+func hasAnyNonNullJSONField(envelope map[string]json.RawMessage, fields ...string) bool {
+	for _, field := range fields {
+		if hasNonNullJSONField(envelope, field) {
+			return true
+		}
+	}
+	return false
+}
+
+func reasoningControlValue(raw json.RawMessage, contract modelprofile.ReasoningControlContract) (string, bool, error) {
+	var value string
+	var present bool
+	var err error
+	if contract.Field == "thinking" {
+		value, present, err = optionalThinkingType(raw)
+	} else {
+		value, present, err = optionalJSONString(raw, contract.Field)
+	}
+	if err != nil || !present {
+		return value, present, err
+	}
+	if !slices.Contains(contract.AllowedValues, value) {
+		return "", false, fmt.Errorf("%s must be one of %s", contract.Field, strings.Join(contract.AllowedValues, ", "))
+	}
+	return value, true, nil
+}
+
+func reasoningControlSummary(toggle, effort string) string {
+	switch {
+	case toggle != "" && effort != "":
+		return "thinking=" + toggle + ";reasoning_effort=" + effort
+	case toggle != "":
+		return toggle
+	default:
+		return effort
+	}
 }
 
 func hasNonNullJSONField(envelope map[string]json.RawMessage, field string) bool {

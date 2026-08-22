@@ -5,6 +5,7 @@ package modelprofile
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -67,7 +68,11 @@ var catalog = []Profile{
 		Capabilities:         []string{"reasoning", "tools", "json_output", "prompt_cache"},
 		ProviderCapabilities: []string{"reasoning", "tools", "json_output", "prompt_cache"},
 		Aliases:              []string{"DeepSeek V4 Flash", "DeepSeek-V4-Flash", "deepseek-v4-flash"},
-		EvidenceRefs:         []string{"https://api-docs.deepseek.com/quick_start/pricing/"},
+		EvidenceRefs: []string{
+			"https://api-docs.deepseek.com/quick_start/pricing/",
+			"https://api-docs.deepseek.com/guides/thinking_mode",
+			"https://api-docs.deepseek.com/api/create-chat-completion",
+		},
 	},
 	{
 		ID: "deepseek.v4-pro.api", Version: "1.0.0", Label: "DeepSeek V4 Pro 官方 API",
@@ -79,7 +84,11 @@ var catalog = []Profile{
 		Capabilities:         []string{"reasoning", "tools", "json_output", "prompt_cache"},
 		ProviderCapabilities: []string{"reasoning", "tools", "json_output", "prompt_cache"},
 		Aliases:              []string{"DeepSeek V4 Pro", "DeepSeek-V4-Pro", "deepseek-v4-pro"},
-		EvidenceRefs:         []string{"https://api-docs.deepseek.com/quick_start/pricing/"},
+		EvidenceRefs: []string{
+			"https://api-docs.deepseek.com/quick_start/pricing/",
+			"https://api-docs.deepseek.com/guides/thinking_mode",
+			"https://api-docs.deepseek.com/api/create-chat-completion",
+		},
 	},
 	{
 		ID: "kimi.k2.6.api", Version: "1.0.0", Label: "Kimi K2.6 官方 API",
@@ -99,7 +108,7 @@ var catalog = []Profile{
 		ProtocolProfile:       "protocol.kimi-coding-openai-chat.v1",
 		ProviderContextWindow: 262_144, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
 		ProviderCapabilities: []string{"reasoning", "tools", "vision", "video", "prompt_cache"},
-		Capabilities:         []string{"reasoning", "tools", "prompt_cache"},
+		Capabilities:         []string{"reasoning", "tools"},
 		Aliases:              []string{"Kimi K2.7 Code", "kimi-for-coding", "kimi-for-coding-highspeed"},
 		EvidenceRefs:         []string{"https://www.kimi.com/code/docs/en/kimi-code/models.html"},
 	},
@@ -130,7 +139,7 @@ var catalog = []Profile{
 		ProtocolProfile:       "protocol.kimi-coding-openai-chat.v1",
 		ProviderContextWindow: 1_048_576, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
 		ProviderCapabilities: []string{"reasoning", "tools", "vision", "video", "prompt_cache"},
-		Capabilities:         []string{"reasoning", "tools", "prompt_cache"},
+		Capabilities:         []string{"reasoning", "tools"},
 		Aliases:              []string{"Kimi K3", "k3", "k3-256k"},
 		EvidenceRefs:         []string{"https://www.kimi.com/code/docs/en/kimi-code/models.html"},
 	},
@@ -142,7 +151,7 @@ var catalog = []Profile{
 		ProviderContextWindow: 204_800, ProviderMaxOutput: 204_800,
 		DefaultContextWindow: 204_800, DefaultOutputLimit: 65_536,
 		ProviderCapabilities: []string{"reasoning", "tools", "prompt_cache"},
-		Capabilities:         []string{"reasoning", "tools"},
+		Capabilities:         []string{"tools"},
 		Aliases:              []string{"MiniMax-M2.7", "MiniMax-M2.7-highspeed"},
 		EvidenceRefs: []string{
 			"https://platform.minimaxi.com/docs/api-reference/api-overview",
@@ -159,7 +168,7 @@ var catalog = []Profile{
 		ProviderContextWindow: 204_800, ProviderMaxOutput: 204_800,
 		DefaultContextWindow: 204_800, DefaultOutputLimit: 65_536,
 		ProviderCapabilities: []string{"reasoning", "tools", "prompt_cache"},
-		Capabilities:         []string{"reasoning", "tools"},
+		Capabilities:         []string{"tools"},
 		Aliases:              []string{"MiniMax-M2.5-highspeed"},
 		EvidenceRefs: []string{
 			"https://platform.minimaxi.com/docs/api-reference/api-overview",
@@ -175,7 +184,7 @@ var catalog = []Profile{
 		ProviderContextWindow: 1_000_000, ProviderMaxOutput: 524_288,
 		DefaultContextWindow: 1_000_000, DefaultOutputLimit: 131_072,
 		ProviderCapabilities: []string{"reasoning", "tools", "vision", "video", "prompt_cache"},
-		Capabilities:         []string{"reasoning", "tools"},
+		Capabilities:         []string{"tools"},
 		Aliases:              []string{"MiniMax M3", "MiniMax-M3"},
 		EvidenceRefs: []string{
 			"https://platform.minimaxi.com/docs/api-reference/api-overview",
@@ -199,6 +208,9 @@ func Lookup(id, version string) (Profile, bool) {
 	version = strings.TrimSpace(version)
 	for _, profile := range catalog {
 		if profile.ID == id && profile.Version == version {
+			if ValidateExecutableComponents(profile) != nil {
+				return Profile{}, false
+			}
 			return clone(profile), true
 		}
 	}
@@ -213,11 +225,32 @@ func Match(modelName string) (Profile, bool) {
 	for _, profile := range catalog[1:] {
 		for _, alias := range profile.Aliases {
 			if normalizeIdentity(alias) == identity {
+				if ValidateExecutableComponents(profile) != nil {
+					return Profile{}, false
+				}
 				return clone(profile), true
 			}
 		}
 	}
 	return Profile{}, false
+}
+
+// ValidateExecutableComponents prevents provider-advertised metadata from
+// becoming executable routing authority without a matching typed component
+// contract. It is used by both catalog selection and tests so a bad catalog
+// entry fails closed even outside CI.
+func ValidateExecutableComponents(profile Profile) error {
+	if slices.Contains(profile.Capabilities, "reasoning") {
+		if contract, ok := ResolveReasoningContract(profile.ReasoningProfile); !ok || contract.ProfileID != profile.ReasoningProfile {
+			return fmt.Errorf("reasoning capability requires a modeled reasoning profile")
+		}
+	}
+	if slices.Contains(profile.Capabilities, "prompt_cache") {
+		if contract, ok := ResolveCacheUsageContract(profile.CacheUsageProfile); !ok || contract.ProfileID != profile.CacheUsageProfile {
+			return fmt.Errorf("prompt_cache capability requires a modeled cache-usage profile")
+		}
+	}
+	return nil
 }
 
 // ValidateEffectiveLimits ensures customer policy narrows provider capability.

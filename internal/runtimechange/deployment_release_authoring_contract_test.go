@@ -1,8 +1,10 @@
 package runtimechange
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -132,5 +134,36 @@ func TestDeploymentReleaseAuthoringClaimRetryableErrorPreservesSQLState(t *testi
 		if !errors.As(err, &recovered) || recovered.SQLState() != code {
 			t.Fatalf("SQLSTATE %s cause chain = %#v", code, recovered)
 		}
+	}
+}
+
+func TestDeploymentReleaseAuthoringReceiptV1DoesNotInventM82ReleaseFields(t *testing.T) {
+	release := DeploymentRelease{
+		ID: 7, ReleaseRef: "rcr_exact", PublicModelID: 9, ModelName: "model",
+		ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.1.0",
+		PublicContextLimit: 262144, PublicOutputLimit: 32768,
+		CandidateVersion: DeploymentCandidateVersion,
+	}
+	receiptJSON, err := json.Marshal(DeploymentReleaseAuthoringReceipt{
+		ContractVersion: DeploymentReleaseAuthoringReceiptContractVersion,
+		ReceiptID:       11, Release: release,
+	})
+	if err != nil {
+		t.Fatalf("marshal authoring receipt: %v", err)
+	}
+	for _, forbidden := range []string{
+		"execution_profile_id", "execution_profile_version",
+		"public_context_limit", "public_output_limit",
+	} {
+		if strings.Contains(string(receiptJSON), forbidden) {
+			t.Fatalf("v1 authoring receipt invented M82 field %q: %s", forbidden, receiptJSON)
+		}
+	}
+	releaseJSON, err := json.Marshal(release)
+	if err != nil {
+		t.Fatalf("marshal exact release: %v", err)
+	}
+	if !strings.Contains(string(releaseJSON), `"execution_profile_id":"kimi.k3.api"`) {
+		t.Fatalf("exact release omitted sealed execution profile: %s", releaseJSON)
 	}
 }

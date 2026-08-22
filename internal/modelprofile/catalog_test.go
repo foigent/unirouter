@@ -86,18 +86,18 @@ func TestKimiComponentContractsAreVersionedAndDefensive(t *testing.T) {
 	reasoning, ok := ResolveReasoningContract(k3.ReasoningProfile)
 	require.True(t, ok)
 	require.Equal(t, ReasoningModeAlwaysOn, reasoning.Mode)
-	require.Equal(t, "reasoning_effort", reasoning.RequestField)
-	require.Equal(t, []string{"low", "high", "max"}, reasoning.AllowedValues)
-	require.Equal(t, "max", reasoning.ProviderDefault)
+	require.Equal(t, "reasoning_effort", reasoning.EffortControl.Field)
+	require.Equal(t, []string{"low", "high", "max"}, reasoning.EffortControl.AllowedValues)
+	require.Equal(t, "max", reasoning.EffortControl.ProviderDefault)
 	require.Equal(t, ReasoningDefaultProvider, reasoning.DefaultAuthority)
 	require.False(t, reasoning.NamedToolChoiceWhileReasoning)
 	require.True(t, reasoning.RequiredToolChoiceWhileReasoning)
 	require.True(t, reasoning.PreserveAssistantReasoningForTools)
 
-	reasoning.AllowedValues[0] = "mutation"
+	reasoning.EffortControl.AllowedValues[0] = "mutation"
 	again, ok := ResolveReasoningContract(k3.ReasoningProfile)
 	require.True(t, ok)
-	require.Equal(t, "low", again.AllowedValues[0])
+	require.Equal(t, "low", again.EffortControl.AllowedValues[0])
 
 	cache, ok := ResolveCacheUsageContract(k3.CacheUsageProfile)
 	require.True(t, ok)
@@ -111,10 +111,43 @@ func TestKimiK26ThinkingContractRemainsDistinctFromK3(t *testing.T) {
 	contract, ok := ResolveReasoningContract(k26.ReasoningProfile)
 	require.True(t, ok)
 	require.Equal(t, ReasoningModeToggle, contract.Mode)
-	require.Equal(t, "thinking", contract.RequestField)
-	require.Equal(t, []string{"enabled", "disabled"}, contract.AllowedValues)
-	require.Equal(t, "enabled", contract.ProviderDefault)
+	require.Equal(t, "thinking", contract.ToggleControl.Field)
+	require.Equal(t, []string{"enabled", "disabled"}, contract.ToggleControl.AllowedValues)
+	require.Equal(t, "enabled", contract.ToggleControl.ProviderDefault)
 	require.False(t, contract.RequiredToolChoiceWhileReasoning)
+}
+
+func TestExecutableCapabilitiesAlwaysHaveTypedComponentContracts(t *testing.T) {
+	for _, profile := range All() {
+		require.NoError(t, ValidateExecutableComponents(profile), profile.ID+"@"+profile.Version)
+	}
+
+	deepSeek, ok := Lookup("deepseek.v4-pro.api", "1.0.0")
+	require.True(t, ok)
+	reasoning, ok := ResolveReasoningContract(deepSeek.ReasoningProfile)
+	require.True(t, ok)
+	require.Equal(t, "thinking", reasoning.ToggleControl.Field)
+	require.Equal(t, []string{"enabled", "disabled"}, reasoning.ToggleControl.AllowedValues)
+	require.Equal(t, "reasoning_effort", reasoning.EffortControl.Field)
+	require.Equal(t, []string{"high", "max"}, reasoning.EffortControl.AllowedValues)
+	require.ElementsMatch(t,
+		[]string{"temperature", "top_p", "presence_penalty", "frequency_penalty"},
+		reasoning.ForbiddenRequestFieldsWhileActive,
+	)
+	cache, ok := ResolveCacheUsageContract(deepSeek.CacheUsageProfile)
+	require.True(t, ok)
+	require.Equal(t, CacheUsageWireDeepSeekHitMissV1, cache.WireSchema)
+
+	for _, identity := range [][2]string{
+		{"minimax.m2.7.token-plan", "1.0.0"},
+		{"minimax.m2.5-highspeed.token-plan", "1.0.0"},
+		{"minimax.m3.token-plan", "1.0.0"},
+	} {
+		profile, found := Lookup(identity[0], identity[1])
+		require.True(t, found)
+		require.Contains(t, profile.ProviderCapabilities, "reasoning")
+		require.NotContains(t, profile.Capabilities, "reasoning")
+	}
 }
 
 func TestCatalogEmptyCollectionsRemainJSONArrays(t *testing.T) {

@@ -16,6 +16,7 @@ import (
 func TestVersionedModelExecutionProfilesMigrationIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
+	execMigrationDown(t, ctx, pool, "000082_sealed_model_execution_contracts.down.sql")
 	down, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
 	))
@@ -50,6 +51,7 @@ UPDATE model_registry
    SET execution_profile_id='minimax.m2.7.token-plan',execution_profile_version='1.0.0'
  WHERE id=$1`, modelID)
 	require.NoError(t, err)
+	execMigrationDown(t, ctx, pool, "000082_sealed_model_execution_contracts.down.sql")
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "durable profile selections exist")
 
@@ -81,11 +83,11 @@ UPDATE model_registry
    SET execution_profile_id='unverified.chat',execution_profile_version='1.0.0'
  WHERE id=$1`, modelID)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000082_future_contract')`)
+	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000083_future_contract')`)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "later migrations must be reversed first")
-	_, err = pool.Exec(ctx, `DELETE FROM schema_migrations WHERE version='000082_future_contract'`)
+	_, err = pool.Exec(ctx, `DELETE FROM schema_migrations WHERE version='000083_future_contract'`)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx, string(down))

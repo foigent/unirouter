@@ -109,19 +109,23 @@ type Drift struct {
 }
 
 type releaseSnapshot struct {
-	ID                    int64
-	Ref                   string
-	CandidateVersion      string
-	CandidateHash         string
-	RouteItemsHash        string
-	RouteItemsCount       int
-	RouteItemsSealed      *time.Time
-	Stage                 string
-	Revision              int64
-	PublicModelID         int64
-	ParentStableReleaseID int64
-	CandidateJSON         json.RawMessage
-	Selected              bool
+	ID                      int64
+	Ref                     string
+	CandidateVersion        string
+	CandidateHash           string
+	RouteItemsHash          string
+	RouteItemsCount         int
+	RouteItemsSealed        *time.Time
+	Stage                   string
+	Revision                int64
+	PublicModelID           int64
+	ExecutionProfileID      string
+	ExecutionProfileVersion string
+	PublicContextLimit      int
+	PublicOutputLimit       int
+	ParentStableReleaseID   int64
+	CandidateJSON           json.RawMessage
+	Selected                bool
 }
 
 type slotSnapshot struct {

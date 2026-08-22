@@ -321,8 +321,8 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 	completionTokens := valueOrZero(wire.CompletionTokens)
 	totalTokens := valueOrZero(wire.TotalTokens)
 
-	if cacheContract, ok := modelprofile.ResolveCacheUsageContract(strings.TrimSpace(cacheUsageProfile)); ok &&
-		cacheContract.WireSchema == modelprofile.CacheUsageWireMoonshotCachedTokensV1 {
+	cacheContract, cacheModeled := modelprofile.ResolveCacheUsageContract(strings.TrimSpace(cacheUsageProfile))
+	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireMoonshotCachedTokensV1 {
 		cachedTokens, cacheReported, err := parseOptionalUsageCounter(wire.CachedTokens, "cached_tokens")
 		if err != nil {
 			return Usage{}, false, err
@@ -350,30 +350,36 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 	}
 
 	// DeepSeek's official usage object reports cache hit and miss as a complete
-	// prompt partition. Presence is pointer-based so an authoritative zero-hit
-	// request remains distinguishable from an unreported cache contract.
-	if wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil {
-		if wire.PromptCacheHitTokens == nil || wire.PromptCacheMissTokens == nil {
+	// prompt partition. These counters become billing truth only when the sealed
+	// execution profile names the exact DeepSeek wire schema.
+	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireDeepSeekHitMissV1 {
+		if hasNonDeepSeekCacheCounters(wire) {
+			return Usage{}, true, fmt.Errorf("DeepSeek cache profile requires prompt_cache_hit_tokens and prompt_cache_miss_tokens instead of another cache schema")
+		}
+		cacheReported := wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil
+		if cacheReported && (wire.PromptCacheHitTokens == nil || wire.PromptCacheMissTokens == nil) {
 			return Usage{}, true, fmt.Errorf("DeepSeek prompt-cache usage requires both hit and miss counters")
 		}
-		hit := valueOrZero(wire.PromptCacheHitTokens)
-		miss := valueOrZero(wire.PromptCacheMissTokens)
-		promptTotal := promptTokens
-		if promptTotal == 0 {
-			promptTotal = hit + miss
+		if cacheReported {
+			hit := valueOrZero(wire.PromptCacheHitTokens)
+			miss := valueOrZero(wire.PromptCacheMissTokens)
+			promptTotal := promptTokens
+			if promptTotal == 0 {
+				promptTotal = hit + miss
+			}
+			usage, err := NewCacheAwareUsage(
+				promptTotal,
+				miss,
+				hit,
+				0,
+				completionTokens,
+				totalTokens,
+				source,
+				CacheUsageSchemaDeepSeekV1,
+				CacheUsageStatusHitMissReported,
+			)
+			return usage, true, err
 		}
-		usage, err := NewCacheAwareUsage(
-			promptTotal,
-			miss,
-			hit,
-			0,
-			completionTokens,
-			totalTokens,
-			source,
-			CacheUsageSchemaDeepSeekV1,
-			CacheUsageStatusHitMissReported,
-		)
-		return usage, true, err
 	}
 
 	// OpenAI reports cache reads and, on the current Chat Completions contract,
@@ -452,6 +458,17 @@ func hasNonKimiCacheCounters(wire *openAIUsageWire) bool {
 		return false
 	}
 	if wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil {
+		return true
+	}
+	return wire.PromptDetails != nil &&
+		(wire.PromptDetails.CachedTokens != nil || wire.PromptDetails.CacheWriteTokens != nil)
+}
+
+func hasNonDeepSeekCacheCounters(wire *openAIUsageWire) bool {
+	if wire == nil {
+		return false
+	}
+	if len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens) {
 		return true
 	}
 	return wire.PromptDetails != nil &&

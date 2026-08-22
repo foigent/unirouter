@@ -75,30 +75,34 @@ type DeploymentDraftRequest struct {
 }
 
 type DeploymentRelease struct {
-	ID                    int64               `json:"id"`
-	ReleaseRef            string              `json:"release_ref"`
-	PublicModelID         int64               `json:"public_model_id"`
-	ModelName             string              `json:"model_name"`
-	CandidateVersion      string              `json:"candidate_version"`
-	CandidateHash         string              `json:"candidate_hash"`
-	BaselineHash          string              `json:"baseline_hash"`
-	RouteItemsHash        string              `json:"route_items_hash"`
-	RouteItemsCount       int                 `json:"route_items_count"`
-	RouteItemsSealedAt    *time.Time          `json:"route_items_sealed_at,omitempty"`
-	Candidate             DeploymentCandidate `json:"candidate"`
-	Stage                 string              `json:"stage"`
-	Version               int64               `json:"version"`
-	ParentStableReleaseID *int64              `json:"parent_stable_release_id,omitempty"`
-	CanaryBasisPoints     int                 `json:"canary_basis_points"`
-	Reason                string              `json:"reason"`
-	CreatedBy             int64               `json:"created_by"`
-	ValidatedBy           *int64              `json:"validated_by,omitempty"`
-	ActivatedBy           *int64              `json:"activated_by,omitempty"`
-	CreatedAt             time.Time           `json:"created_at"`
-	ValidatedAt           *time.Time          `json:"validated_at,omitempty"`
-	ActivatedAt           *time.Time          `json:"activated_at,omitempty"`
-	RolledBackAt          *time.Time          `json:"rolled_back_at,omitempty"`
-	UpdatedAt             time.Time           `json:"updated_at"`
+	ID                      int64               `json:"id"`
+	ReleaseRef              string              `json:"release_ref"`
+	PublicModelID           int64               `json:"public_model_id"`
+	ModelName               string              `json:"model_name"`
+	ExecutionProfileID      string              `json:"execution_profile_id"`
+	ExecutionProfileVersion string              `json:"execution_profile_version"`
+	PublicContextLimit      int                 `json:"public_context_limit"`
+	PublicOutputLimit       int                 `json:"public_output_limit"`
+	CandidateVersion        string              `json:"candidate_version"`
+	CandidateHash           string              `json:"candidate_hash"`
+	BaselineHash            string              `json:"baseline_hash"`
+	RouteItemsHash          string              `json:"route_items_hash"`
+	RouteItemsCount         int                 `json:"route_items_count"`
+	RouteItemsSealedAt      *time.Time          `json:"route_items_sealed_at,omitempty"`
+	Candidate               DeploymentCandidate `json:"candidate"`
+	Stage                   string              `json:"stage"`
+	Version                 int64               `json:"version"`
+	ParentStableReleaseID   *int64              `json:"parent_stable_release_id,omitempty"`
+	CanaryBasisPoints       int                 `json:"canary_basis_points"`
+	Reason                  string              `json:"reason"`
+	CreatedBy               int64               `json:"created_by"`
+	ValidatedBy             *int64              `json:"validated_by,omitempty"`
+	ActivatedBy             *int64              `json:"activated_by,omitempty"`
+	CreatedAt               time.Time           `json:"created_at"`
+	ValidatedAt             *time.Time          `json:"validated_at,omitempty"`
+	ActivatedAt             *time.Time          `json:"activated_at,omitempty"`
+	RolledBackAt            *time.Time          `json:"rolled_back_at,omitempty"`
+	UpdatedAt               time.Time           `json:"updated_at"`
 }
 
 // DeploymentLifecycleRequest is the optimistic-concurrency boundary for a

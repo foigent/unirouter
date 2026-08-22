@@ -68,6 +68,8 @@ RETURNING id`, orgID).Scan(&actorID))
 	)
 	require.False(t, initialAuthoring.IdempotencyReplay)
 	require.Equal(t, initialAuthoring.OriginalLocation, initialAuthoringResponse.Header().Get("Location"))
+	require.Empty(t, initialAuthoring.Release.ExecutionProfileID,
+		"versioned v1 authoring receipt must not grow M82 release fields")
 	initialReplay, initialReplayResponse := serveCanonicalDeploymentReleaseAuthoring(
 		t, handler, authorized,
 		canonicalDeploymentReleaseAuthoringRequest{
@@ -87,6 +89,10 @@ RETURNING id`, orgID).Scan(&actorID))
 	initial := initialAuthoring.Release
 	readBefore := serveCanonicalLifecycleRead(t, handler, authorized, initial.ReleaseRef, http.StatusOK)
 	require.Equal(t, initial.ReleaseRef, readBefore.Release.ReleaseRef)
+	require.Equal(t, "unverified.chat", readBefore.Release.ExecutionProfileID)
+	require.Equal(t, "1.0.0", readBefore.Release.ExecutionProfileVersion)
+	require.Positive(t, readBefore.Release.PublicContextLimit)
+	require.Positive(t, readBefore.Release.PublicOutputLimit)
 	require.False(t, readBefore.Slot.Exists)
 	require.True(t, lifecycleActionDescriptor(t, readBefore.Actions, runtimechange.DeploymentLifecycleActivateInitial).StructurallyAvailable)
 

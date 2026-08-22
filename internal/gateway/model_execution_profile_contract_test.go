@@ -52,7 +52,7 @@ func TestKimiK3ReasoningProfileValidatesEffortToolChoiceAndPreservedThinking(t *
 		{
 			name:    "unknown effort",
 			body:    `{"model":"kimi-k3","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"medium"}`,
-			wantErr: "low, high, or max",
+			wantErr: "low, high, max",
 		},
 		{
 			name:    "named tool choice",
@@ -62,7 +62,7 @@ func TestKimiK3ReasoningProfileValidatesEffortToolChoiceAndPreservedThinking(t *
 		{
 			name:    "K2 thinking field",
 			body:    `{"model":"kimi-k3","messages":[{"role":"user","content":"hello"}],"thinking":{"type":"enabled"}}`,
-			wantErr: "K3 accepts reasoning_effort",
+			wantErr: "does not accept thinking",
 		},
 		{
 			name:    "missing preserved reasoning",
@@ -87,6 +87,90 @@ func TestKimiK3ReasoningProfileValidatesEffortToolChoiceAndPreservedThinking(t *
 				t.Fatalf("unexpected evidence: %+v", evidence)
 			}
 		})
+	}
+}
+
+func TestDeepSeekReasoningProfileValidatesBothControlsAndNoOpCombinations(t *testing.T) {
+	plan := executionProfilePlan(t, "deepseek.v4-pro.api", "1.0.0")
+	tests := []struct {
+		name       string
+		body       string
+		wantToggle string
+		wantEffort string
+		wantErr    string
+	}{
+		{
+			name:       "provider defaults remain omitted",
+			body:       `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}]}`,
+			wantToggle: "omitted", wantEffort: "omitted",
+		},
+		{
+			name:       "explicit enabled max",
+			body:       `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"thinking":{"type":"enabled"},"reasoning_effort":"max"}`,
+			wantToggle: "enabled", wantEffort: "max",
+		},
+		{
+			name:       "disabled without effort",
+			body:       `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"thinking":{"type":"disabled"}}`,
+			wantToggle: "disabled", wantEffort: "omitted",
+		},
+		{
+			name:    "unsupported compatibility effort remains fail closed",
+			body:    `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"medium"}`,
+			wantErr: "reasoning_effort must be one of high, max",
+		},
+		{
+			name:    "effort cannot accompany disabled thinking",
+			body:    `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"thinking":{"type":"disabled"},"reasoning_effort":"high"}`,
+			wantErr: "requires active reasoning",
+		},
+		{
+			name:    "ignored sampling controls are rejected",
+			body:    `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"temperature":0.7}`,
+			wantErr: "temperature is ineffective while reasoning is active",
+		},
+		{
+			name:    "thinking mode rejects tool choice",
+			body:    `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"tool_choice":"auto"}`,
+			wantErr: "tool_choice is not supported while reasoning is active",
+		},
+		{
+			name:       "tool history preserves reasoning",
+			body:       `{"model":"deepseek-v4-pro","messages":[{"role":"assistant","content":null,"reasoning_content":"checked","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":"ok"}]}`,
+			wantToggle: "omitted", wantEffort: "omitted",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evidence, err := validateChatExecutionProfileRequest([]byte(test.body), plan)
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("error=%v, want substring %q", err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if evidence.ReasoningToggleRequest != test.wantToggle || evidence.ReasoningEffortRequest != test.wantEffort ||
+				evidence.ReasoningProviderDefault != "thinking=enabled;reasoning_effort=high" {
+				t.Fatalf("unexpected evidence: %+v", evidence)
+			}
+		})
+	}
+}
+
+func TestUnmodeledReasoningControlsFailClosed(t *testing.T) {
+	plan := executionProfilePlan(t, "minimax.m2.7.token-plan", "1.0.0")
+	for _, body := range []string{
+		`{"model":"MiniMax-M2.7","messages":[],"thinking":{"type":"enabled"}}`,
+		`{"model":"MiniMax-M2.7","messages":[],"reasoning_effort":"high"}`,
+		`{"model":"MiniMax-M2.7","messages":[],"reasoning":{"effort":"high"}}`,
+	} {
+		if _, err := validateChatExecutionProfileRequest([]byte(body), plan); err == nil ||
+			!strings.Contains(err.Error(), "reasoning control is not supported") {
+			t.Fatalf("expected unmodeled reasoning rejection, got %v", err)
+		}
 	}
 }
 

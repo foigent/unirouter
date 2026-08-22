@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000081_versioned_model_execution_profiles"
+const LatestSupportedMigration = "000082_sealed_model_execution_contracts"

@@ -426,6 +426,7 @@ func TestImplicitOutputLimitUsesExactOpenAICompatibleWireContract(t *testing.T) 
 	encKey := []byte("0123456789abcdef0123456789abcdef")
 	newPlan := func(mode modelrouting.Mode) modelrouting.Plan {
 		plan := executionTestPlan(t, mode, modeloperation.IDChatCompletions, "https://api.deepseek.example", encKey, nil)
+		setExecutionTestProfile(t, &plan, "deepseek.v4-flash.api", "1.0.0")
 		plan.PublicOutputLimit = 2_048
 		plan.Routes[0].Provider = "deepseek"
 		plan.Routes[0].UpstreamModel = "deepseek-v4-flash"

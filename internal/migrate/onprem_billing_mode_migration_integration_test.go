@@ -187,6 +187,25 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	// Migration 82 pins model execution contracts to canonical releases. Empty
+	// historical rollback fixtures remove that exact extension before exercising
+	// an earlier migration's own down contract.
+	if name != "000082_sealed_model_execution_contracts.down.sql" {
+		var sealedExecutionContractsApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000082_sealed_model_execution_contracts')`).Scan(&sealedExecutionContractsApplied))
+		if sealedExecutionContractsApplied {
+			execMigrationDown(t, ctx, pool, "000082_sealed_model_execution_contracts.down.sql")
+		}
+	}
+	if name == "000082_sealed_model_execution_contracts.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
 	// Migration 81 adds only defaulted execution-profile identity columns.
 	// Historical rollback fixtures remove the empty/default profile extension
 	// before exercising any earlier migration's own down contract.

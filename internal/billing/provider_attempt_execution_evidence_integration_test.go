@@ -250,6 +250,10 @@ UPDATE call_logs
 
 func TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe(t *testing.T) {
 	pool, orgID, model := newReservationFixture(t, 1000, 0)
+	sealedContractDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
+	))
+	require.NoError(t, err)
 	profileDownSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
 	))
@@ -265,6 +269,8 @@ func TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe(t *testing.T) {
 	connectionLicenseDownSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
 	))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(sealedContractDownSQL))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(profileDownSQL))
 	require.NoError(t, err)

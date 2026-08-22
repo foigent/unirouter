@@ -502,6 +502,9 @@ export default function ModelReleaseWorkspace({
       <Descriptions row size="small" data={[
         { key: 'Release', value: <Space><StatusTag status={stageTone(lifecycle.release.stage)}>{lifecycle.release.stage}</StatusTag><Text>version {lifecycle.release.version}</Text></Space> },
         { key: 'Candidate', value: <Text code>{lifecycle.release.candidate_version} · {lifecycle.release.route_items_count} routes</Text> },
+        { key: 'Execution contract', value: lifecycle.release.execution_profile_id
+          ? <Text code>{lifecycle.release.execution_profile_id}@{lifecycle.release.execution_profile_version} · context={lifecycle.release.public_context_limit} · output={lifecycle.release.public_output_limit}</Text>
+          : '当前读取未包含密封执行 Profile' },
         { key: 'Slot', value: lifecycle.slot.exists
           ? <Text code>version {lifecycle.slot.version} · assigned_public_model_id={optionalIdentity(lifecycle.slot.assigned_public_model_id)} · stable={optionalIdentity(lifecycle.slot.stable_release_id)} · canary={optionalIdentity(lifecycle.slot.canary_release_id)}</Text>
           : '尚无 runtime slot' },
