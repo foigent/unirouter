@@ -29,11 +29,18 @@ func TestModelExecutionProfileCatalogAndExactAliasResolution(t *testing.T) {
 			ID                   string   `json:"id"`
 			ProviderCapabilities []string `json:"provider_capabilities"`
 			Capabilities         []string `json:"capabilities"`
+			Aliases              []string `json:"aliases"`
+			EvidenceRefs         []string `json:"evidence_refs"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
 	require.Equal(t, "unirouter.model-execution-profiles.v1", response.ContractVersion)
 	require.NotEmpty(t, response.Data)
+	require.Equal(t, "unverified.chat", response.Data[0].ID)
+	require.NotNil(t, response.Data[0].ProviderCapabilities)
+	require.NotNil(t, response.Data[0].Capabilities)
+	require.NotNil(t, response.Data[0].Aliases)
+	require.NotNil(t, response.Data[0].EvidenceRefs)
 
 	profile, err := resolveModelExecutionProfile(" MiniMax_M2.7 ", "", "")
 	require.NoError(t, err)

@@ -309,6 +309,32 @@ describe('ModelGovernancePage', () => {
     })));
   });
 
+  it('normalizes sparse profile collections before opening an existing model', async () => {
+    mockGetModelExecutionProfiles.mockResolvedValue({
+      data: [{
+        ...EXECUTION_PROFILES.data[0],
+        provider_capabilities: null,
+        capabilities: null,
+        aliases: null,
+        evidence_refs: null,
+      }],
+    });
+    mockGetModelRegistry.mockResolvedValue({
+      data: [{
+        ...REGISTRY.data[0],
+        execution_profile_id: 'unverified.chat',
+        execution_profile_version: '1.0.0',
+      }],
+      total: 1,
+    });
+
+    render(<ModelGovernancePage />);
+    fireEvent.click(await screen.findByRole('button', { name: '编辑模型' }));
+
+    expect(await screen.findByText('自定义 / 未验证模型')).toBeTruthy();
+    expect(screen.getByText('UniRouter 已验证：仅文本基础合同')).toBeTruthy();
+  });
+
   it('loads model set items from the model set table', async () => {
     render(<ModelGovernancePage />);
 

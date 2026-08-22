@@ -220,10 +220,14 @@ func ValidateEffectiveLimits(profile Profile, contextWindow, outputLimit int) er
 }
 
 func clone(profile Profile) Profile {
-	profile.ProviderCapabilities = append([]string(nil), profile.ProviderCapabilities...)
-	profile.Capabilities = append([]string(nil), profile.Capabilities...)
-	profile.Aliases = append([]string(nil), profile.Aliases...)
-	profile.EvidenceRefs = append([]string(nil), profile.EvidenceRefs...)
+	// Keep the public catalog contract stable: empty collections are encoded as
+	// [] rather than null. Besides being easier for typed clients to consume,
+	// this prevents the deliberately sparse unverified profile from changing
+	// the runtime shape of the response.
+	profile.ProviderCapabilities = append([]string{}, profile.ProviderCapabilities...)
+	profile.Capabilities = append([]string{}, profile.Capabilities...)
+	profile.Aliases = append([]string{}, profile.Aliases...)
+	profile.EvidenceRefs = append([]string{}, profile.EvidenceRefs...)
 	return profile
 }
 

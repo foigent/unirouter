@@ -1,6 +1,7 @@
 package modelprofile
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -68,4 +69,17 @@ func TestCatalogReturnsDefensiveCopies(t *testing.T) {
 	again := All()
 	require.NotContains(t, again[0].Aliases, "mutation")
 	require.NotContains(t, again[len(again)-1].ProviderCapabilities, "mutation")
+}
+
+func TestCatalogEmptyCollectionsRemainJSONArrays(t *testing.T) {
+	unverified, ok := Lookup(UnverifiedProfileID, UnverifiedProfileVersion)
+	require.True(t, ok)
+	require.NotNil(t, unverified.ProviderCapabilities)
+	require.NotNil(t, unverified.Capabilities)
+	require.NotNil(t, unverified.Aliases)
+	require.NotNil(t, unverified.EvidenceRefs)
+
+	payload, err := json.Marshal(unverified)
+	require.NoError(t, err)
+	require.NotContains(t, string(payload), ":null")
 }

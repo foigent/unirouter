@@ -138,7 +138,13 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     try {
       const response = await modelExecutionProfileApi.list();
       if (version !== executionProfilesRequestVersion.current) return;
-      const profiles = Array.isArray(response?.data) ? response.data as ModelExecutionProfile[] : [];
+      const profiles = Array.isArray(response?.data) ? response.data.map(profile => ({
+        ...profile,
+        provider_capabilities: Array.isArray(profile.provider_capabilities) ? profile.provider_capabilities : [],
+        capabilities: Array.isArray(profile.capabilities) ? profile.capabilities : [],
+        aliases: Array.isArray(profile.aliases) ? profile.aliases : [],
+        evidence_refs: Array.isArray(profile.evidence_refs) ? profile.evidence_refs : [],
+      })) as ModelExecutionProfile[] : [];
       if (profiles.length === 0) throw new Error('empty execution profile catalog');
       setExecutionProfiles(profiles);
     } catch {
