@@ -362,6 +362,10 @@ VALUES ($1,'openai.chat_completions.v1','enabled','live_probed','independent-opt
 	require.Equal(t, legacyReleaseRef(fixture), legacyAuthoringOption.Baseline.StableReleaseRef)
 	require.NotNil(t, legacyAuthoringOption.StableRelease)
 	require.Equal(t, runtimechange.CandidateVersion, legacyAuthoringOption.StableRelease.CandidateVersion)
+	require.Empty(t, legacyAuthoringOption.StableRelease.ExecutionProfileID)
+	require.Empty(t, legacyAuthoringOption.StableRelease.ExecutionProfileVersion)
+	require.Zero(t, legacyAuthoringOption.StableRelease.PublicContextLimit)
+	require.Zero(t, legacyAuthoringOption.StableRelease.PublicOutputLimit)
 	require.Nil(t, legacyAuthoringOption.Slot.AssignedPublicModelID)
 	var foreignOrgID, foreignPublicModelID int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT org_id FROM users WHERE id=$1`, foreignUserID).Scan(&foreignOrgID))

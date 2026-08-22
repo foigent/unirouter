@@ -522,12 +522,12 @@ SELECT public_model_id,model_name
 
 func scanDeploymentReleaseSummary(row interface{ Scan(...interface{}) error }) (DeploymentReleaseSummary, error) {
 	var result DeploymentReleaseSummary
-	var publicModelID, routeItemsCount sql.NullInt64
-	var routeItemsHash sql.NullString
+	var publicModelID, publicContextLimit, publicOutputLimit, routeItemsCount sql.NullInt64
+	var executionProfileID, executionProfileVersion, routeItemsHash sql.NullString
 	err := row.Scan(
 		&result.ID, &result.ReleaseRef, &publicModelID, &result.ModelName,
-		&result.ExecutionProfileID, &result.ExecutionProfileVersion,
-		&result.PublicContextLimit, &result.PublicOutputLimit,
+		&executionProfileID, &executionProfileVersion,
+		&publicContextLimit, &publicOutputLimit,
 		&result.CandidateVersion, &result.CandidateHash, &routeItemsHash,
 		&routeItemsCount, &result.RouteItemsSealedAt, &result.Stage, &result.Version,
 		&result.ParentStableReleaseID, &result.UpdatedAt,
@@ -542,6 +542,18 @@ func scanDeploymentReleaseSummary(row interface{ Scan(...interface{}) error }) (
 		return DeploymentReleaseSummary{}, fmt.Errorf("%w: deployment release summary public model identity", ErrUnavailable)
 	}
 	result.PublicModelID = publicModelID.Int64
+	if executionProfileID.Valid {
+		result.ExecutionProfileID = executionProfileID.String
+	}
+	if executionProfileVersion.Valid {
+		result.ExecutionProfileVersion = executionProfileVersion.String
+	}
+	if publicContextLimit.Valid {
+		result.PublicContextLimit = int(publicContextLimit.Int64)
+	}
+	if publicOutputLimit.Valid {
+		result.PublicOutputLimit = int(publicOutputLimit.Int64)
+	}
 	if routeItemsHash.Valid {
 		result.RouteItemsHash = routeItemsHash.String
 	}
