@@ -355,6 +355,20 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 			cacheProfile: "cache-usage.deepseek-v4.v1",
 		},
 		{
+			name:   "DeepSeek official redundant cached-token mirror",
+			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80},"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`,
+			prompt: 100, uncached: 20, read: 80,
+			schema: CacheUsageSchemaDeepSeekV1, status: CacheUsageStatusHitMissReported,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+		},
+		{
+			name:   "DeepSeek official zero cached-token mirror",
+			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":0},"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":100}}`,
+			prompt: 100, uncached: 100, read: 0,
+			schema: CacheUsageSchemaDeepSeekV1, status: CacheUsageStatusHitMissReported,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+		},
+		{
 			name:   "unmodeled DeepSeek counters are not billing truth",
 			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`,
 			prompt: 100, uncached: 100, read: 0,
@@ -403,6 +417,12 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 		{
 			name:         "DeepSeek profile rejects OpenAI nested cache wire",
 			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_tokens_details":{"cached_tokens":80}}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
+		},
+		{
+			name:         "DeepSeek profile rejects contradictory cached-token mirror",
+			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_tokens_details":{"cached_tokens":79},"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":0}}`,
 			cacheProfile: "cache-usage.deepseek-v4.v1",
 			wantErr:      true,
 		},
@@ -503,7 +523,8 @@ func TestKimiTopLevelCacheUsagePreservesZeroAndRejectsContradiction(t *testing.T
 		{name: "cache exceeds prompt", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":11}}`, wantErr: true},
 		{name: "negative", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":-1}}`, wantErr: true},
 		{name: "wrong type", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":"1"}}`, wantErr: true},
-		{name: "ambiguous nested", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":5,"prompt_tokens_details":{"cached_tokens":5}}}`, wantErr: true},
+		{name: "matching nested mirror", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":5,"prompt_tokens_details":{"cached_tokens":5}}}`, wantRead: 5},
+		{name: "contradictory nested mirror", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":5,"prompt_tokens_details":{"cached_tokens":4}}}`, wantErr: true},
 		{name: "wrong cache schema", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":5}}}`, wantErr: true},
 	}
 	for _, test := range tests {
