@@ -32,3 +32,22 @@ func TestDecodeUsageJournalMoneyRequiresCanonicalV2Envelope(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeUsageJournalEventTypeRepairsOnlyHistoricalOutputHolds(t *testing.T) {
+	for _, holdReason := range []string{
+		OutputHoldReasonGuardrailWithheld,
+		OutputHoldReasonResponseTooLarge,
+		OutputHoldReasonProviderResponseUnusable,
+		OutputHoldReasonProviderAttemptUnresolved,
+	} {
+		if got := normalizeUsageJournalEventType(outbox.EventBillingUsagePrepared, holdReason); got != "usage_prepared" {
+			t.Fatalf("historical hold %q normalized to %q", holdReason, got)
+		}
+	}
+	if got := normalizeUsageJournalEventType(outbox.EventBillingSettled, OutputHoldReasonGuardrailWithheld); got != OutputHoldReasonGuardrailWithheld {
+		t.Fatalf("terminal event type was rewritten to %q", got)
+	}
+	if got := normalizeUsageJournalEventType(outbox.EventBillingUsagePrepared, "unexpected_reason"); got != "unexpected_reason" {
+		t.Fatalf("unknown journal type was rewritten to %q", got)
+	}
+}

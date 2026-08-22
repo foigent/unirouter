@@ -2437,9 +2437,30 @@ paths:
   /api/v1/model-names:
     get: *operation_get
 
+  /api/v1/model-execution-profiles:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+    description: |
+      Returns the immutable, repository-reviewed execution profile catalog used by
+      model-registry authoring and runtime admission. provider_capabilities are upstream
+      claims; capabilities are the narrower features verified end-to-end by UniRouter.
+      Customer context_length and output_limit remain explicit policy and may only narrow
+      a verified provider maximum. No price record or provider credential is created.
+    get:
+      tags: [Admin]
+      summary: List versioned model execution profiles
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Immutable execution profile catalog.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelExecutionProfileCatalog" }
+        "403": { $ref: "#/components/responses/Error" }
+
   /api/v1/model-registry:
     x-unirouter-rbac:
-      get: [platform_admin, org_admin]
+      get: [platform_admin, org_admin, org_viewer]
       post: [platform_admin, org_admin]
     description: |
       Organization-scoped model registry. Organization administrators always use the
@@ -2694,13 +2715,13 @@ paths:
   /api/v1/provider-cost/reconciliations:
     x-unirouter-rbac:
       post: [platform_admin]
-    description: Apply one bounded collect/refund/subsidy decision to an unresolved provider attempt. The request contains no amount; collect replays only authoritative stored usage and the frozen customer price. Aggregate provider bills cannot create customer debt.
+    description: Apply one bounded collect/refund/subsidy decision to an unresolved provider attempt. The request contains no amount; collect replays only authoritative stored usage and the frozen customer price. In cost_observation mode collect remains unavailable, while refund/subsidy terminalize the hold with an append-only zero-charge observation receipt and no wallet transaction. Aggregate provider bills cannot create customer debt.
     post: *operation_create
 
   /api/v1/provider-cost/pending:
     x-unirouter-rbac:
       get: [platform_admin]
-    description: List at most 100 unresolved provider attempts for one required explicit organization. Returns bounded metadata only and never prompt, response, credential, or full provider URL.
+    description: List at most 100 unresolved provider attempts for one required explicit organization. Each item includes the immutable request billing_mode so operators can distinguish financial collection from zero-charge observation release. Returns bounded metadata only and never prompt, response, credential, or full provider URL.
     get: *operation_list
 
   /api/v1/provider-cogs/offline-contract:
@@ -4431,6 +4452,10 @@ components:
         release_ref: { type: string, pattern: '^rcr_[a-z0-9][a-z0-9._-]{2,63}$' }
         public_model_id: { type: integer, format: int64, minimum: 1 }
         model_name: { type: string }
+        execution_profile_id: { type: string, description: "M82 sealed execution profile. Present for canonical v2 releases and absent for historical v1 compatibility parents." }
+        execution_profile_version: { type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$' }
+        public_context_limit: { type: integer, minimum: 1, description: "Release-pinned customer-visible context upper bound; runtime safety may narrow it." }
+        public_output_limit: { type: integer, minimum: 1, description: "Release-pinned customer-visible output upper bound; runtime safety may narrow it." }
         candidate_version: { type: string, enum: [unirouter.runtime-change-candidate.v1, unirouter.runtime-change-candidate.v2] }
         candidate_hash: { type: string }
         route_items_hash: { type: string }
@@ -4494,7 +4519,7 @@ components:
     ModelDeploymentReleaseAuthoringReceipt:
       type: object
       additionalProperties: false
-      description: Immutable result of the atomic draft-to-validated command. Same-operation commit-ACK recovery keeps idempotency_replay false; only a later operation observing the winner sets it true.
+      description: Immutable result of the atomic draft-to-validated command. Same-operation commit-ACK recovery keeps idempotency_replay false; only a later operation observing the winner sets it true. Its versioned v1 release body intentionally omits the M82 execution pins; refresh the exact release/lifecycle projection to inspect those facts without changing historical replay bytes.
       required: [contract_version, receipt_id, customer_org_id, server_operation_id, original_http_status, original_location, idempotency_replay, baseline, selections, release, created_at, completed_at]
       properties:
         contract_version: { type: string, enum: [unirouter.model-deployment-release-authoring-receipt.v1] }
@@ -4577,6 +4602,10 @@ components:
         release_ref: { type: string, pattern: '^rcr_[a-z0-9][a-z0-9._-]{2,63}$' }
         public_model_id: { type: integer, format: int64, minimum: 1 }
         model_name: { type: string }
+        execution_profile_id: { type: string, description: "M82 sealed execution profile. Present on exact release/lifecycle reads; omitted from the versioned v1 authoring receipt body." }
+        execution_profile_version: { type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$' }
+        public_context_limit: { type: integer, minimum: 1, description: "Release-pinned customer-visible context upper bound; runtime safety may narrow it." }
+        public_output_limit: { type: integer, minimum: 1, description: "Release-pinned customer-visible output upper bound; runtime safety may narrow it." }
         candidate_version: { type: string, enum: [unirouter.runtime-change-candidate.v2] }
         candidate_hash: { type: string }
         baseline_hash: { type: string }
@@ -6297,6 +6326,8 @@ components:
         pricing_model_name: { type: string }
         approved_catalog: { type: boolean }
         migration_recommendation: { type: string }
+        execution_profile_id: { type: string, description: "Immutable catalog profile identity. Omit both profile fields to exact-match a reviewed model alias, otherwise the unverified profile is used." }
+        execution_profile_version: { type: string, description: "Required together with execution_profile_id." }
       additionalProperties: true
     ModelRegistryCreateRequest:
       allOf:
@@ -6305,6 +6336,42 @@ components:
           required: [model_name]
           properties:
             org_id: { type: integer, format: int64, minimum: 1 }
+    ModelExecutionProfile:
+      type: object
+      additionalProperties: false
+      required: [id, version, label, tokenizer_profile_id, tokenizer_profile_version, reasoning_profile, cache_usage_profile, protocol_profile, provider_context_window, provider_max_output, default_context_window, default_output_limit, provider_capabilities, capabilities, aliases, evidence_refs]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        label: { type: string }
+        tokenizer_profile_id: { type: string }
+        tokenizer_profile_version: { type: string }
+        reasoning_profile: { type: string }
+        cache_usage_profile: { type: string }
+        protocol_profile: { type: string }
+        provider_context_window: { type: integer, minimum: 0 }
+        provider_max_output: { type: integer, minimum: 0 }
+        default_context_window: { type: integer, minimum: 0 }
+        default_output_limit: { type: integer, minimum: 0 }
+        provider_capabilities:
+          type: array
+          uniqueItems: true
+          description: Provider-documented capabilities; not execution authority by themselves.
+          items: { type: string }
+        capabilities:
+          type: array
+          uniqueItems: true
+          description: Capabilities verified through UniRouter's current end-to-end execution path.
+          items: { type: string }
+        aliases: { type: array, uniqueItems: true, items: { type: string } }
+        evidence_refs: { type: array, uniqueItems: true, items: { type: string, format: uri } }
+    ModelExecutionProfileCatalog:
+      type: object
+      additionalProperties: false
+      required: [contract_version, data]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-execution-profiles.v1] }
+        data: { type: array, items: { $ref: "#/components/schemas/ModelExecutionProfile" } }
     ModelPriceMutation:
       type: object
       properties:

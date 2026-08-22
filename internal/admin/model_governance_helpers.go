@@ -116,11 +116,12 @@ func scanModelRegistryRowWithAliases(scan rowScanner) (map[string]interface{}, e
 func scanModelRegistryRowInternal(scan rowScanner, withAliases bool) (map[string]interface{}, string, error) {
 	var id, orgID int64
 	var modelName, displayName, providerFamily, lifecycle, capabilityTags, dataResidency, pricingModelName, migrationRecommendation string
+	var executionProfileID, executionProfileVersion string
 	var contextLength, outputLimit int
 	var approved bool
 	var createdAt, updatedAt time.Time
 	var aliases string
-	dest := []any{&id, &orgID, &modelName, &displayName, &providerFamily, &lifecycle, &contextLength, &outputLimit, &capabilityTags, &dataResidency, &pricingModelName, &approved, &migrationRecommendation, &createdAt, &updatedAt}
+	dest := []any{&id, &orgID, &modelName, &displayName, &providerFamily, &lifecycle, &contextLength, &outputLimit, &capabilityTags, &dataResidency, &pricingModelName, &approved, &migrationRecommendation, &executionProfileID, &executionProfileVersion, &createdAt, &updatedAt}
 	if withAliases {
 		dest = append(dest, &aliases)
 	}
@@ -134,7 +135,8 @@ func scanModelRegistryRowInternal(scan rowScanner, withAliases bool) (map[string
 		"capability_tags": splitCSV(capabilityTags), "data_residency": dataResidency,
 		"pricing_model_name": pricingModelName, "approved_catalog": approved,
 		"migration_recommendation": migrationRecommendation,
-		"created_at":               createdAt, "updated_at": updatedAt,
+		"execution_profile_id":     executionProfileID, "execution_profile_version": executionProfileVersion,
+		"created_at": createdAt, "updated_at": updatedAt,
 	}
 	return item, aliases, nil
 }

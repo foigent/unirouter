@@ -5,8 +5,11 @@ import {
   lifecycleOptions,
   statusOptions,
   type ModelAlias,
+  type ModelExecutionProfile,
   type ModelRegistryItem,
   type ModelSet,
+  modelExecutionProfileKey,
+  toList,
 } from '../utils/modelGovernance';
 
 const { Text } = Typography;
@@ -17,6 +20,12 @@ interface ModelGovernanceSheetsProps {
   setRegistryFormApi: (api: any) => void;
   onRegistrySubmit: (values: Record<string, unknown>) => void | Promise<void>;
   closeRegistrySheet: () => void;
+  executionProfiles: ModelExecutionProfile[];
+  executionProfilesLoading: boolean;
+  executionProfilesError: string;
+  selectedExecutionProfileKey: string;
+  onExecutionProfileChange: (key: string) => void;
+  onRegistryModelNameChange: (modelName: string) => void;
   aliasSheet: { mode: 'create' | 'edit'; record?: ModelAlias } | null;
   aliasFormApi: any;
   setAliasFormApi: (api: any) => void;
@@ -36,25 +45,82 @@ interface ModelGovernanceSheetsProps {
 }
 
 export default function ModelGovernanceSheets(props: ModelGovernanceSheetsProps) {
+  const selectedProfile = props.executionProfiles.find(profile => modelExecutionProfileKey(profile) === props.selectedExecutionProfileKey);
+  const registryRecord = props.registrySheet?.record;
+  const registryInitialValues = registryRecord ? {
+    model_name: registryRecord.model_name,
+    display_name: registryRecord.display_name || registryRecord.model_name,
+    provider_family: registryRecord.provider_family || '',
+    lifecycle: registryRecord.lifecycle || 'staging',
+    context_length: registryRecord.context_length || 0,
+    output_limit: registryRecord.output_limit || 0,
+    capability_tags: toList(registryRecord.capability_tags).join(','),
+    data_residency: registryRecord.data_residency || '',
+    pricing_model_name: registryRecord.pricing_model_name || registryRecord.model_name,
+    approved_catalog: String(Boolean(registryRecord.approved_catalog)),
+    migration_recommendation: registryRecord.migration_recommendation || '',
+    execution_profile_key: registryRecord.execution_profile_id && registryRecord.execution_profile_version
+      ? `${registryRecord.execution_profile_id}@${registryRecord.execution_profile_version}`
+      : 'unverified.chat@1.0.0',
+  } : {
+    lifecycle: 'staging',
+    context_length: 0,
+    output_limit: 0,
+    approved_catalog: 'false',
+    execution_profile_key: 'auto',
+  };
+  const profileOptions = [
+    { label: '自动匹配已验证 Profile', value: 'auto' },
+    ...props.executionProfiles.map(profile => ({ label: `${profile.label} · ${profile.id}@${profile.version}`, value: modelExecutionProfileKey(profile) })),
+  ];
   return (
     <>
       <SideSheet title={props.registrySheet?.mode === 'edit' ? '编辑模型' : '新增模型'} visible={!!props.registrySheet} onCancel={props.closeRegistrySheet} width={560}>
+        {props.registrySheet && <>
         <Banner
           type="warning"
           closeIcon={null}
-          description="UniRouter 不会根据模型名称自动猜测文本、多模态或其他能力。这里保存的是人工声明，不是已验证事实；请依据供应商官方能力说明或真实请求测试证据填写，未验证能力不要加入开发者目录。"
+          description="已验证模型可以绑定版本冻结的执行 Profile；自动匹配只接受 Profile 中的精确别名。未命中的模型使用字节级保守估算，不会按名称猜测 tokenizer、推理、缓存或多模态能力。"
           style={{ marginBottom: 16 }}
         />
-        <Form getFormApi={props.setRegistryFormApi} onSubmit={props.onRegistrySubmit}>
-          <Form.Input field="model_name" label="模型名称" placeholder="gpt-4o" rules={[{ required: true, message: '请输入模型名称' }]} />
+        <Form
+          key={`registry-${props.registrySheet?.mode || 'closed'}-${registryRecord?.id || 'new'}`}
+          getFormApi={props.setRegistryFormApi}
+          initValues={registryInitialValues}
+          onSubmit={props.onRegistrySubmit}
+        >
+          <Form.Input field="model_name" label="模型名称" placeholder="gpt-4o" onChange={(value) => props.onRegistryModelNameChange(String(value || ''))} rules={[{ required: true, message: '请输入模型名称' }]} />
           <Form.Input field="display_name" label="显示名称" placeholder="Company Chat" />
           <Form.Input field="provider_family" label="供应商族" placeholder="openai / anthropic / gemini" />
           <Form.Select field="lifecycle" label={<span id="model-lifecycle-label">模型生命周期</span>} aria-labelledby="model-lifecycle-label" optionList={lifecycleOptions} rules={[{ required: true, message: '请选择模型生命周期' }]} />
+          <Form.Select
+            field="execution_profile_key"
+            label={<span id="model-execution-profile-label">版本化执行 Profile</span>}
+            aria-labelledby="model-execution-profile-label"
+            optionList={profileOptions}
+            loading={props.executionProfilesLoading}
+            disabled={props.executionProfilesLoading || !!props.executionProfilesError}
+            onChange={(value) => props.onExecutionProfileChange(String(value || 'auto'))}
+            rules={[{ required: true, message: '请选择执行 Profile' }]}
+            extraText="Profile 冻结 tokenizer、推理、缓存字段与协议合同；目录中的上下文/输出值可以向下调整，但不能超过供应商上限。"
+          />
+          {props.executionProfilesError && <Banner type="danger" closeIcon={null} description={props.executionProfilesError} style={{ marginBottom: 12 }} />}
+          {selectedProfile && <div className="ur-modelgov-profile-facts">
+            <Text strong>{selectedProfile.label}</Text>
+            <Text type="tertiary" size="small">Tokenizer：{selectedProfile.tokenizer_profile_id}@{selectedProfile.tokenizer_profile_version}</Text>
+            <Text type="tertiary" size="small">推理：{selectedProfile.reasoning_profile} · 缓存：{selectedProfile.cache_usage_profile}</Text>
+            <Text type="tertiary" size="small">协议：{selectedProfile.protocol_profile}</Text>
+            <Text type="tertiary" size="small">供应商上限：context {selectedProfile.provider_context_window || '待验证'} · output {selectedProfile.provider_max_output || '待验证'}；默认采用 {selectedProfile.default_context_window || '未知'} / {selectedProfile.default_output_limit || '未知'}</Text>
+            <Text type="tertiary" size="small">UniRouter 已验证：{selectedProfile.capabilities.join('、') || '仅文本基础合同'}</Text>
+            {(selectedProfile.provider_capabilities || []).some(capability => !selectedProfile.capabilities.includes(capability)) && <Text type="warning" size="small">
+              供应商另有声明但网关尚未放行：{(selectedProfile.provider_capabilities || []).filter(capability => !selectedProfile.capabilities.includes(capability)).join('、')}。这些能力不会自动写入模型目录。
+            </Text>}
+          </div>}
           <div className="ur-modelgov-form-grid">
             <ExactTokenCountInput
               field="context_length"
-              initialValue={props.registrySheet?.record?.context_length ?? 0}
-              resetKey={`${props.registrySheet?.mode || 'closed'}-${props.registrySheet?.record?.id || 'new'}`}
+              initialValue={selectedProfile?.default_context_window ?? props.registrySheet?.record?.context_length ?? 0}
+              resetKey={`${props.registrySheet?.mode || 'closed'}-${props.registrySheet?.record?.id || 'new'}-${props.selectedExecutionProfileKey}`}
               style={{ width: '100%' }}
             />
             <Form.InputNumber field="output_limit" label="单次输出上限（Token，可选）" min={0} style={{ width: '100%' }} extraText="留空或 0 表示未知；用于目录说明，不会替代供应商返回的实际限制。" />
@@ -71,9 +137,10 @@ export default function ModelGovernanceSheets(props: ModelGovernanceSheetsProps)
           <Form.TextArea field="migration_recommendation" label="迁移建议" placeholder="例如：请迁移至 gpt-4.1-mini" rows={3} />
           <div className="ur-form-actions">
             <Button onClick={props.closeRegistrySheet}>取消</Button>
-            <Button type="primary" onClick={() => props.registryFormApi?.submitForm()}>保存</Button>
+            <Button type="primary" disabled={props.executionProfilesLoading || !!props.executionProfilesError || props.executionProfiles.length === 0} onClick={() => props.registryFormApi?.submitForm()}>保存</Button>
           </div>
         </Form>
+        </>}
       </SideSheet>
 
       <SideSheet title={props.aliasSheet?.mode === 'edit' ? '编辑别名' : '新增别名'} visible={!!props.aliasSheet} onCancel={props.closeAliasSheet} width={520}>

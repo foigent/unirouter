@@ -32,6 +32,8 @@ func TestRequiredCapabilitiesForChat(t *testing.T) {
 		{name: "vision audio and text", body: `{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":"x"},{"type":"image_url","image_url":{"url":"x"}},{"type":"input_audio","input_audio":{"data":"x","format":"wav"}}]}]}`, want: []string{"audio", "vision"}},
 		{name: "audio output modality", body: `{"model":"m","messages":[],"modalities":["text","audio"],"audio":{"voice":"alloy","format":"wav"}}`, want: []string{"audio"}},
 		{name: "reasoning and stream", body: `{"model":"m","messages":[],"reasoning_effort":"high","stream":true,"stream_options":{"include_usage":true}}`, want: []string{"reasoning", "streaming"}},
+		{name: "Kimi thinking toggle", body: `{"model":"m","messages":[],"thinking":{"type":"enabled"}}`, want: []string{"reasoning"}},
+		{name: "prompt cache key", body: `{"model":"m","messages":[],"prompt_cache_key":"session-1"}`, want: []string{"prompt_cache"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

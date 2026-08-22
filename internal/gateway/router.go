@@ -64,22 +64,26 @@ func (r *Router) Policy() routingpolicy.Config {
 
 // RouteResult contains the selected channel, key, and mapped model name.
 type RouteResult struct {
-	Channel              models.Channel
-	ChannelKey           models.ChannelKey
-	MappedModel          string
-	RoutingPolicyVersion string
-	SnapshotVersion      string
-	SnapshotSource       string
-	SnapshotDegraded     bool
-	CandidateCount       int
-	ExcludedCount        int
-	ExclusionReasons     string
-	SelectionReason      string
-	RequiresProbe        bool
-	ProbeToken           string
-	RuntimeReleaseRef    string
-	RuntimeStage         string
-	RuntimeAssignmentID  string
+	Channel                 models.Channel
+	ChannelKey              models.ChannelKey
+	MappedModel             string
+	RoutingPolicyVersion    string
+	SnapshotVersion         string
+	SnapshotSource          string
+	SnapshotDegraded        bool
+	CandidateCount          int
+	ExcludedCount           int
+	ExclusionReasons        string
+	SelectionReason         string
+	RequiresProbe           bool
+	ProbeToken              string
+	RuntimeReleaseRef       string
+	RuntimeStage            string
+	RuntimeAssignmentID     string
+	ExecutionProfileID      string
+	ExecutionProfileVersion string
+	ReasoningProfile        string
+	CacheUsageProfile       string
 }
 
 // MarkChannelSuccess records a successful request for a channel.

@@ -187,6 +187,59 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	// Migration 82 pins model execution contracts to canonical releases. Empty
+	// historical rollback fixtures remove that exact extension before exercising
+	// an earlier migration's own down contract.
+	if name != "000082_sealed_model_execution_contracts.down.sql" {
+		var sealedExecutionContractsApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000082_sealed_model_execution_contracts')`).Scan(&sealedExecutionContractsApplied))
+		if sealedExecutionContractsApplied {
+			execMigrationDown(t, ctx, pool, "000082_sealed_model_execution_contracts.down.sql")
+		}
+	}
+	if name == "000082_sealed_model_execution_contracts.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
+	// Migration 81 adds only defaulted execution-profile identity columns.
+	// Historical rollback fixtures remove the empty/default profile extension
+	// before exercising any earlier migration's own down contract.
+	if name == "000081_versioned_model_execution_profiles.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
+	var modelExecutionProfilesApplied bool
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000081_versioned_model_execution_profiles')`).Scan(&modelExecutionProfilesApplied))
+	if modelExecutionProfilesApplied {
+		execMigrationDown(t, ctx, pool, "000081_versioned_model_execution_profiles.down.sql")
+	}
+	// Migration 80 extends the existing provider-cost reconciliation evidence
+	// with an observation receipt terminal. Older rollback fixtures remove this
+	// empty extension before exercising their own historical down contracts.
+	if name == "000080_observation_provider_cost_reconciliation.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
+	var observationReconciliationApplied bool
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000080_observation_provider_cost_reconciliation')`).Scan(&observationReconciliationApplied))
+	if observationReconciliationApplied {
+		execMigrationDown(t, ctx, pool, "000080_observation_provider_cost_reconciliation.down.sql")
+	}
 	// Migration 79 changes only the active_channels License count authority.
 	// Ordered rollback helpers restore its guarded M78 counter contract before
 	// exercising any older down migration; M79's own tests execute it directly.

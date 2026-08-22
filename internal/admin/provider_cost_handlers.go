@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -33,6 +32,7 @@ type pendingProviderCost struct {
 	Channel              string    `json:"channel"`
 	State                string    `json:"state"`
 	OutcomeCertainty     string    `json:"outcome_certainty"`
+	BillingMode          string    `json:"billing_mode"`
 	CalculatedCostMicros *string   `json:"calculated_cost_micros,omitempty"`
 	ChargedCostMicros    *string   `json:"charged_cost_micros,omitempty"`
 	Currency             string    `json:"currency"`
@@ -56,15 +56,19 @@ func (h *Handler) ListPendingProviderCosts(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	rows, err := h.db.Query(r.Context(),
-		`SELECT org_id, request_id, attempt_id, api_key_id, provider, channel_name,
-		        state, outcome_certainty, calculated_cost_micros, charged_cost_micros,
-		        upstream_request_id, started_at, updated_at
-		 FROM billing_provider_attempts
-		 WHERE org_id=$1 AND state IN (
+		`SELECT attempt.org_id, attempt.request_id, attempt.attempt_id, attempt.api_key_id,
+		        attempt.provider, attempt.channel_name, attempt.state, attempt.outcome_certainty,
+		        reservation.billing_mode, attempt.calculated_cost_micros,
+		        attempt.charged_cost_micros, attempt.upstream_request_id,
+		        attempt.started_at, attempt.updated_at
+		 FROM billing_provider_attempts attempt
+		 JOIN freeze_idempotency reservation
+		   ON reservation.org_id=attempt.org_id AND reservation.request_id=attempt.request_id
+		 WHERE attempt.org_id=$1 AND attempt.state IN (
 		   'dispatch_started','response_accepted','outcome_unknown','response_unusable','funding_pending',
 		   'delivery_pending','delivery_failed','output_withheld'
 		 )
-		 ORDER BY updated_at, request_id, attempt_id LIMIT 100`, orgID)
+		 ORDER BY attempt.updated_at, attempt.request_id, attempt.attempt_id LIMIT 100`, orgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Pending provider costs unavailable"})
 		return
@@ -77,7 +81,7 @@ func (h *Handler) ListPendingProviderCosts(w http.ResponseWriter, r *http.Reques
 		var upstreamRequestID sql.NullString
 		if err := rows.Scan(&item.OrgID, &item.RequestID, &item.AttemptID, &item.APIKeyID,
 			&item.Provider, &item.Channel, &item.State, &item.OutcomeCertainty,
-			&calculatedCost, &chargedCost, &upstreamRequestID,
+			&item.BillingMode, &calculatedCost, &chargedCost, &upstreamRequestID,
 			&item.StartedAt, &item.UpdatedAt); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Pending provider costs unavailable"})
 			return
@@ -148,12 +152,15 @@ func (h *Handler) ReconcileProviderCost(w http.ResponseWriter, r *http.Request) 
 	}
 	h.recordAuditForOrgProjectFromRequest(r, result.OrgID, 0,
 		"provider_cost."+strings.TrimSpace(result.Action), "provider_cost_reconciliation",
-		fmt.Sprintf("%s/%s", result.RequestID, result.AttemptID), map[string]interface{}{
+		result.RequestID, map[string]interface{}{
 			"action": result.Action, "api_key_id": result.APIKeyID,
-			"terminal_transaction_id": result.TerminalTransactionID,
-			"customer_charged_micros": result.CustomerChargedMicros,
-			"customer_refund_micros":  result.CustomerRefundMicros,
-			"currency":                result.Currency, "amount_scale": result.AmountScale,
+			"request_id": result.RequestID, "attempt_id": result.AttemptID,
+			"terminal_transaction_id":         result.TerminalTransactionID,
+			"terminal_observation_receipt_id": result.TerminalObservationReceiptID,
+			"billing_mode":                    result.BillingMode,
+			"customer_charged_micros":         result.CustomerChargedMicros,
+			"customer_refund_micros":          result.CustomerRefundMicros,
+			"currency":                        result.Currency, "amount_scale": result.AmountScale,
 			"evidence_ref": mutation.EvidenceRef,
 		})
 	writeJSON(w, http.StatusOK, result)

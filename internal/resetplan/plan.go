@@ -120,6 +120,7 @@ var (
 		{Table: "access_operations", Name: "access_operations_append_only"},
 		{Table: "billing_provider_attempts", Name: "billing_provider_attempts_micro_ledger_evidence"},
 		{Table: "billing_observation_receipts", Name: "billing_observation_receipt_append_only"},
+		{Table: "provider_cost_reconciliations", Name: "provider_cost_reconciliation_append_only"},
 		{Table: "billing_reservation_extensions", Name: "billing_reservation_extension_append_only"},
 		{Table: "billing_reservation_extensions", Name: "billing_reservation_extensions_micro_ledger_evidence"},
 		{Table: "billing_reservation_grant_allocations", Name: "billing_reservation_grants_micro_ledger_evidence"},

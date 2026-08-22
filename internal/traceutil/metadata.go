@@ -107,6 +107,14 @@ var metadataAllowlist = map[string]bool{
 	"guardrail_decision":                true,
 	"guardrail_transformed":             true,
 	"guardrail_degraded":                true,
+	"execution_profile_id":              true,
+	"execution_profile_version":         true,
+	"reasoning_profile":                 true,
+	"reasoning_mode":                    true,
+	"reasoning_request":                 true,
+	"reasoning_provider_default":        true,
+	"reasoning_default_authority":       true,
+	"cache_usage_profile":               true,
 }
 
 func SanitizeMetadata(input map[string]interface{}) map[string]interface{} {

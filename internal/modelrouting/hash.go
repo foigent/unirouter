@@ -122,23 +122,25 @@ func snapshotDigest(value snapshot) (string, error) {
 		Manifest                                                   *manifestItem
 	}
 	type safeSnapshot struct {
-		Mode                 Mode
-		DBNow                time.Time
-		CustomerOrgID        int64
-		PublicModelID        int64
-		PublicModel          string
-		Lifecycle            string
-		Operation            string
-		RequiredCapabilities []string
-		PublicContextLimit   int
-		PublicOutputLimit    int
-		Slot                 slotSnapshot
-		Manifest             []manifestItem
-		LegacyRelease        releaseSnapshot
-		LegacyManifest       []manifestItem
-		LegacyOverrides      []legacyOverride
-		Legacy               []safeLegacy
-		Canonical            []safeCanonical
+		Mode                    Mode
+		DBNow                   time.Time
+		CustomerOrgID           int64
+		PublicModelID           int64
+		PublicModel             string
+		Lifecycle               string
+		Operation               string
+		RequiredCapabilities    []string
+		PublicContextLimit      int
+		PublicOutputLimit       int
+		ExecutionProfileID      string
+		ExecutionProfileVersion string
+		Slot                    slotSnapshot
+		Manifest                []manifestItem
+		LegacyRelease           releaseSnapshot
+		LegacyManifest          []manifestItem
+		LegacyOverrides         []legacyOverride
+		Legacy                  []safeLegacy
+		Canonical               []safeCanonical
 	}
 
 	safe := safeSnapshot{
@@ -147,6 +149,7 @@ func snapshotDigest(value snapshot) (string, error) {
 		Lifecycle: value.PublicModelLifecycle, Operation: value.RequestedOperationID,
 		RequiredCapabilities: slices.Clone(value.RequiredCapabilities), Slot: value.Slot,
 		PublicContextLimit: value.PublicContextLimit, PublicOutputLimit: value.PublicOutputLimit,
+		ExecutionProfileID: value.ExecutionProfileID, ExecutionProfileVersion: value.ExecutionProfileVersion,
 		Manifest: slices.Clone(value.Manifest), LegacyOverrides: slices.Clone(value.LegacyOverrides),
 		LegacyRelease: value.LegacyRelease, LegacyManifest: slices.Clone(value.LegacyManifest),
 	}

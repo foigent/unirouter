@@ -362,6 +362,10 @@ VALUES ($1,'openai.chat_completions.v1','enabled','live_probed','independent-opt
 	require.Equal(t, legacyReleaseRef(fixture), legacyAuthoringOption.Baseline.StableReleaseRef)
 	require.NotNil(t, legacyAuthoringOption.StableRelease)
 	require.Equal(t, runtimechange.CandidateVersion, legacyAuthoringOption.StableRelease.CandidateVersion)
+	require.Empty(t, legacyAuthoringOption.StableRelease.ExecutionProfileID)
+	require.Empty(t, legacyAuthoringOption.StableRelease.ExecutionProfileVersion)
+	require.Zero(t, legacyAuthoringOption.StableRelease.PublicContextLimit)
+	require.Zero(t, legacyAuthoringOption.StableRelease.PublicOutputLimit)
 	require.Nil(t, legacyAuthoringOption.Slot.AssignedPublicModelID)
 	var foreignOrgID, foreignPublicModelID int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT org_id FROM users WHERE id=$1`, foreignUserID).Scan(&foreignOrgID))
@@ -681,10 +685,28 @@ SELECT
 func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := t.Context()
+	sealedContractDown, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(sealedContractDown))
+	require.NoError(t, err)
+	profileDown, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(profileDown))
+	require.NoError(t, err)
+	observationDown, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(observationDown))
+	require.NoError(t, err)
 	// These legacy-bridge fixtures intentionally use distinct display names for
 	// their two projections. Normalize only the legacy source immediately before
 	// the M79 down proof; production rollback never performs reconciliation.
-	_, err := pool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 UPDATE channels legacy
 	SET status='active',
 		name=connection.name,

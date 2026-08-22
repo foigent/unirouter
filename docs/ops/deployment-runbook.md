@@ -1,8 +1,10 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.20
-> **日期**：2026-08-17
+> **版本**：v1.22
+> **日期**：2026-08-22
 > **用途**：运维人员部署和维护 UniRouter 的操作手册
+> **变更记录**：v1.22 增加 `000082` canonical Release 执行 Profile/上下文上限密封、非滚动升级与 guarded down 边界。
+> **变更记录**：v1.21 增加 `000081` 版本化模型执行 Profile、历史模型不推断、guarded down 与非滚动升级边界。
 > **变更记录**：v1.20 增加 release worktree 的 N/N-1/N-2 只读报告、非规范/dirty/attached fail-closed 分类和显式 apply 边界，并补充精确版本构建的 BuildKit Go 缓存约束；v1.19 增加 ECS 不可变标签构建复用、构建前磁盘 fail-closed、可注入 Go module proxy、全服务 Docker 日志轮转、N-1/N-2 schema 兼容门禁和需显式授权的按需镜像/BuildKit 清理；v1.18 增加 development/test Target 单次构建复用、两代已验证回滚保留和只读镜像生命周期报告；v1.17 增加默认关闭的 Exact Response Cache 三段式密钥注入、客户 preflight all-or-none 校验、冷失效轮换边界和迁移 `000056` 运维约束；v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
 
 ---
@@ -941,15 +943,15 @@ M79 只切换商业 License v1 的 `active_channels` 计数权威：字段名和
 legacy `channels.status='active'`。升级前必须 drain 所有仍能写 legacy/verify model
 state 的旧进程；migration 本身不会安装 legacy DML seal，也不能证明 fleet 已退出。
 这是非滚动 schema 切换。M79 binary 无论执行 migration 还是设置
-`SKIP_MIGRATION=true`，都会在 customer baseline 与 HTTP bind 前要求
-`MAX(schema_migrations.version)` 精确等于
-`000079_canonical_connection_license_authority`；M78、future 或空 ledger 全部拒绝。
+`SKIP_MIGRATION=true`，都会在 customer baseline 与 HTTP bind 前要求完整、有序
+database migration ledger 与 M79 binary artifact ledger 完全一致；missing、extra、
+future、duplicate、reordered 或空 ledger 全部拒绝。
 因此不能让 M78 stable 与 M79 canary 共享 M78 数据库并声称 ready。顺序固定为：
 
 1. 阻断入口，drain 并停止所有 M78 stable、canary 和其他 backend 副本；
 2. 只允许一个批准的 M79 migration owner 在 `SKIP_MIGRATION=false` 下升级数据库；
-3. 只读确认 ledger 最大值精确为 M79，再启动 M79 stable；
-4. 仅在同一数据库已精确为 M79 后，才可用 `SKIP_MIGRATION=true` 启动 M79
+3. 只读确认完整 ledger 与 M79 artifact 完全一致，再启动 M79 stable；
+4. 仅在同一数据库已有 exact M79 ledger 后，才可用 `SKIP_MIGRATION=true` 启动 M79
    canary/secondary，并分别读取 readiness。
 
 在维护窗口内先只读对比：
@@ -1018,6 +1020,110 @@ SELECT COUNT(*) AS enabled_without_exact_active_legacy_projection
 M79 ledger；canonical connections、deployments、credential bindings、release 和
 execution evidence 均保留。若旧 binary 无法理解这些 retained schema/data，停止并
 roll forward，不得删除 canonical 证据来制造可启动假象。
+
+### 3.17 `000080` observation provider-cost reconciliation 与 guarded down
+
+M80 只修复 `cost_observation` 请求已形成 provider-cost hold 后无法通过正式接口终结
+的死路。`collect` 在 observation 模式仍然拒绝；平台管理员只能在现有
+`refund`/`subsidy` 权威下释放 hold。成功操作会：
+
+- 保留 provider reported usage、冻结价格与 calculated cost；
+- 将 reservation 终结为 `cancelled`，provider attempt 终结为 `reconciled`；
+- 写一条 append-only `billing_observation_receipts` 零收费收据；
+- 在 `provider_cost_reconciliations` 写 requested/completed 两阶段证据；
+- 不创建 `transactions`，不修改 wallet balance/frozen/spent。
+
+M80 将 completed reconciliation 的终态权威冻结为 XOR：预付费模式引用
+`terminal_transaction_id`，observation 模式引用
+`terminal_observation_receipt_id`。deferred database guard 会复核 requested
+action/actor/reason/evidence、reservation、attempt 和 terminal receipt 精确一致；禁止
+手工补零金额 transaction、直接 UPDATE evidence 或绕过 pending-key admission。
+
+M79→M80 仍按 schema-ceiling 非滚动顺序执行：停止旧 fleet，由唯一 migration owner
+升级，确认数据库完整有序 ledger 与 M80 artifact ledger 完全一致，再启动 M80
+stable/canary。不能只看 `MAX(version)`。M80 down 在 schema mutation 前拒绝任一 later
+migration 或任一 observation reconciliation terminal evidence；安全 down 只恢复 M79
+terminal check，不删除既有 prepaid reconciliation。可先只读检查：
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT COUNT(*) AS observation_reconciliation_terminals
+  FROM provider_cost_reconciliations
+ WHERE terminal_observation_receipt_id IS NOT NULL;
+```
+
+第二项非零时必须 roll forward，不得删除 append-only receipt/reconciliation 来迁就旧
+binary。
+
+### 3.18 `000081` versioned model execution profiles 与 guarded down
+
+M81 为 `model_registry` 增加精确的 `execution_profile_id` 与
+`execution_profile_version`。升级只给历史记录写入
+`unverified.chat@1.0.0`，不会按 `model_name` 猜测 MiniMax、Kimi、DeepSeek、
+Tokenizer、上下文上限或供应商能力。只有操作员在控制台或 API 选择仓库审核过的
+Profile，模型才获得对应的 Tokenizer、reasoning、cache-usage、protocol 身份与供应商
+最大值；客户 `context_length`/`output_limit` 仍是可修改的生效策略，但不能超过该
+Profile。
+
+M80→M81 是 schema-ceiling 变化，必须停止旧 fleet，由唯一 migration owner 升级并
+确认完整 ledger 精确等于 M81 artifact，再启动 M81 stable/canary。不能让 M80 stable
+和 M81 canary 共用数据库。升级后先检查历史行仍为 unverified，再由人工逐模型选择
+已核验 Profile：
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT id, model_name, context_length, output_limit,
+       execution_profile_id, execution_profile_version
+  FROM model_registry
+ ORDER BY id;
+```
+
+M81 down 在任何 schema mutation 前拒绝 later migration，也拒绝任一非
+`unverified.chat@1.0.0` 的持久 Profile 选择。若需要回滚 binary，优先 roll forward；
+不得删除或伪造模型 Profile 证据来迁就旧 binary。只有确认所有模型仍是 unverified、
+且没有 later migration 时，guarded down 才会移除两列并恢复 M80 schema。
+
+Profile 本身也按版本演进，不能原地改写已选择的旧身份。
+`kimi.k3.api@1.1.0` 使用 `reasoning.kimi-k3-effort.v1`、
+`cache-usage.kimi-platform.v1` 和 `protocol.kimi-openai-chat.k3.v1`：缺省
+`reasoning_effort` 时保留字段缺失，让 Kimi 使用供应商默认 `max`；显式值只允许
+`low/high/max`。只有该 cache-usage 合同声明的顶层 `usage.cached_tokens` 才会成为
+缓存读取计费证据，通用 OpenAI-compatible 路由不能凭同名未知字段获得折扣。K3 的
+Partial Mode、system-message 动态工具和内置联网搜索虽然记录为供应商能力，但当前
+不在 UniRouter verified capabilities 中；操作员不得把目录展示误判为可执行支持。
+
+### 3.19 `000082` sealed model execution contracts 与 guarded down
+
+M82 不新增第二套发布生命周期。它在现有 canonical v2
+`runtime_change_releases` 上密封 `execution_profile_id/version` 以及生效的
+`public_context_limit`/`public_output_limit`。升级时，既有 v2 Release 以迁移边界
+当时的 `model_registry` 值完成一次性 backfill；此后新 Release 必须与锁内模型行
+精确一致，四项均不可修改。Canonical Planner 只读当前 stable/canary Release 的
+密封值并把它们纳入 snapshot hash。修改模型目录只影响下一次 Author，只有新
+Release 经过 canary/promotion 后才改变线上行为；运行时安全检查仍可缩小上限，不能
+扩大。价格版本仍由 Billing Freeze 独立固定，不进入 Release Profile。
+
+M81→M82 是 schema-ceiling 变化，必须停止 M81 fleet，由唯一 migration owner
+升级并确认完整 ledger 精确等于 M82 artifact，再启动 M82 stable/canary。不得让
+M81 stable 与 M82 canary 共用数据库。升级后只读检查：
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT release_ref,stage,execution_profile_id,execution_profile_version,
+       public_context_limit,public_output_limit
+  FROM runtime_change_releases
+ WHERE candidate_version='unirouter.runtime-change-candidate.v2'
+ ORDER BY id;
+```
+
+所有 v2 行必须有合法 Profile 和正数上限，且 output 不大于 context。要更换 Profile
+或上限，必须在发布工作台 Author 新 Release；禁止直接 UPDATE release pins。
+
+M82 down 在 schema mutation 前拒绝 later migration；若任一 durable v2 Release 的
+密封值与当前 `model_registry` 不完全相同，也会拒绝，因为 M81 会重新回到可变目录
+lookup。出现该拒绝时应 roll forward，不得删除历史 Release、receipt/event 或改写
+pins 来迁就旧 binary。只有所有 durable pins 在 M81 语义下仍完全等价时，guarded
+down 才能删除四列并恢复 M81 schema。
 
 ---
 
@@ -1442,8 +1548,9 @@ staging 或已授权的非生产测试目标。不得把本章命令当作客户
 stable 与 canary 必须读取同一个
 `UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET`；Compose/CI 会检查两者配置一致。
 本章的流量 canary 只允许两个 binary 的 exact schema ceiling 相同且共享数据库已经
-位于该 ceiling 时使用。任何改变 ceiling 的发布（包括 M78→M79）必须先按 3.16
-完成非滚动 schema 切换，不能保留旧 stable 再启动新 canary。
+位于该 ceiling 时使用。任何改变 ceiling 的发布（包括当前 M81→M82）必须先按
+对应 migration 小节（当前为 3.19）完成非滚动 schema 切换，不能保留旧 stable 再
+启动新 canary。
 
 ### 9.1 前置条件：Nginx 配置
 
@@ -1502,7 +1609,7 @@ backend 处理大部分请求；两者必须声明相同的 exact schema ceiling
 - canary 实例可设置 `SKIP_MIGRATION=true`，但这只跳过 migration 执行，不跳过
   exact runtime-schema gate；共享数据库必须已经由唯一 migration owner 升到两个
   binary 共同声明的 ceiling
-- schema ceiling 不同的 stable/canary 禁止共存；M78→M79 使用 3.16 的非滚动流程
+- schema ceiling 不同的 stable/canary 禁止共存；当前 M81→M82 使用 3.19 的非滚动流程
 - 健康检查和 Prometheus 指标 **只走 stable**
 
 ### 9.3 启动 Canary
@@ -1617,7 +1724,7 @@ done | sort | uniq -c
 
 只有 stable/canary binary 声明相同 schema ceiling、且数据库已经精确位于该 ceiling
 时，canary 验证通过后才可按本节升级 stable。若 candidate 提高 ceiling（包括
-M78→M79），不要执行本节命令；按 3.16 停止整个旧 fleet、由唯一 migration owner
+M81→M82），不要执行本节命令；按 3.19 停止整个旧 fleet、由唯一 migration owner
 升级，再启动新 stable/canary。
 
 ```bash

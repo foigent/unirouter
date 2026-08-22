@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
@@ -222,12 +223,17 @@ func (m *Manager) authorSealedDeploymentReleaseInTx(
 	); err != nil {
 		return DeploymentRelease{}, err
 	}
-	var modelName, lifecycle string
+	var modelName, lifecycle, executionProfileID, executionProfileVersion string
+	var publicContextLimit, publicOutputLimit int
 	if err := tx.QueryRow(ctx, `
-SELECT model_name,lifecycle
+SELECT model_name,lifecycle,context_length,output_limit,
+	   execution_profile_id,execution_profile_version
   FROM model_registry
  WHERE id=$1 AND org_id=$2
- FOR SHARE`, command.Mutation.PublicModelID, command.CustomerOrgID).Scan(&modelName, &lifecycle); err != nil {
+ FOR SHARE`, command.Mutation.PublicModelID, command.CustomerOrgID).Scan(
+		&modelName, &lifecycle, &publicContextLimit, &publicOutputLimit,
+		&executionProfileID, &executionProfileVersion,
+	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DeploymentRelease{}, fmt.Errorf("%w: public model ownership", ErrConflict)
 		}
@@ -235,6 +241,13 @@ SELECT model_name,lifecycle
 	}
 	if lifecycle == "retired" {
 		return DeploymentRelease{}, fmt.Errorf("%w: public model is retired", ErrConflict)
+	}
+	profile, ok := modelprofile.Lookup(executionProfileID, executionProfileVersion)
+	if !ok {
+		return DeploymentRelease{}, fmt.Errorf("%w: unknown model execution profile", ErrConflict)
+	}
+	if err := modelprofile.ValidateEffectiveLimits(profile, publicContextLimit, publicOutputLimit); err != nil {
+		return DeploymentRelease{}, fmt.Errorf("%w: model execution profile limits: %v", ErrConflict, err)
 	}
 	parentID, baselineHash, err := exactDeploymentReleaseAuthoringBaseline(
 		ctx, tx, command.Mutation.PublicModelID, modelName, command.Mutation.Baseline,
@@ -283,13 +296,15 @@ INSERT INTO runtime_change_releases (
   release_ref,model_name,candidate_version,candidate_hash,baseline_hash,
   candidate,provider_pack_pins,simulation_report,overall_risk,stage,version,
   parent_stable_release_id,canary_basis_points,reason,created_by,
-  public_model_id,route_items_hash,route_items_count,authoring_receipt_id)
+  public_model_id,route_items_hash,route_items_count,authoring_receipt_id,
+  execution_profile_id,execution_profile_version,public_context_limit,public_output_limit)
 VALUES ($1,$2,$3,$4,$5,$6::jsonb,'[]'::jsonb,$7::jsonb,'review_required',
-        'draft',1,$8,0,$9,$10,$11,$12,$13,$14)
+        'draft',1,$8,0,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 RETURNING id`, claim.TargetReleaseRef, modelName, DeploymentCandidateVersion,
 		candidateHash, baselineHash, string(candidateJSON), string(reportJSON), parentID,
 		command.Mutation.Reason, command.ActorUserID, command.Mutation.PublicModelID,
 		routeItemsHash, len(routes), claim.ReceiptID,
+		executionProfileID, executionProfileVersion, publicContextLimit, publicOutputLimit,
 	).Scan(&releaseID)
 	if err != nil {
 		return DeploymentRelease{}, classifyWriteError(err)
@@ -330,6 +345,8 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'allow',NULL,NULL,$16
 		"runtime_mutation": "none", "manifest_state": "prepared",
 		"public_model_id":  command.Mutation.PublicModelID,
 		"route_items_hash": routeItemsHash, "route_items_count": len(routes),
+		"execution_profile_id": executionProfileID, "execution_profile_version": executionProfileVersion,
+		"public_context_limit": publicContextLimit, "public_output_limit": publicOutputLimit,
 	})
 	if _, err := tx.Exec(ctx, `
 INSERT INTO runtime_change_events (
@@ -363,6 +380,8 @@ UPDATE runtime_change_releases
 		"runtime_mutation": "none", "manifest_state": "sealed",
 		"public_model_id":  command.Mutation.PublicModelID,
 		"route_items_hash": routeItemsHash, "route_items_count": len(routes),
+		"execution_profile_id": executionProfileID, "execution_profile_version": executionProfileVersion,
+		"public_context_limit": publicContextLimit, "public_output_limit": publicOutputLimit,
 	})
 	if _, err := tx.Exec(ctx, `
 INSERT INTO runtime_change_events (

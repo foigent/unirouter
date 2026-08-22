@@ -118,6 +118,7 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return fmt.Errorf("decode usage journal event: %w", err)
 	}
+	payload.EventType = normalizeUsageJournalEventType(event.Type, payload.EventType)
 	if payload.UsageAuthority == "" {
 		if payload.EventType == "cancelled" && payload.UsageSource == "" {
 			payload.UsageSource = metering.UsageSourceMissing
@@ -295,6 +296,21 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 		return fmt.Errorf("enqueue budget evaluation: %w", err)
 	}
 	return tx.Commit(ctx)
+}
+
+func normalizeUsageJournalEventType(outboxType, journalType string) string {
+	if outboxType != outbox.EventBillingUsagePrepared {
+		return journalType
+	}
+	switch journalType {
+	case OutputHoldReasonGuardrailWithheld,
+		OutputHoldReasonResponseTooLarge,
+		OutputHoldReasonProviderResponseUnusable,
+		OutputHoldReasonProviderAttemptUnresolved:
+		return "usage_prepared"
+	default:
+		return journalType
+	}
 }
 
 func decodeUsageJournalMoney(eventType string, payload usageJournalPayload) (int64, int64, error) {

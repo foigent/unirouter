@@ -8,7 +8,41 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/outbox"
 )
+
+func TestOutputHoldMaterializesUsagePreparedJournalContractIntegration(t *testing.T) {
+	const requestID = "op_output_hold_usage_journal"
+	b, orgID, _, attemptID := newP6F41DeliveryFixture(t, requestID)
+	service, err := outbox.New(b.db, outbox.DefaultOptions())
+	require.NoError(t, err)
+	require.NoError(t, service.RegisterHandler(outbox.EventBillingUsagePrepared, b.ProcessUsageJournalEvent))
+	b.SetOutbox(service)
+	req := p6f41ProviderUsage(requestID, attemptID, orgID)
+	req.UsagePurpose = metering.UsagePurposeProviderEvidence
+
+	require.NoError(t, b.HoldNonStreamOutput(t.Context(), req, OutputHoldReasonGuardrailWithheld))
+
+	var journalType string
+	var queued int
+	require.NoError(t, b.db.QueryRow(t.Context(), `
+		SELECT payload->>'event_type', COUNT(*) OVER ()
+		FROM internal_outbox_events
+		WHERE org_id=$1 AND request_id=$2 AND event_type=$3`,
+		orgID, requestID, outbox.EventBillingUsagePrepared,
+	).Scan(&journalType, &queued))
+	require.Equal(t, "usage_prepared", journalType)
+	require.Equal(t, 1, queued)
+
+	processed, err := service.DrainOnce(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, processed)
+	require.NoError(t, b.db.QueryRow(t.Context(), `
+		SELECT event_type FROM usage_finalization_journal
+		WHERE org_id=$1 AND request_id=$2`, orgID, requestID,
+	).Scan(&journalType))
+	require.Equal(t, "usage_prepared", journalType)
+}
 
 func TestP6F10GuardrailWithheldOutputRetainsUsageWithoutCustomerCharge(t *testing.T) {
 	const requestID = "op_p6f10_guardrail_withheld"

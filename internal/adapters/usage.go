@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 const (
@@ -13,6 +14,7 @@ const (
 	CacheUsageSchemaOpenAIV2    = "openai.prompt_tokens_details.v2"
 	CacheUsageSchemaDeepSeekV1  = "deepseek.prompt_cache.v1"
 	CacheUsageSchemaAnthropicV1 = "anthropic.prompt_cache.v1"
+	CacheUsageSchemaKimiV1      = modelprofile.CacheUsageWireMoonshotCachedTokensV1
 
 	CacheUsageStatusNotReported       = "not_reported"
 	CacheUsageStatusReadReported      = "cache_read_reported"
@@ -262,9 +264,10 @@ func (u Usage) ValidateContract() error {
 }
 
 type openAIUsageWire struct {
-	PromptTokens     *int `json:"prompt_tokens"`
-	CompletionTokens *int `json:"completion_tokens"`
-	TotalTokens      *int `json:"total_tokens"`
+	PromptTokens     *int            `json:"prompt_tokens"`
+	CompletionTokens *int            `json:"completion_tokens"`
+	TotalTokens      *int            `json:"total_tokens"`
+	CachedTokens     json.RawMessage `json:"cached_tokens,omitempty"`
 	PromptDetails    *struct {
 		CachedTokens     *int `json:"cached_tokens"`
 		CacheWriteTokens *int `json:"cache_write_tokens"`
@@ -284,6 +287,14 @@ type optionalUsageCounter struct {
 // The boolean is true only when the endpoint's required core counters are
 // explicitly present; missing and null counters remain non-authoritative.
 func ParseOpenAICompatibleUsage(data []byte, endpoint Endpoint, source string) (Usage, bool, error) {
+	return ParseOpenAICompatibleUsageWithCacheProfile(data, endpoint, source, "")
+}
+
+// ParseOpenAICompatibleUsageWithCacheProfile extends the generic parser only
+// when an immutable execution profile names the exact provider cache wire.
+// A top-level cached_tokens field is therefore billing authority for Kimi, but
+// remains an ignored unknown extension for generic OpenAI-compatible routes.
+func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, source, cacheUsageProfile string) (Usage, bool, error) {
 	switch endpoint {
 	case EndpointChatCompletions, EndpointEmbeddings:
 	default:
@@ -310,31 +321,65 @@ func ParseOpenAICompatibleUsage(data []byte, endpoint Endpoint, source string) (
 	completionTokens := valueOrZero(wire.CompletionTokens)
 	totalTokens := valueOrZero(wire.TotalTokens)
 
+	cacheContract, cacheModeled := modelprofile.ResolveCacheUsageContract(strings.TrimSpace(cacheUsageProfile))
+	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireMoonshotCachedTokensV1 {
+		cachedTokens, cacheReported, err := parseOptionalUsageCounter(wire.CachedTokens, "cached_tokens")
+		if err != nil {
+			return Usage{}, false, err
+		}
+		if cacheReported && hasNonKimiCacheCounters(wire) {
+			return Usage{}, true, fmt.Errorf("Kimi cache usage cannot combine top-level cached_tokens with another cache schema")
+		}
+		if !cacheReported && hasNonKimiCacheCounters(wire) {
+			return Usage{}, true, fmt.Errorf("Kimi cache profile requires top-level cached_tokens instead of another cache schema")
+		}
+		if cacheReported {
+			usage, usageErr := NewCacheAwareUsage(
+				promptTokens,
+				promptTokens-cachedTokens,
+				cachedTokens,
+				0,
+				completionTokens,
+				totalTokens,
+				source,
+				CacheUsageSchemaKimiV1,
+				CacheUsageStatusReadReported,
+			)
+			return usage, true, usageErr
+		}
+	}
+
 	// DeepSeek's official usage object reports cache hit and miss as a complete
-	// prompt partition. Presence is pointer-based so an authoritative zero-hit
-	// request remains distinguishable from an unreported cache contract.
-	if wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil {
-		if wire.PromptCacheHitTokens == nil || wire.PromptCacheMissTokens == nil {
+	// prompt partition. These counters become billing truth only when the sealed
+	// execution profile names the exact DeepSeek wire schema.
+	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireDeepSeekHitMissV1 {
+		if hasNonDeepSeekCacheCounters(wire) {
+			return Usage{}, true, fmt.Errorf("DeepSeek cache profile requires prompt_cache_hit_tokens and prompt_cache_miss_tokens instead of another cache schema")
+		}
+		cacheReported := wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil
+		if cacheReported && (wire.PromptCacheHitTokens == nil || wire.PromptCacheMissTokens == nil) {
 			return Usage{}, true, fmt.Errorf("DeepSeek prompt-cache usage requires both hit and miss counters")
 		}
-		hit := valueOrZero(wire.PromptCacheHitTokens)
-		miss := valueOrZero(wire.PromptCacheMissTokens)
-		promptTotal := promptTokens
-		if promptTotal == 0 {
-			promptTotal = hit + miss
+		if cacheReported {
+			hit := valueOrZero(wire.PromptCacheHitTokens)
+			miss := valueOrZero(wire.PromptCacheMissTokens)
+			promptTotal := promptTokens
+			if promptTotal == 0 {
+				promptTotal = hit + miss
+			}
+			usage, err := NewCacheAwareUsage(
+				promptTotal,
+				miss,
+				hit,
+				0,
+				completionTokens,
+				totalTokens,
+				source,
+				CacheUsageSchemaDeepSeekV1,
+				CacheUsageStatusHitMissReported,
+			)
+			return usage, true, err
 		}
-		usage, err := NewCacheAwareUsage(
-			promptTotal,
-			miss,
-			hit,
-			0,
-			completionTokens,
-			totalTokens,
-			source,
-			CacheUsageSchemaDeepSeekV1,
-			CacheUsageStatusHitMissReported,
-		)
-		return usage, true, err
 	}
 
 	// OpenAI reports cache reads and, on the current Chat Completions contract,
@@ -406,6 +451,46 @@ func validateOpenAIUsageWire(wire *openAIUsageWire) error {
 		)
 	}
 	return validateOptionalUsageCounters(counters...)
+}
+
+func hasNonKimiCacheCounters(wire *openAIUsageWire) bool {
+	if wire == nil {
+		return false
+	}
+	if wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil {
+		return true
+	}
+	return wire.PromptDetails != nil &&
+		(wire.PromptDetails.CachedTokens != nil || wire.PromptDetails.CacheWriteTokens != nil)
+}
+
+func hasNonDeepSeekCacheCounters(wire *openAIUsageWire) bool {
+	if wire == nil {
+		return false
+	}
+	if len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens) {
+		return true
+	}
+	return wire.PromptDetails != nil &&
+		(wire.PromptDetails.CachedTokens != nil || wire.PromptDetails.CacheWriteTokens != nil)
+}
+
+func parseOptionalUsageCounter(raw json.RawMessage, name string) (int, bool, error) {
+	if len(raw) == 0 || isJSONNullUsage(raw) {
+		return 0, false, nil
+	}
+	var value int
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return 0, false, fmt.Errorf("%s must be an integer", name)
+	}
+	if err := validateOptionalUsageCounters(optionalUsageCounter{name: name, value: &value}); err != nil {
+		return 0, false, err
+	}
+	return value, true, nil
+}
+
+func isJSONNullUsage(raw json.RawMessage) bool {
+	return strings.TrimSpace(string(raw)) == "null"
 }
 
 func validateOptionalUsageCounters(counters ...optionalUsageCounter) error {

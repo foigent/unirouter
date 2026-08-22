@@ -36,17 +36,19 @@ type ProviderReconciliationRequest struct {
 }
 
 type ProviderReconciliationResult struct {
-	OrgID                 int64  `json:"org_id"`
-	RequestID             string `json:"request_id"`
-	AttemptID             string `json:"attempt_id"`
-	APIKeyID              int64  `json:"api_key_id"`
-	Action                string `json:"action"`
-	TerminalTransactionID int64  `json:"terminal_transaction_id"`
-	CustomerChargedMicros string `json:"customer_charged_micros"`
-	CustomerRefundMicros  string `json:"customer_refund_micros"`
-	Currency              string `json:"currency"`
-	AmountScale           int64  `json:"amount_scale"`
-	State                 string `json:"state"`
+	OrgID                        int64       `json:"org_id"`
+	RequestID                    string      `json:"request_id"`
+	AttemptID                    string      `json:"attempt_id"`
+	APIKeyID                     int64       `json:"api_key_id"`
+	Action                       string      `json:"action"`
+	TerminalTransactionID        int64       `json:"terminal_transaction_id"`
+	TerminalObservationReceiptID int64       `json:"terminal_observation_receipt_id,omitempty"`
+	CustomerChargedMicros        string      `json:"customer_charged_micros"`
+	CustomerRefundMicros         string      `json:"customer_refund_micros"`
+	Currency                     string      `json:"currency"`
+	AmountScale                  int64       `json:"amount_scale"`
+	BillingMode                  BillingMode `json:"billing_mode"`
+	State                        string      `json:"state"`
 }
 
 func newProviderReconciliationResult(chargedMicros, refundMicros int64) ProviderReconciliationResult {
@@ -156,6 +158,7 @@ func (b *Billing) collectProviderReconciliation(ctx context.Context, req Provide
 	result := newProviderReconciliationResult(settled.ChargedCostMicros, 0)
 	result.OrgID, result.RequestID, result.AttemptID = req.OrgID, req.RequestID, req.AttemptID
 	result.APIKeyID, result.Action, result.TerminalTransactionID = attempt.APIKeyID, req.Action, settled.SettleID
+	result.BillingMode = settled.BillingMode
 	result.State = providerAttemptStateSettled
 	return &result, nil
 }
@@ -171,7 +174,7 @@ func (b *Billing) releaseProviderReconciliation(ctx context.Context, req Provide
 		return nil, fmt.Errorf("lock release reservation: %w", err)
 	}
 	if record.BillingMode == BillingModeCostObservation {
-		return nil, fmt.Errorf("%w: refund and subsidy actions are unavailable in cost_observation mode", ErrProviderReconciliationUnsafe)
+		return b.releaseObservationProviderReconciliationTx(ctx, tx, record, req)
 	}
 	attempt, err := providerAttemptForUpdate(ctx, tx, req.OrgID, req.RequestID, req.AttemptID)
 	if err != nil {
@@ -240,7 +243,7 @@ func (b *Billing) releaseProviderReconciliation(ctx context.Context, req Provide
 	); err != nil {
 		return nil, fmt.Errorf("resolve provider attempt: %w", err)
 	}
-	if err := insertProviderReconciliationPhaseTx(ctx, tx, req, attempt.APIKeyID, "completed", transactionID); err != nil {
+	if err := insertProviderReconciliationPhaseTx(ctx, tx, req, attempt.APIKeyID, "completed", transactionID, 0); err != nil {
 		return nil, err
 	}
 	cancelReq := SettleRequest{
@@ -262,8 +265,110 @@ func (b *Billing) releaseProviderReconciliation(ctx context.Context, req Provide
 	result := newProviderReconciliationResult(0, refund)
 	result.OrgID, result.RequestID, result.AttemptID = req.OrgID, req.RequestID, req.AttemptID
 	result.APIKeyID, result.Action, result.TerminalTransactionID = attempt.APIKeyID, req.Action, transactionID
+	result.BillingMode = record.BillingMode
 	result.State = "reconciled"
 	return &result, nil
+}
+
+func (b *Billing) releaseObservationProviderReconciliationTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	record reservationRecord,
+	req ProviderReconciliationRequest,
+) (*ProviderReconciliationResult, error) {
+	attempt, err := providerAttemptForUpdate(ctx, tx, req.OrgID, req.RequestID, req.AttemptID)
+	if err != nil {
+		return nil, fmt.Errorf("lock observation release attempt: %w", err)
+	}
+	if record.Status == "cancelled" || attempt.State == "reconciled" {
+		_ = tx.Rollback(ctx)
+		return b.requireCompletedProviderReconciliation(ctx, req)
+	}
+	if record.Status != "settlement_pending" || !isProviderAttemptReleasable(req.Action, attempt) {
+		return nil, ErrProviderReconciliationUnsafe
+	}
+	if err := authorizeProviderReconciliationTx(ctx, tx, req, attempt.APIKeyID); err != nil {
+		return nil, err
+	}
+
+	cancelReq := SettleRequest{
+		RequestID: req.RequestID, AttemptID: req.AttemptID, OrgID: req.OrgID,
+		PromptTokens: record.PromptTokens, UncachedPromptTokens: record.UncachedPromptTokens,
+		CacheReadTokens: record.CacheReadTokens, CacheCreationTokens: record.CacheCreationTokens,
+		CompletionTokens: record.CompletionTokens, UsageSource: record.UsageSource,
+		UsageAuthority: record.UsageAuthority, UsagePurpose: record.UsagePurpose,
+		UsageFinality: record.UsageFinality, UsageContractVersion: record.UsageContractVersion,
+		UsageEstimateVersion: record.UsageEstimateVersion,
+		CacheUsageSchema:     record.CacheUsageSchema, CacheUsageStatus: record.CacheUsageStatus,
+	}
+	receiptID, err := insertObservationReceiptTx(
+		ctx, tx, record, cancelReq, "cancelled", record.CalculatedCostMicros,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tx.Exec(ctx, `
+		UPDATE freeze_idempotency
+		SET status='cancelled', charged_cost_micros=0, uncovered_cost_micros=0,
+		    topup_amount_micros=0, refund_amount_micros=0,
+		    forfeited_grant_amount_micros=0,
+		    terminal_transaction_id=NULL,
+		    terminal_observation_receipt_id=$3,
+		    balance_after_micros=NULL, terminal_at=NOW(),
+		    provider_cost_pending_at=NULL, settlement_pending_reason='',
+		    settlement_claimed_until=NULL, settlement_next_attempt_at=NULL,
+		    updated_at=NOW()
+		WHERE request_id=$1 AND org_id=$2
+		  AND billing_mode='cost_observation'
+		  AND status='settlement_pending'`,
+		req.RequestID, req.OrgID, receiptID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("terminalize observation reconciliation: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return nil, ErrProviderReconciliationConflict
+	}
+	result, err = tx.Exec(ctx, `
+		UPDATE billing_provider_attempts
+		SET state='reconciled', retry_authorized=FALSE,
+		    outcome_certainty=CASE WHEN outcome_certainty='pending' THEN 'unknown' ELSE outcome_certainty END,
+		    terminal_transaction_id=NULL,
+		    financial_resolved_at=COALESCE(financial_resolved_at,NOW()),
+		    updated_at=NOW()
+		WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3
+		  AND state IN (
+		      'dispatch_started','response_accepted','outcome_unknown',
+		      'response_unusable','delivery_pending','delivery_failed','output_withheld'
+		  )`, req.OrgID, req.RequestID, req.AttemptID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve observation provider attempt: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return nil, ErrProviderReconciliationConflict
+	}
+	if err := insertProviderReconciliationPhaseTx(
+		ctx, tx, req, attempt.APIKeyID, "completed", 0, receiptID,
+	); err != nil {
+		return nil, err
+	}
+	if err := enqueueUsageJournalTx(
+		ctx, tx, b.outbox, outbox.EventBillingCancelled, "cancelled",
+		record, cancelReq, record.CalculatedCostMicros, 0, 0,
+	); err != nil {
+		return nil, fmt.Errorf("enqueue observation reconciliation: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit observation reconciliation: %w", err)
+	}
+
+	response := newProviderReconciliationResult(0, 0)
+	response.OrgID, response.RequestID, response.AttemptID = req.OrgID, req.RequestID, req.AttemptID
+	response.APIKeyID, response.Action = attempt.APIKeyID, req.Action
+	response.TerminalObservationReceiptID = receiptID
+	response.BillingMode = record.BillingMode
+	response.State = "reconciled"
+	return &response, nil
 }
 
 func isProviderAttemptReleasable(action string, attempt providerAttemptRecord) bool {
@@ -326,14 +431,23 @@ func requireProviderReconciliationAuthorityTx(ctx context.Context, tx pgx.Tx, re
 	return nil
 }
 
-func insertProviderReconciliationPhaseTx(ctx context.Context, tx pgx.Tx, req ProviderReconciliationRequest, apiKeyID int64, phase string, transactionID int64) error {
+func insertProviderReconciliationPhaseTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	req ProviderReconciliationRequest,
+	apiKeyID int64,
+	phase string,
+	transactionID int64,
+	observationReceiptID int64,
+) error {
 	_, err := tx.Exec(ctx,
 		`INSERT INTO provider_cost_reconciliations
-		 (org_id, request_id, attempt_id, api_key_id, action, phase, actor_user_id, reason, evidence_ref, terminal_transaction_id)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		 (org_id, request_id, attempt_id, api_key_id, action, phase, actor_user_id,
+		  reason, evidence_ref, terminal_transaction_id, terminal_observation_receipt_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10::bigint,0),NULLIF($11::bigint,0))
 		 ON CONFLICT (org_id, request_id, attempt_id, action, phase) DO NOTHING`,
 		req.OrgID, req.RequestID, req.AttemptID, apiKeyID, req.Action, phase,
-		req.ActorUserID, req.Reason, req.EvidenceRef, transactionID,
+		req.ActorUserID, req.Reason, req.EvidenceRef, transactionID, observationReceiptID,
 	)
 	if err != nil {
 		return fmt.Errorf("record provider reconciliation %s: %w", phase, err)
@@ -357,7 +471,7 @@ func (b *Billing) completeProviderReconciliation(ctx context.Context, req Provid
 	if !attempt.TerminalTransactionID.Valid || attempt.TerminalTransactionID.Int64 != transactionID {
 		return ErrProviderReconciliationConflict
 	}
-	if err := insertProviderReconciliationPhaseTx(ctx, tx, req, attempt.APIKeyID, "completed", transactionID); err != nil {
+	if err := insertProviderReconciliationPhaseTx(ctx, tx, req, attempt.APIKeyID, "completed", transactionID, 0); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -365,20 +479,35 @@ func (b *Billing) completeProviderReconciliation(ctx context.Context, req Provid
 
 func (b *Billing) completedProviderReconciliation(ctx context.Context, req ProviderReconciliationRequest) (*ProviderReconciliationResult, bool, error) {
 	var result ProviderReconciliationResult
-	var action, state, reason, evidence string
+	var action, state, reason, evidence, attemptState, observationStatus string
+	var billingMode BillingMode
 	var apiKeyID, actor int64
-	var transactionID int64
+	var transactionID, observationReceiptID sql.NullInt64
+	var reservationTransactionID, reservationObservationReceiptID sql.NullInt64
+	var attemptTransactionID sql.NullInt64
 	var charged, refund sql.NullInt64
+	var observationCharged int64
 	err := b.db.QueryRow(ctx,
 		`SELECT r.api_key_id, r.action, r.actor_user_id, r.reason, r.evidence_ref,
-		        r.terminal_transaction_id,
-		        COALESCE(f.status,''), f.charged_cost_micros, f.refund_amount_micros
+		        r.terminal_transaction_id, r.terminal_observation_receipt_id,
+		        COALESCE(f.status,''), f.billing_mode,
+		        f.charged_cost_micros, f.refund_amount_micros,
+		        f.terminal_transaction_id, f.terminal_observation_receipt_id,
+		        a.state, a.terminal_transaction_id,
+		        COALESCE(o.terminal_status,''), COALESCE(o.charged_cost_micros,0)
 		 FROM provider_cost_reconciliations r
 		 JOIN freeze_idempotency f ON f.org_id=r.org_id AND f.request_id=r.request_id
+		 JOIN billing_provider_attempts a
+		   ON a.org_id=r.org_id AND a.request_id=r.request_id AND a.attempt_id=r.attempt_id
+		 LEFT JOIN billing_observation_receipts o
+		   ON o.org_id=r.org_id AND o.request_id=r.request_id
+		  AND o.id=r.terminal_observation_receipt_id
 		 WHERE r.org_id=$1 AND r.request_id=$2 AND r.attempt_id=$3 AND r.phase='completed'`,
 		req.OrgID, req.RequestID, req.AttemptID,
 	).Scan(&apiKeyID, &action, &actor, &reason, &evidence,
-		&transactionID, &state, &charged, &refund)
+		&transactionID, &observationReceiptID, &state, &billingMode,
+		&charged, &refund, &reservationTransactionID, &reservationObservationReceiptID,
+		&attemptState, &attemptTransactionID, &observationStatus, &observationCharged)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, nil
 	}
@@ -388,9 +517,34 @@ func (b *Billing) completedProviderReconciliation(ctx context.Context, req Provi
 	if action != req.Action || actor != req.ActorUserID || reason != req.Reason || evidence != req.EvidenceRef {
 		return nil, false, ErrProviderReconciliationConflict
 	}
+	if transactionID.Valid {
+		if observationReceiptID.Valid || billingMode == BillingModeCostObservation ||
+			!reservationTransactionID.Valid || reservationTransactionID.Int64 != transactionID.Int64 ||
+			!attemptTransactionID.Valid || attemptTransactionID.Int64 != transactionID.Int64 ||
+			(action == ProviderReconciliationCollect && (state != "settled" || attemptState != providerAttemptStateSettled)) ||
+			(action != ProviderReconciliationCollect && (state != "cancelled" || attemptState != "reconciled")) {
+			return nil, false, ErrProviderReconciliationConflict
+		}
+	} else {
+		if !observationReceiptID.Valid || billingMode != BillingModeCostObservation ||
+			action == ProviderReconciliationCollect || state != "cancelled" || attemptState != "reconciled" ||
+			reservationTransactionID.Valid || attemptTransactionID.Valid ||
+			!reservationObservationReceiptID.Valid ||
+			reservationObservationReceiptID.Int64 != observationReceiptID.Int64 ||
+			observationStatus != "cancelled" || observationCharged != 0 {
+			return nil, false, ErrProviderReconciliationConflict
+		}
+	}
 	result = newProviderReconciliationResult(charged.Int64, refund.Int64)
 	result.OrgID, result.RequestID, result.AttemptID = req.OrgID, req.RequestID, req.AttemptID
-	result.APIKeyID, result.Action, result.TerminalTransactionID, result.State = apiKeyID, action, transactionID, state
+	result.APIKeyID, result.Action, result.State = apiKeyID, action, attemptState
+	result.BillingMode = billingMode
+	if transactionID.Valid {
+		result.TerminalTransactionID = transactionID.Int64
+	}
+	if observationReceiptID.Valid {
+		result.TerminalObservationReceiptID = observationReceiptID.Int64
+	}
 	return &result, true, nil
 }
 
@@ -421,7 +575,7 @@ func (b *Billing) requireCompletedProviderReconciliation(ctx context.Context, re
 		if authErr := requireProviderReconciliationAuthorityTx(ctx, tx, req); authErr != nil {
 			return nil, authErr
 		}
-		if phaseErr := insertProviderReconciliationPhaseTx(ctx, tx, req, attempt.APIKeyID, "completed", record.TerminalTransactionID.Int64); phaseErr != nil {
+		if phaseErr := insertProviderReconciliationPhaseTx(ctx, tx, req, attempt.APIKeyID, "completed", record.TerminalTransactionID.Int64, 0); phaseErr != nil {
 			return nil, phaseErr
 		}
 		if commitErr := tx.Commit(ctx); commitErr != nil {

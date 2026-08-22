@@ -17,19 +17,23 @@ const DeploymentReleaseAuthoringOptionsContractVersion = "unirouter.model-deploy
 // immutable candidate remains available from the exact release endpoint; the
 // collection carries enough identity to reopen lifecycle work after refresh.
 type DeploymentReleaseSummary struct {
-	ID                    int64      `json:"id"`
-	ReleaseRef            string     `json:"release_ref"`
-	PublicModelID         int64      `json:"public_model_id"`
-	ModelName             string     `json:"model_name"`
-	CandidateVersion      string     `json:"candidate_version"`
-	CandidateHash         string     `json:"candidate_hash"`
-	RouteItemsHash        string     `json:"route_items_hash"`
-	RouteItemsCount       int        `json:"route_items_count"`
-	RouteItemsSealedAt    *time.Time `json:"route_items_sealed_at,omitempty"`
-	Stage                 string     `json:"stage"`
-	Version               int64      `json:"version"`
-	ParentStableReleaseID *int64     `json:"parent_stable_release_id,omitempty"`
-	UpdatedAt             time.Time  `json:"updated_at"`
+	ID                      int64      `json:"id"`
+	ReleaseRef              string     `json:"release_ref"`
+	PublicModelID           int64      `json:"public_model_id"`
+	ModelName               string     `json:"model_name"`
+	ExecutionProfileID      string     `json:"execution_profile_id,omitempty"`
+	ExecutionProfileVersion string     `json:"execution_profile_version,omitempty"`
+	PublicContextLimit      int        `json:"public_context_limit,omitempty"`
+	PublicOutputLimit       int        `json:"public_output_limit,omitempty"`
+	CandidateVersion        string     `json:"candidate_version"`
+	CandidateHash           string     `json:"candidate_hash"`
+	RouteItemsHash          string     `json:"route_items_hash"`
+	RouteItemsCount         int        `json:"route_items_count"`
+	RouteItemsSealedAt      *time.Time `json:"route_items_sealed_at,omitempty"`
+	Stage                   string     `json:"stage"`
+	Version                 int64      `json:"version"`
+	ParentStableReleaseID   *int64     `json:"parent_stable_release_id,omitempty"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
 type DeploymentReleasePublicModelSummary struct {
@@ -448,6 +452,8 @@ func readActionableDeploymentReleaseSummaries(
 ) ([]DeploymentReleaseSummary, error) {
 	rows, err := tx.Query(ctx, `
 SELECT release.id,release.release_ref,release.public_model_id,release.model_name,
+	   release.execution_profile_id,release.execution_profile_version,
+	   release.public_context_limit,release.public_output_limit,
        release.candidate_version,release.candidate_hash,release.route_items_hash,
        release.route_items_count,release.route_items_sealed_at,release.stage,
        release.version,release.parent_stable_release_id,release.updated_at
@@ -481,7 +487,9 @@ func readDeploymentReleaseSummaryByID(
 	releaseID int64,
 ) (DeploymentReleaseSummary, error) {
 	return scanDeploymentReleaseSummary(store.QueryRow(ctx, `
-SELECT id,release_ref,public_model_id,model_name,candidate_version,candidate_hash,
+SELECT id,release_ref,public_model_id,model_name,
+	   execution_profile_id,execution_profile_version,public_context_limit,public_output_limit,
+	   candidate_version,candidate_hash,
        route_items_hash,route_items_count,route_items_sealed_at,stage,version,
        parent_stable_release_id,updated_at
   FROM runtime_change_releases
@@ -514,10 +522,12 @@ SELECT public_model_id,model_name
 
 func scanDeploymentReleaseSummary(row interface{ Scan(...interface{}) error }) (DeploymentReleaseSummary, error) {
 	var result DeploymentReleaseSummary
-	var publicModelID, routeItemsCount sql.NullInt64
-	var routeItemsHash sql.NullString
+	var publicModelID, publicContextLimit, publicOutputLimit, routeItemsCount sql.NullInt64
+	var executionProfileID, executionProfileVersion, routeItemsHash sql.NullString
 	err := row.Scan(
 		&result.ID, &result.ReleaseRef, &publicModelID, &result.ModelName,
+		&executionProfileID, &executionProfileVersion,
+		&publicContextLimit, &publicOutputLimit,
 		&result.CandidateVersion, &result.CandidateHash, &routeItemsHash,
 		&routeItemsCount, &result.RouteItemsSealedAt, &result.Stage, &result.Version,
 		&result.ParentStableReleaseID, &result.UpdatedAt,
@@ -532,6 +542,18 @@ func scanDeploymentReleaseSummary(row interface{ Scan(...interface{}) error }) (
 		return DeploymentReleaseSummary{}, fmt.Errorf("%w: deployment release summary public model identity", ErrUnavailable)
 	}
 	result.PublicModelID = publicModelID.Int64
+	if executionProfileID.Valid {
+		result.ExecutionProfileID = executionProfileID.String
+	}
+	if executionProfileVersion.Valid {
+		result.ExecutionProfileVersion = executionProfileVersion.String
+	}
+	if publicContextLimit.Valid {
+		result.PublicContextLimit = int(publicContextLimit.Int64)
+	}
+	if publicOutputLimit.Valid {
+		result.PublicOutputLimit = int(publicOutputLimit.Int64)
+	}
 	if routeItemsHash.Valid {
 		result.RouteItemsHash = routeItemsHash.String
 	}

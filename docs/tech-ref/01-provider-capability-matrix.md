@@ -1,8 +1,14 @@
 # Provider Capability Matrix（模型能力矩阵）
 
+> **历史参考，不是当前运行时或价格权威。** 本文冻结于 2026-06-18，表内模型、
+> 上下文、价格和能力不得用于自动创建模型或生产计费。当前的模型执行档案、
+> “供应商声明 / UniRouter 已验证”边界和供应商差距见
+> [42-model-execution-profile-capability-status.md](42-model-execution-profile-capability-status.md)；
+> 运行时事实以版本化 `internal/modelprofile` catalog、operation 级能力证据和冻结价格快照为准。
+
 > **版本**：v2.0
 > **日期**：2026-06-18
-> **用途**：开发团队配置渠道和预冻结公式的核心参考
+> **用途**：历史设计对照；禁止作为当前模型创建、运行时能力或计费输入
 > **变更**：基于 v1.0 修正，补充 2026 年新模型，修正 usage 格式差异
 
 ---

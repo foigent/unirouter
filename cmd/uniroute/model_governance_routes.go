@@ -18,6 +18,7 @@ type modelGovernanceRouteGuards struct {
 // registerModelGovernanceRoutes keeps the organization-governance authority
 // contract reviewable outside the main application assembly.
 func registerModelGovernanceRoutes(mux *http.ServeMux, handler *admin.Handler, guards modelGovernanceRouteGuards) {
+	mux.Handle("GET /api/v1/model-execution-profiles", guards.organizationRead(handler.ListModelExecutionProfiles))
 	mux.Handle("GET /api/v1/model-registry", guards.organizationRead(handler.ListModelRegistry))
 	mux.Handle("POST /api/v1/model-registry", guards.organizationWrite(handler.CreateModelRegistry))
 	mux.Handle("PUT /api/v1/model-registry/{id}", guards.organizationWrite(handler.UpdateModelRegistry))

@@ -187,7 +187,9 @@ SELECT EXISTS (
 
 func readDeploymentRelease(ctx context.Context, store deploymentManifestStore, ref string, lock bool) (DeploymentRelease, error) {
 	query := `
-SELECT id,release_ref,public_model_id,model_name,candidate_version,candidate_hash,
+SELECT id,release_ref,public_model_id,model_name,
+	   execution_profile_id,execution_profile_version,public_context_limit,public_output_limit,
+	   candidate_version,candidate_hash,
        baseline_hash,route_items_hash,route_items_count,route_items_sealed_at,
        candidate,stage,version,parent_stable_release_id,canary_basis_points,
        reason,created_by,validated_by,activated_by,created_at,validated_at,
@@ -202,7 +204,9 @@ SELECT id,release_ref,public_model_id,model_name,candidate_version,candidate_has
 
 func readDeploymentReleaseByID(ctx context.Context, store deploymentManifestStore, id int64, lock bool) (DeploymentRelease, error) {
 	query := `
-SELECT id,release_ref,public_model_id,model_name,candidate_version,candidate_hash,
+SELECT id,release_ref,public_model_id,model_name,
+	   execution_profile_id,execution_profile_version,public_context_limit,public_output_limit,
+	   candidate_version,candidate_hash,
        baseline_hash,route_items_hash,route_items_count,route_items_sealed_at,
        candidate,stage,version,parent_stable_release_id,canary_basis_points,
        reason,created_by,validated_by,activated_by,created_at,validated_at,
@@ -220,6 +224,8 @@ func scanDeploymentRelease(row interface{ Scan(...interface{}) error }) (Deploym
 	var candidateJSON []byte
 	err := row.Scan(
 		&result.ID, &result.ReleaseRef, &result.PublicModelID, &result.ModelName,
+		&result.ExecutionProfileID, &result.ExecutionProfileVersion,
+		&result.PublicContextLimit, &result.PublicOutputLimit,
 		&result.CandidateVersion, &result.CandidateHash, &result.BaselineHash,
 		&result.RouteItemsHash, &result.RouteItemsCount, &result.RouteItemsSealedAt,
 		&candidateJSON, &result.Stage, &result.Version, &result.ParentStableReleaseID,

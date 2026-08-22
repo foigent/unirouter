@@ -9,6 +9,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/modelrouting"
+	"github.com/uniroute/unirouter/internal/tokenprofile"
 )
 
 // These versions are evidence identities, not tokenizer names. The contract is
@@ -17,13 +21,18 @@ import (
 // tokenizers and, unlike the historical chars/4 heuristic, cannot make a large
 // tool schema or provider extension free at admission.
 const (
-	chatAdmissionEstimateVersion       = "chat-json-byte-upper.v1"
-	embeddingsAdmissionEstimateVersion = "embeddings-input-byte-upper.v1"
-	providerAdmissionEstimateVersion   = "provider-json-byte-upper.v1"
-	chatAdmissionBaseOverhead          = int64(64)
-	chatAdmissionMessageOverhead       = int64(32)
-	chatAdmissionCollectionOverhead    = int64(16)
-	maxEmbeddingTokenID                = int64(math.MaxInt32)
+	chatAdmissionEstimateVersion        = "chat-json-byte-upper.v1"
+	embeddingsAdmissionEstimateVersion  = "embeddings-input-byte-upper.v1"
+	providerAdmissionEstimateVersion    = "provider-json-byte-upper.v1"
+	miniMaxM27ChatEstimateVersion       = "chat-json-minimax-m2.7-framed-upper.v1"
+	miniMaxM27ProviderEstimateVersion   = "provider-json-minimax-m2.7-framed-upper.v1"
+	chatAdmissionBaseOverhead           = int64(64)
+	chatAdmissionMessageOverhead        = int64(32)
+	chatAdmissionCollectionOverhead     = int64(16)
+	verifiedTokenizerBaseOverhead       = int64(4_096)
+	verifiedTokenizerMessageOverhead    = int64(64)
+	verifiedTokenizerCollectionOverhead = int64(256)
+	maxEmbeddingTokenID                 = int64(math.MaxInt32)
 )
 
 var (
@@ -34,6 +43,110 @@ var (
 type requestAdmissionEstimate struct {
 	InputTokens int
 	Version     string
+}
+
+// estimateChatAdmissionForPlan keeps syntax/shape validation provider-neutral,
+// then applies the exact tokenizer identity frozen into the planner snapshot.
+// The tokenizer count covers the retained JSON envelope; explicit framing
+// overhead remains conservative because provider-side chat serialization is
+// not observable at admission time. This is an upper bound, not a claim that
+// provider-reported prompt_tokens will equal the estimate.
+func estimateChatAdmissionForPlan(body []byte, plan modelrouting.Plan) (requestAdmissionEstimate, error) {
+	byteUpper, err := estimateChatAdmission(body)
+	if err != nil {
+		return requestAdmissionEstimate{}, err
+	}
+	switch plan.TokenizerProfileID + "\x00" + plan.TokenizerProfileVersion {
+	case modelprofile.TokenizerByteUpperID + "\x00" + modelprofile.TokenizerByteUpperVersion:
+		return byteUpper, nil
+	case modelprofile.TokenizerMiniMaxM27ID + "\x00" + modelprofile.TokenizerMiniMaxM27Version:
+		messages, collections, err := chatEnvelopeCardinality(body)
+		if err != nil {
+			return requestAdmissionEstimate{}, err
+		}
+		return estimateVerifiedTokenizerJSON(
+			body, plan.TokenizerProfileID, plan.TokenizerProfileVersion,
+			messages, collections, miniMaxM27ChatEstimateVersion,
+		)
+	default:
+		return requestAdmissionEstimate{}, fmt.Errorf("%w: unsupported tokenizer profile %s@%s", errAdmissionUnsupportedShape, plan.TokenizerProfileID, plan.TokenizerProfileVersion)
+	}
+}
+
+func estimateProviderJSONAdmissionForPlan(body []byte, plan modelrouting.Plan) (requestAdmissionEstimate, error) {
+	switch plan.TokenizerProfileID + "\x00" + plan.TokenizerProfileVersion {
+	case modelprofile.TokenizerByteUpperID + "\x00" + modelprofile.TokenizerByteUpperVersion:
+		return estimateProviderJSONAdmission(body)
+	case modelprofile.TokenizerMiniMaxM27ID + "\x00" + modelprofile.TokenizerMiniMaxM27Version:
+		if !json.Valid(body) {
+			return requestAdmissionEstimate{}, fmt.Errorf("%w: provider request body must be JSON", errAdmissionUnsupportedShape)
+		}
+		messages, collections, err := chatEnvelopeCardinality(body)
+		if err != nil {
+			return requestAdmissionEstimate{}, err
+		}
+		return estimateVerifiedTokenizerJSON(
+			body, plan.TokenizerProfileID, plan.TokenizerProfileVersion,
+			messages, collections, miniMaxM27ProviderEstimateVersion,
+		)
+	default:
+		return requestAdmissionEstimate{}, fmt.Errorf("%w: unsupported tokenizer profile %s@%s", errAdmissionUnsupportedShape, plan.TokenizerProfileID, plan.TokenizerProfileVersion)
+	}
+}
+
+func estimateVerifiedTokenizerJSON(body []byte, profileID, profileVersion string, messages, collections int, version string) (requestAdmissionEstimate, error) {
+	count, err := tokenprofile.Count(profileID, profileVersion, body)
+	if err != nil {
+		return requestAdmissionEstimate{}, fmt.Errorf("tokenizer profile %s@%s: %w", profileID, profileVersion, err)
+	}
+	messageOverhead, ok := checkedAdmissionMultiply(int64(messages), verifiedTokenizerMessageOverhead)
+	if !ok {
+		return requestAdmissionEstimate{}, errAdmissionEstimateOverflow
+	}
+	collectionOverhead, ok := checkedAdmissionMultiply(int64(collections), verifiedTokenizerCollectionOverhead)
+	if !ok {
+		return requestAdmissionEstimate{}, errAdmissionEstimateOverflow
+	}
+	overhead, ok := checkedAdmissionAdd(verifiedTokenizerBaseOverhead, messageOverhead)
+	if !ok {
+		return requestAdmissionEstimate{}, errAdmissionEstimateOverflow
+	}
+	overhead, ok = checkedAdmissionAdd(overhead, collectionOverhead)
+	if !ok {
+		return requestAdmissionEstimate{}, errAdmissionEstimateOverflow
+	}
+	tokens, err := checkedAdmissionInt(int64(count), overhead)
+	if err != nil {
+		return requestAdmissionEstimate{}, err
+	}
+	return requestAdmissionEstimate{InputTokens: tokens, Version: version}, nil
+}
+
+func chatEnvelopeCardinality(body []byte) (messages, collections int, err error) {
+	var envelope map[string]json.RawMessage
+	if unmarshalErr := json.Unmarshal(body, &envelope); unmarshalErr != nil || envelope == nil {
+		return 0, 0, fmt.Errorf("%w: chat request must be an object", errAdmissionUnsupportedShape)
+	}
+	if raw, ok := envelope["messages"]; ok && !isJSONNull(raw) {
+		var values []json.RawMessage
+		if unmarshalErr := json.Unmarshal(raw, &values); unmarshalErr != nil {
+			return 0, 0, fmt.Errorf("%w: messages must be an array", errAdmissionUnsupportedShape)
+		}
+		messages = len(values)
+	}
+	for _, field := range []string{"tools", "functions"} {
+		if raw, ok := envelope[field]; ok && !isJSONNull(raw) {
+			var values []json.RawMessage
+			if unmarshalErr := json.Unmarshal(raw, &values); unmarshalErr != nil {
+				return 0, 0, fmt.Errorf("%w: %s must be an array", errAdmissionUnsupportedShape, field)
+			}
+			if collections > math.MaxInt-len(values) {
+				return 0, 0, errAdmissionEstimateOverflow
+			}
+			collections += len(values)
+		}
+	}
+	return messages, collections, nil
 }
 
 func estimateProviderJSONAdmission(body []byte) (requestAdmissionEstimate, error) {
@@ -227,6 +340,7 @@ func validateMeasurableChatRoot(envelope map[string]json.RawMessage) error {
 		"logit_bias", "logprobs", "top_logprobs", "seed", "response_format", "tools",
 		"tool_choice", "parallel_tool_calls", "functions", "function_call", "user", "service_tier",
 		"store", "metadata", "modalities", "audio", "prediction", "reasoning_effort", "reasoning",
+		"thinking",
 		"verbosity", "safety_identifier", "prompt_cache_key", "prompt_cache_retention",
 		"repetition_penalty", "min_p", "top_k", "enable_thinking", "reasoning_format",
 		"include_reasoning", "guided_json", "guided_regex", "guided_choice", "guided_grammar",
@@ -298,6 +412,11 @@ func validateMeasurableChatRoot(envelope map[string]json.RawMessage) error {
 	if raw, exists := envelope["reasoning"]; exists && !isJSONNull(raw) {
 		if err := validateScalarJSONObject(raw, "reasoning", "effort", "summary", "enabled", "exclude", "max_tokens", "budget_tokens"); err != nil {
 			return err
+		}
+	}
+	if raw, exists := envelope["thinking"]; exists && !isJSONNull(raw) {
+		if _, _, err := optionalThinkingType(raw); err != nil {
+			return fmt.Errorf("%w: %v", errAdmissionUnsupportedShape, err)
 		}
 	}
 	if raw, exists := envelope["guided_choice"]; exists && !isJSONNull(raw) {

@@ -1,12 +1,40 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/guardrail"
+	"github.com/uniroute/unirouter/internal/models"
 )
+
+func TestMiniMaxNormalizedResponseMeetsStrictChatDeliveryContract(t *testing.T) {
+	response, err := adapters.NewOpenAICompatible().ParseResponse(context.Background(), adapters.ResponseInput{
+		Endpoint:   adapters.EndpointChatCompletions,
+		StatusCode: http.StatusOK,
+		Channel:    models.Channel{Provider: "minimax", AdapterType: adapters.TypeOpenAICompatible},
+		Body:       []byte(`{"id":"chatcmpl-minimax","object":"chat.completion","created":1780152150,"model":"MiniMax-M3","choices":[{"finish_reason":"stop","index":0,"message":{"content":"safe answer","role":"assistant","name":"MiniMax AI","audio_content":""}}],"usage":{"total_tokens":9,"total_characters":0,"prompt_tokens":5,"completion_tokens":4,"prompt_tokens_details":{"cached_tokens":0}},"input_sensitive":false,"output_sensitive":false,"input_sensitive_type":0,"output_sensitive_type":0,"output_sensitive_int":0,"base_resp":{"status_code":0,"status_msg":"success"}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope map[string]interface{}
+	if err := decodeJSONUseNumber(response.Body, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	inspection := inspectNonStreamOutputTexts(envelope)
+	if !inspection.complete() {
+		t.Fatalf("documented safe MiniMax response did not meet strict delivery contract: %v body=%s", inspection.incompletePaths, response.Body)
+	}
+	if len(inspection.texts) != 1 || inspection.texts[0].Content != "safe answer" {
+		t.Fatalf("MiniMax model output was not preserved exactly: %+v", inspection.texts)
+	}
+}
 
 func TestNonStreamOutputInspectionCollectsModeledMessageTextValues(t *testing.T) {
 	response := map[string]interface{}{
@@ -74,6 +102,63 @@ func TestNonStreamOutputInspectionCollectsModeledMessageTextValues(t *testing.T)
 		if got := part["text"]; got != "redacted-"+wantContents[index+4] {
 			t.Fatalf("text part %s was not transformed through its exact ref: %#v", key, got)
 		}
+	}
+}
+
+func TestKimiPreservedThinkingProfileWithholdsReasoningOrToolTranscriptRewrite(t *testing.T) {
+	response := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{"message": map[string]interface{}{
+			"content":           "safe",
+			"reasoning_content": "private reasoning",
+			"tool_calls": []interface{}{map[string]interface{}{
+				"id": "call_1", "type": "function",
+				"function": map[string]interface{}{"name": "lookup", "arguments": `{"id":1}`},
+			}},
+		}}},
+	}
+	inspection := inspectNonStreamOutputTexts(response)
+	if !inspection.complete() {
+		t.Fatalf("fixture incomplete: %v", inspection.incompletePaths)
+	}
+	transformed := append([]guardrail.Text(nil), inspection.texts...)
+	for index := range transformed {
+		if strings.Contains(transformed[index].Path, ".reasoning_content") {
+			transformed[index].Content = "[REDACTED]"
+		}
+	}
+	result := guardrail.Result{Transformed: true, Texts: transformed}
+	k3 := &RouteResult{ReasoningProfile: "reasoning.kimi-k3-effort.v1"}
+	if err := applyProfileAwareOutputGuardrailTransform(k3, result, inspection.refs); err == nil ||
+		!strings.Contains(err.Error(), "preserved reasoning") {
+		t.Fatalf("K3 transcript rewrite was not withheld: %v", err)
+	}
+	message := response["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})
+	if message["reasoning_content"] != "private reasoning" {
+		t.Fatalf("protected transcript changed before withholding: %#v", message)
+	}
+
+	generic := &RouteResult{ReasoningProfile: "reasoning.unverified.v1"}
+	if err := applyProfileAwareOutputGuardrailTransform(generic, result, inspection.refs); err != nil {
+		t.Fatalf("generic redaction behavior changed: %v", err)
+	}
+	if message["reasoning_content"] != "[REDACTED]" {
+		t.Fatalf("generic redaction was not applied: %#v", message)
+	}
+}
+
+func TestKimiPreservedThinkingProfileRejectsStreamTranscriptTransformation(t *testing.T) {
+	k3 := &RouteResult{ReasoningProfile: "reasoning.kimi-k3-effort.v1"}
+	if !profileStreamGuardrailTransformUnsafe(k3, guardrail.Result{
+		Transformed: true,
+		Texts:       []guardrail.Text{{Path: "choices[0].reasoning_content", Content: "[REDACTED]"}},
+	}) {
+		t.Fatal("K3 stream reasoning rewrite was not marked unsafe")
+	}
+	if profileStreamGuardrailTransformUnsafe(k3, guardrail.Result{
+		Transformed: true,
+		Texts:       []guardrail.Text{{Path: "choices[0].content", Content: "[REDACTED]"}},
+	}) {
+		t.Fatal("ordinary content redaction was incorrectly treated as transcript rewrite")
 	}
 }
 

@@ -36,6 +36,8 @@ type guardedStreamFrame struct {
 	envelope    map[string]interface{}
 	refs        []*streamTextRef
 	unsupported bool
+	choiceFrame bool
+	terminal    bool
 	transformed bool
 }
 
@@ -87,10 +89,13 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 		frame.unsupported = true
 		return frame, nil
 	}
+	frame.choiceFrame = len(choices) > 0
+	allChoicesTerminal := len(choices) > 0
 	for choiceIndex, rawChoice := range choices {
 		choice, ok := rawChoice.(map[string]interface{})
 		if !ok {
 			frame.unsupported = true
+			allChoicesTerminal = false
 			continue
 		}
 		if !streamMapKeysSupported(choice, "index", "delta", "text", "finish_reason", "logprobs", "usage") {
@@ -110,11 +115,17 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 		if usage, exists := choice["usage"]; exists && usage != nil && !streamUsageShapeSupported(usage) {
 			frame.unsupported = true
 		}
+		choiceTerminal := false
 		if finish, exists := choice["finish_reason"]; exists && finish != nil {
 			value, ok := finish.(string)
 			if !ok || !streamFinishReasonSupported(value) {
 				frame.unsupported = true
+			} else {
+				choiceTerminal = true
 			}
+		}
+		if !choiceTerminal {
+			allChoicesTerminal = false
 		}
 		choiceIndex, ok = streamEnvelopeIndex(choice, choiceIndex)
 		if !ok {
@@ -192,6 +203,7 @@ func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
 		}
 		frame.collectTextValue(choice, "text", fmt.Sprintf("choices[%d].text", choiceIndex))
 	}
+	frame.terminal = allChoicesTerminal
 	return frame, nil
 }
 

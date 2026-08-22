@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/executionevidence"
@@ -21,6 +22,7 @@ import (
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/responsecache"
@@ -46,6 +48,73 @@ func TestAdmissionEstimateCoversCompleteFinalChatEnvelope(t *testing.T) {
 		if _, err := estimateChatAdmission([]byte(unsafe)); err == nil {
 			t.Fatalf("non-text envelope was not failed closed: %s", unsafe)
 		}
+	}
+}
+
+func TestVerifiedMiniMaxTokenizerProfileReplacesByteUpperWithoutClaimingProviderUsage(t *testing.T) {
+	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":"` + strings.Repeat("a", 100_000) + `"}],"max_tokens":1}`)
+	plan := modelrouting.Plan{
+		ExecutionProfileID: "minimax.m2.7.token-plan", ExecutionProfileVersion: "1.0.0",
+		TokenizerProfileID: modelprofile.TokenizerMiniMaxM27ID, TokenizerProfileVersion: modelprofile.TokenizerMiniMaxM27Version,
+	}
+	byteUpper, err := estimateChatAdmission(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileEstimate, err := estimateChatAdmissionForPlan(body, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profileEstimate.Version != miniMaxM27ChatEstimateVersion || profileEstimate.InputTokens >= byteUpper.InputTokens || profileEstimate.InputTokens >= 20_000 {
+		t.Fatalf("verified tokenizer estimate did not narrow conservatively: profile=%+v byte=%+v", profileEstimate, byteUpper)
+	}
+
+	plan.TokenizerProfileID = modelprofile.TokenizerByteUpperID
+	plan.TokenizerProfileVersion = modelprofile.TokenizerByteUpperVersion
+	fallback, err := estimateChatAdmissionForPlan(body, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fallback != byteUpper {
+		t.Fatalf("unverified byte upper changed: got=%+v want=%+v", fallback, byteUpper)
+	}
+
+	plan.TokenizerProfileID = "tokenizer.unknown"
+	if _, err := estimateChatAdmissionForPlan(body, plan); err == nil {
+		t.Fatal("unknown tokenizer profile was not failed closed")
+	}
+}
+
+func TestVerifiedMiniMaxTokenizerProfileAdmitsLargeToolEnvelopeBeforeFreeze(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://provider.test", encKey, nil)
+	setExecutionTestProfile(t, &plan, "minimax.m2.7.token-plan", "1.0.0")
+	plan.PublicContextLimit = 20_000
+	plan.Routes[0].MaxContext = 20_000
+	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":"` + strings.Repeat("a", 100_000) + `"}],"max_tokens":1}`)
+	byteUpper, err := estimateChatAdmission(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byteUpper.InputTokens <= plan.PublicContextLimit {
+		t.Fatalf("fixture no longer distinguishes byte upper from verified tokenizer: %+v", byteUpper)
+	}
+
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	if err := relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default()); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"public-model", "public-model", "req-minimax-profile", nil,
+		modelExecutionRequestLimits{EstimatedInputTokens: byteUpper.InputTokens, ExplicitOutputTokens: intPointer(1), EstimateVersion: byteUpper.Version},
+		body, time.Now(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.routes) != 1 || batch.limits.EstimatedInputTokens >= plan.PublicContextLimit || batch.limits.EstimateVersion != miniMaxM27ProviderEstimateVersion {
+		t.Fatalf("verified tokenizer plan was not retained through final provider envelope: %+v routes=%d", batch.limits, len(batch.routes))
 	}
 }
 
@@ -357,6 +426,7 @@ func TestImplicitOutputLimitUsesExactOpenAICompatibleWireContract(t *testing.T) 
 	encKey := []byte("0123456789abcdef0123456789abcdef")
 	newPlan := func(mode modelrouting.Mode) modelrouting.Plan {
 		plan := executionTestPlan(t, mode, modeloperation.IDChatCompletions, "https://api.deepseek.example", encKey, nil)
+		setExecutionTestProfile(t, &plan, "deepseek.v4-flash.api", "1.0.0")
 		plan.PublicOutputLimit = 2_048
 		plan.Routes[0].Provider = "deepseek"
 		plan.Routes[0].UpstreamModel = "deepseek-v4-flash"
@@ -367,7 +437,7 @@ func TestImplicitOutputLimitUsesExactOpenAICompatibleWireContract(t *testing.T) 
 	probeOnly := newPlan(modelrouting.ModeCanonical).Routes[0]
 	probeOnly.ProtocolProfileID = "legacy.channel_model_probe"
 	probeOnly.ProtocolProfileVersion = "v1"
-	if _, supported := providerOutputLimitField(probeOnly, nil); supported {
+	if _, supported := providerOutputLimitField(newPlan(modelrouting.ModeCanonical), probeOnly, nil); supported {
 		t.Fatal("probe profile was incorrectly promoted to an execution wire contract")
 	}
 	for _, mode := range []modelrouting.Mode{modelrouting.ModeCanonical, modelrouting.ModeVerify} {
@@ -435,6 +505,39 @@ func TestImplicitOutputLimitUsesExactOpenAICompatibleWireContract(t *testing.T) 
 	if !strings.Contains(string(actualBody), `"max_completion_tokens":128`) || strings.Contains(string(actualBody), `"max_tokens"`) {
 		t.Fatalf("explicit reasoning output field was rewritten: %s", actualBody)
 	}
+}
+
+func TestMiniMaxVerifiedProtocolInjectsOfficialCompletionLimitForReasoning(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://api.minimaxi.com", encKey, nil)
+	setExecutionTestProfile(t, &plan, "minimax.m2.7.token-plan", "1.0.0")
+	plan.PublicContextLimit = 204_800
+	plan.PublicOutputLimit = 65_536
+	plan.Routes[0].Provider = "minimax"
+	plan.Routes[0].UpstreamModel = "MiniMax-M2.7"
+	plan.Routes[0].ProtocolProfileID = "openai.chat_completions"
+	plan.Routes[0].ProtocolProfileVersion = "1.0.0"
+	plan.Routes[0].MaxContext = 204_800
+
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	require.NoError(t, relay.SetModelExecutionRuntime(
+		modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
+	))
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"MiniMax-M2.7", "MiniMax-M2.7", "req-minimax-output-contract", []string{modelCapabilityReasoning},
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
+		[]byte(`{"model":"MiniMax-M2.7","messages":[{"role":"user","content":"hello"}]}`), time.Now(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 65_536, batch.limits.ProviderOutputLimit)
+	require.Len(t, batch.routes, 1)
+	actualBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
+	require.NoError(t, err)
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(actualBody, &payload))
+	require.Equal(t, "65536", string(payload["max_completion_tokens"]))
+	require.Nil(t, payload["max_tokens"])
 }
 
 func TestChatProviderFailuresHaveOneTopologyNeutralExhaustedResponse(t *testing.T) {

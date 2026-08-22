@@ -152,14 +152,14 @@ func revalidatePublicModel(ctx context.Context, tx pgx.Tx, request preparedReque
 		}
 		return Stale, nil
 	}
-	var name, lifecycle string
+	var name, lifecycle, executionProfileID, executionProfileVersion string
 	var contextLimit, outputLimit int
 	err := tx.QueryRow(ctx, `
-SELECT model_name,lifecycle,context_length,output_limit
+SELECT model_name,lifecycle,context_length,output_limit,execution_profile_id,execution_profile_version
   FROM model_registry
  WHERE id=$1 AND org_id=$2
  FOR SHARE`, request.plan.PublicModelID, request.identity.OrgID).Scan(
-		&name, &lifecycle, &contextLimit, &outputLimit,
+		&name, &lifecycle, &contextLimit, &outputLimit, &executionProfileID, &executionProfileVersion,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Stale, nil
@@ -170,7 +170,8 @@ SELECT model_name,lifecycle,context_length,output_limit
 	if lifecycle == "retired" {
 		return Disabled, nil
 	}
-	if name != request.plan.PublicModel || contextLimit != request.plan.PublicContextLimit || outputLimit != request.plan.PublicOutputLimit {
+	if name != request.plan.PublicModel || contextLimit != request.plan.PublicContextLimit || outputLimit != request.plan.PublicOutputLimit ||
+		executionProfileID != request.plan.ExecutionProfileID || executionProfileVersion != request.plan.ExecutionProfileVersion {
 		return Stale, nil
 	}
 	return Applied, nil

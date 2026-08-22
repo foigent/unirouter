@@ -12,6 +12,7 @@ import (
 	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/modelexecution"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
@@ -45,9 +46,18 @@ func (planner *legacyHandlerTestPlanner) Plan(ctx context.Context, request model
 		PublicModel:          request.PublicModel,
 		ModelOperationID:     request.ModelOperationID,
 		RequiredCapabilities: append([]string(nil), request.RequiredCapabilities...),
-		DatabaseTime:         time.Now().UTC(),
-		Routes:               make([]modelrouting.Route, 0, len(legacyRoutes)),
+		ExecutionProfileID:   modelprofile.UnverifiedProfileID, ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
+		TokenizerProfileID: modelprofile.TokenizerByteUpperID, TokenizerProfileVersion: modelprofile.TokenizerByteUpperVersion,
+		DatabaseTime: time.Now().UTC(),
+		Routes:       make([]modelrouting.Route, 0, len(legacyRoutes)),
 	}
+	profile, ok := modelprofile.Lookup(modelprofile.UnverifiedProfileID, modelprofile.UnverifiedProfileVersion)
+	if !ok {
+		return modelrouting.Plan{}, fmt.Errorf("unverified execution profile is unavailable")
+	}
+	plan.ReasoningProfile = profile.ReasoningProfile
+	plan.CacheUsageProfile = profile.CacheUsageProfile
+	plan.ModelProtocolProfile = profile.ProtocolProfile
 	if len(legacyRoutes) > 0 {
 		plan.SnapshotHash = legacyRoutes[0].SnapshotVersion
 		plan.RuntimeReleaseRef = legacyRoutes[0].RuntimeReleaseRef

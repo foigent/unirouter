@@ -12,10 +12,50 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+func TestModelExecutionProfileCatalogAndExactAliasResolution(t *testing.T) {
+	h := newTestHandler(&testutil.MockDB{})
+	recorder := httptest.NewRecorder()
+	h.ListModelExecutionProfiles(recorder, httptest.NewRequest(http.MethodGet, "/model-execution-profiles", nil))
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		ContractVersion string `json:"contract_version"`
+		Data            []struct {
+			ID                   string   `json:"id"`
+			ProviderCapabilities []string `json:"provider_capabilities"`
+			Capabilities         []string `json:"capabilities"`
+			Aliases              []string `json:"aliases"`
+			EvidenceRefs         []string `json:"evidence_refs"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, "unirouter.model-execution-profiles.v1", response.ContractVersion)
+	require.NotEmpty(t, response.Data)
+	require.Equal(t, "unverified.chat", response.Data[0].ID)
+	require.NotNil(t, response.Data[0].ProviderCapabilities)
+	require.NotNil(t, response.Data[0].Capabilities)
+	require.NotNil(t, response.Data[0].Aliases)
+	require.NotNil(t, response.Data[0].EvidenceRefs)
+
+	profile, err := resolveModelExecutionProfile(" MiniMax_M2.7 ", "", "")
+	require.NoError(t, err)
+	require.Equal(t, "minimax.m2.7.token-plan", profile.ID)
+	require.Equal(t, 204_800, profile.DefaultContextWindow)
+	require.Equal(t, 65_536, profile.DefaultOutputLimit)
+	require.Contains(t, profile.ProviderCapabilities, "prompt_cache")
+	require.NotContains(t, profile.Capabilities, "vision")
+
+	unknown, err := resolveModelExecutionProfile("fake-MiniMax-M2.7-preview", "", "")
+	require.NoError(t, err)
+	require.Equal(t, "unverified.chat", unknown.ID)
+	_, err = resolveModelExecutionProfile("MiniMax-M2.7", "minimax.m2.7.token-plan", "9.9.9")
+	require.Error(t, err)
+}
 
 func TestCreateModelRegistry_InvalidLifecycle(t *testing.T) {
 	h := newTestHandler(&testutil.MockDB{})
@@ -156,6 +196,8 @@ func TestUpdateModelRegistry_LifecycleAuditBeforeAfter(t *testing.T) {
 				*dest[9].(*string) = "gpt-4o"
 				*dest[10].(*bool) = true
 				*dest[11].(*string) = ""
+				*dest[12].(*string) = "unverified.chat"
+				*dest[13].(*string) = "1.0.0"
 				if !lockedBefore {
 					*dest[4].(*string) = "deprecated"
 					*dest[11].(*string) = "Use company-chat-v2"
@@ -237,9 +279,11 @@ func TestListApprovedModelCatalog_FiltersApprovedLifecycle(t *testing.T) {
 						*dest[10].(*string) = "gpt-4o"
 						*dest[11].(*bool) = true
 						*dest[12].(*string) = ""
-						*dest[13].(*time.Time) = now
-						*dest[14].(*time.Time) = now
-						*dest[15].(*string) = "company-chat-fast"
+						*dest[13].(*string) = "unverified.chat"
+						*dest[14].(*string) = "1.0.0"
+						*dest[15].(*time.Time) = now
+						*dest[16].(*time.Time) = now
+						*dest[17].(*string) = "company-chat-fast"
 						return nil
 					},
 				},

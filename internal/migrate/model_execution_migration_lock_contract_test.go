@@ -103,6 +103,50 @@ func TestModelExecutionMigrationsJoinSharedLifecycleLockBeforeTableLocks(t *test
 				"provider_connections", "channels", "schema_migrations",
 			},
 		},
+		{
+			name:           "80 up",
+			file:           "000080_observation_provider_cost_reconciliation.up.sql",
+			firstProtected: "ALTER TABLE billing_observation_receipts",
+			lockedTables: []string{
+				"freeze_idempotency", "billing_provider_attempts",
+				"provider_cost_reconciliations", "billing_observation_receipts",
+				"schema_migrations",
+			},
+		},
+		{
+			name:           "80 down",
+			file:           "000080_observation_provider_cost_reconciliation.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"freeze_idempotency", "billing_provider_attempts",
+				"provider_cost_reconciliations", "billing_observation_receipts",
+				"schema_migrations",
+			},
+		},
+		{
+			name:           "81 up",
+			file:           "000081_versioned_model_execution_profiles.up.sql",
+			firstProtected: "ALTER TABLE model_registry",
+			lockedTables:   []string{"model_registry", "schema_migrations"},
+		},
+		{
+			name:           "81 down",
+			file:           "000081_versioned_model_execution_profiles.down.sql",
+			firstProtected: "DO $$",
+			lockedTables:   []string{"model_registry", "schema_migrations"},
+		},
+		{
+			name:           "82 up",
+			file:           "000082_sealed_model_execution_contracts.up.sql",
+			firstProtected: "ALTER TABLE runtime_change_releases",
+			lockedTables:   []string{"runtime_change_releases", "model_registry", "schema_migrations"},
+		},
+		{
+			name:           "82 down",
+			file:           "000082_sealed_model_execution_contracts.down.sql",
+			firstProtected: "DO $$",
+			lockedTables:   []string{"runtime_change_releases", "model_registry", "schema_migrations"},
+		},
 	}
 
 	for _, test := range tests {
@@ -148,6 +192,9 @@ func TestModelExecutionGuardedDownsLockBeforeLedgerAndEvidenceChecks(t *testing.
 		"000071_model_execution_evidence.down.sql",
 		"000072_execution_evidence_projection.down.sql",
 		"000079_canonical_connection_license_authority.down.sql",
+		"000080_observation_provider_cost_reconciliation.down.sql",
+		"000081_versioned_model_execution_profiles.down.sql",
+		"000082_sealed_model_execution_contracts.down.sql",
 	} {
 		t.Run(file, func(t *testing.T) {
 			body, err := os.ReadFile("../../migrations/" + file)

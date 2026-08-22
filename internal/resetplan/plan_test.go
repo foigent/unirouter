@@ -110,7 +110,7 @@ func TestBuildSupportsExactSchema79AndRejectsPreviousOrFutureMax(t *testing.T) {
 	}
 
 	future := completeSnapshot()
-	future.MigrationVersions = append(future.MigrationVersions, "000080_future_contract")
+	future.MigrationVersions = append(future.MigrationVersions, "000083_future_contract")
 	if _, err := Build(future, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
 		t.Fatalf("future migration error = %v", err)
 	}
@@ -459,6 +459,7 @@ func completeSnapshot() Snapshot {
 			{Name: "billing_provider_attempts_reservation_fk", ChildTable: "billing_provider_attempts", ParentTable: "freeze_idempotency", DeleteAction: "NO ACTION", Deferrable: true},
 			{Name: "freeze_idempotency_delivery_attempt_provider_fk", ChildTable: "freeze_idempotency", ParentTable: "billing_provider_attempts", DeleteAction: "NO ACTION", Deferrable: true},
 			{Name: "freeze_idempotency_observation_receipt_fk", ChildTable: "freeze_idempotency", ParentTable: "billing_observation_receipts", DeleteAction: "NO ACTION", Deferrable: true},
+			{Name: "provider_cost_reconciliations_observation_receipt_fk", ChildTable: "provider_cost_reconciliations", ParentTable: "billing_observation_receipts", DeleteAction: "NO ACTION", Deferrable: true},
 		},
 		Triggers: triggers,
 		Redis: RedisObservation{Prefixes: []RedisPrefixObservation{

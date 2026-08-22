@@ -102,15 +102,17 @@ func (relay *Relay) providerClient(timeout time.Duration) adapters.HTTPDoer {
 }
 
 type preparedModelExecutionBatch struct {
-	plan   modelrouting.Plan
-	routes []preparedModelExecutionRoute
-	limits modelExecutionRequestLimits
+	plan            modelrouting.Plan
+	routes          []preparedModelExecutionRoute
+	limits          modelExecutionRequestLimits
+	profileEvidence modelExecutionProfileEvidence
 }
 
 var (
-	errModelExecutionOutputLimitExceeded  = errors.New("model execution output limit exceeded")
-	errModelExecutionContextLimitExceeded = errors.New("model execution context limit exceeded")
-	errModelExecutionOutputLimitRequired  = errors.New("model execution output limit is required")
+	errModelExecutionOutputLimitExceeded   = errors.New("model execution output limit exceeded")
+	errModelExecutionContextLimitExceeded  = errors.New("model execution context limit exceeded")
+	errModelExecutionOutputLimitRequired   = errors.New("model execution output limit is required")
+	errModelExecutionProfileRequestInvalid = errors.New("model execution profile request is invalid")
 )
 
 // legacyImplicitOutputLimitV1 preserves the pre-catalog compatibility
@@ -158,7 +160,7 @@ func (limits modelExecutionRequestLimits) resolveOutputReservation(plan modelrou
 	} else {
 		resolved.ProviderOutputLimit = plan.PublicOutputLimit
 		if resolved.ProviderOutputLimit <= 0 && plan.AuthorityMode == modelrouting.ModeLegacy {
-			resolved.ProviderOutputLimit = serverDerivedLegacyOutputLimit(plan.Routes, requiredCapabilities)
+			resolved.ProviderOutputLimit = serverDerivedLegacyOutputLimit(plan, requiredCapabilities)
 		}
 		if resolved.ProviderOutputLimit <= 0 {
 			return modelExecutionRequestLimits{}, errModelExecutionOutputLimitRequired
@@ -171,24 +173,20 @@ func (limits modelExecutionRequestLimits) resolveOutputReservation(plan modelrou
 	return resolved, nil
 }
 
-func serverDerivedLegacyOutputLimit(routes []modelrouting.Route, requiredCapabilities []string) int {
-	for _, route := range routes {
-		if _, supported := providerOutputLimitField(route, requiredCapabilities); supported {
+func serverDerivedLegacyOutputLimit(plan modelrouting.Plan, requiredCapabilities []string) int {
+	for _, route := range plan.Routes {
+		if _, supported := providerOutputLimitField(plan, route, requiredCapabilities); supported {
 			return legacyImplicitOutputLimitV1
 		}
 	}
 	return 0
 }
 
-// providerOutputLimitField is a wire-contract decision, not a model-name
-// heuristic. The canonical Chat Completions profile and the repository's
-// legacy adapter contract use max_tokens. Requests that require reasoning have
-// no published field contract yet; callers must select an explicit provider
-// field instead of the gateway guessing and reproducing schema-rejection bugs.
-func providerOutputLimitField(route modelrouting.Route, requiredCapabilities []string) (string, bool) {
-	if slices.Contains(requiredCapabilities, modelCapabilityReasoning) {
-		return "", false
-	}
+// providerOutputLimitField is a wire-contract decision, never a model-name
+// heuristic. A verified model protocol profile may bind a provider-specific
+// field; otherwise the route's execution contract supplies only the historical
+// non-reasoning OpenAI-compatible max_tokens behavior.
+func providerOutputLimitField(plan modelrouting.Plan, route modelrouting.Route, requiredCapabilities []string) (string, bool) {
 	adapterType := adapters.NormalizeType(route.AdapterType)
 	if adapterType == adapters.TypeAnthropicNative {
 		// AnthropicNative parses the downstream limit and deterministically emits
@@ -196,6 +194,16 @@ func providerOutputLimitField(route modelrouting.Route, requiredCapabilities []s
 		return "max_tokens", true
 	}
 	if adapterType != adapters.TypeOpenAICompatible && adapterType != adapters.TypeAzureOpenAI {
+		return "", false
+	}
+	// MiniMax's current OpenAI-compatible contract recommends
+	// max_completion_tokens for M3 and M2.x, including reasoning requests. The
+	// immutable model profile is the authority; aliases and provider labels are
+	// deliberately ignored here.
+	if strings.TrimSpace(plan.ModelProtocolProfile) == "protocol.minimax-openai-chat.v2" {
+		return "max_completion_tokens", true
+	}
+	if slices.Contains(requiredCapabilities, modelCapabilityReasoning) {
 		return "", false
 	}
 
@@ -283,6 +291,8 @@ func modelExecutionLimitErrorDetails(err error) (code, message string, ok bool) 
 		return "validation_error.context_length_exceeded", "Estimated request tokens exceed the model's available context limit", true
 	case errors.Is(err, errModelExecutionOutputLimitRequired):
 		return "validation_error.output_limit_required", "An explicit output token limit is required because no provider-compatible published output limit is available", true
+	case errors.Is(err, errModelExecutionProfileRequestInvalid):
+		return "validation_error.model_execution_profile", "Request is incompatible with the selected model execution profile", true
 	default:
 		return "", "", false
 	}
@@ -313,11 +323,24 @@ func (relay *Relay) prepareModelExecutionRoutes(
 	if err := requireModelExecutionDispatchWired(operation, plan); err != nil {
 		return nil, err
 	}
+	profileEvidence := modelExecutionProfileEvidence{}
+	if endpoint == adapters.EndpointChatCompletions {
+		profileEvidence, err = validateChatExecutionProfileRequest(body, plan)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, err)
+		}
+		profileAdmission, admissionErr := estimateChatAdmissionForPlan(body, plan)
+		if admissionErr != nil {
+			return nil, admissionErr
+		}
+		limits.EstimatedInputTokens = profileAdmission.InputTokens
+		limits.EstimateVersion = profileAdmission.Version
+	}
 	limits, err = limits.resolveOutputReservation(plan, requiredCapabilities)
 	if err != nil {
 		return nil, err
 	}
-	batch := &preparedModelExecutionBatch{plan: plan, limits: limits}
+	batch := &preparedModelExecutionBatch{plan: plan, limits: limits, profileEvidence: profileEvidence}
 	maximumInputEstimate := limits.EstimatedInputTokens
 	limitExcluded := 0
 	outputLimitUnsupported := 0
@@ -337,7 +360,7 @@ func (relay *Relay) prepareModelExecutionRoutes(
 		routeLimits := limits
 		providerDownstreamBody := body
 		if limits.ProviderOutputLimit > 0 && endpoint == adapters.EndpointChatCompletions {
-			field, supported := providerOutputLimitField(route, requiredCapabilities)
+			field, supported := providerOutputLimitField(plan, route, requiredCapabilities)
 			if !supported {
 				outputLimitUnsupported++
 				relay.recordTraceEvent(ctx, requestID, "provider.output_limit_unsupported", "provider", "error", publicModel, requestedModel, &compat, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"failure_kind": "configuration"})
@@ -347,7 +370,7 @@ func (relay *Relay) prepareModelExecutionRoutes(
 			if err != nil {
 				return nil, err
 			}
-			injectedAdmission, admissionErr := estimateChatAdmission(providerDownstreamBody)
+			injectedAdmission, admissionErr := estimateChatAdmissionForPlan(providerDownstreamBody, plan)
 			if admissionErr != nil {
 				return nil, admissionErr
 			}
@@ -379,7 +402,7 @@ func (relay *Relay) prepareModelExecutionRoutes(
 		if endpoint == adapters.EndpointEmbeddings {
 			providerAdmission, admissionErr = estimateProviderEmbeddingsAdmission(actualBody)
 		} else {
-			providerAdmission, admissionErr = estimateProviderJSONAdmission(actualBody)
+			providerAdmission, admissionErr = estimateProviderJSONAdmissionForPlan(actualBody, plan)
 		}
 		if admissionErr != nil {
 			relay.recordTraceEvent(ctx, requestID, "provider.request_body_unmeasurable", "provider", "error", publicModel, requestedModel, &compat, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"failure_kind": "configuration"})
@@ -446,6 +469,8 @@ func compatibilityRouteFromExecutionPlan(plan modelrouting.Plan, route modelrout
 		CandidateCount: len(plan.Routes), ExcludedCount: len(plan.Exclusions),
 		SelectionReason: route.SelectionReason, RequiresProbe: route.RequiresProbe,
 		RuntimeReleaseRef: plan.RuntimeReleaseRef, RuntimeStage: plan.RuntimeStage,
+		ExecutionProfileID: plan.ExecutionProfileID, ExecutionProfileVersion: plan.ExecutionProfileVersion,
+		ReasoningProfile: plan.ReasoningProfile, CacheUsageProfile: plan.CacheUsageProfile,
 	}
 }
 
@@ -604,6 +629,7 @@ const (
 	modelCapabilityVision            = "vision"
 	modelCapabilityAudio             = "audio"
 	modelCapabilityStreaming         = "streaming"
+	modelCapabilityPromptCache       = "prompt_cache"
 )
 
 func (relay *Relay) applyRouteHealth(ctx context.Context, _ *RouteResult, action executionHealthAction) error {
@@ -805,10 +831,13 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 			return nil, fmt.Errorf("unsupported response_format type")
 		}
 	}
-	for _, field := range []string{"reasoning", "reasoning_effort"} {
+	for _, field := range []string{"reasoning", "reasoning_effort", "thinking"} {
 		if raw, exists := envelope[field]; exists && !isJSONNull(raw) {
 			add(modelCapabilityReasoning)
 		}
+	}
+	if raw, exists := envelope["prompt_cache_key"]; exists && !isJSONNull(raw) {
+		add(modelCapabilityPromptCache)
 	}
 	if raw, exists := envelope["modalities"]; exists && !isJSONNull(raw) {
 		var modalities []string

@@ -34,6 +34,12 @@ export type CanonicalDeploymentLifecycleRelease = {
   release_ref: string;
   public_model_id: number;
   model_name: string;
+  // M82 exact lifecycle reads expose these pins. The versioned v1 authoring
+  // receipt deliberately omits them and requires a refresh before inspection.
+  execution_profile_id?: string;
+  execution_profile_version?: string;
+  public_context_limit?: number;
+  public_output_limit?: number;
   candidate_version: string;
   candidate_hash: string;
   baseline_hash: string;
@@ -100,6 +106,10 @@ export type CanonicalDeploymentLifecycleReleaseSummary = {
   release_ref: string;
   public_model_id: number;
   model_name: string;
+  execution_profile_id?: string;
+  execution_profile_version?: string;
+  public_context_limit?: number;
+  public_output_limit?: number;
   candidate_version: string;
   candidate_hash: string;
   route_items_hash: string;

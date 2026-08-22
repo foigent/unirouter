@@ -1,6 +1,7 @@
 package runtimechange
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -89,6 +90,77 @@ type DeploymentReleaseAuthoringReceipt struct {
 	Release            DeploymentRelease            `json:"release"`
 	CreatedAt          time.Time                    `json:"created_at"`
 	CompletedAt        time.Time                    `json:"completed_at"`
+}
+
+// MarshalJSON preserves the exact v1 authoring-receipt wire contract. M82 adds
+// release-owned execution pins, but those facts are exposed by the exact
+// release and lifecycle inspection APIs rather than retroactively changing an
+// already versioned idempotency receipt body.
+func (receipt DeploymentReleaseAuthoringReceipt) MarshalJSON() ([]byte, error) {
+	type releaseV1 struct {
+		ID                    int64               `json:"id"`
+		ReleaseRef            string              `json:"release_ref"`
+		PublicModelID         int64               `json:"public_model_id"`
+		ModelName             string              `json:"model_name"`
+		CandidateVersion      string              `json:"candidate_version"`
+		CandidateHash         string              `json:"candidate_hash"`
+		BaselineHash          string              `json:"baseline_hash"`
+		RouteItemsHash        string              `json:"route_items_hash"`
+		RouteItemsCount       int                 `json:"route_items_count"`
+		RouteItemsSealedAt    *time.Time          `json:"route_items_sealed_at,omitempty"`
+		Candidate             DeploymentCandidate `json:"candidate"`
+		Stage                 string              `json:"stage"`
+		Version               int64               `json:"version"`
+		ParentStableReleaseID *int64              `json:"parent_stable_release_id,omitempty"`
+		CanaryBasisPoints     int                 `json:"canary_basis_points"`
+		Reason                string              `json:"reason"`
+		CreatedBy             int64               `json:"created_by"`
+		ValidatedBy           *int64              `json:"validated_by,omitempty"`
+		ActivatedBy           *int64              `json:"activated_by,omitempty"`
+		CreatedAt             time.Time           `json:"created_at"`
+		ValidatedAt           *time.Time          `json:"validated_at,omitempty"`
+		ActivatedAt           *time.Time          `json:"activated_at,omitempty"`
+		RolledBackAt          *time.Time          `json:"rolled_back_at,omitempty"`
+		UpdatedAt             time.Time           `json:"updated_at"`
+	}
+	type receiptV1 struct {
+		ContractVersion    string                       `json:"contract_version"`
+		ReceiptID          int64                        `json:"receipt_id"`
+		CustomerOrgID      int64                        `json:"customer_org_id"`
+		ActorUserID        int64                        `json:"actor_user_id,omitempty"`
+		ServerOperationID  string                       `json:"server_operation_id"`
+		OriginalHTTPStatus int                          `json:"original_http_status"`
+		OriginalLocation   string                       `json:"original_location"`
+		IdempotencyReplay  bool                         `json:"idempotency_replay"`
+		Baseline           DeploymentReleaseBaseline    `json:"baseline"`
+		Selections         []DeploymentReleaseSelection `json:"selections"`
+		Release            releaseV1                    `json:"release"`
+		CreatedAt          time.Time                    `json:"created_at"`
+		CompletedAt        time.Time                    `json:"completed_at"`
+	}
+	release := receipt.Release
+	return json.Marshal(receiptV1{
+		ContractVersion: receipt.ContractVersion, ReceiptID: receipt.ReceiptID,
+		CustomerOrgID: receipt.CustomerOrgID, ActorUserID: receipt.ActorUserID,
+		ServerOperationID: receipt.ServerOperationID, OriginalHTTPStatus: receipt.OriginalHTTPStatus,
+		OriginalLocation: receipt.OriginalLocation, IdempotencyReplay: receipt.IdempotencyReplay,
+		Baseline: receipt.Baseline, Selections: receipt.Selections,
+		Release: releaseV1{
+			ID: release.ID, ReleaseRef: release.ReleaseRef, PublicModelID: release.PublicModelID,
+			ModelName: release.ModelName, CandidateVersion: release.CandidateVersion,
+			CandidateHash: release.CandidateHash, BaselineHash: release.BaselineHash,
+			RouteItemsHash: release.RouteItemsHash, RouteItemsCount: release.RouteItemsCount,
+			RouteItemsSealedAt: release.RouteItemsSealedAt, Candidate: release.Candidate,
+			Stage: release.Stage, Version: release.Version,
+			ParentStableReleaseID: release.ParentStableReleaseID,
+			CanaryBasisPoints:     release.CanaryBasisPoints, Reason: release.Reason,
+			CreatedBy: release.CreatedBy, ValidatedBy: release.ValidatedBy,
+			ActivatedBy: release.ActivatedBy, CreatedAt: release.CreatedAt,
+			ValidatedAt: release.ValidatedAt, ActivatedAt: release.ActivatedAt,
+			RolledBackAt: release.RolledBackAt, UpdatedAt: release.UpdatedAt,
+		},
+		CreatedAt: receipt.CreatedAt, CompletedAt: receipt.CompletedAt,
+	})
 }
 
 func NormalizeDeploymentReleaseAuthoringCommand(

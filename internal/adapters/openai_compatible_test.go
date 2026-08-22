@@ -50,7 +50,7 @@ func TestOpenAICompatibleBuildRequest_RewritesModelAndURL(t *testing.T) {
 
 func TestOpenAICompatibleBuildRequest_PreservesOpenAIAndProviderFields(t *testing.T) {
 	adapter := NewOpenAICompatible()
-	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"https://example.com/image.png"}}]}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"tool_choice":"auto","parallel_tool_calls":true,"response_format":{"type":"json_object"},"stream_options":{"include_usage":true},"reasoning":{"effort":"high"},"reasoning_effort":"high","provider_counter":9223372036854775807}`)
+	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"https://example.com/image.png"}}]},{"role":"assistant","content":null,"reasoning_content":"checked","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"tool_choice":"auto","parallel_tool_calls":true,"response_format":{"type":"json_object"},"stream_options":{"include_usage":true},"reasoning":{"effort":"high"},"reasoning_effort":"high","thinking":{"type":"enabled"},"provider_counter":9223372036854775807}`)
 	req, err := adapter.BuildRequest(context.Background(), RequestInput{
 		Endpoint:       EndpointChatCompletions,
 		DownstreamBody: body,
@@ -74,7 +74,7 @@ func TestOpenAICompatibleBuildRequest_PreservesOpenAIAndProviderFields(t *testin
 	if err := json.Unmarshal(payload["model"], &model); err != nil || model != "upstream-model" {
 		t.Fatalf("model rewrite failed: model=%q err=%v body=%s", model, err, upstreamBody)
 	}
-	for _, field := range []string{"messages", "tools", "tool_choice", "parallel_tool_calls", "response_format", "stream_options", "reasoning", "reasoning_effort", "provider_counter"} {
+	for _, field := range []string{"messages", "tools", "tool_choice", "parallel_tool_calls", "response_format", "stream_options", "reasoning", "reasoning_effort", "thinking", "provider_counter"} {
 		if len(payload[field]) == 0 {
 			t.Fatalf("field %q was dropped: %s", field, upstreamBody)
 		}
@@ -105,6 +105,120 @@ func TestOpenAICompatibleParseResponse_Usage(t *testing.T) {
 	}
 	if resp.Meta.RequestedModel != "company-chat" || resp.Meta.UpstreamModel != "gpt-4o" {
 		t.Fatalf("unexpected meta: %+v", resp.Meta)
+	}
+}
+
+func TestOpenAICompatibleParseResponse_NormalizesOnlySafeMiniMaxControlFields(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"id":"chatcmpl-minimax","object":"chat.completion","created":1780152150,"model":"MiniMax-M3","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hello","name":"MiniMax AI","audio_content":""}}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"total_characters":0},"input_sensitive":false,"output_sensitive":false,"input_sensitive_type":0,"output_sensitive_type":0,"output_sensitive_int":0,"base_resp":{"status_code":0,"status_msg":"success"}}`)
+	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint:   EndpointChatCompletions,
+		StatusCode: http.StatusOK,
+		Body:       body,
+		Channel:    models.Channel{Provider: "MiniMax", AdapterType: TypeOpenAICompatible},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var normalized map[string]json.RawMessage
+	if err := json.Unmarshal(resp.Body, &normalized); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"input_sensitive", "output_sensitive", "input_sensitive_type", "output_sensitive_type", "output_sensitive_int", "base_resp"} {
+		if _, exists := normalized[field]; exists {
+			t.Fatalf("safe MiniMax control field %q was not removed: %s", field, resp.Body)
+		}
+	}
+	var choices []struct {
+		Message map[string]json.RawMessage `json:"message"`
+	}
+	if err := json.Unmarshal(normalized["choices"], &choices); err != nil || len(choices) != 1 {
+		t.Fatalf("decode normalized choices: choices=%v err=%v", choices, err)
+	}
+	for _, field := range []string{"name", "audio_content"} {
+		if _, exists := choices[0].Message[field]; exists {
+			t.Fatalf("safe MiniMax message control field %q was not removed: %s", field, resp.Body)
+		}
+	}
+	if got := string(choices[0].Message["content"]); got != `"hello"` {
+		t.Fatalf("model content changed during normalization: %s", got)
+	}
+	if resp.Usage.PromptTokens != 3 || resp.Usage.CompletionTokens != 4 || resp.Usage.TotalTokens != 7 {
+		t.Fatalf("usage changed during normalization: %+v", resp.Usage)
+	}
+}
+
+func TestOpenAICompatibleParseResponse_LeavesUnsafeOrUnknownMiniMaxFieldsForFailClosedDelivery(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"choices":[{"message":{"role":"assistant","content":"hidden","name":"unexpected","audio_content":"audio"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},"input_sensitive":true,"output_sensitive":true,"input_sensitive_type":1,"output_sensitive_type":2,"output_sensitive_int":3,"base_resp":{"status_code":1001,"status_msg":"blocked"},"unknown_provider_field":"opaque"}`)
+	resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint:   EndpointChatCompletions,
+		StatusCode: http.StatusOK,
+		Body:       body,
+		Channel:    models.Channel{Provider: "minimax", AdapterType: TypeOpenAICompatible},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var normalized map[string]json.RawMessage
+	if err := json.Unmarshal(resp.Body, &normalized); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"input_sensitive", "output_sensitive", "input_sensitive_type", "output_sensitive_type", "output_sensitive_int", "base_resp", "unknown_provider_field"} {
+		if _, exists := normalized[field]; !exists {
+			t.Fatalf("unsafe or unknown field %q was silently removed: %s", field, resp.Body)
+		}
+	}
+}
+
+func TestOpenAICompatibleNormalizeStreamFrame_NormalizesSafeMiniMaxEnvelopeOnly(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	input := []byte(`{"id":"chunk-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"hello","name":"MiniMax AI","audio_content":""}}],"input_sensitive":false,"output_sensitive":false,"base_resp":{"status_code":0,"status_msg":""}}`)
+	got, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
+		Data: input, Channel: models.Channel{Provider: "minimax"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var normalized map[string]json.RawMessage
+	if err := json.Unmarshal(got, &normalized); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"input_sensitive", "output_sensitive", "base_resp"} {
+		if _, exists := normalized[field]; exists {
+			t.Fatalf("safe stream control field %q was not removed: %s", field, got)
+		}
+	}
+	if _, exists := normalized["choices"]; !exists {
+		t.Fatalf("stream choices were lost: %s", got)
+	}
+	var choices []struct {
+		Delta map[string]json.RawMessage `json:"delta"`
+	}
+	if err := json.Unmarshal(normalized["choices"], &choices); err != nil || len(choices) != 1 {
+		t.Fatalf("decode normalized stream choices: choices=%v err=%v", choices, err)
+	}
+	for _, field := range []string{"name", "audio_content"} {
+		if _, exists := choices[0].Delta[field]; exists {
+			t.Fatalf("safe MiniMax stream delta field %q was not removed: %s", field, got)
+		}
+	}
+	if gotContent := string(choices[0].Delta["content"]); gotContent != `"hello"` {
+		t.Fatalf("stream content changed during normalization: %s", gotContent)
+	}
+
+	unsafe := []byte(`{"choices":[{"delta":{"content":"hidden","name":"unexpected","audio_content":"audio"}}]}`)
+	unsafeGot, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
+		Data: unsafe, Channel: models.Channel{Provider: "minimax"},
+	})
+	if err != nil || string(unsafeGot) != string(unsafe) {
+		t.Fatalf("unsafe MiniMax stream metadata was removed: got=%s err=%v", unsafeGot, err)
+	}
+	unchanged, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
+		Data: input, Channel: models.Channel{Provider: "openai"},
+	})
+	if err != nil || string(unchanged) != string(input) {
+		t.Fatalf("non-MiniMax stream frame changed: got=%s err=%v", unchanged, err)
 	}
 }
 
@@ -204,15 +318,16 @@ func TestOpenAICompatibleInvalidPresentCounterStillFails(t *testing.T) {
 func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 	adapter := NewOpenAICompatible()
 	tests := []struct {
-		name     string
-		body     string
-		prompt   int
-		uncached int
-		read     int
-		creation int
-		schema   string
-		status   string
-		wantErr  bool
+		name         string
+		body         string
+		prompt       int
+		uncached     int
+		read         int
+		creation     int
+		schema       string
+		status       string
+		cacheProfile string
+		wantErr      bool
 	}{
 		{
 			name:   "OpenAI cached-token subset",
@@ -237,6 +352,13 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`,
 			prompt: 100, uncached: 20, read: 80,
 			schema: CacheUsageSchemaDeepSeekV1, status: CacheUsageStatusHitMissReported,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+		},
+		{
+			name:   "unmodeled DeepSeek counters are not billing truth",
+			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`,
+			prompt: 100, uncached: 100, read: 0,
+			status: CacheUsageStatusNotReported,
 		},
 		{
 			name:   "authoritative zero hit",
@@ -261,19 +383,34 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "DeepSeek partition must match prompt total",
-			body:    `{"usage":{"prompt_tokens":100,"completion_tokens":1,"total_tokens":101,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":19}}`,
-			wantErr: true,
+			name:         "DeepSeek partition must match prompt total",
+			body:         `{"usage":{"prompt_tokens":100,"completion_tokens":1,"total_tokens":101,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":19}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
 		},
 		{
-			name:    "DeepSeek partial hit-only contract is rejected",
-			body:    `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_cache_hit_tokens":80}}`,
-			wantErr: true,
+			name:         "DeepSeek partial hit-only contract is rejected",
+			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_cache_hit_tokens":80}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
 		},
 		{
-			name:    "DeepSeek partial miss-only contract is rejected",
-			body:    `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_cache_miss_tokens":80}}`,
-			wantErr: true,
+			name:         "DeepSeek partial miss-only contract is rejected",
+			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_cache_miss_tokens":80}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
+		},
+		{
+			name:         "DeepSeek profile rejects OpenAI nested cache wire",
+			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"prompt_tokens_details":{"cached_tokens":80}}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
+		},
+		{
+			name:         "DeepSeek profile rejects Kimi top-level cache wire",
+			body:         `{"usage":{"prompt_tokens":80,"completion_tokens":1,"total_tokens":81,"cached_tokens":80}}`,
+			cacheProfile: "cache-usage.deepseek-v4.v1",
+			wantErr:      true,
 		},
 		{
 			name:    "provider token count above persisted integer limit is rejected",
@@ -284,10 +421,11 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resp, err := adapter.ParseResponse(context.Background(), ResponseInput{
-				Endpoint:   EndpointChatCompletions,
-				StatusCode: http.StatusOK,
-				Body:       []byte(tt.body),
-				Channel:    models.Channel{Provider: "fixture", AdapterType: TypeOpenAICompatible},
+				Endpoint:          EndpointChatCompletions,
+				StatusCode:        http.StatusOK,
+				Body:              []byte(tt.body),
+				Channel:           models.Channel{Provider: "fixture", AdapterType: TypeOpenAICompatible},
+				CacheUsageProfile: tt.cacheProfile,
 			})
 			if tt.wantErr {
 				if err == nil {
@@ -305,6 +443,84 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 				resp.Usage.CacheUsageSchema != tt.schema ||
 				resp.Usage.CacheUsageStatus != tt.status {
 				t.Fatalf("unexpected usage: %+v", resp.Usage)
+			}
+		})
+	}
+}
+
+func TestKimiTopLevelCacheUsageRequiresExactProfile(t *testing.T) {
+	body := []byte(`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"cached_tokens":80}}`)
+	adapter := NewOpenAICompatible()
+
+	kimi, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:           models.Channel{Provider: "moonshot", AdapterType: TypeOpenAICompatible},
+		CacheUsageProfile: "cache-usage.kimi-platform.v1",
+	})
+	if err != nil {
+		t.Fatalf("parse Kimi cache usage: %v", err)
+	}
+	if kimi.Usage.PromptTokens != 100 || kimi.Usage.UncachedPromptTokens != 20 ||
+		kimi.Usage.CacheReadTokens != 80 || kimi.Usage.CacheUsageSchema != CacheUsageSchemaKimiV1 ||
+		kimi.Usage.CacheUsageStatus != CacheUsageStatusReadReported {
+		t.Fatalf("unexpected Kimi cache usage: %+v", kimi.Usage)
+	}
+
+	generic, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel: models.Channel{Provider: "generic", AdapterType: TypeOpenAICompatible},
+	})
+	if err != nil {
+		t.Fatalf("parse generic usage: %v", err)
+	}
+	if generic.Usage.CacheReadTokens != 0 || generic.Usage.CacheUsageSchema != "" ||
+		generic.Usage.UncachedPromptTokens != 100 {
+		t.Fatalf("generic route trusted Kimi-only usage: %+v", generic.Usage)
+	}
+
+	coding, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:           models.Channel{Provider: "moonshot-coding", AdapterType: TypeOpenAICompatible},
+		CacheUsageProfile: "cache-usage.kimi-coding.v1",
+	})
+	if err != nil {
+		t.Fatalf("parse unverified Kimi Coding usage: %v", err)
+	}
+	if coding.Usage.CacheReadTokens != 0 || coding.Usage.CacheUsageSchema != "" ||
+		coding.Usage.UncachedPromptTokens != 100 {
+		t.Fatalf("unverified Kimi Coding profile trusted platform cache wire: %+v", coding.Usage)
+	}
+}
+
+func TestKimiTopLevelCacheUsagePreservesZeroAndRejectsContradiction(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		wantRead int
+		wantErr  bool
+	}{
+		{name: "authoritative zero", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":0}}`},
+		{name: "cache exceeds prompt", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":11}}`, wantErr: true},
+		{name: "negative", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":-1}}`, wantErr: true},
+		{name: "wrong type", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":"1"}}`, wantErr: true},
+		{name: "ambiguous nested", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":5,"prompt_tokens_details":{"cached_tokens":5}}}`, wantErr: true},
+		{name: "wrong cache schema", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":5}}}`, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+				[]byte(test.body), EndpointChatCompletions, metering.UsageSourceUpstream,
+				"cache-usage.kimi-platform.v1",
+			)
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got present=%t usage=%+v", present, usage)
+				}
+				return
+			}
+			if err != nil || !present || usage.CacheReadTokens != test.wantRead ||
+				usage.CacheUsageSchema != CacheUsageSchemaKimiV1 {
+				t.Fatalf("unexpected result: present=%t usage=%+v err=%v", present, usage, err)
 			}
 		})
 	}

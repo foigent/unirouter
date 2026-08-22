@@ -10,6 +10,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 type guardrailPinContextKey struct{}
@@ -855,6 +856,50 @@ func applyOutputGuardrailTransform(result guardrail.Result, refs []outputTextRef
 		}
 	}
 	return nil
+}
+
+func applyProfileAwareOutputGuardrailTransform(route *RouteResult, result guardrail.Result, refs []outputTextRef) error {
+	if profileRequiresPreservedToolReasoning(route) && result.Transformed {
+		if len(result.Texts) != len(refs) {
+			return fmt.Errorf("guardrail output transform shape changed")
+		}
+		for index, ref := range refs {
+			if result.Texts[index].Path != ref.path {
+				return fmt.Errorf("guardrail output transform path changed")
+			}
+			if preservedToolReasoningPath(ref.path) && result.Texts[index].Content != ref.original {
+				return fmt.Errorf("guardrail output transform cannot rewrite preserved reasoning or tool transcript")
+			}
+		}
+	}
+	return applyOutputGuardrailTransform(result, refs)
+}
+
+func profileRequiresPreservedToolReasoning(route *RouteResult) bool {
+	if route == nil {
+		return false
+	}
+	contract, ok := modelprofile.ResolveReasoningContract(route.ReasoningProfile)
+	return ok && contract.PreserveAssistantReasoningForTools
+}
+
+func preservedToolReasoningPath(path string) bool {
+	return strings.Contains(path, ".reasoning_content") ||
+		strings.Contains(path, ".reasoning") ||
+		strings.Contains(path, ".tool_calls[") ||
+		strings.Contains(path, ".function_call")
+}
+
+func profileStreamGuardrailTransformUnsafe(route *RouteResult, result guardrail.Result) bool {
+	if !profileRequiresPreservedToolReasoning(route) || !result.Transformed {
+		return false
+	}
+	for _, text := range result.Texts {
+		if preservedToolReasoningPath(text.Path) {
+			return true
+		}
+	}
+	return false
 }
 
 func (relay *Relay) recordGuardrailResult(ctx context.Context, requestID, model, requestedModel, stage string, result guardrail.Result, route *RouteResult, statusCode int, upstreamRequestID string) {
