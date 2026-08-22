@@ -1082,6 +1082,15 @@ M81 down 在任何 schema mutation 前拒绝 later migration，也拒绝任一�
 不得删除或伪造模型 Profile 证据来迁就旧 binary。只有确认所有模型仍是 unverified、
 且没有 later migration 时，guarded down 才会移除两列并恢复 M80 schema。
 
+Profile 本身也按版本演进，不能原地改写已选择的旧身份。
+`kimi.k3.api@1.1.0` 使用 `reasoning.kimi-k3-effort.v1`、
+`cache-usage.kimi-platform.v1` 和 `protocol.kimi-openai-chat.k3.v1`：缺省
+`reasoning_effort` 时保留字段缺失，让 Kimi 使用供应商默认 `max`；显式值只允许
+`low/high/max`。只有该 cache-usage 合同声明的顶层 `usage.cached_tokens` 才会成为
+缓存读取计费证据，通用 OpenAI-compatible 路由不能凭同名未知字段获得折扣。K3 的
+Partial Mode、system-message 动态工具和内置联网搜索虽然记录为供应商能力，但当前
+不在 UniRouter verified capabilities 中；操作员不得把目录展示误判为可执行支持。
+
 ---
 
 ## 四、备份与恢复

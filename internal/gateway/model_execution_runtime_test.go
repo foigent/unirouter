@@ -206,6 +206,7 @@ func executionTestPlan(t *testing.T, mode modelrouting.Mode, operation modeloper
 		RuntimeReleaseID: evidence.RuntimeReleaseID, RuntimeReleaseRef: evidence.RuntimeReleaseRef,
 		RuntimeStage: evidence.RuntimeStage, SlotVersion: evidence.SlotVersion, Routes: []modelrouting.Route{route},
 	}
+	setExecutionTestProfile(t, &plan, modelprofile.UnverifiedProfileID, modelprofile.UnverifiedProfileVersion)
 	if mode == modelrouting.ModeLegacy {
 		plan.PublicModelID = 0
 		plan.SnapshotHash = "legacy-snapshot"
@@ -215,6 +216,21 @@ func executionTestPlan(t *testing.T, mode modelrouting.Mode, operation modeloper
 		plan.SlotVersion = 0
 	}
 	return plan
+}
+
+func setExecutionTestProfile(t *testing.T, plan *modelrouting.Plan, id, version string) {
+	t.Helper()
+	profile, ok := modelprofile.Lookup(id, version)
+	if !ok {
+		t.Fatalf("unknown execution test profile %s@%s", id, version)
+	}
+	plan.ExecutionProfileID = profile.ID
+	plan.ExecutionProfileVersion = profile.Version
+	plan.TokenizerProfileID = profile.TokenizerProfileID
+	plan.TokenizerProfileVersion = profile.TokenizerProfileVersion
+	plan.ReasoningProfile = profile.ReasoningProfile
+	plan.CacheUsageProfile = profile.CacheUsageProfile
+	plan.ModelProtocolProfile = profile.ProtocolProfile
 }
 
 func executionTestDB() *testutil.MockDB {
@@ -493,6 +509,15 @@ func TestModelExecutionLimitsRejectBeforeFreezeAttemptAndNetwork(t *testing.T) {
 			wantCode: "validation_error.output_limit_required", handle: (*Relay).HandleChatCompletion,
 		},
 		{
+			name:      "K3 invalid reasoning effort",
+			operation: modeloperation.IDChatCompletions, path: "/v1/chat/completions",
+			body:     `{"model":"public-model","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"medium","max_completion_tokens":128}`,
+			wantCode: "validation_error.model_execution_profile", handle: (*Relay).HandleChatCompletion,
+			editPlan: func(plan *modelrouting.Plan) {
+				setExecutionTestProfile(t, plan, "kimi.k3.api", "1.1.0")
+			},
+		},
+		{
 			name:      "embeddings input exceeds every effective route context",
 			operation: modeloperation.IDEmbeddings, path: "/v1/embeddings",
 			body:     `{"model":"public-model","input":"hello world"}`,
@@ -720,6 +745,12 @@ func TestModelExecutionAppliedCanonicalDispatchesChatAndEmbeddingsWithExactProje
 			compat := compatibilityRouteFromExecutionPlan(plan, plan.Routes[0])
 			if compat.Channel.ID != 0 || compat.ChannelKey.ID != 0 {
 				t.Fatalf("canonical adapter view invented legacy IDs: %+v", compat)
+			}
+			if compat.ExecutionProfileID != plan.ExecutionProfileID ||
+				compat.ExecutionProfileVersion != plan.ExecutionProfileVersion ||
+				compat.ReasoningProfile != plan.ReasoningProfile ||
+				compat.CacheUsageProfile != plan.CacheUsageProfile {
+				t.Fatalf("canonical adapter view lost model profile authority: %+v", compat)
 			}
 		})
 	}

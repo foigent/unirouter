@@ -100,7 +100,9 @@ func (a *AzureOpenAI) ParseResponse(ctx context.Context, in ResponseInput) (*Nor
 	usage := NewMissingUsage()
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
 		var err error
-		usage, _, err = ParseOpenAICompatibleUsage(in.Body, in.Endpoint, metering.UsageSourceUpstream)
+		usage, _, err = ParseOpenAICompatibleUsageWithCacheProfile(
+			in.Body, in.Endpoint, metering.UsageSourceUpstream, in.CacheUsageProfile,
+		)
 		if err != nil {
 			return nil, err
 		}

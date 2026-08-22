@@ -71,6 +71,52 @@ func TestCatalogReturnsDefensiveCopies(t *testing.T) {
 	require.NotContains(t, again[len(again)-1].ProviderCapabilities, "mutation")
 }
 
+func TestKimiComponentContractsAreVersionedAndDefensive(t *testing.T) {
+	k3, ok := Match("kimi-k3")
+	require.True(t, ok)
+	require.Equal(t, "kimi.k3.api", k3.ID)
+	require.Equal(t, "1.1.0", k3.Version)
+	require.Equal(t, "reasoning.kimi-k3-effort.v1", k3.ReasoningProfile)
+	require.Equal(t, "cache-usage.kimi-platform.v1", k3.CacheUsageProfile)
+	require.Contains(t, k3.ProviderCapabilities, "dynamic_tools")
+	require.NotContains(t, k3.Capabilities, "dynamic_tools")
+	require.Contains(t, k3.Capabilities, "json_object")
+	require.Contains(t, k3.Capabilities, "json_schema")
+
+	reasoning, ok := ResolveReasoningContract(k3.ReasoningProfile)
+	require.True(t, ok)
+	require.Equal(t, ReasoningModeAlwaysOn, reasoning.Mode)
+	require.Equal(t, "reasoning_effort", reasoning.RequestField)
+	require.Equal(t, []string{"low", "high", "max"}, reasoning.AllowedValues)
+	require.Equal(t, "max", reasoning.ProviderDefault)
+	require.Equal(t, ReasoningDefaultProvider, reasoning.DefaultAuthority)
+	require.False(t, reasoning.NamedToolChoiceWhileReasoning)
+	require.True(t, reasoning.RequiredToolChoiceWhileReasoning)
+	require.True(t, reasoning.PreserveAssistantReasoningForTools)
+
+	reasoning.AllowedValues[0] = "mutation"
+	again, ok := ResolveReasoningContract(k3.ReasoningProfile)
+	require.True(t, ok)
+	require.Equal(t, "low", again.AllowedValues[0])
+
+	cache, ok := ResolveCacheUsageContract(k3.CacheUsageProfile)
+	require.True(t, ok)
+	require.Equal(t, CacheUsageModeAutomatic, cache.Mode)
+	require.Equal(t, CacheUsageWireMoonshotCachedTokensV1, cache.WireSchema)
+}
+
+func TestKimiK26ThinkingContractRemainsDistinctFromK3(t *testing.T) {
+	k26, ok := Lookup("kimi.k2.6.api", "1.0.0")
+	require.True(t, ok)
+	contract, ok := ResolveReasoningContract(k26.ReasoningProfile)
+	require.True(t, ok)
+	require.Equal(t, ReasoningModeToggle, contract.Mode)
+	require.Equal(t, "thinking", contract.RequestField)
+	require.Equal(t, []string{"enabled", "disabled"}, contract.AllowedValues)
+	require.Equal(t, "enabled", contract.ProviderDefault)
+	require.False(t, contract.RequiredToolChoiceWhileReasoning)
+}
+
 func TestCatalogEmptyCollectionsRemainJSONArrays(t *testing.T) {
 	unverified, ok := Lookup(UnverifiedProfileID, UnverifiedProfileVersion)
 	require.True(t, ok)

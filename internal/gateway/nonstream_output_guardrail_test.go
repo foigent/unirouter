@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/uniroute/unirouter/internal/adapters"
@@ -101,6 +102,63 @@ func TestNonStreamOutputInspectionCollectsModeledMessageTextValues(t *testing.T)
 		if got := part["text"]; got != "redacted-"+wantContents[index+4] {
 			t.Fatalf("text part %s was not transformed through its exact ref: %#v", key, got)
 		}
+	}
+}
+
+func TestKimiPreservedThinkingProfileWithholdsReasoningOrToolTranscriptRewrite(t *testing.T) {
+	response := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{"message": map[string]interface{}{
+			"content":           "safe",
+			"reasoning_content": "private reasoning",
+			"tool_calls": []interface{}{map[string]interface{}{
+				"id": "call_1", "type": "function",
+				"function": map[string]interface{}{"name": "lookup", "arguments": `{"id":1}`},
+			}},
+		}}},
+	}
+	inspection := inspectNonStreamOutputTexts(response)
+	if !inspection.complete() {
+		t.Fatalf("fixture incomplete: %v", inspection.incompletePaths)
+	}
+	transformed := append([]guardrail.Text(nil), inspection.texts...)
+	for index := range transformed {
+		if strings.Contains(transformed[index].Path, ".reasoning_content") {
+			transformed[index].Content = "[REDACTED]"
+		}
+	}
+	result := guardrail.Result{Transformed: true, Texts: transformed}
+	k3 := &RouteResult{ReasoningProfile: "reasoning.kimi-k3-effort.v1"}
+	if err := applyProfileAwareOutputGuardrailTransform(k3, result, inspection.refs); err == nil ||
+		!strings.Contains(err.Error(), "preserved reasoning") {
+		t.Fatalf("K3 transcript rewrite was not withheld: %v", err)
+	}
+	message := response["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})
+	if message["reasoning_content"] != "private reasoning" {
+		t.Fatalf("protected transcript changed before withholding: %#v", message)
+	}
+
+	generic := &RouteResult{ReasoningProfile: "reasoning.unverified.v1"}
+	if err := applyProfileAwareOutputGuardrailTransform(generic, result, inspection.refs); err != nil {
+		t.Fatalf("generic redaction behavior changed: %v", err)
+	}
+	if message["reasoning_content"] != "[REDACTED]" {
+		t.Fatalf("generic redaction was not applied: %#v", message)
+	}
+}
+
+func TestKimiPreservedThinkingProfileRejectsStreamTranscriptTransformation(t *testing.T) {
+	k3 := &RouteResult{ReasoningProfile: "reasoning.kimi-k3-effort.v1"}
+	if !profileStreamGuardrailTransformUnsafe(k3, guardrail.Result{
+		Transformed: true,
+		Texts:       []guardrail.Text{{Path: "choices[0].reasoning_content", Content: "[REDACTED]"}},
+	}) {
+		t.Fatal("K3 stream reasoning rewrite was not marked unsafe")
+	}
+	if profileStreamGuardrailTransformUnsafe(k3, guardrail.Result{
+		Transformed: true,
+		Texts:       []guardrail.Text{{Path: "choices[0].content", Content: "[REDACTED]"}},
+	}) {
+		t.Fatal("ordinary content redaction was incorrectly treated as transcript rewrite")
 	}
 }
 

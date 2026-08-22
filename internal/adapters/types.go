@@ -79,14 +79,15 @@ type RequestInput struct {
 }
 
 type ResponseInput struct {
-	Endpoint       Endpoint
-	StatusCode     int
-	Header         http.Header
-	Body           []byte
-	Channel        models.Channel
-	RequestedModel string
-	UpstreamModel  string
-	TTFTMillis     int
+	Endpoint          Endpoint
+	StatusCode        int
+	Header            http.Header
+	Body              []byte
+	Channel           models.Channel
+	RequestedModel    string
+	UpstreamModel     string
+	CacheUsageProfile string
+	TTFTMillis        int
 }
 
 type NormalizedResponse struct {

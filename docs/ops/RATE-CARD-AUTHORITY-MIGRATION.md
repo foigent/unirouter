@@ -16,6 +16,13 @@ Rate Card 可选择全天同价，或提交 UTC 日内价带。日内价带必�
 
 模型执行 Profile 与价格权威相互独立。执行 Profile 冻结 tokenizer、上下文、输出、推理、缓存用量和协议语义；价格变化只产生新的 Rate Card，不要求升级执行 Profile。创建已知模型时可以展示仓库已确认的官方价格建议，但模型治理写权限不得代替财务写权限：任何自动化最多在 Billing Admin/Platform Admin 明确操作后生成带来源证据的 `provider_list` 草稿，不能自动批准、激活或覆盖客户合同价。用户修改价格应创建新的合同价/目录价草稿并走同一 maker-checker 与 supersede 流程。
 
+缓存 token 分类同样不能由价格表或 provider 名称推断。Kimi 当前 Chat API 在
+`usage.cached_tokens` 顶层报告缓存命中；只有模型执行计划选择了冻结的 Kimi
+cache-usage profile 时，该字段才映射为 `cache_read_tokens`，其余
+`prompt_tokens - cached_tokens` 映射为普通输入。未选择该 profile、字段缺失、跨
+schema 重复报告或分区不一致时，不得应用缓存折扣。这样 Rate Card 只负责给已经
+证明的 token 类定价，不负责解释供应商响应格式。
+
 安全切换顺序：
 
 1. 保持 `REQUEST_PRICING_AUTHORITY=legacy`。

@@ -50,7 +50,7 @@ func TestOpenAICompatibleBuildRequest_RewritesModelAndURL(t *testing.T) {
 
 func TestOpenAICompatibleBuildRequest_PreservesOpenAIAndProviderFields(t *testing.T) {
 	adapter := NewOpenAICompatible()
-	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"https://example.com/image.png"}}]}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"tool_choice":"auto","parallel_tool_calls":true,"response_format":{"type":"json_object"},"stream_options":{"include_usage":true},"reasoning":{"effort":"high"},"reasoning_effort":"high","provider_counter":9223372036854775807}`)
+	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"https://example.com/image.png"}}]},{"role":"assistant","content":null,"reasoning_content":"checked","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"tool_choice":"auto","parallel_tool_calls":true,"response_format":{"type":"json_object"},"stream_options":{"include_usage":true},"reasoning":{"effort":"high"},"reasoning_effort":"high","thinking":{"type":"enabled"},"provider_counter":9223372036854775807}`)
 	req, err := adapter.BuildRequest(context.Background(), RequestInput{
 		Endpoint:       EndpointChatCompletions,
 		DownstreamBody: body,
@@ -74,7 +74,7 @@ func TestOpenAICompatibleBuildRequest_PreservesOpenAIAndProviderFields(t *testin
 	if err := json.Unmarshal(payload["model"], &model); err != nil || model != "upstream-model" {
 		t.Fatalf("model rewrite failed: model=%q err=%v body=%s", model, err, upstreamBody)
 	}
-	for _, field := range []string{"messages", "tools", "tool_choice", "parallel_tool_calls", "response_format", "stream_options", "reasoning", "reasoning_effort", "provider_counter"} {
+	for _, field := range []string{"messages", "tools", "tool_choice", "parallel_tool_calls", "response_format", "stream_options", "reasoning", "reasoning_effort", "thinking", "provider_counter"} {
 		if len(payload[field]) == 0 {
 			t.Fatalf("field %q was dropped: %s", field, upstreamBody)
 		}
@@ -419,6 +419,84 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 				resp.Usage.CacheUsageSchema != tt.schema ||
 				resp.Usage.CacheUsageStatus != tt.status {
 				t.Fatalf("unexpected usage: %+v", resp.Usage)
+			}
+		})
+	}
+}
+
+func TestKimiTopLevelCacheUsageRequiresExactProfile(t *testing.T) {
+	body := []byte(`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"cached_tokens":80}}`)
+	adapter := NewOpenAICompatible()
+
+	kimi, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:           models.Channel{Provider: "moonshot", AdapterType: TypeOpenAICompatible},
+		CacheUsageProfile: "cache-usage.kimi-platform.v1",
+	})
+	if err != nil {
+		t.Fatalf("parse Kimi cache usage: %v", err)
+	}
+	if kimi.Usage.PromptTokens != 100 || kimi.Usage.UncachedPromptTokens != 20 ||
+		kimi.Usage.CacheReadTokens != 80 || kimi.Usage.CacheUsageSchema != CacheUsageSchemaKimiV1 ||
+		kimi.Usage.CacheUsageStatus != CacheUsageStatusReadReported {
+		t.Fatalf("unexpected Kimi cache usage: %+v", kimi.Usage)
+	}
+
+	generic, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel: models.Channel{Provider: "generic", AdapterType: TypeOpenAICompatible},
+	})
+	if err != nil {
+		t.Fatalf("parse generic usage: %v", err)
+	}
+	if generic.Usage.CacheReadTokens != 0 || generic.Usage.CacheUsageSchema != "" ||
+		generic.Usage.UncachedPromptTokens != 100 {
+		t.Fatalf("generic route trusted Kimi-only usage: %+v", generic.Usage)
+	}
+
+	coding, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:           models.Channel{Provider: "moonshot-coding", AdapterType: TypeOpenAICompatible},
+		CacheUsageProfile: "cache-usage.kimi-coding.v1",
+	})
+	if err != nil {
+		t.Fatalf("parse unverified Kimi Coding usage: %v", err)
+	}
+	if coding.Usage.CacheReadTokens != 0 || coding.Usage.CacheUsageSchema != "" ||
+		coding.Usage.UncachedPromptTokens != 100 {
+		t.Fatalf("unverified Kimi Coding profile trusted platform cache wire: %+v", coding.Usage)
+	}
+}
+
+func TestKimiTopLevelCacheUsagePreservesZeroAndRejectsContradiction(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		wantRead int
+		wantErr  bool
+	}{
+		{name: "authoritative zero", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":0}}`},
+		{name: "cache exceeds prompt", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":11}}`, wantErr: true},
+		{name: "negative", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":-1}}`, wantErr: true},
+		{name: "wrong type", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":"1"}}`, wantErr: true},
+		{name: "ambiguous nested", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"cached_tokens":5,"prompt_tokens_details":{"cached_tokens":5}}}`, wantErr: true},
+		{name: "wrong cache schema", body: `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":5}}}`, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+				[]byte(test.body), EndpointChatCompletions, metering.UsageSourceUpstream,
+				"cache-usage.kimi-platform.v1",
+			)
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got present=%t usage=%+v", present, usage)
+				}
+				return
+			}
+			if err != nil || !present || usage.CacheReadTokens != test.wantRead ||
+				usage.CacheUsageSchema != CacheUsageSchemaKimiV1 {
+				t.Fatalf("unexpected result: present=%t usage=%+v err=%v", present, usage, err)
 			}
 		})
 	}

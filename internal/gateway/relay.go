@@ -984,10 +984,14 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 	// A published public limit is a hard cap, including streams.
 	ctx = contextWithStreamReservation(ctx, reservedCompletionTokens, false)
 	ctx = contextWithAdmissionInputEstimate(ctx, estimatedInputTokens)
-	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), map[string]interface{}{
+	acceptedMetadata := map[string]interface{}{
 		"stream": req.Stream, "estimated_tokens": estimatedTokens,
 		"admission_estimate_version": executionBatch.limits.EstimateVersion,
-	})
+	}
+	for key, value := range executionBatch.profileEvidence.metadata() {
+		acceptedMetadata[key] = value
+	}
+	relay.recordTraceEvent(ctx, requestID, "gateway.request.accepted", "gateway", "info", req.Model, requestedModel, nil, 0, elapsedMilliseconds(requestStart), acceptedMetadata)
 	relay.recordPayloadPolicyDecision(ctx, requestID, req.Model, requestedModel, elapsedMilliseconds(requestStart))
 
 	// Freeze balance once (before trying any upstream)
@@ -1326,13 +1330,14 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		adapter = adapters.NewOpenAICompatible()
 	}
 	normalized, err := adapter.ParseResponse(ctx, adapters.ResponseInput{
-		Endpoint:       adapters.EndpointChatCompletions,
-		StatusCode:     resp.StatusCode,
-		Header:         resp.Header,
-		Body:           body,
-		Channel:        route.Channel,
-		RequestedModel: requestedModel,
-		UpstreamModel:  route.MappedModel,
+		Endpoint:          adapters.EndpointChatCompletions,
+		StatusCode:        resp.StatusCode,
+		Header:            resp.Header,
+		Body:              body,
+		Channel:           route.Channel,
+		RequestedModel:    requestedModel,
+		UpstreamModel:     route.MappedModel,
+		CacheUsageProfile: route.CacheUsageProfile,
 	})
 	if err != nil {
 		reqLog.Error("Failed to parse adapter response: %v", err)
@@ -1476,7 +1481,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 			writeOutputGuardrailBlock(w, unavailable)
 			return
 		}
-		if err := applyOutputGuardrailTransform(guardrailResult, outputRefs); err != nil {
+		if err := applyProfileAwareOutputGuardrailTransform(route, guardrailResult, outputRefs); err != nil {
 			if holdErr := holdUndeliveredOutput(http.StatusInternalServerError, billing.OutputHoldReasonGuardrailWithheld); holdErr != nil {
 				reqLog.Error("Failed to retain transform-failed provider usage: %v", holdErr)
 				relay.recordTraceEvent(ctx, requestID, "billing.guardrail_hold.failed", "billing", "error", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -2010,6 +2015,10 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			}
 			return false
 		}
+		if profileStreamGuardrailTransformUnsafe(route, inspection.Result) {
+			streamTerminationCode = "guardrail_stream_transform_unsafe"
+			return false
+		}
 		additionalTokens := 0
 		for _, frame := range inspection.Frames {
 			frameTokens := len([]byte(frame.Text))
@@ -2280,7 +2289,9 @@ streamLoop:
 				done = true
 				continue
 			}
-			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleUsage(frameData, adapters.EndpointChatCompletions, metering.UsageSourceUpstream)
+			parsedUsage, hasUsage, usageErr := adapters.ParseOpenAICompatibleUsageWithCacheProfile(
+				frameData, adapters.EndpointChatCompletions, metering.UsageSourceUpstream, route.CacheUsageProfile,
+			)
 			if usageErr != nil {
 				reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to normalize final stream usage: %v", usageErr)
 				streamPayloadInvalid = true
@@ -3292,13 +3303,14 @@ func (relay *Relay) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		defer releaseResponsePayload()
 
 		normalized, err := adapter.ParseResponse(attemptCtx, adapters.ResponseInput{
-			Endpoint:       adapters.EndpointEmbeddings,
-			StatusCode:     resp.StatusCode,
-			Header:         resp.Header,
-			Body:           respBody,
-			Channel:        route.Channel,
-			RequestedModel: requestedModel,
-			UpstreamModel:  route.MappedModel,
+			Endpoint:          adapters.EndpointEmbeddings,
+			StatusCode:        resp.StatusCode,
+			Header:            resp.Header,
+			Body:              respBody,
+			Channel:           route.Channel,
+			RequestedModel:    requestedModel,
+			UpstreamModel:     route.MappedModel,
+			CacheUsageProfile: route.CacheUsageProfile,
 		})
 		if err != nil {
 			reqLog.Error("Failed to parse adapter response")

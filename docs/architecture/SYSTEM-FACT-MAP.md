@@ -27,7 +27,15 @@ mutually exclusive and database-guarded. M81 freezes the exact versioned model
 execution profile selected by the customer: tokenizer, reasoning, cache-usage and
 protocol identities are repository-reviewed evidence, while context/output values
 remain customer policy bounded by provider maxima. Historical rows are deliberately
-`unverified.chat@1.0.0`; no migration infers authority from a model name. M79 takes the shared model-execution migration advisory
+`unverified.chat@1.0.0`; no migration infers authority from a model name. Component
+identities have executable contracts rather than provider-name branches. In
+particular, `kimi.k3.api@1.1.0` validates the provider-owned
+`reasoning_effort=low|high|max` contract without injecting the documented `max`
+default, preserves reasoning on assistant tool-call history, and authorizes Kimi's
+top-level `usage.cached_tokens` only through the selected cache-usage profile.
+Provider-documented Partial Mode, dynamic tools and built-in web search remain
+outside UniRouter's verified capability set until admission, evidence and any
+non-token tool charge are implemented end to end. M79 takes the shared model-execution migration advisory
 lock, then the provider-connection/channel/schema relation locks, then the
 `active_channels` resource advisory lock, and only then the entitlement-table
 lock; this ordering matches both activation and License renewal without a lock

@@ -340,6 +340,7 @@ func validateMeasurableChatRoot(envelope map[string]json.RawMessage) error {
 		"logit_bias", "logprobs", "top_logprobs", "seed", "response_format", "tools",
 		"tool_choice", "parallel_tool_calls", "functions", "function_call", "user", "service_tier",
 		"store", "metadata", "modalities", "audio", "prediction", "reasoning_effort", "reasoning",
+		"thinking",
 		"verbosity", "safety_identifier", "prompt_cache_key", "prompt_cache_retention",
 		"repetition_penalty", "min_p", "top_k", "enable_thinking", "reasoning_format",
 		"include_reasoning", "guided_json", "guided_regex", "guided_choice", "guided_grammar",
@@ -411,6 +412,11 @@ func validateMeasurableChatRoot(envelope map[string]json.RawMessage) error {
 	if raw, exists := envelope["reasoning"]; exists && !isJSONNull(raw) {
 		if err := validateScalarJSONObject(raw, "reasoning", "effort", "summary", "enabled", "exclude", "max_tokens", "budget_tokens"); err != nil {
 			return err
+		}
+	}
+	if raw, exists := envelope["thinking"]; exists && !isJSONNull(raw) {
+		if _, _, err := optionalThinkingType(raw); err != nil {
+			return fmt.Errorf("%w: %v", errAdmissionUnsupportedShape, err)
 		}
 	}
 	if raw, exists := envelope["guided_choice"]; exists && !isJSONNull(raw) {

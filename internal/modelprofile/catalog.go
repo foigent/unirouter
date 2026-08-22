@@ -104,6 +104,26 @@ var catalog = []Profile{
 		EvidenceRefs:         []string{"https://www.kimi.com/code/docs/en/kimi-code/models.html"},
 	},
 	{
+		ID: "kimi.k3.api", Version: "1.1.0", Label: "Kimi K3 官方 API",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.kimi-k3-effort.v1", CacheUsageProfile: "cache-usage.kimi-platform.v1",
+		ProtocolProfile:       "protocol.kimi-openai-chat.k3.v1",
+		ProviderContextWindow: 1_048_576, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
+		ProviderCapabilities: []string{
+			"reasoning", "tools", "tool_choice", "dynamic_tools", "json_object", "json_schema",
+			"partial_mode", "builtin_web_search", "vision", "video", "prompt_cache",
+		},
+		Capabilities: []string{"reasoning", "tools", "json_object", "json_schema", "prompt_cache"},
+		Aliases:      []string{"Kimi K3", "kimi-k3", "k3", "k3-256k"},
+		EvidenceRefs: []string{
+			"https://platform.kimi.com/docs/pricing/chat-k3",
+			"https://platform.kimi.com/docs/guide/use-reasoning-effort",
+			"https://platform.kimi.com/docs/api/chat",
+			"https://platform.kimi.com/docs/guide/use-context-caching-feature-of-kimi-api",
+			"https://platform.kimi.com/docs/guide/use-tool-choice",
+		},
+	},
+	{
 		ID: "kimi.k3.api", Version: "1.0.0", Label: "Kimi K3（套餐上限受权益约束）",
 		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
 		ReasoningProfile: "reasoning.kimi-k3-effort.v1", CacheUsageProfile: "cache-usage.kimi-coding.v1",

@@ -102,15 +102,17 @@ func (relay *Relay) providerClient(timeout time.Duration) adapters.HTTPDoer {
 }
 
 type preparedModelExecutionBatch struct {
-	plan   modelrouting.Plan
-	routes []preparedModelExecutionRoute
-	limits modelExecutionRequestLimits
+	plan            modelrouting.Plan
+	routes          []preparedModelExecutionRoute
+	limits          modelExecutionRequestLimits
+	profileEvidence modelExecutionProfileEvidence
 }
 
 var (
-	errModelExecutionOutputLimitExceeded  = errors.New("model execution output limit exceeded")
-	errModelExecutionContextLimitExceeded = errors.New("model execution context limit exceeded")
-	errModelExecutionOutputLimitRequired  = errors.New("model execution output limit is required")
+	errModelExecutionOutputLimitExceeded   = errors.New("model execution output limit exceeded")
+	errModelExecutionContextLimitExceeded  = errors.New("model execution context limit exceeded")
+	errModelExecutionOutputLimitRequired   = errors.New("model execution output limit is required")
+	errModelExecutionProfileRequestInvalid = errors.New("model execution profile request is invalid")
 )
 
 // legacyImplicitOutputLimitV1 preserves the pre-catalog compatibility
@@ -289,6 +291,8 @@ func modelExecutionLimitErrorDetails(err error) (code, message string, ok bool) 
 		return "validation_error.context_length_exceeded", "Estimated request tokens exceed the model's available context limit", true
 	case errors.Is(err, errModelExecutionOutputLimitRequired):
 		return "validation_error.output_limit_required", "An explicit output token limit is required because no provider-compatible published output limit is available", true
+	case errors.Is(err, errModelExecutionProfileRequestInvalid):
+		return "validation_error.model_execution_profile", "Request is incompatible with the selected model execution profile", true
 	default:
 		return "", "", false
 	}
@@ -319,7 +323,12 @@ func (relay *Relay) prepareModelExecutionRoutes(
 	if err := requireModelExecutionDispatchWired(operation, plan); err != nil {
 		return nil, err
 	}
+	profileEvidence := modelExecutionProfileEvidence{}
 	if endpoint == adapters.EndpointChatCompletions {
+		profileEvidence, err = validateChatExecutionProfileRequest(body, plan)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, err)
+		}
 		profileAdmission, admissionErr := estimateChatAdmissionForPlan(body, plan)
 		if admissionErr != nil {
 			return nil, admissionErr
@@ -331,7 +340,7 @@ func (relay *Relay) prepareModelExecutionRoutes(
 	if err != nil {
 		return nil, err
 	}
-	batch := &preparedModelExecutionBatch{plan: plan, limits: limits}
+	batch := &preparedModelExecutionBatch{plan: plan, limits: limits, profileEvidence: profileEvidence}
 	maximumInputEstimate := limits.EstimatedInputTokens
 	limitExcluded := 0
 	outputLimitUnsupported := 0
@@ -460,6 +469,8 @@ func compatibilityRouteFromExecutionPlan(plan modelrouting.Plan, route modelrout
 		CandidateCount: len(plan.Routes), ExcludedCount: len(plan.Exclusions),
 		SelectionReason: route.SelectionReason, RequiresProbe: route.RequiresProbe,
 		RuntimeReleaseRef: plan.RuntimeReleaseRef, RuntimeStage: plan.RuntimeStage,
+		ExecutionProfileID: plan.ExecutionProfileID, ExecutionProfileVersion: plan.ExecutionProfileVersion,
+		ReasoningProfile: plan.ReasoningProfile, CacheUsageProfile: plan.CacheUsageProfile,
 	}
 }
 
@@ -618,6 +629,7 @@ const (
 	modelCapabilityVision            = "vision"
 	modelCapabilityAudio             = "audio"
 	modelCapabilityStreaming         = "streaming"
+	modelCapabilityPromptCache       = "prompt_cache"
 )
 
 func (relay *Relay) applyRouteHealth(ctx context.Context, _ *RouteResult, action executionHealthAction) error {
@@ -819,10 +831,13 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 			return nil, fmt.Errorf("unsupported response_format type")
 		}
 	}
-	for _, field := range []string{"reasoning", "reasoning_effort"} {
+	for _, field := range []string{"reasoning", "reasoning_effort", "thinking"} {
 		if raw, exists := envelope[field]; exists && !isJSONNull(raw) {
 			add(modelCapabilityReasoning)
 		}
+	}
+	if raw, exists := envelope["prompt_cache_key"]; exists && !isJSONNull(raw) {
+		add(modelCapabilityPromptCache)
 	}
 	if raw, exists := envelope["modalities"]; exists && !isJSONNull(raw) {
 		var modalities []string

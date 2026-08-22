@@ -88,10 +88,7 @@ func TestVerifiedMiniMaxTokenizerProfileReplacesByteUpperWithoutClaimingProvider
 func TestVerifiedMiniMaxTokenizerProfileAdmitsLargeToolEnvelopeBeforeFreeze(t *testing.T) {
 	encKey := []byte("0123456789abcdef0123456789abcdef")
 	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://provider.test", encKey, nil)
-	plan.ExecutionProfileID = "minimax.m2.7.token-plan"
-	plan.ExecutionProfileVersion = "1.0.0"
-	plan.TokenizerProfileID = modelprofile.TokenizerMiniMaxM27ID
-	plan.TokenizerProfileVersion = modelprofile.TokenizerMiniMaxM27Version
+	setExecutionTestProfile(t, &plan, "minimax.m2.7.token-plan", "1.0.0")
 	plan.PublicContextLimit = 20_000
 	plan.Routes[0].MaxContext = 20_000
 	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":"` + strings.Repeat("a", 100_000) + `"}],"max_tokens":1}`)
@@ -512,9 +509,7 @@ func TestImplicitOutputLimitUsesExactOpenAICompatibleWireContract(t *testing.T) 
 func TestMiniMaxVerifiedProtocolInjectsOfficialCompletionLimitForReasoning(t *testing.T) {
 	encKey := []byte("0123456789abcdef0123456789abcdef")
 	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://api.minimaxi.com", encKey, nil)
-	plan.ExecutionProfileID = "minimax.m2.7.token-plan"
-	plan.ExecutionProfileVersion = "1.0.0"
-	plan.ModelProtocolProfile = "protocol.minimax-openai-chat.v2"
+	setExecutionTestProfile(t, &plan, "minimax.m2.7.token-plan", "1.0.0")
 	plan.PublicContextLimit = 204_800
 	plan.PublicOutputLimit = 65_536
 	plan.Routes[0].Provider = "minimax"
