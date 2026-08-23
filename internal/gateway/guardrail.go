@@ -760,8 +760,11 @@ func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutpu
 						inspection.markIncomplete(toolPath)
 						continue
 					}
-					if !streamMapKeysSupported(tool, "id", "type", "function") {
+					if !streamMapKeysSupported(tool, "index", "id", "type", "function") {
 						inspection.markIncomplete(toolPath)
+					}
+					if _, valid := streamEnvelopeIndex(tool, toolIndex); !valid {
+						inspection.markIncomplete(toolPath + ".index")
 					}
 					if value, exists := tool["id"]; !exists || value == nil {
 						inspection.markIncomplete(toolPath + ".id")

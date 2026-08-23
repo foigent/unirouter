@@ -36,6 +36,30 @@ func TestMiniMaxNormalizedResponseMeetsStrictChatDeliveryContract(t *testing.T) 
 	}
 }
 
+func TestDeepSeekToolResponseMeetsStrictChatDeliveryContract(t *testing.T) {
+	response, err := adapters.NewOpenAICompatible().ParseResponse(context.Background(), adapters.ResponseInput{
+		Endpoint:          adapters.EndpointChatCompletions,
+		StatusCode:        http.StatusOK,
+		Channel:           models.Channel{Provider: "deepseek", AdapterType: adapters.TypeOpenAICompatible},
+		CacheUsageProfile: "cache-usage.deepseek-v4.v1",
+		Body:              []byte(`{"id":"chatcmpl-deepseek","object":"chat.completion","created":1787504000,"model":"deepseek-v4-flash","system_fingerprint":"fp","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"city\":\"Shanghai\"}"}}]},"logprobs":null,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":297,"completion_tokens":38,"total_tokens":335,"prompt_cache_hit_tokens":256,"prompt_cache_miss_tokens":41,"prompt_tokens_details":{"cached_tokens":256}}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Usage.CacheReadTokens != 256 || response.Usage.UncachedPromptTokens != 41 {
+		t.Fatalf("DeepSeek cache usage was not retained: %+v", response.Usage)
+	}
+	var envelope map[string]interface{}
+	if err := decodeJSONUseNumber(response.Body, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	inspection := inspectNonStreamOutputTexts(envelope)
+	if !inspection.complete() {
+		t.Fatalf("documented DeepSeek tool response did not meet strict delivery contract: %v body=%s", inspection.incompletePaths, response.Body)
+	}
+}
+
 func TestNonStreamOutputInspectionCollectsModeledMessageTextValues(t *testing.T) {
 	response := map[string]interface{}{
 		"choices": []interface{}{
@@ -143,6 +167,56 @@ func TestKimiPreservedThinkingProfileWithholdsReasoningOrToolTranscriptRewrite(t
 	}
 	if message["reasoning_content"] != "[REDACTED]" {
 		t.Fatalf("generic redaction was not applied: %#v", message)
+	}
+}
+
+func TestNonStreamOutputInspectionAcceptsBoundedToolCallIndex(t *testing.T) {
+	response := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{"message": map[string]interface{}{
+			"content": nil,
+			"role":    "assistant",
+			"tool_calls": []interface{}{map[string]interface{}{
+				"index": json.Number("0"), "id": "call_1", "type": "function",
+				"function": map[string]interface{}{"name": "lookup", "arguments": `{"id":1}`},
+			}},
+		}}},
+	}
+
+	inspection := inspectNonStreamOutputTexts(response)
+	if !inspection.complete() {
+		t.Fatalf("bounded non-stream tool index was rejected: %v", inspection.incompletePaths)
+	}
+	if len(inspection.texts) != 4 {
+		t.Fatalf("tool call text fields were not inspected: %+v", inspection.texts)
+	}
+}
+
+func TestNonStreamOutputInspectionRejectsInvalidToolCallIndex(t *testing.T) {
+	tests := []struct {
+		name  string
+		index interface{}
+	}{
+		{name: "string", index: "0"},
+		{name: "fraction", index: json.Number("0.5")},
+		{name: "negative", index: json.Number("-1")},
+		{name: "too large", index: json.Number("1000001")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := map[string]interface{}{
+				"choices": []interface{}{map[string]interface{}{"message": map[string]interface{}{
+					"tool_calls": []interface{}{map[string]interface{}{
+						"index": test.index, "id": "call_1", "type": "function",
+						"function": map[string]interface{}{"name": "lookup", "arguments": `{}`},
+					}},
+				}}},
+			}
+
+			inspection := inspectNonStreamOutputTexts(response)
+			if inspection.complete() || !reflect.DeepEqual(inspection.incompletePaths, []string{"choices[0].message.tool_calls[0].index"}) {
+				t.Fatalf("invalid tool index was accepted: %+v", inspection)
+			}
+		})
 	}
 }
 
