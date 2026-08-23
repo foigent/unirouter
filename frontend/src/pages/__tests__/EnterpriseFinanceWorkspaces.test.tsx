@@ -143,6 +143,27 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     ], base)).toBeNull();
   });
 
+  it('preserves an exact non-token web-search unit price across every UTC band', () => {
+    const component = (meter: string, value_minor: string, unit_quantity = '1000000') => ({
+      meter, unit_quantity, amount: { value_minor, currency: 'CNY', scale: 1_000_000 },
+    });
+    const base = [component('input_tokens', '1500000'), component('output_tokens', '4500000'),
+      component('cache_read_tokens', '50000'), component('cache_creation_tokens', '1500000'),
+      component('builtin_web_search_calls', '30000', '1')];
+    const override = {
+      start_utc: '01:00', end_utc: '04:00', input_price_yuan: '3', output_price_yuan: '9',
+      cache_read_price_yuan: '0.10', cache_creation_price_yuan: '3',
+      builtin_web_search_price_yuan: '0.02',
+    };
+
+    const bands = buildUTCOverridePriceBands([override], base);
+    expect(bands?.every(band => band.components.some(item => item.meter === 'builtin_web_search_calls'))).toBe(true);
+    expect(bands?.[1].components.find(item => item.meter === 'builtin_web_search_calls')).toEqual(
+      component('builtin_web_search_calls', '20000', '1'),
+    );
+    expect(buildUTCOverridePriceBands([{ ...override, builtin_web_search_price_yuan: '' }], base)).toBeNull();
+  });
+
   it('keeps legacy bootstrap draft-only and reveals the switch instruction only after ready preflight', async () => {
     render(<EnterpriseRateCardWorkspace orgId={9} canManage />);
     await screen.findByText('尚无版本化 Rate Card');

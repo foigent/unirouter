@@ -180,6 +180,54 @@ func TestRequestComponentConversionUsesBigIntegerAndCheckedHalfUpRounding(t *tes
 	require.Equal(t, int64(math.MaxInt64), price)
 }
 
+func TestRequestPriceQuotePreservesOfficialAbsoluteCachePricesWithoutRatios(t *testing.T) {
+	at := time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		input      string
+		cacheRead  string
+		wantInput  int64
+		wantCached int64
+	}{
+		{name: "DeepSeek 1 over 30", input: "30000000", cacheRead: "1000000", wantInput: 30_000_000, wantCached: 1_000_000},
+		{name: "Kimi K2.6 1.1 over 6.5", input: "6500000", cacheRead: "1100000", wantInput: 6_500_000, wantCached: 1_100_000},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			card := requestPricingCard("official", RateProviderList, "provider", "model", at, 1, 1)
+			card.SourceEvidenceRef = "official-source"
+			card.Components[0].Amount.ValueMinor = test.input
+			card.Components[2].Amount.ValueMinor = test.cacheRead
+			quote, err := ResolveRequestPriceQuote([]RateCardRecord{{Card: card}}, 7, "model", at.Add(time.Minute))
+			require.NoError(t, err)
+			input, err := RequestPriceMicros(quote, MeterInputTokens)
+			require.NoError(t, err)
+			cached, err := RequestPriceMicros(quote, MeterCacheReadTokens)
+			require.NoError(t, err)
+			require.Equal(t, test.wantInput, input)
+			require.Equal(t, test.wantCached, cached)
+		})
+	}
+}
+
+func TestRequestPriceQuoteBindsSupportedPerCallMeterAsExactRational(t *testing.T) {
+	at := time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)
+	card := requestPricingCard("kimi-tools", RateSupplierContract, "kimi", "kimi-k2.6", at, 6_500_000, 26_000_000)
+	card.Components = append(card.Components, RateComponent{
+		Meter: MeterBuiltinWebSearchCalls, UnitQuantity: "1",
+		Amount: Amount{ValueMinor: "30000", Currency: "CNY", Scale: 1_000_000},
+	})
+	quote, err := ResolveRequestPriceQuote([]RateCardRecord{{Card: card}}, 7, "kimi-k2.6", at.Add(time.Minute))
+	require.NoError(t, err)
+	require.Regexp(t, `^rcq3_[a-f0-9]{64}$`, quote.PricingVersion)
+	unitRates := RequestUnitPriceComponents(quote)
+	require.Len(t, unitRates, 1)
+	require.Equal(t, MeterBuiltinWebSearchCalls, unitRates[0].Meter)
+	require.Equal(t, "30000", unitRates[0].AmountMinor)
+	require.Equal(t, "1", unitRates[0].UnitQuantity)
+	require.Equal(t, int64(30_000), unitRates[0].PriceMicrosPerUnit)
+}
+
 func requestPricingCard(ref, layer, provider, model string, from time.Time, input, output int64) RateCard {
 	values := []struct {
 		meter string

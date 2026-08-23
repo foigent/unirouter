@@ -32,6 +32,16 @@ type Component struct {
 	PriceMicrosPerMillion int64
 }
 
+// UnitComponent prices a non-token meter with the exact Rate Card rational.
+// AmountMicros is the CNY-micro amount for UnitQuantity meter units. Keeping
+// the denominator until the aggregate calculation avoids per-call rounding
+// drift for prices such as 3 CNY per 100 calls.
+type UnitComponent struct {
+	Quantity     int64
+	AmountMicros int64
+	UnitQuantity int64
+}
+
 // Calculation is an exactly conserved terminal charge. ComponentMicros has
 // the same order as the input components and always sums to TotalMicros.
 type Calculation struct {
@@ -207,6 +217,76 @@ func Calculate(components ...Component) (Calculation, error) {
 		allocations[remainders[i].index]++
 	}
 	return Calculation{TotalMicros: total, ComponentMicros: allocations}, nil
+}
+
+// CalculateUnits rounds the aggregate exact cost once at the micro-CNY
+// boundary and returns a conserved per-meter breakdown.
+func CalculateUnits(components ...UnitComponent) (Calculation, error) {
+	exact := make([]*big.Rat, len(components))
+	total := new(big.Rat)
+	for index, component := range components {
+		if component.Quantity < 0 || component.AmountMicros < 0 || component.UnitQuantity <= 0 {
+			return Calculation{}, ErrNegativeValue
+		}
+		numerator := new(big.Int).Mul(big.NewInt(component.Quantity), big.NewInt(component.AmountMicros))
+		exact[index] = new(big.Rat).SetFrac(numerator, big.NewInt(component.UnitQuantity))
+		total.Add(total, exact[index])
+	}
+	totalMicros, err := roundHalfUpNonnegative(total)
+	if err != nil {
+		return Calculation{}, err
+	}
+
+	allocations := make([]int64, len(components))
+	type remainder struct {
+		index int
+		value *big.Rat
+	}
+	remainders := make([]remainder, len(components))
+	var floorSum int64
+	for index, value := range exact {
+		floor := new(big.Int).Quo(value.Num(), value.Denom())
+		if !floor.IsInt64() {
+			return Calculation{}, ErrOverflow
+		}
+		allocations[index] = floor.Int64()
+		if allocations[index] > math.MaxInt64-floorSum {
+			return Calculation{}, ErrOverflow
+		}
+		floorSum += allocations[index]
+		fraction := new(big.Rat).Sub(value, new(big.Rat).SetInt(floor))
+		remainders[index] = remainder{index: index, value: fraction}
+	}
+	toAllocate := totalMicros - floorSum
+	if toAllocate < 0 || toAllocate > int64(len(components)) {
+		return Calculation{}, fmt.Errorf("unit component conservation invariant violated")
+	}
+	sort.SliceStable(remainders, func(left, right int) bool {
+		return remainders[left].value.Cmp(remainders[right].value) > 0
+	})
+	for index := int64(0); index < toAllocate; index++ {
+		allocations[remainders[index].index]++
+	}
+	return Calculation{TotalMicros: totalMicros, ComponentMicros: allocations}, nil
+}
+
+// EstimateUnitHold applies the same exact decimal safety factor used for token
+// reservations to one non-token rational component and ceilings the result.
+func EstimateUnitHold(component UnitComponent, safetyFactor string) (int64, error) {
+	if component.Quantity < 0 || component.AmountMicros < 0 || component.UnitQuantity <= 0 {
+		return 0, ErrNegativeValue
+	}
+	safety, err := ParseDecimal(safetyFactor)
+	if err != nil {
+		return 0, fmt.Errorf("safety factor: %w", err)
+	}
+	if safety.Sign() < 0 {
+		return 0, ErrNegativeValue
+	}
+	numerator := new(big.Int).Mul(big.NewInt(component.Quantity), big.NewInt(component.AmountMicros))
+	exact := new(big.Rat).SetFrac(numerator, big.NewInt(component.UnitQuantity))
+	exact.Mul(exact, safety)
+	return ceilNonnegative(exact)
 }
 
 // EstimateHold computes a conservative reservation hold. It ceilings the

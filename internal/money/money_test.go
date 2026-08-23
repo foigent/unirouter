@@ -153,3 +153,34 @@ func TestEstimateHoldCeilsThenAppliesMinimum(t *testing.T) {
 		t.Fatalf("overflow error = %v, want ErrOverflow", err)
 	}
 }
+
+func TestCalculateUnitsKeepsExactRationalUntilAggregateRounding(t *testing.T) {
+	calculation, err := CalculateUnits(
+		UnitComponent{Quantity: 1, AmountMicros: 1, UnitQuantity: 3},
+		UnitComponent{Quantity: 1, AmountMicros: 1, UnitQuantity: 3},
+		UnitComponent{Quantity: 1, AmountMicros: 1, UnitQuantity: 3},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calculation.TotalMicros != 1 {
+		t.Fatalf("total = %d, want 1", calculation.TotalMicros)
+	}
+	if !reflect.DeepEqual(calculation.ComponentMicros, []int64{1, 0, 0}) {
+		t.Fatalf("components = %v, want deterministic [1 0 0]", calculation.ComponentMicros)
+	}
+}
+
+func TestEstimateUnitHoldUsesExactAmountPerQuantity(t *testing.T) {
+	// CNY 3 per 100 calls is 30,000 micro-CNY per call. The safety factor is
+	// applied to the exact rational before a single conservative ceiling.
+	hold, err := EstimateUnitHold(UnitComponent{
+		Quantity: 1, AmountMicros: 3_000_000, UnitQuantity: 100,
+	}, "1.1")
+	if err != nil || hold != 33_000 {
+		t.Fatalf("unit hold = %d, %v; want 33000", hold, err)
+	}
+	if _, err := EstimateUnitHold(UnitComponent{Quantity: 1, AmountMicros: 1, UnitQuantity: 0}, "1"); !errors.Is(err, ErrNegativeValue) {
+		t.Fatalf("invalid unit quantity error = %v, want ErrNegativeValue", err)
+	}
+}

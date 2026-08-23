@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 type OpenAICompatible struct{}
@@ -74,6 +75,11 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 			return nil, err
 		}
 		if in.Endpoint == EndpointChatCompletions {
+			meterUsage, meterErr := parseBuiltinToolMeterUsage(in.Body, in.ProtocolProfile)
+			if meterErr != nil {
+				return nil, meterErr
+			}
+			usage.MeterUsage = meterUsage
 			responseBody, err = normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, in.Body)
 			if err != nil {
 				return nil, fmt.Errorf("normalize MiniMax response: %w", err)
@@ -99,6 +105,49 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 		normalized.Error = a.ClassifyHTTPStatus(in.StatusCode, in.Body)
 	}
 	return normalized, nil
+}
+
+func parseBuiltinToolMeterUsage(body []byte, protocolProfile string) ([]metering.MeterQuantity, error) {
+	contract, ok := modelprofile.ResolveChatProtocolContract(protocolProfile)
+	if !ok || !contract.BuiltinWebSearch {
+		return []metering.MeterQuantity{}, nil
+	}
+	var envelope struct {
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
+				ToolCalls []struct {
+					Type     string `json:"type"`
+					Function struct {
+						Name string `json:"name"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("decode builtin tool usage: %w", err)
+	}
+	var count int64
+	for _, choice := range envelope.Choices {
+		if choice.FinishReason != "tool_calls" {
+			continue
+		}
+		for _, call := range choice.Message.ToolCalls {
+			if call.Type == "function" && call.Function.Name == contract.BuiltinWebSearchName {
+				count++
+			}
+		}
+	}
+	if count > contract.MaxBuiltinSearchCalls {
+		return nil, fmt.Errorf("builtin web search usage %d exceeds profile maximum %d", count, contract.MaxBuiltinSearchCalls)
+	}
+	if count == 0 {
+		return []metering.MeterQuantity{}, nil
+	}
+	return metering.NormalizeMeterQuantities([]metering.MeterQuantity{{
+		Meter: contract.BuiltinSearchMeter, Quantity: count,
+	}})
 }
 
 // NormalizeStreamFrame strips only documented, non-model MiniMax control

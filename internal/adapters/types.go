@@ -47,6 +47,7 @@ type Usage struct {
 	EstimateVersion      string
 	CacheUsageSchema     string
 	CacheUsageStatus     string
+	MeterUsage           []metering.MeterQuantity
 }
 
 type ProviderMeta struct {
@@ -87,6 +88,7 @@ type ResponseInput struct {
 	RequestedModel    string
 	UpstreamModel     string
 	CacheUsageProfile string
+	ProtocolProfile   string
 	TTFTMillis        int
 }
 

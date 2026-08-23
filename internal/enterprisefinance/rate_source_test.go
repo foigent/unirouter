@@ -17,6 +17,11 @@ func TestOfficialRateSourceRequiresVerifiableBoundedFreshnessEvidence(t *testing
 		LastSuccessAt: fetchedAt, StaleAfter: fetchedAt.Add(24 * time.Hour), ImportedBy: "user:2",
 	}
 	require.NoError(t, ValidateRateSourceEvidence(evidence))
+	evidence.UnitContract = RateSourceUnitComponents
+	require.NoError(t, ValidateRateSourceEvidence(evidence))
+	evidence.UnitContract = "calls"
+	require.ErrorContains(t, ValidateRateSourceEvidence(evidence), "rate_source_currency_unit")
+	evidence.UnitContract = RateSourceUnitTokens
 
 	evidence.SourceURL = "unirouter://model_prices/model-a"
 	require.ErrorContains(t, ValidateRateSourceEvidence(evidence), "official_rate_source_url")
@@ -28,6 +33,13 @@ func TestOfficialRateSourceRequiresVerifiableBoundedFreshnessEvidence(t *testing
 	evidence.PayloadSHA256 = "sha256:" + stringRepeat("a", 64)
 	evidence.StaleAfter = evidence.LastSuccessAt
 	require.ErrorContains(t, ValidateRateSourceEvidence(evidence), "rate_source_freshness")
+}
+
+func TestRateSourceUnitContractDistinguishesMixedMeters(t *testing.T) {
+	require.Equal(t, RateSourceUnitTokens, rateSourceUnitContract([]RateComponent{{Meter: MeterInputTokens}}))
+	require.Equal(t, RateSourceUnitComponents, rateSourceUnitContract([]RateComponent{
+		{Meter: MeterInputTokens}, {Meter: MeterBuiltinWebSearchCalls},
+	}))
 }
 
 func stringRepeat(value string, count int) string {

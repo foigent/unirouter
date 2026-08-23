@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/executionprojection"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/money"
@@ -100,6 +101,9 @@ type callLogOutboxPayload struct {
 	EffectiveOutputPriceMicrosPerMillion      string                         `json:"effective_output_price_micros_per_million,omitempty"`
 	CacheReadCostMicros                       string                         `json:"cache_read_cost_micros,omitempty"`
 	CacheCreationCostMicros                   string                         `json:"cache_creation_cost_micros,omitempty"`
+	EffectiveUnitRates                        []billing.UnitRate             `json:"effective_unit_rates,omitempty"`
+	MeterUsage                                []metering.MeterQuantity       `json:"meter_usage,omitempty"`
+	NonTokenCostMicros                        string                         `json:"non_token_cost_micros,omitempty"`
 	LegacyCostCents                           json.Number                    `json:"cost_cents,omitempty"`
 	LegacyEffectiveInputPrice                 json.Number                    `json:"effective_input_price_cents,omitempty"`
 	LegacyEffectiveCacheReadPrice             json.Number                    `json:"effective_cache_read_price_cents,omitempty"`
@@ -192,6 +196,7 @@ type callLogMoney struct {
 	EffectiveOutputPriceMicrosPerMillion      int64
 	CacheReadCostMicros                       int64
 	CacheCreationCostMicros                   int64
+	NonTokenCostMicros                        int64
 }
 
 func normalizeCallLogMoney(eventType string, payload callLogOutboxPayload) (callLogMoney, error) {
@@ -210,6 +215,7 @@ func normalizeCallLogMoney(eventType string, payload callLogOutboxPayload) (call
 		&payload.EffectiveOutputPriceMicrosPerMillion,
 		&payload.CacheReadCostMicros,
 		&payload.CacheCreationCostMicros,
+		&payload.NonTokenCostMicros,
 	}
 	parsed := make([]int64, len(values))
 	for i, value := range values {
@@ -223,6 +229,7 @@ func normalizeCallLogMoney(eventType string, payload callLogOutboxPayload) (call
 		CostMicros: parsed[0], EffectiveInputPriceMicrosPerMillion: parsed[1],
 		EffectiveCacheReadPriceMicrosPerMillion: parsed[2], EffectiveCacheCreatePriceMicrosPerMillion: parsed[3],
 		EffectiveOutputPriceMicrosPerMillion: parsed[4], CacheReadCostMicros: parsed[5], CacheCreationCostMicros: parsed[6],
+		NonTokenCostMicros: parsed[7],
 	}, nil
 }
 

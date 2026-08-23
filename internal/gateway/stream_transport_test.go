@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -252,7 +253,7 @@ func TestP6F41BInterruptedStreamSeparatesProviderUsageFromCustomerCharge(t *test
 	if persisted.CompletionTokens <= 0 || persisted.CompletionTokens >= 100 {
 		t.Fatalf("customer completion tokens = %d, want delivered subset below provider-reported 100", persisted.CompletionTokens)
 	}
-	if settled != persisted {
+	if !reflect.DeepEqual(settled, persisted) {
 		t.Fatalf("settlement changed the durable delivered usage: persisted=%+v settled=%+v", persisted, settled)
 	}
 	if strings.Contains(recorder.Body.String(), "data: [DONE]") {
@@ -286,7 +287,7 @@ func TestP6F41BCompleteStreamIncompleteUsageUsesGatewayCounter(t *testing.T) {
 		persisted.CompletionTokens <= 0 {
 		t.Fatalf("incomplete stream usage did not use delivered-counter authority: %+v", persisted)
 	}
-	if settled != persisted {
+	if !reflect.DeepEqual(settled, persisted) {
 		t.Fatalf("settlement changed the durable delivered usage: persisted=%+v settled=%+v", persisted, settled)
 	}
 }

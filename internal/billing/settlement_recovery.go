@@ -239,6 +239,9 @@ func (b *Billing) PersistSettlementUsage(ctx context.Context, req SettleRequest)
 	if err != nil {
 		return err
 	}
+	if err := persistReservationMeterEvidenceTx(ctx, tx, req.RequestID, req.OrgID, req.MeterUsage, costBreakdown.NonTokenCostMicros); err != nil {
+		return err
+	}
 	var streamOwner any
 	var streamGeneration any
 	if req.StreamFence != nil {
@@ -310,7 +313,8 @@ func settlementUsageMatches(record reservationRecord, req SettleRequest) bool {
 		record.UsageContractVersion == req.UsageContractVersion &&
 		record.UsageEstimateVersion == req.UsageEstimateVersion &&
 		record.CacheUsageSchema == req.CacheUsageSchema &&
-		record.CacheUsageStatus == req.CacheUsageStatus
+		record.CacheUsageStatus == req.CacheUsageStatus &&
+		meterUsageEqual(record.MeterUsage, req.MeterUsage)
 }
 
 // RecoverPendingSettlements claims at most limit ready rows, then settles each

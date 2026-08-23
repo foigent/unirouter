@@ -770,6 +770,41 @@ func TestRecordRequest_UsesConfiguredPayloadCaptureMode(t *testing.T) {
 	}
 }
 
+func TestRecordRequest_PersistsFrozenNonTokenPricingEvidence(t *testing.T) {
+	var capturedArgs []any
+	db := &testutil.MockDB{
+		ExecFn: func(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO call_logs") {
+				capturedArgs = append([]any(nil), args...)
+			}
+			return pgconn.CommandTag{}, nil
+		},
+	}
+	relay := newTestRelay(db, &mockBilling{})
+	usage, err := adapters.NewUsage(3, 4, 7, metering.UsageSourceUpstream)
+	require.NoError(t, err)
+	usage, err = usage.WithMeterUsage([]metering.MeterQuantity{{Meter: "builtin_web_search_calls", Quantity: 1}})
+	require.NoError(t, err)
+	rate := billing.UnitRate{
+		Meter: "builtin_web_search_calls", UnitQuantity: 1, AmountMinor: 30_000,
+		Currency: "CNY", AmountScale: money.MicrosPerCNY,
+		ComponentHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	relay.recordRequestWithUsage(
+		contextWithAttemptID(context.Background(), "att_metered"),
+		"req-metered", 1, 1, 1, "kimi", "kimi-platform", "Kimi K2.6", "Kimi K2.6", "127.0.0.1",
+		usage, 30_000, http.StatusOK, 12, 0, false, 7, "", &billing.SettleResult{
+			PricingVersion: "rcq3_test", NonTokenCostMicros: 30_000,
+			MeterUsage: usage.MeterUsage, EffectiveUnitRates: []billing.UnitRate{rate}, Success: true,
+		},
+	)
+
+	require.Len(t, capturedArgs, callLogInsertArgCount)
+	require.JSONEq(t, `[{"meter":"builtin_web_search_calls","unit_quantity":1,"amount_minor":30000,"currency":"CNY","amount_scale":1000000,"component_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]`, capturedArgs[callLogArgEffectiveUnitRates].(string))
+	require.JSONEq(t, `[{"meter":"builtin_web_search_calls","quantity":1}]`, capturedArgs[callLogArgMeterUsage].(string))
+	require.Equal(t, int64(30_000), capturedArgs[callLogArgNonTokenCost])
+}
+
 func TestRecordRequest_UsesTrustedEvidenceContext(t *testing.T) {
 	var capturedArgs []any
 	db := &testutil.MockDB{

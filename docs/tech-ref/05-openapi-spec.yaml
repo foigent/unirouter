@@ -425,11 +425,29 @@ paths:
     get:
       tags: [Gateway]
       summary: OpenAI-compatible model list
+      description: |
+        Returns only models callable by the authenticated key after lifecycle,
+        project model-set and model-authorization filtering. By default the
+        response keeps the ordinary OpenAI-compatible list shape and does not
+        incur an execution-profile lookup. `include=execution_profile` adds a
+        non-secret `x_unirouter_execution` projection for client configuration
+        sync. Only repository-reviewed executable capabilities receive limits;
+        unregistered, unverified or invalid profile bindings are explicitly
+        labeled and never inherit provider-advertised capabilities.
       security:
         - gatewayKey: []
+      parameters:
+        - name: include
+          in: query
+          required: false
+          schema: { type: string, enum: [execution_profile] }
+          description: Opt in to the versioned executable-profile projection used by supported client sync tools.
       responses:
         "200":
-          $ref: "#/components/responses/JSON"
+          description: Authorized model list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicModelList" }
 
   /v1/media/jobs:
     post:
@@ -3052,14 +3070,14 @@ paths:
     x-unirouter-rbac:
       get: [platform_admin, org_admin, billing_admin]
       post: [platform_admin, billing_admin]
-    description: Lists latest enterprise Rate Card versions and the current process request-pricing mode, or creates a draft with exact decimal quantities, economic-layer separation and component hashes. A card may include daily_price_bands, a complete, gap-free, non-overlapping UTC minute schedule whose every band explicitly prices all four request Token meters; an empty array preserves flat-price cards. Cross-midnight intervals must be split before submission and are otherwise rejected. In explicit rate_card mode, active supplier_contracted rates take precedence over provider_list and missing or provider-ambiguous model_ref pricing fails closed without a legacy fallback.
+    description: Lists latest enterprise Rate Card versions and the current process request-pricing mode, or creates a draft with exact absolute amount/unit rationals, currency, economic-layer separation and component hashes. A card may include daily_price_bands, a complete, gap-free, non-overlapping UTC minute schedule whose every band explicitly prices all four request Token meters and preserves each supported non-Token request meter present in the base card; an empty array preserves flat-price cards. Cross-midnight intervals must be split before submission and are otherwise rejected. In explicit rate_card mode, active supplier_contracted rates take precedence over provider_list and missing or provider-ambiguous model_ref pricing fails closed without a legacy fallback.
     get: *operation_list
     post: *operation_create
 
   /api/v1/enterprise-finance/rate-cards/import-official-draft:
     x-unirouter-rbac:
       post: [platform_admin, billing_admin]
-    description: Atomically records an HTTPS source URL, source revision, fetched-at time, payload SHA-256, deterministic transform version and bounded-freshness window, then creates a complete provider_list draft. The draft may carry the same explicit UTC daily_price_bands contract as a manually created card. It performs no network fetch and never approves or activates the draft.
+    description: Atomically records an HTTPS source URL, source revision, fetched-at time, payload SHA-256, deterministic transform version, currency/unit contract and bounded-freshness window, then creates a complete provider_list draft with exact absolute amount/unit components. The draft may carry the same explicit UTC daily_price_bands contract as a manually created card. It performs no network fetch and never approves or activates the draft; an administrator may instead author a separate supplier_contracted override.
     post: *operation_create
 
   /api/v1/enterprise-finance/rate-cards/bootstrap-legacy-drafts:
@@ -3083,7 +3101,7 @@ paths:
   /api/v1/enterprise-finance/rate-cards/{rate_card_ref}/activate:
     x-unirouter-rbac:
       post: [platform_admin, billing_admin]
-    description: Activates an approved supplier-cost Rate Card only when all four request meters are explicit CNY micro rates, every configured UTC daily band is fully priced with no overlap or gap, the candidate is effective now, and provider_list evidence is not stale. Request quotes select the unique band at priced_at and bind the complete schedule plus selected band into the pricing-version content hash. If one same-model/same-layer active card conflicts, callers must provide its exact supersedes_rate_card_ref and expected_superseded_version; the transaction appends a retired version for that ref and an active version for the candidate, rolling both back on any failure. A declaration is rejected when no replacement is necessary, and multiple conflicts fail closed. Historical active versions remain available to validate immutable request snapshots. Activation alone does not change process configuration.
+    description: Activates an approved supplier-cost Rate Card only when all four Token request meters are explicit CNY micro absolute rates, every supported non-Token request meter uses an exact amount/unit rational, every configured UTC daily band preserves the same priced meter set with no overlap or gap, the candidate is effective now, and provider_list evidence is not stale. Request quotes select the unique band at priced_at and bind the complete schedule, selected band and component hashes into the pricing-version content hash; Billing Freeze persists that exact quote version and its required unit rates. If one same-model/same-layer active card conflicts, callers must provide its exact supersedes_rate_card_ref and expected_superseded_version; the transaction appends a retired version for that ref and an active version for the candidate, rolling both back on any failure. A declaration is rejected when no replacement is necessary, and multiple conflicts fail closed. Historical active versions remain available to validate immutable request snapshots. Activation alone does not change process configuration.
     post: *operation_create
 
   /api/v1/enterprise-finance/pricing-snapshots/{request_ref}:
@@ -6336,6 +6354,46 @@ components:
           required: [model_name]
           properties:
             org_id: { type: integer, format: int64, minimum: 1 }
+    PublicModelExecutionProjection:
+      type: object
+      additionalProperties: false
+      required: [status, display_name]
+      properties:
+        status:
+          type: string
+          enum: [verified, unverified, invalid, unregistered]
+          description: Only verified entries carry executable limits and capabilities.
+        display_name: { type: string }
+        profile_id: { type: string }
+        profile_version: { type: string }
+        protocol_profile: { type: string }
+        context_window: { type: integer, minimum: 1 }
+        max_output_tokens: { type: integer, minimum: 1 }
+        capabilities:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        reasoning_mode: { type: string, enum: [toggle, required, always_on] }
+        reasoning_effort_values:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+    PublicModel:
+      type: object
+      additionalProperties: false
+      required: [id, object, owned_by]
+      properties:
+        id: { type: string, minLength: 1 }
+        object: { type: string, enum: [model] }
+        owned_by: { type: string, enum: [uniroute] }
+        x_unirouter_execution: { $ref: "#/components/schemas/PublicModelExecutionProjection" }
+    PublicModelList:
+      type: object
+      additionalProperties: false
+      required: [object, data]
+      properties:
+        object: { type: string, enum: [list] }
+        data: { type: array, items: { $ref: "#/components/schemas/PublicModel" } }
     ModelExecutionProfile:
       type: object
       additionalProperties: false

@@ -18,3 +18,22 @@ Evidence labels are intentionally fail-closed:
 - Feishu Bot and Feishu Aily require isolated adapters and a real tenant; they are not direct Gateway client examples.
 
 Tencent WorkBuddy currently expects a full `/v1/chat/completions` URL in its `models.json`. Its file format embeds the key value, so generate the file only on the target device, restrict permissions and never commit the rendered file.
+
+OpenClaw requires an explicit custom provider. Install
+`openclaw.provider.json` once with environment-backed `baseUrl` and `apiKey`
+values; the placeholder model only makes the initial provider document valid.
+Afterward, synchronize the authorized executable Profile projection without
+putting the key on argv:
+
+```bash
+go run ./cmd/uniroute-openclaw-sync --provider unirouter
+go run ./cmd/uniroute-openclaw-sync --provider unirouter --write
+```
+
+The first command fetches `/v1/models?include=execution_profile`, merges only
+UniRouter-owned execution fields into the existing model rows, and asks
+OpenClaw to validate the result without writing. `--write` repeats validation
+before replacing the provider's model array. User-owned `cost`, `params`,
+`headers` and unrelated `compat` fields are retained; models no longer
+authorized by the Gateway key are removed. This does not make OpenClaw
+compatibility `verified`: record an exact-version live run separately.

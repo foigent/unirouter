@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -88,6 +89,9 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 	}
 	calculatedCost, breakdown, err := calculateReservationCost(record, req)
 	if err != nil {
+		return nil, err
+	}
+	if err := persistReservationMeterEvidenceTx(ctx, tx, req.RequestID, req.OrgID, req.MeterUsage, breakdown.NonTokenCostMicros); err != nil {
 		return nil, err
 	}
 	additionalTopUp := int64(0)
@@ -210,6 +214,8 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 	record.CacheReadCostMicros = breakdown.CacheReadCostMicros
 	record.CacheCreationCostMicros = breakdown.CacheCreationCostMicros
 	record.OutputCostMicros = breakdown.OutputCostMicros
+	record.NonTokenCostMicros = breakdown.NonTokenCostMicros
+	record.MeterUsage = slices.Clone(req.MeterUsage)
 	return prepareDeliveryResult(record, calculatedCost, record.TopUpAmountMicros, true), nil
 }
 
@@ -232,6 +238,9 @@ func prepareDeliveryResult(record reservationRecord, calculatedCost, topUp int64
 			CacheReadCostMicros:     record.CacheReadCostMicros,
 			CacheCreationCostMicros: record.CacheCreationCostMicros,
 			OutputCostMicros:        record.OutputCostMicros,
+			NonTokenCostMicros:      record.NonTokenCostMicros,
+			MeterUsage:              slices.Clone(record.MeterUsage),
+			EffectiveUnitRates:      slices.Clone(record.EffectiveUnitRates),
 			BillingMode:             record.BillingMode,
 			Success:                 funded,
 		},

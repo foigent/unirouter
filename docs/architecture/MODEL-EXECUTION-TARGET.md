@@ -70,15 +70,15 @@ writes remain supported. Draining old binaries is still an orchestration
 responsibility; no environment value or database check proves that a separate
 old process has exited.
 
-The executable schema ceiling is `000082`. After either normal migration or
+The executable schema ceiling is `000083`. After either normal migration or
 `SKIP_MIGRATION`, the backend requires the complete ordered database migration
 ledger to equal the binary artifact ledger before customer-baseline
 initialization or HTTP bind. Missing, extra, future, duplicate, reordered and
-empty ledgers fail closed. Ceiling changes are consequently non-rolling: an M81
-stable and M82 canary cannot both be ready on one database. Drain and stop the
-old fleet, let one migration owner advance the database to M82, then start M82
+empty ledgers fail closed. Ceiling changes are consequently non-rolling: an M82
+stable and M83 canary cannot both be ready on one database. Drain and stop the
+old fleet, let one migration owner advance the database to M83, then start M83
 stable/canary; a secondary may skip migrations only when the database is already
-exact M82. M81 adds an explicit versioned execution-profile identity to every
+exact M83. M81 adds an explicit versioned execution-profile identity to every
 model. Historical rows migrate to `unverified.chat@1.0.0`; migration never guesses
 a tokenizer, context limit or provider contract from a mutable model name. A
 reviewed profile freezes tokenizer, reasoning, cache-usage and protocol identities
@@ -95,7 +95,10 @@ safety may narrow a pinned upper bound, but cannot widen it. Pricing is not part
 of the Release pin: Billing Freeze independently fixes the applicable price
 version because price and capability evolve separately. M82 down rejects later
 migrations and any durable Release whose pins would change under M81 mutable
-lookup semantics.
+lookup semantics. M83 leaves Release and traffic authority unchanged and adds
+durable exact non-token Rate Card rationals plus reserved/actual meter evidence
+to Freeze, observations, finalization and call logs. Its guarded down rejects
+later migrations or any durable M83 meter evidence.
 
 M80 terminalizes cost-observation provider reconciliation with an
 append-only zero-charge receipt and never with a wallet transaction. M79 retains the signed License v1
