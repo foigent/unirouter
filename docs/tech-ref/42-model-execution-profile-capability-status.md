@@ -87,15 +87,16 @@ The repository already contains the correct structural start:
   untyped route.
 - Chat tools, JSON Object/Schema and preserved `reasoning_content` have common
   protocol machinery.
-- `kimi.k2.6.api@1.4.0`, `kimi.k2.7-code.api@1.1.0` and
-  `kimi.k3.api@1.4.0` use the Kimi API Platform surface and retain typed Chat
+- `kimi.k2.6.api@1.5.0`, `kimi.k2.7-code.api@1.1.0` and
+  `kimi.k3.api@1.5.0` use the Kimi API Platform surface and retain typed Chat
   contracts for final-assistant Partial Mode, K3 system-message Dynamic Tools, exact
   `$web_search` admission/evidence, and MIME-bounded inline image/video data
   URLs. Partial plus JSON Object is rejected as a documented incompatible
-  combination. Search remains provider-declared but is not executable on the
-  current profiles. Provider URL and file references remain outside this
-  inline contract.
-- `kimi.k2.6.api@1.4.0` freezes MoonshotAI's reviewed K2.6 `tiktoken.model`,
+  combination. K2.6 and K3 expose one serial, non-stream `$web_search` call per
+  provider response with an exact `builtin_web_search_calls` reservation and
+  actual-usage meter; K2.7 Code does not claim that capability. Provider URL
+  and file references remain outside this inline contract.
+- `kimi.k2.6.api@1.5.0` freezes MoonshotAI's reviewed K2.6 `tiktoken.model`,
   regex and special-token identities. Admission counts the retained request with
   this exact tokenizer plus conservative framing instead of the byte upper bound;
   unknown and separately versioned Kimi models continue to fail closed on the
@@ -147,9 +148,9 @@ The following are still real gaps:
 
 | Model/family | Provider-documented surface | Current UniRouter support | Not yet production-supported |
 |---|---|---|---|
-| Kimi K2.6 | 262,144 context; thinking toggle and optional preserved thinking; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache and built-in search | `kimi.k2.6.api@1.4.0`; exact frozen tokenizer admission; typed fixed parameters/keep/tool constraints; standard tools/JSON Object; final-assistant Partial; Kimi cache usage; MIME-bounded inline image/video | built-in search remains fail-closed; provider-file/remote-URL media; large-media estimator; target live capability conformance; Dynamic Tools are not a K2.6 claim |
+| Kimi K2.6 | 262,144 context; thinking toggle and optional preserved thinking; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache and built-in search | `kimi.k2.6.api@1.5.0`; exact frozen tokenizer admission; typed fixed parameters/keep/tool constraints; standard tools/JSON Object; final-assistant Partial; Kimi cache usage; MIME-bounded inline image/video; one serial non-stream `$web_search` call with exact unit-meter evidence, including thinking-enabled requests | provider-file/remote-URL media; large-media estimator; target live capability conformance; streaming search metering; Dynamic Tools are not a K2.6 claim |
 | Kimi K2.7 Code | 262,144 context and 32K default output; text/image/video; thinking-only with preserved thinking; ToolCalls, JSON Mode, Partial Mode and automatic cache | `kimi.k2.7-code.api@1.1.0` on Kimi API Platform; typed required-thinking/fixed-parameter/tool constraints; standard tools/JSON Object; final-assistant Partial; Kimi cache usage; MIME-bounded inline media | target live capability conformance; large/file media; separate subscription Coding surface and Anthropic coding conformance |
-| Kimi K3 | 1M provider maximum with a 256K current customer default; 131,072 default and 1,048,576 maximum output; always-on reasoning; `low/high/max`; tools, JSON Object/Schema, Partial, dynamic tools, built-in search, vision/video and automatic cache | `kimi.k3.api@1.4.0`; typed effort/fixed-parameter/tool constraints; standard tools/JSON; final-assistant Partial; system-message Dynamic Tools; Kimi cache usage; MIME-bounded inline image/video | built-in search remains fail-closed; provider-file/remote-URL media; large-media estimator; full target live multi-turn/capability conformance |
+| Kimi K3 | 1M provider maximum with a 256K current customer default; 131,072 default and 1,048,576 maximum output; always-on reasoning; `low/high/max`; tools, JSON Object/Schema, Partial, dynamic tools, built-in search, vision/video and automatic cache | `kimi.k3.api@1.5.0`; typed effort/fixed-parameter/tool constraints; standard tools/JSON; final-assistant Partial; system-message Dynamic Tools; Kimi cache usage; MIME-bounded inline image/video; one serial non-stream `$web_search` call with exact unit-meter evidence | provider-file/remote-URL media; large-media estimator; streaming search metering; full target live multi-turn/capability conformance |
 | DeepSeek V4 Flash/Pro | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache. Vision belongs to the separate `deepseek-v4-flash-vision-exp` model | `deepseek.v4-*.api@1.1.0`; OpenAI-compatible Chat; typed thinking/effort including documented compatibility aliases, thinking-mode `tool_choice` rejection and preserved tool-history contract; standard tools/JSON; profile-bound cache hit/miss usage; versioned 1M/384K provider limits | live operation/capability conformance for the configured V4 identities; prefix beta; full Responses/Anthropic operations; Files/FIM; separate vision model qualification |
 | MiniMax M2.5/M2.7/M3 | M2.x 204,800 total window; M3 1M and image/video input; M3 adaptive/disabled thinking; M2.x required thinking; tools and nested cache usage; Token Plan is quota/subscription access | versioned limits; standard function tools; exact tokenizer only for M2.7; MiniMax response-envelope normalization; reasoning/cache labels are provider-declared, not executable | MiniMax typed reasoning/history/cache contracts; M3 multimodal admission; `reasoning_split`; cache/pricing qualification; Token Plan quota evidence. Customer cost remains zero until an independently verified pay-as-you-go key/price is configured |
 
@@ -165,6 +166,8 @@ Official references used for this snapshot:
 - [Kimi context caching](https://platform.kimi.com/docs/guide/use-context-caching-feature-of-kimi-api),
   [Partial Mode](https://platform.kimi.com/docs/guide/use-partial-mode-feature-of-kimi-api) and
   [ToolCalls](https://platform.kimi.com/docs/guide/use-kimi-api-to-complete-tool-calls)
+- [Kimi built-in web search](https://platform.kimi.com/docs/guide/use-web-search) and
+  [tool pricing](https://platform.kimi.com/docs/pricing/tools)
 - [DeepSeek thinking](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode),
   [vision](https://api-docs.deepseek.com/zh-cn/guides/vision),
   [Responses](https://api-docs.deepseek.com/zh-cn/guides/responses_api),

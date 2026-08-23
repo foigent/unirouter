@@ -20,7 +20,7 @@ func TestKimiK26AdvancedProtocolAcceptsFinalPartialAndInlineMedia(t *testing.T) 
 }
 
 func TestKimiPartialModeRejectsJSONObjectCombination(t *testing.T) {
-	for _, profileID := range []string{"protocol.kimi-openai-chat.v2", "protocol.kimi-openai-chat.k3.v2"} {
+	for _, profileID := range []string{"protocol.kimi-openai-chat.v2", "protocol.kimi-openai-chat.v3", "protocol.kimi-openai-chat.k3.v2"} {
 		contract, ok := modelprofile.ResolveChatProtocolContract(profileID)
 		require.True(t, ok)
 		_, err := validateAdvancedChatProtocolRequest([]byte(`{
@@ -81,5 +81,24 @@ func TestKimiBuiltinSearchProducesBoundedReservationAndNormalization(t *testing.
 	_, err = validateAdvancedChatProtocolRequest([]byte(`{"messages":[],"thinking":{"type":"disabled"},"stream":true,"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}]}`), contract)
 	require.ErrorContains(t, err, "requires stream=false")
 	_, err = validateAdvancedChatProtocolRequest([]byte(`{"messages":[],"thinking":{"type":"disabled"},"parallel_tool_calls":true,"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}]}`), contract)
+	require.ErrorContains(t, err, "requires parallel_tool_calls=false")
+}
+
+func TestKimiK26BuiltinSearchAllowsThinkingInProtocolV3(t *testing.T) {
+	contract, ok := modelprofile.ResolveChatProtocolContract("protocol.kimi-openai-chat.v3")
+	require.True(t, ok)
+	require.False(t, contract.BuiltinSearchRequiresThinkingDisabled)
+
+	for _, thinking := range []string{"", `,"thinking":{"type":"enabled"}`} {
+		body := []byte(`{"messages":[{"role":"user","content":"latest"}],"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}]` + thinking + `}`)
+		validated, err := validateAdvancedChatProtocolRequest(body, contract)
+		require.NoError(t, err)
+		require.Equal(t, []metering.MeterQuantity{{Meter: "builtin_web_search_calls", Quantity: 1}}, validated.ReservedMeterUsage)
+		require.Equal(t, []string{"parallel_tool_calls=omitted->false"}, validated.ProviderRequestNormalizations)
+	}
+
+	_, err := validateAdvancedChatProtocolRequest([]byte(`{"messages":[],"stream":true,"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}]}`), contract)
+	require.ErrorContains(t, err, "requires stream=false")
+	_, err = validateAdvancedChatProtocolRequest([]byte(`{"messages":[],"parallel_tool_calls":true,"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}]}`), contract)
 	require.ErrorContains(t, err, "requires parallel_tool_calls=false")
 }
