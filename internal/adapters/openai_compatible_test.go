@@ -504,7 +504,7 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 }
 
 func TestKimiTopLevelCacheUsageRequiresExactProfile(t *testing.T) {
-	body := []byte(`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"cached_tokens":80}}`)
+	body := []byte(`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"cached_tokens":80,"prompt_tokens_details":{"cached_tokens":null,"audio_tokens":3}}}`)
 	adapter := NewOpenAICompatible()
 
 	kimi, err := adapter.ParseResponse(context.Background(), ResponseInput{
@@ -520,6 +520,20 @@ func TestKimiTopLevelCacheUsageRequiresExactProfile(t *testing.T) {
 		kimi.Usage.CacheUsageStatus != CacheUsageStatusReadReported {
 		t.Fatalf("unexpected Kimi cache usage: %+v", kimi.Usage)
 	}
+	var kimiWire struct {
+		Usage struct {
+			CachedTokens  int `json:"cached_tokens"`
+			PromptDetails struct {
+				CachedTokens int `json:"cached_tokens"`
+				AudioTokens  int `json:"audio_tokens"`
+			} `json:"prompt_tokens_details"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(kimi.Body, &kimiWire); err != nil ||
+		kimiWire.Usage.CachedTokens != 80 || kimiWire.Usage.PromptDetails.CachedTokens != 80 ||
+		kimiWire.Usage.PromptDetails.AudioTokens != 3 {
+		t.Fatalf("Kimi client cache projection is incomplete: wire=%+v err=%v body=%s", kimiWire, err, kimi.Body)
+	}
 
 	generic, err := adapter.ParseResponse(context.Background(), ResponseInput{
 		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
@@ -531,6 +545,9 @@ func TestKimiTopLevelCacheUsageRequiresExactProfile(t *testing.T) {
 	if generic.Usage.CacheReadTokens != 0 || generic.Usage.CacheUsageSchema != "" ||
 		generic.Usage.UncachedPromptTokens != 100 {
 		t.Fatalf("generic route trusted Kimi-only usage: %+v", generic.Usage)
+	}
+	if string(generic.Body) != string(body) {
+		t.Fatalf("generic route projected provider cache fields: %s", generic.Body)
 	}
 
 	coding, err := adapter.ParseResponse(context.Background(), ResponseInput{
@@ -544,6 +561,59 @@ func TestKimiTopLevelCacheUsageRequiresExactProfile(t *testing.T) {
 	if coding.Usage.CacheReadTokens != 0 || coding.Usage.CacheUsageSchema != "" ||
 		coding.Usage.UncachedPromptTokens != 100 {
 		t.Fatalf("unverified Kimi Coding profile trusted platform cache wire: %+v", coding.Usage)
+	}
+	if string(coding.Body) != string(body) {
+		t.Fatalf("unverified Kimi Coding route projected provider cache fields: %s", coding.Body)
+	}
+}
+
+func TestOpenAICompatibleNormalizeStreamFrameProjectsProfileCacheUsageForGenericClients(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	tests := []struct {
+		name         string
+		body         string
+		cacheProfile string
+		wantCached   int
+		wantChanged  bool
+	}{
+		{
+			name: "Kimi top-level cache", cacheProfile: "cache-usage.kimi-platform.v1", wantCached: 80, wantChanged: true,
+			body: `{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"cached_tokens":80}}`,
+		},
+		{
+			name: "DeepSeek hit miss", cacheProfile: "cache-usage.deepseek-v4.v1", wantCached: 80, wantChanged: true,
+			body: `{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`,
+		},
+		{
+			name: "untyped provider extension remains unchanged", wantCached: 0,
+			body: `{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"cached_tokens":80}}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
+				Data: []byte(test.body), CacheUsageProfile: test.cacheProfile,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !test.wantChanged {
+				if string(got) != test.body {
+					t.Fatalf("untyped frame changed: %s", got)
+				}
+				return
+			}
+			var wire struct {
+				Usage struct {
+					PromptDetails struct {
+						CachedTokens int `json:"cached_tokens"`
+					} `json:"prompt_tokens_details"`
+				} `json:"usage"`
+			}
+			if err := json.Unmarshal(got, &wire); err != nil || wire.Usage.PromptDetails.CachedTokens != test.wantCached {
+				t.Fatalf("cache projection=%+v err=%v body=%s", wire, err, got)
+			}
+		})
 	}
 }
 

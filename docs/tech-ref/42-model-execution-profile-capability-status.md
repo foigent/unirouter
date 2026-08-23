@@ -75,6 +75,11 @@ The repository already contains the correct structural start:
   have profile-bound usage parsers. A generic OpenAI-compatible route cannot
   turn DeepSeek-shaped fields into billing evidence. Generic nested
   `prompt_tokens_details.cached_tokens` is also recognized.
+- Once one of those profile-bound provider counters is authoritative, the
+  Provider Adapter preserves the original fields and mirrors cache reads into
+  `prompt_tokens_details.cached_tokens` for generic OpenAI SDKs and Agent
+  clients. This response projection does not create billing authority for an
+  untyped route.
 - Chat tools, JSON Object/Schema and preserved `reasoning_content` have common
   protocol machinery.
 - `kimi.k2.6.api@1.3.0` and `kimi.k3.api@1.3.0` retain typed Chat contracts for
