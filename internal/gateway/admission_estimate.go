@@ -34,6 +34,7 @@ const (
 	verifiedTokenizerBaseOverhead       = int64(4_096)
 	verifiedTokenizerMessageOverhead    = int64(64)
 	verifiedTokenizerCollectionOverhead = int64(256)
+	maxChatToolCallIndex                = int64(1_000_000)
 	maxEmbeddingTokenID                 = int64(math.MaxInt32)
 )
 
@@ -395,8 +396,21 @@ func validateMeasurableChatMessage(raw json.RawMessage) error {
 			if err := json.Unmarshal(rawCall, &call); err != nil || call == nil {
 				return fmt.Errorf("%w: message tool_call must be an object", errAdmissionUnsupportedShape)
 			}
-			if err := rejectUnknownJSONFields(call, "message tool_call", "id", "type", "function"); err != nil {
+			if err := rejectUnknownJSONFields(call, "message tool_call", "id", "type", "function", "index"); err != nil {
 				return err
+			}
+			if rawIndex, exists := call["index"]; exists && !isJSONNull(rawIndex) {
+				if !rawJSONNumber(rawIndex) {
+					return fmt.Errorf("%w: message tool_call index must be a non-negative integer", errAdmissionUnsupportedShape)
+				}
+				var index json.Number
+				if err := json.Unmarshal(rawIndex, &index); err != nil {
+					return fmt.Errorf("%w: message tool_call index must be a non-negative integer", errAdmissionUnsupportedShape)
+				}
+				parsed, err := index.Int64()
+				if err != nil || parsed < 0 || parsed > maxChatToolCallIndex {
+					return fmt.Errorf("%w: message tool_call index must be a non-negative integer no greater than %d", errAdmissionUnsupportedShape, maxChatToolCallIndex)
+				}
 			}
 			for _, field := range []string{"id", "type"} {
 				value, exists := call[field]

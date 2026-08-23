@@ -475,6 +475,7 @@ func TestKimiAdvancedProtocolIsPreservedIntoProviderRequestAndFreezeEvidence(t *
 		body           string
 		required       []string
 		wantParallel   bool
+		wantToolIndex  bool
 		wantReserved   []metering.MeterQuantity
 	}{
 		{
@@ -482,6 +483,11 @@ func TestKimiAdvancedProtocolIsPreservedIntoProviderRequestAndFreezeEvidence(t *
 			body:     `{"model":"public-model","messages":[{"role":"user","content":"latest"}],"thinking":{"type":"enabled"},"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}],"max_tokens":128}`,
 			required: []string{modelCapabilityBuiltinWebSearch, modelCapabilityTools}, wantParallel: true,
 			wantReserved: []metering.MeterQuantity{{Meter: "builtin_web_search_calls", Quantity: 1}},
+		},
+		{
+			name: "K2.6 preserved tool history index", profileID: "kimi.k2.6.api", profileVersion: "1.5.0",
+			body:     `{"model":"public-model","messages":[{"role":"user","content":"weather"},{"role":"assistant","content":null,"reasoning_content":"need weather","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"city\":\"Shanghai\"}"}}]},{"role":"tool","tool_call_id":"call_1","name":"lookup","content":"{\"temperature\":20}"}],"thinking":{"type":"enabled"},"tool_choice":"auto","tools":[{"type":"function","function":{"name":"lookup","description":"Look up weather","parameters":{"type":"object"}}}],"max_tokens":128}`,
+			required: []string{modelCapabilityTools}, wantToolIndex: true,
 		},
 		{
 			name: "K2.6 inline image and partial", profileID: "kimi.k2.6.api", profileVersion: "1.5.0",
@@ -526,11 +532,14 @@ func TestKimiAdvancedProtocolIsPreservedIntoProviderRequestAndFreezeEvidence(t *
 			if strings.Contains(test.body, `builtin_function`) {
 				require.Contains(t, string(payload["tools"]), `builtin_function`)
 			}
+			if test.wantToolIndex {
+				require.Contains(t, string(payload["messages"]), `"index":0`)
+			}
 			if strings.Contains(test.body, `image_url`) {
 				require.Contains(t, string(payload["messages"]), `data:image/png;base64,aA==`)
 				require.Contains(t, string(payload["messages"]), `"partial":true`)
 			}
-			if strings.Contains(test.body, `"tools":[{"type":"function"`) {
+			if strings.Contains(test.body, `"role":"system","tools":[{"type":"function"`) {
 				require.Contains(t, string(payload["messages"]), `"tools"`)
 			}
 		})
@@ -543,4 +552,12 @@ func TestKimiAdvancedShapesRemainConservativelyMeasurableBeforeProfileSelection(
 	require.NoError(t, err)
 	require.Greater(t, estimate.InputTokens, len(body))
 	require.Equal(t, chatAdmissionEstimateVersion, estimate.Version)
+}
+
+func TestChatAdmissionRejectsInvalidPreservedToolCallIndex(t *testing.T) {
+	for _, index := range []string{`"0"`, `0.5`, `-1`, `1000001`} {
+		body := []byte(`{"model":"public-model","messages":[{"role":"assistant","content":null,"tool_calls":[{"index":` + index + `,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]}`)
+		_, err := estimateChatPreProfileAdmission(body)
+		require.ErrorContains(t, err, "message tool_call index must be a non-negative integer")
+	}
 }
