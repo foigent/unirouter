@@ -3,6 +3,7 @@ package adapters
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/metering"
@@ -221,7 +222,23 @@ func (u Usage) ForCustomerCharge() (Usage, error) {
 	return u, u.ValidateContract()
 }
 
+func (u Usage) WithMeterUsage(values []metering.MeterQuantity) (Usage, error) {
+	normalized, err := metering.NormalizeMeterQuantities(values)
+	if err != nil {
+		return Usage{}, err
+	}
+	u.MeterUsage = normalized
+	return u, u.ValidateContract()
+}
+
 func (u Usage) ValidateContract() error {
+	normalizedMeters, err := metering.NormalizeMeterQuantities(u.MeterUsage)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(normalizedMeters, u.MeterUsage) {
+		return fmt.Errorf("meter usage is not canonical")
+	}
 	if u.Authority == metering.UsageAuthorityLocalCache {
 		if u.ContractVersion != metering.UsageContractVersionV2 ||
 			u.Source != metering.UsageSourceResponseCache ||

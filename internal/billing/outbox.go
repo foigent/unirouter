@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -16,35 +17,38 @@ import (
 )
 
 type usageJournalPayload struct {
-	EventType            string      `json:"event_type"`
-	BillingMode          BillingMode `json:"billing_mode,omitempty"`
-	RequestID            string      `json:"request_id"`
-	OrgID                int64       `json:"org_id"`
-	ProjectID            int64       `json:"project_id"`
-	Model                string      `json:"model"`
-	PromptTokens         int         `json:"prompt_tokens"`
-	UncachedPromptTokens int         `json:"uncached_prompt_tokens"`
-	CacheReadTokens      int         `json:"cache_read_tokens"`
-	CacheCreationTokens  int         `json:"cache_creation_tokens"`
-	CompletionTokens     int         `json:"completion_tokens"`
-	UsageSource          string      `json:"usage_source"`
-	UsageAuthority       string      `json:"usage_authority"`
-	UsagePurpose         string      `json:"usage_purpose"`
-	UsageFinality        string      `json:"usage_finality"`
-	UsageContractVersion string      `json:"usage_contract_version"`
-	UsageEstimateVersion string      `json:"usage_estimate_version,omitempty"`
-	CacheUsageSchema     string      `json:"cache_usage_schema"`
-	CacheUsageStatus     string      `json:"cache_usage_status"`
-	MoneySchema          string      `json:"money_schema,omitempty"`
-	Currency             string      `json:"currency,omitempty"`
-	AmountScale          int64       `json:"amount_scale,omitempty"`
-	CalculatedCostMicros string      `json:"calculated_cost_micros,omitempty"`
-	ChargedCostMicros    string      `json:"charged_cost_micros,omitempty"`
-	CalculatedCostCents  *int64      `json:"calculated_cost,omitempty"`
-	ChargedCostCents     *int64      `json:"charged_cost,omitempty"`
-	PricingVersion       string      `json:"pricing_version"`
-	TerminalTransaction  int64       `json:"terminal_transaction_id,omitempty"`
-	OccurredAt           time.Time   `json:"occurred_at"`
+	EventType            string                   `json:"event_type"`
+	BillingMode          BillingMode              `json:"billing_mode,omitempty"`
+	RequestID            string                   `json:"request_id"`
+	OrgID                int64                    `json:"org_id"`
+	ProjectID            int64                    `json:"project_id"`
+	Model                string                   `json:"model"`
+	PromptTokens         int                      `json:"prompt_tokens"`
+	UncachedPromptTokens int                      `json:"uncached_prompt_tokens"`
+	CacheReadTokens      int                      `json:"cache_read_tokens"`
+	CacheCreationTokens  int                      `json:"cache_creation_tokens"`
+	CompletionTokens     int                      `json:"completion_tokens"`
+	MeterUsage           []metering.MeterQuantity `json:"meter_usage,omitempty"`
+	EffectiveUnitRates   []UnitRate               `json:"effective_unit_rates,omitempty"`
+	NonTokenCostMicros   string                   `json:"non_token_cost_micros,omitempty"`
+	UsageSource          string                   `json:"usage_source"`
+	UsageAuthority       string                   `json:"usage_authority"`
+	UsagePurpose         string                   `json:"usage_purpose"`
+	UsageFinality        string                   `json:"usage_finality"`
+	UsageContractVersion string                   `json:"usage_contract_version"`
+	UsageEstimateVersion string                   `json:"usage_estimate_version,omitempty"`
+	CacheUsageSchema     string                   `json:"cache_usage_schema"`
+	CacheUsageStatus     string                   `json:"cache_usage_status"`
+	MoneySchema          string                   `json:"money_schema,omitempty"`
+	Currency             string                   `json:"currency,omitempty"`
+	AmountScale          int64                    `json:"amount_scale,omitempty"`
+	CalculatedCostMicros string                   `json:"calculated_cost_micros,omitempty"`
+	ChargedCostMicros    string                   `json:"charged_cost_micros,omitempty"`
+	CalculatedCostCents  *int64                   `json:"calculated_cost,omitempty"`
+	ChargedCostCents     *int64                   `json:"charged_cost,omitempty"`
+	PricingVersion       string                   `json:"pricing_version"`
+	TerminalTransaction  int64                    `json:"terminal_transaction_id,omitempty"`
+	OccurredAt           time.Time                `json:"occurred_at"`
 }
 
 type budgetEvaluationPayload struct {
@@ -62,6 +66,10 @@ func enqueueUsageJournalTx(ctx context.Context, tx pgx.Tx, service *outbox.Servi
 	if service == nil {
 		return nil
 	}
+	nonTokenCost, err := calculateUnitMeterCost(record.EffectiveUnitRates, req.MeterUsage)
+	if err != nil {
+		return err
+	}
 	payload := usageJournalPayload{
 		EventType:            journalType,
 		BillingMode:          record.BillingMode,
@@ -74,6 +82,9 @@ func enqueueUsageJournalTx(ctx context.Context, tx pgx.Tx, service *outbox.Servi
 		CacheReadTokens:      req.CacheReadTokens,
 		CacheCreationTokens:  req.CacheCreationTokens,
 		CompletionTokens:     req.CompletionTokens,
+		MeterUsage:           slices.Clone(req.MeterUsage),
+		EffectiveUnitRates:   slices.Clone(record.EffectiveUnitRates),
+		NonTokenCostMicros:   strconv.FormatInt(nonTokenCost, 10),
 		UsageSource:          req.UsageSource,
 		UsageAuthority:       string(req.UsageAuthority),
 		UsagePurpose:         string(req.UsagePurpose),
@@ -143,6 +154,18 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 	if err != nil {
 		return err
 	}
+	nonTokenCostMicros, err := decodeOptionalMicros(payload.NonTokenCostMicros)
+	if err != nil {
+		return fmt.Errorf("usage journal non-token cost: %w", err)
+	}
+	meterUsageJSON, err := encodeMeterUsage(payload.MeterUsage)
+	if err != nil {
+		return fmt.Errorf("usage journal meter usage: %w", err)
+	}
+	unitRatesJSON, err := encodeUnitRates(payload.EffectiveUnitRates)
+	if err != nil {
+		return fmt.Errorf("usage journal unit rates: %w", err)
+	}
 
 	tx, err := b.db.Begin(ctx)
 	if err != nil {
@@ -159,12 +182,13 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 			usage_contract_version, usage_estimate_version,
 			cache_usage_schema, cache_usage_status, calculated_cost_micros,
 			charged_cost_micros, pricing_version, billing_mode,
+			effective_unit_rates, meter_usage, non_token_cost_micros,
 			terminal_transaction_id, occurred_at
 		 ) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
 			$13, $14, $15, $16, $17,
-			$18, $19, $20, $21, $22, $23, $24, $25
+			$18, $19, $20, $21, $22, $23, $24::jsonb, $25::jsonb, $26, $27, $28
 		 ) ON CONFLICT (event_key) DO NOTHING`,
 		event.Key, payload.EventType, payload.RequestID, payload.OrgID,
 		payload.ProjectID, payload.Model, payload.PromptTokens,
@@ -174,6 +198,7 @@ func (b *Billing) ProcessUsageJournalEvent(ctx context.Context, event outbox.Eve
 		payload.UsageFinality, payload.UsageContractVersion, payload.UsageEstimateVersion,
 		payload.CacheUsageSchema, payload.CacheUsageStatus,
 		calculatedCostMicros, chargedCostMicros, payload.PricingVersion, payload.BillingMode,
+		string(unitRatesJSON), string(meterUsageJSON), nonTokenCostMicros,
 		nullablePositiveInt64(payload.TerminalTransaction), payload.OccurredAt,
 	)
 	if err != nil {
@@ -348,6 +373,17 @@ func decodeUsageJournalMoney(eventType string, payload usageJournalPayload) (int
 	default:
 		return 0, 0, fmt.Errorf("usage journal event type %q is unsupported", eventType)
 	}
+}
+
+func decodeOptionalMicros(value string) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 0 || strconv.FormatInt(parsed, 10) != value {
+		return 0, fmt.Errorf("invalid micro-CNY amount")
+	}
+	return parsed, nil
 }
 
 func nullablePositiveInt64(value int64) interface{} {

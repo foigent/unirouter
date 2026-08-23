@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-08-22.
+> Snapshot date: 2026-08-23.
 > This document is not a claim that every provider-documented feature is production supported.
 
 ## 1. What “supported” means
@@ -77,6 +77,20 @@ The repository already contains the correct structural start:
   `prompt_tokens_details.cached_tokens` is also recognized.
 - Chat tools, JSON Object/Schema and preserved `reasoning_content` have common
   protocol machinery.
+- `kimi.k2.6.api@1.1.0` and `kimi.k3.api@1.2.0` add typed Chat contracts for
+  final-assistant Partial Mode, K3 system-message Dynamic Tools, exact
+  `$web_search` admission/evidence, and MIME-bounded inline image/video data
+  URLs. K2.6 search requires explicit disabled thinking. Provider URL and file
+  references remain outside this inline contract.
+- Kimi top-level `usage.cached_tokens` is normalized as cache-read evidence.
+  A provider response ending in the documented `$web_search` tool call also
+  produces one bounded `builtin_web_search_calls` meter. M83 freezes its exact
+  Rate Card rational and persists its actual quantity and cost through
+  settlement, recovery, receipts and call logs.
+- `/v1/models?include=execution_profile` exposes an authenticated,
+  authorization-filtered executable projection. `uniroute-openclaw-sync`
+  validates and optionally writes the corresponding OpenClaw model metadata
+  while retaining user-owned client fields.
 - M82 pins `execution_profile_id/version` plus the effective public
   context/output limits onto each canonical v2 Release. Canonical Planner reads
   those pins from the selected stable/canary Release; changing `model_registry`
@@ -92,14 +106,20 @@ The following are still real gaps:
 - Kimi Coding cache response semantics are not yet an executable cache-usage
   contract. K2.7 Code and the K3 coding profile therefore do not claim cache
   billing authority even though the provider surface advertises caching.
-- Chat admission rejects non-text content before execution even though capability
-  extraction can identify vision/audio. Vision/video is not production supported
-  on this path yet.
-- Kimi `messages[].partial`, message-level dynamic tool definitions and
-  `type=builtin_function` tools are rejected by the bounded request contract.
+- Kimi inline image/video support is locally contract-verified only. Large
+  payloads remain subject to UniRouter's conservative byte upper bound; provider
+  file IDs and remote URLs require separately governed Files/URL contracts.
+- Kimi K2.7 Code has not inherited the K2.6/K3 Platform contract. Its coding
+  surface, Partial Mode, cache and multimodal semantics still require their own
+  exact profile and live evidence.
 - public Responses and Anthropic Messages are intentionally strict non-stream
   text subsets. They reject tools, rich reasoning and multimodal payloads.
 - there is no public Files API or FIM `/v1/completions` operation.
+- DeepSeek Chat vision is not attached to Flash/Pro: the separate
+  `deepseek-v4-flash-vision-exp` model still needs its own execution profile,
+  route and operation evidence. DeepSeek beta prefix/FIM, native Responses,
+  Anthropic and Files surfaces remain separate operation work rather than Chat
+  field allowlisting.
 - target model-registry labels are not a substitute for a canonical deployment,
   operation probe and capability evidence.
 
@@ -107,9 +127,9 @@ The following are still real gaps:
 
 | Model/family | Provider-documented surface | Current UniRouter support | Not yet production-supported |
 |---|---|---|---|
-| Kimi K2.6 | 262,144 context; thinking toggle; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache; provider currently warns that its older web-search documentation is being updated | versioned 256K profile; thinking toggle contract; standard function tools and multi-turn reasoning preservation; Kimi cache usage parser | Partial Mode; built-in search and its charge; vision/video admission; JSON capability qualification; dynamic tools |
+| Kimi K2.6 | 262,144 context; thinking toggle; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache and built-in search | `kimi.k2.6.api@1.1.0`; thinking/tool-history contract; standard tools; final-assistant Partial; exact non-stream built-in search meter; Kimi cache usage; MIME-bounded inline image/video | provider-file/remote-URL media; large-media estimator; JSON qualification and exact target live evidence; Dynamic Tools are not a K2.6 claim |
 | Kimi K2.7 Code | 262,144 context; text/image/video; thinking-only; ToolCalls, JSON Mode, Partial Mode and automatic cache | versioned 256K profile; required-thinking contract; standard tools | coding-surface cache wire qualification; Partial Mode; multimodal admission; OpenAI and Anthropic coding conformance; complete JSON qualification |
-| Kimi K3 | 1M provider maximum with a 256K current customer default; always-on reasoning; `low/high/max`; tools, JSON Object/Schema, Partial, dynamic tools, built-in search, vision/video and automatic cache | `kimi.k3.api@1.1.0`; exact reasoning contract; standard tools; JSON Object/Schema; Kimi cache usage | dynamic tool loading; Partial Mode; provider built-in search governance/metering; vision/video; full live multi-turn conformance |
+| Kimi K3 | 1M provider maximum with a 256K current customer default; always-on reasoning; `low/high/max`; tools, JSON Object/Schema, Partial, dynamic tools, built-in search, vision/video and automatic cache | `kimi.k3.api@1.2.0`; exact reasoning; standard tools/JSON; final-assistant Partial; system-message Dynamic Tools; exact non-stream built-in search meter; Kimi cache usage; MIME-bounded inline image/video | provider-file/remote-URL media; large-media estimator; full target live multi-turn/capability conformance |
 | DeepSeek V4 Flash/Pro | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache. Vision belongs to the separate `deepseek-v4-flash-vision-exp` model | OpenAI-compatible Chat; typed thinking/effort, thinking-mode `tool_choice` rejection and preserved tool-history contract; standard tools/JSON; profile-bound cache hit/miss usage; versioned limits | live operation/capability conformance for the configured V4 identities; prefix beta; full Responses/Anthropic operations; Files/FIM; separate vision model qualification |
 | MiniMax M2.5/M2.7/M3 | M2.x 204,800 total window; M3 1M and image/video input; M3 adaptive/disabled thinking; M2.x required thinking; tools and nested cache usage; Token Plan is quota/subscription access | versioned limits; standard function tools; exact tokenizer only for M2.7; MiniMax response-envelope normalization; reasoning/cache labels are provider-declared, not executable | MiniMax typed reasoning/history/cache contracts; M3 multimodal admission; `reasoning_split`; cache/pricing qualification; Token Plan quota evidence. Customer cost remains zero until an independently verified pay-as-you-go key/price is configured |
 

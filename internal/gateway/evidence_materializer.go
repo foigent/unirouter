@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/executionprojection"
 	"github.com/uniroute/unirouter/internal/metering"
 )
@@ -385,6 +387,22 @@ func (relay *Relay) materializeCallLog(ctx context.Context, eventType string, pa
 	if err != nil {
 		return err
 	}
+	unitRates, err := billing.CanonicalUnitRates(payload.EffectiveUnitRates)
+	if err != nil {
+		return fmt.Errorf("canonical call-log unit rates: %w", err)
+	}
+	meterUsage, err := metering.NormalizeMeterQuantities(payload.MeterUsage)
+	if err != nil {
+		return fmt.Errorf("canonical call-log meter usage: %w", err)
+	}
+	unitRatesJSON, err := json.Marshal(unitRates)
+	if err != nil {
+		return fmt.Errorf("encode call-log unit rates: %w", err)
+	}
+	meterUsageJSON, err := json.Marshal(meterUsage)
+	if err != nil {
+		return fmt.Errorf("encode call-log meter usage: %w", err)
+	}
 	values, err := projectionValues(payload.RouteProjection, payload.ChannelID)
 	if err != nil {
 		return err
@@ -407,6 +425,7 @@ func (relay *Relay) materializeCallLog(ctx context.Context, eventType string, pa
 		payload.ActorType, nullableString(payload.ActorRef), nullableString(payload.OnBehalfOf), payload.PayloadCaptureMode, payload.SourceEventHash,
 		nullableString(outboxEventKey), payload.OccurredAt,
 	}
+	args = append(args, string(unitRatesJSON), string(meterUsageJSON), moneyValues.NonTokenCostMicros)
 	args = append(args, values.compactArgs()...)
 	_, err = relay.db.Exec(ctx, `INSERT INTO call_logs (
 		request_id,client_request_id,idempotency_key_hash,
@@ -419,6 +438,7 @@ func (relay *Relay) materializeCallLog(ctx context.Context, eventType string, pa
 		effective_input_price_micros_per_million,effective_cache_read_price_micros_per_million,
 		effective_cache_creation_price_micros_per_million,effective_output_price_micros_per_million,
 		cache_read_cost_micros,cache_creation_cost_micros,
+		effective_unit_rates,meter_usage,non_token_cost_micros,
 		is_stream,ip_address,estimated_tokens,usage_confidence,
 		trace_id,session_id,schema_version,capture_mode,evidence_ref,upstream_request_id,
 		workflow_id,agent_id,attempt_id,actor_type,actor_ref,on_behalf_of,payload_capture_mode,source_event_hash,
@@ -435,8 +455,9 @@ func (relay *Relay) materializeCallLog(ctx context.Context, eventType string, pa
 		  WHERE attempt.org_id=$4::bigint AND attempt.request_id=$1::varchar(64)
 		    AND attempt.attempt_id=$51::varchar(64) LIMIT 1),
 		$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,
+		$59::jsonb,$60::jsonb,$61,
 		$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,
-		$59,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,$72,$73
+		$62,$63,$64,$65,$66,$67,$68,$69,$70,$71,$72,$73,$74,$75,$76
 	WHERE NOT EXISTS (
 		SELECT 1 FROM call_logs WHERE org_id=$4::bigint AND request_id=$1::varchar(64)
 	)

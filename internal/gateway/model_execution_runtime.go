@@ -475,6 +475,7 @@ func compatibilityRouteFromExecutionPlan(plan modelrouting.Plan, route modelrout
 		RuntimeReleaseRef: plan.RuntimeReleaseRef, RuntimeStage: plan.RuntimeStage,
 		ExecutionProfileID: plan.ExecutionProfileID, ExecutionProfileVersion: plan.ExecutionProfileVersion,
 		ReasoningProfile: plan.ReasoningProfile, CacheUsageProfile: plan.CacheUsageProfile,
+		ModelProtocolProfile: plan.ModelProtocolProfile,
 	}
 }
 
@@ -631,9 +632,13 @@ const (
 	modelCapabilityJSONSchema        = "json_schema"
 	modelCapabilityReasoning         = "reasoning"
 	modelCapabilityVision            = "vision"
+	modelCapabilityVideo             = "video"
 	modelCapabilityAudio             = "audio"
 	modelCapabilityStreaming         = "streaming"
 	modelCapabilityPromptCache       = "prompt_cache"
+	modelCapabilityPartialMode       = "partial_mode"
+	modelCapabilityDynamicTools      = "dynamic_tools"
+	modelCapabilityBuiltinWebSearch  = "builtin_web_search"
 )
 
 func (relay *Relay) applyRouteHealth(ctx context.Context, _ *RouteResult, action executionHealthAction) error {
@@ -751,6 +756,17 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 		}
 		if len(tools) > 0 {
 			add(modelCapabilityTools)
+		}
+		for _, rawTool := range tools {
+			var tool struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(rawTool, &tool); err != nil {
+				return nil, fmt.Errorf("tools must contain objects")
+			}
+			if tool.Type == "builtin_function" {
+				add(modelCapabilityBuiltinWebSearch)
+			}
 		}
 	}
 	if raw, exists := envelope["functions"]; exists && !isJSONNull(raw) {
@@ -883,6 +899,25 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 			if role == "tool" || role == "function" {
 				add(modelCapabilityTools)
 			}
+			if rawPartial, exists := message["partial"]; exists && !isJSONNull(rawPartial) {
+				var partial bool
+				if err := json.Unmarshal(rawPartial, &partial); err != nil {
+					return nil, fmt.Errorf("message partial must be a boolean")
+				}
+				if partial {
+					add(modelCapabilityPartialMode)
+				}
+			}
+			if rawDynamicTools, exists := message["tools"]; exists && !isJSONNull(rawDynamicTools) {
+				var tools []json.RawMessage
+				if err := json.Unmarshal(rawDynamicTools, &tools); err != nil {
+					return nil, fmt.Errorf("message tools must be an array")
+				}
+				if len(tools) > 0 {
+					add(modelCapabilityTools)
+					add(modelCapabilityDynamicTools)
+				}
+			}
 			if rawCalls, exists := message["tool_calls"]; exists && !isJSONNull(rawCalls) {
 				var calls []json.RawMessage
 				if err := json.Unmarshal(rawCalls, &calls); err != nil {
@@ -924,6 +959,8 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 				case "text", "input_text", "refusal":
 				case "image_url", "input_image":
 					add(modelCapabilityVision)
+				case "video_url", "input_video":
+					add(modelCapabilityVideo)
 				case "input_audio", "audio":
 					add(modelCapabilityAudio)
 				case "tool_use", "tool_result":

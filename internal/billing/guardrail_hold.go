@@ -73,6 +73,9 @@ func (b *Billing) HoldNonStreamOutput(ctx context.Context, request SettleRequest
 	if err != nil {
 		return err
 	}
+	if err := persistReservationMeterEvidenceTx(ctx, tx, req.RequestID, req.OrgID, req.MeterUsage, breakdown.NonTokenCostMicros); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE freeze_idempotency
 		SET status='settlement_pending', settlement_pending_reason=$3,

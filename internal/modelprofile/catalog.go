@@ -91,6 +91,28 @@ var catalog = []Profile{
 		},
 	},
 	{
+		ID: "kimi.k2.6.api", Version: "1.1.0", Label: "Kimi K2.6 官方 API",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.kimi-k2.6-thinking-toggle.v1", CacheUsageProfile: "cache-usage.kimi-platform.v1",
+		ProtocolProfile:       "protocol.kimi-openai-chat.v2",
+		ProviderContextWindow: 262_144, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
+		ProviderCapabilities: []string{
+			"reasoning", "tools", CapabilityPartialMode, CapabilityBuiltinWebSearch,
+			CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Capabilities: []string{
+			"reasoning", "tools", CapabilityPartialMode, CapabilityBuiltinWebSearch,
+			CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Aliases: []string{"Kimi K2.6", "kimi-k2.6", "kimi-k2.6-preview"},
+		EvidenceRefs: []string{
+			"https://platform.kimi.com/docs/pricing/chat-k26",
+			"https://platform.kimi.com/docs/api/chat",
+			"https://platform.kimi.com/docs/guide/use-partial-mode-feature-of-kimi-api",
+			"https://platform.kimi.com/docs/guide/use-web-search",
+		},
+	},
+	{
 		ID: "kimi.k2.6.api", Version: "1.0.0", Label: "Kimi K2.6 官方 API",
 		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
 		ReasoningProfile: "reasoning.kimi-k2.6-thinking-toggle.v1", CacheUsageProfile: "cache-usage.kimi-platform.v1",
@@ -111,6 +133,30 @@ var catalog = []Profile{
 		Capabilities:         []string{"reasoning", "tools"},
 		Aliases:              []string{"Kimi K2.7 Code", "kimi-for-coding", "kimi-for-coding-highspeed"},
 		EvidenceRefs:         []string{"https://www.kimi.com/code/docs/en/kimi-code/models.html"},
+	},
+	{
+		ID: "kimi.k3.api", Version: "1.2.0", Label: "Kimi K3 官方 API",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.kimi-k3-effort.v1", CacheUsageProfile: "cache-usage.kimi-platform.v1",
+		ProtocolProfile:       "protocol.kimi-openai-chat.k3.v2",
+		ProviderContextWindow: 1_048_576, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
+		ProviderCapabilities: []string{
+			"reasoning", "tools", "tool_choice", CapabilityDynamicTools, "json_object", "json_schema",
+			CapabilityPartialMode, CapabilityBuiltinWebSearch, CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Capabilities: []string{
+			"reasoning", "tools", "json_object", "json_schema", CapabilityDynamicTools,
+			CapabilityPartialMode, CapabilityBuiltinWebSearch, CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Aliases: []string{"Kimi K3", "kimi-k3", "k3", "k3-256k"},
+		EvidenceRefs: []string{
+			"https://platform.kimi.com/docs/pricing/chat-k3",
+			"https://platform.kimi.com/docs/guide/use-reasoning-effort",
+			"https://platform.kimi.com/docs/api/chat",
+			"https://platform.kimi.com/docs/guide/use-partial-mode-feature-of-kimi-api",
+			"https://platform.kimi.com/docs/guide/use-dynamic-tool-loading",
+			"https://platform.kimi.com/docs/guide/use-web-search",
+		},
 	},
 	{
 		ID: "kimi.k3.api", Version: "1.1.0", Label: "Kimi K3 官方 API",
@@ -248,6 +294,34 @@ func ValidateExecutableComponents(profile Profile) error {
 	if slices.Contains(profile.Capabilities, "prompt_cache") {
 		if contract, ok := ResolveCacheUsageContract(profile.CacheUsageProfile); !ok || contract.ProfileID != profile.CacheUsageProfile {
 			return fmt.Errorf("prompt_cache capability requires a modeled cache-usage profile")
+		}
+	}
+	advancedChat := false
+	for _, capability := range []string{
+		CapabilityPartialMode, CapabilityDynamicTools, CapabilityBuiltinWebSearch,
+		CapabilityVision, CapabilityVideo,
+	} {
+		if slices.Contains(profile.Capabilities, capability) {
+			advancedChat = true
+			break
+		}
+	}
+	if advancedChat {
+		contract, ok := ResolveChatProtocolContract(profile.ProtocolProfile)
+		if !ok || contract.ProfileID != profile.ProtocolProfile {
+			return fmt.Errorf("advanced chat capabilities require a modeled protocol profile")
+		}
+		checks := map[string]bool{
+			CapabilityPartialMode:      contract.PartialMode,
+			CapabilityDynamicTools:     contract.DynamicSystemTools,
+			CapabilityBuiltinWebSearch: contract.BuiltinWebSearch,
+			CapabilityVision:           contract.InlineImageDataURL,
+			CapabilityVideo:            contract.InlineVideoDataURL,
+		}
+		for capability, supported := range checks {
+			if slices.Contains(profile.Capabilities, capability) && !supported {
+				return fmt.Errorf("capability %s is not modeled by protocol profile", capability)
+			}
 		}
 	}
 	return nil

@@ -48,6 +48,7 @@
 | 39 | [Provenance Passport And Second Connector](39-provenance-passport-and-second-connector.md) | exact Source provenance、Capture Gap、LiteLLM 跨语言 conformance-only 证明与运行时隔离 | v1.0 |
 | 40 | [Invocation Optimization And Compression V1](40-invocation-optimization-v1.md) | 调用优化生命周期、内容无关分桶、Compression Shadow/Canary 与元数据证据 | v1.0 |
 | 42 | [Model Execution Profile And Capability Status](42-model-execution-profile-capability-status.md) | 版本化模型执行档案、M82 Release 密封、供应商能力与 UniRouter 已验证能力的事实边界 | v1.1 |
+| 43 | [Versioned Pricing Profiles And Client Projection](43-versioned-pricing-and-client-profile-sync.md) | 绝对单价、来源证据、Freeze 版本、非 Token 计费与 OpenClaw Profile 投影 | v1.0 |
 
 ## 关联文档
 - [PRD Phase 1](../PRD-Phase1.md) — 历史需求参考

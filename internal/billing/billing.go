@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ type FreezeRequest struct {
 	EstimatedTokens          int
 	EstimatedInputTokens     int
 	ReservedCompletionTokens int
+	ReservedMeterUsage       []metering.MeterQuantity
 	SafetyFactor             string
 	MinFreezeCents           int64
 }
@@ -72,6 +74,7 @@ type SettleRequest struct {
 	UsageEstimateVersion string
 	CacheUsageSchema     string
 	CacheUsageStatus     string
+	MeterUsage           []metering.MeterQuantity
 
 	// settlementRecovery is an internal, durable-claim-bound capability used
 	// only by the generic recovery worker. External/live callers cannot mint it
@@ -106,6 +109,9 @@ type SettleResult struct {
 	CacheReadCostMicros                         int64
 	CacheCreationCostMicros                     int64
 	OutputCostMicros                            int64
+	NonTokenCostMicros                          int64
+	MeterUsage                                  []metering.MeterQuantity
+	EffectiveUnitRates                          []UnitRate
 	BillingMode                                 BillingMode
 	Success                                     bool
 	ErrorCode                                   string
@@ -125,6 +131,7 @@ type priceQuote struct {
 	RateCardVersion                    int64
 	RateCardLayer                      string
 	ProviderRef                        string
+	UnitRates                          []UnitRate
 }
 
 type reservationRecord struct {
@@ -176,6 +183,10 @@ type reservationRecord struct {
 	CacheReadCostMicros                         int64
 	CacheCreationCostMicros                     int64
 	OutputCostMicros                            int64
+	NonTokenCostMicros                          int64
+	EffectiveUnitRates                          []UnitRate
+	ReservedMeterUsage                          []metering.MeterQuantity
+	MeterUsage                                  []metering.MeterQuantity
 	TerminalTransactionID                       sql.NullInt64
 	TerminalObservationReceiptID                sql.NullInt64
 	BalanceAfter                                sql.NullInt64
@@ -375,7 +386,14 @@ func newPriceQuote(model, baseInput, baseOutput, cacheReadRatio, cacheCreationRa
 }
 
 func estimateFreezeAmountFromQuote(quote priceQuote, estimatedTokens int, safetyFactor string, minFreezeCents int64) (int64, error) {
+	return estimateFreezeAmountWithMeters(quote, estimatedTokens, nil, safetyFactor, minFreezeCents)
+}
+
+func estimateFreezeAmountWithMeters(quote priceQuote, estimatedTokens int, reservedMeterUsage []metering.MeterQuantity, safetyFactor string, minFreezeCents int64) (int64, error) {
 	if strings.HasPrefix(quote.Version, "uo1_") {
+		if len(reservedMeterUsage) > 0 {
+			return 0, fmt.Errorf("non-token meters require an authoritative Rate Card")
+		}
 		return 0, nil
 	}
 	reservationPrice := quote.InputPriceMicrosPerMillion
@@ -384,7 +402,26 @@ func estimateFreezeAmountFromQuote(quote priceQuote, estimatedTokens int, safety
 			reservationPrice = candidate
 		}
 	}
-	return money.EstimateHold(int64(estimatedTokens), reservationPrice, safetyFactor, minFreezeCents)
+	tokenHold, err := money.EstimateHold(int64(estimatedTokens), reservationPrice, safetyFactor, 0)
+	if err != nil {
+		return 0, err
+	}
+	unitHold, err := estimateUnitMeterHold(quote.UnitRates, reservedMeterUsage, safetyFactor)
+	if err != nil {
+		return 0, err
+	}
+	hold, err := money.Add(tokenHold, unitHold)
+	if err != nil {
+		return 0, err
+	}
+	minimum, err := money.CentsToMicros(minFreezeCents)
+	if err != nil {
+		return 0, err
+	}
+	if hold < minimum {
+		return minimum, nil
+	}
+	return hold, nil
 }
 
 // CalculateCostMicros calculates a base-price request charge in micro-CNY.
@@ -458,7 +495,12 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	if err != nil {
 		return nil, fmt.Errorf("quote freeze price: %w", err)
 	}
-	freezeAmount, err := estimateFreezeAmountFromQuote(quote, req.EstimatedTokens, req.SafetyFactor, req.MinFreezeCents)
+	reservedMeterUsage, err := normalizeMeterUsage(req.ReservedMeterUsage)
+	if err != nil {
+		return nil, fmt.Errorf("normalize reserved meter usage: %w", err)
+	}
+	req.ReservedMeterUsage = reservedMeterUsage
+	freezeAmount, err := estimateFreezeAmountWithMeters(quote, req.EstimatedTokens, req.ReservedMeterUsage, req.SafetyFactor, req.MinFreezeCents)
 	if err != nil {
 		return nil, fmt.Errorf("calculate freeze amount: %w", err)
 	}
@@ -706,7 +748,15 @@ func insertFreezeReservationTx(
 	mode BillingMode,
 	minFreezeMicros, admissionCalculatedCost, frozenAmount, reservedBalance, reservedGranted int64,
 ) error {
-	_, err := tx.Exec(ctx,
+	unitRatesJSON, err := encodeUnitRates(quote.UnitRates)
+	if err != nil {
+		return err
+	}
+	reservedMeterUsageJSON, err := encodeMeterUsage(req.ReservedMeterUsage)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx,
 		`INSERT INTO freeze_idempotency (
 			request_id, org_id, frozen_amount_micros, status, billing_mode,
 			admission_calculated_cost_micros,
@@ -717,12 +767,13 @@ func insertFreezeReservationTx(
 			effective_input_price_micros_per_million, effective_cache_read_price_micros_per_million,
 			effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
 			cache_read_ratio, cache_creation_ratio,
-			price_multiplier, pricing_version, updated_at
+			price_multiplier, pricing_version, effective_unit_rates,
+			reserved_meter_usage, updated_at
 		 ) VALUES (
 			$1, $2, $3, 'frozen', $4, $5,
 			$6, NULLIF($7,0), NULLIF($8,0), NULLIF($9,''), NULLIF($10,0),
 			$11, $12, $13, $14, $15, $16, $17,
-			$18, $19, $20, $21, $22, $23, $24, $25, NOW()
+			$18, $19, $20, $21, $22, $23, $24, $25, $26::jsonb, $27::jsonb, NOW()
 		 )`,
 		req.RequestID, req.OrgID, frozenAmount, mode, admissionCalculatedCost,
 		req.ProjectID, req.APIKeyID, req.AccessCredentialID, req.CredentialRef, req.AccessGrantID,
@@ -731,7 +782,7 @@ func insertFreezeReservationTx(
 		req.SafetyFactor, minFreezeMicros,
 		quote.InputPriceMicrosPerMillion, quote.CacheReadPriceMicrosPerMillion, quote.CacheCreationPriceMicrosPerMillion,
 		quote.OutputPriceMicrosPerMillion, quote.CacheReadRatio, quote.CacheCreationRatio,
-		quote.Multiplier, quote.Version,
+		quote.Multiplier, quote.Version, string(unitRatesJSON), string(reservedMeterUsageJSON),
 	)
 	return err
 }
@@ -819,6 +870,7 @@ func minInt64(left, right int64) int64 {
 
 func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID int64) (reservationRecord, error) {
 	var record reservationRecord
+	var unitRatesJSON, reservedMeterUsageJSON, meterUsageJSON []byte
 	err := b.db.QueryRow(ctx,
 		`SELECT billing_mode, frozen_amount_micros, admission_calculated_cost_micros,
 		        reserved_balance_micros, reserved_granted_micros,
@@ -827,7 +879,8 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		        effective_cache_creation_price_micros_per_million,
 		        effective_output_price_micros_per_million,
 		        cache_read_ratio::float8, cache_creation_ratio::float8,
-		        pricing_version, status, settlement_pending_reason, delivery_attempt_id,
+		        pricing_version, effective_unit_rates, reserved_meter_usage, meter_usage,
+		        status, settlement_pending_reason, delivery_attempt_id,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 		        completion_tokens, usage_source,
 		        usage_authority, usage_purpose, usage_finality,
@@ -839,7 +892,7 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		        calculated_cost_micros, charged_cost_micros, uncovered_cost_micros, topup_amount_micros,
 		        refund_amount_micros,
 		        uncached_input_cost_micros, cache_read_cost_micros,
-		        cache_creation_cost_micros, output_cost_micros,
+		        cache_creation_cost_micros, output_cost_micros, non_token_cost_micros,
 		        terminal_transaction_id, terminal_observation_receipt_id, balance_after_micros
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
@@ -857,6 +910,9 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.CacheReadRatio,
 		&record.CacheCreationRatio,
 		&record.PricingVersion,
+		&unitRatesJSON,
+		&reservedMeterUsageJSON,
+		&meterUsageJSON,
 		&record.Status,
 		&record.SettlementPendingReason,
 		&record.DeliveryAttemptID,
@@ -887,12 +943,22 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.CacheReadCostMicros,
 		&record.CacheCreationCostMicros,
 		&record.OutputCostMicros,
+		&record.NonTokenCostMicros,
 		&record.TerminalTransactionID,
 		&record.TerminalObservationReceiptID,
 		&record.BalanceAfter,
 	)
 	if err == nil {
 		err = validateReservationBillingMode(record.BillingMode)
+	}
+	if err == nil {
+		record.EffectiveUnitRates, err = decodeUnitRates(unitRatesJSON)
+	}
+	if err == nil {
+		record.ReservedMeterUsage, err = decodeMeterUsage(reservedMeterUsageJSON)
+	}
+	if err == nil {
+		record.MeterUsage, err = decodeMeterUsage(meterUsageJSON)
 	}
 	return record, err
 }
@@ -914,6 +980,11 @@ func normalizeSettlementUsage(req SettleRequest) (SettleRequest, error) {
 		}
 		req.StreamFence = &fence
 	}
+	meterUsage, err := normalizeMeterUsage(req.MeterUsage)
+	if err != nil {
+		return req, err
+	}
+	req.MeterUsage = meterUsage
 	values := map[string]int{
 		"prompt_tokens":          req.PromptTokens,
 		"uncached_prompt_tokens": req.UncachedPromptTokens,
@@ -968,7 +1039,7 @@ func normalizeSettlementUsage(req SettleRequest) (SettleRequest, error) {
 	if len(req.CacheUsageStatus) > 40 {
 		return req, fmt.Errorf("billing cache usage status exceeds 40 characters")
 	}
-	req, err := normalizeSettlementUsageContract(req)
+	req, err = normalizeSettlementUsageContract(req)
 	if err != nil {
 		return req, err
 	}
@@ -1107,6 +1178,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		req.UsageEstimateVersion = record.UsageEstimateVersion
 		req.CacheUsageSchema = record.CacheUsageSchema
 		req.CacheUsageStatus = record.CacheUsageStatus
+		req.MeterUsage = slices.Clone(record.MeterUsage)
 	case "frozen":
 		// Legacy/internal reservations without a provider attempt may still settle
 		// directly. Once an upstream attempt exists, P6-F41 requires the caller to
@@ -1120,6 +1192,9 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 
 	calculatedCost, costBreakdown, err := calculateReservationCost(record, req)
 	if err != nil {
+		return nil, err
+	}
+	if err := persistReservationMeterEvidenceTx(ctx, tx, req.RequestID, req.OrgID, req.MeterUsage, costBreakdown.NonTokenCostMicros); err != nil {
 		return nil, err
 	}
 	if record.BillingMode == BillingModeCostObservation {
@@ -1280,6 +1355,14 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 	// transaction when that row exists. The normal request path may insert the
 	// log after settlement, in which case this update intentionally affects 0.
 	if record.SettlementAttempts > 0 {
+		unitRatesJSON, encodeErr := encodeUnitRates(record.EffectiveUnitRates)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		meterUsageJSON, encodeErr := encodeMeterUsage(req.MeterUsage)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
 		if _, err := tx.Exec(ctx,
 			`UPDATE call_logs
 			 SET prompt_tokens = $3,
@@ -1303,7 +1386,10 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 			     effective_cache_creation_price_micros_per_million = $20,
 			     effective_output_price_micros_per_million = $21,
 			     cache_read_cost_micros = $22,
-			     cache_creation_cost_micros = $23
+			     cache_creation_cost_micros = $23,
+			     effective_unit_rates = $24::jsonb,
+			     meter_usage = $25::jsonb,
+			     non_token_cost_micros = $26
 			 WHERE request_id = $1 AND org_id = $2`,
 			req.RequestID, req.OrgID,
 			req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
@@ -1314,6 +1400,7 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 			record.EffectiveInputPriceMicrosPerMillion, record.EffectiveCacheReadPriceMicrosPerMillion,
 			record.EffectiveCacheCreationPriceMicrosPerMillion, record.EffectiveOutputPriceMicrosPerMillion,
 			costBreakdown.CacheReadCostMicros, costBreakdown.CacheCreationCostMicros,
+			string(unitRatesJSON), string(meterUsageJSON), costBreakdown.NonTokenCostMicros,
 		); err != nil {
 			return nil, fmt.Errorf("converge recovered call log: %w", err)
 		}
@@ -1349,6 +1436,9 @@ func (b *Billing) Settle(ctx context.Context, req SettleRequest) (*SettleResult,
 		CacheReadCostMicros:                         costBreakdown.CacheReadCostMicros,
 		CacheCreationCostMicros:                     costBreakdown.CacheCreationCostMicros,
 		OutputCostMicros:                            costBreakdown.OutputCostMicros,
+		NonTokenCostMicros:                          costBreakdown.NonTokenCostMicros,
+		MeterUsage:                                  slices.Clone(req.MeterUsage),
+		EffectiveUnitRates:                          slices.Clone(record.EffectiveUnitRates),
 		BillingMode:                                 record.BillingMode,
 		Success:                                     true,
 	}, nil
@@ -1425,6 +1515,14 @@ func (b *Billing) settleObservationTx(
 		return nil, err
 	}
 	if record.SettlementAttempts > 0 {
+		unitRatesJSON, encodeErr := encodeUnitRates(record.EffectiveUnitRates)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		meterUsageJSON, encodeErr := encodeMeterUsage(req.MeterUsage)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
 		if _, err := tx.Exec(ctx,
 			`UPDATE call_logs
 			 SET prompt_tokens = $3,
@@ -1448,7 +1546,10 @@ func (b *Billing) settleObservationTx(
 			     effective_cache_creation_price_micros_per_million = $19,
 			     effective_output_price_micros_per_million = $20,
 			     cache_read_cost_micros = $21,
-			     cache_creation_cost_micros = $22
+			     cache_creation_cost_micros = $22,
+			     effective_unit_rates = $23::jsonb,
+			     meter_usage = $24::jsonb,
+			     non_token_cost_micros = $25
 			 WHERE request_id = $1 AND org_id = $2`,
 			req.RequestID, req.OrgID,
 			req.PromptTokens, req.UncachedPromptTokens, req.CacheReadTokens, req.CacheCreationTokens,
@@ -1459,6 +1560,7 @@ func (b *Billing) settleObservationTx(
 			record.EffectiveInputPriceMicrosPerMillion, record.EffectiveCacheReadPriceMicrosPerMillion,
 			record.EffectiveCacheCreationPriceMicrosPerMillion, record.EffectiveOutputPriceMicrosPerMillion,
 			costBreakdown.CacheReadCostMicros, costBreakdown.CacheCreationCostMicros,
+			string(unitRatesJSON), string(meterUsageJSON), costBreakdown.NonTokenCostMicros,
 		); err != nil {
 			return nil, fmt.Errorf("converge recovered observation call log: %w", err)
 		}
@@ -1487,6 +1589,9 @@ func (b *Billing) settleObservationTx(
 		CacheReadCostMicros:                         costBreakdown.CacheReadCostMicros,
 		CacheCreationCostMicros:                     costBreakdown.CacheCreationCostMicros,
 		OutputCostMicros:                            costBreakdown.OutputCostMicros,
+		NonTokenCostMicros:                          costBreakdown.NonTokenCostMicros,
+		MeterUsage:                                  slices.Clone(req.MeterUsage),
+		EffectiveUnitRates:                          slices.Clone(record.EffectiveUnitRates),
 		BillingMode:                                 record.BillingMode,
 		Success:                                     true,
 	}, nil
@@ -1500,18 +1605,32 @@ func insertObservationReceiptTx(
 	terminalStatus string,
 	calculatedCost int64,
 ) (int64, error) {
+	unitRatesJSON, err := encodeUnitRates(record.EffectiveUnitRates)
+	if err != nil {
+		return 0, err
+	}
+	meterUsageJSON, err := encodeMeterUsage(req.MeterUsage)
+	if err != nil {
+		return 0, err
+	}
+	nonTokenCost, err := calculateUnitMeterCost(record.EffectiveUnitRates, req.MeterUsage)
+	if err != nil {
+		return 0, err
+	}
 	var receiptID int64
-	err := tx.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`INSERT INTO billing_observation_receipts (
 			org_id, request_id, terminal_status, calculated_cost_micros,
 			charged_cost_micros, pricing_version, usage_authority,
 			usage_purpose, usage_finality, usage_contract_version,
-			usage_estimate_version, occurred_at
-		 ) VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,$9,$10,NOW())
+			usage_estimate_version, effective_unit_rates, meter_usage,
+			non_token_cost_micros, occurred_at
+		 ) VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,NOW())
 		 RETURNING id`,
 		req.OrgID, req.RequestID, terminalStatus, calculatedCost,
 		record.PricingVersion, req.UsageAuthority, req.UsagePurpose,
 		req.UsageFinality, req.UsageContractVersion, req.UsageEstimateVersion,
+		string(unitRatesJSON), string(meterUsageJSON), nonTokenCost,
 	).Scan(&receiptID)
 	if err != nil {
 		return 0, fmt.Errorf("record observation terminal receipt: %w", err)
@@ -1616,6 +1735,7 @@ type reservationCostBreakdown struct {
 	CacheReadCostMicros     int64
 	CacheCreationCostMicros int64
 	OutputCostMicros        int64
+	NonTokenCostMicros      int64
 }
 
 func calculateReservationCost(record reservationRecord, req SettleRequest) (int64, reservationCostBreakdown, error) {
@@ -1637,17 +1757,36 @@ func calculateReservationCost(record reservationRecord, req SettleRequest) (int6
 	if err != nil {
 		return 0, reservationCostBreakdown{}, fmt.Errorf("calculate reservation cost: %w", err)
 	}
-	return calculation.TotalMicros, reservationCostBreakdown{
+	reservedByMeter := make(map[string]int64, len(record.ReservedMeterUsage))
+	for _, item := range record.ReservedMeterUsage {
+		reservedByMeter[item.Meter] = item.Quantity
+	}
+	for _, item := range req.MeterUsage {
+		reserved, ok := reservedByMeter[item.Meter]
+		if !ok || item.Quantity > reserved {
+			return 0, reservationCostBreakdown{}, fmt.Errorf("billing meter %s usage exceeds its frozen reservation", item.Meter)
+		}
+	}
+	nonTokenCost, err := calculateUnitMeterCost(record.EffectiveUnitRates, req.MeterUsage)
+	if err != nil {
+		return 0, reservationCostBreakdown{}, err
+	}
+	totalCost, err := money.Add(calculation.TotalMicros, nonTokenCost)
+	if err != nil {
+		return 0, reservationCostBreakdown{}, fmt.Errorf("add non-token meter cost: %w", err)
+	}
+	return totalCost, reservationCostBreakdown{
 		UncachedInputCostMicros: calculation.ComponentMicros[0],
 		CacheReadCostMicros:     calculation.ComponentMicros[1],
 		CacheCreationCostMicros: calculation.ComponentMicros[2],
 		OutputCostMicros:        calculation.ComponentMicros[3],
+		NonTokenCostMicros:      nonTokenCost,
 	}, nil
 }
 
 func pricingVersionHasExplicitCacheRates(version string) bool {
 	return strings.HasPrefix(version, "pv2_") || strings.HasPrefix(version, "pv3_") ||
-		strings.HasPrefix(version, "rcq2_")
+		strings.HasPrefix(version, "rcq2_") || strings.HasPrefix(version, "rcq3_")
 }
 
 func settleResultFromRecord(record reservationRecord) *SettleResult {
@@ -1668,6 +1807,9 @@ func settleResultFromRecord(record reservationRecord) *SettleResult {
 		CacheReadCostMicros:                         record.CacheReadCostMicros,
 		CacheCreationCostMicros:                     record.CacheCreationCostMicros,
 		OutputCostMicros:                            record.OutputCostMicros,
+		NonTokenCostMicros:                          record.NonTokenCostMicros,
+		MeterUsage:                                  slices.Clone(record.MeterUsage),
+		EffectiveUnitRates:                          slices.Clone(record.EffectiveUnitRates),
 		BillingMode:                                 record.BillingMode,
 		Success:                                     true,
 	}
@@ -1685,6 +1827,7 @@ func settleResultFromRecord(record reservationRecord) *SettleResult {
 
 func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgID int64) (reservationRecord, error) {
 	var record reservationRecord
+	var unitRatesJSON, reservedMeterUsageJSON, meterUsageJSON []byte
 	err := tx.QueryRow(ctx,
 		`SELECT billing_mode, model_name, project_id, api_key_id,access_credential_id,credential_ref,access_grant_id,
 		        frozen_amount_micros, admission_calculated_cost_micros,
@@ -1694,7 +1837,8 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		        effective_cache_creation_price_micros_per_million,
 		        effective_output_price_micros_per_million,
 		        cache_read_ratio::float8, cache_creation_ratio::float8,
-		        pricing_version, status, settlement_pending_reason, delivery_attempt_id,
+		        pricing_version, effective_unit_rates, reserved_meter_usage, meter_usage,
+		        status, settlement_pending_reason, delivery_attempt_id,
 		        prompt_tokens, uncached_prompt_tokens, cache_read_tokens, cache_creation_tokens,
 		        completion_tokens, usage_source,
 		        usage_authority, usage_purpose, usage_finality,
@@ -1706,7 +1850,7 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		        calculated_cost_micros, charged_cost_micros, uncovered_cost_micros, topup_amount_micros,
 		        refund_amount_micros,
 		        uncached_input_cost_micros, cache_read_cost_micros,
-		        cache_creation_cost_micros, output_cost_micros,
+		        cache_creation_cost_micros, output_cost_micros, non_token_cost_micros,
 		        terminal_transaction_id, terminal_observation_receipt_id, balance_after_micros
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2
@@ -1730,6 +1874,9 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.CacheReadRatio,
 		&record.CacheCreationRatio,
 		&record.PricingVersion,
+		&unitRatesJSON,
+		&reservedMeterUsageJSON,
+		&meterUsageJSON,
 		&record.Status,
 		&record.SettlementPendingReason,
 		&record.DeliveryAttemptID,
@@ -1760,12 +1907,22 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.CacheReadCostMicros,
 		&record.CacheCreationCostMicros,
 		&record.OutputCostMicros,
+		&record.NonTokenCostMicros,
 		&record.TerminalTransactionID,
 		&record.TerminalObservationReceiptID,
 		&record.BalanceAfter,
 	)
 	if err == nil {
 		err = validateReservationBillingMode(record.BillingMode)
+	}
+	if err == nil {
+		record.EffectiveUnitRates, err = decodeUnitRates(unitRatesJSON)
+	}
+	if err == nil {
+		record.ReservedMeterUsage, err = decodeMeterUsage(reservedMeterUsageJSON)
+	}
+	if err == nil {
+		record.MeterUsage, err = decodeMeterUsage(meterUsageJSON)
 	}
 	return record, err
 }

@@ -127,6 +127,14 @@ func inspectChatInputGuardrail(body []byte) (chatInputGuardrailInspection, error
 			for _, field := range []string{"role", "name", "tool_call_id"} {
 				inspection.collectReadOnlyOptionalString(message, field, messagePath+"."+field)
 			}
+			if partial, exists := message["partial"]; exists && partial != nil {
+				if _, ok := partial.(bool); !ok {
+					inspection.markIncomplete(messagePath + ".partial")
+				}
+			}
+			if dynamicTools, exists := message["tools"]; exists && dynamicTools != nil {
+				inspection.collectFunctionCollection(dynamicTools, messagePath+".tools", true)
+			}
 			inspection.collectTextValue(message, "content", messagePath+".content")
 			for _, field := range []string{"refusal", "reasoning", "reasoning_content"} {
 				inspection.collectOptionalString(message, field, messagePath+"."+field, false)
@@ -251,6 +259,11 @@ func (inspection *chatInputGuardrailInspection) collectTextValue(object map[stri
 		case "text", "input_text", "output_text":
 		case "refusal":
 			field = "refusal"
+		case "image_url", "video_url":
+			// Binary media is inspected by the selected protocol profile. The
+			// current executable contract accepts only inline data URLs, so there
+			// is no unbounded remote text surface for this guardrail pass.
+			continue
 		default:
 			inspection.markIncomplete(partPath + ".type")
 			continue
@@ -287,13 +300,17 @@ func (inspection *chatInputGuardrailInspection) collectFunctionCollections(field
 	if !exists || rawCollection == nil {
 		return
 	}
+	inspection.collectFunctionCollection(rawCollection, field, field == "tools")
+}
+
+func (inspection *chatInputGuardrailInspection) collectFunctionCollection(rawCollection interface{}, path string, wrapped bool) {
 	collection, ok := rawCollection.([]interface{})
 	if !ok {
-		inspection.markIncomplete(field)
+		inspection.markIncomplete(path)
 		return
 	}
 	for index, rawEntry := range collection {
-		entryPath := fmt.Sprintf("%s[%d]", field, index)
+		entryPath := fmt.Sprintf("%s[%d]", path, index)
 		entry, ok := rawEntry.(map[string]interface{})
 		if !ok {
 			inspection.markIncomplete(entryPath)
@@ -301,7 +318,7 @@ func (inspection *chatInputGuardrailInspection) collectFunctionCollections(field
 		}
 		function := entry
 		functionPath := entryPath
-		if field == "tools" {
+		if wrapped {
 			inspection.collectRequiredReadOnlyString(entry, "type", entryPath+".type")
 			rawFunction, exists := entry["function"]
 			if !exists || rawFunction == nil {

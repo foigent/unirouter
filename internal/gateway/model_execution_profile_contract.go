@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 )
@@ -21,6 +22,8 @@ type modelExecutionProfileEvidence struct {
 	ReasoningToggleRequest        string
 	ReasoningEffortRequest        string
 	CacheUsageProfile             string
+	ModelProtocolProfile          string
+	ReservedMeterUsage            []metering.MeterQuantity
 	ProviderRequestNormalizations []string
 }
 
@@ -36,6 +39,8 @@ func (e modelExecutionProfileEvidence) metadata() map[string]interface{} {
 		"reasoning_toggle_request":        e.ReasoningToggleRequest,
 		"reasoning_effort_request":        e.ReasoningEffortRequest,
 		"cache_usage_profile":             e.CacheUsageProfile,
+		"model_protocol_profile":          e.ModelProtocolProfile,
+		"reserved_meter_usage":            e.ReservedMeterUsage,
 		"provider_request_normalizations": strings.Join(e.ProviderRequestNormalizations, ","),
 	}
 }
@@ -57,10 +62,22 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 	evidence := modelExecutionProfileEvidence{
 		ExecutionProfileID: plan.ExecutionProfileID, ExecutionProfileVersion: plan.ExecutionProfileVersion,
 		ReasoningProfile: plan.ReasoningProfile, CacheUsageProfile: plan.CacheUsageProfile,
+		ModelProtocolProfile: plan.ModelProtocolProfile,
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
 		return modelExecutionProfileEvidence{}, fmt.Errorf("chat request must be an object")
+	}
+	if protocolContract, modeled := modelprofile.ResolveChatProtocolContract(plan.ModelProtocolProfile); modeled {
+		validation, err := validateAdvancedChatProtocolRequest(body, protocolContract)
+		if err != nil {
+			return modelExecutionProfileEvidence{}, err
+		}
+		evidence.ReservedMeterUsage = slices.Clone(validation.ReservedMeterUsage)
+		evidence.ProviderRequestNormalizations = append(
+			evidence.ProviderRequestNormalizations,
+			validation.ProviderRequestNormalizations...,
+		)
 	}
 
 	contract, modeled := modelprofile.ResolveReasoningContract(plan.ReasoningProfile)
@@ -169,17 +186,25 @@ func redundantAutoToolChoice(envelope map[string]json.RawMessage) bool {
 // are unsupported; the Operation Contract owns the equivalence between an
 // explicit auto tool choice and the provider's default when tools are present.
 func (e modelExecutionProfileEvidence) normalizeProviderRequest(body []byte) ([]byte, error) {
-	if !slices.Contains(e.ProviderRequestNormalizations, "tool_choice=auto->omitted") {
+	if len(e.ProviderRequestNormalizations) == 0 {
 		return body, nil
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
 		return nil, fmt.Errorf("normalized chat request must be an object")
 	}
-	if !redundantAutoToolChoice(envelope) {
-		return nil, fmt.Errorf("tool_choice normalization evidence drift")
+	if slices.Contains(e.ProviderRequestNormalizations, "tool_choice=auto->omitted") {
+		if !redundantAutoToolChoice(envelope) {
+			return nil, fmt.Errorf("tool_choice normalization evidence drift")
+		}
+		delete(envelope, "tool_choice")
 	}
-	delete(envelope, "tool_choice")
+	if slices.Contains(e.ProviderRequestNormalizations, "parallel_tool_calls=omitted->false") {
+		if raw, exists := envelope["parallel_tool_calls"]; exists && !isJSONNull(raw) {
+			return nil, fmt.Errorf("parallel_tool_calls normalization evidence drift")
+		}
+		envelope["parallel_tool_calls"] = json.RawMessage("false")
+	}
 	normalized, err := json.Marshal(envelope)
 	if err != nil {
 		return nil, fmt.Errorf("encode normalized chat request: %w", err)

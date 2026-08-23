@@ -8,16 +8,16 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable PostgreSQL compatibility ceiling is `000082`. After running
+The executable PostgreSQL compatibility ceiling is `000083`. After running
 migrations or honoring `SKIP_MIGRATION`, every backend reads the complete,
 ordered migration ledger and requires it to equal the binary artifact ledger
 before customer-baseline initialization or HTTP bind; missing, extra, future,
 duplicate, reordered and empty ledgers all fail closed. Schema-ceiling changes
-are therefore non-rolling: an M81 process and an M82 process cannot be ready
+are therefore non-rolling: an M82 process and an M83 process cannot be ready
 against one shared database. Operators drain and stop the old fleet, let one
-migration owner advance the database to M82, and only then start M82
+migration owner advance the database to M83, and only then start M83
 stable/canary. A secondary may use `SKIP_MIGRATION=true` only after the shared
-database already has the exact M82 ledger. M78 adds atomic
+database already has the exact M83 ledger. M78 adds atomic
 sealed-release authoring provenance and the explicit v1-to-v2 lifecycle bridge;
 M79 moves the commercial `active_channels` count authority to enabled canonical
 provider connections. M80 gives cost-observation provider reconciliation an
@@ -29,19 +29,25 @@ protocol identities are repository-reviewed evidence, while context/output value
 remain customer policy bounded by provider maxima. Historical rows are deliberately
 `unverified.chat@1.0.0`; no migration infers authority from a model name. Component
 identities have executable contracts rather than provider-name branches. In
-particular, `kimi.k3.api@1.1.0` validates the provider-owned
+particular, `kimi.k3.api@1.2.0` validates the provider-owned
 `reasoning_effort=low|high|max` contract without injecting the documented `max`
 default, preserves reasoning on assistant tool-call history, and authorizes Kimi's
 top-level `usage.cached_tokens` only through the selected cache-usage profile.
-Provider-documented Partial Mode, dynamic tools and built-in web search remain
-outside UniRouter's verified capability set until admission, evidence and any
-non-token tool charge are implemented end to end. M82 pins that reviewed
+Kimi K2.6/K3 Partial Mode, K3 Dynamic Tools, bounded inline media and built-in
+web search now have typed request contracts; only their exact executable
+profile versions may admit those shapes. M83 extends Freeze, finalization,
+observation and call-log evidence with exact non-token Rate Card rationals and
+provider-evidenced meter quantities. The first executable unit is a bounded
+Kimi `$web_search` call; a missing price, excess quantity or untyped response
+fails closed. M82 pins that reviewed
 profile identity plus the public context/output limits into each canonical v2
 Release. Canonical Planner resolves them from the selected stable/canary Release
 and commits them to the snapshot hash, so a registry edit only supplies a future
 Release and cannot mutate live execution. Exact release/lifecycle inspection
 surfaces expose the pins without changing the v1 authoring-receipt body. Billing
-Freeze remains the independent price-version authority. M82 guarded down rejects
+Freeze remains the independent price-version authority. M83 guarded down rejects
+later migrations, durable non-token meter evidence or versioned component source
+evidence that M82 cannot represent. M82 guarded down rejects
 later migrations and any durable Release pin that would be lost under M81's
 mutable registry lookup. M79 takes the shared model-execution migration advisory
 lock, then the provider-connection/channel/schema relation locks, then the

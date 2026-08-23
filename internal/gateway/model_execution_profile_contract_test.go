@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -310,4 +312,83 @@ func TestKimiK3ProviderDefaultIsNotInjectedIntoUpstreamRequest(t *testing.T) {
 	if batch.profileEvidence.ReasoningRequest != "omitted" || batch.profileEvidence.ReasoningProviderDefault != "max" {
 		t.Fatalf("unexpected profile evidence: %+v", batch.profileEvidence)
 	}
+}
+
+func TestKimiAdvancedProtocolIsPreservedIntoProviderRequestAndFreezeEvidence(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	tests := []struct {
+		name           string
+		profileID      string
+		profileVersion string
+		body           string
+		required       []string
+		wantParallel   bool
+		wantReserved   []metering.MeterQuantity
+	}{
+		{
+			name: "K2.6 builtin search", profileID: "kimi.k2.6.api", profileVersion: "1.1.0",
+			body:     `{"model":"public-model","messages":[{"role":"user","content":"latest"}],"thinking":{"type":"disabled"},"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}],"max_tokens":128}`,
+			required: []string{modelCapabilityBuiltinWebSearch, modelCapabilityTools}, wantParallel: true,
+			wantReserved: []metering.MeterQuantity{{Meter: "builtin_web_search_calls", Quantity: 1}},
+		},
+		{
+			name: "K2.6 inline image and partial", profileID: "kimi.k2.6.api", profileVersion: "1.1.0",
+			body:     `{"model":"public-model","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,aA=="}}]},{"role":"assistant","content":"prefix","partial":true}],"max_tokens":128}`,
+			required: []string{modelCapabilityPartialMode, modelCapabilityVision},
+		},
+		{
+			name: "K3 dynamic system tools", profileID: "kimi.k3.api", profileVersion: "1.2.0",
+			body:     `{"model":"public-model","messages":[{"role":"system","tools":[{"type":"function","function":{"name":"lookup","description":"Look up a value","parameters":{"type":"object"}}}]},{"role":"user","content":"hello"}],"max_tokens":128}`,
+			required: []string{modelCapabilityDynamicTools, modelCapabilityTools},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			plan := executionTestPlan(t, modelrouting.ModeLegacy, modeloperation.IDChatCompletions, "https://provider.test", encKey, nil)
+			setExecutionTestProfile(t, &plan, test.profileID, test.profileVersion)
+			plan.Routes[0].Provider = "moonshot"
+			plan.Routes[0].UpstreamModel = "upstream-kimi"
+			relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+			if err := relay.SetModelExecutionRuntime(modelrouting.ModeLegacy, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default()); err != nil {
+				t.Fatal(err)
+			}
+			explicitOutput := 128
+			batch, err := relay.prepareModelExecutionRoutes(
+				context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+				"public-model", "public-model", "req-kimi-advanced", test.required,
+				modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &explicitOutput, EstimateVersion: chatAdmissionEstimateVersion},
+				[]byte(test.body), time.Now(),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			require.ElementsMatch(t, test.wantReserved, batch.profileEvidence.ReservedMeterUsage)
+			actual, err := providerRequestBody(batch.routes[0].upstreamRequest)
+			require.NoError(t, err)
+			var payload map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(actual, &payload))
+			if test.wantParallel {
+				require.JSONEq(t, `false`, string(payload["parallel_tool_calls"]))
+			}
+			if strings.Contains(test.body, `builtin_function`) {
+				require.Contains(t, string(payload["tools"]), `builtin_function`)
+			}
+			if strings.Contains(test.body, `image_url`) {
+				require.Contains(t, string(payload["messages"]), `data:image/png;base64,aA==`)
+				require.Contains(t, string(payload["messages"]), `"partial":true`)
+			}
+			if strings.Contains(test.body, `"tools":[{"type":"function"`) {
+				require.Contains(t, string(payload["messages"]), `"tools"`)
+			}
+		})
+	}
+}
+
+func TestKimiAdvancedShapesRemainConservativelyMeasurableBeforeProfileSelection(t *testing.T) {
+	body := []byte(`{"model":"public-model","messages":[{"role":"system","tools":[{"type":"function","function":{"name":"lookup","description":"Look up a value","parameters":{"type":"object"}}}]},{"role":"user","content":[{"type":"image_url","image_url":"data:image/png;base64,aA=="}]},{"role":"assistant","content":"prefix","partial":true}],"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}]}`)
+	estimate, err := estimateChatPreProfileAdmission(body)
+	require.NoError(t, err)
+	require.Greater(t, estimate.InputTokens, len(body))
+	require.Equal(t, chatAdmissionEstimateVersion, estimate.Version)
 }

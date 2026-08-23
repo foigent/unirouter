@@ -28,6 +28,7 @@ import {
   buildRequestRateComponents,
   buildUTCOverridePriceBands,
   requestPriceMeters,
+  requestUnitPriceMeters,
   yuanToMicrosString,
   type PriceBandOverrideDraft,
 } from '../utils/rateCardPriceBands';
@@ -77,10 +78,10 @@ function RateCardReviewDetails({ record, label }: { record: RateCardRecord; labe
       {label ? <Typography.Text strong>{label}</Typography.Text> : null}
       <Typography.Text strong>模型与层级</Typography.Text>
       <Typography.Text>{record.card.provider_ref} / {record.card.model_ref} / {rateLayerLabels[record.card.layer] || record.card.layer}</Typography.Text>
-      <Typography.Text strong>基础价格（CNY / 1,000,000 tokens）</Typography.Text>
+      <Typography.Text strong>基础绝对单价</Typography.Text>
       {record.card.components.map(component => (
         <Typography.Text key={`review-base-${record.card.rate_card_ref}-${component.meter}`}>
-          {component.meter}：{exactAmount(component.amount)} / {component.unit_quantity} tokens
+          {component.meter}：{exactAmount(component.amount)} / {component.unit_quantity} {component.meter.endsWith('_tokens') ? 'tokens' : 'units'}
         </Typography.Text>
       ))}
       {record.card.daily_price_bands?.length ? (
@@ -91,7 +92,7 @@ function RateCardReviewDetails({ record, label }: { record: RateCardRecord; labe
               <Typography.Text strong>{band.band_ref} · {formatUTCMinute(band.start_minute_utc)}–{formatUTCMinute(band.end_minute_utc)}</Typography.Text>
               {band.components.map(component => (
                 <div key={`review-${record.card.rate_card_ref}-${band.band_ref}-${component.meter}`}>
-                  <Typography.Text>{component.meter}：{exactAmount(component.amount)} / {component.unit_quantity} tokens</Typography.Text>
+                  <Typography.Text>{component.meter}：{exactAmount(component.amount)} / {component.unit_quantity} {component.meter.endsWith('_tokens') ? 'tokens' : 'units'}</Typography.Text>
                 </div>
               ))}
             </div>
@@ -103,6 +104,7 @@ function RateCardReviewDetails({ record, label }: { record: RateCardRecord; labe
         <>
           <Typography.Text>URL：{record.source_evidence.source_url}</Typography.Text>
           <Typography.Text>修订：{record.source_evidence.source_revision}</Typography.Text>
+          {record.source_evidence.unit_contract ? <Typography.Text>计价合同：{record.source_evidence.currency || 'CNY'} / {record.source_evidence.unit_contract}</Typography.Text> : null}
           <Typography.Text className="ur-mono-break">原始载荷：{record.source_evidence.payload_sha256}</Typography.Text>
           <Typography.Text>获取：{formatDateTime(record.source_evidence.fetched_at)}；新鲜度截止：{formatDateTime(record.source_evidence.stale_after)}</Typography.Text>
         </>
@@ -633,7 +635,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       ? form.price_schedule === 'utc_overrides' ? buildUTCOverridePriceBands(priceOverrides, components) : []
       : null;
     if (!components || dailyPriceBands === null || !form.provider_ref?.trim() || !form.model_ref?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.effective_from || '')) {
-      Toast.error('请完整填写供应商、模型、四类默认价格和生效日期；日内特殊价段必须是不重叠、不跨午夜的 UTC 区间，且每段四类价格齐全');
+      Toast.error('请完整填写供应商、模型、四类默认 Token 价格和生效日期；已启用的单位价格也必须在每个 UTC 特殊价段显式填写');
       return;
     }
     if (form.layer === 'supplier_billed_effective' && !form.source_evidence_ref?.trim()) {
@@ -675,7 +677,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       !/^sha256:[a-f0-9]{64}$/.test(importForm.payload_sha256 || '') ||
       !importForm.transform_version?.trim() || !isDate(importForm.effective_from) ||
       !isDate(importForm.fetched_at) || !isDate(importForm.stale_after)) {
-      Toast.error('请完整填写模型、四类价格、来源修订、载荷 SHA-256、获取日期和新鲜度截止日期');
+      Toast.error('请完整填写模型、四类 Token 价格、来源修订、载荷 SHA-256、获取日期和新鲜度截止日期；已启用的单位价格不得缺项');
       return;
     }
     setSubmitting(true);
@@ -967,6 +969,15 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
               placeholder={`${item.label}：CNY / 1,000,000 tokens，最多六位小数`}
             />
           ))}
+          {requestUnitPriceMeters.map(item => (
+            <Input
+              key={item.key}
+              aria-label={`Rate Card ${item.label}每次价格`}
+              value={form[item.key] || ''}
+              onChange={value => updateForm(item.key, value)}
+              placeholder={`${item.label}（可选）：CNY / ${item.unitLabel}；例如 0.03`}
+            />
+          ))}
           <Select
             aria-label="Rate Card 日内计价"
             value={form.price_schedule || 'flat'}
@@ -977,11 +988,11 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
             ]}
             style={{ width: '100%' }}
           />
-          {form.price_schedule === 'utc_overrides' && <RateCardPriceBandsEditor ariaPrefix="Rate Card " overrides={priceOverrides} onChange={setPriceOverrides} />}
+          {form.price_schedule === 'utc_overrides' && <RateCardPriceBandsEditor ariaPrefix="Rate Card " overrides={priceOverrides} enabledUnitMeters={requestUnitPriceMeters.filter(item => Boolean(form[item.key]?.trim())).map(item => item.meter)} onChange={setPriceOverrides} />}
           <Input aria-label="Rate Card 生效日期" type="date" value={form.effective_from || ''} onChange={value => updateForm('effective_from', value)} />
           <Input aria-label="Rate Card 失效日期" type="date" value={form.effective_to || ''} onChange={value => updateForm('effective_to', value)} />
           <Input aria-label="Rate Card 来源证据" value={form.source_evidence_ref || ''} onChange={value => updateForm('source_evidence_ref', value)} placeholder="合同号、签署证据或账单证据引用（按层级要求）" />
-          <Typography.Text type="tertiary">输入、输出、缓存读取、缓存写入四项必须显式定价，不自动猜测缓存折扣。目录价必须使用“导入官方价格草稿”绑定来源证据；保存、独立复核、激活分为三个版本。</Typography.Text>
+          <Typography.Text type="tertiary">输入、输出、缓存读取、缓存写入四项必须使用绝对单价，不自动猜测缓存折扣。联网搜索等非 Token 计费单位按需显式增加。目录价必须通过官方价格草稿绑定来源证据；保存、独立复核、激活分为三个版本。</Typography.Text>
         </Space>
       </Modal>
       <Modal
@@ -1017,6 +1028,15 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
               placeholder={`${item.label}：CNY / 1,000,000 tokens`}
             />
           ))}
+          {requestUnitPriceMeters.map(item => (
+            <Input
+              key={item.key}
+              aria-label={`官方价格 ${item.label}每次价格`}
+              value={importForm[item.key] || ''}
+              onChange={value => updateImportForm(item.key, value)}
+              placeholder={`${item.label}（可选）：CNY / ${item.unitLabel}`}
+            />
+          ))}
           <Select
             aria-label="官方价格日内计价"
             value={importForm.price_schedule || 'flat'}
@@ -1027,7 +1047,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
             ]}
             style={{ width: '100%' }}
           />
-          {importForm.price_schedule === 'utc_overrides' && <RateCardPriceBandsEditor ariaPrefix="官方价格 " overrides={importPriceOverrides} onChange={setImportPriceOverrides} />}
+          {importForm.price_schedule === 'utc_overrides' && <RateCardPriceBandsEditor ariaPrefix="官方价格 " overrides={importPriceOverrides} enabledUnitMeters={requestUnitPriceMeters.filter(item => Boolean(importForm[item.key]?.trim())).map(item => item.meter)} onChange={setImportPriceOverrides} />}
           <Input aria-label="官方价格生效日期" type="date" value={importForm.effective_from || ''} onChange={value => updateImportForm('effective_from', value)} />
           <Input aria-label="官方来源 URL" value={importForm.source_url || ''} onChange={value => updateImportForm('source_url', value)} placeholder="官方定价文档 URL" />
           <Input aria-label="官方来源修订" value={importForm.source_revision || ''} onChange={value => updateImportForm('source_revision', value)} placeholder="文档版本、ETag 或明确修订号" />

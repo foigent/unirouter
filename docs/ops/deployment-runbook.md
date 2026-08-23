@@ -1,8 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.22
-> **日期**：2026-08-22
+> **版本**：v1.23
+> **日期**：2026-08-23
 > **用途**：运维人员部署和维护 UniRouter 的操作手册
+> **变更记录**：v1.23 增加 `000083` 版本化非 Token 计费证据、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.22 增加 `000082` canonical Release 执行 Profile/上下文上限密封、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.21 增加 `000081` 版本化模型执行 Profile、历史模型不推断、guarded down 与非滚动升级边界。
 > **变更记录**：v1.20 增加 release worktree 的 N/N-1/N-2 只读报告、非规范/dirty/attached fail-closed 分类和显式 apply 边界，并补充精确版本构建的 BuildKit Go 缓存约束；v1.19 增加 ECS 不可变标签构建复用、构建前磁盘 fail-closed、可注入 Go module proxy、全服务 Docker 日志轮转、N-1/N-2 schema 兼容门禁和需显式授权的按需镜像/BuildKit 清理；v1.18 增加 development/test Target 单次构建复用、两代已验证回滚保留和只读镜像生命周期报告；v1.17 增加默认关闭的 Exact Response Cache 三段式密钥注入、客户 preflight all-or-none 校验、冷失效轮换边界和迁移 `000056` 运维约束；v1.16 增加 `000037`→`000042` 统一停流量/单次 migrate/部分提交后 roll-forward 流程，补充 `000042` provider-scoped 本地/OIDC 身份合同和 guarded down，并移除管理 CLI 的 argv 密码输入，改为双次无回显交互或受控单行 `--password-stdin`；v1.15 增加迁移原子 ledger 语义，以及 `000039` Guardrail 租户隔离、`000040` 投递尝试绑定、`000041` 流式 generation fencing 的非滚动切换与 quarantine/roll-forward 边界；v1.14 增加 `000038` 管理会话撤销的非滚动切换与 guarded-down 边界；v1.13 增加正式模式 32-byte 运行时密钥门禁，并补齐客户首次安装对同一验签包的容器 staging、`record-applied` 与读回；v1.12 修正客户 preflight 调用、可执行占位符、micro-CNY 查询和 Canary Compose/Nginx 命令；v1.11 明确分离源码开发与签名客户交付路径，增加客户 Compose digest preflight 和通知 Webhook HMAC 配置；v1.10 增加真实上游启用前的模型身份、映射、价格权限和受控调用检查；v1.9 增加可双击 License Studio，并把正式 License/升级验签根从客户运行时环境变量迁到发布二进制；v1.8 新增 V1 商业 License 强制、公钥环/部署绑定和签名离线升级包流程；v1.7 新增 PRD3 SEC-005 运行时暴露策略：CORS 精确 origin、登录限流、metrics 开关/CIDR；v1.6 新增 PRD2 OIDC-first SSO 配置和 mock-provider smoke；v1.5 新增 HTTP-only canary overlay、8081 canary direct smoke、PRD2 HA/backup rehearsal 命令；v1.4 新增生产 `.env` 保护、`API_KEY_HASH_SECRET`、rsync 安全同步规则和 PR #44 部署事故复盘；v1.3 新增 Prometheus + Grafana 监控栈、k6 压测脚本；v1.2 新增 Nginx 反向代理 + canary 测试部署章节；v1.1 修正日志描述（标准库 log，非 zap）、容器名更新（backend/frontend）
@@ -1084,13 +1085,13 @@ M81 down 在任何 schema mutation 前拒绝 later migration，也拒绝任一�
 且没有 later migration 时，guarded down 才会移除两列并恢复 M80 schema。
 
 Profile 本身也按版本演进，不能原地改写已选择的旧身份。
-`kimi.k3.api@1.1.0` 使用 `reasoning.kimi-k3-effort.v1`、
-`cache-usage.kimi-platform.v1` 和 `protocol.kimi-openai-chat.k3.v1`：缺省
+`kimi.k3.api@1.2.0` 使用 `reasoning.kimi-k3-effort.v1`、
+`cache-usage.kimi-platform.v1` 和 `protocol.kimi-openai-chat.k3.v2`：缺省
 `reasoning_effort` 时保留字段缺失，让 Kimi 使用供应商默认 `max`；显式值只允许
 `low/high/max`。只有该 cache-usage 合同声明的顶层 `usage.cached_tokens` 才会成为
 缓存读取计费证据，通用 OpenAI-compatible 路由不能凭同名未知字段获得折扣。K3 的
-Partial Mode、system-message 动态工具和内置联网搜索虽然记录为供应商能力，但当前
-不在 UniRouter verified capabilities 中；操作员不得把目录展示误判为可执行支持。
+Partial Mode、system-message 动态工具、内置联网搜索和内联多模态只在 v2 typed
+contract 中可执行；供应商 URL/file media 与大型载荷仍不属于该合同。
 
 ### 3.19 `000082` sealed model execution contracts 与 guarded down
 
@@ -1124,6 +1125,39 @@ M82 down 在 schema mutation 前拒绝 later migration；若任一 durable v2 Re
 lookup。出现该拒绝时应 roll forward，不得删除历史 Release、receipt/event 或改写
 pins 来迁就旧 binary。只有所有 durable pins 在 M81 语义下仍完全等价时，guarded
 down 才能删除四列并恢复 M81 schema。
+
+### 3.20 `000083` versioned unit-meter billing 与 guarded down
+
+M83 不改变 M82 canonical Release 或 traffic authority。它为现有 Freeze、费用观察、
+usage finalization journal 和 call log 增加四类证据：冻结的绝对 unit rate、预留
+meter quantity、供应商终态实际 meter quantity 以及 non-token micro-CNY cost。首个
+受支持 meter 是 Kimi `$web_search` 对应的 `builtin_web_search_calls`；只有 exact
+execution profile 和响应条件共同成立时才产生一次实际调用证据。
+
+M82→M83 是 schema-ceiling 变化。必须先完成备份/恢复清单检查，停止全部 M82
+backend，由唯一 migration owner 升级并确认 ledger 精确等于 M83 artifact，再启动
+M83 stable/canary。不得让 M82 stable 与 M83 canary 共用数据库。升级后只读检查：
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT column_name
+  FROM information_schema.columns
+ WHERE table_name='freeze_idempotency'
+   AND column_name IN ('effective_unit_rates','reserved_meter_usage','meter_usage','non_token_cost_micros')
+ ORDER BY column_name;
+```
+
+四列必须全部存在。部署前为将使用 `$web_search` 的精确 `model_ref` 发布经 maker/checker
+批准的绝对单价 Rate Card；缺少 `builtin_web_search_calls` 组件时请求应在 dispatch
+前 fail closed，不得退回 token-only 或比例价格。目标 smoke 应核对 Freeze、journal、
+observation/receipt 与 call log 的 meter、rate component hash 和 cost 一致。
+
+M83 down 在任何 schema mutation 前拒绝 later migration；任一相关表已有非空 unit
+rate/meter evidence、非零 non-token cost，或来源表已经记录
+`versioned_rate_card_components.v1` 证据时也拒绝。出现拒绝应 roll forward，不得
+删除或改写价格来源/客户费用证据来迁就 M82 binary。只有确认四个计费表均未形成
+durable M83 证据且没有新版 unit-contract source evidence 时，guarded down 才能恢复
+M82 schema。
 
 ---
 
@@ -1548,8 +1582,8 @@ staging 或已授权的非生产测试目标。不得把本章命令当作客户
 stable 与 canary 必须读取同一个
 `UNIROUTE_NOTIFICATION_WEBHOOK_SIGNING_SECRET`；Compose/CI 会检查两者配置一致。
 本章的流量 canary 只允许两个 binary 的 exact schema ceiling 相同且共享数据库已经
-位于该 ceiling 时使用。任何改变 ceiling 的发布（包括当前 M81→M82）必须先按
-对应 migration 小节（当前为 3.19）完成非滚动 schema 切换，不能保留旧 stable 再
+位于该 ceiling 时使用。任何改变 ceiling 的发布（包括当前 M82→M83）必须先按
+对应 migration 小节（当前为 3.20）完成非滚动 schema 切换，不能保留旧 stable 再
 启动新 canary。
 
 ### 9.1 前置条件：Nginx 配置
@@ -1609,7 +1643,7 @@ backend 处理大部分请求；两者必须声明相同的 exact schema ceiling
 - canary 实例可设置 `SKIP_MIGRATION=true`，但这只跳过 migration 执行，不跳过
   exact runtime-schema gate；共享数据库必须已经由唯一 migration owner 升到两个
   binary 共同声明的 ceiling
-- schema ceiling 不同的 stable/canary 禁止共存；当前 M81→M82 使用 3.19 的非滚动流程
+- schema ceiling 不同的 stable/canary 禁止共存；当前 M82→M83 使用 3.20 的非滚动流程
 - 健康检查和 Prometheus 指标 **只走 stable**
 
 ### 9.3 启动 Canary
@@ -1724,7 +1758,7 @@ done | sort | uniq -c
 
 只有 stable/canary binary 声明相同 schema ceiling、且数据库已经精确位于该 ceiling
 时，canary 验证通过后才可按本节升级 stable。若 candidate 提高 ceiling（包括
-M81→M82），不要执行本节命令；按 3.19 停止整个旧 fleet、由唯一 migration owner
+M82→M83），不要执行本节命令；按 3.20 停止整个旧 fleet、由唯一 migration owner
 升级，再启动新 stable/canary。
 
 ```bash

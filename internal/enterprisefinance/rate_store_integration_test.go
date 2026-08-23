@@ -142,6 +142,7 @@ func TestOfficialRateDraftImportIsAtomicEvidenceBackedAndNeverActive(t *testing.
 		{Meter: MeterOutputTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "20", Currency: "CNY", Scale: 1_000_000}},
 		{Meter: MeterCacheReadTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "2", Currency: "CNY", Scale: 1_000_000}},
 		{Meter: MeterCacheCreationTokens, UnitQuantity: "1000000", Amount: Amount{ValueMinor: "12", Currency: "CNY", Scale: 1_000_000}},
+		{Meter: MeterBuiltinWebSearchCalls, UnitQuantity: "1", Amount: Amount{ValueMinor: "30000", Currency: "CNY", Scale: 1_000_000}},
 	}
 	record, err := store.ImportOfficialRateCardDraft(ctx, OfficialRateDraftImport{
 		Card: RateCard{
@@ -162,12 +163,14 @@ func TestOfficialRateDraftImportIsAtomicEvidenceBackedAndNeverActive(t *testing.
 	require.Empty(t, record.Card.ApprovedBy)
 	require.Nil(t, record.ActivatedAt)
 	require.NotNil(t, record.SourceEvidence)
+	require.Equal(t, RateSourceUnitComponents, record.SourceEvidence.UnitContract)
 
 	listed, err := store.ListLatestRateCards(ctx, orgID)
 	require.NoError(t, err)
 	require.Len(t, listed, 1)
 	require.NotNil(t, listed[0].SourceEvidence)
 	require.Equal(t, "revision-7", listed[0].SourceEvidence.SourceRevision)
+	require.Equal(t, RateSourceUnitComponents, listed[0].SourceEvidence.UnitContract)
 
 	// A broken card causes the entire import to roll back, including evidence.
 	broken := OfficialRateDraftImport{

@@ -42,9 +42,15 @@ UPDATE model_registry
 		"seal the first effective model execution contract",
 	)
 	assertSealedExecutionContract(t, initial, "kimi.k3.api", "1.1.0", 262144, 32768)
+	unitMeterDown, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
+	))
+	require.NoError(t, err)
 	down, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
 	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(unitMeterDown))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.NoError(t, err, "an unchanged M81 projection is a supported downgrade pre-state")
@@ -133,6 +139,8 @@ UPDATE runtime_change_releases
  WHERE id=$1`, child.ID)
 	require.ErrorContains(t, err, "sealed model execution contract is immutable")
 
+	_, err = pool.Exec(ctx, string(unitMeterDown))
+	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "durable release pins would be lost")
 

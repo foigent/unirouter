@@ -17,6 +17,7 @@ const (
 	RateSourceLegacyModel    = "legacy_model_prices"
 	RateSourceContract       = "supplier_contract"
 	RateSourceUnitTokens     = "tokens"
+	RateSourceUnitComponents = "versioned_rate_card_components.v1"
 )
 
 var rateSourceSHA256Pattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
@@ -71,7 +72,8 @@ func ValidateRateSourceEvidence(evidence RateSourceEvidence) error {
 		blank(evidence.SourceRevision) || blank(evidence.TransformVersion) || blank(evidence.ImportedBy) {
 		return invalid("rate_source_identity")
 	}
-	if evidence.Currency != "CNY" || evidence.UnitContract != RateSourceUnitTokens {
+	if evidence.Currency != "CNY" ||
+		(evidence.UnitContract != RateSourceUnitTokens && evidence.UnitContract != RateSourceUnitComponents) {
 		return invalid("rate_source_currency_unit")
 	}
 	if !rateSourceSHA256Pattern.MatchString(evidence.PayloadSHA256) {
@@ -120,7 +122,7 @@ func (s *PostgresStore) ImportOfficialRateCardDraft(ctx context.Context, request
 	request.Evidence.SourceKind = RateSourceOfficialImport
 	request.Evidence.ImportedBy = actorRef
 	request.Evidence.Currency = "CNY"
-	request.Evidence.UnitContract = RateSourceUnitTokens
+	request.Evidence.UnitContract = rateSourceUnitContract(request.Card.Components)
 	if actorRef == "" {
 		return RateCardRecord{}, invalid("rate_source_actor")
 	}
@@ -150,6 +152,17 @@ func (s *PostgresStore) ImportOfficialRateCardDraft(ctx context.Context, request
 	}
 	record.SourceEvidence = &request.Evidence
 	return record, nil
+}
+
+func rateSourceUnitContract(components []RateComponent) string {
+	for _, component := range components {
+		for _, meter := range supportedRequestUnitMeters {
+			if component.Meter == meter {
+				return RateSourceUnitComponents
+			}
+		}
+	}
+	return RateSourceUnitTokens
 }
 
 func (s *PostgresStore) ListRateSourceEvidence(ctx context.Context, orgID int64) ([]RateSourceEvidence, error) {

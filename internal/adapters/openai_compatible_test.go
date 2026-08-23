@@ -108,6 +108,41 @@ func TestOpenAICompatibleParseResponse_Usage(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleParseResponse_MetersKimiBuiltinSearchFromTypedProfile(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"type":"function","function":{"name":"$web_search","arguments":"{}"}}]}}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		ProtocolProfile: "protocol.kimi-openai-chat.v2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []metering.MeterQuantity{{Meter: "builtin_web_search_calls", Quantity: 1}}
+	if len(response.Usage.MeterUsage) != 1 || response.Usage.MeterUsage[0] != want[0] {
+		t.Fatalf("meter usage = %+v, want %+v", response.Usage.MeterUsage, want)
+	}
+
+	withoutProfile, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+	})
+	if err != nil || len(withoutProfile.Usage.MeterUsage) != 0 {
+		t.Fatalf("untyped profile must not infer billable usage: usage=%+v err=%v", withoutProfile.Usage.MeterUsage, err)
+	}
+}
+
+func TestOpenAICompatibleParseResponse_RejectsBuiltinSearchAboveFrozenMaximum(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"type":"function","function":{"name":"$web_search"}},{"type":"function","function":{"name":"$web_search"}}]}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	_, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		ProtocolProfile: "protocol.kimi-openai-chat.v2",
+	})
+	if err == nil || !strings.Contains(err.Error(), "exceeds profile maximum") {
+		t.Fatalf("error = %v, want frozen maximum rejection", err)
+	}
+}
+
 func TestOpenAICompatibleParseResponse_NormalizesOnlySafeMiniMaxControlFields(t *testing.T) {
 	adapter := NewOpenAICompatible()
 	body := []byte(`{"id":"chatcmpl-minimax","object":"chat.completion","created":1780152150,"model":"MiniMax-M3","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hello","name":"MiniMax AI","audio_content":""}}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"total_characters":0},"input_sensitive":false,"output_sensitive":false,"input_sensitive_type":0,"output_sensitive_type":0,"output_sensitive_int":0,"base_resp":{"status_code":0,"status_msg":"success"}}`)

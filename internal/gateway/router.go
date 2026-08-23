@@ -84,6 +84,7 @@ type RouteResult struct {
 	ExecutionProfileVersion string
 	ReasoningProfile        string
 	CacheUsageProfile       string
+	ModelProtocolProfile    string
 }
 
 // MarkChannelSuccess records a successful request for a channel.

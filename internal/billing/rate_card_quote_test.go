@@ -32,6 +32,30 @@ func TestRateCardQuoteAdapterRejectsUndefinedCacheRatio(t *testing.T) {
 	require.Equal(t, float64(0), mustDisplayRatio(t, 0, 0))
 }
 
+func TestRateCardQuoteAdapterPreservesExactNonTokenRational(t *testing.T) {
+	quote := enterprisefinance.RequestPriceQuote{
+		PricingVersion: "rcq3_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Components: []enterprisefinance.RequestPriceComponent{
+			{Meter: enterprisefinance.MeterInputTokens, PriceMicrosPerMillion: 10},
+			{Meter: enterprisefinance.MeterOutputTokens, PriceMicrosPerMillion: 30},
+			{Meter: enterprisefinance.MeterCacheReadTokens, PriceMicrosPerMillion: 2},
+			{Meter: enterprisefinance.MeterCacheCreationTokens, PriceMicrosPerMillion: 12},
+			{
+				Meter:        enterprisefinance.MeterBuiltinWebSearchCalls,
+				UnitQuantity: "100", AmountMinor: "3000000", Currency: "CNY", AmountScale: 1_000_000,
+				ComponentHash: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+			},
+		},
+	}
+	converted, err := priceQuoteFromRateCardQuote(quote)
+	require.NoError(t, err)
+	require.Equal(t, []UnitRate{{
+		Meter:        enterprisefinance.MeterBuiltinWebSearchCalls,
+		UnitQuantity: 100, AmountMinor: 3_000_000, Currency: "CNY", AmountScale: 1_000_000,
+		ComponentHash: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+	}}, converted.UnitRates)
+}
+
 func TestRequestPricingAuthorityIsExplicitAndDefaultsToUpgradeCompatibility(t *testing.T) {
 	service := NewBilling(nil, nil)
 	require.Equal(t, RequestPricingAuthorityLegacy, service.requestPricingAuthority)

@@ -1,6 +1,11 @@
 package metering
 
-import "strings"
+import (
+	"fmt"
+	"regexp"
+	"slices"
+	"strings"
+)
 
 const (
 	UsageSourceUpstream         = "upstream"
@@ -14,6 +19,43 @@ const (
 
 	DefaultEstimatedRatioAlertThreshold = 0.20
 )
+
+// MeterQuantity is a provider-evidenced non-token usage unit. Token classes
+// remain explicit fields because their partition and estimation contracts are
+// different; this envelope is for bounded meters such as builtin search calls.
+type MeterQuantity struct {
+	Meter    string `json:"meter"`
+	Quantity int64  `json:"quantity"`
+}
+
+const MaxPersistedMeterQuantity = int64(1_000_000_000)
+
+var meterNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{1,63}$`)
+
+// NormalizeMeterQuantities provides one canonical order and duplicate/range
+// contract shared by adapters, Billing, receipts, and replays.
+func NormalizeMeterQuantities(values []MeterQuantity) ([]MeterQuantity, error) {
+	if len(values) == 0 {
+		return []MeterQuantity{}, nil
+	}
+	result := slices.Clone(values)
+	slices.SortFunc(result, func(left, right MeterQuantity) int {
+		return strings.Compare(strings.TrimSpace(left.Meter), strings.TrimSpace(right.Meter))
+	})
+	for index := range result {
+		result[index].Meter = strings.TrimSpace(result[index].Meter)
+		if !meterNamePattern.MatchString(result[index].Meter) {
+			return nil, fmt.Errorf("meter %q is invalid", result[index].Meter)
+		}
+		if result[index].Quantity < 0 || result[index].Quantity > MaxPersistedMeterQuantity {
+			return nil, fmt.Errorf("meter %s quantity is outside the persisted range", result[index].Meter)
+		}
+		if index > 0 && result[index-1].Meter == result[index].Meter {
+			return nil, fmt.Errorf("meter %s is duplicated", result[index].Meter)
+		}
+	}
+	return result, nil
+}
 
 type UsageAuthority string
 

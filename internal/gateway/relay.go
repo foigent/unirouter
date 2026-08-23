@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -470,6 +471,7 @@ func settleRequestFromUsage(requestID, attemptID string, orgID int64, usage adap
 		UsageEstimateVersion: usage.EstimateVersion,
 		CacheUsageSchema:     usage.CacheUsageSchema,
 		CacheUsageStatus:     usage.CacheUsageStatus,
+		MeterUsage:           slices.Clone(usage.MeterUsage),
 	}
 }
 
@@ -899,7 +901,11 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		w.Header().Set(compressionOptInHeader, strings.ToUpper(optimizationState.compression.EffectiveMode))
 	}
 
-	admission, admissionErr := estimateChatAdmission(body)
+	// Before routing we can bound only the raw JSON envelope. The selected
+	// immutable protocol profile performs the strict shape validation below;
+	// applying the generic text-only validator here would reject verified Kimi
+	// media, partial, and dynamic-tool contracts before a profile is selected.
+	admission, admissionErr := estimateChatPreProfileAdmission(body)
 	if admissionErr != nil {
 		relay.recordTraceEvent(ctx, requestID, "gateway.admission_rejected", "admission", "warning", req.Model, requestedModel, nil, http.StatusBadRequest, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"error_code": "validation_error.unsupported_semantics", "pre_freeze": true,
@@ -1003,6 +1009,7 @@ func (relay *Relay) HandleChatCompletion(w http.ResponseWriter, r *http.Request)
 		EstimatedTokens:          estimatedTokens,
 		EstimatedInputTokens:     estimatedInputTokens,
 		ReservedCompletionTokens: reservedCompletionTokens,
+		ReservedMeterUsage:       slices.Clone(executionBatch.profileEvidence.ReservedMeterUsage),
 		SafetyFactor:             relay.freezeSafetyFactor,
 		MinFreezeCents:           relay.minFreezeCents,
 	})
@@ -1338,6 +1345,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		RequestedModel:    requestedModel,
 		UpstreamModel:     route.MappedModel,
 		CacheUsageProfile: route.CacheUsageProfile,
+		ProtocolProfile:   route.ModelProtocolProfile,
 	})
 	if err != nil {
 		reqLog.Error("Failed to parse adapter response: %v", err)
@@ -1362,9 +1370,15 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		return
 	}
 	if normalized.Usage.IsMissing() {
+		meterUsage := slices.Clone(normalized.Usage.MeterUsage)
 		normalized.Usage, err = adapters.NewConservativeEstimate(estimatedInputTokens, reservedCompletionTokens)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Unable to establish bounded usage authority")
+			return
+		}
+		normalized.Usage, err = normalized.Usage.WithMeterUsage(meterUsage)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "server_error", "billing_error.settle_failed", "Unable to establish non-token usage authority")
 			return
 		}
 		relay.recordTraceEvent(ctx, requestID, "usage.provider_missing", "billing", "warning", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
@@ -2752,7 +2766,9 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 	}
 	pricingVersion := ""
 	var effectiveInputPrice, effectiveCacheReadPrice, effectiveCacheCreationPrice, effectiveOutputPrice int64
-	var cacheReadCost, cacheCreationCost int64
+	var cacheReadCost, cacheCreationCost, nonTokenCost int64
+	meterUsage := slices.Clone(usage.MeterUsage)
+	unitRates := []billing.UnitRate{}
 	if settlement != nil {
 		pricingVersion = settlement.PricingVersion
 		effectiveInputPrice = settlement.EffectiveInputPriceMicrosPerMillion
@@ -2761,13 +2777,16 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		effectiveOutputPrice = settlement.EffectiveOutputPriceMicrosPerMillion
 		cacheReadCost = settlement.CacheReadCostMicros
 		cacheCreationCost = settlement.CacheCreationCostMicros
+		nonTokenCost = settlement.NonTokenCostMicros
+		meterUsage = slices.Clone(settlement.MeterUsage)
+		unitRates = slices.Clone(settlement.EffectiveUnitRates)
 	}
 	sourceEventHash := hashCallLogEvidence(requestID, requestIdentity.ClientRequestID, requestIdentity.IdempotencyKeyHash,
 		orgID, projectIDArg, keyID, ownerUserIDArg, keyType, model, requestedModel, provider, channelName, channelID,
 		usage.PromptTokens, usage.UncachedPromptTokens, usage.CacheReadTokens, usage.CacheCreationTokens,
 		usage.CompletionTokens, costMicros, statusCode, latencyMs, ttftMs, usageSource,
 		string(usage.Authority), string(usage.Purpose), string(usage.Finality), usage.ContractVersion, usage.EstimateVersion,
-		usage.CacheUsageSchema, usage.CacheUsageStatus, pricingVersion, isStream,
+		usage.CacheUsageSchema, usage.CacheUsageStatus, pricingVersion, unitRates, meterUsage, nonTokenCost, isStream,
 		estimatedTokens, usageConfidence, upstreamRequestID, traceID, evidenceContext.SessionID,
 		evidenceContext.WorkflowID, evidenceContext.AgentID, attemptID, actorType, stringFromNullable(actorRefArg),
 		evidenceContext.OnBehalfOf, payloadCaptureMode)
@@ -2812,6 +2831,9 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		EffectiveOutputPriceMicrosPerMillion:      microsText(effectiveOutputPrice),
 		CacheReadCostMicros:                       microsText(cacheReadCost),
 		CacheCreationCostMicros:                   microsText(cacheCreationCost),
+		EffectiveUnitRates:                        unitRates,
+		MeterUsage:                                meterUsage,
+		NonTokenCostMicros:                        microsText(nonTokenCost),
 		IsStream:                                  isStream,
 		IPAddress:                                 clientIP,
 		EstimatedTokens:                           estimatedTokens,
@@ -2884,6 +2906,9 @@ func (relay *Relay) recordRequestWithUsage(ctx context.Context, requestID string
 		"pricing_version":            pricingVersion,
 		"cache_read_cost_micros":     microsText(cacheReadCost),
 		"cache_creation_cost_micros": microsText(cacheCreationCost),
+		"meter_usage":                meterUsage,
+		"effective_unit_rates":       unitRates,
+		"non_token_cost_micros":      microsText(nonTokenCost),
 	})
 }
 
@@ -3695,13 +3720,26 @@ func (relay *Relay) writeAuthorizedModelList(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	var executionProfiles map[string]publicModelExecutionProfile
+	if requestIncludesModelExecutionProfiles(r.URL.Query()["include"]) {
+		executionProfiles, err = relay.loadPublicModelExecutionProfiles(r.Context(), orgID, allowedModels)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to resolve model execution profiles")
+			return
+		}
+	}
+
 	listedModels := make([]map[string]interface{}, 0, len(allowedModels))
 	for _, model := range allowedModels {
-		listedModels = append(listedModels, map[string]interface{}{
+		listedModel := map[string]interface{}{
 			"id":       model,
 			"object":   "model",
 			"owned_by": "uniroute",
-		})
+		}
+		if executionProfile, ok := executionProfiles[model]; ok {
+			listedModel["x_unirouter_execution"] = executionProfile
+		}
+		listedModels = append(listedModels, listedModel)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{

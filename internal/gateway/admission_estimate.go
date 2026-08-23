@@ -45,6 +45,29 @@ type requestAdmissionEstimate struct {
 	Version     string
 }
 
+func estimateChatPreProfileAdmission(body []byte) (requestAdmissionEstimate, error) {
+	validation, err := validateAdvancedChatProtocolRequest(body, modelprofile.ChatProtocolContract{
+		ProfileID:   "protocol.preprofile.chat.v1",
+		PartialMode: true, DynamicSystemTools: true,
+		BuiltinWebSearch: true, BuiltinWebSearchName: "$web_search",
+		BuiltinSearchMeter:             "builtin_web_search_calls",
+		BuiltinSearchRequiresNonStream: true, BuiltinSearchRequiresSerial: true,
+		MaxBuiltinSearchCalls: 1,
+		InlineImageDataURL:    true, InlineVideoDataURL: true,
+	})
+	if err != nil {
+		return requestAdmissionEstimate{}, fmt.Errorf("%w: %v", errAdmissionUnsupportedShape, err)
+	}
+	if _, err := estimateChatAdmission(validation.SanitizedBody); err != nil {
+		return requestAdmissionEstimate{}, err
+	}
+	messages, collections, err := chatEnvelopeCardinality(body)
+	if err != nil {
+		return requestAdmissionEstimate{}, err
+	}
+	return estimateChatByteUpper(body, messages, collections)
+}
+
 // estimateChatAdmissionForPlan keeps syntax/shape validation provider-neutral,
 // then applies the exact tokenizer identity frozen into the planner snapshot.
 // The tokenizer count covers the retained JSON envelope; explicit framing
@@ -52,9 +75,30 @@ type requestAdmissionEstimate struct {
 // not observable at admission time. This is an upper bound, not a claim that
 // provider-reported prompt_tokens will equal the estimate.
 func estimateChatAdmissionForPlan(body []byte, plan modelrouting.Plan) (requestAdmissionEstimate, error) {
-	byteUpper, err := estimateChatAdmission(body)
-	if err != nil {
-		return requestAdmissionEstimate{}, err
+	byteUpper := requestAdmissionEstimate{}
+	protocolContract, advanced := modelprofile.ResolveChatProtocolContract(plan.ModelProtocolProfile)
+	if advanced {
+		validation, err := validateAdvancedChatProtocolRequest(body, protocolContract)
+		if err != nil {
+			return requestAdmissionEstimate{}, fmt.Errorf("%w: %v", errAdmissionUnsupportedShape, err)
+		}
+		if _, err := estimateChatAdmission(validation.SanitizedBody); err != nil {
+			return requestAdmissionEstimate{}, err
+		}
+		messages, collections, err := chatEnvelopeCardinality(body)
+		if err != nil {
+			return requestAdmissionEstimate{}, err
+		}
+		byteUpper, err = estimateChatByteUpper(body, messages, collections)
+		if err != nil {
+			return requestAdmissionEstimate{}, err
+		}
+	} else {
+		var err error
+		byteUpper, err = estimateChatAdmission(body)
+		if err != nil {
+			return requestAdmissionEstimate{}, err
+		}
 	}
 	switch plan.TokenizerProfileID + "\x00" + plan.TokenizerProfileVersion {
 	case modelprofile.TokenizerByteUpperID + "\x00" + modelprofile.TokenizerByteUpperVersion:
@@ -133,6 +177,22 @@ func chatEnvelopeCardinality(body []byte) (messages, collections int, err error)
 			return 0, 0, fmt.Errorf("%w: messages must be an array", errAdmissionUnsupportedShape)
 		}
 		messages = len(values)
+		for _, value := range values {
+			var message map[string]json.RawMessage
+			if unmarshalErr := json.Unmarshal(value, &message); unmarshalErr != nil || message == nil {
+				return 0, 0, fmt.Errorf("%w: chat message must be an object", errAdmissionUnsupportedShape)
+			}
+			if rawTools, exists := message["tools"]; exists && !isJSONNull(rawTools) {
+				var dynamicTools []json.RawMessage
+				if unmarshalErr := json.Unmarshal(rawTools, &dynamicTools); unmarshalErr != nil {
+					return 0, 0, fmt.Errorf("%w: message tools must be an array", errAdmissionUnsupportedShape)
+				}
+				if collections > math.MaxInt-len(dynamicTools) {
+					return 0, 0, errAdmissionEstimateOverflow
+				}
+				collections += len(dynamicTools)
+			}
+		}
 	}
 	for _, field := range []string{"tools", "functions"} {
 		if raw, ok := envelope[field]; ok && !isJSONNull(raw) {
@@ -249,7 +309,11 @@ func estimateChatAdmission(body []byte) (requestAdmissionEstimate, error) {
 		}
 	}
 
-	messageOverhead, ok := checkedAdmissionMultiply(int64(len(messages)), chatAdmissionMessageOverhead)
+	return estimateChatByteUpper(body, len(messages), collections)
+}
+
+func estimateChatByteUpper(body []byte, messageCount, collections int) (requestAdmissionEstimate, error) {
+	messageOverhead, ok := checkedAdmissionMultiply(int64(messageCount), chatAdmissionMessageOverhead)
 	if !ok {
 		return requestAdmissionEstimate{}, errAdmissionEstimateOverflow
 	}

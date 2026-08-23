@@ -75,11 +75,15 @@ func TestKimiComponentContractsAreVersionedAndDefensive(t *testing.T) {
 	k3, ok := Match("kimi-k3")
 	require.True(t, ok)
 	require.Equal(t, "kimi.k3.api", k3.ID)
-	require.Equal(t, "1.1.0", k3.Version)
+	require.Equal(t, "1.2.0", k3.Version)
 	require.Equal(t, "reasoning.kimi-k3-effort.v1", k3.ReasoningProfile)
 	require.Equal(t, "cache-usage.kimi-platform.v1", k3.CacheUsageProfile)
 	require.Contains(t, k3.ProviderCapabilities, "dynamic_tools")
-	require.NotContains(t, k3.Capabilities, "dynamic_tools")
+	require.Contains(t, k3.Capabilities, "dynamic_tools")
+	require.Contains(t, k3.Capabilities, "partial_mode")
+	require.Contains(t, k3.Capabilities, "builtin_web_search")
+	require.Contains(t, k3.Capabilities, "vision")
+	require.Contains(t, k3.Capabilities, "video")
 	require.Contains(t, k3.Capabilities, "json_object")
 	require.Contains(t, k3.Capabilities, "json_schema")
 
@@ -115,6 +119,31 @@ func TestKimiK26ThinkingContractRemainsDistinctFromK3(t *testing.T) {
 	require.Equal(t, []string{"enabled", "disabled"}, contract.ToggleControl.AllowedValues)
 	require.Equal(t, "enabled", contract.ToggleControl.ProviderDefault)
 	require.False(t, contract.RequiredToolChoiceWhileReasoning)
+}
+
+func TestKimiK26AdvancedChatProfileIsVersionedAndExecutable(t *testing.T) {
+	k26, ok := Match("Kimi K2.6")
+	require.True(t, ok)
+	require.Equal(t, "kimi.k2.6.api", k26.ID)
+	require.Equal(t, "1.1.0", k26.Version)
+	require.Equal(t, "protocol.kimi-openai-chat.v2", k26.ProtocolProfile)
+	require.Equal(t, 262_144, k26.ProviderContextWindow)
+	for _, capability := range []string{
+		CapabilityPartialMode, CapabilityBuiltinWebSearch, CapabilityVision, CapabilityVideo,
+	} {
+		require.Contains(t, k26.Capabilities, capability)
+	}
+	require.NotContains(t, k26.Capabilities, CapabilityDynamicTools)
+	contract, ok := ResolveChatProtocolContract(k26.ProtocolProfile)
+	require.True(t, ok)
+	require.True(t, contract.PartialMode)
+	require.True(t, contract.BuiltinWebSearch)
+	require.True(t, contract.BuiltinSearchRequiresThinkingDisabled)
+	require.True(t, contract.InlineImageDataURL)
+	require.True(t, contract.InlineVideoDataURL)
+	require.Contains(t, contract.InlineImageMIMETypes, "image/png")
+	require.Contains(t, contract.InlineVideoMIMETypes, "video/mp4")
+	require.False(t, contract.DynamicSystemTools)
 }
 
 func TestExecutableCapabilitiesAlwaysHaveTypedComponentContracts(t *testing.T) {

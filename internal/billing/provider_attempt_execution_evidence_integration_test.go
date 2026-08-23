@@ -250,36 +250,6 @@ UPDATE call_logs
 
 func TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe(t *testing.T) {
 	pool, orgID, model := newReservationFixture(t, 1000, 0)
-	sealedContractDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
-	))
-	require.NoError(t, err)
-	profileDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
-	))
-	require.NoError(t, err)
-	observationReconciliationDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
-	))
-	require.NoError(t, err)
-	authoringDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
-	))
-	require.NoError(t, err)
-	connectionLicenseDownSQL, err := os.ReadFile(filepath.Join(
-		testutil.MigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
-	))
-	require.NoError(t, err)
-	_, err = pool.Exec(t.Context(), string(sealedContractDownSQL))
-	require.NoError(t, err)
-	_, err = pool.Exec(t.Context(), string(profileDownSQL))
-	require.NoError(t, err)
-	_, err = pool.Exec(t.Context(), string(observationReconciliationDownSQL))
-	require.NoError(t, err)
-	_, err = pool.Exec(t.Context(), string(connectionLicenseDownSQL))
-	require.NoError(t, err)
-	_, err = pool.Exec(t.Context(), string(authoringDownSQL))
-	require.NoError(t, err)
 	b := NewBilling(pool, nil)
 	evidence := seedProviderAttemptCanonicalEvidence(t, pool, orgID, model)
 	requestID := "attempt-owned-health-fence"
@@ -406,6 +376,51 @@ UPDATE billing_provider_attempts SET dispatch_owner_hash=$4
 UPDATE billing_provider_attempts SET health_outcome='success'
  WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, start.AttemptID)
 	require.ErrorContains(t, err, "health outcome is terminal")
+
+	// Exercise the current Billing implementation against the latest schema
+	// before proving the older dispatch-fence migration remains guarded. M83
+	// owns columns read by reservationForUpdate, so removing it before the
+	// attempt would create an unsupported mixed binary/schema state rather than
+	// test the provider-attempt invariant.
+	_, err = pool.Exec(t.Context(), `
+UPDATE provider_connections SET admin_state='disabled' WHERE id=$1`, evidence.ConnectionID)
+	require.NoError(t, err)
+	unitMeterDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
+	))
+	require.NoError(t, err)
+	sealedContractDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
+	))
+	require.NoError(t, err)
+	profileDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000081_versioned_model_execution_profiles.down.sql",
+	))
+	require.NoError(t, err)
+	observationReconciliationDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation.down.sql",
+	))
+	require.NoError(t, err)
+	connectionLicenseDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000079_canonical_connection_license_authority.down.sql",
+	))
+	require.NoError(t, err)
+	authoringDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(unitMeterDownSQL))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(sealedContractDownSQL))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(profileDownSQL))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(observationReconciliationDownSQL))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(connectionLicenseDownSQL))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(authoringDownSQL))
+	require.NoError(t, err)
 
 	publicAuthorityDownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000077_public_model_execution_authority.down.sql"))
 	require.NoError(t, err)

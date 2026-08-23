@@ -3,16 +3,19 @@ import { IconDelete, IconPlus } from '@douyinfe/semi-icons';
 import {
   emptyPriceOverride,
   requestPriceMeters,
+  requestUnitPriceMeters,
   type PriceBandOverrideDraft,
 } from '../utils/rateCardPriceBands';
 
 export default function RateCardPriceBandsEditor({
   ariaPrefix,
   overrides,
+  enabledUnitMeters = [],
   onChange,
 }: {
   ariaPrefix: string;
   overrides: PriceBandOverrideDraft[];
+  enabledUnitMeters?: string[];
   onChange: (next: PriceBandOverrideDraft[]) => void;
 }) {
   const update = (index: number, key: keyof PriceBandOverrideDraft, value: string) => onChange(
@@ -21,7 +24,7 @@ export default function RateCardPriceBandsEditor({
   return <Space vertical align="start" style={{ width: '100%' }}>
     <Banner
       type="info"
-      description="上方四项是默认价格；这里只填写与默认价不同的 UTC 时段。系统会自动用默认价补齐其余时间，并在保存前拒绝重叠、跨午夜或缺少四项价格的时段。"
+      description="上方四类 Token 价格及已启用的单位价格是默认值；这里只填写与默认价不同的 UTC 时段。系统会自动补齐其余时间，并拒绝重叠、跨午夜或缺项。"
     />
     {overrides.map((override, index) => <div key={`${ariaPrefix}-${index}`} style={{ width: '100%', padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 8 }}>
       <Space vertical align="start" style={{ width: '100%' }}>
@@ -39,6 +42,13 @@ export default function RateCardPriceBandsEditor({
           value={override[item.key]}
           onChange={value => update(index, item.key, value)}
           placeholder={`${item.label}：CNY / 1,000,000 tokens`}
+        />)}
+        {requestUnitPriceMeters.filter(item => enabledUnitMeters.includes(item.meter)).map(item => <Input
+          key={`${ariaPrefix}-${index}-${item.key}`}
+          aria-label={`${ariaPrefix}特殊价段${index + 1}${item.label}每次价格`}
+          value={override[item.key] || ''}
+          onChange={value => update(index, item.key, value)}
+          placeholder={`${item.label}：CNY / ${item.unitLabel}`}
         />)}
       </Space>
     </div>)}

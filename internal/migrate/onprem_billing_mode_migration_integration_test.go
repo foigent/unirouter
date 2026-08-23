@@ -187,6 +187,25 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	// Migration 83 adds only default-empty unit-meter evidence columns for
+	// historical fixtures. Remove that exact extension before exercising any
+	// earlier guarded down migration.
+	if name != "000083_versioned_unit_meter_billing.down.sql" {
+		var unitMeterBillingApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000083_versioned_unit_meter_billing')`).Scan(&unitMeterBillingApplied))
+		if unitMeterBillingApplied {
+			execMigrationDown(t, ctx, pool, "000083_versioned_unit_meter_billing.down.sql")
+		}
+	}
+	if name == "000083_versioned_unit_meter_billing.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
 	// Migration 82 pins model execution contracts to canonical releases. Empty
 	// historical rollback fixtures remove that exact extension before exercising
 	// an earlier migration's own down contract.

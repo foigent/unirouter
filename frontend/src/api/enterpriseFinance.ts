@@ -76,6 +76,8 @@ export type RateSourceEvidence = {
   fetched_at: string;
   payload_sha256: string;
   transform_version: string;
+  currency?: string;
+  unit_contract?: string;
   last_success_at: string;
   stale_after: string;
 };

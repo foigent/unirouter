@@ -12,7 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/logger"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/outbox"
@@ -611,53 +613,56 @@ func hashTraceEvent(requestID, clientRequestID, idempotencyKeyHash, traceID, par
 	return hex.EncodeToString(sum[:])
 }
 
-func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, channelID int64, promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens int, costMicros int64, statusCode, latencyMs, ttftMs int, usageSource, usageAuthority, usagePurpose, usageFinality, usageContractVersion, usageEstimateVersion, cacheUsageSchema, cacheUsageStatus, pricingVersion string, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, workflowID, agentID, attemptID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
+func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, orgID int64, projectID interface{}, keyID int64, ownerUserID interface{}, keyType, model, requestedModel, provider, channel string, channelID int64, promptTokens, uncachedPromptTokens, cacheReadTokens, cacheCreationTokens, completionTokens int, costMicros int64, statusCode, latencyMs, ttftMs int, usageSource, usageAuthority, usagePurpose, usageFinality, usageContractVersion, usageEstimateVersion, cacheUsageSchema, cacheUsageStatus, pricingVersion string, unitRates []billing.UnitRate, meterUsage []metering.MeterQuantity, nonTokenCostMicros int64, isStream bool, estimatedTokens int, usageConfidence float64, upstreamRequestID, traceID, sessionID, workflowID, agentID, attemptID, actorType, actorRef, onBehalfOf, payloadCaptureMode string) string {
 	payload := struct {
-		RequestID            string      `json:"request_id"`
-		ClientRequestID      string      `json:"client_request_id"`
-		IdempotencyHash      string      `json:"idempotency_key_hash"`
-		TraceID              string      `json:"trace_id"`
-		SessionID            string      `json:"session_id"`
-		WorkflowID           string      `json:"workflow_id"`
-		AgentID              string      `json:"agent_id"`
-		AttemptID            string      `json:"attempt_id"`
-		OrgID                int64       `json:"org_id"`
-		ProjectID            interface{} `json:"project_id"`
-		KeyID                int64       `json:"api_key_id"`
-		OwnerUserID          interface{} `json:"owner_user_id"`
-		KeyType              string      `json:"key_type"`
-		Model                string      `json:"model"`
-		RequestedModel       string      `json:"requested_model"`
-		Provider             string      `json:"provider"`
-		Channel              string      `json:"channel"`
-		ChannelID            int64       `json:"route_channel_id"`
-		PromptTokens         int         `json:"prompt_tokens"`
-		UncachedPromptTokens int         `json:"uncached_prompt_tokens"`
-		CacheReadTokens      int         `json:"cache_read_tokens"`
-		CacheCreationTokens  int         `json:"cache_creation_tokens"`
-		CompletionTokens     int         `json:"completion_tokens"`
-		CostMicros           string      `json:"cost_micros"`
-		MoneySchema          string      `json:"money_schema"`
-		StatusCode           int         `json:"status_code"`
-		LatencyMS            int         `json:"latency_ms"`
-		TTFTMS               int         `json:"ttft_ms"`
-		UsageSource          string      `json:"usage_source"`
-		UsageAuthority       string      `json:"usage_authority"`
-		UsagePurpose         string      `json:"usage_purpose"`
-		UsageFinality        string      `json:"usage_finality"`
-		UsageContractVersion string      `json:"usage_contract_version"`
-		UsageEstimateVersion string      `json:"usage_estimate_version"`
-		CacheUsageSchema     string      `json:"cache_usage_schema"`
-		CacheUsageStatus     string      `json:"cache_usage_status"`
-		PricingVersion       string      `json:"pricing_version"`
-		IsStream             bool        `json:"is_stream"`
-		EstimatedTokens      int         `json:"estimated_tokens"`
-		UsageConfidence      float64     `json:"usage_confidence"`
-		UpstreamRequestID    string      `json:"upstream_request_id"`
-		ActorType            string      `json:"actor_type"`
-		ActorRef             string      `json:"actor_ref"`
-		OnBehalfOf           string      `json:"on_behalf_of"`
-		PayloadMode          string      `json:"payload_capture_mode"`
+		RequestID            string                   `json:"request_id"`
+		ClientRequestID      string                   `json:"client_request_id"`
+		IdempotencyHash      string                   `json:"idempotency_key_hash"`
+		TraceID              string                   `json:"trace_id"`
+		SessionID            string                   `json:"session_id"`
+		WorkflowID           string                   `json:"workflow_id"`
+		AgentID              string                   `json:"agent_id"`
+		AttemptID            string                   `json:"attempt_id"`
+		OrgID                int64                    `json:"org_id"`
+		ProjectID            interface{}              `json:"project_id"`
+		KeyID                int64                    `json:"api_key_id"`
+		OwnerUserID          interface{}              `json:"owner_user_id"`
+		KeyType              string                   `json:"key_type"`
+		Model                string                   `json:"model"`
+		RequestedModel       string                   `json:"requested_model"`
+		Provider             string                   `json:"provider"`
+		Channel              string                   `json:"channel"`
+		ChannelID            int64                    `json:"route_channel_id"`
+		PromptTokens         int                      `json:"prompt_tokens"`
+		UncachedPromptTokens int                      `json:"uncached_prompt_tokens"`
+		CacheReadTokens      int                      `json:"cache_read_tokens"`
+		CacheCreationTokens  int                      `json:"cache_creation_tokens"`
+		CompletionTokens     int                      `json:"completion_tokens"`
+		CostMicros           string                   `json:"cost_micros"`
+		MoneySchema          string                   `json:"money_schema"`
+		StatusCode           int                      `json:"status_code"`
+		LatencyMS            int                      `json:"latency_ms"`
+		TTFTMS               int                      `json:"ttft_ms"`
+		UsageSource          string                   `json:"usage_source"`
+		UsageAuthority       string                   `json:"usage_authority"`
+		UsagePurpose         string                   `json:"usage_purpose"`
+		UsageFinality        string                   `json:"usage_finality"`
+		UsageContractVersion string                   `json:"usage_contract_version"`
+		UsageEstimateVersion string                   `json:"usage_estimate_version"`
+		CacheUsageSchema     string                   `json:"cache_usage_schema"`
+		CacheUsageStatus     string                   `json:"cache_usage_status"`
+		PricingVersion       string                   `json:"pricing_version"`
+		EffectiveUnitRates   []billing.UnitRate       `json:"effective_unit_rates"`
+		MeterUsage           []metering.MeterQuantity `json:"meter_usage"`
+		NonTokenCostMicros   string                   `json:"non_token_cost_micros"`
+		IsStream             bool                     `json:"is_stream"`
+		EstimatedTokens      int                      `json:"estimated_tokens"`
+		UsageConfidence      float64                  `json:"usage_confidence"`
+		UpstreamRequestID    string                   `json:"upstream_request_id"`
+		ActorType            string                   `json:"actor_type"`
+		ActorRef             string                   `json:"actor_ref"`
+		OnBehalfOf           string                   `json:"on_behalf_of"`
+		PayloadMode          string                   `json:"payload_capture_mode"`
 	}{
 		RequestID: requestID, ClientRequestID: clientRequestID, IdempotencyHash: idempotencyKeyHash,
 		TraceID: traceID, SessionID: sessionID, WorkflowID: workflowID, AgentID: agentID, AttemptID: attemptID,
@@ -671,7 +676,8 @@ func hashCallLogEvidence(requestID, clientRequestID, idempotencyKeyHash string, 
 		UsageSource: usageSource, UsageAuthority: usageAuthority, UsagePurpose: usagePurpose,
 		UsageFinality: usageFinality, UsageContractVersion: usageContractVersion,
 		UsageEstimateVersion: usageEstimateVersion, CacheUsageSchema: cacheUsageSchema, CacheUsageStatus: cacheUsageStatus,
-		PricingVersion: pricingVersion, IsStream: isStream, EstimatedTokens: estimatedTokens, UsageConfidence: usageConfidence,
+		PricingVersion: pricingVersion, EffectiveUnitRates: unitRates, MeterUsage: meterUsage,
+		NonTokenCostMicros: microsText(nonTokenCostMicros), IsStream: isStream, EstimatedTokens: estimatedTokens, UsageConfidence: usageConfidence,
 		UpstreamRequestID: upstreamRequestID, ActorType: actorType, ActorRef: actorRef, OnBehalfOf: onBehalfOf,
 		PayloadMode: payloadCaptureMode,
 	}

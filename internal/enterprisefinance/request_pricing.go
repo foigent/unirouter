@@ -9,20 +9,23 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 )
 
 const (
-	MeterInputTokens         = "input_tokens"
-	MeterOutputTokens        = "output_tokens"
-	MeterCacheReadTokens     = "cache_read_tokens"
-	MeterCacheCreationTokens = "cache_creation_tokens"
+	MeterInputTokens           = "input_tokens"
+	MeterOutputTokens          = "output_tokens"
+	MeterCacheReadTokens       = "cache_read_tokens"
+	MeterCacheCreationTokens   = "cache_creation_tokens"
+	MeterBuiltinWebSearchCalls = "builtin_web_search_calls"
 
 	RequestPricingAuthority = "versioned_rate_card"
 	RequestPricingKey       = "model_ref"
-	requestPricingVersion   = "rcq2"
+	requestPricingVersionV2 = "rcq2"
+	requestPricingVersionV3 = "rcq3"
 	requestPricingScale     = int64(1_000_000)
 	requestPricingBasis     = int64(1_000_000)
 )
@@ -39,6 +42,14 @@ var requiredRequestMeters = []string{
 	MeterCacheCreationTokens,
 }
 
+// supportedRequestUnitMeters are non-token billing units that the request
+// settlement path can currently measure from provider evidence. Other Rate
+// Card meters remain valid for reporting, but never silently become request
+// charges until a typed meter contract is implemented.
+var supportedRequestUnitMeters = []string{
+	MeterBuiltinWebSearchCalls,
+}
+
 // RequestPriceComponent is the exact, content-addressed request-time rate used
 // by Billing. PriceMicrosPerMillion is rounded half-up exactly once from the
 // CNY-micro Rate Card amount and its explicit unit_quantity.
@@ -50,6 +61,7 @@ type RequestPriceComponent struct {
 	AmountScale           int64  `json:"amount_scale"`
 	ComponentHash         string `json:"component_hash"`
 	PriceMicrosPerMillion int64  `json:"price_micros_per_million"`
+	PriceMicrosPerUnit    int64  `json:"price_micros_per_unit,omitempty"`
 }
 
 // RequestPriceBand is the canonical, fully priced form of one UTC band. Every
@@ -131,8 +143,22 @@ func ValidateRequestPricingRateCard(card RateCard) error {
 		if err := validateRequestPriceComponents(band.Components, "band "+strings.TrimSpace(band.BandRef)); err != nil {
 			return err
 		}
+		for _, meter := range supportedRequestUnitMeters {
+			if hasRateComponent(card.Components, meter) != hasRateComponent(band.Components, meter) {
+				return fmt.Errorf("%w: band %s must preserve request-pricing meter %s", ErrRequestPricingNotReady, strings.TrimSpace(band.BandRef), meter)
+			}
+		}
 	}
 	return nil
+}
+
+func hasRateComponent(components []RateComponent, meter string) bool {
+	for _, component := range components {
+		if component.Meter == meter {
+			return true
+		}
+	}
+	return false
 }
 
 func validateRequestPriceComponents(rateComponents []RateComponent, contextRef string) error {
@@ -149,6 +175,18 @@ func validateRequestPriceComponents(rateComponents []RateComponent, contextRef s
 			return fmt.Errorf("%w: %s meter %s must use CNY micro precision", ErrRequestPricingNotReady, contextRef, meter)
 		}
 		if _, err := requestComponentPrice(component); err != nil {
+			return fmt.Errorf("%w: %s meter %s: %v", ErrRequestPricingNotReady, contextRef, meter, err)
+		}
+	}
+	for _, meter := range supportedRequestUnitMeters {
+		component, ok := components[meter]
+		if !ok {
+			continue
+		}
+		if component.Amount.Currency != "CNY" || component.Amount.Scale != requestPricingScale {
+			return fmt.Errorf("%w: %s meter %s must use CNY micro precision", ErrRequestPricingNotReady, contextRef, meter)
+		}
+		if _, err := requestUnitComponentPrice(component); err != nil {
 			return fmt.Errorf("%w: %s meter %s: %v", ErrRequestPricingNotReady, contextRef, meter, err)
 		}
 	}
@@ -260,6 +298,10 @@ func ResolveRequestPriceQuote(records []RateCardRecord, orgID int64, modelRef st
 	}
 	digest := sha256.Sum256(wire)
 	digestHex := hex.EncodeToString(digest[:])
+	pricingVersionPrefix := requestPricingVersionV2
+	if len(components) > len(requiredRequestMeters) {
+		pricingVersionPrefix = requestPricingVersionV3
+	}
 	quote := RequestPriceQuote{
 		Authority: RequestPricingAuthority, SelectionKey: RequestPricingKey,
 		OrgID: card.OrgID, ModelRef: manifest.ModelRef, ProviderRef: manifest.ProviderRef,
@@ -267,7 +309,7 @@ func ResolveRequestPriceQuote(records []RateCardRecord, orgID int64, modelRef st
 		EffectiveFrom: card.EffectiveFrom.UTC(), SourceEvidenceRef: manifest.SourceEvidenceRef,
 		PricingTimezone: "UTC", DailyPriceBands: dailyPriceBands, SelectedBand: selectedBand,
 		ScheduleSHA256: scheduleSHA256, Components: components, ManifestSHA256: "sha256:" + digestHex,
-		PricingVersion: requestPricingVersion + "_" + digestHex,
+		PricingVersion: pricingVersionPrefix + "_" + digestHex,
 	}
 	if card.EffectiveTo != nil {
 		value := card.EffectiveTo.UTC()
@@ -281,7 +323,7 @@ func requestQuoteComponents(rateComponents []RateComponent) ([]RequestPriceCompo
 	for _, component := range rateComponents {
 		byMeter[component.Meter] = component
 	}
-	components := make([]RequestPriceComponent, 0, len(requiredRequestMeters))
+	components := make([]RequestPriceComponent, 0, len(requiredRequestMeters)+len(supportedRequestUnitMeters))
 	for _, meter := range requiredRequestMeters {
 		component, ok := byMeter[meter]
 		if !ok {
@@ -302,6 +344,26 @@ func requestQuoteComponents(rateComponents []RateComponent) ([]RequestPriceCompo
 			PriceMicrosPerMillion: price,
 		})
 	}
+	for _, meter := range supportedRequestUnitMeters {
+		component, ok := byMeter[meter]
+		if !ok {
+			continue
+		}
+		componentHash, err := RateComponentIdentity(component)
+		if err != nil {
+			return nil, err
+		}
+		price, err := requestUnitComponentPrice(component)
+		if err != nil {
+			return nil, err
+		}
+		components = append(components, RequestPriceComponent{
+			Meter: meter, UnitQuantity: component.UnitQuantity,
+			AmountMinor: component.Amount.ValueMinor, Currency: component.Amount.Currency,
+			AmountScale: component.Amount.Scale, ComponentHash: componentHash,
+			PriceMicrosPerUnit: price,
+		})
+	}
 	return components, nil
 }
 
@@ -316,6 +378,14 @@ func (s *PostgresStore) ResolveRequestPriceQuote(ctx context.Context, orgID int6
 }
 
 func requestComponentPrice(component RateComponent) (int64, error) {
+	return normalizedRequestComponentPrice(component, requestPricingBasis)
+}
+
+func requestUnitComponentPrice(component RateComponent) (int64, error) {
+	return normalizedRequestComponentPrice(component, 1)
+}
+
+func normalizedRequestComponentPrice(component RateComponent, basis int64) (int64, error) {
 	if component.Amount.Currency != "CNY" || component.Amount.Scale != requestPricingScale {
 		return 0, invalid("request_price_currency_scale")
 	}
@@ -329,7 +399,7 @@ func requestComponentPrice(component RateComponent) (int64, error) {
 	}
 	// value_minor is micro-CNY because activation requires scale=1e6.
 	// Multiply before dividing so no precision is lost; ties round half-up.
-	numerator := new(big.Int).Mul(amount, big.NewInt(requestPricingBasis))
+	numerator := new(big.Int).Mul(amount, big.NewInt(basis))
 	quotient, remainder := new(big.Int), new(big.Int)
 	quotient.QuoRem(numerator, unit, remainder)
 	if new(big.Int).Lsh(remainder, 1).Cmp(unit) >= 0 {
@@ -339,6 +409,20 @@ func requestComponentPrice(component RateComponent) (int64, error) {
 		return 0, invalid("request_price_overflow")
 	}
 	return quotient.Int64(), nil
+}
+
+// RequestUnitPriceComponents returns only registered non-token request meters.
+// The original amount/unit rational and component hash are preserved so
+// Billing can Freeze the exact Rate Card component instead of relying on a
+// rounded display ratio or floating-point value.
+func RequestUnitPriceComponents(quote RequestPriceQuote) []RequestPriceComponent {
+	result := make([]RequestPriceComponent, 0)
+	for _, component := range quote.Components {
+		if slices.Contains(supportedRequestUnitMeters, component.Meter) {
+			result = append(result, component)
+		}
+	}
+	return result
 }
 
 func requestPriceByMeter(quote RequestPriceQuote, meter string) (int64, error) {

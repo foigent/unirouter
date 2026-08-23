@@ -76,6 +76,22 @@ func priceQuoteFromRateCardQuote(quote enterprisefinance.RequestPriceQuote) (pri
 	if err != nil {
 		return priceQuote{}, fmt.Errorf("cache-creation display ratio: %w", err)
 	}
+	unitComponents := enterprisefinance.RequestUnitPriceComponents(quote)
+	unitRates := make([]UnitRate, 0, len(unitComponents))
+	for _, component := range unitComponents {
+		rate, err := unitRateFromQuoteComponent(
+			component.Meter, component.UnitQuantity, component.AmountMinor,
+			component.Currency, component.AmountScale, component.ComponentHash,
+		)
+		if err != nil {
+			return priceQuote{}, err
+		}
+		unitRates = append(unitRates, rate)
+	}
+	unitRates, err = normalizeUnitRates(unitRates)
+	if err != nil {
+		return priceQuote{}, err
+	}
 	return priceQuote{
 		InputPriceMicrosPerMillion: input, CacheReadPriceMicrosPerMillion: cacheRead,
 		CacheCreationPriceMicrosPerMillion: cacheCreation, OutputPriceMicrosPerMillion: output,
@@ -83,7 +99,7 @@ func priceQuoteFromRateCardQuote(quote enterprisefinance.RequestPriceQuote) (pri
 		Multiplier: "1", Version: quote.PricingVersion,
 		SelectionKey: quote.SelectionKey, RateCardRef: quote.RateCardRef,
 		RateCardVersion: quote.RateCardVersion, RateCardLayer: quote.Layer,
-		ProviderRef: quote.ProviderRef,
+		ProviderRef: quote.ProviderRef, UnitRates: unitRates,
 	}, nil
 }
 

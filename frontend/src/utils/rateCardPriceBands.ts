@@ -9,6 +9,7 @@ export type PriceBandOverrideDraft = {
   output_price_yuan: string;
   cache_read_price_yuan: string;
   cache_creation_price_yuan: string;
+  builtin_web_search_price_yuan?: string;
 };
 
 export const requestPriceMeters = [
@@ -16,6 +17,13 @@ export const requestPriceMeters = [
   { key: 'output_price_yuan', meter: 'output_tokens', label: '输出 Token' },
   { key: 'cache_read_price_yuan', meter: 'cache_read_tokens', label: '缓存读取 Token' },
   { key: 'cache_creation_price_yuan', meter: 'cache_creation_tokens', label: '缓存创建 / 写入 Token' },
+] as const;
+
+export const requestUnitPriceMeters = [
+  {
+    key: 'builtin_web_search_price_yuan', meter: 'builtin_web_search_calls',
+    label: 'Kimi 内置联网搜索', unitQuantity: '1', unitLabel: '次调用',
+  },
 ] as const;
 
 export function yuanToMicrosString(value: string): string | null {
@@ -26,14 +34,33 @@ export function yuanToMicrosString(value: string): string | null {
   return micros || '0';
 }
 
-export function buildRequestRateComponents(form: Record<string, string>, keyPrefix = ''): RateComponent[] | null {
+export function buildRequestRateComponents(
+  form: Record<string, string>,
+  keyPrefix = '',
+  requiredUnitMeters: string[] = [],
+): RateComponent[] | null {
   const components = requestPriceMeters.map(item => ({ item, valueMinor: yuanToMicrosString(form[`${keyPrefix}${item.key}`] || '') }));
   if (components.some(item => item.valueMinor === null)) return null;
-  return components.map(({ item, valueMinor }) => ({
+  const result: RateComponent[] = components.map(({ item, valueMinor }) => ({
     meter: item.meter,
     unit_quantity: '1000000',
     amount: { value_minor: valueMinor as string, currency: 'CNY', scale: 1_000_000 },
   }));
+  for (const item of requestUnitPriceMeters) {
+    const raw = form[`${keyPrefix}${item.key}`]?.trim() || '';
+    if (!raw) {
+      if (requiredUnitMeters.includes(item.meter)) return null;
+      continue;
+    }
+    const valueMinor = yuanToMicrosString(raw);
+    if (valueMinor === null) return null;
+    result.push({
+      meter: item.meter,
+      unit_quantity: item.unitQuantity,
+      amount: { value_minor: valueMinor, currency: 'CNY', scale: 1_000_000 },
+    });
+  }
+  return result;
 }
 
 function parseUTCMinute(value: string) {
@@ -57,7 +84,10 @@ export function buildUTCValleyPriceBands(
   if (form.price_schedule !== 'utc_valley') return [];
   const start = parseUTCMinute(form.valley_start_utc || '');
   const end = parseUTCMinute(form.valley_end_utc || '');
-  const valleyComponents = buildRequestRateComponents(form, 'valley_');
+  const requiredUnits = requestUnitPriceMeters
+    .filter(item => baseComponents.some(component => component.meter === item.meter))
+    .map(item => item.meter);
+  const valleyComponents = buildRequestRateComponents(form, 'valley_', requiredUnits);
   if (start === null || end === null || start >= end || !valleyComponents) return null;
 
   const bands: DailyPriceBand[] = [];
@@ -72,11 +102,14 @@ export function buildUTCOverridePriceBands(
   baseComponents: RateComponent[],
 ): DailyPriceBand[] | null {
   if (overrides.length === 0) return [];
+  const requiredUnits = requestUnitPriceMeters
+    .filter(item => baseComponents.some(component => component.meter === item.meter))
+    .map(item => item.meter);
   const normalized = overrides.map((override, index) => ({
     index,
     start: parseUTCMinute(override.start_utc || ''),
     end: parseUTCMinute(override.end_utc || ''),
-    components: buildRequestRateComponents(override as unknown as Record<string, string>),
+    components: buildRequestRateComponents(override as unknown as Record<string, string>, '', requiredUnits),
   }));
   if (normalized.some(item => item.start === null || item.end === null || item.start >= item.end || !item.components)) return null;
   normalized.sort((left, right) => (left.start as number) - (right.start as number));
@@ -100,5 +133,6 @@ export function emptyPriceOverride(start_utc = '', end_utc = ''): PriceBandOverr
     start_utc, end_utc,
     input_price_yuan: '', output_price_yuan: '',
     cache_read_price_yuan: '', cache_creation_price_yuan: '',
+    builtin_web_search_price_yuan: '',
   };
 }
