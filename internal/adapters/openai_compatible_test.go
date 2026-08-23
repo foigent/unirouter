@@ -111,16 +111,22 @@ func TestOpenAICompatibleParseResponse_Usage(t *testing.T) {
 func TestOpenAICompatibleParseResponse_MetersKimiBuiltinSearchFromTypedProfile(t *testing.T) {
 	adapter := NewOpenAICompatible()
 	body := []byte(`{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[{"type":"function","function":{"name":"$web_search","arguments":"{}"}}]}}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`)
-	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
-		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
-		ProtocolProfile: "protocol.kimi-openai-chat.v2",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []metering.MeterQuantity{{Meter: "builtin_web_search_calls", Quantity: 1}}
-	if len(response.Usage.MeterUsage) != 1 || response.Usage.MeterUsage[0] != want[0] {
-		t.Fatalf("meter usage = %+v, want %+v", response.Usage.MeterUsage, want)
+	for _, profile := range []string{
+		"protocol.kimi-openai-chat.v2",
+		"protocol.kimi-openai-chat.v3",
+		"protocol.kimi-openai-chat.k3.v2",
+	} {
+		response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+			Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+			ProtocolProfile: profile,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []metering.MeterQuantity{{Meter: "builtin_web_search_calls", Quantity: 1}}
+		if len(response.Usage.MeterUsage) != 1 || response.Usage.MeterUsage[0] != want[0] {
+			t.Fatalf("profile %s meter usage = %+v, want %+v", profile, response.Usage.MeterUsage, want)
+		}
 	}
 
 	withoutProfile, err := adapter.ParseResponse(context.Background(), ResponseInput{

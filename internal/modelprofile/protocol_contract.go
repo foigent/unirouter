@@ -51,6 +51,17 @@ var kimiVideoMIMETypes = []string{
 }
 
 var chatProtocolContracts = map[string]ChatProtocolContract{
+	"protocol.kimi-openai-chat.v3": {
+		ProfileID:               "protocol.kimi-openai-chat.v3",
+		PartialMode:             true,
+		PartialRejectJSONObject: true,
+		BuiltinWebSearch:        true, BuiltinWebSearchName: "$web_search",
+		BuiltinSearchMeter:             "builtin_web_search_calls",
+		BuiltinSearchRequiresNonStream: true, BuiltinSearchRequiresSerial: true,
+		MaxBuiltinSearchCalls: 1,
+		InlineImageDataURL:    true, InlineVideoDataURL: true,
+		InlineImageMIMETypes: kimiImageMIMETypes, InlineVideoMIMETypes: kimiVideoMIMETypes,
+	},
 	"protocol.kimi-openai-chat.v2": {
 		ProfileID:               "protocol.kimi-openai-chat.v2",
 		PartialMode:             true,

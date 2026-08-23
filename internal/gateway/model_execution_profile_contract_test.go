@@ -287,7 +287,7 @@ func TestKimiK26ThinkingProfileAppliesCombinationRules(t *testing.T) {
 }
 
 func TestKimiK26CurrentProfileValidatesKeepToolChoicesAndFixedParameters(t *testing.T) {
-	plan := executionProfilePlan(t, "kimi.k2.6.api", "1.4.0")
+	plan := executionProfilePlan(t, "kimi.k2.6.api", "1.5.0")
 
 	evidence, err := validateChatExecutionProfileRequest([]byte(`{
 		"model":"kimi-k2.6","messages":[],
@@ -397,7 +397,7 @@ func TestKimiK27PlatformProfileValidatesRequiredThinkingAndFixedParameters(t *te
 }
 
 func TestKimiK3CurrentProfileValidatesFixedParameters(t *testing.T) {
-	plan := executionProfilePlan(t, "kimi.k3.api", "1.4.0")
+	plan := executionProfilePlan(t, "kimi.k3.api", "1.5.0")
 	evidence, err := validateChatExecutionProfileRequest([]byte(`{
 		"model":"kimi-k3","messages":[],"reasoning_effort":"low","tool_choice":"required",
 		"temperature":1,"top_p":0.95,"n":1,"presence_penalty":0,"frequency_penalty":0
@@ -478,18 +478,18 @@ func TestKimiAdvancedProtocolIsPreservedIntoProviderRequestAndFreezeEvidence(t *
 		wantReserved   []metering.MeterQuantity
 	}{
 		{
-			name: "K2.6 builtin search", profileID: "kimi.k2.6.api", profileVersion: "1.1.0",
-			body:     `{"model":"public-model","messages":[{"role":"user","content":"latest"}],"thinking":{"type":"disabled"},"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}],"max_tokens":128}`,
+			name: "K2.6 builtin search with thinking", profileID: "kimi.k2.6.api", profileVersion: "1.5.0",
+			body:     `{"model":"public-model","messages":[{"role":"user","content":"latest"}],"thinking":{"type":"enabled"},"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}],"max_tokens":128}`,
 			required: []string{modelCapabilityBuiltinWebSearch, modelCapabilityTools}, wantParallel: true,
 			wantReserved: []metering.MeterQuantity{{Meter: "builtin_web_search_calls", Quantity: 1}},
 		},
 		{
-			name: "K2.6 inline image and partial", profileID: "kimi.k2.6.api", profileVersion: "1.1.0",
+			name: "K2.6 inline image and partial", profileID: "kimi.k2.6.api", profileVersion: "1.5.0",
 			body:     `{"model":"public-model","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,aA=="}}]},{"role":"assistant","content":"prefix","partial":true}],"max_tokens":128}`,
 			required: []string{modelCapabilityPartialMode, modelCapabilityVision},
 		},
 		{
-			name: "K3 dynamic system tools", profileID: "kimi.k3.api", profileVersion: "1.2.0",
+			name: "K3 dynamic system tools", profileID: "kimi.k3.api", profileVersion: "1.5.0",
 			body:     `{"model":"public-model","messages":[{"role":"system","tools":[{"type":"function","function":{"name":"lookup","description":"Look up a value","parameters":{"type":"object"}}}]},{"role":"user","content":"hello"}],"max_tokens":128}`,
 			required: []string{modelCapabilityDynamicTools, modelCapabilityTools},
 		},

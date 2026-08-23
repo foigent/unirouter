@@ -1093,6 +1093,13 @@ Profile 本身也按版本演进，不能原地改写已选择的旧身份。
 Partial Mode、system-message 动态工具、内置联网搜索和内联多模态只在 v2 typed
 contract 中可执行；供应商 URL/file media 与大型载荷仍不属于该合同。
 
+当前 `kimi.k2.6.api@1.5.0` 使用新的
+`protocol.kimi-openai-chat.v3`，允许 K2.6 在 thinking 开启或由供应商默认时使用
+`$web_search`；历史 v2 合同仍保持“必须显式关闭 thinking”的不可变语义。
+`kimi.k3.api@1.5.0` 继续使用 K3 v2 合同并开放同一计量能力。两者都只允许一次串行、
+非流式搜索，以便响应解析器产生权威实际调用量；K2.7 Code 当前 Profile 不声明搜索。
+切换已持久化模型时必须选择这些新 Profile 版本，不能覆写旧 Profile 或协议合同。
+
 ### 3.19 `000082` sealed model execution contracts 与 guarded down
 
 M82 不新增第二套发布生命周期。它在现有 canonical v2

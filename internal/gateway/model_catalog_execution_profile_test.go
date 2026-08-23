@@ -47,7 +47,7 @@ func TestHandleModelsExecutionProfileProjectionIsOptInAndExecutableOnly(t *testi
 						*dest[3].(*int) = 262_144
 						*dest[4].(*int) = 32_768
 						*dest[5].(*string) = "kimi.k2.6.api"
-						*dest[6].(*string) = "1.1.0"
+						*dest[6].(*string) = "1.5.0"
 						return nil
 					},
 				}}, nil
@@ -81,9 +81,10 @@ func TestHandleModelsExecutionProfileProjectionIsOptInAndExecutableOnly(t *testi
 	require.Equal(t, "verified", metadata.Status)
 	require.Equal(t, 262_144, metadata.ContextWindow)
 	require.Equal(t, 32_768, metadata.MaxOutputTokens)
-	require.Equal(t, "protocol.kimi-openai-chat.v2", metadata.ProtocolProfile)
+	require.Equal(t, "protocol.kimi-openai-chat.v3", metadata.ProtocolProfile)
 	require.Contains(t, metadata.Capabilities, "vision")
 	require.Contains(t, metadata.Capabilities, "video")
+	require.Contains(t, metadata.Capabilities, "builtin_web_search")
 	require.Equal(t, "toggle", metadata.ReasoningMode)
 	require.Empty(t, metadata.ReasoningEffortValues)
 }
