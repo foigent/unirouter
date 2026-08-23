@@ -21,6 +21,7 @@ vi.stubGlobal('window', { location: { href: '/' } })
 
 // Import after mocks are set up
 const { api, ApiError } = await import('../client')
+const { providerCostApi } = await import('../providerCosts')
 
 afterAll(() => {
   // This suite replaces the complete Window object to make navigation
@@ -410,6 +411,32 @@ describe('API Client', () => {
       await api.getReconciliation(2, 50, { model: 'company-chat', status: 'reconciled', usage_source: 'adapter_estimated' })
       const url = mockFetch.mock.calls[0][0]
       expect(url).toBe('/api/v1/reconciliation?page=2&page_size=50&model=company-chat&status=reconciled&usage_source=adapter_estimated')
+    })
+  })
+
+  describe('provider cost reconciliation', () => {
+    it('uses the canonical customer scope and never accepts a caller-supplied amount', async () => {
+      mockJsonResponse({ data: [], org_id: 7 })
+      await providerCostApi.listPending(7)
+      expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/provider-cost/pending?org_id=7')
+
+      const mutation = {
+        org_id: 7,
+        request_id: 'req-provider-hold',
+        attempt_id: 'attempt-provider-hold',
+        action: 'refund' as const,
+        reason: 'response was not delivered',
+        evidence_ref: 'call_log:347',
+      }
+      mockJsonResponse({ terminal_observation_receipt_id: 812 })
+      await providerCostApi.reconcile(mutation)
+
+      expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/provider-cost/reconciliations')
+      expect(mockFetch.mock.calls[1][1]).toEqual(expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify(mutation),
+      }))
+      expect(JSON.parse(String(mockFetch.mock.calls[1][1]?.body))).not.toHaveProperty('amount')
     })
   })
 
