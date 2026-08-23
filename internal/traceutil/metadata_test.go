@@ -177,6 +177,31 @@ func TestSanitizeMetadata_StreamPolicyFields(t *testing.T) {
 	}
 }
 
+func TestSanitizeMetadata_ModelExecutionProfileEvidence(t *testing.T) {
+	input := map[string]interface{}{
+		"execution_profile_id":            "deepseek.v4-flash.api",
+		"execution_profile_version":       "1.0.0",
+		"reasoning_profile":               "reasoning.deepseek-thinking-toggle.v1",
+		"reasoning_mode":                  "toggle",
+		"reasoning_request":               "omitted",
+		"reasoning_provider_default":      "enabled",
+		"reasoning_default_authority":     "provider_owned",
+		"reasoning_toggle_request":        "omitted",
+		"reasoning_effort_request":        "omitted",
+		"cache_usage_profile":             "deepseek.prompt_cache.v1",
+		"provider_request_normalizations": "tool_choice=auto->omitted",
+	}
+	metadata, gap := SanitizeMetadataWithGap(input)
+	if gap != "" || len(metadata) != len(input) {
+		t.Fatalf("model execution profile evidence was dropped: gap=%q metadata=%#v", gap, metadata)
+	}
+	for key, value := range input {
+		if metadata[key] != value {
+			t.Fatalf("metadata[%q] = %#v, want %#v", key, metadata[key], value)
+		}
+	}
+}
+
 func TestSanitizeMetadata_GuardrailFieldsRemainBoundedScalars(t *testing.T) {
 	input := map[string]interface{}{
 		"guardrail_policy_set_version":   "a1b2c3d4",
