@@ -11,30 +11,32 @@ import (
 )
 
 type modelExecutionProfileEvidence struct {
-	ExecutionProfileID        string
-	ExecutionProfileVersion   string
-	ReasoningProfile          string
-	ReasoningMode             string
-	ReasoningRequest          string
-	ReasoningProviderDefault  string
-	ReasoningDefaultAuthority string
-	ReasoningToggleRequest    string
-	ReasoningEffortRequest    string
-	CacheUsageProfile         string
+	ExecutionProfileID            string
+	ExecutionProfileVersion       string
+	ReasoningProfile              string
+	ReasoningMode                 string
+	ReasoningRequest              string
+	ReasoningProviderDefault      string
+	ReasoningDefaultAuthority     string
+	ReasoningToggleRequest        string
+	ReasoningEffortRequest        string
+	CacheUsageProfile             string
+	ProviderRequestNormalizations []string
 }
 
 func (e modelExecutionProfileEvidence) metadata() map[string]interface{} {
 	return map[string]interface{}{
-		"execution_profile_id":        e.ExecutionProfileID,
-		"execution_profile_version":   e.ExecutionProfileVersion,
-		"reasoning_profile":           e.ReasoningProfile,
-		"reasoning_mode":              e.ReasoningMode,
-		"reasoning_request":           e.ReasoningRequest,
-		"reasoning_provider_default":  e.ReasoningProviderDefault,
-		"reasoning_default_authority": e.ReasoningDefaultAuthority,
-		"reasoning_toggle_request":    e.ReasoningToggleRequest,
-		"reasoning_effort_request":    e.ReasoningEffortRequest,
-		"cache_usage_profile":         e.CacheUsageProfile,
+		"execution_profile_id":            e.ExecutionProfileID,
+		"execution_profile_version":       e.ExecutionProfileVersion,
+		"reasoning_profile":               e.ReasoningProfile,
+		"reasoning_mode":                  e.ReasoningMode,
+		"reasoning_request":               e.ReasoningRequest,
+		"reasoning_provider_default":      e.ReasoningProviderDefault,
+		"reasoning_default_authority":     e.ReasoningDefaultAuthority,
+		"reasoning_toggle_request":        e.ReasoningToggleRequest,
+		"reasoning_effort_request":        e.ReasoningEffortRequest,
+		"cache_usage_profile":             e.CacheUsageProfile,
+		"provider_request_normalizations": strings.Join(e.ProviderRequestNormalizations, ","),
 	}
 }
 
@@ -121,6 +123,10 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 	if reasoningActive {
 		for _, field := range contract.UnsupportedRequestFieldsWhileActive {
 			if hasNonNullJSONField(envelope, field) {
+				if field == "tool_choice" && redundantAutoToolChoice(envelope) {
+					evidence.ProviderRequestNormalizations = append(evidence.ProviderRequestNormalizations, "tool_choice=auto->omitted")
+					continue
+				}
 				return modelExecutionProfileEvidence{}, fmt.Errorf("%s is not supported while reasoning is active for profile %s", field, plan.ReasoningProfile)
 			}
 		}
@@ -147,6 +153,38 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 		}
 	}
 	return evidence, nil
+}
+
+func redundantAutoToolChoice(envelope map[string]json.RawMessage) bool {
+	choice, err := executionToolChoice(envelope["tool_choice"])
+	if err != nil || choice != "auto" {
+		return false
+	}
+	var tools []json.RawMessage
+	return json.Unmarshal(envelope["tools"], &tools) == nil && len(tools) > 0
+}
+
+// normalizeProviderRequest applies only normalizations already authorized by
+// validation evidence. The selected Model Profile still owns which wire fields
+// are unsupported; the Operation Contract owns the equivalence between an
+// explicit auto tool choice and the provider's default when tools are present.
+func (e modelExecutionProfileEvidence) normalizeProviderRequest(body []byte) ([]byte, error) {
+	if !slices.Contains(e.ProviderRequestNormalizations, "tool_choice=auto->omitted") {
+		return body, nil
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
+		return nil, fmt.Errorf("normalized chat request must be an object")
+	}
+	if !redundantAutoToolChoice(envelope) {
+		return nil, fmt.Errorf("tool_choice normalization evidence drift")
+	}
+	delete(envelope, "tool_choice")
+	normalized, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("encode normalized chat request: %w", err)
+	}
+	return normalized, nil
 }
 
 func hasAnyNonNullJSONField(envelope map[string]json.RawMessage, fields ...string) bool {
