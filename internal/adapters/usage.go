@@ -327,11 +327,17 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 		if err != nil {
 			return Usage{}, false, err
 		}
-		if cacheReported && hasNonKimiCacheCounters(wire) {
-			return Usage{}, true, fmt.Errorf("Kimi cache usage cannot combine top-level cached_tokens with another cache schema")
-		}
-		if !cacheReported && hasNonKimiCacheCounters(wire) {
+		if wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil ||
+			(wire.PromptDetails != nil && wire.PromptDetails.CacheWriteTokens != nil) {
 			return Usage{}, true, fmt.Errorf("Kimi cache profile requires top-level cached_tokens instead of another cache schema")
+		}
+		if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
+			if !cacheReported {
+				return Usage{}, true, fmt.Errorf("Kimi cache profile requires top-level cached_tokens instead of another cache schema")
+			}
+			if *wire.PromptDetails.CachedTokens != cachedTokens {
+				return Usage{}, true, fmt.Errorf("Kimi cached_tokens mirror contradicts the provider-owned top-level counter")
+			}
 		}
 		if cacheReported {
 			usage, usageErr := NewCacheAwareUsage(
@@ -353,12 +359,21 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 	// prompt partition. These counters become billing truth only when the sealed
 	// execution profile names the exact DeepSeek wire schema.
 	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireDeepSeekHitMissV1 {
-		if hasNonDeepSeekCacheCounters(wire) {
+		if (len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens)) ||
+			(wire.PromptDetails != nil && wire.PromptDetails.CacheWriteTokens != nil) {
 			return Usage{}, true, fmt.Errorf("DeepSeek cache profile requires prompt_cache_hit_tokens and prompt_cache_miss_tokens instead of another cache schema")
 		}
 		cacheReported := wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil
 		if cacheReported && (wire.PromptCacheHitTokens == nil || wire.PromptCacheMissTokens == nil) {
 			return Usage{}, true, fmt.Errorf("DeepSeek prompt-cache usage requires both hit and miss counters")
+		}
+		if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
+			if !cacheReported {
+				return Usage{}, true, fmt.Errorf("DeepSeek cache profile requires prompt_cache_hit_tokens and prompt_cache_miss_tokens instead of another cache schema")
+			}
+			if *wire.PromptDetails.CachedTokens != valueOrZero(wire.PromptCacheHitTokens) {
+				return Usage{}, true, fmt.Errorf("DeepSeek cached_tokens mirror contradicts the provider-owned hit counter")
+			}
 		}
 		if cacheReported {
 			hit := valueOrZero(wire.PromptCacheHitTokens)
@@ -451,28 +466,6 @@ func validateOpenAIUsageWire(wire *openAIUsageWire) error {
 		)
 	}
 	return validateOptionalUsageCounters(counters...)
-}
-
-func hasNonKimiCacheCounters(wire *openAIUsageWire) bool {
-	if wire == nil {
-		return false
-	}
-	if wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil {
-		return true
-	}
-	return wire.PromptDetails != nil &&
-		(wire.PromptDetails.CachedTokens != nil || wire.PromptDetails.CacheWriteTokens != nil)
-}
-
-func hasNonDeepSeekCacheCounters(wire *openAIUsageWire) bool {
-	if wire == nil {
-		return false
-	}
-	if len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens) {
-		return true
-	}
-	return wire.PromptDetails != nil &&
-		(wire.PromptDetails.CachedTokens != nil || wire.PromptDetails.CacheWriteTokens != nil)
 }
 
 func parseOptionalUsageCounter(raw json.RawMessage, name string) (int, bool, error) {
