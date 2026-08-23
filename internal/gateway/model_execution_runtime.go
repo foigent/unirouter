@@ -329,6 +329,10 @@ func (relay *Relay) prepareModelExecutionRoutes(
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, err)
 		}
+		body, err = profileEvidence.normalizeProviderRequest(body)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, err)
+		}
 		profileAdmission, admissionErr := estimateChatAdmissionForPlan(body, plan)
 		if admissionErr != nil {
 			return nil, admissionErr

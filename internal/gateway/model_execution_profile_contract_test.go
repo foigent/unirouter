@@ -93,11 +93,12 @@ func TestKimiK3ReasoningProfileValidatesEffortToolChoiceAndPreservedThinking(t *
 func TestDeepSeekReasoningProfileValidatesBothControlsAndNoOpCombinations(t *testing.T) {
 	plan := executionProfilePlan(t, "deepseek.v4-pro.api", "1.0.0")
 	tests := []struct {
-		name       string
-		body       string
-		wantToggle string
-		wantEffort string
-		wantErr    string
+		name              string
+		body              string
+		wantToggle        string
+		wantEffort        string
+		wantNormalization string
+		wantErr           string
 	}{
 		{
 			name:       "provider defaults remain omitted",
@@ -130,8 +131,18 @@ func TestDeepSeekReasoningProfileValidatesBothControlsAndNoOpCombinations(t *tes
 			wantErr: "temperature is ineffective while reasoning is active",
 		},
 		{
-			name:    "thinking mode rejects tool choice",
+			name:       "redundant auto tool choice with tools is normalized",
+			body:       `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto"}`,
+			wantToggle: "omitted", wantEffort: "omitted", wantNormalization: "tool_choice=auto->omitted",
+		},
+		{
+			name:    "auto tool choice without tools remains rejected",
 			body:    `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"tool_choice":"auto"}`,
+			wantErr: "tool_choice is not supported while reasoning is active",
+		},
+		{
+			name:    "non-default tool choice remains rejected",
+			body:    `{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{}}}}],"tool_choice":"none"}`,
 			wantErr: "tool_choice is not supported while reasoning is active",
 		},
 		{
@@ -156,7 +167,49 @@ func TestDeepSeekReasoningProfileValidatesBothControlsAndNoOpCombinations(t *tes
 				evidence.ReasoningProviderDefault != "thinking=enabled;reasoning_effort=high" {
 				t.Fatalf("unexpected evidence: %+v", evidence)
 			}
+			if got := strings.Join(evidence.ProviderRequestNormalizations, ","); got != test.wantNormalization {
+				t.Fatalf("normalizations=%q want=%q", got, test.wantNormalization)
+			}
 		})
+	}
+}
+
+func TestDeepSeekAutoToolChoiceIsOmittedFromProviderRequest(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://provider.test", encKey, nil)
+	setExecutionTestProfile(t, &plan, "deepseek.v4-flash.api", "1.0.0")
+	plan.Routes[0].Provider = "deepseek"
+	plan.Routes[0].UpstreamModel = "deepseek-v4-flash"
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	if err := relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default()); err != nil {
+		t.Fatal(err)
+	}
+	explicitOutput := 128
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"public-model", "public-model", "req-deepseek-auto-tool-choice", []string{modelCapabilityReasoning, modelCapabilityTools},
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &explicitOutput, EstimateVersion: chatAdmissionEstimateVersion},
+		[]byte(`{"model":"public-model","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto","max_tokens":128}`), time.Now(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := providerRequestBody(batch.routes[0].upstreamRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(actual, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := payload["tool_choice"]; exists {
+		t.Fatalf("redundant tool_choice reached provider request: %s", actual)
+	}
+	if _, exists := payload["tools"]; !exists {
+		t.Fatalf("tool definitions were removed: %s", actual)
+	}
+	if got := strings.Join(batch.profileEvidence.ProviderRequestNormalizations, ","); got != "tool_choice=auto->omitted" {
+		t.Fatalf("normalizations=%q", got)
 	}
 }
 
