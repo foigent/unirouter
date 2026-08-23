@@ -75,8 +75,8 @@ func TestKimiComponentContractsAreVersionedAndDefensive(t *testing.T) {
 	k3, ok := Match("kimi-k3")
 	require.True(t, ok)
 	require.Equal(t, "kimi.k3.api", k3.ID)
-	require.Equal(t, "1.3.0", k3.Version)
-	require.Equal(t, "reasoning.kimi-k3-effort.v1", k3.ReasoningProfile)
+	require.Equal(t, "1.4.0", k3.Version)
+	require.Equal(t, "reasoning.kimi-k3-effort.v2", k3.ReasoningProfile)
 	require.Equal(t, "cache-usage.kimi-platform.v1", k3.CacheUsageProfile)
 	require.Contains(t, k3.ProviderCapabilities, "dynamic_tools")
 	require.Contains(t, k3.Capabilities, "dynamic_tools")
@@ -89,6 +89,7 @@ func TestKimiComponentContractsAreVersionedAndDefensive(t *testing.T) {
 	require.Contains(t, k3.Capabilities, "json_schema")
 	require.Equal(t, 1_048_576, k3.ProviderContextWindow)
 	require.Equal(t, 1_048_576, k3.ProviderMaxOutput)
+	require.Equal(t, 131_072, k3.DefaultOutputLimit)
 
 	reasoning, ok := ResolveReasoningContract(k3.ReasoningProfile)
 	require.True(t, ok)
@@ -100,11 +101,18 @@ func TestKimiComponentContractsAreVersionedAndDefensive(t *testing.T) {
 	require.False(t, reasoning.NamedToolChoiceWhileReasoning)
 	require.True(t, reasoning.RequiredToolChoiceWhileReasoning)
 	require.True(t, reasoning.PreserveAssistantReasoningForTools)
+	require.Equal(t, []string{"none", "auto", "required"}, reasoning.AllowedToolChoices)
+	require.Equal(t, "1", reasoning.FixedRequestNumbers["temperature"])
+	require.Equal(t, "0.95", reasoning.FixedRequestNumbers["top_p"])
 
 	reasoning.EffortControl.AllowedValues[0] = "mutation"
+	reasoning.AllowedToolChoices[0] = "mutation"
+	reasoning.FixedRequestNumbers["temperature"] = "999"
 	again, ok := ResolveReasoningContract(k3.ReasoningProfile)
 	require.True(t, ok)
 	require.Equal(t, "low", again.EffortControl.AllowedValues[0])
+	require.Equal(t, "none", again.AllowedToolChoices[0])
+	require.Equal(t, "1", again.FixedRequestNumbers["temperature"])
 
 	cache, ok := ResolveCacheUsageContract(k3.CacheUsageProfile)
 	require.True(t, ok)
@@ -128,13 +136,14 @@ func TestKimiK26AdvancedChatProfileIsVersionedAndExecutable(t *testing.T) {
 	k26, ok := Match("Kimi K2.6")
 	require.True(t, ok)
 	require.Equal(t, "kimi.k2.6.api", k26.ID)
-	require.Equal(t, "1.3.0", k26.Version)
+	require.Equal(t, "1.4.0", k26.Version)
 	require.Equal(t, TokenizerKimiK26ID, k26.TokenizerProfileID)
 	require.Equal(t, TokenizerKimiK26Version, k26.TokenizerProfileVersion)
+	require.Equal(t, "reasoning.kimi-k2.6-thinking-toggle.v2", k26.ReasoningProfile)
 	require.Equal(t, "protocol.kimi-openai-chat.v2", k26.ProtocolProfile)
 	require.Equal(t, 262_144, k26.ProviderContextWindow)
 	for _, capability := range []string{
-		CapabilityPartialMode, CapabilityVision, CapabilityVideo,
+		"json_object", CapabilityPartialMode, CapabilityVision, CapabilityVideo, "prompt_cache",
 	} {
 		require.Contains(t, k26.Capabilities, capability)
 	}
@@ -151,6 +160,59 @@ func TestKimiK26AdvancedChatProfileIsVersionedAndExecutable(t *testing.T) {
 	require.Contains(t, contract.InlineImageMIMETypes, "image/png")
 	require.Contains(t, contract.InlineVideoMIMETypes, "video/mp4")
 	require.False(t, contract.DynamicSystemTools)
+	reasoning, ok := ResolveReasoningContract(k26.ReasoningProfile)
+	require.True(t, ok)
+	require.Equal(t, []string{"all"}, reasoning.ThinkingKeepValues)
+	require.Equal(t, "null", reasoning.ThinkingKeepProviderDefault)
+	require.Equal(t, []string{"none", "auto"}, reasoning.AllowedToolChoices)
+	require.Equal(t, "0.6", reasoning.FixedRequestNumbersWhenDisabled["temperature"])
+}
+
+func TestKimiK27PlatformProfileDoesNotReuseCodingSurface(t *testing.T) {
+	k27, ok := Match("kimi-k2.7-code")
+	require.True(t, ok)
+	require.Equal(t, "kimi.k2.7-code.api", k27.ID)
+	require.Equal(t, "1.1.0", k27.Version)
+	require.Equal(t, "reasoning.kimi-k2.7-thinking-required.v2", k27.ReasoningProfile)
+	require.Equal(t, "cache-usage.kimi-platform.v1", k27.CacheUsageProfile)
+	require.Equal(t, "protocol.kimi-openai-chat.v2", k27.ProtocolProfile)
+	require.Equal(t, 262_144, k27.ProviderContextWindow)
+	require.Equal(t, 32_768, k27.DefaultOutputLimit)
+	for _, capability := range []string{
+		"reasoning", "tools", "json_object", CapabilityPartialMode,
+		CapabilityVision, CapabilityVideo, "prompt_cache",
+	} {
+		require.Contains(t, k27.Capabilities, capability)
+	}
+	require.NotContains(t, k27.ProviderCapabilities, CapabilityBuiltinWebSearch)
+	require.NotContains(t, k27.Capabilities, CapabilityDynamicTools)
+	require.NotContains(t, k27.Capabilities, "json_schema")
+
+	reasoning, ok := ResolveReasoningContract(k27.ReasoningProfile)
+	require.True(t, ok)
+	require.Equal(t, ReasoningModeRequired, reasoning.Mode)
+	require.Equal(t, []string{"enabled"}, reasoning.ToggleControl.AllowedValues)
+	require.Equal(t, []string{"all"}, reasoning.ThinkingKeepValues)
+	require.Equal(t, "all", reasoning.ThinkingKeepProviderDefault)
+	require.Equal(t, []string{"none", "auto"}, reasoning.AllowedToolChoices)
+}
+
+func TestLatestDeepSeekProfilesAcceptOnlyDocumentedCompatibilityEffortAliases(t *testing.T) {
+	for _, model := range []string{"DeepSeek V4 Flash", "DeepSeek V4 Pro"} {
+		profile, ok := Match(model)
+		require.True(t, ok)
+		require.Equal(t, "1.1.0", profile.Version)
+		require.Equal(t, "reasoning.deepseek-thinking-toggle.v2", profile.ReasoningProfile)
+		reasoning, found := ResolveReasoningContract(profile.ReasoningProfile)
+		require.True(t, found)
+		require.Equal(t, map[string]string{
+			"low": "high", "medium": "high", "xhigh": "max",
+		}, reasoning.EffortControl.CompatibilityValues)
+		reasoning.EffortControl.CompatibilityValues["medium"] = "mutation"
+		again, resolved := ResolveReasoningContract(profile.ReasoningProfile)
+		require.True(t, resolved)
+		require.Equal(t, "high", again.EffortControl.CompatibilityValues["medium"])
+	}
 }
 
 func TestExecutableCapabilitiesAlwaysHaveTypedComponentContracts(t *testing.T) {

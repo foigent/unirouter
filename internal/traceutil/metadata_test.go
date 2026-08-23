@@ -187,7 +187,10 @@ func TestSanitizeMetadata_ModelExecutionProfileEvidence(t *testing.T) {
 		"reasoning_provider_default":      "enabled",
 		"reasoning_default_authority":     "provider_owned",
 		"reasoning_toggle_request":        "omitted",
+		"reasoning_thinking_keep_request": "omitted",
+		"reasoning_thinking_keep_default": "all",
 		"reasoning_effort_request":        "omitted",
+		"reasoning_effort_effective":      "omitted",
 		"cache_usage_profile":             "deepseek.prompt_cache.v1",
 		"provider_request_normalizations": "tool_choice=auto->omitted",
 	}

@@ -20,11 +20,12 @@ const (
 type ChatProtocolContract struct {
 	ProfileID string
 
-	PartialMode          bool
-	DynamicSystemTools   bool
-	BuiltinWebSearch     bool
-	BuiltinWebSearchName string
-	BuiltinSearchMeter   string
+	PartialMode             bool
+	PartialRejectJSONObject bool
+	DynamicSystemTools      bool
+	BuiltinWebSearch        bool
+	BuiltinWebSearchName    string
+	BuiltinSearchMeter      string
 
 	// Builtin search v1 is intentionally bounded to one non-stream call per
 	// provider response. This gives Freeze a finite liability ceiling and lets
@@ -51,9 +52,10 @@ var kimiVideoMIMETypes = []string{
 
 var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.kimi-openai-chat.v2": {
-		ProfileID:        "protocol.kimi-openai-chat.v2",
-		PartialMode:      true,
-		BuiltinWebSearch: true, BuiltinWebSearchName: "$web_search",
+		ProfileID:               "protocol.kimi-openai-chat.v2",
+		PartialMode:             true,
+		PartialRejectJSONObject: true,
+		BuiltinWebSearch:        true, BuiltinWebSearchName: "$web_search",
 		BuiltinSearchMeter:             "builtin_web_search_calls",
 		BuiltinSearchRequiresNonStream: true, BuiltinSearchRequiresSerial: true,
 		BuiltinSearchRequiresThinkingDisabled: true,
@@ -62,9 +64,11 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 		InlineImageMIMETypes: kimiImageMIMETypes, InlineVideoMIMETypes: kimiVideoMIMETypes,
 	},
 	"protocol.kimi-openai-chat.k3.v2": {
-		ProfileID:   "protocol.kimi-openai-chat.k3.v2",
-		PartialMode: true, DynamicSystemTools: true,
-		BuiltinWebSearch: true, BuiltinWebSearchName: "$web_search",
+		ProfileID:               "protocol.kimi-openai-chat.k3.v2",
+		PartialMode:             true,
+		PartialRejectJSONObject: true,
+		DynamicSystemTools:      true,
+		BuiltinWebSearch:        true, BuiltinWebSearchName: "$web_search",
 		BuiltinSearchMeter:             "builtin_web_search_calls",
 		BuiltinSearchRequiresNonStream: true, BuiltinSearchRequiresSerial: true,
 		MaxBuiltinSearchCalls: 1,

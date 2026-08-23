@@ -115,7 +115,10 @@ var metadataAllowlist = map[string]bool{
 	"reasoning_provider_default":        true,
 	"reasoning_default_authority":       true,
 	"reasoning_toggle_request":          true,
+	"reasoning_thinking_keep_request":   true,
+	"reasoning_thinking_keep_default":   true,
 	"reasoning_effort_request":          true,
+	"reasoning_effort_effective":        true,
 	"cache_usage_profile":               true,
 	"provider_request_normalizations":   true,
 }
