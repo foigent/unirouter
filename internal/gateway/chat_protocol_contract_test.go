@@ -19,6 +19,24 @@ func TestKimiK26AdvancedProtocolAcceptsFinalPartialAndInlineMedia(t *testing.T) 
 	require.NotEmpty(t, validated.SanitizedBody)
 }
 
+func TestKimiPartialModeRejectsJSONObjectCombination(t *testing.T) {
+	for _, profileID := range []string{"protocol.kimi-openai-chat.v2", "protocol.kimi-openai-chat.k3.v2"} {
+		contract, ok := modelprofile.ResolveChatProtocolContract(profileID)
+		require.True(t, ok)
+		_, err := validateAdvancedChatProtocolRequest([]byte(`{
+			"messages":[{"role":"assistant","content":"{","partial":true}],
+			"response_format":{"type":"json_object"}
+		}`), contract)
+		require.ErrorContains(t, err, "partial mode is incompatible with response_format.type=json_object")
+
+		_, err = validateAdvancedChatProtocolRequest([]byte(`{
+			"messages":[{"role":"assistant","content":"{","partial":true}],
+			"response_format":{"type":"json_schema","json_schema":{"name":"answer","schema":{"type":"object"}}}
+		}`), contract)
+		require.NoError(t, err)
+	}
+}
+
 func TestKimiAdvancedProtocolRejectsUnboundedRemoteMedia(t *testing.T) {
 	contract, ok := modelprofile.ResolveChatProtocolContract("protocol.kimi-openai-chat.v2")
 	require.True(t, ok)

@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-08-23.
+> Snapshot date: 2026-08-24.
 > This document is not a claim that every provider-documented feature is production supported.
 
 ## 1. What “supported” means
@@ -65,12 +65,17 @@ The repository already contains the correct structural start:
   executable `Capabilities`.
 - exact alias matching can propose a reviewed profile; unknown model names use
   `unverified.chat` instead of guessing limits or behavior.
-- Kimi K2.6, K2.7 Code and K3 have modeled reasoning contracts. K3 validates
-  `reasoning_effort=low|high|max`; omission preserves the provider default.
+- Kimi K2.6, K2.7 Code and K3 have modeled reasoning contracts. K2.6 records
+  `thinking.keep=null|all`, K2.7 fixes preserved thinking to `all`, and K3
+  validates `reasoning_effort=low|high|max`; omission preserves each provider
+  default. The current profiles also reject non-provider sampling values and
+  invalid model-specific `tool_choice` combinations before dispatch.
 - DeepSeek Chat has a typed thinking-toggle/effort contract. It rejects unknown
   effort values, disabled-thinking plus effort, ineffective sampling fields
   and `tool_choice` while thinking is active, and tool-call history that drops
-  preserved `reasoning_content`.
+  preserved `reasoning_content`. Provider-documented `low/medium/xhigh`
+  compatibility values remain unchanged on the wire while evidence records
+  their effective `high/high/max` behavior.
 - Kimi Platform top-level `usage.cached_tokens` and DeepSeek hit/miss counters
   have profile-bound usage parsers. A generic OpenAI-compatible route cannot
   turn DeepSeek-shaped fields into billing evidence. Generic nested
@@ -82,12 +87,15 @@ The repository already contains the correct structural start:
   untyped route.
 - Chat tools, JSON Object/Schema and preserved `reasoning_content` have common
   protocol machinery.
-- `kimi.k2.6.api@1.3.0` and `kimi.k3.api@1.3.0` retain typed Chat contracts for
-  final-assistant Partial Mode, K3 system-message Dynamic Tools, exact
+- `kimi.k2.6.api@1.4.0`, `kimi.k2.7-code.api@1.1.0` and
+  `kimi.k3.api@1.4.0` use the Kimi API Platform surface and retain typed Chat
+  contracts for final-assistant Partial Mode, K3 system-message Dynamic Tools, exact
   `$web_search` admission/evidence, and MIME-bounded inline image/video data
-  URLs. K2.6 search requires explicit disabled thinking. Provider URL and file
-  references remain outside this inline contract.
-- `kimi.k2.6.api@1.3.0` freezes MoonshotAI's reviewed K2.6 `tiktoken.model`,
+  URLs. Partial plus JSON Object is rejected as a documented incompatible
+  combination. Search remains provider-declared but is not executable on the
+  current profiles. Provider URL and file references remain outside this
+  inline contract.
+- `kimi.k2.6.api@1.4.0` freezes MoonshotAI's reviewed K2.6 `tiktoken.model`,
   regex and special-token identities. Admission counts the retained request with
   this exact tokenizer plus conservative framing instead of the byte upper bound;
   unknown and separately versioned Kimi models continue to fail closed on the
@@ -113,15 +121,17 @@ The following are still real gaps:
   `reasoning_details`, full assistant-history and cache semantics are not yet
   modeled end to end. Their executable capability set is therefore deliberately
   limited to standard tools; reasoning/cache remain provider-declared only.
-- Kimi Coding cache response semantics are not yet an executable cache-usage
-  contract. K2.7 Code and the K3 coding profile therefore do not claim cache
-  billing authority even though the provider surface advertises caching.
+- Historical Kimi Coding profiles remain separate and do not claim cache
+  billing authority. The current K2.7 Code profile deliberately targets the
+  official Kimi API Platform (`api.moonshot.cn`) surface, whose top-level
+  `usage.cached_tokens` contract is shared with the other Platform models.
 - Kimi inline image/video support is locally contract-verified only. Large
   payloads remain subject to UniRouter's conservative byte upper bound; provider
   file IDs and remote URLs require separately governed Files/URL contracts.
-- Kimi K2.7 Code has not inherited the K2.6/K3 Platform contract. Its coding
-  surface, Partial Mode, cache and multimodal semantics still require their own
-  exact profile and live evidence.
+- Kimi K2.7 Code Platform Partial Mode, cache, JSON Object and inline
+  multimodal shapes are locally contract-verified. Provider-live conformance,
+  large-media estimation and the separate subscription Coding surface remain
+  distinct evidence gaps.
 - public Responses and Anthropic Messages are intentionally strict non-stream
   text subsets. They reject tools, rich reasoning and multimodal payloads.
 - there is no public Files API or FIM `/v1/completions` operation.
@@ -137,10 +147,10 @@ The following are still real gaps:
 
 | Model/family | Provider-documented surface | Current UniRouter support | Not yet production-supported |
 |---|---|---|---|
-| Kimi K2.6 | 262,144 context; thinking toggle; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache and built-in search | `kimi.k2.6.api@1.3.0`; exact frozen tokenizer admission; thinking/tool-history contract; standard tools; final-assistant Partial; exact non-stream built-in search meter; Kimi cache usage; MIME-bounded inline image/video | provider-file/remote-URL media; large-media estimator; JSON qualification and exact target live capability evidence; Dynamic Tools are not a K2.6 claim |
-| Kimi K2.7 Code | 262,144 context; text/image/video; thinking-only; ToolCalls, JSON Mode, Partial Mode and automatic cache | versioned 256K profile; required-thinking contract; standard tools | coding-surface cache wire qualification; Partial Mode; multimodal admission; OpenAI and Anthropic coding conformance; complete JSON qualification |
-| Kimi K3 | 1M provider maximum with a 256K current customer default; always-on reasoning; `low/high/max`; tools, JSON Object/Schema, Partial, dynamic tools, built-in search, vision/video and automatic cache | `kimi.k3.api@1.2.0`; exact reasoning; standard tools/JSON; final-assistant Partial; system-message Dynamic Tools; exact non-stream built-in search meter; Kimi cache usage; MIME-bounded inline image/video | provider-file/remote-URL media; large-media estimator; full target live multi-turn/capability conformance |
-| DeepSeek V4 Flash/Pro | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache. Vision belongs to the separate `deepseek-v4-flash-vision-exp` model | OpenAI-compatible Chat; typed thinking/effort, thinking-mode `tool_choice` rejection and preserved tool-history contract; standard tools/JSON; profile-bound cache hit/miss usage; versioned limits | live operation/capability conformance for the configured V4 identities; prefix beta; full Responses/Anthropic operations; Files/FIM; separate vision model qualification |
+| Kimi K2.6 | 262,144 context; thinking toggle and optional preserved thinking; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache and built-in search | `kimi.k2.6.api@1.4.0`; exact frozen tokenizer admission; typed fixed parameters/keep/tool constraints; standard tools/JSON Object; final-assistant Partial; Kimi cache usage; MIME-bounded inline image/video | built-in search remains fail-closed; provider-file/remote-URL media; large-media estimator; target live capability conformance; Dynamic Tools are not a K2.6 claim |
+| Kimi K2.7 Code | 262,144 context and 32K default output; text/image/video; thinking-only with preserved thinking; ToolCalls, JSON Mode, Partial Mode and automatic cache | `kimi.k2.7-code.api@1.1.0` on Kimi API Platform; typed required-thinking/fixed-parameter/tool constraints; standard tools/JSON Object; final-assistant Partial; Kimi cache usage; MIME-bounded inline media | target live capability conformance; large/file media; separate subscription Coding surface and Anthropic coding conformance |
+| Kimi K3 | 1M provider maximum with a 256K current customer default; 131,072 default and 1,048,576 maximum output; always-on reasoning; `low/high/max`; tools, JSON Object/Schema, Partial, dynamic tools, built-in search, vision/video and automatic cache | `kimi.k3.api@1.4.0`; typed effort/fixed-parameter/tool constraints; standard tools/JSON; final-assistant Partial; system-message Dynamic Tools; Kimi cache usage; MIME-bounded inline image/video | built-in search remains fail-closed; provider-file/remote-URL media; large-media estimator; full target live multi-turn/capability conformance |
+| DeepSeek V4 Flash/Pro | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache. Vision belongs to the separate `deepseek-v4-flash-vision-exp` model | `deepseek.v4-*.api@1.1.0`; OpenAI-compatible Chat; typed thinking/effort including documented compatibility aliases, thinking-mode `tool_choice` rejection and preserved tool-history contract; standard tools/JSON; profile-bound cache hit/miss usage; versioned 1M/384K provider limits | live operation/capability conformance for the configured V4 identities; prefix beta; full Responses/Anthropic operations; Files/FIM; separate vision model qualification |
 | MiniMax M2.5/M2.7/M3 | M2.x 204,800 total window; M3 1M and image/video input; M3 adaptive/disabled thinking; M2.x required thinking; tools and nested cache usage; Token Plan is quota/subscription access | versioned limits; standard function tools; exact tokenizer only for M2.7; MiniMax response-envelope normalization; reasoning/cache labels are provider-declared, not executable | MiniMax typed reasoning/history/cache contracts; M3 multimodal admission; `reasoning_split`; cache/pricing qualification; Token Plan quota evidence. Customer cost remains zero until an independently verified pay-as-you-go key/price is configured |
 
 Official references used for this snapshot:
@@ -149,6 +159,7 @@ Official references used for this snapshot:
 - [Kimi token estimate API](https://platform.kimi.com/docs/api/estimate) and
   [frozen K2.6 tokenizer source](https://huggingface.co/moonshotai/Kimi-K2.6/tree/7eb5002f6aadc958aed6a9177b7ed26bb94011bb)
 - [Kimi K2.7 Code pricing and capability summary](https://platform.kimi.com/docs/pricing/chat-k27-code)
+- [Kimi model-specific parameter constraints](https://platform.kimi.com/docs/api/models-overview)
 - [Kimi K3 pricing](https://platform.kimi.com/docs/pricing/chat-k3) and
   [reasoning effort](https://platform.kimi.com/docs/guide/use-reasoning-effort)
 - [Kimi context caching](https://platform.kimi.com/docs/guide/use-context-caching-feature-of-kimi-api),
@@ -181,9 +192,9 @@ Official references used for this snapshot:
 4. **Qualify the existing eight models:** create canonical deployment operations,
    exact live probes and per-capability evidence before marking them production
    approved.
-5. **Close the Chat mainline:** Kimi Partial/cache/tool history; DeepSeek live
-   thinking/JSON/tools/cache conformance; MiniMax reasoning/cache, then
-   multimodal admission.
+5. **Close the Chat mainline:** Kimi and DeepSeek target-live
+   Partial/cache/tool-history/thinking/JSON/tools conformance; MiniMax
+   reasoning/cache, then multimodal admission.
 6. **Add new operations deliberately:** DeepSeek full Responses/Anthropic,
    Files/FIM; Kimi dynamic tools and built-in search. Each needs its own admission,
    metering, evidence and negative fixtures.

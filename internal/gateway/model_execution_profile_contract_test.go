@@ -176,6 +176,34 @@ func TestDeepSeekReasoningProfileValidatesBothControlsAndNoOpCombinations(t *tes
 	}
 }
 
+func TestDeepSeekCurrentProfilePreservesCompatibilityEffortEvidence(t *testing.T) {
+	plan := executionProfilePlan(t, "deepseek.v4-pro.api", "1.1.0")
+	for _, test := range []struct {
+		request   string
+		effective string
+	}{
+		{request: "low", effective: "high"},
+		{request: "medium", effective: "high"},
+		{request: "high", effective: "high"},
+		{request: "xhigh", effective: "max"},
+		{request: "max", effective: "max"},
+	} {
+		t.Run(test.request, func(t *testing.T) {
+			body := []byte(`{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"` + test.request + `"}`)
+			evidence, err := validateChatExecutionProfileRequest(body, plan)
+			require.NoError(t, err)
+			require.Equal(t, test.request, evidence.ReasoningEffortRequest)
+			require.Equal(t, test.effective, evidence.ReasoningEffortEffective)
+			normalized, err := evidence.normalizeProviderRequest(body)
+			require.NoError(t, err)
+			require.JSONEq(t, string(body), string(normalized))
+		})
+	}
+
+	_, err := validateChatExecutionProfileRequest([]byte(`{"model":"deepseek-v4-pro","messages":[],"reasoning_effort":"ultra"}`), plan)
+	require.ErrorContains(t, err, "high, max, low, medium, xhigh")
+}
+
 func TestDeepSeekAutoToolChoiceIsOmittedFromProviderRequest(t *testing.T) {
 	encKey := []byte("0123456789abcdef0123456789abcdef")
 	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://provider.test", encKey, nil)
@@ -256,6 +284,130 @@ func TestKimiK26ThinkingProfileAppliesCombinationRules(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestKimiK26CurrentProfileValidatesKeepToolChoicesAndFixedParameters(t *testing.T) {
+	plan := executionProfilePlan(t, "kimi.k2.6.api", "1.4.0")
+
+	evidence, err := validateChatExecutionProfileRequest([]byte(`{
+		"model":"kimi-k2.6","messages":[],
+		"thinking":{"type":"enabled","keep":"all"},
+		"tool_choice":"auto","temperature":1,"top_p":0.950,"n":1,
+		"presence_penalty":0.0,"frequency_penalty":0
+	}`), plan)
+	require.NoError(t, err)
+	require.Equal(t, "enabled", evidence.ReasoningToggleRequest)
+	require.Equal(t, "all", evidence.ReasoningThinkingKeepRequest)
+	require.Equal(t, "null", evidence.ReasoningThinkingKeepDefault)
+
+	for _, test := range []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{
+			name:    "keep requires enabled thinking",
+			body:    `{"model":"kimi-k2.6","messages":[],"thinking":{"type":"disabled","keep":"all"}}`,
+			wantErr: "thinking.keep requires thinking.type=enabled",
+		},
+		{
+			name:    "required is unsupported even with thinking disabled",
+			body:    `{"model":"kimi-k2.6","messages":[],"thinking":{"type":"disabled"},"tool_choice":"required"}`,
+			wantErr: "tool_choice=required is not supported",
+		},
+		{
+			name:    "disabled thinking uses non-thinking temperature",
+			body:    `{"model":"kimi-k2.6","messages":[],"thinking":{"type":"disabled"},"temperature":1}`,
+			wantErr: "temperature must be 0.6",
+		},
+		{
+			name:    "thinking temperature is fixed",
+			body:    `{"model":"kimi-k2.6","messages":[],"temperature":0.6}`,
+			wantErr: "temperature must be 1",
+		},
+		{
+			name:    "top p is fixed",
+			body:    `{"model":"kimi-k2.6","messages":[],"top_p":0.9}`,
+			wantErr: "top_p must be 0.95",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, validateErr := validateChatExecutionProfileRequest([]byte(test.body), plan)
+			require.ErrorContains(t, validateErr, test.wantErr)
+		})
+	}
+
+	evidence, err = validateChatExecutionProfileRequest([]byte(`{
+		"model":"kimi-k2.6","messages":[],"thinking":{"type":"disabled"},
+		"tool_choice":"auto","temperature":0.60,"top_p":0.95,"n":1,
+		"presence_penalty":0,"frequency_penalty":0
+	}`), plan)
+	require.NoError(t, err)
+	require.Equal(t, "disabled", evidence.ReasoningToggleRequest)
+}
+
+func TestKimiK27PlatformProfileValidatesRequiredThinkingAndFixedParameters(t *testing.T) {
+	plan := executionProfilePlan(t, "kimi.k2.7-code.api", "1.1.0")
+
+	evidence, err := validateChatExecutionProfileRequest([]byte(`{"model":"kimi-k2.7-code","messages":[]}`), plan)
+	require.NoError(t, err)
+	require.Equal(t, "omitted", evidence.ReasoningToggleRequest)
+	require.Equal(t, "omitted", evidence.ReasoningThinkingKeepRequest)
+	require.Equal(t, "all", evidence.ReasoningThinkingKeepDefault)
+
+	evidence, err = validateChatExecutionProfileRequest([]byte(`{
+		"model":"kimi-k2.7-code","messages":[],
+		"thinking":{"type":"enabled","keep":"all"},"tool_choice":"auto",
+		"temperature":1.0,"top_p":0.95,"n":1,"presence_penalty":0,"frequency_penalty":0
+	}`), plan)
+	require.NoError(t, err)
+	require.Equal(t, "all", evidence.ReasoningThinkingKeepRequest)
+
+	for _, test := range []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{
+			name:    "thinking cannot be disabled",
+			body:    `{"model":"kimi-k2.7-code","messages":[],"thinking":{"type":"disabled"}}`,
+			wantErr: "thinking must be one of enabled",
+		},
+		{
+			name:    "required tool choice is unsupported",
+			body:    `{"model":"kimi-k2.7-code","messages":[],"tool_choice":"required"}`,
+			wantErr: "tool_choice=required is not supported",
+		},
+		{
+			name:    "named tool choice is unsupported",
+			body:    `{"model":"kimi-k2.7-code","messages":[],"tool_choice":{"type":"function","function":{"name":"lookup"}}}`,
+			wantErr: "tool_choice=named is not supported",
+		},
+		{
+			name:    "temperature is fixed",
+			body:    `{"model":"kimi-k2.7-code","messages":[],"temperature":0.6}`,
+			wantErr: "temperature must be 1",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, validateErr := validateChatExecutionProfileRequest([]byte(test.body), plan)
+			require.ErrorContains(t, validateErr, test.wantErr)
+		})
+	}
+}
+
+func TestKimiK3CurrentProfileValidatesFixedParameters(t *testing.T) {
+	plan := executionProfilePlan(t, "kimi.k3.api", "1.4.0")
+	evidence, err := validateChatExecutionProfileRequest([]byte(`{
+		"model":"kimi-k3","messages":[],"reasoning_effort":"low","tool_choice":"required",
+		"temperature":1,"top_p":0.95,"n":1,"presence_penalty":0,"frequency_penalty":0
+	}`), plan)
+	require.NoError(t, err)
+	require.Equal(t, "low", evidence.ReasoningEffortRequest)
+	require.Equal(t, "low", evidence.ReasoningEffortEffective)
+
+	_, err = validateChatExecutionProfileRequest([]byte(`{"model":"kimi-k3","messages":[],"n":2}`), plan)
+	require.ErrorContains(t, err, "n must be 1")
 }
 
 func TestKimiProfileValidationPrecedesSecretDecryption(t *testing.T) {

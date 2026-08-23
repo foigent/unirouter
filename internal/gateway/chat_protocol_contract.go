@@ -36,6 +36,7 @@ func validateAdvancedChatProtocolRequest(body []byte, contract modelprofile.Chat
 	if err := json.Unmarshal(rawMessages, &messages); err != nil {
 		return advancedChatProtocolValidation{}, fmt.Errorf("messages must be an array of objects")
 	}
+	partialRequested := false
 	for index := range messages {
 		role, err := requiredMessageRole(messages[index])
 		if err != nil {
@@ -52,6 +53,7 @@ func validateAdvancedChatProtocolRequest(body []byte, contract modelprofile.Chat
 			if partial && (role != "assistant" || index != len(messages)-1) {
 				return advancedChatProtocolValidation{}, fmt.Errorf("partial=true is allowed only on the final assistant message")
 			}
+			partialRequested = partialRequested || partial
 			delete(messages[index], "partial")
 		}
 		if rawTools, exists := messages[index]["tools"]; exists && !isJSONNull(rawTools) {
@@ -82,6 +84,9 @@ func validateAdvancedChatProtocolRequest(body []byte, contract modelprofile.Chat
 		return advancedChatProtocolValidation{}, fmt.Errorf("encode sanitized messages: %w", err)
 	}
 	envelope["messages"] = sanitizedMessages
+	if partialRequested && contract.PartialRejectJSONObject && responseFormatType(envelope["response_format"]) == "json_object" {
+		return advancedChatProtocolValidation{}, fmt.Errorf("partial mode is incompatible with response_format.type=json_object for protocol profile %s", contract.ProfileID)
+	}
 
 	builtinRequested := false
 	if rawTools, exists := envelope["tools"]; exists && !isJSONNull(rawTools) {
@@ -148,6 +153,16 @@ func validateAdvancedChatProtocolRequest(body []byte, contract modelprofile.Chat
 		return advancedChatProtocolValidation{}, fmt.Errorf("encode protocol validation body: %w", err)
 	}
 	return result, nil
+}
+
+func responseFormatType(raw json.RawMessage) string {
+	var value struct {
+		Type string `json:"type"`
+	}
+	if len(raw) == 0 || isJSONNull(raw) || json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	return value.Type
 }
 
 func validateDynamicSystemTools(raw json.RawMessage) error {

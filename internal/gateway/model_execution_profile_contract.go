@@ -3,7 +3,9 @@ package gateway
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/metering"
@@ -20,7 +22,10 @@ type modelExecutionProfileEvidence struct {
 	ReasoningProviderDefault      string
 	ReasoningDefaultAuthority     string
 	ReasoningToggleRequest        string
+	ReasoningThinkingKeepRequest  string
+	ReasoningThinkingKeepDefault  string
 	ReasoningEffortRequest        string
+	ReasoningEffortEffective      string
 	CacheUsageProfile             string
 	ModelProtocolProfile          string
 	ReservedMeterUsage            []metering.MeterQuantity
@@ -37,7 +42,10 @@ func (e modelExecutionProfileEvidence) metadata() map[string]interface{} {
 		"reasoning_provider_default":      e.ReasoningProviderDefault,
 		"reasoning_default_authority":     e.ReasoningDefaultAuthority,
 		"reasoning_toggle_request":        e.ReasoningToggleRequest,
+		"reasoning_thinking_keep_request": e.ReasoningThinkingKeepRequest,
+		"reasoning_thinking_keep_default": e.ReasoningThinkingKeepDefault,
 		"reasoning_effort_request":        e.ReasoningEffortRequest,
+		"reasoning_effort_effective":      e.ReasoningEffortEffective,
 		"cache_usage_profile":             e.CacheUsageProfile,
 		"model_protocol_profile":          e.ModelProtocolProfile,
 		"reserved_meter_usage":            e.ReservedMeterUsage,
@@ -104,7 +112,7 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 
 	toggleRequest := ""
 	if contract.ToggleControl.Field != "" {
-		value, present, err := reasoningControlValue(envelope[contract.ToggleControl.Field], contract.ToggleControl)
+		value, effective, present, err := reasoningControlValue(envelope[contract.ToggleControl.Field], contract.ToggleControl)
 		if err != nil {
 			return modelExecutionProfileEvidence{}, err
 		}
@@ -112,23 +120,47 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 		reasoningActive = contract.ToggleControl.ProviderDefault == "enabled"
 		if present {
 			toggleRequest = value
-			reasoningActive = value == "enabled"
+			reasoningActive = effective == "enabled"
 		}
 		evidence.ReasoningToggleRequest = toggleRequest
+		if contract.ToggleControl.Field == "thinking" {
+			keep, keepPresent, keepErr := optionalThinkingKeep(envelope[contract.ToggleControl.Field])
+			if keepErr != nil {
+				return modelExecutionProfileEvidence{}, keepErr
+			}
+			if keepPresent && len(contract.ThinkingKeepValues) == 0 {
+				return modelExecutionProfileEvidence{}, fmt.Errorf("thinking.keep is not supported by profile %s", plan.ReasoningProfile)
+			}
+			if len(contract.ThinkingKeepValues) > 0 {
+				evidence.ReasoningThinkingKeepRequest = "omitted"
+				evidence.ReasoningThinkingKeepDefault = contract.ThinkingKeepProviderDefault
+				if keepPresent {
+					if !slices.Contains(contract.ThinkingKeepValues, keep) {
+						return modelExecutionProfileEvidence{}, fmt.Errorf("thinking.keep must be one of %s", strings.Join(contract.ThinkingKeepValues, ", "))
+					}
+					if contract.ThinkingKeepRequiresEnabled && !reasoningActive {
+						return modelExecutionProfileEvidence{}, fmt.Errorf("thinking.keep requires thinking.type=enabled for profile %s", plan.ReasoningProfile)
+					}
+					evidence.ReasoningThinkingKeepRequest = keep
+				}
+			}
+		}
 	}
 
 	effortRequest := ""
 	if contract.EffortControl.Field != "" {
-		value, present, err := reasoningControlValue(envelope[contract.EffortControl.Field], contract.EffortControl)
+		value, effective, present, err := reasoningControlValue(envelope[contract.EffortControl.Field], contract.EffortControl)
 		if err != nil {
 			return modelExecutionProfileEvidence{}, err
 		}
 		effortRequest = "omitted"
+		evidence.ReasoningEffortEffective = "omitted"
 		if present {
 			if !reasoningActive {
 				return modelExecutionProfileEvidence{}, fmt.Errorf("%s requires active reasoning for profile %s", contract.EffortControl.Field, plan.ReasoningProfile)
 			}
 			effortRequest = value
+			evidence.ReasoningEffortEffective = effective
 		}
 		evidence.ReasoningEffortRequest = effortRequest
 	}
@@ -158,6 +190,9 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 	if err != nil {
 		return modelExecutionProfileEvidence{}, err
 	}
+	if choice != "" && len(contract.AllowedToolChoices) > 0 && !slices.Contains(contract.AllowedToolChoices, choice) {
+		return modelExecutionProfileEvidence{}, fmt.Errorf("tool_choice=%s is not supported by profile %s", choice, plan.ReasoningProfile)
+	}
 	if reasoningActive && choice == "named" && !contract.NamedToolChoiceWhileReasoning {
 		return modelExecutionProfileEvidence{}, fmt.Errorf("named tool_choice is incompatible with active reasoning for profile %s", plan.ReasoningProfile)
 	}
@@ -168,6 +203,9 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 		if err := requireAssistantReasoningForToolHistory(envelope["messages"]); err != nil {
 			return modelExecutionProfileEvidence{}, err
 		}
+	}
+	if err := validateFixedRequestNumbers(envelope, contract, reasoningActive, plan.ReasoningProfile); err != nil {
+		return modelExecutionProfileEvidence{}, err
 	}
 	return evidence, nil
 }
@@ -221,7 +259,7 @@ func hasAnyNonNullJSONField(envelope map[string]json.RawMessage, fields ...strin
 	return false
 }
 
-func reasoningControlValue(raw json.RawMessage, contract modelprofile.ReasoningControlContract) (string, bool, error) {
+func reasoningControlValue(raw json.RawMessage, contract modelprofile.ReasoningControlContract) (string, string, bool, error) {
 	var value string
 	var present bool
 	var err error
@@ -231,12 +269,25 @@ func reasoningControlValue(raw json.RawMessage, contract modelprofile.ReasoningC
 		value, present, err = optionalJSONString(raw, contract.Field)
 	}
 	if err != nil || !present {
-		return value, present, err
+		return value, value, present, err
 	}
-	if !slices.Contains(contract.AllowedValues, value) {
-		return "", false, fmt.Errorf("%s must be one of %s", contract.Field, strings.Join(contract.AllowedValues, ", "))
+	if slices.Contains(contract.AllowedValues, value) {
+		return value, value, true, nil
 	}
-	return value, true, nil
+	if effective, ok := contract.CompatibilityValues[value]; ok && slices.Contains(contract.AllowedValues, effective) {
+		return value, effective, true, nil
+	}
+	return "", "", false, fmt.Errorf("%s must be one of %s", contract.Field, strings.Join(reasoningControlAcceptedValues(contract), ", "))
+}
+
+func reasoningControlAcceptedValues(contract modelprofile.ReasoningControlContract) []string {
+	values := slices.Clone(contract.AllowedValues)
+	compatibility := make([]string, 0, len(contract.CompatibilityValues))
+	for value := range contract.CompatibilityValues {
+		compatibility = append(compatibility, value)
+	}
+	sort.Strings(compatibility)
+	return append(values, compatibility...)
 }
 
 func reasoningControlSummary(toggle, effort string) string {
@@ -274,8 +325,11 @@ func optionalThinkingType(raw json.RawMessage) (string, bool, error) {
 	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
 		return "", false, fmt.Errorf("thinking must be an object")
 	}
-	if len(value) != 1 || value["type"] == nil {
-		return "", false, fmt.Errorf("thinking must contain exactly type")
+	if err := rejectUnknownJSONFields(value, "thinking", "type", "keep"); err != nil {
+		return "", false, err
+	}
+	if value["type"] == nil {
+		return "", false, fmt.Errorf("thinking.type is required")
 	}
 	typeValue, present, err := optionalJSONString(value["type"], "thinking.type")
 	if err != nil || !present {
@@ -284,7 +338,58 @@ func optionalThinkingType(raw json.RawMessage) (string, bool, error) {
 		}
 		return "", false, fmt.Errorf("thinking.type is required")
 	}
+	if rawKeep, exists := value["keep"]; exists && !isJSONNull(rawKeep) {
+		if _, present, keepErr := optionalJSONString(rawKeep, "thinking.keep"); keepErr != nil || !present {
+			if keepErr != nil {
+				return "", false, keepErr
+			}
+			return "", false, fmt.Errorf("thinking.keep must be a string")
+		}
+	}
 	return typeValue, true, nil
+}
+
+func optionalThinkingKeep(raw json.RawMessage) (string, bool, error) {
+	if len(raw) == 0 || isJSONNull(raw) {
+		return "", false, nil
+	}
+	var value map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+		return "", false, fmt.Errorf("thinking must be an object")
+	}
+	return optionalJSONString(value["keep"], "thinking.keep")
+}
+
+func validateFixedRequestNumbers(
+	envelope map[string]json.RawMessage,
+	contract modelprofile.ReasoningContract,
+	reasoningActive bool,
+	profileID string,
+) error {
+	expected := make(map[string]string, len(contract.FixedRequestNumbers)+len(contract.FixedRequestNumbersWhenDisabled))
+	for field, value := range contract.FixedRequestNumbers {
+		expected[field] = value
+	}
+	if !reasoningActive {
+		for field, value := range contract.FixedRequestNumbersWhenDisabled {
+			expected[field] = value
+		}
+	}
+	for field, want := range expected {
+		raw, present := envelope[field]
+		if !present || isJSONNull(raw) {
+			continue
+		}
+		actualNumber, ok := new(big.Rat).SetString(strings.TrimSpace(string(raw)))
+		if !ok {
+			return fmt.Errorf("%s must be a JSON number", field)
+		}
+		expectedNumber, ok := new(big.Rat).SetString(want)
+		if !ok || actualNumber.Cmp(expectedNumber) != 0 {
+			return fmt.Errorf("%s must be %s for profile %s", field, want, profileID)
+		}
+	}
+	return nil
 }
 
 func executionToolChoice(raw json.RawMessage) (string, error) {

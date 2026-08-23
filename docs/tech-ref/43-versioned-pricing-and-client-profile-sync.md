@@ -2,7 +2,7 @@
 
 > Status: implemented repository contract; target activation and provider-live
 > evidence remain environment-specific.
-> Snapshot date: 2026-08-23.
+> Snapshot date: 2026-08-24.
 
 ## 1. Pricing authority
 
@@ -41,6 +41,27 @@ No six-decimal ratio is involved. The same representation can exactly retain
 fractions such as `1/30`, regardless of whether that ratio remains present on a
 later provider price page. Current provider prices must always be imported with
 dated source evidence instead of reconstructed from an old ratio.
+
+The official pages checked on 2026-08-24 currently publish these flat CNY
+prices per million tokens:
+
+| Model | Ordinary input | Cache-read input | Output | Current daily bands |
+|---|---:|---:|---:|---|
+| DeepSeek V4 Flash | 1.00 | 0.02 | 2.00 | none published |
+| DeepSeek V4 Pro | 3.00 | 0.025 | 6.00 | none published |
+| Kimi K2.6 | 6.50 | 1.10 | 27.00 | none published |
+| Kimi K2.7 Code | 6.50 | 1.30 | 27.00 | none published |
+| Kimi K3 | 20.00 | 2.00 | 100.00 | none published |
+
+The associated Kimi built-in web-search unit is CNY 0.03 per provider-reported
+call. These are dated `provider_list` inputs, not permanent constants and not
+customer contract prices. A future provider schedule can use complete UTC
+daily bands, but UniRouter must not retain or fabricate an old band schedule
+when the current official source publishes a flat rate.
+
+Sources: [DeepSeek models and pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/),
+[Kimi current model prices](https://platform.kimi.com/) and
+[Kimi web-search pricing](https://platform.kimi.com/docs/pricing/tools).
 
 ## 2. Draft, approval and override
 
