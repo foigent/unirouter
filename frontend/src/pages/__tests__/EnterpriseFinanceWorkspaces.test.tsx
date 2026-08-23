@@ -143,6 +143,32 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     ], base)).toBeNull();
   });
 
+  it('materializes DeepSeek weekday peaks without applying them on weekends', () => {
+    const component = (meter: string, value_minor: string) => ({
+      meter, unit_quantity: '1000000', amount: { value_minor, currency: 'CNY', scale: 1_000_000 },
+    });
+    const base = [component('input_tokens', '1500000'), component('output_tokens', '4500000'),
+      component('cache_read_tokens', '50000'), component('cache_creation_tokens', '0')];
+    const override = (start_utc: string, end_utc: string) => ({
+      start_utc, end_utc, weekdays_utc: [1, 2, 3, 4, 5],
+      input_price_yuan: '3', output_price_yuan: '9',
+      cache_read_price_yuan: '0.10', cache_creation_price_yuan: '0',
+    });
+
+    const bands = buildUTCOverridePriceBands([
+      override('01:00', '04:00'), override('06:00', '10:00'),
+    ], base);
+
+    expect(bands).toHaveLength(27);
+    const sunday = bands?.filter(band => band.weekdays_utc?.[0] === 0) || [];
+    expect(sunday).toHaveLength(1);
+    expect([sunday[0].start_minute_utc, sunday[0].end_minute_utc]).toEqual([0, 1440]);
+    expect(sunday[0].components[0].amount.value_minor).toBe('1500000');
+    const mondayPeak = bands?.find(band => band.weekdays_utc?.[0] === 1 && band.start_minute_utc === 60);
+    expect(mondayPeak?.end_minute_utc).toBe(240);
+    expect(mondayPeak?.components[0].amount.value_minor).toBe('3000000');
+  });
+
   it('preserves an exact non-token web-search unit price across every UTC band', () => {
     const component = (meter: string, value_minor: string, unit_quantity = '1000000') => ({
       meter, unit_quantity, amount: { value_minor, currency: 'CNY', scale: 1_000_000 },
@@ -303,7 +329,7 @@ describe('EnterpriseRateCardWorkspace request-pricing authority', () => {
     fireEvent.click(await screen.findByText('复核'));
 
     expect(screen.getByText(/批准 official-rate v1/)).toBeTruthy();
-    expect(screen.getByText('valley · 01:30–06:00')).toBeTruthy();
+    expect(screen.getByText('valley · 每天 · 01:30–06:00')).toBeTruthy();
     expect(screen.getByText('URL：https://provider.example/pricing')).toBeTruthy();
     expect(screen.getByText('修订：revision-7')).toBeTruthy();
     expect(screen.getByText(`原始载荷：sha256:${'a'.repeat(64)}`)).toBeTruthy();

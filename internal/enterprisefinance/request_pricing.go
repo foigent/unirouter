@@ -26,6 +26,7 @@ const (
 	RequestPricingKey       = "model_ref"
 	requestPricingVersionV2 = "rcq2"
 	requestPricingVersionV3 = "rcq3"
+	requestPricingVersionV4 = "rcq4"
 	requestPricingScale     = int64(1_000_000)
 	requestPricingBasis     = int64(1_000_000)
 )
@@ -68,6 +69,7 @@ type RequestPriceComponent struct {
 // band contains all four request meters; no ratio or inherited price is used.
 type RequestPriceBand struct {
 	BandRef        string                  `json:"band_ref"`
+	WeekdaysUTC    []int                   `json:"weekdays_utc,omitempty"`
 	StartMinuteUTC int                     `json:"start_minute_utc"`
 	EndMinuteUTC   int                     `json:"end_minute_utc"`
 	Components     []RequestPriceComponent `json:"components"`
@@ -75,6 +77,7 @@ type RequestPriceBand struct {
 
 type RequestPriceBandSelection struct {
 	BandRef        string `json:"band_ref"`
+	WeekdaysUTC    []int  `json:"weekdays_utc,omitempty"`
 	StartMinuteUTC int    `json:"start_minute_utc"`
 	EndMinuteUTC   int    `json:"end_minute_utc"`
 }
@@ -254,7 +257,7 @@ func ResolveRequestPriceQuote(records []RateCardRecord, orgID int64, modelRef st
 			return RequestPriceQuote{}, err
 		}
 		dailyPriceBands = append(dailyPriceBands, RequestPriceBand{
-			BandRef: band.BandRef, StartMinuteUTC: band.StartMinuteUTC,
+			BandRef: band.BandRef, WeekdaysUTC: append([]int(nil), band.WeekdaysUTC...), StartMinuteUTC: band.StartMinuteUTC,
 			EndMinuteUTC: band.EndMinuteUTC, Components: components,
 		})
 	}
@@ -263,7 +266,7 @@ func ResolveRequestPriceQuote(records []RateCardRecord, orgID int64, modelRef st
 	} else if scheduled {
 		selectedComponents = band.Components
 		selectedBand = RequestPriceBandSelection{
-			BandRef: band.BandRef, StartMinuteUTC: band.StartMinuteUTC, EndMinuteUTC: band.EndMinuteUTC,
+			BandRef: band.BandRef, WeekdaysUTC: append([]int(nil), band.WeekdaysUTC...), StartMinuteUTC: band.StartMinuteUTC, EndMinuteUTC: band.EndMinuteUTC,
 		}
 	}
 	components, err := requestQuoteComponents(selectedComponents)
@@ -301,6 +304,12 @@ func ResolveRequestPriceQuote(records []RateCardRecord, orgID int64, modelRef st
 	pricingVersionPrefix := requestPricingVersionV2
 	if len(components) > len(requiredRequestMeters) {
 		pricingVersionPrefix = requestPricingVersionV3
+	}
+	for _, band := range dailyPriceBands {
+		if len(band.WeekdaysUTC) > 0 {
+			pricingVersionPrefix = requestPricingVersionV4
+			break
+		}
 	}
 	quote := RequestPriceQuote{
 		Authority: RequestPricingAuthority, SelectionKey: RequestPricingKey,

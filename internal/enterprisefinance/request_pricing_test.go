@@ -81,6 +81,51 @@ func TestRequestPriceQuoteSelectsUTCMinuteBandAndBindsCompleteSchedule(t *testin
 	require.NotEqual(t, valley.PricingVersion, changed.PricingVersion, "unselected bands remain bound into the manifest")
 }
 
+func TestRequestPriceQuoteSelectsExactUTCWeekdaySchedule(t *testing.T) {
+	monday := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	require.Equal(t, time.Monday, monday.Weekday())
+	base := requestPricingCard("x", RateSupplierContract, "p", "m", monday, 5, 45).Components
+	peak := requestPricingCard("x", RateSupplierContract, "p", "m", monday, 10, 90).Components
+	card := requestPricingCard("weekly", RateSupplierContract, "deepseek", "DeepSeek V4 Flash", monday.Add(-7*24*time.Hour), 5, 45)
+	weekdays := []int{1, 2, 3, 4, 5}
+	card.DailyPriceBands = []DailyPriceBand{
+		{BandRef: "weekend", WeekdaysUTC: []int{0, 6}, StartMinuteUTC: 0, EndMinuteUTC: 1440, Components: base},
+		{BandRef: "weekday-base-0", WeekdaysUTC: weekdays, StartMinuteUTC: 0, EndMinuteUTC: 60, Components: base},
+		{BandRef: "weekday-peak-1", WeekdaysUTC: weekdays, StartMinuteUTC: 60, EndMinuteUTC: 240, Components: peak},
+		{BandRef: "weekday-base-1", WeekdaysUTC: weekdays, StartMinuteUTC: 240, EndMinuteUTC: 360, Components: base},
+		{BandRef: "weekday-peak-2", WeekdaysUTC: weekdays, StartMinuteUTC: 360, EndMinuteUTC: 600, Components: peak},
+		{BandRef: "weekday-base-2", WeekdaysUTC: weekdays, StartMinuteUTC: 600, EndMinuteUTC: 1440, Components: base},
+	}
+
+	weekdayPeak, err := ResolveRequestPriceQuote([]RateCardRecord{{Card: card}}, 7, card.ModelRef, monday.Add(2*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, "weekday-peak-1", weekdayPeak.SelectedBand.BandRef)
+	require.Equal(t, weekdays, weekdayPeak.SelectedBand.WeekdaysUTC)
+	require.Regexp(t, `^rcq4_[a-f0-9]{64}$`, weekdayPeak.PricingVersion)
+	input, err := RequestPriceMicros(weekdayPeak, MeterInputTokens)
+	require.NoError(t, err)
+	require.Equal(t, int64(10), input)
+
+	weekendOffPeak, err := ResolveRequestPriceQuote([]RateCardRecord{{Card: card}}, 7, card.ModelRef, monday.Add(-24*time.Hour+2*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, time.Sunday, monday.Add(-24*time.Hour).Weekday())
+	require.Equal(t, "weekend", weekendOffPeak.SelectedBand.BandRef)
+	input, err = RequestPriceMicros(weekendOffPeak, MeterInputTokens)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), input)
+	require.NotEqual(t, weekdayPeak.PricingVersion, weekendOffPeak.PricingVersion)
+
+	broken := card
+	broken.DailyPriceBands = canonicalDailyPriceBands(card.DailyPriceBands)
+	broken.DailyPriceBands[0].WeekdaysUTC = []int{0}
+	require.ErrorIs(t, ValidateRequestPricingRateCard(broken), ErrInvalid)
+
+	broken = card
+	broken.DailyPriceBands = canonicalDailyPriceBands(card.DailyPriceBands)
+	broken.DailyPriceBands[0].WeekdaysUTC = []int{0, 7}
+	require.ErrorIs(t, ValidateRequestPricingRateCard(broken), ErrInvalid)
+}
+
 func TestRequestPricingDailyBandsFailClosedOnGapOverlapCrossMidnightAndIncompletePrice(t *testing.T) {
 	day := time.Date(2026, 8, 13, 0, 0, 0, 0, time.UTC)
 	components := requestPricingCard("x", RateSupplierContract, "p", "m", day, 10, 20).Components

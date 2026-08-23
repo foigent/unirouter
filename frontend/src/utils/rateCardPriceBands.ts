@@ -5,6 +5,7 @@ export type { DailyPriceBand, RateComponent } from '../api/enterpriseFinance';
 export type PriceBandOverrideDraft = {
   start_utc: string;
   end_utc: string;
+  weekdays_utc?: number[];
   input_price_yuan: string;
   output_price_yuan: string;
   cache_read_price_yuan: string;
@@ -109,10 +110,39 @@ export function buildUTCOverridePriceBands(
     index,
     start: parseUTCMinute(override.start_utc || ''),
     end: parseUTCMinute(override.end_utc || ''),
+    weekdays: normalizeUTCWeekdays(override.weekdays_utc),
     components: buildRequestRateComponents(override as unknown as Record<string, string>, '', requiredUnits),
   }));
-  if (normalized.some(item => item.start === null || item.end === null || item.start >= item.end || !item.components)) return null;
+  if (normalized.some(item => item.start === null || item.end === null || item.start >= item.end || item.weekdays === null || !item.components)) return null;
   normalized.sort((left, right) => (left.start as number) - (right.start as number));
+
+  const explicitWeekdays = normalized.some(item => (item.weekdays?.length || 0) > 0);
+  if (explicitWeekdays) {
+    const weeklyBands: DailyPriceBand[] = [];
+    for (let weekday = 0; weekday < 7; weekday += 1) {
+      const applicable = normalized.filter(item => !item.weekdays?.length || item.weekdays.includes(weekday));
+      let cursor = 0;
+      for (const item of applicable) {
+        const start = item.start as number;
+        const end = item.end as number;
+        if (start < cursor) return null;
+        if (start > cursor) weeklyBands.push({
+          band_ref: `day-${weekday}-base-${cursor}-${start}`, weekdays_utc: [weekday],
+          start_minute_utc: cursor, end_minute_utc: start, components: copyRateComponents(baseComponents),
+        });
+        weeklyBands.push({
+          band_ref: `day-${weekday}-override-${item.index + 1}`, weekdays_utc: [weekday],
+          start_minute_utc: start, end_minute_utc: end, components: item.components as RateComponent[],
+        });
+        cursor = end;
+      }
+      if (cursor < 24 * 60) weeklyBands.push({
+        band_ref: `day-${weekday}-base-${cursor}-1440`, weekdays_utc: [weekday],
+        start_minute_utc: cursor, end_minute_utc: 24 * 60, components: copyRateComponents(baseComponents),
+      });
+    }
+    return weeklyBands;
+  }
 
   const bands: DailyPriceBand[] = [];
   let cursor = 0;
@@ -128,9 +158,17 @@ export function buildUTCOverridePriceBands(
   return bands;
 }
 
+function normalizeUTCWeekdays(weekdays?: number[]): number[] | null {
+  if (!weekdays?.length) return [];
+  if (weekdays.some(value => !Number.isInteger(value) || value < 0 || value > 6)) return null;
+  const normalized = Array.from(new Set(weekdays)).sort((left, right) => left - right);
+  return normalized.length === weekdays.length ? normalized : null;
+}
+
 export function emptyPriceOverride(start_utc = '', end_utc = ''): PriceBandOverrideDraft {
   return {
     start_utc, end_utc,
+    weekdays_utc: [],
     input_price_yuan: '', output_price_yuan: '',
     cache_read_price_yuan: '', cache_creation_price_yuan: '',
     builtin_web_search_price_yuan: '',

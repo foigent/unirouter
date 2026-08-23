@@ -108,3 +108,38 @@ func TestDailyPriceBandTamperFailsActivationClosed(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalid)
 	assertLatestRateState(t, ctx, pool, orgID, approved.Card.RateCardRef, approved.Card.Version, RateApproved)
 }
+
+func TestWeekdayPriceBandsRoundTripAndSelectWeekendWithoutPeak(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	store, err := NewPostgresStore(pool)
+	require.NoError(t, err)
+	orgID := insertFinanceTestOrg(t, ctx, pool, "weekday-price-bands")
+	monday := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	base := supersedeRequestComponents(5)
+	peak := supersedeRequestComponents(10)
+	weekdays := []int{1, 2, 3, 4, 5}
+	bands := []DailyPriceBand{
+		{BandRef: "weekend", WeekdaysUTC: []int{0, 6}, StartMinuteUTC: 0, EndMinuteUTC: 1440, Components: base},
+		{BandRef: "weekday-base-before", WeekdaysUTC: weekdays, StartMinuteUTC: 0, EndMinuteUTC: 60, Components: base},
+		{BandRef: "weekday-peak", WeekdaysUTC: weekdays, StartMinuteUTC: 60, EndMinuteUTC: 240, Components: peak},
+		{BandRef: "weekday-base-after", WeekdaysUTC: weekdays, StartMinuteUTC: 240, EndMinuteUTC: 1440, Components: base},
+	}
+	draft, err := store.CreateRateCardDraft(ctx, RateCard{
+		RateCardRef: "weekday-rate", OrgID: orgID, ProviderRef: "deepseek", ModelRef: "DeepSeek V4 Flash",
+		Layer: RateSupplierContract, EffectiveFrom: monday.Add(-7 * 24 * time.Hour), Components: base, DailyPriceBands: bands,
+	}, "user:1301")
+	require.NoError(t, err)
+	require.Equal(t, []int{0, 6}, draft.Card.DailyPriceBands[0].WeekdaysUTC)
+	approved, err := store.ApproveRateCard(ctx, orgID, draft.Card.RateCardRef, draft.Card.Version, "user:1302")
+	require.NoError(t, err)
+	_, err = store.ActivateRateCard(ctx, orgID, approved.Card.RateCardRef, approved.Card.Version, "user:1302", monday)
+	require.NoError(t, err)
+
+	weekday, err := store.ResolveRequestPriceQuote(ctx, orgID, "DeepSeek V4 Flash", monday.Add(2*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, "weekday-peak", weekday.SelectedBand.BandRef)
+	weekend, err := store.ResolveRequestPriceQuote(ctx, orgID, "DeepSeek V4 Flash", monday.Add(-24*time.Hour+2*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, "weekend", weekend.SelectedBand.BandRef)
+}
