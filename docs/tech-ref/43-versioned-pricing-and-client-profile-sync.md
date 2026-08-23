@@ -140,3 +140,11 @@ This is a client projection, not a second execution authority. Runtime routing
 continues to use legacy `candidate.v1` while compatibility mode is selected;
 M82 canonical Release pins remain unchanged until a separately authorized
 canonical cutover.
+
+Provider cache usage has a separate response projection. When the selected
+execution profile makes Kimi's top-level `cached_tokens` or DeepSeek's exact
+hit/miss pair authoritative, the OpenAI-compatible response retains those
+provider fields and adds the equivalent
+`prompt_tokens_details.cached_tokens`. Generic OpenClaw/OpenAI clients can then
+display cache reads without changing the frozen Billing evidence or trusting
+cache-like fields from an unverified provider surface.

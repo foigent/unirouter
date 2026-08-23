@@ -84,6 +84,10 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 			if err != nil {
 				return nil, fmt.Errorf("normalize MiniMax response: %w", err)
 			}
+			responseBody, err = normalizeOpenAIClientCacheUsage(responseBody, usage)
+			if err != nil {
+				return nil, fmt.Errorf("normalize provider cache usage: %w", err)
+			}
 		}
 	}
 	normalized := &NormalizedResponse{
@@ -155,7 +159,76 @@ func parseBuiltinToolMeterUsage(body []byte, protocolProfile string) ([]metering
 // frame and fails closed on unknown or unsafe fields.
 func (a *OpenAICompatible) NormalizeStreamFrame(ctx context.Context, in StreamChunkInput) ([]byte, error) {
 	_ = ctx
-	return normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, in.Data)
+	body, err := normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, in.Data)
+	if err != nil {
+		return nil, err
+	}
+	usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+		body, EndpointChatCompletions, metering.UsageSourceUpstream, in.CacheUsageProfile,
+	)
+	if err != nil || !present {
+		return body, err
+	}
+	return normalizeOpenAIClientCacheUsage(body, usage)
+}
+
+// normalizeOpenAIClientCacheUsage mirrors profile-authoritative provider cache
+// counters into the standard OpenAI prompt_tokens_details shape used by generic
+// SDKs. Provider-owned fields remain intact for native clients and evidence;
+// ParseOpenAICompatibleUsageWithCacheProfile validates contradictions before
+// this projection is reached.
+func normalizeOpenAIClientCacheUsage(body []byte, usage Usage) ([]byte, error) {
+	if usage.CacheUsageSchema != CacheUsageSchemaKimiV1 && usage.CacheUsageSchema != CacheUsageSchemaDeepSeekV1 {
+		return body, nil
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("decode response envelope: %w", err)
+	}
+	if envelope == nil {
+		return nil, fmt.Errorf("decode response envelope: JSON object is required")
+	}
+	rawUsage, exists := envelope["usage"]
+	if !exists || isJSONNullUsage(rawUsage) {
+		return nil, fmt.Errorf("authoritative cache usage has no response usage object")
+	}
+	var usageObject map[string]json.RawMessage
+	if err := json.Unmarshal(rawUsage, &usageObject); err != nil {
+		return nil, fmt.Errorf("decode response usage object: %w", err)
+	}
+	if usageObject == nil {
+		return nil, fmt.Errorf("decode response usage object: JSON object is required")
+	}
+
+	promptDetails := make(map[string]json.RawMessage)
+	if rawDetails, ok := usageObject["prompt_tokens_details"]; ok && !isJSONNullUsage(rawDetails) {
+		if err := json.Unmarshal(rawDetails, &promptDetails); err != nil || promptDetails == nil {
+			return nil, fmt.Errorf("decode prompt_tokens_details object")
+		}
+		if rawCached, mirrored := promptDetails["cached_tokens"]; mirrored && !isJSONNullUsage(rawCached) {
+			return body, nil
+		}
+	}
+	cachedJSON, err := json.Marshal(usage.CacheReadTokens)
+	if err != nil {
+		return nil, fmt.Errorf("encode cached token projection: %w", err)
+	}
+	promptDetails["cached_tokens"] = cachedJSON
+	detailsJSON, err := json.Marshal(promptDetails)
+	if err != nil {
+		return nil, fmt.Errorf("encode prompt_tokens_details projection: %w", err)
+	}
+	usageObject["prompt_tokens_details"] = detailsJSON
+	usageJSON, err := json.Marshal(usageObject)
+	if err != nil {
+		return nil, fmt.Errorf("encode response usage projection: %w", err)
+	}
+	envelope["usage"] = usageJSON
+	projected, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("encode response envelope projection: %w", err)
+	}
+	return projected, nil
 }
 
 func normalizeMiniMaxOpenAIEnvelope(provider string, body []byte) ([]byte, error) {

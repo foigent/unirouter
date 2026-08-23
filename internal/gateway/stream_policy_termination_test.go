@@ -314,6 +314,60 @@ func TestRelayStreamRequestAcceptsKimiTerminalChoiceUsage(t *testing.T) {
 	}
 }
 
+func TestRelayStreamRequestProjectsKimiCacheUsageForOpenAIClients(t *testing.T) {
+	var settled billing.SettleRequest
+	b := &mockBilling{
+		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settled = req
+			return &billing.SettleResult{SettleID: 1, ActualCostMicros: 1, ChargedCostMicros: 1, Success: true}, nil
+		},
+	}
+	relay := newTestRelay(p6f11RelayDB(), b)
+	stream := "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"KIMI_CACHE_OK\"},\"finish_reason\":null}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17,\"cached_tokens\":8}}\n\n" +
+		"data: [DONE]\n\n"
+	rec := httptest.NewRecorder()
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(stream))}
+	route := &RouteResult{
+		Channel:           models.Channel{ID: 1, Name: "Kimi K2.6", Provider: "kimi", AdapterType: adapters.TypeOpenAICompatible},
+		CacheUsageProfile: "cache-usage.kimi-platform.v1",
+	}
+	requestID := "req-kimi-cache-client-projection"
+
+	relay.relayStreamRequest(p6f11StreamContext(nil, requestID), rec, resp, route,
+		requestID, 1, 2, "Kimi K2.6", "Kimi K2.6", "127.0.0.1", nil,
+		logger.New(logger.Fields{RequestID: requestID, OrgID: 1}), time.Now(), 1_000, adapters.NewOpenAICompatible(), "")
+
+	var projected bool
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		payload := strings.TrimPrefix(line, "data: ")
+		if payload == line || !json.Valid([]byte(payload)) {
+			continue
+		}
+		var wire struct {
+			Usage *struct {
+				CachedTokens  int `json:"cached_tokens"`
+				PromptDetails struct {
+					CachedTokens int `json:"cached_tokens"`
+				} `json:"prompt_tokens_details"`
+			} `json:"usage"`
+		}
+		if err := json.Unmarshal([]byte(payload), &wire); err != nil {
+			t.Fatal(err)
+		}
+		if wire.Usage != nil && wire.Usage.CachedTokens == 8 && wire.Usage.PromptDetails.CachedTokens == 8 {
+			projected = true
+		}
+	}
+	if !projected {
+		t.Fatalf("Kimi cache usage was not projected for the OpenAI client: %s", rec.Body.String())
+	}
+	if settled.PromptTokens != 13 || settled.UncachedPromptTokens != 5 || settled.CacheReadTokens != 8 ||
+		settled.CompletionTokens != 4 || settled.CacheUsageSchema != adapters.CacheUsageSchemaKimiV1 {
+		t.Fatalf("provider cache usage was not settled exactly: %+v", settled)
+	}
+}
+
 func TestRelayStreamRequestNormalizesSafeMiniMaxControlMetadataAndAcceptsTerminalChoiceEOF(t *testing.T) {
 	var settled billing.SettleRequest
 	var terminal billing.DeliveryEvent

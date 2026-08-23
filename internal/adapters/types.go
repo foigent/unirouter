@@ -115,11 +115,12 @@ type StreamState struct {
 }
 
 type StreamChunkInput struct {
-	Data           []byte
-	Channel        models.Channel
-	RequestedModel string
-	UpstreamModel  string
-	State          *StreamState
+	Data              []byte
+	Channel           models.Channel
+	RequestedModel    string
+	UpstreamModel     string
+	CacheUsageProfile string
+	State             *StreamState
 }
 
 type NormalizedStreamChunk struct {

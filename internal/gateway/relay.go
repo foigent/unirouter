@@ -2194,11 +2194,12 @@ streamLoop:
 				continue
 			}
 			chunk, err := streamNormalizer.NormalizeStreamChunk(ctx, adapters.StreamChunkInput{
-				Data:           []byte(data),
-				Channel:        route.Channel,
-				RequestedModel: requestedModel,
-				UpstreamModel:  route.MappedModel,
-				State:          streamState,
+				Data:              []byte(data),
+				Channel:           route.Channel,
+				RequestedModel:    requestedModel,
+				UpstreamModel:     route.MappedModel,
+				CacheUsageProfile: route.CacheUsageProfile,
+				State:             streamState,
 			})
 			if err != nil {
 				reqLog.With(logger.Fields{ChannelID: uint(route.Channel.ID)}).Error("Failed to normalize stream chunk: %v", err)
@@ -2277,11 +2278,12 @@ streamLoop:
 			if streamFrameNormalizer != nil {
 				var normalizeErr error
 				frameData, normalizeErr = streamFrameNormalizer.NormalizeStreamFrame(ctx, adapters.StreamChunkInput{
-					Data:           frameData,
-					Channel:        route.Channel,
-					RequestedModel: requestedModel,
-					UpstreamModel:  route.MappedModel,
-					State:          streamState,
+					Data:              frameData,
+					Channel:           route.Channel,
+					RequestedModel:    requestedModel,
+					UpstreamModel:     route.MappedModel,
+					CacheUsageProfile: route.CacheUsageProfile,
+					State:             streamState,
 				})
 				if normalizeErr != nil || !json.Valid(frameData) {
 					streamPayloadInvalid = true
