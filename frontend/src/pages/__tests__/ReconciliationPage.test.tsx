@@ -6,6 +6,8 @@ const mockGetReconciliation = vi.fn();
 const mockGetModelNames = vi.fn();
 const mockGetOrganizations = vi.fn();
 const mockPreviewProviderCOGSOffline = vi.fn();
+const mockGetPendingProviderCosts = vi.fn();
+const mockReconcileProviderCost = vi.fn();
 const mockGetEnterpriseFiscalPeriods = vi.fn();
 const mockGetEnterpriseAllocationSummary = vi.fn();
 const mockGetEnterpriseAllocationRuns = vi.fn();
@@ -18,6 +20,13 @@ vi.mock('../../api/client', () => ({
     getModelNames: (...args: any[]) => mockGetModelNames(...args),
     getOrganizations: (...args: any[]) => mockGetOrganizations(...args),
     previewProviderCOGSOffline: (...args: any[]) => mockPreviewProviderCOGSOffline(...args),
+  },
+}));
+
+vi.mock('../../api/providerCosts', () => ({
+  providerCostApi: {
+    listPending: (...args: any[]) => mockGetPendingProviderCosts(...args),
+    reconcile: (...args: any[]) => mockReconcileProviderCost(...args),
   },
 }));
 
@@ -87,6 +96,19 @@ describe('ReconciliationPage', () => {
     mockGetReconciliation.mockResolvedValue(RECON_RESPONSE);
     mockGetModelNames.mockResolvedValue({ data: ['company-chat'] });
     mockGetOrganizations.mockResolvedValue({ data: [{ id: 7, name: '总部' }], total: 1 });
+    mockGetPendingProviderCosts.mockResolvedValue({ data: [], org_id: 7 });
+    mockReconcileProviderCost.mockResolvedValue({
+      request_id: 'req-provider-hold',
+      attempt_id: 'attempt-provider-hold',
+      action: 'refund',
+      terminal_observation_receipt_id: 812,
+      customer_charged_micros: '0',
+      customer_refund_micros: '0',
+      currency: 'CNY',
+      amount_scale: 1000000,
+      billing_mode: 'cost_observation',
+      state: 'reconciled',
+    });
     mockGetEnterpriseFiscalPeriods.mockResolvedValue({
       data: [{ period_ref: 'FY26-P08', state: 'reconciled', version: 3 }],
     });
@@ -184,6 +206,53 @@ describe('ReconciliationPage', () => {
     await waitFor(() => expect(mockGetReconciliation).toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 7 })));
     expect(mockGetReconciliation).not.toHaveBeenCalledWith(1, 20, expect.objectContaining({ org_id: 99 }));
     expect(mockGetOrganizations).not.toHaveBeenCalled();
+  });
+
+  it('lets a platform admin release a cost_observation hold without supplying an amount', async () => {
+    auth.user = {
+      role: 'platform_admin',
+      org_id: 99,
+      customer_context: { state: 'ready', org_id: 7, org_name: '总部' },
+    };
+    mockGetPendingProviderCosts.mockResolvedValue({
+      org_id: 7,
+      data: [{
+        org_id: 7,
+        request_id: 'req-provider-hold',
+        attempt_id: 'attempt-provider-hold',
+        api_key_id: 44,
+        provider: 'deepseek',
+        channel: 'deepseek-direct',
+        state: 'output_withheld',
+        outcome_certainty: 'known_usage',
+        billing_mode: 'cost_observation',
+        calculated_cost_micros: '0',
+        currency: 'CNY',
+        amount_scale: 1000000,
+        started_at: '2026-08-24T00:00:00Z',
+        updated_at: '2026-08-24T00:01:00Z',
+      }],
+    });
+    render(<ReconciliationPage />);
+
+    expect(await screen.findByText('req-provider-hold')).toBeTruthy();
+    expect(mockGetPendingProviderCosts).toHaveBeenCalledWith(7);
+    fireEvent.click(screen.getByRole('button', { name: '零收费协调' }));
+    expect(await screen.findByText('确认零收费供应商成本协调')).toBeTruthy();
+    expect((screen.getByLabelText('协调原因') as HTMLTextAreaElement).value).toContain('cost_observation');
+    fireEvent.change(screen.getByLabelText('证据引用'), { target: { value: 'call_log:347' } });
+    fireEvent.click(screen.getByRole('button', { name: '解除冻结并生成收据' }));
+
+    await waitFor(() => expect(mockReconcileProviderCost).toHaveBeenCalledWith({
+      org_id: 7,
+      request_id: 'req-provider-hold',
+      attempt_id: 'attempt-provider-hold',
+      action: 'refund',
+      reason: expect.stringContaining('cost_observation'),
+      evidence_ref: 'call_log:347',
+    }));
+    expect(await screen.findByText(/观察收据 #812/)).toBeTruthy();
+    expect(screen.getByText(/客户收费 0，退款 0/)).toBeTruthy();
   });
 
   it('fails closed before customer-domain reads when the canonical customer is ambiguous', async () => {

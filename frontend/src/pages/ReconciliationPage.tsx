@@ -9,6 +9,7 @@ import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerCont
 import { usageSourceLabel, usageSourceOptions } from '../utils/displayLabels';
 import { formatInteger, formatPercent, formatSignedInteger } from '../utils/formatNumber';
 import { EnterpriseAllocationWorkspace } from './EnterpriseFinanceWorkspaces';
+import { ProviderCostResolutionWorkspace } from '../features/reconciliation/ProviderCostResolutionWorkspace';
 
 interface ReconRecord {
   id: number;
@@ -453,6 +454,7 @@ export default function ReconciliationPage() {
         closeIcon={null}
         style={{ marginBottom: 16 }}
       />
+	  {platform && targetOrgID && <ProviderCostResolutionWorkspace orgId={targetOrgID} />}
 	  <EnterpriseAllocationWorkspace orgId={targetOrgID} canManage={canManageEnterpriseFinance} />
       <Surface title="筛选条件">
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
