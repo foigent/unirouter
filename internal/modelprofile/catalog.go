@@ -91,6 +91,27 @@ var catalog = []Profile{
 		},
 	},
 	{
+		ID: "kimi.k2.6.api", Version: "1.2.0", Label: "Kimi K2.6 官方 API",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.kimi-k2.6-thinking-toggle.v1", CacheUsageProfile: "cache-usage.kimi-platform.v1",
+		ProtocolProfile:       "protocol.kimi-openai-chat.v2",
+		ProviderContextWindow: 262_144, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
+		ProviderCapabilities: []string{
+			"reasoning", "tools", CapabilityPartialMode, CapabilityBuiltinWebSearch,
+			CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Capabilities: []string{
+			"reasoning", "tools", CapabilityPartialMode, CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Aliases: []string{"Kimi K2.6", "kimi-k2.6", "kimi-k2.6-preview"},
+		EvidenceRefs: []string{
+			"https://platform.kimi.com/docs/pricing/chat-k26",
+			"https://platform.kimi.com/docs/guide/kimi-k2-6-quickstart",
+			"https://platform.kimi.com/docs/api/chat",
+			"https://platform.kimi.com/docs/guide/use-partial-mode-feature-of-kimi-api",
+		},
+	},
+	{
 		ID: "kimi.k2.6.api", Version: "1.1.0", Label: "Kimi K2.6 官方 API",
 		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
 		ReasoningProfile: "reasoning.kimi-k2.6-thinking-toggle.v1", CacheUsageProfile: "cache-usage.kimi-platform.v1",
@@ -133,6 +154,31 @@ var catalog = []Profile{
 		Capabilities:         []string{"reasoning", "tools"},
 		Aliases:              []string{"Kimi K2.7 Code", "kimi-for-coding", "kimi-for-coding-highspeed"},
 		EvidenceRefs:         []string{"https://www.kimi.com/code/docs/en/kimi-code/models.html"},
+	},
+	{
+		ID: "kimi.k3.api", Version: "1.3.0", Label: "Kimi K3 官方 API",
+		TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+		ReasoningProfile: "reasoning.kimi-k3-effort.v1", CacheUsageProfile: "cache-usage.kimi-platform.v1",
+		ProtocolProfile:       "protocol.kimi-openai-chat.k3.v2",
+		ProviderContextWindow: 1_048_576, ProviderMaxOutput: 1_048_576,
+		DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
+		ProviderCapabilities: []string{
+			"reasoning", "tools", "tool_choice", CapabilityDynamicTools, "json_object", "json_schema",
+			CapabilityPartialMode, CapabilityBuiltinWebSearch, CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Capabilities: []string{
+			"reasoning", "tools", "json_object", "json_schema", CapabilityDynamicTools,
+			CapabilityPartialMode, CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Aliases: []string{"Kimi K3", "kimi-k3", "k3", "k3-256k"},
+		EvidenceRefs: []string{
+			"https://platform.kimi.com/docs/pricing/chat-k3",
+			"https://platform.kimi.com/docs/guide/kimi-k3-quickstart",
+			"https://platform.kimi.com/docs/guide/use-reasoning-effort",
+			"https://platform.kimi.com/docs/api/chat",
+			"https://platform.kimi.com/docs/guide/use-partial-mode-feature-of-kimi-api",
+			"https://platform.kimi.com/docs/guide/use-dynamic-tool-loading",
+		},
 	},
 	{
 		ID: "kimi.k3.api", Version: "1.2.0", Label: "Kimi K3 官方 API",

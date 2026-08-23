@@ -10,6 +10,7 @@ export type RateComponent = {
 };
 export type DailyPriceBand = {
   band_ref: string;
+  weekdays_utc?: number[];
   start_minute_utc: number;
   end_minute_utc: number;
   components: RateComponent[];

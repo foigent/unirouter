@@ -122,11 +122,14 @@ type RateComponent struct {
 	Amount       Amount `json:"amount"`
 }
 
-// DailyPriceBand is one non-cross-midnight UTC segment in a complete daily
+// DailyPriceBand is one non-cross-midnight UTC segment in a complete weekly
 // schedule. Minutes use the half-open interval [start_minute_utc,
-// end_minute_utc); a scheduled Rate Card must cover 00:00-24:00 exactly once.
+// end_minute_utc). An empty weekdays_utc applies the band to every UTC day;
+// otherwise Sunday=0 through Saturday=6. A scheduled Rate Card must cover
+// 00:00-24:00 exactly once on each applicable UTC weekday.
 type DailyPriceBand struct {
 	BandRef        string          `json:"band_ref"`
+	WeekdaysUTC    []int           `json:"weekdays_utc,omitempty"`
 	StartMinuteUTC int             `json:"start_minute_utc"`
 	EndMinuteUTC   int             `json:"end_minute_utc"`
 	Components     []RateComponent `json:"components"`

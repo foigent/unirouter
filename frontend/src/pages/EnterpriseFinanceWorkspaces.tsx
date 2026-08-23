@@ -72,6 +72,12 @@ function formatUTCMinute(value: number) {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
+function formatUTCWeekdays(values?: number[]) {
+  if (!values?.length) return '每天';
+  const labels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  return values.map(value => labels[value] || `星期${value}`).join('、');
+}
+
 function RateCardReviewDetails({ record, label }: { record: RateCardRecord; label?: string }) {
   return (
     <Space vertical align="start" style={{ width: '100%' }}>
@@ -89,7 +95,7 @@ function RateCardReviewDetails({ record, label }: { record: RateCardRecord; labe
           <Typography.Text strong>UTC 日内价带（半开区间）</Typography.Text>
           {record.card.daily_price_bands.map(band => (
             <div key={`review-band-${record.card.rate_card_ref}-${band.band_ref}`} style={{ width: '100%' }}>
-              <Typography.Text strong>{band.band_ref} · {formatUTCMinute(band.start_minute_utc)}–{formatUTCMinute(band.end_minute_utc)}</Typography.Text>
+              <Typography.Text strong>{band.band_ref} · {formatUTCWeekdays(band.weekdays_utc)} · {formatUTCMinute(band.start_minute_utc)}–{formatUTCMinute(band.end_minute_utc)}</Typography.Text>
               {band.components.map(component => (
                 <div key={`review-${record.card.rate_card_ref}-${band.band_ref}-${component.meter}`}>
                   <Typography.Text>{component.meter}：{exactAmount(component.amount)} / {component.unit_quantity} {component.meter.endsWith('_tokens') ? 'tokens' : 'units'}</Typography.Text>
@@ -635,7 +641,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       ? form.price_schedule === 'utc_overrides' ? buildUTCOverridePriceBands(priceOverrides, components) : []
       : null;
     if (!components || dailyPriceBands === null || !form.provider_ref?.trim() || !form.model_ref?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(form.effective_from || '')) {
-      Toast.error('请完整填写供应商、模型、四类默认 Token 价格和生效日期；已启用的单位价格也必须在每个 UTC 特殊价段显式填写');
+      Toast.error('请完整填写供应商、模型、四类默认 Token 价格和生效日期；已启用的单位价格也必须在每个 UTC 星期/特殊价段显式填写');
       return;
     }
     if (form.layer === 'supplier_billed_effective' && !form.source_evidence_ref?.trim()) {
@@ -677,7 +683,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       !/^sha256:[a-f0-9]{64}$/.test(importForm.payload_sha256 || '') ||
       !importForm.transform_version?.trim() || !isDate(importForm.effective_from) ||
       !isDate(importForm.fetched_at) || !isDate(importForm.stale_after)) {
-      Toast.error('请完整填写模型、四类 Token 价格、来源修订、载荷 SHA-256、获取日期和新鲜度截止日期；已启用的单位价格不得缺项');
+      Toast.error('请完整填写模型、四类 Token 价格、来源修订、载荷 SHA-256、获取日期和新鲜度截止日期；已启用的单位价格不得在任何 UTC 星期/特殊价段缺项');
       return;
     }
     setSubmitting(true);
@@ -756,7 +762,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
     {
       title: '组件 / UTC 日内价', width: 240,
       render: (_: unknown, record: RateCardRecord) => (
-        <span>{record.card.components.map(item => item.meter).join('、')} · {record.card.daily_price_bands?.length ? `${record.card.daily_price_bands.length} 段/日` : '全天同价'}</span>
+        <span>{record.card.components.map(item => item.meter).join('、')} · {record.card.daily_price_bands?.length ? `${record.card.daily_price_bands.length} 个 UTC 星期/时段` : '全天同价'}</span>
       ),
     },
     {
@@ -803,7 +809,7 @@ export function EnterpriseRateCardWorkspace({ orgId, canManage }: { orgId?: numb
       <Banner
         type="info"
         closeIcon={null}
-        description="所谓官方价格同步是受控导入：记录来源 URL、修订、获取时间、原始载荷哈希和转换版本，并且只生成草稿。UniRouter 不承诺网络实时性，也不会自动批准或激活；证据过期时拒绝激活，导入或替换失败不会改写当前 active 费率。日内价只接受 UTC 明示时段和四项显式价格，不推断时区或折扣。"
+        description="所谓官方价格同步是受控导入：记录来源 URL、修订、获取时间、原始载荷哈希和转换版本，并且只生成草稿。UniRouter 不承诺网络实时性，也不会自动批准或激活；证据过期时拒绝激活，导入或替换失败不会改写当前 active 费率。分时价只接受 UTC 明示星期/时段和四项显式价格，不推断时区、工作日或折扣。"
         style={{ marginBottom: 16 }}
       />
       {error ? <Banner type="danger" description={error} style={{ marginBottom: 16 }} /> : null}
