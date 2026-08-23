@@ -114,7 +114,10 @@ var metadataAllowlist = map[string]bool{
 	"reasoning_request":                 true,
 	"reasoning_provider_default":        true,
 	"reasoning_default_authority":       true,
+	"reasoning_toggle_request":          true,
+	"reasoning_effort_request":          true,
 	"cache_usage_profile":               true,
+	"provider_request_normalizations":   true,
 }
 
 func SanitizeMetadata(input map[string]interface{}) map[string]interface{} {
