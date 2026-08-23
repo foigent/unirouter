@@ -55,10 +55,18 @@ var miniMaxM27State struct {
 }
 
 func Count(profileID, profileVersion string, value []byte) (int, error) {
-	if profileID != modelprofile.TokenizerMiniMaxM27ID || profileVersion != modelprofile.TokenizerMiniMaxM27Version {
+	var (
+		ids []int
+		err error
+	)
+	switch profileID + "\x00" + profileVersion {
+	case modelprofile.TokenizerKimiK26ID + "\x00" + modelprofile.TokenizerKimiK26Version:
+		ids, err = encodeKimiK26(value)
+	case modelprofile.TokenizerMiniMaxM27ID + "\x00" + modelprofile.TokenizerMiniMaxM27Version:
+		ids, err = encodeMiniMaxM27(value)
+	default:
 		return 0, fmt.Errorf("unsupported tokenizer profile %s@%s", profileID, profileVersion)
 	}
-	ids, err := encodeMiniMaxM27(value)
 	if err != nil {
 		return 0, err
 	}

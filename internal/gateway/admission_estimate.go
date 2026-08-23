@@ -24,6 +24,8 @@ const (
 	chatAdmissionEstimateVersion        = "chat-json-byte-upper.v1"
 	embeddingsAdmissionEstimateVersion  = "embeddings-input-byte-upper.v1"
 	providerAdmissionEstimateVersion    = "provider-json-byte-upper.v1"
+	kimiK26ChatEstimateVersion          = "chat-json-kimi-k2.6-framed-upper.v1"
+	kimiK26ProviderEstimateVersion      = "provider-json-kimi-k2.6-framed-upper.v1"
 	miniMaxM27ChatEstimateVersion       = "chat-json-minimax-m2.7-framed-upper.v1"
 	miniMaxM27ProviderEstimateVersion   = "provider-json-minimax-m2.7-framed-upper.v1"
 	chatAdmissionBaseOverhead           = int64(64)
@@ -103,6 +105,15 @@ func estimateChatAdmissionForPlan(body []byte, plan modelrouting.Plan) (requestA
 	switch plan.TokenizerProfileID + "\x00" + plan.TokenizerProfileVersion {
 	case modelprofile.TokenizerByteUpperID + "\x00" + modelprofile.TokenizerByteUpperVersion:
 		return byteUpper, nil
+	case modelprofile.TokenizerKimiK26ID + "\x00" + modelprofile.TokenizerKimiK26Version:
+		messages, collections, err := chatEnvelopeCardinality(body)
+		if err != nil {
+			return requestAdmissionEstimate{}, err
+		}
+		return estimateVerifiedTokenizerJSON(
+			body, plan.TokenizerProfileID, plan.TokenizerProfileVersion,
+			messages, collections, kimiK26ChatEstimateVersion,
+		)
 	case modelprofile.TokenizerMiniMaxM27ID + "\x00" + modelprofile.TokenizerMiniMaxM27Version:
 		messages, collections, err := chatEnvelopeCardinality(body)
 		if err != nil {
@@ -121,6 +132,18 @@ func estimateProviderJSONAdmissionForPlan(body []byte, plan modelrouting.Plan) (
 	switch plan.TokenizerProfileID + "\x00" + plan.TokenizerProfileVersion {
 	case modelprofile.TokenizerByteUpperID + "\x00" + modelprofile.TokenizerByteUpperVersion:
 		return estimateProviderJSONAdmission(body)
+	case modelprofile.TokenizerKimiK26ID + "\x00" + modelprofile.TokenizerKimiK26Version:
+		if !json.Valid(body) {
+			return requestAdmissionEstimate{}, fmt.Errorf("%w: provider request body must be JSON", errAdmissionUnsupportedShape)
+		}
+		messages, collections, err := chatEnvelopeCardinality(body)
+		if err != nil {
+			return requestAdmissionEstimate{}, err
+		}
+		return estimateVerifiedTokenizerJSON(
+			body, plan.TokenizerProfileID, plan.TokenizerProfileVersion,
+			messages, collections, kimiK26ProviderEstimateVersion,
+		)
 	case modelprofile.TokenizerMiniMaxM27ID + "\x00" + modelprofile.TokenizerMiniMaxM27Version:
 		if !json.Valid(body) {
 			return requestAdmissionEstimate{}, fmt.Errorf("%w: provider request body must be JSON", errAdmissionUnsupportedShape)

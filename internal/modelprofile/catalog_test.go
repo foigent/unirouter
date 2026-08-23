@@ -128,7 +128,9 @@ func TestKimiK26AdvancedChatProfileIsVersionedAndExecutable(t *testing.T) {
 	k26, ok := Match("Kimi K2.6")
 	require.True(t, ok)
 	require.Equal(t, "kimi.k2.6.api", k26.ID)
-	require.Equal(t, "1.2.0", k26.Version)
+	require.Equal(t, "1.3.0", k26.Version)
+	require.Equal(t, TokenizerKimiK26ID, k26.TokenizerProfileID)
+	require.Equal(t, TokenizerKimiK26Version, k26.TokenizerProfileVersion)
 	require.Equal(t, "protocol.kimi-openai-chat.v2", k26.ProtocolProfile)
 	require.Equal(t, 262_144, k26.ProviderContextWindow)
 	for _, capability := range []string{

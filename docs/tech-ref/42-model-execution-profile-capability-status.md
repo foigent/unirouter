@@ -77,11 +77,16 @@ The repository already contains the correct structural start:
   `prompt_tokens_details.cached_tokens` is also recognized.
 - Chat tools, JSON Object/Schema and preserved `reasoning_content` have common
   protocol machinery.
-- `kimi.k2.6.api@1.1.0` and `kimi.k3.api@1.2.0` add typed Chat contracts for
+- `kimi.k2.6.api@1.3.0` and `kimi.k3.api@1.3.0` retain typed Chat contracts for
   final-assistant Partial Mode, K3 system-message Dynamic Tools, exact
   `$web_search` admission/evidence, and MIME-bounded inline image/video data
   URLs. K2.6 search requires explicit disabled thinking. Provider URL and file
   references remain outside this inline contract.
+- `kimi.k2.6.api@1.3.0` freezes MoonshotAI's reviewed K2.6 `tiktoken.model`,
+  regex and special-token identities. Admission counts the retained request with
+  this exact tokenizer plus conservative framing instead of the byte upper bound;
+  unknown and separately versioned Kimi models continue to fail closed on the
+  byte upper bound.
 - Kimi top-level `usage.cached_tokens` is normalized as cache-read evidence.
   A provider response ending in the documented `$web_search` tool call also
   produces one bounded `builtin_web_search_calls` meter. M83 freezes its exact
@@ -127,7 +132,7 @@ The following are still real gaps:
 
 | Model/family | Provider-documented surface | Current UniRouter support | Not yet production-supported |
 |---|---|---|---|
-| Kimi K2.6 | 262,144 context; thinking toggle; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache and built-in search | `kimi.k2.6.api@1.1.0`; thinking/tool-history contract; standard tools; final-assistant Partial; exact non-stream built-in search meter; Kimi cache usage; MIME-bounded inline image/video | provider-file/remote-URL media; large-media estimator; JSON qualification and exact target live evidence; Dynamic Tools are not a K2.6 claim |
+| Kimi K2.6 | 262,144 context; thinking toggle; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache and built-in search | `kimi.k2.6.api@1.3.0`; exact frozen tokenizer admission; thinking/tool-history contract; standard tools; final-assistant Partial; exact non-stream built-in search meter; Kimi cache usage; MIME-bounded inline image/video | provider-file/remote-URL media; large-media estimator; JSON qualification and exact target live capability evidence; Dynamic Tools are not a K2.6 claim |
 | Kimi K2.7 Code | 262,144 context; text/image/video; thinking-only; ToolCalls, JSON Mode, Partial Mode and automatic cache | versioned 256K profile; required-thinking contract; standard tools | coding-surface cache wire qualification; Partial Mode; multimodal admission; OpenAI and Anthropic coding conformance; complete JSON qualification |
 | Kimi K3 | 1M provider maximum with a 256K current customer default; always-on reasoning; `low/high/max`; tools, JSON Object/Schema, Partial, dynamic tools, built-in search, vision/video and automatic cache | `kimi.k3.api@1.2.0`; exact reasoning; standard tools/JSON; final-assistant Partial; system-message Dynamic Tools; exact non-stream built-in search meter; Kimi cache usage; MIME-bounded inline image/video | provider-file/remote-URL media; large-media estimator; full target live multi-turn/capability conformance |
 | DeepSeek V4 Flash/Pro | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache. Vision belongs to the separate `deepseek-v4-flash-vision-exp` model | OpenAI-compatible Chat; typed thinking/effort, thinking-mode `tool_choice` rejection and preserved tool-history contract; standard tools/JSON; profile-bound cache hit/miss usage; versioned limits | live operation/capability conformance for the configured V4 identities; prefix beta; full Responses/Anthropic operations; Files/FIM; separate vision model qualification |
@@ -136,6 +141,8 @@ The following are still real gaps:
 Official references used for this snapshot:
 
 - [Kimi K2.6 pricing and capability summary](https://platform.kimi.com/docs/pricing/chat-k26)
+- [Kimi token estimate API](https://platform.kimi.com/docs/api/estimate) and
+  [frozen K2.6 tokenizer source](https://huggingface.co/moonshotai/Kimi-K2.6/tree/7eb5002f6aadc958aed6a9177b7ed26bb94011bb)
 - [Kimi K2.7 Code pricing and capability summary](https://platform.kimi.com/docs/pricing/chat-k27-code)
 - [Kimi K3 pricing](https://platform.kimi.com/docs/pricing/chat-k3) and
   [reasoning effort](https://platform.kimi.com/docs/guide/use-reasoning-effort)

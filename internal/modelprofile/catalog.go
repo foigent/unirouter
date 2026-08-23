@@ -16,6 +16,8 @@ const (
 
 	TokenizerByteUpperID       = "tokenizer.byte-upper"
 	TokenizerByteUpperVersion  = "1.0.0"
+	TokenizerKimiK26ID         = "tokenizer.kimi-k2.6"
+	TokenizerKimiK26Version    = "1.0.0"
 	TokenizerMiniMaxM27ID      = "tokenizer.minimax-m2.7"
 	TokenizerMiniMaxM27Version = "1.0.0"
 )
@@ -88,6 +90,29 @@ var catalog = []Profile{
 			"https://api-docs.deepseek.com/quick_start/pricing/",
 			"https://api-docs.deepseek.com/guides/thinking_mode",
 			"https://api-docs.deepseek.com/api/create-chat-completion",
+		},
+	},
+	{
+		ID: "kimi.k2.6.api", Version: "1.3.0", Label: "Kimi K2.6 官方 API",
+		TokenizerProfileID: TokenizerKimiK26ID, TokenizerProfileVersion: TokenizerKimiK26Version,
+		ReasoningProfile: "reasoning.kimi-k2.6-thinking-toggle.v1", CacheUsageProfile: "cache-usage.kimi-platform.v1",
+		ProtocolProfile:       "protocol.kimi-openai-chat.v2",
+		ProviderContextWindow: 262_144, DefaultContextWindow: 262_144, DefaultOutputLimit: 32_768,
+		ProviderCapabilities: []string{
+			"reasoning", "tools", CapabilityPartialMode, CapabilityBuiltinWebSearch,
+			CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Capabilities: []string{
+			"reasoning", "tools", CapabilityPartialMode, CapabilityVision, CapabilityVideo, "prompt_cache",
+		},
+		Aliases: []string{"Kimi K2.6", "kimi-k2.6", "kimi-k2.6-preview"},
+		EvidenceRefs: []string{
+			"https://platform.kimi.com/docs/pricing/chat-k26",
+			"https://platform.kimi.com/docs/guide/kimi-k2-6-quickstart",
+			"https://platform.kimi.com/docs/api/chat",
+			"https://platform.kimi.com/docs/api/estimate",
+			"https://huggingface.co/moonshotai/Kimi-K2.6/tree/7eb5002f6aadc958aed6a9177b7ed26bb94011bb",
+			"https://platform.kimi.com/docs/guide/use-partial-mode-feature-of-kimi-api",
 		},
 	},
 	{

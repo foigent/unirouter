@@ -85,36 +85,62 @@ func TestVerifiedMiniMaxTokenizerProfileReplacesByteUpperWithoutClaimingProvider
 	}
 }
 
-func TestVerifiedMiniMaxTokenizerProfileAdmitsLargeToolEnvelopeBeforeFreeze(t *testing.T) {
-	encKey := []byte("0123456789abcdef0123456789abcdef")
-	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://provider.test", encKey, nil)
-	setExecutionTestProfile(t, &plan, "minimax.m2.7.token-plan", "1.0.0")
-	plan.PublicContextLimit = 20_000
-	plan.Routes[0].MaxContext = 20_000
+func TestVerifiedKimiK26TokenizerProfileReplacesByteUpperWithoutClaimingProviderUsage(t *testing.T) {
 	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":"` + strings.Repeat("a", 100_000) + `"}],"max_tokens":1}`)
+	plan := modelrouting.Plan{
+		ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.3.0",
+		TokenizerProfileID: modelprofile.TokenizerKimiK26ID, TokenizerProfileVersion: modelprofile.TokenizerKimiK26Version,
+	}
 	byteUpper, err := estimateChatAdmission(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if byteUpper.InputTokens <= plan.PublicContextLimit {
-		t.Fatalf("fixture no longer distinguishes byte upper from verified tokenizer: %+v", byteUpper)
-	}
+	require.NoError(t, err)
+	profileEstimate, err := estimateChatAdmissionForPlan(body, plan)
+	require.NoError(t, err)
+	require.Equal(t, kimiK26ChatEstimateVersion, profileEstimate.Version)
+	require.Less(t, profileEstimate.InputTokens, byteUpper.InputTokens)
+	require.Less(t, profileEstimate.InputTokens, 30_000)
+	providerEstimate, err := estimateProviderJSONAdmissionForPlan(body, plan)
+	require.NoError(t, err)
+	require.Equal(t, kimiK26ProviderEstimateVersion, providerEstimate.Version)
+	require.Equal(t, profileEstimate.InputTokens, providerEstimate.InputTokens)
+}
 
-	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
-	if err := relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default()); err != nil {
-		t.Fatal(err)
+func TestVerifiedTokenizerProfilesAdmitLargeToolEnvelopeBeforeFreeze(t *testing.T) {
+	tests := []struct {
+		name            string
+		profileID       string
+		profileVersion  string
+		estimateVersion string
+		contentBytes    int
+		contextLimit    int
+	}{
+		{name: "Kimi K2.6", profileID: "kimi.k2.6.api", profileVersion: "1.3.0", estimateVersion: kimiK26ChatEstimateVersion, contentBytes: 262_000, contextLimit: 262_144},
+		{name: "MiniMax M2.7", profileID: "minimax.m2.7.token-plan", profileVersion: "1.0.0", estimateVersion: miniMaxM27ProviderEstimateVersion, contentBytes: 100_000, contextLimit: 20_000},
 	}
-	batch, err := relay.prepareModelExecutionRoutes(
-		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
-		"public-model", "public-model", "req-minimax-profile", nil,
-		modelExecutionRequestLimits{EstimatedInputTokens: byteUpper.InputTokens, ExplicitOutputTokens: intPointer(1), EstimateVersion: byteUpper.Version},
-		body, time.Now(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(batch.routes) != 1 || batch.limits.EstimatedInputTokens >= plan.PublicContextLimit || batch.limits.EstimateVersion != miniMaxM27ProviderEstimateVersion {
-		t.Fatalf("verified tokenizer plan was not retained through final provider envelope: %+v routes=%d", batch.limits, len(batch.routes))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encKey := []byte("0123456789abcdef0123456789abcdef")
+			plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://provider.test", encKey, nil)
+			setExecutionTestProfile(t, &plan, test.profileID, test.profileVersion)
+			plan.PublicContextLimit = test.contextLimit
+			plan.Routes[0].MaxContext = test.contextLimit
+			body := []byte(`{"model":"public-model","messages":[{"role":"user","content":"` + strings.Repeat("a", test.contentBytes) + `"}],"max_tokens":1}`)
+			byteUpper, err := estimateChatAdmission(body)
+			require.NoError(t, err)
+			require.Greater(t, byteUpper.InputTokens, plan.PublicContextLimit)
+
+			relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+			require.NoError(t, relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default()))
+			batch, err := relay.prepareModelExecutionRoutes(
+				context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+				"public-model", "public-model", "req-verified-tokenizer-profile", nil,
+				modelExecutionRequestLimits{EstimatedInputTokens: byteUpper.InputTokens, ExplicitOutputTokens: intPointer(1), EstimateVersion: byteUpper.Version},
+				body, time.Now(),
+			)
+			require.NoError(t, err)
+			require.Len(t, batch.routes, 1)
+			require.Less(t, batch.limits.EstimatedInputTokens, plan.PublicContextLimit)
+			require.Equal(t, test.estimateVersion, batch.limits.EstimateVersion)
+		})
 	}
 }
 
