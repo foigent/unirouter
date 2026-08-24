@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Modal, Toast } from '@douyinfe/semi-ui';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelEndpointsPage from '../ModelEndpointsPage';
 import {

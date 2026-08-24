@@ -4,6 +4,29 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.1] - 2026-08-24
+
+### Changed
+
+- Enabled the reviewed React Router v7 transition and relative-splat behavior
+  in production and shared test routers before the eventual router upgrade.
+- Added a React compatibility guard that retains Strict Mode, rejects
+  UniRouter-owned `findDOMNode` calls, and blocks React 19 while the exact Semi
+  UI dependency waiver remains active.
+
+### Fixed
+
+- Covered absolute deep links, query/hash restoration and catch-all replace
+  redirects under the future router behavior, while making affected async
+  component tests wait for observable UI state instead of render counts.
+
+### Compatibility boundary
+
+- UniRouter source has no `findDOMNode` call. The visible React 18 warning from
+  Semi UI 2.100.0 remains an exact, non-suppressed temporary waiver and must be
+  removed before React 19; this release does not claim the upstream warning is
+  fixed.
+
 ## [1.2.0] - 2026-08-24
 
 ### Added

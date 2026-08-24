@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelReadinessPage from '../ModelReadinessPage';
 import { ApiError } from '../../api/transport';

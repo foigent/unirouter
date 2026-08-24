@@ -1,13 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import { describe, expect, it, vi } from 'vitest';
 import IntegrationsPage from '../IntegrationsPage';
 
-const dataExchangeMount = vi.hoisted(() => vi.fn());
-vi.mock('../DataExchangePage', () => ({ default: () => { dataExchangeMount(); return <div>X-Insight 连接工作区</div>; } }));
+const dataExchangeRender = vi.hoisted(() => vi.fn());
+vi.mock('../DataExchangePage', () => ({ default: () => { dataExchangeRender(); return <div>X-Insight 连接工作区</div>; } }));
 
 describe('IntegrationsPage', () => {
-  it('keeps the Reference Connector isolated and does not probe it until selected', () => {
+  it('keeps the Reference Connector isolated and does not render it until selected', () => {
     render(<MemoryRouter><IntegrationsPage /></MemoryRouter>);
 
     expect(screen.getByRole('heading', { name: '集成管理' })).toBeTruthy();
@@ -17,10 +17,10 @@ describe('IntegrationsPage', () => {
     expect(screen.getByText(/不会自动获得模型、管理员或财务权限/)).toBeTruthy();
     expect(screen.getByText(/凭据与事件处理留在 Adapter/)).toBeTruthy();
     expect(screen.getByText('可配置')).toBeTruthy();
-    expect(dataExchangeMount).not.toHaveBeenCalled();
+    expect(dataExchangeRender).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('tab', { name: 'X-Insight' }));
     expect(screen.getByText('X-Insight 连接工作区')).toBeTruthy();
-    expect(dataExchangeMount).toHaveBeenCalledTimes(1);
+    expect(dataExchangeRender).toHaveBeenCalled();
   });
 });

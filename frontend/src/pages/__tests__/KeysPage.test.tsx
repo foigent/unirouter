@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
+import { Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
 import KeysPage from '../KeysPage';
+import { MemoryRouter } from '../../test/MemoryRouter';
 
 function RedirectTarget() {
   const location = useLocation();

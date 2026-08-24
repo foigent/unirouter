@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import ApiDocsPage from '../ApiDocsPage';
 import { useAuthStore } from '../../store/auth';
 
@@ -238,7 +238,7 @@ describe('ApiDocsPage', () => {
     renderPage('/docs#error-guardrail_error.blocked');
 
     expect(await screen.findByText('API 快速接入')).toBeTruthy();
-    expect(screen.getByText('当前项目角色为只读')).toBeTruthy();
+    expect(await screen.findByText('当前项目角色为只读')).toBeTruthy();
     expect(await screen.findByText('guardrail_error.blocked')).toBeTruthy();
     expect(screen.queryByText('项目 API 参考')).toBeNull();
     expect(screen.queryByText('请求调试台直接使用项目访问凭证调用')).toBeNull();

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Modal } from '@douyinfe/semi-ui';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AccessReviewPage from '../AccessReviewPage';
 import { useAuthStore } from '../../store/auth';
