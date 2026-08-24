@@ -1,11 +1,13 @@
 import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Modal, Toast } from '@douyinfe/semi-ui';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MemoryRouter } from '../../test/MemoryRouter';
 import WorkloadApplicationsPage from '../WorkloadApplicationsPage';
 import { useAuthStore } from '../../store/auth';
+import { pasteValue } from '../../test/user';
 
 const clientMocks = {
   getContract: vi.fn(), getProjects: vi.fn(), getApplications: vi.fn(), getCredentials: vi.fn(),
@@ -144,7 +146,13 @@ async function renderApplicationBAfterAdverseAccessOrdering() {
 }
 
 describe('ApplicationsV2Page', () => {
-  afterEach(() => { Modal.destroyAll(); Toast.destroyAll(); });
+  afterEach(async () => {
+    await act(async () => {
+      Modal.destroyAll();
+      Toast.destroyAll();
+      await Promise.resolve();
+    });
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -293,11 +301,12 @@ describe('ApplicationsV2Page', () => {
   });
 
   it('creates an application without asking the operator for internal identity refs', async () => {
+    const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/applications?project_id=11']}><WorkloadApplicationsPage /></MemoryRouter>);
 
     await waitFor(() => expect(screen.getByRole('button', { name: /新建应用/ })).toBeEnabled());
     const createButton = screen.getByRole('button', { name: /新建应用/ });
-    fireEvent.click(createButton);
+    await user.click(createButton);
     expect((await screen.findAllByText('新建应用')).length).toBe(2);
     expect(screen.getByText('环境（创建后不可变）')).toBeTruthy();
     expect(screen.queryByLabelText(/Application ref|Logical ref/i)).toBeNull();
@@ -307,8 +316,8 @@ describe('ApplicationsV2Page', () => {
     expect(screen.getByRole('combobox', { name: '应用类型' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '环境（创建后不可变）' })).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText('显示名称'), { target: { value: '新服务' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await pasteValue(user, screen.getByLabelText('显示名称'), '新服务');
+    await user.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(clientMocks.createApplication).toHaveBeenCalledWith(expect.objectContaining({
       display_name: '新服务', kind: 'service', environment: 'development', production_use: false,
     })));
@@ -416,17 +425,19 @@ describe('ApplicationsV2Page', () => {
   });
 
   it('binds credential issue to the currently displayed Application after adverse access-response ordering', async () => {
+    const user = userEvent.setup();
     await renderApplicationBAfterAdverseAccessOrdering();
 
-    fireEvent.click(screen.getByRole('button', { name: /创建应用 Key/ }));
-    fireEvent.change(await screen.findByLabelText('Key 名称'), { target: { value: 'project-b-runtime' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+    await user.click(screen.getByRole('button', { name: /创建应用 Key/ }));
+    await pasteValue(user, await screen.findByLabelText('Key 名称'), 'project-b-runtime');
+    await user.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalledWith('grant-project-b', expect.objectContaining({ name: 'project-b-runtime' }), expect.any(String)));
     expect(accessMocks.issueCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
   }, 30_000);
 
   it('refreshes the application summary after issuing a credential', async () => {
+    const user = userEvent.setup();
     const withoutCredential = { ...application, credential_count: 0, active_credential_count: 0 };
     clientMocks.getApplications
       .mockResolvedValueOnce({ data: [withoutCredential], total: 1 })
@@ -438,9 +449,9 @@ describe('ApplicationsV2Page', () => {
     render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
 
     expect(await screen.findByText('0/0')).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: /创建应用 Key/ }));
-    fireEvent.change(await screen.findByLabelText('Key 名称'), { target: { value: 'issued-runtime' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+    await user.click(await screen.findByRole('button', { name: /创建应用 Key/ }));
+    await pasteValue(user, await screen.findByLabelText('Key 名称'), 'issued-runtime');
+    await user.click(screen.getByRole('button', { name: '创建' }));
 
     await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalled());
     expect(await screen.findByText('1/1')).toBeTruthy();

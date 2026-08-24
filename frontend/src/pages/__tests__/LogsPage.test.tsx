@@ -211,11 +211,11 @@ describe('LogsPage', () => {
     expect(mockGetOrganizations).not.toHaveBeenCalled();
   });
 
-  it('does not query execution records when platform customer context is unavailable', () => {
+  it('does not query execution records when platform customer context is unavailable', async () => {
     auth.user = { role: 'platform_admin', org_id: 99, customer_context: { state: 'unavailable' } };
     renderLogs();
 
-    expect(screen.getAllByText('无法确认客户组织上下文').length).toBeGreaterThanOrEqual(1);
+    expect((await screen.findAllByText('无法确认客户组织上下文')).length).toBeGreaterThanOrEqual(1);
     expect(mockGetLogs).not.toHaveBeenCalled();
   });
 

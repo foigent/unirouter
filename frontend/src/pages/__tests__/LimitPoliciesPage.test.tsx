@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LimitPoliciesPage from '../LimitPoliciesPage';
 import { useAuthStore } from '../../store/auth';
+import { pasteValue } from '../../test/user';
 
 const mocks = vi.hoisted(() => ({
   getLimitPolicies: vi.fn(),
@@ -116,6 +118,7 @@ describe('LimitPoliciesPage', () => {
   });
 
   it('defaults platform creation to the canonical customer and preserves an existing deployment-global policy', async () => {
+    const user = userEvent.setup();
     useAuthStore.setState({ user: {
       id: 1, username: 'platform', role: 'platform_admin', org_id: 99,
       customer_context: { state: 'ready', org_id: 22, org_name: 'Acme' },
@@ -136,15 +139,15 @@ describe('LimitPoliciesPage', () => {
     expect(screen.getByText('部署全局（当前部署全部请求）')).toBeTruthy();
     expect(mocks.getOrganizations).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /新增策略/ }));
-    fireEvent.change(await screen.findByPlaceholderText('production-chat'), { target: { value: 'customer-default' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建策略' }));
+    await user.click(screen.getByRole('button', { name: /新增策略/ }));
+    await pasteValue(user, await screen.findByPlaceholderText('production-chat'), 'customer-default');
+    await user.click(screen.getByRole('button', { name: '创建策略' }));
     await waitFor(() => expect(mocks.createLimitPolicy).toHaveBeenCalledWith(expect.objectContaining({
       name: 'customer-default', org_id: 22,
     })));
 
-    fireEvent.click(screen.getByRole('button', { name: '编辑策略 deployment-cap' }));
-    fireEvent.click(await screen.findByRole('button', { name: '保存并生成新版本' }));
+    await user.click(screen.getByRole('button', { name: '编辑策略 deployment-cap' }));
+    await user.click(await screen.findByRole('button', { name: '保存并生成新版本' }));
     await waitFor(() => expect(mocks.updateLimitPolicy).toHaveBeenCalledWith(8, expect.objectContaining({
       org_id: 0, project_id: 0, api_key_id: 0,
     })));

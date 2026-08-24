@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Toast } from '@douyinfe/semi-ui';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import UsersPage from '../UsersPage';
 import { useAuthStore } from '../../store/auth';
 import { ApiError } from '../../api/client';
+import { pasteValue } from '../../test/user';
 
 const mocks = vi.hoisted(() => ({
   getUsers: vi.fn(),
@@ -125,20 +127,21 @@ describe('UsersPage enterprise identity presentation', () => {
   });
 
   it('creates a local user in the customer organization and grants the recommended project access', async () => {
+    const user = userEvent.setup();
     mocks.createUser.mockResolvedValue({ id: 10 });
     render(<UsersPage />);
 
     await screen.findByText('local-user');
-    fireEvent.click(screen.getByRole('button', { name: /新增本地用户/ }));
+    await user.click(screen.getByRole('button', { name: /新增本地用户/ }));
 
     expect(await screen.findByText('本地登录名在当前部署中全局唯一，忽略大小写和首尾空白。')).toBeTruthy();
     expect(screen.queryByText(/登录来源、外部 subject、用户名与邮箱由 OIDC/)).toBeNull();
     expect(screen.getByRole('combobox', { name: '组织角色' })).toHaveTextContent('普通成员');
     expect(screen.getByRole('combobox', { name: '状态' })).toHaveTextContent('启用');
 
-    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'local-user' } });
-    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'secret-password-123' } });
-    fireEvent.click(screen.getByText('创建'));
+    await pasteValue(user, await screen.findByLabelText('用户名'), 'local-user');
+    await pasteValue(user, screen.getByLabelText('初始密码'), 'secret-password-123');
+    await user.click(screen.getByText('创建'));
 
     await waitFor(() => expect(mocks.createUser).toHaveBeenCalledWith({
       org_id: 1,
@@ -151,15 +154,16 @@ describe('UsersPage enterprise identity presentation', () => {
   });
 
   it('opens every new-user form with blank account credentials instead of retaining the previous draft', async () => {
+    const user = userEvent.setup();
     render(<UsersPage />);
 
     await screen.findByText('local-user');
-    fireEvent.click(screen.getByRole('button', { name: /新增本地用户/ }));
-    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'unfinished-user' } });
-    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'unfinished-password-123' } });
-    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await user.click(screen.getByRole('button', { name: /新增本地用户/ }));
+    await pasteValue(user, await screen.findByLabelText('用户名'), 'unfinished-user');
+    await pasteValue(user, screen.getByLabelText('初始密码'), 'unfinished-password-123');
+    await user.click(screen.getByRole('button', { name: '取消' }));
 
-    fireEvent.click(screen.getByRole('button', { name: /新增本地用户/ }));
+    await user.click(screen.getByRole('button', { name: /新增本地用户/ }));
     expect(await screen.findByLabelText('用户名')).toHaveValue('');
     expect(screen.getByLabelText('初始密码')).toHaveValue('');
     expect(screen.getByLabelText('用户名')).toHaveAttribute('autocomplete', 'off');
@@ -167,22 +171,24 @@ describe('UsersPage enterprise identity presentation', () => {
   });
 
   it('grants normal model use through project membership instead of an advanced model grant', async () => {
+    const user = userEvent.setup();
     render(<UsersPage />);
 
     await screen.findByText('local-user');
-    fireEvent.click(screen.getByRole('button', { name: '授予项目访问 local-user' }));
+    await user.click(screen.getByRole('button', { name: '授予项目访问 local-user' }));
 
     expect(await screen.findByText(/先加入一个项目，再由项目使用者在“项目工作台”创建自己的项目访问凭证/)).toBeTruthy();
     await waitFor(() => expect(mocks.getProjects).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('combobox', { name: '项目' }));
-    fireEvent.click(await screen.findByText('核心项目'));
+    await user.click(screen.getByRole('combobox', { name: '项目' }));
+    await user.click(await screen.findByText('核心项目'));
     expect(screen.getByRole('combobox', { name: '项目角色' })).toHaveTextContent('项目使用者');
-    fireEvent.click(screen.getByRole('button', { name: '授予项目访问' }));
+    await user.click(screen.getByRole('button', { name: '授予项目访问' }));
 
     await waitFor(() => expect(mocks.upsertProjectMember).toHaveBeenCalledWith(31, 8, 'project_user'));
   });
 
   it('shows a safe conflict message when a local login ID is unavailable', async () => {
+    const user = userEvent.setup();
     mocks.createUser.mockRejectedValue(new ApiError('internal detail must not be shown', 409, {
       error: 'Local login ID is unavailable',
       code: 'local_login_id_conflict',
@@ -190,16 +196,17 @@ describe('UsersPage enterprise identity presentation', () => {
     render(<UsersPage />);
 
 	await screen.findByText('local-user');
-    fireEvent.click(screen.getByText('新增本地用户'));
-    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'Taken-User' } });
-    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'secret-password-123' } });
-    fireEvent.click(screen.getByText('创建'));
+    await user.click(screen.getByText('新增本地用户'));
+    await pasteValue(user, await screen.findByLabelText('用户名'), 'Taken-User');
+    await pasteValue(user, screen.getByLabelText('初始密码'), 'secret-password-123');
+    await user.click(screen.getByText('创建'));
 
     expect(await screen.findByText('本地登录名不可用，请使用其他登录名')).toBeTruthy();
     expect(screen.queryByText('internal detail must not be shown')).toBeNull();
   });
 
   it('preserves a resource-limit conflict instead of relabeling it as a login-ID conflict', async () => {
+    const user = userEvent.setup();
     const licenseMessage = 'commercial License limit exceeded for active_users: 10 active, limit 10';
     mocks.createUser.mockRejectedValue(new ApiError(licenseMessage, 409, {
       error: licenseMessage,
@@ -208,24 +215,25 @@ describe('UsersPage enterprise identity presentation', () => {
     render(<UsersPage />);
 
 	await screen.findByText('local-user');
-    fireEvent.click(screen.getByText('新增本地用户'));
-    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'new-user' } });
-    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'secret-password-123' } });
-    fireEvent.click(screen.getByText('创建'));
+    await user.click(screen.getByText('新增本地用户'));
+    await pasteValue(user, await screen.findByLabelText('用户名'), 'new-user');
+    await pasteValue(user, screen.getByLabelText('初始密码'), 'secret-password-123');
+    await user.click(screen.getByText('创建'));
 
     expect(await screen.findByText(licenseMessage)).toBeTruthy();
     expect(screen.queryByText('本地登录名不可用，请使用其他登录名')).toBeNull();
   });
 
   it('counts the minimum password length in Unicode code points', async () => {
+    const user = userEvent.setup();
     mocks.createUser.mockResolvedValue({ id: 10 });
     render(<UsersPage />);
 
 	await screen.findByText('local-user');
-    fireEvent.click(screen.getByText('新增本地用户'));
-    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'unicode-user' } });
-    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: '😀'.repeat(12) } });
-    fireEvent.click(screen.getByText('创建'));
+    await user.click(screen.getByText('新增本地用户'));
+    await pasteValue(user, await screen.findByLabelText('用户名'), 'unicode-user');
+    await pasteValue(user, screen.getByLabelText('初始密码'), '😀'.repeat(12));
+    await user.click(screen.getByText('创建'));
 
     await waitFor(() => expect(mocks.createUser).toHaveBeenCalledWith(expect.objectContaining({
       username: 'unicode-user',
@@ -234,27 +242,29 @@ describe('UsersPage enterprise identity presentation', () => {
   });
 
   it('rejects fewer than 12 Unicode code points even when UTF-16 has 22 code units', async () => {
+    const user = userEvent.setup();
     render(<UsersPage />);
 
 	await screen.findByText('local-user');
-    fireEvent.click(screen.getByText('新增本地用户'));
-    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'short-unicode-user' } });
-    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: '😀'.repeat(11) } });
-    fireEvent.click(screen.getByText('创建'));
+    await user.click(screen.getByText('新增本地用户'));
+    await pasteValue(user, await screen.findByLabelText('用户名'), 'short-unicode-user');
+    await pasteValue(user, screen.getByLabelText('初始密码'), '😀'.repeat(11));
+    await user.click(screen.getByText('创建'));
 
     expect(await screen.findByText('至少 12 个 Unicode 字符（按码点计）')).toBeTruthy();
     expect(mocks.createUser).not.toHaveBeenCalled();
   });
 
   it('accepts exactly 72 UTF-8 bytes and rejects 73 UTF-8 bytes', async () => {
+    const user = userEvent.setup();
     mocks.createUser.mockResolvedValue({ id: 10 });
     const { unmount } = render(<UsersPage />);
 
 	await screen.findByText('local-user');
-    fireEvent.click(screen.getByText('新增本地用户'));
-    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'byte-boundary-user' } });
-    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: '界'.repeat(24) } });
-    fireEvent.click(screen.getByText('创建'));
+    await user.click(screen.getByText('新增本地用户'));
+    await pasteValue(user, await screen.findByLabelText('用户名'), 'byte-boundary-user');
+    await pasteValue(user, screen.getByLabelText('初始密码'), '界'.repeat(24));
+    await user.click(screen.getByText('创建'));
 
     await waitFor(() => expect(mocks.createUser).toHaveBeenCalledWith(expect.objectContaining({
       username: 'byte-boundary-user',
@@ -269,27 +279,28 @@ describe('UsersPage enterprise identity presentation', () => {
     render(<UsersPage />);
 
     await screen.findByText('暂无用户');
-    fireEvent.click(screen.getByText('新增本地用户'));
-    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'over-byte-boundary-user' } });
-    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: `${'界'.repeat(23)}😀` } });
-    fireEvent.click(screen.getByText('创建'));
+    await user.click(screen.getByText('新增本地用户'));
+    await pasteValue(user, await screen.findByLabelText('用户名'), 'over-byte-boundary-user');
+    await pasteValue(user, screen.getByLabelText('初始密码'), `${'界'.repeat(23)}😀`);
+    await user.click(screen.getByText('创建'));
 
     expect(await screen.findByText('最多 72 个 UTF-8 字节')).toBeTruthy();
     expect(mocks.createUser).not.toHaveBeenCalled();
   });
 
   it('passes the selected disabled status when creating a local user', async () => {
+    const user = userEvent.setup();
     mocks.createUser.mockResolvedValue({ id: 10 });
     render(<UsersPage />);
 
 	await screen.findByText('local-user');
-    fireEvent.click(screen.getByText('新增本地用户'));
+    await user.click(screen.getByText('新增本地用户'));
 
-    fireEvent.change(await screen.findByLabelText('用户名'), { target: { value: 'disabled-user' } });
-    fireEvent.change(screen.getByLabelText('初始密码'), { target: { value: 'secret-password-123' } });
-    fireEvent.click(screen.getByRole('combobox', { name: '状态' }));
-    fireEvent.click(await screen.findByText('禁用'));
-    fireEvent.click(screen.getByText('创建'));
+    await pasteValue(user, await screen.findByLabelText('用户名'), 'disabled-user');
+    await pasteValue(user, screen.getByLabelText('初始密码'), 'secret-password-123');
+    await user.click(screen.getByRole('combobox', { name: '状态' }));
+    await user.click(await screen.findByText('禁用'));
+    await user.click(screen.getByText('创建'));
 
     await waitFor(() => expect(mocks.createUser).toHaveBeenCalledWith({
       org_id: 1,

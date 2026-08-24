@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Toast } from '@douyinfe/semi-ui';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPage from '../SettingsPage';
 import { useAuthStore } from '../../store/auth';
 import { ApiError } from '../../api/client';
+import { pasteValue } from '../../test/user';
 
 const mocks = vi.hoisted(() => ({
   getMe: vi.fn(),
@@ -99,6 +101,7 @@ describe('SettingsPage account scope', () => {
   });
 
   it('clears the now-revoked local session after a successful password change', async () => {
+    const user = userEvent.setup();
     localStorage.setItem('token', 'old-session');
     useAuthStore.setState({ token: 'old-session', isAuthenticated: true });
     mocks.changePassword.mockResolvedValue({ success: true, reauthentication_required: true });
@@ -107,10 +110,10 @@ describe('SettingsPage account scope', () => {
     await screen.findByText('alice');
     const inputs = container.querySelectorAll('input[type="password"]');
     expect(inputs).toHaveLength(3);
-    fireEvent.change(inputs[0], { target: { value: 'old-password-123' } });
-    fireEvent.change(inputs[1], { target: { value: 'new-password-123' } });
-    fireEvent.change(inputs[2], { target: { value: 'new-password-123' } });
-    fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
+    await pasteValue(user, inputs[0], 'old-password-123');
+    await pasteValue(user, inputs[1], 'new-password-123');
+    await pasteValue(user, inputs[2], 'new-password-123');
+    await user.click(screen.getByRole('button', { name: '修改密码' }));
 
     await waitFor(() => expect(mocks.changePassword).toHaveBeenCalledWith({
       old_password: 'old-password-123',
@@ -121,27 +124,29 @@ describe('SettingsPage account scope', () => {
   });
 
   it('counts the minimum password length in Unicode code points', async () => {
+    const user = userEvent.setup();
     render(<SettingsPage />);
     await screen.findByText('alice');
     const inputs = document.querySelectorAll('input[type="password"]');
-    fireEvent.change(inputs[0], { target: { value: 'old-password-123' } });
-    fireEvent.change(inputs[1], { target: { value: '😀'.repeat(11) } });
-    fireEvent.change(inputs[2], { target: { value: '😀'.repeat(11) } });
-    fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
+    await pasteValue(user, inputs[0], 'old-password-123');
+    await pasteValue(user, inputs[1], '😀'.repeat(11));
+    await pasteValue(user, inputs[2], '😀'.repeat(11));
+    await user.click(screen.getByRole('button', { name: '修改密码' }));
 
     expect(await screen.findByText('至少 12 个 Unicode 字符（按码点计）')).toBeTruthy();
     expect(mocks.changePassword).not.toHaveBeenCalled();
   });
 
   it('accepts exactly 72 UTF-8 bytes for a new local password', async () => {
+    const user = userEvent.setup();
     mocks.changePassword.mockResolvedValue({ success: true, reauthentication_required: true });
     render(<SettingsPage />);
     await screen.findByText('alice');
     const inputs = document.querySelectorAll('input[type="password"]');
-    fireEvent.change(inputs[0], { target: { value: 'old-password-123' } });
-    fireEvent.change(inputs[1], { target: { value: '界'.repeat(24) } });
-    fireEvent.change(inputs[2], { target: { value: '界'.repeat(24) } });
-    fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
+    await pasteValue(user, inputs[0], 'old-password-123');
+    await pasteValue(user, inputs[1], '界'.repeat(24));
+    await pasteValue(user, inputs[2], '界'.repeat(24));
+    await user.click(screen.getByRole('button', { name: '修改密码' }));
 
     await waitFor(() => expect(mocks.changePassword).toHaveBeenCalledWith({
       old_password: 'old-password-123',
@@ -150,46 +155,49 @@ describe('SettingsPage account scope', () => {
   });
 
   it('rejects a 73-byte new password before calling the API', async () => {
+    const user = userEvent.setup();
     render(<SettingsPage />);
     await screen.findByText('alice');
     const inputs = document.querySelectorAll('input[type="password"]');
     const password = `${'界'.repeat(23)}😀`;
-    fireEvent.change(inputs[0], { target: { value: 'old-password-123' } });
-    fireEvent.change(inputs[1], { target: { value: password } });
-    fireEvent.change(inputs[2], { target: { value: password } });
-    fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
+    await pasteValue(user, inputs[0], 'old-password-123');
+    await pasteValue(user, inputs[1], password);
+    await pasteValue(user, inputs[2], password);
+    await user.click(screen.getByRole('button', { name: '修改密码' }));
 
     expect(await screen.findByText('最多 72 个 UTF-8 字节')).toBeTruthy();
     expect(mocks.changePassword).not.toHaveBeenCalled();
   });
 
   it('does not mislabel a server password-policy rejection as a wrong current password', async () => {
+    const user = userEvent.setup();
     mocks.changePassword.mockRejectedValue(new ApiError('password must be at most 72 bytes', 400, {
       error: 'password must be at most 72 bytes',
     }));
     render(<SettingsPage />);
     await screen.findByText('alice');
     const inputs = document.querySelectorAll('input[type="password"]');
-    fireEvent.change(inputs[0], { target: { value: 'old-password-123' } });
-    fireEvent.change(inputs[1], { target: { value: 'new-password-123' } });
-    fireEvent.change(inputs[2], { target: { value: 'new-password-123' } });
-    fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
+    await pasteValue(user, inputs[0], 'old-password-123');
+    await pasteValue(user, inputs[1], 'new-password-123');
+    await pasteValue(user, inputs[2], 'new-password-123');
+    await user.click(screen.getByRole('button', { name: '修改密码' }));
 
     expect(await screen.findByText('新密码需至少 12 个 Unicode 字符（按码点计），且最多 72 个 UTF-8 字节')).toBeTruthy();
     expect(screen.queryByText(/当前密码不正确/)).toBeNull();
   });
 
   it('identifies a rejected current password without calling it a policy error', async () => {
+    const user = userEvent.setup();
     mocks.changePassword.mockRejectedValue(new ApiError('Invalid credentials', 401, {
       error: 'Invalid credentials',
     }));
     render(<SettingsPage />);
     await screen.findByText('alice');
     const inputs = document.querySelectorAll('input[type="password"]');
-    fireEvent.change(inputs[0], { target: { value: 'wrong-password' } });
-    fireEvent.change(inputs[1], { target: { value: 'new-password-123' } });
-    fireEvent.change(inputs[2], { target: { value: 'new-password-123' } });
-    fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
+    await pasteValue(user, inputs[0], 'wrong-password');
+    await pasteValue(user, inputs[1], 'new-password-123');
+    await pasteValue(user, inputs[2], 'new-password-123');
+    await user.click(screen.getByRole('button', { name: '修改密码' }));
 
     expect(await screen.findByText('当前密码不正确或登录状态已失效，请重新登录')).toBeTruthy();
     expect(screen.queryByText('新密码需至少 12 个 Unicode 字符（按码点计），且最多 72 个 UTF-8 字节')).toBeNull();

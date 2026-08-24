@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Modal } from '@douyinfe/semi-ui';
 import { useNavigate } from 'react-router-dom';
 import { MemoryRouter } from '../../test/MemoryRouter';
@@ -45,7 +46,12 @@ function deferred<T>() {
 }
 
 describe('AccessReviewPage', () => {
-  afterEach(() => { Modal.destroyAll(); });
+  afterEach(async () => {
+    await act(async () => {
+      Modal.destroyAll();
+      await Promise.resolve();
+    });
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -124,18 +130,20 @@ describe('AccessReviewPage', () => {
 
   it('refreshes the authoritative queue after an optimistic revision conflict', async () => {
     mocks.decideRequest.mockRejectedValue(new ApiError('conflict', 409, {}));
+    const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/access-review?project_id=11']}><AccessReviewPage /></MemoryRouter>);
 
-    fireEvent.click(await screen.findByRole('button', { name: '批准' }));
+    await user.click(await screen.findByRole('button', { name: '批准' }));
     await screen.findByText('批准访问请求');
     expect(screen.getByText('确认批准张三的访问申请？系统会在保存前再次核对你的权限、项目状态和申请范围。')).toBeTruthy();
     expect(screen.queryByText(/revision/i)).toBeNull();
     const modalButtons = screen.getAllByRole('button');
-    fireEvent.click(modalButtons[modalButtons.length - 1]);
+    await user.click(modalButtons[modalButtons.length - 1]);
     await waitFor(() => expect(mocks.decideRequest).toHaveBeenCalledWith('request-actionable', {
       expected_revision: 2, decision: 'approve', reason_codes: ['manual_approved'],
     }, expect.any(String)));
     await waitFor(() => expect(mocks.listProjectRequests).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('请求已被其他操作更新，已刷新审核队列。')).toBeTruthy();
   });
 
   it('never renders a slower prior-project queue response under the current project', async () => {
@@ -155,20 +163,22 @@ describe('AccessReviewPage', () => {
   });
 
   it('binds a decision confirmation to the project that rendered the request', async () => {
+    const user = userEvent.setup();
     mocks.listProjectRequests.mockImplementation((projectID: number) => Promise.resolve({
       data: [queueRequest(projectID, `request-project-${projectID}`, true, projectID)],
       pagination: { limit: 25, has_more: false }, scope: 'project',
     }));
     render(<MemoryRouter initialEntries={['/access-review?project_id=11']}><AccessReviewPage /><ProjectSwitch /></MemoryRouter>);
 
-    fireEvent.click(await screen.findByRole('button', { name: '批准' }));
+    await user.click(await screen.findByRole('button', { name: '批准' }));
     await waitFor(() => expect(screen.getAllByText('批准访问请求').length).toBeGreaterThan(0));
-    fireEvent.click(screen.getByRole('button', { name: 'switch-project' }));
+    await user.click(screen.getByRole('button', { name: 'switch-project' }));
     expect(await screen.findByText('request-project-12')).toBeTruthy();
     const modalButtons = screen.getAllByRole('button');
-    fireEvent.click(modalButtons[modalButtons.length - 1]);
+    await user.click(modalButtons[modalButtons.length - 1]);
 
     await waitFor(() => expect(mocks.decideRequest).not.toHaveBeenCalled());
+    expect(await screen.findByText('审核范围已切换；未提交旧项目请求。')).toBeTruthy();
   });
 
   it('keeps the current project queue stable when a prior-project decision later conflicts', async () => {

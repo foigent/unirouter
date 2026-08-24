@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useLocation } from 'react-router-dom';
 import { MemoryRouter } from '../../test/MemoryRouter';
 import DeveloperConsolePage from '../DeveloperConsolePage';
 import { useAuthStore } from '../../store/auth';
 import type { LicenseAccess } from '../../navigation';
+import { pasteValue } from '../../test/user';
 
 const mockGetProjects = vi.fn();
 const mockGetKeys = vi.fn();
@@ -337,13 +339,14 @@ describe('DeveloperConsolePage', () => {
   });
 
   it('creates project-scoped keys with the selected project_id', async () => {
+    const user = userEvent.setup();
     renderPage('project_admin');
 
     await screen.findByText('frontend');
-    fireEvent.click(screen.getByText('创建项目凭证'));
+    await user.click(screen.getByText('创建项目凭证'));
     const nameInput = await screen.findByPlaceholderText('frontend-prod');
-    fireEvent.change(nameInput, { target: { value: 'dev-key' } });
-    fireEvent.click(screen.getByText(/^创建$/));
+    await pasteValue(user, nameInput, 'dev-key');
+    await user.click(screen.getByText(/^创建$/));
 
     await waitFor(() => {
       expect(mockCreateKey).toHaveBeenCalledWith(expect.objectContaining({
