@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Modal, Toast } from '@douyinfe/semi-ui';
 import { MemoryRouter } from '../../test/MemoryRouter';
@@ -226,13 +226,28 @@ function renderPage(entry = '/channels') {
 async function chooseSelectOption(
   label: string,
   option: string | RegExp,
-  user = userEvent.setup(),
+  user = userEvent.setup({ skipHover: true, delay: null }),
 ) {
-  await user.click(screen.getByRole('combobox', { name: label }));
-  const choice = screen.getAllByRole('option').find(node => {
-    const text = node.textContent || '';
-    return typeof option === 'string' ? text === option : option.test(text);
-  });
+  const combobox = screen.getByRole('combobox', { name: label });
+  await user.click(combobox);
+  await waitFor(() => expect(combobox).toHaveAttribute('aria-expanded', 'true'));
+  const controlledID = combobox.getAttribute('aria-controls');
+  if (!controlledID) throw new Error(`missing controlled option list for ${label}`);
+  const currentChoice = () => {
+    const controlledLists = Array.from(document.querySelectorAll<HTMLElement>('[id]'))
+      .filter(node => node.id === controlledID);
+    for (let index = controlledLists.length - 1; index >= 0; index -= 1) {
+      const candidateChoices = within(controlledLists[index]).queryAllByRole('option');
+      const choice = candidateChoices.find(node => {
+        const text = node.textContent || '';
+        return typeof option === 'string' ? text === option : option.test(text);
+      });
+      if (choice) return choice;
+    }
+    return undefined;
+  };
+  await waitFor(() => expect(currentChoice()).toBeTruthy());
+  const choice = currentChoice();
   if (!choice) throw new Error(`missing option ${String(option)} for ${label}`);
   await user.click(choice);
   return choice;
@@ -308,7 +323,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
   });
 
   it('keeps the custom provider template selected when the execution Profile catalog is unavailable', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ skipHover: true, delay: null });
     mocks.profileList.mockRejectedValueOnce(new Error('profile catalog unavailable'));
     renderPage();
 
@@ -496,7 +511,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
   it('disables a zero-limit existing public model and rejects a stale selection after its limits regress', async () => {
     const current = application();
     const toast = vi.spyOn(Toast, 'error');
-    const user = userEvent.setup();
+    const user = userEvent.setup({ skipHover: true, delay: null });
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
@@ -539,7 +554,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     });
     mocks.list.mockResolvedValue(projection([pathful]));
     const toast = vi.spyOn(Toast, 'error');
-    const user = userEvent.setup();
+    const user = userEvent.setup({ skipHover: true, delay: null });
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
@@ -570,7 +585,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
   });
 
   it('creates through the canonical transaction with one retained idempotency key for an uncertain retry', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ skipHover: true, delay: null });
     mocks.create
       .mockRejectedValueOnce(new TypeError('network unavailable'))
       .mockResolvedValueOnce({
@@ -622,7 +637,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
   }, 20_000);
 
   it('composes an official provider preset with the latest reviewed model profile and pins it on create', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ skipHover: true, delay: null });
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);

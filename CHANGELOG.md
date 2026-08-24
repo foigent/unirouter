@@ -11,8 +11,9 @@ those build identities do not replace the product version.
 - Removed all React `act(...)` and Semi Form validation-race warnings from the
   frontend unit suite by waiting for observable state, real user interactions,
   and file-owned Semi portal cleanup.
-- Made the execution-Profile fallback interaction wait until the provider
-  template control is actually enabled instead of bypassing its disabled state.
+- Kept the custom provider template selected after an execution-Profile catalog
+  failure by binding initialization to the SideSheet open transition and
+  preserving unrelated fields when applying partial Semi Form updates.
 
 ### Added
 

@@ -56,7 +56,7 @@ describe('ModelAuthorizationWorkspace', () => {
   });
 
   it('uses people and model pickers and leaves the internal authorization reference to the server', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ skipHover: true, delay: null });
     render(<ModelAuthorizationWorkspace />);
 
     expect(await screen.findByText('高级模型限制策略')).toBeTruthy();

@@ -112,6 +112,10 @@ function newIdempotencyKey() {
   return `ui-model-deployment-${random}`;
 }
 
+function patchFormValues(formApi: any, values: Record<string, unknown>) {
+  formApi.setValues({ ...formApi.getValues(), ...values });
+}
+
 export default function ModelEndpointCreateSheet({ open, applications, onCancel, onCreated }: Props) {
   const [formApi, setFormApi] = useState<any>(null);
   const [connectionMode, setConnectionMode] = useState<'new' | 'existing'>('new');
@@ -171,20 +175,8 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   }, [open]);
 
   useEffect(() => {
-    if (!open || !formApi) return;
+    if (!open) return;
     const preset = initialPreset;
-    formApi.setValues({
-      connection_mode: 'new',
-      public_model_mode: 'new',
-      credential_mode: 'new',
-      preset: preset.value,
-      provider: preset.provider,
-      base_url: preset.baseURL,
-      adapter_type: preset.adapterType,
-      lifecycle: 'staging',
-      route_role: 'primary',
-      operation_id: 'openai.chat_completions.v1',
-    });
     setConnectionMode('new');
     setPublicModelMode('new');
     setCredentialMode('new');
@@ -195,7 +187,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     setSelectedConnectionID(0);
     setSelectedExecutionProfileKey('');
     createIntent.current = null;
-  }, [formApi, open]);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !formApi || executionProfilesLoading || reviewedModels.length === 0) return;
@@ -208,7 +200,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     setAdapterType(preset.adapterType);
     setOperationID(operation);
     setNewConnectionBaseURL(nextBaseURL);
-    formApi.setValues({
+    patchFormValues(formApi, {
       preset: selectedPreset,
       route_role: formApi.getValue('route_role') || 'primary',
       model_template: option.key,
@@ -241,7 +233,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
 
   const clearReviewedModelDraft = () => {
     setSelectedExecutionProfileKey('');
-    formApi?.setValues({
+    if (formApi) patchFormValues(formApi, {
       model_template: undefined,
       model_name: undefined,
       display_name: undefined,
@@ -263,7 +255,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     const operation = option.operationIDs[0];
     setSelectedExecutionProfileKey(option.key);
     setOperationID(operation);
-    formApi?.setValues({
+    if (formApi) patchFormValues(formApi, {
       model_template: option.key,
       model_name: option.recommendedPublicModelID,
       display_name: reviewedModelDisplayName(option.profile),
