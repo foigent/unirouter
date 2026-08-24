@@ -1,5 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { Toast } from '@douyinfe/semi-ui';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelAuthorizationWorkspace from '../ModelAuthorizationWorkspace';
 import { useAuthStore } from '../../store/auth';
@@ -55,18 +56,19 @@ describe('ModelAuthorizationWorkspace', () => {
   });
 
   it('uses people and model pickers and leaves the internal authorization reference to the server', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
     render(<ModelAuthorizationWorkspace />);
 
     expect(await screen.findByText('高级模型限制策略')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '新增限制策略' }));
+    await user.click(screen.getByRole('button', { name: '新增限制策略' }));
     expect(await screen.findByText(/这不是开通权限/)).toBeTruthy();
     expect(screen.queryByText('策略标识')).toBeNull();
 
-    fireEvent.click(screen.getByRole('combobox', { name: '选择人员' }));
-    fireEvent.click(await screen.findByText('test2 · 本地账号'));
-    fireEvent.click(screen.getByRole('combobox', { name: '只允许调用这些模型' }));
-    fireEvent.click(await screen.findByText('deepseek-v4-flash'));
-    fireEvent.click(screen.getByRole('button', { name: '创建草稿' }));
+    await user.click(screen.getByRole('combobox', { name: '选择人员' }));
+    await user.click(await screen.findByText('test2 · 本地账号'));
+    await user.click(screen.getByRole('combobox', { name: '只允许调用这些模型' }));
+    await user.click(await screen.findByText('deepseek-v4-flash'));
+    await user.click(screen.getByRole('button', { name: '创建草稿' }));
 
     await waitFor(() => expect(mocks.createModelAuthorization).toHaveBeenCalledWith({
       org_id: 7,

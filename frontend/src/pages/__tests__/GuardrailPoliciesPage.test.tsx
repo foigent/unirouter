@@ -1,8 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Modal } from '@douyinfe/semi-ui';
+import userEvent from '@testing-library/user-event';
 import GuardrailPoliciesPage from '../GuardrailPoliciesPage';
 import { useAuthStore } from '../../store/auth';
+import { pasteValue } from '../../test/user';
 
 const mocks = vi.hoisted(() => ({
   getGuardrailPolicies: vi.fn(),
@@ -179,6 +181,7 @@ describe('GuardrailPoliciesPage', () => {
   });
 
   it('defaults platform creation to the canonical customer and preserves an existing deployment-global rule', async () => {
+    const user = userEvent.setup();
     useAuthStore.setState({ user: {
       id: 1, username: 'platform', role: 'platform_admin', org_id: 99,
       customer_context: { state: 'ready', org_id: 22, org_name: 'Acme' },
@@ -190,22 +193,22 @@ describe('GuardrailPoliciesPage', () => {
     await screen.findByText('redact-email');
     expect(mocks.getOrganizations).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /新增策略/ }));
+    await user.click(screen.getByRole('button', { name: /新增策略/ }));
     expect(await screen.findByRole('combobox', { name: '作用域' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '检测内容' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '命中后动作' })).toBeTruthy();
-    fireEvent.click(screen.getByText('高级设置（检查阶段、单个凭证和故障规则）'));
+    await user.click(screen.getByText('高级设置（检查阶段、单个凭证和故障规则）'));
     expect(screen.getByRole('combobox', { name: '检查阶段' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '检测器不可用时' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '是否为部署强制规则' })).toBeTruthy();
-    fireEvent.change(await screen.findByPlaceholderText('例如：客户数据脱敏'), { target: { value: 'customer-default' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建策略' }));
+    await pasteValue(user, await screen.findByPlaceholderText('例如：客户数据脱敏'), 'customer-default');
+    await user.click(screen.getByRole('button', { name: '创建策略' }));
     await waitFor(() => expect(mocks.createGuardrailPolicy).toHaveBeenCalledWith(expect.objectContaining({
       name: 'customer-default', org_id: 22, mandatory: false,
     })));
 
-    fireEvent.click(screen.getByRole('button', { name: '编辑安全策略 platform-mandatory' }));
-    fireEvent.click(await screen.findByRole('button', { name: '保存并生成新版本' }));
+    await user.click(screen.getByRole('button', { name: '编辑安全策略 platform-mandatory' }));
+    await user.click(await screen.findByRole('button', { name: '保存并生成新版本' }));
     await waitFor(() => expect(mocks.updateGuardrailPolicy).toHaveBeenCalledWith(9, expect.objectContaining({
       org_id: 0, project_id: 0, api_key_id: 0, mandatory: true,
     })));

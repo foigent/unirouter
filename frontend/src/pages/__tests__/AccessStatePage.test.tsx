@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from '../../test/MemoryRouter';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AccessStatePage from '../AccessStatePage';
 import { useAuthStore } from '../../store/auth';
+import { pasteValue } from '../../test/user';
 
 const mocks = vi.hoisted(() => ({
   getProjects: vi.fn(), listMyRequests: vi.fn(), listMyGrants: vi.fn(),
@@ -97,6 +99,7 @@ describe('AccessStatePage', () => {
   });
 
   it('shows a secret once and renders secret-free replay evidence truthfully', async () => {
+    const user = userEvent.setup();
     mocks.issueCredential
       .mockResolvedValueOnce({
         id: 91, credential_ref: 'cred-one', key: 'ur-secret-once', key_prefix: 'ur-once', name: 'Laptop', grant_ref: 'grant-one',
@@ -110,17 +113,17 @@ describe('AccessStatePage', () => {
       });
     render(<MemoryRouter initialEntries={['/access?project_id=11']}><AccessStatePage /></MemoryRouter>);
 
-    fireEvent.click(await screen.findByRole('button', { name: '管理 API Key' }));
-    fireEvent.click(await screen.findByRole('button', { name: /创建 API Key/ }));
-    fireEvent.change(await screen.findByLabelText('Key 名称'), { target: { value: 'Laptop' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+    await user.click(await screen.findByRole('button', { name: '管理 API Key' }));
+    await user.click(await screen.findByRole('button', { name: /创建 API Key/ }));
+    await pasteValue(user, await screen.findByLabelText('Key 名称'), 'Laptop');
+    await user.click(screen.getByRole('button', { name: '创建' }));
     expect(await screen.findByText('ur-secret-once')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'confirm' }));
+    await user.click(screen.getByRole('button', { name: 'confirm' }));
     await waitFor(() => expect(screen.queryByText('ur-secret-once')).toBeNull());
 
-    fireEvent.click(await screen.findByRole('button', { name: /创建 API Key/ }));
-    fireEvent.change(await screen.findByLabelText('Key 名称'), { target: { value: 'Laptop' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建' }));
+    await user.click(await screen.findByRole('button', { name: /创建 API Key/ }));
+    await pasteValue(user, await screen.findByLabelText('Key 名称'), 'Laptop');
+    await user.click(screen.getByRole('button', { name: '创建' }));
     expect(await screen.findByText(/之前成功操作的安全重放/)).toBeTruthy();
     expect(screen.queryByText(/rotate_active_version/)).toBeNull();
     expect(screen.queryByText('ur-secret-once')).toBeNull();

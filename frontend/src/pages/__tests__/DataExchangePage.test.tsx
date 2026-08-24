@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Toast } from '@douyinfe/semi-ui';
 import DataExchangePage, { receiptPayload } from '../DataExchangePage';
 import { parseFrozenConnectorInvitation, parseReceiverRegistrationBundle } from '../XInsightLiveConnection';
@@ -57,7 +57,12 @@ vi.mock('../../api/client', () => ({
 }));
 
 describe('DataExchangePage', () => {
-  afterEach(() => { Toast.destroyAll(); });
+  afterEach(async () => {
+    await act(async () => {
+      Toast.destroyAll();
+      await Promise.resolve();
+    });
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();

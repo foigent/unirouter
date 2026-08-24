@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { GrantCreditsPanel } from '../GrantsPage';
+import { pasteValue } from '../../test/user';
 
 const mockGetGrants = vi.fn();
 const mockCreateGrant = vi.fn();
@@ -19,18 +21,19 @@ describe('GrantCreditsPanel', () => {
   });
 
   it('reuses one client identity when a safe retry is needed', async () => {
+    const user = userEvent.setup();
     mockCreateGrant
       .mockRejectedValueOnce(new Error('temporary failure'))
       .mockResolvedValueOnce({ id: 9 });
     render(<GrantCreditsPanel orgId={22} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /发放赠送额度/ }));
-    fireEvent.change(screen.getByPlaceholderText('100.00'), { target: { value: '12.34' } });
-    fireEvent.change(screen.getByPlaceholderText('授信调整 / 商务补偿 / TICKET-001'), { target: { value: ' TICKET-001 ' } });
-    fireEvent.click(screen.getByRole('button', { name: '确认发放' }));
+    await user.click(await screen.findByRole('button', { name: /发放赠送额度/ }));
+    await pasteValue(user, screen.getByPlaceholderText('100.00'), '12.34');
+    await pasteValue(user, screen.getByPlaceholderText('授信调整 / 商务补偿 / TICKET-001'), ' TICKET-001 ');
+    await user.click(screen.getByRole('button', { name: '确认发放' }));
 
     await waitFor(() => expect(mockCreateGrant).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('button', { name: '确认发放' }));
+    await user.click(screen.getByRole('button', { name: '确认发放' }));
     await waitFor(() => expect(mockCreateGrant).toHaveBeenCalledTimes(2));
 
     const first = mockCreateGrant.mock.calls[0][0];
@@ -45,10 +48,11 @@ describe('GrantCreditsPanel', () => {
   });
 
   it('does not submit a grant without an auditable reason', async () => {
+    const user = userEvent.setup();
     render(<GrantCreditsPanel orgId={22} />);
-    fireEvent.click(await screen.findByRole('button', { name: /发放赠送额度/ }));
-    fireEvent.change(screen.getByPlaceholderText('100.00'), { target: { value: '10.00' } });
-    fireEvent.click(screen.getByRole('button', { name: '确认发放' }));
+    await user.click(await screen.findByRole('button', { name: /发放赠送额度/ }));
+    await pasteValue(user, screen.getByPlaceholderText('100.00'), '10.00');
+    await user.click(screen.getByRole('button', { name: '确认发放' }));
 
     await waitFor(() => expect(mockCreateGrant).not.toHaveBeenCalled());
   });

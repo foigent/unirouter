@@ -95,9 +95,12 @@ describe('NotificationCenterPage', () => {
     mockGetProjects.mockResolvedValue({ data: [], total: 0 });
   });
 
-  afterEach(() => {
-    Modal.destroyAll();
-    Toast.destroyAll();
+  afterEach(async () => {
+    await act(async () => {
+      Modal.destroyAll();
+      Toast.destroyAll();
+      await Promise.resolve();
+    });
     document.querySelectorAll('.semi-portal').forEach(portal => portal.remove());
     document.body.removeAttribute('style');
   });

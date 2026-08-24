@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from '../../test/MemoryRouter'
 import LoginPage from '../../pages/LoginPage'
+import { pasteValue } from '../../test/user'
 
 // Mock the auth store
 const mocks = vi.hoisted(() => ({
@@ -65,6 +66,7 @@ describe('LoginPage', () => {
   })
 
   it('toggles password visibility without changing the submitted value', async () => {
+    const user = userEvent.setup()
     mockLogin.mockResolvedValueOnce({ id: 1, username: 'admin', role: 'admin' })
     renderLoginPage()
 
@@ -72,15 +74,15 @@ describe('LoginPage', () => {
     const passwordInput = screen.getByPlaceholderText('请输入密码')
     expect(passwordInput).toHaveAttribute('type', 'password')
 
-    fireEvent.change(usernameInput, { target: { value: 'admin' } })
-    fireEvent.change(passwordInput, { target: { value: 'secret123' } })
-    fireEvent.click(screen.getByRole('button', { name: '显示密码' }))
+    await pasteValue(user, usernameInput, 'admin')
+    await pasteValue(user, passwordInput, 'secret123')
+    await user.click(screen.getByRole('button', { name: '显示密码' }))
     expect(passwordInput).toHaveAttribute('type', 'text')
 
-    fireEvent.click(screen.getByRole('button', { name: '隐藏密码' }))
+    await user.click(screen.getByRole('button', { name: '隐藏密码' }))
     expect(passwordInput).toHaveAttribute('type', 'password')
 
-    fireEvent.click(screen.getByRole('button', { name: /登录/i }))
+    await user.click(screen.getByRole('button', { name: /登录/i }))
 
     await waitFor(() => {
       expect(mockLogin).toHaveBeenCalledWith('admin', 'secret123')

@@ -1,6 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Modal, Toast } from '@douyinfe/semi-ui';
 import { MemoryRouter } from '../../test/MemoryRouter';
+import { pasteValue } from '../../test/user';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ModelEndpointsPage from '../ModelEndpointsPage';
 import {
@@ -221,14 +223,33 @@ function renderPage(entry = '/channels') {
   return render(<MemoryRouter initialEntries={[entry]}><ModelEndpointsPage /></MemoryRouter>);
 }
 
-async function chooseSelectOption(label: string, option: string | RegExp) {
-  fireEvent.click(screen.getByRole('combobox', { name: label }));
-  const choice = screen.getAllByRole('option').find(node => {
-    const text = node.textContent || '';
-    return typeof option === 'string' ? text === option : option.test(text);
-  });
+async function chooseSelectOption(
+  label: string,
+  option: string | RegExp,
+  user = userEvent.setup({ skipHover: true, delay: null }),
+) {
+  const combobox = screen.getByRole('combobox', { name: label });
+  await user.click(combobox);
+  await waitFor(() => expect(combobox).toHaveAttribute('aria-expanded', 'true'));
+  const controlledID = combobox.getAttribute('aria-controls');
+  if (!controlledID) throw new Error(`missing controlled option list for ${label}`);
+  const currentChoice = () => {
+    const controlledLists = Array.from(document.querySelectorAll<HTMLElement>('[id]'))
+      .filter(node => node.id === controlledID);
+    for (let index = controlledLists.length - 1; index >= 0; index -= 1) {
+      const candidateChoices = within(controlledLists[index]).queryAllByRole('option');
+      const choice = candidateChoices.find(node => {
+        const text = node.textContent || '';
+        return typeof option === 'string' ? text === option : option.test(text);
+      });
+      if (choice) return choice;
+    }
+    return undefined;
+  };
+  await waitFor(() => expect(currentChoice()).toBeTruthy());
+  const choice = currentChoice();
   if (!choice) throw new Error(`missing option ${String(option)} for ${label}`);
-  fireEvent.click(choice);
+  await user.click(choice);
   return choice;
 }
 
@@ -302,17 +323,19 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
   });
 
   it('keeps the custom provider template selected when the execution Profile catalog is unavailable', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
     mocks.profileList.mockRejectedValueOnce(new Error('profile catalog unavailable'));
     renderPage();
 
     const createButton = (await screen.findByText('接入模型')).closest('button');
     expect(createButton).toBeTruthy();
-    fireEvent.click(createButton!);
+    await user.click(createButton!);
     expect(await screen.findByText(/无法加载版本化执行 Profile/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '接入模板' })).not.toBeDisabled());
 
-    await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商');
+    await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商', user);
 
-    expect(screen.getByRole('combobox', { name: '接入模板' })).toHaveTextContent('自定义 OpenAI 兼容供应商');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '接入模板' })).toHaveTextContent('自定义 OpenAI 兼容供应商'));
     expect(screen.getByLabelText('供应商标识')).not.toBeDisabled();
     expect(screen.getByLabelText('Base URL')).not.toBeDisabled();
   });
@@ -488,30 +511,31 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
   it('disables a zero-limit existing public model and rejects a stale selection after its limits regress', async () => {
     const current = application();
     const toast = vi.spyOn(Toast, 'error');
+    const user = userEvent.setup({ skipHover: true, delay: null });
     renderPage();
 
-    fireEvent.click((await screen.findByText('接入模型')).closest('button')!);
-    fireEvent.click(screen.getByText('复用现有公共模型', { exact: true }));
-    await chooseSelectOption('现有公共模型', /DeepSeek V4 Flash/);
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(screen.getByText('复用现有公共模型', { exact: true }));
+    await chooseSelectOption('现有公共模型', /DeepSeek V4 Flash/, user);
 
     mocks.list.mockResolvedValue(projection([application({
       public_model: { ...current.public_model, context_length: 0, output_limit: 0 },
     })]));
-    fireEvent.click(screen.getByRole('button', { name: /刷新$/ }));
+    await user.click(screen.getByRole('button', { name: /刷新$/ }));
     await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2));
 
-    fireEvent.click(screen.getByRole('combobox', { name: '现有公共模型' }));
+    await user.click(screen.getByRole('combobox', { name: '现有公共模型' }));
     const unavailable = await screen.findByRole('option', { name: /缺少 context\/output 执行边界/ });
     expect(unavailable).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText(/请先在公共模型目录修复执行边界/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('combobox', { name: '现有公共模型' }));
+    await user.click(screen.getByRole('combobox', { name: '现有公共模型' }));
 
-    fireEvent.change(screen.getByLabelText('连接名称'), { target: { value: 'DeepSeek second deployment' } });
-    fireEvent.change(screen.getByLabelText('上游模型 / 部署 ID'), { target: { value: 'deepseek-v4-flash-second' } });
+    await user.type(screen.getByLabelText('连接名称'), 'DeepSeek second deployment');
+    await user.type(screen.getByLabelText('上游模型 / 部署 ID'), 'deepseek-v4-flash-second');
     fireEvent.change(screen.getByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
     fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
-    fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建模型接入' }));
+    await user.type(screen.getByLabelText('供应商 API Key'), 'sk-test-only');
+    await user.click(screen.getByRole('button', { name: '创建模型接入' }));
 
     await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('请先在公共模型目录修复后再复用')));
     expect(mocks.create).not.toHaveBeenCalled();
@@ -530,33 +554,38 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     });
     mocks.list.mockResolvedValue(projection([pathful]));
     const toast = vi.spyOn(Toast, 'error');
+    const user = userEvent.setup({ skipHover: true, delay: null });
     renderPage();
 
-    fireEvent.click((await screen.findByText('接入模型')).closest('button')!);
-    fireEvent.click(screen.getByText('复用现有连接', { exact: true }));
-    await chooseSelectOption('现有连接', /Pathful OpenAI connection/);
-    await chooseSelectOption('Operation', /Responses · POST \/v1\/responses/);
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(screen.getByText('复用现有连接', { exact: true }));
+    await chooseSelectOption('现有连接', /Pathful OpenAI connection/, user);
+    await chooseSelectOption('Operation', /Responses · POST \/v1\/responses/, user);
 
     expect(await screen.findByText(/该 operation 要求 path-free HTTPS origin/)).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('公共模型 ID'), { target: { value: 'pathful-response-model' } });
+    await user.type(screen.getByLabelText('公共模型 ID'), 'pathful-response-model');
     fireEvent.change(screen.getByLabelText('公共模型上下文上限（Token）'), { target: { value: '128000' } });
     fireEvent.change(screen.getByLabelText('公共模型单次输出上限（Token）'), { target: { value: '8192' } });
-    fireEvent.change(screen.getByLabelText('上游模型 / 部署 ID'), { target: { value: 'response-upstream' } });
+    await user.type(screen.getByLabelText('上游模型 / 部署 ID'), 'response-upstream');
     fireEvent.change(screen.getByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
     fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
-    fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
+    await user.type(screen.getByLabelText('供应商 API Key'), 'sk-test-only');
 
     const createButton = screen.getByRole('button', { name: '创建模型接入' });
     expect(createButton).toBeDisabled();
-    fireEvent.click(createButton);
+    await user.click(createButton);
     expect(mocks.create).not.toHaveBeenCalled();
 
-    fireEvent.submit(createButton.closest('form')!);
+    await act(async () => {
+      fireEvent.submit(createButton.closest('form')!);
+      await Promise.resolve();
+    });
     await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('path-free HTTPS origin')));
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
   it('creates through the canonical transaction with one retained idempotency key for an uncertain retry', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
     mocks.create
       .mockRejectedValueOnce(new TypeError('network unavailable'))
       .mockResolvedValueOnce({
@@ -568,9 +597,9 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 
     const createButton = (await screen.findByText('接入模型')).closest('button');
     expect(createButton).toBeTruthy();
-    fireEvent.click(createButton!);
+    await user.click(createButton!);
     await screen.findByText(/deepseek\.v4-flash\.api@1\.1\.0/);
-    await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商');
+    await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商', user);
     fireEvent.change(await screen.findByLabelText('连接名称'), { target: { value: 'DeepSeek new production' } });
     fireEvent.change(await screen.findByLabelText('供应商标识'), { target: { value: 'deepseek' } });
     fireEvent.change(await screen.findByLabelText('Base URL'), { target: { value: 'https://api.deepseek.com' } });
@@ -580,11 +609,11 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'deepseek-v5-202608' } });
     fireEvent.change(await screen.findByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
     fireEvent.change(await screen.findByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
-    fireEvent.change(await screen.findByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建模型接入' }));
+    await pasteValue(user, await screen.findByLabelText('供应商 API Key'), 'sk-test-only');
+    await user.click(screen.getByRole('button', { name: '创建模型接入' }));
 
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('button', { name: '创建模型接入' }));
+    await user.click(screen.getByRole('button', { name: '创建模型接入' }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
 
     const firstKey = mocks.create.mock.calls[0][1];
@@ -608,17 +637,18 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
   }, 20_000);
 
   it('composes an official provider preset with the latest reviewed model profile and pins it on create', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
     renderPage();
 
-    fireEvent.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
     expect(await screen.findByText(/deepseek\.v4-flash\.api@1\.1\.0/)).toBeTruthy();
     expect(screen.getByLabelText('供应商标识')).toBeDisabled();
     expect(screen.getByLabelText('Base URL')).toBeDisabled();
     expect(screen.getByLabelText('公共模型上下文上限（Token）')).toBeDisabled();
     expect(screen.getByLabelText('Deployment 单次输出上限（Token）')).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建模型接入' }));
+    await pasteValue(user, screen.getByLabelText('供应商 API Key'), 'sk-test-only');
+    await user.click(screen.getByRole('button', { name: '创建模型接入' }));
 
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
     expect(mocks.create.mock.calls[0][0]).toEqual(expect.objectContaining({

@@ -4,6 +4,34 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.2] - 2026-08-24
+
+### Fixed
+
+- Removed all React `act(...)` and Semi Form validation-race warnings from the
+  frontend unit suite by waiting for observable state, real user interactions,
+  and file-owned Semi portal cleanup.
+- Kept the custom provider template selected after an execution-Profile catalog
+  failure by binding initialization to the SideSheet open transition and
+  preserving unrelated fields when applying partial Semi Form updates.
+- Normalized ANSI control sequences before warning fingerprinting so local and
+  CI runs classify the same diagnostics and stack continuations.
+
+### Added
+
+- Added a Vitest stderr fingerprint ratchet: an unknown diagnostic or an
+  increase in an approved fingerprint now fails the test command even when all
+  assertions pass. Reporter output remains visible.
+- Kept expected validation-boundary and explicit failure-path diagnostics in
+  exact, independently capped fingerprints so one warning family cannot
+  silently replace another.
+
+### Compatibility boundary
+
+- The exact React 18 / Semi UI 2.100.0 `findDOMNode` waiver remains visible and
+  capped at ten occurrences. UniRouter-owned calls remain forbidden and React
+  19 remains blocked until that third-party warning reaches zero.
+
 ## [1.2.1] - 2026-08-24
 
 ### Changed
