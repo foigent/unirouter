@@ -83,11 +83,11 @@ UPDATE model_registry
    SET execution_profile_id='unverified.chat',execution_profile_version='1.0.0'
  WHERE id=$1`, modelID)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000084_future_contract')`)
+	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000085_future_contract')`)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))
 	require.ErrorContains(t, err, "later migrations must be reversed first")
-	_, err = pool.Exec(ctx, `DELETE FROM schema_migrations WHERE version='000084_future_contract'`)
+	_, err = pool.Exec(ctx, `DELETE FROM schema_migrations WHERE version='000085_future_contract'`)
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx, string(down))

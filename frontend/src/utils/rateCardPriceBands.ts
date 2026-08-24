@@ -40,12 +40,21 @@ export function buildRequestRateComponents(
   keyPrefix = '',
   requiredUnitMeters: string[] = [],
 ): RateComponent[] | null {
+  return buildRequestRateComponentsForCurrency(form, 'CNY', keyPrefix, requiredUnitMeters);
+}
+
+export function buildRequestRateComponentsForCurrency(
+  form: Record<string, string>,
+  currency: 'CNY' | 'USD',
+  keyPrefix = '',
+  requiredUnitMeters: string[] = [],
+): RateComponent[] | null {
   const components = requestPriceMeters.map(item => ({ item, valueMinor: yuanToMicrosString(form[`${keyPrefix}${item.key}`] || '') }));
   if (components.some(item => item.valueMinor === null)) return null;
   const result: RateComponent[] = components.map(({ item, valueMinor }) => ({
     meter: item.meter,
     unit_quantity: '1000000',
-    amount: { value_minor: valueMinor as string, currency: 'CNY', scale: 1_000_000 },
+    amount: { value_minor: valueMinor as string, currency, scale: 1_000_000 },
   }));
   for (const item of requestUnitPriceMeters) {
     const raw = form[`${keyPrefix}${item.key}`]?.trim() || '';
@@ -58,7 +67,7 @@ export function buildRequestRateComponents(
     result.push({
       meter: item.meter,
       unit_quantity: item.unitQuantity,
-      amount: { value_minor: valueMinor, currency: 'CNY', scale: 1_000_000 },
+      amount: { value_minor: valueMinor, currency, scale: 1_000_000 },
     });
   }
   return result;

@@ -1,8 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.23
-> **日期**：2026-08-23
+> **版本**：v1.24
+> **日期**：2026-08-24
 > **用途**：运维人员部署和维护 UniRouter 的操作手册
+> **变更记录**：v1.24 增加 `000084` 官方价格来源 CNY/USD 审核草稿、CNY 结算 fail-closed、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.23 增加 `000083` 版本化非 Token 计费证据、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.22 增加 `000082` canonical Release 执行 Profile/上下文上限密封、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.21 增加 `000081` 版本化模型执行 Profile、历史模型不推断、guarded down 与非滚动升级边界。
@@ -1165,6 +1166,29 @@ rate/meter evidence、非零 non-token cost，或来源表已经记录
 删除或改写价格来源/客户费用证据来迁就 M82 binary。只有确认四个计费表均未形成
 durable M83 证据且没有新版 unit-contract source evidence 时，guarded down 才能恢复
 M82 schema。
+
+### 3.21 `000084` official rate-source currency drafts 与 guarded down
+
+M84 只把 `enterprise_finance_rate_source_evidence.currency` 从 `CNY` 放宽为单一
+`CNY|USD`，用于保留 Gemini、OpenAI、xAI、Anthropic 的官方原币审核草稿。Rate Card
+审批、激活、request quote、钱包、Freeze/settlement 和 Outbox 仍要求 micro-CNY；USD
+草稿必须在 approval 阶段 fail closed，不得做隐式汇率转换。
+
+M83→M84 是 schema-ceiling 变化，必须停止全部 M83 backend，由唯一 migration owner
+升级并确认 ledger 精确等于 M84 artifact，再启动 M84 stable/canary。不得让 M83 与 M84
+进程共用数据库。升级后只读检查：
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT pg_get_constraintdef(oid)
+  FROM pg_constraint
+ WHERE conname='enterprise_finance_rate_source_currency_check';
+```
+
+约束必须只允许 `CNY` 与 `USD`。smoke 应导入一个 USD `provider_list` draft，确认来源
+证据保留 USD、草稿不自动批准/激活，并确认 approval 返回 CNY request-pricing 未就绪。
+M84 down 在 schema mutation 前拒绝 later migration 或任何非 CNY 来源证据；存在 USD
+草稿时必须 roll forward，不得删除来源证据来迁就 M83 binary。
 
 ---
 

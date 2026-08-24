@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000083_versioned_unit_meter_billing"
+const LatestSupportedMigration = "000084_official_rate_source_currency_drafts"

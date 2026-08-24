@@ -17,6 +17,11 @@ func TestOfficialRateSourceRequiresVerifiableBoundedFreshnessEvidence(t *testing
 		LastSuccessAt: fetchedAt, StaleAfter: fetchedAt.Add(24 * time.Hour), ImportedBy: "user:2",
 	}
 	require.NoError(t, ValidateRateSourceEvidence(evidence))
+	evidence.Currency = "USD"
+	require.NoError(t, ValidateRateSourceEvidence(evidence))
+	evidence.Currency = "EUR"
+	require.ErrorContains(t, ValidateRateSourceEvidence(evidence), "rate_source_currency_unit")
+	evidence.Currency = "CNY"
 	evidence.UnitContract = RateSourceUnitComponents
 	require.NoError(t, ValidateRateSourceEvidence(evidence))
 	evidence.UnitContract = "calls"
@@ -40,6 +45,30 @@ func TestRateSourceUnitContractDistinguishesMixedMeters(t *testing.T) {
 	require.Equal(t, RateSourceUnitComponents, rateSourceUnitContract([]RateComponent{
 		{Meter: MeterInputTokens}, {Meter: MeterBuiltinWebSearchCalls},
 	}))
+	require.Equal(t, RateSourceUnitComponents, rateSourceUnitContractForCard(RateCard{
+		Components: []RateComponent{{Meter: MeterInputTokens}},
+		DailyPriceBands: []DailyPriceBand{{Components: []RateComponent{
+			{Meter: MeterInputTokens}, {Meter: MeterBuiltinWebSearchCalls},
+		}}},
+	}))
+}
+
+func TestOfficialRateCardCurrencyMustBeSingleSupportedCurrency(t *testing.T) {
+	card := RateCard{Components: []RateComponent{
+		{Amount: Amount{Currency: "USD"}},
+		{Amount: Amount{Currency: "USD"}},
+	}}
+	currency, err := rateCardCurrency(card)
+	require.NoError(t, err)
+	require.Equal(t, "USD", currency)
+
+	card.Components[1].Amount.Currency = "CNY"
+	_, err = rateCardCurrency(card)
+	require.ErrorContains(t, err, "rate_source_mixed_currency")
+
+	card.Components = []RateComponent{{Amount: Amount{Currency: "EUR"}}}
+	_, err = rateCardCurrency(card)
+	require.ErrorContains(t, err, "rate_source_currency")
 }
 
 func stringRepeat(value string, count int) string {

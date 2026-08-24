@@ -263,6 +263,7 @@ export const enterpriseFinanceApi = {
   createRateCardDraft: (data: RateCardDraftInput) =>
     request<RateCardRecord>('/enterprise-finance/rate-cards', { method: 'POST', body: JSON.stringify(data) }),
   importOfficialRateCardDraft: (data: Omit<RateCardDraftInput, 'layer' | 'source_evidence_ref'> & {
+    rate_card_ref?: string; evidence_ref?: string;
     source_url: string; source_revision: string; fetched_at: string; payload_sha256: string;
     transform_version: string; stale_after: string;
   }) => request<{ record: RateCardRecord; import_state: 'draft'; automatic_activation: false; network_fetch_performed: false }>(

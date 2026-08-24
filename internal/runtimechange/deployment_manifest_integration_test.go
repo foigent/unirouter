@@ -685,6 +685,12 @@ SELECT
 func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := t.Context()
+	currencyDraftDown, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(currencyDraftDown))
+	require.NoError(t, err)
 	unitMeterDown, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
 	))

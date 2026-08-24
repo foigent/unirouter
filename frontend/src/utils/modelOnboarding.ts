@@ -12,6 +12,15 @@ export type ReviewedModelOnboardingOption = {
   recommendedUpstreamModelID: string;
 };
 
+export type ReviewedModelOnboardingLimits = {
+  providerContextWindow: number;
+  providerMaxOutput: number;
+  publicContextLength: number;
+  publicOutputLimit: number;
+  deploymentMaxContext: number;
+  deploymentDefaultMaxOutput: number;
+};
+
 function semverParts(value: string) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
   return match ? match.slice(1).map(Number) : undefined;
@@ -35,7 +44,7 @@ function unique(values: string[]) {
 
 function publicModelIDs(profile: ModelExecutionProfile) {
   return unique((profile.aliases || [])
-    .map(value => String(value || '').trim())
+    .map(value => String(value || '').trim().toLowerCase())
     .filter(value => /^[a-z0-9][a-z0-9._-]{0,99}$/.test(value)));
 }
 
@@ -48,6 +57,7 @@ function upstreamModelIDs(profile: ModelExecutionProfile) {
 function operationIDs(profile: ModelExecutionProfile): CanonicalOperationID[] {
   const protocol = String(profile.protocol_profile || '').toLowerCase();
   if (protocol.includes('anthropic') && protocol.includes('message')) return ['anthropic.messages.v1'];
+  if (protocol.includes('openai') && protocol.includes('responses')) return ['openai.responses.v1'];
   if (protocol.includes('openai') && protocol.includes('chat')) return ['openai.chat_completions.v1'];
   return [];
 }
@@ -68,14 +78,18 @@ export function reviewedModelOptions(
     const publicIDs = publicModelIDs(profile);
     const upstreamIDs = upstreamModelIDs(profile);
     const operations = operationIDs(profile);
+    const recommendedPublicModelID = publicIDs[0] || '';
     return {
       key: `${profile.id}@${profile.version}`,
       profile,
       publicModelIDs: publicIDs,
       upstreamModelIDs: upstreamIDs,
       operationIDs: operations,
-      recommendedPublicModelID: publicIDs[0] || '',
-      recommendedUpstreamModelID: upstreamIDs.find(value => value === publicIDs[0]) || upstreamIDs[0] || '',
+      recommendedPublicModelID,
+      recommendedUpstreamModelID: upstreamIDs.find(value => value === recommendedPublicModelID)
+        || upstreamIDs.find(value => value.toLowerCase() === recommendedPublicModelID)
+        || upstreamIDs[0]
+        || '',
     };
   }).filter(option => option.recommendedPublicModelID && option.recommendedUpstreamModelID &&
     option.operationIDs.length > 0 && option.profile.default_context_window > 0 && option.profile.default_output_limit > 0)
@@ -84,4 +98,21 @@ export function reviewedModelOptions(
 
 export function reviewedModelDisplayName(profile: ModelExecutionProfile) {
   return profile.label.replace(/\s*官方 API$/u, '').trim() || profile.label;
+}
+
+export function reviewedModelOnboardingLimits(profile: ModelExecutionProfile): ReviewedModelOnboardingLimits {
+  const providerContextWindow = Number.isSafeInteger(profile.provider_context_window) && profile.provider_context_window > 0
+    ? profile.provider_context_window
+    : 0;
+  const providerMaxOutput = Number.isSafeInteger(profile.provider_max_output) && profile.provider_max_output > 0
+    ? profile.provider_max_output
+    : 0;
+  return {
+    providerContextWindow,
+    providerMaxOutput,
+    publicContextLength: providerContextWindow || profile.default_context_window,
+    publicOutputLimit: providerMaxOutput || profile.default_output_limit,
+    deploymentMaxContext: providerContextWindow || profile.default_context_window,
+    deploymentDefaultMaxOutput: profile.default_output_limit,
+  };
 }

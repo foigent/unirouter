@@ -72,7 +72,7 @@ func ValidateRateSourceEvidence(evidence RateSourceEvidence) error {
 		blank(evidence.SourceRevision) || blank(evidence.TransformVersion) || blank(evidence.ImportedBy) {
 		return invalid("rate_source_identity")
 	}
-	if evidence.Currency != "CNY" ||
+	if (evidence.Currency != "CNY" && evidence.Currency != "USD") ||
 		(evidence.UnitContract != RateSourceUnitTokens && evidence.UnitContract != RateSourceUnitComponents) {
 		return invalid("rate_source_currency_unit")
 	}
@@ -121,19 +121,29 @@ func (s *PostgresStore) ImportOfficialRateCardDraft(ctx context.Context, request
 	request.Evidence.OrgID = request.Card.OrgID
 	request.Evidence.SourceKind = RateSourceOfficialImport
 	request.Evidence.ImportedBy = actorRef
-	request.Evidence.Currency = "CNY"
-	request.Evidence.UnitContract = rateSourceUnitContract(request.Card.Components)
+	request.Evidence.UnitContract = rateSourceUnitContractForCard(request.Card)
 	if actorRef == "" {
 		return RateCardRecord{}, invalid("rate_source_actor")
-	}
-	if err := ValidateRateSourceEvidence(request.Evidence); err != nil {
-		return RateCardRecord{}, err
 	}
 	if err := ValidateRateCard(request.Card); err != nil {
 		return RateCardRecord{}, err
 	}
-	if err := ValidateRequestPricingRateCard(request.Card); err != nil {
+	currency, err := rateCardCurrency(request.Card)
+	if err != nil {
 		return RateCardRecord{}, err
+	}
+	request.Evidence.Currency = currency
+	if err := ValidateRateSourceEvidence(request.Evidence); err != nil {
+		return RateCardRecord{}, err
+	}
+	// Current runtime settlement is CNY-only. Foreign-currency official list
+	// prices may be retained as immutable review evidence, but approval still
+	// fails closed through ValidateRequestPricingRateCard until an explicit FX or
+	// multi-currency settlement authority exists.
+	if currency == "CNY" {
+		if err := ValidateRequestPricingRateCard(request.Card); err != nil {
+			return RateCardRecord{}, err
+		}
 	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -154,12 +164,53 @@ func (s *PostgresStore) ImportOfficialRateCardDraft(ctx context.Context, request
 	return record, nil
 }
 
+func rateCardCurrency(card RateCard) (string, error) {
+	currency := ""
+	visit := func(components []RateComponent) error {
+		for _, component := range components {
+			value := strings.TrimSpace(component.Amount.Currency)
+			if currency == "" {
+				currency = value
+				continue
+			}
+			if value != currency {
+				return invalid("rate_source_mixed_currency")
+			}
+		}
+		return nil
+	}
+	if err := visit(card.Components); err != nil {
+		return "", err
+	}
+	for _, band := range card.DailyPriceBands {
+		if err := visit(band.Components); err != nil {
+			return "", err
+		}
+	}
+	if currency != "CNY" && currency != "USD" {
+		return "", invalid("rate_source_currency")
+	}
+	return currency, nil
+}
+
 func rateSourceUnitContract(components []RateComponent) string {
 	for _, component := range components {
 		for _, meter := range supportedRequestUnitMeters {
 			if component.Meter == meter {
 				return RateSourceUnitComponents
 			}
+		}
+	}
+	return RateSourceUnitTokens
+}
+
+func rateSourceUnitContractForCard(card RateCard) string {
+	if rateSourceUnitContract(card.Components) == RateSourceUnitComponents {
+		return RateSourceUnitComponents
+	}
+	for _, band := range card.DailyPriceBands {
+		if rateSourceUnitContract(band.Components) == RateSourceUnitComponents {
+			return RateSourceUnitComponents
 		}
 	}
 	return RateSourceUnitTokens

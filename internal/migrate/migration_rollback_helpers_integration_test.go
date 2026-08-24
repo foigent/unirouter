@@ -21,6 +21,7 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000084_official_rate_source_currency_drafts.down.sql",
 	"000083_versioned_unit_meter_billing.down.sql",
 	"000082_sealed_model_execution_contracts.down.sql",
 	"000081_versioned_model_execution_profiles.down.sql",
@@ -66,6 +67,7 @@ func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 	orderedNames := make([]string, 0, len(names)+4)
 	seen := make(map[string]struct{}, len(names)+4)
 	for _, name := range []string{
+		"000084_official_rate_source_currency_drafts.down.sql",
 		"000083_versioned_unit_meter_billing.down.sql",
 		"000082_sealed_model_execution_contracts.down.sql",
 		"000081_versioned_model_execution_profiles.down.sql",

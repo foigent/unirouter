@@ -117,11 +117,30 @@ The repository already contains the correct structural start:
   plan snapshot hash, while route safety may still narrow an upper bound.
 - The product-facing “模型接入” form composes a reviewed provider preset with
   the latest exact version of each matching Profile ID. It offers only safe
-  aliases and Profile-compatible operations, fills the reviewed limit defaults,
-  and sends the exact Profile identity for backend validation/persistence.
-  These are authoring defaults, not live capability, price, credential, probe,
-  Release or traffic evidence; custom/omitted selection remains explicitly
-  `unverified.chat@1.0.0`.
+  aliases and Profile-compatible operations, fills documented provider maxima
+  into public/deployment upper-bound fields, and keeps the provider request
+  default in `deployment.default_max_output`. When a provider does not document
+  an independent output maximum, the form labels that fact and uses the reviewed
+  request default as a safe effective public limit instead of presenting it as a
+  provider maximum. It sends the exact Profile identity for backend
+  validation/persistence. These are authoring values, not live capability,
+  price, credential, probe, Release or traffic evidence; custom/omitted selection
+  remains explicitly `unverified.chat@1.0.0`.
+- When a separate dated official-price snapshot exists, onboarding may also
+  offer an evidence-backed `provider_list` Rate Card draft. That second write
+  remains review-only and never turns the execution Profile into price
+  authority, auto-activates a card or changes runtime pricing mode.
+- The 2026-08-24 onboarding catalog also carries documented-only profiles for
+  the frozen 22-model set: GLM-5.3/5.2/5V-Turbo; Qwen3.8-Max and
+  Qwen3.7-Plus/Flash; Gemini 3.7/3.5 Flash and 3.5 Flash-Lite; MiMo V2.5 Pro
+  and V2.5; Hy3; GPT-5.6 Sol/Terra/Luna; Grok 4.6; Claude Opus 5, Sonnet 5
+  and Haiku 4.5; and Doubao Seed Evolving, Seed 2.1 Pro and Seed 2.1 Turbo.
+  Each profile freezes the exact upstream ID, documented provider context and
+  maximum output, a distinct request default, primary operation and provider
+  claims. Its executable `Capabilities` remains empty until the corresponding
+  model x operation x capability milestone becomes locally conformant. This is
+  `documented` evidence, not `locally_conformant`, `canary_live_verified` or
+  `released` evidence.
 
 The following are still real gaps:
 
@@ -142,6 +161,9 @@ The following are still real gaps:
   distinct evidence gaps.
 - public Responses and Anthropic Messages are intentionally strict non-stream
   text subsets. They reject tools, rich reasoning and multimodal payloads.
+- The new GPT-5.6 and Claude profiles select those canonical operation IDs for
+  onboarding, but their documented reasoning, tool, cache and multimodal claims
+  do not override the strict subset or create executable capability evidence.
 - there is no public Files API or FIM `/v1/completions` operation.
 - DeepSeek Chat vision is not attached to Flash/Pro: the separate
   `deepseek-v4-flash-vision-exp` model still needs its own execution profile,

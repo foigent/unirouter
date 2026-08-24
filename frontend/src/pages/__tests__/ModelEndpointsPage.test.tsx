@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => ({
   cutoverLegacy: vi.fn(),
   rollbackLegacy: vi.fn(),
   profileList: vi.fn(),
+  importOfficialRateCardDraft: vi.fn(),
+  getRateCards: vi.fn(),
 }));
 
 vi.mock('../../api/modelDeploymentReleases', async importOriginal => {
@@ -75,6 +77,18 @@ vi.mock('../../api/modelExecutionProfiles', async importOriginal => {
   return {
     ...actual,
     modelExecutionProfileApi: { list: mocks.profileList },
+  };
+});
+
+vi.mock('../../api/enterpriseFinance', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../api/enterpriseFinance')>();
+  return {
+    ...actual,
+    enterpriseFinanceApi: {
+      ...actual.enterpriseFinanceApi,
+      importOfficialRateCardDraft: mocks.importOfficialRateCardDraft,
+      getRateCards: mocks.getRateCards,
+    },
   };
 });
 
@@ -261,6 +275,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-24T12:00:00Z'));
     setRole('org_admin');
     mocks.list.mockResolvedValue(projection());
     mocks.releaseList.mockResolvedValue({
@@ -290,6 +305,10 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       idempotency_replay: false,
       reused: { connection: false, public_model: false, deployment: false, credential: false, operation: false },
     });
+    mocks.importOfficialRateCardDraft.mockResolvedValue({
+      import_state: 'draft', automatic_activation: false, network_fetch_performed: false,
+    });
+    mocks.getRateCards.mockResolvedValue({ data: [], total: 0 });
     mocks.profileList.mockResolvedValue({
       contract_version: 'unirouter.model-execution-profiles.v1',
       data: [{
@@ -533,7 +552,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     await user.type(screen.getByLabelText('连接名称'), 'DeepSeek second deployment');
     await user.type(screen.getByLabelText('上游模型 / 部署 ID'), 'deepseek-v4-flash-second');
     fireEvent.change(screen.getByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
-    fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
+    fireEvent.change(screen.getByLabelText('Deployment 默认单次输出（Token）'), { target: { value: '4096' } });
     await user.type(screen.getByLabelText('供应商 API Key'), 'sk-test-only');
     await user.click(screen.getByRole('button', { name: '创建模型接入' }));
 
@@ -568,7 +587,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     fireEvent.change(screen.getByLabelText('公共模型单次输出上限（Token）'), { target: { value: '8192' } });
     await user.type(screen.getByLabelText('上游模型 / 部署 ID'), 'response-upstream');
     fireEvent.change(screen.getByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
-    fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
+    fireEvent.change(screen.getByLabelText('Deployment 默认单次输出（Token）'), { target: { value: '4096' } });
     await user.type(screen.getByLabelText('供应商 API Key'), 'sk-test-only');
 
     const createButton = screen.getByRole('button', { name: '创建模型接入' });
@@ -608,7 +627,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     fireEvent.change(await screen.findByLabelText('公共模型单次输出上限（Token）'), { target: { value: '8192' } });
     fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'deepseek-v5-202608' } });
     fireEvent.change(await screen.findByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
-    fireEvent.change(await screen.findByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
+    fireEvent.change(await screen.findByLabelText('Deployment 默认单次输出（Token）'), { target: { value: '4096' } });
     await pasteValue(user, await screen.findByLabelText('供应商 API Key'), 'sk-test-only');
     await user.click(screen.getByRole('button', { name: '创建模型接入' }));
 
@@ -642,10 +661,14 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
     expect(await screen.findByText(/deepseek\.v4-flash\.api@1\.1\.0/)).toBeTruthy();
+    expect(screen.getByText(/供应商上限 context 1,000,000 \/ output 384,000/)).toBeTruthy();
+    expect(screen.getByText(/请求默认 context 1,000,000 \/ output 32,768/)).toBeTruthy();
+    expect(screen.getByText(/待审核 Pricing Profile 草稿 · 官方标准按量 Token 费率 · CNY\/百万 Token：输入 1 \/ 输出 2/)).toBeTruthy();
+    expect(screen.getByLabelText('同时创建待审核 Pricing Profile 草稿')).toBeChecked();
     expect(screen.getByLabelText('供应商标识')).toBeDisabled();
     expect(screen.getByLabelText('Base URL')).toBeDisabled();
     expect(screen.getByLabelText('公共模型上下文上限（Token）')).toBeDisabled();
-    expect(screen.getByLabelText('Deployment 单次输出上限（Token）')).toBeDisabled();
+    expect(screen.getByLabelText('Deployment 默认单次输出（Token）')).toBeDisabled();
 
     await pasteValue(user, screen.getByLabelText('供应商 API Key'), 'sk-test-only');
     await user.click(screen.getByRole('button', { name: '创建模型接入' }));
@@ -656,7 +679,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       public_model: expect.objectContaining({
         model_name: 'deepseek-v4-flash',
         context_length: 1_000_000,
-        output_limit: 32_768,
+        output_limit: 384_000,
         execution_profile_id: 'deepseek.v4-flash.api',
         execution_profile_version: '1.1.0',
       }),
@@ -667,5 +690,55 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       }),
       operation: { operation_id: 'openai.chat_completions.v1' },
     }));
+    expect(mocks.importOfficialRateCardDraft).toHaveBeenCalledWith(expect.objectContaining({
+      provider_ref: 'deepseek',
+      model_ref: 'deepseek-v4-flash',
+      source_url: 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing/',
+      payload_sha256: 'sha256:593f092cc8e91ad568f4843a83264e2f7aa2551b5c46d1e35b5e2654e3f06a02',
+      components: expect.arrayContaining([
+        expect.objectContaining({ meter: 'output_tokens', amount: expect.objectContaining({ value_minor: '2000000' }) }),
+      ]),
+    }));
+  });
+
+  it('treats an exact official pricing draft readback as an idempotent replay after an uncertain import failure', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
+    mocks.importOfficialRateCardDraft.mockRejectedValueOnce(new TypeError('network unavailable'));
+    mocks.getRateCards.mockResolvedValueOnce({
+      total: 1,
+      data: [{
+        id: 1,
+        card: {
+          rate_card_ref: 'onboarding-rate-deepseek-deepseek-v4-flash-retrieved-2026-08-24-official-onboarding-rate.v1-593f092cc8e9',
+          provider_ref: 'deepseek', model_ref: 'deepseek-v4-flash', layer: 'provider_list',
+          version: 1, state: 'draft', effective_from: '2026-08-24T08:00:00Z', created_by: 'user:1',
+          components: [
+            ['input_tokens', '1000000'], ['output_tokens', '2000000'],
+            ['cache_read_tokens', '20000'], ['cache_creation_tokens', '1000000'],
+          ].map(([meter, value_minor]) => ({
+            meter, unit_quantity: '1000000', amount: { value_minor, currency: 'CNY', scale: 1_000_000 },
+          })),
+          daily_price_bands: [],
+        },
+        source_evidence: {
+          evidence_ref: 'onboarding-source-deepseek-deepseek-v4-flash-retrieved-2026-08-24-official-onboarding-rate.v1-593f092cc8e9',
+          source_kind: 'official_import', source_url: 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing/',
+          source_revision: 'retrieved-2026-08-24', fetched_at: '2026-08-24T08:00:00Z',
+          payload_sha256: 'sha256:593f092cc8e91ad568f4843a83264e2f7aa2551b5c46d1e35b5e2654e3f06a02',
+          transform_version: 'official-onboarding-rate.v1', last_success_at: '2026-08-24T08:00:00Z',
+          stale_after: '2026-08-31T08:00:00Z',
+        },
+      }],
+    });
+    renderPage();
+
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await screen.findByText(/^待审核 Pricing Profile 草稿 ·/);
+    await pasteValue(user, screen.getByLabelText('供应商 API Key'), 'sk-test-only');
+    await user.click(screen.getByRole('button', { name: '创建模型接入' }));
+
+    await waitFor(() => expect(mocks.getRateCards).toHaveBeenCalledTimes(1));
+    expect(mocks.importOfficialRateCardDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.create).toHaveBeenCalledTimes(1);
   });
 });

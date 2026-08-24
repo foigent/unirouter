@@ -42,6 +42,10 @@ UPDATE model_registry
 		"seal the first effective model execution contract",
 	)
 	assertSealedExecutionContract(t, initial, "kimi.k3.api", "1.1.0", 262144, 32768)
+	currencyDraftDown, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
+	))
+	require.NoError(t, err)
 	unitMeterDown, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
 	))
@@ -49,6 +53,8 @@ UPDATE model_registry
 	down, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
 	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(currencyDraftDown))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(unitMeterDown))
 	require.NoError(t, err)

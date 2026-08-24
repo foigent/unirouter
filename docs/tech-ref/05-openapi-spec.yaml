@@ -3079,7 +3079,7 @@ paths:
   /api/v1/enterprise-finance/rate-cards/import-official-draft:
     x-unirouter-rbac:
       post: [platform_admin, billing_admin]
-    description: Atomically records an HTTPS source URL, source revision, fetched-at time, payload SHA-256, deterministic transform version, currency/unit contract and bounded-freshness window, then creates a complete provider_list draft with exact absolute amount/unit components. The draft may carry the same explicit UTC weekday/minute daily_price_bands contract as a manually created card. It performs no network fetch and never approves or activates the draft; an administrator may instead author a separate supplier_contracted override.
+    description: Atomically records an HTTPS source URL, source revision, fetched-at time, payload SHA-256, deterministic transform version, currency/unit contract and bounded-freshness window, then creates a single-currency CNY or USD provider_list draft with exact absolute amount/unit components. Mixed currencies are rejected. A USD import is retained only as review evidence and cannot pass the current CNY request-pricing approval gate. The draft may carry the same explicit UTC weekday/minute daily_price_bands contract as a manually created card. It performs no network fetch and never approves or activates the draft; an administrator may instead author a separate supplier_contracted override.
     post: *operation_create
 
   /api/v1/enterprise-finance/rate-cards/bootstrap-legacy-drafts:

@@ -385,6 +385,10 @@ UPDATE billing_provider_attempts SET health_outcome='success'
 	_, err = pool.Exec(t.Context(), `
 UPDATE provider_connections SET admin_state='disabled' WHERE id=$1`, evidence.ConnectionID)
 	require.NoError(t, err)
+	currencyDraftDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
+	))
+	require.NoError(t, err)
 	unitMeterDownSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
 	))
@@ -408,6 +412,8 @@ UPDATE provider_connections SET admin_state='disabled' WHERE id=$1`, evidence.Co
 	authoringDownSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
 	))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(currencyDraftDownSQL))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(unitMeterDownSQL))
 	require.NoError(t, err)

@@ -8,16 +8,16 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable PostgreSQL compatibility ceiling is `000083`. After running
+The executable PostgreSQL compatibility ceiling is `000084`. After running
 migrations or honoring `SKIP_MIGRATION`, every backend reads the complete,
 ordered migration ledger and requires it to equal the binary artifact ledger
 before customer-baseline initialization or HTTP bind; missing, extra, future,
 duplicate, reordered and empty ledgers all fail closed. Schema-ceiling changes
-are therefore non-rolling: an M82 process and an M83 process cannot be ready
+are therefore non-rolling: an M83 process and an M84 process cannot be ready
 against one shared database. Operators drain and stop the old fleet, let one
-migration owner advance the database to M83, and only then start M83
+migration owner advance the database to M84, and only then start M84
 stable/canary. A secondary may use `SKIP_MIGRATION=true` only after the shared
-database already has the exact M83 ledger. M78 adds atomic
+database already has the exact M84 ledger. M78 adds atomic
 sealed-release authoring provenance and the explicit v1-to-v2 lifecycle bridge;
 M79 moves the commercial `active_channels` count authority to enabled canonical
 provider connections. M80 gives cost-observation provider reconciliation an
@@ -60,6 +60,12 @@ trigger/function and retains canonical tables, credentials and history. Neither
 migration reinterprets the M77 Responses/Messages public-execution chain, and
 legacy tables remain available only for history and explicit compatibility
 operation.
+
+M84 widens only official rate-source evidence currency to one original CNY or
+USD value so foreign list prices can be retained as review-only drafts. It does
+not widen the CNY request-pricing approval, activation, wallet or settlement
+contracts. Mixed-currency source drafts fail closed, and M84 down refuses to
+discard any retained non-CNY source evidence.
 
 The supported customer topology is:
 
@@ -106,7 +112,7 @@ flowchart LR
 
 | Concept | Durable authority | Important projections/consumers |
 |---|---|---|
-| Onboarding composition | repository-reviewed provider preset plus an exact Model Execution Profile; the backend validates the profile pair, aliases, operation and effective limits and persists the exact profile pin | “模型接入” form defaults and constrained choices only; it is not a live probe, release, pricing, credential or traffic authority, and omission stays `unverified.chat@1.0.0` |
+| Onboarding composition | repository-reviewed provider preset plus an exact Model Execution Profile; the backend validates the profile pair, operation and effective limits and persists the exact profile pin. A separate dated official-price snapshot may be sent to the existing evidence-backed Rate Card draft importer | “模型接入” form defaults and constrained choices only; it is not a live probe, release, active pricing, credential or traffic authority. Pricing composition creates only a separately reviewable draft and omission stays `unverified.chat@1.0.0` |
 | Public model identity | model registry and aliases | model catalog, project model sets, readiness, `/v1/models` |
 | Provider connection | canonical `provider_connections` plus deployment operation/profile and public-to-upstream mapping | canonical deployment UI, operation probe, Planner candidates, License `active_channels` usage |
 | Credential | canonical `provider_credential_bindings` plus exact deployment link; plaintext is accepted once and encrypted | operation probe and Coordinator credential selection |

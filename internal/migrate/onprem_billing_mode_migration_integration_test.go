@@ -187,6 +187,24 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	// Migration 84 only widens official source-evidence currency for review
+	// drafts. Remove it before any earlier guarded down migration.
+	if name != "000084_official_rate_source_currency_drafts.down.sql" {
+		var currencyDraftsApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000084_official_rate_source_currency_drafts')`).Scan(&currencyDraftsApplied))
+		if currencyDraftsApplied {
+			execMigrationDown(t, ctx, pool, "000084_official_rate_source_currency_drafts.down.sql")
+		}
+	}
+	if name == "000084_official_rate_source_currency_drafts.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
 	// Migration 83 adds only default-empty unit-meter evidence columns for
 	// historical fixtures. Remove that exact extension before exercising any
 	// earlier guarded down migration.

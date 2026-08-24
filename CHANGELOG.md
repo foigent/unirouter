@@ -4,6 +4,36 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.3] - 2026-08-24
+
+### Added
+
+- Added documented-only onboarding Profiles and official Provider presets for
+  the frozen 22-model GLM, Qwen, Gemini, MiMo, Hy3, GPT-5.6, Grok, Claude and
+  Doubao catalog, with exact upstream IDs, primary operations, provider limits,
+  request defaults, documented capability claims and official evidence links.
+- Added dated CNY or USD official-price candidates. Flat, reviewable schedules
+  can create provider-list drafts; context-, tier-, cache-TTL-, storage- or
+  tool-dependent prices remain visible as `manual_review_required` instead of
+  being flattened into an inaccurate rate.
+- Added migration `000084_official_rate_source_currency_drafts`, allowing USD
+  only on official review-source evidence while retaining CNY-only request
+  pricing approval, activation, wallet and settlement contracts.
+
+### Fixed
+
+- Separated documented provider maximum output from the default output used
+  when a request omits an explicit limit, including the DeepSeek V4 384K
+  maximum and the reviewed defaults for Kimi, MiniMax and the new catalog.
+- Rejected mixed-currency official drafts and guarded M84 rollback when retained
+  non-CNY evidence would be lost; no implicit FX conversion was introduced.
+
+### Evidence boundary
+
+- The new provider capability sets are `documented` only. They do not claim
+  `locally_conformant`, provider-live, canary or released support until each
+  model x operation x capability milestone is tested independently.
+
 ## [1.2.2] - 2026-08-24
 
 ### Fixed
