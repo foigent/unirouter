@@ -14,6 +14,8 @@ those build identities do not replace the product version.
 - Kept the custom provider template selected after an execution-Profile catalog
   failure by binding initialization to the SideSheet open transition and
   preserving unrelated fields when applying partial Semi Form updates.
+- Normalized ANSI control sequences before warning fingerprinting so local and
+  CI runs classify the same diagnostics and stack continuations.
 
 ### Added
 

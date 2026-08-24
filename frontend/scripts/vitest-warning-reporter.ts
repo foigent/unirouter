@@ -1,4 +1,5 @@
 import process from 'node:process';
+import { stripVTControlCharacters } from 'node:util';
 import type { Reporter } from 'vitest';
 
 type UserConsoleLog = {
@@ -40,11 +41,11 @@ const allowedStderr = new Map<string, AllowedStderr>([
   ],
 ]);
 
-function diagnosticLines(content: string) {
+export function diagnosticLines(content: string) {
   return content
     .split(/\r?\n/u)
-    .filter((line) => line.trim().length > 0 && !/^\s+at(?:\s|$)/u.test(line))
-    .map((line) => line.trim());
+    .map((line) => stripVTControlCharacters(line).trim())
+    .filter((line) => line.length > 0 && !/^at(?:\s|$)/u.test(line));
 }
 
 export default class WarningRatchetReporter implements Reporter {
