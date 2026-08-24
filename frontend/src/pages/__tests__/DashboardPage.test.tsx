@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import DashboardPage from '../DashboardPage';
 import { useAuthStore } from '../../store/auth';
 import type { LicenseAccess } from '../../navigation';

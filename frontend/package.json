@@ -1,17 +1,18 @@
 {
   "name": "uniroute-frontend",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && npm run check:api-contracts && vite build && node scripts/check-bundle-budget.mjs",
+    "build": "tsc && npm run check:api-contracts && npm run check:react-compat && vite build && node scripts/check-bundle-budget.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "check:api-contracts": "node scripts/check-api-contract-debt.mjs",
+    "check:react-compat": "node scripts/check-react-compatibility.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "type-check": "tsc --noEmit && npm run check:api-contracts"
+    "type-check": "tsc --noEmit && npm run check:api-contracts && npm run check:react-compat"
   },
   "dependencies": {
     "@douyinfe/semi-icons": "^2.100.0",

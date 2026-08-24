@@ -2,7 +2,8 @@ import { useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Modal, Toast } from '@douyinfe/semi-ui';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import WorkloadApplicationsPage from '../WorkloadApplicationsPage';
 import { useAuthStore } from '../../store/auth';
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import DeveloperConsolePage from '../DeveloperConsolePage';
 import { useAuthStore } from '../../store/auth';
 import type { LicenseAccess } from '../../navigation';

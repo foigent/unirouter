@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { Button, LocaleProvider, Spin } from '@douyinfe/semi-ui'
 import zh_CN from '@douyinfe/semi-ui/lib/es/locale/source/zh_CN'
 import './index.css'
+import { ROUTER_FUTURE_FLAGS } from './routing/routerFuture'
 import ErrorBoundary from './components/ErrorBoundary'
 import { profileNeedsRefresh, useAuthStore } from './store/auth'
 import { authzContextForUser, getDefaultPathForAuthz, isPlatformAdminRole, isRouteAllowedForAuthz } from './navigation'
@@ -126,7 +127,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <Suspense fallback={<RouteLoading />}>
         <LocaleProvider locale={zh_CN}>
-          <BrowserRouter>
+          <BrowserRouter future={ROUTER_FUTURE_FLAGS}>
             <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<ProtectedRoute><App /></ProtectedRoute>}>

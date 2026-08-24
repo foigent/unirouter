@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { Route, Routes, useLocation } from 'react-router-dom';
 import App from '../App';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/auth';
 import type { LicenseAccess } from '../navigation';
+import { MemoryRouter } from '../test/MemoryRouter';
 
 const PARTIAL_LICENSE: LicenseAccess = {
   status: 'active',
@@ -52,6 +53,7 @@ function renderApp(
   return render(
     <MemoryRouter initialEntries={[options.initialEntry || '/']}>
       <Routes>
+        <Route path="/login" element={<div>Login</div>} />
         <Route path="/" element={<><LocationProbe /><App /></>}>
           <Route index element={<div>Dashboard</div>} />
           <Route path="logs" element={<div>Logs</div>} />
@@ -168,7 +170,7 @@ describe('App shell', () => {
 
     expect(screen.getByText('环境未配置')).toBeTruthy();
     expect(screen.queryByText('生产环境')).toBeNull();
-    expect(screen.getByLabelText('UniRouter 版本 V1.2.0')).toHaveTextContent('V1.2.0');
+    expect(screen.getByLabelText('UniRouter 版本 V1.2.1')).toHaveTextContent('V1.2.1');
   });
 
   it('opens account settings from the avatar chip', async () => {

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '../../store/auth';
 import OrganizationMembersPage from '../OrganizationMembersPage';

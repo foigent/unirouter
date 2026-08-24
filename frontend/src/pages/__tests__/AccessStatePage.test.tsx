@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from '../../test/MemoryRouter';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AccessStatePage from '../AccessStatePage';
 import { useAuthStore } from '../../store/auth';
