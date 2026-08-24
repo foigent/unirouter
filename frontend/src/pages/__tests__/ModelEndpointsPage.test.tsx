@@ -301,6 +301,22 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(canonicalOperationOriginError('openai.chat_completions.v1', 'https://api.openai.com/v1')).toBe('');
   });
 
+  it('keeps the custom provider template selected when the execution Profile catalog is unavailable', async () => {
+    mocks.profileList.mockRejectedValueOnce(new Error('profile catalog unavailable'));
+    renderPage();
+
+    const createButton = (await screen.findByText('接入模型')).closest('button');
+    expect(createButton).toBeTruthy();
+    fireEvent.click(createButton!);
+    expect(await screen.findByText(/无法加载版本化执行 Profile/)).toBeTruthy();
+
+    await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商');
+
+    expect(screen.getByRole('combobox', { name: '接入模板' })).toHaveTextContent('自定义 OpenAI 兼容供应商');
+    expect(screen.getByLabelText('供应商标识')).not.toBeDisabled();
+    expect(screen.getByLabelText('Base URL')).not.toBeDisabled();
+  });
+
   it('flattens the list by exact deployment_id and operation_id and reads detail through the exact route', async () => {
     renderPage();
 

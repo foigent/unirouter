@@ -460,6 +460,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           onChange={(value) => {
             const preset = providerPreset(value);
             clearReviewedModelDraft();
+            formApi?.setValue('preset', preset.value);
             setSelectedPreset(preset.value);
             setAdapterType(preset.adapterType);
             const firstOperation = operationOptionsByAdapter[preset.adapterType][0].value;
