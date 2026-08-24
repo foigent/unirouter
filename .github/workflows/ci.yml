@@ -92,6 +92,12 @@ jobs:
             echo "docker=$docker"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Validate product version and release notes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/check-release-metadata.sh
+
   backend:
     name: Backend Tests
     needs: changes
@@ -544,6 +550,8 @@ jobs:
           grep -F 'UNIROUTER_RELEASE_TRUST_MODE: development' <<< "$compose_config"
           grep -F 'ARG VITE_DEPLOY_ENV=' frontend/Dockerfile
           grep -F 'ENV VITE_DEPLOY_ENV=${VITE_DEPLOY_ENV}' frontend/Dockerfile
+          grep -F 'ARG VITE_APP_VERSION=' frontend/Dockerfile
+          grep -F 'ENV VITE_APP_VERSION=${VITE_APP_VERSION}' frontend/Dockerfile
 
           canary_compose="$(
             GRAFANA_ADMIN_PASSWORD=ci-compose-validation \

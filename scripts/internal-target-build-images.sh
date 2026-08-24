@@ -70,6 +70,11 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   exit 2
 }
 cd "${repo_root}"
+product_version="$(tr -d '[:space:]' < VERSION)"
+if [[ ! "${product_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "internal target image build: VERSION must contain one MAJOR.MINOR.PATCH value" >&2
+  exit 2
+fi
 head_commit="$(git rev-parse HEAD)"
 if [[ "${head_commit}" != "${runtime_commit}" ]]; then
   echo "internal target image build: RUNTIME_COMMIT does not equal checkout HEAD" >&2
@@ -193,6 +198,7 @@ if [[ "${frontend_needs_build}" == true ]]; then
     --label "org.opencontainers.image.revision=${runtime_commit}" \
     --label "org.opencontainers.image.version=${runtime_version}" \
     --build-arg VITE_DEPLOY_ENV=development \
+    --build-arg "VITE_APP_VERSION=${product_version}" \
     --tag "${frontend_image}" ./frontend
   validate_exact_target frontend "${frontend_image}"
   echo "BUILT_ONCE component=frontend image=${frontend_image}"

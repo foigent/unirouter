@@ -259,6 +259,15 @@ body {
   padding: 12px 20px 14px;
 }
 
+.ur-product-version {
+  margin: 0 10px 8px;
+  color: rgba(255,255,255,0.46);
+  font-size: 11px;
+  line-height: 18px;
+  letter-spacing: 0.04em;
+  user-select: text;
+}
+
 .ur-sider-footer .semi-button {
   justify-content: flex-start;
   color: rgba(255,255,255,0.72) !important;
@@ -2906,6 +2915,17 @@ body {
     flex-direction: column;
     display: flex;
     align-items: stretch;
+  }
+  .ur-page-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .ur-page-actions > .semi-space,
+  .ur-page-actions > .semi-space > .semi-space {
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 	  .ur-kpi-grid,
 	  .ur-split-grid,

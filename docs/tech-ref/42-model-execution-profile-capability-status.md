@@ -115,6 +115,13 @@ The repository already contains the correct structural start:
   those pins from the selected stable/canary Release; changing `model_registry`
   affects only a newly authored Release. The pins participate in the immutable
   plan snapshot hash, while route safety may still narrow an upper bound.
+- The product-facing “模型接入” form composes a reviewed provider preset with
+  the latest exact version of each matching Profile ID. It offers only safe
+  aliases and Profile-compatible operations, fills the reviewed limit defaults,
+  and sends the exact Profile identity for backend validation/persistence.
+  These are authoring defaults, not live capability, price, credential, probe,
+  Release or traffic evidence; custom/omitted selection remains explicitly
+  `unverified.chat@1.0.0`.
 
 The following are still real gaps:
 

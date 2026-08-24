@@ -122,6 +122,13 @@ export default function App() {
           style={{ border: 'none' }}
         />
         <div className="ur-sider-footer">
+          <div
+            className="ur-product-version"
+            aria-label={`UniRouter 版本 V${__UNIROUTER_VERSION__}`}
+            title="产品版本；部署制品另有精确运行时版本与提交标识"
+          >
+            V{__UNIROUTER_VERSION__}
+          </div>
           <Button
             className="mobile-account-button"
             icon={<IconUser />}

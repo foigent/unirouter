@@ -29,7 +29,7 @@ protocol identities are repository-reviewed evidence, while context/output value
 remain customer policy bounded by provider maxima. Historical rows are deliberately
 `unverified.chat@1.0.0`; no migration infers authority from a model name. Component
 identities have executable contracts rather than provider-name branches. In
-particular, `kimi.k3.api@1.2.0` validates the provider-owned
+particular, `kimi.k3.api@1.5.0` validates the provider-owned
 `reasoning_effort=low|high|max` contract without injecting the documented `max`
 default, preserves reasoning on assistant tool-call history, and authorizes Kimi's
 top-level `usage.cached_tokens` only through the selected cache-usage profile.
@@ -89,8 +89,12 @@ API guidance follows the same ownership boundary. Ordinary project members use t
 
 ```mermaid
 flowchart LR
+  T["Reviewed provider preset\nprotocol + official base URL"] --> O["Model onboarding composition\nsafe editable draft"]
+  E["Exact Model Execution Profile\nversion + aliases + maxima"] --> O
   R["Model registry\npublic model identity"] --> A["Alias and model set\ncustomer visibility"]
   C["Provider endpoint\nprotocol, base URL, upstream model mapping"] --> K["Upstream credential"]
+  O -. "create with exact profile pin" .-> R
+  O -. "create connection/deployment/operation" .-> C
   K --> P["Live probe\ncredential + model + routing epoch"]
   C --> P
   R --> L["M78 sealed release\nserver baseline + selected operations"]
@@ -102,6 +106,7 @@ flowchart LR
 
 | Concept | Durable authority | Important projections/consumers |
 |---|---|---|
+| Onboarding composition | repository-reviewed provider preset plus an exact Model Execution Profile; the backend validates the profile pair, aliases, operation and effective limits and persists the exact profile pin | “模型接入” form defaults and constrained choices only; it is not a live probe, release, pricing, credential or traffic authority, and omission stays `unverified.chat@1.0.0` |
 | Public model identity | model registry and aliases | model catalog, project model sets, readiness, `/v1/models` |
 | Provider connection | canonical `provider_connections` plus deployment operation/profile and public-to-upstream mapping | canonical deployment UI, operation probe, Planner candidates, License `active_channels` usage |
 | Credential | canonical `provider_credential_bindings` plus exact deployment link; plaintext is accepted once and encrypted | operation probe and Coordinator credential selection |
@@ -128,6 +133,8 @@ Rules:
 5. Readiness is a read-only explanation of existing authorities. It must never introduce another status or require users to re-enter identifiers already known by the selected model/project/application.
 6. Endpoint display names are mutable and may repeat. No request, health, or cost projection may infer endpoint identity from `channels.name`; legacy rows without provable route identity remain unattributed.
 7. A canonical live probe addresses exactly `deployment_id + operation_id + credential_binding_id`. All four supported operations use distinct bounded requests. Responses and Messages additionally resolve their exact endpoint-protocol profile and execute its real network request/response contract; a local conformance fixture is never live evidence. A successful response advances only that operation while tools, vision and every other capability remain unchanged unless separately exercised and evidenced.
+8. “模型接入” is the primary product wording. `Canonical Deployment` remains the internal durable identity because routing, release, probe and audit records require `deployment_id + operation_id`; it is not the user task name.
+9. A reviewed onboarding template may prefill and constrain provider, model aliases, context/output limits and operation. It must pin the exact Profile version, keep connection naming editable, and never mark the result live-verified or released. Reusing an existing public model treats supplied Profile fields only as exact assertions.
 
 For Responses and Messages, M75 and M77 form this control chain:
 

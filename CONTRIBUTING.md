@@ -11,6 +11,11 @@ Docker 开发路径使用根目录 source Compose，不得将其当作客户正�
 
 ## 开发流程
 
+每轮只保留一个 Active Milestone。先完成 coherent diff 和聚焦测试，
+diff 冻结后只运行一次与风险相称的项目 gate。只有 migration、security、
+identity/authorization、financial 或不可逆变化默认提高验证强度；普通
+可逆 UI/API 变更不强制增加迁移、恢复或独立证据仪式。
+
 ### 1. 创建分支
 
 ```bash
@@ -41,6 +46,14 @@ curl http://localhost:8080/health/ready
 ```
 
 ### 3. 提交代码
+
+Release-bearing 变更必须先更新根目录 `VERSION`（SemVer）和
+`CHANGELOG.md`，并保持 `frontend/package.json`、
+`frontend/package-lock.json` 同版本。提交前运行：
+
+```bash
+scripts/check-release-metadata.sh
+```
 
 **Commit 规范**（Conventional Commits）：
 
@@ -81,7 +94,7 @@ Fixes #45"
 
 **详细流程**：
 1. 执行负责人确认范围、风险、非目标和授权边界。
-2. 完成聚焦回归及与风险相称的全量验证，更新当前执行记录和必要的不可变 evidence。
+2. 完成聚焦回归；diff 冻结后执行一次与风险相称的项目 gate。只有长时间、R2 风险或跨外部生命周期工作才更新执行记录和不可变 evidence。
 3. 创建 PR；不得绕过分支保护或 required CI。
 4. `Change Routing` 对变更分类；适用的 `Backend Tests`、`Frontend Build`、`Docker Build` 必须成功。纯文档 PR 可以由路由明确跳过昂贵任务。
 5. 合并后，以 `origin/main` 的实际提交为准更新状态；已授权的非生产部署仍需记录版本、健康、回滚和目标证据。
@@ -174,6 +187,7 @@ cd frontend && npm run type-check && npm test && npm run build
 - **新功能**：更新 README.md
 - **Breaking Change**：在 PR 描述中明确标注
 - **架构/兼容/发布治理**：遵守 `docs/governance/README.md`
+- **产品版本**：release-bearing 变更按 SemVer 更新 `VERSION` 和 `CHANGELOG.md`；部署 runtime version/commit 继续独立保留
 - **重大技术决策**：使用 `docs/governance/ADR-TEMPLATE.md` 记录 ADR
 - **当前事实变化**：同步更新 `docs/ops/CURRENT-STATUS.md`、`docs/issues/OPEN-ISSUES.md` 或相应 evidence；不得把 Local/CI/Target/Production 状态互相推导
 

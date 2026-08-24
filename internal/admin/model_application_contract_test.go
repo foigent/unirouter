@@ -16,6 +16,7 @@ import (
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -53,6 +54,58 @@ func TestCanonicalModelApplicationViewerProjectionRemovesCredentialIdentities(t 
 		admin.Applications[0].Operations[0].LatestProbe.CredentialBindingID == nil ||
 		admin.Applications[0].Operations[0].LatestProbe.TestedBy == nil {
 		t.Fatalf("admin projection was unexpectedly redacted: %+v", admin.Applications[0])
+	}
+}
+
+func TestNormalizeCanonicalApplicationCreatePinsReviewedProfileDefaults(t *testing.T) {
+	t.Parallel()
+	request := canonicalModelApplicationCreateRequest{
+		Connection: canonicalConnectionInput{
+			Name: "DeepSeek official", Provider: "deepseek", BaseURL: "https://api.deepseek.com",
+			AdapterType: adapters.TypeOpenAICompatible,
+		},
+		PublicModel: canonicalPublicModelInput{
+			ModelName: "deepseek-v4-flash", ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.1.0",
+		},
+		Deployment: canonicalDeploymentInput{UpstreamModel: "deepseek-v4-flash"},
+		Credential: canonicalCredentialInput{APIKey: "profile-secret"},
+		Operation:  canonicalOperationInput{OperationID: string(modeloperation.IDChatCompletions)},
+	}
+
+	normalized, err := normalizeCanonicalApplicationCreate(request)
+	if err != nil {
+		t.Fatalf("normalize reviewed profile: %v", err)
+	}
+	if normalized.PublicModel.ContextLength == nil || *normalized.PublicModel.ContextLength != 1_000_000 ||
+		normalized.PublicModel.OutputLimit == nil || *normalized.PublicModel.OutputLimit != 32_768 {
+		t.Fatalf("reviewed defaults were not applied: %+v", normalized.PublicModel)
+	}
+
+	unknown := request
+	unknown.PublicModel.ExecutionProfileVersion = "9.9.9"
+	if _, err := normalizeCanonicalApplicationCreate(unknown); !errors.Is(err, errCanonicalApplicationInvalid) {
+		t.Fatalf("unknown profile error=%v want invalid", err)
+	}
+
+	overLimit := request
+	overLimit.PublicModel.ContextLength = canonicalApplicationIntPointer(1_000_001)
+	overLimit.PublicModel.OutputLimit = canonicalApplicationIntPointer(32_768)
+	if _, err := normalizeCanonicalApplicationCreate(overLimit); !errors.Is(err, errCanonicalApplicationInvalid) {
+		t.Fatalf("over-limit profile error=%v want invalid", err)
+	}
+
+	unverified := request
+	unverified.PublicModel.ExecutionProfileID = ""
+	unverified.PublicModel.ExecutionProfileVersion = ""
+	unverified.PublicModel.ContextLength = nil
+	unverified.PublicModel.OutputLimit = nil
+	normalized, err = normalizeCanonicalApplicationCreate(unverified)
+	if err != nil {
+		t.Fatalf("normalize unverified profile: %v", err)
+	}
+	if normalized.PublicModel.ExecutionProfileID != modelprofile.UnverifiedProfileID ||
+		normalized.PublicModel.ExecutionProfileVersion != modelprofile.UnverifiedProfileVersion {
+		t.Fatalf("unverified profile not pinned: %+v", normalized.PublicModel)
 	}
 }
 

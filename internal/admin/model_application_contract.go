@@ -21,6 +21,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modeldeployment"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/strictjson"
 )
@@ -57,14 +58,16 @@ type canonicalModelApplication struct {
 }
 
 type canonicalPublicModel struct {
-	ID              int64  `json:"id"`
-	ModelName       string `json:"model_name"`
-	DisplayName     string `json:"display_name"`
-	ProviderFamily  string `json:"provider_family"`
-	Lifecycle       string `json:"lifecycle"`
-	ContextLength   int    `json:"context_length"`
-	OutputLimit     int    `json:"output_limit"`
-	ApprovedCatalog bool   `json:"approved_catalog"`
+	ID                      int64  `json:"id"`
+	ModelName               string `json:"model_name"`
+	DisplayName             string `json:"display_name"`
+	ProviderFamily          string `json:"provider_family"`
+	Lifecycle               string `json:"lifecycle"`
+	ContextLength           int    `json:"context_length"`
+	OutputLimit             int    `json:"output_limit"`
+	ApprovedCatalog         bool   `json:"approved_catalog"`
+	ExecutionProfileID      string `json:"execution_profile_id"`
+	ExecutionProfileVersion string `json:"execution_profile_version"`
 }
 
 type canonicalDeployment struct {
@@ -270,14 +273,16 @@ type canonicalConnectionInput struct {
 }
 
 type canonicalPublicModelInput struct {
-	ID              int64  `json:"id,omitempty"`
-	ModelName       string `json:"model_name,omitempty"`
-	DisplayName     string `json:"display_name,omitempty"`
-	ProviderFamily  string `json:"provider_family,omitempty"`
-	Lifecycle       string `json:"lifecycle,omitempty"`
-	ContextLength   *int   `json:"context_length,omitempty"`
-	OutputLimit     *int   `json:"output_limit,omitempty"`
-	ApprovedCatalog *bool  `json:"approved_catalog,omitempty"`
+	ID                      int64  `json:"id,omitempty"`
+	ModelName               string `json:"model_name,omitempty"`
+	DisplayName             string `json:"display_name,omitempty"`
+	ProviderFamily          string `json:"provider_family,omitempty"`
+	Lifecycle               string `json:"lifecycle,omitempty"`
+	ContextLength           *int   `json:"context_length,omitempty"`
+	OutputLimit             *int   `json:"output_limit,omitempty"`
+	ApprovedCatalog         *bool  `json:"approved_catalog,omitempty"`
+	ExecutionProfileID      string `json:"execution_profile_id,omitempty"`
+	ExecutionProfileVersion string `json:"execution_profile_version,omitempty"`
 }
 
 type canonicalDeploymentInput struct {
@@ -683,6 +688,8 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 	request.PublicModel.DisplayName = strings.TrimSpace(request.PublicModel.DisplayName)
 	request.PublicModel.ProviderFamily = strings.TrimSpace(request.PublicModel.ProviderFamily)
 	request.PublicModel.Lifecycle = strings.TrimSpace(request.PublicModel.Lifecycle)
+	request.PublicModel.ExecutionProfileID = strings.TrimSpace(request.PublicModel.ExecutionProfileID)
+	request.PublicModel.ExecutionProfileVersion = strings.TrimSpace(request.PublicModel.ExecutionProfileVersion)
 	request.Deployment.UpstreamModel = strings.TrimSpace(request.Deployment.UpstreamModel)
 	request.Credential.APIKey = strings.TrimSpace(request.Credential.APIKey)
 	request.Operation.OperationID = strings.TrimSpace(request.Operation.OperationID)
@@ -698,6 +705,10 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 		}
 		if request.PublicModel.Lifecycle == "" {
 			request.PublicModel.Lifecycle = "staging"
+		}
+		if request.PublicModel.ExecutionProfileID == "" && request.PublicModel.ExecutionProfileVersion == "" {
+			request.PublicModel.ExecutionProfileID = modelprofile.UnverifiedProfileID
+			request.PublicModel.ExecutionProfileVersion = modelprofile.UnverifiedProfileVersion
 		}
 	} else if request.PublicModel.ModelName != "" {
 		if _, err := modeldeployment.NormalizeIdentity(request.PublicModel.ModelName, 100); err != nil {
@@ -717,6 +728,27 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 	if (request.PublicModel.ContextLength != nil && *request.PublicModel.ContextLength < 0) ||
 		(request.PublicModel.OutputLimit != nil && *request.PublicModel.OutputLimit < 0) {
 		return request, errCanonicalApplicationInvalid
+	}
+	if (request.PublicModel.ExecutionProfileID == "") != (request.PublicModel.ExecutionProfileVersion == "") {
+		return request, errCanonicalApplicationInvalid
+	}
+	if request.PublicModel.ExecutionProfileID != "" {
+		profile, ok := modelprofile.Lookup(request.PublicModel.ExecutionProfileID, request.PublicModel.ExecutionProfileVersion)
+		if !ok {
+			return request, errCanonicalApplicationInvalid
+		}
+		if request.PublicModel.ID == 0 && profile.ID != modelprofile.UnverifiedProfileID {
+			if request.PublicModel.ContextLength == nil && profile.DefaultContextWindow > 0 {
+				request.PublicModel.ContextLength = canonicalApplicationIntPointer(profile.DefaultContextWindow)
+			}
+			if request.PublicModel.OutputLimit == nil && profile.DefaultOutputLimit > 0 {
+				request.PublicModel.OutputLimit = canonicalApplicationIntPointer(profile.DefaultOutputLimit)
+			}
+			if request.PublicModel.ContextLength == nil || request.PublicModel.OutputLimit == nil ||
+				modelprofile.ValidateEffectiveLimits(profile, *request.PublicModel.ContextLength, *request.PublicModel.OutputLimit) != nil {
+				return request, errCanonicalApplicationInvalid
+			}
+		}
 	}
 	if _, err := modeldeployment.NormalizeIdentity(request.Deployment.UpstreamModel, 200); err != nil {
 		return request, errCanonicalApplicationInvalid
@@ -980,13 +1012,15 @@ func canonicalJSONEqual(left, right []byte) bool {
 
 func ensureCanonicalPublicModel(ctx context.Context, tx pgx.Tx, orgID int64, input canonicalPublicModelInput, provider string) (int64, bool, error) {
 	if input.ID > 0 {
-		var modelName, displayName, providerFamily, lifecycle string
+		var modelName, displayName, providerFamily, lifecycle, executionProfileID, executionProfileVersion string
 		var contextLength, outputLimit int
 		var approved bool
 		if err := tx.QueryRow(ctx, `
-SELECT model_name,display_name,provider_family,lifecycle,context_length,output_limit,approved_catalog
+SELECT model_name,display_name,provider_family,lifecycle,context_length,output_limit,approved_catalog,
+       execution_profile_id,execution_profile_version
   FROM model_registry WHERE id=$1 AND org_id=$2 FOR UPDATE`, input.ID, orgID).Scan(
 			&modelName, &displayName, &providerFamily, &lifecycle, &contextLength, &outputLimit, &approved,
+			&executionProfileID, &executionProfileVersion,
 		); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return 0, false, errCanonicalApplicationNotFound
@@ -999,7 +1033,9 @@ SELECT model_name,display_name,provider_family,lifecycle,context_length,output_l
 			(input.Lifecycle != "" && lifecycle != input.Lifecycle) ||
 			(input.ContextLength != nil && contextLength != *input.ContextLength) ||
 			(input.OutputLimit != nil && outputLimit != *input.OutputLimit) ||
-			(input.ApprovedCatalog != nil && approved != *input.ApprovedCatalog) {
+			(input.ApprovedCatalog != nil && approved != *input.ApprovedCatalog) ||
+			(input.ExecutionProfileID != "" && executionProfileID != input.ExecutionProfileID) ||
+			(input.ExecutionProfileVersion != "" && executionProfileVersion != input.ExecutionProfileVersion) {
 			// Never treat a mutable spelling as a selector. Once a caller supplies
 			// an ID, any additional field is an assertion, not a mutation.
 			return 0, false, errCanonicalApplicationConflict
@@ -1030,27 +1066,29 @@ SELECT model_name,display_name,provider_family,lifecycle,context_length,output_l
 	err := tx.QueryRow(ctx, `
 INSERT INTO model_registry (
   org_id,model_name,display_name,provider_family,lifecycle,context_length,
-  output_limit,pricing_model_name,approved_catalog)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$2,$8)
+  output_limit,pricing_model_name,approved_catalog,execution_profile_id,execution_profile_version)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$2,$8,$9,$10)
 ON CONFLICT (org_id,model_name) DO NOTHING
 RETURNING id`, orgID, input.ModelName, input.DisplayName, providerFamily, input.Lifecycle,
-		contextLength, outputLimit, approved).Scan(&id)
+		contextLength, outputLimit, approved, input.ExecutionProfileID, input.ExecutionProfileVersion).Scan(&id)
 	if err == nil {
 		return id, false, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return 0, false, fmt.Errorf("create canonical public model: %w", err)
 	}
-	var existingDisplayName, existingProviderFamily, existingLifecycle string
+	var existingDisplayName, existingProviderFamily, existingLifecycle, existingExecutionProfileID, existingExecutionProfileVersion string
 	var existingContextLength, existingOutputLimit int
 	var existingApproved bool
 	if err := tx.QueryRow(ctx, `
-SELECT id,display_name,provider_family,lifecycle,context_length,output_limit,approved_catalog
+SELECT id,display_name,provider_family,lifecycle,context_length,output_limit,approved_catalog,
+       execution_profile_id,execution_profile_version
   FROM model_registry
  WHERE org_id=$1 AND model_name=$2
  FOR UPDATE`, orgID, input.ModelName).Scan(
 		&id, &existingDisplayName, &existingProviderFamily, &existingLifecycle,
 		&existingContextLength, &existingOutputLimit, &existingApproved,
+		&existingExecutionProfileID, &existingExecutionProfileVersion,
 	); err != nil {
 		return 0, false, fmt.Errorf("reuse canonical public model: %w", err)
 	}
@@ -1067,7 +1105,9 @@ SELECT id,display_name,provider_family,lifecycle,context_length,output_limit,app
 		existingLifecycle != input.Lifecycle ||
 		existingContextLength != contextLength ||
 		existingOutputLimit != outputLimit ||
-		existingApproved != approved {
+		existingApproved != approved ||
+		existingExecutionProfileID != input.ExecutionProfileID ||
+		existingExecutionProfileVersion != input.ExecutionProfileVersion {
 		return 0, false, errCanonicalApplicationConflict
 	}
 	return id, true, nil
@@ -1221,7 +1261,8 @@ func (h *Handler) loadCanonicalModelApplicationsSnapshot(
 	}
 	rows, err := store.Query(ctx, `
 SELECT mr.id,mr.model_name,mr.display_name,mr.provider_family,mr.lifecycle,
-       mr.context_length,mr.output_limit,mr.approved_catalog,
+	       mr.context_length,mr.output_limit,mr.approved_catalog,
+	       mr.execution_profile_id,mr.execution_profile_version,
        md.id,md.upstream_model,md.admin_state,md.config_revision,md.priority,
        md.routing_weight,md.max_context,md.default_max_output,md.degradation_threshold,
        md.circuit_state,md.circuit_revision,md.fail_count,md.retired_at,
@@ -1260,6 +1301,7 @@ SELECT mr.id,mr.model_name,mr.display_name,mr.provider_family,mr.lifecycle,
 			&item.PublicModel.ID, &item.PublicModel.ModelName, &item.PublicModel.DisplayName,
 			&item.PublicModel.ProviderFamily, &item.PublicModel.Lifecycle,
 			&item.PublicModel.ContextLength, &item.PublicModel.OutputLimit, &item.PublicModel.ApprovedCatalog,
+			&item.PublicModel.ExecutionProfileID, &item.PublicModel.ExecutionProfileVersion,
 			&item.Deployment.ID, &item.Deployment.UpstreamModel, &item.Deployment.AdminState,
 			&item.Deployment.ConfigRevision, &item.Deployment.Priority, &item.Deployment.RoutingWeight,
 			&item.Deployment.MaxContext, &item.Deployment.DefaultMaxOutput,

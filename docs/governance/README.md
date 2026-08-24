@@ -10,6 +10,35 @@ This document defines the minimum engineering rules for any change to UniRouter.
 Completed PRD scope remains historical; current execution authority comes from
 the active issue/batch record and explicit User decisions.
 
+## Active Milestone And Proportionate Verification
+
+Keep exactly one Active Milestone: the smallest independently useful outcome
+that advances the complete authorized goal. Newly discovered work is classified
+as required for that milestone, blocking it, or a separate backlog item; only
+the first two enter the current diff.
+
+For ordinary product changes, the default economical path is:
+
+1. inspect the current authority and freeze the acceptance matrix;
+2. complete the coherent diff and focused regression tests;
+3. freeze the diff, run one risk-proportionate repository gate, then make at
+   most one normal push/CI cycle when that external action is authorized;
+4. rerun only a failed job when the exact commit is unchanged and the failure
+   is demonstrably external.
+
+Migration, security, identity/authorization, financial, and irreversible
+changes elevate verification: add the relevant negative states, rollback or
+recovery proof, independent review, and target evidence. UI wording, normal
+API composition, and other reversible product behavior do not receive that
+ceremony by default. Provider-generic protocol evidence is authoritative for
+UniRouter behavior; named Agent frameworks receive bounded compatibility smoke
+tests and are not billing or usage authorities.
+
+Browser UI is reserved for visual/interaction evidence. Deterministic drafts
+and repeated configuration are produced through code or supported APIs; an
+existing signed-in browser is used only where human authentication or approval
+is actually required.
+
 ## ADR Policy
 
 Use an Architecture Decision Record when a change:
@@ -50,6 +79,18 @@ API changes must follow these rules:
 - OpenAPI, backend `/docs`, frontend `/docs`, API client tests, and route parity
   tests must be updated in the same batch as route changes.
 
+The repository product version is the exact SemVer in root `VERSION` and must
+match `frontend/package.json` and `frontend/package-lock.json`. Release-bearing
+changes increment `MAJOR.MINOR.PATCH` and add a dated entry to `CHANGELOG.md`:
+
+- `MAJOR`: deliberately incompatible customer-facing contract;
+- `MINOR`: backward-compatible capability or material product behavior;
+- `PATCH`: backward-compatible correction.
+
+Runtime images also retain an immutable runtime version and exact commit. That
+deployment identity is evidence for a build and must not be substituted for,
+or allowed to silently regress, the product SemVer.
+
 ## Migration And Rollback Policy
 
 Schema changes must include:
@@ -78,8 +119,11 @@ Before a release or PR merge that changes code or acceptance-sensitive docs:
 - Scope stays inside the approved PRD/batch.
 - Relevant tests pass locally or are explicitly delegated with reason.
 - `git diff --check` passes.
-- `docs/agent-workflows/EXECUTION-RECORD.md` records scope, risk, verification,
-  CI, target state and non-goals for the active R2/R3/R4 batch.
+- `VERSION`, frontend package metadata, and `CHANGELOG.md` pass
+  `scripts/check-release-metadata.sh` for a release-bearing change.
+- `docs/agent-workflows/EXECUTION-RECORD.md` is updated only when the change is
+  long-running, crosses an external lifecycle, or needs resumable risk/evidence
+  state; ordinary local changes do not create evidence ceremony by default.
 - `Change Routing` and every applicable required CI job pass; docs-only changes
   may skip expensive jobs only when routing classifies them explicitly.
 - `docs/ops/CURRENT-STATUS.md`, acceptance matrix, and `docs/issues/OPEN-ISSUES.md`
