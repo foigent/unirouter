@@ -323,6 +323,9 @@ func newModelBrowserApplicationServer(t *testing.T, pool *pgxpool.Pool, router *
 	apiMux.HandleFunc("GET /api/v1/auth/oidc/config", handler.OIDCConfig)
 	apiMux.Handle("GET /api/v1/me", authenticated(handler.GetMe))
 	apiMux.Handle("GET /api/v1/organizations", authenticated(handler.ListOrganizations))
+	apiMux.Handle("GET /api/v1/model-execution-profiles", licensedRoute(licensing.FeatureModelGovernance, func(next http.HandlerFunc) http.Handler {
+		return organizationRoleRoute(next, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer)
+	})(handler.ListModelExecutionProfiles))
 	registerModelDeploymentRoutes(apiMux, handler, modelDeploymentRouteGuards{
 		read: func(next http.HandlerFunc) http.Handler {
 			return organizationRoleRoute(next, auth.RolePlatformAdmin, auth.RoleOrgAdmin, auth.RoleOrgViewer)
@@ -349,7 +352,7 @@ func modelBrowserLicenseRuntime(t *testing.T) *licensing.Runtime {
 	document, err := licensing.SignCommercialPayload(licensing.Payload{
 		LicenseID: "license-model-browser", Customer: "Model Browser Customer", DeploymentID: "model-browser",
 		Tier: "enterprise", IssuedAt: now.Add(-time.Hour).Format(time.RFC3339), NotBefore: now.Add(-time.Hour).Format(time.RFC3339), ExpiresAt: now.Add(24 * time.Hour).Format(time.RFC3339),
-		Features: []string{licensing.FeatureGateway},
+		Features: []string{licensing.FeatureGateway, licensing.FeatureModelGovernance},
 		Limits:   map[string]int64{licensing.LimitActiveChannels: 10, licensing.LimitActiveAPIKeys: 10, licensing.LimitActiveProjects: 10, licensing.LimitActiveUsers: 10},
 	}, "model-browser-key", privateKey)
 	require.NoError(t, err)

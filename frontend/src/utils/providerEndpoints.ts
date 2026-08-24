@@ -7,6 +7,7 @@ export type ProviderPreset = {
   baseURL: string;
   adapterType: ProviderAdapterType;
   note: string;
+  executionProfilePrefixes?: string[];
 };
 
 // Presets are shortcuts, not an allowlist. Keep custom first so a provider
@@ -20,9 +21,9 @@ export const providerPresets: ProviderPreset[] = [
     adapterType: 'openai_compatible',
     note: '适用于 MiniMax、MiMo 和其他已确认兼容 Chat Completions 的 MaaS 或聚合平台。',
   },
-  { value: 'deepseek', label: 'DeepSeek 官方', provider: 'deepseek', baseURL: 'https://api.deepseek.com', adapterType: 'openai_compatible', note: 'OpenAI 兼容协议；上游模型 ID 以 DeepSeek 控制台实际授权为准。' },
-  { value: 'kimi', label: 'Kimi / Moonshot 官方', provider: 'kimi', baseURL: 'https://api.moonshot.cn/v1', adapterType: 'openai_compatible', note: 'OpenAI 兼容协议；不会按模型名称猜测参数能力。' },
-  { value: 'minimax', label: 'MiniMax 官方（中国区）', provider: 'minimax', baseURL: 'https://api.minimaxi.com/v1', adapterType: 'openai_compatible', note: '使用 MiniMax 官方 OpenAI 兼容入口；模型 ID 以当前控制台为准。' },
+  { value: 'deepseek', label: 'DeepSeek 官方', provider: 'deepseek', baseURL: 'https://api.deepseek.com', adapterType: 'openai_compatible', note: 'OpenAI 兼容协议；可从版本化执行 Profile 选择已审查模型，创建后仍需精确 Operation 探测。', executionProfilePrefixes: ['deepseek.'] },
+  { value: 'kimi', label: 'Kimi / Moonshot 官方', provider: 'kimi', baseURL: 'https://api.moonshot.cn/v1', adapterType: 'openai_compatible', note: 'OpenAI 兼容协议；可从版本化执行 Profile 选择已审查模型，不按名称猜测能力。', executionProfilePrefixes: ['kimi.'] },
+  { value: 'minimax', label: 'MiniMax 官方（中国区）', provider: 'minimax', baseURL: 'https://api.minimaxi.com/v1', adapterType: 'openai_compatible', note: '使用 MiniMax 官方 OpenAI 兼容入口；Token Plan Profile 只预填已审查执行边界，不生成金额。', executionProfilePrefixes: ['minimax.'] },
   { value: 'mimo', label: '小米 MiMo 官方', provider: 'mimo', baseURL: 'https://api.xiaomimimo.com/v1', adapterType: 'openai_compatible', note: '使用 MiMo 官方 OpenAI Chat Completions 兼容入口；订阅计划如给出专用地址，以控制台为准。' },
   { value: 'openai', label: 'OpenAI 官方', provider: 'openai', baseURL: 'https://api.openai.com/v1', adapterType: 'openai_compatible', note: '当前连接使用 Chat Completions 兼容适配。' },
   { value: 'openrouter', label: 'OpenRouter', provider: 'openrouter', baseURL: 'https://openrouter.ai/api/v1', adapterType: 'openai_compatible', note: '同一公共模型可与官方端点并存，供应商模型 ID 必须分别填写。' },

@@ -1,9 +1,19 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+
+const packageVersion = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+).version as string
 
 /// <reference types="vitest" />
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __UNIROUTER_VERSION__: JSON.stringify(
+      String(process.env.VITE_APP_VERSION || packageVersion).trim(),
+    ),
+  },
   test: {
     globals: true,
     environment: 'jsdom',

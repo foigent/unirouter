@@ -111,6 +111,7 @@ RETURNING id`, orgID).Scan(&userID))
 			ModelName: "company-deepseek-v4-flash", DisplayName: "DeepSeek V4 Flash",
 			ProviderFamily: "deepseek", Lifecycle: "ga", ContextLength: canonicalTestPtr(128000),
 			OutputLimit: canonicalTestPtr(8192), ApprovedCatalog: canonicalTestPtr(true),
+			ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.1.0",
 		},
 		Deployment: canonicalDeploymentInput{
 			UpstreamModel: "deepseek-v4-flash", MaxContext: canonicalTestPtr(128000), DefaultMaxOutput: canonicalTestPtr(8192),
@@ -127,6 +128,8 @@ RETURNING id`, orgID).Scan(&userID))
 	require.Equal(t, "openai.chat_completions", official.Application.Operations[0].ProtocolProfileID)
 	require.Equal(t, "1.0.0", official.Application.Operations[0].ProtocolProfileVersion)
 	require.Equal(t, "declared", official.Application.Operations[0].EvidenceState)
+	require.Equal(t, "deepseek.v4-flash.api", official.Application.PublicModel.ExecutionProfileID)
+	require.Equal(t, "1.1.0", official.Application.PublicModel.ExecutionProfileVersion)
 	require.Nil(t, official.Application.Operations[0].VerifiedAt)
 	require.Equal(t, "enabled", official.Application.Connection.AdminState)
 	require.Equal(t, "ready", official.Application.Credential.State)

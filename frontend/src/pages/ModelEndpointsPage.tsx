@@ -97,7 +97,7 @@ export default function ModelEndpointsPage() {
     } catch (error) {
       if (version !== listVersion.current) return;
       setProjection(null);
-      setLoadError(endpointError(error, '无法读取 canonical deployment 状态。'));
+      setLoadError(endpointError(error, '无法读取模型接入状态。'));
     } finally {
       if (version === listVersion.current) setLoading(false);
     }
@@ -142,7 +142,7 @@ export default function ModelEndpointsPage() {
   };
 
   const viewNavigation = <Space>
-    <Button type={!auxiliaryView ? 'primary' : 'tertiary'} onClick={() => selectView()}>Canonical Deployments</Button>
+    <Button type={!auxiliaryView ? 'primary' : 'tertiary'} onClick={() => selectView()}>模型执行目标</Button>
     <Button type={selectedView === 'catalog' ? 'primary' : 'tertiary'} onClick={() => selectView('catalog')}>公共模型目录</Button>
     <Button type={selectedView === 'diagnostics' ? 'primary' : 'tertiary'} onClick={() => selectView('diagnostics')}>执行诊断</Button>
   </Space>;
@@ -321,7 +321,7 @@ export default function ModelEndpointsPage() {
 
   if (!canRead) {
     return <div className="ur-page ur-page-wide">
-      <PageHeader eyebrow="模型接入" title="模型与端点" description="Canonical deployment 管理只对平台管理员、组织管理员和组织只读角色开放。" />
+      <PageHeader eyebrow="模型接入" title="模型接入" description="供应商连接与模型执行目标只对平台管理员、组织管理员和组织只读角色开放。" />
       <EmptyState title="当前身份无权读取供应商部署" description="项目成员不会收到 provider、Base URL、credential 或 deployment 管理状态。请从项目工作台使用已授权的公共模型。" minHeight={360} />
     </div>;
   }
@@ -353,8 +353,8 @@ export default function ModelEndpointsPage() {
   return <div className="ur-page ur-page-wide">
     <PageHeader
       eyebrow="模型接入"
-      title="Canonical Deployments"
-      description="以 deployment_id + operation_id 管理一个精确执行目标；配置、凭证、探测、运行时和调用授权保持为五个独立事实轴。"
+      title="模型接入"
+      description="接入、探测并发布精确模型执行目标；内部以 deployment_id + operation_id 保持配置、凭证、探测、运行时和调用授权五个独立事实轴。"
       actions={<Space>
         {viewNavigation}
         <Button icon={<IconRefresh />} loading={loading} onClick={() => void load()}>刷新</Button>
@@ -364,7 +364,7 @@ export default function ModelEndpointsPage() {
           disabled={!gatewayLicensed}
           title={!gatewayLicensed ? gatewayRestriction : undefined}
           onClick={() => setCreateOpen(true)}
-        >新增 Deployment</Button>}
+        >接入模型</Button>}
       </Space>}
     />
 
@@ -394,17 +394,17 @@ export default function ModelEndpointsPage() {
     />}
 
     <div className="ur-model-endpoint-kpis">
-      <MetricTile label="Deployments" value={projection?.summary.deployments ?? '-'} meta="持久 deployment identity" />
+      <MetricTile label="执行目标" value={projection?.summary.deployments ?? '-'} meta="持久 deployment identity" />
       <MetricTile label="凭证可选" value={projection?.summary.credentials_ready ?? '-'} tone="green" meta={`暂停连接 ${projection?.summary.connections_paused ?? '-'}`} />
       <MetricTile label="探测就绪" value={projection?.summary.probes_ready ?? '-'} tone="blue" meta="operation 级当前证据" />
       <MetricTile label="运行时成员" value={projection?.summary.runtime_assigned_operations ?? '-'} tone="amber" meta="不等同调用者已授权" />
     </div>
 
     <Surface
-      title="Deployment × Operation"
-      description="每行只有一个可深链的 deployment_id + operation_id；不会按公共模型或旧 channel 回退选择。"
+      title="模型执行目标"
+      description="每行对应一个精确 Deployment × Operation；可查看内部持久身份，系统不会按公共模型或旧 channel 回退选择。"
       actions={<Input
-        aria-label="搜索 Canonical Deployments"
+        aria-label="搜索模型执行目标"
         prefix={<IconSearch />}
         value={filter}
         onChange={setFilter}
@@ -412,8 +412,8 @@ export default function ModelEndpointsPage() {
         style={{ width: 320 }}
       />}
     >
-      {loadError ? <EmptyState title="Canonical deployment 状态暂时不可用" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} />
-        : loading && !projection ? <EmptyState title="正在读取 Canonical Deployments" description="正在加载持久身份与五轴状态。" minHeight={320} />
+      {loadError ? <EmptyState title="模型接入状态暂时不可用" description={loadError} actions={<Button type="primary" onClick={() => void load()}>重试</Button>} minHeight={320} />
+        : loading && !projection ? <EmptyState title="正在读取模型执行目标" description="正在加载持久身份与五轴状态。" minHeight={320} />
           : <Table
             rowKey="key"
             loading={loading}
@@ -425,9 +425,9 @@ export default function ModelEndpointsPage() {
               style: { cursor: 'pointer' },
             })}
             empty={<EmptyState
-              title="还没有 Canonical Deployment"
-              description={canManage ? '创建第一条 deployment 与 operation；创建后仍需分别完成探测和 canonical lifecycle。' : '当前组织还没有可读取的 deployment。'}
-              actions={canManage ? <Button type="primary" disabled={!gatewayLicensed} title={!gatewayLicensed ? gatewayRestriction : undefined} onClick={() => setCreateOpen(true)}>新增 Deployment</Button> : undefined}
+              title="还没有模型执行目标"
+              description={canManage ? '接入第一个模型；创建后仍需分别完成精确 Operation 探测与发布。' : '当前组织还没有可读取的模型执行目标。'}
+              actions={canManage ? <Button type="primary" disabled={!gatewayLicensed} title={!gatewayLicensed ? gatewayRestriction : undefined} onClick={() => setCreateOpen(true)}>接入模型</Button> : undefined}
               minHeight={300}
             />}
           />}

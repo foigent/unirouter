@@ -18,6 +18,8 @@ export type CanonicalPublicModel = {
   context_length: number;
   output_limit: number;
   approved_catalog: boolean;
+  execution_profile_id: string;
+  execution_profile_version: string;
 };
 
 export type CanonicalDeployment = {
@@ -239,6 +241,8 @@ export type CanonicalModelApplicationCreateRequest = {
     lifecycle?: string;
     context_length?: number;
     output_limit?: number;
+    execution_profile_id?: string;
+    execution_profile_version?: string;
   };
   deployment: {
     upstream_model: string;

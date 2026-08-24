@@ -2,7 +2,9 @@
 FROM node:24-alpine AS builder
 WORKDIR /app
 ARG VITE_DEPLOY_ENV=
+ARG VITE_APP_VERSION=
 ENV VITE_DEPLOY_ENV=${VITE_DEPLOY_ENV}
+ENV VITE_APP_VERSION=${VITE_APP_VERSION}
 COPY package.json package-lock.json ./
 RUN npm pkg delete devDependencies.canvas && npm ci
 COPY . .

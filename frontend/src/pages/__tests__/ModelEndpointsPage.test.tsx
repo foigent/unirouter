@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   rollbackStable: vi.fn(),
   cutoverLegacy: vi.fn(),
   rollbackLegacy: vi.fn(),
+  profileList: vi.fn(),
 }));
 
 vi.mock('../../api/modelDeploymentReleases', async importOriginal => {
@@ -67,6 +68,14 @@ vi.mock('../../api/modelDeployments', async importOriginal => {
   };
 });
 
+vi.mock('../../api/modelExecutionProfiles', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../api/modelExecutionProfiles')>();
+  return {
+    ...actual,
+    modelExecutionProfileApi: { list: mocks.profileList },
+  };
+});
+
 vi.mock('../ModelGovernancePage', () => ({
   default: ({ embedded }: { embedded?: boolean }) => <div>模型目录嵌入视图 · embedded={String(Boolean(embedded))}</div>,
 }));
@@ -89,6 +98,8 @@ function application(overrides: Record<string, unknown> = {}) {
       context_length: 128000,
       output_limit: 8192,
       approved_catalog: true,
+      execution_profile_id: 'deepseek.v4-flash.api',
+      execution_profile_version: '1.1.0',
     },
     deployment: {
       id: 41,
@@ -212,7 +223,11 @@ function renderPage(entry = '/channels') {
 
 async function chooseSelectOption(label: string, option: string | RegExp) {
   fireEvent.click(screen.getByRole('combobox', { name: label }));
-  const choice = await screen.findByRole('option', { name: option });
+  const choice = screen.getAllByRole('option').find(node => {
+    const text = node.textContent || '';
+    return typeof option === 'string' ? text === option : option.test(text);
+  });
+  if (!choice) throw new Error(`missing option ${String(option)} for ${label}`);
   fireEvent.click(choice);
   return choice;
 }
@@ -254,6 +269,27 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       idempotency_replay: false,
       reused: { connection: false, public_model: false, deployment: false, credential: false, operation: false },
     });
+    mocks.profileList.mockResolvedValue({
+      contract_version: 'unirouter.model-execution-profiles.v1',
+      data: [{
+        id: 'deepseek.v4-flash.api',
+        version: '1.1.0',
+        label: 'DeepSeek V4 Flash 官方 API',
+        tokenizer_profile_id: 'tokenizer.byte-upper.v1',
+        tokenizer_profile_version: '1.0.0',
+        reasoning_profile: 'reasoning.deepseek-thinking-toggle.v2',
+        cache_usage_profile: 'cache-usage.deepseek-v4.v1',
+        protocol_profile: 'protocol.deepseek-openai-chat.v1',
+        provider_context_window: 1_000_000,
+        provider_max_output: 384_000,
+        default_context_window: 1_000_000,
+        default_output_limit: 32_768,
+        provider_capabilities: ['reasoning', 'tools', 'prompt_cache'],
+        capabilities: ['reasoning', 'tools', 'prompt_cache'],
+        aliases: ['DeepSeek V4 Flash', 'DeepSeek-V4-Flash', 'deepseek-v4-flash'],
+        evidence_refs: ['https://example.test/deepseek-v4-flash'],
+      }],
+    });
   });
 
   it('derives the OpenAI Responses origin and rejects pathful public operation connections before submit', () => {
@@ -263,6 +299,22 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(canonicalOperationOriginError('openai.responses.v1', 'https://api.openai.com/v1')).toMatch(/path-free HTTPS origin/);
     expect(canonicalOperationOriginError('anthropic.messages.v1', 'https://api.anthropic.com\u00a0')).toMatch(/ASCII/);
     expect(canonicalOperationOriginError('openai.chat_completions.v1', 'https://api.openai.com/v1')).toBe('');
+  });
+
+  it('keeps the custom provider template selected when the execution Profile catalog is unavailable', async () => {
+    mocks.profileList.mockRejectedValueOnce(new Error('profile catalog unavailable'));
+    renderPage();
+
+    const createButton = (await screen.findByText('接入模型')).closest('button');
+    expect(createButton).toBeTruthy();
+    fireEvent.click(createButton!);
+    expect(await screen.findByText(/无法加载版本化执行 Profile/)).toBeTruthy();
+
+    await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商');
+
+    expect(screen.getByRole('combobox', { name: '接入模板' })).toHaveTextContent('自定义 OpenAI 兼容供应商');
+    expect(screen.getByLabelText('供应商标识')).not.toBeDisabled();
+    expect(screen.getByLabelText('Base URL')).not.toBeDisabled();
   });
 
   it('flattens the list by exact deployment_id and operation_id and reads detail through the exact route', async () => {
@@ -407,7 +459,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 
     expect(await screen.findByText(/当前为组织只读视图/)).toBeTruthy();
     expect(await screen.findByText('1 · 配置与管理状态')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '新增 Deployment' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '接入模型' })).toBeNull();
     expect(screen.queryByRole('button', { name: '用此绑定探测精确 Operation' })).toBeNull();
     expect(screen.queryByText('binding_id=91')).toBeNull();
     expect(screen.getByText(/只读角色仅查看聚合凭证状态/)).toBeTruthy();
@@ -438,7 +490,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     const toast = vi.spyOn(Toast, 'error');
     renderPage();
 
-    fireEvent.click((await screen.findByText('新增 Deployment')).closest('button')!);
+    fireEvent.click((await screen.findByText('接入模型')).closest('button')!);
     fireEvent.click(screen.getByText('复用现有公共模型', { exact: true }));
     await chooseSelectOption('现有公共模型', /DeepSeek V4 Flash/);
 
@@ -459,7 +511,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     fireEvent.change(screen.getByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
     fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
     fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建 Deployment' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建模型接入' }));
 
     await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('请先在公共模型目录修复后再复用')));
     expect(mocks.create).not.toHaveBeenCalled();
@@ -480,7 +532,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     const toast = vi.spyOn(Toast, 'error');
     renderPage();
 
-    fireEvent.click((await screen.findByText('新增 Deployment')).closest('button')!);
+    fireEvent.click((await screen.findByText('接入模型')).closest('button')!);
     fireEvent.click(screen.getByText('复用现有连接', { exact: true }));
     await chooseSelectOption('现有连接', /Pathful OpenAI connection/);
     await chooseSelectOption('Operation', /Responses · POST \/v1\/responses/);
@@ -494,7 +546,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
     fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
 
-    const createButton = screen.getByRole('button', { name: '创建 Deployment' });
+    const createButton = screen.getByRole('button', { name: '创建模型接入' });
     expect(createButton).toBeDisabled();
     fireEvent.click(createButton);
     expect(mocks.create).not.toHaveBeenCalled();
@@ -514,10 +566,14 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       });
     renderPage();
 
-    const createButton = (await screen.findByText('新增 Deployment')).closest('button');
+    const createButton = (await screen.findByText('接入模型')).closest('button');
     expect(createButton).toBeTruthy();
     fireEvent.click(createButton!);
+    await screen.findByText(/deepseek\.v4-flash\.api@1\.1\.0/);
+    await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商');
     fireEvent.change(await screen.findByLabelText('连接名称'), { target: { value: 'DeepSeek new production' } });
+    fireEvent.change(await screen.findByLabelText('供应商标识'), { target: { value: 'deepseek' } });
+    fireEvent.change(await screen.findByLabelText('Base URL'), { target: { value: 'https://api.deepseek.com' } });
     fireEvent.change(await screen.findByLabelText('公共模型 ID'), { target: { value: 'deepseek-v5' } });
     fireEvent.change(await screen.findByLabelText('公共模型上下文上限（Token）'), { target: { value: '128000' } });
     fireEvent.change(await screen.findByLabelText('公共模型单次输出上限（Token）'), { target: { value: '8192' } });
@@ -525,10 +581,10 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     fireEvent.change(await screen.findByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
     fireEvent.change(await screen.findByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
     fireEvent.change(await screen.findByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
-    fireEvent.click(screen.getByRole('button', { name: '创建 Deployment' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建模型接入' }));
 
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('button', { name: '创建 Deployment' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建模型接入' }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
 
     const firstKey = mocks.create.mock.calls[0][1];
@@ -550,4 +606,36 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     }));
     await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(41, 'openai.responses.v1'));
   }, 20_000);
+
+  it('composes an official provider preset with the latest reviewed model profile and pins it on create', async () => {
+    renderPage();
+
+    fireEvent.click((await screen.findByText('接入模型')).closest('button')!);
+    expect(await screen.findByText(/deepseek\.v4-flash\.api@1\.1\.0/)).toBeTruthy();
+    expect(screen.getByLabelText('供应商标识')).toBeDisabled();
+    expect(screen.getByLabelText('Base URL')).toBeDisabled();
+    expect(screen.getByLabelText('公共模型上下文上限（Token）')).toBeDisabled();
+    expect(screen.getByLabelText('Deployment 单次输出上限（Token）')).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('供应商 API Key'), { target: { value: 'sk-test-only' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建模型接入' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0]).toEqual(expect.objectContaining({
+      connection: expect.objectContaining({ provider: 'deepseek', base_url: 'https://api.deepseek.com' }),
+      public_model: expect.objectContaining({
+        model_name: 'deepseek-v4-flash',
+        context_length: 1_000_000,
+        output_limit: 32_768,
+        execution_profile_id: 'deepseek.v4-flash.api',
+        execution_profile_version: '1.1.0',
+      }),
+      deployment: expect.objectContaining({
+        upstream_model: 'deepseek-v4-flash',
+        max_context: 1_000_000,
+        default_max_output: 32_768,
+      }),
+      operation: { operation_id: 'openai.chat_completions.v1' },
+    }));
+  });
 });

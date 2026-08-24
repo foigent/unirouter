@@ -63,9 +63,9 @@ try {
   await page.waitForURL((url) => url.pathname !== '/login');
 
   await page.goto('/channels');
-  await page.getByRole('heading', { name: 'Canonical Deployments', exact: true }).waitFor({ state: 'visible' });
-  await page.getByRole('button', { name: '新增 Deployment', exact: true }).click();
-  const createSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: '新增 Canonical Deployment' }).last();
+  await page.getByRole('heading', { name: '模型接入', exact: true }).waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: '接入模型', exact: true }).click();
+  const createSheet = page.locator('.semi-sidesheet:visible').filter({ hasText: '接入模型' }).last();
   await createSheet.waitFor({ state: 'visible' });
 
   await selectOption(createSheet, '接入模板', '自定义 OpenAI 兼容供应商');
@@ -83,7 +83,7 @@ try {
 
   const [createResponse] = await Promise.all([
     apiResponse('POST', '/api/v1/model-deployments'),
-    createSheet.getByRole('button', { name: '创建 Deployment', exact: true }).click(),
+    createSheet.getByRole('button', { name: '创建模型接入', exact: true }).click(),
   ]);
   const created = await responseJSON(createResponse, 201);
   assert.equal(created.idempotency_replay, false);
