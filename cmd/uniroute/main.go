@@ -481,6 +481,7 @@ func main() {
 		log.Fatalf("Invalid payload safety configuration: %v", err)
 	}
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
+	relay.SetBillingAdmissionReadinessInspector(billingSvc)
 	sharedPolicyBilling.SetEarlyRateAdmissionEvidenceSink(relay)
 	if err := relay.SetModelExecutionRuntime(
 		cfg.ModelRouteAuthority, executionPlanner, executionCoordinator, effectiveConfig.RoutingPolicy.Config,

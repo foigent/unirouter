@@ -83,10 +83,9 @@ func (adapter *pinnedPublicNonStreamGuard) evaluate(
 	return PublicOutputGuardDecision{Action: PublicOutputGuardAllow}, nil
 }
 
-// HandlePublicNonStream is the only production gateway entry for the M77
-// Responses/Messages non-stream executor. Middleware must have retained and
-// strictly admitted the body, and the main handler must have bound the caller's
-// authorized public model in context without rewriting the request document.
+// HandlePublicNonStream is the compatibility name for the exact public
+// Responses/Messages entry. Exact v2 identities may select their separately
+// compiled SSE executor; historical identities remain non-stream.
 func (relay *Relay) HandlePublicNonStream(w http.ResponseWriter, r *http.Request, operation modeloperation.ID) {
 	if w == nil || r == nil {
 		return
@@ -143,6 +142,52 @@ func (relay *Relay) HandlePublicNonStream(w http.ResponseWriter, r *http.Request
 	request.CredentialRef = apiKey.CredentialRef
 	if apiKey.AccessGrantID != nil {
 		request.AccessGrantID = *apiKey.AccessGrantID
+	}
+	var inspectStreaming func([]byte) (bool, error)
+	var bindStream publicStreamBindingFactory
+	switch operation {
+	case modeloperation.IDResponses:
+		inspectStreaming = endpointprotocol.PublicResponsesStreamingRequested
+		bindStream = newPublicResponsesStreamBinding
+	case modeloperation.IDMessages:
+		inspectStreaming = endpointprotocol.PublicAnthropicMessagesStreamingRequested
+		bindStream = newPublicAnthropicMessagesStreamBinding
+	}
+	if inspectStreaming != nil {
+		streaming, inspectErr := inspectStreaming(body)
+		if inspectErr != nil {
+			writePublicNonStreamError(w, r, requestID, errPublicNonStreamRequestInvalid)
+			return
+		}
+		if streaming {
+			streamPolicy := relay.currentStreamPolicy()
+			streamCore := &publicNonStreamOrchestrator{
+				mode: runtime.mode, planner: runtime.planner, coordinator: runtime.publicCoordinator,
+				billing: relay.billing, registry: runtime.publicStreamRegistry,
+				decrypt: auth.DecryptKey, encryptionKey: relay.encKey,
+				// The request-scoped stream policy below is the only whole-stream
+				// deadline. A second http.Client timeout would truncate the body on
+				// a different clock and make that policy non-authoritative.
+				doer: relay.providerClient(0), guard: guard,
+				safetyFactor: relay.freezeSafetyFactor, minFreeze: relay.minFreezeCents,
+			}
+			streamOrchestrator := &publicStreamOrchestrator{
+				core: streamCore, billing: relay.billing, pinned: guard.pinned,
+				streamPolicy: streamPolicy, relay: relay, bindStream: bindStream,
+			}
+			err := streamOrchestrator.execute(r.Context(), w, request)
+			if err == nil {
+				return
+			}
+			if publicResponseWasStarted(err) {
+				logger.New(logger.Fields{
+					RequestID: requestID, OrgID: uint(apiKey.OrgID), Module: "public_operation_stream",
+				}).Error("post-write public operation stream terminal failed: %v", err)
+				return
+			}
+			writePublicNonStreamError(w, r, requestID, err)
+			return
+		}
 	}
 
 	err := orchestrator.execute(r.Context(), w, request)

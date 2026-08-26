@@ -25,7 +25,12 @@ func TestSealedModelExecutionContractReleasePinningIntegration(t *testing.T) {
 	require.NoError(t, err)
 	planner, err := modelrouting.NewPlanner(pool, routingpolicy.Default())
 	require.NoError(t, err)
-	fixture := createCanonicalDeploymentFixture(t, pool, "m82-execution-contract", "active", 100, 100)
+	// This test changes a sealed profile version, not the provider product.
+	// Use a matching Kimi route so exact product-identity checks remain active.
+	fixture := createCanonicalDeploymentFixtureWithProduct(
+		t, pool, "m82-execution-contract", "active", 100, 100,
+		"kimi", "https://api.moonshot.cn/v1", "kimi-k3",
+	)
 	makeSoleInitialCustomer(t, pool, fixture.OrgID)
 
 	_, err = pool.Exec(ctx, `
@@ -42,6 +47,20 @@ UPDATE model_registry
 		"seal the first effective model execution contract",
 	)
 	assertSealedExecutionContract(t, initial, "kimi.k3.api", "1.1.0", 262144, 32768)
+	reverseLaterBindings := func() {
+		// Keep the historical M82 rollback fixture at its supported predecessor;
+		// the newer exact-public and Plan fences are independently guarded.
+		for _, name := range []string{
+			"000087_anthropic_messages_tools_public_binding.down.sql",
+			"000086_exact_public_execution_bindings.down.sql",
+			"000085_model_execution_plan_freeze_fence.down.sql",
+		} {
+			body, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+			require.NoError(t, readErr)
+			_, downErr := pool.Exec(ctx, string(body))
+			require.NoError(t, downErr, name)
+		}
+	}
 	currencyDraftDown, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
 	))
@@ -54,6 +73,7 @@ UPDATE model_registry
 		testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts.down.sql",
 	))
 	require.NoError(t, err)
+	reverseLaterBindings()
 	_, err = pool.Exec(ctx, string(currencyDraftDown))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(unitMeterDown))
@@ -88,13 +108,13 @@ SELECT
 		SelectionKey: "m82-stable-before-profile-change",
 	}
 	plan, err := planner.Plan(ctx, request)
-	require.NoError(t, err)
+	require.NoError(t, err, "sealed-profile route exclusions: %+v", plan.Exclusions)
 	assertPlannedExecutionContract(t, plan, initial.ID, "kimi.k3.api", "1.1.0", 262144, 32768)
 
 	_, err = pool.Exec(ctx, `
 UPDATE model_registry
-   SET execution_profile_id='deepseek.v4-pro.api',
-       execution_profile_version='1.0.0',
+   SET execution_profile_id='kimi.k3.api',
+       execution_profile_version='1.2.0',
        context_length=1000000,
        output_limit=32768
  WHERE id=$1`, fixture.PublicModelID)
@@ -109,7 +129,7 @@ UPDATE model_registry
 		t, pool, manager, fixture, []runtimechange.DeploymentRoute{deploymentRoute(fixture)},
 		"author a new release for the reviewed profile change",
 	)
-	assertSealedExecutionContract(t, child, "deepseek.v4-pro.api", "1.0.0", 1000000, 32768)
+	assertSealedExecutionContract(t, child, "kimi.k3.api", "1.2.0", 1000000, 32768)
 
 	request.SelectionKey = "m82-stable-before-child-promotion"
 	plan, err = planner.Plan(ctx, request)
@@ -137,7 +157,7 @@ UPDATE model_registry
 	request.SelectionKey = "m82-stable-after-child-promotion"
 	plan, err = planner.Plan(ctx, request)
 	require.NoError(t, err)
-	assertPlannedExecutionContract(t, plan, child.ID, "deepseek.v4-pro.api", "1.0.0", 1000000, 32768)
+	assertPlannedExecutionContract(t, plan, child.ID, "kimi.k3.api", "1.2.0", 1000000, 32768)
 
 	_, err = pool.Exec(ctx, `
 UPDATE runtime_change_releases
@@ -145,6 +165,9 @@ UPDATE runtime_change_releases
  WHERE id=$1`, child.ID)
 	require.ErrorContains(t, err, "sealed model execution contract is immutable")
 
+	reverseLaterBindings()
+	_, err = pool.Exec(ctx, string(currencyDraftDown))
+	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(unitMeterDown))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(down))

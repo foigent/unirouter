@@ -44,6 +44,7 @@ export type CanonicalConnection = {
   provider: string;
   base_url: string;
   adapter_type: string;
+  adapter_config?: Record<string, unknown>;
   admin_state: string;
   config_revision: number;
   retired_at?: string;

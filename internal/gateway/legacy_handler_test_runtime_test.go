@@ -41,19 +41,33 @@ func (planner *legacyHandlerTestPlanner) Plan(ctx context.Context, request model
 	if err != nil {
 		return modelrouting.Plan{}, err
 	}
-	plan := modelrouting.Plan{
-		AuthorityMode:        modelrouting.ModeLegacy,
-		PublicModel:          request.PublicModel,
-		ModelOperationID:     request.ModelOperationID,
-		RequiredCapabilities: append([]string(nil), request.RequiredCapabilities...),
-		ExecutionProfileID:   modelprofile.UnverifiedProfileID, ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
-		TokenizerProfileID: modelprofile.TokenizerByteUpperID, TokenizerProfileVersion: modelprofile.TokenizerByteUpperVersion,
-		DatabaseTime: time.Now().UTC(),
-		Routes:       make([]modelrouting.Route, 0, len(legacyRoutes)),
-	}
 	profile, ok := modelprofile.Lookup(modelprofile.UnverifiedProfileID, modelprofile.UnverifiedProfileVersion)
 	if !ok {
 		return modelrouting.Plan{}, fmt.Errorf("unverified execution profile is unavailable")
+	}
+	var requirements []modelrouting.CapabilityRequirement
+	if request.DeriveInvocationCapabilities != nil {
+		requirements, err = request.DeriveInvocationCapabilities(profile)
+		if err != nil {
+			return modelrouting.Plan{}, err
+		}
+	} else {
+		requirements = request.InvocationCapabilities
+	}
+	requiredCapabilities := make([]string, len(requirements))
+	for index := range requirements {
+		requiredCapabilities[index] = requirements[index].CapabilityID
+	}
+	plan := modelrouting.Plan{
+		AuthorityMode:          modelrouting.ModeLegacy,
+		PublicModel:            request.PublicModel,
+		ModelOperationID:       request.ModelOperationID,
+		CapabilityRequirements: requirements,
+		RequiredCapabilities:   requiredCapabilities,
+		ExecutionProfileID:     modelprofile.UnverifiedProfileID, ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
+		TokenizerProfileID: modelprofile.TokenizerByteUpperID, TokenizerProfileVersion: modelprofile.TokenizerByteUpperVersion,
+		DatabaseTime: time.Now().UTC(),
+		Routes:       make([]modelrouting.Route, 0, len(legacyRoutes)),
 	}
 	plan.ReasoningProfile = profile.ReasoningProfile
 	plan.CacheUsageProfile = profile.CacheUsageProfile

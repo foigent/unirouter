@@ -254,8 +254,13 @@ SELECT (SELECT COUNT(*) FROM model_operation_public_execution_contract_extension
        (SELECT COUNT(*) FROM model_operation_current_public_execution_contracts)`).Scan(
 		&extensions, &currentContracts,
 	))
-	require.Equal(t, 2, extensions)
-	require.Equal(t, 2, currentContracts)
+	require.Equal(t, 5, extensions, "M77 v1, M86 v2 and M87 tools tuples coexist")
+	require.Equal(t, extensions, currentContracts)
+	var legacyExtensions int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions
+WHERE introduced_migration='000077_public_model_execution_authority'`).Scan(&legacyExtensions))
+	require.Equal(t, 2, legacyExtensions, "new tuples must not replace historical v1 authority")
 
 	_, err := pool.Exec(ctx, `
 UPDATE model_operation_public_execution_contract_extensions

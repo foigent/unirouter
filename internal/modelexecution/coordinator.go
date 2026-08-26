@@ -218,7 +218,7 @@ func providerAttemptStart(request preparedRequest) billing.ProviderAttemptStart 
 		CredentialRef:      request.identity.CredentialRef, AccessGrantID: request.identity.AccessGrantID,
 		RouteSequence: request.identity.RouteSequence, RouteTotal: request.identity.RouteTotal,
 		Endpoint: request.identity.Endpoint, Provider: request.route.Provider,
-		Channel: request.route.ConnectionName,
+		Channel: request.route.ConnectionName, ExecutionSnapshotHash: request.plan.SnapshotHash,
 	}
 	if request.dispatchPublicEvidence != nil {
 		public := *request.dispatchPublicEvidence
@@ -257,7 +257,11 @@ func preparePublicRequest(plan modelrouting.Plan, route modelrouting.Route, iden
 	if err != nil {
 		return preparedRequest{}, fmt.Errorf("%w: public route base evidence: %v", ErrInvalid, err)
 	}
-	compiled, err := modelqualification.CompiledPublicBinding(evidence.ModelOperationID)
+	compiled, err := modelqualification.CompiledPublicBindingFor(modelqualification.Binding{
+		OperationID: evidence.ModelOperationID, PublicPath: route.PublicPath,
+		ProtocolProfileID: evidence.ProtocolProfileID, ProtocolProfileVersion: evidence.ProtocolProfileVersion,
+		ExecutorContractVersion: route.ExecutorContractVersion,
+	})
 	if err != nil || route.PublicPath != compiled.PublicPath ||
 		evidence.ProtocolProfileID != compiled.ProfileID ||
 		evidence.ProtocolProfileVersion != compiled.ProfileVersion ||

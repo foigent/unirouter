@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/uniroute/unirouter/internal/guardrail"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 const chatDeliveryWhitelistVersion = "chat-completion-delivery.v1"
@@ -32,13 +34,324 @@ type streamTextRef struct {
 }
 
 type guardedStreamFrame struct {
-	raw         []byte
-	envelope    map[string]interface{}
-	refs        []*streamTextRef
-	unsupported bool
-	choiceFrame bool
-	terminal    bool
-	transformed bool
+	raw           []byte
+	envelope      map[string]interface{}
+	refs          []*streamTextRef
+	unsupported   bool
+	choiceFrame   bool
+	terminal      bool
+	transformed   bool
+	terminalUsage bool
+	nonEmptyText  map[string]bool
+	opaqueFields  map[string]bool
+}
+
+type exactStreamProtocolState struct {
+	contract         modelprofile.ChatStreamContract
+	sawOpaque        bool
+	sawContent       bool
+	sawTerminalUsage bool
+}
+
+func exactStreamStateForProtocol(protocolProfile string) *exactStreamProtocolState {
+	contract, ok := modelprofile.ResolveChatProtocolContract(protocolProfile)
+	if !ok || !contract.StreamContract.ResponseModeled {
+		return nil
+	}
+	return &exactStreamProtocolState{contract: contract.StreamContract}
+}
+
+func (state *exactStreamProtocolState) accept(frame *guardedStreamFrame, authoritativeUsage bool) error {
+	if state == nil || frame == nil {
+		return nil
+	}
+	if frame.terminalUsage {
+		if state.contract.RequireTerminalUsage && !authoritativeUsage {
+			return fmt.Errorf("exact stream terminal usage was not accepted by the provider usage contract")
+		}
+		if state.sawTerminalUsage {
+			return fmt.Errorf("exact stream emitted terminal usage more than once")
+		}
+		state.sawTerminalUsage = true
+		return nil
+	}
+	if state.sawTerminalUsage {
+		return fmt.Errorf("exact stream emitted model data after terminal usage")
+	}
+	if !state.contract.ReasoningOpaqueAnswerFlow {
+		return nil
+	}
+	reasoning := frame.nonEmptyText["reasoning_content"]
+	content := frame.nonEmptyText["content"]
+	opaque := frame.opaqueFields["encrypted_content"]
+	if opaque {
+		if state.sawOpaque || state.sawContent || reasoning || content {
+			return fmt.Errorf("exact stream encrypted_content phase is invalid")
+		}
+		state.sawOpaque = true
+	}
+	if reasoning {
+		if state.sawOpaque || state.sawContent {
+			return fmt.Errorf("exact stream reasoning_content appeared after the opaque or answer phase")
+		}
+	}
+	if content {
+		if reasoning {
+			return fmt.Errorf("exact stream mixed reasoning_content and content in one frame")
+		}
+		state.sawContent = true
+	}
+	return nil
+}
+
+func (state *exactStreamProtocolState) validateDone() error {
+	if state == nil {
+		return nil
+	}
+	if state.contract.RequireTerminalUsage && !state.sawTerminalUsage {
+		return fmt.Errorf("exact stream ended without the required terminal usage frame")
+	}
+	return nil
+}
+
+// validateCleanEOF applies the same exact terminal invariants when an
+// OpenAI-compatible provider closes a fully finished SSE stream without a
+// literal [DONE] event. A clean transport EOF is not evidence that required
+// terminal usage was present.
+func (state *exactStreamProtocolState) validateCleanEOF(finishReasonObserved bool) error {
+	if state == nil {
+		if !finishReasonObserved {
+			return fmt.Errorf("stream ended without a supported finish_reason")
+		}
+		return nil
+	}
+	if state.contract.RequireDone {
+		return fmt.Errorf("exact stream ended without the required [DONE] event")
+	}
+	if !finishReasonObserved {
+		return fmt.Errorf("exact stream ended without a supported finish_reason")
+	}
+	return state.validateDone()
+}
+
+func parseGuardedStreamFrameForProtocol(data []byte, protocolProfile string) (*guardedStreamFrame, error) {
+	contract, ok := modelprofile.ResolveChatProtocolContract(protocolProfile)
+	if !ok {
+		return parseGuardedStreamFrame(data)
+	}
+	if !contract.StreamContract.ResponseModeled {
+		frame, err := parseGuardedStreamFrame(data)
+		if err != nil || frame == nil || !contract.AssistantReasoningResponseModeled {
+			return frame, err
+		}
+		if genericStreamContainsUnmodeledReasoning(data, contract.AssistantReasoningResponseFields) {
+			frame.unsupported = true
+		}
+		if contract.FunctionToolsRequireNonStream && genericStreamContainsFunctionTools(data) {
+			frame.unsupported = true
+		}
+		return frame, nil
+	}
+	return parseExactGuardedStreamFrame(data, contract.StreamContract)
+}
+
+func genericStreamContainsUnmodeledReasoning(data []byte, allowed []string) bool {
+	var envelope struct {
+		Choices []struct {
+			Delta map[string]json.RawMessage `json:"delta"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(data, &envelope) != nil {
+		return false
+	}
+	for _, choice := range envelope.Choices {
+		for _, field := range []string{"reasoning_content", "reasoning"} {
+			if _, exists := choice.Delta[field]; exists && !slices.Contains(allowed, field) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func genericStreamContainsFunctionTools(data []byte) bool {
+	var envelope struct {
+		Choices []struct {
+			Delta        map[string]json.RawMessage `json:"delta"`
+			FinishReason json.RawMessage            `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(data, &envelope) != nil {
+		return false
+	}
+	for _, choice := range envelope.Choices {
+		for _, field := range []string{"function_call", "tool_calls"} {
+			if _, exists := choice.Delta[field]; exists {
+				return true
+			}
+		}
+		var finish string
+		if json.Unmarshal(choice.FinishReason, &finish) == nil && (finish == "function_call" || finish == "tool_calls") {
+			return true
+		}
+	}
+	return false
+}
+
+func parseExactGuardedStreamFrame(data []byte, contract modelprofile.ChatStreamContract) (*guardedStreamFrame, error) {
+	if err := rejectDuplicateJSONMembers(data); err != nil {
+		return nil, fmt.Errorf("stream frame has ambiguous JSON members: %w", err)
+	}
+	var envelope map[string]interface{}
+	if err := decodeJSONUseNumber(data, &envelope); err != nil {
+		return nil, err
+	}
+	frame := &guardedStreamFrame{
+		raw: append([]byte(nil), data...), envelope: envelope,
+		nonEmptyText: make(map[string]bool), opaqueFields: make(map[string]bool),
+	}
+	if !streamMapKeysSupported(envelope, "id", "object", "created", "model", "choices", "usage") {
+		frame.unsupported = true
+	}
+	for _, key := range []string{"id", "model"} {
+		if value, exists := envelope[key]; exists && value != nil {
+			if _, ok := value.(string); !ok {
+				frame.unsupported = true
+			}
+		}
+	}
+	if value, exists := envelope["object"]; exists && value != nil {
+		object, ok := value.(string)
+		if !ok || object != "chat.completion.chunk" {
+			frame.unsupported = true
+		}
+	}
+	if value, exists := envelope["created"]; exists && value != nil {
+		number, ok := value.(json.Number)
+		if !ok {
+			frame.unsupported = true
+		} else if created, err := number.Int64(); err != nil || created < 0 {
+			frame.unsupported = true
+		}
+	}
+	usage, hasUsage := envelope["usage"]
+	if hasUsage && usage != nil && !streamUsageShapeSupported(usage) {
+		frame.unsupported = true
+	}
+	rawChoices, choicesPresent := envelope["choices"]
+	if !choicesPresent || rawChoices == nil {
+		frame.unsupported = true
+		return frame, nil
+	}
+	choices, ok := rawChoices.([]interface{})
+	if !ok {
+		frame.unsupported = true
+		return frame, nil
+	}
+	frame.choiceFrame = len(choices) > 0
+	if len(choices) == 0 {
+		if !hasUsage || usage == nil {
+			frame.unsupported = true
+		} else {
+			frame.terminalUsage = true
+		}
+		return frame, nil
+	}
+	if hasUsage && usage != nil && !contract.AllowTerminalUsageChoices {
+		// include_usage is modeled as one separate choices=[] terminal frame.
+		frame.unsupported = true
+	}
+	allowedDeltaFields := append([]string{"role"}, contract.DeltaTextFields...)
+	allowedDeltaFields = append(allowedDeltaFields, contract.DeltaOpaqueFields...)
+	allChoicesTerminal := true
+	for choiceIndex, rawChoice := range choices {
+		choice, ok := rawChoice.(map[string]interface{})
+		if !ok {
+			frame.unsupported = true
+			allChoicesTerminal = false
+			continue
+		}
+		if !streamMapKeysSupported(choice, "index", "delta", "finish_reason") {
+			frame.unsupported = true
+		}
+		choiceIndex, ok = streamEnvelopeIndex(choice, choiceIndex)
+		if !ok {
+			frame.unsupported = true
+		}
+		choiceTerminal := false
+		if finish, exists := choice["finish_reason"]; exists && finish != nil {
+			value, ok := finish.(string)
+			if !ok || !stringInList(value, contract.FinishReasons) {
+				frame.unsupported = true
+			} else {
+				choiceTerminal = true
+			}
+		}
+		if !choiceTerminal {
+			allChoicesTerminal = false
+		}
+		delta, ok := choice["delta"].(map[string]interface{})
+		if !ok {
+			frame.unsupported = true
+			continue
+		}
+		if !streamMapKeysSupported(delta, allowedDeltaFields...) {
+			frame.unsupported = true
+		}
+		if role, exists := delta["role"]; exists && role != nil {
+			value, ok := role.(string)
+			if !ok || value != "assistant" {
+				frame.unsupported = true
+			}
+		}
+		for _, field := range contract.DeltaTextFields {
+			value, exists := delta[field]
+			if !exists || value == nil {
+				continue
+			}
+			text, ok := value.(string)
+			if !ok {
+				frame.unsupported = true
+				continue
+			}
+			frame.refs = append(frame.refs, &streamTextRef{
+				container: delta, key: field, path: fmt.Sprintf("choices[%d].%s", choiceIndex, field), original: text,
+			})
+			if text != "" {
+				frame.nonEmptyText[field] = true
+			}
+		}
+		for _, field := range contract.DeltaOpaqueFields {
+			value, exists := delta[field]
+			if !exists || value == nil {
+				continue
+			}
+			opaque, ok := value.(string)
+			if !ok || opaque == "" {
+				frame.unsupported = true
+				continue
+			}
+			frame.opaqueFields[field] = true
+		}
+	}
+	frame.terminal = allChoicesTerminal
+	if hasUsage && usage != nil && contract.AllowTerminalUsageChoices {
+		if !allChoicesTerminal {
+			frame.unsupported = true
+		} else {
+			frame.terminalUsage = true
+		}
+	}
+	return frame, nil
+}
+
+func stringInList(value string, allowed []string) bool {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func parseGuardedStreamFrame(data []byte) (*guardedStreamFrame, error) {
@@ -532,11 +845,15 @@ func streamGuardrailCurrentTexts(frames []*guardedStreamFrame) ([]guardrail.Text
 }
 
 func inspectGuardedStreamBatch(ctx context.Context, pinned *guardrail.Pinned, profile guardrail.StreamProfile, data [][]byte, history map[string]string) (guardedStreamBatchInspection, error) {
+	return inspectGuardedStreamBatchForProtocol(ctx, pinned, profile, data, history, "")
+}
+
+func inspectGuardedStreamBatchForProtocol(ctx context.Context, pinned *guardrail.Pinned, profile guardrail.StreamProfile, data [][]byte, history map[string]string, protocolProfile string) (guardedStreamBatchInspection, error) {
 	batch := guardedStreamBatchInspection{Frames: make([]guardedStreamInspection, len(data))}
 	parsed := make([]*guardedStreamFrame, 0, len(data))
 	parsedByIndex := make([]*guardedStreamFrame, len(data))
 	for index, raw := range data {
-		frame, err := parseGuardedStreamFrame(raw)
+		frame, err := parseGuardedStreamFrameForProtocol(raw, protocolProfile)
 		if err != nil {
 			return batch, err
 		}

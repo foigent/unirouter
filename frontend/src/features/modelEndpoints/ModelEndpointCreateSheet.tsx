@@ -22,7 +22,12 @@ import {
   officialPricingDraftRefs,
   type OfficialPricingDraft,
 } from '../../utils/officialPricingDrafts';
-import { providerPreset, providerPresets } from '../../utils/providerEndpoints';
+import {
+  providerPreset,
+  providerPresetAdapterConfigMatches,
+  providerPresets,
+  type ProviderPreset,
+} from '../../utils/providerEndpoints';
 import { endpointError } from './presentation';
 
 const { Text } = Typography;
@@ -69,7 +74,7 @@ const initialFormValues = {
   lifecycle: 'staging',
   route_role: 'primary',
   operation_id: 'openai.chat_completions.v1',
-  pricing_draft_enabled: true,
+  pricing_draft_enabled: false,
 };
 
 function positiveCanonicalTokenLimit(value: unknown) {
@@ -83,8 +88,15 @@ function canonicalPublicModelExecutionLimitsReady(model: CanonicalModelApplicati
 }
 
 const presetOperationBaseURLs: Partial<Record<string, Partial<Record<CanonicalOperationID, string>>>> = {
-  openai: { 'openai.responses.v1': 'https://api.openai.com' },
+  openai: { 'openai.chat_completions.v1': 'https://api.openai.com/v1' },
+  'openai-responses': { 'openai.responses.v1': 'https://api.openai.com' },
 };
+
+function defaultOperationForPreset(preset: ProviderPreset): CanonicalOperationID {
+  if (preset.apiSurface === 'openai_responses') return 'openai.responses.v1';
+  if (preset.apiSurface === 'anthropic_messages') return 'anthropic.messages.v1';
+  return operationOptionsByAdapter[preset.adapterType][0].value;
+}
 
 export function canonicalOperationBaseURLForPreset(presetValue: string, operationID: CanonicalOperationID) {
   const preset = providerPreset(presetValue);
@@ -96,6 +108,9 @@ export function canonicalOperationOriginError(operationID: CanonicalOperationID,
   const baseURL = String(rawBaseURL || '').replace(/^ +| +$/gu, '');
   if (!baseURL || /[^\x20-\x7e]/u.test(baseURL)) {
     return '该 operation 要求仅包含 ASCII 的 path-free HTTPS origin，例如 https://api.openai.com';
+  }
+  if (/[?#]/u.test(baseURL)) {
+    return '该 operation 要求 path-free HTTPS origin；不能包含 query 或 fragment 分隔符';
   }
   try {
     const parsed = new URL(baseURL);
@@ -114,6 +129,175 @@ export function canonicalOperationOriginError(operationID: CanonicalOperationID,
     }
   } catch {
     return '该 operation 要求有效的 path-free HTTPS origin，例如 https://api.openai.com';
+  }
+  return '';
+}
+
+export function providerPresetBaseURLError(
+  presetValue: string,
+  operationID: CanonicalOperationID,
+  rawBaseURL: unknown,
+) {
+  const operationError = canonicalOperationOriginError(operationID, rawBaseURL);
+  if (operationError) return operationError;
+
+  const baseURL = String(rawBaseURL || '').trim();
+  if (/[?#]/u.test(baseURL)) {
+    return '官方模板 Base URL 不能包含 query 或 fragment 分隔符';
+  }
+  if (presetValue === 'openai' || presetValue === 'openai-responses') {
+    const expectedOperation = presetValue === 'openai-responses'
+      ? 'openai.responses.v1'
+      : 'openai.chat_completions.v1';
+    if (operationID !== expectedOperation) {
+      return `OpenAI ${presetValue === 'openai-responses' ? 'Responses' : 'Chat Completions'} 模板不能绑定到 ${operationID}`;
+    }
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      const path = parsed.pathname.replace(/\/$/u, '');
+      const expectedPath = operationID === 'openai.responses.v1' ? '' : '/v1';
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.openai.com'
+        && authority.toLowerCase() === 'api.openai.com'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && path === expectedPath
+        ? ''
+        : `OpenAI 官方模板要求精确使用 https://api.openai.com${expectedPath}`;
+    } catch {
+      return `OpenAI 官方模板要求精确使用 https://api.openai.com${operationID === 'openai.responses.v1' ? '' : '/v1'}`;
+    }
+  }
+  if (presetValue === 'gemini') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'generativelanguage.googleapis.com'
+        && authority.toLowerCase() === 'generativelanguage.googleapis.com'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === '/v1beta/openai'
+        ? ''
+        : 'Gemini 官方模板要求精确使用 https://generativelanguage.googleapis.com/v1beta/openai';
+    } catch {
+      return 'Gemini 官方模板要求精确使用 https://generativelanguage.googleapis.com/v1beta/openai';
+    }
+  }
+  if (presetValue === 'deepseek') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.deepseek.com'
+        && authority.toLowerCase() === 'api.deepseek.com'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === ''
+        ? ''
+        : 'DeepSeek 官方模板要求精确使用 https://api.deepseek.com';
+    } catch {
+      return 'DeepSeek 官方模板要求精确使用 https://api.deepseek.com';
+    }
+  }
+  if (presetValue === 'kimi') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.moonshot.cn'
+        && authority.toLowerCase() === 'api.moonshot.cn'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === '/v1'
+        ? ''
+        : 'Kimi 开放平台模板要求精确使用 https://api.moonshot.cn/v1';
+    } catch {
+      return 'Kimi 开放平台模板要求精确使用 https://api.moonshot.cn/v1';
+    }
+  }
+  if (presetValue === 'minimax') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.minimaxi.com'
+        && authority.toLowerCase() === 'api.minimaxi.com'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === '/v1'
+        ? ''
+        : 'MiniMax 中国区官方模板要求精确使用 https://api.minimaxi.com/v1';
+    } catch {
+      return 'MiniMax 中国区官方模板要求精确使用 https://api.minimaxi.com/v1';
+    }
+  }
+  if (presetValue === 'xai') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.x.ai'
+        && authority.toLowerCase() === 'api.x.ai'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === '/v1'
+        ? ''
+        : 'xAI 官方模板要求精确使用 https://api.x.ai/v1';
+    } catch {
+      return 'xAI 官方模板要求精确使用 https://api.x.ai/v1';
+    }
+  }
+  if (presetValue !== 'dashscope' && presetValue !== 'dashscope-shared') return '';
+
+  try {
+    const parsed = new URL(baseURL);
+    if (presetValue === 'dashscope-shared') {
+      return baseURL.replace(/\/$/u, '') === 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+        ? ''
+        : '北京共享兼容模板只接受 https://dashscope.aliyuncs.com/compatible-mode/v1';
+    }
+    const workspaceSuffix = '.cn-beijing.maas.aliyuncs.com';
+    const workspaceID = parsed.hostname.endsWith(workspaceSuffix)
+      ? parsed.hostname.slice(0, -workspaceSuffix.length)
+      : '';
+    const path = parsed.pathname.replace(/\/$/u, '');
+    if (
+      parsed.protocol !== 'https:'
+      || parsed.username
+      || parsed.password
+      || parsed.port
+      || !workspaceID
+      || workspaceID.includes('.')
+      || workspaceID === 'trial'
+      || workspaceID === 'token-plan'
+      || path !== '/compatible-mode/v1'
+      || parsed.search
+      || parsed.hash
+    ) {
+      return '北京业务空间模板只接受 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1；其他地域必须使用独立 Profile 与价格证据';
+    }
+  } catch {
+    return '请粘贴完整的北京业务空间 API Host，例如 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1';
   }
   return '';
 }
@@ -240,7 +424,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     ? reviewedModelOnboardingLimits(selectedReviewedModel.profile)
     : undefined;
   const selectedOfficialPricingDraft = selectedReviewedModel
-    ? officialPricingDraftFor(selectedReviewedModel.profile.id, selectedUpstreamModelID || selectedReviewedModel.recommendedUpstreamModelID)
+    ? officialPricingDraftFor(
+      selectedReviewedModel.profile.id,
+      selectedUpstreamModelID || selectedReviewedModel.recommendedUpstreamModelID,
+      selectedReviewedModel.profile.region,
+    )
     : undefined;
 
   useEffect(() => {
@@ -286,7 +474,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     const preset = providerPreset(selectedPreset);
     const operation = option.operationIDs[0];
     const limits = reviewedModelOnboardingLimits(option.profile);
-    const pricingDraft = officialPricingDraftFor(option.profile.id, option.recommendedUpstreamModelID);
+    const pricingDraft = officialPricingDraftFor(
+      option.profile.id,
+      option.recommendedUpstreamModelID,
+      option.profile.region,
+    );
     const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, operation);
     setSelectedExecutionProfileKey(option.key);
     setAdapterType(preset.adapterType);
@@ -323,7 +515,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   const effectiveBaseURL = connectionMode === 'existing'
     ? selectedExistingConnection?.base_url || ''
     : newConnectionBaseURL;
-  const operationOriginError = canonicalOperationOriginError(operationID, effectiveBaseURL);
+  const operationOriginError = providerPresetBaseURLError(selectedPreset, operationID, effectiveBaseURL);
 
   const clearReviewedModelDraft = () => {
     setSelectedExecutionProfileKey('');
@@ -350,7 +542,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     }
     const operation = option.operationIDs[0];
     const limits = reviewedModelOnboardingLimits(option.profile);
-    const pricingDraft = officialPricingDraftFor(option.profile.id, option.recommendedUpstreamModelID);
+    const pricingDraft = officialPricingDraftFor(
+      option.profile.id,
+      option.recommendedUpstreamModelID,
+      option.profile.region,
+    );
     setSelectedExecutionProfileKey(option.key);
     setOperationID(operation);
     setSelectedUpstreamModelID(option.recommendedUpstreamModelID);
@@ -377,7 +573,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     const deploymentMaxContext = positiveCanonicalTokenLimit(values.deployment_max_context);
     const deploymentDefaultMaxOutput = positiveCanonicalTokenLimit(values.deployment_default_max_output);
     const submittedPricingDraft = activeReviewedModel
-      ? officialPricingDraftFor(activeReviewedModel.profile.id, upstreamModel)
+      ? officialPricingDraftFor(
+        activeReviewedModel.profile.id,
+        upstreamModel,
+        activeReviewedModel.profile.region,
+      )
       : undefined;
     const createPricingDraft = Boolean(activeReviewedModel)
       && (values.pricing_draft_enabled === true || values.pricing_draft_enabled === 'true');
@@ -408,7 +608,8 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       Toast.error('所选公共模型缺少正整数 context/output 执行边界；请先在公共模型目录修复后再复用');
       return;
     }
-    const submittedOriginError = canonicalOperationOriginError(
+    const submittedOriginError = providerPresetBaseURLError(
+      selectedPreset,
       submittedOperationID,
       connectionMode === 'existing' ? selectedExistingConnection?.base_url : values.base_url,
     );
@@ -427,7 +628,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           ? { anthropic_version: '2023-06-01' }
           : adapterType === 'azure_openai'
             ? { api_version: String(values.azure_api_version || '').trim(), deployment: upstreamModel }
-            : {},
+            : { ...(selectedProviderPreset.adapterConfig || {}) },
       };
     const publicModel = publicModelMode === 'existing'
       ? { id: Number(values.public_model_id) }
@@ -530,11 +731,12 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             const preset = providerPreset(selectedPreset);
             setAdapterType(preset.adapterType);
             setSelectedExecutionProfileKey('');
-            const firstOperation = operationOptionsByAdapter[preset.adapterType][0].value;
-            setOperationID(firstOperation);
-            setNewConnectionBaseURL(preset.baseURL);
-            formApi?.setValue('base_url', preset.baseURL);
-            formApi?.setValue('operation_id', firstOperation);
+            const defaultOperation = defaultOperationForPreset(preset);
+            const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, defaultOperation);
+            setOperationID(defaultOperation);
+            setNewConnectionBaseURL(nextBaseURL);
+            formApi?.setValue('base_url', nextBaseURL);
+            formApi?.setValue('operation_id', defaultOperation);
           } else {
             setAdapterType('');
             setOperationID('' as CanonicalOperationID);
@@ -556,7 +758,16 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         onChange={(value) => {
           const id = Number(value);
           const selected = connections.find(connection => connection.id === id);
-          const matchingPreset = providerPresets.find(preset => preset.provider === selected?.provider && preset.adapterType === selected?.adapter_type);
+          const matchingPreset = providerPresets.find(preset => {
+            const presetOperation = defaultOperationForPreset(preset);
+            return preset.provider === selected?.provider &&
+              preset.adapterType === selected?.adapter_type &&
+              providerPresetAdapterConfigMatches(preset, selected?.adapter_config) &&
+              !providerPresetBaseURLError(preset.value, presetOperation, selected?.base_url);
+          });
+          const firstOperation = matchingPreset
+            ? defaultOperationForPreset(matchingPreset)
+            : operationOptionsByAdapter[selected?.adapter_type || '']?.[0]?.value;
           clearReviewedModelDraft();
           setSelectedConnectionID(id);
           setCredentialMode('new');
@@ -566,7 +777,6 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           setNewConnectionBaseURL('');
           formApi?.setValue('credential_mode', 'new');
           formApi?.setValue('binding_id', undefined);
-          const firstOperation = operationOptionsByAdapter[selected?.adapter_type || '']?.[0]?.value;
           setOperationID((firstOperation || '') as CanonicalOperationID);
           formApi?.setValue('operation_id', firstOperation || '');
         }}
@@ -585,14 +795,14 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             formApi?.setValue('preset', preset.value);
             setSelectedPreset(preset.value);
             setAdapterType(preset.adapterType);
-            const firstOperation = operationOptionsByAdapter[preset.adapterType][0].value;
-            const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, firstOperation);
-            setOperationID(firstOperation);
+            const defaultOperation = defaultOperationForPreset(preset);
+            const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, defaultOperation);
+            setOperationID(defaultOperation);
             setNewConnectionBaseURL(nextBaseURL);
             formApi?.setValue('provider', preset.value === 'custom' ? '' : preset.provider);
             formApi?.setValue('base_url', nextBaseURL);
             formApi?.setValue('adapter_type', preset.adapterType);
-            formApi?.setValue('operation_id', firstOperation);
+            formApi?.setValue('operation_id', defaultOperation);
           }}
           extraText={providerPreset(selectedPreset).note}
         />
@@ -603,14 +813,14 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         <Form.Input
           field="base_url"
           label="Base URL"
-          placeholder="https://..."
-          disabled={selectedPreset !== 'custom'}
+          placeholder={selectedProviderPreset.editableBaseURL ? '粘贴业务空间 API Host（含 /compatible-mode/v1）' : 'https://...'}
+          disabled={selectedPreset !== 'custom' && !selectedProviderPreset.editableBaseURL}
           onChange={value => setNewConnectionBaseURL(String(value || ''))}
           rules={[
             { required: true, message: '必填' },
             {
-              validator: (_rule, value) => !canonicalOperationOriginError(operationID, value),
-              message: canonicalOperationOriginError(operationID, newConnectionBaseURL) || '该 operation 的 Base URL 不合法',
+              validator: (_rule, value) => !providerPresetBaseURLError(selectedPreset, operationID, value),
+              message: 'Base URL 与当前 operation 或地域模板不匹配；北京业务空间只接受专属 cn-beijing Host，其他地域必须使用独立 Profile 与价格证据',
             },
           ]}
         />
@@ -641,12 +851,12 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           }))}
           rules={[{ required: true, message: '请选择模型模板' }]}
           onChange={selectReviewedModel}
-          extraText="只列出该官方 Provider 最新的仓库审查 Profile；Profile 与供应商 live probe、Release、Pricing 证据仍保持分离。"
+          extraText="这里只展示本地合同子集，不代表该模型已完整适配。供应商 live probe、Release 和 Pricing 仍需各自验证。"
         />
         {selectedReviewedModel && selectedReviewedLimits && <Banner
-          type="success"
+          type="info"
           closeIcon={null}
-          description={`${selectedReviewedModel.profile.id}@${selectedReviewedModel.profile.version} · 供应商上限 context ${selectedReviewedLimits.providerContextWindow ? selectedReviewedLimits.providerContextWindow.toLocaleString() : '未文档化'} / output ${selectedReviewedLimits.providerMaxOutput ? selectedReviewedLimits.providerMaxOutput.toLocaleString() : '未文档化'} · 请求默认 context ${selectedReviewedModel.profile.default_context_window.toLocaleString()} / output ${selectedReviewedModel.profile.default_output_limit.toLocaleString()} · 官方文档能力 ${selectedReviewedModel.profile.provider_capabilities.join(' / ') || '无'} · 已验证可执行能力 ${selectedReviewedModel.profile.capabilities.join(' / ') || '待逐项验证'}`}
+          description={`${selectedReviewedModel.profile.id}@${selectedReviewedModel.profile.version} · ${selectedReviewedModel.profile.provider} / ${selectedReviewedModel.profile.region} / ${selectedReviewedModel.profile.api_surface} · Operation ${selectedReviewedModel.operationIDs.join(' / ')} · 协议 ${selectedReviewedModel.profile.protocol_profile}${selectedReviewedModel.profile.protocol_profile_version ? `@${selectedReviewedModel.profile.protocol_profile_version}` : ''} · Catalog 证据 ${selectedReviewedModel.profile.catalog_evidence_state}（不代表 live/released）· 供应商上限 context ${selectedReviewedLimits.providerContextWindow ? selectedReviewedLimits.providerContextWindow.toLocaleString() : '未文档化'} / output ${selectedReviewedLimits.providerMaxOutput ? selectedReviewedLimits.providerMaxOutput.toLocaleString() : '未文档化或无固定上限'} · 当前可执行上限 context ${selectedReviewedLimits.executableContextWindow ? selectedReviewedLimits.executableContextWindow.toLocaleString() : '未建模'} / output ${selectedReviewedLimits.executableMaxOutput ? selectedReviewedLimits.executableMaxOutput.toLocaleString() : '未单独收窄'} · 请求默认 context ${selectedReviewedModel.profile.default_context_window.toLocaleString()} / output ${selectedReviewedModel.profile.default_output_limit.toLocaleString()}（${selectedReviewedModel.profile.default_output_authority}）· 官方文档能力 ${selectedReviewedModel.profile.provider_capabilities.join(' / ') || '无'} · 仓库已建模可执行能力 ${selectedReviewedModel.profile.capabilities.join(' / ') || (selectedReviewedModel.profile.catalog_evidence_state === 'locally_conformant' ? '严格文本基础合同' : '待逐项验证')}${selectedReviewedModel.profile.processing_tier_policy ? ` · Processing tier ${selectedReviewedModel.profile.processing_tier_policy}：default/flex/priority 已建模为请求级协议与运行证据；显式 flex/priority 目前只允许 cost_observation，不代表客户计费、live verified 或 released` : ''}`}
           style={{ marginBottom: 16 }}
         />}
       </>}
@@ -688,7 +898,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
               if (!matchingUpstream) return;
               setSelectedUpstreamModelID(matchingUpstream);
               formApi?.setValue('upstream_model', matchingUpstream);
-              const pricingDraft = officialPricingDraftFor(selectedReviewedModel.profile.id, matchingUpstream);
+              const pricingDraft = officialPricingDraftFor(
+                selectedReviewedModel.profile.id,
+                matchingUpstream,
+                selectedReviewedModel.profile.region,
+              );
               formApi?.setValue('pricing_draft_enabled', pricingDraftEnabledByDefault(pricingDraft));
             }}
             extraText="来自执行 Profile 的精确稳定别名；展示名称可单独修改。"
@@ -717,7 +931,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
               { required: true, message: '必填' },
               { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
             ]}
-            extraText={selectedReviewedModel ? '使用该 Profile 已文档化的供应商上限；Release 可以经审查后进一步收窄。' : '面向调用者公开的模型级执行边界；不能为空或为 0。'}
+            extraText={selectedReviewedModel
+              ? selectedReviewedLimits?.executableContextWindow !== selectedReviewedLimits?.providerContextWindow
+                ? '使用该 Profile 的 UniRouter 已审查可执行 context 上限；供应商虽支持更大窗口，当前计费合同不能无损执行。'
+                : '使用该 Profile 已文档化的供应商 context 上限；Release 可以经审查后进一步收窄。'
+              : '面向调用者公开的模型级执行边界；不能为空或为 0。'}
           />
           <Form.InputNumber
             field="public_output_limit"
@@ -734,7 +952,9 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             extraText={selectedReviewedModel
               ? selectedReviewedLimits?.providerMaxOutput
                 ? '使用该 Profile 已文档化的供应商最大输出；Release 可以经审查后进一步收窄。'
-                : '供应商未文档化独立最大输出；暂以已审查请求默认值作为安全公开上限，不能冒充供应商最大值。'
+                : selectedReviewedLimits?.executableMaxOutput
+                  ? '供应商未文档化固定最大输出；使用该 Profile 的 UniRouter 已审查可执行策略上限，不能冒充供应商最大值。'
+                  : '供应商未文档化固定最大输出且没有单独可执行上限；暂以请求默认值作为安全公开上限。'
               : '面向调用者公开的单次输出边界；不能为空或为 0。'}
           />
         </div>
@@ -750,7 +970,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         onChange={value => {
           const upstreamModelID = String(value || '');
           setSelectedUpstreamModelID(upstreamModelID);
-          const pricingDraft = officialPricingDraftFor(activeReviewedModel.profile.id, upstreamModelID);
+          const pricingDraft = officialPricingDraftFor(
+            activeReviewedModel.profile.id,
+            upstreamModelID,
+            activeReviewedModel.profile.region,
+          );
           formApi?.setValue('pricing_draft_enabled', pricingDraftEnabledByDefault(pricingDraft));
         }}
         extraText="只允许该 Profile 审查过的精确上游 ID；创建后的真实可用性仍由供应商模型列表与 Operation 探测确认。"
@@ -771,11 +995,15 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             { required: true, message: '必填' },
             { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
           ]}
-          extraText={activeReviewedModel ? '使用该 Profile 已文档化的供应商上限；Release 仍会冻结最终有效边界。' : '该精确供应商 Deployment 已核实的上下文执行边界。'}
+          extraText={activeReviewedModel
+            ? selectedReviewedLimits?.executableContextWindow !== selectedReviewedLimits?.providerContextWindow
+              ? '使用该 Profile 的 UniRouter 已审查可执行 context 上限；Release 仍会冻结最终有效边界。'
+              : '使用该 Profile 已文档化的供应商 context 上限；Release 仍会冻结最终有效边界。'
+            : '该精确供应商 Deployment 已核实的上下文执行边界。'}
         />
         <Form.InputNumber
           field="deployment_default_max_output"
-          label="Deployment 默认单次输出（Token）"
+          label={activeReviewedModel ? '请求默认单次输出（Profile 投影，Token）' : 'Deployment 默认单次输出（Token）'}
           min={1}
           max={maxCanonicalTokenLimit}
           precision={0}
@@ -785,7 +1013,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             { required: true, message: '必填' },
             { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
           ]}
-          extraText={activeReviewedModel ? '使用 Profile 的请求默认值；这是省略显式 max_tokens 时的默认执行值，不是供应商最大输出。' : '该精确供应商 Deployment 已核实的默认输出执行边界。'}
+          extraText={activeReviewedModel ? `Canonical 请求默认由 Profile 与公共 cap 决定；此字段保存相同投影供路由证据使用，不能作为独立的每 Deployment 覆盖。权威为 ${activeReviewedModel.profile.default_output_authority}；它不是供应商最大输出。` : '该精确供应商 Deployment 已核实的默认输出执行边界。'}
         />
       </div>
 
@@ -793,7 +1021,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         <Banner
           type={officialPricingDraftIsFresh(selectedOfficialPricingDraft) ? 'warning' : 'danger'}
           closeIcon={null}
-          description={`待审核 Pricing Profile 草稿 · ${selectedOfficialPricingDraft.pricingScope} · ${selectedOfficialPricingDraft.currency}/百万 Token：输入 ${selectedOfficialPricingDraft.inputPrice} / 输出 ${selectedOfficialPricingDraft.outputPrice} / cacheRead ${selectedOfficialPricingDraft.cacheReadPrice} / cacheCreate ${selectedOfficialPricingDraft.cacheCreationPrice} · 来源获取 ${selectedOfficialPricingDraft.fetchedAt.slice(0, 10)} · 新鲜度截止 ${selectedOfficialPricingDraft.staleAfter.slice(0, 10)}${selectedOfficialPricingDraft.effectiveTo ? ` · 有效期截止 ${selectedOfficialPricingDraft.effectiveTo.slice(0, 10)}` : ''}。${selectedOfficialPricingDraft.reviewNote}${selectedOfficialPricingDraft.currency === 'USD' ? ' USD 草稿只保存原币审核证据；当前 CNY 请求结算不会批准或激活它。' : ''}`}
+          description={`待审核 Pricing Profile 草稿 · 地域 ${selectedOfficialPricingDraft.pricingRegion} · ${selectedOfficialPricingDraft.pricingScope} · ${selectedOfficialPricingDraft.currency}/百万 Token：输入 ${selectedOfficialPricingDraft.inputPrice} / 输出 ${selectedOfficialPricingDraft.outputPrice} / cacheRead ${selectedOfficialPricingDraft.cacheReadPrice} / cacheCreate ${selectedOfficialPricingDraft.cacheCreationPrice} · 来源获取 ${selectedOfficialPricingDraft.fetchedAt.slice(0, 10)} · 新鲜度截止 ${selectedOfficialPricingDraft.staleAfter.slice(0, 10)}${selectedOfficialPricingDraft.effectiveTo ? ` · 有效期截止 ${selectedOfficialPricingDraft.effectiveTo.slice(0, 10)}` : ''}。${selectedOfficialPricingDraft.reviewNote}${selectedOfficialPricingDraft.currency === 'USD' ? ' USD 草稿只保存原币审核证据；当前 CNY 请求结算不会批准或激活它。' : ''}`}
           style={{ marginBottom: 12 }}
         />
         <Form.Checkbox
@@ -809,7 +1037,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       {activeReviewedModel && selectedOfficialPricingDraft?.state === 'manual_review_required' && <Banner
         type="warning"
         closeIcon={null}
-        description={`官方价格已记录（${selectedOfficialPricingDraft.currency}）：${selectedOfficialPricingDraft.documentedPricingSummary} Pricing Profile 不自动生成：${selectedOfficialPricingDraft.reason} 来源 ${selectedOfficialPricingDraft.sourceURL}`}
+        description={`官方价格已记录（${selectedOfficialPricingDraft.pricingRegion} / ${selectedOfficialPricingDraft.currency}）：${selectedOfficialPricingDraft.documentedPricingSummary} Pricing Profile 不自动生成：${selectedOfficialPricingDraft.reason} 来源 ${selectedOfficialPricingDraft.sourceURL}`}
         style={{ marginBottom: 12 }}
       />}
 

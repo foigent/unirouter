@@ -46,6 +46,7 @@ type publicExecutionFixture struct {
 	operationRevision, activeBindingID  int64
 	model, upstreamModel, releaseSuffix string
 	route                               runtimechange.DeploymentRoute
+	lastPlanSnapshotHash                string
 }
 
 func TestPublicCoordinatorPersistsExactM77AttemptAfterPlannerExactItemJoinIntegration(t *testing.T) {
@@ -412,6 +413,7 @@ func (fixture *publicExecutionFixture) plan(t *testing.T, selection string) (mod
 	})
 	require.NoError(t, err)
 	require.Len(t, plan.Routes, 1)
+	fixture.lastPlanSnapshotHash = plan.SnapshotHash
 	return plan, plan.Routes[0]
 }
 
@@ -421,6 +423,7 @@ func (fixture *publicExecutionFixture) freeze(t *testing.T, suffix string) Attem
 	result, err := fixture.billing.Freeze(t.Context(), billing.FreezeRequest{
 		RequestID: requestID, OrgID: fixture.orgID, APIKeyID: fixture.apiKeyID,
 		Model: fixture.model, EstimatedTokens: 1, SafetyFactor: "1", MinFreezeCents: 1,
+		ExecutionSnapshotHash: fixture.lastPlanSnapshotHash,
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success, result.ErrorDetail)

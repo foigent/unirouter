@@ -15,6 +15,7 @@ import (
 func TestOfficialRateSourceCurrencyDraftMigrationGuardsUSDReviewEvidence(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
+	execMigrationDown(t, ctx, pool, "000085_model_execution_plan_freeze_fence.down.sql")
 	var orgID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name) VALUES ('m84-usd-source-test') RETURNING id`).Scan(&orgID))
 	_, err := pool.Exec(ctx, `

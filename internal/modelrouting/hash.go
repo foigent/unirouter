@@ -8,6 +8,8 @@ import (
 	"io"
 	"slices"
 	"time"
+
+	"github.com/uniroute/unirouter/internal/executionevidence"
 )
 
 func adapterDigest(raw json.RawMessage) string {
@@ -129,7 +131,7 @@ func snapshotDigest(value snapshot) (string, error) {
 		PublicModel             string
 		Lifecycle               string
 		Operation               string
-		RequiredCapabilities    []string
+		CapabilityRequirements  []CapabilityRequirement
 		PublicContextLimit      int
 		PublicOutputLimit       int
 		ExecutionProfileID      string
@@ -147,7 +149,7 @@ func snapshotDigest(value snapshot) (string, error) {
 		Mode: value.Mode, DBNow: value.DBNow.UTC(), CustomerOrgID: value.CustomerOrgID,
 		PublicModelID: value.PublicModelID, PublicModel: value.PublicModel,
 		Lifecycle: value.PublicModelLifecycle, Operation: value.RequestedOperationID,
-		RequiredCapabilities: slices.Clone(value.RequiredCapabilities), Slot: value.Slot,
+		CapabilityRequirements: cloneCapabilityRequirements(value.CapabilityRequirements), Slot: value.Slot,
 		PublicContextLimit: value.PublicContextLimit, PublicOutputLimit: value.PublicOutputLimit,
 		ExecutionProfileID: value.ExecutionProfileID, ExecutionProfileVersion: value.ExecutionProfileVersion,
 		Manifest: slices.Clone(value.Manifest), LegacyOverrides: slices.Clone(value.LegacyOverrides),
@@ -226,8 +228,15 @@ func snapshotDigest(value snapshot) (string, error) {
 
 func capabilityEvidenceDigest(required []string, available map[string]capabilitySnapshot) string {
 	items := capabilityEvidenceEntries(required, available)
-	body, _ := json.Marshal(items)
-	return digestBytes(body)
+	// Reuse the evidence authority's UTC/microsecond normalization, including
+	// for PostgreSQL timestamps scanned in a non-UTC process timezone.
+	digest, err := executionevidence.CapabilityDigest(items)
+	if err != nil {
+		// An empty digest cannot pass Normalize/NormalizeV2 at dispatch. Never
+		// turn invalid capability evidence into the valid empty-list digest.
+		return ""
+	}
+	return digest
 }
 
 func capabilityEvidenceEntries(required []string, available map[string]capabilitySnapshot) []CapabilityEvidenceEntry {

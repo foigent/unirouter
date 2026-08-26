@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/outbox"
@@ -27,6 +28,7 @@ const (
 
 var ErrDeliveryNotChargeable = errors.New("billing reservation has no chargeable local delivery outcome")
 var ErrDeliveryAttemptConflict = errors.New("billing delivery attempt authority changed")
+var ErrProviderFinalUsageRequired = errors.New("billing public charge contract requires provider-final usage")
 
 type PrepareDeliveryResult struct {
 	Funded    bool
@@ -78,6 +80,9 @@ func (b *Billing) PrepareNonStreamDelivery(ctx context.Context, request SettleRe
 		return nil, fmt.Errorf("cannot prepare delivery in reservation state %s", record.Status)
 	}
 	if err := bindDeliveryAttemptTx(ctx, tx, &record, req.OrgID, req.RequestID, req.AttemptID); err != nil {
+		return nil, err
+	}
+	if err := requireBoundOrInternalSettlementTx(ctx, tx, record, req); err != nil {
 		return nil, err
 	}
 	if record.Status == "settlement_pending" &&
@@ -485,6 +490,27 @@ func (b *Billing) RecordDelivery(ctx context.Context, event DeliveryEvent) error
 		return tx.Commit(ctx)
 	}
 
+	if event.Mode == DeliveryModeStream && event.Outcome == DeliveryOutcomeInterrupted &&
+		(!record.SettlementPayloadAt.Valid || record.UsageAuthority != metering.UsageAuthorityProviderReported || record.UsageFinality != metering.UsageFinalityFinal) {
+		requiresFinal, err := attemptRequiresProviderFinalUsageTx(ctx, tx, event.OrgID, event.RequestID, event.AttemptID)
+		if err != nil {
+			return err
+		}
+		if requiresFinal {
+			// Disclosure is known, provider-final usage is not. Preserve the
+			// existing pending attempt rather than inventing known_usage.
+			_, err := tx.Exec(ctx, `UPDATE freeze_idempotency
+SET provider_cost_pending_at=COALESCE(provider_cost_pending_at,NOW()),
+    settlement_pending_reason='provider_attempt_unresolved',
+    settlement_claimed_until=NULL,settlement_next_attempt_at=NULL,updated_at=NOW()
+WHERE org_id=$1 AND request_id=$2 AND status='settlement_pending'`, event.OrgID, event.RequestID)
+			if err != nil {
+				return fmt.Errorf("hold interrupted public stream without final usage: %w", err)
+			}
+			return tx.Commit(ctx)
+		}
+	}
+
 	switch event.Outcome {
 	case DeliveryOutcomeWriteFailed:
 		if _, err := tx.Exec(ctx, `
@@ -619,6 +645,14 @@ func requireBoundOrInternalSettlementTx(ctx context.Context, tx pgx.Tx, record r
 		return err
 	}
 	if record.DeliveryAttemptID.Valid {
+		requiresFinal, err := attemptRequiresProviderFinalUsageTx(ctx, tx, req.OrgID, req.RequestID, req.AttemptID)
+		if err != nil {
+			return err
+		}
+		if requiresFinal &&
+			(req.UsageAuthority != metering.UsageAuthorityProviderReported || req.UsageFinality != metering.UsageFinalityFinal) {
+			return ErrProviderFinalUsageRequired
+		}
 		return nil
 	}
 	var hasProviderAttempt bool
@@ -633,6 +667,15 @@ func requireBoundOrInternalSettlementTx(ctx context.Context, tx pgx.Tx, record r
 		return ErrDeliveryAttemptConflict
 	}
 	return nil
+}
+
+func attemptRequiresProviderFinalUsageTx(ctx context.Context, tx pgx.Tx, orgID int64, requestID, attemptID string) (bool, error) {
+	var chargeContract string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(route_charge_contract_version,'')
+FROM billing_provider_attempts WHERE org_id=$1 AND request_id=$2 AND attempt_id=$3`, orgID, requestID, attemptID).Scan(&chargeContract); err != nil {
+		return false, fmt.Errorf("read exact attempt charge contract: %w", err)
+	}
+	return chargeContract == executionevidence.PublicChargeContractV1, nil
 }
 
 func requireSettlementStreamAuthorityTx(ctx context.Context, tx pgx.Tx, record reservationRecord, req SettleRequest) error {

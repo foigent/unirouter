@@ -16,6 +16,15 @@ import (
 
 type OpenAICompatible struct{}
 
+const (
+	OpenAIEndpointPathCanonicalV1  = modelprofile.EndpointPathModeCanonicalV1
+	OpenAIEndpointPathBaseRelative = modelprofile.EndpointPathModeBaseRelative
+)
+
+type openAICompatibleConfig struct {
+	EndpointPathMode string `json:"endpoint_path_mode"`
+}
+
 func NewOpenAICompatible() *OpenAICompatible {
 	return &OpenAICompatible{}
 }
@@ -24,7 +33,40 @@ func (a *OpenAICompatible) Type() string {
 	return TypeOpenAICompatible
 }
 
+func (a *OpenAICompatible) ValidateConfig(raw []byte) error {
+	_, err := parseOpenAICompatibleConfig(raw)
+	return err
+}
+
+// EffectiveEndpointPathMode returns the normalized request-path composition
+// used by an adapter configuration. Product identity validation consumes this
+// value so a reviewed endpoint cannot be paired with a URL-incompatible mode.
+func EffectiveEndpointPathMode(adapterType string, raw []byte) (string, error) {
+	switch NormalizeType(adapterType) {
+	case TypeAnthropicNative:
+		if _, err := parseAnthropicConfig(raw); err != nil {
+			return "", err
+		}
+		// anthropic_native always appends the exact /v1/messages path to a
+		// canonical provider origin; this is adapter behavior, not a mutable
+		// connection option.
+		return modelprofile.EndpointPathModeCanonicalV1, nil
+	case TypeOpenAICompatible:
+		config, err := parseOpenAICompatibleConfig(raw)
+		if err != nil {
+			return "", err
+		}
+		return config.EndpointPathMode, nil
+	default:
+		return "", nil
+	}
+}
+
 func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*http.Request, error) {
+	config, err := parseOpenAICompatibleConfig(in.Channel.AdapterConfig)
+	if err != nil {
+		return nil, err
+	}
 	mappedModel := strings.TrimSpace(in.MappedModel)
 	if mappedModel == "" {
 		mappedModel = in.RequestedModel
@@ -50,7 +92,7 @@ func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*
 	if err != nil {
 		return nil, fmt.Errorf("encode upstream body: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, UpstreamEndpoint(in.Channel.BaseURL, string(in.Endpoint)), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openAICompatibleUpstreamEndpoint(in.Channel.BaseURL, in.Endpoint, config.EndpointPathMode), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -62,17 +104,49 @@ func (a *OpenAICompatible) BuildRequest(ctx context.Context, in RequestInput) (*
 	return req, nil
 }
 
+func parseOpenAICompatibleConfig(raw []byte) (openAICompatibleConfig, error) {
+	config := openAICompatibleConfig{EndpointPathMode: OpenAIEndpointPathCanonicalV1}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return config, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var decoded openAICompatibleConfig
+	if err := decoder.Decode(&decoded); err != nil {
+		return openAICompatibleConfig{}, fmt.Errorf("decode openai_compatible adapter_config: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return openAICompatibleConfig{}, fmt.Errorf("decode openai_compatible adapter_config: trailing JSON value")
+		}
+		return openAICompatibleConfig{}, fmt.Errorf("decode openai_compatible adapter_config trailing content: %w", err)
+	}
+	if strings.TrimSpace(decoded.EndpointPathMode) != "" {
+		config.EndpointPathMode = strings.TrimSpace(decoded.EndpointPathMode)
+	}
+	switch config.EndpointPathMode {
+	case OpenAIEndpointPathCanonicalV1, OpenAIEndpointPathBaseRelative:
+		return config, nil
+	default:
+		return openAICompatibleConfig{}, fmt.Errorf("openai_compatible endpoint_path_mode must be %q or %q", OpenAIEndpointPathCanonicalV1, OpenAIEndpointPathBaseRelative)
+	}
+}
+
 func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) (*NormalizedResponse, error) {
 	_ = ctx
 	usage := NewMissingUsage()
 	responseBody := in.Body
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
 		var err error
-		usage, _, err = ParseOpenAICompatibleUsageWithCacheProfile(
+		var usagePresent bool
+		usage, usagePresent, err = ParseOpenAICompatibleUsageWithCacheProfile(
 			in.Body, in.Endpoint, metering.UsageSourceUpstream, in.CacheUsageProfile,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if cacheContract, ok := modelprofile.ResolveCacheUsageContract(strings.TrimSpace(in.CacheUsageProfile)); ok && cacheContract.RequireReadCounter && !usagePresent {
+			return nil, fmt.Errorf("cache profile %s requires final response usage with prompt_tokens_details.cached_tokens", cacheContract.ProfileID)
 		}
 		if in.Endpoint == EndpointChatCompletions {
 			meterUsage, meterErr := parseBuiltinToolMeterUsage(in.Body, in.ProtocolProfile)
@@ -470,6 +544,15 @@ func UpstreamEndpoint(baseURL, endpoint string) string {
 		path = strings.TrimPrefix(path, "v1/")
 	}
 	return base + "/" + path
+}
+
+func openAICompatibleUpstreamEndpoint(baseURL string, endpoint Endpoint, pathMode string) string {
+	base := strings.TrimRight(baseURL, "/")
+	path := strings.TrimLeft(string(endpoint), "/")
+	if pathMode == OpenAIEndpointPathBaseRelative {
+		path = strings.TrimPrefix(path, "v1/")
+	}
+	return UpstreamEndpoint(base, path)
 }
 
 func extractOpenAIErrorMessage(body []byte) string {

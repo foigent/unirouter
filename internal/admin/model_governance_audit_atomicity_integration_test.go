@@ -15,8 +15,65 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
+
+func TestModelGovernanceProfilePublicLimitsIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	orgID := testutil.NewTestOrg(t, pool)
+	var userID int64
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO users(org_id,username,password_hash,role,status)
+VALUES ($1,'governance-limits','test-hash','org_admin','active') RETURNING id`, orgID).Scan(&userID))
+	h := NewHandler(pool, "test-secret", []byte("0123456789abcdef01234567"), nil)
+	serve := func(handler http.HandlerFunc, body string, id int64) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/model-registry", strings.NewReader(body))
+		if id > 0 {
+			req.SetPathValue("id", fmt.Sprint(id))
+		}
+		ctx := context.WithValue(req.Context(), middleware.CtxOrgID, orgID)
+		ctx = context.WithValue(ctx, middleware.CtxUserID, userID)
+		ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RoleOrgAdmin)
+		w := httptest.NewRecorder()
+		handler(w, req.WithContext(ctx))
+		return w
+	}
+	profile, ok := modelprofile.Match("deepseek-v4-flash")
+	require.True(t, ok)
+	require.Equal(t, 32_768, profile.DefaultOutputLimit)
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprint("explicit_lower_limit=", explicit), func(t *testing.T) {
+			body := map[string]any{"model_name": fmt.Sprintf("governance-limit-%t", explicit),
+				"execution_profile_id": profile.ID, "execution_profile_version": profile.Version}
+			wantContext, wantOutput := modelprofile.DefaultPublicContextLimit(profile), 384_000
+			if explicit {
+				wantContext, wantOutput = 128_000, 4096
+				body["context_length"], body["output_limit"] = wantContext, wantOutput
+			}
+			wire, err := json.Marshal(body)
+			require.NoError(t, err)
+			w := serve(h.CreateModelRegistry, string(wire), 0)
+			require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+			var result struct {
+				ID int64 `json:"id"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+			var contextLimit, outputLimit int
+			require.NoError(t, pool.QueryRow(t.Context(), `SELECT context_length,output_limit FROM model_registry WHERE id=$1`, result.ID).Scan(&contextLimit, &outputLimit))
+			require.Equal(t, wantContext, contextLimit)
+			require.Equal(t, wantOutput, outputLimit)
+			// Re-saving the same exact Profile must not overwrite explicit limits.
+			w = serve(h.UpdateModelRegistry, fmt.Sprintf(`{"execution_profile_id":%q,"execution_profile_version":%q,"display_name":"Preserved"}`, profile.ID, profile.Version), result.ID)
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+			require.NoError(t, pool.QueryRow(t.Context(), `SELECT context_length,output_limit FROM model_registry WHERE id=$1`, result.ID).Scan(&contextLimit, &outputLimit))
+			require.Equal(t, wantContext, contextLimit)
+			require.Equal(t, wantOutput, outputLimit)
+		})
+	}
+	w := serve(h.CreateModelRegistry, `{"model_name":"gpt-5.6-sol"}`, 0)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "multiple API surfaces")
+}
 
 func TestModelGovernanceMutationAuditAtomicityIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)

@@ -55,6 +55,96 @@ func TestCompiledBindingsAreExact(t *testing.T) {
 	}
 }
 
+func TestResponsesExactBindingsCoexistWithoutOperationLatestFallback(t *testing.T) {
+	historical, err := CompiledBindingFor(
+		"openai.responses.v1", endpointprotocol.ProfileOpenAIResponsesText, "1.0.0",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := CompiledBindingFor(
+		"openai.responses.v1", endpointprotocol.ProfileOpenAIResponsesTextV2, "1.0.0",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if historical.ExecutorContractVersion != ExecutorContractVersion ||
+		current.ExecutorContractVersion != ResponsesDualExecutorContractV1 {
+		t.Fatalf("historical=%+v current=%+v", historical, current)
+	}
+	historicalPublic, err := CompiledPublicBindingFor(historical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentPublic, err := CompiledPublicBindingFor(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if historicalPublic.DeliveryContractVersion != endpointprotocol.PublicDeliveryContractV1 ||
+		currentPublic.DeliveryContractVersion != endpointprotocol.PublicResponsesDeliveryContractV2 {
+		t.Fatalf("historical=%+v current=%+v", historicalPublic, currentPublic)
+	}
+	if err := ValidateCompiledPublicBinding(historicalPublic); err != nil {
+		t.Fatalf("historical binding lost addressability: %v", err)
+	}
+	if err := ValidateCompiledPublicBinding(currentPublic); err != nil {
+		t.Fatalf("exact v2 binding unavailable: %v", err)
+	}
+	if _, err := CompiledBindingFor(
+		"openai.responses.v1", endpointprotocol.ProfileOpenAIResponsesTextV2, "2.0.0",
+	); !errors.Is(err, ErrBindingMismatch) {
+		t.Fatalf("unknown exact version error=%v", err)
+	}
+	// Operation-only compatibility remains the immutable historical tuple; it
+	// must never silently advance when a new exact binding is appended.
+	legacy, err := CompiledBinding("openai.responses.v1")
+	if err != nil || legacy != historical {
+		t.Fatalf("operation-only binding drifted: %+v err=%v", legacy, err)
+	}
+}
+
+func TestMessagesExactBindingsCoexistWithoutOperationLatestFallback(t *testing.T) {
+	historical, err := CompiledBindingFor(
+		"anthropic.messages.v1", endpointprotocol.ProfileAnthropicMessagesText, "1.0.0",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, err := CompiledBindingFor(
+		"anthropic.messages.v1", endpointprotocol.ProfileAnthropicMessagesTextV2, "1.0.0",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if historical.ExecutorContractVersion != ExecutorContractVersion ||
+		v2.ExecutorContractVersion != MessagesDualExecutorContractV1 {
+		t.Fatalf("historical=%+v v2=%+v", historical, v2)
+	}
+	historicalPublic, err := CompiledPublicBindingFor(historical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2Public, err := CompiledPublicBindingFor(v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if historicalPublic.DeliveryContractVersion != endpointprotocol.PublicDeliveryContractV1 ||
+		v2Public.DeliveryContractVersion != endpointprotocol.PublicAnthropicMessagesDeliveryContractV2 ||
+		v2Public.ExecutorContractVersion != endpointprotocol.PublicMessagesDualExecutorContractV1 {
+		t.Fatalf("historical=%+v v2=%+v", historicalPublic, v2Public)
+	}
+	if err := ValidateCompiledPublicBinding(historicalPublic); err != nil {
+		t.Fatalf("historical binding lost addressability: %v", err)
+	}
+	if err := ValidateCompiledPublicBinding(v2Public); err != nil {
+		t.Fatalf("exact v2 binding unavailable: %v", err)
+	}
+	legacy, err := CompiledBinding("anthropic.messages.v1")
+	if err != nil || legacy != historical {
+		t.Fatalf("operation-only binding drifted: %+v err=%v", legacy, err)
+	}
+}
+
 func TestNormalizeHTTPSOrigin(t *testing.T) {
 	for input, want := range map[string]string{
 		"https://API.Example.com":             "https://api.example.com",

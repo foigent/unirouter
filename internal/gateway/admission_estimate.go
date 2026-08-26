@@ -49,19 +49,20 @@ type requestAdmissionEstimate struct {
 }
 
 func estimateChatPreProfileAdmission(body []byte) (requestAdmissionEstimate, error) {
-	validation, err := validateAdvancedChatProtocolRequest(body, modelprofile.ChatProtocolContract{
-		ProfileID:   "protocol.preprofile.chat.v1",
-		PartialMode: true, DynamicSystemTools: true,
-		BuiltinWebSearch: true, BuiltinWebSearchName: "$web_search",
-		BuiltinSearchMeter:             "builtin_web_search_calls",
-		BuiltinSearchRequiresNonStream: true, BuiltinSearchRequiresSerial: true,
-		MaxBuiltinSearchCalls: 1,
-		InlineImageDataURL:    true, InlineVideoDataURL: true,
-	})
+	// Before routing, service_tier remains a measurable generic string. The
+	// selected current profile will apply its exact tier contract; an immutable
+	// legacy profile preserves the generic admission behavior it originally had.
+	validation, err := validateAdvancedChatProtocolRequestWithAuthority(
+		body, modelprofile.PreProfileChatProtocolContract(), true,
+	)
 	if err != nil {
 		return requestAdmissionEstimate{}, fmt.Errorf("%w: %v", errAdmissionUnsupportedShape, err)
 	}
-	if _, err := estimateChatAdmission(validation.SanitizedBody); err != nil {
+	validationBody, err := sanitizePreProfileRequestExtensions(validation.SanitizedBody)
+	if err != nil {
+		return requestAdmissionEstimate{}, err
+	}
+	if _, err := estimateChatAdmission(validationBody); err != nil {
 		return requestAdmissionEstimate{}, err
 	}
 	messages, collections, err := chatEnvelopeCardinality(body)
@@ -71,6 +72,47 @@ func estimateChatPreProfileAdmission(body []byte) (requestAdmissionEstimate, err
 	return estimateChatByteUpper(body, messages, collections)
 }
 
+func sanitizePreProfileRequestExtensions(body []byte) ([]byte, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
+		return nil, fmt.Errorf("%w: chat request must be an object", errAdmissionUnsupportedShape)
+	}
+	for _, extension := range modelprofile.PreProfileRequestExtensionFields() {
+		raw, exists := envelope[extension.Field]
+		if !exists {
+			continue
+		}
+		if isJSONNull(raw) {
+			delete(envelope, extension.Field)
+			continue
+		}
+		switch extension.WireType {
+		case modelprofile.RequestExtensionBoolean:
+			if !rawJSONBool(raw) {
+				return nil, fmt.Errorf("%w: %s must be a boolean or null", errAdmissionUnsupportedShape, extension.Field)
+			}
+		case modelprofile.RequestExtensionInteger:
+			var value int64
+			if json.Unmarshal(raw, &value) != nil {
+				return nil, fmt.Errorf("%w: %s must be an integer or null", errAdmissionUnsupportedShape, extension.Field)
+			}
+		case modelprofile.RequestExtensionObject:
+			var value map[string]json.RawMessage
+			if json.Unmarshal(raw, &value) != nil || value == nil {
+				return nil, fmt.Errorf("%w: %s must be an object or null", errAdmissionUnsupportedShape, extension.Field)
+			}
+		default:
+			return nil, fmt.Errorf("%w: unsupported pre-profile extension contract", errAdmissionUnsupportedShape)
+		}
+		delete(envelope, extension.Field)
+	}
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("%w: encode pre-profile admission shadow", errAdmissionUnsupportedShape)
+	}
+	return encoded, nil
+}
+
 // estimateChatAdmissionForPlan keeps syntax/shape validation provider-neutral,
 // then applies the exact tokenizer identity frozen into the planner snapshot.
 // The tokenizer count covers the retained JSON envelope; explicit framing
@@ -78,30 +120,85 @@ func estimateChatPreProfileAdmission(body []byte) (requestAdmissionEstimate, err
 // not observable at admission time. This is an upper bound, not a claim that
 // provider-reported prompt_tokens will equal the estimate.
 func estimateChatAdmissionForPlan(body []byte, plan modelrouting.Plan) (requestAdmissionEstimate, error) {
-	byteUpper := requestAdmissionEstimate{}
+	return estimateChatAdmissionForPlanWithEvidence(body, plan, nil)
+}
+
+func estimateChatAdmissionForValidatedPlan(
+	body []byte,
+	plan modelrouting.Plan,
+	evidence modelExecutionProfileEvidence,
+) (requestAdmissionEstimate, error) {
+	return estimateChatAdmissionForPlanWithEvidence(body, plan, &evidence)
+}
+
+func estimateChatAdmissionForPlanWithEvidence(
+	body []byte,
+	plan modelrouting.Plan,
+	evidence *modelExecutionProfileEvidence,
+) (requestAdmissionEstimate, error) {
+	validationBody := body
+	var imageAdmissionTokenUpper int64
+	imageAdmissionEstimateVersion := ""
 	protocolContract, advanced := modelprofile.ResolveChatProtocolContract(plan.ModelProtocolProfile)
 	if advanced {
-		validation, err := validateAdvancedChatProtocolRequest(body, protocolContract)
-		if err != nil {
-			return requestAdmissionEstimate{}, fmt.Errorf("%w: %v", errAdmissionUnsupportedShape, err)
+		if evidence != nil {
+			if evidence.ExecutionProfileID != plan.ExecutionProfileID || evidence.ExecutionProfileVersion != plan.ExecutionProfileVersion ||
+				evidence.ModelProtocolProfile != plan.ModelProtocolProfile || len(evidence.AdmissionShadowBody) == 0 ||
+				!evidence.matchesAdmissionBody(body) {
+				return requestAdmissionEstimate{}, fmt.Errorf("%w: exact profile admission snapshot is unavailable", errAdmissionUnsupportedShape)
+			}
+			validationBody = evidence.AdmissionShadowBody
+			imageAdmissionTokenUpper = evidence.ImageAdmissionTokenUpper
+			imageAdmissionEstimateVersion = evidence.ImageAdmissionEstimateVersion
+		} else {
+			legacyProtocolAuthority := false
+			if profile, ok := modelprofile.Lookup(plan.ExecutionProfileID, plan.ExecutionProfileVersion); ok {
+				legacyProtocolAuthority = profile.LegacyProtocolAuthority
+			}
+			validation, err := validateAdvancedChatProtocolRequestWithAuthority(body, protocolContract, legacyProtocolAuthority)
+			if err != nil {
+				return requestAdmissionEstimate{}, fmt.Errorf("%w: %v", errAdmissionUnsupportedShape, err)
+			}
+			validationBody = validation.SanitizedBody
+			imageAdmissionTokenUpper = validation.ImageAdmissionTokenUpper
+			imageAdmissionEstimateVersion = validation.ImageAdmissionEstimateVersion
 		}
-		if _, err := estimateChatAdmission(validation.SanitizedBody); err != nil {
-			return requestAdmissionEstimate{}, err
-		}
-		messages, collections, err := chatEnvelopeCardinality(body)
-		if err != nil {
-			return requestAdmissionEstimate{}, err
-		}
-		byteUpper, err = estimateChatByteUpper(body, messages, collections)
-		if err != nil {
-			return requestAdmissionEstimate{}, err
-		}
-	} else {
+	}
+	if reasoningContract, modeled := modelprofile.ResolveReasoningContract(plan.ReasoningProfile); modeled {
 		var err error
-		byteUpper, err = estimateChatAdmission(body)
+		validationBody, err = sanitizeReasoningExtensionsForAdmission(validationBody, reasoningContract)
 		if err != nil {
 			return requestAdmissionEstimate{}, err
 		}
+	}
+	if _, err := estimateChatAdmission(validationBody); err != nil {
+		return requestAdmissionEstimate{}, err
+	}
+	messages, collections, err := chatEnvelopeCardinality(body)
+	if err != nil {
+		return requestAdmissionEstimate{}, err
+	}
+	byteUpper, err := estimateChatByteUpper(body, messages, collections)
+	if err != nil {
+		return requestAdmissionEstimate{}, err
+	}
+	if imageAdmissionTokenUpper > 0 {
+		shadowMessages, shadowCollections, cardinalityErr := chatEnvelopeCardinality(validationBody)
+		if cardinalityErr != nil {
+			return requestAdmissionEstimate{}, cardinalityErr
+		}
+		textUpper, textErr := estimateChatByteUpper(validationBody, shadowMessages, shadowCollections)
+		if textErr != nil {
+			return requestAdmissionEstimate{}, textErr
+		}
+		imageAwareTokens, intErr := checkedAdmissionInt(int64(textUpper.InputTokens), imageAdmissionTokenUpper)
+		if intErr != nil {
+			return requestAdmissionEstimate{}, intErr
+		}
+		if imageAwareTokens > byteUpper.InputTokens {
+			byteUpper.InputTokens = imageAwareTokens
+		}
+		byteUpper.Version = imageAdmissionEstimateVersion + "+" + chatAdmissionEstimateVersion
 	}
 	switch plan.TokenizerProfileID + "\x00" + plan.TokenizerProfileVersion {
 	case modelprofile.TokenizerByteUpperID + "\x00" + modelprofile.TokenizerByteUpperVersion:
@@ -127,6 +224,32 @@ func estimateChatAdmissionForPlan(body []byte, plan modelrouting.Plan) (requestA
 	default:
 		return requestAdmissionEstimate{}, fmt.Errorf("%w: unsupported tokenizer profile %s@%s", errAdmissionUnsupportedShape, plan.TokenizerProfileID, plan.TokenizerProfileVersion)
 	}
+}
+
+// sanitizeReasoningExtensionsForAdmission removes only provider extension
+// fields already owned by the frozen reasoning contract from the generic
+// validation shadow. The original request remains the tokenizer input and
+// provider payload, while validateChatExecutionProfileRequest remains the
+// semantic/type authority for these fields.
+func sanitizeReasoningExtensionsForAdmission(body []byte, contract modelprofile.ReasoningContract) ([]byte, error) {
+	fields := []string{contract.BudgetControl.Field, contract.PreserveThinkingField, contract.SplitOutputField}
+	if fields[0] == "" && fields[1] == "" && fields[2] == "" {
+		return body, nil
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
+		return nil, fmt.Errorf("%w: chat request must be an object", errAdmissionUnsupportedShape)
+	}
+	for _, field := range fields {
+		if field != "" {
+			delete(envelope, field)
+		}
+	}
+	sanitized, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("%w: encode reasoning admission shadow", errAdmissionUnsupportedShape)
+	}
+	return sanitized, nil
 }
 
 func estimateProviderJSONAdmissionForPlan(body []byte, plan modelrouting.Plan) (requestAdmissionEstimate, error) {
@@ -442,7 +565,7 @@ func validateMeasurableChatRoot(envelope map[string]json.RawMessage) error {
 		"tool_choice", "parallel_tool_calls", "functions", "function_call", "user", "service_tier",
 		"store", "metadata", "modalities", "audio", "prediction", "reasoning_effort", "reasoning",
 		"thinking",
-		"verbosity", "safety_identifier", "prompt_cache_key", "prompt_cache_retention",
+		"verbosity", "safety_identifier", "prompt_cache_key",
 		"repetition_penalty", "min_p", "top_k", "enable_thinking", "reasoning_format",
 		"include_reasoning", "guided_json", "guided_regex", "guided_choice", "guided_grammar",
 		"guided_decoding_backend"); err != nil {
@@ -469,7 +592,7 @@ func validateMeasurableChatRoot(envelope map[string]json.RawMessage) error {
 	}
 	for _, field := range []string{
 		"user", "service_tier", "reasoning_effort", "verbosity", "safety_identifier", "prompt_cache_key",
-		"prompt_cache_retention", "reasoning_format", "guided_regex", "guided_grammar", "guided_decoding_backend",
+		"reasoning_format", "guided_regex", "guided_grammar", "guided_decoding_backend",
 	} {
 		if raw, exists := envelope[field]; exists && !isJSONNull(raw) && !rawJSONString(raw) {
 			return fmt.Errorf("%w: %s must be a string or null", errAdmissionUnsupportedShape, field)

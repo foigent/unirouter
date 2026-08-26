@@ -16,10 +16,9 @@ import (
 func TestVersionedUnitMeterBillingMigrationIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
-	currencyDown, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql"))
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, string(currencyDown))
-	require.NoError(t, err)
+	execMigrationDown(t, ctx, pool, "000085_model_execution_plan_freeze_fence.down.sql")
+	execMigrationDown(t, ctx, pool, "000084_official_rate_source_currency_drafts.down.sql")
+	var err error
 
 	var columnCount int
 	require.NoError(t, pool.QueryRow(ctx, `

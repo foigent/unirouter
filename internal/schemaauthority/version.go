@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000084_official_rate_source_currency_drafts"
+const LatestSupportedMigration = "000087_anthropic_messages_tools_public_binding"

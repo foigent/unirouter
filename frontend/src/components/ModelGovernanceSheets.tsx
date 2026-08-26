@@ -1,7 +1,9 @@
 import { Banner, Button, Form, SideSheet, Space, TextArea, Typography } from '@douyinfe/semi-ui';
 import { ExactTokenCountInput } from '../ui';
+import { reviewedModelOnboardingLimits } from '../utils/modelOnboarding';
 import {
   approvedOptions,
+  executionProfilesAvailableForBinding,
   lifecycleOptions,
   statusOptions,
   type ModelAlias,
@@ -45,8 +47,12 @@ interface ModelGovernanceSheetsProps {
 }
 
 export default function ModelGovernanceSheets(props: ModelGovernanceSheetsProps) {
-  const selectedProfile = props.executionProfiles.find(profile => modelExecutionProfileKey(profile) === props.selectedExecutionProfileKey);
   const registryRecord = props.registrySheet?.record;
+  const retainedProfileKey = props.registrySheet?.mode === 'edit' && registryRecord?.execution_profile_id && registryRecord.execution_profile_version
+    ? `${registryRecord.execution_profile_id}@${registryRecord.execution_profile_version}`
+    : '';
+  const selectableProfiles = executionProfilesAvailableForBinding(props.executionProfiles, retainedProfileKey);
+  const selectedProfile = selectableProfiles.find(profile => modelExecutionProfileKey(profile) === props.selectedExecutionProfileKey);
   const registryInitialValues = registryRecord ? {
     model_name: registryRecord.model_name,
     display_name: registryRecord.display_name || registryRecord.model_name,
@@ -71,7 +77,10 @@ export default function ModelGovernanceSheets(props: ModelGovernanceSheetsProps)
   };
   const profileOptions = [
     { label: '自动匹配已验证 Profile', value: 'auto' },
-    ...props.executionProfiles.map(profile => ({ label: `${profile.label} · ${profile.id}@${profile.version}`, value: modelExecutionProfileKey(profile) })),
+    ...selectableProfiles.map(profile => ({
+      label: `${profile.label} · ${profile.id}@${profile.version}${profile.current ? '' : ' · 历史绑定（仅保留）'}`,
+      value: modelExecutionProfileKey(profile),
+    })),
   ];
   return (
     <>
@@ -80,7 +89,7 @@ export default function ModelGovernanceSheets(props: ModelGovernanceSheetsProps)
         <Banner
           type="warning"
           closeIcon={null}
-          description="已验证模型可以绑定版本冻结的执行 Profile；自动匹配只接受 Profile 中的精确别名。未命中的模型使用字节级保守估算，不会按名称猜测 tokenizer、推理、缓存或多模态能力。"
+          description="已验证模型可以绑定版本冻结的执行 Profile；自动匹配只接受 Profile 中唯一的精确别名。多个 API surface 共用别名时必须明确选择 Profile。未命中的模型使用字节级保守估算，不会按名称猜测 tokenizer、推理、缓存或多模态能力。"
           style={{ marginBottom: 16 }}
         />
         <Form
@@ -102,16 +111,18 @@ export default function ModelGovernanceSheets(props: ModelGovernanceSheetsProps)
             disabled={props.executionProfilesLoading || !!props.executionProfilesError}
             onChange={(value) => props.onExecutionProfileChange(String(value || 'auto'))}
             rules={[{ required: true, message: '请选择执行 Profile' }]}
-            extraText="Profile 冻结 tokenizer、推理、缓存字段与协议合同；目录中的上下文/输出值可以向下调整，但不能超过供应商上限。"
+            extraText="Profile 冻结 tokenizer、推理、缓存字段与协议合同；目录中的上下文/输出值可以向下调整，但不能超过供应商能力或 UniRouter 已审查可执行策略上限。"
           />
           {props.executionProfilesError && <Banner type="danger" closeIcon={null} description={props.executionProfilesError} style={{ marginBottom: 12 }} />}
           {selectedProfile && <div className="ur-modelgov-profile-facts">
             <Text strong>{selectedProfile.label}</Text>
             <Text type="tertiary" size="small">Tokenizer：{selectedProfile.tokenizer_profile_id}@{selectedProfile.tokenizer_profile_version}</Text>
             <Text type="tertiary" size="small">推理：{selectedProfile.reasoning_profile} · 缓存：{selectedProfile.cache_usage_profile}</Text>
-            <Text type="tertiary" size="small">协议：{selectedProfile.protocol_profile}</Text>
-            <Text type="tertiary" size="small">供应商上限：context {selectedProfile.provider_context_window || '待验证'} · output {selectedProfile.provider_max_output || '待验证'}；默认采用 {selectedProfile.default_context_window || '未知'} / {selectedProfile.default_output_limit || '未知'}</Text>
-            <Text type="tertiary" size="small">UniRouter 已验证：{selectedProfile.capabilities.join('、') || '仅文本基础合同'}</Text>
+            <Text type="tertiary" size="small">协议：{selectedProfile.protocol_profile}{selectedProfile.protocol_profile_version ? `@${selectedProfile.protocol_profile_version}` : ''}</Text>
+            <Text type="tertiary" size="small">Catalog 证据：{selectedProfile.catalog_evidence_state}（不代表 live verified 或 released）</Text>
+            <Text type="tertiary" size="small">供应商上限：context {selectedProfile.provider_context_window || '待验证'} · output {selectedProfile.provider_max_output || '未文档化或无固定上限'}；UniRouter 可执行 output 上限 {selectedProfile.executable_max_output || selectedProfile.provider_max_output || '未单独收窄'}；请求默认 output {selectedProfile.default_output_limit || '未知'}</Text>
+            <Text type="tertiary" size="small">UniRouter 已验证：{selectedProfile.capabilities.join('、') || (selectedProfile.catalog_evidence_state === 'locally_conformant' ? '严格文本基础合同' : '尚无本地一致性能力')}</Text>
+            <Text type="tertiary" size="small">每次调用必须证明：{selectedProfile.always_required_capabilities.join('、') || '无'}</Text>
             {(selectedProfile.provider_capabilities || []).some(capability => !selectedProfile.capabilities.includes(capability)) && <Text type="warning" size="small">
               供应商另有声明但网关尚未放行：{(selectedProfile.provider_capabilities || []).filter(capability => !selectedProfile.capabilities.includes(capability)).join('、')}。这些能力不会自动写入模型目录。
             </Text>}
@@ -119,11 +130,11 @@ export default function ModelGovernanceSheets(props: ModelGovernanceSheetsProps)
           <div className="ur-modelgov-form-grid">
             <ExactTokenCountInput
               field="context_length"
-              initialValue={selectedProfile?.default_context_window ?? props.registrySheet?.record?.context_length ?? 0}
+              initialValue={props.registrySheet?.record?.context_length ?? (selectedProfile ? reviewedModelOnboardingLimits(selectedProfile).publicContextLength : 0)}
               resetKey={`${props.registrySheet?.mode || 'closed'}-${props.registrySheet?.record?.id || 'new'}-${props.selectedExecutionProfileKey}`}
               style={{ width: '100%' }}
             />
-            <Form.InputNumber field="output_limit" label="单次输出上限（Token，可选）" min={0} style={{ width: '100%' }} extraText="留空或 0 表示未知；用于目录说明，不会替代供应商返回的实际限制。" />
+            <Form.InputNumber field="output_limit" label="公开执行输出上限（Token）" min={0} style={{ width: '100%' }} extraText="这是运行时硬上限，不是请求默认输出。新建时留空或 0 使用所选 Profile 的可执行上限；可显式下调。" />
           </div>
           <Form.Input
             field="capability_tags"

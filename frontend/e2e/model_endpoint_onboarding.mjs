@@ -78,7 +78,7 @@ try {
   await createSheet.getByLabel('公共模型单次输出上限（Token）').fill(String(publicOutputLimit));
   await createSheet.getByLabel('上游模型 / 部署 ID').fill(fixture.upstream_model);
   await createSheet.getByLabel('Deployment 上下文上限（Token）').fill(String(publicContextLimit));
-  await createSheet.getByLabel('Deployment 单次输出上限（Token）').fill(String(deploymentOutputLimit));
+  await createSheet.getByLabel('Deployment 默认单次输出（Token）').fill(String(deploymentOutputLimit));
   await createSheet.getByLabel('供应商 API Key').fill(fixture.provider_key);
 
   const [createResponse] = await Promise.all([

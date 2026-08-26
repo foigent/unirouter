@@ -187,6 +187,59 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	if name != "000087_anthropic_messages_tools_public_binding.down.sql" {
+		var toolsBindingApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000087_anthropic_messages_tools_public_binding')`).Scan(&toolsBindingApplied))
+		if toolsBindingApplied {
+			execMigrationDown(t, ctx, pool, "000087_anthropic_messages_tools_public_binding.down.sql")
+		}
+	}
+	if name == "000087_anthropic_messages_tools_public_binding.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
+	// Migration 86 appends exact public execution identities. Remove it before
+	// any earlier guarded rollback so the schema ledger and dependent views stay
+	// in strict reverse order.
+	if name != "000086_exact_public_execution_bindings.down.sql" {
+		var exactBindingsApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000086_exact_public_execution_bindings')`).Scan(&exactBindingsApplied))
+		if exactBindingsApplied {
+			execMigrationDown(t, ctx, pool, "000086_exact_public_execution_bindings.down.sql")
+		}
+	}
+	if name == "000086_exact_public_execution_bindings.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
+	// Migration 85 adds an empty-by-default Plan-to-Freeze fence. Remove it
+	// before guarded rollback tests for earlier migrations.
+	if name != "000085_model_execution_plan_freeze_fence.down.sql" {
+		var planFenceApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000085_model_execution_plan_freeze_fence')`).Scan(&planFenceApplied))
+		if planFenceApplied {
+			execMigrationDown(t, ctx, pool, "000085_model_execution_plan_freeze_fence.down.sql")
+		}
+	}
+	if name == "000085_model_execution_plan_freeze_fence.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
 	// Migration 84 only widens official source-evidence currency for review
 	// drafts. Remove it before any earlier guarded down migration.
 	if name != "000084_official_rate_source_currency_drafts.down.sql" {

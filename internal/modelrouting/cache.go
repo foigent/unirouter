@@ -30,23 +30,23 @@ type pairedSnapshotCacheEntry struct {
 // Secrets are absent from both hashes.
 func newPairedSnapshotCacheKey(value snapshot) pairedSnapshotCacheKey {
 	payload := struct {
-		Mode                 Mode     `json:"mode"`
-		CustomerOrgID        int64    `json:"customer_org_id"`
-		PublicModelID        int64    `json:"public_model_id"`
-		PublicModel          string   `json:"public_model"`
-		OperationID          string   `json:"operation_id"`
-		RequiredCapabilities []string `json:"required_capabilities"`
-		SlotVersion          int64    `json:"slot_version"`
-		SelectedReleaseID    int64    `json:"selected_release_id"`
-		SelectedManifestHash string   `json:"selected_manifest_hash"`
-		LegacyReleaseID      int64    `json:"legacy_release_id"`
-		LegacyManifestHash   string   `json:"legacy_manifest_hash"`
+		Mode                   Mode                    `json:"mode"`
+		CustomerOrgID          int64                   `json:"customer_org_id"`
+		PublicModelID          int64                   `json:"public_model_id"`
+		PublicModel            string                  `json:"public_model"`
+		OperationID            string                  `json:"operation_id"`
+		CapabilityRequirements []CapabilityRequirement `json:"capability_requirements"`
+		SlotVersion            int64                   `json:"slot_version"`
+		SelectedReleaseID      int64                   `json:"selected_release_id"`
+		SelectedManifestHash   string                  `json:"selected_manifest_hash"`
+		LegacyReleaseID        int64                   `json:"legacy_release_id"`
+		LegacyManifestHash     string                  `json:"legacy_manifest_hash"`
 	}{
 		Mode: value.Mode, CustomerOrgID: value.CustomerOrgID,
 		PublicModelID: value.PublicModelID, PublicModel: value.PublicModel,
-		OperationID:          value.RequestedOperationID,
-		RequiredCapabilities: append([]string(nil), value.RequiredCapabilities...),
-		SlotVersion:          value.Slot.Version, SelectedReleaseID: value.Slot.Selected.ID,
+		OperationID:            value.RequestedOperationID,
+		CapabilityRequirements: cloneCapabilityRequirements(value.CapabilityRequirements),
+		SlotVersion:            value.Slot.Version, SelectedReleaseID: value.Slot.Selected.ID,
 		SelectedManifestHash: value.Slot.Selected.RouteItemsHash,
 		LegacyReleaseID:      value.LegacyRelease.ID, LegacyManifestHash: value.LegacyRelease.RouteItemsHash,
 	}

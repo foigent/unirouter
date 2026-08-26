@@ -388,7 +388,11 @@ func TestRelayStreamRequestNormalizesSafeMiniMaxControlMetadataAndAcceptsTermina
 		"data: {\"id\":\"minimax-chunk\",\"object\":\"chat.completion.chunk\",\"created\":1780152150,\"model\":\"MiniMax-M2.7\",\"choices\":[{\"index\":0,\"delta\":{\"name\":\"MiniMax AI\",\"audio_content\":null},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":4,\"total_tokens\":17,\"total_characters\":0,\"prompt_tokens_details\":{\"cached_tokens\":0}},\"input_sensitive\":false,\"output_sensitive\":false,\"base_resp\":{\"status_code\":0,\"status_msg\":\"success\"}}\n\n"
 	rec := httptest.NewRecorder()
 	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(stream))}
-	route := &RouteResult{Channel: models.Channel{ID: 1, Name: "MiniMax Token Plan", Provider: "minimax", AdapterType: adapters.TypeOpenAICompatible}}
+	route := &RouteResult{
+		Channel:              models.Channel{ID: 1, Name: "MiniMax Token Plan", Provider: "minimax", AdapterType: adapters.TypeOpenAICompatible},
+		CacheUsageProfile:    miniMaxM27CacheProfile,
+		ModelProtocolProfile: miniMaxM27CacheProtocol,
+	}
 	requestID := "req-minimax-safe-stream-metadata"
 
 	relay.relayStreamRequest(p6f11StreamContext(nil, requestID), rec, resp, route,
@@ -407,7 +411,8 @@ func TestRelayStreamRequestNormalizesSafeMiniMaxControlMetadataAndAcceptsTermina
 	if strings.Contains(body, "stream_error.invalid_frame") {
 		t.Fatalf("safe MiniMax stream metadata was rejected: %s", body)
 	}
-	if settled.PromptTokens != 13 || settled.CompletionTokens != 4 {
+	if settled.PromptTokens != 13 || settled.UncachedPromptTokens != 13 || settled.CacheReadTokens != 0 ||
+		settled.CompletionTokens != 4 || settled.CacheUsageSchema != adapters.CacheUsageSchemaOpenAIV1 {
 		t.Fatalf("provider usage was not settled exactly: %+v", settled)
 	}
 	if terminal.Outcome != billing.DeliveryOutcomeCompleted || terminal.ErrorCode != "" {

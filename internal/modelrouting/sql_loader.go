@@ -35,7 +35,6 @@ func loadSQLSnapshot(ctx context.Context, tx pgx.Tx, request Request, forcedRele
 	value := snapshot{
 		Mode: request.Mode, CustomerOrgID: request.CustomerOrgID,
 		PublicModel: request.PublicModel, RequestedOperationID: request.ModelOperationID,
-		RequiredCapabilities:    append([]string(nil), request.RequiredCapabilities...),
 		ExecutionProfileID:      modelprofile.UnverifiedProfileID,
 		ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
 	}
@@ -85,6 +84,15 @@ SELECT id,lifecycle,context_length,output_limit,execution_profile_id,execution_p
 		}
 		value.Legacy = legacy
 	}
+	profile, ok := modelprofile.Lookup(value.ExecutionProfileID, value.ExecutionProfileVersion)
+	if !ok {
+		return snapshot{}, fmt.Errorf("%w: unknown model execution profile %s@%s", ErrManifestStale, value.ExecutionProfileID, value.ExecutionProfileVersion)
+	}
+	value.CapabilityRequirements, err = ResolveCapabilityRequirements(profile, request)
+	if err != nil {
+		return snapshot{}, err
+	}
+	value.CapabilitiesResolved = true
 	// Legacy mode must remain the exact pre-cutover authority. In particular it
 	// does not read normalized manifests, canonical projections, operation rows,
 	// probes or capability evidence and therefore cannot be broken by an
@@ -141,7 +149,7 @@ SELECT id,lifecycle,context_length,output_limit,execution_profile_id,execution_p
 	if err != nil {
 		return snapshot{}, err
 	}
-	if err := loadCapabilities(ctx, tx, value.CustomerOrgID, value.PublicModelID, operation, request.RequiredCapabilities, canonical); err != nil {
+	if err := loadCapabilities(ctx, tx, value.CustomerOrgID, value.PublicModelID, operation, capabilityIDs(value.CapabilityRequirements), canonical); err != nil {
 		return snapshot{}, err
 	}
 	value.Canonical = canonical

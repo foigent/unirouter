@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/models"
@@ -315,4 +316,153 @@ func TestEvaluateNonStreamOutputGuardrailPropagatesCollectorCompleteness(t *test
 		len(result.Receipts) != 1 || result.Receipts[0].Outcome != guardrail.OutcomeIndeterminate {
 		t.Fatalf("collector completeness did not reach policy evaluation: result=%+v refs=%+v", result, refs)
 	}
+}
+
+func TestDoubaoEncryptedReasoningEvidenceIsExactProfileBoundAndOpaque(t *testing.T) {
+	response := map[string]interface{}{
+		"id":    "chatcmpl-doubao",
+		"model": "doubao-seed-2-1-pro-260628",
+		"choices": []interface{}{map[string]interface{}{
+			"index": json.Number("0"), "finish_reason": "stop",
+			"message": map[string]interface{}{
+				"role": "assistant", "content": "safe answer",
+				"reasoning_content": "reasoning summary",
+				"encrypted_content": "opaque-ciphertext",
+			},
+		}},
+	}
+
+	generic := inspectNonStreamOutputTexts(response)
+	require.False(t, generic.complete(), "generic Chat must not inherit Doubao response extensions")
+
+	inspection := inspectNonStreamOutputTextsForProtocol(response, "protocol.doubao-seed-2.1-pro-openai-chat.v1")
+	require.True(t, inspection.complete(), inspection.incompletePaths)
+	require.Len(t, inspection.texts, 2)
+	require.Len(t, inspection.refs, 2)
+	for _, item := range inspection.texts {
+		require.NotContains(t, item.Path, "encrypted_content")
+	}
+	message := response["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})
+	require.Equal(t, "opaque-ciphertext", message["encrypted_content"])
+
+	message["encrypted_content"] = ""
+	inspection = inspectNonStreamOutputTextsForProtocol(response, "protocol.doubao-seed-2.1-pro-openai-chat.v1")
+	require.False(t, inspection.complete())
+	message["encrypted_content"] = map[string]interface{}{"ciphertext": "hidden"}
+	inspection = inspectNonStreamOutputTextsForProtocol(response, "protocol.doubao-seed-2.1-pro-openai-chat.v1")
+	require.False(t, inspection.complete())
+
+	message["encrypted_content"] = "opaque-ciphertext"
+	message["tool_calls"] = []interface{}{map[string]interface{}{
+		"index": json.Number("0"), "id": "call_1", "type": "function",
+		"function": map[string]interface{}{"name": "lookup", "arguments": `{}`},
+	}}
+	inspection = inspectNonStreamOutputTextsForProtocol(response, "protocol.doubao-seed-2.1-pro-openai-chat.v1")
+	require.False(t, inspection.complete(), "tool response must not inherit generic parser support")
+	delete(message, "tool_calls")
+	message["function_call"] = map[string]interface{}{"name": "lookup", "arguments": `{}`}
+	inspection = inspectNonStreamOutputTextsForProtocol(response, "protocol.doubao-seed-2.1-pro-openai-chat.v1")
+	require.False(t, inspection.complete(), "legacy function response must remain deferred")
+}
+
+func TestDoubaoTurboEncryptedReasoningEvidenceIsExactProfileBoundAndOpaque(t *testing.T) {
+	response := map[string]interface{}{
+		"id": "chatcmpl-doubao-turbo", "model": "doubao-seed-2-1-turbo-260628",
+		"choices": []interface{}{map[string]interface{}{
+			"index": json.Number("0"), "finish_reason": "stop",
+			"message": map[string]interface{}{
+				"role": "assistant", "content": "safe answer",
+				"reasoning_content": "reasoning summary", "encrypted_content": "opaque-ciphertext",
+			},
+		}},
+	}
+	require.False(t, inspectNonStreamOutputTexts(response).complete(), "generic Chat must not inherit Doubao response extensions")
+	inspection := inspectNonStreamOutputTextsForProtocol(response, "protocol.doubao-seed-2.1-turbo-openai-chat.v1")
+	require.True(t, inspection.complete(), inspection.incompletePaths)
+	require.Len(t, inspection.texts, 2)
+	for _, item := range inspection.texts {
+		require.NotContains(t, item.Path, "encrypted_content")
+	}
+	message := response["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})
+	message["tool_calls"] = []interface{}{map[string]interface{}{
+		"index": json.Number("0"), "id": "call_1", "type": "function",
+		"function": map[string]interface{}{"name": "lookup", "arguments": `{}`},
+	}}
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, "protocol.doubao-seed-2.1-turbo-openai-chat.v1").complete())
+}
+
+func TestDoubaoSeedEvolvingCoreAcceptsOnlyModeledPlainTextResponse(t *testing.T) {
+	response := map[string]interface{}{
+		"id": "chatcmpl-doubao-evolving", "model": "doubao-seed-evolving",
+		"choices": []interface{}{map[string]interface{}{
+			"index": json.Number("0"), "finish_reason": "stop",
+			"message": map[string]interface{}{"role": "assistant", "content": "safe answer"},
+		}},
+	}
+	protocol := "protocol.doubao-seed-evolving-openai-chat.v1"
+	inspection := inspectNonStreamOutputTextsForProtocol(response, protocol)
+	require.True(t, inspection.complete(), inspection.incompletePaths)
+	require.Equal(t, []guardrail.Text{{Path: "choices[0].message.content", Content: "safe answer"}}, inspection.texts)
+
+	message := response["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})
+	message["tool_calls"] = []interface{}{map[string]interface{}{
+		"index": json.Number("0"), "id": "call_1", "type": "function",
+		"function": map[string]interface{}{"name": "lookup", "arguments": `{}`},
+	}}
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, protocol).complete(), "tool responses remain deferred")
+	delete(message, "tool_calls")
+	message["encrypted_content"] = "opaque-ciphertext"
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, protocol).complete(), "opaque reasoning evidence remains deferred")
+	delete(message, "encrypted_content")
+	message["reasoning_content"] = "private reasoning"
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, protocol).complete(), "reasoning text remains deferred")
+	delete(message, "reasoning_content")
+	response["choices"].([]interface{})[0].(map[string]interface{})["finish_reason"] = "tool_calls"
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, protocol).complete(), "tool finish reason remains deferred")
+}
+
+func TestDoubaoSeedEvolvingReasoningResponseEvidenceIsExactAndOpaque(t *testing.T) {
+	response := map[string]interface{}{
+		"id": "chatcmpl-doubao-evolving-reasoning", "model": "doubao-seed-evolving",
+		"choices": []interface{}{map[string]interface{}{
+			"index": json.Number("0"), "finish_reason": "stop",
+			"message": map[string]interface{}{
+				"role": "assistant", "content": "safe answer",
+				"reasoning_content": "reasoning summary", "encrypted_content": "opaque-ciphertext",
+			},
+		}},
+	}
+	protocol := "protocol.doubao-seed-evolving-openai-chat.v2"
+	require.False(t, inspectNonStreamOutputTexts(response).complete(), "generic Chat must not inherit Evolving response extensions")
+	inspection := inspectNonStreamOutputTextsForProtocol(response, protocol)
+	require.True(t, inspection.complete(), inspection.incompletePaths)
+	require.Equal(t, []guardrail.Text{
+		{Path: "choices[0].message.content", Content: "safe answer"},
+		{Path: "choices[0].message.reasoning_content", Content: "reasoning summary"},
+	}, inspection.texts)
+	for _, item := range inspection.texts {
+		require.NotContains(t, item.Path, "encrypted_content")
+	}
+
+	message := response["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})
+	message["encrypted_content"] = ""
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, protocol).complete(), "empty opaque evidence is invalid")
+	message["encrypted_content"] = map[string]interface{}{"ciphertext": "opaque"}
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, protocol).complete(), "opaque evidence must retain the documented string wire type")
+	message["encrypted_content"] = "opaque-ciphertext"
+	message["reasoning"] = "unmodeled reasoning alias"
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, protocol).complete(), "unmodeled reasoning alias remains rejected")
+	delete(message, "reasoning")
+	message["tool_calls"] = []interface{}{map[string]interface{}{
+		"index": json.Number("0"), "id": "call_1", "type": "function",
+		"function": map[string]interface{}{"name": "lookup", "arguments": `{}`},
+	}}
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, protocol).complete(), "tool response remains deferred")
+	delete(message, "tool_calls")
+	response["choices"].([]interface{})[0].(map[string]interface{})["finish_reason"] = "tool_calls"
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, protocol).complete(), "tool finish reason remains deferred")
+
+	coreProtocol := "protocol.doubao-seed-evolving-openai-chat.v1"
+	response["choices"].([]interface{})[0].(map[string]interface{})["finish_reason"] = "stop"
+	require.False(t, inspectNonStreamOutputTextsForProtocol(response, coreProtocol).complete(), "historical core must not inherit reasoning evidence")
 }

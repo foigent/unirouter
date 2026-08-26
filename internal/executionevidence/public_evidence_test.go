@@ -69,12 +69,63 @@ func TestEvidenceV2IsExplicitAndLeavesV1DigestStable(t *testing.T) {
 
 func TestEvidenceV2ContractConstantsMatchEndpointProtocolRegistry(t *testing.T) {
 	if PublicDeliveryContractV1 != endpointprotocol.PublicDeliveryContractV1 ||
+		PublicResponsesDeliveryContractV2 != endpointprotocol.PublicResponsesDeliveryContractV2 ||
+		PublicMessagesDeliveryContractV2 != endpointprotocol.PublicAnthropicMessagesDeliveryContractV2 ||
 		PublicChargeContractV1 != endpointprotocol.PublicCustomerChargeContractV1 ||
 		PublicIdempotencyContractV1 != endpointprotocol.PublicIdempotencyContractV1 {
 		t.Fatalf(
 			"execution evidence public contracts drifted from endpoint protocol registry: delivery=%q charge=%q idempotency=%q",
 			PublicDeliveryContractV1, PublicChargeContractV1, PublicIdempotencyContractV1,
 		)
+	}
+}
+
+func TestEvidenceV2AcceptsExactMessagesV2DeliveryOnlyForMessages(t *testing.T) {
+	base := canonicalFixture()
+	base.ContractVersion = ContractVersionV2
+	base.ModelOperationID = "anthropic.messages.v1"
+	base.ProtocolProfileID = endpointprotocol.ProfileAnthropicMessagesTextV2
+	base.ProtocolProfileVersion = "1.0.0"
+	value := EvidenceV2{
+		EvidenceV1:                 base,
+		PublicExecutionBindingID:   89,
+		DeliveryContractVersion:    PublicMessagesDeliveryContractV2,
+		ChargeContractVersion:      PublicChargeContractV1,
+		IdempotencyContractVersion: PublicIdempotencyContractV1,
+	}
+	normalized, err := NormalizeV2(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.DeliveryContractVersion != PublicMessagesDeliveryContractV2 {
+		t.Fatalf("normalized=%+v", normalized)
+	}
+	value.ModelOperationID = "openai.responses.v1"
+	if _, err := NormalizeV2(value); err == nil {
+		t.Fatalf("Messages delivery crossed operation fence: %v", err)
+	}
+}
+
+func TestEvidenceV2AcceptsResponsesV2WithoutWideningMessages(t *testing.T) {
+	base := canonicalFixture()
+	base.ContractVersion = ContractVersionV2
+	base.ModelOperationID = "openai.responses.v1"
+	base.ProtocolProfileID = endpointprotocol.ProfileOpenAIResponsesTextV2
+	base.ProtocolProfileVersion = "1.0.0"
+	value := EvidenceV2{
+		EvidenceV1:                 base,
+		PublicExecutionBindingID:   88,
+		DeliveryContractVersion:    PublicResponsesDeliveryContractV2,
+		ChargeContractVersion:      PublicChargeContractV1,
+		IdempotencyContractVersion: PublicIdempotencyContractV1,
+	}
+	if _, err := NormalizeV2(value); err != nil {
+		t.Fatalf("Responses v2 evidence rejected: %v", err)
+	}
+	value.ModelOperationID = "anthropic.messages.v1"
+	value.ProtocolProfileID = endpointprotocol.ProfileAnthropicMessagesText
+	if _, err := NormalizeV2(value); err == nil {
+		t.Fatal("Responses-only delivery contract widened Anthropic Messages")
 	}
 }
 

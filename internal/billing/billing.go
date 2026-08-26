@@ -36,8 +36,11 @@ type FreezeRequest struct {
 	EstimatedInputTokens     int
 	ReservedCompletionTokens int
 	ReservedMeterUsage       []metering.MeterQuantity
-	SafetyFactor             string
-	MinFreezeCents           int64
+	// ExecutionSnapshotHash binds pricing snapshot and any wallet authorization
+	// to the one normalized modelrouting Plan used for provider dispatch.
+	ExecutionSnapshotHash string
+	SafetyFactor          string
+	MinFreezeCents        int64
 }
 
 // FreezeResult contains the result of a freeze operation.
@@ -142,6 +145,7 @@ type reservationRecord struct {
 	AccessCredentialID                          sql.NullInt64
 	CredentialRef                               sql.NullString
 	AccessGrantID                               sql.NullInt64
+	ExecutionSnapshotHash                       sql.NullString
 	FrozenAmountMicros                          int64
 	AdmissionCalculatedCostMicros               int64
 	ReservedBalanceMicros                       int64
@@ -477,6 +481,10 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	if err := ValidateBillingMode(b.mode); err != nil {
 		return nil, err
 	}
+	req.ExecutionSnapshotHash = strings.TrimSpace(req.ExecutionSnapshotHash)
+	if req.ExecutionSnapshotHash != "" && !validModelExecutionSnapshotHash(req.ExecutionSnapshotHash) {
+		return nil, fmt.Errorf("freeze execution snapshot hash is invalid")
+	}
 	// An admitted operation is governed by its persisted mode and price
 	// snapshot. Resolve an existing receipt before consulting the current
 	// pricing authority so a restart or authority switch cannot break an
@@ -529,21 +537,24 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 	// server operation ID cannot be silently reused after settlement/cancel.
 	var existing reservationRecord
 	var existingAPIKeyID, existingAccessCredentialID, existingAccessGrantID sql.NullInt64
-	var existingCredentialRef sql.NullString
+	var existingCredentialRef, existingExecutionSnapshotHash sql.NullString
 	err = tx.QueryRow(ctx,
 		`SELECT frozen_amount_micros, admission_calculated_cost_micros,
 		        status, pricing_version, billing_mode, api_key_id,
-		        access_credential_id,credential_ref,access_grant_id
+		        access_credential_id,credential_ref,access_grant_id,execution_snapshot_hash
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
 		req.RequestID, req.OrgID,
 	).Scan(&existing.FrozenAmountMicros, &existing.AdmissionCalculatedCostMicros,
 		&existing.Status, &existing.PricingVersion, &existing.BillingMode, &existingAPIKeyID,
-		&existingAccessCredentialID, &existingCredentialRef, &existingAccessGrantID)
+		&existingAccessCredentialID, &existingCredentialRef, &existingAccessGrantID, &existingExecutionSnapshotHash)
 	if err == nil {
 		if nullableID(existingAPIKeyID) != req.APIKeyID || nullableID(existingAccessCredentialID) != req.AccessCredentialID ||
 			nullableString(existingCredentialRef) != req.CredentialRef || nullableID(existingAccessGrantID) != req.AccessGrantID {
 			return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "billing access identity changed"}, nil
+		}
+		if nullableString(existingExecutionSnapshotHash) != req.ExecutionSnapshotHash {
+			return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "model execution Plan snapshot changed"}, nil
 		}
 		if existing.Status == "frozen" {
 			return &FreezeResult{
@@ -570,7 +581,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 			if isUniqueViolation(err) {
 				_ = tx.Rollback(ctx)
 				record, lookupErr := b.lookupReservation(ctx, req.RequestID, req.OrgID)
-				if lookupErr == nil && record.Status == "frozen" {
+				if lookupErr == nil && record.Status == "frozen" && reservationExecutionSnapshotMatches(record, req.ExecutionSnapshotHash) {
 					return &FreezeResult{
 						AmountMicros: 0, CalculatedCostMicros: record.AdmissionCalculatedCostMicros,
 						PricingVersion: record.PricingVersion,
@@ -660,7 +671,7 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 		if isUniqueViolation(err) {
 			_ = tx.Rollback(ctx)
 			record, lookupErr := b.lookupReservation(ctx, req.RequestID, req.OrgID)
-			if lookupErr == nil && record.Status == "frozen" {
+			if lookupErr == nil && record.Status == "frozen" && reservationExecutionSnapshotMatches(record, req.ExecutionSnapshotHash) {
 				return &FreezeResult{
 					AmountMicros:         record.FrozenAmountMicros,
 					CalculatedCostMicros: record.AdmissionCalculatedCostMicros,
@@ -703,17 +714,17 @@ func (b *Billing) Freeze(ctx context.Context, req FreezeRequest) (*FreezeResult,
 func (b *Billing) replayFreeze(ctx context.Context, req FreezeRequest) (*FreezeResult, bool, error) {
 	var record reservationRecord
 	var apiKeyID, accessCredentialID, accessGrantID sql.NullInt64
-	var credentialRef sql.NullString
+	var credentialRef, executionSnapshotHash sql.NullString
 	err := b.db.QueryRow(ctx,
 		`SELECT frozen_amount_micros, admission_calculated_cost_micros,
 		        status, pricing_version, billing_mode, api_key_id,
-		        access_credential_id,credential_ref,access_grant_id
+		        access_credential_id,credential_ref,access_grant_id,execution_snapshot_hash
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
 		req.RequestID, req.OrgID,
 	).Scan(&record.FrozenAmountMicros, &record.AdmissionCalculatedCostMicros,
 		&record.Status, &record.PricingVersion, &record.BillingMode, &apiKeyID,
-		&accessCredentialID, &credentialRef, &accessGrantID)
+		&accessCredentialID, &credentialRef, &accessGrantID, &executionSnapshotHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, nil
 	}
@@ -726,6 +737,9 @@ func (b *Billing) replayFreeze(ctx context.Context, req FreezeRequest) (*FreezeR
 	if nullableID(apiKeyID) != req.APIKeyID || nullableID(accessCredentialID) != req.AccessCredentialID ||
 		nullableString(credentialRef) != req.CredentialRef || nullableID(accessGrantID) != req.AccessGrantID {
 		return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "billing access identity changed"}, true, nil
+	}
+	if nullableString(executionSnapshotHash) != req.ExecutionSnapshotHash {
+		return &FreezeResult{Success: false, ErrorCode: "request_identity_conflict", ErrorDetail: "model execution Plan snapshot changed"}, true, nil
 	}
 	if record.Status == "frozen" {
 		return &FreezeResult{
@@ -768,12 +782,12 @@ func insertFreezeReservationTx(
 			effective_cache_creation_price_micros_per_million, effective_output_price_micros_per_million,
 			cache_read_ratio, cache_creation_ratio,
 			price_multiplier, pricing_version, effective_unit_rates,
-			reserved_meter_usage, updated_at
+			reserved_meter_usage, execution_snapshot_hash, updated_at
 		 ) VALUES (
 			$1, $2, $3, 'frozen', $4, $5,
 			$6, NULLIF($7,0), NULLIF($8,0), NULLIF($9,''), NULLIF($10,0),
 			$11, $12, $13, $14, $15, $16, $17,
-			$18, $19, $20, $21, $22, $23, $24, $25, $26::jsonb, $27::jsonb, NOW()
+			$18, $19, $20, $21, $22, $23, $24, $25, $26::jsonb, $27::jsonb, NULLIF($28,''), NOW()
 		 )`,
 		req.RequestID, req.OrgID, frozenAmount, mode, admissionCalculatedCost,
 		req.ProjectID, req.APIKeyID, req.AccessCredentialID, req.CredentialRef, req.AccessGrantID,
@@ -782,7 +796,7 @@ func insertFreezeReservationTx(
 		req.SafetyFactor, minFreezeMicros,
 		quote.InputPriceMicrosPerMillion, quote.CacheReadPriceMicrosPerMillion, quote.CacheCreationPriceMicrosPerMillion,
 		quote.OutputPriceMicrosPerMillion, quote.CacheReadRatio, quote.CacheCreationRatio,
-		quote.Multiplier, quote.Version, string(unitRatesJSON), string(reservedMeterUsageJSON),
+		quote.Multiplier, quote.Version, string(unitRatesJSON), string(reservedMeterUsageJSON), req.ExecutionSnapshotHash,
 	)
 	return err
 }
@@ -799,6 +813,18 @@ func nullableString(value sql.NullString) string {
 		return ""
 	}
 	return value.String
+}
+
+func validModelExecutionSnapshotHash(value string) bool {
+	if len(value) != 69 || !strings.HasPrefix(value, "mrs1_") || value != strings.ToLower(value) {
+		return false
+	}
+	decoded, err := hex.DecodeString(value[len("mrs1_"):])
+	return err == nil && len(decoded) == 32
+}
+
+func reservationExecutionSnapshotMatches(record reservationRecord, expected string) bool {
+	return nullableString(record.ExecutionSnapshotHash) == expected
 }
 
 type grantReservationAllocation struct {
@@ -893,7 +919,8 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		        refund_amount_micros,
 		        uncached_input_cost_micros, cache_read_cost_micros,
 		        cache_creation_cost_micros, output_cost_micros, non_token_cost_micros,
-		        terminal_transaction_id, terminal_observation_receipt_id, balance_after_micros
+		        terminal_transaction_id, terminal_observation_receipt_id, balance_after_micros,
+		        execution_snapshot_hash
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2`,
 		requestID, orgID,
@@ -947,6 +974,7 @@ func (b *Billing) lookupReservation(ctx context.Context, requestID string, orgID
 		&record.TerminalTransactionID,
 		&record.TerminalObservationReceiptID,
 		&record.BalanceAfter,
+		&record.ExecutionSnapshotHash,
 	)
 	if err == nil {
 		err = validateReservationBillingMode(record.BillingMode)
@@ -1851,7 +1879,8 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		        refund_amount_micros,
 		        uncached_input_cost_micros, cache_read_cost_micros,
 		        cache_creation_cost_micros, output_cost_micros, non_token_cost_micros,
-		        terminal_transaction_id, terminal_observation_receipt_id, balance_after_micros
+		        terminal_transaction_id, terminal_observation_receipt_id, balance_after_micros,
+		        execution_snapshot_hash
 		 FROM freeze_idempotency
 		 WHERE request_id = $1 AND org_id = $2
 		 FOR UPDATE`, requestID, orgID,
@@ -1911,6 +1940,7 @@ func reservationForUpdate(ctx context.Context, tx pgx.Tx, requestID string, orgI
 		&record.TerminalTransactionID,
 		&record.TerminalObservationReceiptID,
 		&record.BalanceAfter,
+		&record.ExecutionSnapshotHash,
 	)
 	if err == nil {
 		err = validateReservationBillingMode(record.BillingMode)

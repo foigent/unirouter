@@ -319,9 +319,15 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v1','1.0.0',
 			  'unirouter.endpoint-profile-nonstream-executor.v1','000075_model_operation_production_qualification'),
 			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v1','1.0.0',
-			  'unirouter.endpoint-profile-nonstream-executor.v1','000075_model_operation_production_qualification')
-			)`, want: 2},
-		{name: "fresh compiled execution support count", query: "SELECT COUNT(*) FROM model_operation_execution_support_bindings", want: 2},
+			  'unirouter.endpoint-profile-nonstream-executor.v1','000075_model_operation_production_qualification'),
+			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v2','1.0.0',
+			  'unirouter.endpoint-profile-responses-dual-executor.v1','000086_exact_public_execution_bindings'),
+			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v2','1.0.0',
+			  'unirouter.endpoint-profile-messages-dual-executor.v1','000086_exact_public_execution_bindings'),
+			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text-tools.v3','1.0.0',
+			  'unirouter.endpoint-profile-messages-tools-executor.v1','000087_anthropic_messages_tools_public_binding')
+			)`, want: 5},
+		{name: "fresh compiled execution support count", query: "SELECT COUNT(*) FROM model_operation_execution_support_bindings", want: 5},
 		{name: "fresh public execution extension", query: `SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions
 			WHERE (operation_id,public_path,protocol_profile_id,protocol_profile_version,
 			       executor_contract_version,delivery_contract_version,
@@ -333,9 +339,21 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v1','1.0.0',
 			  'unirouter.endpoint-profile-nonstream-executor.v1',
 			  'unirouter.public-nonstream-delivery.v1','unirouter.provider-final-token-charge.v1',
-			  'unirouter.public-at-most-once.v1','000077_public_model_execution_authority')
-			)`, want: 2},
-		{name: "fresh public execution extension count", query: "SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions", want: 2},
+			  'unirouter.public-at-most-once.v1','000077_public_model_execution_authority'),
+			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v2','1.0.0',
+			  'unirouter.endpoint-profile-responses-dual-executor.v1',
+			  'unirouter.public-responses-delivery.v2','unirouter.provider-final-token-charge.v1',
+			  'unirouter.public-at-most-once.v1','000086_exact_public_execution_bindings'),
+			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v2','1.0.0',
+			  'unirouter.endpoint-profile-messages-dual-executor.v1',
+			  'unirouter.public-anthropic-messages-delivery.v2','unirouter.provider-final-token-charge.v1',
+			  'unirouter.public-at-most-once.v1','000086_exact_public_execution_bindings'),
+			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text-tools.v3','1.0.0',
+			  'unirouter.endpoint-profile-messages-tools-executor.v1',
+			  'unirouter.public-anthropic-messages-tools-delivery.v1','unirouter.provider-final-token-charge.v1',
+			  'unirouter.public-at-most-once.v1','000087_anthropic_messages_tools_public_binding')
+			)`, want: 5},
+		{name: "fresh public execution extension count", query: "SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions", want: 5},
 		{name: "fresh known public tables", query: `SELECT COUNT(*) FROM pg_catalog.pg_tables
 			WHERE schemaname='public' AND tablename=ANY($1::text[])`, args: []any{expectedTables}, want: int64(len(expectedTables))},
 		{name: "fresh exact public table inventory", query: "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public'", want: int64(len(expectedTables))},

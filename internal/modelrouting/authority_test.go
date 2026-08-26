@@ -21,7 +21,7 @@ func TestAuthorityLegacyReleaseProvesChatAndEmbeddingsAdapterExecutability(t *te
 	}
 
 	request := requestFor(ModeVerify, "authority-chat-adapter")
-	request.RequiredCapabilities = nil
+	request.InvocationCapabilities = nil
 	chatPlan, err := buildPlan(value, request, routingpolicy.Default())
 	if err != nil {
 		t.Fatalf("build chat plan: %v", err)

@@ -341,9 +341,9 @@ paths:
   /v1/responses:
     post:
       tags: [Gateway]
-      summary: Strict OpenAI Responses non-stream text execution
+      summary: Strict OpenAI Responses text execution
       description: |
-        Executes only the exact M77-qualified `unirouter.openai.responses.text.v1` public profile. The caller's public model remains the downstream identity; provider mapping is private. The retained request budget is 8 MiB and the endpoint-protocol document is limited to 2 MiB. Only string `input`, optional string `instructions`, bounded metadata/plain-text controls, `store=false`, and `stream=false` are admitted. Tools, state, background work, reasoning controls, structured or multimodal input/output, include expansions, prompt templates, and unknown root or nested members fail before provider dispatch. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
+        Executes only an exact M77-qualified public Responses profile. V1 remains strict non-stream text. Current Sol/Terra/Luna Responses `@1.3.0` pin `unirouter.openai.responses.text.v2@1.0.0` and additionally admit exact core-text SSE when `stream=true`. The caller's public model remains the downstream identity; provider mapping is private. The retained request budget is 8 MiB and the endpoint-protocol document is limited to 2 MiB. All three current Profiles admit only `reasoning.effort=none|low|medium|high|xhigh|max`; omission preserves the provider default. Tools, state/replay, reasoning summaries or encrypted output, background work, structured or multimodal input/output, include expansions, prompt templates, and unknown root or nested members fail before provider dispatch. Exact text SSE validates event order, sequence, response identity, final usage and guarded text reconciliation; failed or incomplete streams do not settle. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
       security:
         - gatewayKey: []
       parameters:
@@ -368,6 +368,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PublicResponsesResponse"
+            text/event-stream:
+              schema:
+                type: string
+                description: Exact Responses v2 core-text SSE; available only when the selected immutable Profile supports streaming.
         "400": { $ref: "#/components/responses/PublicOpenAIError" }
         "401": { $ref: "#/components/responses/PublicOpenAIError" }
         "403": { $ref: "#/components/responses/PublicOpenAIError" }
@@ -6399,7 +6403,7 @@ components:
     ModelExecutionProfile:
       type: object
       additionalProperties: false
-      required: [id, version, label, tokenizer_profile_id, tokenizer_profile_version, reasoning_profile, cache_usage_profile, protocol_profile, provider_context_window, provider_max_output, default_context_window, default_output_limit, provider_capabilities, capabilities, aliases, evidence_refs]
+      required: [id, version, label, tokenizer_profile_id, tokenizer_profile_version, reasoning_profile, cache_usage_profile, protocol_profile, provider_context_window, provider_max_output, default_context_window, default_output_limit, provider_capabilities, capabilities, always_required_capabilities, aliases, evidence_refs]
       properties:
         id: { type: string }
         version: { type: string }
@@ -6409,6 +6413,14 @@ components:
         reasoning_profile: { type: string }
         cache_usage_profile: { type: string }
         protocol_profile: { type: string }
+        upstream_model_family:
+          type: string
+          minLength: 1
+          description: Exact model family for a Profile address with typed upstream version identity; absent on historical unmodeled addresses.
+        upstream_version_policy:
+          type: string
+          enum: [pinned, floating]
+          description: Append-only per-Profile-address version policy; never inferred from a mutable current alias.
         provider_context_window: { type: integer, minimum: 0 }
         provider_max_output: { type: integer, minimum: 0 }
         default_context_window: { type: integer, minimum: 0 }
@@ -6422,6 +6434,11 @@ components:
           type: array
           uniqueItems: true
           description: Capabilities verified through UniRouter's current end-to-end execution path.
+          items: { type: string }
+        always_required_capabilities:
+          type: array
+          uniqueItems: true
+          description: Narrow supported subset that every invocation of this exact Profile must prove during route selection. Optional or provider-default-derived invocation requirements belong to the one normalized Plan snapshot, not this list.
           items: { type: string }
         aliases: { type: array, uniqueItems: true, items: { type: string } }
         evidence_refs: { type: array, uniqueItems: true, items: { type: string, format: uri } }
@@ -6562,8 +6579,15 @@ components:
           additionalProperties: { type: string, maxLength: 512 }
         temperature: { type: number, minimum: 0, maximum: 2 }
         top_p: { type: number, minimum: 0, maximum: 1 }
+        reasoning:
+          type: object
+          description: Profile-bound control; executable with current GPT-5.6 Sol/Terra/Luna Responses 1.3.0. Omission preserves the provider default.
+          additionalProperties: false
+          required: [effort]
+          properties:
+            effort: { type: string, enum: [none, low, medium, high, xhigh, max] }
         store: { type: boolean, enum: [false], default: false }
-        stream: { type: boolean, enum: [false], default: false }
+        stream: { type: boolean, default: false, description: "true is executable only with an exact Sol/Terra/Luna Responses v2 streaming Profile; other Profiles fail closed." }
         text:
           type: object
           additionalProperties: false

@@ -59,6 +59,10 @@ type ProviderAttemptStart struct {
 	Endpoint           string
 	Provider           string
 	Channel            string
+	// ExecutionSnapshotHash is the Plan identity frozen before dispatch. It is
+	// independent from RouteEvidence.SnapshotHash because immutable legacy
+	// evidence intentionally has no canonical route snapshot field.
+	ExecutionSnapshotHash string
 	// RouteEvidence is nil only for the pre-contract legacy writer. New
 	// dispatch coordinators persist the exact secret-free route proof before
 	// issuing an upstream request.
@@ -111,6 +115,7 @@ type providerAttemptRecord struct {
 	TerminalTransactionID sql.NullInt64
 	RouteEvidenceVersion  sql.NullString
 	RouteEvidenceHash     sql.NullString
+	ExecutionSnapshotHash sql.NullString
 	DispatchOwnerHash     sql.NullString
 }
 
@@ -230,6 +235,7 @@ func normalizeProviderAttemptStart(req ProviderAttemptStart) (normalizedProvider
 	req.Endpoint = strings.TrimSpace(req.Endpoint)
 	req.Provider = strings.TrimSpace(req.Provider)
 	req.Channel = strings.TrimSpace(req.Channel)
+	req.ExecutionSnapshotHash = strings.TrimSpace(req.ExecutionSnapshotHash)
 	if req.RequestID == "" || len(req.RequestID) > 64 || req.AttemptID == "" || len(req.AttemptID) > 64 {
 		return normalizedProviderAttemptStart{}, fmt.Errorf("provider attempt requires bounded request_id and attempt_id")
 	}
@@ -241,6 +247,9 @@ func normalizeProviderAttemptStart(req ProviderAttemptStart) (normalizedProvider
 	}
 	if req.Endpoint == "" || len(req.Endpoint) > 64 || req.Provider == "" || len(req.Provider) > 50 || req.Channel == "" || len(req.Channel) > 255 {
 		return normalizedProviderAttemptStart{}, fmt.Errorf("provider attempt routing metadata is invalid")
+	}
+	if req.ExecutionSnapshotHash != "" && !validModelExecutionSnapshotHash(req.ExecutionSnapshotHash) {
+		return normalizedProviderAttemptStart{}, fmt.Errorf("provider attempt execution snapshot hash is invalid")
 	}
 
 	normalized := normalizedProviderAttemptStart{ProviderAttemptStart: req}
@@ -270,6 +279,9 @@ func normalizeProviderAttemptStart(req ProviderAttemptStart) (normalizedProvider
 			return normalizedProviderAttemptStart{}, fmt.Errorf("marshal provider attempt capabilities: %w", err)
 		}
 		normalized.PublicRouteEvidence = &evidence
+		if normalized.ExecutionSnapshotHash != evidence.SnapshotHash {
+			return normalizedProviderAttemptStart{}, fmt.Errorf("provider attempt Plan snapshot does not match public route evidence")
+		}
 		normalized.routeEvidenceHash = hash
 		normalized.capabilityJSON = capabilityJSON
 		return normalized, nil
@@ -290,6 +302,9 @@ func normalizeProviderAttemptStart(req ProviderAttemptStart) (normalizedProvider
 		}
 	default:
 		return normalizedProviderAttemptStart{}, fmt.Errorf("provider attempt has unsupported route authority")
+	}
+	if evidence.SnapshotHash != "" && normalized.ExecutionSnapshotHash != evidence.SnapshotHash {
+		return normalizedProviderAttemptStart{}, fmt.Errorf("provider attempt Plan snapshot does not match route evidence")
 	}
 	hash, err := executionevidence.Digest(evidence)
 	if err != nil {
@@ -420,6 +435,9 @@ func (b *Billing) beginProviderAttemptTx(
 	if record.Status != "frozen" {
 		return false, fmt.Errorf("begin provider attempt: reservation is %s", record.Status)
 	}
+	if nullableString(record.ExecutionSnapshotHash) != req.ExecutionSnapshotHash {
+		return false, ErrProviderAttemptConflict
+	}
 	if record.APIKeyID.Valid && record.APIKeyID.Int64 != req.APIKeyID {
 		return false, ErrProviderAttemptConflict
 	}
@@ -485,7 +503,7 @@ func (b *Billing) beginProviderAttemptTx(
 		    route_legacy_credential_state_revision,route_requires_probe,route_probe_lease_token_hash,
 		    route_public_execution_binding_id,route_delivery_contract_version,
 		    route_charge_contract_version,route_idempotency_contract_version,
-		    dispatch_owner_hash
+		    execution_snapshot_hash,dispatch_owner_hash
 		 ) VALUES ($1,$2,$3,$4,NULLIF($5,0),NULLIF($6,0),NULLIF($7,''),NULLIF($8,0),
 		           NULLIF($9,0),NULLIF($10,0),NULLIF($11,0),$12,$13,$14,$15,$16,
 		           $17,$18,$19,$20,NULLIF($21,0),NULLIF($22,0),NULLIF($23,0),
@@ -493,7 +511,7 @@ func (b *Billing) beginProviderAttemptTx(
 		           $29,NULLIF($30,0),$31,$32,$33,$34,$35,$36,$37,
 		           NULLIF($38,0),$39,NULLIF($40,0),$41,$42,NULLIF($43,0),$44,
 		           NULLIF($45,0),NULLIF($46,0),NULLIF($47,0),$48,$49,
-		           NULLIF($50,0),$51,$52,$53,NULLIF($54,''))`,
+		           NULLIF($50,0),$51,$52,$53,NULLIF($54,''),NULLIF($55,''))`,
 		req.OrgID, req.RequestID, req.AttemptID, req.APIKeyID,
 		record.ProjectID, req.AccessCredentialID, req.CredentialRef, req.AccessGrantID,
 		req.ChannelID, req.ChannelKeyID, values.deploymentID,
@@ -510,7 +528,7 @@ func (b *Billing) beginProviderAttemptTx(
 		values.legacyCircuitRevision, values.legacyCredentialStateRevision, values.requiresProbe,
 		values.probeLeaseTokenHash, values.publicExecutionBindingID,
 		values.deliveryContractVersion, values.chargeContractVersion,
-		values.idempotencyContractVersion, dispatchOwnerHash,
+		values.idempotencyContractVersion, req.ExecutionSnapshotHash, dispatchOwnerHash,
 	); err != nil {
 		return false, fmt.Errorf("insert provider attempt: %w", err)
 	}
@@ -606,7 +624,8 @@ func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, reque
 		        channel_id, channel_key_id, route_sequence, route_total,
 		        endpoint, provider, channel_name, state, outcome_certainty, retry_authorized,
 		        http_status, failure_kind, upstream_request_id, calculated_cost_micros, charged_cost_micros,
-		        terminal_transaction_id,route_evidence_version,route_evidence_hash,dispatch_owner_hash
+		        terminal_transaction_id,route_evidence_version,route_evidence_hash,
+		        execution_snapshot_hash,dispatch_owner_hash
 		 FROM billing_provider_attempts
 		 WHERE org_id = $1 AND request_id = $2 AND attempt_id = $3
 		 FOR UPDATE`, orgID, requestID, attemptID,
@@ -617,6 +636,7 @@ func providerAttemptForUpdate(ctx context.Context, tx pgx.Tx, orgID int64, reque
 		&record.RetryAuthorized, &record.HTTPStatus, &record.FailureKind,
 		&record.UpstreamRequestID, &record.CalculatedCostMicros, &record.ChargedCostMicros,
 		&record.TerminalTransactionID, &record.RouteEvidenceVersion, &record.RouteEvidenceHash,
+		&record.ExecutionSnapshotHash,
 		&record.DispatchOwnerHash,
 	)
 	return record, err
@@ -629,6 +649,9 @@ func providerAttemptStartMatches(record providerAttemptRecord, req normalizedPro
 		record.RouteSequence == req.RouteSequence && record.RouteTotal == req.RouteTotal &&
 		record.Endpoint == req.Endpoint && record.Provider == req.Provider && record.Channel == req.Channel
 	if !identityMatches {
+		return false
+	}
+	if nullableString(record.ExecutionSnapshotHash) != req.ExecutionSnapshotHash {
 		return false
 	}
 	if req.RouteEvidence == nil && req.PublicRouteEvidence == nil {

@@ -134,6 +134,7 @@ func TestPreparePublicRequestKeepsV2ThroughAttemptAndDecision(t *testing.T) {
 	require.Equal(t, wantDigest, prepared.dispatchEvidenceHash)
 
 	start := providerAttemptStart(prepared)
+	require.Equal(t, plan.SnapshotHash, start.ExecutionSnapshotHash)
 	require.NotNil(t, start.PublicRouteEvidence)
 	require.Nil(t, start.RouteEvidence)
 	require.Zero(t, start.ChannelID)
@@ -274,6 +275,7 @@ func TestPrepareRequestRequiresCompleteAccessCredentialIdentity(t *testing.T) {
 	require.NoError(t, err)
 	prepared.dispatchEvidence = prepared.evidence
 	start := providerAttemptStart(prepared)
+	require.Equal(t, plan.SnapshotHash, start.ExecutionSnapshotHash)
 	require.EqualValues(t, 3, start.AccessCredentialID)
 	require.Equal(t, "cred_abcdefgh", start.CredentialRef)
 	require.EqualValues(t, 4, start.AccessGrantID)

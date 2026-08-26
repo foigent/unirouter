@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Toast } from '@douyinfe/semi-ui';
 import ModelGovernancePage, { comparableModelIdentity, formatModelSetItems, parseModelSetItems } from '../ModelGovernancePage';
 
 const mockGetModelRegistry = vi.fn();
@@ -78,38 +79,66 @@ const EXECUTION_PROFILES = {
     {
       id: 'unverified.chat',
       version: '1.0.0',
+      current: true,
       label: '自定义 / 未验证模型',
       tokenizer_profile_id: 'tokenizer.byte-upper',
       tokenizer_profile_version: '1.0.0',
       reasoning_profile: 'reasoning.unverified.v1',
       cache_usage_profile: 'cache-usage.unverified.v1',
       protocol_profile: 'protocol.openai-compatible.unverified.v1',
+      catalog_evidence_state: 'unverified',
       provider_context_window: 0,
       provider_max_output: 0,
       default_context_window: 0,
       default_output_limit: 0,
       provider_capabilities: [],
       capabilities: [],
+      always_required_capabilities: [],
       aliases: [],
       evidence_refs: [],
     },
     {
       id: 'minimax.m3.token-plan',
-      version: '1.0.0',
-      label: 'MiniMax M3 Token Plan',
+      version: '1.3.0',
+      current: true,
+      label: 'MiniMax M3 官方 API（OpenAI Chat Embedded Reasoning）',
       tokenizer_profile_id: 'tokenizer.byte-upper',
       tokenizer_profile_version: '1.0.0',
-      reasoning_profile: 'reasoning.minimax-m3.v1',
+      reasoning_profile: 'reasoning.minimax-m3-adaptive-embedded.v1',
       cache_usage_profile: 'cache-usage.minimax-m3.v1',
-      protocol_profile: 'protocol.minimax-openai-chat.v2',
+      protocol_profile: 'protocol.minimax-m3-openai-chat.v5',
+      catalog_evidence_state: 'locally_conformant',
       provider_context_window: 1_000_000,
       provider_max_output: 524_288,
+      executable_max_output: 131_072,
       default_context_window: 1_000_000,
       default_output_limit: 131_072,
       provider_capabilities: ['reasoning', 'tools', 'vision', 'video', 'prompt_cache'],
-      capabilities: ['reasoning', 'tools'],
+      capabilities: ['streaming', 'reasoning', 'tools', 'function_tools', 'tool_choice_auto'],
+      always_required_capabilities: [],
       aliases: ['MiniMax M3', 'MiniMax-M3'],
       evidence_refs: ['https://platform.minimaxi.com/docs/api-reference/text-chat-openai'],
+    },
+    {
+      id: 'doubao.seed-evolving.api',
+      version: '1.1.0',
+      current: false,
+      label: 'Doubao Seed Evolving Ark Floating Alias Identity',
+      tokenizer_profile_id: 'tokenizer.byte-upper',
+      tokenizer_profile_version: '1.0.0',
+      reasoning_profile: 'reasoning.doubao-documented.v1',
+      cache_usage_profile: 'cache-usage.doubao-documented.v1',
+      protocol_profile: 'protocol.doubao-openai-chat.documented.v1',
+      catalog_evidence_state: 'documented',
+      provider_context_window: 1_048_576,
+      provider_max_output: 262_144,
+      default_context_window: 1_048_576,
+      default_output_limit: 4_096,
+      provider_capabilities: ['mutable_alias'],
+      capabilities: [],
+      always_required_capabilities: [],
+      aliases: ['Doubao Seed Evolving', 'doubao-seed-evolving'],
+      evidence_refs: ['https://ark.volcengine.com/region:cn-beijing/model/comparison'],
     },
   ],
 };
@@ -172,6 +201,7 @@ describe('ModelGovernancePage helpers', () => {
 
 describe('ModelGovernancePage', () => {
   beforeEach(() => {
+    act(() => { Toast.destroyAll(); });
     vi.clearAllMocks();
     window.history.replaceState(null, '', '/model-governance');
     auth.user = null;
@@ -271,7 +301,7 @@ describe('ModelGovernancePage', () => {
     render(<ModelGovernancePage />);
 
     fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
-    expect(await screen.findByText(/自动匹配只接受 Profile 中的精确别名/)).toBeTruthy();
+    expect(await screen.findByText(/自动匹配只接受 Profile 中唯一的精确别名/)).toBeTruthy();
     expect(screen.getByText(/标签本身不会执行能力检测/)).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '模型生命周期' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: '开发者目录可见' })).toBeTruthy();
@@ -293,8 +323,9 @@ describe('ModelGovernancePage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
     fireEvent.change(await screen.findByPlaceholderText('gpt-4o'), { target: { value: 'MiniMax-M3' } });
 
-    expect(await screen.findByText('协议：protocol.minimax-openai-chat.v2')).toBeTruthy();
-    expect(screen.getByText(/UniRouter 已验证：reasoning、tools/)).toBeTruthy();
+    expect(await screen.findByText('协议：protocol.minimax-m3-openai-chat.v5')).toBeTruthy();
+    expect(screen.getByText('Catalog 证据：locally_conformant（不代表 live verified 或 released）')).toBeTruthy();
+    expect(screen.getByText(/UniRouter 已验证：streaming、reasoning、tools、function_tools、tool_choice_auto/)).toBeTruthy();
     expect(screen.getByText(/供应商另有声明但网关尚未放行：vision、video、prompt_cache/)).toBeTruthy();
     expect(await screen.findByText(/规范化：1000000 → 1,000,000 tokens/)).toBeTruthy();
 
@@ -303,9 +334,90 @@ describe('ModelGovernancePage', () => {
       model_name: 'MiniMax-M3',
       context_length: 1_000_000,
       output_limit: 131_072,
-      capability_tags: 'reasoning,tools',
+      capability_tags: 'streaming,reasoning,tools,function_tools,tool_choice_auto',
       execution_profile_id: 'minimax.m3.token-plan',
-      execution_profile_version: '1.0.0',
+      execution_profile_version: '1.3.0',
+    })));
+  });
+
+  it('hides non-current Profile candidates from new model binding and auto-match', async () => {
+    render(<ModelGovernancePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
+    await act(async () => {
+      fireEvent.change(await screen.findByPlaceholderText('gpt-4o'), { target: { value: 'doubao-seed-evolving' } });
+    });
+
+    expect(screen.queryByText('Doubao Seed Evolving Ark Floating Alias Identity')).toBeNull();
+    expect(screen.queryByText(/历史绑定（仅保留）/)).toBeNull();
+  });
+
+  it.each([false, true])('requires an explicit surface for ambiguous GPT aliases (reverse=%s)', async (reverse) => {
+    const candidates = ['chat', 'responses'].map(surface => ({
+      ...EXECUTION_PROFILES.data[1],
+      id: `openai.gpt-5.6-sol.${surface}`, version: '1.3.0',
+      label: `GPT Sol ${surface}`, aliases: ['gpt-5.6-sol'],
+    }));
+    mockGetModelExecutionProfiles.mockResolvedValue({ data: reverse ? [...candidates].reverse() : candidates });
+    render(<ModelGovernancePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
+    await act(async () => {
+      fireEvent.change(await screen.findByPlaceholderText('gpt-4o'), { target: { value: 'gpt-5.6-sol' } });
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '保存' })); });
+    expect(await screen.findByText('模型名称对应多个 API surface，请明确选择执行 Profile')).toBeTruthy();
+    expect(mockCreateModelRegistry).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('combobox', { name: '版本化执行 Profile' }));
+    await act(async () => {
+      fireEvent.click(await screen.findByText('GPT Sol responses · openai.gpt-5.6-sol.responses@1.3.0'));
+    });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '保存' })); });
+    await waitFor(() => expect(mockCreateModelRegistry).toHaveBeenCalledWith(expect.objectContaining({
+      execution_profile_id: 'openai.gpt-5.6-sol.responses', execution_profile_version: '1.3.0',
+    })));
+  });
+
+  it.each([384_000, 4096])('uses executable output rather than request default and permits a lower cap (%s)', async (output) => {
+    const profile = {
+      ...EXECUTION_PROFILES.data[1], id: 'deepseek.v4-flash.api', version: '1.5.0',
+      label: 'DeepSeek V4 Flash', aliases: ['deepseek-v4-flash'],
+      provider_max_output: 384_000, executable_max_output: 384_000, default_output_limit: 32_768,
+    };
+    mockGetModelExecutionProfiles.mockResolvedValue({ data: [
+      { ...profile, version: '1.0.0', current: false }, profile,
+    ] });
+    render(<ModelGovernancePage />);
+    fireEvent.click(await screen.findByRole('button', { name: /新增模型/ }));
+    fireEvent.change(await screen.findByPlaceholderText('gpt-4o'), { target: { value: 'deepseek-v4-flash' } });
+    const outputInput = await screen.findByDisplayValue('384000');
+    expect(await screen.findByText(/请求默认 output 32768/)).toBeTruthy();
+    if (output !== 384_000) fireEvent.change(outputInput, { target: { value: String(output) } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(mockCreateModelRegistry).toHaveBeenCalledWith(expect.objectContaining({
+      output_limit: output, execution_profile_version: '1.5.0',
+    })));
+  });
+
+  it('keeps a non-current Profile visible only for its existing historical binding', async () => {
+    mockGetModelRegistry.mockResolvedValue({
+      data: [{
+        ...REGISTRY.data[0],
+        execution_profile_id: 'doubao.seed-evolving.api',
+        execution_profile_version: '1.1.0',
+      }],
+      total: 1,
+    });
+    render(<ModelGovernancePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '编辑模型' }));
+
+    expect(await screen.findByText('Doubao Seed Evolving Ark Floating Alias Identity')).toBeTruthy();
+    expect(screen.getByText(/历史绑定（仅保留）/)).toBeTruthy();
+    expect(screen.getByDisplayValue('128000')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(mockUpdateModelRegistry).toHaveBeenCalledWith(1, expect.objectContaining({
+      context_length: 128_000, output_limit: 4096,
+      execution_profile_id: 'doubao.seed-evolving.api', execution_profile_version: '1.1.0',
     })));
   });
 
@@ -315,6 +427,7 @@ describe('ModelGovernancePage', () => {
         ...EXECUTION_PROFILES.data[0],
         provider_capabilities: null,
         capabilities: null,
+        always_required_capabilities: null,
         aliases: null,
         evidence_refs: null,
       }],
@@ -332,7 +445,8 @@ describe('ModelGovernancePage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '编辑模型' }));
 
     expect(await screen.findByText('自定义 / 未验证模型')).toBeTruthy();
-    expect(screen.getByText('UniRouter 已验证：仅文本基础合同')).toBeTruthy();
+    expect(screen.getByText('UniRouter 已验证：尚无本地一致性能力')).toBeTruthy();
+    expect(screen.getByText('每次调用必须证明：无')).toBeTruthy();
   });
 
   it('loads model set items from the model set table', async () => {

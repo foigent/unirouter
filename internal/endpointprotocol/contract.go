@@ -14,10 +14,13 @@ import (
 const (
 	ContractVersion = "unirouter.endpoint-protocol.v1"
 
-	ProfileOpenAIResponsesText   = "unirouter.openai.responses.text.v1"
-	ProfileAnthropicMessagesText = "unirouter.anthropic.messages.text.v1"
-	ProfileCohereRerankV2        = "unirouter.cohere.rerank.v2"
-	ProfileOpenAIImageGPT        = "unirouter.openai.images.gpt-image.v1"
+	ProfileOpenAIResponsesText     = "unirouter.openai.responses.text.v1"
+	ProfileOpenAIResponsesTextV2   = "unirouter.openai.responses.text.v2"
+	ProfileAnthropicMessagesText   = "unirouter.anthropic.messages.text.v1"
+	ProfileAnthropicMessagesTextV2 = "unirouter.anthropic.messages.text.v2"
+	ProfileAnthropicMessagesTextV3 = "unirouter.anthropic.messages.text-tools.v3"
+	ProfileCohereRerankV2          = "unirouter.cohere.rerank.v2"
+	ProfileOpenAIImageGPT          = "unirouter.openai.images.gpt-image.v1"
 
 	RuntimeContractOnly      = "local_contract_only"
 	RuntimeRepositoryImageV1 = "repository_local_image_v1"
@@ -111,13 +114,16 @@ type BuildInput struct {
 // profile's strict request validation. It binds response checks to the exact
 // request semantics without becoming a log or API payload.
 type Binding struct {
-	profileID      string
-	profileVersion string
-	requestedModel string
-	mappedModel    string
-	documentCount  int
-	topN           int
-	outputCount    int
+	profileID       string
+	profileVersion  string
+	requestedModel  string
+	mappedModel     string
+	streaming       bool
+	documentCount   int
+	topN            int
+	outputCount     int
+	publicContract  *PublicRequestContract
+	publicSemantics PublicInvocationSemantics
 }
 
 type UnitObservation struct {
@@ -160,7 +166,10 @@ type Registry struct {
 func NewRegistry() *Registry {
 	return newRegistry(
 		openAIResponsesProfile{},
+		openAIResponsesProfileV2{},
 		anthropicMessagesProfile{},
+		anthropicMessagesProfileV2{},
+		anthropicMessagesProfileV3{},
 		cohereRerankProfile{},
 		openAIImageProfile{},
 	)

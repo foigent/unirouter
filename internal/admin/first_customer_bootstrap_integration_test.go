@@ -139,6 +139,54 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 	require.EqualValues(t, 1, unchangedProjects)
 
 	seedFreshBootstrapReleaseEvidence(t, pool)
+	for _, corruption := range []struct {
+		name, table, trigger, statement, failedCheck string
+	}{
+		{
+			name:    "same-count support provenance drift",
+			table:   "model_operation_execution_support_bindings",
+			trigger: "model_operation_execution_support_bindings_immutable",
+			statement: `UPDATE model_operation_execution_support_bindings
+			 SET introduced_migration='000999_unapproved_fixture'
+			 WHERE protocol_profile_id='unirouter.openai.responses.text.v2'`,
+			failedCheck: "check fresh compiled execution support: got 4 want 5",
+		},
+		{
+			name:    "extra support tuple",
+			table:   "model_operation_execution_support_bindings",
+			trigger: "model_operation_execution_support_bindings_immutable",
+			statement: `INSERT INTO model_operation_execution_support_bindings (
+			 operation_id,public_path,protocol_profile_id,protocol_profile_version,
+			 executor_contract_version,introduced_migration)
+			 VALUES ('fixture.future.v1','/v1/future','fixture.future','1.0.0',
+			 'fixture.future-executor.v1','000999_unapproved_fixture')`,
+			failedCheck: "check fresh compiled execution support count: got 6 want 5",
+		},
+		{
+			name:    "missing public extension",
+			table:   "model_operation_public_execution_contract_extensions",
+			trigger: "model_operation_public_execution_contract_extensions_immutable",
+			statement: `DELETE FROM model_operation_public_execution_contract_extensions
+			 WHERE protocol_profile_id='unirouter.anthropic.messages.text-tools.v3'`,
+			failedCheck: "check fresh public execution extension: got 4 want 5",
+		},
+	} {
+		t.Run(corruption.name, func(t *testing.T) {
+			tx, err := pool.Begin(t.Context())
+			require.NoError(t, err)
+			defer func() { _ = tx.Rollback(t.Context()) }()
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/first-customer", nil)
+			require.NoError(t, handler.verifyFirstCustomerFreshMigrationCheckpoint(request, tx, adminID, adminOrgID))
+			// Fault injection is transaction-local in an isolated database. Rollback
+			// restores both the immutable trigger and the exact migration-owned rows.
+			_, err = tx.Exec(t.Context(), "ALTER TABLE "+corruption.table+" DISABLE TRIGGER "+corruption.trigger)
+			require.NoError(t, err)
+			_, err = tx.Exec(t.Context(), corruption.statement)
+			require.NoError(t, err)
+			require.ErrorContains(t, handler.verifyFirstCustomerFreshMigrationCheckpoint(request, tx, adminID, adminOrgID), corruption.failedCheck)
+			require.NoError(t, tx.Rollback(t.Context()))
+		})
+	}
 	response := serve("fresh-bootstrap-client-001")
 	require.Equal(t, http.StatusCreated, response.Code, response.Body.String())
 	var created firstCustomerBootstrapResult
@@ -339,7 +387,7 @@ func TestFirstCustomerBootstrapFailsClosedOnSchemaDriftIntegration(t *testing.T)
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
-		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000085_future_contract')`)
+		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000088_future_contract')`)
 		require.NoError(t, err)
 
 		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-002", "First Customer")

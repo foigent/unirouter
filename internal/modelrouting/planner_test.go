@@ -267,6 +267,242 @@ func TestNewProtocolOperationsRequireProductionApprovedEvidence(t *testing.T) {
 	}
 }
 
+func TestCanonicalEligibilityRechecksProfileProductIdentityAtRuntime(t *testing.T) {
+	value := canonicalFixture()
+	value.ExecutionProfileID = "qwen.3.8-max.api"
+	value.ExecutionProfileVersion = "1.7.0"
+	candidate := value.Canonical[0]
+	candidate.Provider = "dashscope"
+	candidate.BaseURL = "https://workspace-123.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+	candidate.AdapterConfig = json.RawMessage(`{}`)
+	candidate.UpstreamModel = "qwen3.8-max"
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); !eligible || reason != "" {
+		t.Fatalf("valid Qwen runtime binding eligibility=(%t,%q), want admitted", eligible, reason)
+	}
+	candidate.BaseURL = "https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+		t.Fatalf("cross-region Qwen runtime binding eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+	}
+	candidate.BaseURL = "https://workspace-123.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+	candidate.UpstreamModel = "qwen3.7-plus"
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+		t.Fatalf("wrong-upstream Qwen runtime binding eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+	}
+}
+
+func TestCanonicalEligibilityRejectsForgedOpenAIEndpointAtRuntime(t *testing.T) {
+	value := canonicalFixture()
+	value.ExecutionProfileID = "openai.gpt-5.6-sol.chat"
+	value.ExecutionProfileVersion = "1.0.0"
+	candidate := value.Canonical[0]
+	candidate.Provider = "openai"
+	candidate.BaseURL = "https://api.openai.com/v1"
+	candidate.AdapterConfig = json.RawMessage(`{}`)
+	candidate.UpstreamModel = "gpt-5.6-sol"
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); !eligible || reason != "" {
+		t.Fatalf("valid OpenAI runtime binding eligibility=(%t,%q), want admitted", eligible, reason)
+	}
+	candidate.BaseURL = "https://arbitrary.example/v1"
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+		t.Fatalf("forged OpenAI runtime binding eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+	}
+}
+
+func TestCanonicalEligibilityPreservesHistoricalOpenAIResponsesOrigin(t *testing.T) {
+	value := publicSnapshotFixture(t, modelprofile.OperationOpenAIResponses, true)
+	value.ExecutionProfileID = "openai.gpt-5.6-sol.api"
+	value.ExecutionProfileVersion = "1.0.0"
+	candidate := value.Canonical[0]
+	candidate.Provider = "openai"
+	candidate.BaseURL = "https://api.openai.com"
+	candidate.AdapterType = "openai_compatible"
+	candidate.AdapterConfig = json.RawMessage(`{}`)
+	candidate.UpstreamModel = "gpt-5.6-sol"
+	for index := range candidate.Bindings {
+		candidate.Bindings[index].Probe.HTTPSOrigin = candidate.BaseURL
+	}
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); !eligible || reason != "" {
+		t.Fatalf("valid historical Responses binding eligibility=(%t,%q), want admitted", eligible, reason)
+	}
+	candidate.BaseURL = "https://api.openai.com/v1"
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+		t.Fatalf("pathful historical Responses binding eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+	}
+}
+
+func TestCanonicalEligibilityBindsCurrentGPT56ResponsesToExactEndpointProtocol(t *testing.T) {
+	for _, model := range []string{"sol", "terra", "luna"} {
+		t.Run(model, func(t *testing.T) {
+			value := publicSnapshotFixture(t, modelprofile.OperationOpenAIResponses, true)
+			profileID := "openai.gpt-5.6-" + model + ".responses"
+			current, ok := modelprofile.MatchForSurface("gpt-5.6-"+model, modelprofile.APISurfaceOpenAIResponses)
+			if !ok {
+				t.Fatalf("current profile %q not found", profileID)
+			}
+			if current.ID != profileID {
+				t.Fatalf("current Responses profile ID = %q, want %q", current.ID, profileID)
+			}
+			value.ExecutionProfileID = current.ID
+			value.ExecutionProfileVersion = current.Version
+			rebindPublicSnapshotFixtureToProfile(t, &value, current)
+			candidate := value.Canonical[0]
+			candidate.Provider = "openai"
+			candidate.BaseURL = "https://api.openai.com"
+			candidate.AdapterType = "openai_compatible"
+			candidate.AdapterConfig = json.RawMessage(`{}`)
+			candidate.UpstreamModel = "gpt-5.6-" + model
+			for index := range candidate.Bindings {
+				candidate.Bindings[index].Probe.HTTPSOrigin = candidate.BaseURL
+			}
+			if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); !eligible || reason != "" {
+				t.Fatalf("exact %s Responses runtime binding eligibility=(%t,%q), want admitted", model, eligible, reason)
+			}
+
+			mismatched := candidate
+			mismatched.ProtocolProfileVersion = "9.9.9"
+			manifest := *candidate.Manifest
+			manifest.ProtocolProfileVersion = mismatched.ProtocolProfileVersion
+			mismatched.Manifest = &manifest
+			if eligible, reason := canonicalEligibility(value, mismatched, mismatched.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+				t.Fatalf("mismatched %s Responses endpoint protocol eligibility=(%t,%q), want profile identity exclusion", model, eligible, reason)
+			}
+		})
+	}
+}
+
+func rebindPublicSnapshotFixtureToProfile(t *testing.T, value *snapshot, profile modelprofile.Profile) {
+	t.Helper()
+	if len(value.Canonical) != 1 || len(value.Manifest) != 1 {
+		t.Fatalf("public snapshot fixture cardinality = (%d candidates, %d items), want (1, 1)", len(value.Canonical), len(value.Manifest))
+	}
+	candidate := &value.Canonical[0]
+	compiled, err := modelqualification.CompiledBindingFor(
+		candidate.OperationID,
+		profile.ProtocolProfile,
+		profile.ProtocolProfileVersion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	public, err := modelqualification.CompiledPublicBindingFor(compiled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate.ProtocolProfileID = public.ProfileID
+	candidate.ProtocolProfileVersion = public.ProfileVersion
+	candidate.PublicPath = public.PublicPath
+	candidate.ExecutorContractVersion = public.ExecutorContractVersion
+	candidate.DeliveryContractVersion = public.DeliveryContractVersion
+	candidate.ChargeContractVersion = public.ChargeContractVersion
+	candidate.IdempotencyContractVersion = public.IdempotencyContractVersion
+	for index := range candidate.Bindings {
+		probe := &candidate.Bindings[index].Probe
+		probe.ProfileID = public.ProfileID
+		probe.ProfileVersion = public.ProfileVersion
+		probe.PublicPath = public.PublicPath
+		probe.ExecutorContractVersion = public.ExecutorContractVersion
+	}
+	item := &value.Manifest[0]
+	item.ProtocolProfileID = public.ProfileID
+	item.ProtocolProfileVersion = public.ProfileVersion
+	item.PublicPath = public.PublicPath
+	item.ExecutorContractVersion = public.ExecutorContractVersion
+	item.DeliveryContractVersion = public.DeliveryContractVersion
+	item.ChargeContractVersion = public.ChargeContractVersion
+	item.IdempotencyContractVersion = public.IdempotencyContractVersion
+	candidate.Manifest = item
+	value.Slot.Selected.RouteItemsHash = manifestDigest(value.Manifest)
+	value.Slot.Stable = value.Slot.Selected
+}
+
+func TestCanonicalEligibilityRejectsForgedGeminiEndpointAtRuntime(t *testing.T) {
+	value := canonicalFixture()
+	value.ExecutionProfileID = "gemini.3.7-flash.api"
+	value.ExecutionProfileVersion = "1.6.0"
+	candidate := value.Canonical[0]
+	candidate.Provider = "gemini"
+	candidate.BaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
+	candidate.AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)
+	candidate.UpstreamModel = "gemini-3.7-flash"
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); !eligible || reason != "" {
+		t.Fatalf("valid Gemini runtime binding eligibility=(%t,%q), want admitted", eligible, reason)
+	}
+	candidate.AdapterConfig = json.RawMessage(`{}`)
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+		t.Fatalf("default Gemini path mode eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+	}
+	candidate.AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)
+	candidate.BaseURL = "https://arbitrary.example/v1beta/openai"
+	if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+		t.Fatalf("forged Gemini runtime binding eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+	}
+}
+
+func TestCanonicalEligibilityRejectsForgedDeepSeekEndpointAtRuntime(t *testing.T) {
+	for _, test := range []struct {
+		profileID, upstreamModel string
+	}{
+		{profileID: "deepseek.v4-flash.api", upstreamModel: "deepseek-v4-flash"},
+		{profileID: "deepseek.v4-pro.api", upstreamModel: "deepseek-v4-pro"},
+	} {
+		t.Run(test.profileID, func(t *testing.T) {
+			value := canonicalFixture()
+			value.ExecutionProfileID = test.profileID
+			value.ExecutionProfileVersion = "1.2.0"
+			candidate := value.Canonical[0]
+			candidate.Provider = "deepseek"
+			candidate.BaseURL = "https://api.deepseek.com"
+			candidate.AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)
+			candidate.UpstreamModel = test.upstreamModel
+			if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); !eligible || reason != "" {
+				t.Fatalf("valid DeepSeek runtime binding eligibility=(%t,%q), want admitted", eligible, reason)
+			}
+			candidate.AdapterConfig = json.RawMessage(`{}`)
+			if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+				t.Fatalf("default path mode eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+			}
+			candidate.AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)
+			candidate.BaseURL = "https://arbitrary.example"
+			if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+				t.Fatalf("forged DeepSeek runtime binding eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+			}
+		})
+	}
+}
+
+func TestCanonicalEligibilitySeparatesKimiPlatformFromCodingSubscriptionAtRuntime(t *testing.T) {
+	for _, test := range []struct {
+		profileID, version, upstreamModel string
+	}{
+		{profileID: "kimi.k2.6.api", version: "1.6.0", upstreamModel: "kimi-k2.6"},
+		{profileID: "kimi.k2.7-code.api", version: "1.2.0", upstreamModel: "kimi-k2.7-code"},
+		{profileID: "kimi.k3.api", version: "1.6.0", upstreamModel: "kimi-k3"},
+	} {
+		t.Run(test.profileID, func(t *testing.T) {
+			value := canonicalFixture()
+			value.ExecutionProfileID = test.profileID
+			value.ExecutionProfileVersion = test.version
+			candidate := value.Canonical[0]
+			candidate.Provider = "kimi"
+			candidate.BaseURL = "https://api.moonshot.cn/v1"
+			candidate.AdapterConfig = json.RawMessage(`{}`)
+			candidate.UpstreamModel = test.upstreamModel
+			if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); !eligible || reason != "" {
+				t.Fatalf("valid Kimi platform binding eligibility=(%t,%q), want admitted", eligible, reason)
+			}
+			candidate.BaseURL = "https://api.kimi.com/coding/v1"
+			if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+				t.Fatalf("Kimi coding endpoint eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+			}
+			candidate.BaseURL = "https://api.moonshot.cn/v1"
+			candidate.UpstreamModel = "kimi-for-coding"
+			if eligible, reason := canonicalEligibility(value, candidate, candidate.OperationID, true); eligible || reason != "profile_product_identity_mismatch" {
+				t.Fatalf("Kimi coding model ID eligibility=(%t,%q), want product identity exclusion", eligible, reason)
+			}
+		})
+	}
+}
+
 func TestPublicPlannerReturnsOnlyExplicitEvidenceV2FromExactM77Item(t *testing.T) {
 	for _, operation := range []string{"openai.responses.v1", "anthropic.messages.v1"} {
 		t.Run(operation, func(t *testing.T) {
@@ -392,6 +628,492 @@ func TestCanonicalEvidenceBindsOperationProtocolAndCapabilities(t *testing.T) {
 	}
 }
 
+func TestCapabilityEvidenceHashIsIndependentOfTimestampLocation(t *testing.T) {
+	value := canonicalFixture()
+	for index := range value.Canonical {
+		for id, capability := range value.Canonical[index].Capabilities {
+			// PostgreSQL timestamptz scans can use the process's local timezone.
+			localized := capability.VerifiedAt.In(time.FixedZone("UTC+8", 8*60*60)).Add(123 * time.Nanosecond)
+			capability.VerifiedAt = &localized
+			value.Canonical[index].Capabilities[id] = capability
+		}
+	}
+	plan, err := planFixture(t, value, requestFor(ModeCanonical, "timezone-evidence"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range plan.Routes {
+		if _, err := executionevidence.Normalize(route.Evidence); err != nil {
+			t.Fatalf("canonical capability hash must survive evidence normalization: %v", err)
+		}
+	}
+}
+
+func TestInvalidCapabilityEvidenceCannotReceiveAnEmptyListDigest(t *testing.T) {
+	if got := capabilityEvidenceDigest([]string{"tools"}, map[string]capabilitySnapshot{}); got != "" {
+		t.Fatalf("missing capability evidence received a usable digest: %s", got)
+	}
+	if got := capabilityEvidenceDigest(nil, nil); got == "" {
+		t.Fatal("the valid empty requirement set must retain its canonical digest")
+	}
+}
+
+func TestCanonicalRoutingKeepsStrictAndGenericJSONSchemaCapabilitiesDistinct(t *testing.T) {
+	value := canonicalFixture()
+	verified := value.DBNow.Add(-time.Minute)
+	for index := range value.Canonical {
+		value.Canonical[index].Capabilities[modelprofile.CapabilityStrictJSONSchema] = capabilitySnapshot{
+			ID: modelprofile.CapabilityStrictJSONSchema, SupportState: "enabled", EvidenceState: "production_approved",
+			EvidenceRef: "fixture://capability/strict-json-schema", VerifiedAt: &verified, Revision: 6,
+		}
+	}
+	request := requestFor(ModeCanonical, "strict-json-schema")
+	request.InvocationCapabilities = invocationRequirements(modelprofile.CapabilityStrictJSONSchema)
+	plan, err := planFixture(t, value, request)
+	if err != nil || len(plan.Routes) == 0 {
+		t.Fatalf("strict JSON Schema route = %#v, %v", plan, err)
+	}
+
+	request.SelectionKey = "generic-json-schema"
+	request.InvocationCapabilities = invocationRequirements(modelprofile.CapabilityJSONSchema)
+	if plan, err = planFixture(t, value, request); !errors.Is(err, ErrNoRoute) || len(plan.Routes) != 0 {
+		t.Fatalf("generic JSON Schema must not use a strict-only route: %#v, %v", plan, err)
+	}
+}
+
+func TestCanonicalRoutingRequiresEveryQwenExtensionCapabilityEvidence(t *testing.T) {
+	required := []string{
+		modelprofile.CapabilityReasoning,
+		modelprofile.CapabilityStreaming,
+		modelprofile.CapabilityTools,
+		modelprofile.CapabilityToolStream,
+	}
+	buildFixture := func(omitted string) snapshot {
+		value := canonicalFixture()
+		verified := value.DBNow.Add(-time.Minute)
+		for index := range value.Canonical {
+			if omitted != "" {
+				delete(value.Canonical[index].Capabilities, omitted)
+			}
+			for _, capability := range required {
+				if capability == omitted {
+					continue
+				}
+				value.Canonical[index].Capabilities[capability] = capabilitySnapshot{
+					ID: capability, SupportState: "enabled", EvidenceState: "production_approved",
+					EvidenceRef: "fixture://capability/" + capability, VerifiedAt: &verified, Revision: 6,
+				}
+			}
+		}
+		return value
+	}
+
+	request := requestFor(ModeCanonical, "qwen-extensions")
+	request.InvocationCapabilities = invocationRequirements(required...)
+	plan, err := planFixture(t, buildFixture(""), request)
+	if err != nil || len(plan.Routes) == 0 {
+		t.Fatalf("fully evidenced Qwen extension route = %#v, %v", plan, err)
+	}
+
+	for _, omitted := range required {
+		t.Run("missing_"+omitted, func(t *testing.T) {
+			plan, err := planFixture(t, buildFixture(omitted), request)
+			if !errors.Is(err, ErrNoRoute) || len(plan.Routes) != 0 {
+				t.Fatalf("route without %s evidence = %#v, %v", omitted, plan, err)
+			}
+		})
+	}
+}
+
+func TestExactPublicProfileSupportedCapabilitiesDoNotBecomeInvocationRequirements(t *testing.T) {
+	reasoning, ok := modelprofile.Lookup("openai.gpt-5.6-sol.responses", "1.2.0")
+	if !ok {
+		t.Fatal("Sol Responses reasoning profile missing")
+	}
+	got, err := ResolveCapabilityRequirements(reasoning, Request{})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("supported capability became invocation requirement: %v, %v", got, err)
+	}
+	core, ok := modelprofile.Lookup("openai.gpt-5.6-sol.responses", "1.1.0")
+	if !ok {
+		t.Fatal("Sol Responses core profile missing")
+	}
+	got, err = ResolveCapabilityRequirements(core, Request{})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("historical core acquired new requirements: %v, %v", got, err)
+	}
+}
+
+func TestCapabilityRequirementsHaveOneNormalizedAuthorityWithOriginSet(t *testing.T) {
+	profile, ok := modelprofile.Lookup("openai.gpt-5.6-sol.responses", "1.2.0")
+	if !ok {
+		t.Fatal("Sol Responses reasoning profile missing")
+	}
+	profile.AlwaysRequiredCapabilities = []string{modelprofile.CapabilityReasoningEffort}
+	request := Request{InvocationCapabilities: []CapabilityRequirement{
+		{CapabilityID: modelprofile.CapabilityReasoningEffort, Origins: []string{CapabilityOriginProviderDefault}},
+		{CapabilityID: modelprofile.CapabilityReasoningEffort, Origins: []string{CapabilityOriginExplicitRequest, CapabilityOriginProviderDefault}},
+	}}
+
+	got, err := ResolveCapabilityRequirements(profile, request)
+	if err != nil {
+		t.Fatalf("resolveCapabilityRequirements() error = %v", err)
+	}
+	want := []CapabilityRequirement{{
+		CapabilityID: modelprofile.CapabilityReasoningEffort,
+		Origins: []string{
+			CapabilityOriginExplicitRequest,
+			CapabilityOriginProfileAlwaysRequired,
+			CapabilityOriginProviderDefault,
+		},
+	}}
+	if !slices.EqualFunc(got, want, func(left, right CapabilityRequirement) bool {
+		return left.CapabilityID == right.CapabilityID && slices.Equal(left.Origins, right.Origins)
+	}) {
+		t.Fatalf("normalized capability requirements = %#v, want %#v", got, want)
+	}
+}
+
+func TestFunctionToolChoiceConstraintIsNormalizedOnceAndBoundIntoPlanHash(t *testing.T) {
+	profile, ok := modelprofile.Lookup("doubao.seed-2.1-pro.api", "1.6.0")
+	if !ok {
+		t.Fatal("Doubao Seed 2.1 Pro exact tools profile missing")
+	}
+	profile.AlwaysRequiredCapabilities = nil
+	request := Request{InvocationCapabilities: []CapabilityRequirement{
+		{
+			CapabilityID: modelprofile.CapabilityToolChoiceAuto,
+			Origins:      []string{CapabilityOriginProviderDefault},
+			FunctionToolChoice: &FunctionToolChoiceConstraint{
+				DeclaredFunctionNames: []string{"zeta", "alpha", "alpha"},
+			},
+		},
+		{
+			CapabilityID: modelprofile.CapabilityToolChoiceAuto,
+			Origins:      []string{CapabilityOriginExplicitRequest},
+			FunctionToolChoice: &FunctionToolChoiceConstraint{
+				DeclaredFunctionNames: []string{"alpha", "zeta"},
+			},
+		},
+	}}
+	got, err := ResolveCapabilityRequirements(profile, request)
+	if err != nil {
+		t.Fatalf("normalize function tool choice: %v", err)
+	}
+	want := []CapabilityRequirement{{
+		CapabilityID: modelprofile.CapabilityToolChoiceAuto,
+		Origins:      []string{CapabilityOriginExplicitRequest, CapabilityOriginProviderDefault},
+		FunctionToolChoice: &FunctionToolChoiceConstraint{
+			DeclaredFunctionNames: []string{"alpha", "zeta"},
+		},
+	}}
+	if !slices.EqualFunc(got, want, func(left, right CapabilityRequirement) bool {
+		return left.CapabilityID == right.CapabilityID && slices.Equal(left.Origins, right.Origins) &&
+			equalFunctionToolChoiceConstraint(left.FunctionToolChoice, right.FunctionToolChoice)
+	}) {
+		t.Fatalf("normalized function tool choice = %#v, want %#v", got, want)
+	}
+
+	value := canonicalFixture()
+	value.CapabilityRequirements = cloneCapabilityRequirements(got)
+	value.CapabilitiesResolved = true
+	withConstraint, err := snapshotDigest(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	without := canonicalFixture()
+	without.CapabilityRequirements = cloneCapabilityRequirements(got)
+	without.CapabilityRequirements[0].FunctionToolChoice = nil
+	without.CapabilitiesResolved = true
+	withoutConstraint, err := snapshotDigest(without)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withConstraint == withoutConstraint {
+		t.Fatal("function tool choice constraint did not change the Plan snapshot hash")
+	}
+
+	cloned := cloneCapabilityRequirements(got)
+	cloned[0].FunctionToolChoice.DeclaredFunctionNames[0] = "mutated"
+	if got[0].FunctionToolChoice.DeclaredFunctionNames[0] != "alpha" {
+		t.Fatal("capability constraint clone aliases the Plan authority")
+	}
+}
+
+func TestFunctionToolChoiceNoneUsesFunctionToolsRequirementInTheSamePlanSnapshot(t *testing.T) {
+	profile, ok := modelprofile.Lookup("doubao.seed-2.1-pro.api", "1.6.0")
+	if !ok {
+		t.Fatal("Doubao Seed 2.1 Pro exact tools profile missing")
+	}
+	profile.AlwaysRequiredCapabilities = nil
+	got, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: []CapabilityRequirement{{
+		CapabilityID: modelprofile.CapabilityFunctionTools,
+		Origins:      []string{CapabilityOriginExplicitRequest},
+		FunctionToolChoice: &FunctionToolChoiceConstraint{
+			DeclaredFunctionNames: []string{"zeta", "alpha", "alpha"},
+		},
+	}}})
+	if err != nil {
+		t.Fatalf("normalize function tool none constraint: %v", err)
+	}
+	want := []CapabilityRequirement{{
+		CapabilityID: modelprofile.CapabilityFunctionTools,
+		Origins:      []string{CapabilityOriginExplicitRequest},
+		FunctionToolChoice: &FunctionToolChoiceConstraint{
+			DeclaredFunctionNames: []string{"alpha", "zeta"},
+		},
+	}}
+	if !slices.EqualFunc(got, want, func(left, right CapabilityRequirement) bool {
+		return left.CapabilityID == right.CapabilityID && slices.Equal(left.Origins, right.Origins) &&
+			equalFunctionToolChoiceConstraint(left.FunctionToolChoice, right.FunctionToolChoice)
+	}) {
+		t.Fatalf("normalized function tool none constraint = %#v, want %#v", got, want)
+	}
+
+	got, err = ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: []CapabilityRequirement{{
+		CapabilityID:       modelprofile.CapabilityFunctionTools,
+		Origins:            []string{CapabilityOriginExplicitRequest},
+		FunctionToolChoice: &FunctionToolChoiceConstraint{},
+	}}})
+	if err != nil || len(got) != 1 || got[0].FunctionToolChoice == nil {
+		t.Fatalf("empty declared set must remain an explicit none constraint: got=%#v err=%v", got, err)
+	}
+}
+
+func TestFunctionToolChoiceConstraintConflictsFailClosed(t *testing.T) {
+	profile, ok := modelprofile.Lookup("doubao.seed-2.1-pro.api", "1.6.0")
+	if !ok {
+		t.Fatal("Doubao Seed 2.1 Pro exact tools profile missing")
+	}
+	profile.AlwaysRequiredCapabilities = nil
+	constraint := func(names []string, selected string) *FunctionToolChoiceConstraint {
+		return &FunctionToolChoiceConstraint{DeclaredFunctionNames: names, SelectedFunctionName: selected}
+	}
+	tests := []struct {
+		name         string
+		requirements []CapabilityRequirement
+	}{
+		{name: "missing constraint", requirements: []CapabilityRequirement{{CapabilityID: modelprofile.CapabilityToolChoiceAuto, Origins: []string{CapabilityOriginProviderDefault}}}},
+		{name: "constraint on non-choice", requirements: []CapabilityRequirement{{CapabilityID: modelprofile.CapabilityTools, Origins: []string{CapabilityOriginExplicitRequest}, FunctionToolChoice: constraint([]string{"lookup"}, "")}}},
+		{name: "named selection missing", requirements: []CapabilityRequirement{{CapabilityID: modelprofile.CapabilityToolChoiceNamed, Origins: []string{CapabilityOriginExplicitRequest}, FunctionToolChoice: constraint([]string{"lookup"}, "")}}},
+		{name: "named selection undeclared", requirements: []CapabilityRequirement{{CapabilityID: modelprofile.CapabilityToolChoiceNamed, Origins: []string{CapabilityOriginExplicitRequest}, FunctionToolChoice: constraint([]string{"lookup"}, "other")}}},
+		{name: "auto carries selection", requirements: []CapabilityRequirement{{CapabilityID: modelprofile.CapabilityToolChoiceAuto, Origins: []string{CapabilityOriginExplicitRequest}, FunctionToolChoice: constraint([]string{"lookup"}, "lookup")}}},
+		{name: "control character in declared name", requirements: []CapabilityRequirement{{CapabilityID: modelprofile.CapabilityToolChoiceAuto, Origins: []string{CapabilityOriginExplicitRequest}, FunctionToolChoice: constraint([]string{"look\tup"}, "")}}},
+		{name: "duplicate conflict", requirements: []CapabilityRequirement{
+			{CapabilityID: modelprofile.CapabilityToolChoiceReq, Origins: []string{CapabilityOriginExplicitRequest}, FunctionToolChoice: constraint([]string{"lookup"}, "")},
+			{CapabilityID: modelprofile.CapabilityToolChoiceReq, Origins: []string{CapabilityOriginProviderDefault}, FunctionToolChoice: constraint([]string{"other"}, "")},
+		}},
+		{name: "multiple choices", requirements: []CapabilityRequirement{
+			{CapabilityID: modelprofile.CapabilityToolChoiceAuto, Origins: []string{CapabilityOriginProviderDefault}, FunctionToolChoice: constraint([]string{"lookup"}, "")},
+			{CapabilityID: modelprofile.CapabilityToolChoiceReq, Origins: []string{CapabilityOriginExplicitRequest}, FunctionToolChoice: constraint([]string{"lookup"}, "")},
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: test.requirements})
+			if !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("ResolveCapabilityRequirements() error = %v, want invalid request", err)
+			}
+		})
+	}
+}
+
+func TestDoubaoImplicitCacheUsesOneAlwaysRequiredCapabilityAuthority(t *testing.T) {
+	profile, ok := modelprofile.Lookup("doubao.seed-evolving.api", "1.8.0")
+	if !ok {
+		t.Fatal("Doubao implicit-cache candidate profile missing")
+	}
+	got, err := ResolveCapabilityRequirements(profile, Request{})
+	if err != nil {
+		t.Fatalf("resolve implicit-cache requirements: %v", err)
+	}
+	want := []CapabilityRequirement{
+		{CapabilityID: modelprofile.CapabilityCacheReadUsage, Origins: []string{CapabilityOriginProfileAlwaysRequired}},
+		{CapabilityID: modelprofile.CapabilityPromptCache, Origins: []string{CapabilityOriginProfileAlwaysRequired}},
+	}
+	if !slices.EqualFunc(got, want, func(left, right CapabilityRequirement) bool {
+		return left.CapabilityID == right.CapabilityID && slices.Equal(left.Origins, right.Origins)
+	}) {
+		t.Fatalf("implicit-cache capability requirements = %#v, want %#v", got, want)
+	}
+}
+
+func TestCapabilityRequirementsRejectUnsupportedAndUntrustedOrigins(t *testing.T) {
+	profile, ok := modelprofile.Lookup("openai.gpt-5.6-sol.responses", "1.2.0")
+	if !ok {
+		t.Fatal("Sol Responses reasoning profile missing")
+	}
+	tests := []CapabilityRequirement{
+		{CapabilityID: modelprofile.CapabilityTools, Origins: []string{CapabilityOriginExplicitRequest}},
+		{CapabilityID: modelprofile.CapabilityReasoningEffort, Origins: []string{"client_claim"}},
+	}
+	for _, requirement := range tests {
+		_, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: []CapabilityRequirement{requirement}})
+		if !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("requirement %#v error = %v, want invalid request", requirement, err)
+		}
+	}
+}
+
+func TestHistoricalGenericProcessingTierCannotAcquireUnsupportedInvocationSemantics(t *testing.T) {
+	value := canonicalFixture()
+	value.ExecutionProfileID = "deepseek.v4-pro.api"
+	value.ExecutionProfileVersion = "1.1.0"
+	value.Canonical = value.Canonical[:1]
+	value.Manifest = value.Manifest[:1]
+	candidate := &value.Canonical[0]
+	candidate.Provider = "deepseek"
+	candidate.BaseURL = "https://provider.deepseek.invalid/v1"
+	candidate.AdapterType = "openai_compatible"
+	candidate.AdapterConfig = json.RawMessage(`{}`)
+	candidate.AdapterConfigDigest = adapterDigest(candidate.AdapterConfig)
+	candidate.UpstreamModel = "deepseek-v4-pro"
+	for index := range candidate.Bindings {
+		candidate.Bindings[index].Probe.UpstreamModel = candidate.UpstreamModel
+	}
+	delete(candidate.Capabilities, modelprofile.CapabilityServiceTier)
+	candidate.Manifest = &value.Manifest[0]
+	value.Slot.Selected.RouteItemsHash = manifestDigest(value.Manifest)
+	value.Slot.Selected.RouteItemsCount = len(value.Manifest)
+	value.Slot.Stable = value.Slot.Selected
+
+	request := requestFor(ModeCanonical, "historical-generic-tier")
+	request.InvocationCapabilities = invocationRequirements(modelprofile.CapabilityTools, modelprofile.CapabilityServiceTier)
+	plan, err := planFixture(t, value, request)
+	if !errors.Is(err, ErrInvalidRequest) || len(plan.Routes) != 0 {
+		t.Fatalf("historical profile accepted unsupported tier semantics: %#v, %v", plan, err)
+	}
+}
+
+func TestCurrentProcessingTierStillRequiresProductionCapabilityEvidence(t *testing.T) {
+	buildFixture := func(withEvidence bool) snapshot {
+		value := canonicalFixture()
+		value.ExecutionProfileID = "gemini.3.7-flash.api"
+		value.ExecutionProfileVersion = "1.7.0"
+		value.Canonical = value.Canonical[:1]
+		value.Manifest = value.Manifest[:1]
+		candidate := &value.Canonical[0]
+		candidate.Provider = "gemini"
+		candidate.BaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
+		candidate.AdapterType = "openai_compatible"
+		candidate.AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)
+		candidate.AdapterConfigDigest = adapterDigest(candidate.AdapterConfig)
+		candidate.UpstreamModel = "gemini-3.7-flash"
+		for index := range candidate.Bindings {
+			candidate.Bindings[index].Probe.UpstreamModel = candidate.UpstreamModel
+		}
+		delete(candidate.Capabilities, modelprofile.CapabilityServiceTier)
+		if withEvidence {
+			verified := value.DBNow.Add(-time.Minute)
+			candidate.Capabilities[modelprofile.CapabilityServiceTier] = capabilitySnapshot{
+				ID: modelprofile.CapabilityServiceTier, SupportState: "enabled", EvidenceState: "production_approved",
+				EvidenceRef: "fixture://capability/service-tier", VerifiedAt: &verified, Revision: 6,
+			}
+		}
+		candidate.Manifest = &value.Manifest[0]
+		value.Slot.Selected.RouteItemsHash = manifestDigest(value.Manifest)
+		value.Slot.Selected.RouteItemsCount = len(value.Manifest)
+		value.Slot.Stable = value.Slot.Selected
+		return value
+	}
+
+	request := requestFor(ModeCanonical, "current-tier")
+	request.InvocationCapabilities = invocationRequirements(modelprofile.CapabilityTools, modelprofile.CapabilityServiceTier)
+	if plan, err := planFixture(t, buildFixture(false), request); !errors.Is(err, ErrNoRoute) || len(plan.Routes) != 0 {
+		t.Fatalf("current tier route without evidence = %#v, %v", plan, err)
+	}
+	plan, err := planFixture(t, buildFixture(true), request)
+	if err != nil || len(plan.Routes) == 0 || !slices.Contains(plan.RequiredCapabilities, modelprofile.CapabilityServiceTier) {
+		t.Fatalf("current evidenced tier route = %#v, %v", plan, err)
+	}
+}
+
+func TestCanonicalRoutingRequiresSearchRequestCapabilityEvidence(t *testing.T) {
+	value := canonicalFixture()
+	verified := value.DBNow.Add(-time.Minute)
+	for index := range value.Canonical {
+		value.Canonical[index].Capabilities[modelprofile.CapabilityBuiltinSearchReq] = capabilitySnapshot{
+			ID: modelprofile.CapabilityBuiltinSearchReq, SupportState: "enabled", EvidenceState: "production_approved",
+			EvidenceRef: "fixture://capability/builtin-web-search-request", VerifiedAt: &verified, Revision: 6,
+		}
+	}
+	request := requestFor(ModeCanonical, "search-request")
+	request.InvocationCapabilities = invocationRequirements(modelprofile.CapabilityBuiltinSearchReq)
+	plan, err := planFixture(t, value, request)
+	if err != nil || len(plan.Routes) == 0 {
+		t.Fatalf("evidenced search request route = %#v, %v", plan, err)
+	}
+
+	for index := range value.Canonical {
+		delete(value.Canonical[index].Capabilities, modelprofile.CapabilityBuiltinSearchReq)
+	}
+	plan, err = planFixture(t, value, request)
+	if !errors.Is(err, ErrNoRoute) || len(plan.Routes) != 0 {
+		t.Fatalf("search request route without evidence = %#v, %v", plan, err)
+	}
+}
+
+func TestCanonicalRoutingRequiresExplicitPromptCacheCapabilityEvidence(t *testing.T) {
+	value := canonicalFixture()
+	verified := value.DBNow.Add(-time.Minute)
+	for index := range value.Canonical {
+		value.Canonical[index].Capabilities[modelprofile.CapabilityPromptCache] = capabilitySnapshot{
+			ID: modelprofile.CapabilityPromptCache, SupportState: "enabled", EvidenceState: "production_approved",
+			EvidenceRef: "fixture://capability/prompt-cache", VerifiedAt: &verified, Revision: 6,
+		}
+		value.Canonical[index].Capabilities[modelprofile.CapabilityExplicitCache] = capabilitySnapshot{
+			ID: modelprofile.CapabilityExplicitCache, SupportState: "enabled", EvidenceState: "production_approved",
+			EvidenceRef: "fixture://capability/explicit-prompt-cache", VerifiedAt: &verified, Revision: 6,
+		}
+	}
+	request := requestFor(ModeCanonical, "explicit-prompt-cache")
+	request.InvocationCapabilities = invocationRequirements(modelprofile.CapabilityPromptCache, modelprofile.CapabilityExplicitCache)
+	plan, err := planFixture(t, value, request)
+	if err != nil || len(plan.Routes) == 0 {
+		t.Fatalf("evidenced explicit prompt cache route = %#v, %v", plan, err)
+	}
+
+	for index := range value.Canonical {
+		delete(value.Canonical[index].Capabilities, modelprofile.CapabilityExplicitCache)
+	}
+	plan, err = planFixture(t, value, request)
+	if !errors.Is(err, ErrNoRoute) || len(plan.Routes) != 0 {
+		t.Fatalf("explicit prompt cache route without evidence = %#v, %v", plan, err)
+	}
+}
+
+func TestRequestDefaultOutputLimitRemainsDistinctFromProviderMaximum(t *testing.T) {
+	tests := []struct {
+		name, id, version string
+		publicMaximum     int
+		expectedDefault   int
+	}{
+		{name: "DeepSeek V4", id: "deepseek.v4-flash.api", version: "1.2.0", publicMaximum: 384_000, expectedDefault: 32_768},
+		{name: "Kimi K3", id: "kimi.k3.api", version: "1.5.0", publicMaximum: 1_048_576, expectedDefault: 131_072},
+		{name: "MiniMax M3", id: "minimax.m3.token-plan", version: "1.0.0", publicMaximum: 524_288, expectedDefault: 131_072},
+		{name: "GLM 5.3", id: "glm.5.3.api", version: "1.7.0", publicMaximum: 131_072, expectedDefault: 65_536},
+		{name: "Grok 4.6", id: "xai.grok-4.6.api", version: "1.1.0", publicMaximum: 131_072, expectedDefault: 32_768},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			profile, ok := modelprofile.Lookup(test.id, test.version)
+			if !ok {
+				t.Fatalf("missing profile %s@%s", test.id, test.version)
+			}
+			if actual := modelprofile.DefaultRequestOutputLimit(profile, test.publicMaximum); actual != test.expectedDefault {
+				t.Fatalf("request default = %d, want %d", actual, test.expectedDefault)
+			}
+		})
+	}
+	profile, ok := modelprofile.Lookup("glm.5.3.api", "1.7.0")
+	if !ok {
+		t.Fatal("missing GLM profile")
+	}
+	if actual := modelprofile.DefaultRequestOutputLimit(profile, 16_384); actual != 16_384 {
+		t.Fatalf("customer maximum did not narrow provider default: %d", actual)
+	}
+}
+
 func TestSnapshotHashNeverDependsOnEncryptedSecrets(t *testing.T) {
 	value := canonicalFixture()
 	value.Mode = ModeCanonical
@@ -508,6 +1230,11 @@ func TestUnsealedOrMutatedManifestNeverRoutes(t *testing.T) {
 
 func planFixture(t *testing.T, value snapshot, request Request) (Plan, error) {
 	t.Helper()
+	// Exercise the same single normalization point as the SQL loader. Snapshot
+	// fixtures may carry a baseline requirement for direct buildPlan tests, but
+	// Planner input must replace it from this invocation exactly once.
+	value.CapabilityRequirements = nil
+	value.CapabilitiesResolved = false
 	starter := &fakeStarter{tx: &fakeTx{}}
 	loader := &fixtureLoader{value: value}
 	planner := &Planner{database: starter, policy: routingpolicy.Default(), loader: loader}
@@ -517,9 +1244,20 @@ func planFixture(t *testing.T, value snapshot, request Request) (Plan, error) {
 func requestFor(mode Mode, key string) Request {
 	return Request{
 		Mode: mode, CustomerOrgID: 41, PublicModel: "company-chat",
-		ModelOperationID: "openai.chat_completions.v1", RequiredCapabilities: []string{"tools"},
+		ModelOperationID: "openai.chat_completions.v1", InvocationCapabilities: invocationRequirements("tools"),
 		SelectionKey: key,
 	}
+}
+
+func invocationRequirements(capabilities ...string) []CapabilityRequirement {
+	requirements := make([]CapabilityRequirement, len(capabilities))
+	for index, capability := range capabilities {
+		requirements[index] = CapabilityRequirement{
+			CapabilityID: capability,
+			Origins:      []string{CapabilityOriginExplicitRequest},
+		}
+	}
+	return requirements
 }
 
 func verifyFixture() snapshot {
@@ -527,7 +1265,8 @@ func verifyFixture() snapshot {
 	value := snapshot{
 		DBNow: now, CustomerOrgID: 41, PublicModelID: 71, PublicModel: "company-chat",
 		PublicModelLifecycle: "production", RequestedOperationID: "openai.chat_completions.v1",
-		RequiredCapabilities: []string{"tools"}, PublicContextLimit: 128000, PublicOutputLimit: 8192,
+		CapabilityRequirements: invocationRequirements("tools"), CapabilitiesResolved: true,
+		PublicContextLimit: 128000, PublicOutputLimit: 8192,
 		ExecutionProfileID: modelprofile.UnverifiedProfileID, ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
 	}
 	for index, id := range []int64{11, 22} {

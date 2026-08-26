@@ -19,11 +19,11 @@ func TestRunWritesPassingReportToStdout(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("decode stdout: %v", err)
 	}
-	if report.Summary.Profiles != 4 || report.Summary.Cases != 41 ||
-		report.Summary.Passed != 41 || report.Summary.Failed != 0 {
+	if report.Summary.Profiles != 7 || report.Summary.Cases != 65 ||
+		report.Summary.Passed != 65 || report.Summary.Failed != 0 {
 		t.Fatalf("summary=%+v", report.Summary)
 	}
-	if stderr.String() != "endpoint conformance passed: profiles=4 cases=41\n" {
+	if stderr.String() != "endpoint conformance passed: profiles=7 cases=65\n" {
 		t.Fatalf("stderr=%q", stderr.String())
 	}
 }

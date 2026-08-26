@@ -15,6 +15,8 @@ export type ReviewedModelOnboardingOption = {
 export type ReviewedModelOnboardingLimits = {
   providerContextWindow: number;
   providerMaxOutput: number;
+  executableContextWindow: number;
+  executableMaxOutput: number;
   publicContextLength: number;
   publicOutputLimit: number;
   deploymentMaxContext: number;
@@ -49,32 +51,44 @@ function publicModelIDs(profile: ModelExecutionProfile) {
 }
 
 function upstreamModelIDs(profile: ModelExecutionProfile) {
-  return unique((profile.aliases || [])
+  return unique((profile.upstream_model_ids || [])
     .map(value => String(value || '').trim())
     .filter(value => value.length > 0 && value.length <= 200 && !/\s/u.test(value)));
 }
 
 function operationIDs(profile: ModelExecutionProfile): CanonicalOperationID[] {
-  const protocol = String(profile.protocol_profile || '').toLowerCase();
-  if (protocol.includes('anthropic') && protocol.includes('message')) return ['anthropic.messages.v1'];
-  if (protocol.includes('openai') && protocol.includes('responses')) return ['openai.responses.v1'];
-  if (protocol.includes('openai') && protocol.includes('chat')) return ['openai.chat_completions.v1'];
-  return [];
+  const expectedBySurface: Partial<Record<ModelExecutionProfile['api_surface'], CanonicalOperationID>> = {
+    openai_chat_completions: 'openai.chat_completions.v1',
+    openai_responses: 'openai.responses.v1',
+    anthropic_messages: 'anthropic.messages.v1',
+  };
+  const expected = expectedBySurface[profile.api_surface];
+  const declared = unique((profile.operations || []).map(value => String(value || '').trim()));
+  return expected && declared.length === 1 && declared[0] === expected ? [expected] : [];
 }
 
 export function reviewedModelOptions(
   profiles: ModelExecutionProfile[],
   preset: ProviderPreset,
 ): ReviewedModelOnboardingOption[] {
-  const prefixes = preset.executionProfilePrefixes || [];
-  if (prefixes.length === 0) return [];
-  const latest = new Map<string, ModelExecutionProfile>();
+  if (!preset.provider || !preset.region || !preset.apiSurface) return [];
+  const expectedAdapter = preset.apiSurface === 'anthropic_messages' ? 'anthropic_native' : 'openai_compatible';
+  if (preset.adapterType !== expectedAdapter) return [];
+  const expectedEndpointClass = preset.endpointClass || 'provider_https';
+  const current = new Map<string, ModelExecutionProfile>();
+  const ambiguous = new Set<string>();
   for (const profile of profiles) {
-    if (!prefixes.some(prefix => profile.id.startsWith(prefix))) continue;
-    const current = latest.get(profile.id);
-    if (!current || compareProfileVersions(profile.version, current.version) > 0) latest.set(profile.id, profile);
+    if (profile.provider !== preset.provider || profile.region !== preset.region || profile.api_surface !== preset.apiSurface ||
+      !profile.endpoint_classes?.includes(expectedEndpointClass)) continue;
+    if (profile.current !== true) continue;
+    if (current.has(profile.id)) {
+      ambiguous.add(profile.id);
+      current.delete(profile.id);
+      continue;
+    }
+    if (!ambiguous.has(profile.id)) current.set(profile.id, profile);
   }
-  return Array.from(latest.values()).map(profile => {
+  return Array.from(current.values()).map(profile => {
     const publicIDs = publicModelIDs(profile);
     const upstreamIDs = upstreamModelIDs(profile);
     const operations = operationIDs(profile);
@@ -107,12 +121,22 @@ export function reviewedModelOnboardingLimits(profile: ModelExecutionProfile): R
   const providerMaxOutput = Number.isSafeInteger(profile.provider_max_output) && profile.provider_max_output > 0
     ? profile.provider_max_output
     : 0;
+  const rawExecutableContextWindow = Number(profile.executable_context_window);
+  const executableContextWindow = Number.isSafeInteger(rawExecutableContextWindow) && rawExecutableContextWindow > 0
+    ? rawExecutableContextWindow
+    : providerContextWindow;
+  const rawExecutableMaxOutput = Number(profile.executable_max_output);
+  const executableMaxOutput = Number.isSafeInteger(rawExecutableMaxOutput) && rawExecutableMaxOutput > 0
+    ? rawExecutableMaxOutput
+    : providerMaxOutput;
   return {
     providerContextWindow,
     providerMaxOutput,
-    publicContextLength: providerContextWindow || profile.default_context_window,
-    publicOutputLimit: providerMaxOutput || profile.default_output_limit,
-    deploymentMaxContext: providerContextWindow || profile.default_context_window,
+    executableContextWindow,
+    executableMaxOutput,
+    publicContextLength: executableContextWindow || profile.default_context_window,
+    publicOutputLimit: executableMaxOutput || profile.default_output_limit,
+    deploymentMaxContext: executableContextWindow || profile.default_context_window,
     deploymentDefaultMaxOutput: profile.default_output_limit,
   };
 }

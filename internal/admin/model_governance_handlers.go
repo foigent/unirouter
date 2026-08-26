@@ -21,8 +21,10 @@ type modelSetItemRequest struct {
 const maxContextLengthTokens int64 = 2147483647
 
 const (
-	contextLengthErrorCode  = "invalid_context_length"
-	contextLengthReasonCode = "integer_tokens_0_to_2147483647_required"
+	contextLengthErrorCode                    = "invalid_context_length"
+	contextLengthReasonCode                   = "integer_tokens_0_to_2147483647_required"
+	profileAttachmentErrorCode                = "model_execution_profile_not_attachable"
+	deployedProfileIdentityImmutableErrorCode = "model_execution_profile_identity_immutable"
 )
 
 var errInvalidContextLength = errors.New("invalid context_length")
@@ -114,6 +116,9 @@ func resolveModelExecutionProfile(modelName, profileID, profileVersion string) (
 	if profileID == "" && profileVersion == "" {
 		if matched, ok := modelprofile.Match(modelName); ok {
 			return matched, nil
+		}
+		if modelprofile.HasAmbiguousCurrentAlias(modelName) {
+			return modelprofile.Profile{}, fmt.Errorf("execution profile id and version are required when a model has multiple API surfaces")
 		}
 		profileID, profileVersion = modelprofile.UnverifiedProfileID, modelprofile.UnverifiedProfileVersion
 	} else if profileID == "" || profileVersion == "" {
@@ -260,11 +265,15 @@ func (h *Handler) CreateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_model_execution_profile"})
 		return
 	}
-	if int(req.ContextLength) == 0 && profile.DefaultContextWindow > 0 {
-		req.ContextLength = contextLengthInput(profile.DefaultContextWindow)
+	if err := modelprofile.ValidateNewAttachment(profile.ID, profile.Version); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": profileAttachmentErrorCode})
+		return
 	}
-	if req.OutputLimit == 0 && profile.DefaultOutputLimit > 0 {
-		req.OutputLimit = profile.DefaultOutputLimit
+	if int(req.ContextLength) == 0 {
+		req.ContextLength = contextLengthInput(modelprofile.DefaultPublicContextLimit(profile))
+	}
+	if req.OutputLimit == 0 {
+		req.OutputLimit = modelprofile.DefaultPublicOutputLimit(profile)
 	}
 	if strings.TrimSpace(req.CapabilityTags) == "" && len(profile.Capabilities) > 0 {
 		req.CapabilityTags = strings.Join(profile.Capabilities, ",")
@@ -458,17 +467,41 @@ func (h *Handler) UpdateModelRegistry(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_model_execution_profile"})
 		return
 	}
+	profileIdentityChanged := req.ExecutionProfileID != nil &&
+		(profile.ID != beforeAuditState.ExecutionProfileID || profile.Version != beforeAuditState.ExecutionProfileVersion)
+	if profileIdentityChanged {
+		if err := modelprofile.ValidateNewAttachment(profile.ID, profile.Version); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": profileAttachmentErrorCode})
+			return
+		}
+		var hasDeployment bool
+		if err := tx.QueryRow(r.Context(), `
+SELECT EXISTS (
+  SELECT 1 FROM model_deployments
+   WHERE public_model_id=$1 AND customer_org_id=$2
+)`, id, beforeAuditState.OrgID).Scan(&hasDeployment); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
+			return
+		}
+		if hasDeployment {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "Execution profile identity is immutable after a deployment exists; create a new public model",
+				"code":  deployedProfileIdentityImmutableErrorCode,
+			})
+			return
+		}
+	}
 	effectiveContext := beforeAuditState.ContextLength
 	if req.ContextLength != nil {
 		effectiveContext = int(*req.ContextLength)
-	} else if req.ExecutionProfileID != nil && effectiveContext == 0 && profile.DefaultContextWindow > 0 {
-		effectiveContext = profile.DefaultContextWindow
+	} else if req.ExecutionProfileID != nil && effectiveContext == 0 {
+		effectiveContext = modelprofile.DefaultPublicContextLimit(profile)
 	}
 	effectiveOutput := beforeAuditState.OutputLimit
 	if req.OutputLimit != nil {
 		effectiveOutput = *req.OutputLimit
-	} else if req.ExecutionProfileID != nil && effectiveOutput == 0 && profile.DefaultOutputLimit > 0 {
-		effectiveOutput = profile.DefaultOutputLimit
+	} else if req.ExecutionProfileID != nil && effectiveOutput == 0 {
+		effectiveOutput = modelprofile.DefaultPublicOutputLimit(profile)
 	}
 	if err := validateModelExecutionProfileSelection(profile, effectiveContext, effectiveOutput); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": err.Error(), "code": "invalid_model_execution_profile_limits"})

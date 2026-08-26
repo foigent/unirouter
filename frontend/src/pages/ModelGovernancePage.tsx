@@ -12,9 +12,11 @@ import InvocationOptimizationWorkspace from './InvocationOptimizationWorkspace';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 import ModelGovernanceAssignment from '../components/ModelGovernanceAssignment';
 import ModelGovernanceSheets from '../components/ModelGovernanceSheets';
+import { reviewedModelOnboardingLimits } from '../utils/modelOnboarding';
 import { ModelAliasPanel, ModelRegistryPanel, ModelSetPanel } from '../components/ModelGovernanceCatalog';
 import {
   comparableModelIdentity,
+  executionProfilesAvailableForBinding,
   formatModelSetItems,
   isApproved,
   parseModelSetItems,
@@ -142,6 +144,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
         ...profile,
         provider_capabilities: Array.isArray(profile.provider_capabilities) ? profile.provider_capabilities : [],
         capabilities: Array.isArray(profile.capabilities) ? profile.capabilities : [],
+        always_required_capabilities: Array.isArray(profile.always_required_capabilities) ? profile.always_required_capabilities : [],
         aliases: Array.isArray(profile.aliases) ? profile.aliases : [],
         evidence_refs: Array.isArray(profile.evidence_refs) ? profile.evidence_refs : [],
       })) as ModelExecutionProfile[] : [];
@@ -314,7 +317,7 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
 	}, [registry]);
 
   const openCreateRegistry = () => {
-    if (executionProfilesLoading || executionProfilesError || executionProfiles.length === 0) {
+    if (executionProfilesLoading || executionProfilesError || executionProfilesAvailableForBinding(executionProfiles).length === 0) {
       Toast.error('执行 Profile 目录尚未就绪，暂不能新增模型');
       return;
     }
@@ -344,8 +347,9 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     if (key === 'auto') return;
     const profile = executionProfiles.find(item => modelExecutionProfileKey(item) === key);
     if (!profile) return;
-    registryFormApi?.setValue('context_length', profile.default_context_window || 0);
-    registryFormApi?.setValue('output_limit', profile.default_output_limit || 0);
+    const limits = reviewedModelOnboardingLimits(profile);
+    registryFormApi?.setValue('context_length', limits.publicContextLength);
+    registryFormApi?.setValue('output_limit', limits.publicOutputLimit);
     registryFormApi?.setValue('capability_tags', profile.capabilities.join(','));
   }, [executionProfiles, registryFormApi]);
 
@@ -354,8 +358,9 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
     const current = registryFormApi?.getValue('execution_profile_key');
     if (current && current !== 'auto') return;
     const identity = comparableModelIdentity(modelName);
-    const matched = executionProfiles.find(profile => profile.aliases.some(alias => comparableModelIdentity(alias) === identity));
-    if (matched) applyExecutionProfile(modelExecutionProfileKey(matched));
+    const matches = executionProfilesAvailableForBinding(executionProfiles)
+      .filter(profile => profile.aliases.some(alias => comparableModelIdentity(alias) === identity));
+    if (matches.length === 1) applyExecutionProfile(modelExecutionProfileKey(matches[0]));
   }, [applyExecutionProfile, executionProfiles, registryFormApi, registrySheet?.mode]);
 
 	const retireRegistry = (record: ModelRegistryItem) => {
@@ -381,9 +386,19 @@ export default function ModelGovernancePage({ embedded = false }: { embedded?: b
       return;
     }
     const profileKey = String(values.execution_profile_key || selectedExecutionProfileKey || 'auto');
-    const profile = executionProfiles.find(item => modelExecutionProfileKey(item) === profileKey);
+    const retainedProfileKey = registrySheet?.mode === 'edit' && registrySheet.record?.execution_profile_id && registrySheet.record.execution_profile_version
+      ? `${registrySheet.record.execution_profile_id}@${registrySheet.record.execution_profile_version}`
+      : '';
+    const profile = executionProfilesAvailableForBinding(executionProfiles, retainedProfileKey)
+      .find(item => modelExecutionProfileKey(item) === profileKey);
     if (profileKey !== 'auto' && !profile) {
       Toast.error('所选执行 Profile 已变化，请刷新后重试');
+      return;
+    }
+    if (profileKey === 'auto' && executionProfilesAvailableForBinding(executionProfiles).filter(item =>
+      item.aliases.some(alias => comparableModelIdentity(alias) === comparableModelIdentity(String(values.model_name || ''))),
+    ).length > 1) {
+      Toast.error('模型名称对应多个 API surface，请明确选择执行 Profile');
       return;
     }
     const payload = {

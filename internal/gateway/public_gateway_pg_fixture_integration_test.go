@@ -21,6 +21,7 @@ import (
 	"github.com/uniroute/unirouter/internal/integrationfixture"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -63,7 +64,7 @@ type publicGatewayPGFixture struct {
 	*publicGatewayPGSuite
 
 	model, upstreamModel, providerSecret string
-	provider, adapterType                string
+	provider, adapterType, origin        string
 	publicModelID, connectionID          int64
 	deploymentID, credentialBindingID    int64
 	operationRevision, activeBindingID   int64
@@ -71,6 +72,13 @@ type publicGatewayPGFixture struct {
 	identity                             endpointprotocol.PublicContractIdentity
 	route                                runtimechange.DeploymentRoute
 	releaseSuffix                        string
+}
+
+type publicGatewayPGExecutionProfile struct {
+	id, version            string
+	baseURL, upstreamModel string
+	context, output        int
+	capabilities           []string
 }
 
 func newPublicGatewayPGSuite(t *testing.T, pool *pgxpool.Pool, label string) *publicGatewayPGSuite {
@@ -141,12 +149,31 @@ func (suite *publicGatewayPGSuite) newRoute(
 	label string,
 	operation modeloperation.ID,
 ) *publicGatewayPGFixture {
+	return suite.newRouteWithExecutionProfile(t, label, operation, publicGatewayPGExecutionProfile{})
+}
+
+func (suite *publicGatewayPGSuite) newRouteWithExecutionProfile(
+	t *testing.T,
+	label string,
+	operation modeloperation.ID,
+	executionProfile publicGatewayPGExecutionProfile,
+) *publicGatewayPGFixture {
 	t.Helper()
 	require.NotNil(t, suite)
 	require.NotNil(t, suite.pool)
 
 	identity, err := modelqualification.CompiledPublicBinding(string(operation))
 	require.NoError(t, err)
+	if executionProfile.id != "" && executionProfile.id != modelprofile.UnverifiedProfileID {
+		profile, ok := modelprofile.Lookup(executionProfile.id, executionProfile.version)
+		require.True(t, ok, "exact execution profile must exist")
+		binding, bindingErr := modelqualification.CompiledBindingFor(
+			string(operation), profile.ProtocolProfile, profile.ProtocolProfileVersion,
+		)
+		require.NoError(t, bindingErr)
+		identity, err = modelqualification.CompiledPublicBindingFor(binding)
+		require.NoError(t, err)
+	}
 	require.Contains(t, []modeloperation.ID{modeloperation.IDResponses, modeloperation.IDMessages}, operation)
 
 	suffix := publicGatewayPGUniqueSuffix(suite.fixtureSuffix + "-" + label)
@@ -155,6 +182,7 @@ func (suite *publicGatewayPGSuite) newRoute(
 		model:                "m77-gateway-" + suffix,
 		upstreamModel:        "upstream-m77-" + suffix,
 		providerSecret:       "provider-secret-" + suffix,
+		origin:               suite.origin,
 		operation:            operation,
 		identity:             identity,
 		releaseSuffix:        strings.ReplaceAll(suffix, "-", "_"),
@@ -169,23 +197,41 @@ func (suite *publicGatewayPGSuite) newRoute(
 	default:
 		t.Fatalf("unsupported public gateway operation %q", operation)
 	}
+	if executionProfile.baseURL != "" {
+		fixture.origin = executionProfile.baseURL
+	}
+	if executionProfile.upstreamModel != "" {
+		fixture.upstreamModel = executionProfile.upstreamModel
+	}
 
 	ctx := t.Context()
 	_, err = suite.pool.Exec(ctx, `
 INSERT INTO model_prices(model_name,provider,input_price_cents,output_price_cents)
 VALUES ($1,$2,2,10)`, fixture.model, fixture.provider)
 	require.NoError(t, err)
+	if executionProfile.id == "" {
+		executionProfile.id = modelprofile.UnverifiedProfileID
+		executionProfile.version = modelprofile.UnverifiedProfileVersion
+	}
+	if executionProfile.context <= 0 {
+		executionProfile.context = 128000
+	}
+	if executionProfile.output <= 0 {
+		executionProfile.output = 8192
+	}
 	require.NoError(t, suite.pool.QueryRow(ctx, `
 INSERT INTO model_registry(
     org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,
-    context_length,output_limit)
-VALUES ($1,$2,$2,$3,'ga',TRUE,128000,8192) RETURNING id`,
-		suite.orgID, fixture.model, fixture.provider).Scan(&fixture.publicModelID))
+    context_length,output_limit,execution_profile_id,execution_profile_version)
+VALUES ($1,$2,$2,$3,'ga',TRUE,$4,$5,$6,$7) RETURNING id`,
+		suite.orgID, fixture.model, fixture.provider, executionProfile.context,
+		executionProfile.output, executionProfile.id, executionProfile.version,
+	).Scan(&fixture.publicModelID))
 	require.NoError(t, suite.pool.QueryRow(ctx, `
 INSERT INTO provider_connections(
     name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
 VALUES ($1,$2,$3,$4,'{}','enabled',1)
-RETURNING id`, "m77-gateway-connection-"+suffix, fixture.provider, suite.origin,
+RETURNING id`, "m77-gateway-connection-"+suffix, fixture.provider, fixture.origin,
 		fixture.adapterType).Scan(&fixture.connectionID))
 	require.NoError(t, suite.pool.QueryRow(ctx, `
 INSERT INTO model_deployments(
@@ -263,6 +309,15 @@ SELECT qualified,qualification_state,current_operation_revision
 	// Approval proves the historical structural transition. Dispatch requires
 	// a distinct current probe for the exact approved operation/credential epoch.
 	fixture.insertCurrentProbe(t, "dispatch-current", time.Now().UTC())
+	for _, capability := range executionProfile.capabilities {
+		_, err = suite.pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities(
+    deployment_id,operation_id,capability_id,support_state,evidence_state,
+    evidence_ref,verified_at,revision)
+VALUES ($1,$2,$3,'enabled','production_approved','integration:exact-profile',NOW(),1)`,
+			fixture.deploymentID, operation, capability)
+		require.NoError(t, err)
+	}
 
 	fixture.route = runtimechange.DeploymentRoute{
 		DeploymentID: fixture.deploymentID, ModelOperationID: string(operation),

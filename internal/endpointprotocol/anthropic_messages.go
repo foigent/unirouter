@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strconv"
 )
 
@@ -24,13 +25,24 @@ type anthropicMessagesRequest struct {
 }
 
 type anthropicMessagesWireRequest struct {
-	Model       string                    `json:"model"`
-	MaxTokens   json.Number               `json:"max_tokens"`
-	Messages    []anthropicMessageRequest `json:"messages"`
-	System      string                    `json:"system,omitempty"`
-	Temperature *json.Number              `json:"temperature,omitempty"`
-	TopP        *json.Number              `json:"top_p,omitempty"`
-	Stream      bool                      `json:"stream"`
+	Model        string                        `json:"model"`
+	MaxTokens    json.Number                   `json:"max_tokens"`
+	Messages     []anthropicMessageRequest     `json:"messages"`
+	System       string                        `json:"system,omitempty"`
+	Temperature  *json.Number                  `json:"temperature,omitempty"`
+	TopP         *json.Number                  `json:"top_p,omitempty"`
+	Thinking     *anthropicThinkingRequest     `json:"thinking,omitempty"`
+	OutputConfig *anthropicOutputConfigRequest `json:"output_config,omitempty"`
+	Stream       bool                          `json:"stream"`
+}
+
+type anthropicThinkingRequest struct {
+	Type         string       `json:"type"`
+	BudgetTokens *json.Number `json:"budget_tokens,omitempty"`
+}
+
+type anthropicOutputConfigRequest struct {
+	Effort string `json:"effort"`
 }
 
 type anthropicMessageRequest struct {
@@ -189,7 +201,17 @@ func (profile anthropicMessagesProfile) BuildRequest(
 	if marshalErr != nil {
 		return nil, nil, protocolError(ErrInvalidRequest, "request_encoding_failed")
 	}
-	target := *baseURL
+	return buildAnthropicMessagesHTTPRequest(ctx, *baseURL, input, wireBody, profile.Descriptor())
+}
+
+func buildAnthropicMessagesHTTPRequest(
+	ctx context.Context,
+	baseURL url.URL,
+	input BuildInput,
+	wireBody []byte,
+	descriptor Descriptor,
+) (*http.Request, *Binding, error) {
+	target := baseURL
 	target.Path = "/v1/messages"
 	target.RawPath = ""
 	request, requestErr := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(wireBody))
@@ -200,8 +222,8 @@ func (profile anthropicMessagesProfile) BuildRequest(
 	request.Header.Set("x-api-key", input.APIKey)
 	request.Header.Set("anthropic-version", anthropicMessagesAPIVersion)
 	return request, &Binding{
-		profileID:      profile.Descriptor().ProfileID,
-		profileVersion: profile.Descriptor().ProfileVersion,
+		profileID:      descriptor.ProfileID,
+		profileVersion: descriptor.ProfileVersion,
 		requestedModel: input.RequestedModel,
 		mappedModel:    input.MappedModel,
 	}, nil

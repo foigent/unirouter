@@ -25,7 +25,7 @@ describe('DeploymentNetworkPage', () => {
       runtime_mutation: 'none',
       endpoint_profiles: [
         { profile_id: 'endpoint.openai-chat.v1', display_name: 'OpenAI Chat Completions', paths: ['/v1/chat/completions', '/v1/models'], runtime_state: 'runtime_supported', evidence_level: 'verified', streaming: true },
-        { profile_id: 'endpoint.openai-responses.contract.v1', display_name: 'OpenAI Responses (strict non-stream text)', paths: ['/v1/responses'], runtime_state: 'runtime_supported', evidence_level: 'repository_runtime_verified', streaming: false },
+        { profile_id: 'endpoint.openai-responses.contract.v1', display_name: 'OpenAI Responses (strict text; exact stream subset)', paths: ['/v1/responses'], runtime_state: 'runtime_supported', evidence_level: 'repository_runtime_verified', streaming: true },
         { profile_id: 'endpoint.anthropic-messages.v1', display_name: 'Anthropic Messages (strict non-stream text)', paths: ['/v1/messages'], runtime_state: 'runtime_supported', evidence_level: 'repository_runtime_verified', streaming: false },
       ],
     });

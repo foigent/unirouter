@@ -51,6 +51,9 @@ func newGatewayEmbeddingsHandler(pool *pgxpool.Pool, relay *gateway.Relay, outbo
 	}
 }
 
+// newGatewayPublicNonStreamHandler retains its historical constructor name;
+// the exact Responses v2 gateway entry may dispatch to its separately compiled
+// stream executor after authorization and retained-body transport inspection.
 func newGatewayPublicNonStreamHandler(
 	pool *pgxpool.Pool,
 	relay *gateway.Relay,

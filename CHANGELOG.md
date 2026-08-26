@@ -8,10 +8,10 @@ those build identities do not replace the product version.
 
 ### Added
 
-- Added documented-only onboarding Profiles and official Provider presets for
-  the frozen 22-model GLM, Qwen, Gemini, MiMo, Hy3, GPT-5.6, Grok, Claude and
-  Doubao catalog, with exact upstream IDs, primary operations, provider limits,
-  request defaults, documented capability claims and official evidence links.
+- Added exact versioned onboarding Profiles and official Provider presets for
+  the retained catalog: 30 upstream model entries and 33 API-surface identities,
+  with exact upstream IDs, explicit operations, provider limits, request defaults,
+  bounded protocol subsets and separately recorded documentation evidence.
 - Added dated CNY or USD official-price candidates. Flat, reviewable schedules
   can create provider-list drafts; context-, tier-, cache-TTL-, storage- or
   tool-dependent prices remain visible as `manual_review_required` instead of
@@ -19,6 +19,11 @@ those build identities do not replace the product version.
 - Added migration `000084_official_rate_source_currency_drafts`, allowing USD
   only on official review-source evidence while retaining CNY-only request
   pricing approval, activation, wallet and settlement contracts.
+- Added M85 Plan-to-Freeze/attempt snapshot fences, M86 coexisting exact public
+  Responses/Messages v1/v2 bindings and the bounded M87 Messages function-tool
+  binding. Historical Profile and sealed Release identities remain addressable;
+  referenced evidence prevents destructive rollback. These schema changes
+  require an explicitly approved non-rolling deployment, not a live promotion.
 
 ### Fixed
 
@@ -27,12 +32,31 @@ those build identities do not replace the product version.
   maximum and the reviewed defaults for Kimi, MiniMax and the new catalog.
 - Rejected mixed-currency official drafts and guarded M84 rollback when retained
   non-CNY evidence would be lost; no implicit FX conversion was introduced.
+- Derived invocation capability requirements from the exact typed Profile in
+  the same route snapshot, rather than requiring every supported capability.
+  Normalized capability evidence through one timestamp/hash authority and kept
+  historical strict public-v1 execution isolated from newer capabilities.
+- Rejected public output-limit violations before credentials/Freeze, serialized
+  M85 rollback against evidence writers and migration discovery, and corrected
+  onboarding/status claims to distinguish local subsets from full adaptation.
+- Kept public stream response, terminal-health and delivery ordering consistent
+  with the durable attempt ledger; preserved actual rejected/transport status
+  and prevented checkpoint estimates from charging provider-final-only contracts.
+  Updated M86 attempt/call-log/trace constraints to consume exact public bindings.
+- Required explicit GPT surface selection for ambiguous governance aliases;
+  populated new public limits from executable maxima without changing existing
+  lower limits or mistaking request defaults for provider maxima.
+- Kept fresh-install bootstrap compatible with the exact M86/M87 protocol seed
+  additions while retaining dirty-state, provenance, schema and Release guards.
 
 ### Evidence boundary
 
-- The new provider capability sets are `documented` only. They do not claim
-  `locally_conformant`, provider-live, canary or released support until each
-  model x operation x capability milestone is tested independently.
+- B1 retains only the explicitly approved bounded implementation batch; it is
+  not completion of every model's provider-documented capabilities. Local
+  conformance is capability-specific. Provider-live, canary and release evidence
+  remain separate; no paid traffic, deployment or canonical switch is authorized
+  by this changelog. USD prices remain review-only drafts, and nonstandard tiers
+  cannot debit prepaid customer wallets.
 
 ## [1.2.2] - 2026-08-24
 

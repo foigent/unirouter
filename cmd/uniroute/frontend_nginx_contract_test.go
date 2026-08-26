@@ -28,9 +28,18 @@ func TestFrontendNginxAPIProxiesPreserveStreamingAndAppendForwardedPeer(t *testi
 			"proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
 			"proxy_buffering off;",
 			"proxy_cache off;",
-			"proxy_read_timeout 300s;",
-			"proxy_send_timeout 300s;",
 		} {
+			if !strings.Contains(block, directive) {
+				t.Fatalf("frontend nginx location %s missing %q", path, directive)
+			}
+		}
+		readTimeout := "proxy_read_timeout 300s;"
+		sendTimeout := "proxy_send_timeout 300s;"
+		if path == "/v1/" {
+			readTimeout = "proxy_read_timeout 1920s;"
+			sendTimeout = "proxy_send_timeout 960s;"
+		}
+		for _, directive := range []string{readTimeout, sendTimeout} {
 			if !strings.Contains(block, directive) {
 				t.Fatalf("frontend nginx location %s missing %q", path, directive)
 			}
@@ -53,6 +62,31 @@ func TestFrontendNginxSPAResponsesCarryBaselineSecurityHeaders(t *testing.T) {
 	} {
 		if !strings.Contains(block, directive) {
 			t.Fatalf("frontend nginx SPA location missing %q", directive)
+		}
+	}
+}
+
+func TestGatewayNginxV1ProxyProvidesTransportCeilingForRequestSpecificDeadlines(t *testing.T) {
+	const (
+		maximumTypedApplicationWriteDeadlineSeconds = 1_860
+		proxyReadTimeoutSeconds                     = 1_920
+	)
+	if proxyReadTimeoutSeconds <= maximumTypedApplicationWriteDeadlineSeconds {
+		t.Fatal("gateway proxy read ceiling must remain strictly above every typed application write deadline")
+	}
+	for _, name := range []string{"../../nginx/nginx.conf", "../../nginx/nginx.http-canary.conf"} {
+		srcBytes, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		block := nginxLocationBlock(t, string(srcBytes), "/v1/")
+		if !strings.Contains(block, "Transport ceiling only; the Gateway owns each typed per-request deadline.") {
+			t.Fatalf("gateway nginx %s must not present the shared /v1 timeout as a provider policy", name)
+		}
+		for _, directive := range []string{"proxy_read_timeout 1920s;", "proxy_send_timeout 960s;"} {
+			if !strings.Contains(block, directive) {
+				t.Fatalf("gateway nginx %s /v1 missing %q", name, directive)
+			}
 		}
 	}
 }

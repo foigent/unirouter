@@ -12,14 +12,17 @@ func TestCatalogCoversEveryFixedProfileWithImmutableEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Catalog failed: %v", err)
 	}
-	if len(profiles) != 4 {
-		t.Fatalf("profiles=%d want 4", len(profiles))
+	if len(profiles) != 7 {
+		t.Fatalf("profiles=%d want 7", len(profiles))
 	}
 	wantRuntimeState := map[string]string{
-		ProfileOpenAIResponsesText:   RuntimeContractOnly,
-		ProfileAnthropicMessagesText: RuntimeContractOnly,
-		ProfileCohereRerankV2:        RuntimeContractOnly,
-		ProfileOpenAIImageGPT:        RuntimeRepositoryImageV1,
+		ProfileOpenAIResponsesText:     RuntimeContractOnly,
+		ProfileOpenAIResponsesTextV2:   RuntimeContractOnly,
+		ProfileAnthropicMessagesText:   RuntimeContractOnly,
+		ProfileAnthropicMessagesTextV2: RuntimeContractOnly,
+		ProfileAnthropicMessagesTextV3: RuntimeContractOnly,
+		ProfileCohereRerankV2:          RuntimeContractOnly,
+		ProfileOpenAIImageGPT:          RuntimeRepositoryImageV1,
 	}
 	var schemaDigest string
 	for _, profile := range profiles {
@@ -61,9 +64,16 @@ func TestOfflineConformanceMatchesGoldenDeterministically(t *testing.T) {
 	if !bytes.Equal(firstJSON, secondJSON) {
 		t.Fatalf("offline report is not deterministic\nfirst=%s\nsecond=%s", firstJSON, secondJSON)
 	}
-	if first.Summary.Profiles != 4 ||
-		first.Summary.Cases != 41 ||
-		first.Summary.Passed != 41 ||
+	for _, profile := range first.Profiles {
+		for _, result := range profile.Cases {
+			if !result.Passed {
+				t.Fatalf("offline case %s/%s failed: %s", profile.ProfileID, result.CaseID, result.Message)
+			}
+		}
+	}
+	if first.Summary.Profiles != 7 ||
+		first.Summary.Cases != 65 ||
+		first.Summary.Passed != 65 ||
 		first.Summary.Failed != 0 {
 		t.Fatalf("summary=%+v", first.Summary)
 	}
@@ -88,6 +98,8 @@ func TestOfflineConformanceResolvesManifestExactProfileVersion(t *testing.T) {
 	registry := newRegistry(
 		descriptorOverrideProfile{Profile: v1, descriptor: v2Descriptor},
 		anthropicMessagesProfile{},
+		anthropicMessagesProfileV2{},
+		anthropicMessagesProfileV3{},
 		cohereRerankProfile{},
 		openAIImageProfile{},
 	)
