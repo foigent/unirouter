@@ -199,6 +199,35 @@ from the run bound to the pushed commit/PR, not inferred from this source file.
 B1 stops after that exact-commit integration check and the handoff; no next
 model/capability, Target migration or release is started automatically.
 
+### B1 CI follow-up — bounded frontend animation-lifecycle repair
+
+Commit `a65afe97928e2c1702d801e5d09e71d26cea9f33` did not close B1:
+[CI run 32948564489](https://github.com/foigent/unirouter/actions/runs/32948564489)
+passed Backend Tests (including exact Neutral N1 qualification) and PR4 Browser
+E2E, but Frontend Build failed the same two custom-provider selection tests
+(620/622 passed). Docker stopped at its routed prerequisite check, not an image
+build defect. The separate
+[protocol run 32948564453](https://github.com/foigent/unirouter/actions/runs/32948564453)
+passed. Earlier isolated frontend passes were insufficient integration evidence.
+
+The product owner approved one bounded repair commit/push and CI verification.
+The initial fixed-clock hypothesis was insufficient: allowing time to advance
+still reproduced both failures in the full frontend suite. That candidate was
+withdrawn. The actual Select popup uses CSSAnimation, enabling motion after
+positioning; jsdom supplies no CSS `animationend`. Fast isolated interactions
+could use the pre-positioning, non-animated path, while slower runs waited for a
+close event before committing the controlled value. The helper now exercises
+the positioned popup's enter/leave lifecycle explicitly, on the exact option's
+dialog, and retains the original committed-selection assertion. No production
+UI, model, Profile, clock, timeout, warning allowance or retry behavior changes
+are included. With only enter completion supplied, both original tests failed
+deterministically; supplying leave completion passed all 24 page tests and the
+full 622-test frontend suite. Type checking, API/React guards, production build,
+bundle budget and the unchanged warning ratchet passed. The bounded independent
+source review found no blocker. CI evidence must still come from the run bound
+to the repair commit in [PR #339](https://github.com/foigent/unirouter/pull/339),
+not from these local results; no Target/live/release claim follows.
+
 ## Historical local milestone log
 
 The following entries preserve prior local checkpoints and their exact version

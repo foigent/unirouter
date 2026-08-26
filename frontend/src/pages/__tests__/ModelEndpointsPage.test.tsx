@@ -297,7 +297,15 @@ async function chooseSelectOption(
   await waitFor(() => expect(currentChoice()).toBeTruthy());
   const choice = currentChoice();
   if (!choice) throw new Error(`missing option ${String(option)} for ${label}`);
+  const popup = choice.closest('[role="dialog"]');
+  if (!popup) throw new Error(`missing option popup for ${label}`);
+  // jsdom does not emit CSS animation events. Exercise the positioned popup,
+  // not the timing-dependent pre-positioning path where Semi disables motion.
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-show'));
+  fireEvent.animationEnd(popup);
   await user.click(choice);
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-hide'));
+  fireEvent.animationEnd(popup);
   // Wait for the controlled Form.Select to commit before editing fields whose
   // Input/Select identity changes with the provider template.
   await waitFor(() => expect(combobox).toHaveTextContent(option));
