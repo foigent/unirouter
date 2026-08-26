@@ -173,7 +173,6 @@ func TestDoubaoSeed21ProToolsCandidateUsesOnePlannerCapabilitySnapshot(t *testin
 	require.NoError(t, err)
 	require.Equal(t, []modelrouting.CapabilityRequirement{
 		{CapabilityID: modelprofile.CapabilityFunctionTools, Origins: []string{modelrouting.CapabilityOriginExplicitRequest, modelrouting.CapabilityOriginProviderDefault}, FunctionToolChoice: toolChoiceConstraint([]string{}, "")},
-		{CapabilityID: modelprofile.CapabilityReasoning, Origins: []string{modelrouting.CapabilityOriginExplicitRequest}},
 		{CapabilityID: modelprofile.CapabilityTools, Origins: []string{modelrouting.CapabilityOriginExplicitRequest}},
 	}, historyBatch.plan.CapabilityRequirements)
 	require.Equal(t, historyBatch.plan.CapabilityRequirements, historyBatch.routes[0].compat.PlanCapabilityRequirements)

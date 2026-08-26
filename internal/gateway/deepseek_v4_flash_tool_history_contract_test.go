@@ -104,3 +104,33 @@ func TestDeepSeekV4FlashToolHistoryPreservesReasoningInProviderPayloadAndOnePlan
 	require.NoError(t, json.Unmarshal(payloadBody, &payload))
 	require.Contains(t, string(payload["messages"]), `"reasoning_content":"greeting"`)
 }
+
+func TestDeepSeekV4FlashDisabledThinkingPreservesWireControlWithoutReasoningRequirement(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://api.deepseek.com", encKey, nil)
+	setExecutionTestProfile(t, &plan, "deepseek.v4-flash.api", "1.4.0")
+	plan.Routes[0].Provider = "deepseek"
+	plan.Routes[0].UpstreamModel = "deepseek-v4-flash"
+	planner := &executionPlannerStub{plan: plan}
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	require.NoError(t, relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, planner, &executionCoordinatorStub{}, routingpolicy.Default()))
+
+	explicitOutput := 128
+	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":"hello"}],"thinking":{"type":"disabled"},"max_tokens":128}`)
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"public-model", "public-model", "req-deepseek-flash-disabled",
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &explicitOutput, EstimateVersion: chatAdmissionEstimateVersion},
+		body, time.Now(),
+	)
+	require.NoError(t, err)
+	require.Empty(t, batch.plan.CapabilityRequirements)
+	require.Empty(t, batch.routes[0].compat.PlanCapabilityRequirements)
+
+	payloadBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
+	require.NoError(t, err)
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(payloadBody, &payload))
+	require.JSONEq(t, `{"type":"disabled"}`, string(payload["thinking"]))
+	require.JSONEq(t, `128`, string(payload["max_tokens"]))
+}

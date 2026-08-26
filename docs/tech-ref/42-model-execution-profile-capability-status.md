@@ -9,7 +9,7 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-## Delivery snapshot — first UI workflow blocked; bounded workbench repair local
+## Delivery snapshot — first UI workflow exposed a pre-dispatch capability blocker
 
 The finite B1 integration batch in
 [Baseline §5](44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26)
@@ -20,21 +20,28 @@ The subsequent bootstrap repair was deployed at `e888c05f9d5d` on the same
 schema, with Local/CI and Target read-only preview checks passed. Following
 explicit approval of the two runtime-shell objects, customer 2 and its zero
 wallet were initialized; the normal startup path created Default Project 86.
-Both backends now run the bounded no-redirect repair at `35517b9196ec`; its
-Local/CI and Target zero-call acceptance passed on 2026-08-27. The unchanged
-frontend retains the `e888c05f9d5d` image; schema remains M87/86 entries.
+The corrected UI-workbench candidate `1f30b1cd4c8d614f177fa0d890f162d4c0605af7`
+passed automatic CI 32998254738 and protocol-conformance CI 32998255070. After
+the authorized maintenance switch, both backends and the frontend run its exact
+artifacts on development/test; schema remains M87/86 entries. Both backends use
+canonical model-route authority with compatibility disabled. This deployment
+does not change the Source Instance, customer identities, pricing or Release.
 The product owner initially approved the exact DeepSeek 3-call/CNY-1 envelope
 below, then increased the cumulative test ceiling to 20 calls/CNY 5.
-Its first supported connectivity probe passed; the generic-client and direct
-functional requests have not run, and the daemon authority remains `legacy`.
+Its first supported connectivity probe passed. The first generic-client request
+was then made through the ordinary-user UI and failed before Freeze or provider
+dispatch because canonical routing incorrectly treated an explicitly disabled
+reasoning control as an invocation capability. The direct functional request
+has not run.
 On 2026-08-27 the user explicitly authorized an Agent-created test account and
 required the full product flow to be clicked through the UI. User 38 now belongs
 to customer 2 / project 86 as an ordinary member/project user, with successful
 UI login. Release 22 is active with one exact Flash route; directory approval
 and GA are test-environment configuration, not capability or acceptance evidence.
-No client key has been issued. The UI exposed a legacy-only catalog projection
-and a debugger unable to express the frozen request; the bounded local repair
-is recorded below. This is not
+The UI issued one model-restricted test key after the user explicitly delegated
+the complete test flow to the Agent. Its one-time value was not read back or
+printed. The prior catalog/debugger repair is deployed; the live-found
+capability blocker has a bounded local correction recorded below. This is not
 a standing allowance for subsequent models or capabilities.
 B1/B2 closure did not itself authorize a new model/capability milestone; the
 separately approved Flash matrix is bounded below. The original 204-path WIP
@@ -1027,6 +1034,41 @@ own CI before deployment; the first candidate's failure is not relabeled green.
 No paid call was used to discover or reproduce these defects; cumulative
 supplier dispatch remains **1/20**, CNY 5 ceiling, prior probe charge unavailable
 (not zero). The gateway/direct functional pair remains unexecuted.
+
+### First ordinary-user UI request — pre-dispatch blocker and bounded correction
+
+The corrected workbench candidate was deployed between 02:34 and 02:35 CST.
+The ordinary-user UI then created API key 73, restricted to
+`deepseek-v4-flash`, 1 RPM and 1 RPS. The UI retained the key only in its
+password control; neither the one-time value nor the control value was read
+back, logged or copied into evidence.
+
+The first Run click used exactly non-stream Chat, `max_tokens=128`,
+`thinking.type=disabled`, no tools/media/search/retry/failover, and the prompt
+`Reply with exactly: UNIROUTER_UI_OK`. The UI reported HTTP 503 and
+`No available channel for model: deepseek-v4-flash`; call log 369 / request
+`op_a2cb96a94999b506cee57bead4a25fd5` recorded `usage_status=no_route`, zero
+tokens, zero cost and no route identities. Read-only Target evidence showed zero
+provider attempts, zero Freeze rows, zero transactions and an unchanged zero
+wallet. This click therefore did not consume a supplier-call slot; the bounded
+supplier count remains 1/20.
+
+The exact Release/profile/operation route existed, but no capability evidence
+row existed. Typed validation correctly normalized the explicit disabled value;
+the invocation-capability derivation subsequently treated the mere presence of
+the toggle as active reasoning. The canonical selector then correctly failed
+closed. The correction carries the typed effective toggle value into the one
+Plan capability snapshot: disabled controls remain present in the provider wire
+payload but do not require reasoning route evidence; enabled and omitted
+provider-default reasoning still do. It does not insert capability evidence,
+relax canonical eligibility, modify the Profile/Release or remove the provider
+control.
+
+Focused positive/negative tests, the affected gateway/modelrouting race gate,
+vet and `git diff --check` pass locally. An independent blocker review confirmed
+the correction and its boundary. This is Local evidence only until its exact
+commit passes CI and is deployed. The same frozen UI request must be clicked at
+most once after that deployment; no retry is authorized by this checkpoint.
 
 ## Historical local milestone log
 

@@ -1062,10 +1062,11 @@ func invocationCapabilityRequirementsForChat(
 func explicitReasoningCapabilityIDs(evidence modelExecutionProfileEvidence) []string {
 	capabilities := make([]string, 0, 3)
 	toggleExplicit := evidence.ReasoningToggleRequest != "" && evidence.ReasoningToggleRequest != "omitted"
+	toggleEnablesReasoning := toggleExplicit && evidence.ReasoningToggleEffective != "disabled"
 	preserveExplicit := evidence.ReasoningPreserveRequest != "" && evidence.ReasoningPreserveRequest != "omitted"
 	effortExplicit := evidence.ReasoningEffortRequest != "" && evidence.ReasoningEffortRequest != "omitted"
 	budgetExplicit := evidence.ReasoningBudgetRequest != "" && evidence.ReasoningBudgetRequest != "omitted"
-	if toggleExplicit || preserveExplicit || (!effortExplicit && !budgetExplicit) {
+	if toggleEnablesReasoning || preserveExplicit || (!toggleExplicit && !effortExplicit && !budgetExplicit) {
 		capabilities = append(capabilities, modelCapabilityReasoning)
 	}
 	if effortExplicit {

@@ -2261,7 +2261,7 @@ func TestKimiAdvancedProtocolIsPreservedIntoProviderRequestAndFreezeEvidence(t *
 		{
 			name: "K2.6 builtin search with thinking", profileID: "kimi.k2.6.api", profileVersion: "1.7.0",
 			body:     `{"model":"public-model","messages":[{"role":"user","content":"latest"}],"thinking":{"type":"disabled"},"tools":[{"type":"builtin_function","function":{"name":"$web_search"}}],"max_completion_tokens":128}`,
-			required: []string{modelCapabilityBuiltinWebSearch, modelCapabilityReasoning, modelCapabilityTools}, wantParallel: true,
+			required: []string{modelCapabilityBuiltinWebSearch, modelCapabilityTools}, wantParallel: true,
 			wantReserved: []metering.MeterQuantity{{Meter: "builtin_web_search_calls", Quantity: 1}},
 		},
 		{

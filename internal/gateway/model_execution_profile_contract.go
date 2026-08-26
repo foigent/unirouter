@@ -23,6 +23,7 @@ type modelExecutionProfileEvidence struct {
 	ReasoningProviderDefault      string
 	ReasoningDefaultAuthority     string
 	ReasoningToggleRequest        string
+	ReasoningToggleEffective      string
 	ReasoningThinkingKeepRequest  string
 	ReasoningThinkingKeepDefault  string
 	ReasoningThinkingClearRequest string
@@ -90,6 +91,7 @@ func (e modelExecutionProfileEvidence) metadata() map[string]interface{} {
 		"reasoning_provider_default":       e.ReasoningProviderDefault,
 		"reasoning_default_authority":      e.ReasoningDefaultAuthority,
 		"reasoning_toggle_request":         e.ReasoningToggleRequest,
+		"reasoning_toggle_effective":       e.ReasoningToggleEffective,
 		"reasoning_thinking_keep_request":  e.ReasoningThinkingKeepRequest,
 		"reasoning_thinking_keep_default":  e.ReasoningThinkingKeepDefault,
 		"reasoning_thinking_clear_request": e.ReasoningThinkingClearRequest,
@@ -238,9 +240,11 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 			return modelExecutionProfileEvidence{}, err
 		}
 		toggleRequest = "omitted"
+		evidence.ReasoningToggleEffective = "omitted"
 		reasoningActive = reasoningControlProviderDefaultActive(contract.ToggleControl)
 		if present {
 			toggleRequest = value
+			evidence.ReasoningToggleEffective = effective
 			reasoningActive = effective != "disabled"
 		}
 		evidence.ReasoningToggleRequest = toggleRequest
