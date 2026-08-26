@@ -16,7 +16,7 @@ this source ceiling alone does not prove a deployment. The separately authorized
 records the 86-entry M87 ledger after a non-rolling maintenance window on
 2026-08-26. The subsequent
 [bootstrap repair checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#first-customer-runtime-reset-repair--localci-and-target-preview-2026-08-26)
-records the currently deployed `e888c05f9d5d70f4809bcd5362373b8fa8f8ecf4`
+records the earlier deployed `e888c05f9d5d70f4809bcd5362373b8fa8f8ecf4`
 with the same schema and a successful read-only operator preview. The later
 [approved initialization](../tech-ref/42-model-execution-profile-capability-status.md#first-customer-initialization--target-verified-2026-08-26)
 created independent customer 2, its zero CNY wallet and startup-owned Default
@@ -24,11 +24,28 @@ Project 86; admin/platform organization 1 and login evidence remain separate.
 A later readback confirms one staging DeepSeek Flash deployment and credential
 binding under customer 2. Following explicit approval of a 3-call/CNY-1 batch,
 exact probe 1 succeeded at 23:02:34 CST on 2026-08-26 (HTTP 200, 298 ms), advancing
-only the Chat operation to `live_probed` revision 2. There is still no Release,
-runtime assignment or gateway-client call; canonical remains disabled. This
+only the Chat operation to `live_probed` revision 2. At that checkpoint there was
+no Release, runtime assignment or gateway-client call. This
 single connectivity result does not prove model capabilities, usage or pricing.
-The remaining gateway/direct pair awaits a verified no-redirect transport fix
-and an explicitly owned customer-side test sponsor; no new identity was invented.
+The [no-redirect transport repair](../tech-ref/42-model-execution-profile-capability-status.md#no-redirect-transport-repair--deployment-and-zero-call-acceptance-2026-08-27)
+now runs on both backends at `35517b9196ec94b7625f4532303d0d45262f22b1`,
+verified on 2026-08-27 at Local/CI and Target deployment/readiness levels.
+The unchanged Target frontend retains its verified `e888c05f9d5d` artifact.
+Following explicit authorization to create a test account and test through the
+UI, user 38 was created as customer 2's ordinary member / project 86 user and
+successfully logged in. UI authoring/first activation created Release 22,
+active@3 / slot@1, containing only deployment 1 / Chat. Model 677 is now approved
+in the test customer catalog with lifecycle GA; this is not capability evidence
+or personal acceptance. Both daemons still use `legacy`; no client key, gateway
+call, provider attempt or Freeze exists. The original probe remains the only
+supplier call. The [UI checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#ui-led-account-and-first-call-preparation--2026-08-27)
+records the customer workbench blockers and the finite local repair, not yet
+deployed. Project discovery now reads existing v2 normalized route items with
+exact tenant/public-model identity and stable/active/allow membership, retaining
+an explicit historical v1 branch; discovery is not gateway admission authority.
+The repair also gives the Chat debugger explicit optional request bounds and
+accurate non-stream response/error/duration evidence; no schema, pricing or
+execution Profile changed. Customer-side manual acceptance remains deferred.
 The product owner later increased the cumulative test ceiling to 20 calls/CNY 5,
 including probe 1; this is spending authority, not evidence of further calls or
 a change to caller-identity, capability or Release requirements.

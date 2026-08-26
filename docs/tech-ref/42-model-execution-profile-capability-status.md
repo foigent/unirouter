@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-08-26.
+> Snapshot date: 2026-08-27.
 > This document is not a claim that every provider-documented feature is production supported.
 
 The current product-scope candidate is
@@ -9,21 +9,32 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-## Delivery snapshot — B1/B2 closed; first customer initialized on Target
+## Delivery snapshot — first UI workflow blocked; bounded workbench repair local
 
 The finite B1 integration batch in
 [Baseline §5](44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26)
 has closed at Local/CI on `ab4b5b3f42e6819d27ac946ad7899ac08498affb`.
 B2's explicitly authorized bounded Target deployment in Baseline §6 is now on
 1.2.3/M87; the exact deployment and zero-call acceptance checkpoint is below.
-The subsequent bootstrap repair is deployed at `e888c05f9d5d` on the same
+The subsequent bootstrap repair was deployed at `e888c05f9d5d` on the same
 schema, with Local/CI and Target read-only preview checks passed. Following
 explicit approval of the two runtime-shell objects, customer 2 and its zero
 wallet were initialized; the normal startup path created Default Project 86.
+Both backends now run the bounded no-redirect repair at `35517b9196ec`; its
+Local/CI and Target zero-call acceptance passed on 2026-08-27. The unchanged
+frontend retains the `e888c05f9d5d` image; schema remains M87/86 entries.
 The product owner initially approved the exact DeepSeek 3-call/CNY-1 envelope
 below, then increased the cumulative test ceiling to 20 calls/CNY 5.
 Its first supported connectivity probe passed; the generic-client and direct
-functional requests have not run, and canonical remains unchanged. This is not
+functional requests have not run, and the daemon authority remains `legacy`.
+On 2026-08-27 the user explicitly authorized an Agent-created test account and
+required the full product flow to be clicked through the UI. User 38 now belongs
+to customer 2 / project 86 as an ordinary member/project user, with successful
+UI login. Release 22 is active with one exact Flash route; directory approval
+and GA are test-environment configuration, not capability or acceptance evidence.
+No client key has been issued. The UI exposed a legacy-only catalog projection
+and a debugger unable to express the frozen request; the bounded local repair
+is recorded below. This is not
 a standing allowance for subsequent models or capabilities.
 B1/B2 closure did not itself authorize a new model/capability milestone; the
 separately approved Flash matrix is bounded below. The original 204-path WIP
@@ -689,7 +700,7 @@ must not be used for the proposed test budget or represented as current pricing.
 
 The operator subsequently entered the credential in the secure UI, as recorded
 below; no secret was pasted into this conversation or read back by the agent.
-The budget decision is still pending. Remaining zero-call setup and canonical
+At that checkpoint the budget decision was still pending. Zero-call setup and canonical
 preconditions do not authorize a probe implicitly.
 The bounded independent closing review found no additional bootstrap blocker.
 Two `validated_required` wording findings were accepted: separate pre-probe
@@ -721,7 +732,8 @@ Target checks found the onboarding already saved. No duplicate submit was made.
   runtime assignments; it does not mean the newly saved deployment is missing.
   No daemon mode, configuration, Release or traffic was changed in this readback.
 
-The first 3-call/CNY-1 supplier budget remains unapproved. Credential entry or
+At this saved-onboarding checkpoint the first 3-call/CNY-1 supplier budget was
+still unapproved. Credential entry or
 successful persistence cannot authorize a paid connectivity probe implicitly.
 
 ### DeepSeek first paid workflow — approved pre-dispatch checkpoint, 2026-08-26
@@ -778,7 +790,9 @@ Target readback still has zero gateway call logs, Freeze records and financial
 transactions; all customer-wallet amounts remain zero. No Release was authored,
 no client key issued, and no canonical switch occurred.
 
-The remaining functional requests are paused at two preconditions:
+At this post-probe checkpoint, the remaining functional requests were paused
+at two preconditions. The first is now resolved by the verified handoff below;
+the customer caller/accountability prerequisite remains open:
 
 - `validated_blocker`: the default gateway `providerClient` followed HTTP
   redirects inside one `.Do`, outside the provider-attempt count. A local test
@@ -787,20 +801,23 @@ The remaining functional requests are paused at two preconditions:
   DeepSeek performed such a redirect. The minimal local fix refuses redirects
   and preserves the original status/body for ordinary failure handling; it
   changes no Profile, schema, routing selector, retry count or price. Target
-  still runs the preceding `e888c05f9d5d` implementation until a verified handoff.
-- `product_decision_required`: service credentials require a real, same-customer
-  human sponsor. The only current user is platform admin 1/org1, who cannot be
-  repurposed as customer 2's sponsor. The minimum supported path is a separately
-  owned customer `member`, project 86 `project_user`, and a non-production
-  workload/direct grant explicitly bound to that sponsor. The operator must
-  identify the accountable person; a fabricated test user is not human approval.
-  No user, membership or grant has been created as a workaround. Personal
-  credentials remain owner-self-service; platform-admin authority does not
-  permit impersonating that owner.
+  at that checkpoint still ran the preceding `e888c05f9d5d` implementation.
+- `validated_blocker` (clarified on 2026-08-27): a valid customer-side calling
+  identity is missing. Service grants require a same-organization active
+  sponsor account with calling/administrative authority; the only user is
+  platform admin 1/org1, not a customer 2 account. The minimum existing path is
+  an explicitly attributed customer `member`, project 86 `project_user`, and a
+  non-production workload/direct grant. An authorized platform administrator
+  can manage the resulting service credential and the Agent can execute the
+  test. The sponsor need not personally operate or accept each request. Code
+  does not prove natural-person identity or customer acceptance; an invented
+  user row would not establish responsibility. No user, membership or grant
+  has been created as a workaround. Personal credentials remain subject-self-
+  service, not a platform-admin impersonation path.
 
 The bounded reviewer supplied source findings only. The main agent validated
 the transport defect with the failing local test and separately classified the
-human-sponsor decision; neither finding authorizes extra paid calls or a new
+accountability prerequisite; neither finding authorizes extra paid calls or a new
 identity policy. Remaining scope is still the original gateway/direct pair.
 
 Local repair closeout: the redirect regression now passes for 200 and all five
@@ -809,10 +826,11 @@ the necessary local gate passed once: `go test -race ./internal/gateway
 ./internal/adapters` (gateway 98.911 s, adapters 2.715 s), followed by
 `go vet ./internal/gateway ./internal/adapters` and `git diff --check`.
 The review's one ambiguous milestone sentence was corrected without expanding
-scope. A macOS linker warning did not fail the gate. This repair has not been
-pushed, CI-tested or deployed; the earlier commit's CI is not evidence for this
-new diff. The remaining live requests await the customer-side responsibility
-decision; the already-authorized repair handoff can proceed independently.
+scope. A macOS linker warning did not fail the gate. At this local checkpoint,
+the repair had not yet been pushed, CI-tested or deployed; the earlier commit's
+CI was not evidence for the new diff. The remaining live requests awaited the
+customer-side responsibility decision; the separately authorized repair handoff
+subsequently completed as recorded below.
 No additional supplier traffic was used by these tests.
 
 ### Cumulative paid-test budget update — approved, 2026-08-26
@@ -835,9 +853,163 @@ further traffic for diagnosis. No wallet mode, price authority, identity policy,
 canonical prerequisite or Release guard is relaxed by the larger budget.
 
 The budget update did not explicitly identify a customer-side human sponsor.
-That narrow responsibility question remains separate; meanwhile the reviewed
-no-redirect repair proceeds through its one push/CI/Target handoff, with no new
-supplier request required for deployment acceptance.
+That narrow responsibility question remains separate. The reviewed no-redirect
+repair subsequently completed its one push/CI/Target handoff below, with no new
+supplier request used for deployment acceptance.
+
+### No-redirect transport repair — deployment and zero-call acceptance, 2026-08-27
+
+The finite repair is committed and pushed once as
+`35517b9196ec94b7625f4532303d0d45262f22b1`, tree
+`022686fc1153183862195b35e81044c7a20a76ab`, version **1.2.3**. Its executable
+scope is the default provider HTTP client's no-redirect boundary and its
+regression test; the remaining changed paths are the existing three evidence/
+scope documents. No Profile, protocol, frontend, migration, routing policy or
+pricing contract changed.
+
+- Local verification and the bounded independent review are recorded above.
+  The manually dispatched [CI run 32986199076](https://github.com/foigent/unirouter/actions/runs/32986199076)
+  passed at this exact commit, attempt 1: backend tests/integration/conformance,
+  PR4 browser E2E, frontend build and Docker build. No automatic run was observed
+  after the one push at that checkpoint, so the existing workflow was dispatched.
+  A later PR readback on 2026-08-27 also found automatic CI 32986498453 successful
+  at the same commit. Therefore this was not a sole-run handoff; the earlier
+  observation did not prove an automatic run was absent. For the next batch,
+  inspect the exact-commit PR run before considering any manual dispatch.
+  No re-push or CI rerun was used, and PR 339 remains unmerged.
+- The supported Target source-build helper verified the clean exact source
+  worktree and produced backend
+  `unirouter-release/backend:35517b9196ec`, image
+  `sha256:92d024eb5943bc2fea4f40a4dcdeef4cc050e45fdc002af31e249f005606d91e`.
+  The helper verified unchanged frontend ancestry/path content and reused
+  `unirouter-release/frontend:e888c05f9d5d`, image
+  `sha256:6969a14d44bb8e4525fd3fc6dcd29b6cde7a7a32ca75f3354f4792516ea07a6f`.
+  The frontend was not rebuilt or relabeled as the new backend revision.
+- The source diff has no migrations or Compose changes. Read-only migration
+  status, database count/max and the new processes' exact-ledger startup gate
+  agree on **M87 / 86 entries**. No migration was executed. Both replicas were
+  replaced sequentially using the existing TLS and runtime overlays, stop
+  budget and `SKIP_MIGRATION=true`; no schema-crossing rolling upgrade occurred.
+- Both backend containers became healthy with zero restart count; Nginx syntax
+  validation and reload passed. The first post-reload public readiness request
+  returned curl error 16 (HTTP/2 framing). A subsequent bounded diagnostic got
+  HTTP 200 with DB/Redis healthy over both HTTP/2 and HTTP/1.1, and HTTP 200 from
+  the local canary entry. The public frontend also returned HTTP 200 over HTTP/2.
+  The initial failure did not recur in these checks; its cause is unproven, and
+  no timeout or Nginx policy was changed to hide it.
+- Both replicas retain `MODEL_ROUTE_AUTHORITY=legacy`, compatibility `true`,
+  async media `false`, source instance `unirouter-test-reset-20260824-v3` and
+  absent billing/pricing overrides (`cost_observation` / `legacy` defaults).
+  The post-deployment database readback at **00:12:28 CST** has one probe and
+  zero gateway calls, provider attempts, runtime Releases, client keys, project
+  memberships, financial transactions or Freeze records. Customer 2's CNY
+  wallet remains all-zero; admin 1/org1 and auth epoch 6 are unchanged. The
+  operation remains `live_probed` revision 2/ref `probe:1`.
+- A read-only refresh of the existing Chrome model-access page retained the
+  authenticated admin view and saved DeepSeek Flash entry, without credential
+  inspection or another probe. This is a session/readback check, not a fresh
+  password login or functional model test.
+
+Build/deployment and additive retention metadata are retained server-side at
+`/opt/unirouter/deployment-evidence/20260826-redirect-35517b91`; the unchanged
+private reset-evidence directory was not accessed. The preceding `e888c05f9d5d`
+M87 backend and source worktree remain available for application-only rollback;
+no rollback was exercised, database restore performed, or image/worktree cleanup
+run. Older M83 artifacts are not application-only rollback candidates for M87.
+
+This closes the transport repair's Local/CI/deployment acceptance, **not** the
+first functional workflow, all-model adaptation, canonical enablement, billing
+acceptance or a formal Release. Cumulative supplier usage is still **1/20 calls**;
+the **CNY 5** ceiling is unchanged and the existing probe's supplier charge
+remains unavailable, not zero. No additional paid traffic was generated by the
+repair. The same gateway/direct pair is pending an explicitly attributed
+customer-side account and supported least-privilege caller/Release preparation.
+This account prerequisite is not a requirement for the user to test personally,
+and it is not resolved by increasing the test budget.
+
+### Test executor and caller accountability clarification — 2026-08-27
+
+The product owner delegated all test execution to the Agent and reserved the
+customer-side test-responsibility role for later. The earlier wording conflated
+test execution, service-grant sponsorship and customer acceptance. It is
+corrected here: these are separate responsibilities; no rule requires the
+sponsor to log in or personally perform the tests.
+
+The main agent validated the bounded review's distinction against
+`accesssponsor/sponsor.go`, `accessprovisioning/service.go` and the public gateway
+authentication chain. The actual runtime prerequisite remains: a same-customer
+active account must support the service Grant, and its service credential must
+authenticate the public request. An admin login session is not a gateway key;
+an Agent capability also needs a valid root key. The administrative operation
+probe bypasses the public gateway/admission/Freeze path and cannot prove it.
+The old PRD4 SQL-seeded legacy fixture is not a substitute for this current
+clean-baseline identity/Grant flow. No new operator bypass is authorized or
+implemented by this review.
+
+At **01:17:52 CST**, read-only Target checks found one total user, zero customer
+2 users, project memberships or client keys, and healthy `35517b91` replicas.
+A single credential-free public Chat request returned **401** with
+`auth_error.invalid_api_key`, as required. It is a negative authentication
+check, not a supplier call or a functional-model result. Post-check readback at
+**01:19:47 CST** still has one probe and zero gateway calls, provider attempts,
+Freeze records, client keys or customer users. No credential was read,
+account created, responsibility assigned, provider probe repeated or customer
+acceptance recorded. The remaining gateway/direct pair still awaits supported
+caller preparation; the Agent must not claim it can execute the full workflow
+using only the existing admin probe. The cumulative ceiling remains 20 calls/
+CNY 5, with the single earlier probe consuming one supplier-call slot.
+
+### UI-led account and first-call preparation — 2026-08-27
+
+The latest user instruction replaces script-driven provisioning with product
+UI interaction. The unexecuted temporary CLI draft was not used. Chrome retains
+the original admin session; a separate browser session holds the ordinary test
+login. Passwords and tokens were neither read back nor printed.
+
+- UI empty-submit validation rejected missing username/password. One submit
+  created `unirouter-test-20260827` (user 38), ordinary member of customer 2;
+  the default-project option created project 86 membership `project_user`.
+  UI member-list readback and a fresh test-account login succeeded. Personal
+  acceptance remains deferred, but is no longer an account-creation blocker.
+- UI authoring created Release 22,
+  `rcr_deployment_20260826t173443_8a00fcf89d8123b56058e0be`, validated@2,
+  authoring receipt 1 at 01:34:43 CST. The UI confirmed exact
+  `deepseek.v4-flash.api@1.4.0`, context 1,000,000, output 384,000 and only
+  deployment 1 / Chat. UI confirmation activated it at 01:35:13,
+  active@3 / slot version 1 / lifecycle receipt 1. This is a runtime Release
+  inside development/test, not a software release or functional-model result.
+- The same UI opened model 677's developer catalog visibility and then its GA
+  catalog lifecycle. No capability label, Profile, limit, pricing or evidence
+  was upgraded. Even after this configuration, the member workbench remained
+  empty and offered a fictional `company-chat` fallback.
+- Read-only Target checks at 01:39:48 confirmed one customer user/member,
+  zero client keys/calls/attempts/Freeze rows and the original single supplier
+  probe. The old assignment view projected Release 22 as stable/active with
+  `channel_id=null`, `admission=''`: it expands v1 overrides, not v2 deployment
+  items. Both daemons still used legacy routing, compatibility true, async false.
+
+The main agent adjudicated the independent review as follows:
+
+| Finding | Disposition / finite correction |
+|---|---|
+| v2 Release omitted from routable project catalog | `validated_blocker`: consume existing normalized route items with exact tenant/public-model identity and stable/active/allow constraints; retain explicit historical v1 compatibility. No schema or Planner change. |
+| Frozen max_tokens/thinking request cannot be expressed; empty catalog invents a model | `validated_blocker`: optional explicit controls, omission preserved by default; no arbitrary JSON merge or provider capability expansion; no model means no dispatch. |
+| HTTP 200 malformed/non-text body shown as success; latency stops at headers | `validated_required` for this acceptance: show response error, preserve HTTP status, measure complete body duration separately from header latency; show original usage and finish reason. |
+| Directory refresh silently substitutes another model with old thinking parameters | `validated_required`: pin the selected model in UI state; disappearance disables Run until explicit reselection; shared Select/manual-input changes clear provider extensions. Two failing regressions were reproduced and corrected. |
+| Streaming parser and member diagnostic model-list permissions | `valid_deferred`: not part of this non-stream text repair; no permission relaxation or streaming-complete claim. |
+
+The finite local batch is the workbench, its tests, catalog query, catalog tests
+and these three existing evidence/scope documents. Local workbench tests and
+isolated PostgreSQL tests cover canonical activation, same-name tenant isolation,
+independent catalog approval/lifecycle and retained v1 behavior. The closing
+review confirmed the final correction without expanding scope. All 30 workbench
+tests, the affected admin package race tests (15.280 s), admin vet, isolated
+PostgreSQL integration and the production frontend build/bundle guards passed.
+The existing Semi findDOMNode warning remains within its tracked ratchet; the
+macOS linker warning did not fail the race gate. Push/CI and deployment of this
+repair are still pending. No paid call was used to discover or reproduce these defects; cumulative
+supplier dispatch remains **1/20**, CNY 5 ceiling, prior probe charge unavailable
+(not zero). The gateway/direct functional pair remains unexecuted.
 
 ## Historical local milestone log
 

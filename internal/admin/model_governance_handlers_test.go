@@ -508,10 +508,28 @@ func TestListApprovedModelCatalog_FiltersApprovedLifecycle(t *testing.T) {
 
 func TestListApprovedModelCatalog_RoutableOnlyRequiresStableActiveRelease(t *testing.T) {
 	const assignmentProjection = "FROM runtime_channel_assignments_v1 assignment"
+	checkCanonicalProjection := func(sql string) {
+		t.Helper()
+		for _, predicate := range []string{
+			"JOIN runtime_route_revision_items item ON item.release_id = release.id",
+			"release.id = slot.stable_release_id", "slot.public_model_id = mr.id",
+			"release.public_model_id = mr.id", "deployment.public_model_id = mr.id",
+			"deployment.customer_org_id = mr.org_id", "release.stage = 'active'",
+			"release.candidate_version = 'unirouter.runtime-change-candidate.v2'",
+			"release.route_items_sealed_at IS NOT NULL", "item.admission = 'allow'",
+			"item.source_candidate_version = release.candidate_version",
+			"legacy.candidate_version = 'unirouter.runtime-change-candidate.v1'",
+		} {
+			if !strings.Contains(sql, predicate) {
+				t.Fatalf("catalog query lost exact manifest predicate %q: %s", predicate, sql)
+			}
+		}
+	}
 	countChecked := false
 	listChecked := false
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			checkCanonicalProjection(sql)
 			if !strings.Contains(sql, assignmentProjection) || !strings.Contains(sql, "assignment.model_name = mr.model_name") ||
 				!strings.Contains(sql, "assignment.assignment_kind = 'stable'") || !strings.Contains(sql, "assignment.release_stage = 'active'") {
 				t.Fatalf("routable catalog count query missing canonical stable assignment filter: %s", sql)
@@ -523,6 +541,7 @@ func TestListApprovedModelCatalog_RoutableOnlyRequiresStableActiveRelease(t *tes
 			}}
 		},
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			checkCanonicalProjection(sql)
 			if !strings.Contains(sql, assignmentProjection) || !strings.Contains(sql, "assignment.model_name = mr.model_name") ||
 				!strings.Contains(sql, "assignment.assignment_kind = 'stable'") || !strings.Contains(sql, "assignment.release_stage = 'active'") {
 				t.Fatalf("routable catalog list query missing canonical stable assignment filter: %s", sql)

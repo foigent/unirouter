@@ -363,3 +363,28 @@ The subsequent product-owner budget update raises the cumulative ceiling to
 20 calls/CNY 5, including that probe. It does not add model/surface/capability
 requirements; each later authorized milestone still freezes its own bounded
 matrix before using any of the remaining shared allowance.
+
+The bounded no-redirect transport repair subsequently completed one push, one
+successful exact-commit CI run and same-schema Target deployment at
+`35517b9196ec94b7625f4532303d0d45262f22b1` on 2026-08-27; see the
+[zero-call acceptance checkpoint](42-model-execution-profile-capability-status.md#no-redirect-transport-repair--deployment-and-zero-call-acceptance-2026-08-27).
+It changes no Profile, schema, pricing or model/capability scope. At that
+checkpoint supplier-call usage remained 1/20, with no gateway/direct functional
+call, runtime Release, canonical switch or wallet debit. The caller prerequisite
+was not permission to invent responsibility or reassign the platform admin.
+The Agent is the delegated test executor. Customer-side personal execution or
+manual acceptance is not a prerequisite, and must not be conflated with the
+existing service-credential account/Grant requirements.
+
+The user then explicitly authorized an Agent-created test account and required
+the product workflow to be performed through the UI. Account/member creation,
+login, one Flash Release's authoring/first activation and test-customer catalog
+opening are recorded in the [UI checkpoint](42-model-execution-profile-capability-status.md#ui-led-account-and-first-call-preparation--2026-08-27).
+They do not authorize production, a new capability, or personal acceptance.
+The finite blocker-repair batch is limited to v2-aware project catalog discovery
+with retained v1 compatibility, explicit optional debugger request parameters,
+non-stream response/error/duration accuracy, regression tests and these existing
+three documents. No schema, pricing, gateway protocol or permission expansion;
+stream parser/diagnostic discovery issues remain outside this batch. Supplier
+dispatch is still 1/20, shared CNY 5 ceiling. After this diff's review/gate/CI/
+Target handoff, resume the same bounded UI text milestone, not a new model.

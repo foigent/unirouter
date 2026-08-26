@@ -143,6 +143,154 @@ describe('DeveloperConsolePage', () => {
     setupMocks();
   });
 
+  it('sends explicit bounded text parameters only when selected in the UI', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      id: 'chatcmpl-ui-bounded', choices: [{ message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11, prompt_cache_hit_tokens: 4 },
+    }), { status: 200 }));
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      fireEvent.change(screen.getByLabelText('max_tokens（可选）'), { target: { value: '128' } });
+      fireEvent.click(screen.getByRole('combobox', { name: 'thinking.type（可选）' }));
+      fireEvent.click(await screen.findByRole('option', { name: /disabled/ }));
+      fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      await screen.findByText('OK');
+      const [path, init] = fetchMock.mock.calls[0];
+      expect(path).toBe('/v1/chat/completions');
+      expect(JSON.parse(String(init?.body))).toEqual({
+        model: 'company-chat', stream: false,
+        messages: [{ role: 'user', content: '请用一句话返回当前项目的健康检查结果。' }],
+        max_tokens: 128, thinking: { type: 'disabled' },
+      });
+      expect(screen.getByText(/"prompt_cache_hit_tokens": 4/)).toBeTruthy();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('does not invent a callable model when the project catalog is empty', async () => {
+    mockGetModelCatalog.mockResolvedValue({ data: [], total: 0 });
+    renderPage();
+    await screen.findByText('暂无已启用模型');
+    expect(screen.getByRole('button', { name: /运行$/ }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('combobox', { name: '调试模型' }).textContent).not.toContain('company-chat');
+  });
+
+  it('requires reselection when refresh removes the selected model and clears its extension', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'replacement OK' }, finish_reason: 'stop' }],
+    }), { status: 200 }));
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      fireEvent.click(screen.getByRole('combobox', { name: 'thinking.type（可选）' }));
+      fireEvent.click(await screen.findByRole('option', { name: /disabled/ }));
+      mockGetModelCatalog.mockResolvedValue({ data: [{ ...MODELS.data[0], model_name: 'model-b', aliases: '', display_name: 'Replacement' }], total: 1 });
+      fireEvent.click(screen.getByText('刷新'));
+      await screen.findByText('Replacement');
+      expect(screen.getByRole('button', { name: /运行$/ }).hasAttribute('disabled')).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByRole('option', { name: /disabled/ })).toBeNull());
+      await userEvent.click(screen.getByRole('combobox', { name: '调试模型' }));
+      fireEvent.click(await screen.findByRole('option', { name: /model-b/ }));
+      fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      await screen.findByText('replacement OK');
+      const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+      expect(payload.model).toBe('model-b');
+      expect(payload).not.toHaveProperty('thinking');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('clears provider extensions when the model is manually changed', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'switched OK' }, finish_reason: 'stop' }],
+    }), { status: 200 }));
+    try {
+      const access = accessWith(['gateway']);
+      access.features.model_governance = false;
+      renderPage('developer', access);
+      await screen.findByText('Core Project');
+      const modelInput = await screen.findByPlaceholderText('输入现有模型或别名');
+      fireEvent.change(modelInput, { target: { value: 'model-a' } });
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      fireEvent.click(screen.getByRole('combobox', { name: 'thinking.type（可选）' }));
+      fireEvent.click(await screen.findByRole('option', { name: /disabled/ }));
+      fireEvent.change(modelInput, { target: { value: 'model-b' } });
+      fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      await screen.findByText('switched OK');
+      const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+      expect(payload.model).toBe('model-b');
+      expect(payload).not.toHaveProperty('thinking');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it.each(['0', '-1', '1.5', '9007199254740992'])(
+    'does not dispatch an invalid explicit output limit: %s', async value => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch');
+      try {
+        renderPage();
+        await screen.findByText('Company Chat');
+        fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+        fireEvent.change(screen.getByLabelText('max_tokens（可选）'), { target: { value } });
+        expect(screen.getByText('max_tokens 必须是正整数。')).toBeTruthy();
+        expect(screen.getByRole('button', { name: /运行$/ }).hasAttribute('disabled')).toBe(true);
+        expect(fetchMock).not.toHaveBeenCalled();
+      } finally {
+        fetchMock.mockRestore();
+      }
+    },
+  );
+
+  it.each(['not json', '{}', 'null', '{"choices":[]}', '{"error":{"message":"upstream failed"}}'])(
+    'reports HTTP 200 with invalid text response as a response error: %s', async body => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status: 200 }));
+      try {
+        renderPage();
+        await screen.findByText('Company Chat');
+        fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+        fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
+        expect(await screen.findByText('response_error')).toBeTruthy();
+        expect(screen.getByText('HTTP 200')).toBeTruthy();
+      } finally {
+        fetchMock.mockRestore();
+      }
+    },
+  );
+
+  it('measures non-stream completion after the response body and preserves omitted parameters', async () => {
+    let clock = 0;
+    const nowMock = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      clock = 20;
+      return { status: 200, ok: true, json: async () => {
+        clock = 120;
+        return { id: 'chatcmpl-timing', choices: [{ message: { content: 'timing OK' }, finish_reason: 'stop' }] };
+      } } as Response;
+    });
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      await screen.findByText('timing OK');
+      expect(screen.getByText('客户端完整耗时 120ms')).toBeTruthy();
+      expect(screen.getByText('响应头耗时 20ms')).toBeTruthy();
+      const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+      expect(payload).not.toHaveProperty('max_tokens');
+      expect(payload).not.toHaveProperty('thinking');
+    } finally {
+      fetchMock.mockRestore();
+      nowMock.mockRestore();
+    }
+  });
+
   it('distinguishes a project-list failure from an account with no assigned projects and supports retry', async () => {
     mockGetProjects.mockRejectedValueOnce(new Error('projects down'));
 
