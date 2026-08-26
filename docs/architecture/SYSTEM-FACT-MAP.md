@@ -28,37 +28,47 @@ only the Chat operation to `live_probed` revision 2. At that checkpoint there wa
 no Release, runtime assignment or gateway-client call. This
 single connectivity result does not prove model capabilities, usage or pricing.
 The [no-redirect transport repair](../tech-ref/42-model-execution-profile-capability-status.md#no-redirect-transport-repair--deployment-and-zero-call-acceptance-2026-08-27)
-was superseded by the exact UI-workbench candidate
-`1f30b1cd4c8d614f177fa0d890f162d4c0605af7`. Automatic CI 32998254738 and
-protocol-conformance CI 32998255070 passed before both backends and the frontend
-were deployed during an authorized non-rolling maintenance switch. Both
-backends now use canonical model-route authority with compatibility disabled;
+was superseded by UI-workbench candidate
+`1f30b1cd4c8d614f177fa0d890f162d4c0605af7`, then by the live-found capability
+correction `e47af1faacd8ca96403c25b4cf2c47ec155bd980`. Its automatic CI
+33002920179 and protocol-conformance CI 33002920186 passed before both prior
+canonical replicas were drained. Both backends now use the exact e47 image;
+the Git-proven unchanged frontend remains the verified `1f30b1cd4c8d` image.
+Canonical model-route authority remains enabled with compatibility disabled;
 the database remains at the exact 86-entry M87 ledger.
 Following explicit authorization to create a test account and test through the
 UI, user 38 was created as customer 2's ordinary member / project 86 user and
 successfully logged in. UI authoring/first activation created Release 22,
 active@3 / slot@1, containing only deployment 1 / Chat. Model 677 is now approved
 in the test customer catalog with lifecycle GA; this is not capability evidence
-or personal acceptance. The ordinary-user UI created one model-restricted test
-key without reading or printing its value, then clicked the exact bounded
-non-stream Flash request once. That request recorded a 503/no-route call log but
-no provider attempt, Freeze, transaction, token or wallet mutation, so the
-original probe remains the only supplier call. The [UI checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#ui-led-account-and-first-call-preparation--2026-08-27)
-records the deployed workbench and the live-found invocation-capability blocker.
+or personal acceptance. The ordinary-user UI first clicked the exact bounded
+non-stream Flash request and recorded a 503/no-route call with no provider
+attempt, Freeze, transaction, token or wallet mutation. The live-found fix
+preserves an explicitly disabled thinking control in the provider payload but
+does not make reasoning a per-invocation route requirement. After deployment,
+the UI clicked the same request once: HTTP 200, exact expected text, 16 prompt +
+8 completion tokens and provider-reported final usage. The original probe plus
+this successful UI attempt are the only two supplier calls. One unused one-time
+key was inadvertently exposed to an automation trace and immediately disabled;
+all nine short-lived test keys are now disabled, including key 81 used for the
+successful request. No credential is retained here. The [UI checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#first-ordinary-user-ui-request--pre-dispatch-blocker-and-bounded-correction)
+records the exact request and evidence boundary.
 Project discovery now reads existing v2 normalized route items with
 exact tenant/public-model identity and stable/active/allow membership, retaining
 an explicit historical v1 branch; discovery is not gateway admission authority.
 The repair also gives the Chat debugger explicit optional request bounds and
 accurate non-stream response/error/duration evidence; no schema, pricing or
-execution Profile changed. A bounded local correction now distinguishes an
-explicitly disabled reasoning control from an invoked reasoning capability while
-preserving the exact provider payload. It has passed affected local gates but is
-not yet CI/Target evidence. Customer-side manual acceptance remains deferred.
+execution Profile changed. Call, provider-attempt and cost-observation Freeze
+bind the same canonical deployment/connection/Release/Plan snapshot. One
+append-only zero-charge observation receipt exists, with no customer transaction,
+supplier-cost reconciliation or wallet movement. Zero customer charge does not
+prove zero supplier cost. Customer-side manual acceptance remains deferred.
 The product owner later increased the cumulative test ceiling to 20 calls/CNY 5,
 including probe 1; this is spending authority, not evidence of further calls or
 a change to caller-identity, capability or Release requirements.
-That evidence does not imply supplier-live capability, billing or Release
-qualification. After running
+The exact Flash non-stream text slice is `canary_live_verified`. That evidence
+does not imply direct parity, other capabilities, billing, supplier-cost
+authority or `released`. After running
 migrations or honoring `SKIP_MIGRATION`, every backend reads the complete,
 ordered migration ledger and requires it to equal the binary artifact ledger
 before customer-baseline initialization or HTTP bind; missing, extra, future,

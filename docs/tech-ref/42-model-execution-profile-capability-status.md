@@ -9,7 +9,7 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-## Delivery snapshot — first UI workflow exposed a pre-dispatch capability blocker
+## Delivery snapshot — first UI non-stream vertical slice Target verified
 
 The finite B1 integration batch in
 [Baseline §5](44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26)
@@ -22,26 +22,35 @@ explicit approval of the two runtime-shell objects, customer 2 and its zero
 wallet were initialized; the normal startup path created Default Project 86.
 The corrected UI-workbench candidate `1f30b1cd4c8d614f177fa0d890f162d4c0605af7`
 passed automatic CI 32998254738 and protocol-conformance CI 32998255070. After
-the authorized maintenance switch, both backends and the frontend run its exact
-artifacts on development/test; schema remains M87/86 entries. Both backends use
-canonical model-route authority with compatibility disabled. This deployment
-does not change the Source Instance, customer identities, pricing or Release.
+the authorized maintenance switch, both backends and the frontend ran its exact
+artifacts on development/test. The live-found capability correction is exact
+commit `e47af1faacd8ca96403c25b4cf2c47ec155bd980`, automatic CI 33002920179
+and protocol-conformance CI 33002920186. Both backends now run that exact image;
+the unchanged frontend remains `1f30b1cd4c8d`. Schema remains M87/86 entries,
+and canonical model-route authority remains enabled with compatibility disabled.
+Neither deployment changed the Source Instance, identities, pricing or Release.
 The product owner initially approved the exact DeepSeek 3-call/CNY-1 envelope
 below, then increased the cumulative test ceiling to 20 calls/CNY 5.
 Its first supported connectivity probe passed. The first generic-client request
 was then made through the ordinary-user UI and failed before Freeze or provider
 dispatch because canonical routing incorrectly treated an explicitly disabled
-reasoning control as an invocation capability. The direct functional request
-has not run.
+reasoning control as an invocation capability. After the bounded correction,
+the same frozen UI request was clicked once and returned the exact expected
+non-stream text with provider-reported final usage. The direct functional
+comparison has not run.
 On 2026-08-27 the user explicitly authorized an Agent-created test account and
 required the full product flow to be clicked through the UI. User 38 now belongs
 to customer 2 / project 86 as an ordinary member/project user, with successful
 UI login. Release 22 is active with one exact Flash route; directory approval
 and GA are test-environment configuration, not capability or acceptance evidence.
-The UI issued one model-restricted test key after the user explicitly delegated
-the complete test flow to the Agent. Its one-time value was not read back or
-printed. The prior catalog/debugger repair is deployed; the live-found
-capability blocker has a bounded local correction recorded below. This is not
+The UI issued short-lived model-restricted test keys after the user explicitly
+delegated the complete test flow to the Agent. One unused key was inadvertently
+included in an automation trace while inspecting the one-time modal; it was
+immediately disabled before any request. Browser password-value redaction then
+made several safe transfers look empty; those unused keys were also disabled.
+The successful request used key 81, and all nine test keys are now disabled.
+No credential value is retained in this document. The workbench and bounded
+capability correction are deployed and recorded below. This is not
 a standing allowance for subsequent models or capabilities.
 B1/B2 closure did not itself authorize a new model/capability milestone; the
 separately approved Flash matrix is bounded below. The original 204-path WIP
@@ -971,7 +980,8 @@ CNY 5, with the single earlier probe consuming one supplier-call slot.
 The latest user instruction replaces script-driven provisioning with product
 UI interaction. The unexecuted temporary CLI draft was not used. Chrome retains
 the original admin session; a separate browser session holds the ordinary test
-login. Passwords and tokens were neither read back nor printed.
+login. Login passwords were not read back or printed. The later one-time Key
+automation incident and immediate revocation are recorded in the next section.
 
 - UI empty-submit validation rejected missing username/password. One submit
   created `unirouter-test-20260827` (user 38), ordinary member of customer 2;
@@ -1029,11 +1039,12 @@ still clicks real options and asserts exact payloads; it does not change product
 code, disable animation, increase timeouts or relax assertions. A bounded
 independent counter-review confirmed that boundary. Node **24.19.0** full
 frontend tests then passed **82 files / 645 tests** in **41.02 s**, with the
-existing warning ratchets unchanged. The corrected candidate still needs its
-own CI before deployment; the first candidate's failure is not relabeled green.
-No paid call was used to discover or reproduce these defects; cumulative
-supplier dispatch remains **1/20**, CNY 5 ceiling, prior probe charge unavailable
-(not zero). The gateway/direct functional pair remains unexecuted.
+existing warning ratchets unchanged. The corrected candidate subsequently
+passed its own CI and was deployed; the first candidate's failure is not
+relabeled green. At this local checkpoint no paid call had been used to discover
+or reproduce these defects; cumulative supplier dispatch remained **1/20**,
+CNY 5 ceiling, prior probe charge unavailable (not zero), and the gateway/direct
+functional pair remained unexecuted. The next section records later Target facts.
 
 ### First ordinary-user UI request — pre-dispatch blocker and bounded correction
 
@@ -1065,10 +1076,39 @@ relax canonical eligibility, modify the Profile/Release or remove the provider
 control.
 
 Focused positive/negative tests, the affected gateway/modelrouting race gate,
-vet and `git diff --check` pass locally. An independent blocker review confirmed
-the correction and its boundary. This is Local evidence only until its exact
-commit passes CI and is deployed. The same frozen UI request must be clicked at
-most once after that deployment; no retry is authorized by this checkpoint.
+vet and `git diff --check` passed locally. An independent blocker review
+confirmed the correction and its boundary. Exact commit
+`e47af1faacd8ca96403c25b4cf2c47ec155bd980` then passed automatic CI
+33002920179 and protocol-conformance CI 33002920186. Development/test reused the
+unchanged `1f30b1cd4c8d` frontend, built backend image
+`sha256:6a6d066ab4986a1ac2e1786062ff290ee60fdf69585e6c5dcd9a5296a75801eb`
+once, drained both prior canonical replicas and brought both exact replicas
+healthy without a schema migration. HTTP/1.1 and HTTP/2 readiness passed.
+
+The post-deployment UI clicked the same frozen request exactly once. It returned
+HTTP 200 / request `op_38289be7c6561dfbf7340a6faac8f4b8`, exact content
+`UNIROUTER_UI_OK`, `finish_reason=stop`, 16 prompt tokens, 8 completion tokens,
+24 total tokens, zero cache-read tokens and 16 cache-miss tokens. The UI showed
+1,584 ms complete-client time and 1,583 ms headers time; the durable call row
+records 834 ms gateway/provider latency. UI refresh projected two total calls,
+one success/one failure, 24 tokens, 50% error rate and zero customer charge.
+Request lookup showed the exact DeepSeek provider, official connection and
+routed model without exposing request content or credentials.
+
+The successful request has one route, one provider attempt and no retry
+authority. Call, attempt and Freeze bind deployment 1, connection/credential
+binding 9, Chat operation, Release 22 and the same immutable Plan snapshot
+`mrs1_159eccb69f57f6277dead9df9c836249633aab64fae833abfeada5fa39c32fca`.
+Usage authority is provider-reported/final. The cost-observation Freeze settled
+with zero frozen/calculated/charged customer amount and append-only observation
+receipt 163; there is no customer transaction, supplier-cost reconciliation or
+wallet movement. This zero customer charge is not evidence that the supplier
+call was free. Probe 1 plus this UI attempt consume 2/20 supplier-call slots;
+the failed no-route UI click and key-management actions consumed none. All test
+keys are disabled. This closes only Flash non-stream text as
+`canary_live_verified`; personal customer acceptance, direct parity, reasoning,
+tools, billing, supplier-cost authority, other capabilities and `released`
+remain separate.
 
 ## Historical local milestone log
 
