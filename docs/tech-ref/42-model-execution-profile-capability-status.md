@@ -9,14 +9,24 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-## Delivery snapshot — B1 Local/CI closed; B2 bounded Target/zero-call closed
+## Delivery snapshot — B1/B2 closed; first customer initialized on Target
 
 The finite B1 integration batch in
 [Baseline §5](44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26)
 has closed at Local/CI on `ab4b5b3f42e6819d27ac946ad7899ac08498affb`.
 B2's explicitly authorized bounded Target deployment in Baseline §6 is now on
 1.2.3/M87; the exact deployment and zero-call acceptance checkpoint is below.
-This does not start a new model/capability milestone. The original 204-path WIP
+The subsequent bootstrap repair is deployed at `e888c05f9d5d` on the same
+schema, with Local/CI and Target read-only preview checks passed. Following
+explicit approval of the two runtime-shell objects, customer 2 and its zero
+wallet were initialized; the normal startup path created Default Project 86.
+The product owner initially approved the exact DeepSeek 3-call/CNY-1 envelope
+below, then increased the cumulative test ceiling to 20 calls/CNY 5.
+Its first supported connectivity probe passed; the generic-client and direct
+functional requests have not run, and canonical remains unchanged. This is not
+a standing allowance for subsequent models or capabilities.
+B1/B2 closure did not itself authorize a new model/capability milestone; the
+separately approved Flash matrix is bounded below. The original 204-path WIP
 was the cumulative B1 candidate, not the current worktree or 204 completed
 deliverables. Inclusion approval, Local, CI, Artifact, Target, provider-live
 evidence and Release remain distinct.
@@ -343,7 +353,7 @@ above, without rewriting that earlier evidence.
 
 ### B2 Target deployment and bounded zero-call acceptance — 2026-08-26
 
-Development/test now runs **1.2.3 / `ab4b5b3f42e6819d27ac946ad7899ac08498affb`**,
+At the B2 checkpoint, development/test ran **1.2.3 / `ab4b5b3f42e6819d27ac946ad7899ac08498affb`**,
 tree `91abc085c3df1927ed3444791deeb9403ebc7266`, with the exact **86-entry M87**
 ledger. The maintenance window was **18:28:50–18:29:56 CST**. This is internal
 candidate deployment evidence, not PR merge, formal Release or supplier-live
@@ -471,7 +481,7 @@ supported zero-credential/probe bypass; it did not independently inspect Target
 or authorize a repair. Only the existing three documentation files changed;
 `git diff --check` passed. No runtime tests, CI, push or deployment were added.
 
-### First-customer runtime-reset repair — local candidate, 2026-08-26
+### First-customer runtime-reset repair — Local/CI and Target preview, 2026-08-26
 
 The product owner approved the compatibility repair and subsequent independent
 test-customer initialization after the blocked preflight. The exact Target
@@ -493,8 +503,9 @@ creates no audit or receipt. The deployment-operator panel lists exact shell
 objects and requires explicit confirmation; a changed name, actor or session
 invalidates preview/confirmation, and uncertain submissions retain their
 idempotency intent only within the same identity/session. Ordinary customer
-workspaces have no additional initialization entry. Actual Target shell removal
-is awaiting its separately requested exact-object confirmation.
+workspaces have no additional initialization entry. At the preview checkpoint,
+Target shell removal awaited separate exact-object confirmation; the later
+approved execution is recorded below.
 
 Local evidence: the original handler returned 409 for the runtime-shell fixture;
 the new path passes the first-customer integration suite, including existing
@@ -516,16 +527,317 @@ CSS-animation/committed-selection contract, without changing product behavior,
 timeouts or the warning ratchet. The affected UsersPage/bootstrap/network
 25-test regression, production build and bundle budget then passed. Previously
 passing lanes were not mechanically rerun. The repair adds only that one
-test-file correction to the reviewed scope. CI and deployment are pending; this
-is not a completed Target repair or canonical cutover.
+test-file correction to the reviewed scope. These local checks alone do not
+establish Target execution or a canonical cutover.
 
-Deployment remains the same M87/86-entry ledger, so this candidate needs no
-migration or database rollback. Build exact clean-source images once, replace
-only the application components while retaining the B2 transport/environment
-configuration, and check revision/health/schema plus a read-only operator
-preview before the separately authorized bootstrap. The application rollback
+The one pushed candidate is `e888c05f9d5d70f4809bcd5362373b8fa8f8ecf4`, tree
+`99e461f381d714bbb30a96c8a5068e26d294ff62`, version 1.2.3. Both the
+[main CI run](https://github.com/foigent/unirouter/actions/runs/32963747418) and
+[protocol run](https://github.com/foigent/unirouter/actions/runs/32963747345)
+passed without reruns. Main CI includes the real PostgreSQL 16 Admin integration
+tests, full frontend suite, browser E2E and Docker build. PR #339 remains open;
+there was no merge or formal Release.
+
+Target acceptance on 2026-08-26 (UI runtime observation at 20:00 CST):
+
+- A verified standard Git bundle transported the exact candidate to a clean
+  detached ECS worktree. The supported helper built each component once, using
+  the default official Go proxy. Backend image ID is
+  `sha256:d87061f11ab69a0ccf90812f9d7ea23ff9b7e65504ccbc858e5e83c4c62c0480`;
+  frontend image ID is
+  `sha256:6969a14d44bb8e4525fd3fc6dcd29b6cde7a7a32ca75f3354f4792516ea07a6f`.
+- Canary and stable use that same backend image and are healthy; frontend and
+  HTTPS readiness are healthy. The schema remains M87/86 entries. This repair
+  has no migration, Compose or Nginx source diff. The B2 environment/transport
+  overlays were retained; Nginx was validated and reloaded for refreshed DNS.
+  Legacy routing, compatibility true, async media false and the unchanged
+  cost-observation/legacy compiled defaults remain in effect.
+- The existing admin login remains valid. The deployed operator UI reports
+  `e888c05f9d5d` and its real `dry_run` succeeds for the proposed name
+  `UniRouter Clean Test`, explicitly listing automatic project 85 and the zero
+  wallet for platform organization 1. Confirmation stays unchecked and actual
+  submission was not performed.
+- Before/after readbacks of non-sensitive admin/org/project/wallet fields are
+  equal. There is still one admin, one platform org, one automatic project and
+  one all-zero wallet; two login audits, one session and zero outbox events.
+  Models, connections, deployments, keys, call logs and runtime Releases remain
+  zero. This is Target preview evidence, not Target bootstrap mutation evidence.
+- The current image/source keep entries were added without removing any old
+  entry or running cleanup. Server-private deployment evidence is under
+  `/opt/unirouter/deployment-evidence/20260826-bootstrap-e888c05f`; it includes
+  the source bundle, build log and credential-free acceptance record. The old
+  reset-evidence backups were not read, downloaded or deleted.
+
+Diagnostic boundaries: the initial Target Git fetch used an existing local-
+bundle origin without the requested branch and was corrected to the supported
+bundle path; a manual health check used the wrong `/health` path, then passed
+at `/health/ready`; a Chrome navigation timeout was followed by a loaded page,
+HTTP 200 and successful UI preview. None establishes a product regression.
+The unchanged dependency lock produced audit advisories: the production-only
+audit reports two moderate findings and zero high/critical findings. Exploit
+reachability was not assessed and dependencies were not changed in this batch.
+
+Deployment uses the same M87/86-entry ledger; the application rollback
 target is B2 `ab4b5b3f42e6819d27ac946ad7899ac08498affb` on the same schema;
 rollback must not undo any subsequently approved customer or audit records.
+The repair/preview tranche stopped at the exact-object normalization gate;
+the subsequent approval and initialization checkpoint follow below. Paid
+probes/calls still require a separate bounded traffic budget.
+These post-Target documentation updates are local evidence follow-up, not a
+second implementation push or CI cycle.
+
+### First-customer initialization — Target verified, 2026-08-26
+
+The product owner explicitly approved removing automatic empty project 85 and
+the all-zero wallet of platform organization 1 through the supported bootstrap.
+After rechecking the same healthy `e888c05f9d5d` runtime and exact predecessor,
+the existing authenticated operator UI submitted the same previewed name,
+`UniRouter Clean Test`. The transaction committed at **20:24:58 CST**:
+
+- Independent active root customer **2** and its CNY wallet were created; all
+  wallet amounts are zero. Project 85 and the platform zero wallet were removed
+  only by the guarded bootstrap transaction, not by reset or manual SQL.
+- Admin remains user 1 in platform organization 1 with the same role, status and
+  auth epoch 6. Platform organization 1 remains the active root partner. Both
+  login audits remain; exactly one `bootstrap.first_customer` audit identifies
+  actor 1, platform org 1 and created customer 2. No verifier was read or output.
+  The bootstrap code does not modify admin/verifier, License or Release state.
+- Canary then stable were restarted at the same image/configuration. The normal
+  baseline path created **Default Project 86 / customer 2** once, and the second
+  startup reused it. There are no project memberships; the platform admin was
+  not converted into a customer user or project member. Both replicas are healthy.
+- The operator panel disappeared after the returned customer context refreshed.
+  The customer dashboard now explicitly says `UniRouter Clean Test`; request,
+  deployment and model inventories remain empty. This empty dashboard is not a
+  performance or pricing qualification.
+- Final readback has zero model registry rows, provider credentials, API keys,
+  calls, transactions and Freeze rows. Schema remains M87/86; legacy routing,
+  compatibility true, async media false, source instance, and absent billing/
+  pricing overrides remain unchanged. Effective defaults are cost observation
+  and legacy request pricing, not prepaid charging.
+- The supported canonical **check-only** CLI for customer 2 now reports only
+  `authority_inventory_empty`. The former `customer_root_mismatch` is gone.
+  Exit 1 is an expected missing-inventory result, not a failed cutover. Process-
+  local CLI overrides did not modify daemon configuration or activate canonical.
+
+A new mode-0600 custom-format pre-initialization backup is retained only in
+the existing ECS deployment-evidence directory. Its archive list validated;
+this checkpoint did not repeat a restore drill or inspect the old reset backup.
+Pre-initialization recovery material is retained, but this particular payload
+has not been restore-tested. Restoration is a separately scoped data operation,
+not an automatic rollback of newly retained customer/audit records. No new code,
+gate, push, CI or formal
+Release was needed for this already-tested workflow.
+
+### DeepSeek first paid workflow — bounded proposal, not yet authorized
+
+Candidate identity: `deepseek.v4-flash.api@1.4.0` × CN official OpenAI-compatible
+`chat.completions` × non-stream text. Proposed public model ID `deepseek-v4-flash`,
+upstream `deepseek-v4-flash`, endpoint `https://api.deepseek.com`. Connection,
+deployment, operation and credential revisions must be resolved and frozen
+before the connectivity probe. Only a successful exact probe permits subsequent
+Release authoring/activation; exact Release, route and client-key identities
+must then be frozen before the gateway request. The later saved-onboarding
+checkpoint below records the pre-probe identities; Release and client keys
+remain absent.
+This staged ordering does not permit fabricated probe evidence or skipping
+canonical preconditions.
+
+| Request | Maximum upstream calls | Frozen request boundary |
+|---|---:|---|
+| Supported operation connectivity probe | 1 | Short fixed text, `stream=false`, `max_tokens=1`; existing 15-second probe client, no redirect or application retry. Provider-default thinking remains in effect; this is not reasoning conformance evidence. |
+| Generic-client gateway non-stream text | 1 | Single short text message, explicit `thinking.type=disabled`, `max_tokens=128`, `stream=false`; exact Profile/Release/route binding required. |
+| Direct upstream comparison | 1 | Same input, model and output/thinking settings as the gateway request; no tools/media/search. |
+
+Proposed total ceiling: **3 provider requests / CNY 1**, including the probe;
+no automatic retry or failover and stop for diagnosis on any failure. A timeout
+or ambiguous dispatch consumes a call slot and cannot be treated as free.
+The two functional requests use at most 128 completion tokens and a conservative
+512-input-token planning allowance. This is a proposed authorization envelope,
+not a claim that a local wallet can enforce the supplier's bill. The current
+customer wallet must retain zero holds, zero debits and no customer financial
+transaction; absent price remains unavailable, not an approved zero tariff.
+
+Official Chinese [DeepSeek pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
+was re-read on 2026-08-26: Flash's off-peak input/cache-hit/output prices per
+million tokens are CNY 1.5/0.05/4.5; weekday peaks are 3/0.10/9 (Beijing
+09:00–12:00 and 14:00–18:00). The conservative three-request token estimate at
+peak rates is CNY 0.008064, distinct from the proposed CNY 1 authorization cap.
+Rates must be checked again before dispatch. This is a local supplier-cost
+estimate, not supplier-reported cost, customer pricing or an active Rate Card.
+The [Chat reference](https://api-docs.deepseek.com/zh-cn/api/create-chat-completion/)
+documents the explicit thinking toggle; current provider output maximum is
+384K, while the Profile's 32,768 is a UniRouter request default and is not used
+for these tightly bounded test requests.
+
+The older 2026-08-24 frontend price summary is not current price evidence.
+It already remains `manual_review_required` and supplies no executable rates;
+no stale price was activated. Updating that dated summary is a bounded pricing-
+documentation follow-up, not authority to implement missing cache-write meters,
+customer charging or a financial redesign. The existing POC smoke script is
+not run unchanged: it lacks this explicit output/thinking bound and does not
+provide sufficient usage/receipt evidence. No Agent framework is required.
+
+Before operator credential entry, the Chrome onboarding form was prepared but
+unsaved: it projected the official
+DeepSeek endpoint, exact Flash @1.4.0 Profile, stable upstream/public ID,
+Chat operation, 1M context, 384,000 public maximum output and 32,768 request
+default. At that checkpoint no supplier credential was entered or created, and
+no probe ran.
+Its existing price-summary warning still contains the older numbers; those
+must not be used for the proposed test budget or represented as current pricing.
+
+The operator subsequently entered the credential in the secure UI, as recorded
+below; no secret was pasted into this conversation or read back by the agent.
+The budget decision is still pending. Remaining zero-call setup and canonical
+preconditions do not authorize a probe implicitly.
+The bounded independent closing review found no additional bootstrap blocker.
+Two `validated_required` wording findings were accepted: separate pre-probe
+identity freezing from post-probe Release/client freezing, and avoid claiming
+that archive-list validation proves restoration. Both are corrected above;
+the reviewer did not independently repeat Target checks or approve traffic.
+
+### DeepSeek Flash saved onboarding — zero-call readback, 2026-08-26
+
+At 22:13 CST, after the operator reported completing credential entry, read-only
+Target checks found the onboarding already saved. No duplicate submit was made.
+
+- Public model **677**, customer **2**, `deepseek-v4-flash`, lifecycle `staging`,
+  exact `deepseek.v4-flash.api@1.4.0`, context 1,000,000 and output cap 384,000.
+- Connection **9@revision 1**, DeepSeek official HTTPS origin, adapter
+  `openai_compatible`, enabled. Deployment **1@revision 1** binds model 677 and
+  connection 9 to upstream `deepseek-v4-flash`; priority/weight 100/100, context
+  1,000,000 and request-default output 32,768.
+- Credential binding **9@state revision 1** is active and linked only to that
+  deployment; last-used/cooldown are null and fail count is zero. Only metadata
+  was queried, never the encrypted key or plaintext. This does not prove the
+  credential is accepted by DeepSeek.
+- Operation **`openai.chat_completions.v1`@revision 1** is `declared`, with no
+  verified timestamp or capability-evidence rows. There are zero probes, calls,
+  runtime Releases, client keys, legacy model/org prices, transactions or Freeze
+  rows. The customer wallet remains all-zero; one create audit was added while
+  the bootstrap audit and two login audits remain.
+- The current canonical check still returns `authority_inventory_empty` for
+  runtime assignments; it does not mean the newly saved deployment is missing.
+  No daemon mode, configuration, Release or traffic was changed in this readback.
+
+The first 3-call/CNY-1 supplier budget remains unapproved. Credential entry or
+successful persistence cannot authorize a paid connectivity probe implicitly.
+
+### DeepSeek first paid workflow — approved pre-dispatch checkpoint, 2026-08-26
+
+Following the saved-onboarding readback, the product owner explicitly confirmed
+the proposed **maximum 3 supplier requests / CNY 1** batch. The preceding
+unapproved proposal/readback paragraphs are historical checkpoints, not the
+current authorization state. Only the three rows of that frozen matrix are
+approved: one supported operation probe, one generic-client non-stream request,
+and one direct comparison. No automatic retry, failover, additional probe,
+streaming, tools, reasoning-conformance or other model traffic is approved.
+Any failed or ambiguous dispatch consumes its slot and stops further traffic
+for diagnosis; unused slots are not permission to change the matrix.
+
+The pre-probe identity is customer 2 / public model 677 /
+`deepseek.v4-flash.api@1.4.0` / connection 9@1 / deployment 1@1 /
+`openai.chat_completions.v1` operation revision 1 / credential binding 9@1.
+The operation endpoint protocol remains `openai.chat_completions@1.0.0`;
+it is not the model's execution Profile identity. Release, route and caller
+identities must be established through supported workflows and separately
+frozen before the gateway request, never fabricated as probe prerequisites.
+
+Readiness was rechecked at 22:58 CST: both replicas remain healthy at
+`e888c05f9d5d`, API readiness reports DB/Redis healthy, and supplier probes,
+gateway calls, Releases, client keys, financial transactions and Freeze rows
+are still zero. Customer 2's CNY wallet is all-zero. Billing/pricing overrides
+remain absent (`cost_observation` / `legacy` compiled defaults); daemon routing
+remains legacy with compatibility enabled and async media disabled.
+The official Chinese pricing page was refreshed again before dispatch and
+retains the peak/off-peak rates quoted above. The peak-priced conservative
+token estimate remains CNY 0.008064, not an invoice or customer tariff.
+
+No supplier request has been sent at this checkpoint. The secure generic-client
+credential path and transport no-replay boundary are being checked independently;
+reviewer findings do not grant additional authority or change the matrix.
+
+### DeepSeek Flash exact connectivity probe — Target verified, 2026-08-26
+
+At **23:02:34 CST**, the authenticated operator submitted the supported exact
+probe once. Durable probe **1** records HTTP **200**, **298 ms**, 533 response
+bytes, `success=true`, `provider_success=true`, `current=true`, reason `ok`,
+and reported model `deepseek-v4-flash`. Connection 9@1, deployment 1@1 and
+credential binding 9@1 match the frozen pre-dispatch identity. The operation
+advanced from `declared` revision 1 to `live_probed` revision 2 with `probe:1`.
+No capability evidence was synthesized. The returned alias is not evidence of
+an exact upstream model release or a permanent version pin.
+
+This consumes **1 of 3 supplier-call slots**. Gateway and direct-comparison
+slots are unspent. The probe does not persist token usage or supplier-reported
+cost, so its actual cost is **unavailable**, not zero. The token/rate planning
+allowance above remains an Estimate, not an Observation. Its 298 ms latency is
+for this tiny connectivity probe, not a text-generation performance baseline.
+Target readback still has zero gateway call logs, Freeze records and financial
+transactions; all customer-wallet amounts remain zero. No Release was authored,
+no client key issued, and no canonical switch occurred.
+
+The remaining functional requests are paused at two preconditions:
+
+- `validated_blocker`: the default gateway `providerClient` followed HTTP
+  redirects inside one `.Do`, outside the provider-attempt count. A local test
+  using the real adapter's replayable POST and controlled transport reproduced
+  two HTTP requests for each of 301/302/303/307/308. There is no evidence that
+  DeepSeek performed such a redirect. The minimal local fix refuses redirects
+  and preserves the original status/body for ordinary failure handling; it
+  changes no Profile, schema, routing selector, retry count or price. Target
+  still runs the preceding `e888c05f9d5d` implementation until a verified handoff.
+- `product_decision_required`: service credentials require a real, same-customer
+  human sponsor. The only current user is platform admin 1/org1, who cannot be
+  repurposed as customer 2's sponsor. The minimum supported path is a separately
+  owned customer `member`, project 86 `project_user`, and a non-production
+  workload/direct grant explicitly bound to that sponsor. The operator must
+  identify the accountable person; a fabricated test user is not human approval.
+  No user, membership or grant has been created as a workaround. Personal
+  credentials remain owner-self-service; platform-admin authority does not
+  permit impersonating that owner.
+
+The bounded reviewer supplied source findings only. The main agent validated
+the transport defect with the failing local test and separately classified the
+human-sponsor decision; neither finding authorizes extra paid calls or a new
+identity policy. Remaining scope is still the original gateway/direct pair.
+
+Local repair closeout: the redirect regression now passes for 200 and all five
+redirect statuses. After the bounded independent code review found no blocker,
+the necessary local gate passed once: `go test -race ./internal/gateway
+./internal/adapters` (gateway 98.911 s, adapters 2.715 s), followed by
+`go vet ./internal/gateway ./internal/adapters` and `git diff --check`.
+The review's one ambiguous milestone sentence was corrected without expanding
+scope. A macOS linker warning did not fail the gate. This repair has not been
+pushed, CI-tested or deployed; the earlier commit's CI is not evidence for this
+new diff. The remaining live requests await the customer-side responsibility
+decision; the already-authorized repair handoff can proceed independently.
+No additional supplier traffic was used by these tests.
+
+### Cumulative paid-test budget update — approved, 2026-08-26
+
+The product owner subsequently authorized continued testing with a cumulative
+ceiling of **20 supplier calls / CNY 5**, including the successful probe already
+recorded above. This supersedes the earlier 3-call/CNY-1 ceiling, not its evidence
+or the approved model/surface/capability scope. Current usage is one call; at
+most 19 additional calls remain available. The earlier probe's actual supplier
+charge is unavailable and must not be treated as a free call or zero cost.
+
+The current active matrix remains Flash non-stream text: one gateway request
+and one same-payload direct comparison with thinking disabled, `max_tokens=128`
+and no tools/media/search. Remaining budget is not a target to consume. Any
+subsequent already-approved capability needs its own bounded request matrix and
+cost estimate frozen before dispatch, within this same cumulative ceiling.
+Probe, retries, direct comparisons, failover and ambiguous dispatches all count;
+automatic retry/failover remains disabled for this matrix and failures stop
+further traffic for diagnosis. No wallet mode, price authority, identity policy,
+canonical prerequisite or Release guard is relaxed by the larger budget.
+
+The budget update did not explicitly identify a customer-side human sponsor.
+That narrow responsibility question remains separate; meanwhile the reviewed
+no-redirect repair proceeds through its one push/CI/Target handoff, with no new
+supplier request required for deployment acceptance.
 
 ## Historical local milestone log
 

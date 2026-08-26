@@ -102,7 +102,11 @@ func (relay *Relay) providerClient(timeout time.Duration) adapters.HTTPDoer {
 	if relay != nil && relay.providerHTTPDoer != nil {
 		return relay.providerHTTPDoer
 	}
-	return &http.Client{Timeout: timeout}
+	// A redirect would dispatch outside the frozen route identity and provider
+	// attempt ledger. Preserve the original response for normal failure handling.
+	return &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
 }
 
 type preparedModelExecutionBatch struct {

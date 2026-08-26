@@ -323,8 +323,8 @@ and development/test canonical enablement subject to supported preflight and
 recovery conditions. This does not authorize supplier calls/probes, new identity
 initialization, a reset, code changes to weaken authority gates, or other models.
 The [blocked preflight](42-model-execution-profile-capability-status.md#deepseek-zero-call-preparation--blocked-preflight-2026-08-26)
-found no explicit customer root or assigned Release inventory, and the current
-first-customer bootstrap does not accept the observed post-reset runtime shell.
+found no explicit customer root or assigned Release inventory; the bootstrap
+deployed at that checkpoint did not accept the post-reset runtime shell.
 Canonical enablement remains unexecuted. Resolve that initialization scope,
 then obtain the bounded probe/traffic authorization needed for a first sealed
 Release; zero-call authorization cannot substitute for those prerequisites.
@@ -338,5 +338,28 @@ affected documentation, one integration/CI handoff and exact candidate Target
 deployment. No schema, Profile, price, canonical/probe guard or credential
 authority changes belong here. Actual removal of the two automatic Target shell
 objects (project 85 and the zero wallet for organization 1) was separately
-presented for explicit confirmation; no data mutation occurs until authorized.
+presented for explicit confirmation and subsequently approved by the product
+owner. The supported transaction created customer 2 and its zero wallet; normal
+startup created Default Project 86. Admin/platform identity and retained login
+evidence remain unchanged. This approval does not authorize further deletion.
 Paid probes remain a later separately budgeted action, not an automatic next step.
+The bounded repair now has passing Local/CI and
+[Target read-only preview evidence](42-model-execution-profile-capability-status.md#first-customer-runtime-reset-repair--localci-and-target-preview-2026-08-26)
+at `e888c05f9d5d70f4809bcd5362373b8fa8f8ecf4`, followed by the approved Target
+initialization checkpoint. This closes the bootstrap prerequisite, not any
+model's provider-live/Release acceptance. The first DeepSeek 3-call/CNY-1
+proposal in the status document subsequently received explicit product-owner
+approval. Only that exact probe/gateway/direct matrix is authorized; this is
+not a baseline scope expansion or a standing paid-traffic allowance.
+The subsequent operator credential entry produced one saved DeepSeek Flash
+staging deployment, verified only by zero-call readback. Credential entry did
+not itself authorize traffic or confer live capability/Release evidence; the
+later explicit budget approval is recorded separately in the status document.
+The first authorized probe subsequently passed, consuming one of the three
+slots. Only operation connectivity is evidenced; the gateway/direct pair remains
+pending transport and caller-identity prerequisites. This does not extend the
+approved matrix or permit replacing unused slots with other tests.
+The subsequent product-owner budget update raises the cumulative ceiling to
+20 calls/CNY 5, including that probe. It does not add model/surface/capability
+requirements; each later authorized milestone still freezes its own bounded
+matrix before using any of the remaining shared allowance.

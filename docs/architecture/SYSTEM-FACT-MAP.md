@@ -13,8 +13,25 @@ M85–M87 batch inclusion is tracked in
 [B1 scope](../tech-ref/44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26);
 this source ceiling alone does not prove a deployment. The separately authorized
 [B2 Target checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#b2-target-deployment-and-bounded-zero-call-acceptance--2026-08-26)
-records development/test on exact commit `ab4b5b3f42e6819d27ac946ad7899ac08498affb`
-and the 86-entry M87 ledger after a non-rolling maintenance window on 2026-08-26.
+records the 86-entry M87 ledger after a non-rolling maintenance window on
+2026-08-26. The subsequent
+[bootstrap repair checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#first-customer-runtime-reset-repair--localci-and-target-preview-2026-08-26)
+records the currently deployed `e888c05f9d5d70f4809bcd5362373b8fa8f8ecf4`
+with the same schema and a successful read-only operator preview. The later
+[approved initialization](../tech-ref/42-model-execution-profile-capability-status.md#first-customer-initialization--target-verified-2026-08-26)
+created independent customer 2, its zero CNY wallet and startup-owned Default
+Project 86; admin/platform organization 1 and login evidence remain separate.
+A later readback confirms one staging DeepSeek Flash deployment and credential
+binding under customer 2. Following explicit approval of a 3-call/CNY-1 batch,
+exact probe 1 succeeded at 23:02:34 CST on 2026-08-26 (HTTP 200, 298 ms), advancing
+only the Chat operation to `live_probed` revision 2. There is still no Release,
+runtime assignment or gateway-client call; canonical remains disabled. This
+single connectivity result does not prove model capabilities, usage or pricing.
+The remaining gateway/direct pair awaits a verified no-redirect transport fix
+and an explicitly owned customer-side test sponsor; no new identity was invented.
+The product owner later increased the cumulative test ceiling to 20 calls/CNY 5,
+including probe 1; this is spending authority, not evidence of further calls or
+a change to caller-identity, capability or Release requirements.
 That evidence does not imply supplier-live capability, billing or Release
 qualification. After running
 migrations or honoring `SKIP_MIGRATION`, every backend reads the complete,
@@ -101,7 +118,9 @@ write-free `dry_run` projection in the existing API, exposed only in the
 deployment-operator workspace. It preserves admin/platform identity and login
 evidence, normalizes only an explicitly authorized automatic empty project and
 zero wallet, and creates a separate customer; it does not alter startup/probe
-gates or make the local candidate Target evidence.
+gates. After explicit exact-object approval, Target initialization succeeded;
+the subsequent canonical check removed the customer-root blocker but still
+rejects empty runtime inventory. This is not supplier-live or billing evidence.
 
 ## 2. User workspaces
 
