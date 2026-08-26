@@ -137,6 +137,37 @@ function LocationProbe() {
   return <div data-testid="location">{location.pathname}{location.search}</div>;
 }
 
+async function chooseWorkbenchOption(label: string, option: RegExp) {
+  const user = userEvent.setup({ skipHover: true });
+  const combobox = screen.getByRole('combobox', { name: label });
+  await user.click(combobox);
+  await waitFor(() => expect(combobox).toHaveAttribute('aria-expanded', 'true'));
+  const controlledID = combobox.getAttribute('aria-controls');
+  if (!controlledID) throw new Error(`missing controlled options for ${label}`);
+  const currentChoice = () => {
+    const lists = Array.from(document.querySelectorAll<HTMLElement>('[id]'))
+      .filter(node => node.id === controlledID);
+    for (const list of lists.reverse()) {
+      const choice = within(list).queryAllByRole('option').find(node => option.test(node.textContent || ''));
+      if (choice) return choice;
+    }
+    return undefined;
+  };
+  await waitFor(() => expect(currentChoice()).toBeTruthy());
+  const choice = currentChoice();
+  if (!choice) throw new Error(`missing option for ${label}`);
+  const popup = choice.closest('[role="dialog"]');
+  expect(popup).toBeTruthy();
+  // As in ModelEndpointsPage tests, jsdom must supply CSS animation completion.
+  // Wait for the positioned popup so a pre-positioning option is not clicked.
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-show'));
+  fireEvent.animationEnd(popup as Element);
+  await user.click(choice);
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-hide'));
+  fireEvent.animationEnd(popup as Element);
+  await waitFor(() => expect(combobox).toHaveTextContent(option));
+}
+
 describe('DeveloperConsolePage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -153,9 +184,8 @@ describe('DeveloperConsolePage', () => {
       await screen.findByText('Company Chat');
       fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
       fireEvent.change(screen.getByLabelText('max_tokens（可选）'), { target: { value: '128' } });
-      fireEvent.click(screen.getByRole('combobox', { name: 'thinking.type（可选）' }));
-      fireEvent.click(await screen.findByRole('option', { name: /disabled/ }));
-      fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      await chooseWorkbenchOption('thinking.type（可选）', /disabled/);
+      await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
       await screen.findByText('OK');
       const [path, init] = fetchMock.mock.calls[0];
       expect(path).toBe('/v1/chat/completions');
@@ -186,16 +216,13 @@ describe('DeveloperConsolePage', () => {
       renderPage();
       await screen.findByText('Company Chat');
       fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
-      fireEvent.click(screen.getByRole('combobox', { name: 'thinking.type（可选）' }));
-      fireEvent.click(await screen.findByRole('option', { name: /disabled/ }));
+      await chooseWorkbenchOption('thinking.type（可选）', /disabled/);
       mockGetModelCatalog.mockResolvedValue({ data: [{ ...MODELS.data[0], model_name: 'model-b', aliases: '', display_name: 'Replacement' }], total: 1 });
       fireEvent.click(screen.getByText('刷新'));
       await screen.findByText('Replacement');
       expect(screen.getByRole('button', { name: /运行$/ }).hasAttribute('disabled')).toBe(true);
       expect(fetchMock).not.toHaveBeenCalled();
-      await waitFor(() => expect(screen.queryByRole('option', { name: /disabled/ })).toBeNull());
-      await userEvent.click(screen.getByRole('combobox', { name: '调试模型' }));
-      fireEvent.click(await screen.findByRole('option', { name: /model-b/ }));
+      await chooseWorkbenchOption('调试模型', /model-b/);
       fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
       await screen.findByText('replacement OK');
       const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
@@ -218,8 +245,7 @@ describe('DeveloperConsolePage', () => {
       const modelInput = await screen.findByPlaceholderText('输入现有模型或别名');
       fireEvent.change(modelInput, { target: { value: 'model-a' } });
       fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
-      fireEvent.click(screen.getByRole('combobox', { name: 'thinking.type（可选）' }));
-      fireEvent.click(await screen.findByRole('option', { name: /disabled/ }));
+      await chooseWorkbenchOption('thinking.type（可选）', /disabled/);
       fireEvent.change(modelInput, { target: { value: 'model-b' } });
       fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
       await screen.findByText('switched OK');

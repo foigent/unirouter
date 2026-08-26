@@ -1006,8 +1006,25 @@ review confirmed the final correction without expanding scope. All 30 workbench
 tests, the affected admin package race tests (15.280 s), admin vet, isolated
 PostgreSQL integration and the production frontend build/bundle guards passed.
 The existing Semi findDOMNode warning remains within its tracked ratchet; the
-macOS linker warning did not fail the race gate. Push/CI and deployment of this
-repair are still pending. No paid call was used to discover or reproduce these defects; cumulative
+macOS linker warning did not fail the race gate. The first candidate was pushed
+as `fe692d0da1203b7d3250eada740a75ab2fcaae1f`, tree
+`6a6bf0523c4378167a3de093043323a5a95986f6`. Its automatic CI 32996980104
+passed real-backend browser acceptance but failed frontend testing: 644/645
+passed, with the new bounded-request test missing thinking in its captured body.
+This candidate was not deployed; its built images/evidence remain identifiable.
+
+The correction changes only the test interaction and this evidence record.
+User-event clicks plus value waits alone also reproduced the problem in the
+Node24 full suite. The existing ModelEndpointsPage test pattern supplies the
+positioned popup's enter/leave completion: jsdom does not emit CSS animation
+events, and the controlled Select defers onChange until popoverClose. The test
+still clicks real options and asserts exact payloads; it does not change product
+code, disable animation, increase timeouts or relax assertions. A bounded
+independent counter-review confirmed that boundary. Node **24.19.0** full
+frontend tests then passed **82 files / 645 tests** in **41.02 s**, with the
+existing warning ratchets unchanged. The corrected candidate still needs its
+own CI before deployment; the first candidate's failure is not relabeled green.
+No paid call was used to discover or reproduce these defects; cumulative
 supplier dispatch remains **1/20**, CNY 5 ceiling, prior probe charge unavailable
 (not zero). The gateway/direct functional pair remains unexecuted.
 
