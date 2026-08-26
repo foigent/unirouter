@@ -4,6 +4,7 @@ import { IconPlus, IconRefresh } from '@douyinfe/semi-icons';
 import { api } from '../api/client';
 import { EmptyState, MetricTile, PageHeader, Surface } from '../ui';
 import { formatDateTime } from '../utils/formatDate';
+import FirstCustomerBootstrapPanel from './FirstCustomerBootstrapPanel';
 
 const { Text, Title } = Typography;
 
@@ -247,6 +248,7 @@ export default function DeploymentNetworkPage() {
         description="先查看 UniRouter 实际正在运行的实例；如需记录额外的客户部署或访问入口，再维护附加登记。登记不会执行部署。"
         actions={<><Button onClick={() => openProfile()} icon={<IconPlus />}>登记附加部署</Button><Button type="primary" onClick={() => openEndpoint()} icon={<IconPlus />} disabled={!profiles.length}>登记附加入口</Button></>}
       />
+      <FirstCustomerBootstrapPanel />
       <Banner
         type="info"
         description="上方“当前运行实例”来自服务自身的只读观测；下方登记只保存非秘密的说明与期望状态，不会创建服务器、修改 DNS、重启 Ingress 或保存 TLS 私钥。"

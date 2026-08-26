@@ -51,6 +51,12 @@ Responses and Chat Completions, this expands to **33 surface-specific product
 identities**. `E`, `D`, `F` and `N` mean `execution_required`,
 `documentation_required`, `deferred` and `not_applicable` respectively.
 
+Completion means closing approved model × surface × capability rows, not
+supporting Chat, Responses and Messages for every model. Cross-protocol
+translation is a separate product scope. Reuse this matrix and resolve only
+undecided rows; a finite delivery batch must not reopen the entire Mission or
+automatically absorb the next row.
+
 Core columns are exact capability milestones:
 
 - `op`: non-stream Chat, Messages or Responses request for the named surface;
@@ -155,6 +161,21 @@ prepaid customer-wallet path.
 - Documentation-only: exact source and matrix/schema completeness; no invented
   runtime or financial test.
 
+Representative live acceptance also includes a fixed SDK/runtime version for
+the approved surface: stream parsing, function-tool round trips and multi-turn
+state where those capabilities are in scope. Homologous models need difference
+checks, not every language/SDK combination. SDKs and Agent smoke do not replace
+the generic protocol client's usage, cache-read and billing authority.
+
+Performance acceptance separates valid completed responses, rate limits,
+provider/client errors, transport failures, timeouts and stream-terminal errors.
+Record sample size, concurrency, time to first content token and full duration;
+missing usage is absent, never invented tokens. Controlled-upstream gateway
+measurements and bounded live-provider observations answer different questions.
+A few live calls cannot establish capacity, tail latency or a competitive claim.
+These checks accompany later representative batches; they are not prerequisites
+for the zero-supplier-call deployment batch.
+
 Active Milestone, current Profile versions and progress remain mutable
 projections outside this draft Baseline.
 
@@ -226,3 +247,96 @@ Not included: new provider/model/surface/capability, financial-architecture
 rework, native-USD observation, FX, nonstandard-tier wallet settlement, paid
 supplier traffic, Target migration/deployment, reset, identity changes,
 canonical switch or Release promotion. Those require their own later boundary.
+
+## 6. B2 finite Target batch — authorized scope and acceptance, 2026-08-26
+
+The accepted next direction is **deploy the integration-qualified version to
+development/test and perform zero-supplier-call onboarding acceptance**.
+After the read-only preflight, the product owner explicitly authorized the
+bounded build, server-local upgrade backup/recovery verification, maintenance,
+non-rolling M83 → M87 deployment and zero-supplier-call template acceptance.
+This is B2 execution authority, not authority inferred from B1 or a reviewer.
+PR merge and formal release are separate actions, not prerequisites or implicit
+parts of this development/test candidate deployment.
+
+Execution outcome: the exact candidate is deployed on development/test with
+M87's complete 86-entry ledger. The non-rolling maintenance and representative
+unsaved-template acceptance are recorded in the
+[B2 Target checkpoint](42-model-execution-profile-capability-status.md#b2-target-deployment-and-bounded-zero-call-acceptance--2026-08-26).
+That checkpoint does not approve the global Draft matrix or promote any
+capability to supplier-live/released. No next paid test starts automatically.
+
+The integration-qualified candidate is `ab4b5b3f42e6819d27ac946ad7899ac08498affb`
+(1.2.3), tree `91abc085c3df1927ed3444791deeb9403ebc7266`. Build that exact clean
+checkout and verify the resulting image digests before execution; do not infer
+artifact or Target evidence from successful CI. A changed source candidate needs
+an explicit diff decision and affected validation, not a silent substitution.
+
+1. Freeze only this batch's artifact, configuration, migration chain, entry
+   points and acceptance checks. No new model, capability, financial contract
+   or cross-protocol conversion enters B2. Reuse the supported development/test
+   image lifecycle in deployment-runbook §9.10.
+2. Require a maintenance window for the shared database's M83 → M87 transition
+   (M84–M87, 82 → 86 applied migrations). Block new gateway and control-plane
+   traffic at every entrance, drain and stop all old writers, then use one
+   explicit migration owner. `SKIP_MIGRATION` does not bypass the exact-ledger
+   startup check; old stable and new canary must not coexist across this change.
+3. Before stopping service, verify the exact release checkout, migration file
+   bytes and actual read-only mount sources as well as image identity. Verify
+   the container stop budget against application shutdown, not an assumed
+   Compose default. An active-request sample alone is not drain proof.
+4. Define application **and database** recovery before migration, using a new
+   authorized server-local upgrade backup with a verified recovery path. Do not
+   inspect, download, delete or repurpose the private reset backup. Retaining an
+   old image is not sufficient. Guarded reverse migrations apply only while
+   their evidence-preservation preconditions hold; never delete evidence to
+   force them. Any restore must account for writes after its snapshot.
+5. After exact-ledger readback, start matching replicas and verify health,
+   commit/version, source instance, unchanged routing/billing modes and business
+   baseline. Have the user re-establish admin login if needed, without exposing
+   credentials. Check surface-specific catalog/template defaults and truthful
+   UI labels with read-only or unsaved forms. No provider probe, provider model
+   discovery, credential validation call, SDK/Agent traffic or inference is
+   authorized. Persisted onboarding/price/binding/Release changes require an
+   explicitly listed acceptance action and recovery treatment; zero supplier
+   calls does not make those writes rollback-neutral.
+6. Stop after the bounded Target report. It establishes deployment and zero-call
+   onboarding evidence only, not provider-live verification, billing completion
+   or Release promotion. Next is a separately bounded DeepSeek milestone with
+   explicit output/reasoning limits and total call/cost budgets including all
+   retries and failover attempts; it does not start automatically.
+
+For later batches, finance is a dependency, not a phase mechanically delayed
+until every model is tested. Verify effective runtime BillingMode, pricing
+authority and missing-price behavior before the first real call; never change
+the environment-wide mode implicitly or trust a request-level override. An
+approved zero-customer-charge path still requires a supplier-spend budget.
+Search metering, cache storage and nonstandard tiers cannot claim billing
+completion before their corresponding contracts exist. Current cost-observation
+mode is not native-USD supplier cost accounting, and unavailable customer pricing
+must not be represented as an approved zero price.
+
+## 7. Subsequent DeepSeek preparation boundary — 2026-08-26
+
+The product owner subsequently approved DeepSeek V4 Flash onboarding preparation
+and development/test canonical enablement subject to supported preflight and
+recovery conditions. This does not authorize supplier calls/probes, new identity
+initialization, a reset, code changes to weaken authority gates, or other models.
+The [blocked preflight](42-model-execution-profile-capability-status.md#deepseek-zero-call-preparation--blocked-preflight-2026-08-26)
+found no explicit customer root or assigned Release inventory, and the current
+first-customer bootstrap does not accept the observed post-reset runtime shell.
+Canonical enablement remains unexecuted. Resolve that initialization scope,
+then obtain the bounded probe/traffic authorization needed for a first sealed
+Release; zero-call authorization cannot substitute for those prerequisites.
+
+After that preflight, the product owner explicitly approved the minimal
+first-customer compatibility repair and subsequent supported initialization of
+a separate test customer. The implementation tranche is finite: one additional
+exact runtime-reset predecessor in the existing bootstrap, a no-write preview
+and necessary operator confirmation UI, predecessor/negative/concurrency tests,
+affected documentation, one integration/CI handoff and exact candidate Target
+deployment. No schema, Profile, price, canonical/probe guard or credential
+authority changes belong here. Actual removal of the two automatic Target shell
+objects (project 85 and the zero wallet for organization 1) was separately
+presented for explicit confirmation; no data mutation occurs until authorized.
+Paid probes remain a later separately budgeted action, not an automatic next step.

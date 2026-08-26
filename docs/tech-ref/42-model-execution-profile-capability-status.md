@@ -9,21 +9,24 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-## B1 integration snapshot — not a completed adaptation claim
+## Delivery snapshot — B1 Local/CI closed; B2 bounded Target/zero-call closed
 
-Active work is the finite B1 integration closeout in
-[Baseline §5](44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26).
-No further model/capability promotion is active. The initial candidate is based
-on `4fd2405ef81340b5f1b19f12adce6ee7fdf892bb`; its 204 changed paths are cumulative
-WIP, not 204 completed deliverables. Inclusion approval, local integration,
-CI, Target and provider-live evidence are distinct gates.
+The finite B1 integration batch in
+[Baseline §5](44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26)
+has closed at Local/CI on `ab4b5b3f42e6819d27ac946ad7899ac08498affb`.
+B2's explicitly authorized bounded Target deployment in Baseline §6 is now on
+1.2.3/M87; the exact deployment and zero-call acceptance checkpoint is below.
+This does not start a new model/capability milestone. The original 204-path WIP
+was the cumulative B1 candidate, not the current worktree or 204 completed
+deliverables. Inclusion approval, Local, CI, Artifact, Target, provider-live
+evidence and Release remain distinct.
 
 There are **30 upstream model entries and 33 current surface identities**.
 The table is a code projection of exact new-attachment pointers, not a Baseline
 approval or proof that each model satisfies the full capability matrix.
-Recorded local milestones cover bounded subsets. The final local gate checkpoint
-is recorded below; CI and all new Target/live/release claims require their own
-exact-commit/environment evidence.
+Recorded local milestones cover bounded subsets. Local/CI, the historical
+preflight and B2 Target acceptance are recorded separately below; supplier-live
+and Release claims still require their own exact identity/evidence.
 
 <!-- current-profile-inventory:start -->
 | Current exact Profile | Surface |
@@ -224,9 +227,305 @@ are included. With only enter completion supplied, both original tests failed
 deterministically; supplying leave completion passed all 24 page tests and the
 full 622-test frontend suite. Type checking, API/React guards, production build,
 bundle budget and the unchanged warning ratchet passed. The bounded independent
-source review found no blocker. CI evidence must still come from the run bound
-to the repair commit in [PR #339](https://github.com/foigent/unirouter/pull/339),
-not from these local results; no Target/live/release claim follows.
+source review found no blocker. The repair's CI outcome is recorded separately
+below; no Target/live/release claim follows from the local results.
+
+### B1 exact-commit CI closeout
+
+Read back on 2026-08-26: [PR #339](https://github.com/foigent/unirouter/pull/339)
+remains open, with head `ab4b5b3f42e6819d27ac946ad7899ac08498affb` and source tree
+`91abc085c3df1927ed3444791deeb9403ebc7266`.
+[CI 32951189399](https://github.com/foigent/unirouter/actions/runs/32951189399)
+passed Backend Tests, Frontend Build, PR4 Browser E2E and Docker Build;
+[protocol conformance 32951189406](https://github.com/foigent/unirouter/actions/runs/32951189406)
+also passed. This closes B1 integration, not all 30 models' adaptation. The next
+batch does not reopen the tested runtime diff or automatically trigger more CI.
+
+### B2 read-only Target preflight — 2026-08-26, approximately 17:48 CST
+
+Commands ran from the local workstation to the verified `unirouter-dev` SSH
+target, 8.130.18.85. No Target writes or supplier calls were made.
+
+| Item | Observed current state |
+|---|---|
+| Application | 1.2.2; stable/canary/frontend revision `4b0ca40040f011e06349ee66762a5dccccf387d2` |
+| Release checkout | `/opt/unirouter/releases/4b0ca40040f011e06349ee66762a5dccccf387d2`; tree `5d0a4378356e4afd4ebedd4be37676aab037e224`; migration directory reports no Git changes |
+| Backend image ID | Both replicas: `sha256:a86ce9968f089d6d3e593870006f038575237c59a2f9fae0c51a7b9d4750812a` |
+| Frontend image ID | `sha256:ca55c8a96b7515000fda7f225c4683b426f9e35f195ad3f34b16f941afa1a7e8` |
+| Database | Both replicas use the same database; ledger count 82, ceiling M83; installed `migrate status` reports no pending migration for the old artifact |
+| Health | Stable/canary readiness: application, DB and Redis OK; frontend/Nginx containers running (not browser/TLS acceptance) |
+| Routing/source | `legacy`, compatibility enabled, async media disabled; source instance `unirouter-test-reset-20260824-v3` on both replicas |
+| Billing | Both billing environment overrides absent; installed exact-version config resolves defaults to `cost_observation` / `legacy`. This is configuration evidence, not proof of future request settlement or native-USD cost support |
+| Baseline | One active admin, Default Project and CNY wallet; balance/grant/frozen/spent all zero. Models, connections, deployments, credential bindings, channels, API keys, rate cards, model prices, calls, transactions, attempts and Freeze records all zero |
+| Audit | One `login` / `user` entry dated 2026-08-24; audit is no longer empty. Current browser session was not inspected |
+| Host capacity | Docker/containerd filesystem: approximately 14 GiB available, 64% used; recheck before building |
+
+Deployment prerequisites still open, not verified by the table:
+
+- Explicit authority for build, server-local upgrade backup, maintenance
+  and non-rolling M84–M87 migration/deployment. No `ab4b5b3f42e6` deployment images
+  were listed on Target; the authorized build must match the pinned candidate
+  commit/tree and record resulting image identities. PR merge is not a B2 step.
+- All-entry drain and stop sequence. Stable's direct port 8080 and frontend's
+  port 3000 exist in addition to Nginx; stopping Nginx alone is insufficient.
+  Both backend containers have no explicit stop timeout. The application's
+  120-second shutdown setting does not prove the container will wait that long.
+- Verify deployed migration file bytes against the final source, not only image
+  labels: both replicas bind-mount the release checkout's `migrations` into
+  `/app/migrations:ro`. The startup ledger check verifies names, not SQL hashes.
+- One migration owner, then complete exact-ledger readback before both new
+  replicas start. The runbook's M84 section alone does not cover this M87 job.
+- Server-local backup/recovery verification and an application-plus-database
+  recovery decision before migration. USD drafts, new snapshot hashes and
+  binding/probe/Release evidence can prevent guarded down migrations even with
+  zero supplier calls. No reset backup was accessed; no recoverability claim is
+  made from merely retaining old images.
+
+The bounded independent deployment review's migration-sequence, shutdown-budget,
+mount-identity and recovery findings are adjudicated `validated_required` for
+B2 preflight. They do not authorize execution or reopen B1's runtime scope.
+
+Only B2's read-only and unsaved-form acceptance is presently planned; persistent
+test data must not silently enter the batch. SDK workflows and performance are
+later bounded acceptance work, not B2 blockers. The existing chat k6 script
+counts 429 as success, labels full request time as upstream latency and adds ten
+tokens after JSON parsing failure; its old results cannot substantiate success,
+upstream latency or token-throughput claims. Do not run it against paid providers
+or expand B2 to repair it. Finance remains capability-dependent, with no global
+billing-mode change, wallet activation, canonical switch or automatic next call.
+
+### B2 authorized execution — historical build/preflight checkpoint
+
+The product owner subsequently authorized the exact B2 maintenance deployment,
+including server-local backup/recovery verification and zero-supplier-call
+template acceptance. The preflight snapshot above is historical; authorization
+is now satisfied, while artifact, drain, migration and acceptance gates still
+need actual execution evidence. No PR merge or formal release is included.
+Target lacks GitHub private-repository authentication, so source transfer uses
+a verified standard Git bundle over SSH, without copying credentials. The exact
+commit/tree and clean detached checkout remain the artifact authority.
+
+Execution checkpoint on 2026-08-26, approximately 18:13 CST:
+
+- Bundle SHA-256 `3fe88df13461074db0331f045c4b777566e418b8e5d4a9e0635fa5e264d4afa3`
+  verified on both hosts; candidate commit/tree and detached checkout are exact.
+- A new server-private M83 dump restored successfully into a separate rehearsal
+  database. Ledger is 82/M83; admin/org/project non-sensitive whitelist fields
+  and zero wallet values compare equal. No password/verifier query was run.
+  The private dump and rehearsal database remain retained; the old reset backup
+  was not accessed. Candidate up/down rehearsal still awaits the new binary.
+- Candidate Compose preserves every existing application environment field;
+  only version/commit and stable's explicit `SKIP_MIGRATION=true` differ.
+  Both replicas receive a 150-second container stop budget. No existing service
+  has been recreated. Candidate TLS configuration changes only `/v1/` transport
+  timeouts to 1920/960 seconds; isolated `nginx -t` passed. A preceding Compose
+  one-off hit the existing static-IP reservation; a no-published-port container
+  verified the same configuration without that test-harness conflict.
+- The official-proxy build stalled on `proxy.golang.org` connectivity and was
+  canceled without an image. The default chain's direct-source alternative
+  failed because the pinned Alpine builder contains no Git executable. Neither
+  failure proves a model/runtime defect. Do not patch the pinned Dockerfile or
+  disable checksum verification to bypass this prerequisite.
+- The runbook-listed `https://goproxy.cn,direct` returned HTTP 200 for a locked
+  dependency metadata request from Target. This is a reachability check, not a
+  successful build. Its use requires the runbook's explicit proxy approval;
+  no third build has started and no new image is claimed.
+- Target remains on 1.2.2/M83; stable/canary are healthy, with zero calls,
+  provider attempts and transactions. No maintenance stop or live migration
+  occurred. Chrome still shows the existing admin/empty-model view after its
+  refresh; post-upgrade UI/template acceptance remains pending.
+
+The product owner then explicitly approved `https://goproxy.cn,direct` for this
+build only. The exact candidate helper subsequently completed with that build
+argument; runtime configuration, pinned Dockerfile and checksum verification
+were unchanged. The following checkpoint supersedes the pending-state claims
+above, without rewriting that earlier evidence.
+
+### B2 Target deployment and bounded zero-call acceptance — 2026-08-26
+
+Development/test now runs **1.2.3 / `ab4b5b3f42e6819d27ac946ad7899ac08498affb`**,
+tree `91abc085c3df1927ed3444791deeb9403ebc7266`, with the exact **86-entry M87**
+ledger. The maintenance window was **18:28:50–18:29:56 CST**. This is internal
+candidate deployment evidence, not PR merge, formal Release or supplier-live
+verification.
+
+- The supported clean-checkout helper built backend image ID
+  `sha256:7237ffd4c941627e174843ba41cf4c958dd3398a09e0f6b91123d0314adc0848`
+  and frontend image ID
+  `sha256:3331d3c77219f23d710ae2ee9e35fc342ac8efcb5e6cb4e29db63160110885c7`.
+  Both carry the exact version/commit labels. Source, image and both actual
+  read-only migration mounts have equal per-file SHA-256 manifests.
+- A new server-private M83 backup restored into a separate database. The new
+  CLI upgraded that restored database to the full M87 ledger; the checked-in
+  guarded downs, in 87/86/85/84 order, restored the exact original M83 ledger.
+  Non-sensitive admin/org/project identity fields and wallet amounts remained
+  equal. A fresh post-drain M83 dump was also created and its archive listing
+  validated; the restore/up/down drill used the earlier preflight dump, not
+  this second payload. Both backups and the rehearsal database remain on ECS.
+  The old private reset backup and password verifiers were not inspected.
+- Nginx/frontend and both old backends stopped with exit 0; no other business
+  database client remained. One CLI migration owner advanced the live database.
+  Only after full-ledger equality did matching stable/canary/frontend start,
+  followed by Nginx. All Compose operations retained project `unirouter` and its
+  network. PostgreSQL, Redis and monitoring container IDs are unchanged.
+- Both replicas are healthy with `SKIP_MIGRATION=true`, a 150-second container
+  stop budget, and exact startup-schema gates. Legacy routing, compatibility
+  `true`, async media `false`, source instance and application configuration
+  remain unchanged. Billing/pricing environment overrides remain absent; the
+  unchanged compiled defaults are `cost_observation` / `legacy`. This is not
+  proof of a native-USD cost or customer-settlement contract.
+- Public HTTPS readiness and frontend returned 200 with normal TLS verification.
+  Effective Nginx `/v1/` transport ceilings are 1920/960 seconds; they are not a
+  provider-specific semantic deadline or a performance/capacity qualification.
+  The keep lists protect the new images/source and retain every old entry;
+  historical M83 states are explicitly not application-only M87 rollback points.
+  No cleanup was run. A failed future startup must stop any partial new fleet
+  before considering guarded down; evidence guards must never be bypassed.
+- Chrome's existing admin session remained valid after a real page reload and
+  displayed V1.2.3 with the empty deployment/Release view. Read-only database
+  checks retained the Default Project and CNY wallet with all amounts zero.
+  The two audit entries are login events, both predating the maintenance window;
+  they are not supplier calls or leftover billing activity.
+
+Unsaved template checks covered 16 exact Profiles across all 12 provider
+families: DeepSeek Flash; Kimi K2.6/K3; MiniMax M2.5 Highspeed/M3; GLM 5.2;
+Qwen 3.7 Flash; Gemini 3.5 Flash; MiMo V2.5; Hy3; GPT Luna Chat/Responses;
+Grok 4.6; Claude Haiku; Doubao Seed 2.1 Pro/Evolving. This is representative UI
+mapping acceptance, **not exhaustive execution acceptance of 30 models/33
+surface identities**. Provider/region, endpoint, exact upstream ID, operation,
+Profile limits/default authority and bounded-capability labels were inspected.
+DeepSeek's 384,000 maximum and 32,768 request default are separate; Kimi K2.6's
+undocumented maximum is not replaced by an invented provider claim. GPT surfaces
+resolve separately, Qwen's business-space host requires explicit user input,
+and Gemini remains named as an OpenAI-compatible core subset. Unsupported price
+selectors stay manual-review warnings; MiMo/Doubao's supported CNY draft offers
+remain unchecked, review-only and explicitly exclude unmodeled meters. USD is
+not shown as an activated CNY settlement price. All forms were canceled without
+entering credentials or submitting any create/probe/price/Release action.
+
+Final post-form readback confirmed zero models, connections, deployments,
+credential bindings, channels/keys, calls, provider attempts, wallet transactions,
+Freeze rows, prices/Rate Cards/source drafts and probes. The single admin and
+non-sensitive identity/wallet fingerprints remained unchanged. Both replicas
+were healthy and the candidate checkout was clean. The independent closing
+review found no remaining B2 blocker in the retained documentation/evidence
+claims; it did not independently rerun Target checks. `git diff --check` passed.
+Only the three delivery/architecture documents differ locally; no runtime code,
+new gate/CI run, push, merge or formal release was added to B2.
+
+B2 stops here. It does not establish SDK workflows, performance, functional
+provider calls, usage/billing correctness, live capability evidence or release
+readiness. The next DeepSeek milestone still needs its exact model/operation/
+capability matrix and total supplier-call/cost budget, including retry/failover.
+
+### DeepSeek zero-call preparation — blocked preflight, 2026-08-26
+
+The subsequent approval covers DeepSeek V4 Flash onboarding preparation and a
+development/test canonical switch **only after supported prerequisites pass**.
+It does not authorize provider probes/calls, an identity change, a reset or
+bypassing startup/Release evidence. This checkpoint is not a completed cutover.
+
+At 18:53–18:54 CST, both backends still ran exact `ab4b5b3f42e6` and were healthy
+in `legacy` / compatibility `true`, with async media `false`. Read-only SQL found
+only active platform admin and organization 1 (`Platform Admin`, root
+`partner`), no explicit customer root, and a CNY wallet with all amounts zero.
+Models, connections, deployments, credential bindings, deployment probes,
+runtime Releases/slots and call logs were all zero; audit count remained two.
+
+The deployed binary's supported read-only `model-route-authority check`, with
+canonical environment overrides for that CLI process only and organization 1
+as the inspected candidate, returned exit 1 / `ready=false` with
+`customer_root_mismatch` and `authority_inventory_empty`. No daemon configuration
+changed; HTTPS readiness remained healthy. This is an expected precondition
+rejection, not a failed attempted rollout.
+
+The blockers and their boundaries are:
+
+- `validated_blocker`: canonical startup requires one explicit active root
+  customer and nonempty assigned runtime inventory (`modelrouting/authority.go`).
+  The legacy customer-context fallback to a sole partner root does not satisfy
+  that authority gate. Creating model data under that fallback now would not
+  resolve the eventual canonical customer identity.
+- `validated_blocker`: the current first-customer API accepts strict-reset
+  (zero wallets) or exact fresh-seed checkpoints. This Target has a runtime
+  wallet and two login audits, so neither accepted predecessor matches
+  (`admin/first_customer_bootstrap_handlers.go`). This conclusion combines the
+  inspected guards with Target readback; no bootstrap POST was attempted.
+- `validated_blocker`: sealing and initial activation share a proof requiring
+  active credentials and their own successful exact-revision operation probes
+  (`runtimechange/deployment_manifest.go`). An entirely zero-provider-call
+  first canonical activation is therefore not available through this workflow.
+- `product_decision_required`: any additional first-customer initialization or
+  compatibility repair must explicitly preserve admin/platform identities and
+  retained evidence. It is not authorized by the cutover approval. Probe count,
+  total supplier-spend cap and credential entry remain a separate traffic gate.
+
+No persistent onboarding, bootstrap, probe, Release or configuration mutation
+was performed. The exact preparation identity remains
+`deepseek.v4-flash.api@1.4.0` / `openai.chat_completions.v1` / upstream
+`deepseek-v4-flash`; a template is not an attachment or live evidence. Stop here
+until the initialization boundary is resolved; do not reset, delete login
+audits, change the partner type, forge probe evidence or relax startup checks.
+The bounded independent review confirmed these code prerequisites and found no
+supported zero-credential/probe bypass; it did not independently inspect Target
+or authorize a repair. Only the existing three documentation files changed;
+`git diff --check` passed. No runtime tests, CI, push or deployment were added.
+
+### First-customer runtime-reset repair — local candidate, 2026-08-26
+
+The product owner approved the compatibility repair and subsequent independent
+test-customer initialization after the blocked preflight. The exact Target
+runtime shell was read back as project 85 under partner organization 1, no
+members/budget/creator, all-zero CNY wallet, one valid session and two login
+audits; settings are the four reset-preserved keys and M87 has 86 entries.
+
+The candidate adds a distinct runtime-reset predecessor without changing the
+old strict-reset or fresh-seed requirements. It checks the exact automatic
+project, zero wallet, reset-owned empty tables/settings and full artifact ledger;
+it retains login/session/outbox evidence and validates the current committing
+session. Project-linked audit/outbox evidence rejects normalization so foreign
+key behavior cannot rewrite retained evidence. No admin, partner identity,
+verifier, License/Release, schema or canonical/probe rule is changed.
+
+The same API now accepts strict-boolean `dry_run:true` and rejects duplicate JSON
+members, null and non-boolean preview flags. Preview allocates no identity and
+creates no audit or receipt. The deployment-operator panel lists exact shell
+objects and requires explicit confirmation; a changed name, actor or session
+invalidates preview/confirmation, and uncertain submissions retain their
+idempotency intent only within the same identity/session. Ordinary customer
+workspaces have no additional initialization entry. Actual Target shell removal
+is awaiting its separately requested exact-object confirmation.
+
+Local evidence: the original handler returned 409 for the runtime-shell fixture;
+the new path passes the first-customer integration suite, including existing
+fresh/strict predecessors, evidence preservation, read-only checks and preview,
+schema/data/identity/session drift, invalid preview flags, fresh-fallback denial,
+and concurrent bootstrap/baseline behavior with `-race`. This used isolated
+PostgreSQL **18.3** on the developer machine, not PostgreSQL 16 Target evidence.
+The 67 focused frontend tests and type/API/React guards passed with zero new
+warnings. The bounded independent review found one UI actor/session lifecycle
+issue; its local form-remount fix and two regression tests were independently
+rechecked, with no remaining blocker or required correction.
+
+The bounded local integration gate then passed `go vet ./...`, the untagged
+Admin/customer-context/CLI race suites, release metadata and diff checks. The
+full frontend run initially passed 629/631 tests: two unchanged UsersPage tests
+clicked a Semi option before its popup/controlled selection had committed.
+They passed in isolation; their test-only fix now follows the existing explicit
+CSS-animation/committed-selection contract, without changing product behavior,
+timeouts or the warning ratchet. The affected UsersPage/bootstrap/network
+25-test regression, production build and bundle budget then passed. Previously
+passing lanes were not mechanically rerun. The repair adds only that one
+test-file correction to the reviewed scope. CI and deployment are pending; this
+is not a completed Target repair or canonical cutover.
+
+Deployment remains the same M87/86-entry ledger, so this candidate needs no
+migration or database rollback. Build exact clean-source images once, replace
+only the application components while retaining the B2 transport/environment
+configuration, and check revision/health/schema plus a read-only operator
+preview before the separately authorized bootstrap. The application rollback
+target is B2 `ab4b5b3f42e6819d27ac946ad7899ac08498affb` on the same schema;
+rollback must not undo any subsequently approved customer or audit records.
 
 ## Historical local milestone log
 

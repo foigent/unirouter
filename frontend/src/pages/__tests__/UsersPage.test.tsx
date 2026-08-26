@@ -37,6 +37,23 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+async function chooseCommittedOption(user: ReturnType<typeof userEvent.setup>, label: string, option: string) {
+  const combobox = screen.getByRole('combobox', { name: label });
+  await user.click(combobox);
+  const choice = (await screen.findByText(option)).closest('[role="option"]');
+  if (!choice) throw new Error(`missing option ${option} for ${label}`);
+  const popup = choice.closest('[role="dialog"]');
+  if (!popup) throw new Error(`missing option popup for ${label}`);
+  // Match the existing Semi interaction contract: jsdom never completes CSS
+  // animations, and a click before popup positioning can miss the selection.
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-show'));
+  fireEvent.animationEnd(popup);
+  await user.click(choice);
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-hide'));
+  fireEvent.animationEnd(popup);
+  await waitFor(() => expect(combobox).toHaveTextContent(option));
+}
+
 describe('UsersPage enterprise identity presentation', () => {
   beforeEach(() => {
     act(() => { Toast.destroyAll(); });
@@ -179,8 +196,7 @@ describe('UsersPage enterprise identity presentation', () => {
 
     expect(await screen.findByText(/先加入一个项目，再由项目使用者在“项目工作台”创建自己的项目访问凭证/)).toBeTruthy();
     await waitFor(() => expect(mocks.getProjects).toHaveBeenCalled());
-    await user.click(screen.getByRole('combobox', { name: '项目' }));
-    await user.click(await screen.findByText('核心项目'));
+    await chooseCommittedOption(user, '项目', '核心项目');
     expect(screen.getByRole('combobox', { name: '项目角色' })).toHaveTextContent('项目使用者');
     await user.click(screen.getByRole('button', { name: '授予项目访问' }));
 
@@ -298,8 +314,7 @@ describe('UsersPage enterprise identity presentation', () => {
 
     await pasteValue(user, await screen.findByLabelText('用户名'), 'disabled-user');
     await pasteValue(user, screen.getByLabelText('初始密码'), 'secret-password-123');
-    await user.click(screen.getByRole('combobox', { name: '状态' }));
-    await user.click(await screen.findByText('禁用'));
+    await chooseCommittedOption(user, '状态', '禁用');
     await user.click(screen.getByText('创建'));
 
     await waitFor(() => expect(mocks.createUser).toHaveBeenCalledWith({

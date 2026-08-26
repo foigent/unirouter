@@ -2148,7 +2148,7 @@ docker compose --env-file payload/deploy/.env \
   -f payload/deploy/docker-compose.yml stop backend
 ```
 
-`first-customer` 有两个互斥 checkpoint。一个是已获授权的 second-integration reset
+`first-customer` 有三个互斥 checkpoint。一个是已获授权的 second-integration reset
 产生的严格 post-reset 空壳：保留 active local platform admin 与组织壳，其余 reset-owned
 产品表为空。另一个是当前完整迁移链的精确 fresh seed：seed admin 已轮换密码、仅有一个
 有效登录 session，且恰有一个逻辑 login 审计；该证据可以仍是 durable Outbox pending
@@ -2165,6 +2165,22 @@ admin `project_admin` membership，再创建唯一 active customer 及其零余�
 随后导入 customer-bound License 时，首装唯一的 reviewed customer project 必须使用
 `slug=default`；最终 canonical 重启会复用该项目，不得再自动占用第二个 active-project
 License seat。
+
+第三个 checkpoint 接受受支持 reset 后已由正常启动生成的运行时壳，而不是 fresh
+seed 的宽松兜底：必须是唯一 active local platform admin（reset 已推进 auth epoch）、
+唯一 active partner 根组织、精确自动项目形状、全零 CNY wallet、reset 设置、完整制品
+迁移账本和空业务表。项目成员、预算、业务引用、非登录审计或登录审计/outbox 的项目
+引用均拒绝。可以保留同一管理员的多个合法登录记录及历史会话；提交时仍锁定并重新
+验证当前会话。License/Release 等平台状态、admin/verifier、平台组织及登录证据不修改。
+
+在平台运维的“部署与网络”入口输入客户名称，先执行只读预检。对应 API 请求体为
+`{"organization_name":"<approved customer name>","dry_run":true}`；使用现有认证和
+client-request-id 合同，不输出凭据。预检列出 `would_remove.project_id` 和
+`would_remove.zero_wallet_org_id`（strict-reset 无空壳对象），不写入任何数据或 receipt。
+操作者应确认这些精确对象的归位权限后再提交；预检结果不绕过提交时重新执行的完整
+SERIALIZABLE 检查。runtime-reset 只原子移除该自动空项目和全零钱包，并创建独立客户及
+其零余额钱包；客户默认项目按原有启动流程生成。失败不得通过删除审计、改组织类型、
+手工 SQL、reset 或伪造 probe 来凑前态。此步骤不授权任何供应商流量或 canonical 切换。
 
 确认 backend 已停止后，手工把 `payload/deploy/.env` 的
 `MODEL_ROUTE_AUTHORITY` 改为 `canonical`、

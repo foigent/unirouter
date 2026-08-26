@@ -86,6 +86,14 @@ describe('API Client', () => {
   })
 
   describe('first-customer bootstrap', () => {
+    it('requests an explicit server-side dry run without changing the create contract', async () => {
+      mockJsonResponse({ ready: true, dry_run: true })
+      await api.bootstrapFirstCustomer('First Customer', 'bootstrap-preview-001', { dryRun: true })
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/bootstrap/first-customer', expect.objectContaining({
+        method: 'POST', body: JSON.stringify({ organization_name: 'First Customer', dry_run: true }),
+      }))
+    })
+
     it('binds the organization body to one explicit client request identity', async () => {
       mockJsonResponse({ organization_id: 9, wallet_balance_micros: 0 })
 

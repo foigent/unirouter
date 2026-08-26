@@ -11,8 +11,12 @@ UniRouter is a modular monolith with one public gateway and one administration A
 The local candidate's executable PostgreSQL compatibility ceiling is `000087`.
 M85–M87 batch inclusion is tracked in
 [B1 scope](../tech-ref/44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26);
-this source ceiling does not claim those migrations are approved for or applied
-to Target. After running
+this source ceiling alone does not prove a deployment. The separately authorized
+[B2 Target checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#b2-target-deployment-and-bounded-zero-call-acceptance--2026-08-26)
+records development/test on exact commit `ab4b5b3f42e6819d27ac946ad7899ac08498affb`
+and the 86-entry M87 ledger after a non-rolling maintenance window on 2026-08-26.
+That evidence does not imply supplier-live capability, billing or Release
+qualification. After running
 migrations or honoring `SKIP_MIGRATION`, every backend reads the complete,
 ordered migration ledger and requires it to equal the binary artifact ledger
 before customer-baseline initialization or HTTP bind; missing, extra, future,
@@ -87,6 +91,17 @@ The supported customer topology is:
 `org_id` remains an internal isolation and integrity key. It is not a normal operator-selectable tenant dimension in the single-customer product.
 
 New installations should keep deployment-operator and customer identities in separate organization records. For an upgraded local installation with exactly one active root organization, the customer-context resolver may adopt that sole root as the compatibility customer context even when its historical `org_type` is `partner`. This does not make the deployment-operator role a project member, and customer-facing UI must use the resolved customer context rather than expose a historical technical name such as `Platform Admin`.
+
+That compatibility resolution is not canonical-startup readiness: the current
+route-authority checker separately requires one explicit active root `customer`
+and assigned runtime inventory. The [DeepSeek preflight](../tech-ref/42-model-execution-profile-capability-status.md#deepseek-zero-call-preparation--blocked-preflight-2026-08-26)
+records this distinction on the partner-only clean Target. The subsequently
+approved bootstrap repair adds an exact runtime-reset predecessor and a
+write-free `dry_run` projection in the existing API, exposed only in the
+deployment-operator workspace. It preserves admin/platform identity and login
+evidence, normalizes only an explicitly authorized automatic empty project and
+zero wallet, and creates a separate customer; it does not alter startup/probe
+gates or make the local candidate Target evidence.
 
 ## 2. User workspaces
 

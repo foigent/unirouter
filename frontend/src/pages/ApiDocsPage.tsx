@@ -221,7 +221,7 @@ const endpointGroups: EndpointGroup[] = [
       ['DELETE', '/api/v1/channel-keys/{id}', legacyModelMutationRetiredDescription],
       ['GET', '/api/v1/keys', '访问凭证列表'],
       ['GET', '/api/v1/organizations', '返回这套部署唯一的客户组织；未初始化、不唯一或已停用时不猜测目标'],
-      ['POST', '/api/v1/bootstrap/first-customer', '从精确 post-reset 或当前 fresh-migration checkpoint 创建首个客户与零余额钱包；fresh production 还要求已登记发布证据，任一漂移返回 409 并整笔回滚'],
+      ['POST', '/api/v1/bootstrap/first-customer', '从精确 strict-reset、runtime-reset 空壳或 fresh-migration 前态初始化首客户；dry_run=true 只读预检并列出空壳归位对象，提交时重新校验；fresh production 保持发布证据门禁，漂移返回 409'],
       ['GET', '/api/v1/limit-policies', '查看跨副本 RPM/RPS/TPM/并发策略及其版本'],
       ['POST', '/api/v1/limit-policies', '创建 disabled/shadow/enforce 共享限额策略'],
       ['PUT', '/api/v1/limit-policies/{id}', '按当前 version 更新策略；冲突返回 409，成功后版本递增'],

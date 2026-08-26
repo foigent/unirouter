@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/resetplan"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
+	"github.com/uniroute/unirouter/internal/strictjson"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,10 +28,26 @@ type firstCustomerBootstrapCheckpoint uint8
 const (
 	firstCustomerBootstrapCheckpointStrictReset firstCustomerBootstrapCheckpoint = iota + 1
 	firstCustomerBootstrapCheckpointFreshSeed
+	firstCustomerBootstrapCheckpointRuntimeReset
 )
 
 type firstCustomerBootstrapRequest struct {
-	OrganizationName string `json:"organization_name"`
+	OrganizationName string                       `json:"organization_name"`
+	DryRun           firstCustomerBootstrapDryRun `json:"dry_run,omitempty"`
+}
+
+type firstCustomerBootstrapDryRun bool
+
+func (d *firstCustomerBootstrapDryRun) UnmarshalJSON(data []byte) error {
+	switch string(data) {
+	case "true":
+		*d = true
+	case "false":
+		*d = false
+	default:
+		return fmt.Errorf("dry_run must be a boolean")
+	}
+	return nil
 }
 
 type firstCustomerBootstrapResult struct {
@@ -53,7 +71,12 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var request firstCustomerBootstrapRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err != nil || strictjson.Validate(body) != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid request body"})
+		return
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid request body"})
@@ -111,6 +134,10 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Bootstrap idempotency readback failed"})
 		return
 	} else if found {
+		if request.DryRun {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "First customer was already initialized"})
+			return
+		}
 		if replay.OrganizationName != request.OrganizationName {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "X-Client-Request-ID was already used with different input"})
 			return
@@ -127,8 +154,40 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 		})
 		return
 	}
+	if request.DryRun {
+		checkpointName := "strict_reset"
+		wouldRemove := map[string]int64{}
+		if checkpoint != firstCustomerBootstrapCheckpointStrictReset {
+			checkpointName = "fresh_seed"
+			if checkpoint == firstCustomerBootstrapCheckpointRuntimeReset {
+				checkpointName = "runtime_reset"
+			}
+			var projectID int64
+			if err := tx.QueryRow(r.Context(), `SELECT id FROM projects WHERE org_id=$1 AND slug='default'`, adminOrgID).Scan(&projectID); err != nil {
+				writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "First-customer bootstrap preview changed"})
+				return
+			}
+			wouldRemove["project_id"] = projectID
+			wouldRemove["zero_wallet_org_id"] = adminOrgID
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"contract_version": "unirouter.first-customer-bootstrap-preview.v1",
+			"dry_run":          true, "ready": true, "checkpoint": checkpointName,
+			"organization_name": request.OrganizationName, "platform_org_id": adminOrgID,
+			"would_remove": wouldRemove,
+		})
+		return // Deferred rollback releases locks; no normalization, audit or receipt.
+	}
 	if checkpoint == firstCustomerBootstrapCheckpointFreshSeed {
 		if err := normalizeFirstCustomerFreshSeed(r, tx, adminUserID, adminOrgID); err != nil {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "First-customer bootstrap checkpoint changed before commit",
+			})
+			return
+		}
+	}
+	if checkpoint == firstCustomerBootstrapCheckpointRuntimeReset {
+		if err := normalizeFirstCustomerRuntimeShell(r, tx, adminOrgID); err != nil {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{
 				"error": "First-customer bootstrap checkpoint changed before commit",
 			})
@@ -191,10 +250,13 @@ func (h *Handler) verifyFirstCustomerBootstrapCheckpoint(r *http.Request, tx pgx
 	if err := verifyFirstCustomerEmptyCheckpoint(r, tx, adminUserID, adminOrgID); err == nil {
 		return firstCustomerBootstrapCheckpointStrictReset, nil
 	}
-	if err := h.verifyFirstCustomerFreshMigrationCheckpoint(r, tx, adminUserID, adminOrgID); err != nil {
+	if err := h.verifyFirstCustomerFreshMigrationCheckpoint(r, tx, adminUserID, adminOrgID); err == nil {
+		return firstCustomerBootstrapCheckpointFreshSeed, nil
+	}
+	if err := h.verifyFirstCustomerRuntimeResetCheckpoint(r, tx, adminUserID, adminOrgID); err != nil {
 		return 0, err
 	}
-	return firstCustomerBootstrapCheckpointFreshSeed, nil
+	return firstCustomerBootstrapCheckpointRuntimeReset, nil
 }
 
 // verifyFirstCustomerFreshMigrationCheckpoint accepts only the exact seed
