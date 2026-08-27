@@ -307,6 +307,7 @@ export type CanonicalCapabilityProbeView = {
   latency_ms: number;
   reported_model?: string;
   error_summary?: string;
+  contract_error_code?: string;
   finish_reason?: string;
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -348,6 +349,7 @@ export type CanonicalCapabilityProbeResult = {
   stale: boolean;
   reason_code: string;
   provider_reason_code: string;
+  contract_error_code?: string;
   status_code: number;
   latency_ms: number;
   reported_model?: string;

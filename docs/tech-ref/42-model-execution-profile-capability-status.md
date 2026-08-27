@@ -25,10 +25,15 @@ passed automatic CI 32998254738 and protocol-conformance CI 32998255070. After
 the authorized maintenance switch, both backends and the frontend ran its exact
 artifacts on development/test. The live-found capability correction is exact
 commit `e47af1faacd8ca96403c25b4cf2c47ec155bd980`, automatic CI 33002920179
-and protocol-conformance CI 33002920186. Both backends now run that exact image;
-the unchanged frontend remains `1f30b1cd4c8d`. Schema remains M87/86 entries,
-and canonical model-route authority remains enabled with compatibility disabled.
-Neither deployment changed the Source Instance, identities, pricing or Release.
+and protocol-conformance CI 33002920186. It was subsequently superseded on
+development/test by the bounded M88 capability-qualification artifact
+`08d0ef8e5cee7e1bff515d5751e7a9bdd452f16f`; automatic CI 33050163111 and
+protocol-conformance CI 33050163136 passed. Stable, canary and frontend use the
+exact 08d artifacts after a non-rolling maintenance deployment, and the schema
+ledger is M88/87 entries. Canonical model-route authority remains enabled with
+compatibility disabled; no canonical cutover was performed by that deployment.
+None of these deployments changed the Source Instance, identities, pricing or
+Release.
 The product owner initially approved the exact DeepSeek 3-call/CNY-1 envelope
 below, then increased the cumulative test ceiling to 20 calls/CNY 5.
 Its first supported connectivity probe passed. The first generic-client request
@@ -1166,15 +1171,38 @@ migration/routing/revalidation/reset/bootstrap integration selector under the
 race detector, all 83 frontend test files / 648 tests, the production frontend
 build, bundle budget and `git diff --check`.
 
+The exact 08d artifact was then deployed non-rolling to development/test after
+an isolated M87→M88 rehearsal and a drained database backup. Stable, canary,
+frontend and Nginx passed zero-provider-call health/readback. The Admin UI ran
+the typed streaming probe once. The provider returned HTTP 200 in 984 ms, but
+the typed stream contract rejected the response; no approval or qualification
+was created, and no ordinary streaming request followed. This is supplier call
+3/20. Customer wallet, transactions and prior Freeze counts remained unchanged.
+The deployed validator retained only the generic
+`provider_stream_contract_invalid` category and discarded partial parse
+metrics, so the historical receipt cannot prove whether its live root cause was
+line endings, terminal usage ordering or another typed-contract mismatch.
+
+The subsequent local stabilization accepts the three SSE-standard line endings
+CRLF, LF and CR while retaining the narrower DeepSeek data/comment field
+contract. It preserves a bounded typed partial observation—sanitized model,
+terminal and usage fields when parsed, plus byte, event and delta counters—and
+an enumerated error category in the immutable receipt and Admin UI; raw provider
+response content is never stored. Deterministic unit, Admin PostgreSQL, OpenAPI
+and UI tests cover the
+success and typed-invalid paths. This correction is not supplier-live evidence;
+the stop-on-failure rule remains in force and no paid re-probe has occurred.
+
 An additional broader-than-CI integration invocation was not used as release
 evidence: unchanged historical health/runtimechange tests attempted to create
 database states that existing constraints reject (a disabled deployment
 retaining a probe lease, an expired lease identity and a mutable deployment
 identity tuple). The repository's actual CI selectors do not include those
 legacy fixtures. They are recorded as separate test-suite debt, not silently
-called green and not expanded into M88. This checkpoint remains
-`locally_conformant`; CI, non-rolling M88 Target deployment and the UI-led live
-probe/approval/streaming request remain separate evidence steps.
+called green and not expanded into M88. The parser stabilization remains
+`locally_conformant`; the M88 base is Target-deployed, while successful live
+probe, approval and the ordinary streaming request remain separate unmet
+evidence steps.
 
 ## Historical local milestone log
 

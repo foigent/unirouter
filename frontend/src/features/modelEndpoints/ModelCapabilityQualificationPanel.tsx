@@ -129,7 +129,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
       } else if (result.provider_success && result.stale) {
         Toast.warning('供应商流式响应成功，但配置已漂移；证据仅保留为历史记录');
       } else {
-        Toast.error(`流式能力探测未通过：${result.reason_code || result.provider_reason_code}`);
+        Toast.error(`流式能力探测未通过：${result.contract_error_code || result.reason_code || result.provider_reason_code}`);
       }
       await load();
     } catch (probeError) {
@@ -231,6 +231,7 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
             {qualification.latest_probe.total_tokens !== undefined && <Text>usage: {qualification.latest_probe.prompt_tokens || 0} + {qualification.latest_probe.completion_tokens || 0} = {qualification.latest_probe.total_tokens}</Text>}
           </Space>
           {qualification.latest_probe.error_summary && <Text type="danger">{qualification.latest_probe.error_summary}</Text>}
+          {qualification.latest_probe.contract_error_code && <Text type="danger">合同校验：{qualification.latest_probe.contract_error_code}</Text>}
         </div> : <Text type="tertiary">尚未运行 typed streaming probe。</Text>}
 
         {qualification.qualified && <Banner

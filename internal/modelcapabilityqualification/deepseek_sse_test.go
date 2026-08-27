@@ -8,7 +8,7 @@ import (
 )
 
 func TestDeepSeekChatSSEProbeContract(t *testing.T) {
-	valid := strings.Join([]string{
+	lines := []string{
 		`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}`,
 		"",
 		`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":"stop"}]}`,
@@ -17,14 +17,20 @@ func TestDeepSeekChatSSEProbeContract(t *testing.T) {
 		"",
 		`data: [DONE]`,
 		"",
-	}, "\n")
-	observation, err := ValidateDeepSeekChatSSE("text/event-stream; charset=utf-8", strings.NewReader(valid))
-	require.NoError(t, err)
-	require.Equal(t, "deepseek-v4-flash", observation.ReportedModel)
-	require.Equal(t, "stop", observation.FinishReason)
-	require.Equal(t, int64(24), observation.TotalTokens)
-	require.True(t, observation.UsageSeen)
-	require.True(t, observation.DoneSeen)
+	}
+	for name, separator := range map[string]string{"lf": "\n", "crlf": "\r\n", "cr": "\r"} {
+		t.Run(name, func(t *testing.T) {
+			valid := strings.Join(lines, separator)
+			observation, err := ValidateDeepSeekChatSSE("text/event-stream; charset=utf-8", strings.NewReader(valid))
+			require.NoError(t, err)
+			require.Equal(t, "deepseek-v4-flash", observation.ReportedModel)
+			require.Equal(t, "stop", observation.FinishReason)
+			require.Equal(t, int64(24), observation.TotalTokens)
+			require.True(t, observation.UsageSeen)
+			require.True(t, observation.DoneSeen)
+			require.Equal(t, len(valid), observation.ResponseBytes)
+		})
+	}
 }
 
 func TestDeepSeekChatSSEProbeRejectsIncompleteOrMisorderedEvidence(t *testing.T) {
@@ -42,6 +48,23 @@ func TestDeepSeekChatSSEProbeRejectsIncompleteOrMisorderedEvidence(t *testing.T)
 			require.ErrorIs(t, err, ErrInvalidDeepSeekSSE)
 		})
 	}
+}
+
+func TestDeepSeekChatSSEProbePreservesBoundedFailureEvidence(t *testing.T) {
+	body := strings.Join([]string{
+		`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"content":"partial"},"finish_reason":null}]}`,
+		"",
+		"event: unsupported-by-the-deepseek-probe-contract",
+		"",
+	}, "\r\n")
+
+	observation, err := ValidateDeepSeekChatSSE("text/event-stream", strings.NewReader(body))
+	require.ErrorIs(t, err, ErrInvalidDeepSeekSSE)
+	require.Equal(t, "unsupported_field", DeepSeekSSEErrorCode(err))
+	require.Equal(t, "deepseek-v4-flash", observation.ReportedModel)
+	require.Equal(t, 1, observation.DataEventCount)
+	require.Equal(t, 1, observation.ContentDeltaCount)
+	require.Equal(t, len(body), observation.ResponseBytes)
 }
 
 func TestCompiledDeepSeekStreamingBindingIsExact(t *testing.T) {

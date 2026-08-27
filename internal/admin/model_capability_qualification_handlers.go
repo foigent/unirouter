@@ -59,6 +59,7 @@ type modelCapabilityProbeResult struct {
 	Stale              bool   `json:"stale"`
 	ReasonCode         string `json:"reason_code"`
 	ProviderReasonCode string `json:"provider_reason_code"`
+	ContractErrorCode  string `json:"contract_error_code,omitempty"`
 	StatusCode         int    `json:"status_code"`
 	LatencyMS          int64  `json:"latency_ms"`
 	ReportedModel      string `json:"reported_model,omitempty"`
@@ -115,6 +116,7 @@ type modelCapabilityProbeView struct {
 	LatencyMS           int64     `json:"latency_ms"`
 	ReportedModel       string    `json:"reported_model,omitempty"`
 	ErrorSummary        string    `json:"error_summary,omitempty"`
+	ContractErrorCode   string    `json:"contract_error_code,omitempty"`
 	FinishReason        string    `json:"finish_reason,omitempty"`
 	PromptTokens        int64     `json:"prompt_tokens,omitempty"`
 	CompletionTokens    int64     `json:"completion_tokens,omitempty"`
@@ -162,19 +164,20 @@ type modelCapabilitySnapshot struct {
 }
 
 type modelCapabilityProbeOutcome struct {
-	ProviderSuccess  bool
-	ContractSuccess  bool
-	StatusCode       int
-	LatencyMS        int64
-	ReasonCode       string
-	ReportedModel    string
-	FinishReason     string
-	PromptTokens     int64
-	CompletionTokens int64
-	TotalTokens      int64
-	ResponseBytes    int
-	DataEventCount   int
-	DeltaCount       int
+	ProviderSuccess   bool
+	ContractSuccess   bool
+	StatusCode        int
+	LatencyMS         int64
+	ReasonCode        string
+	ContractErrorCode string
+	ReportedModel     string
+	FinishReason      string
+	PromptTokens      int64
+	CompletionTokens  int64
+	TotalTokens       int64
+	ResponseBytes     int
+	DataEventCount    int
+	DeltaCount        int
 }
 
 func (h *Handler) GetCanonicalModelCapabilityQualification(w http.ResponseWriter, r *http.Request) {
@@ -533,12 +536,6 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 	outcome.ProviderSuccess = true
 	observation, err := modelcapabilityqualification.ValidateDeepSeekChatSSE(response.Header.Get("Content-Type"), response.Body)
 	outcome.LatencyMS = time.Since(started).Milliseconds()
-	if err != nil {
-		outcome.ReasonCode = "provider_stream_contract_invalid"
-		return outcome
-	}
-	outcome.ContractSuccess = true
-	outcome.ReasonCode = "ok"
 	outcome.ReportedModel = observation.ReportedModel
 	outcome.FinishReason = observation.FinishReason
 	outcome.PromptTokens = observation.PromptTokens
@@ -547,6 +544,13 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 	outcome.ResponseBytes = observation.ResponseBytes
 	outcome.DataEventCount = observation.DataEventCount
 	outcome.DeltaCount = observation.DeltaCount
+	if err != nil {
+		outcome.ReasonCode = "provider_stream_contract_invalid"
+		outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekSSEErrorCode(err)
+		return outcome
+	}
+	outcome.ContractSuccess = true
+	outcome.ReasonCode = "ok"
 	return outcome
 }
 
@@ -591,7 +595,8 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 	responseSummary, _ := json.Marshal(map[string]interface{}{
 		"provider_success": outcome.ProviderSuccess, "contract_success": outcome.ContractSuccess,
 		"current": currentProof, "reason_code": reasonCode, "provider_reason_code": outcome.ReasonCode,
-		"response_bytes": outcome.ResponseBytes, "data_event_count": outcome.DataEventCount,
+		"contract_error_code": outcome.ContractErrorCode,
+		"response_bytes":      outcome.ResponseBytes, "data_event_count": outcome.DataEventCount,
 		"delta_count": outcome.DeltaCount, "finish_reason": outcome.FinishReason,
 		"usage": map[string]int64{"prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": outcome.TotalTokens},
 	})
@@ -658,7 +663,8 @@ UPDATE model_deployment_capabilities
 		CapabilityProbeID: probeID, DeploymentID: snapshot.DeploymentID, OperationID: snapshot.OperationID,
 		CapabilityID: snapshot.CapabilityID, Success: success, ProviderSuccess: outcome.ProviderSuccess,
 		Current: currentProof, Stale: !currentProof, ReasonCode: reasonCode, ProviderReasonCode: outcome.ReasonCode,
-		StatusCode: outcome.StatusCode, LatencyMS: outcome.LatencyMS, ReportedModel: outcome.ReportedModel,
+		ContractErrorCode: outcome.ContractErrorCode,
+		StatusCode:        outcome.StatusCode, LatencyMS: outcome.LatencyMS, ReportedModel: outcome.ReportedModel,
 		FinishReason: outcome.FinishReason, PromptTokens: outcome.PromptTokens,
 		CompletionTokens: outcome.CompletionTokens, TotalTokens: outcome.TotalTokens,
 	}
@@ -973,8 +979,9 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 	if err == nil {
 		latest.Current = latestCurrent
 		var summary struct {
-			FinishReason string `json:"finish_reason"`
-			Usage        struct {
+			FinishReason      string `json:"finish_reason"`
+			ContractErrorCode string `json:"contract_error_code"`
+			Usage             struct {
 				PromptTokens     int64 `json:"prompt_tokens"`
 				CompletionTokens int64 `json:"completion_tokens"`
 				TotalTokens      int64 `json:"total_tokens"`
@@ -982,6 +989,7 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 		}
 		_ = json.Unmarshal(responseSummary, &summary)
 		latest.FinishReason = summary.FinishReason
+		latest.ContractErrorCode = summary.ContractErrorCode
 		latest.PromptTokens = summary.Usage.PromptTokens
 		latest.CompletionTokens = summary.Usage.CompletionTokens
 		latest.TotalTokens = summary.Usage.TotalTokens

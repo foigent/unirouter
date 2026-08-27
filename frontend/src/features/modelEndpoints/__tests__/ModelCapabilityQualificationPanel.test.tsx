@@ -146,6 +146,37 @@ describe('ModelCapabilityQualificationPanel', () => {
     expect(mocks.approveCapability).not.toHaveBeenCalled();
   });
 
+  it('shows the bounded contract failure category without exposing provider response content', async () => {
+    mocks.getQualification.mockResolvedValue({
+      ...baseQualification,
+      state: 'probe_failed',
+      qualification_state: 'probe_failed',
+      latest_probe: {
+        capability_probe_id: 502,
+        success: false,
+        provider_success: true,
+        current: true,
+        status_code: 200,
+        latency_ms: 984,
+        error_summary: 'provider_stream_contract_invalid',
+        contract_error_code: 'unsupported_field',
+        tested_at: '2026-08-27T01:00:00Z',
+      },
+    });
+
+    render(<ModelCapabilityQualificationPanel
+      selected={selected}
+      operation={operation}
+      canManage
+      canApprove
+      gatewayLicensed
+      gatewayRestriction=""
+    />);
+
+    expect(await screen.findByText('合同校验：unsupported_field')).toBeInTheDocument();
+    expect(screen.getByText('provider_stream_contract_invalid')).toBeInTheDocument();
+  });
+
   it('ignores a late qualification response after the exact target changes', async () => {
     let resolveA: (value: typeof baseQualification) => void = () => undefined;
     const delayedA = new Promise<typeof baseQualification>(resolve => { resolveA = resolve; });

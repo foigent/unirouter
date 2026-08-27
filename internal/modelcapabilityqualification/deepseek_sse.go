@@ -20,6 +20,40 @@ const (
 
 var ErrInvalidDeepSeekSSE = errors.New("invalid DeepSeek Chat SSE probe response")
 
+type deepSeekSSEValidationError struct {
+	code  string
+	cause error
+}
+
+func (e *deepSeekSSEValidationError) Error() string {
+	if e.cause != nil {
+		return fmt.Sprintf("%s: %s: %v", ErrInvalidDeepSeekSSE, e.code, e.cause)
+	}
+	return fmt.Sprintf("%s: %s", ErrInvalidDeepSeekSSE, e.code)
+}
+
+func (e *deepSeekSSEValidationError) Unwrap() error {
+	return ErrInvalidDeepSeekSSE
+}
+
+func invalidDeepSeekSSE(code string, cause ...error) error {
+	validationErr := &deepSeekSSEValidationError{code: code}
+	if len(cause) > 0 {
+		validationErr.cause = cause[0]
+	}
+	return validationErr
+}
+
+// DeepSeekSSEErrorCode returns a bounded diagnostic category suitable for an
+// immutable probe receipt. It never includes provider response content.
+func DeepSeekSSEErrorCode(err error) string {
+	var validationErr *deepSeekSSEValidationError
+	if errors.As(err, &validationErr) {
+		return validationErr.code
+	}
+	return ""
+}
+
 type DeepSeekSSEObservation struct {
 	ReportedModel     string
 	DataEventCount    int
@@ -37,12 +71,17 @@ type DeepSeekSSEObservation struct {
 func ValidateDeepSeekChatSSE(contentType string, reader io.Reader) (DeepSeekSSEObservation, error) {
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil || mediaType != "text/event-stream" {
-		return DeepSeekSSEObservation{}, fmt.Errorf("%w: content_type", ErrInvalidDeepSeekSSE)
+		return DeepSeekSSEObservation{}, invalidDeepSeekSSE("content_type")
 	}
 	limited := &io.LimitedReader{R: reader, N: DeepSeekSSEMaxResponseBytes + 1}
 	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 0, 64*1024), DeepSeekSSEMaxLineBytes)
+	scanner.Split(splitSSELines)
 	var observation DeepSeekSSEObservation
+	observed := func() DeepSeekSSEObservation {
+		observation.ResponseBytes = DeepSeekSSEMaxResponseBytes + 1 - int(limited.N)
+		return observation
+	}
 	var dataLines []string
 	process := func() error {
 		if len(dataLines) == 0 {
@@ -53,22 +92,21 @@ func ValidateDeepSeekChatSSE(contentType string, reader io.Reader) (DeepSeekSSEO
 		observation.DataEventCount++
 		if payload == "[DONE]" {
 			if observation.DoneSeen || !observation.UsageSeen || observation.FinishReason == "" {
-				return fmt.Errorf("%w: terminal_order", ErrInvalidDeepSeekSSE)
+				return invalidDeepSeekSSE("terminal_order")
 			}
 			observation.DoneSeen = true
 			return nil
 		}
 		if observation.DoneSeen {
-			return fmt.Errorf("%w: data_after_done", ErrInvalidDeepSeekSSE)
+			return invalidDeepSeekSSE("data_after_done")
 		}
 		return validateDeepSeekChunk([]byte(payload), &observation)
 	}
 	for scanner.Scan() {
 		line := scanner.Text()
-		observation.ResponseBytes += len(scanner.Bytes()) + 1
 		if line == "" {
 			if err := process(); err != nil {
-				return DeepSeekSSEObservation{}, err
+				return observed(), err
 			}
 			continue
 		}
@@ -77,7 +115,7 @@ func ValidateDeepSeekChatSSE(contentType string, reader io.Reader) (DeepSeekSSEO
 		}
 		field, value, ok := strings.Cut(line, ":")
 		if !ok || field != "data" {
-			return DeepSeekSSEObservation{}, fmt.Errorf("%w: unsupported_field", ErrInvalidDeepSeekSSE)
+			return observed(), invalidDeepSeekSSE("unsupported_field")
 		}
 		if strings.HasPrefix(value, " ") {
 			value = value[1:]
@@ -85,18 +123,45 @@ func ValidateDeepSeekChatSSE(contentType string, reader io.Reader) (DeepSeekSSEO
 		dataLines = append(dataLines, value)
 	}
 	if err := scanner.Err(); err != nil {
-		return DeepSeekSSEObservation{}, fmt.Errorf("%w: read: %v", ErrInvalidDeepSeekSSE, err)
+		return observed(), invalidDeepSeekSSE("read", err)
 	}
 	if limited.N <= 0 {
-		return DeepSeekSSEObservation{}, fmt.Errorf("%w: response_too_large", ErrInvalidDeepSeekSSE)
+		return observed(), invalidDeepSeekSSE("response_too_large")
 	}
 	if err := process(); err != nil {
-		return DeepSeekSSEObservation{}, err
+		return observed(), err
 	}
 	if !observation.DoneSeen || !observation.UsageSeen || observation.FinishReason == "" || observation.ContentDeltaCount == 0 {
-		return DeepSeekSSEObservation{}, fmt.Errorf("%w: incomplete", ErrInvalidDeepSeekSSE)
+		return observed(), invalidDeepSeekSSE("incomplete")
 	}
-	return observation, nil
+	return observed(), nil
+}
+
+// splitSSELines implements the three line endings allowed by the SSE format:
+// CRLF, LF and CR. bufio.ScanLines does not split a stream that uses bare CR.
+func splitSSELines(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	for index, value := range data {
+		switch value {
+		case '\n':
+			lineEnd := index
+			if index > 0 && data[index-1] == '\r' {
+				lineEnd--
+			}
+			return index + 1, data[:lineEnd], nil
+		case '\r':
+			if index+1 == len(data) && !atEOF {
+				return 0, nil, nil
+			}
+			if index+1 < len(data) && data[index+1] == '\n' {
+				return index + 2, data[:index], nil
+			}
+			return index + 1, data[:index], nil
+		}
+	}
+	if atEOF && len(data) > 0 {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 func validateDeepSeekChunk(payload []byte, observation *DeepSeekSSEObservation) error {
@@ -108,11 +173,11 @@ func validateDeepSeekChunk(payload []byte, observation *DeepSeekSSEObservation) 
 		Usage   json.RawMessage `json:"usage"`
 	}
 	if err := decoder.Decode(&chunk); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		return fmt.Errorf("%w: json", ErrInvalidDeepSeekSSE)
+		return invalidDeepSeekSSE("json")
 	}
 	if model := safeReportedModel(chunk.Model); model != "" {
 		if observation.ReportedModel != "" && observation.ReportedModel != model {
-			return fmt.Errorf("%w: model_changed", ErrInvalidDeepSeekSSE)
+			return invalidDeepSeekSSE("model_changed")
 		}
 		observation.ReportedModel = model
 	}
@@ -121,11 +186,11 @@ func validateDeepSeekChunk(payload []byte, observation *DeepSeekSSEObservation) 
 		FinishReason json.RawMessage `json:"finish_reason"`
 	}
 	if len(chunk.Choices) == 0 || json.Unmarshal(chunk.Choices, &choices) != nil {
-		return fmt.Errorf("%w: choices", ErrInvalidDeepSeekSSE)
+		return invalidDeepSeekSSE("choices")
 	}
 	if len(choices) == 0 {
 		if observation.UsageSeen || len(chunk.Usage) == 0 || bytes.Equal(bytes.TrimSpace(chunk.Usage), []byte("null")) {
-			return fmt.Errorf("%w: final_usage", ErrInvalidDeepSeekSSE)
+			return invalidDeepSeekSSE("final_usage")
 		}
 		prompt, completion, total, err := parseDeepSeekUsage(chunk.Usage)
 		if err != nil {
@@ -138,18 +203,18 @@ func validateDeepSeekChunk(payload []byte, observation *DeepSeekSSEObservation) 
 		return nil
 	}
 	if len(chunk.Usage) > 0 && !bytes.Equal(bytes.TrimSpace(chunk.Usage), []byte("null")) {
-		return fmt.Errorf("%w: usage_mixed_with_choices", ErrInvalidDeepSeekSSE)
+		return invalidDeepSeekSSE("usage_mixed_with_choices")
 	}
 	for _, choice := range choices {
 		var delta map[string]json.RawMessage
 		if len(choice.Delta) == 0 || json.Unmarshal(choice.Delta, &delta) != nil || delta == nil {
-			return fmt.Errorf("%w: delta", ErrInvalidDeepSeekSSE)
+			return invalidDeepSeekSSE("delta")
 		}
 		observation.DeltaCount++
 		if raw, exists := delta["content"]; exists && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			var content string
 			if json.Unmarshal(raw, &content) != nil {
-				return fmt.Errorf("%w: content", ErrInvalidDeepSeekSSE)
+				return invalidDeepSeekSSE("content")
 			}
 			if content != "" {
 				observation.ContentDeltaCount++
@@ -158,10 +223,10 @@ func validateDeepSeekChunk(payload []byte, observation *DeepSeekSSEObservation) 
 		if len(choice.FinishReason) > 0 && !bytes.Equal(bytes.TrimSpace(choice.FinishReason), []byte("null")) {
 			var finish string
 			if json.Unmarshal(choice.FinishReason, &finish) != nil || strings.TrimSpace(finish) == "" || strings.ContainsAny(finish, "\x00\r\n") {
-				return fmt.Errorf("%w: finish_reason", ErrInvalidDeepSeekSSE)
+				return invalidDeepSeekSSE("finish_reason")
 			}
 			if observation.FinishReason != "" && observation.FinishReason != finish {
-				return fmt.Errorf("%w: finish_reason_changed", ErrInvalidDeepSeekSSE)
+				return invalidDeepSeekSSE("finish_reason_changed")
 			}
 			observation.FinishReason = finish
 		}
@@ -178,22 +243,22 @@ func parseDeepSeekUsage(raw json.RawMessage) (int64, int64, int64, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	if decoder.Decode(&usage) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		return 0, 0, 0, fmt.Errorf("%w: usage", ErrInvalidDeepSeekSSE)
+		return 0, 0, 0, invalidDeepSeekSSE("usage")
 	}
 	values := []json.Number{usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens}
 	parsed := make([]int64, len(values))
 	for index, value := range values {
 		if value == "" || strings.ContainsAny(string(value), ".eE+") {
-			return 0, 0, 0, fmt.Errorf("%w: usage", ErrInvalidDeepSeekSSE)
+			return 0, 0, 0, invalidDeepSeekSSE("usage")
 		}
 		integer, err := strconv.ParseInt(string(value), 10, 64)
 		if err != nil || integer < 0 {
-			return 0, 0, 0, fmt.Errorf("%w: usage", ErrInvalidDeepSeekSSE)
+			return 0, 0, 0, invalidDeepSeekSSE("usage")
 		}
 		parsed[index] = integer
 	}
 	if parsed[0]+parsed[1] != parsed[2] {
-		return 0, 0, 0, fmt.Errorf("%w: usage_total", ErrInvalidDeepSeekSSE)
+		return 0, 0, 0, invalidDeepSeekSSE("usage_total")
 	}
 	return parsed[0], parsed[1], parsed[2], nil
 }

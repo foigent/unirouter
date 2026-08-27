@@ -87,7 +87,7 @@ UPDATE provider_credential_bindings
 			"",
 			`data: [DONE]`,
 			"",
-		}, "\n")
+		}, "\r\n")
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"text/event-stream; charset=utf-8"}},
@@ -203,4 +203,61 @@ SELECT customer_org_id,approved_by_org_id
 	require.NoError(t, json.Unmarshal(getResponse.Body.Bytes(), &view))
 	require.Equal(t, "approved_current", view.State)
 	require.Equal(t, approval.ApprovalID, view.PreferredApprovalID)
+
+	const rawProviderMarker = "PRIVATE_PROVIDER_STREAM_MARKER_MUST_NOT_PERSIST"
+	handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(request *http.Request) (*http.Response, error) {
+		providerCalls.Add(1)
+		stream := strings.Join([]string{
+			`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"content":"partial"},"finish_reason":null}]}`,
+			"",
+			"event: " + rawProviderMarker,
+			"",
+		}, "\r\n")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(stream)),
+		}, nil
+	}))
+	failedRequest := authorized(http.MethodPost, probeTarget,
+		fmt.Sprintf(`{"credential_binding_id":%d}`, fixture.BindingID))
+	failedRequest.SetPathValue("deploymentID", strconv.FormatInt(fixture.DeploymentID, 10))
+	failedRequest.SetPathValue("operationID", "openai.chat_completions.v1")
+	failedRequest.SetPathValue("capabilityID", "streaming")
+	failedResponse := httptest.NewRecorder()
+	handler.ProbeCanonicalModelCapability(failedResponse, failedRequest)
+	require.Equal(t, http.StatusOK, failedResponse.Code, failedResponse.Body.String())
+	var failed modelCapabilityProbeResult
+	require.NoError(t, json.Unmarshal(failedResponse.Body.Bytes(), &failed))
+	require.False(t, failed.Success)
+	require.True(t, failed.ProviderSuccess)
+	require.Equal(t, "provider_stream_contract_invalid", failed.ProviderReasonCode)
+	require.Equal(t, "unsupported_field", failed.ContractErrorCode)
+	require.Equal(t, int64(2), providerCalls.Load())
+
+	var storedSummary, storedError string
+	require.NoError(t, pool.QueryRow(t.Context(), `
+SELECT response_summary::text,error_summary
+  FROM model_capability_probes WHERE capability_probe_id=$1`, failed.CapabilityProbeID).Scan(
+		&storedSummary, &storedError,
+	))
+	require.Contains(t, storedSummary, `"contract_error_code": "unsupported_field"`)
+	require.Contains(t, storedSummary, `"data_event_count": 1`)
+	require.Equal(t, "provider_stream_contract_invalid", storedError)
+	require.NotContains(t, storedSummary, rawProviderMarker)
+	require.NotContains(t, storedError, rawProviderMarker)
+
+	failedGetRequest := authorized(http.MethodGet, getTarget, "")
+	failedGetRequest.SetPathValue("deploymentID", strconv.FormatInt(fixture.DeploymentID, 10))
+	failedGetRequest.SetPathValue("operationID", "openai.chat_completions.v1")
+	failedGetRequest.SetPathValue("capabilityID", "streaming")
+	failedGetResponse := httptest.NewRecorder()
+	handler.GetCanonicalModelCapabilityQualification(failedGetResponse, failedGetRequest)
+	require.Equal(t, http.StatusOK, failedGetResponse.Code, failedGetResponse.Body.String())
+	var failedView modelCapabilityQualificationView
+	require.NoError(t, json.Unmarshal(failedGetResponse.Body.Bytes(), &failedView))
+	require.NotNil(t, failedView.LatestProbe)
+	require.Equal(t, failed.CapabilityProbeID, failedView.LatestProbe.CapabilityProbeID)
+	require.Equal(t, "unsupported_field", failedView.LatestProbe.ContractErrorCode)
+	require.NotContains(t, failedGetResponse.Body.String(), rawProviderMarker)
 }

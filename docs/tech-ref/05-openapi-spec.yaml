@@ -4940,6 +4940,7 @@ components:
         latency_ms: { type: integer, format: int64, minimum: 0 }
         reported_model: { type: string, maxLength: 200 }
         error_summary: { type: string, maxLength: 255 }
+        contract_error_code: { $ref: "#/components/schemas/ModelCapabilityContractErrorCode" }
         finish_reason: { type: string }
         prompt_tokens: { type: integer, format: int64, minimum: 0 }
         completion_tokens: { type: integer, format: int64, minimum: 0 }
@@ -4985,6 +4986,7 @@ components:
         stale: { type: boolean }
         reason_code: { type: string }
         provider_reason_code: { type: string }
+        contract_error_code: { $ref: "#/components/schemas/ModelCapabilityContractErrorCode" }
         status_code: { type: integer, minimum: 0, maximum: 599 }
         latency_ms: { type: integer, format: int64, minimum: 0 }
         reported_model: { type: string, maxLength: 200 }
@@ -4993,6 +4995,27 @@ components:
         completion_tokens: { type: integer, format: int64, minimum: 0 }
         total_tokens: { type: integer, format: int64, minimum: 0 }
         evidence_ref: { type: string, pattern: '^capability_probe:[1-9][0-9]*$' }
+    ModelCapabilityContractErrorCode:
+      type: string
+      enum:
+        - content_type
+        - terminal_order
+        - data_after_done
+        - unsupported_field
+        - read
+        - response_too_large
+        - incomplete
+        - json
+        - model_changed
+        - choices
+        - final_usage
+        - usage_mixed_with_choices
+        - delta
+        - content
+        - finish_reason
+        - finish_reason_changed
+        - usage
+        - usage_total
     ModelCapabilityApprovalResult:
       type: object
       additionalProperties: false

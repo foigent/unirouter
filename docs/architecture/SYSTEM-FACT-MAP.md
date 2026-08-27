@@ -32,12 +32,13 @@ single connectivity result does not prove model capabilities, usage or pricing.
 The [no-redirect transport repair](../tech-ref/42-model-execution-profile-capability-status.md#no-redirect-transport-repair--deployment-and-zero-call-acceptance-2026-08-27)
 was superseded by UI-workbench candidate
 `1f30b1cd4c8d614f177fa0d890f162d4c0605af7`, then by the live-found capability
-correction `e47af1faacd8ca96403c25b4cf2c47ec155bd980`. Its automatic CI
-33002920179 and protocol-conformance CI 33002920186 passed before both prior
-canonical replicas were drained. Both backends now use the exact e47 image;
-the Git-proven unchanged frontend remains the verified `1f30b1cd4c8d` image.
-Canonical model-route authority remains enabled with compatibility disabled;
-the database remains at the exact 86-entry M87 ledger.
+correction `e47af1faacd8ca96403c25b4cf2c47ec155bd980`, and finally by bounded M88
+artifact `08d0ef8e5cee7e1bff515d5751e7a9bdd452f16f`. Its automatic CI
+33050163111 and protocol-conformance CI 33050163136 passed before a non-rolling
+maintenance deployment. Stable, canary and frontend now use the exact 08d
+artifacts; canonical model-route authority remains enabled with compatibility
+disabled, and that M88 deployment performed no canonical cutover. The database
+has the exact 87-entry M88 ledger.
 Following explicit authorization to create a test account and test through the
 UI, user 38 was created as customer 2's ordinary member / project 86 user and
 successfully logged in. UI authoring/first activation created Release 22,
@@ -49,9 +50,10 @@ attempt, Freeze, transaction, token or wallet mutation. The live-found fix
 preserves an explicitly disabled thinking control in the provider payload but
 does not make reasoning a per-invocation route requirement. After deployment,
 the UI clicked the same request once: HTTP 200, exact expected text, 16 prompt +
-8 completion tokens and provider-reported final usage. The original probe plus
-this successful UI attempt are the only two supplier calls. One unused one-time
-key was inadvertently exposed to an automation trace and immediately disabled;
+8 completion tokens and provider-reported final usage. At that non-stream
+checkpoint, the original probe plus this successful UI attempt were the only
+two supplier calls. One unused one-time key was inadvertently exposed to an
+automation trace and immediately disabled;
 all nine short-lived test keys are now disabled, including key 81 used for the
 successful request. No credential is retained here. The [UI checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#first-ordinary-user-ui-request--pre-dispatch-blocker-and-bounded-correction)
 records the exact request and evidence boundary.
@@ -68,6 +70,17 @@ prove zero supplier cost. Customer-side manual acceptance remains deferred.
 The product owner later increased the cumulative test ceiling to 20 calls/CNY 5,
 including probe 1; this is spending authority, not evidence of further calls or
 a change to caller-identity, capability or Release requirements.
+The M88 Admin workflow subsequently issued exactly one typed streaming probe.
+The provider returned HTTP 200, but the deployed validator rejected its stream
+contract and recorded only a generic sanitized error. No capability approval,
+qualification or ordinary streaming request followed; this is supplier call
+3/20, with no wallet or transaction mutation. A local stabilization candidate
+now accepts SSE-standard CRLF/LF/CR endings and records a bounded typed partial
+observation—sanitized model, terminal and usage fields when parsed, plus byte,
+event and delta counters—with an enumerated failure category and no provider
+response content. It remains
+local evidence until its own gate/artifact/Target checks; it does not reinterpret
+the historical failed receipt or authorize another paid probe.
 The exact Flash non-stream text slice is `canary_live_verified`. That evidence
 does not imply direct parity, other capabilities, billing, supplier-cost
 authority or `released`. After running
