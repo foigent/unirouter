@@ -444,19 +444,27 @@ FROM billing_provider_attempts a WHERE org_id=$1 AND request_id=$2 AND attempt_i
 	conn, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 	defer conn.Release()
-	for _, name := range []string{
-		"000088_model_capability_execution_qualification.down.sql",
-		"000087_anthropic_messages_tools_public_binding.down.sql",
-	} {
+	name := "000088_model_capability_execution_qualification.down.sql"
+	down, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+	require.NoError(t, readErr)
+	_, err = conn.Exec(ctx, string(down))
+	require.NoError(t, err, name)
+	guardedDown := "000086_exact_public_execution_bindings.down.sql"
+	guardedError := "provider-attempt or projection evidence refers"
+	if fixture.identity.DeliveryContractVersion == endpointprotocol.PublicAnthropicMessagesToolsDeliveryV1 {
+		guardedDown = "000087_anthropic_messages_tools_public_binding.down.sql"
+		guardedError = "immutable evidence refers"
+	} else {
+		name = "000087_anthropic_messages_tools_public_binding.down.sql"
 		down, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
 		require.NoError(t, readErr)
 		_, err = conn.Exec(ctx, string(down))
 		require.NoError(t, err, name)
 	}
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000086_exact_public_execution_bindings.down.sql"))
+	down, err = os.ReadFile(filepath.Join(testutil.MigrationsDir(t), guardedDown))
 	require.NoError(t, err)
 	_, err = conn.Exec(ctx, string(down))
-	require.ErrorContains(t, err, "provider-attempt or projection evidence refers")
+	require.ErrorContains(t, err, guardedError)
 	_, err = conn.Exec(ctx, "ROLLBACK")
 	require.NoError(t, err)
 	var count int
