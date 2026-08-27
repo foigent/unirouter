@@ -5,6 +5,8 @@ package migrate_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,6 +24,66 @@ type m88CapabilityFixture struct {
 	deploymentID int64
 	bindingID    int64
 	linkCreated  time.Time
+}
+
+func TestDeepSeekChatSSEContractV2MigrationPreservesHistoricalContractIntegration(t *testing.T) {
+	pool, _ := setupMigratedThrough(t, "000088_model_capability_execution_qualification.up.sql")
+	ctx := t.Context()
+	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+
+	assertVersions := func(v1Bindings, v2Bindings, currentV2 int) {
+		t.Helper()
+		var actualV1, actualV2, actualCurrentV2 int
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT
+  COUNT(*) FILTER (WHERE probe_contract_version='1.0.0'),
+  COUNT(*) FILTER (WHERE probe_contract_version='2.0.0')
+FROM model_capability_probe_contract_bindings
+WHERE probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'`).Scan(&actualV1, &actualV2))
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_capability_current_probe_contracts
+ WHERE probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'
+   AND probe_contract_version='2.0.0'`).Scan(&actualCurrentV2))
+		require.Equal(t, v1Bindings, actualV1)
+		require.Equal(t, v2Bindings, actualV2)
+		require.Equal(t, currentV2, actualCurrentV2)
+	}
+
+	assertVersions(2, 2, 2)
+	execMigrationDown(t, ctx, pool, "000089_deepseek_chat_sse_usage_contract_v2.down.sql")
+	assertVersions(2, 0, 0)
+	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	assertVersions(2, 2, 2)
+}
+
+func TestDeepSeekChatSSEContractV2MigrationRefusesDownWithRetainedEvidenceIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	fixture := insertM88CapabilityFixture(t, pool, "v2-down-evidence")
+	insertM88CapabilityProbe(t, pool, fixture, 1, "v2-down-evidence")
+
+	down, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000089_deepseek_chat_sse_usage_contract_v2.down.sql",
+	))
+	require.NoError(t, err)
+	conn, err := pool.Acquire(t.Context())
+	require.NoError(t, err)
+	defer conn.Release()
+	_, err = conn.Exec(t.Context(), string(down))
+	require.ErrorContains(t, err, "cannot downgrade DeepSeek Chat SSE contract v2 with retained v2 probe evidence")
+	_, rollbackErr := conn.Exec(t.Context(), "ROLLBACK")
+	require.NoError(t, rollbackErr)
+
+	var migrationApplied bool
+	var currentV2 int
+	require.NoError(t, pool.QueryRow(t.Context(), `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000089_deepseek_chat_sse_usage_contract_v2')`).Scan(&migrationApplied))
+	require.True(t, migrationApplied)
+	require.NoError(t, pool.QueryRow(t.Context(), `
+SELECT COUNT(*) FROM model_capability_current_probe_contracts
+ WHERE probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'
+   AND probe_contract_version='2.0.0'`).Scan(&currentV2))
+	require.Equal(t, 2, currentV2)
 }
 
 func TestModelCapabilityQualificationEmptyDownAndReapplyIntegration(t *testing.T) {
@@ -44,7 +106,7 @@ SELECT support_state,evidence_state,evidence_ref
 	   AND capability_id='streaming'`, deploymentID).Scan(&supportState, &evidenceState, &evidenceRef))
 		require.Equal(t, "enabled", supportState)
 		require.Equal(t, "declared", evidenceState)
-		require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0", evidenceRef)
+		require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0", evidenceRef)
 	}
 	assertDeclared(exactDeploymentID)
 	assertDeclared(legacyDeploymentID)
@@ -59,6 +121,7 @@ SELECT support_state,evidence_ref FROM model_deployment_capabilities
 	require.Equal(t, "unsupported", supportState)
 	require.Equal(t, "operator-decision", evidenceRef)
 
+	execMigrationDown(t, ctx, pool, "000089_deepseek_chat_sse_usage_contract_v2.down.sql")
 	execMigrationDown(t, ctx, pool, "000088_model_capability_execution_qualification.down.sql")
 	var tableName *string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass('model_capability_routing_approvals')::TEXT`).Scan(&tableName))
@@ -296,7 +359,7 @@ INSERT INTO model_capability_probes (
   source_fingerprint,tested_by)
 VALUES ($1,$2,$3,'openai.chat_completions.v1','streaming',
         'deepseek.v4-flash.api','1.4.0','protocol.deepseek-openai-chat.v4','1.0.0',
-        'unirouter.capability-probe.deepseek-chat-sse.v1','1.0.0',
+        'unirouter.capability-probe.deepseek-chat-sse.v1','2.0.0',
         'deepseek','https://api.deepseek.com','openai_compatible','{}',
         'deepseek-v4-flash',1,1,1,1,$4,$5,$6,TRUE,TRUE,200,12,
         'deepseek-v4-flash','','{}','{}','admin.model_capability_probe.v1',$7,

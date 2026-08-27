@@ -51,6 +51,7 @@ UPDATE model_registry
 		// Keep the historical M82 rollback fixture at its supported predecessor;
 		// the newer exact-public and Plan fences are independently guarded.
 		for _, name := range []string{
+			"000089_deepseek_chat_sse_usage_contract_v2.down.sql",
 			"000088_model_capability_execution_qualification.down.sql",
 			"000087_anthropic_messages_tools_public_binding.down.sql",
 			"000086_exact_public_execution_bindings.down.sql",

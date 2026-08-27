@@ -29,8 +29,13 @@ and protocol-conformance CI 33002920186. It was subsequently superseded on
 development/test by the bounded M88 capability-qualification artifact
 `08d0ef8e5cee7e1bff515d5751e7a9bdd452f16f`; automatic CI 33050163111 and
 protocol-conformance CI 33050163136 passed. Stable, canary and frontend use the
-exact 08d artifacts after a non-rolling maintenance deployment, and the schema
-ledger is M88/87 entries. Canonical model-route authority remains enabled with
+exact 08d artifacts after a non-rolling maintenance deployment. That artifact
+was subsequently superseded by the bounded parser-diagnostics commit
+`56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and the caller-scoped readiness UI
+commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`; the latter passed automatic CI
+33058690558 (successful unchanged-code rerun) and protocol CI 33058690563.
+Stable, canary and frontend now run the exact 4c6 artifacts; the schema ledger
+remains M88/87 entries. Canonical model-route authority remains enabled with
 compatibility disabled; no canonical cutover was performed by that deployment.
 None of these deployments changed the Source Instance, identities, pricing or
 Release.
@@ -1127,8 +1132,9 @@ dual control, pricing authority, Release or canonical cutover.
 
 M88 introduces one generic append-only capability probe/approval receipt model,
 but exposes only the exact typed DeepSeek Flash Chat SSE probe contract in this
-batch. A successful probe validates `text/event-stream`, legal deltas, a finish
-reason, the separate final `choices=[]` usage frame and `[DONE]`. It creates
+batch. Its historical `@1.0.0` contract validates `text/event-stream`, legal
+deltas, a finish reason, the then-documented separate final `choices=[]` usage
+frame and `[DONE]`. It creates
 `live_probed` evidence only. A platform approval is a separate immutable action
 labelled “批准在当前环境进入路由池”; it is not `released`, an SLA claim or a
 long-term stability claim. The UI places both actions in one guided capability
@@ -1183,15 +1189,31 @@ The deployed validator retained only the generic
 metrics, so the historical receipt cannot prove whether its live root cause was
 line endings, terminal usage ordering or another typed-contract mismatch.
 
-The subsequent local stabilization accepts the three SSE-standard line endings
+The subsequent parser stabilization accepts the three SSE-standard line endings
 CRLF, LF and CR while retaining the narrower DeepSeek data/comment field
 contract. It preserves a bounded typed partial observation—sanitized model,
 terminal and usage fields when parsed, plus byte, event and delta counters—and
 an enumerated error category in the immutable receipt and Admin UI; raw provider
 response content is never stored. Deterministic unit, Admin PostgreSQL, OpenAPI
-and UI tests cover the
-success and typed-invalid paths. This correction is not supplier-live evidence;
-the stop-on-failure rule remains in force and no paid re-probe has occurred.
+and UI tests cover the success and typed-invalid paths. The exact 4c6 Target UI
+then ran supplier call 4/20 once. Probe 2 recorded provider HTTP 200 in 922 ms,
+12 data events, 11 deltas and reported model `deepseek-v4-flash`, but correctly
+retained failure evidence `usage_mixed_with_choices`; no approval was created,
+no ordinary streaming request followed, and the CNY wallet and transaction
+count remained zero.
+
+Current DeepSeek documentation now states that no separate usage-only chunk is
+emitted: final usage rides on the last single-choice chunk, which has no new
+content and a non-null `finish_reason`, immediately before `[DONE]`. The live
+shape and official contract therefore agree; the immutable M88 `@1.0.0`
+contract is historical rather than wrong evidence. The bounded local M89
+candidate preserves `@1.0.0`, adds `@2.0.0` for the current final-choice usage
+shape, and moves only the exact Flash Chat current bindings to `@2.0.0`.
+Versioned parser dispatch prevents either receipt version from being
+reinterpreted by the other. M89 migration up/down/reapply, typed positive and
+negative parsing, Admin probe/approval, preferred-receipt and frozen-receipt
+integration tests pass locally. This remains `locally_conformant`: M89 is not
+deployed, and no `@2.0.0` live probe or approval exists yet.
 
 An additional broader-than-CI integration invocation was not used as release
 evidence: unchanged historical health/runtimechange tests attempted to create

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -87,6 +89,73 @@ RETURNING id`).Scan(&pathfulConnectionID))
 	require.Equal(t, "https://api.example.com", created.Application.Connection.BaseURL)
 }
 
+func TestCanonicalModelApplicationCurrentCapabilityRollsBackThroughM89AndM88Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := t.Context()
+	var orgID, userID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type)
+VALUES ('reviewed-binding-rollback-customer','active','customer') RETURNING id`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users
+ (org_id,username,password_hash,organization_role,role,status)
+VALUES ($1,'reviewed-binding-rollback-admin','fixture','org_admin','org_admin','active') RETURNING id`, orgID).Scan(&userID))
+	handler := NewHandler(pool, "reviewed-binding-rollback-jwt", []byte("0123456789abcdef01234567"), nil)
+	request := canonicalModelApplicationCreateRequest{
+		Connection: canonicalConnectionInput{
+			Name: "Reviewed DeepSeek rollback", Provider: "deepseek", BaseURL: "https://api.deepseek.com",
+			AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`),
+		},
+		PublicModel: canonicalPublicModelInput{
+			ModelName: "reviewed-deepseek-rollback", ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.4.0",
+		},
+		Deployment: canonicalDeploymentInput{UpstreamModel: "deepseek-v4-flash"},
+		Credential: canonicalCredentialInput{APIKey: "reviewed-binding-rollback-fixture"},
+		Operation:  canonicalOperationInput{OperationID: string(modeloperation.IDChatCompletions)},
+	}
+	created := createCanonicalApplicationForTest(
+		t, handler, canonicalApplicationAuthorizedRequest(orgID, userID), request, http.StatusCreated,
+	)
+	deploymentID := created.Application.Deployment.ID
+	assertCapability := func(wantRef string, wantRevision int64) {
+		t.Helper()
+		var evidenceRef string
+		var revision int64
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT evidence_ref,revision FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='streaming'`, deploymentID).Scan(&evidenceRef, &revision))
+		require.Equal(t, wantRef, evidenceRef)
+		require.Equal(t, wantRevision, revision)
+	}
+	assertCapability("capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0", 1)
+
+	for _, migration := range []struct {
+		name         string
+		wantRef      string
+		wantRevision int64
+	}{
+		{
+			name:         "000089_deepseek_chat_sse_usage_contract_v2.down.sql",
+			wantRef:      "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0",
+			wantRevision: 1,
+		},
+		{name: "000088_model_capability_execution_qualification.down.sql"},
+	} {
+		body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), migration.name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(body))
+		require.NoError(t, err, migration.name)
+		if migration.wantRef != "" {
+			assertCapability(migration.wantRef, migration.wantRevision)
+		}
+	}
+	var capabilityCount int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='streaming'`, deploymentID).Scan(&capabilityCount))
+	require.Zero(t, capabilityCount)
+}
+
 func TestCanonicalModelApplicationReviewedProfileRejectsCrossProviderReuseIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
@@ -123,7 +192,7 @@ SELECT support_state,evidence_state,evidence_ref
 	))
 	require.Equal(t, "enabled", capabilitySupport)
 	require.Equal(t, "declared", capabilityEvidence)
-	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0", capabilityEvidenceRef)
+	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0", capabilityEvidenceRef)
 	qualificationTarget := fmt.Sprintf(
 		"/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/streaming",
 		created.Application.Deployment.ID,

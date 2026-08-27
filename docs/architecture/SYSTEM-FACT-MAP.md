@@ -8,11 +8,13 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The local candidate's executable PostgreSQL compatibility ceiling is `000088`.
+The local candidate's executable PostgreSQL compatibility ceiling is `000089`.
 M85–M87 batch inclusion is tracked in
 [B1 scope](../tech-ref/44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26);
 M88 is the separately bounded local capability-qualification candidate described
-in the current status document. This source ceiling alone does not prove a
+in the current status document. M89 preserves M88's immutable `@1.0.0` probe
+contract and promotes only the exact DeepSeek Flash Chat current binding to the
+new `@2.0.0` final-choice usage contract. This source ceiling alone does not prove a
 deployment. The separately authorized
 [B2 Target checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#b2-target-deployment-and-bounded-zero-call-acceptance--2026-08-26)
 records the 86-entry M87 ledger after a non-rolling maintenance window on
@@ -35,8 +37,10 @@ was superseded by UI-workbench candidate
 correction `e47af1faacd8ca96403c25b4cf2c47ec155bd980`, and finally by bounded M88
 artifact `08d0ef8e5cee7e1bff515d5751e7a9bdd452f16f`. Its automatic CI
 33050163111 and protocol-conformance CI 33050163136 passed before a non-rolling
-maintenance deployment. Stable, canary and frontend now use the exact 08d
-artifacts; canonical model-route authority remains enabled with compatibility
+maintenance deployment. It was later superseded by parser-diagnostics commit
+`56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and caller-scoped readiness UI
+commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`. Stable, canary and frontend now
+use the exact 4c6 artifacts; canonical model-route authority remains enabled with compatibility
 disabled, and that M88 deployment performed no canonical cutover. The database
 has the exact 87-entry M88 ledger.
 Following explicit authorization to create a test account and test through the
@@ -70,17 +74,21 @@ prove zero supplier cost. Customer-side manual acceptance remains deferred.
 The product owner later increased the cumulative test ceiling to 20 calls/CNY 5,
 including probe 1; this is spending authority, not evidence of further calls or
 a change to caller-identity, capability or Release requirements.
-The M88 Admin workflow subsequently issued exactly one typed streaming probe.
-The provider returned HTTP 200, but the deployed validator rejected its stream
-contract and recorded only a generic sanitized error. No capability approval,
-qualification or ordinary streaming request followed; this is supplier call
-3/20, with no wallet or transaction mutation. A local stabilization candidate
-now accepts SSE-standard CRLF/LF/CR endings and records a bounded typed partial
-observation—sanitized model, terminal and usage fields when parsed, plus byte,
-event and delta counters—with an enumerated failure category and no provider
-response content. It remains
-local evidence until its own gate/artifact/Target checks; it does not reinterpret
-the historical failed receipt or authorize another paid probe.
+The M88 Admin workflow subsequently issued one typed streaming probe. The
+provider returned HTTP 200, but the original deployed validator rejected its
+stream contract and recorded only a generic sanitized error. Parser-diagnostics
+commit 56d then deployed support for SSE-standard CRLF/LF/CR endings and a
+bounded typed partial observation—sanitized model, terminal and usage fields
+when parsed, plus byte, event and delta counters—with an enumerated failure
+category and no provider response content. A single authorized UI re-probe on
+4c6 recorded provider HTTP 200 in 922 ms, 12 data events, 11 deltas and exact
+error `usage_mixed_with_choices`. This is supplier call 4/20. No capability
+approval, qualification, ordinary streaming request, wallet movement or
+transaction followed. DeepSeek's current official contract and this live shape
+both place usage on the final single-choice chunk; the old M88 `@1.0.0`
+separate-usage contract remains historical evidence. The M89 local candidate
+adds current `@2.0.0` without reinterpreting either failed receipt. It remains
+local evidence until its own gate/artifact/Target checks.
 The exact Flash non-stream text slice is `canary_live_verified`. That evidence
 does not imply direct parity, other capabilities, billing, supplier-cost
 authority or `released`. After running

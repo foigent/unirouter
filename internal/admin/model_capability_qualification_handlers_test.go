@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 )
 
 func TestModelCapabilityProbePreservesSafeContractFailureEvidence(t *testing.T) {
@@ -36,7 +37,10 @@ func TestModelCapabilityProbePreservesSafeContractFailureEvidence(t *testing.T) 
 	outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 		Provider: "deepseek", BaseURL: "https://api.deepseek.com",
 		AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
-		UpstreamModel: "deepseek-v4-flash", EncryptedSecret: encrypted,
+		UpstreamModel:        "deepseek-v4-flash",
+		EncryptedSecret:      encrypted,
+		ProbeContractID:      modelcapabilityqualification.DeepSeekChatSSEProbeContractID,
+		ProbeContractVersion: modelcapabilityqualification.DeepSeekChatSSEProbeContractCurrentVersion,
 	}, "capability-probe-test")
 
 	require.True(t, outcome.ProviderSuccess)

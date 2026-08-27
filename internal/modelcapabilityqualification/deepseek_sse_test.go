@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDeepSeekChatSSEProbeContract(t *testing.T) {
+func TestDeepSeekChatSSEProbeContractV1PreservesHistoricalUsageOnlyChunk(t *testing.T) {
 	lines := []string{
 		`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}`,
 		"",
@@ -21,7 +21,10 @@ func TestDeepSeekChatSSEProbeContract(t *testing.T) {
 	for name, separator := range map[string]string{"lf": "\n", "crlf": "\r\n", "cr": "\r"} {
 		t.Run(name, func(t *testing.T) {
 			valid := strings.Join(lines, separator)
-			observation, err := ValidateDeepSeekChatSSE("text/event-stream; charset=utf-8", strings.NewReader(valid))
+			observation, err := ValidateDeepSeekChatSSE(
+				DeepSeekChatSSEProbeContractID, DeepSeekChatSSEProbeContractVersionV1,
+				"text/event-stream; charset=utf-8", strings.NewReader(valid),
+			)
 			require.NoError(t, err)
 			require.Equal(t, "deepseek-v4-flash", observation.ReportedModel)
 			require.Equal(t, "stop", observation.FinishReason)
@@ -29,6 +32,96 @@ func TestDeepSeekChatSSEProbeContract(t *testing.T) {
 			require.True(t, observation.UsageSeen)
 			require.True(t, observation.DoneSeen)
 			require.Equal(t, len(valid), observation.ResponseBytes)
+		})
+	}
+}
+
+func TestDeepSeekChatSSEProbeContractV2AcceptsDocumentedFinalChoiceUsage(t *testing.T) {
+	lines := []string{
+		`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
+		"",
+		`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":null}],"usage":null}`,
+		"",
+		`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24}}`,
+		"",
+		`data: [DONE]`,
+		"",
+	}
+	for name, separator := range map[string]string{"lf": "\n", "crlf": "\r\n", "cr": "\r"} {
+		t.Run(name, func(t *testing.T) {
+			valid := strings.Join(lines, separator)
+			observation, err := ValidateDeepSeekChatSSE(
+				DeepSeekChatSSEProbeContractID, DeepSeekChatSSEProbeContractCurrentVersion,
+				"text/event-stream; charset=utf-8", strings.NewReader(valid),
+			)
+			require.NoError(t, err)
+			require.Equal(t, "deepseek-v4-flash", observation.ReportedModel)
+			require.Equal(t, "stop", observation.FinishReason)
+			require.Equal(t, int64(24), observation.TotalTokens)
+			require.True(t, observation.UsageSeen)
+			require.True(t, observation.DoneSeen)
+			require.Equal(t, len(valid), observation.ResponseBytes)
+		})
+	}
+}
+
+func TestDeepSeekChatSSEProbeContractVersionsDoNotReinterpretEachOther(t *testing.T) {
+	historical := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
+		"",
+		`data: {"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		"",
+		`data: [DONE]`,
+		"",
+	}, "\n")
+	_, err := ValidateDeepSeekChatSSE(
+		DeepSeekChatSSEProbeContractID, DeepSeekChatSSEProbeContractCurrentVersion,
+		"text/event-stream", strings.NewReader(historical),
+	)
+	require.ErrorIs(t, err, ErrInvalidDeepSeekSSE)
+	require.Equal(t, "final_usage", DeepSeekSSEErrorCode(err))
+
+	current := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}],"usage":null}`,
+		"",
+		`data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		"",
+		`data: [DONE]`,
+		"",
+	}, "\n")
+	_, err = ValidateDeepSeekChatSSE(
+		DeepSeekChatSSEProbeContractID, DeepSeekChatSSEProbeContractVersionV1,
+		"text/event-stream", strings.NewReader(current),
+	)
+	require.ErrorIs(t, err, ErrInvalidDeepSeekSSE)
+	require.Equal(t, "usage_mixed_with_choices", DeepSeekSSEErrorCode(err))
+}
+
+func TestDeepSeekChatSSEProbeContractV2RejectsNonTerminalUsage(t *testing.T) {
+	for name, body := range map[string]string{
+		"usage before finish": strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+			"", `data: [DONE]`, "",
+		}, "\n"),
+		"content with final usage": strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+			"", `data: [DONE]`, "",
+		}, "\n"),
+		"data after final usage": strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}],"usage":null}`,
+			"",
+			`data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+			"",
+			`data: {"choices":[{"delta":{"content":"late"},"finish_reason":null}],"usage":null}`,
+			"", `data: [DONE]`, "",
+		}, "\n"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := ValidateDeepSeekChatSSE(
+				DeepSeekChatSSEProbeContractID, DeepSeekChatSSEProbeContractCurrentVersion,
+				"text/event-stream", strings.NewReader(body),
+			)
+			require.ErrorIs(t, err, ErrInvalidDeepSeekSSE)
 		})
 	}
 }
@@ -44,7 +137,10 @@ func TestDeepSeekChatSSEProbeRejectsIncompleteOrMisorderedEvidence(t *testing.T)
 		{name: "data after done", body: "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\ndata: [DONE]\n\ndata: {}\n\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := ValidateDeepSeekChatSSE("text/event-stream", strings.NewReader(test.body))
+			_, err := ValidateDeepSeekChatSSE(
+				DeepSeekChatSSEProbeContractID, DeepSeekChatSSEProbeContractCurrentVersion,
+				"text/event-stream", strings.NewReader(test.body),
+			)
 			require.ErrorIs(t, err, ErrInvalidDeepSeekSSE)
 		})
 	}
@@ -58,7 +154,10 @@ func TestDeepSeekChatSSEProbePreservesBoundedFailureEvidence(t *testing.T) {
 		"",
 	}, "\r\n")
 
-	observation, err := ValidateDeepSeekChatSSE("text/event-stream", strings.NewReader(body))
+	observation, err := ValidateDeepSeekChatSSE(
+		DeepSeekChatSSEProbeContractID, DeepSeekChatSSEProbeContractCurrentVersion,
+		"text/event-stream", strings.NewReader(body),
+	)
 	require.ErrorIs(t, err, ErrInvalidDeepSeekSSE)
 	require.Equal(t, "unsupported_field", DeepSeekSSEErrorCode(err))
 	require.Equal(t, "deepseek-v4-flash", observation.ReportedModel)

@@ -63,7 +63,7 @@ const baseQualification = {
   protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
   protocol_profile_version: '1.0.0',
   probe_contract_id: 'unirouter.capability-probe.deepseek-chat-sse.v1',
-  probe_contract_version: '1.0.0',
+  probe_contract_version: '2.0.0',
   probe_available: true,
   probe_availability_reason_code: 'typed_probe_available',
   state: 'not_probed',

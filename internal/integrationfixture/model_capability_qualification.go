@@ -86,7 +86,7 @@ VALUES ($1,'openai.chat_completions.v1','enabled','production_approved','integra
 INSERT INTO model_deployment_capabilities (
   deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
 VALUES ($1,'openai.chat_completions.v1','streaming','enabled','declared',
-        'capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0',1)`, fixture.DeploymentID)
+		'capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0',1)`, fixture.DeploymentID)
 	require.NoError(t, err)
 	return fixture
 }
@@ -112,7 +112,7 @@ INSERT INTO model_capability_probes (
   source_fingerprint,tested_by)
 VALUES ($1,$2,$3,'openai.chat_completions.v1','streaming',
 		'deepseek.v4-flash.api','1.4.0',$4,$5,
-		'unirouter.capability-probe.deepseek-chat-sse.v1','1.0.0',
+		'unirouter.capability-probe.deepseek-chat-sse.v1','2.0.0',
 		'deepseek','https://api.deepseek.com','openai_compatible',
 		'{"endpoint_path_mode":"base_relative"}',
 		'deepseek-v4-flash',1,1,1,1,$6,$7,$8,TRUE,TRUE,200,12,

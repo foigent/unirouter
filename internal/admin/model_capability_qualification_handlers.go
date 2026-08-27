@@ -534,7 +534,10 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		return outcome
 	}
 	outcome.ProviderSuccess = true
-	observation, err := modelcapabilityqualification.ValidateDeepSeekChatSSE(response.Header.Get("Content-Type"), response.Body)
+	observation, err := modelcapabilityqualification.ValidateDeepSeekChatSSE(
+		snapshot.ProbeContractID, snapshot.ProbeContractVersion,
+		response.Header.Get("Content-Type"), response.Body,
+	)
 	outcome.LatencyMS = time.Since(started).Milliseconds()
 	outcome.ReportedModel = observation.ReportedModel
 	outcome.FinishReason = observation.FinishReason

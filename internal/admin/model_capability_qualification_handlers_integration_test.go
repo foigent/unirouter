@@ -81,9 +81,9 @@ UPDATE provider_credential_bindings
 		stream := strings.Join([]string{
 			`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}`,
 			"",
-			`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":"stop"}]}`,
+			`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":null}],"usage":null}`,
 			"",
-			`data: {"model":"deepseek-v4-flash","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24}}`,
+			`data: {"model":"deepseek-v4-flash","choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24}}`,
 			"",
 			`data: [DONE]`,
 			"",
@@ -122,7 +122,7 @@ UPDATE provider_credential_bindings
 		WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
 		  AND capability_id='streaming' AND support_state='enabled'
 		  AND evidence_state='declared'
-		  AND evidence_ref='capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0'`,
+		  AND evidence_ref='capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0'`,
 		fixture.DeploymentID).Scan(&declaredCapabilityCount))
 	require.Equal(t, 1, declaredCapabilityCount)
 

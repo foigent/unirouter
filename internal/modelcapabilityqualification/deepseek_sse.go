@@ -68,7 +68,25 @@ type DeepSeekSSEObservation struct {
 	ResponseBytes     int
 }
 
-func ValidateDeepSeekChatSSE(contentType string, reader io.Reader) (DeepSeekSSEObservation, error) {
+type deepSeekSSEUsageMode uint8
+
+const (
+	deepSeekSSESeparateUsageChunk deepSeekSSEUsageMode = iota + 1
+	deepSeekSSEFinalChoiceUsage
+)
+
+// ValidateDeepSeekChatSSE validates one immutable probe-contract version.
+// Version 1.0.0 preserves DeepSeek's historical separate usage-only chunk;
+// version 2.0.0 models the current final choice + usage chunk documented by
+// DeepSeek. Callers must never reinterpret an old receipt with a new contract.
+func ValidateDeepSeekChatSSE(
+	probeContractID, probeContractVersion, contentType string,
+	reader io.Reader,
+) (DeepSeekSSEObservation, error) {
+	usageMode, err := deepSeekSSEUsageModeForContract(probeContractID, probeContractVersion)
+	if err != nil {
+		return DeepSeekSSEObservation{}, err
+	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil || mediaType != "text/event-stream" {
 		return DeepSeekSSEObservation{}, invalidDeepSeekSSE("content_type")
@@ -100,7 +118,10 @@ func ValidateDeepSeekChatSSE(contentType string, reader io.Reader) (DeepSeekSSEO
 		if observation.DoneSeen {
 			return invalidDeepSeekSSE("data_after_done")
 		}
-		return validateDeepSeekChunk([]byte(payload), &observation)
+		if usageMode == deepSeekSSEFinalChoiceUsage && observation.UsageSeen {
+			return invalidDeepSeekSSE("data_after_usage")
+		}
+		return validateDeepSeekChunk(usageMode, []byte(payload), &observation)
 	}
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -137,6 +158,20 @@ func ValidateDeepSeekChatSSE(contentType string, reader io.Reader) (DeepSeekSSEO
 	return observed(), nil
 }
 
+func deepSeekSSEUsageModeForContract(probeContractID, probeContractVersion string) (deepSeekSSEUsageMode, error) {
+	if probeContractID != DeepSeekChatSSEProbeContractID {
+		return 0, invalidDeepSeekSSE("probe_contract")
+	}
+	switch probeContractVersion {
+	case DeepSeekChatSSEProbeContractVersionV1:
+		return deepSeekSSESeparateUsageChunk, nil
+	case DeepSeekChatSSEProbeContractCurrentVersion:
+		return deepSeekSSEFinalChoiceUsage, nil
+	default:
+		return 0, invalidDeepSeekSSE("probe_contract")
+	}
+}
+
 // splitSSELines implements the three line endings allowed by the SSE format:
 // CRLF, LF and CR. bufio.ScanLines does not split a stream that uses bare CR.
 func splitSSELines(data []byte, atEOF bool) (advance int, token []byte, err error) {
@@ -164,7 +199,7 @@ func splitSSELines(data []byte, atEOF bool) (advance int, token []byte, err erro
 	return 0, nil, nil
 }
 
-func validateDeepSeekChunk(payload []byte, observation *DeepSeekSSEObservation) error {
+func validateDeepSeekChunk(usageMode deepSeekSSEUsageMode, payload []byte, observation *DeepSeekSSEObservation) error {
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.UseNumber()
 	var chunk struct {
@@ -189,22 +224,14 @@ func validateDeepSeekChunk(payload []byte, observation *DeepSeekSSEObservation) 
 		return invalidDeepSeekSSE("choices")
 	}
 	if len(choices) == 0 {
-		if observation.UsageSeen || len(chunk.Usage) == 0 || bytes.Equal(bytes.TrimSpace(chunk.Usage), []byte("null")) {
+		if usageMode != deepSeekSSESeparateUsageChunk || observation.UsageSeen ||
+			len(chunk.Usage) == 0 || bytes.Equal(bytes.TrimSpace(chunk.Usage), []byte("null")) {
 			return invalidDeepSeekSSE("final_usage")
 		}
-		prompt, completion, total, err := parseDeepSeekUsage(chunk.Usage)
-		if err != nil {
-			return err
-		}
-		observation.PromptTokens = prompt
-		observation.CompletionTokens = completion
-		observation.TotalTokens = total
-		observation.UsageSeen = true
-		return nil
+		return recordDeepSeekUsage(chunk.Usage, observation)
 	}
-	if len(chunk.Usage) > 0 && !bytes.Equal(bytes.TrimSpace(chunk.Usage), []byte("null")) {
-		return invalidDeepSeekSSE("usage_mixed_with_choices")
-	}
+	finishInChunk := false
+	contentInChunk := false
 	for _, choice := range choices {
 		var delta map[string]json.RawMessage
 		if len(choice.Delta) == 0 || json.Unmarshal(choice.Delta, &delta) != nil || delta == nil {
@@ -217,6 +244,7 @@ func validateDeepSeekChunk(payload []byte, observation *DeepSeekSSEObservation) 
 				return invalidDeepSeekSSE("content")
 			}
 			if content != "" {
+				contentInChunk = true
 				observation.ContentDeltaCount++
 			}
 		}
@@ -229,8 +257,30 @@ func validateDeepSeekChunk(payload []byte, observation *DeepSeekSSEObservation) 
 				return invalidDeepSeekSSE("finish_reason_changed")
 			}
 			observation.FinishReason = finish
+			finishInChunk = true
 		}
 	}
+	if len(chunk.Usage) > 0 && !bytes.Equal(bytes.TrimSpace(chunk.Usage), []byte("null")) {
+		if usageMode != deepSeekSSEFinalChoiceUsage {
+			return invalidDeepSeekSSE("usage_mixed_with_choices")
+		}
+		if observation.UsageSeen || len(choices) != 1 || !finishInChunk || contentInChunk {
+			return invalidDeepSeekSSE("final_usage")
+		}
+		return recordDeepSeekUsage(chunk.Usage, observation)
+	}
+	return nil
+}
+
+func recordDeepSeekUsage(raw json.RawMessage, observation *DeepSeekSSEObservation) error {
+	prompt, completion, total, err := parseDeepSeekUsage(raw)
+	if err != nil {
+		return err
+	}
+	observation.PromptTokens = prompt
+	observation.CompletionTokens = completion
+	observation.TotalTokens = total
+	observation.UsageSeen = true
 	return nil
 }
 

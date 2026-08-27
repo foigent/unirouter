@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	DeepSeekChatSSEProbeContractID      = "unirouter.capability-probe.deepseek-chat-sse.v1"
-	DeepSeekChatSSEProbeContractVersion = "1.0.0"
-	ProbeSourceKind                     = "admin.model_capability_probe.v1"
-	ApprovalSourceKind                  = "admin.model_capability_routing_approval.v1"
+	DeepSeekChatSSEProbeContractID             = "unirouter.capability-probe.deepseek-chat-sse.v1"
+	DeepSeekChatSSEProbeContractVersionV1      = "1.0.0"
+	DeepSeekChatSSEProbeContractCurrentVersion = "2.0.0"
+	ProbeSourceKind                            = "admin.model_capability_probe.v1"
+	ApprovalSourceKind                         = "admin.model_capability_routing_approval.v1"
 )
 
 var ErrUnsupported = errors.New("model capability qualification contract is unsupported")
@@ -45,7 +46,7 @@ var deepSeekFlashStreaming = Binding{
 	ProtocolProfileID:       "protocol.deepseek-openai-chat.v4",
 	ProtocolProfileVersion:  "1.0.0",
 	ProbeContractID:         DeepSeekChatSSEProbeContractID,
-	ProbeContractVersion:    DeepSeekChatSSEProbeContractVersion,
+	ProbeContractVersion:    DeepSeekChatSSEProbeContractCurrentVersion,
 	ExpectedProvider:        "deepseek",
 	ExpectedUpstreamModel:   "deepseek-v4-flash",
 	PublicPath:              modeloperation.PathChatCompletions,
@@ -63,7 +64,7 @@ var deepSeekFlashLegacyStreaming = Binding{
 	ProtocolProfileID:       "openai.chat_completions",
 	ProtocolProfileVersion:  "1.0.0",
 	ProbeContractID:         DeepSeekChatSSEProbeContractID,
-	ProbeContractVersion:    DeepSeekChatSSEProbeContractVersion,
+	ProbeContractVersion:    DeepSeekChatSSEProbeContractCurrentVersion,
 	ExpectedProvider:        "deepseek",
 	ExpectedUpstreamModel:   "deepseek-v4-flash",
 	PublicPath:              modeloperation.PathChatCompletions,
