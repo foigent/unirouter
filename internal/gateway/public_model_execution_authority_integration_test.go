@@ -143,6 +143,7 @@ SELECT row_to_json(binding)::text FROM model_operation_public_execution_bindings
 	original := readBinding()
 	for cycle := 0; cycle < 2; cycle++ {
 		for _, name := range []string{
+			"000088_model_capability_execution_qualification.down.sql",
 			"000087_anthropic_messages_tools_public_binding.down.sql",
 			"000086_exact_public_execution_bindings.down.sql",
 		} {
@@ -184,6 +185,12 @@ func TestPublicModelExecutionAuthorityExactBindingsRollbackProtectsSealedEvidenc
 				id: tc.profileID, version: tc.version, baseURL: origin, upstreamModel: tc.upstream,
 				capabilities: []string{modelprofile.CapabilityReasoning, modelprofile.CapabilityReasoningEffort},
 			})
+			capabilityDown, err := os.ReadFile(filepath.Join(
+				testutil.MigrationsDir(t), "000088_model_capability_execution_qualification.down.sql",
+			))
+			require.NoError(t, err)
+			_, err = pool.Exec(t.Context(), string(capabilityDown))
+			require.NoError(t, err)
 			name := "000087_anthropic_messages_tools_public_binding.down.sql"
 			if tc.name != "messages-tools-v3" {
 				body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
@@ -437,6 +444,15 @@ FROM billing_provider_attempts a WHERE org_id=$1 AND request_id=$2 AND attempt_i
 	conn, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 	defer conn.Release()
+	for _, name := range []string{
+		"000088_model_capability_execution_qualification.down.sql",
+		"000087_anthropic_messages_tools_public_binding.down.sql",
+	} {
+		down, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, readErr)
+		_, err = conn.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+	}
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000086_exact_public_execution_bindings.down.sql"))
 	require.NoError(t, err)
 	_, err = conn.Exec(ctx, string(down))

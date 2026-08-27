@@ -60,6 +60,7 @@ export default function ModelEndpointsPage() {
   const user = useAuthStore(state => state.user);
   const organizationRole = organizationRoleForUser(user);
   const canManage = isOrgAdminRole(organizationRole);
+  const canApproveCapabilities = organizationRole === 'platform_admin';
   const canRead = !user || canManage || isOrgViewerRole(organizationRole);
   const gatewayLicensed = hasLicensedFeature(user?.license_access, 'gateway');
   const gatewayRestriction = user?.license_access ? licenseRestrictionMessage(user.license_access, 'gateway') : '';
@@ -444,6 +445,7 @@ export default function ModelEndpointsPage() {
       selected={exactDetail}
       operation={selectedOperation}
       canManage={canManage}
+      canApproveCapabilities={canApproveCapabilities}
       gatewayLicensed={gatewayLicensed}
       gatewayRestriction={gatewayRestriction}
       workingBindingID={workingBindingID}

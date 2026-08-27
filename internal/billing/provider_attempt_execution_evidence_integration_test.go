@@ -415,6 +415,7 @@ UPDATE billing_provider_attempts SET execution_snapshot_hash=NULL WHERE org_id=$
 	// The newer public-binding migrations must be reversed before the M85
 	// guard can permit this isolated fixture to enter the legacy schema.
 	for _, name := range []string{
+		"000088_model_capability_execution_qualification.down.sql",
 		"000087_anthropic_messages_tools_public_binding.down.sql",
 		"000086_exact_public_execution_bindings.down.sql",
 	} {

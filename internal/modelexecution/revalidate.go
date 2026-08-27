@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -732,26 +733,104 @@ func revalidateCapabilities(ctx context.Context, tx pgx.Tx, request preparedRequ
 	if len(ids) == 0 {
 		return Applied, nil
 	}
-	rows, err := tx.Query(ctx, `
+	actual := make([]executionevidence.CapabilityEntry, 0, len(ids))
+	for _, bound := range wanted {
+		if approvalID, ok := capabilityApprovalID(bound.EvidenceRef); ok {
+			// Lock the two mutable inputs that are not already locked by public
+			// model, deployment, connection and operation revalidation. The SQL
+			// qualification view remains the sole business-rule authority.
+			var supportRevision int64
+			if err := tx.QueryRow(ctx, `
+SELECT support_revision
+  FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id=$2 AND capability_id=$3
+ FOR SHARE`, request.evidence.DeploymentID, request.underlying.id, bound.CapabilityID).Scan(&supportRevision); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return Stale, nil
+				}
+				return "", err
+			}
+			var probeContractID, probeContractVersion string
+			if err := tx.QueryRow(ctx, `
+SELECT probe_contract_id,probe_contract_version
+  FROM model_capability_current_probe_contracts
+ WHERE operation_id=$1 AND capability_id=$2
+   AND execution_profile_id=$3 AND execution_profile_version=$4
+   AND protocol_profile_id=$5 AND protocol_profile_version=$6
+ FOR SHARE`, request.underlying.id, bound.CapabilityID,
+				request.plan.ExecutionProfileID, request.plan.ExecutionProfileVersion,
+				request.underlying.profileID, request.underlying.profileVersion).Scan(
+				&probeContractID, &probeContractVersion,
+			); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return Stale, nil
+				}
+				return "", err
+			}
+			var item executionevidence.CapabilityEntry
+			var approvedAt time.Time
+			var qualified bool
+			if err := tx.QueryRow(ctx, `
+SELECT capability_id,approval_id,approved_at,qualified
+  FROM model_capability_approval_qualifications
+ WHERE approval_id=$1 AND deployment_id=$2 AND operation_id=$3 AND capability_id=$4
+   AND execution_profile_id=$5 AND execution_profile_version=$6
+   AND protocol_profile_id=$7 AND protocol_profile_version=$8
+   AND probe_contract_id=$9 AND probe_contract_version=$10`,
+				approvalID, request.evidence.DeploymentID, request.underlying.id, bound.CapabilityID,
+				request.plan.ExecutionProfileID, request.plan.ExecutionProfileVersion,
+				request.underlying.profileID, request.underlying.profileVersion,
+				probeContractID, probeContractVersion,
+			).Scan(&item.CapabilityID, &item.Revision, &approvedAt, &qualified); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return Stale, nil
+				}
+				return "", err
+			}
+			if !qualified || item.Revision != approvalID || supportRevision <= 0 {
+				return Stale, nil
+			}
+			item.SupportState = "enabled"
+			item.EvidenceState = "production_approved"
+			item.EvidenceRef = "capability_approval:" + strconv.FormatInt(approvalID, 10)
+			item.VerifiedAt = &approvedAt
+			actual = append(actual, item)
+			continue
+		}
+
+		// Historical capabilities keep their existing projection contract. An
+		// exact M88 probe contract forbids this fallback even if someone forges
+		// production_approved directly on the mutable projection row.
+		var typedContractExists bool
+		if err := tx.QueryRow(ctx, `
+SELECT EXISTS (
+  SELECT 1 FROM model_capability_current_probe_contracts
+   WHERE operation_id=$1 AND capability_id=$2
+     AND execution_profile_id=$3 AND execution_profile_version=$4
+     AND protocol_profile_id=$5 AND protocol_profile_version=$6
+)`, request.underlying.id, bound.CapabilityID,
+			request.plan.ExecutionProfileID, request.plan.ExecutionProfileVersion,
+			request.underlying.profileID, request.underlying.profileVersion).Scan(&typedContractExists); err != nil {
+			return "", err
+		}
+		if typedContractExists {
+			return Stale, nil
+		}
+		var item executionevidence.CapabilityEntry
+		if err := tx.QueryRow(ctx, `
 SELECT capability_id,support_state,evidence_state,evidence_ref,verified_at,revision
   FROM model_deployment_capabilities
- WHERE deployment_id=$1 AND operation_id=$2 AND capability_id=ANY($3::varchar[])
- ORDER BY capability_id
- FOR SHARE`, request.evidence.DeploymentID, request.underlying.id, ids)
-	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
-	actual := make([]executionevidence.CapabilityEntry, 0, len(ids))
-	for rows.Next() {
-		var item executionevidence.CapabilityEntry
-		if err := rows.Scan(&item.CapabilityID, &item.SupportState, &item.EvidenceState, &item.EvidenceRef, &item.VerifiedAt, &item.Revision); err != nil {
+ WHERE deployment_id=$1 AND operation_id=$2 AND capability_id=$3
+ FOR SHARE`, request.evidence.DeploymentID, request.underlying.id, bound.CapabilityID).Scan(
+			&item.CapabilityID, &item.SupportState, &item.EvidenceState,
+			&item.EvidenceRef, &item.VerifiedAt, &item.Revision,
+		); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return Stale, nil
+			}
 			return "", err
 		}
 		actual = append(actual, item)
-	}
-	if err := rows.Err(); err != nil {
-		return "", err
 	}
 	if len(actual) != len(wanted) {
 		return Stale, nil
@@ -764,6 +843,19 @@ SELECT capability_id,support_state,evidence_state,evidence_ref,verified_at,revis
 		}
 	}
 	return Applied, nil
+}
+
+func capabilityApprovalID(evidenceRef string) (int64, bool) {
+	const prefix = "capability_approval:"
+	if !strings.HasPrefix(evidenceRef, prefix) {
+		return 0, false
+	}
+	value := strings.TrimPrefix(evidenceRef, prefix)
+	if value == "" || (len(value) > 1 && value[0] == '0') {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(value, 10, 64)
+	return id, err == nil && id > 0
 }
 
 func revalidateBindingAndProbe(ctx context.Context, tx pgx.Tx, request preparedRequest, dbNow time.Time) (Status, error) {

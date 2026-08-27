@@ -1110,6 +1110,69 @@ keys are disabled. This closes only Flash non-stream text as
 tools, billing, supplier-cost authority, other capabilities and `released`
 remain separate.
 
+### DeepSeek Flash streaming qualification control plane — local M88 candidate
+
+The next finite milestone is exactly:
+
+`DeepSeek V4 Flash × OpenAI-compatible Chat Completions × streaming capability qualification`.
+
+It does not add streaming to another model or surface. It also does not add
+tools/reasoning/cache approval, automatic approval, batch approval, revocation,
+dual control, pricing authority, Release or canonical cutover.
+
+M88 introduces one generic append-only capability probe/approval receipt model,
+but exposes only the exact typed DeepSeek Flash Chat SSE probe contract in this
+batch. A successful probe validates `text/event-stream`, legal deltas, a finish
+reason, the separate final `choices=[]` usage frame and `[DONE]`. It creates
+`live_probed` evidence only. A platform approval is a separate immutable action
+labelled “批准在当前环境进入路由池”; it is not `released`, an SLA claim or a
+long-term stability claim. The UI places both actions in one guided capability
+validation panel, discloses one expected supplier call and states that unavailable
+supplier cost is not zero cost.
+
+The migration materializes an `enabled/declared` streaming projection for an
+already-existing deployment only when its provider, upstream model, operation,
+Execution Profile and protocol Profile match the exact M88 support tuple. The
+canonical deployment creator applies the same compiled-plus-database check for
+future exact applications. Both paths are zero-provider-call declaration
+writers: they create neither live evidence nor approval, routing, Release or
+pricing authority, and `ON CONFLICT DO NOTHING` preserves any prior explicit
+support decision, including `unsupported`. Rollback removes only the untouched
+M88 declaration marker; retained probe, approval or attempt evidence prevents
+destructive down migration. The M87→M88→M87→M88 integration path asserts that
+the exact declaration is restored, a mismatched tuple stays absent and an
+existing unsupported decision remains unchanged.
+
+The mutable `model_deployment_capabilities` row is not routing authority. The
+receipt-aware qualification resolver covers all three execution consumers:
+Planner, cutover/manifest qualification and pre-dispatch revalidation. New
+Plans/cutovers deterministically select the preferred current receipt. A frozen
+Plan instead validates its already-bound approval identity; a newer equivalent
+receipt does not invalidate it. Stable deployment/operation/Profile/protocol/
+probe-contract drift does invalidate qualification. Transient credential health
+or cooldown does not revoke the streaming approval, although existing
+connectivity gates may still make the route temporarily unavailable.
+
+Local deterministic tests and isolated PostgreSQL 16 integration tests cover
+forged projection rejection, preferred A/B selection, the same selection in
+Planner and cutover, bound-A validation after B is appended, credential-health
+revision separation, stable-tuple drift, typed SSE parsing and the two-stage
+Admin/UI flow. The frozen local gate on 2026-08-27 passed `go vet ./...`, the
+complete Go unit/race suite, all Admin integration tests, the exact M88
+migration/routing/revalidation/reset/bootstrap integration selector under the
+race detector, all 83 frontend test files / 648 tests, the production frontend
+build, bundle budget and `git diff --check`.
+
+An additional broader-than-CI integration invocation was not used as release
+evidence: unchanged historical health/runtimechange tests attempted to create
+database states that existing constraints reject (a disabled deployment
+retaining a probe lease, an expired lease identity and a mutable deployment
+identity tuple). The repository's actual CI selectors do not include those
+legacy fixtures. They are recorded as separate test-suite debt, not silently
+called green and not expanded into M88. This checkpoint remains
+`locally_conformant`; CI, non-rolling M88 Target deployment and the UI-led live
+probe/approval/streaming request remain separate evidence steps.
+
 ## Historical local milestone log
 
 The following entries preserve prior local checkpoints and their exact version

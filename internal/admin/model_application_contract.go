@@ -19,6 +19,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"github.com/uniroute/unirouter/internal/modeldeployment"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
@@ -632,6 +633,7 @@ func (h *Handler) createCanonicalModelApplicationWithReadbackAndIdempotency(
 	if err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
+	request.Operation = resolveCanonicalCapabilityOperationProfile(publicModel, request.Operation)
 	if err := validateCanonicalProfileProductBinding(publicModel, connection, request.Deployment.UpstreamModel, request.Operation); err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
@@ -648,6 +650,12 @@ func (h *Handler) createCanonicalModelApplicationWithReadbackAndIdempotency(
 	}
 	operationReused, err := ensureCanonicalOperation(ctx, tx, deploymentID, request.Operation)
 	if err != nil {
+		return canonicalModelApplicationCreateResult{}, err
+	}
+	if err := ensureCanonicalDeclaredCapabilities(
+		ctx, tx, deploymentID, publicModel, connection,
+		request.Deployment.UpstreamModel, request.Operation,
+	); err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
 	if err := insertAuditEntry(ctx, tx, "model_deployment.create", "model_deployment", strconv.FormatInt(deploymentID, 10), map[string]interface{}{
@@ -927,6 +935,24 @@ func resolveCanonicalOperationProfile(input canonicalOperationInput, adapterType
 		return input, errCanonicalApplicationInvalid
 	}
 	return input, nil
+}
+
+// resolveCanonicalCapabilityOperationProfile is intentionally narrow: M88's
+// compiled capability contract may refine the generic Chat protocol selected
+// by adapter type to one exact provider/Profile protocol. This does not infer
+// support from provider documentation or widen other model surfaces.
+func resolveCanonicalCapabilityOperationProfile(
+	publicModel canonicalPublicModelIdentity,
+	operation canonicalOperationInput,
+) canonicalOperationInput {
+	binding := modelcapabilityqualification.DeepSeekFlashStreamingBinding()
+	if operation.OperationID == binding.OperationID &&
+		publicModel.ExecutionProfileID == binding.ExecutionProfileID &&
+		publicModel.ExecutionProfileVersion == binding.ExecutionProfileVersion {
+		operation.ProtocolProfileID = binding.ProtocolProfileID
+		operation.ProtocolProfileVersion = binding.ProtocolProfileVersion
+	}
+	return operation
 }
 
 func validCanonicalProviderBaseURL(raw string) bool {
@@ -1314,6 +1340,91 @@ SELECT protocol_profile_id,protocol_profile_version,support_state
 		return false, errCanonicalApplicationConflict
 	}
 	return true, nil
+}
+
+// ensureCanonicalDeclaredCapabilities materializes only capabilities for which
+// the compiled Profile contract and M88's migration-owned support tuple agree
+// exactly. It records supported/declared state; it never creates probe,
+// approval, Release, or routing evidence and never overwrites an existing
+// explicit support decision.
+func ensureCanonicalDeclaredCapabilities(
+	ctx context.Context,
+	tx pgx.Tx,
+	deploymentID int64,
+	publicModel canonicalPublicModelIdentity,
+	connection canonicalConnectionIdentity,
+	upstreamModel string,
+	operation canonicalOperationInput,
+) error {
+	binding, err := modelcapabilityqualification.Resolve(
+		operation.OperationID, modelprofile.CapabilityStreaming,
+		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
+		operation.ProtocolProfileID, operation.ProtocolProfileVersion,
+	)
+	if errors.Is(err, modelcapabilityqualification.ErrUnsupported) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolve canonical capability declaration: %w", err)
+	}
+	if connection.Provider != binding.ExpectedProvider || upstreamModel != binding.ExpectedUpstreamModel {
+		return errCanonicalApplicationConflict
+	}
+
+	var databaseBinding modelcapabilityqualification.Binding
+	err = tx.QueryRow(ctx, `
+SELECT current_contract.operation_id,current_contract.capability_id,
+       current_contract.execution_profile_id,current_contract.execution_profile_version,
+       current_contract.protocol_profile_id,current_contract.protocol_profile_version,
+       current_contract.probe_contract_id,current_contract.probe_contract_version,
+       contract.expected_provider,contract.expected_upstream_model,contract.public_path
+  FROM model_capability_current_probe_contracts current_contract
+  JOIN model_capability_probe_contract_bindings contract
+    ON contract.operation_id=current_contract.operation_id
+   AND contract.capability_id=current_contract.capability_id
+   AND contract.execution_profile_id=current_contract.execution_profile_id
+   AND contract.execution_profile_version=current_contract.execution_profile_version
+   AND contract.protocol_profile_id=current_contract.protocol_profile_id
+   AND contract.protocol_profile_version=current_contract.protocol_profile_version
+   AND contract.probe_contract_id=current_contract.probe_contract_id
+   AND contract.probe_contract_version=current_contract.probe_contract_version
+ WHERE current_contract.operation_id=$1 AND current_contract.capability_id=$2
+   AND current_contract.execution_profile_id=$3
+   AND current_contract.execution_profile_version=$4
+   AND current_contract.protocol_profile_id=$5
+   AND current_contract.protocol_profile_version=$6`,
+		binding.OperationID, binding.CapabilityID,
+		binding.ExecutionProfileID, binding.ExecutionProfileVersion,
+		binding.ProtocolProfileID, binding.ProtocolProfileVersion,
+	).Scan(
+		&databaseBinding.OperationID, &databaseBinding.CapabilityID,
+		&databaseBinding.ExecutionProfileID, &databaseBinding.ExecutionProfileVersion,
+		&databaseBinding.ProtocolProfileID, &databaseBinding.ProtocolProfileVersion,
+		&databaseBinding.ProbeContractID, &databaseBinding.ProbeContractVersion,
+		&databaseBinding.ExpectedProvider, &databaseBinding.ExpectedUpstreamModel,
+		&databaseBinding.PublicPath,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errCanonicalApplicationConflict
+	}
+	if err != nil {
+		return fmt.Errorf("read canonical capability declaration contract: %w", err)
+	}
+	if databaseBinding != binding {
+		return errCanonicalApplicationConflict
+	}
+
+	evidenceRef := "capability_contract:" + binding.ProbeContractID + "@" + binding.ProbeContractVersion
+	if _, err := tx.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,$2,$3,'enabled','declared',$4,1)
+ON CONFLICT (deployment_id,operation_id,capability_id) DO NOTHING`,
+		deploymentID, binding.OperationID, binding.CapabilityID, evidenceRef,
+	); err != nil {
+		return fmt.Errorf("declare canonical model capability: %w", err)
+	}
+	return nil
 }
 
 func (h *Handler) loadCanonicalModelApplications(ctx context.Context, orgID, deploymentID int64, operationID string) (canonicalModelApplicationProjection, error) {

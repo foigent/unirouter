@@ -213,6 +213,7 @@ func inspectProtectedState(ctx context.Context, q queryer) (resetplan.ProtectedS
 		"commercial_license_entitlements", "deployment_profiles", "gateway_endpoints",
 		"micro_ledger_runtime_state", "model_operation_execution_support_bindings",
 		"model_operation_public_execution_contract_extensions",
+		"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
 		"release_history", "release_state",
 	}
 	protected := resetplan.ProtectedState{SettingKeys: resetplan.ProtectedSettingKeys()}

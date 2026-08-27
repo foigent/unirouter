@@ -953,7 +953,7 @@ paths:
     post:
       tags: [Admin]
       summary: Transactionally create or exactly reuse one model deployment and operation
-      description: "Requires an active Gateway License and Idempotency-Key. Existing IDs are explicit selectors and extra fields are exact assertions; no name-based connection lookup or fallback-to-first deployment occurs. A new public model may pin one exact repository-reviewed execution_profile_id/version; both fields are required together, their context/output limits are server-validated, and omission explicitly records unverified.chat rather than guessing from the model name. This profile pin is model metadata only: creation still does not imply a live probe, release, route, price, or caller authorization. Responses and Messages require the effective connection base_url to be a path-free HTTPS origin before any receipt or canonical row is written; invalid new input returns 400 and an incompatible selected connection returns 409 with code canonical_application_https_origin_required. The first committed mutation returns 201. An exact actor-scoped replay within 24 hours returns the current projection with the original reused-result, status 200, X-UniRouter-Idempotency-Replayed true, and X-UniRouter-Original-Request-ID. The receipt stores no raw key, request body, provider API key, or response body; using the same key with another normalized payload returns 409."
+      description: "Requires an active Gateway License and Idempotency-Key. Existing IDs are explicit selectors and extra fields are exact assertions; no name-based connection lookup or fallback-to-first deployment occurs. A new public model may pin one exact repository-reviewed execution_profile_id/version; both fields are required together, their context/output limits are server-validated, and omission explicitly records unverified.chat rather than guessing from the model name. For the exact compiled M88 DeepSeek V4 Flash Chat streaming tuple, creation also materializes only an enabled/declared capability projection after the compiled binding and database support contract agree exactly. This performs no provider call and creates no live probe, routing approval, route, Release, price, or caller authorization; no capability is inferred for any other tuple. Responses and Messages require the effective connection base_url to be a path-free HTTPS origin before any receipt or canonical row is written; invalid new input returns 400 and an incompatible selected connection returns 409 with code canonical_application_https_origin_required. The first committed mutation returns 201. An exact actor-scoped replay within 24 hours returns the current projection with the original reused-result, status 200, X-UniRouter-Idempotency-Replayed true, and X-UniRouter-Original-Request-ID. The receipt stores no raw key, request body, provider API key, or response body; using the same key with another normalized payload returns 409."
       security: [{ bearerAuth: [] }]
       parameters:
         - name: Idempotency-Key
@@ -1152,6 +1152,101 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ModelOperationProductionApproval" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+    get:
+      tags: [Admin]
+      summary: Read one exact typed capability qualification
+      description: "License-independent truth read for one exact deployment, operation, capability, Execution Profile, protocol Profile and probe contract. The preferred approval is selected deterministically for new Plans and cutover proofs. A frozen Plan remains bound to its recorded approval identity and pre-dispatch validates that receipt directly; a newer equivalent approval does not stale the in-flight Plan. Raw model_deployment_capabilities projection state is never routing authority. Qualification excludes transient credential cooldown and health revision; ordinary route health gates remain independent."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming] } }
+      responses:
+        "200":
+          description: Sanitized current qualification, preferred approval and latest probe projection.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelCapabilityQualification" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/probes:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Run one server-owned typed capability probe
+      description: "Requires an active Gateway License. M88 supports only DeepSeek V4 Flash at deepseek.v4-flash.api@1.4.0, OpenAI-compatible Chat Completions, and streaming. The server owns the fixed prompt and bounded request: stream=true, stream_options.include_usage=true, thinking.type=disabled and max_tokens=64. A successful result must prove text/event-stream, legal content deltas, finish_reason, a final empty-choices usage chunk and [DONE]. It appends live_probed evidence only and never auto-approves routing. This action is one real supplier call; supplier cost unavailable is absent/unknown, never represented as CNY zero."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [credential_binding_id]
+              properties:
+                credential_binding_id: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Sanitized append-only typed probe receipt. success requires both provider contract success and unchanged exact inputs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelCapabilityProbeResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/routing-approvals:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Admin]
+      summary: Approve exact typed capability evidence for the current environment route pool
+      description: "Requires an active Gateway License and current platform administrator. Appends one immutable approval bound to the exact successful probe, deployment, connection, operation, Execution Profile, protocol Profile, probe contract and stable revisions. Credential identity and revision are verified at approval time as source provenance, but later transient cooldown or health revision does not revoke the capability approval. Approval is qualification input only: it is not released status, SLA proof, long-term stability evidence or canonical cutover."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [capability_probe_id, reason]
+              properties:
+                capability_probe_id: { type: integer, format: int64, minimum: 1 }
+                reason: { type: string, minLength: 1, maxLength: 512, description: Trimmed administrative reason; NUL and line breaks are rejected. }
+      responses:
+        "200":
+          description: Exact idempotent replay of the existing capability routing approval.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelCapabilityApprovalResult" }
+        "201":
+          description: Newly appended capability routing approval.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelCapabilityApprovalResult" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -4831,6 +4926,88 @@ components:
         current_connection_revision: { type: integer, format: int64, minimum: 1 }
         current_deployment_revision: { type: integer, format: int64, minimum: 1 }
         current_operation_revision: { type: integer, format: int64, minimum: 1 }
+    ModelCapabilityProbeView:
+      type: object
+      additionalProperties: false
+      required: [capability_probe_id, success, provider_success, current, status_code, latency_ms, tested_at]
+      properties:
+        capability_probe_id: { type: integer, format: int64, minimum: 1 }
+        credential_binding_id: { type: integer, format: int64, minimum: 1 }
+        success: { type: boolean }
+        provider_success: { type: boolean }
+        current: { type: boolean }
+        status_code: { type: integer, minimum: 0, maximum: 599 }
+        latency_ms: { type: integer, format: int64, minimum: 0 }
+        reported_model: { type: string, maxLength: 200 }
+        error_summary: { type: string, maxLength: 255 }
+        finish_reason: { type: string }
+        prompt_tokens: { type: integer, format: int64, minimum: 0 }
+        completion_tokens: { type: integer, format: int64, minimum: 0 }
+        total_tokens: { type: integer, format: int64, minimum: 0 }
+        tested_at: { type: string, format: date-time }
+    ModelCapabilityQualification:
+      type: object
+      additionalProperties: false
+      required: [contract_version, deployment_id, operation_id, capability_id, support_state, support_revision, execution_profile_id, execution_profile_version, protocol_profile_id, protocol_profile_version, probe_available, probe_availability_reason_code, state, qualified, qualification_state]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-capability-qualification.v1] }
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id: { type: string, enum: [openai.chat_completions.v1] }
+        capability_id: { type: string, enum: [streaming] }
+        support_state: { type: string, enum: [enabled, unsupported] }
+        support_revision: { type: integer, format: int64, minimum: 1 }
+        execution_profile_id: { type: string, enum: [deepseek.v4-flash.api] }
+        execution_profile_version: { type: string, enum: [1.4.0] }
+        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4] }
+        protocol_profile_version: { type: string, enum: [1.0.0] }
+        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1] }
+        probe_contract_version: { type: string, enum: [1.0.0] }
+        probe_available: { type: boolean }
+        probe_availability_reason_code: { type: string }
+        state: { type: string, enum: [not_probed, probe_failed, probe_stale, probed_awaiting_approval, approved_current] }
+        qualified: { type: boolean }
+        qualification_state: { type: string }
+        preferred_approval_id: { type: integer, format: int64, minimum: 1 }
+        preferred_capability_probe_id: { type: integer, format: int64, minimum: 1 }
+        latest_probe: { $ref: "#/components/schemas/ModelCapabilityProbeView" }
+    ModelCapabilityProbeResult:
+      type: object
+      additionalProperties: false
+      required: [capability_probe_id, deployment_id, operation_id, capability_id, success, provider_success, current, stale, reason_code, provider_reason_code, status_code, latency_ms]
+      properties:
+        capability_probe_id: { type: integer, format: int64, minimum: 1 }
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id: { type: string, enum: [openai.chat_completions.v1] }
+        capability_id: { type: string, enum: [streaming] }
+        success: { type: boolean }
+        provider_success: { type: boolean }
+        current: { type: boolean }
+        stale: { type: boolean }
+        reason_code: { type: string }
+        provider_reason_code: { type: string }
+        status_code: { type: integer, minimum: 0, maximum: 599 }
+        latency_ms: { type: integer, format: int64, minimum: 0 }
+        reported_model: { type: string, maxLength: 200 }
+        finish_reason: { type: string }
+        prompt_tokens: { type: integer, format: int64, minimum: 0 }
+        completion_tokens: { type: integer, format: int64, minimum: 0 }
+        total_tokens: { type: integer, format: int64, minimum: 0 }
+        evidence_ref: { type: string, pattern: '^capability_probe:[1-9][0-9]*$' }
+    ModelCapabilityApprovalResult:
+      type: object
+      additionalProperties: false
+      required: [approval_id, capability_probe_id, deployment_id, operation_id, capability_id, qualified, qualification_state, evidence_ref, approved_at, idempotency_replay]
+      properties:
+        approval_id: { type: integer, format: int64, minimum: 1 }
+        capability_probe_id: { type: integer, format: int64, minimum: 1 }
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id: { type: string, enum: [openai.chat_completions.v1] }
+        capability_id: { type: string, enum: [streaming] }
+        qualified: { type: boolean }
+        qualification_state: { type: string }
+        evidence_ref: { type: string, pattern: '^capability_approval:[1-9][0-9]*$' }
+        approved_at: { type: string, format: date-time }
+        idempotency_replay: { type: boolean }
     ModelRouteSafetyResult:
       type: object
       additionalProperties: false

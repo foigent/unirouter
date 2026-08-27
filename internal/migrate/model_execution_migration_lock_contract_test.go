@@ -147,6 +147,26 @@ func TestModelExecutionMigrationsJoinSharedLifecycleLockBeforeTableLocks(t *test
 			firstProtected: "DO $$",
 			lockedTables:   []string{"runtime_change_releases", "model_registry", "schema_migrations"},
 		},
+		{
+			name:           "88 up",
+			file:           "000088_model_capability_execution_qualification.up.sql",
+			firstProtected: "ALTER TABLE model_deployment_capabilities",
+			lockedTables: []string{
+				"model_deployment_capabilities", "model_deployment_operations",
+				"model_deployments", "provider_connections", "provider_credential_bindings",
+				"credential_binding_deployments", "model_registry", "users", "orgs",
+				"billing_provider_attempts", "schema_migrations",
+			},
+		},
+		{
+			name:           "88 down",
+			file:           "000088_model_capability_execution_qualification.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_routing_approvals", "model_capability_probes",
+				"model_deployment_capabilities", "billing_provider_attempts", "schema_migrations",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -195,6 +215,7 @@ func TestModelExecutionGuardedDownsLockBeforeLedgerAndEvidenceChecks(t *testing.
 		"000080_observation_provider_cost_reconciliation.down.sql",
 		"000081_versioned_model_execution_profiles.down.sql",
 		"000082_sealed_model_execution_contracts.down.sql",
+		"000088_model_capability_execution_qualification.down.sql",
 	} {
 		t.Run(file, func(t *testing.T) {
 			body, err := os.ReadFile("../../migrations/" + file)

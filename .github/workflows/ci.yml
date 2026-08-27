@@ -304,6 +304,9 @@ jobs:
           test_pattern+='|TestObservationProviderCostReconciliationMigrationIntegration'
           test_pattern+='|TestVersionedModelExecutionProfilesMigrationIntegration'
           test_pattern+='|TestModelExecutionPlanFreezeFence.*Integration|TestExactPublicExecutionBindings.*Integration'
+          test_pattern+='|TestModelCapabilityQualification.*Integration'
+          test_pattern+='|TestPlannerAndCutoverSelectTheSamePreferredCapabilityApprovalIntegration'
+          test_pattern+='|TestPreDispatchValidatesBoundCapabilityApprovalInsteadOfLatestIntegration'
           test_pattern+='|TestOfficialRateSourceCurrencyDraftMigrationGuardsUSDReviewEvidence'
           test_pattern+='|TestOfficialRateDraftImportIsAtomicEvidenceBackedAndNeverActive'
           test_pattern+='|TestApply(AndCheckLegacyCompatibilityAuthorityAreIdempotentAndReadOnly|SealsCurrentLegacyStableAndCanaryBeforeVerifyCheck|FailsClosedWhenCurrentLegacyCanaryProjectionDrifts|AtExactCanonicalConnectionLimitRemainsIdempotentIntegration)'
@@ -321,7 +324,7 @@ jobs:
             ./internal/resetexec ./cmd/uniroute \
             ./internal/orgdirectory ./internal/enterprisefinance ./internal/runtimechange \
             ./internal/customercontext ./internal/modelrouteauthority \
-            ./internal/billing ./internal/modelexecution ./internal/middleware ./internal/completedfeed \
+            ./internal/billing ./internal/modelexecution ./internal/modelrouting ./internal/middleware ./internal/completedfeed \
             ./internal/gateway ./internal/outbox ./internal/terminalhook \
             -run "$test_pattern" -count=1 -timeout=20m
 

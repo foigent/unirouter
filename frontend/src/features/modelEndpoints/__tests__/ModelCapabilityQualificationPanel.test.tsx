@@ -1,0 +1,241 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Modal } from '@douyinfe/semi-ui';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CanonicalModelApplication, CanonicalOperation } from '../../../api/modelDeployments';
+import ModelCapabilityQualificationPanel from '../ModelCapabilityQualificationPanel';
+
+const mocks = vi.hoisted(() => ({
+  getQualification: vi.fn(),
+  probeCapability: vi.fn(),
+  approveCapability: vi.fn(),
+}));
+
+vi.mock('../../../api/modelDeployments', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../api/modelDeployments')>();
+  return {
+    ...actual,
+    modelDeploymentApi: {
+      ...actual.modelDeploymentApi,
+      getCapabilityQualification: mocks.getQualification,
+      probeCapability: mocks.probeCapability,
+      approveCapability: mocks.approveCapability,
+    },
+  };
+});
+
+const selected = {
+  deployment: { id: 41, config_revision: 7 },
+  connection: { id: 21, config_revision: 5 },
+  public_model: {
+    execution_profile_id: 'deepseek.v4-flash.api',
+    execution_profile_version: '1.4.0',
+  },
+  credential: {
+    bindings: [{ id: 91, status: 'active', state_revision: 3, fail_count: 0, eligible: true }],
+  },
+} as unknown as CanonicalModelApplication;
+
+const operation = {
+  operation_id: 'openai.chat_completions.v1',
+  revision: 9,
+  protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
+  protocol_profile_version: '1.0.0',
+} as CanonicalOperation;
+
+const selectedB = {
+  ...selected,
+  deployment: { ...selected.deployment, id: 42, config_revision: 8 },
+  connection: { ...selected.connection, id: 22, config_revision: 6 },
+  credential: {
+    bindings: [{ id: 92, status: 'active', state_revision: 1, fail_count: 0, eligible: true }],
+  },
+} as unknown as CanonicalModelApplication;
+
+const baseQualification = {
+  contract_version: 'unirouter.model-capability-qualification.v1',
+  deployment_id: 41,
+  operation_id: 'openai.chat_completions.v1',
+  capability_id: 'streaming',
+  support_state: 'enabled',
+  support_revision: 1,
+  execution_profile_id: 'deepseek.v4-flash.api',
+  execution_profile_version: '1.4.0',
+  protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
+  protocol_profile_version: '1.0.0',
+  probe_contract_id: 'unirouter.capability-probe.deepseek-chat-sse.v1',
+  probe_contract_version: '1.0.0',
+  probe_available: true,
+  probe_availability_reason_code: 'typed_probe_available',
+  state: 'not_probed',
+  qualified: false,
+  qualification_state: 'approval_missing',
+};
+
+describe('ModelCapabilityQualificationPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getQualification.mockResolvedValue(baseQualification);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      Modal.destroyAll();
+      await Promise.resolve();
+    });
+  });
+
+  it('keeps probe and approval separate while presenting the real-call and cost boundary', async () => {
+    let confirmationConfig: any;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      confirmationConfig = config;
+      return { destroy: vi.fn(), update: vi.fn() } as any;
+    });
+    mocks.probeCapability.mockResolvedValue({
+      capability_probe_id: 501,
+      deployment_id: 41,
+      operation_id: 'openai.chat_completions.v1',
+      capability_id: 'streaming',
+      success: true,
+      provider_success: true,
+      current: true,
+      stale: false,
+      reason_code: 'ok',
+      provider_reason_code: 'ok',
+      status_code: 200,
+      latency_ms: 120,
+      finish_reason: 'stop',
+      prompt_tokens: 16,
+      completion_tokens: 8,
+      total_tokens: 24,
+    });
+    mocks.approveCapability.mockResolvedValue({
+      approval_id: 601,
+      capability_probe_id: 501,
+      deployment_id: 41,
+      operation_id: 'openai.chat_completions.v1',
+      capability_id: 'streaming',
+      qualified: true,
+      qualification_state: 'qualified',
+      evidence_ref: 'capability_approval:601',
+      approved_at: '2026-08-27T01:00:00Z',
+      idempotency_replay: false,
+    });
+
+    render(<ModelCapabilityQualificationPanel
+      selected={selected}
+      operation={operation}
+      canManage
+      canApprove
+      gatewayLicensed
+      gatewayRestriction=""
+    />);
+
+    const probeButton = await screen.findByRole('button', { name: /运行流式能力探测（预计 1 次调用）/u });
+    fireEvent.click(probeButton);
+    expect(confirmationConfig.title).toBe('运行流式能力探测？');
+    expect(confirmationConfig.okText).toBe('运行流式能力探测（预计 1 次调用）');
+    const content = render(confirmationConfig.content);
+    expect(content.getByText('预计发起 1 次真实供应商调用，并计入已批准的测试调用上限。')).toBeInTheDocument();
+    expect(content.getByText('供应商成本当前不可得；这不表示费用为 ¥0。')).toBeInTheDocument();
+    expect(content.getByText('Connection #21@5 · Deployment #41@7')).toBeInTheDocument();
+    expect(content.getByText('openai.chat_completions.v1@9 · deepseek.v4-flash.api@1.4.0 · protocol.deepseek-openai-chat.v4@1.0.0')).toBeInTheDocument();
+    await act(async () => { await confirmationConfig.onOk(); });
+    await waitFor(() => expect(mocks.probeCapability).toHaveBeenCalledWith(
+      41, 'openai.chat_completions.v1', 'streaming', { credential_binding_id: 91 },
+    ));
+    expect(mocks.approveCapability).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late qualification response after the exact target changes', async () => {
+    let resolveA: (value: typeof baseQualification) => void = () => undefined;
+    const delayedA = new Promise<typeof baseQualification>(resolve => { resolveA = resolve; });
+    mocks.getQualification.mockImplementation((deploymentID: number) => {
+      if (deploymentID === 41) return delayedA;
+      return Promise.resolve({
+        ...baseQualification,
+        deployment_id: 42,
+        state: 'approved_current',
+        qualified: true,
+        qualification_state: 'qualified',
+        preferred_approval_id: 702,
+      });
+    });
+
+    const view = render(<ModelCapabilityQualificationPanel
+      selected={selected}
+      operation={operation}
+      canManage
+      canApprove
+      gatewayLicensed
+      gatewayRestriction=""
+    />);
+    view.rerender(<ModelCapabilityQualificationPanel
+      selected={selectedB}
+      operation={operation}
+      canManage
+      canApprove
+      gatewayLicensed
+      gatewayRestriction=""
+    />);
+
+    expect(await screen.findByText(/approval_id=702/u)).toBeInTheDocument();
+    await act(async () => { resolveA(baseQualification); });
+    expect(screen.getByText(/approval_id=702/u)).toBeInTheDocument();
+  });
+
+  it('destroys an open approval confirmation and refuses its stale action after identity change', async () => {
+    const destroy = vi.fn();
+    let approvalConfig: any;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      approvalConfig = config;
+      return { destroy, update: vi.fn() } as any;
+    });
+    mocks.getQualification.mockResolvedValue({
+      ...baseQualification,
+      state: 'probed_awaiting_approval',
+      qualification_state: 'approval_missing',
+      latest_probe: {
+        capability_probe_id: 501,
+        success: true,
+        provider_success: true,
+        current: true,
+        stale: false,
+        reason_code: 'ok',
+        provider_reason_code: 'ok',
+        status_code: 200,
+        latency_ms: 120,
+        finish_reason: 'stop',
+        prompt_tokens: 16,
+        completion_tokens: 8,
+        total_tokens: 24,
+        tested_at: '2026-08-27T01:00:00Z',
+      },
+    });
+
+    const view = render(<ModelCapabilityQualificationPanel
+      selected={selected}
+      operation={operation}
+      canManage
+      canApprove
+      gatewayLicensed
+      gatewayRestriction=""
+    />);
+    fireEvent.click(await screen.findByRole('button', { name: '批准在当前环境进入路由池' }));
+    expect(approvalConfig.title).toBe('批准在当前环境进入路由池？');
+    const content = render(approvalConfig.content);
+    expect(content.getByText('Connection #21@5 · Deployment #41@7')).toBeInTheDocument();
+    expect(content.getByText('Probe #501')).toBeInTheDocument();
+
+    view.rerender(<ModelCapabilityQualificationPanel
+      selected={selectedB}
+      operation={operation}
+      canManage
+      canApprove
+      gatewayLicensed
+      gatewayRestriction=""
+    />);
+    await waitFor(() => expect(destroy).toHaveBeenCalled());
+    await act(async () => { await approvalConfig.onOk(); });
+    expect(mocks.approveCapability).not.toHaveBeenCalled();
+  });
+});

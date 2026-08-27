@@ -24,6 +24,15 @@ those build identities do not replace the product version.
   binding. Historical Profile and sealed Release identities remain addressable;
   referenced evidence prevents destructive rollback. These schema changes
   require an explicitly approved non-rolling deployment, not a live promotion.
+- Added the bounded M88 capability-qualification authority: append-only typed
+  probe and approval receipts, deterministic preferred approval for new Plans
+  and cutover, and exact bound-receipt revalidation for in-flight Plans. This
+  release exposes only DeepSeek V4 Flash Chat streaming qualification. The
+  migration and canonical deployment creator materialize its exact
+  `enabled/declared` support projection only when the compiled and database
+  contracts agree; they never call the provider or create live, approval,
+  route, Release or pricing authority, and never overwrite an existing support
+  decision.
 
 ### Fixed
 
@@ -48,6 +57,13 @@ those build identities do not replace the product version.
   lower limits or mistaking request defaults for provider maxima.
 - Kept fresh-install bootstrap compatible with the exact M86/M87 protocol seed
   additions while retaining dirty-state, provenance, schema and Release guards.
+- Prevented mutable capability projection rows from authorizing M88-typed
+  routes without a current receipt-aware qualification. Equivalent newer
+  approvals do not invalidate an already frozen Plan; stable contract drift
+  still fails closed, while transient credential cooldown remains a separate
+  route-health gate. M88 rollback removes only its untouched declaration
+  marker; retained probe, approval or execution evidence blocks destructive
+  rollback, and a down/up replay restores only the exact supported tuple.
 
 ### Evidence boundary
 

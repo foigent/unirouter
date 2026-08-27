@@ -213,6 +213,48 @@ VALUES ($1,$2,NULL,0,1)`, modelName, legacyReleaseID)
 	require.Equal(t, bindingID, plan.Routes[0].Evidence.CredentialBindingID)
 }
 
+func TestPlannerAndCutoverSelectTheSamePreferredCapabilityApprovalIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	fixture := integrationfixture.InsertModelCapabilityQualification(t, pool, "planner-preferred")
+	ctx := context.Background()
+
+	candidates := []canonicalCandidate{{
+		DeploymentID: fixture.DeploymentID,
+		Capabilities: make(map[string]capabilitySnapshot),
+	}}
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	require.NoError(t, err)
+	require.NoError(t, loadCapabilities(ctx, tx, fixture.OrgID, fixture.ModelID,
+		"openai.chat_completions.v1", "deepseek.v4-flash.api", "1.4.0",
+		[]string{"streaming"}, candidates))
+	require.Empty(t, candidates[0].Capabilities, "raw declared projection cannot authorize typed streaming")
+	require.NoError(t, tx.Rollback(ctx))
+
+	_, approvalA, _ := integrationfixture.AppendModelCapabilityProbeApproval(t, pool, fixture, 1, "planner-a")
+	_, approvalB, approvedAtB := integrationfixture.AppendModelCapabilityProbeApproval(t, pool, fixture, 1, "planner-b")
+	require.Greater(t, approvalB, approvalA)
+
+	plannerCandidates := []canonicalCandidate{{DeploymentID: fixture.DeploymentID, Capabilities: make(map[string]capabilitySnapshot)}}
+	cutoverCandidates := []canonicalCandidate{{DeploymentID: fixture.DeploymentID, Capabilities: make(map[string]capabilitySnapshot)}}
+	tx, err = pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	require.NoError(t, err)
+	require.NoError(t, loadCapabilities(ctx, tx, fixture.OrgID, fixture.ModelID,
+		"openai.chat_completions.v1", "deepseek.v4-flash.api", "1.4.0",
+		[]string{"streaming"}, plannerCandidates))
+	require.NoError(t, loadAllCapabilities(ctx, tx, fixture.OrgID, fixture.ModelID,
+		"openai.chat_completions.v1", "deepseek.v4-flash.api", "1.4.0", cutoverCandidates))
+	require.NoError(t, tx.Rollback(ctx))
+
+	for label, loaded := range map[string][]canonicalCandidate{"planner": plannerCandidates, "cutover": cutoverCandidates} {
+		capability, ok := loaded[0].Capabilities["streaming"]
+		require.True(t, ok, label)
+		require.Equal(t, "capability_approval:"+fmt.Sprint(approvalB), capability.EvidenceRef, label)
+		require.Equal(t, approvalB, capability.Revision, label)
+		require.NotNil(t, capability.VerifiedAt, label)
+		require.True(t, capability.VerifiedAt.Equal(approvedAtB), label)
+	}
+}
+
 func insertPlannerProbe(
 	t *testing.T,
 	pool *pgxpool.Pool,

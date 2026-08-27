@@ -187,6 +187,22 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	if name != "000088_model_capability_execution_qualification.down.sql" {
+		var capabilityQualificationApplied bool
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM schema_migrations
+               WHERE version='000088_model_capability_execution_qualification')`).Scan(&capabilityQualificationApplied))
+		if capabilityQualificationApplied {
+			execMigrationDown(t, ctx, pool, "000088_model_capability_execution_qualification.down.sql")
+		}
+	}
+	if name == "000088_model_capability_execution_qualification.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
 	if name != "000087_anthropic_messages_tools_public_binding.down.sql" {
 		var toolsBindingApplied bool
 		require.NoError(t, pool.QueryRow(ctx, `

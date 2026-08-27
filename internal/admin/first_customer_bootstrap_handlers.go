@@ -416,6 +416,30 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			  'unirouter.public-at-most-once.v1','000087_anthropic_messages_tools_public_binding')
 			)`, want: 5},
 		{name: "fresh public execution extension count", query: "SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions", want: 5},
+		{name: "fresh capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND capability_id='streaming'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id='protocol.deepseek-openai-chat.v4'
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'
+			  AND probe_contract_version='1.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000088_model_capability_execution_qualification'`, want: 1},
+		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 1},
+		{name: "fresh current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND capability_id='streaming'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id='protocol.deepseek-openai-chat.v4'
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'
+			  AND probe_contract_version='1.0.0'`, want: 1},
+		{name: "fresh current capability probe contract count", query: "SELECT COUNT(*) FROM model_capability_current_probe_contracts", want: 1},
 		{name: "fresh known public tables", query: `SELECT COUNT(*) FROM pg_catalog.pg_tables
 			WHERE schemaname='public' AND tablename=ANY($1::text[])`, args: []any{expectedTables}, want: int64(len(expectedTables))},
 		{name: "fresh exact public table inventory", query: "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public'", want: int64(len(expectedTables))},

@@ -113,6 +113,32 @@ VALUES ($1,'reviewed-binding-admin','fixture','org_admin','org_admin','active') 
 	created := createCanonicalApplicationForTest(t, handler, authorized, request, http.StatusCreated)
 	require.Equal(t, "deepseek.v4-flash.api", created.Application.PublicModel.ExecutionProfileID)
 	require.Equal(t, "1.4.0", created.Application.PublicModel.ExecutionProfileVersion)
+	var capabilitySupport, capabilityEvidence, capabilityEvidenceRef string
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT support_state,evidence_state,evidence_ref
+  FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='streaming'`, created.Application.Deployment.ID).Scan(
+		&capabilitySupport, &capabilityEvidence, &capabilityEvidenceRef,
+	))
+	require.Equal(t, "enabled", capabilitySupport)
+	require.Equal(t, "declared", capabilityEvidence)
+	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0", capabilityEvidenceRef)
+	qualificationTarget := fmt.Sprintf(
+		"/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/streaming",
+		created.Application.Deployment.ID,
+	)
+	qualificationRequest := authorized(http.MethodGet, qualificationTarget, "")
+	qualificationRequest.SetPathValue("deploymentID", strconv.FormatInt(created.Application.Deployment.ID, 10))
+	qualificationRequest.SetPathValue("operationID", "openai.chat_completions.v1")
+	qualificationRequest.SetPathValue("capabilityID", "streaming")
+	qualificationResponse := httptest.NewRecorder()
+	handler.GetCanonicalModelCapabilityQualification(qualificationResponse, qualificationRequest)
+	require.Equal(t, http.StatusOK, qualificationResponse.Code, qualificationResponse.Body.String())
+	var qualification modelCapabilityQualificationView
+	require.NoError(t, json.Unmarshal(qualificationResponse.Body.Bytes(), &qualification))
+	require.Equal(t, "not_probed", qualification.State)
+	require.True(t, qualification.ProbeAvailable)
 	aggregator := request
 	aggregator.Connection = canonicalConnectionInput{
 		Name: "Rejected aggregator", Provider: "openrouter", BaseURL: "https://openrouter.example/api/v1",

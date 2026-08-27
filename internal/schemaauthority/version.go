@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000087_anthropic_messages_tools_public_binding"
+const LatestSupportedMigration = "000088_model_capability_execution_qualification"
