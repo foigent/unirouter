@@ -177,7 +177,7 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			statement: `UPDATE model_capability_probe_contract_bindings
 			 SET expected_upstream_model='deepseek-v4-flash-drift'
 			 WHERE probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'`,
-			failedCheck: "check fresh capability probe contract binding: got 0 want 1",
+			failedCheck: "check fresh capability probe contract binding: got 0 want 2",
 		},
 		{
 			name:    "extra capability probe contract binding",
@@ -192,7 +192,7 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			 'fixture.future.protocol','1.0.0','fixture.future.probe','1.0.0',
 			 'fixture','fixture-future','/v1/future',
 			 '000088_model_capability_execution_qualification')`,
-			failedCheck: "check fresh capability probe contract binding count: got 2 want 1",
+			failedCheck: "check fresh capability probe contract binding count: got 3 want 2",
 		},
 		{
 			name:    "missing current capability probe contract",
@@ -200,7 +200,7 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			trigger: "model_capability_current_probe_contracts_immutable",
 			statement: `DELETE FROM model_capability_current_probe_contracts
 			 WHERE probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'`,
-			failedCheck: "check fresh current capability probe contract: got 0 want 1",
+			failedCheck: "check fresh current capability probe contract: got 0 want 2",
 		},
 	} {
 		t.Run(corruption.name, func(t *testing.T) {

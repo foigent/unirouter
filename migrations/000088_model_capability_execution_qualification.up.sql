@@ -127,6 +127,12 @@ INSERT INTO model_capability_probe_contract_bindings (
     'unirouter.capability-probe.deepseek-chat-sse.v1','1.0.0',
     'deepseek','deepseek-v4-flash','/v1/chat/completions',
     '000088_model_capability_execution_qualification'
+), (
+    'openai.chat_completions.v1','streaming','deepseek.v4-flash.api','1.4.0',
+    'openai.chat_completions','1.0.0',
+    'unirouter.capability-probe.deepseek-chat-sse.v1','1.0.0',
+    'deepseek','deepseek-v4-flash','/v1/chat/completions',
+    '000088_model_capability_execution_qualification'
 );
 
 INSERT INTO model_capability_current_probe_contracts (
@@ -136,6 +142,10 @@ INSERT INTO model_capability_current_probe_contracts (
 ) VALUES (
     'openai.chat_completions.v1','streaming','deepseek.v4-flash.api','1.4.0',
     'protocol.deepseek-openai-chat.v4','1.0.0',
+    'unirouter.capability-probe.deepseek-chat-sse.v1','1.0.0'
+), (
+    'openai.chat_completions.v1','streaming','deepseek.v4-flash.api','1.4.0',
+    'openai.chat_completions','1.0.0',
     'unirouter.capability-probe.deepseek-chat-sse.v1','1.0.0'
 );
 
@@ -160,12 +170,17 @@ BEGIN
           JOIN model_deployment_operations operation
             ON operation.deployment_id=capability.deployment_id
            AND operation.operation_id=capability.operation_id
+          JOIN model_capability_current_probe_contracts current_contract
+            ON current_contract.operation_id=capability.operation_id
+           AND current_contract.capability_id=capability.capability_id
+           AND current_contract.execution_profile_id=model.execution_profile_id
+           AND current_contract.execution_profile_version=model.execution_profile_version
+           AND current_contract.protocol_profile_id=operation.protocol_profile_id
+           AND current_contract.protocol_profile_version=operation.protocol_profile_version
          WHERE capability.operation_id='openai.chat_completions.v1'
            AND capability.capability_id='streaming'
            AND model.execution_profile_id='deepseek.v4-flash.api'
            AND model.execution_profile_version='1.4.0'
-           AND operation.protocol_profile_id='protocol.deepseek-openai-chat.v4'
-           AND operation.protocol_profile_version='1.0.0'
            AND capability.evidence_state IN ('live_probed','production_approved')
     ) THEN
         RAISE EXCEPTION 'pre-authority DeepSeek streaming live or production evidence exists'
@@ -175,7 +190,7 @@ END;
 $$;
 
 -- `supported` is an exact Profile/typed-contract projection, not live
--- evidence. Materialize only the one compiled M88 tuple for matching existing
+-- evidence. Materialize only the compiled M88 tuples for matching existing
 -- deployments. Existing rows, including an explicit unsupported decision, are
 -- never overwritten; probe and routing approval remain separate later steps.
 INSERT INTO model_deployment_capabilities (

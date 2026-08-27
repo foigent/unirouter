@@ -45,12 +45,21 @@ func TestDeepSeekChatSSEProbeRejectsIncompleteOrMisorderedEvidence(t *testing.T)
 }
 
 func TestCompiledDeepSeekStreamingBindingIsExact(t *testing.T) {
+	for _, binding := range []Binding{
+		DeepSeekFlashStreamingBinding(),
+		DeepSeekFlashLegacyStreamingBinding(),
+	} {
+		resolved, err := Resolve(binding.OperationID, binding.CapabilityID,
+			binding.ExecutionProfileID, binding.ExecutionProfileVersion,
+			binding.ProtocolProfileID, binding.ProtocolProfileVersion)
+		require.NoError(t, err)
+		require.Equal(t, binding, resolved)
+	}
 	binding := DeepSeekFlashStreamingBinding()
-	resolved, err := Resolve(binding.OperationID, binding.CapabilityID,
+	_, err := Resolve(binding.OperationID, binding.CapabilityID,
 		binding.ExecutionProfileID, binding.ExecutionProfileVersion,
-		binding.ProtocolProfileID, binding.ProtocolProfileVersion)
-	require.NoError(t, err)
-	require.Equal(t, binding, resolved)
+		"openai.chat_completions", "9.9.9")
+	require.ErrorIs(t, err, ErrUnsupported)
 	_, err = Resolve(binding.OperationID, binding.CapabilityID,
 		binding.ExecutionProfileID, "1.3.0", binding.ProtocolProfileID, binding.ProtocolProfileVersion)
 	require.ErrorIs(t, err, ErrUnsupported)

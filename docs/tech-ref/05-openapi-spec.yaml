@@ -4958,7 +4958,7 @@ components:
         support_revision: { type: integer, format: int64, minimum: 1 }
         execution_profile_id: { type: string, enum: [deepseek.v4-flash.api] }
         execution_profile_version: { type: string, enum: [1.4.0] }
-        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4] }
+        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, openai.chat_completions] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
         probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1] }
         probe_contract_version: { type: string, enum: [1.0.0] }

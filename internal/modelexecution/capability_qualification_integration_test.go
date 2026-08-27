@@ -18,33 +18,43 @@ import (
 )
 
 func TestPreDispatchValidatesBoundCapabilityApprovalInsteadOfLatestIntegration(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
-	fixture := integrationfixture.InsertModelCapabilityQualification(t, pool, "dispatch-bound")
-	_, approvalA, approvedAtA := integrationfixture.AppendModelCapabilityProbeApproval(t, pool, fixture, 1, "dispatch-a")
-	_, approvalB, _ := integrationfixture.AppendModelCapabilityProbeApproval(t, pool, fixture, 1, "dispatch-b")
-	require.Greater(t, approvalB, approvalA)
+	for _, protocolProfileID := range []string{
+		"protocol.deepseek-openai-chat.v4",
+		"openai.chat_completions",
+	} {
+		protocolProfileID := protocolProfileID
+		t.Run(protocolProfileID, func(t *testing.T) {
+			pool := testutil.SetupMigratedTestDB(t)
+			fixture := integrationfixture.InsertModelCapabilityQualificationWithProtocol(
+				t, pool, "dispatch-bound-"+protocolProfileID, protocolProfileID, "1.0.0",
+			)
+			_, approvalA, approvedAtA := integrationfixture.AppendModelCapabilityProbeApproval(t, pool, fixture, 1, "dispatch-a")
+			_, approvalB, _ := integrationfixture.AppendModelCapabilityProbeApproval(t, pool, fixture, 1, "dispatch-b")
+			require.Greater(t, approvalB, approvalA)
 
-	request := boundM88CapabilityRequest(fixture.DeploymentID, approvalA, approvedAtA)
-	require.Equal(t, Applied, revalidateBoundM88Capability(t, pool, request),
-		"an equivalent newer receipt must not stale a frozen Plan bound to A")
+			request := boundM88CapabilityRequest(fixture.DeploymentID, approvalA, approvedAtA, protocolProfileID)
+			require.Equal(t, Applied, revalidateBoundM88Capability(t, pool, request),
+				"an equivalent newer receipt must not stale a frozen Plan bound to A")
 
-	_, err := pool.Exec(context.Background(), `
+			_, err := pool.Exec(context.Background(), `
 UPDATE provider_credential_bindings
    SET state_revision=state_revision+1,cooldown_until=NOW()+INTERVAL '2 minutes'
  WHERE id=$1`, fixture.BindingID)
-	require.NoError(t, err)
-	require.Equal(t, Applied, revalidateBoundM88Capability(t, pool, request),
-		"transient credential health must not revoke capability approval")
+			require.NoError(t, err)
+			require.Equal(t, Applied, revalidateBoundM88Capability(t, pool, request),
+				"transient credential health must not revoke capability approval")
 
-	_, err = pool.Exec(context.Background(), `
+			_, err = pool.Exec(context.Background(), `
 UPDATE model_deployment_operations SET revision=revision+1
  WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'`, fixture.DeploymentID)
-	require.NoError(t, err)
-	require.Equal(t, Stale, revalidateBoundM88Capability(t, pool, request),
-		"stable operation identity drift must reject before provider dispatch")
+			require.NoError(t, err)
+			require.Equal(t, Stale, revalidateBoundM88Capability(t, pool, request),
+				"stable operation identity drift must reject before provider dispatch")
+		})
+	}
 }
 
-func boundM88CapabilityRequest(deploymentID, approvalID int64, approvedAt time.Time) preparedRequest {
+func boundM88CapabilityRequest(deploymentID, approvalID int64, approvedAt time.Time, protocolProfileID string) preparedRequest {
 	verifiedAt := approvedAt.UTC()
 	return preparedRequest{
 		plan: modelrouting.Plan{
@@ -63,7 +73,7 @@ func boundM88CapabilityRequest(deploymentID, approvalID int64, approvedAt time.T
 			}},
 		},
 		underlying: operationIdentity{
-			id: "openai.chat_completions.v1", profileID: "protocol.deepseek-openai-chat.v4", profileVersion: "1.0.0",
+			id: "openai.chat_completions.v1", profileID: protocolProfileID, profileVersion: "1.0.0",
 		},
 	}
 }

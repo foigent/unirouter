@@ -27,7 +27,7 @@ type m88CapabilityFixture struct {
 func TestModelCapabilityQualificationEmptyDownAndReapplyIntegration(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000087_anthropic_messages_tools_public_binding.up.sql")
 	ctx := t.Context()
-	exactDeploymentID, mismatchDeploymentID, unsupportedDeploymentID := insertPreM88CapabilityProjectionFixtures(t, pool)
+	exactDeploymentID, legacyDeploymentID, mismatchDeploymentID, unsupportedDeploymentID := insertPreM88CapabilityProjectionFixtures(t, pool)
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
 
 	var applied bool
@@ -36,14 +36,18 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
                WHERE version='000088_model_capability_execution_qualification')`).Scan(&applied))
 	require.True(t, applied)
 	var supportState, evidenceState, evidenceRef string
-	require.NoError(t, pool.QueryRow(ctx, `
+	assertDeclared := func(deploymentID int64) {
+		require.NoError(t, pool.QueryRow(ctx, `
 SELECT support_state,evidence_state,evidence_ref
   FROM model_deployment_capabilities
  WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
-   AND capability_id='streaming'`, exactDeploymentID).Scan(&supportState, &evidenceState, &evidenceRef))
-	require.Equal(t, "enabled", supportState)
-	require.Equal(t, "declared", evidenceState)
-	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0", evidenceRef)
+	   AND capability_id='streaming'`, deploymentID).Scan(&supportState, &evidenceState, &evidenceRef))
+		require.Equal(t, "enabled", supportState)
+		require.Equal(t, "declared", evidenceState)
+		require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0", evidenceRef)
+	}
+	assertDeclared(exactDeploymentID)
+	assertDeclared(legacyDeploymentID)
 	var mismatchCount int
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM model_deployment_capabilities
@@ -59,10 +63,12 @@ SELECT support_state,evidence_ref FROM model_deployment_capabilities
 	var tableName *string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass('model_capability_routing_approvals')::TEXT`).Scan(&tableName))
 	require.Nil(t, tableName)
-	require.NoError(t, pool.QueryRow(ctx, `
+	for _, deploymentID := range []int64{exactDeploymentID, legacyDeploymentID} {
+		require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM model_deployment_capabilities
- WHERE deployment_id=$1 AND capability_id='streaming'`, exactDeploymentID).Scan(&mismatchCount))
-	require.Zero(t, mismatchCount, "M88-created declared projection must not survive downgrade to raw-capability routing")
+	 WHERE deployment_id=$1 AND capability_id='streaming'`, deploymentID).Scan(&mismatchCount))
+		require.Zero(t, mismatchCount, "M88-created declared projection must not survive downgrade to raw-capability routing")
+	}
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT support_state FROM model_deployment_capabilities
  WHERE deployment_id=$1 AND capability_id='streaming'`, unsupportedDeploymentID).Scan(&supportState))
@@ -72,14 +78,8 @@ SELECT support_state FROM model_deployment_capabilities
 	require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass('model_capability_routing_approvals')::TEXT`).Scan(&tableName))
 	require.NotNil(t, tableName)
 	require.Equal(t, "model_capability_routing_approvals", *tableName)
-	require.NoError(t, pool.QueryRow(ctx, `
-SELECT support_state,evidence_state,evidence_ref
-  FROM model_deployment_capabilities
- WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
-   AND capability_id='streaming'`, exactDeploymentID).Scan(&supportState, &evidenceState, &evidenceRef))
-	require.Equal(t, "enabled", supportState)
-	require.Equal(t, "declared", evidenceState)
-	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0", evidenceRef)
+	assertDeclared(exactDeploymentID)
+	assertDeclared(legacyDeploymentID)
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM model_deployment_capabilities
  WHERE deployment_id=$1 AND capability_id='streaming'`, mismatchDeploymentID).Scan(&mismatchCount))
@@ -91,10 +91,10 @@ SELECT support_state,evidence_ref FROM model_deployment_capabilities
 	require.Equal(t, "operator-decision", evidenceRef)
 }
 
-func insertPreM88CapabilityProjectionFixtures(t *testing.T, pool *pgxpool.Pool) (int64, int64, int64) {
+func insertPreM88CapabilityProjectionFixtures(t *testing.T, pool *pgxpool.Pool) (int64, int64, int64, int64) {
 	t.Helper()
 	ctx := t.Context()
-	var orgID, modelID, connectionID, unsupportedConnectionID int64
+	var orgID, modelID, connectionID, legacyConnectionID, unsupportedConnectionID int64
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO orgs (name,status,org_type)
 VALUES ('m88-projection-customer','active','customer') RETURNING id`).Scan(&orgID))
@@ -108,13 +108,18 @@ VALUES ($1,'m88-projection-flash','M88 Projection Flash','deepseek','ga',TRUE,
 INSERT INTO provider_connections (
   name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
 VALUES ('m88-projection-connection','deepseek','https://api.deepseek.com',
-        'openai_compatible','{}','enabled',1) RETURNING id`).Scan(&connectionID))
+		'openai_compatible','{}','enabled',1) RETURNING id`).Scan(&connectionID))
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO provider_connections (
+  name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
+VALUES ('m88-projection-legacy-connection','deepseek','https://api.deepseek.com',
+        'openai_compatible','{}','enabled',1) RETURNING id`).Scan(&legacyConnectionID))
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO provider_connections (
   name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
 VALUES ('m88-projection-unsupported-connection','deepseek','https://api.deepseek.com',
         'openai_compatible','{}','enabled',1) RETURNING id`).Scan(&unsupportedConnectionID))
-	insertDeployment := func(upstream string, targetConnectionID int64) int64 {
+	insertDeployment := func(upstream string, targetConnectionID int64, protocolProfileID string) int64 {
 		var deploymentID int64
 		require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO model_deployments (
@@ -127,20 +132,21 @@ INSERT INTO model_deployment_operations (
   deployment_id,operation_id,support_state,evidence_state,evidence_ref,revision,
   protocol_profile_id,protocol_profile_version)
 VALUES ($1,'openai.chat_completions.v1','enabled','declared','',1,
-        'protocol.deepseek-openai-chat.v4','1.0.0')`, deploymentID)
+		$2,'1.0.0')`, deploymentID, protocolProfileID)
 		require.NoError(t, err)
 		return deploymentID
 	}
-	exactDeploymentID := insertDeployment("deepseek-v4-flash", connectionID)
-	mismatchDeploymentID := insertDeployment("deepseek-v4-flash-mismatch", connectionID)
-	unsupportedDeploymentID := insertDeployment("deepseek-v4-flash", unsupportedConnectionID)
+	exactDeploymentID := insertDeployment("deepseek-v4-flash", connectionID, "protocol.deepseek-openai-chat.v4")
+	legacyDeploymentID := insertDeployment("deepseek-v4-flash", legacyConnectionID, "openai.chat_completions")
+	mismatchDeploymentID := insertDeployment("deepseek-v4-flash-mismatch", connectionID, "protocol.deepseek-openai-chat.v4")
+	unsupportedDeploymentID := insertDeployment("deepseek-v4-flash", unsupportedConnectionID, "protocol.deepseek-openai-chat.v4")
 	_, err := pool.Exec(ctx, `
 INSERT INTO model_deployment_capabilities (
   deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
 VALUES ($1,'openai.chat_completions.v1','streaming','unsupported','declared','operator-decision',1)`,
 		unsupportedDeploymentID)
 	require.NoError(t, err)
-	return exactDeploymentID, mismatchDeploymentID, unsupportedDeploymentID
+	return exactDeploymentID, legacyDeploymentID, mismatchDeploymentID, unsupportedDeploymentID
 }
 
 func TestModelCapabilityQualificationReceiptSelectionAndBoundValidationIntegration(t *testing.T) {

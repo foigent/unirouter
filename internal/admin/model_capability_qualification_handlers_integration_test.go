@@ -21,8 +21,32 @@ import (
 )
 
 func TestDeepSeekStreamingCapabilityProbeAndApprovalFlowIntegration(t *testing.T) {
+	for _, testCase := range []struct {
+		name                       string
+		protocolProfileID          string
+		verifyCanonicalMaterialize bool
+	}{
+		{name: "current-v4", protocolProfileID: "protocol.deepseek-openai-chat.v4", verifyCanonicalMaterialize: true},
+		{name: "sealed-legacy", protocolProfileID: "openai.chat_completions"},
+	} {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			testDeepSeekStreamingCapabilityProbeAndApprovalFlow(
+				t, testCase.name, testCase.protocolProfileID, testCase.verifyCanonicalMaterialize,
+			)
+		})
+	}
+}
+
+func testDeepSeekStreamingCapabilityProbeAndApprovalFlow(
+	t *testing.T,
+	suffix, protocolProfileID string,
+	verifyCanonicalMaterialize bool,
+) {
 	pool := testutil.SetupMigratedTestDB(t)
-	fixture := integrationfixture.InsertModelCapabilityQualification(t, pool, "admin-flow")
+	fixture := integrationfixture.InsertModelCapabilityQualificationWithProtocol(
+		t, pool, "admin-flow-"+suffix, protocolProfileID, "1.0.0",
+	)
 	var operatorOrgID, platformUserID int64
 	require.NoError(t, pool.QueryRow(t.Context(), `
 INSERT INTO orgs (name,status,org_type)
@@ -73,22 +97,24 @@ UPDATE provider_credential_bindings
 	authorized := canonicalOperationProbeAuthorizedRequest(
 		operatorOrgID, fixture.OrgID, platformUserID, auth.RolePlatformAdmin,
 	)
-	_, err = pool.Exec(t.Context(), `DELETE FROM model_deployment_capabilities
-		WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
-		  AND capability_id='streaming'`, fixture.DeploymentID)
-	require.NoError(t, err)
-	created := createCanonicalApplicationForTest(t, handler, authorized, canonicalModelApplicationCreateRequest{
-		Connection:  canonicalConnectionInput{ID: fixture.ConnectionID},
-		PublicModel: canonicalPublicModelInput{ID: fixture.ModelID},
-		Deployment: canonicalDeploymentInput{
-			UpstreamModel:    "deepseek-v4-flash",
-			MaxContext:       canonicalTestPtr(393216),
-			DefaultMaxOutput: canonicalTestPtr(32768),
-		},
-		Credential: canonicalCredentialInput{BindingID: fixture.BindingID},
-		Operation:  canonicalOperationInput{OperationID: "openai.chat_completions.v1"},
-	}, http.StatusCreated)
-	require.Equal(t, fixture.DeploymentID, created.Application.Deployment.ID)
+	if verifyCanonicalMaterialize {
+		_, err = pool.Exec(t.Context(), `DELETE FROM model_deployment_capabilities
+			WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+			  AND capability_id='streaming'`, fixture.DeploymentID)
+		require.NoError(t, err)
+		created := createCanonicalApplicationForTest(t, handler, authorized, canonicalModelApplicationCreateRequest{
+			Connection:  canonicalConnectionInput{ID: fixture.ConnectionID},
+			PublicModel: canonicalPublicModelInput{ID: fixture.ModelID},
+			Deployment: canonicalDeploymentInput{
+				UpstreamModel:    "deepseek-v4-flash",
+				MaxContext:       canonicalTestPtr(393216),
+				DefaultMaxOutput: canonicalTestPtr(32768),
+			},
+			Credential: canonicalCredentialInput{BindingID: fixture.BindingID},
+			Operation:  canonicalOperationInput{OperationID: "openai.chat_completions.v1"},
+		}, http.StatusCreated)
+		require.Equal(t, fixture.DeploymentID, created.Application.Deployment.ID)
+	}
 	require.Equal(t, int64(0), providerCalls.Load(), "supported capability materialization must not call the provider")
 	var declaredCapabilityCount int
 	require.NoError(t, pool.QueryRow(t.Context(), `SELECT COUNT(*)

@@ -1132,15 +1132,18 @@ supplier cost is not zero cost.
 
 The migration materializes an `enabled/declared` streaming projection for an
 already-existing deployment only when its provider, upstream model, operation,
-Execution Profile and protocol Profile match the exact M88 support tuple. The
-canonical deployment creator applies the same compiled-plus-database check for
-future exact applications. Both paths are zero-provider-call declaration
+Execution Profile and protocol Profile match one of two exact M88 support
+tuples: the current DeepSeek v4 Chat protocol, or the historical generic Chat
+protocol already sealed into pre-M88 DeepSeek Flash Releases. This is not a
+generic Chat inference. The canonical deployment creator continues to refine
+new exact applications to the v4 protocol and applies the same compiled-plus-
+database check. Both paths are zero-provider-call declaration
 writers: they create neither live evidence nor approval, routing, Release or
 pricing authority, and `ON CONFLICT DO NOTHING` preserves any prior explicit
 support decision, including `unsupported`. Rollback removes only the untouched
 M88 declaration marker; retained probe, approval or attempt evidence prevents
 destructive down migration. The M87→M88→M87→M88 integration path asserts that
-the exact declaration is restored, a mismatched tuple stays absent and an
+both exact declarations are restored, a mismatched tuple stays absent and an
 existing unsupported decision remains unchanged.
 
 The mutable `model_deployment_capabilities` row is not routing authority. The

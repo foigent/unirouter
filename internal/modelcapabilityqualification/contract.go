@@ -51,20 +51,41 @@ var deepSeekFlashStreaming = Binding{
 	PublicPath:              modeloperation.PathChatCompletions,
 }
 
+// deepSeekFlashLegacyStreaming preserves the exact Chat surface already
+// sealed by pre-M88 DeepSeek Flash Releases. The execution Profile, provider,
+// upstream model and probe contract remain exact; only the historical
+// operation protocol identity differs from new attachments.
+var deepSeekFlashLegacyStreaming = Binding{
+	OperationID:             string(modeloperation.IDChatCompletions),
+	CapabilityID:            modelprofile.CapabilityStreaming,
+	ExecutionProfileID:      "deepseek.v4-flash.api",
+	ExecutionProfileVersion: "1.4.0",
+	ProtocolProfileID:       "openai.chat_completions",
+	ProtocolProfileVersion:  "1.0.0",
+	ProbeContractID:         DeepSeekChatSSEProbeContractID,
+	ProbeContractVersion:    DeepSeekChatSSEProbeContractVersion,
+	ExpectedProvider:        "deepseek",
+	ExpectedUpstreamModel:   "deepseek-v4-flash",
+	PublicPath:              modeloperation.PathChatCompletions,
+}
+
 func Resolve(
 	operationID, capabilityID,
 	executionProfileID, executionProfileVersion,
 	protocolProfileID, protocolProfileVersion string,
 ) (Binding, error) {
-	candidate := deepSeekFlashStreaming
-	if candidate.OperationID != operationID || candidate.CapabilityID != capabilityID ||
-		candidate.ExecutionProfileID != executionProfileID || candidate.ExecutionProfileVersion != executionProfileVersion ||
-		candidate.ProtocolProfileID != protocolProfileID || candidate.ProtocolProfileVersion != protocolProfileVersion {
-		return Binding{}, fmt.Errorf("%w: %s/%s %s@%s %s@%s", ErrUnsupported,
-			operationID, capabilityID, executionProfileID, executionProfileVersion,
-			protocolProfileID, protocolProfileVersion)
+	for _, candidate := range [...]Binding{deepSeekFlashStreaming, deepSeekFlashLegacyStreaming} {
+		if candidate.OperationID == operationID && candidate.CapabilityID == capabilityID &&
+			candidate.ExecutionProfileID == executionProfileID && candidate.ExecutionProfileVersion == executionProfileVersion &&
+			candidate.ProtocolProfileID == protocolProfileID && candidate.ProtocolProfileVersion == protocolProfileVersion {
+			return candidate, nil
+		}
 	}
-	return candidate, nil
+	return Binding{}, fmt.Errorf("%w: %s/%s %s@%s %s@%s", ErrUnsupported,
+		operationID, capabilityID, executionProfileID, executionProfileVersion,
+		protocolProfileID, protocolProfileVersion)
 }
 
 func DeepSeekFlashStreamingBinding() Binding { return deepSeekFlashStreaming }
+
+func DeepSeekFlashLegacyStreamingBinding() Binding { return deepSeekFlashLegacyStreaming }

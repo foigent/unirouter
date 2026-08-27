@@ -14,19 +14,34 @@ import (
 )
 
 type ModelCapabilityQualification struct {
-	OrgID        int64
-	UserID       int64
-	ModelID      int64
-	ConnectionID int64
-	DeploymentID int64
-	BindingID    int64
-	LinkCreated  time.Time
+	OrgID                  int64
+	UserID                 int64
+	ModelID                int64
+	ConnectionID           int64
+	DeploymentID           int64
+	BindingID              int64
+	LinkCreated            time.Time
+	ProtocolProfileID      string
+	ProtocolProfileVersion string
 }
 
 func InsertModelCapabilityQualification(t *testing.T, pool *pgxpool.Pool, suffix string) ModelCapabilityQualification {
+	return InsertModelCapabilityQualificationWithProtocol(
+		t, pool, suffix, "protocol.deepseek-openai-chat.v4", "1.0.0",
+	)
+}
+
+func InsertModelCapabilityQualificationWithProtocol(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	suffix, protocolProfileID, protocolProfileVersion string,
+) ModelCapabilityQualification {
 	t.Helper()
 	ctx := context.Background()
-	fixture := ModelCapabilityQualification{}
+	fixture := ModelCapabilityQualification{
+		ProtocolProfileID:      protocolProfileID,
+		ProtocolProfileVersion: protocolProfileVersion,
+	}
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO orgs (name,status,org_type)
 VALUES ($1,'active','customer') RETURNING id`, "capability-customer-"+suffix).Scan(&fixture.OrgID))
@@ -65,12 +80,13 @@ INSERT INTO model_deployment_operations (
   deployment_id,operation_id,support_state,evidence_state,evidence_ref,revision,
   protocol_profile_id,protocol_profile_version)
 VALUES ($1,'openai.chat_completions.v1','enabled','production_approved','integration',1,
-        'protocol.deepseek-openai-chat.v4','1.0.0')`, fixture.DeploymentID)
+		$2,$3)`, fixture.DeploymentID, fixture.ProtocolProfileID, fixture.ProtocolProfileVersion)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `
 INSERT INTO model_deployment_capabilities (
   deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
-VALUES ($1,'openai.chat_completions.v1','streaming','enabled','declared','',1)`, fixture.DeploymentID)
+VALUES ($1,'openai.chat_completions.v1','streaming','enabled','declared',
+        'capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0',1)`, fixture.DeploymentID)
 	require.NoError(t, err)
 	return fixture
 }
@@ -95,14 +111,15 @@ INSERT INTO model_capability_probes (
   reported_model,error_summary,request_summary,response_summary,source_kind,source_ref,
   source_fingerprint,tested_by)
 VALUES ($1,$2,$3,'openai.chat_completions.v1','streaming',
-        'deepseek.v4-flash.api','1.4.0','protocol.deepseek-openai-chat.v4','1.0.0',
-        'unirouter.capability-probe.deepseek-chat-sse.v1','1.0.0',
-        'deepseek','https://api.deepseek.com','openai_compatible',
-        '{"endpoint_path_mode":"base_relative"}',
-        'deepseek-v4-flash',1,1,1,1,$4,$5,$6,TRUE,TRUE,200,12,
-        'deepseek-v4-flash','','{}','{}','admin.model_capability_probe.v1',$7,
-        $8,$9)
+		'deepseek.v4-flash.api','1.4.0',$4,$5,
+		'unirouter.capability-probe.deepseek-chat-sse.v1','1.0.0',
+		'deepseek','https://api.deepseek.com','openai_compatible',
+		'{"endpoint_path_mode":"base_relative"}',
+		'deepseek-v4-flash',1,1,1,1,$6,$7,$8,TRUE,TRUE,200,12,
+		'deepseek-v4-flash','','{}','{}','admin.model_capability_probe.v1',$9,
+		$10,$11)
 RETURNING capability_probe_id`, fixture.OrgID, fixture.DeploymentID, fixture.ConnectionID,
+		fixture.ProtocolProfileID, fixture.ProtocolProfileVersion,
 		fixture.BindingID, credentialRevision, fixture.LinkCreated, "capability-"+suffix,
 		fmt.Sprintf("sha256:%064x", probeFingerprintSequence.Add(1)), fixture.UserID).Scan(&probeID))
 	require.NoError(t, pool.QueryRow(ctx, `

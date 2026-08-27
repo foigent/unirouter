@@ -25,6 +25,8 @@ func TestModelCapabilityExecutionQualificationMigrationSeparatesSelectionFromBou
 		"capability evidence projection lacks a current typed receipt",
 		"current model capability probe contracts are migration-owned",
 		"expected_contract_provider",
+		"'protocol.deepseek-openai-chat.v4','1.0.0'",
+		"'openai.chat_completions','1.0.0'",
 		"BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON model_capability_probe_contract_bindings",
 		"BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON model_capability_current_probe_contracts",
 	} {
