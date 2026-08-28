@@ -885,27 +885,15 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         extraText="缺少正整数 context_length 或 output_limit 的公共模型不可复用；请先在公共模型目录修复执行边界。"
       /> : <>
         <div className="ur-model-endpoint-form-grid">
-          {selectedReviewedModel ? <Form.Select
+          {selectedReviewedModel ? <Form.Input
             field="model_name"
             label={<span id="reviewed-public-model-id-label">公共模型 ID</span>}
             aria-labelledby="reviewed-public-model-id-label"
-            optionList={selectedReviewedModel.publicModelIDs.map(value => ({ label: value, value }))}
-            rules={[{ required: true, message: '必填' }]}
-            onChange={value => {
-              const publicModelID = String(value || '');
-              const matchingUpstream = selectedReviewedModel.upstreamModelIDs.find(item => item === publicModelID)
-                || selectedReviewedModel.upstreamModelIDs.find(item => item.toLowerCase() === publicModelID);
-              if (!matchingUpstream) return;
-              setSelectedUpstreamModelID(matchingUpstream);
-              formApi?.setValue('upstream_model', matchingUpstream);
-              const pricingDraft = officialPricingDraftFor(
-                selectedReviewedModel.profile.id,
-                matchingUpstream,
-                selectedReviewedModel.profile.region,
-              );
-              formApi?.setValue('pricing_draft_enabled', pricingDraftEnabledByDefault(pricingDraft));
-            }}
-            extraText="来自执行 Profile 的精确稳定别名；展示名称可单独修改。"
+            rules={[
+              { required: true, message: '必填' },
+              { validator: (_rule, value) => !value || /^[a-z0-9][a-z0-9._-]{0,99}$/.test(String(value).trim()), message: '只使用小写字母、数字、点、短横线或下划线' },
+            ]}
+            extraText="面向调用方的稳定模型 ID，可为新版本使用唯一 ID；供应商模型身份由下方 Profile 与上游模型独立锁定。"
           /> : <Form.Input field="model_name" label="公共模型 ID" placeholder="例如 deepseek-v4-flash" rules={[
             { required: true, message: '必填' },
             { validator: (_rule, value) => !value || /^[a-z0-9][a-z0-9._-]{0,99}$/.test(String(value).trim()), message: '只使用小写字母、数字、点、短横线或下划线' },

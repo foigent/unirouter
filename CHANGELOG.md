@@ -4,6 +4,22 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.6] - 2026-08-28
+
+### Fixed
+
+- Kept reviewed onboarding strict about the exact Execution Profile and upstream
+  provider model while allowing the administrator to choose a unique, stable
+  public model ID. This lets a new immutable deployment replace an older public
+  identity through an audited Alias cutover without treating that caller-facing
+  ID as a provider model alias.
+
+### Evidence boundary
+
+- This UI contract does not create, qualify, release or route a model by itself.
+  Those control-plane records and any supplier calls remain separately verified
+  on development/test.
+
 ## [1.2.5] - 2026-08-28
 
 ### Fixed

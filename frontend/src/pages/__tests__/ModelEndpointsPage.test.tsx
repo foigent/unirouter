@@ -1032,8 +1032,13 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(screen.queryByLabelText('同时创建待审核 Pricing Profile 草稿')).toBeNull();
     expect(screen.getByLabelText('供应商标识')).toBeDisabled();
     expect(screen.getByLabelText('Base URL')).toBeDisabled();
+    expect(screen.getByLabelText('公共模型 ID')).not.toBeDisabled();
     expect(screen.getByLabelText('公共模型上下文上限（Token）')).toBeDisabled();
     expect(screen.getByLabelText('请求默认单次输出（Profile 投影，Token）')).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('公共模型 ID'), { target: { value: 'deepseek-v4-flash-20260828' } });
+    });
 
     await pasteValue(user, screen.getByLabelText('供应商 API Key'), 'sk-test-only');
     await user.click(screen.getByRole('button', { name: '创建模型接入' }));
@@ -1045,7 +1050,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
         adapter_config: { endpoint_path_mode: 'base_relative' },
       }),
       public_model: expect.objectContaining({
-        model_name: 'deepseek-v4-flash',
+        model_name: 'deepseek-v4-flash-20260828',
         context_length: 1_000_000,
         output_limit: 384_000,
         execution_profile_id: 'deepseek.v4-flash.api',
