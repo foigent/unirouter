@@ -1284,6 +1284,74 @@ func TestKimiTopLevelCacheUsagePreservesZeroAndRejectsContradiction(t *testing.T
 	}
 }
 
+func TestNormalizeDeepSeekFlashChatToolResponseIsExactScopedAndLossless(t *testing.T) {
+	body := []byte(`{"id":"chatcmpl-deepseek","model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","tool_calls":[{"index":999999999999999999999999999999999999999,"id":"call_1","type":"function","function":{"name":"echo","arguments":"{}"}}]}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	normalized, changed, err := NormalizeDeepSeekFlashChatToolResponse(
+		"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", body,
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+	var envelope map[string]interface{}
+	require.NoError(t, json.Unmarshal(normalized, &envelope))
+	choice := envelope["choices"].([]interface{})[0].(map[string]interface{})
+	require.EqualValues(t, 0, choice["index"])
+	tool := choice["message"].(map[string]interface{})["tool_calls"].([]interface{})[0].(map[string]interface{})
+	require.NotContains(t, tool, "index")
+	require.Equal(t, "call_1", tool["id"])
+
+	unknown := []byte(strings.Replace(string(body), `"index":999999999999999999999999999999999999999,"id"`, `"index":0,"unexpected":true,"id"`, 1))
+	normalized, changed, err = NormalizeDeepSeekFlashChatToolResponse(
+		"deepseek", "deepseek-v4-flash", "openai.chat_completions", unknown,
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Contains(t, string(normalized), `"unexpected":true`)
+
+	for _, invalid := range []string{`null`, `"0"`, `-1`, `0.5`, `1e2`, `01`} {
+		mutated := []byte(strings.Replace(string(body), `999999999999999999999999999999999999999`, invalid, 1))
+		_, _, normalizeErr := NormalizeDeepSeekFlashChatToolResponse(
+			"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", mutated,
+		)
+		require.Error(t, normalizeErr, invalid)
+	}
+
+	for _, scope := range []struct{ provider, model, protocol string }{
+		{"other", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4"},
+		{"deepseek", "deepseek-v4-pro", "protocol.deepseek-openai-chat.v4"},
+		{"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v3"},
+	} {
+		unchanged, applied, scopeErr := NormalizeDeepSeekFlashChatToolResponse(scope.provider, scope.model, scope.protocol, body)
+		require.NoError(t, scopeErr)
+		require.False(t, applied)
+		require.Equal(t, body, unchanged)
+	}
+}
+
+func TestOpenAICompatibleParseResponseNormalizesDeepSeekFlashToolCallIndex(t *testing.T) {
+	body := []byte(`{"id":"chatcmpl-deepseek","model":"deepseek-v4-flash","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"echo","arguments":"{}"}}]}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	response, err := NewOpenAICompatible().ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK,
+		Channel:       models.Channel{Provider: "deepseek", AdapterType: TypeOpenAICompatible},
+		UpstreamModel: "deepseek-v4-flash", ProtocolProfile: "openai.chat_completions", Body: body,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, response.Usage.TotalTokens)
+	var envelope map[string]interface{}
+	require.NoError(t, json.Unmarshal(response.Body, &envelope))
+	tool := envelope["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})["tool_calls"].([]interface{})[0].(map[string]interface{})
+	require.NotContains(t, tool, "index")
+
+	invalid := []byte(strings.Replace(string(body), `"index":0,"id":"call_1"`, `"index":null,"id":"call_1"`, 1))
+	response, err = NewOpenAICompatible().ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK,
+		Channel:       models.Channel{Provider: "deepseek", AdapterType: TypeOpenAICompatible},
+		UpstreamModel: "deepseek-v4-flash", ProtocolProfile: "openai.chat_completions", Body: invalid,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, response.Usage.TotalTokens)
+	require.Contains(t, string(response.Body), `"index":null`)
+}
+
 func TestOpenAICompatibleClassifyHTTPStatus(t *testing.T) {
 	adapter := NewOpenAICompatible()
 	cases := []struct {

@@ -215,6 +215,7 @@ export default function DeveloperConsolePage() {
     usage?: unknown;
     finish_reason?: string;
     usage_source?: string;
+    billing_status?: string;
     doc_url?: string;
     error?: string;
   } | null>(null);
@@ -567,6 +568,7 @@ export default function DeveloperConsolePage() {
         let content = '';
         let finalMeta: any = null;
         let finishReason: string | undefined;
+        let streamError: any = null;
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -586,10 +588,23 @@ export default function DeveloperConsolePage() {
               }
               if (chunk?._uniroute) finalMeta = { ...(finalMeta || {}), ...chunk._uniroute };
               if (chunk?.usage) finalMeta = { ...(finalMeta || {}), usage: chunk.usage };
+              if (chunk?.error) streamError = chunk.error;
             } catch {
               // Ignore malformed SSE lines from intermediaries; the gateway error path is handled below.
             }
           }
+        }
+        if (streamError) {
+          setPlaygroundResult({
+            status: response.status,
+            content: '',
+            request_id: streamError?.request_id || finalMeta?.request_id,
+            latency_ms: elapsed(),
+            headers_ms: headersMS,
+            billing_status: streamError?.billing_status || finalMeta?.billing_status,
+            error: [streamError?.code, streamError?.message].filter(Boolean).join('：') || '流式响应失败',
+          });
+          return;
         }
         setPlaygroundResult({
           status: response.status,
@@ -1075,6 +1090,7 @@ export default function DeveloperConsolePage() {
                         {playgroundResult.cost_micros !== undefined && <MoneyText micros={playgroundResult.cost_micros} precision={6} tone="cost" />}
                         {playgroundResult.latency_ms !== undefined && <Text type="tertiary">客户端完整耗时 {playgroundResult.latency_ms}ms</Text>}
                         {playgroundResult.headers_ms !== undefined && <Text type="tertiary">响应头耗时 {playgroundResult.headers_ms}ms</Text>}
+                        {playgroundResult.billing_status && <Text type="tertiary">billing_status：{playgroundResult.billing_status}</Text>}
                       </div>
                       {playgroundResult.error ? (
                         <div className="ur-playground-error">

@@ -327,6 +327,49 @@ describe('DeveloperConsolePage', () => {
     }
   });
 
+  it('surfaces a terminal SSE error instead of reporting an empty stream', async () => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode([
+          'data: {"choices":[{"delta":{"content":null,"reasoning_content":"private"},"finish_reason":null}]}',
+          'data: {"error":{"type":"stream_error","code":"stream_error.output_limit_exceeded","message":"Stream exceeded its explicit output limit","request_id":"op-stream-limit","billing_status":"settled_partial_stream"}}',
+          '',
+        ].join('\n')));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }));
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      const mode = screen.getAllByRole('combobox').find(node => node.getAttribute('style')?.includes('width: 120px'));
+      expect(mode).toBeTruthy();
+      await userEvent.click(mode!);
+      await waitFor(() => expect(mode).toHaveAttribute('aria-expanded', 'true'));
+      const controlledID = mode!.getAttribute('aria-controls');
+      expect(controlledID).toBeTruthy();
+      const options = Array.from(document.querySelectorAll<HTMLElement>(`[id="${controlledID}"]`)).flatMap(list => within(list).queryAllByRole('option'));
+      const streamOption = options.find(option => option.textContent === '流式');
+      expect(streamOption).toBeTruthy();
+      await userEvent.click(streamOption!);
+      await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
+
+      expect(await screen.findByText('response_error')).toBeTruthy();
+      expect(screen.getByText('HTTP 200')).toBeTruthy();
+      expect(screen.getByText('op-stream-limit')).toBeTruthy();
+      expect(screen.getByText('billing_status：settled_partial_stream')).toBeTruthy();
+      expect(screen.getByText(/stream_error\.output_limit_exceeded/)).toBeTruthy();
+      expect(screen.queryByText('(empty stream)')).toBeNull();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it('does not invent a callable model when the project catalog is empty', async () => {
     mockGetModelCatalog.mockResolvedValue({ data: [], total: 0 });
     renderPage();

@@ -154,7 +154,17 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 				return nil, meterErr
 			}
 			usage.MeterUsage = meterUsage
-			responseBody, err = normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, in.Body)
+			// DeepSeek Flash can emit an SDK-only per-tool-call index which is
+			// not part of UniRouter's immutable v4 delivery contract. Normalize
+			// that one exact wire variation before the shared delivery guardrail.
+			// Invalid values deliberately remain in the body so the guardrail can
+			// fail closed without discarding already parsed provider usage.
+			if normalizedBody, _, normalizeErr := NormalizeDeepSeekFlashChatToolResponse(
+				in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile, responseBody,
+			); normalizeErr == nil {
+				responseBody = normalizedBody
+			}
+			responseBody, err = normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, responseBody)
 			if err != nil {
 				return nil, fmt.Errorf("normalize MiniMax response: %w", err)
 			}
@@ -183,6 +193,111 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 		normalized.Error = a.ClassifyHTTPStatus(in.StatusCode, in.Body)
 	}
 	return normalized, nil
+}
+
+// NormalizeDeepSeekFlashChatToolResponse removes only the optional
+// choices[].message.tool_calls[].index wire member emitted by DeepSeek V4
+// Flash Chat Completions. UniRouter's canonical v4 response identifies tool
+// calls by id/type/function, so the child index has no public semantic role.
+//
+// The scope is intentionally exact. Other providers, models and protocols are
+// returned unchanged. An index, when present, must be a non-null JSON number
+// whose lexical form is 0 or a non-zero-leading decimal integer. No machine
+// integer conversion is performed, so this function introduces no hidden
+// numeric ceiling; the existing response-body limit remains the resource
+// boundary. Unknown sibling fields are retained for the delivery guardrail to
+// reject under the immutable protocol contract.
+func NormalizeDeepSeekFlashChatToolResponse(provider, upstreamModel, protocolProfile string, body []byte) ([]byte, bool, error) {
+	if !strings.EqualFold(strings.TrimSpace(provider), "deepseek") ||
+		strings.TrimSpace(upstreamModel) != "deepseek-v4-flash" ||
+		(strings.TrimSpace(protocolProfile) != "protocol.deepseek-openai-chat.v4" &&
+			strings.TrimSpace(protocolProfile) != "openai.chat_completions") {
+		return body, false, nil
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return body, false, fmt.Errorf("decode DeepSeek Flash Chat response: %w", err)
+	}
+	var choices []map[string]json.RawMessage
+	if rawChoices, ok := envelope["choices"]; ok {
+		if err := json.Unmarshal(rawChoices, &choices); err != nil {
+			return body, false, fmt.Errorf("decode DeepSeek Flash Chat choices: %w", err)
+		}
+	}
+	changed := false
+	for choiceIndex := range choices {
+		rawMessage, ok := choices[choiceIndex]["message"]
+		if !ok || bytes.Equal(bytes.TrimSpace(rawMessage), []byte("null")) {
+			continue
+		}
+		var message map[string]json.RawMessage
+		if err := json.Unmarshal(rawMessage, &message); err != nil {
+			return body, false, fmt.Errorf("decode DeepSeek Flash Chat choices[%d].message: %w", choiceIndex, err)
+		}
+		rawToolCalls, ok := message["tool_calls"]
+		if !ok || bytes.Equal(bytes.TrimSpace(rawToolCalls), []byte("null")) {
+			continue
+		}
+		var toolCalls []map[string]json.RawMessage
+		if err := json.Unmarshal(rawToolCalls, &toolCalls); err != nil {
+			return body, false, fmt.Errorf("decode DeepSeek Flash Chat choices[%d].message.tool_calls: %w", choiceIndex, err)
+		}
+		choiceChanged := false
+		for toolIndex := range toolCalls {
+			rawIndex, present := toolCalls[toolIndex]["index"]
+			if !present {
+				continue
+			}
+			if !isLexicalNonnegativeJSONInteger(rawIndex) {
+				return body, false, fmt.Errorf("DeepSeek Flash Chat choices[%d].message.tool_calls[%d].index must be a non-negative decimal integer", choiceIndex, toolIndex)
+			}
+			delete(toolCalls[toolIndex], "index")
+			choiceChanged = true
+			changed = true
+		}
+		if !choiceChanged {
+			continue
+		}
+		encodedToolCalls, err := json.Marshal(toolCalls)
+		if err != nil {
+			return body, false, fmt.Errorf("encode DeepSeek Flash Chat tool calls: %w", err)
+		}
+		message["tool_calls"] = encodedToolCalls
+		encodedMessage, err := json.Marshal(message)
+		if err != nil {
+			return body, false, fmt.Errorf("encode DeepSeek Flash Chat message: %w", err)
+		}
+		choices[choiceIndex]["message"] = encodedMessage
+	}
+	if !changed {
+		return body, false, nil
+	}
+	encodedChoices, err := json.Marshal(choices)
+	if err != nil {
+		return body, false, fmt.Errorf("encode DeepSeek Flash Chat choices: %w", err)
+	}
+	envelope["choices"] = encodedChoices
+	normalized, err := json.Marshal(envelope)
+	if err != nil {
+		return body, false, fmt.Errorf("encode DeepSeek Flash Chat response: %w", err)
+	}
+	return normalized, true, nil
+}
+
+func isLexicalNonnegativeJSONInteger(raw json.RawMessage) bool {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] < '0' || raw[0] > '9' {
+		return false
+	}
+	if len(raw) > 1 && raw[0] == '0' {
+		return false
+	}
+	for _, character := range raw[1:] {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func parseBuiltinToolMeterUsage(body []byte, protocolProfile string) ([]metering.MeterQuantity, error) {

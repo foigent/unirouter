@@ -723,11 +723,58 @@ func inspectNonStreamOutputTextsForRoute(response map[string]interface{}, route 
 		protocolProfile = route.ModelProtocolProfile
 	}
 	inspection := inspectNonStreamOutputTextsForProtocol(response, protocolProfile)
+	inspectDeepSeekFlashNormalizedToolResponse(response, route, &inspection)
 	inspectFunctionToolChoiceResponse(route, &inspection)
 	if routeRequiresPlanCapability(route, modelprofile.CapabilityStrictJSONSchema) {
 		inspectStrictJSONSchemaResponse(response, &inspection)
 	}
 	return inspection
+}
+
+// The exact DeepSeek Flash response normalizer removes every valid provider
+// tool-call index before delivery. Any child index that remains on the current
+// generic tuple therefore represents an invalid normalization result and must
+// fail closed. This assertion is route-scoped so it does not narrow the shared
+// generic OpenAI-compatible contract for other providers.
+func inspectDeepSeekFlashNormalizedToolResponse(
+	response map[string]interface{},
+	route *RouteResult,
+	inspection *nonStreamOutputInspection,
+) {
+	if route == nil || inspection == nil ||
+		!strings.EqualFold(strings.TrimSpace(route.Channel.Provider), "deepseek") ||
+		strings.TrimSpace(route.MappedModel) != "deepseek-v4-flash" ||
+		(route.ModelProtocolProfile != "protocol.deepseek-openai-chat.v4" &&
+			route.ModelProtocolProfile != "openai.chat_completions") {
+		return
+	}
+	choices, ok := response["choices"].([]interface{})
+	if !ok {
+		return
+	}
+	for choiceIndex, rawChoice := range choices {
+		choice, ok := rawChoice.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		message, ok := choice["message"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		toolCalls, ok := message["tool_calls"].([]interface{})
+		if !ok {
+			continue
+		}
+		for toolIndex, rawTool := range toolCalls {
+			tool, ok := rawTool.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if _, exists := tool["index"]; exists {
+				inspection.markIncomplete(fmt.Sprintf("choices[%d].message.tool_calls[%d].index", choiceIndex, toolIndex))
+			}
+		}
+	}
 }
 
 func inspectFunctionToolChoiceResponse(route *RouteResult, inspection *nonStreamOutputInspection) {
@@ -1300,6 +1347,16 @@ func boundedGuardrailList(values []string, maxBytes int) string {
 		out.WriteString(value)
 	}
 	return out.String()
+}
+
+func boundedIncompletePathList(paths []string, maxBytes int) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	paths = append([]string(nil), paths...)
+	sort.Strings(paths)
+	paths = slices.Compact(paths)
+	return boundedGuardrailList(paths, maxBytes)
 }
 
 func guardrailBlockedByUnavailable(result guardrail.Result) bool {

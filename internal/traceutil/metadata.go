@@ -40,6 +40,7 @@ var metadataAllowlist = map[string]bool{
 	"error_code":                         true,
 	"estimated_tokens":                   true,
 	"failure_kind":                       true,
+	"incomplete_paths":                   true,
 	"freeze_amount_cents":                true,
 	"freeze_amount_micros":               true,
 	"is_stream":                          true,

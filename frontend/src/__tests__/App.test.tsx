@@ -170,7 +170,7 @@ describe('App shell', () => {
 
     expect(screen.getByText('环境未配置')).toBeTruthy();
     expect(screen.queryByText('生产环境')).toBeNull();
-    expect(screen.getByLabelText('UniRouter 版本 V1.2.6')).toHaveTextContent('V1.2.6');
+    expect(screen.getByLabelText('UniRouter 版本 V1.2.7')).toHaveTextContent('V1.2.7');
   });
 
   it('opens account settings from the avatar chip', async () => {

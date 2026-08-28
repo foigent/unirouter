@@ -11,7 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/guardrail"
+	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/traceutil"
 )
 
 func TestMiniMaxNormalizedResponseMeetsStrictChatDeliveryContract(t *testing.T) {
@@ -38,12 +40,22 @@ func TestMiniMaxNormalizedResponseMeetsStrictChatDeliveryContract(t *testing.T) 
 }
 
 func TestDeepSeekToolResponseMeetsStrictChatDeliveryContract(t *testing.T) {
+	body := `{"id":"chatcmpl-deepseek","object":"chat.completion","created":1787504000,"model":"deepseek-v4-flash","system_fingerprint":"fp","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"logprobs":null,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":297,"completion_tokens":38,"total_tokens":335,"prompt_cache_hit_tokens":256,"prompt_cache_miss_tokens":41,"prompt_tokens_details":{"cached_tokens":256}}}`
+	_, err := modelcapabilityqualification.ValidateDeepSeekChatFunctionTools(
+		modelcapabilityqualification.DeepSeekChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.DeepSeekChatFunctionToolsProbeContractV2,
+		"application/json", strings.NewReader(body),
+	)
+	require.NoError(t, err)
+
 	response, err := adapters.NewOpenAICompatible().ParseResponse(context.Background(), adapters.ResponseInput{
 		Endpoint:          adapters.EndpointChatCompletions,
 		StatusCode:        http.StatusOK,
 		Channel:           models.Channel{Provider: "deepseek", AdapterType: adapters.TypeOpenAICompatible},
+		UpstreamModel:     "deepseek-v4-flash",
+		ProtocolProfile:   "protocol.deepseek-openai-chat.v4",
 		CacheUsageProfile: "cache-usage.deepseek-v4.v1",
-		Body:              []byte(`{"id":"chatcmpl-deepseek","object":"chat.completion","created":1787504000,"model":"deepseek-v4-flash","system_fingerprint":"fp","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"city\":\"Shanghai\"}"}}]},"logprobs":null,"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":297,"completion_tokens":38,"total_tokens":335,"prompt_cache_hit_tokens":256,"prompt_cache_miss_tokens":41,"prompt_tokens_details":{"cached_tokens":256}}}`),
+		Body:              []byte(body),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -55,10 +67,90 @@ func TestDeepSeekToolResponseMeetsStrictChatDeliveryContract(t *testing.T) {
 	if err := decodeJSONUseNumber(response.Body, &envelope); err != nil {
 		t.Fatal(err)
 	}
-	inspection := inspectNonStreamOutputTexts(envelope)
+	inspection := inspectNonStreamOutputTextsForProtocol(envelope, "protocol.deepseek-openai-chat.v4")
 	if !inspection.complete() {
 		t.Fatalf("documented DeepSeek tool response did not meet strict delivery contract: %v body=%s", inspection.incompletePaths, response.Body)
 	}
+	toolCall := envelope["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})["tool_calls"].([]interface{})[0].(map[string]interface{})
+	require.NotContains(t, toolCall, "index")
+
+	toolCall["index"] = "0"
+	require.False(t, inspectNonStreamOutputTextsForProtocol(envelope, "protocol.deepseek-openai-chat.v4").complete())
+	delete(toolCall, "index")
+	toolCall["unexpected"] = true
+	unknown := inspectNonStreamOutputTextsForProtocol(envelope, "protocol.deepseek-openai-chat.v4")
+	require.False(t, unknown.complete())
+	require.Contains(t, unknown.incompletePaths, "choices[0].message.tool_calls[0]")
+}
+
+func TestDeepSeekToolResponseNormalizationFailsClosedUnderCurrentGenericTuple(t *testing.T) {
+	base := `{"id":"chatcmpl-deepseek","object":"chat.completion","created":1787504000,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":8,"completion_tokens":4,"total_tokens":12}}`
+	parse := func(t *testing.T, body string) map[string]interface{} {
+		t.Helper()
+		response, err := adapters.NewOpenAICompatible().ParseResponse(context.Background(), adapters.ResponseInput{
+			Endpoint: adapters.EndpointChatCompletions, StatusCode: http.StatusOK,
+			Channel:       models.Channel{Provider: "deepseek", AdapterType: adapters.TypeOpenAICompatible},
+			UpstreamModel: "deepseek-v4-flash", ProtocolProfile: "openai.chat_completions", Body: []byte(body),
+		})
+		require.NoError(t, err)
+		var envelope map[string]interface{}
+		require.NoError(t, decodeJSONUseNumber(response.Body, &envelope))
+		return envelope
+	}
+	route := &RouteResult{
+		Channel:              models.Channel{Provider: "deepseek"},
+		MappedModel:          "deepseek-v4-flash",
+		ModelProtocolProfile: "openai.chat_completions",
+	}
+
+	canonical := parse(t, base)
+	require.True(t, inspectNonStreamOutputTextsForRoute(canonical, route).complete())
+	tool := canonical["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})["tool_calls"].([]interface{})[0].(map[string]interface{})
+	require.NotContains(t, tool, "index")
+
+	invalidIndex := parse(t, strings.Replace(base, `"index":0,"id":"call_1"`, `"index":null,"id":"call_1"`, 1))
+	require.False(t, inspectNonStreamOutputTextsForRoute(invalidIndex, route).complete())
+
+	unknownSibling := parse(t, strings.Replace(base, `"index":0,"id":"call_1"`, `"index":0,"unexpected":true,"id":"call_1"`, 1))
+	require.False(t, inspectNonStreamOutputTextsForRoute(unknownSibling, route).complete())
+}
+
+func TestDeepSeekCanonicalToolResponseCanBeReplayedAsNextTurnHistory(t *testing.T) {
+	raw := []byte(`{"id":"chatcmpl-deepseek","object":"chat.completion","created":1787504000,"model":"deepseek-v4-flash","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}}],"usage":{"prompt_tokens":8,"completion_tokens":4,"total_tokens":12}}`)
+	response, err := adapters.NewOpenAICompatible().ParseResponse(context.Background(), adapters.ResponseInput{
+		Endpoint: adapters.EndpointChatCompletions, StatusCode: http.StatusOK,
+		Channel:       models.Channel{Provider: "deepseek", AdapterType: adapters.TypeOpenAICompatible},
+		UpstreamModel: "deepseek-v4-flash", ProtocolProfile: "protocol.deepseek-openai-chat.v4", Body: raw,
+	})
+	require.NoError(t, err)
+	var canonical struct {
+		Choices []struct {
+			Message json.RawMessage `json:"message"`
+		} `json:"choices"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body, &canonical))
+	require.Len(t, canonical.Choices, 1)
+	require.NotContains(t, string(canonical.Choices[0].Message), `"index"`)
+
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"model": "deepseek-v4-flash",
+		"messages": []json.RawMessage{
+			json.RawMessage(`{"role":"user","content":"weather"}`),
+			canonical.Choices[0].Message,
+			json.RawMessage(`{"role":"tool","tool_call_id":"call_1","content":"sunny"}`),
+			json.RawMessage(`{"role":"user","content":"continue"}`),
+		},
+		"tools": []map[string]interface{}{{
+			"type": "function", "function": map[string]interface{}{
+				"name": "lookup", "parameters": map[string]interface{}{"type": "object"},
+			},
+		}},
+		"thinking": map[string]string{"type": "disabled"},
+	})
+	require.NoError(t, err)
+	plan := executionProfilePlan(t, "deepseek.v4-flash.api", "1.5.0")
+	_, err = validateChatExecutionProfileRequest(requestBody, plan)
+	require.NoError(t, err)
 }
 
 func TestNonStreamOutputInspectionCollectsModeledMessageTextValues(t *testing.T) {
@@ -219,6 +311,17 @@ func TestNonStreamOutputInspectionRejectsInvalidToolCallIndex(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBoundedIncompletePathListIsDeterministicAndDoesNotTruncatePaths(t *testing.T) {
+	require.Equal(t, "a.path,z.path", boundedIncompletePathList([]string{"z.path", "a.path", "z.path"}, 64))
+	require.Equal(t, "a.path", boundedIncompletePathList([]string{"z.path", "a.path"}, 10))
+	require.Empty(t, boundedIncompletePathList([]string{"a.path"}, 0))
+	metadata, gap := traceutil.SanitizeMetadataWithGap(map[string]interface{}{
+		"incomplete_paths": boundedIncompletePathList([]string{"z.path", "a.path", "z.path"}, 240),
+	})
+	require.Empty(t, gap)
+	require.Equal(t, "a.path,z.path", metadata["incomplete_paths"])
 }
 
 func TestKimiPreservedThinkingProfileRejectsStreamTranscriptTransformation(t *testing.T) {

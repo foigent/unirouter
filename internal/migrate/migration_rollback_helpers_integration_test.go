@@ -21,6 +21,7 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000093_deepseek_function_tool_probe_contract_v2.down.sql",
 	"000092_deepseek_reasoning_tool_choice_contract.down.sql",
 	"000091_deepseek_chat_tools_json_capabilities.down.sql",
 	"000090_deepseek_chat_reasoning_capabilities.down.sql",
@@ -75,6 +76,7 @@ func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 	orderedNames := make([]string, 0, len(names)+4)
 	seen := make(map[string]struct{}, len(names)+4)
 	for _, name := range []string{
+		"000093_deepseek_function_tool_probe_contract_v2.down.sql",
 		"000092_deepseek_reasoning_tool_choice_contract.down.sql",
 		"000091_deepseek_chat_tools_json_capabilities.down.sql",
 		"000090_deepseek_chat_reasoning_capabilities.down.sql",

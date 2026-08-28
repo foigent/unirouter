@@ -1508,6 +1508,7 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		}
 		relay.recordTraceEvent(ctx, requestID, "provider.response_unusable", "provider", "warning", model, requestedModel, route, resp.StatusCode, elapsedMilliseconds(requestStart), map[string]interface{}{
 			"failure_kind": "unsupported_response_shape", "delivery_profile": chatDeliveryWhitelistVersion,
+			"incomplete_paths": boundedIncompletePathList(deliveryInspection.incompletePaths, 240),
 		}, upstreamRequestID)
 		if healthAuthorityFailed {
 			w.Header().Set("Retry-After", "1")

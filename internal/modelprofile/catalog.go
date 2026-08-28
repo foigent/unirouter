@@ -2257,7 +2257,6 @@ func legacyConformantProviderProfiles() []Profile {
 				toolChoiceCompatibility.ReasoningProfile = "reasoning.deepseek-v4-pro-thinking-toggle.v5"
 			}
 			profiles = append(profiles, toolChoiceCompatibility)
-
 		case existing.ID == "kimi.k2.6.api" && existing.Version == "1.5.0":
 			promoted := clone(existing)
 			promoted.Version = "1.6.0"

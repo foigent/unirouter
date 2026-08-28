@@ -8,7 +8,7 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The local candidate's executable PostgreSQL compatibility ceiling is `000092`.
+The local candidate's executable PostgreSQL compatibility ceiling is `000093`.
 M85–M87 batch inclusion is tracked in
 [B1 scope](../tech-ref/44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26);
 M88 is the separately bounded local capability-qualification candidate described
@@ -19,15 +19,25 @@ reasoning-effort typed qualification bindings for DeepSeek Flash Chat. M91 adds
 the exact tools, function-tools, auto/named/required tool-choice and JSON Object
 bindings. M92 adds the exact DeepSeek Flash Profile 1.5 capability bindings
 after the reasoning/tool-choice composition correction; it does not reinterpret
-Profile 1.4 receipts. All four reuse M88's append-only receipt plus receipt-aware qualification
+Profile 1.4 receipts. M93 adds only a function-tool probe-contract v2 for the
+five existing Profile 1.5 capabilities under both exact Chat protocol
+identities. Its ten immutable bindings advance ten current pointers while
+Profile 1.5, protocol v4, Releases and aliases remain unchanged. Runtime and
+probe parsing share one exact-scoped DeepSeek Flash response normalizer; v1
+receipts remain immutable but become stale for current qualification. All five
+migrations reuse M88's append-only receipt plus receipt-aware qualification
 authority; they create only `enabled/declared` projections and do not infer live
 support, approval, routing, Release or pricing from a Profile claim. Their fixed
 probe contracts accept no administrator-supplied provider payload and retain
 only bounded response facts, never private reasoning text or arbitrary tool
-arguments. M90/M91 are deployed Target facts at the checkpoint below; M92 is a
+arguments. M90–M92 are deployed Target facts at the checkpoint below; M93 is a
 local candidate only. M92 can be downgraded only while no Flash/Pro Profile 1.5
 model attachment, probe or approval exists; the guard prevents an M91 binary
-from inheriting a durable Profile identity that it cannot interpret. This source ceiling alone does not prove a
+from inheriting a durable Profile identity that it cannot interpret. M93
+downgrade is blocked only by retained function-tool Probe v2 evidence or
+approval, or by projection-identity drift that prevents exact restoration; the
+already-supported unchanged Profile 1.5 attachment is not a new M93
+identity. This source ceiling alone does not prove a
 deployment. The separately authorized
 [B2 Target checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#b2-target-deployment-and-bounded-zero-call-acceptance--2026-08-26)
 records the 86-entry M87 ledger after a non-rolling maintenance window on
@@ -54,11 +64,12 @@ maintenance deployment. It was later superseded by parser-diagnostics commit
 `56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and caller-scoped readiness UI
 commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`, then by the versioned SSE
 contract and M90/M91 capability batch. Stable, canary and frontend now use exact
-commit `6ff5cbf1c3917b218cffc212163a4756d1f794eb`, tree
-`d0084d90240126301e14075e5d608246f46109f8`, version 1.2.4 and schema M91;
+commit `c4ee78fc3eb41f144e72000d01917f41d7470bfb`, tree
+`7c8bb66f970fc772948f0da684ce74594bebb258`, version 1.2.6 and schema M92;
 canonical model-route authority remains enabled with compatibility disabled.
-Profile 1.5/M92 remains local and has no Target probe, approval, route or Release
-evidence.
+M93's Probe v2/normalizer correction remains local and has no Target v2 probe or
+approval evidence. The active organization Alias resolves to public model 697, whose
+sealed active Release 23 remains bound to immutable Profile 1.5.
 Following explicit authorization to create a test account and test through the
 UI, user 38 was created as customer 2's ordinary member / project 86 user and
 successfully logged in. UI authoring/first activation created Release 22,

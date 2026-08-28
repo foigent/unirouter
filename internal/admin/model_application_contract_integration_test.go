@@ -93,6 +93,10 @@ RETURNING id`).Scan(&pathfulConnectionID))
 func TestCanonicalModelApplicationCurrentCapabilityRollsBackThroughM92Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
+	m93Body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000093_deepseek_function_tool_probe_contract_v2.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(m93Body))
+	require.NoError(t, err)
 	body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000092_deepseek_reasoning_tool_choice_contract.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(body))
@@ -100,9 +104,13 @@ func TestCanonicalModelApplicationCurrentCapabilityRollsBackThroughM92Integratio
 	var migrationCount int
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM schema_migrations
- WHERE version='000092_deepseek_reasoning_tool_choice_contract'`).Scan(&migrationCount))
+	 WHERE version='000092_deepseek_reasoning_tool_choice_contract'`).Scan(&migrationCount))
 	require.Zero(t, migrationCount)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	m92OnlyDir := t.TempDir()
+	m92Up, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000092_deepseek_reasoning_tool_choice_contract.up.sql"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(m92OnlyDir, "000092_deepseek_reasoning_tool_choice_contract.up.sql"), m92Up, 0o600))
+	require.NoError(t, migrate.Run(ctx, pool, m92OnlyDir))
 
 	var orgID, userID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type)
@@ -136,23 +144,45 @@ UPDATE model_registry
  WHERE id=$1`, proModelID)
 	require.NoError(t, err)
 
-	handler := NewHandler(pool, "reviewed-binding-rollback-jwt", []byte("0123456789abcdef01234567"), nil)
-	request := canonicalModelApplicationCreateRequest{
-		Connection: canonicalConnectionInput{
-			Name: "Reviewed DeepSeek rollback", Provider: "deepseek", BaseURL: "https://api.deepseek.com",
-			AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`),
-		},
-		PublicModel: canonicalPublicModelInput{
-			ModelName: "reviewed-deepseek-rollback", ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.5.0",
-		},
-		Deployment: canonicalDeploymentInput{UpstreamModel: "deepseek-v4-flash"},
-		Credential: canonicalCredentialInput{APIKey: "reviewed-binding-rollback-fixture"},
-		Operation:  canonicalOperationInput{OperationID: string(modeloperation.IDChatCompletions)},
-	}
-	created := createCanonicalApplicationForTest(
-		t, handler, canonicalApplicationAuthorizedRequest(orgID, userID), request, http.StatusCreated,
-	)
-	deploymentID := created.Application.Deployment.ID
+	var modelID, connectionID, deploymentID, bindingID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO model_registry (
+  org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,
+  context_length,output_limit,execution_profile_id,execution_profile_version)
+VALUES ($1,'reviewed-deepseek-rollback','Reviewed DeepSeek rollback','deepseek','staging',TRUE,
+        393216,384000,'deepseek.v4-flash.api','1.5.0') RETURNING id`, orgID).Scan(&modelID))
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO provider_connections (
+  name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
+VALUES ('Reviewed DeepSeek rollback','deepseek','https://api.deepseek.com',
+        'openai_compatible','{"endpoint_path_mode":"base_relative"}','enabled',1)
+RETURNING id`).Scan(&connectionID))
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO model_deployments (
+  customer_org_id,public_model_id,connection_id,upstream_model,admin_state,
+  config_revision,max_context,default_max_output)
+VALUES ($1,$2,$3,'deepseek-v4-flash','enabled',1,393216,32768) RETURNING id`,
+		orgID, modelID, connectionID).Scan(&deploymentID))
+	_, err = pool.Exec(ctx, `
+INSERT INTO model_deployment_operations (
+  deployment_id,operation_id,support_state,evidence_state,evidence_ref,revision,
+  protocol_profile_id,protocol_profile_version)
+VALUES ($1,'openai.chat_completions.v1','enabled','declared','',1,
+        'protocol.deepseek-openai-chat.v4','1.0.0')`, deploymentID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,'openai.chat_completions.v1','streaming','enabled','declared',
+        'capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0',1)`, deploymentID)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO provider_credential_bindings (connection_id,key_enc,status,state_revision)
+VALUES ($1,'reviewed-binding-rollback-fixture','active',1) RETURNING id`, connectionID).Scan(&bindingID))
+	_, err = pool.Exec(ctx, `
+INSERT INTO credential_binding_deployments (binding_id,deployment_id,connection_id)
+VALUES ($1,$2,$3)`, bindingID, deploymentID, connectionID)
+	require.NoError(t, err)
 	assertCapability := func(wantRef string, wantRevision int64) {
 		t.Helper()
 		var evidenceRef string
@@ -181,8 +211,6 @@ SELECT evidence_ref,revision FROM model_deployment_capabilities
 	var connectionRevision, deploymentRevision, operationRevision, capabilityRevision int64
 	var bindingRevision int64
 	var linkCreated time.Time
-	connectionID := created.Application.Connection.ID
-	bindingID := created.Application.Credential.Bindings[0].ID
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT connection.config_revision,deployment.config_revision,operation.revision,
        capability.support_revision,binding.state_revision,link.created_at
@@ -269,6 +297,8 @@ VALUES ($1,'reviewed-binding-admin','fixture','org_admin','org_admin','active') 
 	created := createCanonicalApplicationForTest(t, handler, authorized, request, http.StatusCreated)
 	require.Equal(t, "deepseek.v4-flash.api", created.Application.PublicModel.ExecutionProfileID)
 	require.Equal(t, "1.5.0", created.Application.PublicModel.ExecutionProfileVersion)
+	require.Equal(t, "protocol.deepseek-openai-chat.v4", created.Application.Operations[0].ProtocolProfileID)
+	require.Equal(t, "1.0.0", created.Application.Operations[0].ProtocolProfileVersion)
 	var declaredCapabilityCount int
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM model_deployment_capabilities
@@ -288,6 +318,11 @@ SELECT support_state,evidence_state,evidence_ref
 	require.Equal(t, "enabled", capabilitySupport)
 	require.Equal(t, "declared", capabilityEvidence)
 	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0", capabilityEvidenceRef)
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT evidence_ref FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='tools'`, created.Application.Deployment.ID).Scan(&capabilityEvidenceRef))
+	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-function-tools.v1@2.0.0", capabilityEvidenceRef)
 	qualificationTarget := fmt.Sprintf(
 		"/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/streaming",
 		created.Application.Deployment.ID,

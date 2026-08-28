@@ -126,25 +126,25 @@ parity or a complete price contract. Official USD prices remain review drafts;
 nonstandard tiers cannot debit customer wallets. No entry is declared fully
 adapted, provider-live-verified or released by this table.
 
-### DeepSeek Flash UI completion batch — Target 1.4 evidence plus local 1.5/M92 correction, 2026-08-28
+### DeepSeek Flash UI completion batch — Target Profile 1.5/M92 plus local Probe v2/M93 correction, 2026-08-28
 
-The current finite batch remains one model family, one surface and one
-operation. Its new local attachment identity is:
+The current finite batch remains one model family, one surface, one operation
+and the existing exact attachment identity
+`deepseek.v4-flash.api@1.5.0 × OpenAI-compatible Chat Completions`. It does not
+authorize another model, surface, Production, customer settlement or a
+platform-wide canonical switch. Development/test currently runs exact
+commit `c4ee78fc3eb41f144e72000d01917f41d7470bfb`, version 1.2.6 and schema
+M92. Public model 697 (`deepseek-v4-flash-20260828`) and sealed active Release
+23 bind immutable Profile `deepseek.v4-flash.api@1.5.0`; the active organization
+Alias `deepseek-v4-flash` currently targets that identity. M93 changes only the
+current function-tool probe-contract version for this existing identity; Target
+M92 evidence cannot qualify that new v2 interpretation contract.
 
-`deepseek.v4-flash.api@1.5.0 × OpenAI-compatible Chat Completions`.
-
-It does not authorize another model, surface, canonical switch, customer
-settlement or Release. Development/test currently runs exact commit
-`6ff5cbf1c3917b218cffc212163a4756d1f794eb` / tree
-`d0084d90240126301e14075e5d608246f46109f8`, version 1.2.4 and schema M91.
-Its active public model and sealed Release still bind immutable Profile
-`deepseek.v4-flash.api@1.4.0`. That Target evidence cannot qualify the local
-Profile 1.5/M92 correction below.
-
-The ordinary test account is user 39 in customer 2 / Default Project 86. Its
-model-restricted keys 83 and 84 remain active only for this approved test batch;
-no secret is recorded here. The product owner removed the call-count ceiling for
-this Flash closure while retaining a cumulative CNY 5 supplier-spend ceiling.
+The ordinary test account is user 39 in customer 2 / Default Project 86. A
+replacement model-restricted test key remains active only for this approved
+test batch; its secret was not read or recorded. The product owner removed the
+call-count ceiling for this Flash closure while retaining a cumulative CNY 5
+supplier-spend ceiling.
 Eighteen supplier calls preceded that decision. Calls remain short and typed;
 there is no automatic retry or unbounded failover. The following calls 6 and 7 are retained as earlier
 successful UI checkpoints:
@@ -163,19 +163,17 @@ successful UI checkpoints:
   verifies the Profile's 384K ceiling boundary without claiming that 384K was
   generated.
 
-The approved public-identity transition does not rewrite model 677 or sealed
-Release 22. A new immutable public model identity
-`deepseek-v4-flash-20260828` will bind Profile 1.5, reuse the explicitly selected
-DeepSeek connection and credential binding, complete exact qualification and
-receive its own sealed Release. Only after those checks pass may the active
-organization alias `deepseek-v4-flash` point to the new identity. Disabling that
-alias restores resolution to the historical direct model name; the cutover does
-not retire or mutate Profile 1.4 evidence.
+The completed Profile 1.5 transition did not rewrite model 677 or sealed Release
+22; model 697 and Release 23 are separate retained identities. The response
+wire-compatibility correction below does not create another Profile, Protocol,
+public model, Release or Alias transition. Historical v1 probe and approval
+receipts remain addressable and are not reinterpreted.
 
-The deployed stream response was correct, but the workbench discarded terminal
-`finish_reason` and raw usage while reading SSE. The local candidate now retains
-both fields in UI state; its real `ReadableStream` regression test passes. This
-UI correction is not yet Target-verified.
+The deployed explicit-output-limit stream correctly ended with an SSE error,
+but the workbench displayed it as `(empty stream)`. The local candidate now
+surfaces the terminal error code/message, request identity and billing status;
+its real `ReadableStream` regression test passes. This UI correction is not yet
+Target-verified.
 
 Later UI and typed-capability work reached calls 16–18. Call 16 verified the
 deployed Profile 1.4 reasoning path. Call 17 exercised `tool_choice=auto`, but
@@ -187,7 +185,7 @@ Profile 1.4 contract had allowed that impossible composition, while individual
 Admin tool probes had forced `thinking=disabled` and therefore could not reveal
 the defect. No retry was made.
 
-The append-only correction creates DeepSeek Flash and Pro Profile 1.5 with
+The deployed append-only correction created DeepSeek Flash and Pro Profile 1.5 with
 reasoning contract v5. Under active/default thinking, explicit `required`,
 named and `none` choices fail before Freeze or credential use; redundant
 explicit `auto` with tools is normalized to omission, preserving the provider
@@ -198,10 +196,33 @@ already-supported Chat protocol identities. Canonical onboarding now
 materializes all exact migration-approved capabilities rather than streaming
 alone. Empty-attachment M92 rollback is tested; any retained Flash/Pro Profile
 1.5 model attachment, probe or approval blocks downgrade before mutation. These
-changes are locally conformant only and have made no Target write or supplier
-call.
+Profile and M92 control-plane changes are deployed Target facts; individual
+capabilities still require exact live evidence and approval.
 
-M90 and M91 are the bounded local continuation. M90 adds typed qualification
+The next live tool call exposed a separate delivery-shape defect: DeepSeek's
+successful non-stream function-tool response included an SDK-compatible
+per-tool integer `index`, while immutable protocol v4 rejected that field and
+withheld the provider HTTP 200 response. The local correction preserves Profile
+1.5, protocol v4, Release 23 and the Alias. One exact-scoped shared normalizer
+accepts only a lexical non-negative decimal integer at
+`choices[].message.tool_calls[].index`, deletes that non-authoritative child
+field, preserves `choices[].index`, and leaves every unknown sibling for the v4
+or retained generic exact-route guardrail to reject. Any residual invalid child
+index also fails closed on either tuple. It performs no machine-integer conversion or undocumented
+numeric bounding. Runtime delivery and function-tool Probe v2 consume this same
+normalizer; the probe then checks its bounded semantic sentinel and usage.
+
+M93 adds ten immutable v2 bindings: five existing function-tool capabilities
+under each of Profile 1.5's two exact protocol identities. It changes the ten
+current pointers from v1 to v2 without changing the total current-binding count.
+Old v1 receipts remain historical facts and become `probe_contract_stale` for
+new routing qualification. M93 rollback is blocked by retained v2 probes or
+approvals and by stable projection-identity drift that would leave a dangling
+v2 evidence reference, but not merely by the pre-existing unchanged Profile 1.5 attachment. This is
+`locally_conformant` only; no M93 Target migration, v2 probe/approval, supplier
+call, Release or Alias change has occurred.
+
+M90 and M91 are the deployed bounded continuation. M90 adds typed qualification
 for explicit `thinking=enabled` and `reasoning_effort=low`; the validator records
 only that non-empty reasoning evidence existed, never the private reasoning
 text. M91 adds fixed no-side-effect function-tool probes for `tools`,
@@ -220,11 +241,15 @@ Focused local evidence currently passed:
 - capability panel and developer workbench suites, 39 tests;
 - frontend type/API/react compatibility checks and `git diff --check`.
 
-Reasoning, tools/tool-choice, JSON Object, repeated-prefix cacheRead, fixed SDK
-workflow and the local UI changes remain `locally_conformant` only. No M90/M91
-Target migration, typed live probe, capability approval, ordinary public call,
-push, CI or Release has occurred. Zero customer charge is not zero supplier
-cost, and the remaining 13-call/CNY-budget ceiling is unchanged.
+The remaining Profile 1.5 tools/tool-choice, JSON Object, repeated-prefix
+cacheRead, fixed SDK workflow and local UI changes remain independently scoped.
+No M93 Target migration, v2 typed live probe, v2 capability approval, new
+ordinary public tool call, push or CI has occurred. M93 deliberately requires a
+temporary fail-closed tool window after deployment until the actual routable
+Deployment is re-probed and approved; the UI must describe this as a probe
+contract upgrade awaiting revalidation, not a provider capability regression.
+Zero customer charge is not zero supplier cost; there is no call-count ceiling,
+and the cumulative supplier-spend hard cap remains CNY 5.
 
 ### B1 correction checkpoint — local candidate only
 

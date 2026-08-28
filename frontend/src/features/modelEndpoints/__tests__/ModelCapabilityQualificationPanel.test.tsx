@@ -177,6 +177,39 @@ describe('ModelCapabilityQualificationPanel', () => {
     expect(screen.getByText('provider_stream_contract_invalid')).toBeInTheDocument();
   });
 
+  it('explains probe-contract staleness as revalidation rather than provider regression', async () => {
+    mocks.getQualification.mockResolvedValue({
+      ...baseQualification,
+      capability_id: 'tools',
+      probe_contract_id: 'unirouter.capability-probe.deepseek-chat-function-tools.v1',
+      probe_contract_version: '2.0.0',
+      state: 'probe_stale',
+      qualification_state: 'probe_contract_stale',
+      latest_probe: {
+        capability_probe_id: 500,
+        success: true,
+        provider_success: true,
+        current: false,
+        status_code: 200,
+        latency_ms: 200,
+        tested_at: '2026-08-27T01:00:00Z',
+      },
+    });
+
+    render(<ModelCapabilityQualificationPanel
+      selected={selected}
+      operation={operation}
+      canManage
+      canApprove
+      gatewayLicensed
+      gatewayRestriction=""
+      capabilityID="tools"
+    />);
+
+    expect(await screen.findByText(/探测合同已升级/u)).toBeInTheDocument();
+    expect(screen.queryByText(/供应商.*不支持/u)).not.toBeInTheDocument();
+  });
+
   it('uses the same two-stage workflow for typed reasoning without exposing reasoning text', async () => {
     let confirmationConfig: any;
     vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {

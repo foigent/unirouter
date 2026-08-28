@@ -47,4 +47,6 @@ func TestDeepSeekV4FlashToolHistoryPromotionIsAppendOnly(t *testing.T) {
 	require.ErrorContains(t, ValidateExecutableComponents(drifted), "tool-request reasoning replay requires exact function-tool history")
 	require.Error(t, ValidateNewAttachment(historical.ID, historical.Version))
 	require.NoError(t, ValidateNewAttachment(candidate.ID, candidate.Version))
+	_, ok = Lookup("deepseek.v4-flash.api", "1.6.0")
+	require.False(t, ok)
 }

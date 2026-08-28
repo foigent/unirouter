@@ -937,20 +937,29 @@ func resolveCanonicalOperationProfile(input canonicalOperationInput, adapterType
 	return input, nil
 }
 
-// resolveCanonicalCapabilityOperationProfile is intentionally narrow: M88's
-// compiled capability contract may refine the generic Chat protocol selected
-// by adapter type to one exact provider/Profile protocol. This does not infer
-// support from provider documentation or widen other model surfaces.
+// resolveCanonicalCapabilityOperationProfile is intentionally narrow: a
+// compiled capability contract may refine the generic protocol selected by
+// adapter type only when it publishes an exact preferred protocol for this
+// immutable execution Profile. This does not infer support from provider
+// documentation or widen other model surfaces.
 func resolveCanonicalCapabilityOperationProfile(
 	publicModel canonicalPublicModelIdentity,
 	operation canonicalOperationInput,
 ) canonicalOperationInput {
-	binding := modelcapabilityqualification.DeepSeekFlashStreamingBinding()
-	if operation.OperationID == binding.OperationID &&
-		publicModel.ExecutionProfileID == binding.ExecutionProfileID &&
-		publicModel.ExecutionProfileVersion == binding.ExecutionProfileVersion {
-		operation.ProtocolProfileID = binding.ProtocolProfileID
-		operation.ProtocolProfileVersion = binding.ProtocolProfileVersion
+	preferred, err := modelcapabilityqualification.ResolvePreferredOperationProtocol(
+		operation.OperationID,
+		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
+	)
+	if err != nil {
+		return operation
+	}
+	if _, err := modelcapabilityqualification.ResolveAll(
+		operation.OperationID,
+		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
+		preferred.ProtocolProfileID, preferred.ProtocolProfileVersion,
+	); err == nil {
+		operation.ProtocolProfileID = preferred.ProtocolProfileID
+		operation.ProtocolProfileVersion = preferred.ProtocolProfileVersion
 	}
 	return operation
 }

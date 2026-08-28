@@ -9,6 +9,7 @@ import (
 	"mime"
 	"strings"
 
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
@@ -62,12 +63,22 @@ func ValidateDeepSeekChatFunctionTools(
 	reader io.Reader,
 ) (DeepSeekCoreObservation, error) {
 	if probeContractID != DeepSeekChatFunctionToolsProbeContractID ||
-		probeContractVersion != DeepSeekChatCoreProbeContractVersion {
+		(probeContractVersion != DeepSeekChatCoreProbeContractVersion &&
+			probeContractVersion != DeepSeekChatFunctionToolsProbeContractV2) {
 		return DeepSeekCoreObservation{}, invalidDeepSeekCore("probe_contract")
 	}
 	body, observation, err := readDeepSeekCoreResponse(contentType, reader)
 	if err != nil {
 		return observation, err
+	}
+	if probeContractVersion == DeepSeekChatFunctionToolsProbeContractV2 {
+		normalized, _, err := adapters.NormalizeDeepSeekFlashChatToolResponse(
+			"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", body,
+		)
+		if err != nil {
+			return observation, invalidDeepSeekCore("delivery_shape", err)
+		}
+		body = normalized
 	}
 	var payload struct {
 		Model   string `json:"model"`

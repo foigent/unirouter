@@ -298,6 +298,12 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
           <Text code>{qualification.probe_contract_id}@{qualification.probe_contract_version}</Text>
         </Space>
 
+        {qualification.qualification_state === 'probe_contract_stale' && <Banner
+          type="warning"
+          closeIcon={null}
+          description="探测合同已升级，原批准保留为历史证据但不再具备当前路由资格；请按当前合同重新探测并批准。"
+        />}
+
         {qualification.latest_probe ? <div>
           <Space wrap>
             <Text strong>最近证据</Text>

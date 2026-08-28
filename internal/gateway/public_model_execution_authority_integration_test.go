@@ -143,6 +143,7 @@ SELECT row_to_json(binding)::text FROM model_operation_public_execution_bindings
 	original := readBinding()
 	for cycle := 0; cycle < 2; cycle++ {
 		for _, name := range []string{
+			"000093_deepseek_function_tool_probe_contract_v2.down.sql",
 			"000092_deepseek_reasoning_tool_choice_contract.down.sql",
 			"000091_deepseek_chat_tools_json_capabilities.down.sql",
 			"000090_deepseek_chat_reasoning_capabilities.down.sql",
@@ -190,6 +191,7 @@ func TestPublicModelExecutionAuthorityExactBindingsRollbackProtectsSealedEvidenc
 				capabilities: []string{modelprofile.CapabilityReasoning, modelprofile.CapabilityReasoningEffort},
 			})
 			for _, capabilityDownName := range []string{
+				"000093_deepseek_function_tool_probe_contract_v2.down.sql",
 				"000092_deepseek_reasoning_tool_choice_contract.down.sql",
 				"000091_deepseek_chat_tools_json_capabilities.down.sql",
 				"000090_deepseek_chat_reasoning_capabilities.down.sql",
@@ -456,6 +458,7 @@ FROM billing_provider_attempts a WHERE org_id=$1 AND request_id=$2 AND attempt_i
 	defer conn.Release()
 	var down []byte
 	for _, name := range []string{
+		"000093_deepseek_function_tool_probe_contract_v2.down.sql",
 		"000092_deepseek_reasoning_tool_choice_contract.down.sql",
 		"000091_deepseek_chat_tools_json_capabilities.down.sql",
 		"000090_deepseek_chat_reasoning_capabilities.down.sql",

@@ -4,6 +4,32 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.7] - 2026-08-28
+
+### Fixed
+
+- Normalized DeepSeek V4 Flash's optional SDK-only function-tool `index` at the
+  exact provider/model/Chat boundary, preserving the existing Profile `1.5.0`,
+  protocol v4, Release and Alias. Runtime delivery and function-tool Probe v2
+  reuse one normalizer; valid lexical non-negative integer indexes are removed
+  from the canonical response while unrelated fields remain fail-closed.
+- Added M93's ten immutable Probe v2 bindings for the five existing function-tool
+  capabilities under Profile `1.5.0`'s two exact Chat protocol identities. Old
+  v1 receipts remain historical but no longer qualify current routing.
+- Made the Developer Console surface a terminal SSE error and its request and
+  billing status after an HTTP 200 stream, instead of displaying the failed
+  stream as an empty successful response.
+
+### Evidence boundary
+
+- This UI contract does not create, qualify, release or route a model by itself.
+  Those control-plane records and any supplier calls remain separately verified
+  on development/test.
+- M93's Probe v2/normalizer correction and the terminal-stream UI correction are
+  locally conformant only until their exact artifact is deployed, probed,
+  approved and exercised through the development/test UI. They do not reinterpret
+  v1 evidence or authorize Production.
+
 ## [1.2.6] - 2026-08-28
 
 ### Fixed
@@ -16,9 +42,9 @@ those build identities do not replace the product version.
 
 ### Evidence boundary
 
-- This UI contract does not create, qualify, release or route a model by itself.
-  Those control-plane records and any supplier calls remain separately verified
-  on development/test.
+- This onboarding contract does not create, qualify, release or route a model by
+  itself. Those control-plane records and any supplier calls remain separately
+  verified on development/test.
 
 ## [1.2.5] - 2026-08-28
 
