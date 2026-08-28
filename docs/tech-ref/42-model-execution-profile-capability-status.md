@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-08-28.
+> Snapshot date: 2026-08-29.
 > This document is not a claim that every provider-documented feature is production supported.
 
 The current product-scope candidate is
@@ -9,69 +9,72 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-## Delivery snapshot — first UI non-stream vertical slice Target verified
+## Delivery snapshot — DeepSeek Flash Chat completion, development/test
 
-The finite B1 integration batch in
-[Baseline §5](44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26)
-has closed at Local/CI on `ab4b5b3f42e6819d27ac946ad7899ac08498affb`.
-B2's explicitly authorized bounded Target deployment in Baseline §6 is now on
-1.2.3/M87; the exact deployment and zero-call acceptance checkpoint is below.
-The subsequent bootstrap repair was deployed at `e888c05f9d5d` on the same
-schema, with Local/CI and Target read-only preview checks passed. Following
-explicit approval of the two runtime-shell objects, customer 2 and its zero
-wallet were initialized; the normal startup path created Default Project 86.
-The corrected UI-workbench candidate `1f30b1cd4c8d614f177fa0d890f162d4c0605af7`
-passed automatic CI 32998254738 and protocol-conformance CI 32998255070. After
-the authorized maintenance switch, both backends and the frontend ran its exact
-artifacts on development/test. The live-found capability correction is exact
-commit `e47af1faacd8ca96403c25b4cf2c47ec155bd980`, automatic CI 33002920179
-and protocol-conformance CI 33002920186. It was subsequently superseded on
-development/test by the bounded M88 capability-qualification artifact
-`08d0ef8e5cee7e1bff515d5751e7a9bdd452f16f`; automatic CI 33050163111 and
-protocol-conformance CI 33050163136 passed. Stable, canary and frontend use the
-exact 08d artifacts after a non-rolling maintenance deployment. That artifact
-was subsequently superseded by the bounded parser-diagnostics commit
-`56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and the caller-scoped readiness UI
-commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`; the latter passed automatic CI
-33058690558 (successful unchanged-code rerun) and protocol CI 33058690563. The
-versioned SSE contract commit `eeb170c561b1c09837d17ff412f04077273037be`
-and the M90/M91 capability batch then superseded it. Stable, canary and frontend
-now run exact commit `6ff5cbf1c3917b218cffc212163a4756d1f794eb`, tree
-`d0084d90240126301e14075e5d608246f46109f8`, version 1.2.4 and schema M91 after
-the approved non-rolling upgrade; PR 339's exact CI was green. Canonical
-model-route authority is enabled with compatibility disabled. This software
-deployment did not itself change the Source Instance, public-model identity,
-pricing or sealed runtime Release.
-The product owner initially approved the exact DeepSeek 3-call/CNY-1 envelope
-below, then increased the cumulative test ceiling to 20 calls/CNY 5. On
-2026-08-28 the call-count ceiling was removed for this Flash closure while the
-cumulative supplier-spend ceiling remained CNY 5.
-Its first supported connectivity probe passed. The first generic-client request
-was then made through the ordinary-user UI and failed before Freeze or provider
-dispatch because canonical routing incorrectly treated an explicitly disabled
-reasoning control as an invocation capability. After the bounded correction,
-the same frozen UI request was clicked once and returned the exact expected
-non-stream text with provider-reported final usage. The direct functional
-comparison has not run.
-On 2026-08-27 the user explicitly authorized an Agent-created test account and
-required the full product flow to be clicked through the UI. User 38 now belongs
-to customer 2 / project 86 as an ordinary member/project user, with successful
-UI login. Release 22 is active with one exact Flash route; directory approval
-and GA are test-environment configuration, not capability or acceptance evidence.
-The UI issued short-lived model-restricted test keys after the user explicitly
-delegated the complete test flow to the Agent. One unused key was inadvertently
-included in an automation trace while inspecting the one-time modal; it was
-immediately disabled before any request. Browser password-value redaction then
-made several safe transfers look empty; those unused keys were also disabled.
-The successful request used key 81, and all nine test keys are now disabled.
-No credential value is retained in this document. The workbench and bounded
-capability correction are deployed and recorded below. This is not
-a standing allowance for subsequent models or capabilities.
-B1/B2 closure did not itself authorize a new model/capability milestone; the
-separately approved Flash matrix is bounded below. The original 204-path WIP
-was the cumulative B1 candidate, not the current worktree or 204 completed
-deliverables. Inclusion approval, Local, CI, Artifact, Target, provider-live
-evidence and Release remain distinct.
+As of 2026-08-29, the exact reviewed artifact is commit
+`18c7153fbdc0b1a9ed2b1d4898893f0dc687dd47`, tree
+`5721a8488c68ff4d596a4dd5ad3c57e3f639f400`, version 1.2.7 and schema ceiling
+`000093_deepseek_function_tool_probe_contract_v2`. Automatic CI run
+33187407637 and protocol-conformance run 33187407720 both passed on that exact
+commit. Development/test stable, canary and frontend run images built from
+`18c7153fbdc0`; both backends are healthy. The database has 92 ordered migration
+rows with M93 as its maximum. Canonical model-route authority remains enabled
+with compatibility disabled; this batch did not change the Source Instance,
+public-model identity, Profile, protocol, sealed Release 23, Alias, pricing or
+Production traffic.
+
+The actual routable identity is deployment 2,
+`deepseek.v4-flash.api@1.5.0 × openai.chat_completions@1.0.0`, public model
+`deepseek-v4-flash-20260828`. After M93 advanced only the function-tool probe
+interpretation contract to v2, Admin UI issued and separately approved five
+typed probes. Current receipt-aware qualification is `qualified` for:
+
+- `tools`: probe 21 / approval 19;
+- `function_tools`: probe 22 / approval 20;
+- `tool_choice_auto`: probe 23 / approval 21;
+- `tool_choice_named`: probe 24 / approval 22;
+- `tool_choice_required`: probe 25 / approval 23.
+
+The ordinary-user Developer Console then produced three exact public-call
+checkpoints on deployment 2 / Release 23:
+
+- `op_dfd4ce1c4f59a2cfb2a4a8ebbdc3415a`: non-stream function tool, HTTP 200,
+  provider-reported final usage 388 input / 256 cache-read / 76 output; the
+  canonical response removed the non-authoritative child tool-call `index`;
+- `op_4e2d9bacc2a62a58a00e92f01f840f03`: streaming with an explicit output
+  limit, provider HTTP 200 followed by the correctly surfaced terminal
+  `stream_error.output_limit_exceeded`; partial usage remains
+  `gateway_counter/estimated`, not a successful final usage claim;
+- `op_610602dbacefbcef39b03ce62da5a0cb`: streaming with
+  `thinking=disabled`, HTTP 200 and provider-reported final usage 28 input / 12
+  output.
+
+A fixed `openai-python@3.5.0` workflow issued exactly three additional requests:
+
+- `op_8d8a3a25a0b6457751f17d90bf30ce4c`: function tool, child `index` absent,
+  reasoning preserved for replay, provider-reported final usage 384 input / 256
+  cache-read / 71 output;
+- `op_63b8117120eded7cec53d6275c1e465b`: tool-result replay returned
+  `ROUNDTRIP_OK`, with provider-reported final usage 106 input / 5 output;
+- `op_e5aff789d82e1076dc49b6c489422aa7`: SSE returned `STREAM_SDK_OK`, with
+  provider-reported final usage 12 input / 5 output.
+
+This M93 closure sub-batch therefore has an explainable total of 11 supplier
+calls: five Probe v2 calls plus the six public UI/SDK requests listed above. It
+is not a standing call-count ceiling and is not a claim about the whole Flash
+history. The previously approved call-count ceiling was removed; the remaining
+authorization boundary is a cumulative CNY 5 supplier-spend ceiling. Native
+supplier cost still lacks invoice or supplier-reported Observation authority,
+so neither the repository nor this snapshot claims to have precisely measured
+actual supplier spend. Customer 2's CNY wallet remains zero for balance, grant,
+freeze and cumulative spend, with zero customer financial transactions.
+
+The two task-scoped keys `ui-flash-v127-final-20260829` and
+`ui-flash-v126-b-20260828` are disabled. The Developer Console credential field,
+local clipboard and temporary fixed-SDK environment were cleared. This exact
+DeepSeek Flash Chat subset is `canary_live_verified` on development/test; it
+does not promote another model, prove full provider parity, constitute customer
+manual acceptance or change `release_state`.
 
 There are **30 upstream model entries and 33 current surface identities**.
 The table is a code projection of exact new-attachment pointers, not a Baseline
@@ -126,13 +129,17 @@ parity or a complete price contract. Official USD prices remain review drafts;
 nonstandard tiers cannot debit customer wallets. No entry is declared fully
 adapted, provider-live-verified or released by this table.
 
-### DeepSeek Flash UI completion batch — Target Profile 1.5/M92 plus local Probe v2/M93 correction, 2026-08-28
+### Historical DeepSeek Flash M92/local-M93 checkpoint — superseded
 
-The current finite batch remains one model family, one surface, one operation
-and the existing exact attachment identity
+> Historical checkpoint from 2026-08-28. Present-tense statements in this
+> subsection describe that checkpoint only and are superseded by the
+> 2026-08-29 completion snapshot above.
+
+At that checkpoint, the finite batch remained one model family, one surface,
+one operation and the existing exact attachment identity
 `deepseek.v4-flash.api@1.5.0 × OpenAI-compatible Chat Completions`. It does not
 authorize another model, surface, Production, customer settlement or a
-platform-wide canonical switch. Development/test currently runs exact
+platform-wide canonical switch. Development/test then ran exact
 commit `c4ee78fc3eb41f144e72000d01917f41d7470bfb`, version 1.2.6 and schema
 M92. Public model 697 (`deepseek-v4-flash-20260828`) and sealed active Release
 23 bind immutable Profile `deepseek.v4-flash.api@1.5.0`; the active organization
@@ -140,8 +147,8 @@ Alias `deepseek-v4-flash` currently targets that identity. M93 changes only the
 current function-tool probe-contract version for this existing identity; Target
 M92 evidence cannot qualify that new v2 interpretation contract.
 
-The ordinary test account is user 39 in customer 2 / Default Project 86. A
-replacement model-restricted test key remains active only for this approved
+The ordinary test account was user 39 in customer 2 / Default Project 86. A
+replacement model-restricted test key remained active only for this approved
 test batch; its secret was not read or recorded. The product owner removed the
 call-count ceiling for this Flash closure while retaining a cumulative CNY 5
 supplier-spend ceiling.
@@ -170,10 +177,10 @@ public model, Release or Alias transition. Historical v1 probe and approval
 receipts remain addressable and are not reinterpreted.
 
 The deployed explicit-output-limit stream correctly ended with an SSE error,
-but the workbench displayed it as `(empty stream)`. The local candidate now
+but the workbench displayed it as `(empty stream)`. The local candidate then
 surfaces the terminal error code/message, request identity and billing status;
-its real `ReadableStream` regression test passes. This UI correction is not yet
-Target-verified.
+its real `ReadableStream` regression test passed. This UI correction was not yet
+Target-verified at that checkpoint.
 
 Later UI and typed-capability work reached calls 16–18. Call 16 verified the
 deployed Profile 1.4 reasoning path. Call 17 exercised `tool_choice=auto`, but
@@ -218,9 +225,10 @@ current pointers from v1 to v2 without changing the total current-binding count.
 Old v1 receipts remain historical facts and become `probe_contract_stale` for
 new routing qualification. M93 rollback is blocked by retained v2 probes or
 approvals and by stable projection-identity drift that would leave a dangling
-v2 evidence reference, but not merely by the pre-existing unchanged Profile 1.5 attachment. This is
-`locally_conformant` only; no M93 Target migration, v2 probe/approval, supplier
-call, Release or Alias change has occurred.
+v2 evidence reference, but not merely by the pre-existing unchanged Profile 1.5
+attachment. At that checkpoint this was `locally_conformant` only; no M93 Target
+migration, v2 probe/approval, supplier call, Release or Alias change had
+occurred.
 
 M90 and M91 are the deployed bounded continuation. M90 adds typed qualification
 for explicit `thinking=enabled` and `reasoning_effort=low`; the validator records
@@ -233,7 +241,7 @@ scenarios rather than arbitrary provider JSON. Exact current and historical
 Chat surface tuples are migration-owned; mismatched tuples stay absent and an
 explicit `unsupported` decision is preserved.
 
-Focused local evidence currently passed:
+At that checkpoint, focused local evidence had passed:
 
 - typed validator and Admin handler tests, including private-data non-retention;
 - isolated PostgreSQL M90/M91 exact projection, guarded down and reapply tests;
@@ -241,10 +249,11 @@ Focused local evidence currently passed:
 - capability panel and developer workbench suites, 39 tests;
 - frontend type/API/react compatibility checks and `git diff --check`.
 
-The remaining Profile 1.5 tools/tool-choice, JSON Object, repeated-prefix
-cacheRead, fixed SDK workflow and local UI changes remain independently scoped.
-No M93 Target migration, v2 typed live probe, v2 capability approval, new
-ordinary public tool call, push or CI has occurred. M93 deliberately requires a
+At that checkpoint, the remaining Profile 1.5 tools/tool-choice, JSON Object,
+repeated-prefix cacheRead, fixed SDK workflow and local UI changes remained
+independently scoped. No M93 Target migration, v2 typed live probe, v2 capability
+approval, new ordinary public tool call, push or CI had occurred. M93 deliberately
+requires a
 temporary fail-closed tool window after deployment until the actual routable
 Deployment is re-probed and approved; the UI must describe this as a probe
 contract upgrade awaiting revalidation, not a provider capability regression.

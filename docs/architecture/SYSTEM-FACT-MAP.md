@@ -8,11 +8,18 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The local candidate's executable PostgreSQL compatibility ceiling is `000093`.
+The executable source and development/test PostgreSQL compatibility ceiling is
+`000093_deepseek_function_tool_probe_contract_v2`. Development/test stable,
+canary and frontend run exact commit
+`18c7153fbdc0b1a9ed2b1d4898893f0dc687dd47`, tree
+`5721a8488c68ff4d596a4dd5ad3c57e3f639f400`, version 1.2.7; the database has
+92 ordered migration rows ending at M93. This is Target evidence for that exact
+environment, not Production or Release-state evidence.
+
 M85–M87 batch inclusion is tracked in
 [B1 scope](../tech-ref/44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26);
-M88 is the separately bounded local capability-qualification candidate described
-in the current status document. M89 preserves M88's immutable `@1.0.0` probe
+M88 adds the append-only capability probe/approval receipts and receipt-aware
+qualification authority. M89 preserves M88's immutable `@1.0.0` probe
 contract and promotes only the exact DeepSeek Flash Chat current binding to the
 new `@2.0.0` final-choice usage contract. M90 adds exact reasoning and
 reasoning-effort typed qualification bindings for DeepSeek Flash Chat. M91 adds
@@ -30,15 +37,14 @@ authority; they create only `enabled/declared` projections and do not infer live
 support, approval, routing, Release or pricing from a Profile claim. Their fixed
 probe contracts accept no administrator-supplied provider payload and retain
 only bounded response facts, never private reasoning text or arbitrary tool
-arguments. M90–M92 are deployed Target facts at the checkpoint below; M93 is a
-local candidate only. M92 can be downgraded only while no Flash/Pro Profile 1.5
+arguments. M88–M93 are deployed Target facts only for the exact artifact and
+environment recorded above. M92 can be downgraded only while no Flash/Pro Profile 1.5
 model attachment, probe or approval exists; the guard prevents an M91 binary
 from inheriting a durable Profile identity that it cannot interpret. M93
 downgrade is blocked only by retained function-tool Probe v2 evidence or
 approval, or by projection-identity drift that prevents exact restoration; the
-already-supported unchanged Profile 1.5 attachment is not a new M93
-identity. This source ceiling alone does not prove a
-deployment. The separately authorized
+already-supported unchanged Profile 1.5 attachment is not a new M93 identity.
+The separately authorized
 [B2 Target checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#b2-target-deployment-and-bounded-zero-call-acceptance--2026-08-26)
 records the 86-entry M87 ledger after a non-rolling maintenance window on
 2026-08-26. The subsequent
@@ -63,13 +69,33 @@ artifact `08d0ef8e5cee7e1bff515d5751e7a9bdd452f16f`. Its automatic CI
 maintenance deployment. It was later superseded by parser-diagnostics commit
 `56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and caller-scoped readiness UI
 commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`, then by the versioned SSE
-contract and M90/M91 capability batch. Stable, canary and frontend now use exact
-commit `c4ee78fc3eb41f144e72000d01917f41d7470bfb`, tree
-`7c8bb66f970fc772948f0da684ce74594bebb258`, version 1.2.6 and schema M92;
-canonical model-route authority remains enabled with compatibility disabled.
-M93's Probe v2/normalizer correction remains local and has no Target v2 probe or
-approval evidence. The active organization Alias resolves to public model 697, whose
-sealed active Release 23 remains bound to immutable Profile 1.5.
+contract, M90/M91 capability batch and historical M92 checkpoint
+`c4ee78fc3eb41f144e72000d01917f41d7470bfb`. The current M93 artifact and
+Target evidence are recorded at the start of this section and in the
+[completion snapshot](../tech-ref/42-model-execution-profile-capability-status.md#delivery-snapshot--deepseek-flash-chat-completion-developmenttest).
+Canonical model-route authority remains enabled with compatibility disabled.
+The active organization Alias resolves to public model 697, whose sealed active
+Release 23 remains bound to immutable Profile 1.5. M93 did not change that
+Profile, protocol, Release or Alias. Its five function-tool Probe v2 receipts
+and approvals currently qualify the actual deployment 2 generic Chat tuple.
+
+Two structural follow-ups remain deliberately deferred and do not reopen this
+runtime milestone. First, Probe v2 proves its typed capability sentinel and
+usage after the shared provider normalizer, while public delivery separately
+enforces the complete canonical response shape. A probe success followed by a
+shape-withheld public response on the same exact tuple is a current blocker;
+claiming that `qualified` alone proves complete delivery, or adding another
+provider-specific permissive envelope parser, requires a shared pure delivery-
+shape validator first. Any changed acceptance set requires a new probe-contract
+version and must not reinterpret v2 receipts. Second, new-provider onboarding
+must not add entries to `modelcapabilityqualification.preferredOperationProtocols`.
+Before another preferred mapping is needed, move that choice into an existing
+typed Profile/operation/surface identity authority; introduce a broader Provider
+Surface Manifest only if the existing authorities cannot express the required
+region, authentication, method, path and surface/version identity. These are
+bounded implementation triggers, not active lessons or authorization for a
+platform framework project.
+
 Following explicit authorization to create a test account and test through the
 UI, user 38 was created as customer 2's ordinary member / project 86 user and
 successfully logged in. UI authoring/first activation created Release 22,
