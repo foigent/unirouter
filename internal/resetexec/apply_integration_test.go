@@ -180,6 +180,61 @@ SELECT COUNT(*) FROM runtime_change_releases WHERE id=$1`, authoredReleaseID).Sc
 	}
 }
 
+func TestResetInspectBuildIncludesM88ProtectedCapabilityContractsIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	seedResetIntegrationFixture(t, pool)
+
+	target := resetplan.TargetIdentity{
+		RuntimeVersion: "v2.0.2",
+		RuntimeCommit:  strings.Repeat("a", 40),
+		SourceTree:     strings.Repeat("b", 40),
+	}
+	redisObservation := resetplan.RedisObservation{Prefixes: []resetplan.RedisPrefixObservation{{Prefix: "limit:{"}}}
+	baseline, err := Inspect(ctx, pool, redisObservation)
+	require.NoError(t, err)
+	baseline.ExpectedMigrationVersions = resetArtifactSchemaLedger(t)
+	baselinePlan, err := resetplan.Build(baseline, target, "source-old", "source-new", time.Unix(1, 0))
+	require.NoError(t, err)
+	require.Len(t, baselinePlan.Protected.Tables, 10)
+
+	protectedByName := make(map[string]resetplan.ContentDigest, len(baselinePlan.Protected.Tables))
+	for _, digest := range baselinePlan.Protected.Tables {
+		protectedByName[digest.Name] = digest
+	}
+	require.Contains(t, protectedByName, "model_capability_probe_contract_bindings")
+	require.Contains(t, protectedByName, "model_capability_current_probe_contracts")
+	require.EqualValues(t, 20, protectedByName["model_capability_probe_contract_bindings"].RowCount)
+	require.EqualValues(t, 18, protectedByName["model_capability_current_probe_contracts"].RowCount)
+
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, `ALTER TABLE model_capability_probe_contract_bindings
+		DISABLE TRIGGER model_capability_probe_contract_bindings_immutable`)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `UPDATE model_capability_probe_contract_bindings
+		SET expected_upstream_model='deepseek-v4-flash-drift'
+		WHERE probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'`)
+	require.NoError(t, err)
+
+	drifted, err := Inspect(ctx, tx, redisObservation)
+	require.NoError(t, err)
+	drifted.ExpectedMigrationVersions = resetArtifactSchemaLedger(t)
+	driftedPlan, err := resetplan.Build(drifted, target, "source-old", "source-new", time.Unix(1, 0))
+	require.NoError(t, err)
+	require.Len(t, driftedPlan.Protected.Tables, 10)
+	driftedByName := make(map[string]resetplan.ContentDigest, len(driftedPlan.Protected.Tables))
+	for _, digest := range driftedPlan.Protected.Tables {
+		driftedByName[digest.Name] = digest
+	}
+	require.NotEqual(t,
+		protectedByName["model_capability_probe_contract_bindings"].SHA256,
+		driftedByName["model_capability_probe_contract_bindings"].SHA256,
+	)
+	require.NotEqual(t, baselinePlan.ScopeSHA256, driftedPlan.ScopeSHA256)
+}
+
 type resetAuthoringSnapshotBuilder struct{}
 
 func (resetAuthoringSnapshotBuilder) BuildRuntimeChangeSnapshots(

@@ -125,6 +125,229 @@ func TestHandlePublicNonStreamUsesNarrowRuntimeAndCanonicalDelivery(t *testing.T
 	}
 }
 
+func TestHandlePublicNonStreamDispatchesExactResponsesV2StreamWithoutMappedModelDisclosure(t *testing.T) {
+	const requestedModel = "public-text"
+	const resolvedModel = "catalog-text"
+	key := []byte("0123456789abcdef0123456789abcdef")
+	encrypted, err := auth.EncryptKey([]byte("provider-secret"), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := publicRuntimePlanForProfile(t, 1, "openai.gpt-5.6-sol.responses", "1.3.0")
+	plan.PublicModel = resolvedModel
+	plan.Routes[0].EncryptedSecret = encrypted
+	planner := &executionPlannerStub{plan: plan}
+	coordinator := &publicHandlerCoordinator{executionCoordinatorStub: &executionCoordinatorStub{}}
+	var begins, persists, finishes atomic.Int64
+	billingService := &mockBilling{
+		freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
+			return &billing.FreezeResult{Success: true}, nil
+		},
+		beginStreamFn: func(context.Context, billing.StreamDeliveryStart) error {
+			begins.Add(1)
+			return nil
+		},
+		persistUsageFn: func(_ context.Context, request billing.SettleRequest) error {
+			persists.Add(1)
+			if request.StreamFence == nil || request.UsageAuthority != "provider_reported" {
+				t.Fatalf("usage=%+v", request)
+			}
+			return nil
+		},
+		finishStreamFn: func(_ context.Context, _ billing.StreamDeliveryStart, state, _ string) error {
+			finishes.Add(1)
+			if state != billing.StreamLeaseStateCompleted {
+				t.Fatalf("state=%s", state)
+			}
+			return nil
+		},
+	}
+	relay := NewRelay(executionTestDB(), nil, nil, billingService, nil, key)
+	if err := relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, planner, coordinator, routingpolicy.Default()); err != nil {
+		t.Fatal(err)
+	}
+	service, err := guardrail.NewService(&testutil.MockDB{}, nil, []byte("public-handler-stream-guardrail-secret"), guardrail.DefaultOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	relay.SetGuardrail(service)
+	var providerBody string
+	relay.providerHTTPDoer = publicNonStreamDoerFunc(func(request *http.Request) (*http.Response, error) {
+		body, readErr := io.ReadAll(request.Body)
+		if readErr != nil {
+			return nil, readErr
+		}
+		providerBody = string(body)
+		return &http.Response{
+			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(publicResponsesSSE("safe", " answer"))),
+		}, nil
+	})
+
+	recorder := httptest.NewRecorder()
+	publicHandlerStreamRequest(t, relay, requestedModel, modelauthz.Decision{
+		ContractVersion: modelauthz.ContractVersion, Allowed: true, Endpoint: modeloperation.PathResponses,
+		RequestedModel: requestedModel, ResolvedModel: resolvedModel, RuntimeMutation: "none",
+	}, recorder)
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Content-Type") != "text/event-stream" ||
+		!strings.Contains(recorder.Body.String(), "event: response.completed") ||
+		!strings.Contains(recorder.Body.String(), `"model":"`+requestedModel+`"`) ||
+		strings.Contains(recorder.Body.String(), "provider-private-model") ||
+		!strings.Contains(providerBody, `"stream":true`) || !strings.Contains(providerBody, `"model":"provider-private-model"`) ||
+		begins.Load() != 1 || persists.Load() != 1 || finishes.Load() != 1 {
+		t.Fatalf("status=%d headers=%v customer=%s provider=%s begin=%d persist=%d finish=%d",
+			recorder.Code, recorder.Header(), recorder.Body.String(), providerBody, begins.Load(), persists.Load(), finishes.Load())
+	}
+}
+
+func TestHandlePublicNonStreamDispatchesExactMessagesV2StreamWithoutMappedModelDisclosure(t *testing.T) {
+	const requestedModel = "public-text"
+	const resolvedModel = "catalog-text"
+	key := []byte("0123456789abcdef0123456789abcdef")
+	encrypted, err := auth.EncryptKey([]byte("provider-secret"), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := publicRuntimePlanForProfileOperation(
+		t, 1, "anthropic.claude-sonnet-5.api", "1.3.0", modeloperation.IDMessages,
+	)
+	plan.PublicModel = resolvedModel
+	plan.Routes[0].EncryptedSecret = encrypted
+	planner := &executionPlannerStub{plan: plan}
+	coordinator := &publicHandlerCoordinator{executionCoordinatorStub: &executionCoordinatorStub{}}
+	var begins, persists, finishes atomic.Int64
+	billingService := &mockBilling{
+		freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
+			return &billing.FreezeResult{Success: true}, nil
+		},
+		beginStreamFn: func(context.Context, billing.StreamDeliveryStart) error {
+			begins.Add(1)
+			return nil
+		},
+		persistUsageFn: func(_ context.Context, request billing.SettleRequest) error {
+			persists.Add(1)
+			if request.StreamFence == nil || request.UsageAuthority != "provider_reported" ||
+				request.CacheUsageSchema != "anthropic.prompt_cache.v1" {
+				t.Fatalf("usage=%+v", request)
+			}
+			return nil
+		},
+		finishStreamFn: func(_ context.Context, _ billing.StreamDeliveryStart, state, reason string) error {
+			finishes.Add(1)
+			if state != billing.StreamLeaseStateCompleted || reason != "message_completed" {
+				t.Fatalf("state=%s reason=%s", state, reason)
+			}
+			return nil
+		},
+	}
+	relay := NewRelay(executionTestDB(), nil, nil, billingService, nil, key)
+	if err := relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, planner, coordinator, routingpolicy.Default()); err != nil {
+		t.Fatal(err)
+	}
+	service, err := guardrail.NewService(
+		&testutil.MockDB{}, nil, []byte("public-handler-messages-stream-guardrail-secret"), guardrail.DefaultOptions(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relay.SetGuardrail(service)
+	var providerBody string
+	relay.providerHTTPDoer = publicNonStreamDoerFunc(func(request *http.Request) (*http.Response, error) {
+		body, readErr := io.ReadAll(request.Body)
+		if readErr != nil {
+			return nil, readErr
+		}
+		providerBody = string(body)
+		return &http.Response{
+			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(publicAnthropicMessagesSSE("safe", " answer"))),
+		}, nil
+	})
+
+	recorder := httptest.NewRecorder()
+	publicHandlerOperationStreamRequest(t, relay, modeloperation.IDMessages, requestedModel, modelauthz.Decision{
+		ContractVersion: modelauthz.ContractVersion, Allowed: true, Endpoint: modeloperation.PathMessages,
+		RequestedModel: requestedModel, ResolvedModel: resolvedModel, RuntimeMutation: "none",
+	}, `true`, recorder)
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Content-Type") != "text/event-stream" ||
+		!strings.Contains(recorder.Body.String(), "event: message_stop") ||
+		!strings.Contains(recorder.Body.String(), `"model":"`+requestedModel+`"`) ||
+		strings.Contains(recorder.Body.String(), "provider-private-model") ||
+		!strings.Contains(providerBody, `"stream":true`) ||
+		!strings.Contains(providerBody, `"model":"provider-private-model"`) ||
+		begins.Load() != 1 || persists.Load() != 1 || finishes.Load() != 1 {
+		t.Fatalf("status=%d headers=%v customer=%s provider=%s begin=%d persist=%d finish=%d",
+			recorder.Code, recorder.Header(), recorder.Body.String(), providerBody,
+			begins.Load(), persists.Load(), finishes.Load())
+	}
+}
+
+func TestHandlePublicNonStreamRejectsInvalidMessagesStreamTypeBeforePlanOrFreeze(t *testing.T) {
+	planner := &executionPlannerStub{plan: publicRuntimePlanForProfileOperation(
+		t, 1, "anthropic.claude-sonnet-5.api", "1.3.0", modeloperation.IDMessages,
+	)}
+	coordinator := &publicHandlerCoordinator{executionCoordinatorStub: &executionCoordinatorStub{}}
+	var freezes, providerCalls atomic.Int64
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{
+		freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
+			freezes.Add(1)
+			return &billing.FreezeResult{Success: true}, nil
+		},
+	}, nil, []byte("0123456789abcdef0123456789abcdef"))
+	if err := relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, planner, coordinator, routingpolicy.Default()); err != nil {
+		t.Fatal(err)
+	}
+	relay.providerHTTPDoer = publicNonStreamDoerFunc(func(*http.Request) (*http.Response, error) {
+		providerCalls.Add(1)
+		return nil, nil
+	})
+	recorder := httptest.NewRecorder()
+	publicHandlerOperationStreamRequest(t, relay, modeloperation.IDMessages, "public-text", modelauthz.Decision{
+		ContractVersion: modelauthz.ContractVersion, Allowed: true, Endpoint: modeloperation.PathMessages,
+		RequestedModel: "public-text", ResolvedModel: "public-text", RuntimeMutation: "none",
+	}, `"true"`, recorder)
+	planner.mu.Lock()
+	plans := len(planner.requests)
+	planner.mu.Unlock()
+	if recorder.Code != http.StatusBadRequest || plans != 0 || freezes.Load() != 0 || providerCalls.Load() != 0 ||
+		!strings.Contains(recorder.Body.String(), `"type":"invalid_request_error"`) {
+		t.Fatalf("status=%d plans=%d freeze=%d provider=%d body=%s",
+			recorder.Code, plans, freezes.Load(), providerCalls.Load(), recorder.Body.String())
+	}
+}
+
+func TestHandlePublicNonStreamPreservesHistoricalMessagesV1StreamRejection(t *testing.T) {
+	planner := &executionPlannerStub{plan: publicRuntimePlanForProfileOperation(
+		t, 1, "anthropic.claude-sonnet-5.api", "1.2.0", modeloperation.IDMessages,
+	)}
+	coordinator := &publicHandlerCoordinator{executionCoordinatorStub: &executionCoordinatorStub{}}
+	var freezes, providerCalls atomic.Int64
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{
+		freezeFn: func(context.Context, billing.FreezeRequest) (*billing.FreezeResult, error) {
+			freezes.Add(1)
+			return &billing.FreezeResult{Success: true}, nil
+		},
+	}, nil, []byte("0123456789abcdef0123456789abcdef"))
+	if err := relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, planner, coordinator, routingpolicy.Default()); err != nil {
+		t.Fatal(err)
+	}
+	relay.providerHTTPDoer = publicNonStreamDoerFunc(func(*http.Request) (*http.Response, error) {
+		providerCalls.Add(1)
+		return nil, nil
+	})
+	recorder := httptest.NewRecorder()
+	publicHandlerOperationStreamRequest(t, relay, modeloperation.IDMessages, "public-text", modelauthz.Decision{
+		ContractVersion: modelauthz.ContractVersion, Allowed: true, Endpoint: modeloperation.PathMessages,
+		RequestedModel: "public-text", ResolvedModel: "public-text", RuntimeMutation: "none",
+	}, `true`, recorder)
+	if recorder.Code != http.StatusBadRequest || freezes.Load() != 0 || providerCalls.Load() != 0 ||
+		coordinator.publicCalls.Load() != 0 ||
+		!strings.Contains(recorder.Body.String(), `"type":"invalid_request_error"`) {
+		t.Fatalf("status=%d freeze=%d provider=%d authorize=%d body=%s",
+			recorder.Code, freezes.Load(), providerCalls.Load(), coordinator.publicCalls.Load(), recorder.Body.String())
+	}
+}
+
 func TestHandlePublicNonStreamExactRuntimeFencePrecedesPlanFreezeAndProvider(t *testing.T) {
 	planner := &executionPlannerStub{plan: publicRuntimePlan(t, 1)}
 	legacyOnlyCoordinator := &executionCoordinatorStub{}
@@ -255,6 +478,55 @@ func publicHandlerRequestWithDecision(
 	request = request.WithContext(ctx)
 	budget := payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits())
 	handler := payloadpolicy.RequestMiddlewareWithMax(budget, 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		relay.HandlePublicNonStream(w, r, operation)
+	}))
+	handler.ServeHTTP(recorder, request)
+}
+
+func publicHandlerStreamRequest(
+	t *testing.T,
+	relay *Relay,
+	requestedModel string,
+	decision modelauthz.Decision,
+	recorder http.ResponseWriter,
+) {
+	t.Helper()
+	publicHandlerOperationStreamRequest(
+		t, relay, modeloperation.IDResponses, requestedModel, decision, `true`, recorder,
+	)
+}
+
+func publicHandlerOperationStreamRequest(
+	t *testing.T,
+	relay *Relay,
+	operation modeloperation.ID,
+	requestedModel string,
+	decision modelauthz.Decision,
+	streamValue string,
+	recorder http.ResponseWriter,
+) {
+	t.Helper()
+	definition, known := modeloperation.LookupID(operation)
+	if !known {
+		t.Fatalf("unknown operation %s", operation)
+	}
+	body := `{"model":"` + requestedModel + `","input":"hello","max_output_tokens":64,"stream":` + streamValue + `}`
+	if operation == modeloperation.IDMessages {
+		body = `{"model":"` + requestedModel + `","max_tokens":64,"stream":` + streamValue + `,"messages":[{"role":"user","content":"hello"}]}`
+	}
+	request := httptest.NewRequest(http.MethodPost, definition.Path, strings.NewReader(body))
+	apiKey := &models.ApiKey{ID: 13, OrgID: 11, Status: "active"}
+	ctx := context.WithValue(request.Context(), middleware.CtxAPIKey, apiKey)
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(11))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(13))
+	ctx = context.WithValue(ctx, middleware.CtxRequestID, "req-public-handler-stream")
+	ctx = context.WithValue(ctx, middleware.CtxModelAlias, requestedModel)
+	ctx = modelauthz.WithDecision(ctx, decision)
+	request = request.WithContext(ctx)
+	budget := payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits())
+	handler := payloadpolicy.RequestMiddlewareWithMax(
+		budget, 8*payloadpolicy.MiB, middleware.GetOrgIDFromContext,
+	)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		relay.HandlePublicNonStream(w, r, operation)
 	}))
 	handler.ServeHTTP(recorder, request)

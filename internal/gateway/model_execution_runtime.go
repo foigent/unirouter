@@ -14,12 +14,14 @@ import (
 
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
@@ -45,14 +47,15 @@ type ModelExecutionCoordinator interface {
 }
 
 type modelExecutionRuntime struct {
-	mode              modelrouting.Mode
-	planner           ModelRoutePlanner
-	coordinator       ModelExecutionCoordinator
-	publicCoordinator publicModelExecutionCoordinator
-	registry          *adapters.Registry
-	publicRegistry    *endpointprotocol.PublicNonStreamRegistry
-	policy            routingpolicy.Config
-	leaseInterval     time.Duration
+	mode                 modelrouting.Mode
+	planner              ModelRoutePlanner
+	coordinator          ModelExecutionCoordinator
+	publicCoordinator    publicModelExecutionCoordinator
+	registry             *adapters.Registry
+	publicRegistry       *endpointprotocol.PublicNonStreamRegistry
+	publicStreamRegistry *endpointprotocol.PublicStreamRegistry
+	policy               routingpolicy.Config
+	leaseInterval        time.Duration
 }
 
 // SetModelExecutionRuntime switches Chat and Embeddings to the canonical
@@ -82,7 +85,8 @@ func (relay *Relay) SetModelExecutionRuntime(
 	relay.modelExecution = &modelExecutionRuntime{
 		mode: mode, planner: planner, coordinator: coordinator, publicCoordinator: publicCoordinator,
 		registry: adapters.DefaultRegistry(), publicRegistry: endpointprotocol.NewPublicNonStreamRegistry(),
-		policy: policy, leaseInterval: leaseInterval,
+		publicStreamRegistry: endpointprotocol.NewPublicStreamRegistry(),
+		policy:               policy, leaseInterval: leaseInterval,
 	}
 	return nil
 }
@@ -98,14 +102,19 @@ func (relay *Relay) providerClient(timeout time.Duration) adapters.HTTPDoer {
 	if relay != nil && relay.providerHTTPDoer != nil {
 		return relay.providerHTTPDoer
 	}
-	return &http.Client{Timeout: timeout}
+	// A redirect would dispatch outside the frozen route identity and provider
+	// attempt ledger. Preserve the original response for normal failure handling.
+	return &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
 }
 
 type preparedModelExecutionBatch struct {
-	plan            modelrouting.Plan
-	routes          []preparedModelExecutionRoute
-	limits          modelExecutionRequestLimits
-	profileEvidence modelExecutionProfileEvidence
+	plan                modelrouting.Plan
+	routes              []preparedModelExecutionRoute
+	limits              modelExecutionRequestLimits
+	profileEvidence     modelExecutionProfileEvidence
+	providerRequestBody []byte
 }
 
 var (
@@ -113,6 +122,8 @@ var (
 	errModelExecutionContextLimitExceeded  = errors.New("model execution context limit exceeded")
 	errModelExecutionOutputLimitRequired   = errors.New("model execution output limit is required")
 	errModelExecutionProfileRequestInvalid = errors.New("model execution profile request is invalid")
+	errProcessingTierContractUnavailable   = errors.New("processing tier customer charge contract is unavailable")
+	errProcessingTierStateUnavailable      = errors.New("processing tier billing state is unavailable")
 )
 
 // legacyImplicitOutputLimitV1 preserves the pre-catalog compatibility
@@ -158,7 +169,7 @@ func (limits modelExecutionRequestLimits) resolveOutputReservation(plan modelrou
 	if resolved.ExplicitOutputTokens != nil {
 		resolved.EstimatedOutputTokens = *resolved.ExplicitOutputTokens
 	} else {
-		resolved.ProviderOutputLimit = plan.PublicOutputLimit
+		resolved.ProviderOutputLimit = plan.RequestDefaultOutputLimit
 		if resolved.ProviderOutputLimit <= 0 && plan.AuthorityMode == modelrouting.ModeLegacy {
 			resolved.ProviderOutputLimit = serverDerivedLegacyOutputLimit(plan, requiredCapabilities)
 		}
@@ -196,14 +207,15 @@ func providerOutputLimitField(plan modelrouting.Plan, route modelrouting.Route, 
 	if adapterType != adapters.TypeOpenAICompatible && adapterType != adapters.TypeAzureOpenAI {
 		return "", false
 	}
-	// MiniMax's current OpenAI-compatible contract recommends
-	// max_completion_tokens for M3 and M2.x, including reasoning requests. The
-	// immutable model profile is the authority; aliases and provider labels are
-	// deliberately ignored here.
-	if strings.TrimSpace(plan.ModelProtocolProfile) == "protocol.minimax-openai-chat.v2" {
-		return "max_completion_tokens", true
+	if contract, ok := modelprofile.ResolveChatProtocolContract(plan.ModelProtocolProfile); ok && contract.OutputLimitModeled {
+		if contract.OutputLimitField == "max_tokens" || contract.OutputLimitField == "max_completion_tokens" {
+			return contract.OutputLimitField, true
+		}
+		return "", false
 	}
-	if slices.Contains(requiredCapabilities, modelCapabilityReasoning) {
+	if slices.Contains(requiredCapabilities, modelCapabilityReasoning) ||
+		slices.Contains(requiredCapabilities, modelprofile.CapabilityReasoningEffort) ||
+		slices.Contains(requiredCapabilities, modelprofile.CapabilityReasoningBudget) {
 		return "", false
 	}
 
@@ -298,12 +310,22 @@ func modelExecutionLimitErrorDetails(err error) (code, message string, ok bool) 
 	}
 }
 
-func (relay *Relay) prepareModelExecutionRoutes(
+func processingTierAdmissionErrorDetails(err error) (status int, code, message string, ok bool) {
+	switch {
+	case errors.Is(err, errProcessingTierContractUnavailable):
+		return http.StatusConflict, "billing_error.processing_tier_contract_unavailable", "The requested processing tier is not available for customer charging in the current billing mode", true
+	case errors.Is(err, errProcessingTierStateUnavailable):
+		return http.StatusServiceUnavailable, "billing_error.processing_tier_state_unavailable", "Processing-tier billing readiness could not be verified", true
+	default:
+		return 0, "", "", false
+	}
+}
+
+func (relay *Relay) prepareModelExecutionPlan(
 	ctx context.Context,
 	operation modeloperation.ID,
 	endpoint adapters.Endpoint,
 	publicModel, requestedModel, requestID string,
-	requiredCapabilities []string,
 	limits modelExecutionRequestLimits,
 	body []byte,
 	requestStart time.Time,
@@ -312,10 +334,44 @@ func (relay *Relay) prepareModelExecutionRoutes(
 	if runtime == nil || runtime.planner == nil || runtime.registry == nil {
 		return nil, fmt.Errorf("model execution runtime is not configured")
 	}
+	var profileEvidence modelExecutionProfileEvidence
+	var normalizedBody []byte
 	plan, err := runtime.planner.Plan(ctx, modelrouting.Request{
 		Mode: runtime.mode, CustomerOrgID: middleware.GetOrgIDFromContext(ctx),
 		PublicModel: publicModel, ModelOperationID: string(operation),
-		RequiredCapabilities: slices.Clone(requiredCapabilities), SelectionKey: requestID,
+		SelectionKey: requestID,
+		DeriveInvocationCapabilities: func(profile modelprofile.Profile) ([]modelrouting.CapabilityRequirement, error) {
+			if endpoint != adapters.EndpointChatCompletions {
+				return nil, nil
+			}
+			profilePlan := modelExecutionPlanForProfile(profile)
+			evidence, validationErr := validateChatExecutionProfileRequest(body, profilePlan)
+			if validationErr != nil {
+				return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, validationErr)
+			}
+			if replayErr := validatePreservedAssistantToolHistory(ctx, body, profilePlan.ReasoningProfile); replayErr != nil {
+				return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, replayErr)
+			}
+			normalized, normalizationErr := evidence.normalizeProviderRequest(body)
+			if normalizationErr != nil {
+				return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, normalizationErr)
+			}
+			if len(evidence.AdmissionShadowBody) > 0 {
+				normalizedShadow, shadowErr := evidence.normalizeProviderRequest(evidence.AdmissionShadowBody)
+				if shadowErr != nil {
+					return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, shadowErr)
+				}
+				evidence.AdmissionShadowBody = normalizedShadow
+			}
+			evidence.bindAdmissionBody(normalized)
+			requirements, capabilityErr := invocationCapabilityRequirementsForChat(profile, evidence, body)
+			if capabilityErr != nil {
+				return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, capabilityErr)
+			}
+			profileEvidence = evidence
+			normalizedBody = normalized
+			return requirements, nil
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -323,29 +379,47 @@ func (relay *Relay) prepareModelExecutionRoutes(
 	if err := requireModelExecutionDispatchWired(operation, plan); err != nil {
 		return nil, err
 	}
-	profileEvidence := modelExecutionProfileEvidence{}
 	if endpoint == adapters.EndpointChatCompletions {
-		profileEvidence, err = validateChatExecutionProfileRequest(body, plan)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, err)
+		if normalizedBody == nil || profileEvidence.ExecutionProfileID != plan.ExecutionProfileID ||
+			profileEvidence.ExecutionProfileVersion != plan.ExecutionProfileVersion {
+			return nil, fmt.Errorf("%w: exact profile normalization snapshot is unavailable", errModelExecutionProfileRequestInvalid)
 		}
-		body, err = profileEvidence.normalizeProviderRequest(body)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", errModelExecutionProfileRequestInvalid, err)
-		}
-		profileAdmission, admissionErr := estimateChatAdmissionForPlan(body, plan)
+		body = normalizedBody
+		profileAdmission, admissionErr := estimateChatAdmissionForValidatedPlan(body, plan, profileEvidence)
 		if admissionErr != nil {
 			return nil, admissionErr
 		}
 		limits.EstimatedInputTokens = profileAdmission.InputTokens
 		limits.EstimateVersion = profileAdmission.Version
 	}
-	limits, err = limits.resolveOutputReservation(plan, requiredCapabilities)
+	if err := relay.validateProcessingTierBillingReadiness(ctx, publicModel, profileEvidence); err != nil {
+		return nil, err
+	}
+	limits, err = limits.resolveOutputReservation(plan, plan.RequiredCapabilities)
 	if err != nil {
 		return nil, err
 	}
-	batch := &preparedModelExecutionBatch{plan: plan, limits: limits, profileEvidence: profileEvidence}
-	maximumInputEstimate := limits.EstimatedInputTokens
+	return &preparedModelExecutionBatch{
+		plan: plan, limits: limits, profileEvidence: profileEvidence,
+		providerRequestBody: slices.Clone(body),
+	}, nil
+}
+
+func (relay *Relay) materializeModelExecutionRoutes(
+	ctx context.Context,
+	endpoint adapters.Endpoint,
+	publicModel, requestedModel, requestID string,
+	requestStart time.Time,
+	batch *preparedModelExecutionBatch,
+) error {
+	runtime := relay.modelExecution
+	if runtime == nil || runtime.registry == nil || batch == nil {
+		return fmt.Errorf("model execution route materialization is not configured")
+	}
+	plan := batch.plan
+	limits := batch.limits
+	body := batch.providerRequestBody
+	maximumInputEstimate := batch.limits.EstimatedInputTokens
 	limitExcluded := 0
 	outputLimitUnsupported := 0
 	for index := range plan.Routes {
@@ -364,19 +438,30 @@ func (relay *Relay) prepareModelExecutionRoutes(
 		routeLimits := limits
 		providerDownstreamBody := body
 		if limits.ProviderOutputLimit > 0 && endpoint == adapters.EndpointChatCompletions {
-			field, supported := providerOutputLimitField(plan, route, requiredCapabilities)
+			field, supported := providerOutputLimitField(plan, route, plan.RequiredCapabilities)
 			if !supported {
 				outputLimitUnsupported++
 				relay.recordTraceEvent(ctx, requestID, "provider.output_limit_unsupported", "provider", "error", publicModel, requestedModel, &compat, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"failure_kind": "configuration"})
 				continue
 			}
-			providerDownstreamBody, err = injectChatOutputLimit(body, field, limits.ProviderOutputLimit)
-			if err != nil {
-				return nil, err
+			var injectErr error
+			providerDownstreamBody, injectErr = injectChatOutputLimit(body, field, limits.ProviderOutputLimit)
+			if injectErr != nil {
+				return injectErr
 			}
-			injectedAdmission, admissionErr := estimateChatAdmissionForPlan(providerDownstreamBody, plan)
+			injectedEvidence := batch.profileEvidence
+			if len(injectedEvidence.AdmissionShadowBody) > 0 {
+				injectedEvidence.AdmissionShadowBody, injectErr = injectChatOutputLimit(
+					injectedEvidence.AdmissionShadowBody, field, limits.ProviderOutputLimit,
+				)
+				if injectErr != nil {
+					return injectErr
+				}
+			}
+			injectedEvidence.bindAdmissionBody(providerDownstreamBody)
+			injectedAdmission, admissionErr := estimateChatAdmissionForValidatedPlan(providerDownstreamBody, plan, injectedEvidence)
 			if admissionErr != nil {
-				return nil, admissionErr
+				return admissionErr
 			}
 			if injectedAdmission.InputTokens > routeLimits.EstimatedInputTokens {
 				routeLimits.EstimatedInputTokens = injectedAdmission.InputTokens
@@ -431,14 +516,73 @@ func (relay *Relay) prepareModelExecutionRoutes(
 	batch.limits.EstimatedInputTokens = maximumInputEstimate
 	if len(batch.routes) == 0 {
 		if len(plan.Routes) > 0 && limitExcluded == len(plan.Routes) {
-			return nil, errModelExecutionContextLimitExceeded
+			return errModelExecutionContextLimitExceeded
 		}
 		if len(plan.Routes) > 0 && outputLimitUnsupported+limitExcluded == len(plan.Routes) && outputLimitUnsupported > 0 {
-			return nil, errModelExecutionOutputLimitRequired
+			return errModelExecutionOutputLimitRequired
 		}
-		return nil, fmt.Errorf("%w: no locally executable route", modelrouting.ErrNoRoute)
+		return fmt.Errorf("%w: no locally executable route", modelrouting.ErrNoRoute)
+	}
+	return nil
+}
+
+func (relay *Relay) prepareModelExecutionRoutes(
+	ctx context.Context,
+	operation modeloperation.ID,
+	endpoint adapters.Endpoint,
+	publicModel, requestedModel, requestID string,
+	limits modelExecutionRequestLimits,
+	body []byte,
+	requestStart time.Time,
+) (*preparedModelExecutionBatch, error) {
+	batch, err := relay.prepareModelExecutionPlan(
+		ctx, operation, endpoint, publicModel, requestedModel, requestID,
+		limits, body, requestStart,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := relay.materializeModelExecutionRoutes(
+		ctx, endpoint, publicModel, requestedModel, requestID, requestStart, batch,
+	); err != nil {
+		return nil, err
 	}
 	return batch, nil
+}
+
+// validateProcessingTierBillingReadiness keeps explicit non-standard provider
+// tiers out of customer wallet authorization until CustomerChargeQuote can
+// select the normalized tier. It runs before secret decryption and Freeze.
+func (relay *Relay) validateProcessingTierBillingReadiness(
+	ctx context.Context,
+	publicModel string,
+	evidence modelExecutionProfileEvidence,
+) error {
+	if evidence.ProcessingTierFieldPresent && evidence.ProcessingTierPolicy == "" {
+		return errProcessingTierContractUnavailable
+	}
+	if !evidence.ProcessingTierExplicit || evidence.ProcessingTierEffective == modelprofile.ProcessingTierStandard {
+		return nil
+	}
+	if evidence.ProcessingTierEffective != modelprofile.ProcessingTierFlex &&
+		evidence.ProcessingTierEffective != modelprofile.ProcessingTierPriority {
+		return fmt.Errorf("%w: unsupported normalized tier %q", errModelExecutionProfileRequestInvalid, evidence.ProcessingTierEffective)
+	}
+	if relay == nil || relay.billingAdmissionReadiness == nil {
+		return errProcessingTierStateUnavailable
+	}
+	readiness, err := relay.billingAdmissionReadiness.InspectAdmissionReadiness(
+		ctx,
+		middleware.GetOrgIDFromContext(ctx),
+		publicModel,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errProcessingTierStateUnavailable, err)
+	}
+	if readiness.BillingMode != billing.BillingModeCostObservation {
+		return fmt.Errorf("%w: billing mode %s", errProcessingTierContractUnavailable, readiness.BillingMode)
+	}
+	return nil
 }
 
 func compatibilityRouteFromExecutionPlan(plan modelrouting.Plan, route modelrouting.Route) RouteResult {
@@ -475,8 +619,27 @@ func compatibilityRouteFromExecutionPlan(plan modelrouting.Plan, route modelrout
 		RuntimeReleaseRef: plan.RuntimeReleaseRef, RuntimeStage: plan.RuntimeStage,
 		ExecutionProfileID: plan.ExecutionProfileID, ExecutionProfileVersion: plan.ExecutionProfileVersion,
 		ReasoningProfile: plan.ReasoningProfile, CacheUsageProfile: plan.CacheUsageProfile,
-		ModelProtocolProfile: plan.ModelProtocolProfile,
+		ModelProtocolProfile:       plan.ModelProtocolProfile,
+		PlanCapabilityRequirements: cloneGatewayPlanCapabilityRequirements(plan.CapabilityRequirements),
 	}
+}
+
+func cloneGatewayPlanCapabilityRequirements(requirements []modelrouting.CapabilityRequirement) []modelrouting.CapabilityRequirement {
+	if len(requirements) == 0 {
+		return nil
+	}
+	cloned := make([]modelrouting.CapabilityRequirement, len(requirements))
+	for index, requirement := range requirements {
+		cloned[index] = requirement
+		cloned[index].Origins = slices.Clone(requirement.Origins)
+		if requirement.FunctionToolChoice != nil {
+			cloned[index].FunctionToolChoice = &modelrouting.FunctionToolChoiceConstraint{
+				DeclaredFunctionNames: slices.Clone(requirement.FunctionToolChoice.DeclaredFunctionNames),
+				SelectedFunctionName:  requirement.FunctionToolChoice.SelectedFunctionName,
+			}
+		}
+	}
+	return cloned
 }
 
 type executionDecisionContextKey struct{}
@@ -630,15 +793,21 @@ const (
 	modelCapabilityParallelToolCalls = "parallel_tool_calls"
 	modelCapabilityJSONObject        = "json_object"
 	modelCapabilityJSONSchema        = "json_schema"
+	modelCapabilityStrictJSONSchema  = "strict_json_schema"
 	modelCapabilityReasoning         = "reasoning"
 	modelCapabilityVision            = "vision"
 	modelCapabilityVideo             = "video"
+	modelCapabilityFiles             = "files"
 	modelCapabilityAudio             = "audio"
 	modelCapabilityStreaming         = "streaming"
+	modelCapabilityToolStream        = "tool_stream"
 	modelCapabilityPromptCache       = "prompt_cache"
+	modelCapabilityExplicitCache     = "explicit_prompt_cache"
 	modelCapabilityPartialMode       = "partial_mode"
 	modelCapabilityDynamicTools      = "dynamic_tools"
 	modelCapabilityBuiltinWebSearch  = "builtin_web_search"
+	modelCapabilityBuiltinSearchReq  = "builtin_web_search_request"
+	modelCapabilityServiceTier       = "service_tier"
 )
 
 func (relay *Relay) applyRouteHealth(ctx context.Context, _ *RouteResult, action executionHealthAction) error {
@@ -719,6 +888,197 @@ func (relay *Relay) maintainExecutionLease(
 	}
 }
 
+func modelExecutionPlanForProfile(profile modelprofile.Profile) modelrouting.Plan {
+	return modelrouting.Plan{
+		ExecutionProfileID:      profile.ID,
+		ExecutionProfileVersion: profile.Version,
+		ReasoningProfile:        profile.ReasoningProfile,
+		CacheUsageProfile:       profile.CacheUsageProfile,
+		ModelProtocolProfile:    profile.ProtocolProfile,
+	}
+}
+
+func profileDefaultReasoningIsActive(profile modelprofile.Profile) bool {
+	// Historical generic Chat Profiles remain addressable but are never
+	// retroactively assigned provider-default capability semantics.
+	if profile.LegacyProtocolAuthority {
+		return false
+	}
+	contract, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
+	if !ok {
+		return false
+	}
+	switch contract.Mode {
+	case modelprofile.ReasoningModeAlwaysOn, modelprofile.ReasoningModeRequired:
+		return true
+	}
+	if contract.ToggleControl.Field != "" {
+		return reasoningControlProviderDefaultActive(contract.ToggleControl)
+	}
+	return reasoningControlProviderDefaultActive(contract.EffortControl)
+}
+
+func invocationCapabilityRequirementsForChat(
+	profile modelprofile.Profile,
+	evidence modelExecutionProfileEvidence,
+	body []byte,
+) ([]modelrouting.CapabilityRequirement, error) {
+	capabilityBody := body
+	if len(evidence.AdmissionShadowBody) > 0 {
+		capabilityBody = evidence.AdmissionShadowBody
+	}
+	capabilities, err := requiredCapabilitiesForChat(capabilityBody)
+	if err != nil {
+		return nil, err
+	}
+	requirements := make([]modelrouting.CapabilityRequirement, 0, len(capabilities)+1)
+	hasReasoningControl := false
+	for _, capability := range capabilities {
+		if evidence.FunctionToolInvocationModeled &&
+			(capability == modelCapabilityTools || capability == modelCapabilityParallelToolCalls) {
+			continue
+		}
+		if capability == modelCapabilityReasoning {
+			hasReasoningControl = true
+			exact := explicitReasoningCapabilityIDs(evidence)
+			for _, exactCapability := range exact {
+				requirements = append(requirements, modelrouting.CapabilityRequirement{
+					CapabilityID: exactCapability,
+					Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+				})
+			}
+			continue
+		}
+		requirements = append(requirements, modelrouting.CapabilityRequirement{
+			CapabilityID: capability,
+			Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+		})
+	}
+	if evidence.FunctionToolInvocationModeled {
+		noFunctionCalls := evidence.FunctionToolChoiceEffective == "none" && evidence.FunctionToolsRequested
+		if evidence.FunctionToolsRequested {
+			for _, capability := range []string{modelprofile.CapabilityTools, modelprofile.CapabilityFunctionTools} {
+				requirement := modelrouting.CapabilityRequirement{
+					CapabilityID: capability,
+					Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+				}
+				if capability == modelprofile.CapabilityFunctionTools && noFunctionCalls {
+					if evidence.FunctionToolChoiceOrigin != modelrouting.CapabilityOriginExplicitRequest {
+						requirement.Origins = append(requirement.Origins, evidence.FunctionToolChoiceOrigin)
+					}
+					requirement.FunctionToolChoice = &modelrouting.FunctionToolChoiceConstraint{
+						DeclaredFunctionNames: slices.Clone(evidence.DeclaredFunctionNames),
+					}
+				}
+				requirements = append(requirements, requirement)
+			}
+		}
+		choiceCapability := map[string]string{
+			"auto":     modelprofile.CapabilityToolChoiceAuto,
+			"named":    modelprofile.CapabilityToolChoiceNamed,
+			"required": modelprofile.CapabilityToolChoiceReq,
+		}[evidence.FunctionToolChoiceEffective]
+		if choiceCapability != "" && evidence.FunctionToolsRequested {
+			requirements = append(requirements, modelrouting.CapabilityRequirement{
+				CapabilityID: choiceCapability,
+				Origins:      []string{evidence.FunctionToolChoiceOrigin},
+				FunctionToolChoice: &modelrouting.FunctionToolChoiceConstraint{
+					DeclaredFunctionNames: slices.Clone(evidence.DeclaredFunctionNames),
+					SelectedFunctionName:  evidence.SelectedFunctionName,
+				},
+			})
+		}
+		if evidence.FunctionToolChoiceRequest == "none" && !evidence.FunctionToolsRequested {
+			requirements = append(requirements, modelrouting.CapabilityRequirement{
+				CapabilityID: modelprofile.CapabilityFunctionTools,
+				Origins:      []string{evidence.FunctionToolChoiceOrigin},
+				FunctionToolChoice: &modelrouting.FunctionToolChoiceConstraint{
+					DeclaredFunctionNames: slices.Clone(evidence.DeclaredFunctionNames),
+				},
+			})
+		}
+		if evidence.ParallelToolCallsEffective && evidence.FunctionToolsRequested {
+			requirements = append(requirements, modelrouting.CapabilityRequirement{
+				CapabilityID: modelprofile.CapabilityParallelTools,
+				Origins:      []string{evidence.ParallelToolCallsOrigin},
+			})
+		}
+	}
+	if evidence.ImageRequested {
+		requirements = append(requirements, modelrouting.CapabilityRequirement{
+			CapabilityID: modelprofile.CapabilityVision,
+			Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+		})
+	}
+	for _, typed := range []struct {
+		requested  bool
+		capability string
+	}{
+		{evidence.ToolStreamRequested, modelprofile.CapabilityToolStream},
+		{evidence.SearchRequested, modelprofile.CapabilityBuiltinSearchReq},
+		{evidence.PartialModeRequested, modelprofile.CapabilityPartialMode},
+		{evidence.AudioRequested, modelprofile.CapabilityAudio},
+		{evidence.VideoRequested, modelprofile.CapabilityVideo},
+		{evidence.FilesRequested, modelprofile.CapabilityFiles},
+	} {
+		if typed.requested {
+			requirements = append(requirements, modelrouting.CapabilityRequirement{
+				CapabilityID: typed.capability,
+				Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+			})
+		}
+	}
+	if evidence.DynamicToolsRequested {
+		for _, capability := range []string{modelprofile.CapabilityTools, modelprofile.CapabilityDynamicTools} {
+			requirements = append(requirements, modelrouting.CapabilityRequirement{
+				CapabilityID: capability,
+				Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+			})
+		}
+	}
+	if evidence.BuiltinWebSearchRequested {
+		for _, capability := range []string{modelprofile.CapabilityTools, modelprofile.CapabilityBuiltinWebSearch} {
+			requirements = append(requirements, modelrouting.CapabilityRequirement{
+				CapabilityID: capability,
+				Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+			})
+		}
+	}
+	if !hasReasoningControl && profileDefaultReasoningIsActive(profile) {
+		capability := modelCapabilityReasoning
+		if slices.Contains(profile.Capabilities, modelprofile.CapabilityReasoningEffort) {
+			capability = modelprofile.CapabilityReasoningEffort
+		}
+		if !slices.Contains(profile.AlwaysRequiredCapabilities, capability) {
+			requirements = append(requirements, modelrouting.CapabilityRequirement{
+				CapabilityID: capability,
+				Origins:      []string{modelrouting.CapabilityOriginProviderDefault},
+			})
+		}
+	}
+	return requirements, nil
+}
+
+func explicitReasoningCapabilityIDs(evidence modelExecutionProfileEvidence) []string {
+	capabilities := make([]string, 0, 3)
+	toggleExplicit := evidence.ReasoningToggleRequest != "" && evidence.ReasoningToggleRequest != "omitted"
+	toggleEnablesReasoning := toggleExplicit && evidence.ReasoningToggleEffective != "disabled"
+	preserveExplicit := evidence.ReasoningPreserveRequest != "" && evidence.ReasoningPreserveRequest != "omitted"
+	effortExplicit := evidence.ReasoningEffortRequest != "" && evidence.ReasoningEffortRequest != "omitted"
+	budgetExplicit := evidence.ReasoningBudgetRequest != "" && evidence.ReasoningBudgetRequest != "omitted"
+	if toggleEnablesReasoning || preserveExplicit || (!toggleExplicit && !effortExplicit && !budgetExplicit) {
+		capabilities = append(capabilities, modelCapabilityReasoning)
+	}
+	if effortExplicit {
+		capabilities = append(capabilities, modelprofile.CapabilityReasoningEffort)
+	}
+	if budgetExplicit {
+		capabilities = append(capabilities, modelprofile.CapabilityReasoningBudget)
+	}
+	slices.Sort(capabilities)
+	return capabilities
+}
+
 func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil || envelope == nil {
@@ -748,6 +1108,16 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 		if !streamEnabled {
 			return nil, fmt.Errorf("stream_options requires stream=true")
 		}
+	}
+	if raw, exists := envelope["service_tier"]; exists {
+		if isJSONNull(raw) {
+			return nil, fmt.Errorf("service_tier must be a string")
+		}
+		var tier string
+		if err := json.Unmarshal(raw, &tier); err != nil || strings.TrimSpace(tier) == "" {
+			return nil, fmt.Errorf("service_tier must be a non-empty string")
+		}
+		add(modelCapabilityServiceTier)
 	}
 	if raw, exists := envelope["tools"]; exists && !isJSONNull(raw) {
 		var tools []json.RawMessage
@@ -834,9 +1204,54 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 			add(modelCapabilityParallelToolCalls)
 		}
 	}
+	if raw, exists := envelope["tool_stream"]; exists && !isJSONNull(raw) {
+		var enabled bool
+		if err := json.Unmarshal(raw, &enabled); err != nil {
+			return nil, fmt.Errorf("tool_stream must be a boolean")
+		}
+		if enabled {
+			add(modelCapabilityTools)
+			add(modelCapabilityStreaming)
+			add(modelCapabilityToolStream)
+		}
+	}
+	qwenSearchRequested := false
+	if raw, exists := envelope["enable_search"]; exists && !isJSONNull(raw) {
+		if err := json.Unmarshal(raw, &qwenSearchRequested); err != nil {
+			return nil, fmt.Errorf("enable_search must be a boolean")
+		}
+	}
+	if raw, exists := envelope["search_options"]; exists && !isJSONNull(raw) {
+		var options map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &options); err != nil || options == nil {
+			return nil, fmt.Errorf("search_options must be an object or null")
+		}
+		qwenSearchRequested = true
+	}
+	if qwenSearchRequested {
+		add(modelCapabilityBuiltinSearchReq)
+	}
+	if raw, exists := envelope["web_search_options"]; exists && !isJSONNull(raw) {
+		var options map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &options); err != nil || options == nil {
+			return nil, fmt.Errorf("web_search_options must be an object or null")
+		}
+		if rawEnable, exists := options["enable"]; exists && !isJSONNull(rawEnable) {
+			var enabled bool
+			if err := json.Unmarshal(rawEnable, &enabled); err != nil {
+				return nil, fmt.Errorf("web_search_options.enable must be a boolean")
+			}
+			if enabled {
+				add(modelCapabilityBuiltinSearchReq)
+			}
+		}
+	}
 	if raw, exists := envelope["response_format"]; exists && !isJSONNull(raw) {
 		var format struct {
-			Type string `json:"type"`
+			Type       string `json:"type"`
+			JSONSchema struct {
+				Strict bool `json:"strict"`
+			} `json:"json_schema"`
 		}
 		if err := json.Unmarshal(raw, &format); err != nil {
 			return nil, fmt.Errorf("response_format must be an object")
@@ -846,18 +1261,30 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 		case "json_object":
 			add(modelCapabilityJSONObject)
 		case "json_schema":
-			add(modelCapabilityJSONSchema)
+			if format.JSONSchema.Strict {
+				add(modelCapabilityStrictJSONSchema)
+			} else {
+				add(modelCapabilityJSONSchema)
+			}
 		default:
 			return nil, fmt.Errorf("unsupported response_format type")
 		}
 	}
-	for _, field := range []string{"reasoning", "reasoning_effort", "thinking"} {
+	for _, field := range []string{"reasoning", "reasoning_effort", "thinking", "enable_thinking", "thinking_budget", "preserve_thinking"} {
 		if raw, exists := envelope[field]; exists && !isJSONNull(raw) {
 			add(modelCapabilityReasoning)
 		}
 	}
 	if raw, exists := envelope["prompt_cache_key"]; exists && !isJSONNull(raw) {
 		add(modelCapabilityPromptCache)
+	}
+	if raw, exists := envelope["prompt_cache_options"]; exists && !isJSONNull(raw) {
+		var options map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &options); err != nil || options == nil {
+			return nil, fmt.Errorf("prompt_cache_options must be an object or null")
+		}
+		add(modelCapabilityPromptCache)
+		add(modelCapabilityExplicitCache)
 	}
 	if raw, exists := envelope["modalities"]; exists && !isJSONNull(raw) {
 		var modalities []string
@@ -949,6 +1376,15 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 				return nil, fmt.Errorf("message content parts must be objects")
 			}
 			for _, part := range parts {
+				for _, cacheField := range []string{"cache_control", "prompt_cache_breakpoint"} {
+					if rawCache, exists := part[cacheField]; exists && !isJSONNull(rawCache) {
+						if firstJSONToken(rawCache) != '{' {
+							return nil, fmt.Errorf("message content part %s must be an object or null", cacheField)
+						}
+						add(modelCapabilityPromptCache)
+						add(modelCapabilityExplicitCache)
+					}
+				}
 				var kind string
 				if rawType, exists := part["type"]; exists {
 					if err := json.Unmarshal(rawType, &kind); err != nil {
@@ -961,6 +1397,8 @@ func requiredCapabilitiesForChat(body []byte) ([]string, error) {
 					add(modelCapabilityVision)
 				case "video_url", "input_video":
 					add(modelCapabilityVideo)
+				case "file_url":
+					add(modelCapabilityFiles)
 				case "input_audio", "audio":
 					add(modelCapabilityAudio)
 				case "tool_use", "tool_result":

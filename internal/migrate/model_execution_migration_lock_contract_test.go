@@ -147,6 +147,128 @@ func TestModelExecutionMigrationsJoinSharedLifecycleLockBeforeTableLocks(t *test
 			firstProtected: "DO $$",
 			lockedTables:   []string{"runtime_change_releases", "model_registry", "schema_migrations"},
 		},
+		{
+			name:           "88 up",
+			file:           "000088_model_capability_execution_qualification.up.sql",
+			firstProtected: "ALTER TABLE model_deployment_capabilities",
+			lockedTables: []string{
+				"model_deployment_capabilities", "model_deployment_operations",
+				"model_deployments", "provider_connections", "provider_credential_bindings",
+				"credential_binding_deployments", "model_registry", "users", "orgs",
+				"billing_provider_attempts", "schema_migrations",
+			},
+		},
+		{
+			name:           "88 down",
+			file:           "000088_model_capability_execution_qualification.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_routing_approvals", "model_capability_probes",
+				"model_deployment_capabilities", "billing_provider_attempts", "schema_migrations",
+			},
+		},
+		{
+			name:           "89 up",
+			file:           "000089_deepseek_chat_sse_usage_contract_v2.up.sql",
+			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "schema_migrations",
+			},
+		},
+		{
+			name:           "89 down",
+			file:           "000089_deepseek_chat_sse_usage_contract_v2.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_capability_probes", "schema_migrations",
+			},
+		},
+		{
+			name:           "90 up",
+			file:           "000090_deepseek_chat_reasoning_capabilities.up.sql",
+			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "schema_migrations",
+			},
+		},
+		{
+			name:           "90 down",
+			file:           "000090_deepseek_chat_reasoning_capabilities.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "model_capability_probes",
+				"model_capability_routing_approvals", "schema_migrations",
+			},
+		},
+		{
+			name:           "91 up",
+			file:           "000091_deepseek_chat_tools_json_capabilities.up.sql",
+			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "schema_migrations",
+			},
+		},
+		{
+			name:           "91 down",
+			file:           "000091_deepseek_chat_tools_json_capabilities.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "model_capability_probes",
+				"model_capability_routing_approvals", "schema_migrations",
+			},
+		},
+		{
+			name:           "93 up",
+			file:           "000093_deepseek_function_tool_probe_contract_v2.up.sql",
+			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "schema_migrations",
+			},
+		},
+		{
+			name:           "93 down",
+			file:           "000093_deepseek_function_tool_probe_contract_v2.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "model_capability_probes",
+				"model_capability_routing_approvals", "schema_migrations",
+			},
+		},
+		{
+			name:           "92 up",
+			file:           "000092_deepseek_reasoning_tool_choice_contract.up.sql",
+			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "schema_migrations",
+			},
+		},
+		{
+			name:           "92 down",
+			file:           "000092_deepseek_reasoning_tool_choice_contract.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "model_capability_probes",
+				"model_capability_routing_approvals", "schema_migrations",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -195,6 +317,12 @@ func TestModelExecutionGuardedDownsLockBeforeLedgerAndEvidenceChecks(t *testing.
 		"000080_observation_provider_cost_reconciliation.down.sql",
 		"000081_versioned_model_execution_profiles.down.sql",
 		"000082_sealed_model_execution_contracts.down.sql",
+		"000088_model_capability_execution_qualification.down.sql",
+		"000089_deepseek_chat_sse_usage_contract_v2.down.sql",
+		"000090_deepseek_chat_reasoning_capabilities.down.sql",
+		"000091_deepseek_chat_tools_json_capabilities.down.sql",
+		"000092_deepseek_reasoning_tool_choice_contract.down.sql",
+		"000093_deepseek_function_tool_probe_contract_v2.down.sql",
 	} {
 		t.Run(file, func(t *testing.T) {
 			body, err := os.ReadFile("../../migrations/" + file)

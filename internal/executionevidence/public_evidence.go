@@ -7,9 +7,12 @@ import (
 )
 
 const (
-	PublicDeliveryContractV1    = "unirouter.public-nonstream-delivery.v1"
-	PublicChargeContractV1      = "unirouter.provider-final-token-charge.v1"
-	PublicIdempotencyContractV1 = "unirouter.public-at-most-once.v1"
+	PublicDeliveryContractV1          = "unirouter.public-nonstream-delivery.v1"
+	PublicResponsesDeliveryContractV2 = "unirouter.public-responses-delivery.v2"
+	PublicMessagesDeliveryContractV2  = "unirouter.public-anthropic-messages-delivery.v2"
+	PublicMessagesToolsDeliveryV1     = "unirouter.public-anthropic-messages-tools-delivery.v1"
+	PublicChargeContractV1            = "unirouter.provider-final-token-charge.v1"
+	PublicIdempotencyContractV1       = "unirouter.public-at-most-once.v1"
 )
 
 // EvidenceV2 is the explicit public-execution extension. EvidenceV1 is
@@ -42,14 +45,35 @@ func NormalizeV2(value EvidenceV2) (EvidenceV2, error) {
 		(normalizedBase.ModelOperationID != "openai.responses.v1" &&
 			normalizedBase.ModelOperationID != "anthropic.messages.v1") ||
 		value.PublicExecutionBindingID <= 0 ||
-		value.DeliveryContractVersion != PublicDeliveryContractV1 ||
-		value.ChargeContractVersion != PublicChargeContractV1 ||
-		value.IdempotencyContractVersion != PublicIdempotencyContractV1 {
+		!validPublicContractBundle(
+			normalizedBase.ModelOperationID,
+			value.DeliveryContractVersion,
+			value.ChargeContractVersion,
+			value.IdempotencyContractVersion,
+		) {
 		return EvidenceV2{}, invalid("public_execution_bundle")
 	}
 	normalizedBase.ContractVersion = ContractVersionV2
 	value.EvidenceV1 = normalizedBase
 	return value, nil
+}
+
+func validPublicContractBundle(operationID, delivery, charge, idempotency string) bool {
+	if charge != PublicChargeContractV1 || idempotency != PublicIdempotencyContractV1 {
+		return false
+	}
+	switch delivery {
+	case PublicDeliveryContractV1:
+		return operationID == "openai.responses.v1" || operationID == "anthropic.messages.v1"
+	case PublicResponsesDeliveryContractV2:
+		return operationID == "openai.responses.v1"
+	case PublicMessagesDeliveryContractV2:
+		return operationID == "anthropic.messages.v1"
+	case PublicMessagesToolsDeliveryV1:
+		return operationID == "anthropic.messages.v1"
+	default:
+		return false
+	}
 }
 
 func NormalizeV2ForDispatch(value EvidenceV2) (EvidenceV2, error) {

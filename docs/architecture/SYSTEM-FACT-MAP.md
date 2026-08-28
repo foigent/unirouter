@@ -1,6 +1,6 @@
 # UniRouter System Fact Map
 
-> Status: canonical current-state map for implementation impact analysis.
+> Status: repository current-state map for implementation impact analysis; local source facts are not Target deployment evidence.
 > Scope: the supported on-premises topology, where one deployment serves one customer while deployment operators remain a separate identity concern.
 > Authority: code and migrations override this map when they disagree; any product change that alters an entity, authority, or consumer must update this file in the same batch.
 
@@ -8,16 +8,161 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable PostgreSQL compatibility ceiling is `000083`. After running
+The executable source and development/test PostgreSQL compatibility ceiling is
+`000093_deepseek_function_tool_probe_contract_v2`. Development/test stable,
+canary and frontend run exact commit
+`18c7153fbdc0b1a9ed2b1d4898893f0dc687dd47`, tree
+`5721a8488c68ff4d596a4dd5ad3c57e3f639f400`, version 1.2.7; the database has
+92 ordered migration rows ending at M93. This is Target evidence for that exact
+environment, not Production or Release-state evidence.
+
+M85–M87 batch inclusion is tracked in
+[B1 scope](../tech-ref/44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26);
+M88 adds the append-only capability probe/approval receipts and receipt-aware
+qualification authority. M89 preserves M88's immutable `@1.0.0` probe
+contract and promotes only the exact DeepSeek Flash Chat current binding to the
+new `@2.0.0` final-choice usage contract. M90 adds exact reasoning and
+reasoning-effort typed qualification bindings for DeepSeek Flash Chat. M91 adds
+the exact tools, function-tools, auto/named/required tool-choice and JSON Object
+bindings. M92 adds the exact DeepSeek Flash Profile 1.5 capability bindings
+after the reasoning/tool-choice composition correction; it does not reinterpret
+Profile 1.4 receipts. M93 adds only a function-tool probe-contract v2 for the
+five existing Profile 1.5 capabilities under both exact Chat protocol
+identities. Its ten immutable bindings advance ten current pointers while
+Profile 1.5, protocol v4, Releases and aliases remain unchanged. Runtime and
+probe parsing share one exact-scoped DeepSeek Flash response normalizer; v1
+receipts remain immutable but become stale for current qualification. All five
+migrations reuse M88's append-only receipt plus receipt-aware qualification
+authority; they create only `enabled/declared` projections and do not infer live
+support, approval, routing, Release or pricing from a Profile claim. Their fixed
+probe contracts accept no administrator-supplied provider payload and retain
+only bounded response facts, never private reasoning text or arbitrary tool
+arguments. M88–M93 are deployed Target facts only for the exact artifact and
+environment recorded above. M92 can be downgraded only while no Flash/Pro Profile 1.5
+model attachment, probe or approval exists; the guard prevents an M91 binary
+from inheriting a durable Profile identity that it cannot interpret. M93
+downgrade is blocked only by retained function-tool Probe v2 evidence or
+approval, or by projection-identity drift that prevents exact restoration; the
+already-supported unchanged Profile 1.5 attachment is not a new M93 identity.
+The separately authorized
+[B2 Target checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#b2-target-deployment-and-bounded-zero-call-acceptance--2026-08-26)
+records the 86-entry M87 ledger after a non-rolling maintenance window on
+2026-08-26. The subsequent
+[bootstrap repair checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#first-customer-runtime-reset-repair--localci-and-target-preview-2026-08-26)
+records the earlier deployed `e888c05f9d5d70f4809bcd5362373b8fa8f8ecf4`
+with the same schema and a successful read-only operator preview. The later
+[approved initialization](../tech-ref/42-model-execution-profile-capability-status.md#first-customer-initialization--target-verified-2026-08-26)
+created independent customer 2, its zero CNY wallet and startup-owned Default
+Project 86; admin/platform organization 1 and login evidence remain separate.
+A later readback confirms one staging DeepSeek Flash deployment and credential
+binding under customer 2. Following explicit approval of a 3-call/CNY-1 batch,
+exact probe 1 succeeded at 23:02:34 CST on 2026-08-26 (HTTP 200, 298 ms), advancing
+only the Chat operation to `live_probed` revision 2. At that checkpoint there was
+no Release, runtime assignment or gateway-client call. This
+single connectivity result does not prove model capabilities, usage or pricing.
+The [no-redirect transport repair](../tech-ref/42-model-execution-profile-capability-status.md#no-redirect-transport-repair--deployment-and-zero-call-acceptance-2026-08-27)
+was superseded by UI-workbench candidate
+`1f30b1cd4c8d614f177fa0d890f162d4c0605af7`, then by the live-found capability
+correction `e47af1faacd8ca96403c25b4cf2c47ec155bd980`, and finally by bounded M88
+artifact `08d0ef8e5cee7e1bff515d5751e7a9bdd452f16f`. Its automatic CI
+33050163111 and protocol-conformance CI 33050163136 passed before a non-rolling
+maintenance deployment. It was later superseded by parser-diagnostics commit
+`56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and caller-scoped readiness UI
+commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`, then by the versioned SSE
+contract, M90/M91 capability batch and historical M92 checkpoint
+`c4ee78fc3eb41f144e72000d01917f41d7470bfb`. The current M93 artifact and
+Target evidence are recorded at the start of this section and in the
+[completion snapshot](../tech-ref/42-model-execution-profile-capability-status.md#delivery-snapshot--deepseek-flash-chat-completion-developmenttest).
+Canonical model-route authority remains enabled with compatibility disabled.
+The active organization Alias resolves to public model 697, whose sealed active
+Release 23 remains bound to immutable Profile 1.5. M93 did not change that
+Profile, protocol, Release or Alias. Its five function-tool Probe v2 receipts
+and approvals currently qualify the actual deployment 2 generic Chat tuple.
+
+Two structural follow-ups remain deliberately deferred and do not reopen this
+runtime milestone. First, Probe v2 proves its typed capability sentinel and
+usage after the shared provider normalizer, while public delivery separately
+enforces the complete canonical response shape. A probe success followed by a
+shape-withheld public response on the same exact tuple is a current blocker;
+claiming that `qualified` alone proves complete delivery, or adding another
+provider-specific permissive envelope parser, requires a shared pure delivery-
+shape validator first. Any changed acceptance set requires a new probe-contract
+version and must not reinterpret v2 receipts. Second, new-provider onboarding
+must not add entries to `modelcapabilityqualification.preferredOperationProtocols`.
+Before another preferred mapping is needed, move that choice into an existing
+typed Profile/operation/surface identity authority; introduce a broader Provider
+Surface Manifest only if the existing authorities cannot express the required
+region, authentication, method, path and surface/version identity. These are
+bounded implementation triggers, not active lessons or authorization for a
+platform framework project.
+
+Following explicit authorization to create a test account and test through the
+UI, user 38 was created as customer 2's ordinary member / project 86 user and
+successfully logged in. UI authoring/first activation created Release 22,
+active@3 / slot@1, containing only deployment 1 / Chat. Model 677 is now approved
+in the test customer catalog with lifecycle GA; this is not capability evidence
+or personal acceptance. The ordinary-user UI first clicked the exact bounded
+non-stream Flash request and recorded a 503/no-route call with no provider
+attempt, Freeze, transaction, token or wallet mutation. The live-found fix
+preserves an explicitly disabled thinking control in the provider payload but
+does not make reasoning a per-invocation route requirement. After deployment,
+the UI clicked the same request once: HTTP 200, exact expected text, 16 prompt +
+8 completion tokens and provider-reported final usage. At that non-stream
+checkpoint, the original probe plus this successful UI attempt were the only
+two supplier calls. One unused one-time key was inadvertently exposed to an
+automation trace and immediately disabled;
+all nine short-lived test keys are now disabled, including key 81 used for the
+successful request. No credential is retained here. The [UI checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#first-ordinary-user-ui-request--pre-dispatch-blocker-and-bounded-correction)
+records the exact request and evidence boundary.
+Project discovery now reads existing v2 normalized route items with
+exact tenant/public-model identity and stable/active/allow membership, retaining
+an explicit historical v1 branch; discovery is not gateway admission authority.
+The repair also gives the Chat debugger explicit optional request bounds and
+accurate non-stream response/error/duration evidence; no schema, pricing or
+execution Profile changed. Call, provider-attempt and cost-observation Freeze
+bind the same canonical deployment/connection/Release/Plan snapshot. One
+append-only zero-charge observation receipt exists, with no customer transaction,
+supplier-cost reconciliation or wallet movement. Zero customer charge does not
+prove zero supplier cost. Customer-side manual acceptance remains deferred.
+The product owner later increased the cumulative test ceiling to 20 calls/CNY 5,
+including probe 1; this is spending authority, not evidence of further calls or
+a change to caller-identity, capability or Release requirements.
+On 2026-08-28 the owner removed the call-count ceiling for the Flash closure
+while retaining a cumulative CNY 5 supplier-spend ceiling and approved an
+audited alias cutover after the replacement Profile 1.5 identity is qualified
+and sealed. This does not authorize another model or a Production release.
+The M88 Admin workflow subsequently issued one typed streaming probe. The
+provider returned HTTP 200, but the original deployed validator rejected its
+stream contract and recorded only a generic sanitized error. Parser-diagnostics
+commit 56d then deployed support for SSE-standard CRLF/LF/CR endings and a
+bounded typed partial observation—sanitized model, terminal and usage fields
+when parsed, plus byte, event and delta counters—with an enumerated failure
+category and no provider response content. A single authorized UI re-probe on
+4c6 recorded provider HTTP 200 in 922 ms, 12 data events, 11 deltas and exact
+error `usage_mixed_with_choices`. This is supplier call 4/20. No capability
+approval, qualification, ordinary streaming request, wallet movement or
+transaction followed. DeepSeek's current official contract and this live shape
+both place usage on the final single-choice chunk; the old M88 `@1.0.0`
+separate-usage contract remains historical evidence. The M89 local candidate
+adds current `@2.0.0` without reinterpreting either failed receipt. It remains
+local evidence until its own gate/artifact/Target checks.
+The exact Flash non-stream text slice is `canary_live_verified`. That evidence
+does not imply direct parity, other capabilities, billing, supplier-cost
+authority or `released`. After running
 migrations or honoring `SKIP_MIGRATION`, every backend reads the complete,
 ordered migration ledger and requires it to equal the binary artifact ledger
 before customer-baseline initialization or HTTP bind; missing, extra, future,
 duplicate, reordered and empty ledgers all fail closed. Schema-ceiling changes
-are therefore non-rolling: an M82 process and an M83 process cannot be ready
+are therefore non-rolling: an M84 process and an M87 process cannot be ready
 against one shared database. Operators drain and stop the old fleet, let one
-migration owner advance the database to M83, and only then start M83
+migration owner advance the database to the approved artifact's exact ledger,
+and only then start matching
 stable/canary. A secondary may use `SKIP_MIGRATION=true` only after the shared
-database already has the exact M83 ledger. M78 adds atomic
+database already has that exact ledger. M85 adds nullable immutable Plan hash
+bindings on Freeze/attempt without backfilling historical rows. M86 preserves
+v1 and v2 public execution tuples in exact binding views; M87 appends the
+Messages tools v3 tuple. None rewrites a sealed Release or promotes live traffic.
+M78 adds atomic
 sealed-release authoring provenance and the explicit v1-to-v2 lifecycle bridge;
 M79 moves the commercial `active_channels` count authority to enabled canonical
 provider connections. M80 gives cost-observation provider reconciliation an
@@ -61,6 +206,12 @@ migration reinterprets the M77 Responses/Messages public-execution chain, and
 legacy tables remain available only for history and explicit compatibility
 operation.
 
+M84 widens only official rate-source evidence currency to one original CNY or
+USD value so foreign list prices can be retained as review-only drafts. It does
+not widen the CNY request-pricing approval, activation, wallet or settlement
+contracts. Mixed-currency source drafts fail closed, and M84 down refuses to
+discard any retained non-CNY source evidence.
+
 The supported customer topology is:
 
 - one deployment;
@@ -72,6 +223,19 @@ The supported customer topology is:
 `org_id` remains an internal isolation and integrity key. It is not a normal operator-selectable tenant dimension in the single-customer product.
 
 New installations should keep deployment-operator and customer identities in separate organization records. For an upgraded local installation with exactly one active root organization, the customer-context resolver may adopt that sole root as the compatibility customer context even when its historical `org_type` is `partner`. This does not make the deployment-operator role a project member, and customer-facing UI must use the resolved customer context rather than expose a historical technical name such as `Platform Admin`.
+
+That compatibility resolution is not canonical-startup readiness: the current
+route-authority checker separately requires one explicit active root `customer`
+and assigned runtime inventory. The [DeepSeek preflight](../tech-ref/42-model-execution-profile-capability-status.md#deepseek-zero-call-preparation--blocked-preflight-2026-08-26)
+records this distinction on the partner-only clean Target. The subsequently
+approved bootstrap repair adds an exact runtime-reset predecessor and a
+write-free `dry_run` projection in the existing API, exposed only in the
+deployment-operator workspace. It preserves admin/platform identity and login
+evidence, normalizes only an explicitly authorized automatic empty project and
+zero wallet, and creates a separate customer; it does not alter startup/probe
+gates. After explicit exact-object approval, Target initialization succeeded;
+the subsequent canonical check removed the customer-root blocker but still
+rejects empty runtime inventory. This is not supplier-live or billing evidence.
 
 ## 2. User workspaces
 
@@ -90,28 +254,38 @@ API guidance follows the same ownership boundary. Ordinary project members use t
 ```mermaid
 flowchart LR
   T["Reviewed provider preset\nprotocol + official base URL"] --> O["Model onboarding composition\nsafe editable draft"]
-  E["Exact Model Execution Profile\nversion + aliases + maxima"] --> O
+  H["Immutable Profile catalog\nall historical ID@version addresses"] --> O
+  E["Current-for-surface index\nnew attachment authority"] --> O
+  X["Compiled public operation contract\noperation + path + endpoint protocol@version"] --> O
   R["Model registry\npublic model identity"] --> A["Alias and model set\ncustomer visibility"]
   C["Provider endpoint\nprotocol, base URL, upstream model mapping"] --> K["Upstream credential"]
   O -. "create with exact profile pin" .-> R
   O -. "create connection/deployment/operation" .-> C
   K --> P["Live probe\ncredential + model + routing epoch"]
   C --> P
+  X --> P
   R --> L["M78 sealed release\nserver baseline + selected operations"]
+  H -. "exact historical pin remains resolvable" .-> L
   P --> L
   L --> S["Runtime slot\nstable or canary"]
   S --> G["Gateway route plan"]
+  X --> G
+  H -. "selected Profile typed capability identities" .-> G
   A --> G
 ```
 
 | Concept | Durable authority | Important projections/consumers |
 |---|---|---|
-| Onboarding composition | repository-reviewed provider preset plus an exact Model Execution Profile; the backend validates the profile pair, aliases, operation and effective limits and persists the exact profile pin | “模型接入” form defaults and constrained choices only; it is not a live probe, release, pricing, credential or traffic authority, and omission stays `unverified.chat@1.0.0` |
+| Model adaptation requirement | current `unirouter.model-adaptation.required.v1` file is a Draft exact-matrix candidate; no immutable approved Baseline has been issued | product-scope candidate only; it is never loaded by Gateway and never copies Progress, evidence, Release or pricing state |
+| Model Execution Profile lifecycle | immutable repository product-identity manifest owns every addressable `profile_id@version`, including provider, region, requested upstream model, surface, operation and request-default provenance; append-only exact-address metadata may additionally declare upstream model family and `pinned|floating` version policy, while historical unmodeled addresses remain empty rather than being backfilled; a locally conformant public operation may pin an exact endpoint-protocol ID/version and compose typed capability sub-contracts; the independent current-for-surface index stores only one attachable version pointer | onboarding and exact surface alias resolution use the current pointer; Planner and sealed Release reads resolve immutable historical addresses. Provider-reported model identity belongs to probe or immutable attempt evidence and never rewrites the requested alias. `Profile.Capabilities` is the supported executable set and `AlwaysRequiredCapabilities` is its narrowly validated subset. The exact typed invocation derives one normalized Plan capability list with origin sets; optional supported capabilities are not automatically required. The current pointer cannot backfill historical fields, and no mutable booleans or database lifecycle state are introduced |
+| Onboarding composition | repository-reviewed provider preset plus an exact Model Execution Profile; the backend validates the profile pair, operation and effective limits and persists the exact profile pin. For the exact M88 DeepSeek Flash Chat streaming contract, migration recognizes both the current v4 protocol tuple and the historical generic-Chat tuple already sealed in pre-M88 Releases; canonical create refines new attachments to v4. Either path may materialize an `enabled/declared` capability projection only after compiled and database support contracts agree. A separate dated official-price snapshot may be sent to the existing evidence-backed Rate Card draft importer | “模型接入” form defaults and constrained choices only; a declaration is not a live probe, routing approval, Release, active pricing, credential or traffic authority. The historical binding is not generic Chat inference. The declaration writer performs no provider call and never overwrites an existing support decision. Pricing composition creates only a separately reviewable draft. Omission stays `unverified.chat@1.0.0` only when the alias is not ambiguous across current surfaces; an explicit unverified pair remains the deliberate escape hatch |
+| Processing tier | provider/surface-specific typed policy composed by the exact operation Profile; requested wire value, normalized effective tier, runtime timeout and provider response evidence are separate fields. A surface with no documented observed-tier channel records that evidence as unavailable rather than fabricating a missing header source or inferred tier | admission capability derivation, pre-Freeze billing-mode guard, request-specific deadline, provider payload and trace evidence. It never derives a customer price from a supplier wire value |
 | Public model identity | model registry and aliases | model catalog, project model sets, readiness, `/v1/models` |
 | Provider connection | canonical `provider_connections` plus deployment operation/profile and public-to-upstream mapping | canonical deployment UI, operation probe, Planner candidates, License `active_channels` usage |
 | Credential | canonical `provider_credential_bindings` plus exact deployment link; plaintext is accepted once and encrypted | operation probe and Coordinator credential selection |
 | Legacy endpoint history | `channels`, `channel_keys` and `channel_model_probes` | read-only migration/audit compatibility and explicit legacy/verify planning; never canonical readiness or current Dashboard authority |
 | Canonical operation probe evidence | append-only `model_deployment_probes`, bound to exact deployment, operation, protocol profile, connection/deployment/credential revisions and credential-deployment link epoch | canonical route admission and operation evidence; never capability inference |
+| Capability routing qualification | M88 append-only typed capability probe and approval receipts plus `model_capability_approval_qualifications`; the receipt is the approval source, while receipt plus the current exact deployment/operation/Profile/protocol/probe-contract tuple is the current qualification authority | new Plan and cutover use `model_capability_execution_qualifications` to select one deterministic preferred approval. Pre-dispatch validates the approval identity already frozen in the Plan; it never requires that receipt to remain the newest. The mutable capability row is UI/management projection only |
 | Responses/Messages execution support | immutable M75 binding plus compiled `modelqualification` tuple: operation, public path, protocol profile/version and executor contract | probe availability and structural production qualification; it cannot by itself authorize public dispatch |
 | Responses/Messages production qualification | append-only platform approval of one current exact live probe; `model_operation_execution_qualifications` is the only mutable current structural qualification truth | canonical read DTO and M77 public-binding creation; qualification alone is never online/traffic proof |
 | Public execution support extension | immutable M77 extension references the exact M75 five-field support tuple and adds delivery, charge and idempotency contract versions | the sole exact eight-field public executor registry lookup |
@@ -135,6 +309,12 @@ Rules:
 7. A canonical live probe addresses exactly `deployment_id + operation_id + credential_binding_id`. All four supported operations use distinct bounded requests. Responses and Messages additionally resolve their exact endpoint-protocol profile and execute its real network request/response contract; a local conformance fixture is never live evidence. A successful response advances only that operation while tools, vision and every other capability remain unchanged unless separately exercised and evidenced.
 8. “模型接入” is the primary product wording. `Canonical Deployment` remains the internal durable identity because routing, release, probe and audit records require `deployment_id + operation_id`; it is not the user task name.
 9. A reviewed onboarding template may prefill and constrain provider, model aliases, context/output limits and operation. It must pin the exact Profile version, keep connection naming editable, and never mark the result live-verified or released. Reusing an existing public model treats supplied Profile fields only as exact assertions.
+10. A non-standard normalized processing tier must pass its typed provider/surface contract and the current customer-charge boundary before credential decryption and Freeze. Until a tier-aware `CustomerChargeQuote` exists, explicit Flex/Priority is cost-observation-only.
+11. Requested, effective and provider-observed tiers are distinct. Missing or unknown provider evidence stays a capture gap; Priority-to-Standard is accepted only from the typed provider response header and never inferred from latency or status.
+12. A provider model alias that is current on more than one API surface is ambiguous by design. New attachment must select the exact surface-specific Profile and compatible operation; surface-agnostic reviewed matching fails closed. Retiring a mixed legacy Profile ID removes only new-attachment eligibility—historical lookup, sealed Release pins and immutable evidence are not rewritten.
+13. A Model Execution Profile may claim local conformance for the strict public Responses/Messages baseline only by pinning the exact compiled endpoint-protocol ID/version for that operation. A richer public request grammar must be a typed, versioned capability sub-contract on a new exact Profile address. Historical Profile pins retain their former grammar. Canonical onboarding and Planner both compare the endpoint-protocol pin with the deployment operation; a mismatch fails before public qualification or dispatch. This repository-level conformance does not replace the live probe, M75/M77 approval chain, customer price authority or Release.
+14. Current capability authority: select the exact Profile/Release identity, use its typed operation contract to derive one normalized, sorted and deduplicated Plan capability list with per-invocation origin (`explicit_request` or `provider_default`) plus any truly unavoidable `profile_always_required` entries, then select route evidence inside the same repeatable-read snapshot. Closed invocation constraints such as declared/selected function names and an exact `tool_choice=none` no-call rule live inside that same capability entry and snapshot hash; `none` reuses the supported `function_tools` entry rather than inventing another capability set. A route receives only a deep-copied projection, not another authority. `effective_required` must be a subset of Profile-supported capabilities. Route selection, the M85 Freeze receipt and the provider-attempt Receipt bind the same Plan snapshot hash; none independently re-normalizes the capability list. Historical empty bindings remain addressable only for pre-M85 compatibility and do not authorize a new evidenced attempt.
+15. For an M88-typed capability, Planner and cutover select the same deterministic preferred qualified approval for the exact deployment, operation, Execution Profile, protocol Profile and probe contract. The Plan freezes that approval in the existing capability `evidence_ref` and evidence hash. Pre-dispatch then validates that exact bound receipt against the same stable tuple; a later equivalent receipt does not stale an in-flight Plan. Stable tuple drift or an invalid receipt fails closed. Credential cooldown/recovery remains an operational availability axis and does not revoke a generic streaming approval; a future credential-scoped capability must declare that narrower scope in its own typed probe contract.
 
 For Responses and Messages, M75 and M77 form this control chain:
 
@@ -146,7 +326,7 @@ flowchart LR
   B --> M["Sealed M77 manifest item\nand EvidenceV2 Planner snapshot"]
   C["Current credential + link\nlatest own live probe"] --> R["Attempt-first Coordinator\nsame-transaction revalidation"]
   M --> R
-  R --> X["Strict public non-stream executor\ndelivery + settlement receipts"]
+  R --> X["Strict public operation executor\nnon-stream + exact Responses text SSE"]
 ```
 
 The approval receipt freezes the exact probe credential identity and link epoch
@@ -283,17 +463,18 @@ flowchart LR
   credential-binding and operation rows are a migration/proof projection, not
   the live read authority. `verify` compares the two projections atomically;
   `canonical` selects only the sealed v2 projection.
-- Planner fixes one operation- and capability-specific route snapshot and
-  locally builds every usable candidate before billing Freeze. After Freeze,
+- Planner fixes one operation- and capability-specific route snapshot; Gateway
+  locally builds usable candidates before billing Freeze. After Freeze,
   only an `Applied` Coordinator decision may dispatch provider HTTP; that same
   transaction owns the immutable provider-attempt evidence and health fence.
 - Before Freeze, Chat conservatively measures the complete supported envelope
   (including tool/function/structured controls), while Embeddings accepts only
-  bounded string or integer token-ID shapes. Unknown semantics fail before
-  Planner, Freeze and network. Public context and each candidate's `MaxContext`
+  bounded string or integer token-ID shapes. Typed normalization rejects unknown
+  semantics before Freeze and network. Public context and each candidate's `MaxContext`
   are hard admission evidence. `DefaultMaxOutput` is not a hard maximum:
-  omitted canonical/verify output is reserved and injected from the immutable
-  public limit only for an exact supported wire profile; the legacy adapter
+  omitted canonical/verify output is reserved and injected from the exact
+  Profile's request default, bounded by its public limit and supported wire
+  contract; the legacy adapter
   contract uses its versioned 1000-token compatibility ceiling. The legacy
   probe profile never authorizes a wire field. The deliberate pre-catalog
   legacy case has no public registry limit and retains the channel `MaxContext`
@@ -383,24 +564,100 @@ The normal human/developer flow is: create user -> add user to project -> the pr
 
 ## 5. Pricing, billing, and evidence truth
 
+### 5.1 Current implemented facts
+
 ```mermaid
 flowchart LR
-  PA["Pricing authority\nlegacy price or active Rate Card"] --> F["Freeze immutable request price snapshot"]
+  LP["Legacy model price"] --> B["Billing Freeze / settle"]
+  RC["Current RequestPriceQuote\nCNY supplier-layer Rate Card selected by model_ref"] --> B
   U["Provider usage fields"] --> M["Meter classification\ninput, cache read, cache creation, output"]
-  F --> T["Settle or observe"]
+  B --> T["Settle or cost-observation billing mode"]
   M --> T
-  T --> J["Usage journal, receipt, call log, outbox"]
+  T --> J["Customer usage journal, receipt, call log, outbox"]
   J --> R["Reconciliation and reports"]
+  PC["providercogs offline MemoryStore"] -. "append-only import/replay only" .-> R
 ```
 
 | Concept | Authority | Boundary |
 |---|---|---|
-| Request price | configured pricing mode: legacy model price or active Rate Card | drafts and imported evidence never affect requests |
+| Current request price | configured pricing mode: legacy model price or `RequestPriceQuote` | `RequestPriceQuote` is CNY and immutable after selection, but currently resolves supplier-layer Rate Cards primarily by `model_ref`; it is not yet the approved `CustomerChargeQuote` contract |
 | Peak/off-peak price | complete UTC daily bands in the active Rate Card | every minute must select exactly one band |
 | Cache-hit charging | provider usage fields such as cached input tokens | UniRouter does not infer a cache hit from latency or prompt text |
 | Prepaid billing | wallet freeze and settlement records | blocks when required funds/admission are unavailable |
-| Cost observation | calculated-cost receipt/journal | does not charge wallet or pretend project budgets are enforced |
-| Supplier reconciliation | imported/manual provider evidence and reconciliation records | must be labelled as evidence, not a live integration when no connector is configured |
+| Exact public final-token charge | immutable attempt `route_charge_contract_version` plus provider-reported final usage | checkpoint estimates cannot become public customer charges; missing final usage retains pending liability, including process-loss recovery |
+| `BillingModeCostObservation` | customer-CNY calculated-cost receipt/journal | does not charge the wallet; its current numeric storage is not native-currency supplier-cost evidence and must not be presented as such |
+| Supplier-cost estimate | any UniRouter-local `usage × rate` calculation, whether before or after the provider response | an estimate is defined by local calculation authority, not chronology |
+| Supplier-cost observation | supplier-reported cost, bill or reconciliation evidence | the current reusable semantics are offline in `providercogs`; its persistence is only `MemoryStore`, so it is not a production runtime supplier-cost system |
+| Supplier-cost quote | a provider-supplied, citable quote | absent unless the provider actually supplies an authoritative quote; a UniRouter calculation is never renamed as a quote |
+| Supplier reconciliation | imported/manual provider evidence and offline reconciliation records | `supplier_reported` and `unirouter_estimated` are authorities; `provisional`, `final` and `invoice_reconciled` are finality/evidence states, not authorities |
+| Foreign supplier list price | original-currency review draft | no FX, native-USD runtime cost claim or CNY wallet charge is created by M84 source evidence |
+
+### 5.2 Known current conflicts
+
+- The Rate Card type separates supplier and customer economic layers, but the
+  current request resolver selects `supplier_contracted` or `provider_list` and
+  feeds that quote into Billing. Source code therefore has an architecture
+  conflict; this map does not claim that the current Target has actually charged
+  a customer incorrectly.
+- Current cost-observation receipts can store a numeric calculated zero when a
+  price is unavailable. That compatibility storage is not authoritative proof
+  of a free price; a future typed projection must expose price status and omit
+  the quote when unavailable.
+- No implemented runtime contract yet represents the approved replayable
+  `CustomerChargeQuote`, native-currency `SupplierCostObservation`, or their
+  separation. The offline `providercogs` terminology and authority/finality
+  invariants should be reused without making Gateway depend on its offline
+  types or implementing invoice ingestion in this milestone.
+
+### 5.3 Approved target architecture (not current implementation)
+
+```mermaid
+flowchart LR
+  PA["Public CNY customer pricing authority"] --> CQ["CustomerChargeQuote\nroute-neutral + normalized-tier-aware"]
+  CQ --> PS["One immutable pricing snapshot"]
+  PS --> WA["Wallet authorization upper bound"]
+  US["Normalized provider usage"] --> ST["Customer settlement or zero-charge observation"]
+  WA --> ST
+  SC["Supplier native-currency rate evidence"] --> SE["SupplierCostEstimate\nUniRouter-local calculation"]
+  SO["Supplier-reported bill / reconciliation"] --> OB["SupplierCostObservation"]
+  SE -. "separate authority" .-> REP["Margin and reconciliation reporting"]
+  OB -. "separate authority" .-> REP
+  ST --> REP
+```
+
+The approved V1 target freezes these invariants:
+
+- `CustomerChargeQuote` is public-CNY, route-neutral and normalized-tier-aware.
+  It depends on public product/model, operation, normalized requested tier,
+  server-resolved customer plan and effective period. Provider, connection,
+  route, attempt and supplier currency never select or mutate it.
+- Customer plan is resolved by the server from authenticated organization,
+  project, API-key and contract identity. A client-supplied `customer_plan` is
+  rejected rather than used as a pricing input.
+- A quote Receipt retains `customer_charge_quote_id`, quote contract version,
+  pricing Profile ID/version, selector schema version, normalized selector
+  dimensions, selector hash, normalized meter/rate components, server quote
+  time, effective period, customer-plan resolver identity/version, `currency=CNY`,
+  estimated/reserved quantities and `maximum_authorized_customer_cost`. A hash
+  proves stability but is never the only explainable price identity.
+- Once wallet Freeze authorizes the quote, failover, retry and crossing a price
+  period reuse that exact snapshot. Final customer charge cannot exceed the
+  authorized maximum without a new explicit authorization; supplier cost never
+  increases the customer quote.
+- Customer amounts remain distinct:
+  `quoted_customer_cost`, `wallet_authorized_cost` and
+  `charged_customer_cost`. In cost-observation mode the latter two are zero;
+  `quoted_customer_cost` is present only when an approved quote exists. An
+  unavailable price is absent, never an authoritative zero-price quote.
+- A pricing snapshot/observation and a wallet hold are different events even if
+  a compatibility API is still named `Freeze`. Cost-observation may create an
+  immutable pricing snapshot but never a hold, balance change or customer
+  financial transaction.
+- Standard tier may use an approved customer price. Until a separate settlement
+  rule exists, explicit flex/priority fails the prepaid path with
+  `billing_contract_unavailable` before secret resolution, wallet authorization
+  or provider dispatch; only separately authorized bounded zero-charge supplier-
+  cost evidence is allowed.
 
 ## 6. Operational and integration truth
 

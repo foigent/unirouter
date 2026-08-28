@@ -322,7 +322,7 @@ SELECT deployment.customer_org_id,probe.deployment_id,probe.connection_id,probe.
     ON credential_link.binding_id=probe.credential_binding_id
    AND credential_link.deployment_id=probe.deployment_id
    AND credential_link.connection_id=probe.connection_id
-  JOIN model_operation_current_execution_support_bindings support
+  JOIN model_operation_exact_execution_support_bindings support
     ON support.operation_id=operation.operation_id
    AND support.protocol_profile_id=operation.protocol_profile_id
    AND support.protocol_profile_version=operation.protocol_profile_version

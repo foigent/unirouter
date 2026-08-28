@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/models"
 )
@@ -46,6 +47,103 @@ func TestOpenAICompatibleBuildRequest_RewritesModelAndURL(t *testing.T) {
 	if payload["model"] != "gpt-4o" {
 		t.Fatalf("expected rewritten model gpt-4o, got %v", payload["model"])
 	}
+}
+
+func TestGPT56CacheUsageSeparatesReadsWritesAndOrdinaryInput(t *testing.T) {
+	usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+		[]byte(`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":60,"cache_write_tokens":30}}}`),
+		EndpointChatCompletions,
+		metering.UsageSourceUpstream,
+		"cache-usage.openai-gpt-5.6.v1",
+	)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 100, usage.PromptTokens)
+	require.Equal(t, 10, usage.UncachedPromptTokens)
+	require.Equal(t, 60, usage.CacheReadTokens)
+	require.Equal(t, 30, usage.CacheCreationTokens)
+	require.Equal(t, CacheUsageSchemaOpenAIV2, usage.CacheUsageSchema)
+	require.Equal(t, CacheUsageStatusReadWriteReported, usage.CacheUsageStatus)
+
+	_, present, err = ParseOpenAICompatibleUsageWithCacheProfile(
+		[]byte(`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80,"cache_write_tokens":30}}}`),
+		EndpointChatCompletions,
+		metering.UsageSourceUpstream,
+		"cache-usage.openai-gpt-5.6.v1",
+	)
+	require.True(t, present)
+	require.Error(t, err)
+}
+
+func TestOpenAICompatibleEndpointPathModeIsTypedAndProviderIndependent(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	require.NoError(t, adapter.ValidateConfig([]byte(`{"endpoint_path_mode":"base_relative"}`)))
+	for _, raw := range []string{
+		`{"endpoint_path_mode":"future"}`,
+		`{"endpoint_path_mode":"base_relative","unknown":true}`,
+		`{"endpoint_path_mode":"base_relative"}{}`,
+	} {
+		require.Error(t, adapter.ValidateConfig([]byte(raw)))
+	}
+	for _, test := range []struct {
+		base, want string
+	}{
+		{base: "https://api.deepseek.com", want: "https://api.deepseek.com/chat/completions"},
+		{base: "https://open.bigmodel.cn/api/paas/v4", want: "https://open.bigmodel.cn/api/paas/v4/chat/completions"},
+		{base: "https://generativelanguage.googleapis.com/v1beta/openai", want: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"},
+		{base: "https://ark.cn-beijing.volces.com/api/v3", want: "https://ark.cn-beijing.volces.com/api/v3/chat/completions"},
+	} {
+		req, err := adapter.BuildRequest(context.Background(), RequestInput{
+			Endpoint: EndpointChatCompletions, DownstreamBody: []byte(`{"model":"m","messages":[]}`),
+			RequestedModel: "m", MappedModel: "m", APIKey: "fixture",
+			Channel: models.Channel{Provider: "enterprise-alias", BaseURL: test.base, AdapterType: TypeOpenAICompatible,
+				AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)},
+		})
+		require.NoError(t, err)
+		require.Equal(t, test.want, req.URL.String())
+	}
+}
+
+func TestKimiPlatformCanonicalV1BuildsTheReviewedChatEndpoint(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions, DownstreamBody: []byte(`{"model":"public-kimi","messages":[]}`),
+		RequestedModel: "public-kimi", MappedModel: "kimi-k3", APIKey: "fixture",
+		Channel: models.Channel{
+			Provider: "kimi", BaseURL: "https://api.moonshot.cn/v1", AdapterType: TypeOpenAICompatible,
+			AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"canonical_v1"}`),
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://api.moonshot.cn/v1/chat/completions", request.URL.String())
+}
+
+func TestMiniMaxCanonicalV1BuildsTheReviewedChatEndpoint(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions, DownstreamBody: []byte(`{"model":"public-minimax","messages":[]}`),
+		RequestedModel: "public-minimax", MappedModel: "MiniMax-M3", APIKey: "fixture",
+		Channel: models.Channel{
+			Provider: "minimax", BaseURL: "https://api.minimaxi.com/v1", AdapterType: TypeOpenAICompatible,
+			AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"canonical_v1"}`),
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://api.minimaxi.com/v1/chat/completions", request.URL.String())
+}
+
+func TestXAICanonicalV1BuildsTheReviewedChatEndpoint(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions, DownstreamBody: []byte(`{"model":"public-grok","messages":[]}`),
+		RequestedModel: "public-grok", MappedModel: "grok-4.6", APIKey: "fixture",
+		Channel: models.Channel{
+			Provider: "xai", BaseURL: "https://api.x.ai/v1", AdapterType: TypeOpenAICompatible,
+			AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"canonical_v1"}`),
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://api.x.ai/v1/chat/completions", request.URL.String())
 }
 
 func TestOpenAICompatibleBuildRequest_PreservesOpenAIAndProviderFields(t *testing.T) {
@@ -105,6 +203,537 @@ func TestOpenAICompatibleParseResponse_Usage(t *testing.T) {
 	}
 	if resp.Meta.RequestedModel != "company-chat" || resp.Meta.UpstreamModel != "gpt-4o" {
 		t.Fatalf("unexpected meta: %+v", resp.Meta)
+	}
+}
+
+func TestGLM53BaseNonStreamChatPreservesOfficialEnvelopeAndUsage(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint:       EndpointChatCompletions,
+		DownstreamBody: []byte(`{"model":"public-glm","messages":[{"role":"user","content":"Hello"}],"stream":false}`),
+		RequestedModel: "public-glm",
+		MappedModel:    "glm-5.3",
+		Channel:        models.Channel{BaseURL: "https://open.bigmodel.cn/api/paas/v4", Provider: "renamed-glm-proxy", AdapterType: TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)},
+		APIKey:         "fixture-key",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", request.URL.String())
+	requestBody, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"glm-5.3","messages":[{"role":"user","content":"Hello"}],"stream":false}`, string(requestBody))
+
+	body := []byte(`{"id":"glm-fixture","request_id":"req-fixture","created":1787568000,"model":"glm-5.3","choices":[{"index":0,"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:        models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		RequestedModel: "public-glm", UpstreamModel: "glm-5.3",
+		ProtocolProfile: "protocol.glm-openai-chat.v1",
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, string(body), string(response.Body))
+	require.Equal(t, 3, response.Usage.PromptTokens)
+	require.Equal(t, 4, response.Usage.CompletionTokens)
+	require.Equal(t, 7, response.Usage.TotalTokens)
+	require.Equal(t, metering.UsageAuthorityProviderReported, response.Usage.Authority)
+	require.Equal(t, metering.UsageFinalityFinal, response.Usage.Finality)
+}
+
+func TestGLM52BaseNonStreamChatPreservesOfficialEnvelopeAndUsage(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint:       EndpointChatCompletions,
+		DownstreamBody: []byte(`{"model":"public-glm","messages":[{"role":"user","content":"Hello"}],"stream":false}`),
+		RequestedModel: "public-glm",
+		MappedModel:    "glm-5.2",
+		Channel:        models.Channel{BaseURL: "https://open.bigmodel.cn/api/paas/v4", Provider: "renamed-glm-proxy", AdapterType: TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)},
+		APIKey:         "fixture-key",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", request.URL.String())
+	requestBody, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"glm-5.2","messages":[{"role":"user","content":"Hello"}],"stream":false}`, string(requestBody))
+
+	body := []byte(`{"id":"glm52-fixture","model":"glm-5.2","choices":[{"index":0,"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:        models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		RequestedModel: "public-glm", UpstreamModel: "glm-5.2",
+		ProtocolProfile: "protocol.glm-openai-chat.v1",
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, string(body), string(response.Body))
+	require.Equal(t, 7, response.Usage.TotalTokens)
+	require.Equal(t, metering.UsageAuthorityProviderReported, response.Usage.Authority)
+	require.Equal(t, metering.UsageFinalityFinal, response.Usage.Finality)
+}
+
+func TestGLM5VTurboBaseTextNonStreamChatPreservesOfficialEnvelopeAndUsage(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint:       EndpointChatCompletions,
+		DownstreamBody: []byte(`{"model":"public-glm-vision","messages":[{"role":"user","content":"Hello"}],"stream":false}`),
+		RequestedModel: "public-glm-vision",
+		MappedModel:    "glm-5v-turbo",
+		Channel:        models.Channel{BaseURL: "https://open.bigmodel.cn/api/paas/v4", Provider: "renamed-glm-proxy", AdapterType: TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)},
+		APIKey:         "fixture-key",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", request.URL.String())
+	requestBody, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"glm-5v-turbo","messages":[{"role":"user","content":"Hello"}],"stream":false}`, string(requestBody))
+
+	body := []byte(`{"id":"glm5v-fixture","model":"glm-5v-turbo","choices":[{"index":0,"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:        models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		RequestedModel: "public-glm-vision", UpstreamModel: "glm-5v-turbo",
+		ProtocolProfile: "protocol.glm-openai-chat.v1",
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, string(body), string(response.Body))
+	require.Equal(t, 3, response.Usage.PromptTokens)
+	require.Equal(t, 4, response.Usage.CompletionTokens)
+	require.Equal(t, 7, response.Usage.TotalTokens)
+	require.Equal(t, metering.UsageAuthorityProviderReported, response.Usage.Authority)
+	require.Equal(t, metering.UsageFinalityFinal, response.Usage.Finality)
+}
+
+func TestGLM5VTurboStreamingChatPreservesOfficialChunksAndFinalUsage(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	channel := models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible}
+	frames := [][]byte{
+		[]byte(`{"id":"glm5v-stream","model":"glm-5v-turbo","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}`),
+		[]byte(`{"id":"glm5v-stream","model":"glm-5v-turbo","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}`),
+		[]byte(`{"id":"glm5v-stream","model":"glm-5v-turbo","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`),
+	}
+	for _, frame := range frames {
+		got, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{Data: frame, Channel: channel})
+		require.NoError(t, err)
+		require.JSONEq(t, string(frame), string(got))
+	}
+
+	usage, present, err := ParseOpenAICompatibleUsage(frames[2], EndpointChatCompletions, metering.UsageSourceUpstream)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 7, usage.TotalTokens)
+	require.Equal(t, metering.UsageAuthorityProviderReported, usage.Authority)
+	require.Equal(t, metering.UsageFinalityFinal, usage.Finality)
+}
+
+func TestGLM5VTurboReasoningRequestAndResponsePreserveOfficialControls(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	requestBody := []byte(`{"model":"public-glm-vision","messages":[{"role":"user","content":"Solve"}],"thinking":{"type":"enabled","clear_thinking":false},"reasoning_effort":"high","max_tokens":4096}`)
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions, DownstreamBody: requestBody,
+		RequestedModel: "public-glm-vision", MappedModel: "glm-5v-turbo",
+		Channel: models.Channel{BaseURL: "https://open.bigmodel.cn/api/paas/v4", Provider: "glm", AdapterType: TypeOpenAICompatible},
+		APIKey:  "fixture-key",
+	})
+	require.NoError(t, err)
+	wire, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"glm-5v-turbo","messages":[{"role":"user","content":"Solve"}],"thinking":{"type":"enabled","clear_thinking":false},"reasoning_effort":"high","max_tokens":4096}`, string(wire))
+
+	responseBody := []byte(`{"id":"glm5v-reasoning","model":"glm-5v-turbo","choices":[{"index":0,"message":{"role":"assistant","reasoning_content":"Think","content":"Answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":6,"total_tokens":9}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: responseBody,
+		Channel:        models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		RequestedModel: "public-glm-vision", UpstreamModel: "glm-5v-turbo",
+		ProtocolProfile: "protocol.glm-openai-chat.v3",
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, string(responseBody), string(response.Body))
+	require.Equal(t, 9, response.Usage.TotalTokens)
+}
+
+func TestGLM5VTurboFunctionToolResponsePreservesOfficialToolCallAndUsage(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"id":"glm5v-tool","model":"glm-5v-turbo","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"Need inspection","tool_calls":[{"id":"call_1","type":"function","function":{"name":"inspect_layout","arguments":"{\"selector\":\"#app\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":8,"total_tokens":28}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:        models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		RequestedModel: "public-glm-vision", UpstreamModel: "glm-5v-turbo",
+		ProtocolProfile: "protocol.glm-openai-chat.v4",
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, string(body), string(response.Body))
+	require.Equal(t, 20, response.Usage.PromptTokens)
+	require.Equal(t, 8, response.Usage.CompletionTokens)
+	require.Equal(t, 28, response.Usage.TotalTokens)
+}
+
+func TestGLM5VTurboNonStreamCacheReadUsageUsesExactOfficialWire(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"id":"glm5v-cache","model":"glm-5v-turbo","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80}}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:        models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		RequestedModel: "public-glm-vision", UpstreamModel: "glm-5v-turbo",
+		CacheUsageProfile: "cache-usage.glm-openai.v1",
+		ProtocolProfile:   "protocol.glm-openai-chat.glm5v.v1",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 100, response.Usage.PromptTokens)
+	require.Equal(t, 20, response.Usage.UncachedPromptTokens)
+	require.Equal(t, 80, response.Usage.CacheReadTokens)
+	require.Zero(t, response.Usage.CacheCreationTokens)
+	require.Equal(t, 7, response.Usage.CompletionTokens)
+	require.Equal(t, CacheUsageSchemaOpenAIV1, response.Usage.CacheUsageSchema)
+	require.Equal(t, CacheUsageStatusReadReported, response.Usage.CacheUsageStatus)
+	require.Equal(t, metering.UsageAuthorityProviderReported, response.Usage.Authority)
+	require.Equal(t, metering.UsageFinalityFinal, response.Usage.Finality)
+}
+
+func TestDoubaoSeedEvolvingCacheReadUsageRequiresExactNestedCounter(t *testing.T) {
+	profile := "cache-usage.doubao-ark-chat.v1"
+	tests := []struct {
+		name     string
+		usage    string
+		wantRead int
+		wantErr  string
+	}{
+		{
+			name:     "cache hit",
+			usage:    `{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80}}`,
+			wantRead: 80,
+		},
+		{
+			name:  "authoritative zero",
+			usage: `{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":0}}`,
+		},
+		{
+			name:    "missing prompt details",
+			usage:   `{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107}`,
+			wantErr: "including an authoritative zero",
+		},
+		{
+			name:    "null prompt details",
+			usage:   `{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":null}`,
+			wantErr: "including an authoritative zero",
+		},
+		{
+			name:    "null counter",
+			usage:   `{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":null}}`,
+			wantErr: "including an authoritative zero",
+		},
+		{
+			name:    "counter exceeds prompt",
+			usage:   `{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":101}}`,
+			wantErr: "uncached_prompt_tokens must be nonnegative",
+		},
+		{
+			name:    "conflicting top-level schema",
+			usage:   `{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"cached_tokens":80,"prompt_tokens_details":{"cached_tokens":80}}`,
+			wantErr: "without another cache schema",
+		},
+		{
+			name:    "unmodeled cache write",
+			usage:   `{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80,"cache_write_tokens":10}}`,
+			wantErr: "without another cache schema",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := []byte(`{"choices":[],"usage":` + test.usage + `}`)
+			usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+				body, EndpointChatCompletions, metering.UsageSourceUpstream, profile,
+			)
+			if test.wantErr != "" {
+				require.True(t, present)
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, present)
+			require.Equal(t, 100, usage.PromptTokens)
+			require.Equal(t, test.wantRead, usage.CacheReadTokens)
+			require.Equal(t, 100-test.wantRead, usage.UncachedPromptTokens)
+			require.Equal(t, CacheUsageSchemaOpenAIV1, usage.CacheUsageSchema)
+			require.Equal(t, CacheUsageStatusReadReported, usage.CacheUsageStatus)
+		})
+	}
+
+	legacy, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+		[]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}`),
+		EndpointChatCompletions, metering.UsageSourceUpstream, "cache-usage.glm-openai.v1",
+	)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, CacheUsageStatusNotReported, legacy.CacheUsageStatus)
+
+	adapter := NewOpenAICompatible()
+	for _, body := range []string{
+		`{"choices":[]}`,
+		`{"choices":[],"usage":null}`,
+		`{"choices":[],"usage":{"completion_tokens":1,"total_tokens":1,"prompt_tokens_details":{"cached_tokens":0}}}`,
+		`{"choices":[],"usage":{"prompt_tokens":1,"total_tokens":1,"prompt_tokens_details":{"cached_tokens":0}}}`,
+	} {
+		_, err := adapter.ParseResponse(context.Background(), ResponseInput{
+			Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: []byte(body),
+			Channel:           models.Channel{Provider: "doubao", AdapterType: TypeOpenAICompatible},
+			CacheUsageProfile: profile,
+		})
+		require.ErrorContains(t, err, "requires final response usage")
+	}
+}
+
+func TestGLM5VTurboImageRequestRemainsProviderNative(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"model":"public-glm-vision","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://cdn.example.test/layout.png"}},{"type":"text","text":"Describe"}]}]}`)
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions, DownstreamBody: body,
+		RequestedModel: "public-glm-vision", MappedModel: "glm-5v-turbo",
+		Channel: models.Channel{BaseURL: "https://open.bigmodel.cn/api/paas/v4", Provider: "glm", AdapterType: TypeOpenAICompatible},
+		APIKey:  "fixture-key",
+	})
+	require.NoError(t, err)
+	wire, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"glm-5v-turbo","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://cdn.example.test/layout.png"}},{"type":"text","text":"Describe"}]}]}`, string(wire))
+}
+
+func TestGLM5VTurboVideoRequestRemainsProviderNative(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"model":"public-glm-vision","messages":[{"role":"user","content":[{"type":"video_url","video_url":{"url":"https://cdn.example.test/demo.mov"}},{"type":"text","text":"Track"}]}]}`)
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions, DownstreamBody: body,
+		RequestedModel: "public-glm-vision", MappedModel: "glm-5v-turbo",
+		Channel: models.Channel{BaseURL: "https://open.bigmodel.cn/api/paas/v4", Provider: "glm", AdapterType: TypeOpenAICompatible},
+		APIKey:  "fixture-key",
+	})
+	require.NoError(t, err)
+	wire, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"glm-5v-turbo","messages":[{"role":"user","content":[{"type":"video_url","video_url":{"url":"https://cdn.example.test/demo.mov"}},{"type":"text","text":"Track"}]}]}`, string(wire))
+}
+
+func TestGLM5VTurboFileRequestRemainsProviderNative(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"model":"public-glm-vision","messages":[{"role":"user","content":[{"type":"file_url","file_url":{"url":"https://cdn.example.test/report.pdf"}},{"type":"text","text":"Summarize"}]}]}`)
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions, DownstreamBody: body,
+		RequestedModel: "public-glm-vision", MappedModel: "glm-5v-turbo",
+		Channel: models.Channel{BaseURL: "https://open.bigmodel.cn/api/paas/v4", Provider: "glm", AdapterType: TypeOpenAICompatible},
+		APIKey:  "fixture-key",
+	})
+	require.NoError(t, err)
+	wire, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"glm-5v-turbo","messages":[{"role":"user","content":[{"type":"file_url","file_url":{"url":"https://cdn.example.test/report.pdf"}},{"type":"text","text":"Summarize"}]}]}`, string(wire))
+}
+
+func TestGLM52StreamingChatPreservesOfficialChunksAndFinalUsage(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	frames := [][]byte{
+		[]byte(`{"id":"glm52-stream","model":"glm-5.2","choices":[{"index":0,"delta":{"reasoning_content":"Think"},"finish_reason":null}]}`),
+		[]byte(`{"id":"glm52-stream","model":"glm-5.2","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}`),
+		[]byte(`{"id":"glm52-stream","model":"glm-5.2","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`),
+	}
+	for _, frame := range frames {
+		got, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{
+			Data: frame, Channel: models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		})
+		require.NoError(t, err)
+		require.JSONEq(t, string(frame), string(got))
+	}
+	usage, present, err := ParseOpenAICompatibleUsage(frames[2], EndpointChatCompletions, metering.UsageSourceUpstream)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 7, usage.TotalTokens)
+}
+
+func TestGLM53StreamingChatPreservesOfficialChunksAndFinalUsage(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	channel := models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible}
+	frames := [][]byte{
+		[]byte(`{"id":"glm-stream","created":1787568000,"model":"glm-5.3","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}`),
+		[]byte(`{"id":"glm-stream","created":1787568000,"model":"glm-5.3","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}`),
+		[]byte(`{"id":"glm-stream","created":1787568000,"model":"glm-5.3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`),
+	}
+	for _, frame := range frames {
+		got, err := adapter.NormalizeStreamFrame(context.Background(), StreamChunkInput{Data: frame, Channel: channel})
+		require.NoError(t, err)
+		require.JSONEq(t, string(frame), string(got))
+	}
+
+	usage, present, err := ParseOpenAICompatibleUsage(frames[2], EndpointChatCompletions, metering.UsageSourceUpstream)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 3, usage.PromptTokens)
+	require.Equal(t, 4, usage.CompletionTokens)
+	require.Equal(t, 7, usage.TotalTokens)
+	require.Equal(t, metering.UsageAuthorityProviderReported, usage.Authority)
+	require.Equal(t, metering.UsageFinalityFinal, usage.Finality)
+}
+
+func TestGLM53ReasoningRequestPreservesOfficialControls(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"model":"public-glm","messages":[{"role":"user","content":"Solve"}],"thinking":{"type":"enabled","clear_thinking":false},"reasoning_effort":"high","max_tokens":4096}`)
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions, DownstreamBody: body,
+		RequestedModel: "public-glm", MappedModel: "glm-5.3",
+		Channel: models.Channel{BaseURL: "https://open.bigmodel.cn/api/paas/v4", Provider: "glm", AdapterType: TypeOpenAICompatible},
+		APIKey:  "fixture-key",
+	})
+	require.NoError(t, err)
+	wire, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"glm-5.3","messages":[{"role":"user","content":"Solve"}],"thinking":{"type":"enabled","clear_thinking":false},"reasoning_effort":"high","max_tokens":4096}`, string(wire))
+}
+
+func TestGLM53FunctionToolResponsePreservesOfficialToolCallAndUsage(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"id":"glm-tool","model":"glm-5.3","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Shanghai\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":8,"total_tokens":28}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:        models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		RequestedModel: "public-glm", UpstreamModel: "glm-5.3",
+		ProtocolProfile: "protocol.glm-openai-chat.v4",
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, string(body), string(response.Body))
+	require.Equal(t, 20, response.Usage.PromptTokens)
+	require.Equal(t, 8, response.Usage.CompletionTokens)
+	require.Equal(t, 28, response.Usage.TotalTokens)
+}
+
+func TestGLM53JSONObjectRequestAndResponseRemainUnmodified(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	requestBody := []byte(`{"model":"public-glm","messages":[{"role":"user","content":"Return JSON"}],"response_format":{"type":"json_object"}}`)
+	request, err := adapter.BuildRequest(context.Background(), RequestInput{
+		Endpoint: EndpointChatCompletions, DownstreamBody: requestBody,
+		RequestedModel: "public-glm", MappedModel: "glm-5.3",
+		Channel: models.Channel{BaseURL: "https://open.bigmodel.cn/api/paas/v4", Provider: "glm", AdapterType: TypeOpenAICompatible},
+		APIKey:  "fixture-key",
+	})
+	require.NoError(t, err)
+	wire, err := io.ReadAll(request.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"glm-5.3","messages":[{"role":"user","content":"Return JSON"}],"response_format":{"type":"json_object"}}`, string(wire))
+
+	responseBody := []byte(`{"id":"glm-json","model":"glm-5.3","choices":[{"index":0,"message":{"role":"assistant","content":"{\"ok\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":4,"total_tokens":9}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: responseBody,
+		Channel:        models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		RequestedModel: "public-glm", UpstreamModel: "glm-5.3",
+		ProtocolProfile: "protocol.glm-openai-chat.v5",
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, string(responseBody), string(response.Body))
+	require.Equal(t, 9, response.Usage.TotalTokens)
+}
+
+func TestGLM53NonStreamCacheReadUsageUsesExactOfficialWire(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"id":"glm-cache","model":"glm-5.3","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80}}}`)
+	response, err := adapter.ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK, Body: body,
+		Channel:        models.Channel{Provider: "glm", AdapterType: TypeOpenAICompatible},
+		RequestedModel: "public-glm", UpstreamModel: "glm-5.3",
+		CacheUsageProfile: "cache-usage.glm-openai.v1",
+		ProtocolProfile:   "protocol.glm-openai-chat.v5",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 100, response.Usage.PromptTokens)
+	require.Equal(t, 20, response.Usage.UncachedPromptTokens)
+	require.Equal(t, 80, response.Usage.CacheReadTokens)
+	require.Zero(t, response.Usage.CacheCreationTokens)
+	require.Equal(t, 7, response.Usage.CompletionTokens)
+	require.Equal(t, CacheUsageSchemaOpenAIV1, response.Usage.CacheUsageSchema)
+	require.Equal(t, CacheUsageStatusReadReported, response.Usage.CacheUsageStatus)
+	require.Equal(t, metering.UsageAuthorityProviderReported, response.Usage.Authority)
+	require.Equal(t, metering.UsageFinalityFinal, response.Usage.Finality)
+
+	for _, invalid := range []string{
+		`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"cached_tokens":80}}`,
+		`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80,"cache_write_tokens":10}}}`,
+		`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":101}}}`,
+		`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20}}`,
+	} {
+		_, _, err := ParseOpenAICompatibleUsageWithCacheProfile(
+			[]byte(invalid), EndpointChatCompletions, metering.UsageSourceUpstream, "cache-usage.glm-openai.v1",
+		)
+		require.Error(t, err, invalid)
+	}
+
+	withoutCache := []byte(`{"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`)
+	usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+		withoutCache, EndpointChatCompletions, metering.UsageSourceUpstream, "cache-usage.glm-openai.v1",
+	)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 10, usage.UncachedPromptTokens)
+	require.Zero(t, usage.CacheReadTokens)
+	require.Equal(t, CacheUsageStatusNotReported, usage.CacheUsageStatus)
+}
+
+func TestGLM52NonStreamCacheReadUsageUsesExactOfficialWire(t *testing.T) {
+	body := []byte(`{"usage":{"prompt_tokens":50,"completion_tokens":5,"total_tokens":55,"prompt_tokens_details":{"cached_tokens":30}}}`)
+	usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+		body, EndpointChatCompletions, metering.UsageSourceUpstream, "cache-usage.glm-openai.v1",
+	)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 20, usage.UncachedPromptTokens)
+	require.Equal(t, 30, usage.CacheReadTokens)
+	require.Zero(t, usage.CacheCreationTokens)
+	require.Equal(t, CacheUsageSchemaOpenAIV1, usage.CacheUsageSchema)
+}
+
+func TestMiMoCacheReadUsageUsesSealedOpenAIWireProfile(t *testing.T) {
+	body := []byte(`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80,"audio_tokens":3,"image_tokens":4,"video_tokens":5}}}`)
+	usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+		body, EndpointChatCompletions, metering.UsageSourceUpstream, "cache-usage.mimo-openai.v1",
+	)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 20, usage.UncachedPromptTokens)
+	require.Equal(t, 80, usage.CacheReadTokens)
+	require.Zero(t, usage.CacheCreationTokens)
+	require.Equal(t, CacheUsageSchemaOpenAIV1, usage.CacheUsageSchema)
+	require.Equal(t, CacheUsageStatusReadReported, usage.CacheUsageStatus)
+}
+
+func TestHy3CacheReadUsageUsesSealedOpenAIWireProfile(t *testing.T) {
+	body := []byte(`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":64},"completion_tokens_details":{"reasoning_tokens":3}}}`)
+	usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+		body, EndpointChatCompletions, metering.UsageSourceUpstream, "cache-usage.hy3-openai.v1",
+	)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 36, usage.UncachedPromptTokens)
+	require.Equal(t, 64, usage.CacheReadTokens)
+	require.Zero(t, usage.CacheCreationTokens)
+	require.Equal(t, CacheUsageSchemaOpenAIV1, usage.CacheUsageSchema)
+	require.Equal(t, CacheUsageStatusReadReported, usage.CacheUsageStatus)
+}
+
+func TestQwenContextCacheUsageUsesExactOfficialWire(t *testing.T) {
+	body := []byte(`{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":60,"cache_creation_input_tokens":30}}}`)
+	usage, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+		body, EndpointChatCompletions, metering.UsageSourceUpstream, "cache-usage.qwen-context-cache.v1",
+	)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 10, usage.UncachedPromptTokens)
+	require.Equal(t, 60, usage.CacheReadTokens)
+	require.Equal(t, 30, usage.CacheCreationTokens)
+	require.Equal(t, CacheUsageSchemaQwenV1, usage.CacheUsageSchema)
+	require.Equal(t, CacheUsageStatusReadWriteReported, usage.CacheUsageStatus)
+
+	for _, invalid := range []string{
+		`{"usage":{"prompt_tokens":100,"completion_tokens":7,"cached_tokens":60}}`,
+		`{"usage":{"prompt_tokens":100,"completion_tokens":7,"prompt_cache_hit_tokens":60,"prompt_cache_miss_tokens":40}}`,
+		`{"usage":{"prompt_tokens":100,"completion_tokens":7,"prompt_tokens_details":{"cached_tokens":80,"cache_creation_input_tokens":30}}}`,
+		`{"usage":{"prompt_tokens":100,"completion_tokens":7,"prompt_tokens_details":{"cached_tokens":-1}}}`,
+	} {
+		_, present, err := ParseOpenAICompatibleUsageWithCacheProfile(
+			[]byte(invalid), EndpointChatCompletions, metering.UsageSourceUpstream, "cache-usage.qwen-context-cache.v1",
+		)
+		require.True(t, present, invalid)
+		require.Error(t, err, invalid)
 	}
 }
 
@@ -371,22 +1000,19 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name:   "OpenAI cached-token subset",
+			name:   "unmodeled OpenAI cached-token subset is not billing truth",
 			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":80}}}`,
-			prompt: 100, uncached: 20, read: 80,
-			schema: CacheUsageSchemaOpenAIV1, status: CacheUsageStatusReadReported,
+			prompt: 100, uncached: 100, status: CacheUsageStatusNotReported,
 		},
 		{
-			name:   "OpenAI cached-read and cache-write partition",
+			name:   "unmodeled OpenAI read-write partition is not billing truth",
 			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":60,"cache_write_tokens":30}}}`,
-			prompt: 100, uncached: 10, read: 60, creation: 30,
-			schema: CacheUsageSchemaOpenAIV2, status: CacheUsageStatusReadWriteReported,
+			prompt: 100, uncached: 100, status: CacheUsageStatusNotReported,
 		},
 		{
-			name:   "OpenAI cache-write-only contract",
+			name:   "unmodeled OpenAI cache-write-only field is not billing truth",
 			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cache_write_tokens":80}}}`,
-			prompt: 100, uncached: 20, creation: 80,
-			schema: CacheUsageSchemaOpenAIV2, status: CacheUsageStatusWriteReported,
+			prompt: 100, uncached: 100, status: CacheUsageStatusNotReported,
 		},
 		{
 			name:   "DeepSeek hit-miss partition",
@@ -416,10 +1042,10 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 			status: CacheUsageStatusNotReported,
 		},
 		{
-			name:   "authoritative zero hit",
+			name:   "unmodeled zero hit is not authoritative",
 			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":0}}}`,
 			prompt: 100, uncached: 100, read: 0,
-			schema: CacheUsageSchemaOpenAIV1, status: CacheUsageStatusReadReported,
+			status: CacheUsageStatusNotReported,
 		},
 		{
 			name:   "unknown cache-like field is not billing truth",
@@ -428,14 +1054,14 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 			status: CacheUsageStatusNotReported,
 		},
 		{
-			name:    "cached subset cannot exceed prompt total",
-			body:    `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":11}}}`,
-			wantErr: true,
+			name:   "unmodeled invalid cached subset is ignored",
+			body:   `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":11}}}`,
+			prompt: 10, uncached: 10, status: CacheUsageStatusNotReported,
 		},
 		{
-			name:    "OpenAI read-write partition cannot exceed prompt total",
-			body:    `{"usage":{"prompt_tokens":100,"completion_tokens":1,"total_tokens":101,"prompt_tokens_details":{"cached_tokens":80,"cache_write_tokens":21}}}`,
-			wantErr: true,
+			name:   "unmodeled invalid read-write partition is ignored",
+			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":1,"total_tokens":101,"prompt_tokens_details":{"cached_tokens":80,"cache_write_tokens":21}}}`,
+			prompt: 100, uncached: 100, status: CacheUsageStatusNotReported,
 		},
 		{
 			name:         "DeepSeek partition must match prompt total",
@@ -656,6 +1282,74 @@ func TestKimiTopLevelCacheUsagePreservesZeroAndRejectsContradiction(t *testing.T
 			}
 		})
 	}
+}
+
+func TestNormalizeDeepSeekFlashChatToolResponseIsExactScopedAndLossless(t *testing.T) {
+	body := []byte(`{"id":"chatcmpl-deepseek","model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","tool_calls":[{"index":999999999999999999999999999999999999999,"id":"call_1","type":"function","function":{"name":"echo","arguments":"{}"}}]}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	normalized, changed, err := NormalizeDeepSeekFlashChatToolResponse(
+		"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", body,
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+	var envelope map[string]interface{}
+	require.NoError(t, json.Unmarshal(normalized, &envelope))
+	choice := envelope["choices"].([]interface{})[0].(map[string]interface{})
+	require.EqualValues(t, 0, choice["index"])
+	tool := choice["message"].(map[string]interface{})["tool_calls"].([]interface{})[0].(map[string]interface{})
+	require.NotContains(t, tool, "index")
+	require.Equal(t, "call_1", tool["id"])
+
+	unknown := []byte(strings.Replace(string(body), `"index":999999999999999999999999999999999999999,"id"`, `"index":0,"unexpected":true,"id"`, 1))
+	normalized, changed, err = NormalizeDeepSeekFlashChatToolResponse(
+		"deepseek", "deepseek-v4-flash", "openai.chat_completions", unknown,
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Contains(t, string(normalized), `"unexpected":true`)
+
+	for _, invalid := range []string{`null`, `"0"`, `-1`, `0.5`, `1e2`, `01`} {
+		mutated := []byte(strings.Replace(string(body), `999999999999999999999999999999999999999`, invalid, 1))
+		_, _, normalizeErr := NormalizeDeepSeekFlashChatToolResponse(
+			"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", mutated,
+		)
+		require.Error(t, normalizeErr, invalid)
+	}
+
+	for _, scope := range []struct{ provider, model, protocol string }{
+		{"other", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4"},
+		{"deepseek", "deepseek-v4-pro", "protocol.deepseek-openai-chat.v4"},
+		{"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v3"},
+	} {
+		unchanged, applied, scopeErr := NormalizeDeepSeekFlashChatToolResponse(scope.provider, scope.model, scope.protocol, body)
+		require.NoError(t, scopeErr)
+		require.False(t, applied)
+		require.Equal(t, body, unchanged)
+	}
+}
+
+func TestOpenAICompatibleParseResponseNormalizesDeepSeekFlashToolCallIndex(t *testing.T) {
+	body := []byte(`{"id":"chatcmpl-deepseek","model":"deepseek-v4-flash","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"echo","arguments":"{}"}}]}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	response, err := NewOpenAICompatible().ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK,
+		Channel:       models.Channel{Provider: "deepseek", AdapterType: TypeOpenAICompatible},
+		UpstreamModel: "deepseek-v4-flash", ProtocolProfile: "openai.chat_completions", Body: body,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, response.Usage.TotalTokens)
+	var envelope map[string]interface{}
+	require.NoError(t, json.Unmarshal(response.Body, &envelope))
+	tool := envelope["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})["tool_calls"].([]interface{})[0].(map[string]interface{})
+	require.NotContains(t, tool, "index")
+
+	invalid := []byte(strings.Replace(string(body), `"index":0,"id":"call_1"`, `"index":null,"id":"call_1"`, 1))
+	response, err = NewOpenAICompatible().ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK,
+		Channel:       models.Channel{Provider: "deepseek", AdapterType: TypeOpenAICompatible},
+		UpstreamModel: "deepseek-v4-flash", ProtocolProfile: "openai.chat_completions", Body: invalid,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, response.Usage.TotalTokens)
+	require.Contains(t, string(response.Body), `"index":null`)
 }
 
 func TestOpenAICompatibleClassifyHTTPStatus(t *testing.T) {

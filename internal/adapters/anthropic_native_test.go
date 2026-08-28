@@ -679,6 +679,19 @@ func TestDefaultRegistryIncludesAnthropicNative(t *testing.T) {
 	}
 }
 
+func TestAnthropicNativeHasExactCanonicalMessagesPathMode(t *testing.T) {
+	mode, err := EffectiveEndpointPathMode(TypeAnthropicNative, []byte(`{"anthropic_version":"2023-06-01"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != "canonical_v1" {
+		t.Fatalf("path mode=%q", mode)
+	}
+	if _, err := EffectiveEndpointPathMode(TypeAnthropicNative, []byte(`{"endpoint_path_mode":"canonical_v1"}`)); err == nil {
+		t.Fatal("anthropic native accepted a caller-controlled endpoint path mode")
+	}
+}
+
 func withStreamData(in StreamChunkInput, data string) StreamChunkInput {
 	in.Data = []byte(data)
 	return in

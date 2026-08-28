@@ -1,0 +1,98 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "anthropic-messages-text-tools.v3",
+  "profile_id": "unirouter.anthropic.messages.text-tools.v3",
+  "request": {
+    "base_url": "https://api.anthropic.example",
+    "requested_model": "company-claude",
+    "mapped_model": "claude-sonnet-5",
+    "request_id": "fixture-anthropic-tools-3",
+    "body": "{\"model\":\"company-claude\",\"max_tokens\":64,\"tools\":[{\"name\":\"lookup\",\"description\":\"Look up a city\",\"input_schema\":{\"type\":\"object\"}}],\"messages\":[{\"role\":\"user\",\"content\":\"synthetic tool fixture\"}]}",
+    "expected_method": "POST",
+    "expected_url": "https://api.anthropic.example/v1/messages",
+    "expected_authentication": "anthropic_x_api_key",
+    "expected_anthropic_version_header": "2023-06-01",
+    "expected_request_id_header": "",
+    "expected_body": "{\"model\":\"claude-sonnet-5\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"synthetic tool fixture\"}],\"tools\":[{\"name\":\"lookup\",\"description\":\"Look up a city\",\"input_schema\":{\"type\":\"object\"}}],\"stream\":false}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"id\":\"msg_fixture_tools_v3\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-5\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_fixture\",\"name\":\"lookup\",\"input\":{\"city\":\"Paris\"}}],\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":12,\"output_tokens\":3}}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.anthropic.messages.text-tools.v3",
+      "provider_state": "completed",
+      "provider_object_id": "msg_fixture_tools_v3",
+      "mapped_model": "claude-sonnet-5",
+      "output_count": 1,
+      "units": [
+        {
+          "class": "input_tokens",
+          "quantity": "12",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "cache_write_tokens",
+          "quantity": "0",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "cache_read_tokens",
+          "quantity": "0",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "output_tokens",
+          "quantity": "3",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "server-tool-rejected",
+      "body": "{\"model\":\"company-claude\",\"max_tokens\":64,\"tools\":[{\"type\":\"web_search_20250305\",\"name\":\"web_search\",\"input_schema\":{\"type\":\"object\"}}],\"messages\":[{\"role\":\"user\",\"content\":\"synthetic\"}]}",
+      "expected_code": "public_request_unknown_member"
+    },
+    {
+      "case_id": "undeclared-choice-rejected",
+      "body": "{\"model\":\"company-claude\",\"max_tokens\":64,\"tools\":[{\"name\":\"lookup\",\"input_schema\":{\"type\":\"object\"}}],\"tool_choice\":{\"type\":\"tool\",\"name\":\"other\"},\"messages\":[{\"role\":\"user\",\"content\":\"synthetic\"}]}",
+      "expected_code": "named_tool_choice_undeclared"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "undeclared-tool-rejected",
+      "body": "{\"id\":\"msg_bad_tool\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-5\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_bad\",\"name\":\"other\",\"input\":{}}],\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}",
+      "expected_code": "tool_use_choice_mismatch"
+    },
+    {
+      "case_id": "tool-stop-mismatch-rejected",
+      "body": "{\"id\":\"msg_bad_stop\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-5\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_bad_stop\",\"name\":\"lookup\",\"input\":{}}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}",
+      "expected_code": "tool_use_stop_mismatch"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "rate-limit-retry",
+      "status_code": 429,
+      "expected_failure_kind": "rate_limit",
+      "expected_retryable": true
+    },
+    {
+      "case_id": "overloaded-retry",
+      "status_code": 529,
+      "expected_failure_kind": "channel_failure",
+      "expected_retryable": true
+    }
+  ]
+}

@@ -13,13 +13,14 @@ import {
 import { ApiError } from '../api/transport';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
+import { parseModelList } from '../utils/modelList';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 import { projectOption } from '../utils/projectDisplay';
 
 const { Text, Title } = Typography;
 
 type Project = { id: number; name: string; slug?: string; status: string; current_user_membership_role?: string };
-type ModelAlias = { alias: string; target_model: string; display_name?: string; status: string };
+type CatalogModel = { model_name: string; display_name?: string; aliases?: string | string[] };
 type WorkloadApplication = { application_ref: string; display_name: string; project_id: number; environment?: string; status: string };
 type ModelOption = { value: string; label: string };
 
@@ -168,6 +169,7 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
   const [error, setError] = useState('');
   const readinessGeneration = useRef(0);
   const applicationGeneration = useRef(0);
+  const modelOptionsGeneration = useRef(0);
 
   const query = useMemo(() => {
     const endpoint = search.get('endpoint') || canonicalOperationPaths['openai.chat_completions.v1'];
@@ -209,40 +211,47 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
   }, [connectionMode]);
 
   const loadModelOptions = useCallback(async () => {
+    const generation = ++modelOptionsGeneration.current;
+    setModelOptions([]);
+    setModelApplications([]);
     setModelOptionsError('');
-    const [deploymentResult, aliasResult] = await Promise.allSettled([
-      modelDeploymentApi.list(),
-      connectionMode
-        ? Promise.resolve([] as ModelAlias[])
-        : loadAllPages<ModelAlias>((page, size) => api.getModelAliases(page, size)),
-    ]);
     const options = new Map<string, string>();
-    if (deploymentResult.status === 'fulfilled') {
-      const canonicalApplications = deploymentResult.value.applications || [];
-      setModelApplications(canonicalApplications);
-      for (const application of canonicalApplications) {
-        options.set(application.public_model.model_name, application.public_model.display_name || application.public_model.model_name);
+    let nextApplications: CanonicalModelApplication[] = [];
+    let nextError = '';
+    if (connectionMode) {
+      try {
+        const result = await modelDeploymentApi.list();
+        nextApplications = result.applications || [];
+        for (const application of nextApplications) {
+          options.set(application.public_model.model_name, application.public_model.display_name || application.public_model.model_name);
+        }
+      } catch {
+        nextError = '模型部署列表暂时不可用，无法安全选择诊断模型。';
       }
-    } else {
-      setModelApplications([]);
-    }
-    if (aliasResult.status === 'fulfilled') {
-      for (const alias of aliasResult.value) {
-        if (alias.status === 'active') options.set(alias.alias, `${alias.display_name || alias.alias}（Alias → ${alias.target_model}）`);
+    } else if (query.project_id) {
+      try {
+        const catalog = await loadAllPages<CatalogModel>((page, size) => api.getModelCatalog(page, size, {
+          project_id: query.project_id,
+          routable_only: true,
+        }));
+        for (const model of catalog) {
+          options.set(model.model_name, model.display_name || model.model_name);
+          for (const alias of parseModelList(model.aliases)) {
+            options.set(alias, `${alias}（Alias → ${model.model_name}）`);
+          }
+        }
+      } catch {
+        nextError = '当前项目的已启用模型目录暂时不可用，无法安全选择诊断模型。';
       }
     }
+    if (modelOptionsGeneration.current !== generation) return;
     if (query.model && !options.has(query.model)) options.set(query.model, query.model);
+    setModelApplications(nextApplications);
+    setModelOptionsError(nextError);
     setModelOptions([...options.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label)));
-    if (connectionMode && deploymentResult.status === 'rejected') {
-      setModelOptionsError('模型部署列表暂时不可用，无法安全选择诊断模型。');
-    } else if (deploymentResult.status === 'rejected' && aliasResult.status === 'rejected') {
-      setModelOptionsError('模型部署和 Alias 列表均暂时不可用，无法安全选择诊断模型。');
-    } else if (deploymentResult.status === 'rejected' || aliasResult.status === 'rejected') {
-      setModelOptionsError('部分模型来源暂时不可用；当前下拉只显示已成功读取的模型。');
-    }
-  }, [connectionMode, query.model]);
+  }, [connectionMode, query.model, query.project_id]);
 
   const loadApplications = useCallback(async () => {
     const generation = ++applicationGeneration.current;

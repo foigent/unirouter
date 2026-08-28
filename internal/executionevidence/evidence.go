@@ -141,10 +141,12 @@ func NormalizeCompact(value CompactProjection) (CompactProjection, error) {
 		value.CredentialBindingID > 0 && value.RuntimeReleaseID > 0 && mrsPattern.MatchString(value.SnapshotHash)
 	canonicalEmpty := value.PublicModelID == 0 && value.DeploymentID == 0 && value.ConnectionID == 0 &&
 		value.CredentialBindingID == 0 && value.RuntimeReleaseID == 0 && value.SnapshotHash == ""
-	publicPresent := value.PublicExecutionBindingID > 0 &&
-		value.DeliveryContractVersion == PublicDeliveryContractV1 &&
-		value.ChargeContractVersion == PublicChargeContractV1 &&
-		value.IdempotencyContractVersion == PublicIdempotencyContractV1
+	publicPresent := value.PublicExecutionBindingID > 0 && validPublicContractBundle(
+		value.ModelOperationID,
+		value.DeliveryContractVersion,
+		value.ChargeContractVersion,
+		value.IdempotencyContractVersion,
+	)
 	publicEmpty := value.PublicExecutionBindingID == 0 && value.DeliveryContractVersion == "" &&
 		value.ChargeContractVersion == "" && value.IdempotencyContractVersion == ""
 	if value.ContractVersion == ContractVersionV1 && (!publicEmpty || isPublicOperation(value.ModelOperationID)) {

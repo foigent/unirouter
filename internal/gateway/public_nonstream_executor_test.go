@@ -422,6 +422,82 @@ func TestPublicNonStreamExecutorHTTPFailureMetadataAndHealthEligibility(t *testi
 	}
 }
 
+func TestPublicClaudeSonnet5RefusalExplanationAlwaysCrossesOutputGuard(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		decision    PublicOutputGuardDecision
+		wantText    string
+		wantBlocked bool
+	}{
+		{name: "allow", decision: PublicOutputGuardDecision{Action: PublicOutputGuardAllow}, wantText: "provider refusal explanation"},
+		{name: "replace", decision: PublicOutputGuardDecision{Action: PublicOutputGuardReplace, Replacements: []string{"safe refusal explanation"}}, wantText: "safe refusal explanation"},
+		{name: "block", decision: PublicOutputGuardDecision{Action: PublicOutputGuardBlock}, wantBlocked: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			upstream := publicSonnet5Upstream(t)
+			executor := mustPublicExecutor(t,
+				publicNonStreamDoerFunc(func(*http.Request) (*http.Response, error) {
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{
+  "id":"msg_refusal","type":"message","role":"assistant","model":"claude-sonnet-5",
+  "content":[],"stop_reason":"refusal","stop_sequence":null,
+  "stop_details":{"type":"refusal","category":"cyber","explanation":"provider refusal explanation"},
+  "usage":{"input_tokens":10,"output_tokens":1}
+}`))}, nil
+				}),
+				publicOutputGuardFunc(func(_ context.Context, input PublicOutputGuardInput) (PublicOutputGuardDecision, error) {
+					if input.EndpointKind != endpointprotocol.EndpointMessages || len(input.Texts) != 1 ||
+						input.Texts[0] != (endpointprotocol.PublicText{Path: "stop_details.explanation", Text: "provider refusal explanation"}) {
+						t.Fatalf("guard input=%+v", input)
+					}
+					return test.decision, nil
+				}),
+			)
+			result, err := executor.Execute(context.Background(), upstream)
+			if test.wantBlocked {
+				failure := requirePublicExecutionFailure(t, err, PublicNonStreamStageOutputGuardrail)
+				if !errors.Is(err, ErrPublicNonStreamOutputWithheld) || failure.HealthAction() != PublicNonStreamHealthSuccess ||
+					result.Delivery.CustomerUsage() != (endpointprotocol.PublicCustomerUsage{InputTokens: 10, OutputTokens: 1}) {
+					t.Fatalf("blocked refusal result=%+v failure=%+v err=%v", result, failure, err)
+				}
+				return
+			}
+			if err != nil || !strings.Contains(string(result.Delivery.Body()), `"explanation":"`+test.wantText+`"`) ||
+				result.Delivery.CustomerUsage() != (endpointprotocol.PublicCustomerUsage{InputTokens: 10, OutputTokens: 1}) {
+				t.Fatalf("refusal result=%+v body=%s err=%v", result, result.Delivery.Body(), err)
+			}
+		})
+	}
+}
+
+func TestPublicClaudeSonnet5OmittedThinkingEvidenceBypassesTextGuardWithoutBypassingUsage(t *testing.T) {
+	upstream := publicSonnet5ControlsUpstream(t)
+	executor := mustPublicExecutor(t,
+		publicNonStreamDoerFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{
+  "id":"msg_thinking","type":"message","role":"assistant","model":"claude-sonnet-5",
+  "content":[{"type":"thinking","thinking":"","signature":"opaque-signature"},{"type":"text","text":"provider answer"}],
+  "stop_reason":"end_turn","stop_sequence":null,
+  "usage":{"input_tokens":10,"output_tokens":7,"output_tokens_details":{"thinking_tokens":3},"inference_geo":"global","service_tier":"standard"}
+}`))}, nil
+		}),
+		publicOutputGuardFunc(func(_ context.Context, input PublicOutputGuardInput) (PublicOutputGuardDecision, error) {
+			if input.EndpointKind != endpointprotocol.EndpointMessages || len(input.Texts) != 1 ||
+				input.Texts[0] != (endpointprotocol.PublicText{Path: "content[1].text", Text: "provider answer"}) {
+				t.Fatalf("guard input=%+v", input)
+			}
+			return PublicOutputGuardDecision{Action: PublicOutputGuardReplace, Replacements: []string{"safe answer"}}, nil
+		}),
+	)
+	result, err := executor.Execute(context.Background(), upstream)
+	if err != nil || result.Delivery.CustomerUsage() != (endpointprotocol.PublicCustomerUsage{InputTokens: 10, OutputTokens: 7}) ||
+		!strings.Contains(string(result.Delivery.Body()), `"signature":"opaque-signature"`) ||
+		!strings.Contains(string(result.Delivery.Body()), `"inference_geo":"global"`) ||
+		!strings.Contains(string(result.Delivery.Body()), `"service_tier":"standard"`) ||
+		!strings.Contains(string(result.Delivery.Body()), `"text":"safe answer"`) {
+		t.Fatalf("thinking result=%+v body=%s err=%v", result, result.Delivery.Body(), err)
+	}
+}
+
 func publicResponsesUpstream(t *testing.T) *endpointprotocol.PublicUpstreamRequest {
 	t.Helper()
 	identity := endpointprotocol.PublicContractIdentity{
@@ -450,6 +526,97 @@ func publicResponsesUpstream(t *testing.T) *endpointprotocol.PublicUpstreamReque
 		APIKey:      "secret",
 		RequestID:   "req-public",
 		MappedModel: "provider-private-model",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return upstream
+}
+
+func publicSonnet5Upstream(t *testing.T) *endpointprotocol.PublicUpstreamRequest {
+	t.Helper()
+	identity := endpointprotocol.PublicContractIdentity{
+		ModelOperationID:           string(modeloperation.IDMessages),
+		PublicPath:                 modeloperation.PathMessages,
+		ExecutorContractVersion:    endpointprotocol.EndpointProfileNonStreamExecutorV1,
+		ProfileID:                  endpointprotocol.ProfileAnthropicMessagesText,
+		ProfileVersion:             "1.0.0",
+		DeliveryContractVersion:    endpointprotocol.PublicDeliveryContractV1,
+		ChargeContractVersion:      endpointprotocol.PublicCustomerChargeContractV1,
+		IdempotencyContractVersion: endpointprotocol.PublicIdempotencyContractV1,
+	}
+	profile, err := endpointprotocol.NewPublicNonStreamRegistry().Resolve(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := profile.PrepareRequest(
+		[]byte(`{"model":"public-claude","max_tokens":64,"messages":[{"role":"user","content":"hello"}]}`),
+		"public-claude",
+		endpointprotocol.PublicRequestContract{
+			ExecutionProfileID: "anthropic.claude-sonnet-5.api", ExecutionProfileVersion: "1.1.0",
+			AnthropicMessages: &endpointprotocol.PublicAnthropicMessagesContract{
+				ForbiddenRootFields: []string{"temperature", "top_p"}, RequireFinalUserMessage: true,
+				AllowedResponseStops: []string{"end_turn", "max_tokens", "refusal", "stop_sequence"},
+				RefusalStopDetails:   true,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream, err := profile.BuildUpstream(context.Background(), prepared, endpointprotocol.PublicUpstreamInput{
+		BaseURL: "https://api.anthropic.com", APIKey: "secret", RequestID: "req-sonnet5",
+		MappedModel: "claude-sonnet-5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return upstream
+}
+
+func publicSonnet5ControlsUpstream(t *testing.T) *endpointprotocol.PublicUpstreamRequest {
+	t.Helper()
+	identity := endpointprotocol.PublicContractIdentity{
+		ModelOperationID:           string(modeloperation.IDMessages),
+		PublicPath:                 modeloperation.PathMessages,
+		ExecutorContractVersion:    endpointprotocol.EndpointProfileNonStreamExecutorV1,
+		ProfileID:                  endpointprotocol.ProfileAnthropicMessagesText,
+		ProfileVersion:             "1.0.0",
+		DeliveryContractVersion:    endpointprotocol.PublicDeliveryContractV1,
+		ChargeContractVersion:      endpointprotocol.PublicCustomerChargeContractV1,
+		IdempotencyContractVersion: endpointprotocol.PublicIdempotencyContractV1,
+	}
+	profile, err := endpointprotocol.NewPublicNonStreamRegistry().Resolve(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := profile.PrepareRequest(
+		[]byte(`{"model":"public-claude","max_tokens":64,"thinking":{"type":"adaptive"},"output_config":{"effort":"high"},"messages":[{"role":"user","content":"hello"}]}`),
+		"public-claude",
+		endpointprotocol.PublicRequestContract{
+			ExecutionProfileID: "anthropic.claude-sonnet-5.api", ExecutionProfileVersion: "1.2.0",
+			AnthropicMessages: &endpointprotocol.PublicAnthropicMessagesContract{
+				ForbiddenRootFields: []string{"temperature", "top_p"}, RequireFinalUserMessage: true,
+				AllowedResponseStops: []string{"end_turn", "max_tokens", "refusal", "stop_sequence"},
+				RefusalStopDetails:   true,
+				ResponseInferenceGeo: true, ResponseServiceTier: true,
+				Reasoning: &endpointprotocol.PublicAnthropicReasoningRequestContract{
+					ThinkingObjectField: "thinking", ThinkingTypeField: "type",
+					AllowedThinkingTypes: []string{"adaptive", "disabled"}, ThinkingProviderDefault: "adaptive",
+					DisabledThinkingTypes:   []string{"disabled"},
+					OutputConfigObjectField: "output_config", EffortField: "effort",
+					AllowedEfforts: []string{"low", "medium", "high", "xhigh", "max"}, EffortProviderDefault: "high",
+					ResponseThinkingTextMode: "omitted",
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream, err := profile.BuildUpstream(context.Background(), prepared, endpointprotocol.PublicUpstreamInput{
+		BaseURL: "https://api.anthropic.com", APIKey: "secret", RequestID: "req-sonnet5-controls",
+		MappedModel: "claude-sonnet-5",
 	})
 	if err != nil {
 		t.Fatal(err)

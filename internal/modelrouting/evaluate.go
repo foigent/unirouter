@@ -8,9 +8,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/executionevidence"
 	"github.com/uniroute/unirouter/internal/modellist"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
@@ -338,6 +340,22 @@ func canonicalEligibility(value snapshot, candidate canonicalCandidate, operatio
 	if !candidate.OperationPresent || candidate.OperationID != operation || candidate.OperationSupportState != "enabled" {
 		return false, "unsupported_operation"
 	}
+	if operation != legacyCompatibilityOp && (value.ExecutionProfileID != "" || value.ExecutionProfileVersion != "") {
+		profile, ok := modelprofile.Lookup(value.ExecutionProfileID, value.ExecutionProfileVersion)
+		endpointPathMode := ""
+		var pathModeErr error
+		if ok && modelprofile.RequiredEndpointPathMode(profile) != "" {
+			endpointPathMode, pathModeErr = adapters.EffectiveEndpointPathMode(candidate.AdapterType, candidate.AdapterConfig)
+		}
+		if !ok || pathModeErr != nil || modelprofile.ValidateProductBinding(profile, modelprofile.ProductBinding{
+			Provider: candidate.Provider, BaseURL: candidate.BaseURL,
+			AdapterType: candidate.AdapterType, EndpointPathMode: endpointPathMode, OperationID: operation,
+			ProtocolProfileID: candidate.ProtocolProfileID, ProtocolProfileVersion: candidate.ProtocolProfileVersion,
+			UpstreamModel: candidate.UpstreamModel,
+		}) != nil {
+			return false, "profile_product_identity_mismatch"
+		}
+	}
 	if candidate.ProtocolProfileID == "" || candidate.ProtocolProfileVersion == "" {
 		return false, "protocol_profile_missing"
 	}
@@ -364,7 +382,7 @@ func canonicalEligibility(value snapshot, candidate canonicalCandidate, operatio
 			candidate.Manifest.IdempotencyContractVersion == "" {
 			return false, "public_execution_binding_missing"
 		}
-		compiled, err := modelqualification.CompiledPublicBinding(operation)
+		compiled, err := modelqualification.CompiledPublicBindingFor(binding)
 		if err != nil || candidate.Manifest.PublicPath != compiled.PublicPath ||
 			candidate.Manifest.ProtocolProfileID != compiled.ProfileID ||
 			candidate.Manifest.ProtocolProfileVersion != compiled.ProfileVersion ||
@@ -388,7 +406,7 @@ func canonicalEligibility(value snapshot, candidate canonicalCandidate, operatio
 			return false, "unverified_operation"
 		}
 	}
-	for _, required := range value.RequiredCapabilities {
+	for _, required := range capabilityIDs(value.CapabilityRequirements) {
 		capability, exists := candidate.Capabilities[required]
 		if !exists || capability.SupportState != "enabled" || capability.EvidenceState != "production_approved" || capability.VerifiedAt == nil {
 			return false, "unsupported_capability:" + required
@@ -762,8 +780,9 @@ func evidenceFor(
 	operationVerifiedAt := candidate.OperationVerifiedAt
 	protocolProfileID := candidate.ProtocolProfileID
 	protocolProfileVersion := candidate.ProtocolProfileVersion
-	capabilityEvidenceHash := capabilityEvidenceDigest(value.RequiredCapabilities, candidate.Capabilities)
-	capabilityEvidence := capabilityEvidenceEntries(value.RequiredCapabilities, candidate.Capabilities)
+	requiredCapabilityIDs := capabilityIDs(value.CapabilityRequirements)
+	capabilityEvidenceHash := capabilityEvidenceDigest(requiredCapabilityIDs, candidate.Capabilities)
+	capabilityEvidence := capabilityEvidenceEntries(requiredCapabilityIDs, candidate.Capabilities)
 	executionSource := executionevidence.ContractSourceCanonicalProfile
 	if legacyExecution {
 		executionSource = executionevidence.ContractSourceLegacyAdapter

@@ -2,18 +2,81 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 )
 
 type guardrailPinContextKey struct{}
+
+type assistantToolHistorySnapshotContextKey struct{}
+
+type assistantToolHistorySnapshot map[string][sha256.Size]byte
+
+func contextWithAssistantToolHistorySnapshot(ctx context.Context, body []byte) context.Context {
+	snapshot := snapshotAssistantToolHistory(body)
+	if len(snapshot) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, assistantToolHistorySnapshotContextKey{}, snapshot)
+}
+
+func snapshotAssistantToolHistory(body []byte) assistantToolHistorySnapshot {
+	var envelope struct {
+		Messages []map[string]json.RawMessage `json:"messages"`
+	}
+	if json.Unmarshal(body, &envelope) != nil {
+		return nil
+	}
+	snapshot := make(assistantToolHistorySnapshot)
+	for index, message := range envelope.Messages {
+		var role string
+		if json.Unmarshal(message["role"], &role) != nil || role != "assistant" {
+			continue
+		}
+		var calls []json.RawMessage
+		if json.Unmarshal(message["tool_calls"], &calls) != nil || len(calls) == 0 {
+			continue
+		}
+		var content string
+		if json.Unmarshal(message["content"], &content) != nil {
+			continue
+		}
+		canonicalMessage, err := json.Marshal(message)
+		if err != nil {
+			continue
+		}
+		snapshot[fmt.Sprintf("messages[%d]", index)] = sha256.Sum256(canonicalMessage)
+	}
+	return snapshot
+}
+
+func validatePreservedAssistantToolHistory(ctx context.Context, body []byte, reasoningProfile string) error {
+	contract, ok := modelprofile.ResolveReasoningContract(reasoningProfile)
+	if !ok || contract.AssistantToolHistoryReplayField != "content" || ctx == nil {
+		return nil
+	}
+	original, _ := ctx.Value(assistantToolHistorySnapshotContextKey{}).(assistantToolHistorySnapshot)
+	if len(original) == 0 {
+		return nil
+	}
+	current := snapshotAssistantToolHistory(body)
+	for path, originalHash := range original {
+		if currentHash, exists := current[path]; !exists || currentHash != originalHash {
+			return fmt.Errorf("assistant tool history %s was changed before exact-profile execution", path)
+		}
+	}
+	return nil
+}
 
 func contextWithGuardrailPin(ctx context.Context, pinned *guardrail.Pinned) context.Context {
 	if pinned == nil {
@@ -259,10 +322,10 @@ func (inspection *chatInputGuardrailInspection) collectTextValue(object map[stri
 		case "text", "input_text", "output_text":
 		case "refusal":
 			field = "refusal"
-		case "image_url", "video_url":
+		case "image_url", "video_url", "file_url":
 			// Binary media is inspected by the selected protocol profile. The
-			// current executable contract accepts only inline data URLs, so there
-			// is no unbounded remote text surface for this guardrail pass.
+			// guardrail does not fetch or treat provider-side media URLs as prompt
+			// text; the typed protocol contract owns their exact wire validation.
 			continue
 		default:
 			inspection.markIncomplete(partPath + ".type")
@@ -585,9 +648,10 @@ type outputTextRef struct {
 // no text. A present field with an unsupported shape is incomplete and must not
 // be treated as successfully inspected by an enforced output policy.
 type nonStreamOutputInspection struct {
-	texts           []guardrail.Text
-	refs            []outputTextRef
-	incompletePaths []string
+	texts                   []guardrail.Text
+	refs                    []outputTextRef
+	incompletePaths         []string
+	choiceFunctionToolNames [][]string
 }
 
 func (inspection nonStreamOutputInspection) complete() bool {
@@ -650,11 +714,204 @@ func (inspection *nonStreamOutputInspection) collectTextValue(container map[stri
 }
 
 func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutputInspection {
+	return inspectNonStreamOutputTextsForProtocol(response, "")
+}
+
+func inspectNonStreamOutputTextsForRoute(response map[string]interface{}, route *RouteResult) nonStreamOutputInspection {
+	protocolProfile := ""
+	if route != nil {
+		protocolProfile = route.ModelProtocolProfile
+	}
+	inspection := inspectNonStreamOutputTextsForProtocol(response, protocolProfile)
+	inspectDeepSeekFlashNormalizedToolResponse(response, route, &inspection)
+	inspectFunctionToolChoiceResponse(route, &inspection)
+	if routeRequiresPlanCapability(route, modelprofile.CapabilityStrictJSONSchema) {
+		inspectStrictJSONSchemaResponse(response, &inspection)
+	}
+	return inspection
+}
+
+// The exact DeepSeek Flash response normalizer removes every valid provider
+// tool-call index before delivery. Any child index that remains on the current
+// generic tuple therefore represents an invalid normalization result and must
+// fail closed. This assertion is route-scoped so it does not narrow the shared
+// generic OpenAI-compatible contract for other providers.
+func inspectDeepSeekFlashNormalizedToolResponse(
+	response map[string]interface{},
+	route *RouteResult,
+	inspection *nonStreamOutputInspection,
+) {
+	if route == nil || inspection == nil ||
+		!strings.EqualFold(strings.TrimSpace(route.Channel.Provider), "deepseek") ||
+		strings.TrimSpace(route.MappedModel) != "deepseek-v4-flash" ||
+		(route.ModelProtocolProfile != "protocol.deepseek-openai-chat.v4" &&
+			route.ModelProtocolProfile != "openai.chat_completions") {
+		return
+	}
+	choices, ok := response["choices"].([]interface{})
+	if !ok {
+		return
+	}
+	for choiceIndex, rawChoice := range choices {
+		choice, ok := rawChoice.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		message, ok := choice["message"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		toolCalls, ok := message["tool_calls"].([]interface{})
+		if !ok {
+			continue
+		}
+		for toolIndex, rawTool := range toolCalls {
+			tool, ok := rawTool.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if _, exists := tool["index"]; exists {
+				inspection.markIncomplete(fmt.Sprintf("choices[%d].message.tool_calls[%d].index", choiceIndex, toolIndex))
+			}
+		}
+	}
+}
+
+func inspectFunctionToolChoiceResponse(route *RouteResult, inspection *nonStreamOutputInspection) {
+	if route == nil || inspection == nil {
+		return
+	}
+	choiceCapability := ""
+	var constraint *modelrouting.FunctionToolChoiceConstraint
+	for _, requirement := range route.PlanCapabilityRequirements {
+		if requirement.FunctionToolChoice == nil ||
+			(requirement.CapabilityID != modelprofile.CapabilityFunctionTools &&
+				requirement.CapabilityID != modelprofile.CapabilityToolChoiceAuto &&
+				requirement.CapabilityID != modelprofile.CapabilityToolChoiceReq &&
+				requirement.CapabilityID != modelprofile.CapabilityToolChoiceNamed) {
+			continue
+		}
+		if choiceCapability != "" {
+			inspection.markIncomplete("plan.function_tool_choice")
+			return
+		}
+		choiceCapability = requirement.CapabilityID
+		constraint = requirement.FunctionToolChoice
+	}
+	if choiceCapability == "" {
+		if contract, modeled := modelprofile.ResolveChatProtocolContract(route.ModelProtocolProfile); modeled &&
+			contract.ExactFunctionToolResponseModeled {
+			for _, names := range inspection.choiceFunctionToolNames {
+				if len(names) > 0 {
+					inspection.markIncomplete("plan.function_tool_choice")
+					break
+				}
+			}
+		}
+		return
+	}
+	isNone := choiceCapability == modelprofile.CapabilityFunctionTools
+	if constraint == nil || (!isNone && len(constraint.DeclaredFunctionNames) == 0) ||
+		(choiceCapability == modelprofile.CapabilityToolChoiceNamed && constraint.SelectedFunctionName == "") ||
+		(choiceCapability != modelprofile.CapabilityToolChoiceNamed && constraint.SelectedFunctionName != "") {
+		inspection.markIncomplete("plan.function_tool_choice")
+		return
+	}
+	if isNone {
+		for index, names := range inspection.choiceFunctionToolNames {
+			if len(names) > 0 {
+				inspection.markIncomplete(fmt.Sprintf("choices[%d].message.tool_calls", index))
+			}
+		}
+		return
+	}
+	if (choiceCapability == modelprofile.CapabilityToolChoiceReq || choiceCapability == modelprofile.CapabilityToolChoiceNamed) &&
+		len(inspection.choiceFunctionToolNames) == 0 {
+		inspection.markIncomplete("choices")
+		return
+	}
+	for index, names := range inspection.choiceFunctionToolNames {
+		path := fmt.Sprintf("choices[%d].message.tool_calls", index)
+		if (choiceCapability == modelprofile.CapabilityToolChoiceReq || choiceCapability == modelprofile.CapabilityToolChoiceNamed) && len(names) == 0 {
+			inspection.markIncomplete(path)
+			continue
+		}
+		for toolIndex, name := range names {
+			if !slices.Contains(constraint.DeclaredFunctionNames, name) ||
+				(choiceCapability == modelprofile.CapabilityToolChoiceNamed && name != constraint.SelectedFunctionName) {
+				inspection.markIncomplete(fmt.Sprintf("%s[%d].function.name", path, toolIndex))
+			}
+		}
+	}
+}
+
+func routeRequiresPlanCapability(route *RouteResult, capability string) bool {
+	if route == nil || strings.TrimSpace(capability) == "" {
+		return false
+	}
+	for _, requirement := range route.PlanCapabilityRequirements {
+		if requirement.CapabilityID == capability {
+			return true
+		}
+	}
+	return false
+}
+
+func inspectStrictJSONSchemaResponse(response map[string]interface{}, inspection *nonStreamOutputInspection) {
+	choices, ok := response["choices"].([]interface{})
+	if !ok || len(choices) == 0 {
+		inspection.markIncomplete("choices")
+		return
+	}
+	for index, rawChoice := range choices {
+		choicePath := fmt.Sprintf("choices[%d]", index)
+		choice, ok := rawChoice.(map[string]interface{})
+		if !ok {
+			inspection.markIncomplete(choicePath)
+			continue
+		}
+		finishReason, ok := choice["finish_reason"].(string)
+		if !ok || finishReason != "stop" {
+			inspection.markIncomplete(choicePath + ".finish_reason")
+		}
+		message, ok := choice["message"].(map[string]interface{})
+		if !ok {
+			inspection.markIncomplete(choicePath + ".message")
+			continue
+		}
+		if refusal, exists := message["refusal"]; exists && refusal != nil {
+			inspection.markIncomplete(choicePath + ".message.refusal")
+		}
+		content, ok := message["content"].(string)
+		if !ok || strings.TrimSpace(content) == "" || !json.Valid([]byte(content)) {
+			inspection.markIncomplete(choicePath + ".message.content")
+		}
+	}
+}
+
+func inspectNonStreamOutputTextsForProtocol(response map[string]interface{}, protocolProfile string) nonStreamOutputInspection {
 	rawChoices, exists := response["choices"]
 	choices, ok := rawChoices.([]interface{})
+	opaqueMessageFields := []string{}
+	reasoningMessageFields := []string{"reasoning_content", "reasoning"}
+	toolResponsesAllowed := true
+	exactFunctionToolResponse := false
+	assistantToolResponseReplayField := ""
+	if contract, modeled := modelprofile.ResolveChatProtocolContract(protocolProfile); modeled {
+		opaqueMessageFields = contract.OpaqueAssistantMessageFields
+		if contract.AssistantReasoningResponseModeled {
+			reasoningMessageFields = contract.AssistantReasoningResponseFields
+		}
+		if contract.FunctionToolsModeled {
+			toolResponsesAllowed = contract.FunctionTools
+		}
+		exactFunctionToolResponse = contract.ExactFunctionToolResponseModeled
+		assistantToolResponseReplayField = contract.AssistantToolResponseReplayField
+	}
 	inspection := nonStreamOutputInspection{
-		texts: make([]guardrail.Text, 0, len(choices)),
-		refs:  make([]outputTextRef, 0, len(choices)),
+		texts:                   make([]guardrail.Text, 0, len(choices)),
+		refs:                    make([]outputTextRef, 0, len(choices)),
+		choiceFunctionToolNames: make([][]string, len(choices)),
 	}
 	if !streamMapKeysSupported(response, "id", "object", "created", "model", "system_fingerprint", "service_tier", "choices", "usage", "metadata") {
 		inspection.markIncomplete(chatDeliveryWhitelistVersion + ".root")
@@ -685,6 +942,8 @@ func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutpu
 		return inspection
 	}
 	for index, rawChoice := range choices {
+		finishReason := ""
+		choiceHasToolCalls := false
 		choice, ok := rawChoice.(map[string]interface{})
 		if !ok {
 			inspection.markIncomplete(fmt.Sprintf("choices[%d]", index))
@@ -698,7 +957,10 @@ func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutpu
 		}
 		if finish, exists := choice["finish_reason"]; exists && finish != nil {
 			value, ok := finish.(string)
-			if !ok || !streamFinishReasonSupported(value) {
+			finishReason = value
+			if !ok || !streamFinishReasonSupported(value) ||
+				(!toolResponsesAllowed && (value == "tool_calls" || value == "function_call")) ||
+				(exactFunctionToolResponse && value == "function_call") {
 				inspection.markIncomplete(fmt.Sprintf("choices[%d].finish_reason", index))
 			}
 		}
@@ -711,20 +973,43 @@ func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutpu
 				inspection.markIncomplete(fmt.Sprintf("choices[%d].message", index))
 				continue
 			}
-			if !streamMapKeysSupported(message, "role", "content", "refusal", "reasoning_content", "reasoning", "function_call", "tool_calls") {
+			messageKeys := []string{"role", "content", "refusal"}
+			messageKeys = append(messageKeys, reasoningMessageFields...)
+			if toolResponsesAllowed {
+				if exactFunctionToolResponse {
+					messageKeys = append(messageKeys, "tool_calls")
+				} else {
+					messageKeys = append(messageKeys, "function_call", "tool_calls")
+				}
+			}
+			messageKeys = append(messageKeys, opaqueMessageFields...)
+			if !streamMapKeysSupported(message, messageKeys...) {
 				inspection.markIncomplete(fmt.Sprintf("choices[%d].message", index))
 			}
 			if role, exists := message["role"]; exists && role != nil {
 				value, ok := role.(string)
-				if !ok || (value != "assistant" && value != "tool" && value != "function") {
+				if !ok || (exactFunctionToolResponse && value != "assistant") ||
+					(!exactFunctionToolResponse && value != "assistant" && value != "tool" && value != "function") {
 					inspection.markIncomplete(fmt.Sprintf("choices[%d].message.role", index))
 				}
 			}
-			for _, key := range []string{"content", "refusal", "reasoning_content", "reasoning"} {
+			for _, key := range append([]string{"content", "refusal"}, reasoningMessageFields...) {
 				inspection.collectTextValue(message, key, fmt.Sprintf("choices[%d].message.%s", index, key))
 			}
-			if rawFunctionCall, exists := message["function_call"]; exists && rawFunctionCall != nil {
+			for _, key := range opaqueMessageFields {
+				if value, present := message[key]; present && value != nil {
+					text, valid := value.(string)
+					if !valid || strings.TrimSpace(text) == "" {
+						inspection.markIncomplete(fmt.Sprintf("choices[%d].message.%s", index, key))
+					}
+				}
+			}
+			if rawFunctionCall, exists := message["function_call"]; toolResponsesAllowed && exists && rawFunctionCall != nil {
 				path := fmt.Sprintf("choices[%d].message.function_call", index)
+				if exactFunctionToolResponse {
+					inspection.markIncomplete(path)
+					continue
+				}
 				functionCall, ok := rawFunctionCall.(map[string]interface{})
 				if !ok {
 					inspection.markIncomplete(path)
@@ -747,12 +1032,13 @@ func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutpu
 					}
 				}
 			}
-			if rawToolCalls, exists := message["tool_calls"]; exists && rawToolCalls != nil {
+			if rawToolCalls, exists := message["tool_calls"]; toolResponsesAllowed && exists && rawToolCalls != nil {
 				toolCalls, ok := rawToolCalls.([]interface{})
-				if !ok {
+				if !ok || (exactFunctionToolResponse && len(toolCalls) == 0) {
 					inspection.markIncomplete(fmt.Sprintf("choices[%d].message.tool_calls", index))
 					continue
 				}
+				choiceHasToolCalls = len(toolCalls) > 0
 				for toolIndex, rawTool := range toolCalls {
 					toolPath := fmt.Sprintf("choices[%d].message.tool_calls[%d]", index, toolIndex)
 					tool, ok := rawTool.(map[string]interface{})
@@ -760,16 +1046,28 @@ func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutpu
 						inspection.markIncomplete(toolPath)
 						continue
 					}
-					if !streamMapKeysSupported(tool, "index", "id", "type", "function") {
+					toolFields := []string{"index", "id", "type", "function"}
+					if exactFunctionToolResponse {
+						toolFields = []string{"id", "type", "function"}
+					}
+					if !streamMapKeysSupported(tool, toolFields...) {
 						inspection.markIncomplete(toolPath)
 					}
-					if _, valid := streamEnvelopeIndex(tool, toolIndex); !valid {
+					if !exactFunctionToolResponse {
+						if _, valid := streamEnvelopeIndex(tool, toolIndex); !valid {
+							inspection.markIncomplete(toolPath + ".index")
+						}
+					} else if _, exists := tool["index"]; exists {
 						inspection.markIncomplete(toolPath + ".index")
 					}
 					if value, exists := tool["id"]; !exists || value == nil {
 						inspection.markIncomplete(toolPath + ".id")
 					} else if text, ok := value.(string); ok {
-						inspection.appendReadOnlyText(toolPath+".id", text)
+						if exactFunctionToolResponse && strings.TrimSpace(text) == "" {
+							inspection.markIncomplete(toolPath + ".id")
+						} else {
+							inspection.appendReadOnlyText(toolPath+".id", text)
+						}
 					} else {
 						inspection.markIncomplete(toolPath + ".id")
 					}
@@ -792,7 +1090,12 @@ func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutpu
 					if value, exists := function["name"]; !exists || value == nil {
 						inspection.markIncomplete(toolPath + ".function.name")
 					} else if text, ok := value.(string); ok {
-						inspection.appendReadOnlyText(toolPath+".function.name", text)
+						if exactFunctionToolResponse && strings.TrimSpace(text) == "" {
+							inspection.markIncomplete(toolPath + ".function.name")
+						} else {
+							inspection.appendReadOnlyText(toolPath+".function.name", text)
+							inspection.choiceFunctionToolNames[index] = append(inspection.choiceFunctionToolNames[index], text)
+						}
 					} else {
 						inspection.markIncomplete(toolPath + ".function.name")
 					}
@@ -807,8 +1110,22 @@ func inspectNonStreamOutputTexts(response map[string]interface{}) nonStreamOutpu
 					}
 				}
 			}
+			if choiceHasToolCalls && assistantToolResponseReplayField != "" {
+				value, exists := message[assistantToolResponseReplayField]
+				text, valid := value.(string)
+				if !exists || !valid || strings.TrimSpace(text) == "" {
+					inspection.markIncomplete(fmt.Sprintf("choices[%d].message.%s", index, assistantToolResponseReplayField))
+				}
+			}
 		}
-		inspection.collectTextValue(choice, "text", fmt.Sprintf("choices[%d].text", index))
+		if legacyText, exists := choice["text"]; exactFunctionToolResponse && exists && legacyText != nil {
+			inspection.markIncomplete(fmt.Sprintf("choices[%d].text", index))
+		} else {
+			inspection.collectTextValue(choice, "text", fmt.Sprintf("choices[%d].text", index))
+		}
+		if exactFunctionToolResponse && ((finishReason == "tool_calls") != choiceHasToolCalls) {
+			inspection.markIncomplete(fmt.Sprintf("choices[%d].finish_reason", index))
+		}
 	}
 	return inspection
 }
@@ -847,7 +1164,11 @@ func nonStreamOutputTexts(response map[string]interface{}) ([]guardrail.Text, []
 }
 
 func evaluateNonStreamOutputGuardrail(ctx context.Context, pinned *guardrail.Pinned, response map[string]interface{}) (guardrail.Result, []outputTextRef) {
-	inspection := inspectNonStreamOutputTexts(response)
+	return evaluateNonStreamOutputGuardrailForProtocol(ctx, pinned, response, "")
+}
+
+func evaluateNonStreamOutputGuardrailForProtocol(ctx context.Context, pinned *guardrail.Pinned, response map[string]interface{}, protocolProfile string) (guardrail.Result, []outputTextRef) {
+	inspection := inspectNonStreamOutputTextsForProtocol(response, protocolProfile)
 	result := pinned.EvaluateWithCompleteness(ctx, guardrail.StageNonStreamOutput, inspection.texts, inspection.complete())
 	return result, inspection.refs
 }
@@ -892,7 +1213,65 @@ func applyProfileAwareOutputGuardrailTransform(route *RouteResult, result guardr
 			}
 		}
 	}
+	if profileRequiresContentToolReplay(route) && result.Transformed {
+		if len(result.Texts) != len(refs) {
+			return fmt.Errorf("guardrail output transform shape changed")
+		}
+		toolChoices := toolCallChoicePrefixes(refs)
+		for index, ref := range refs {
+			if result.Texts[index].Path != ref.path {
+				return fmt.Errorf("guardrail output transform path changed")
+			}
+			choicePrefix, inToolTranscript := outputToolTranscriptChoicePrefix(ref.path)
+			if _, hasToolCall := toolChoices[choicePrefix]; hasToolCall && inToolTranscript &&
+				result.Texts[index].Content != ref.original {
+				return fmt.Errorf("guardrail output transform cannot rewrite preserved assistant tool transcript")
+			}
+		}
+	}
+	if routeRequiresPlanCapability(route, modelprofile.CapabilityStrictJSONSchema) && result.Transformed {
+		if len(result.Texts) != len(refs) {
+			return fmt.Errorf("guardrail output transform shape changed")
+		}
+		for index, ref := range refs {
+			if result.Texts[index].Path != ref.path {
+				return fmt.Errorf("guardrail output transform path changed")
+			}
+			if strings.HasSuffix(ref.path, ".message.content") && !json.Valid([]byte(result.Texts[index].Content)) {
+				return fmt.Errorf("guardrail output transform invalidated strict JSON content")
+			}
+		}
+	}
 	return applyOutputGuardrailTransform(result, refs)
+}
+
+func outputToolTranscriptChoicePrefix(path string) (string, bool) {
+	if strings.HasSuffix(path, ".message.content") {
+		return strings.TrimSuffix(path, ".message.content"), true
+	}
+	if index := strings.Index(path, ".message.tool_calls["); index >= 0 {
+		return path[:index], true
+	}
+	return "", false
+}
+
+func profileRequiresContentToolReplay(route *RouteResult) bool {
+	if route == nil {
+		return false
+	}
+	contract, ok := modelprofile.ResolveReasoningContract(route.ReasoningProfile)
+	return ok && contract.AssistantToolHistoryReplayField == "content"
+}
+
+func toolCallChoicePrefixes(refs []outputTextRef) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, ref := range refs {
+		marker := ".message.tool_calls["
+		if index := strings.Index(ref.path, marker); index >= 0 {
+			result[ref.path[:index]] = struct{}{}
+		}
+	}
+	return result
 }
 
 func profileRequiresPreservedToolReasoning(route *RouteResult) bool {
@@ -968,6 +1347,16 @@ func boundedGuardrailList(values []string, maxBytes int) string {
 		out.WriteString(value)
 	}
 	return out.String()
+}
+
+func boundedIncompletePathList(paths []string, maxBytes int) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	paths = append([]string(nil), paths...)
+	sort.Strings(paths)
+	paths = slices.Compact(paths)
+	return boundedGuardrailList(paths, maxBytes)
 }
 
 func guardrailBlockedByUnavailable(result guardrail.Result) bool {

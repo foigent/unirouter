@@ -3,15 +3,16 @@
 > Scope: PRD7 B6 / P7-F08
 > Contract: `unirouter.endpoint-protocol.v1`
 > Base-profile evidence level: local fixture verified, zero network
-> Public execution extension: exact M77-qualified non-stream Responses/Messages only
+> Public execution extension: exact M77/M86/M87-qualified Responses/Messages
+> with separately versioned text-SSE and bounded Messages client-tool contracts
 
 ## Purpose
 
 This layer freezes strict, endpoint-specific request and response semantics for
-four protocols:
+versioned endpoint protocols:
 
-- OpenAI Responses, text-only stateless profile;
-- Anthropic Messages, native non-streaming text-only profile;
+- OpenAI Responses, versioned stateless text profiles;
+- Anthropic Messages, versioned native text and bounded client-tool profiles;
 - Cohere Rerank V2, string-document profile;
 - OpenAI GPT Image generation, single inline-image profile, now consumed only
   by the repository-local asynchronous image job plane.
@@ -27,17 +28,21 @@ execution authority; it does not widen the historical `Profile` contract.
 | Profile | Upstream path | Runtime state | Admitted semantics |
 |---------|---------------|---------------|--------------------|
 | `unirouter.openai.responses.text.v1` | `/v1/responses` | `local_contract_only` | one string text input, optional bounded metadata/plain-text config, stateless `store=false`, non-streaming text output |
+| `unirouter.openai.responses.text.v2` | `/v1/responses` | `local_contract_only` | the same bounded stateless text request with exact non-stream/stream modes; strict core-text SSE only |
 | `unirouter.anthropic.messages.text.v1` | `/v1/messages` | `local_contract_only` | native `user`/`assistant` text messages, optional string system prompt, non-streaming text output |
+| `unirouter.anthropic.messages.text.v2` | `/v1/messages` | `local_contract_only` | native text with exact non-stream/stream modes |
+| `unirouter.anthropic.messages.text-tools.v3` | `/v1/messages` | `local_contract_only` | text plus bounded non-stream client tools; tool streaming and server tools rejected |
 | `unirouter.cohere.rerank.v2` | `/v2/rerank` | `local_contract_only` | text query, 1–1000 string documents, bounded `top_n`, ordered exact relevance scores |
 | `unirouter.openai.images.gpt-image.v1` | `/v1/images/generations` | `repository_local_image_v1` | GPT Image model, one non-streamed base64 result and exact provider usage partitions |
 
-The historical registry is closed over those four profiles. There is no runtime
-registration hook. `repository_local_image_v1` records a source-code wiring
-fact, not deployment, credential, object-store, external-network, paid-traffic,
-or production evidence. The Responses and Anthropic Messages rows above remain
-`local_contract_only` because they describe that historical interface. Public
-execution exists only through the distinct M77 contract below; Cohere rerank
-remains contract-only.
+The registry is closed over these seven exact profiles. The original four
+addresses remain immutable; the three appended identities do not reinterpret
+v1. There is no runtime registration hook. The table reports manifest runtime
+states, not deployment readiness. `repository_local_image_v1` records a
+source-code wiring fact, not deployment, credential, object-store, paid-traffic
+or production evidence. Public Responses/Messages execution additionally needs
+the separate exact public registry, model contract and sealed binding described
+below. A local manifest alone cannot authorize it; Cohere remains contract-only.
 
 Executable profiles are resolved only by the exact immutable
 `(profile_id, profile_version)` pair recorded by the manifest. There is no
@@ -62,8 +67,10 @@ integers and nested JSON are never converted through `float64`. This is a
 lossless parsing property, not permission to execute unknown semantics. Only
 the explicitly admitted request fields are forwarded; unknown top-level or
 nested text-control fields fail before provider dispatch. The M77 executor uses
-this same closed subset and requires production-approved authority before the
-common executor can dispatch it.
+this same closed base subset and requires production-approved authority before
+the common executor can dispatch it. An immutable Model Execution Profile may
+compose a further typed request sub-contract only after Planner selects its
+exact ID/version and route evidence.
 Metadata is the narrow exception because the current OpenAI contract defines it
 as at most 16 bounded string pairs and it does not select tools, state, output
 modality or execution behavior.
@@ -72,8 +79,15 @@ For Responses, `max_output_tokens` is a canonical positive int64 and the
 current official API reference minimum of 16 is enforced. `temperature`,
 `top_p`, metadata, `text.format={"type":"text"}` and the documented verbosity
 values are validated without rewriting their values. The mapped model is the
-only caller-provided field replaced; `store=false` and `stream=false` are made
-explicit on the upstream request.
+only caller-provided field replaced; `store=false` is made explicit. V1 also
+makes `stream=false` explicit, while v2 preserves the strictly typed requested
+non-stream/stream mode.
+
+Current Sol/Terra/Luna Responses `@1.3.0` are the current such compositions. They
+admit only `reasoning={"effort":"none|low|medium|high|xhigh|max"}` through the
+`reasoning_effort` capability evidence identity. Omission is forwarded as
+omission, preserving OpenAI's documented `medium` default. Historical
+Responses addresses retain their exact prior grammar.
 
 OpenAI profiles propagate an optional printable-ASCII
 `X-Client-Request-Id` of at most 512 bytes. The Cohere profile does not invent
@@ -85,11 +99,16 @@ Known semantics outside the safe subset fail as
 `unsupported_semantics`; they are never silently removed:
 
 - Responses state, storage, background mode, tools, include expansions,
-  reasoning controls, prompt templates, moderation, automatic truncation,
+  reasoning controls other than the exact model-bound effort object,
+  reasoning summaries, prompt templates, moderation, automatic truncation,
   structured/multimodal input, `response_format` or non-text `text.format`,
-  unknown execution fields and streaming;
-- Anthropic tools/tool blocks, non-text content, thinking, beta features,
-  cache controls, structured output and streaming;
+  unknown execution fields, plus any stream outside Sol/Terra/Luna exact v2 core-text
+  SSE contract;
+- Anthropic v1 rejects tools/tool blocks, non-text content, thinking, beta
+  features, cache controls, structured output and streaming. V2 adds text
+  streaming; v3 adds bounded non-stream client tools. Model-bound public
+  thinking compositions remain separate; media, beta features, explicit cache,
+  structured output, server tools and tool streaming remain outside B1;
 - rerank document objects, returned documents and streaming;
 - image multiple/partial results, hosted URLs, streaming and unsupported
   output controls.
@@ -104,8 +123,13 @@ shape:
   error/incomplete details, optional top-level `output_text` consistency and
   exact provider usage totals. Queued/in-progress/incomplete responses are not
   final successes; failed/cancelled responses are terminal upstream failures.
-  Empty completed reasoning metadata items may precede the text message, while
-  reasoning summary/encrypted content remains outside this first profile;
+  Empty completed reasoning metadata items may precede the text message. Under
+  an exact model-bound reasoning composition in non-stream mode, a nonempty
+  string `encrypted_content` is
+  shape-validated and discarded; it is never delivered, billed as a distinct
+  unit, persisted for replay or treated as customer-visible evidence. Nonempty
+  reasoning summary/content remains rejected. The core Profiles continue to
+  reject nonempty encrypted content;
 - Anthropic Messages requires a terminal assistant `message`, only text content
   blocks, an admitted stop reason, exact mapped-model identity and provider
   input/cache-write/cache-read/output usage. Nullable or absent cache counters
@@ -139,10 +163,11 @@ The historical contract therefore records provider observations but does not
 create customer debt, prices or ledger entries. M77 settlement uses a separate
 versioned charge contract and never reinterprets the old outcome.
 
-## M77 Public Non-Stream Execution
+## Historical M77 Public Non-Stream Execution
 
-`POST /v1/responses` and `POST /v1/messages` are registered only for the first
-strict, synchronous text subset described above. Public execution resolves an
+The original M77 bindings for `POST /v1/responses` and `POST /v1/messages`
+admit only the first strict, synchronous text subset. This section describes
+those immutable v1 bindings, not the full current registry. Public execution resolves an
 exact immutable eight-field identity: model operation, public path, executor
 contract, endpoint profile ID/version, delivery contract, charge contract and
 idempotency contract. The selected sealed release item must carry its own M77
@@ -187,6 +212,18 @@ The three public contracts are
 input-plus-output total must fit the persisted signed-32-bit boundary before a
 response can become customer-deliverable.
 
+### B1 exact public extensions
+
+M86 retains v1 and adds exact Responses/Messages v2 tuples; M87 adds the
+Messages client-tools v3 tuple. Current Sol/Terra/Luna Responses compose v2
+core-text streaming/reasoning. Current Claude Profiles compose Messages v2
+text streaming/reasoning; Sonnet alone composes v3 non-stream client tools.
+These tuples use their own delivery identities, not the v1 delivery literal.
+Provider-final usage is still required for settlement; an interrupted stream
+checkpoint without that evidence retains pending liability and cannot become
+an estimated customer charge. Exact model subsets and local evidence are in
+[the B1 status snapshot](42-model-execution-profile-capability-status.md).
+
 ## Error And Retry Boundary
 
 HTTP status classification reuses the existing UniRouter failover classes:
@@ -207,12 +244,12 @@ API keys and provider response bodies are excluded.
 Embedded artifacts live under `internal/endpointprotocol/artifacts`:
 
 - one manifest Schema;
-- four manifests;
-- four synthetic fixtures with positive and negative cases;
+- seven manifests;
+- seven synthetic fixtures with positive and negative cases;
 - one deterministic golden report.
 
 `uniroute-endpoint-conformance` runs without network access. The current report
-contains 4 profiles and 41 passing cases. It verifies request bytes, model and
+contains 7 profiles and 65 passing cases. It verifies request bytes, model and
 header behavior, terminal outcomes, exact units, unsupported semantics, nested
 duplicate rejection and status classification. Direct Responses profile tests
 add 64-bit preservation, unknown-field fail-closed behavior, nullable usage
@@ -223,8 +260,8 @@ consistency.
 
 This public extension does not add or change:
 
-- any `/v1/embeddings` behavior, the legacy Chat/Embeddings executor, or a
-  streaming Responses/Messages route;
+- any `/v1/embeddings` behavior, the legacy Chat/Embeddings executor, Messages
+  tool streaming, or a Responses stream outside the exact v2 core-text SSE contract;
 - adapter registration. Responses/Messages use the closed endpoint-protocol
   executor, not legacy `RouteResult` or the Chat-to-Anthropic adapter;
 - Provider Conformance Pack V1 artifacts or their digests;
@@ -233,8 +270,8 @@ This public extension does not add or change:
 - prompt-cache runtime integration;
 - Responses background execution, conversation/previous-response state,
   stored responses, prompt templates, tools, structured or multimodal input,
-  structured output, streaming, include expansions, reasoning controls or
-  unknown provider execution extensions;
+  structured output, tool/reasoning deltas, include expansions, reasoning
+  summaries or unknown provider execution extensions;
 - Cohere rerank public execution or broader provider extension semantics.
 
 P7-D03 authorized the repository-local Image V1 job-plane implementation.

@@ -68,14 +68,34 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 	args := []interface{}{orgID}
 	argIdx := 2
 	if routableOnly := r.URL.Query().Get("routable_only"); routableOnly == "true" || routableOnly == "1" {
-		conditions = append(conditions, `EXISTS (
+		// Discovery projects existing manifests; it does not authorize execution.
+		// V2 has normalized deployment/operation items, not legacy overrides.
+		// Keep the historical v1 branch explicit, never as fallback evidence for v2.
+		conditions = append(conditions, `(EXISTS (
+			SELECT 1
+			FROM runtime_change_slots slot
+			JOIN runtime_change_releases release ON release.id = slot.stable_release_id
+			JOIN runtime_route_revision_items item ON item.release_id = release.id
+			JOIN model_deployments deployment ON deployment.id = item.deployment_id
+			WHERE slot.public_model_id = mr.id
+			  AND release.public_model_id = mr.id
+			  AND deployment.public_model_id = mr.id
+			  AND deployment.customer_org_id = mr.org_id
+			  AND release.stage = 'active'
+			  AND release.candidate_version = 'unirouter.runtime-change-candidate.v2'
+			  AND release.route_items_sealed_at IS NOT NULL
+			  AND item.source_candidate_version = release.candidate_version
+			  AND item.admission = 'allow'
+		) OR EXISTS (
 			SELECT 1
 			FROM runtime_channel_assignments_v1 assignment
+			JOIN runtime_change_releases legacy ON legacy.id = assignment.release_id
 			WHERE assignment.model_name = mr.model_name
+			  AND legacy.candidate_version = 'unirouter.runtime-change-candidate.v1'
 			  AND assignment.assignment_kind = 'stable'
 			  AND assignment.release_stage = 'active'
 			  AND assignment.admission = 'allow'
-		)`)
+		))`)
 	}
 	if projectID > 0 {
 		hasSets, err := h.projectHasAssignedModelSets(r.Context(), projectID, orgID)

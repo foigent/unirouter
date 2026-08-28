@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/auth"
+	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 )
@@ -243,6 +244,22 @@ func TestCanonicalOperationProbeSupportsFourExactOperationContracts(t *testing.T
 			require.Nil(t, spec.ExecutionBinding)
 		}
 	}
+	v2, err := canonicalOperationProbeSpecForProfile(
+		modeloperation.IDResponses,
+		endpointprotocol.ProfileOpenAIResponsesTextV2,
+		"1.0.0",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, v2.ExecutionBinding)
+	require.Equal(t, modelqualification.ResponsesDualExecutorContractV1, v2.ExecutionBinding.ExecutorContractVersion)
+	require.Equal(t, endpointprotocol.ProfileOpenAIResponsesTextV2, v2.ProfileID)
+
+	_, err = canonicalOperationProbeSpecForProfile(
+		modeloperation.IDResponses,
+		endpointprotocol.ProfileOpenAIResponsesTextV2,
+		"2.0.0",
+	)
+	require.ErrorIs(t, err, errCanonicalOperationProbeUnsupported)
 }
 
 func TestCanonicalOperationProbeHandlerRejectsUnsupportedOperationBeforeStorageOrFallback(t *testing.T) {

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/resetplan"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
+	"github.com/uniroute/unirouter/internal/strictjson"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,10 +28,26 @@ type firstCustomerBootstrapCheckpoint uint8
 const (
 	firstCustomerBootstrapCheckpointStrictReset firstCustomerBootstrapCheckpoint = iota + 1
 	firstCustomerBootstrapCheckpointFreshSeed
+	firstCustomerBootstrapCheckpointRuntimeReset
 )
 
 type firstCustomerBootstrapRequest struct {
-	OrganizationName string `json:"organization_name"`
+	OrganizationName string                       `json:"organization_name"`
+	DryRun           firstCustomerBootstrapDryRun `json:"dry_run,omitempty"`
+}
+
+type firstCustomerBootstrapDryRun bool
+
+func (d *firstCustomerBootstrapDryRun) UnmarshalJSON(data []byte) error {
+	switch string(data) {
+	case "true":
+		*d = true
+	case "false":
+		*d = false
+	default:
+		return fmt.Errorf("dry_run must be a boolean")
+	}
+	return nil
 }
 
 type firstCustomerBootstrapResult struct {
@@ -53,7 +71,12 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var request firstCustomerBootstrapRequest
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err != nil || strictjson.Validate(body) != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid request body"})
+		return
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "Invalid request body"})
@@ -111,6 +134,10 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Bootstrap idempotency readback failed"})
 		return
 	} else if found {
+		if request.DryRun {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "First customer was already initialized"})
+			return
+		}
 		if replay.OrganizationName != request.OrganizationName {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "X-Client-Request-ID was already used with different input"})
 			return
@@ -127,8 +154,40 @@ func (h *Handler) BootstrapFirstCustomer(w http.ResponseWriter, r *http.Request)
 		})
 		return
 	}
+	if request.DryRun {
+		checkpointName := "strict_reset"
+		wouldRemove := map[string]int64{}
+		if checkpoint != firstCustomerBootstrapCheckpointStrictReset {
+			checkpointName = "fresh_seed"
+			if checkpoint == firstCustomerBootstrapCheckpointRuntimeReset {
+				checkpointName = "runtime_reset"
+			}
+			var projectID int64
+			if err := tx.QueryRow(r.Context(), `SELECT id FROM projects WHERE org_id=$1 AND slug='default'`, adminOrgID).Scan(&projectID); err != nil {
+				writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "First-customer bootstrap preview changed"})
+				return
+			}
+			wouldRemove["project_id"] = projectID
+			wouldRemove["zero_wallet_org_id"] = adminOrgID
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"contract_version": "unirouter.first-customer-bootstrap-preview.v1",
+			"dry_run":          true, "ready": true, "checkpoint": checkpointName,
+			"organization_name": request.OrganizationName, "platform_org_id": adminOrgID,
+			"would_remove": wouldRemove,
+		})
+		return // Deferred rollback releases locks; no normalization, audit or receipt.
+	}
 	if checkpoint == firstCustomerBootstrapCheckpointFreshSeed {
 		if err := normalizeFirstCustomerFreshSeed(r, tx, adminUserID, adminOrgID); err != nil {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "First-customer bootstrap checkpoint changed before commit",
+			})
+			return
+		}
+	}
+	if checkpoint == firstCustomerBootstrapCheckpointRuntimeReset {
+		if err := normalizeFirstCustomerRuntimeShell(r, tx, adminOrgID); err != nil {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{
 				"error": "First-customer bootstrap checkpoint changed before commit",
 			})
@@ -191,10 +250,13 @@ func (h *Handler) verifyFirstCustomerBootstrapCheckpoint(r *http.Request, tx pgx
 	if err := verifyFirstCustomerEmptyCheckpoint(r, tx, adminUserID, adminOrgID); err == nil {
 		return firstCustomerBootstrapCheckpointStrictReset, nil
 	}
-	if err := h.verifyFirstCustomerFreshMigrationCheckpoint(r, tx, adminUserID, adminOrgID); err != nil {
+	if err := h.verifyFirstCustomerFreshMigrationCheckpoint(r, tx, adminUserID, adminOrgID); err == nil {
+		return firstCustomerBootstrapCheckpointFreshSeed, nil
+	}
+	if err := h.verifyFirstCustomerRuntimeResetCheckpoint(r, tx, adminUserID, adminOrgID); err != nil {
 		return 0, err
 	}
-	return firstCustomerBootstrapCheckpointFreshSeed, nil
+	return firstCustomerBootstrapCheckpointRuntimeReset, nil
 }
 
 // verifyFirstCustomerFreshMigrationCheckpoint accepts only the exact seed
@@ -319,9 +381,15 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v1','1.0.0',
 			  'unirouter.endpoint-profile-nonstream-executor.v1','000075_model_operation_production_qualification'),
 			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v1','1.0.0',
-			  'unirouter.endpoint-profile-nonstream-executor.v1','000075_model_operation_production_qualification')
-			)`, want: 2},
-		{name: "fresh compiled execution support count", query: "SELECT COUNT(*) FROM model_operation_execution_support_bindings", want: 2},
+			  'unirouter.endpoint-profile-nonstream-executor.v1','000075_model_operation_production_qualification'),
+			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v2','1.0.0',
+			  'unirouter.endpoint-profile-responses-dual-executor.v1','000086_exact_public_execution_bindings'),
+			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v2','1.0.0',
+			  'unirouter.endpoint-profile-messages-dual-executor.v1','000086_exact_public_execution_bindings'),
+			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text-tools.v3','1.0.0',
+			  'unirouter.endpoint-profile-messages-tools-executor.v1','000087_anthropic_messages_tools_public_binding')
+			)`, want: 5},
+		{name: "fresh compiled execution support count", query: "SELECT COUNT(*) FROM model_operation_execution_support_bindings", want: 5},
 		{name: "fresh public execution extension", query: `SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions
 			WHERE (operation_id,public_path,protocol_profile_id,protocol_profile_version,
 			       executor_contract_version,delivery_contract_version,
@@ -333,9 +401,152 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v1','1.0.0',
 			  'unirouter.endpoint-profile-nonstream-executor.v1',
 			  'unirouter.public-nonstream-delivery.v1','unirouter.provider-final-token-charge.v1',
-			  'unirouter.public-at-most-once.v1','000077_public_model_execution_authority')
-			)`, want: 2},
-		{name: "fresh public execution extension count", query: "SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions", want: 2},
+			  'unirouter.public-at-most-once.v1','000077_public_model_execution_authority'),
+			 ('openai.responses.v1','/v1/responses','unirouter.openai.responses.text.v2','1.0.0',
+			  'unirouter.endpoint-profile-responses-dual-executor.v1',
+			  'unirouter.public-responses-delivery.v2','unirouter.provider-final-token-charge.v1',
+			  'unirouter.public-at-most-once.v1','000086_exact_public_execution_bindings'),
+			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text.v2','1.0.0',
+			  'unirouter.endpoint-profile-messages-dual-executor.v1',
+			  'unirouter.public-anthropic-messages-delivery.v2','unirouter.provider-final-token-charge.v1',
+			  'unirouter.public-at-most-once.v1','000086_exact_public_execution_bindings'),
+			 ('anthropic.messages.v1','/v1/messages','unirouter.anthropic.messages.text-tools.v3','1.0.0',
+			  'unirouter.endpoint-profile-messages-tools-executor.v1',
+			  'unirouter.public-anthropic-messages-tools-delivery.v1','unirouter.provider-final-token-charge.v1',
+			  'unirouter.public-at-most-once.v1','000087_anthropic_messages_tools_public_binding')
+			)`, want: 5},
+		{name: "fresh public execution extension count", query: "SELECT COUNT(*) FROM model_operation_public_execution_contract_extensions", want: 5},
+		{name: "fresh capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND capability_id='streaming'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'
+			  AND probe_contract_version='2.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000089_deepseek_chat_sse_usage_contract_v2'`, want: 2},
+		{name: "fresh historical capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND capability_id='streaming'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'
+			  AND probe_contract_version='1.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000088_model_capability_execution_qualification'`, want: 2},
+		{name: "fresh reasoning capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND (capability_id,probe_contract_id) IN (
+			    ('reasoning','unirouter.capability-probe.deepseek-chat-reasoning.v1'),
+			    ('reasoning_effort','unirouter.capability-probe.deepseek-chat-reasoning-effort.v1'))
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_version='1.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000090_deepseek_chat_reasoning_capabilities'`, want: 4},
+		{name: "fresh tools/JSON capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND (capability_id,probe_contract_id) IN (
+			    ('tools','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('function_tools','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_auto','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_named','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_required','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('json_object','unirouter.capability-probe.deepseek-chat-json-object.v1'))
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_version='1.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000091_deepseek_chat_tools_json_capabilities'`, want: 12},
+		{name: "fresh DeepSeek 1.5 capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.5.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000092_deepseek_reasoning_tool_choice_contract'`, want: 18},
+		{name: "fresh DeepSeek 1.5 function-tool v2 capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.5.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND capability_id IN ('tools','function_tools','tool_choice_auto','tool_choice_named','tool_choice_required')
+			  AND probe_contract_id='unirouter.capability-probe.deepseek-chat-function-tools.v1'
+			  AND probe_contract_version='2.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000093_deepseek_function_tool_probe_contract_v2'`, want: 10},
+		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 48},
+		{name: "fresh current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND capability_id='streaming'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'
+			  AND probe_contract_version='2.0.0'`, want: 2},
+		{name: "fresh reasoning current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND (capability_id,probe_contract_id) IN (
+			    ('reasoning','unirouter.capability-probe.deepseek-chat-reasoning.v1'),
+			    ('reasoning_effort','unirouter.capability-probe.deepseek-chat-reasoning-effort.v1'))
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_version='1.0.0'`, want: 4},
+		{name: "fresh tools/JSON current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND (capability_id,probe_contract_id) IN (
+			    ('tools','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('function_tools','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_auto','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_named','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_required','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('json_object','unirouter.capability-probe.deepseek-chat-json-object.v1'))
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_version='1.0.0'`, want: 12},
+		{name: "fresh DeepSeek 1.5 current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.5.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'`, want: 18},
+		{name: "fresh DeepSeek 1.5 current function-tool probe v2 contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.5.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND capability_id IN ('tools','function_tools','tool_choice_auto','tool_choice_named','tool_choice_required')
+			  AND probe_contract_id='unirouter.capability-probe.deepseek-chat-function-tools.v1'
+			  AND probe_contract_version='2.0.0'`, want: 10},
+		{name: "fresh current capability probe contract count", query: "SELECT COUNT(*) FROM model_capability_current_probe_contracts", want: 36},
 		{name: "fresh known public tables", query: `SELECT COUNT(*) FROM pg_catalog.pg_tables
 			WHERE schemaname='public' AND tablename=ANY($1::text[])`, args: []any{expectedTables}, want: int64(len(expectedTables))},
 		{name: "fresh exact public table inventory", query: "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public'", want: int64(len(expectedTables))},

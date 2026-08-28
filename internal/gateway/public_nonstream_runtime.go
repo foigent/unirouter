@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 )
@@ -76,12 +78,16 @@ func (allowPublicNonStreamGuard) Evaluate(context.Context, PublicOutputGuardInpu
 
 type publicSecretDecryptor func(ciphertext string, key []byte) (string, error)
 
+type publicProfileRegistry interface {
+	Resolve(endpointprotocol.PublicContractIdentity) (endpointprotocol.PublicNonStreamProfile, error)
+}
+
 type publicNonStreamOrchestrator struct {
 	mode          modelrouting.Mode
 	planner       ModelRoutePlanner
 	coordinator   publicModelExecutionCoordinator
 	billing       publicNonStreamBilling
-	registry      *endpointprotocol.PublicNonStreamRegistry
+	registry      publicProfileRegistry
 	decrypt       publicSecretDecryptor
 	encryptionKey []byte
 	doer          PublicNonStreamHTTPDoer
@@ -114,6 +120,16 @@ type preparedPublicNonStreamRoute struct {
 	inputEstimate int
 }
 
+type publicExecutionPreparation struct {
+	plan           modelrouting.Plan
+	identity       endpointprotocol.PublicContractIdentity
+	publicProfile  endpointprotocol.PublicNonStreamProfile
+	prepared       *endpointprotocol.PublicPreparedRequest
+	routes         []preparedPublicNonStreamRoute
+	maximumInput   int
+	outputEstimate int
+}
+
 type publicAttemptOutcome struct {
 	completion billing.ProviderAttemptCompletion
 	retry      bool
@@ -122,29 +138,20 @@ type publicAttemptOutcome struct {
 
 func (orchestrator *publicNonStreamOrchestrator) validateRuntime(
 	request publicNonStreamRequest,
-) (endpointprotocol.PublicContractIdentity, endpointprotocol.PublicNonStreamProfile, error) {
+) error {
 	if orchestrator == nil || orchestrator.mode != modelrouting.ModeCanonical || orchestrator.planner == nil ||
 		orchestrator.coordinator == nil || orchestrator.billing == nil || orchestrator.registry == nil ||
 		orchestrator.decrypt == nil || orchestrator.doer == nil || orchestrator.guard == nil ||
 		strings.TrimSpace(orchestrator.safetyFactor) == "" || orchestrator.minFreeze < 0 {
-		return endpointprotocol.PublicContractIdentity{}, nil, errPublicNonStreamRuntimeUnavailable
+		return errPublicNonStreamRuntimeUnavailable
 	}
 	definition, known := modeloperation.LookupID(request.Operation)
 	if !known || (request.Operation != modeloperation.IDResponses && request.Operation != modeloperation.IDMessages) ||
 		definition.Path != request.Path || definition.Method != http.MethodPost || !definition.Paid ||
 		!modelqualification.IsQualificationRequired(string(request.Operation)) {
-		return endpointprotocol.PublicContractIdentity{}, nil, errPublicNonStreamContractMismatch
+		return errPublicNonStreamContractMismatch
 	}
-	identity, err := modelqualification.CompiledPublicBinding(string(request.Operation))
-	if err != nil || identity.PublicPath != request.Path {
-		return endpointprotocol.PublicContractIdentity{}, nil, errPublicNonStreamContractMismatch
-	}
-	profile, err := orchestrator.registry.Resolve(identity)
-	if err != nil || profile.Descriptor().Identity != identity || profile.Descriptor().Streaming ||
-		profile.Descriptor().CachePolicy != endpointprotocol.PublicCachePolicyBypass {
-		return endpointprotocol.PublicContractIdentity{}, nil, fmt.Errorf("%w: registry", errPublicNonStreamContractMismatch)
-	}
-	return identity, profile, nil
+	return nil
 }
 
 func validatePublicNonStreamRequest(request publicNonStreamRequest) error {
@@ -199,7 +206,8 @@ func validatePublicNonStreamPlan(
 ) error {
 	if plan.AuthorityMode != modelrouting.ModeCanonical || plan.ModelOperationID != string(request.Operation) ||
 		plan.PublicModel != request.ResolvedModel || plan.PublicModelID <= 0 || plan.RuntimeReleaseID <= 0 ||
-		plan.SnapshotHash == "" || plan.PublicContextLimit <= 0 || plan.PublicOutputLimit <= 0 || len(plan.Routes) == 0 {
+		plan.SnapshotHash == "" || plan.PublicContextLimit <= 0 || plan.PublicOutputLimit <= 0 ||
+		plan.ExecutionProfileID == "" || plan.ExecutionProfileVersion == "" || len(plan.Routes) == 0 {
 		return errPublicNonStreamContractMismatch
 	}
 	for _, route := range plan.Routes {
@@ -223,6 +231,271 @@ func validatePublicNonStreamPlan(
 		}
 	}
 	return nil
+}
+
+func publicBindingForExecutionProfile(profile modelprofile.Profile, operation string) (modelqualification.Binding, error) {
+	if profile.ID == modelprofile.UnverifiedProfileID {
+		// M81/M82 retained this identity on historical sealed public v1 routes.
+		// Preserve only their original strict non-stream tuple, not a current
+		// Profile inferred from the provider/model or a newer protocol version.
+		if profile.Version != modelprofile.UnverifiedProfileVersion {
+			return modelqualification.Binding{}, errPublicNonStreamContractMismatch
+		}
+		var protocol string
+		switch modeloperation.ID(operation) {
+		case modeloperation.IDResponses:
+			protocol = endpointprotocol.ProfileOpenAIResponsesText
+		case modeloperation.IDMessages:
+			protocol = endpointprotocol.ProfileAnthropicMessagesText
+		default:
+			return modelqualification.Binding{}, errPublicNonStreamContractMismatch
+		}
+		return modelqualification.CompiledBindingFor(operation, protocol, "1.0.0")
+	}
+	return modelqualification.CompiledBindingFor(operation, profile.ProtocolProfile, profile.ProtocolProfileVersion)
+}
+
+func publicRequestContractForProfile(
+	profile modelprofile.Profile,
+	operation string,
+	identity endpointprotocol.PublicContractIdentity,
+) (endpointprotocol.PublicRequestContract, error) {
+	if profile.ID == modelprofile.UnverifiedProfileID {
+		binding, err := publicBindingForExecutionProfile(profile, operation)
+		if err != nil {
+			return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+		}
+		expected, err := modelqualification.CompiledPublicBindingFor(binding)
+		if err != nil || identity != expected ||
+			expected.ExecutorContractVersion != endpointprotocol.EndpointProfileNonStreamExecutorV1 ||
+			expected.DeliveryContractVersion != endpointprotocol.PublicDeliveryContractV1 {
+			return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+		}
+		return endpointprotocol.PublicRequestContract{
+			ExecutionProfileID: profile.ID, ExecutionProfileVersion: profile.Version,
+		}, nil
+	}
+	if profile.ProtocolProfile != identity.ProfileID || profile.ProtocolProfileVersion != identity.ProfileVersion ||
+		!slices.Contains(profile.Operations, operation) {
+		return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+	}
+	contract := endpointprotocol.PublicRequestContract{
+		ExecutionProfileID: profile.ID, ExecutionProfileVersion: profile.Version,
+	}
+	if profile.OperationPolicyProfile != "" {
+		if profile.APISurface != modelprofile.APISurfaceAnthropicMessage {
+			return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+		}
+		policy, modeled := modelprofile.ResolveAnthropicMessagesOperationContract(profile.OperationPolicyProfile)
+		if !modeled || policy.ProfileID != profile.OperationPolicyProfile {
+			return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+		}
+		contract.AnthropicMessages = &endpointprotocol.PublicAnthropicMessagesContract{
+			RequireFinalUserMessage: policy.RequireFinalUserMessage,
+			AllowedResponseStops:    slices.Clone(policy.AllowedResponseStops),
+			RefusalStopDetails:      policy.RefusalStopDetails,
+			ResponseInferenceGeo:    policy.ResponseInferenceGeo,
+			ResponseServiceTier:     policy.ResponseServiceTier,
+		}
+		if policy.FunctionTools != nil {
+			contract.AnthropicMessages.FunctionTools = &endpointprotocol.PublicAnthropicFunctionToolsContract{
+				MaxTools: policy.FunctionTools.MaxTools, ToolNamePattern: policy.FunctionTools.ToolNamePattern,
+				ToolChoices: slices.Clone(policy.FunctionTools.ToolChoices), ProviderDefaultChoice: policy.FunctionTools.ProviderDefaultChoice,
+				NamedChoice: policy.FunctionTools.NamedChoice, ParallelToolUse: policy.FunctionTools.ParallelToolUse,
+				ParallelProviderDefault: policy.FunctionTools.ParallelProviderDefault,
+				ExactHistory:            policy.FunctionTools.ExactHistory, ExactResponse: policy.FunctionTools.ExactResponse,
+				RequiresNonStream:           policy.FunctionTools.RequiresNonStream,
+				ToolInputIdentityGuarded:    policy.FunctionTools.ToolInputIdentityGuarded,
+				ThinkingHistoryIdentityOnly: policy.FunctionTools.ThinkingHistoryIdentityOnly,
+			}
+		}
+		slices.Sort(contract.AnthropicMessages.AllowedResponseStops)
+	}
+	for _, capability := range profile.Capabilities {
+		switch capability {
+		case modelprofile.CapabilityReasoning:
+			reasoning, modeled := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
+			if !modeled || profile.APISurface != modelprofile.APISurfaceAnthropicMessage ||
+				contract.AnthropicMessages == nil || reasoning.ToggleRequestObjectField() != "thinking" ||
+				reasoning.ToggleControl.Field != "type" || reasoning.ToggleControl.ProviderDefault == "" ||
+				!slices.Contains(reasoning.ToggleControl.AllowedValues, reasoning.ToggleControl.ProviderDefault) ||
+				reasoning.DefaultAuthority != modelprofile.ReasoningDefaultProvider {
+				return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+			}
+			for _, field := range reasoning.UnsupportedRequestFieldsWhileActive {
+				if field == "temperature" || field == "top_p" {
+					contract.AnthropicMessages.ForbiddenRootFields = append(
+						contract.AnthropicMessages.ForbiddenRootFields, field,
+					)
+				}
+			}
+			slices.Sort(contract.AnthropicMessages.ForbiddenRootFields)
+		case modelprofile.CapabilityReasoningEffort:
+			reasoning, modeled := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
+			if !modeled || reasoning.EffortControl.Field != "effort" || len(reasoning.EffortControl.AllowedValues) == 0 {
+				return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+			}
+			if profile.APISurface == modelprofile.APISurfaceAnthropicMessage {
+				if contract.AnthropicMessages == nil || reasoning.ToggleRequestObjectField() != "thinking" ||
+					reasoning.ToggleControl.Field != "type" || reasoning.EffortRequestObjectField() != "output_config" {
+					return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+				}
+				contract.AnthropicMessages.Reasoning = &endpointprotocol.PublicAnthropicReasoningRequestContract{
+					ThinkingObjectField:      reasoning.ToggleRequestObjectField(),
+					ThinkingTypeField:        reasoning.ToggleControl.Field,
+					AllowedThinkingTypes:     slices.Clone(reasoning.ToggleControl.AllowedValues),
+					DisabledThinkingTypes:    slices.Clone(reasoning.ToggleControl.DisabledValues),
+					ThinkingProviderDefault:  reasoning.ToggleControl.ProviderDefault,
+					OutputConfigObjectField:  reasoning.EffortRequestObjectField(),
+					EffortField:              reasoning.EffortControl.Field,
+					AllowedEfforts:           slices.Clone(reasoning.EffortControl.AllowedValues),
+					EffortsAllowedDisabled:   slices.Clone(reasoning.EffortValuesWhenDisabled),
+					EffortProviderDefault:    reasoning.EffortControl.ProviderDefault,
+					ResponseThinkingTextMode: reasoning.ResponseThinkingTextMode,
+				}
+			} else {
+				if reasoning.EffortRequestObjectField() != "reasoning" {
+					return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+				}
+				contract.Reasoning = &endpointprotocol.PublicReasoningRequestContract{
+					RequestObjectField: reasoning.EffortRequestObjectField(),
+					EffortField:        reasoning.EffortControl.Field,
+					AllowedEfforts:     slices.Clone(reasoning.EffortControl.AllowedValues),
+				}
+			}
+		case modelprofile.CapabilityReasoningBudget:
+			reasoning, modeled := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
+			if !modeled || profile.APISurface != modelprofile.APISurfaceAnthropicMessage ||
+				contract.AnthropicMessages == nil || reasoning.ToggleRequestObjectField() != "thinking" ||
+				reasoning.ToggleControl.Field != "type" || reasoning.BudgetControl.Field == "" ||
+				reasoning.BudgetControl.Minimum <= 0 || reasoning.BudgetControl.Maximum < reasoning.BudgetControl.Minimum ||
+				!reasoning.BudgetControl.RequiresActiveReasoning {
+				return endpointprotocol.PublicRequestContract{}, errPublicNonStreamContractMismatch
+			}
+			contract.AnthropicMessages.Reasoning = &endpointprotocol.PublicAnthropicReasoningRequestContract{
+				ThinkingObjectField:      reasoning.ToggleRequestObjectField(),
+				ThinkingTypeField:        reasoning.ToggleControl.Field,
+				AllowedThinkingTypes:     slices.Clone(reasoning.ToggleControl.AllowedValues),
+				DisabledThinkingTypes:    slices.Clone(reasoning.ToggleControl.DisabledValues),
+				ThinkingProviderDefault:  reasoning.ToggleControl.ProviderDefault,
+				BudgetField:              reasoning.BudgetControl.Field,
+				BudgetMinimum:            reasoning.BudgetControl.Minimum,
+				BudgetMaximum:            reasoning.BudgetControl.Maximum,
+				BudgetRequiredTypes:      []string{"enabled"},
+				ResponseThinkingTextMode: reasoning.ResponseThinkingTextMode,
+			}
+		default:
+			// Supported capabilities that are not used by this invocation do not
+			// become routing requirements and do not widen the wire grammar. The
+			// exact endpoint parser continues to reject any unmodeled request field;
+			// a capability is projected here only when this operation needs typed
+			// request semantics for it.
+			continue
+		}
+	}
+	return contract, nil
+}
+
+func publicInvocationCapabilityRequirements(
+	profile modelprofile.Profile,
+	prepared *endpointprotocol.PublicPreparedRequest,
+) ([]modelrouting.CapabilityRequirement, error) {
+	if prepared == nil {
+		return nil, fmt.Errorf("public prepared request is required")
+	}
+	semantics := prepared.InvocationSemantics()
+	requirements := make([]modelrouting.CapabilityRequirement, 0, 8)
+	if slices.Contains(profile.Capabilities, modelprofile.CapabilityReasoning) {
+		reasoning, modeled := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
+		if !modeled || reasoning.DefaultAuthority != modelprofile.ReasoningDefaultProvider ||
+			reasoning.ToggleControl.ProviderDefault == "" {
+			return nil, fmt.Errorf("public reasoning default is not modeled")
+		}
+		origin := modelrouting.CapabilityOriginProviderDefault
+		if semantics.ReasoningControlExplicit {
+			origin = modelrouting.CapabilityOriginExplicitRequest
+		}
+		requirements = append(requirements, modelrouting.CapabilityRequirement{
+			CapabilityID: modelprofile.CapabilityReasoning,
+			Origins:      []string{origin},
+		})
+	}
+	if slices.Contains(profile.Capabilities, modelprofile.CapabilityReasoningEffort) {
+		origin := modelrouting.CapabilityOriginProviderDefault
+		if semantics.ReasoningEffortExplicit {
+			origin = modelrouting.CapabilityOriginExplicitRequest
+		}
+		requirements = append(requirements, modelrouting.CapabilityRequirement{
+			CapabilityID: modelprofile.CapabilityReasoningEffort,
+			Origins:      []string{origin},
+		})
+	}
+	if slices.Contains(profile.Capabilities, modelprofile.CapabilityReasoningBudget) && semantics.ReasoningBudgetExplicit {
+		requirements = append(requirements, modelrouting.CapabilityRequirement{
+			CapabilityID: modelprofile.CapabilityReasoningBudget,
+			Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+		})
+	}
+	if slices.Contains(profile.Capabilities, modelprofile.CapabilityStreaming) && semantics.Streaming {
+		requirements = append(requirements, modelrouting.CapabilityRequirement{
+			CapabilityID: modelprofile.CapabilityStreaming,
+			Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+		})
+	}
+	if semantics.FunctionToolsRequested {
+		choiceOrigin := modelrouting.CapabilityOriginProviderDefault
+		if semantics.ToolChoiceExplicit {
+			choiceOrigin = modelrouting.CapabilityOriginExplicitRequest
+		}
+		for _, capability := range []string{modelprofile.CapabilityTools, modelprofile.CapabilityFunctionTools} {
+			if !slices.Contains(profile.Capabilities, capability) {
+				return nil, fmt.Errorf("public function tools capability %q is not supported", capability)
+			}
+			requirement := modelrouting.CapabilityRequirement{
+				CapabilityID: capability,
+				Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+			}
+			if capability == modelprofile.CapabilityFunctionTools && semantics.ToolChoiceEffective == "none" {
+				if choiceOrigin != modelrouting.CapabilityOriginExplicitRequest {
+					requirement.Origins = append(requirement.Origins, choiceOrigin)
+				}
+				requirement.FunctionToolChoice = &modelrouting.FunctionToolChoiceConstraint{
+					DeclaredFunctionNames: slices.Clone(semantics.DeclaredToolNames),
+				}
+			}
+			requirements = append(requirements, requirement)
+		}
+		choiceCapability := map[string]string{
+			"auto":     modelprofile.CapabilityToolChoiceAuto,
+			"named":    modelprofile.CapabilityToolChoiceNamed,
+			"required": modelprofile.CapabilityToolChoiceReq,
+		}[semantics.ToolChoiceEffective]
+		if choiceCapability != "" {
+			if !slices.Contains(profile.Capabilities, choiceCapability) {
+				return nil, fmt.Errorf("public tool choice capability %q is not supported", choiceCapability)
+			}
+			requirements = append(requirements, modelrouting.CapabilityRequirement{
+				CapabilityID: choiceCapability, Origins: []string{choiceOrigin},
+				FunctionToolChoice: &modelrouting.FunctionToolChoiceConstraint{
+					DeclaredFunctionNames: slices.Clone(semantics.DeclaredToolNames),
+					SelectedFunctionName:  semantics.NamedToolChoice,
+				},
+			})
+		}
+		if semantics.ParallelToolUseEffective {
+			if !slices.Contains(profile.Capabilities, modelprofile.CapabilityParallelTools) {
+				return nil, fmt.Errorf("public parallel tools capability is not supported")
+			}
+			origin := modelrouting.CapabilityOriginProviderDefault
+			if semantics.ParallelToolUseExplicit {
+				origin = modelrouting.CapabilityOriginExplicitRequest
+			}
+			requirements = append(requirements, modelrouting.CapabilityRequirement{
+				CapabilityID: modelprofile.CapabilityParallelTools, Origins: []string{origin},
+			})
+		}
+	}
+	return requirements, nil
 }
 
 func publicAttemptID(requestID string, sequence int, bindingID int64) string {
@@ -366,63 +639,12 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 	if w == nil {
 		return errPublicNonStreamRequestInvalid
 	}
-	if err := validatePublicNonStreamRequest(request); err != nil {
-		return err
-	}
-	identity, profile, err := orchestrator.validateRuntime(request)
+	preparation, err := orchestrator.prepare(ctx, request, false)
 	if err != nil {
 		return err
 	}
-	prepared, err := profile.PrepareRequest(request.Body, request.PublicModel)
-	if err != nil {
-		return fmt.Errorf("%w: %v", errPublicNonStreamRequestInvalid, err)
-	}
-	prepared, err = orchestrator.applyInputGuard(ctx, profile, prepared, request.PublicModel)
-	if err != nil {
-		return err
-	}
-	admission := prepared.Admission()
-	inputEstimate, err := estimateProviderJSONAdmission(prepared.CanonicalBody())
-	if err != nil {
-		return fmt.Errorf("%w: request estimate", errPublicNonStreamRequestInvalid)
-	}
-	outputEstimate, err := checkedAdmissionInt(admission.ExplicitMaxOutputTokens, 0)
-	if err != nil || outputEstimate <= 0 {
-		return fmt.Errorf("%w: output estimate", errPublicNonStreamRequestInvalid)
-	}
-
-	plan, err := orchestrator.planner.Plan(ctx, modelrouting.Request{
-		Mode: modelrouting.ModeCanonical, CustomerOrgID: request.OrgID,
-		PublicModel: request.ResolvedModel, ModelOperationID: string(request.Operation),
-		SelectionKey: request.RequestID,
-	})
-	if err != nil {
-		return fmt.Errorf("%w: plan", errPublicNonStreamUpstreamFailed)
-	}
-	if err := validatePublicNonStreamPlan(request, plan, identity); err != nil {
-		return err
-	}
-	routes, maximumInput, err := orchestrator.prepareRoutes(
-		ctx, request, plan, identity, prepared, inputEstimate.InputTokens, outputEstimate,
-	)
-	if err != nil {
-		return err
-	}
-	estimatedTokens, err := checkedAdmissionInt(int64(maximumInput), int64(outputEstimate))
-	if err != nil {
-		return fmt.Errorf("%w: freeze estimate", errPublicNonStreamRequestInvalid)
-	}
-	freeze, err := orchestrator.billing.Freeze(ctx, billing.FreezeRequest{
-		RequestID: request.RequestID, OrgID: request.OrgID, ProjectID: request.ProjectID,
-		APIKeyID: request.APIKeyID, AccessCredentialID: request.AccessCredentialID,
-		CredentialRef: request.CredentialRef, AccessGrantID: request.AccessGrantID,
-		Model: request.ResolvedModel, EstimatedTokens: estimatedTokens,
-		EstimatedInputTokens: maximumInput, ReservedCompletionTokens: outputEstimate,
-		SafetyFactor: orchestrator.safetyFactor, MinFreezeCents: orchestrator.minFreeze,
-	})
-	if err != nil || freeze == nil || !freeze.Success {
-		return fmt.Errorf("%w: freeze", errPublicNonStreamBillingFailed)
-	}
+	plan := preparation.plan
+	routes := preparation.routes
 	executor, err := NewPublicNonStreamExecutor(orchestrator.doer, orchestrator.guard)
 	if err != nil {
 		return orchestrator.cancelFrozen(ctx, request, fmt.Errorf("%w: executor", errPublicNonStreamRuntimeUnavailable))
@@ -470,13 +692,8 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 				case billing.ProviderAttemptOutcomeResponseAccepted:
 					return orchestrator.retainAfterHealthFailure(ctx, request, attemptID, execution, err)
 				case billing.ProviderAttemptOutcomeRejected:
-					// A durable rejection carries no provider liability. Fail closed
-					// on the health fence and release the frozen reservation.
 					return orchestrator.cancelFrozen(ctx, request, errors.Join(err, executionErr))
 				case billing.ProviderAttemptOutcomeUnknown, billing.ProviderAttemptOutcomeResponseUnusable:
-					// CompleteProviderAttempt has moved the reservation to
-					// settlement_pending. Cancel would falsely refund an unresolved
-					// provider liability and is therefore forbidden.
 					return errors.Join(err, errPublicNonStreamUpstreamFailed, executionErr)
 				default:
 					return errors.Join(errPublicNonStreamBillingFailed, err)
@@ -505,8 +722,6 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 				}
 				break
 			case billing.ProviderAttemptOutcomeUnknown, billing.ProviderAttemptOutcomeResponseUnusable:
-				// These are durable settlement-pending states. Do not try a
-				// second provider and do not cancel the reservation.
 				return errors.Join(errPublicNonStreamUpstreamFailed, executionErr)
 			default:
 				return errors.Join(errPublicNonStreamBillingFailed, executionErr)
@@ -532,6 +747,133 @@ func (orchestrator *publicNonStreamOrchestrator) execute(
 		lastFailure = errPublicNonStreamUpstreamFailed
 	}
 	return orchestrator.cancelFrozen(ctx, request, fmt.Errorf("%w: all candidates failed", errPublicNonStreamUpstreamFailed))
+}
+
+func (orchestrator *publicNonStreamOrchestrator) prepare(
+	ctx context.Context,
+	request publicNonStreamRequest,
+	expectedStreaming bool,
+) (publicExecutionPreparation, error) {
+	if err := validatePublicNonStreamRequest(request); err != nil {
+		return publicExecutionPreparation{}, err
+	}
+	if err := orchestrator.validateRuntime(request); err != nil {
+		return publicExecutionPreparation{}, err
+	}
+	var identity endpointprotocol.PublicContractIdentity
+	var publicProfile endpointprotocol.PublicNonStreamProfile
+	var prepared *endpointprotocol.PublicPreparedRequest
+	var requestContract endpointprotocol.PublicRequestContract
+	plan, err := orchestrator.planner.Plan(ctx, modelrouting.Request{
+		Mode: modelrouting.ModeCanonical, CustomerOrgID: request.OrgID,
+		PublicModel: request.ResolvedModel, ModelOperationID: string(request.Operation),
+		SelectionKey: request.RequestID,
+		DeriveInvocationCapabilities: func(profile modelprofile.Profile) ([]modelrouting.CapabilityRequirement, error) {
+			binding, bindingErr := publicBindingForExecutionProfile(profile, string(request.Operation))
+			if bindingErr != nil || binding.PublicPath != request.Path {
+				return nil, errPublicNonStreamContractMismatch
+			}
+			// The handler may only use the strict transport discriminator before
+			// planning. Exact executor eligibility remains profile-bound here so a
+			// historical non-stream Profile keeps its immutable request error
+			// semantics instead of being misreported as a retryable runtime mismatch.
+			if expectedStreaming && binding.ExecutorContractVersion == modelqualification.ExecutorContractVersion {
+				return nil, fmt.Errorf("%w: exact profile is non-stream", errPublicNonStreamRequestInvalid)
+			}
+			candidateIdentity, identityErr := modelqualification.CompiledPublicBindingFor(binding)
+			if identityErr != nil || candidateIdentity.PublicPath != request.Path {
+				return nil, errPublicNonStreamContractMismatch
+			}
+			candidateProfile, registryErr := orchestrator.registry.Resolve(candidateIdentity)
+			if registryErr != nil || candidateProfile.Descriptor().Identity != candidateIdentity ||
+				candidateProfile.Descriptor().Streaming != expectedStreaming ||
+				candidateProfile.Descriptor().CachePolicy != endpointprotocol.PublicCachePolicyBypass {
+				return nil, fmt.Errorf("%w: registry", errPublicNonStreamContractMismatch)
+			}
+			contract, contractErr := publicRequestContractForProfile(profile, string(request.Operation), candidateIdentity)
+			if contractErr != nil {
+				return nil, contractErr
+			}
+			candidate, prepareErr := candidateProfile.PrepareRequest(request.Body, request.PublicModel, contract)
+			if prepareErr != nil {
+				return nil, fmt.Errorf("%w: %v", errPublicNonStreamRequestInvalid, prepareErr)
+			}
+			requirements, deriveErr := publicInvocationCapabilityRequirements(profile, candidate)
+			if deriveErr != nil {
+				return nil, fmt.Errorf("%w: %v", errPublicNonStreamRequestInvalid, deriveErr)
+			}
+			requestContract = contract
+			prepared = candidate
+			identity = candidateIdentity
+			publicProfile = candidateProfile
+			return requirements, nil
+		},
+	})
+	if err != nil {
+		if errors.Is(err, errPublicNonStreamRequestInvalid) || errors.Is(err, errPublicNonStreamContractMismatch) {
+			return publicExecutionPreparation{}, err
+		}
+		return publicExecutionPreparation{}, fmt.Errorf("%w: plan", errPublicNonStreamUpstreamFailed)
+	}
+	if publicProfile == nil || identity.ModelOperationID == "" {
+		return publicExecutionPreparation{}, errPublicNonStreamContractMismatch
+	}
+	if err := validatePublicNonStreamPlan(request, plan, identity); err != nil {
+		return publicExecutionPreparation{}, err
+	}
+	if prepared == nil || requestContract.ExecutionProfileID != plan.ExecutionProfileID ||
+		requestContract.ExecutionProfileVersion != plan.ExecutionProfileVersion {
+		return publicExecutionPreparation{}, errPublicNonStreamContractMismatch
+	}
+	prepared, err = orchestrator.applyInputGuard(ctx, publicProfile, prepared, request.PublicModel)
+	if err != nil {
+		return publicExecutionPreparation{}, err
+	}
+	admission := prepared.Admission()
+	inputEstimate, err := estimateProviderJSONAdmission(prepared.CanonicalBody())
+	if err != nil {
+		return publicExecutionPreparation{}, fmt.Errorf("%w: request estimate", errPublicNonStreamRequestInvalid)
+	}
+	outputEstimate, err := checkedAdmissionInt(admission.ExplicitMaxOutputTokens, 0)
+	if err != nil || outputEstimate <= 0 {
+		return publicExecutionPreparation{}, fmt.Errorf("%w: output estimate", errPublicNonStreamRequestInvalid)
+	}
+	// Public text contracts require an explicit output bound. Validate it
+	// against the sealed public limits before decrypting any route credential;
+	// a client limit violation is not an unavailable upstream candidate.
+	requestLimits := modelExecutionRequestLimits{
+		EstimatedInputTokens: inputEstimate.InputTokens, EstimatedOutputTokens: outputEstimate,
+		ExplicitOutputTokens: &outputEstimate,
+	}
+	if err := requestLimits.validatePublic(plan); err != nil {
+		return publicExecutionPreparation{}, fmt.Errorf("%w: plan limit", errPublicNonStreamRequestInvalid)
+	}
+	routes, maximumInput, err := orchestrator.prepareRoutes(
+		ctx, request, plan, identity, prepared, inputEstimate.InputTokens, outputEstimate,
+	)
+	if err != nil {
+		return publicExecutionPreparation{}, err
+	}
+	estimatedTokens, err := checkedAdmissionInt(int64(maximumInput), int64(outputEstimate))
+	if err != nil {
+		return publicExecutionPreparation{}, fmt.Errorf("%w: freeze estimate", errPublicNonStreamRequestInvalid)
+	}
+	freeze, err := orchestrator.billing.Freeze(ctx, billing.FreezeRequest{
+		RequestID: request.RequestID, OrgID: request.OrgID, ProjectID: request.ProjectID,
+		APIKeyID: request.APIKeyID, AccessCredentialID: request.AccessCredentialID,
+		CredentialRef: request.CredentialRef, AccessGrantID: request.AccessGrantID,
+		Model: request.ResolvedModel, EstimatedTokens: estimatedTokens,
+		EstimatedInputTokens: maximumInput, ReservedCompletionTokens: outputEstimate,
+		ExecutionSnapshotHash: plan.SnapshotHash,
+		SafetyFactor:          orchestrator.safetyFactor, MinFreezeCents: orchestrator.minFreeze,
+	})
+	if err != nil || freeze == nil || !freeze.Success {
+		return publicExecutionPreparation{}, fmt.Errorf("%w: freeze", errPublicNonStreamBillingFailed)
+	}
+	return publicExecutionPreparation{
+		plan: plan, identity: identity, publicProfile: publicProfile, prepared: prepared,
+		routes: routes, maximumInput: maximumInput, outputEstimate: outputEstimate,
+	}, nil
 }
 
 func (orchestrator *publicNonStreamOrchestrator) applyInputGuard(
@@ -561,7 +903,9 @@ func (orchestrator *publicNonStreamOrchestrator) applyInputGuard(
 	}
 	// Always cross the strict parser again, even for an allow decision. This
 	// prevents the guard integration from becoming an alternate request codec.
-	reprepared, err := profile.PrepareRequest(prepared.CanonicalBody(), publicModel)
+	reprepared, err := profile.PrepareRequest(
+		prepared.CanonicalBody(), publicModel, prepared.RequestContract(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("%w: transformed request", errPublicNonStreamGuardFailed)
 	}
@@ -612,7 +956,7 @@ func (orchestrator *publicNonStreamOrchestrator) prepareRoutes(
 		}
 		limits := modelExecutionRequestLimits{
 			EstimatedInputTokens: estimate.InputTokens, EstimatedOutputTokens: outputEstimate,
-			EstimateVersion: estimate.Version,
+			ExplicitOutputTokens: &outputEstimate, EstimateVersion: estimate.Version,
 		}
 		if err := limits.validatePublic(plan); err != nil || !limits.routeFits(plan, route) {
 			continue
@@ -623,7 +967,10 @@ func (orchestrator *publicNonStreamOrchestrator) prepareRoutes(
 	if len(routes) == 0 {
 		return nil, 0, fmt.Errorf("%w: no locally executable candidate", errPublicNonStreamUpstreamFailed)
 	}
-	maximumLimits := modelExecutionRequestLimits{EstimatedInputTokens: maximumInput, EstimatedOutputTokens: outputEstimate}
+	maximumLimits := modelExecutionRequestLimits{
+		EstimatedInputTokens: maximumInput, EstimatedOutputTokens: outputEstimate,
+		ExplicitOutputTokens: &outputEstimate,
+	}
 	if err := maximumLimits.validatePublic(plan); err != nil {
 		return nil, 0, fmt.Errorf("%w: plan limit", errPublicNonStreamRequestInvalid)
 	}

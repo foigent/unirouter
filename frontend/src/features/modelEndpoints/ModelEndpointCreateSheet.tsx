@@ -7,11 +7,27 @@ import {
   type CanonicalModelApplicationCreateResult,
   type CanonicalOperationID,
 } from '../../api/modelDeployments';
+import { enterpriseFinanceApi, type RateCardRecord } from '../../api/enterpriseFinance';
 import { modelExecutionProfileApi, type ModelExecutionProfile } from '../../api/modelExecutionProfiles';
 import { ApiError } from '../../api/transport';
 import { PasswordField } from '../../ui';
-import { reviewedModelDisplayName, reviewedModelOptions } from '../../utils/modelOnboarding';
-import { providerPreset, providerPresets } from '../../utils/providerEndpoints';
+import {
+  reviewedModelDisplayName,
+  reviewedModelOnboardingLimits,
+  reviewedModelOptions,
+} from '../../utils/modelOnboarding';
+import {
+  officialPricingDraftComponents,
+  officialPricingDraftFor,
+  officialPricingDraftRefs,
+  type OfficialPricingDraft,
+} from '../../utils/officialPricingDrafts';
+import {
+  providerPreset,
+  providerPresetAdapterConfigMatches,
+  providerPresets,
+  type ProviderPreset,
+} from '../../utils/providerEndpoints';
 import { endpointError } from './presentation';
 
 const { Text } = Typography;
@@ -58,6 +74,7 @@ const initialFormValues = {
   lifecycle: 'staging',
   route_role: 'primary',
   operation_id: 'openai.chat_completions.v1',
+  pricing_draft_enabled: false,
 };
 
 function positiveCanonicalTokenLimit(value: unknown) {
@@ -71,8 +88,15 @@ function canonicalPublicModelExecutionLimitsReady(model: CanonicalModelApplicati
 }
 
 const presetOperationBaseURLs: Partial<Record<string, Partial<Record<CanonicalOperationID, string>>>> = {
-  openai: { 'openai.responses.v1': 'https://api.openai.com' },
+  openai: { 'openai.chat_completions.v1': 'https://api.openai.com/v1' },
+  'openai-responses': { 'openai.responses.v1': 'https://api.openai.com' },
 };
+
+function defaultOperationForPreset(preset: ProviderPreset): CanonicalOperationID {
+  if (preset.apiSurface === 'openai_responses') return 'openai.responses.v1';
+  if (preset.apiSurface === 'anthropic_messages') return 'anthropic.messages.v1';
+  return operationOptionsByAdapter[preset.adapterType][0].value;
+}
 
 export function canonicalOperationBaseURLForPreset(presetValue: string, operationID: CanonicalOperationID) {
   const preset = providerPreset(presetValue);
@@ -84,6 +108,9 @@ export function canonicalOperationOriginError(operationID: CanonicalOperationID,
   const baseURL = String(rawBaseURL || '').replace(/^ +| +$/gu, '');
   if (!baseURL || /[^\x20-\x7e]/u.test(baseURL)) {
     return '该 operation 要求仅包含 ASCII 的 path-free HTTPS origin，例如 https://api.openai.com';
+  }
+  if (/[?#]/u.test(baseURL)) {
+    return '该 operation 要求 path-free HTTPS origin；不能包含 query 或 fragment 分隔符';
   }
   try {
     const parsed = new URL(baseURL);
@@ -106,6 +133,175 @@ export function canonicalOperationOriginError(operationID: CanonicalOperationID,
   return '';
 }
 
+export function providerPresetBaseURLError(
+  presetValue: string,
+  operationID: CanonicalOperationID,
+  rawBaseURL: unknown,
+) {
+  const operationError = canonicalOperationOriginError(operationID, rawBaseURL);
+  if (operationError) return operationError;
+
+  const baseURL = String(rawBaseURL || '').trim();
+  if (/[?#]/u.test(baseURL)) {
+    return '官方模板 Base URL 不能包含 query 或 fragment 分隔符';
+  }
+  if (presetValue === 'openai' || presetValue === 'openai-responses') {
+    const expectedOperation = presetValue === 'openai-responses'
+      ? 'openai.responses.v1'
+      : 'openai.chat_completions.v1';
+    if (operationID !== expectedOperation) {
+      return `OpenAI ${presetValue === 'openai-responses' ? 'Responses' : 'Chat Completions'} 模板不能绑定到 ${operationID}`;
+    }
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      const path = parsed.pathname.replace(/\/$/u, '');
+      const expectedPath = operationID === 'openai.responses.v1' ? '' : '/v1';
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.openai.com'
+        && authority.toLowerCase() === 'api.openai.com'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && path === expectedPath
+        ? ''
+        : `OpenAI 官方模板要求精确使用 https://api.openai.com${expectedPath}`;
+    } catch {
+      return `OpenAI 官方模板要求精确使用 https://api.openai.com${operationID === 'openai.responses.v1' ? '' : '/v1'}`;
+    }
+  }
+  if (presetValue === 'gemini') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'generativelanguage.googleapis.com'
+        && authority.toLowerCase() === 'generativelanguage.googleapis.com'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === '/v1beta/openai'
+        ? ''
+        : 'Gemini 官方模板要求精确使用 https://generativelanguage.googleapis.com/v1beta/openai';
+    } catch {
+      return 'Gemini 官方模板要求精确使用 https://generativelanguage.googleapis.com/v1beta/openai';
+    }
+  }
+  if (presetValue === 'deepseek') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.deepseek.com'
+        && authority.toLowerCase() === 'api.deepseek.com'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === ''
+        ? ''
+        : 'DeepSeek 官方模板要求精确使用 https://api.deepseek.com';
+    } catch {
+      return 'DeepSeek 官方模板要求精确使用 https://api.deepseek.com';
+    }
+  }
+  if (presetValue === 'kimi') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.moonshot.cn'
+        && authority.toLowerCase() === 'api.moonshot.cn'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === '/v1'
+        ? ''
+        : 'Kimi 开放平台模板要求精确使用 https://api.moonshot.cn/v1';
+    } catch {
+      return 'Kimi 开放平台模板要求精确使用 https://api.moonshot.cn/v1';
+    }
+  }
+  if (presetValue === 'minimax') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.minimaxi.com'
+        && authority.toLowerCase() === 'api.minimaxi.com'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === '/v1'
+        ? ''
+        : 'MiniMax 中国区官方模板要求精确使用 https://api.minimaxi.com/v1';
+    } catch {
+      return 'MiniMax 中国区官方模板要求精确使用 https://api.minimaxi.com/v1';
+    }
+  }
+  if (presetValue === 'xai') {
+    try {
+      const parsed = new URL(baseURL);
+      const authority = baseURL.slice('https://'.length).split('/')[0];
+      return parsed.protocol === 'https:'
+        && parsed.hostname.toLowerCase() === 'api.x.ai'
+        && authority.toLowerCase() === 'api.x.ai'
+        && !parsed.port
+        && !parsed.username
+        && !parsed.password
+        && !parsed.search
+        && !parsed.hash
+        && parsed.pathname.replace(/\/$/u, '') === '/v1'
+        ? ''
+        : 'xAI 官方模板要求精确使用 https://api.x.ai/v1';
+    } catch {
+      return 'xAI 官方模板要求精确使用 https://api.x.ai/v1';
+    }
+  }
+  if (presetValue !== 'dashscope' && presetValue !== 'dashscope-shared') return '';
+
+  try {
+    const parsed = new URL(baseURL);
+    if (presetValue === 'dashscope-shared') {
+      return baseURL.replace(/\/$/u, '') === 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+        ? ''
+        : '北京共享兼容模板只接受 https://dashscope.aliyuncs.com/compatible-mode/v1';
+    }
+    const workspaceSuffix = '.cn-beijing.maas.aliyuncs.com';
+    const workspaceID = parsed.hostname.endsWith(workspaceSuffix)
+      ? parsed.hostname.slice(0, -workspaceSuffix.length)
+      : '';
+    const path = parsed.pathname.replace(/\/$/u, '');
+    if (
+      parsed.protocol !== 'https:'
+      || parsed.username
+      || parsed.password
+      || parsed.port
+      || !workspaceID
+      || workspaceID.includes('.')
+      || workspaceID === 'trial'
+      || workspaceID === 'token-plan'
+      || path !== '/compatible-mode/v1'
+      || parsed.search
+      || parsed.hash
+    ) {
+      return '北京业务空间模板只接受 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1；其他地域必须使用独立 Profile 与价格证据';
+    }
+  } catch {
+    return '请粘贴完整的北京业务空间 API Host，例如 https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1';
+  }
+  return '';
+}
+
 function newIdempotencyKey() {
   const random = globalThis.crypto?.randomUUID?.()
     || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -114,6 +310,76 @@ function newIdempotencyKey() {
 
 function patchFormValues(formApi: any, values: Record<string, unknown>) {
   formApi.setValues({ ...formApi.getValues(), ...values });
+}
+
+function officialPricingDraftIsFresh(template: OfficialPricingDraft) {
+  const staleAt = Date.parse(template.staleAfter);
+  return Number.isFinite(staleAt) && Date.now() < staleAt;
+}
+
+function pricingDraftEnabledByDefault(template: ReturnType<typeof officialPricingDraftFor>) {
+  return template?.state === 'available'
+    && !template.requiresPayGoConfirmation
+    && officialPricingDraftIsFresh(template);
+}
+
+function matchingImportedPricingDraft(
+  cards: RateCardRecord[],
+  template: OfficialPricingDraft,
+  modelRef: string,
+) {
+  const refs = officialPricingDraftRefs(template, modelRef);
+  const expectedComponents = officialPricingDraftComponents(template);
+  return cards.some(record => {
+    const exactComponents = record.card.components.length === expectedComponents.length
+      && expectedComponents.every(expected => record.card.components.some(actual =>
+        actual.meter === expected.meter
+        && actual.unit_quantity === expected.unit_quantity
+        && actual.amount.value_minor === expected.amount.value_minor
+        && actual.amount.currency === expected.amount.currency
+        && actual.amount.scale === expected.amount.scale));
+    return record.card.rate_card_ref === refs.rateCardRef
+      && record.card.state === 'draft'
+      && record.card.provider_ref === template.provider
+      && record.card.model_ref === modelRef
+      && (record.card.daily_price_bands?.length || 0) === 0
+      && exactComponents
+      && record.source_evidence?.evidence_ref === refs.evidenceRef
+      && record.source_evidence.payload_sha256 === template.payloadSHA256
+      && record.source_evidence.transform_version === template.transformVersion;
+  });
+}
+
+async function importOfficialOnboardingPricingDraft(template: OfficialPricingDraft, modelRef: string) {
+  const refs = officialPricingDraftRefs(template, modelRef);
+  const payload = {
+    rate_card_ref: refs.rateCardRef,
+    evidence_ref: refs.evidenceRef,
+    provider_ref: template.provider,
+    model_ref: modelRef,
+    effective_from: template.fetchedAt,
+    effective_to: template.effectiveTo || null,
+    components: officialPricingDraftComponents(template),
+    daily_price_bands: [],
+    source_url: template.sourceURL,
+    source_revision: template.sourceRevision,
+    fetched_at: template.fetchedAt,
+    payload_sha256: template.payloadSHA256,
+    transform_version: template.transformVersion,
+    stale_after: template.staleAfter,
+  };
+  try {
+    await enterpriseFinanceApi.importOfficialRateCardDraft(payload);
+    return 'created' as const;
+  } catch (error) {
+    try {
+      const existing = await enterpriseFinanceApi.getRateCards();
+      if (matchingImportedPricingDraft(existing?.data || [], template, modelRef)) return 'reused' as const;
+    } catch {
+      // Preserve the original import failure; the fallback is read-only replay detection.
+    }
+    throw error;
+  }
 }
 
 export default function ModelEndpointCreateSheet({ open, applications, onCancel, onCreated }: Props) {
@@ -130,6 +396,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   const [executionProfilesLoading, setExecutionProfilesLoading] = useState(false);
   const [executionProfilesError, setExecutionProfilesError] = useState('');
   const [selectedExecutionProfileKey, setSelectedExecutionProfileKey] = useState('');
+  const [selectedUpstreamModelID, setSelectedUpstreamModelID] = useState('');
   const [saving, setSaving] = useState(false);
   const createIntent = useRef<CreateIntent | null>(null);
 
@@ -153,6 +420,16 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   );
   const selectedReviewedModel = reviewedModels.find(option => option.key === selectedExecutionProfileKey);
   const activeReviewedModel = publicModelMode === 'new' ? selectedReviewedModel : undefined;
+  const selectedReviewedLimits = selectedReviewedModel
+    ? reviewedModelOnboardingLimits(selectedReviewedModel.profile)
+    : undefined;
+  const selectedOfficialPricingDraft = selectedReviewedModel
+    ? officialPricingDraftFor(
+      selectedReviewedModel.profile.id,
+      selectedUpstreamModelID || selectedReviewedModel.recommendedUpstreamModelID,
+      selectedReviewedModel.profile.region,
+    )
+    : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -186,6 +463,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     setNewConnectionBaseURL(preset.baseURL);
     setSelectedConnectionID(0);
     setSelectedExecutionProfileKey('');
+    setSelectedUpstreamModelID('');
     createIntent.current = null;
   }, [open]);
 
@@ -195,11 +473,18 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     const option = reviewedModels[0];
     const preset = providerPreset(selectedPreset);
     const operation = option.operationIDs[0];
+    const limits = reviewedModelOnboardingLimits(option.profile);
+    const pricingDraft = officialPricingDraftFor(
+      option.profile.id,
+      option.recommendedUpstreamModelID,
+      option.profile.region,
+    );
     const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, operation);
     setSelectedExecutionProfileKey(option.key);
     setAdapterType(preset.adapterType);
     setOperationID(operation);
     setNewConnectionBaseURL(nextBaseURL);
+    setSelectedUpstreamModelID(option.recommendedUpstreamModelID);
     patchFormValues(formApi, {
       preset: selectedPreset,
       route_role: formApi.getValue('route_role') || 'primary',
@@ -214,12 +499,13 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       display_name: reviewedModelDisplayName(option.profile),
       provider_family: preset.provider,
       lifecycle: 'staging',
-      public_context_length: option.profile.default_context_window,
-      public_output_limit: option.profile.default_output_limit,
+      public_context_length: limits.publicContextLength,
+      public_output_limit: limits.publicOutputLimit,
       upstream_model: option.recommendedUpstreamModelID,
-      deployment_max_context: option.profile.default_context_window,
-      deployment_default_max_output: option.profile.default_output_limit,
+      deployment_max_context: limits.deploymentMaxContext,
+      deployment_default_max_output: limits.deploymentDefaultMaxOutput,
       operation_id: operation,
+      pricing_draft_enabled: pricingDraftEnabledByDefault(pricingDraft),
     });
   }, [connectionMode, executionProfilesLoading, formApi, open, reviewedModels, selectedExecutionProfileKey, selectedPreset]);
 
@@ -229,10 +515,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
   const effectiveBaseURL = connectionMode === 'existing'
     ? selectedExistingConnection?.base_url || ''
     : newConnectionBaseURL;
-  const operationOriginError = canonicalOperationOriginError(operationID, effectiveBaseURL);
+  const operationOriginError = providerPresetBaseURLError(selectedPreset, operationID, effectiveBaseURL);
 
   const clearReviewedModelDraft = () => {
     setSelectedExecutionProfileKey('');
+    setSelectedUpstreamModelID('');
     if (formApi) patchFormValues(formApi, {
       model_template: undefined,
       model_name: undefined,
@@ -243,6 +530,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       upstream_model: undefined,
       deployment_max_context: undefined,
       deployment_default_max_output: undefined,
+      pricing_draft_enabled: false,
     });
   };
 
@@ -253,19 +541,27 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       return;
     }
     const operation = option.operationIDs[0];
+    const limits = reviewedModelOnboardingLimits(option.profile);
+    const pricingDraft = officialPricingDraftFor(
+      option.profile.id,
+      option.recommendedUpstreamModelID,
+      option.profile.region,
+    );
     setSelectedExecutionProfileKey(option.key);
     setOperationID(operation);
+    setSelectedUpstreamModelID(option.recommendedUpstreamModelID);
     if (formApi) patchFormValues(formApi, {
       model_template: option.key,
       model_name: option.recommendedPublicModelID,
       display_name: reviewedModelDisplayName(option.profile),
       provider_family: selectedProviderPreset.provider,
-      public_context_length: option.profile.default_context_window,
-      public_output_limit: option.profile.default_output_limit,
+      public_context_length: limits.publicContextLength,
+      public_output_limit: limits.publicOutputLimit,
       upstream_model: option.recommendedUpstreamModelID,
-      deployment_max_context: option.profile.default_context_window,
-      deployment_default_max_output: option.profile.default_output_limit,
+      deployment_max_context: limits.deploymentMaxContext,
+      deployment_default_max_output: limits.deploymentDefaultMaxOutput,
       operation_id: operation,
+      pricing_draft_enabled: pricingDraftEnabledByDefault(pricingDraft),
     });
   };
 
@@ -276,6 +572,15 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     const publicOutputLimit = positiveCanonicalTokenLimit(values.public_output_limit);
     const deploymentMaxContext = positiveCanonicalTokenLimit(values.deployment_max_context);
     const deploymentDefaultMaxOutput = positiveCanonicalTokenLimit(values.deployment_default_max_output);
+    const submittedPricingDraft = activeReviewedModel
+      ? officialPricingDraftFor(
+        activeReviewedModel.profile.id,
+        upstreamModel,
+        activeReviewedModel.profile.region,
+      )
+      : undefined;
+    const createPricingDraft = Boolean(activeReviewedModel)
+      && (values.pricing_draft_enabled === true || values.pricing_draft_enabled === 'true');
     const selectedExistingConnection = connectionMode === 'existing'
       ? connections.find(item => item.id === Number(values.connection_id))
       : undefined;
@@ -290,12 +595,21 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
       Toast.error('请填写有效的公共模型执行边界；每项必须是正整数 Token');
       return;
     }
+    if (createPricingDraft && (
+      !submittedPricingDraft
+      || submittedPricingDraft.state !== 'available'
+      || !officialPricingDraftIsFresh(submittedPricingDraft)
+    )) {
+      Toast.error('当前官方价格证据不可生成新鲜、可审查的 Pricing Profile 草稿；请取消该选项或重新同步官方来源');
+      return;
+    }
     if (publicModelMode === 'existing'
       && (!selectedExistingPublicModel || !canonicalPublicModelExecutionLimitsReady(selectedExistingPublicModel))) {
       Toast.error('所选公共模型缺少正整数 context/output 执行边界；请先在公共模型目录修复后再复用');
       return;
     }
-    const submittedOriginError = canonicalOperationOriginError(
+    const submittedOriginError = providerPresetBaseURLError(
+      selectedPreset,
       submittedOperationID,
       connectionMode === 'existing' ? selectedExistingConnection?.base_url : values.base_url,
     );
@@ -314,7 +628,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           ? { anthropic_version: '2023-06-01' }
           : adapterType === 'azure_openai'
             ? { api_version: String(values.azure_api_version || '').trim(), deployment: upstreamModel }
-            : {},
+            : { ...(selectedProviderPreset.adapterConfig || {}) },
       };
     const publicModel = publicModelMode === 'existing'
       ? { id: Number(values.public_model_id) }
@@ -354,9 +668,26 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     try {
       const result = await modelDeploymentApi.create(input, createIntent.current.idempotencyKey);
       createIntent.current = null;
+      let pricingDraftState: 'skipped' | 'created' | 'reused' = 'skipped';
+      if (createPricingDraft && submittedPricingDraft?.state === 'available') {
+        try {
+          pricingDraftState = await importOfficialOnboardingPricingDraft(
+            submittedPricingDraft,
+            String(values.model_name || '').trim(),
+          );
+        } catch (pricingError) {
+          Toast.warning(`模型接入已创建，但待审核 Pricing Profile 草稿创建失败：${pricingError instanceof Error && pricingError.message ? pricingError.message : '请在模型计费页重新导入官方来源'}`);
+          await onCreated(result);
+          return;
+        }
+      }
       Toast.success(result.idempotency_replay
         ? '已安全重放原创建结果；没有重复创建连接、deployment 或凭证'
-        : '模型接入草稿与精确 Operation 已创建；尚未完成探测或发布到运行时');
+        : pricingDraftState === 'created'
+          ? '模型接入与待审核 Pricing Profile 草稿已创建；价格没有批准、激活或影响运行时'
+          : pricingDraftState === 'reused'
+            ? '模型接入已创建；相同来源的待审核 Pricing Profile 草稿已存在，未重复写入'
+            : '模型接入草稿与精确 Operation 已创建；尚未完成探测或发布到运行时');
       await onCreated(result);
     } catch (error) {
       if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
@@ -377,7 +708,7 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
     <Banner
       type="info"
       closeIcon={null}
-      description="一次提交原子创建或精确复用供应商连接、公共模型、执行目标、凭证绑定与一个 Operation。内部持久身份仍是 deployment_id + operation_id；创建不等于探测通过、已发布或对调用者可用。"
+      description="一次提交原子创建或精确复用供应商连接、公共模型、执行目标、凭证绑定与一个 Operation。可选 Pricing Profile 是随后独立写入的待审核草稿；失败不会回滚已创建的模型接入，也不会批准、激活或切换计价权威。内部持久身份仍是 deployment_id + operation_id；创建不等于探测通过、已发布或对调用者可用。"
       style={{ marginBottom: 16 }}
     />
     <Form key={open ? 'canonical-create-open' : 'canonical-create-closed'} getFormApi={setFormApi} initValues={initialFormValues} onSubmit={submit}>
@@ -400,11 +731,12 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             const preset = providerPreset(selectedPreset);
             setAdapterType(preset.adapterType);
             setSelectedExecutionProfileKey('');
-            const firstOperation = operationOptionsByAdapter[preset.adapterType][0].value;
-            setOperationID(firstOperation);
-            setNewConnectionBaseURL(preset.baseURL);
-            formApi?.setValue('base_url', preset.baseURL);
-            formApi?.setValue('operation_id', firstOperation);
+            const defaultOperation = defaultOperationForPreset(preset);
+            const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, defaultOperation);
+            setOperationID(defaultOperation);
+            setNewConnectionBaseURL(nextBaseURL);
+            formApi?.setValue('base_url', nextBaseURL);
+            formApi?.setValue('operation_id', defaultOperation);
           } else {
             setAdapterType('');
             setOperationID('' as CanonicalOperationID);
@@ -426,7 +758,16 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         onChange={(value) => {
           const id = Number(value);
           const selected = connections.find(connection => connection.id === id);
-          const matchingPreset = providerPresets.find(preset => preset.provider === selected?.provider && preset.adapterType === selected?.adapter_type);
+          const matchingPreset = providerPresets.find(preset => {
+            const presetOperation = defaultOperationForPreset(preset);
+            return preset.provider === selected?.provider &&
+              preset.adapterType === selected?.adapter_type &&
+              providerPresetAdapterConfigMatches(preset, selected?.adapter_config) &&
+              !providerPresetBaseURLError(preset.value, presetOperation, selected?.base_url);
+          });
+          const firstOperation = matchingPreset
+            ? defaultOperationForPreset(matchingPreset)
+            : operationOptionsByAdapter[selected?.adapter_type || '']?.[0]?.value;
           clearReviewedModelDraft();
           setSelectedConnectionID(id);
           setCredentialMode('new');
@@ -436,7 +777,6 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           setNewConnectionBaseURL('');
           formApi?.setValue('credential_mode', 'new');
           formApi?.setValue('binding_id', undefined);
-          const firstOperation = operationOptionsByAdapter[selected?.adapter_type || '']?.[0]?.value;
           setOperationID((firstOperation || '') as CanonicalOperationID);
           formApi?.setValue('operation_id', firstOperation || '');
         }}
@@ -455,14 +795,14 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             formApi?.setValue('preset', preset.value);
             setSelectedPreset(preset.value);
             setAdapterType(preset.adapterType);
-            const firstOperation = operationOptionsByAdapter[preset.adapterType][0].value;
-            const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, firstOperation);
-            setOperationID(firstOperation);
+            const defaultOperation = defaultOperationForPreset(preset);
+            const nextBaseURL = canonicalOperationBaseURLForPreset(preset.value, defaultOperation);
+            setOperationID(defaultOperation);
             setNewConnectionBaseURL(nextBaseURL);
             formApi?.setValue('provider', preset.value === 'custom' ? '' : preset.provider);
             formApi?.setValue('base_url', nextBaseURL);
             formApi?.setValue('adapter_type', preset.adapterType);
-            formApi?.setValue('operation_id', firstOperation);
+            formApi?.setValue('operation_id', defaultOperation);
           }}
           extraText={providerPreset(selectedPreset).note}
         />
@@ -473,14 +813,14 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         <Form.Input
           field="base_url"
           label="Base URL"
-          placeholder="https://..."
-          disabled={selectedPreset !== 'custom'}
+          placeholder={selectedProviderPreset.editableBaseURL ? '粘贴业务空间 API Host（含 /compatible-mode/v1）' : 'https://...'}
+          disabled={selectedPreset !== 'custom' && !selectedProviderPreset.editableBaseURL}
           onChange={value => setNewConnectionBaseURL(String(value || ''))}
           rules={[
             { required: true, message: '必填' },
             {
-              validator: (_rule, value) => !canonicalOperationOriginError(operationID, value),
-              message: canonicalOperationOriginError(operationID, newConnectionBaseURL) || '该 operation 的 Base URL 不合法',
+              validator: (_rule, value) => !providerPresetBaseURLError(selectedPreset, operationID, value),
+              message: 'Base URL 与当前 operation 或地域模板不匹配；北京业务空间只接受专属 cn-beijing Host，其他地域必须使用独立 Profile 与价格证据',
             },
           ]}
         />
@@ -511,12 +851,12 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
           }))}
           rules={[{ required: true, message: '请选择模型模板' }]}
           onChange={selectReviewedModel}
-          extraText="只列出该官方 Provider 最新的仓库审查 Profile；Profile 与供应商 live probe、Release、Pricing 证据仍保持分离。"
+          extraText="这里只展示本地合同子集，不代表该模型已完整适配。供应商 live probe、Release 和 Pricing 仍需各自验证。"
         />
-        {selectedReviewedModel && <Banner
-          type="success"
+        {selectedReviewedModel && selectedReviewedLimits && <Banner
+          type="info"
           closeIcon={null}
-          description={`${selectedReviewedModel.profile.id}@${selectedReviewedModel.profile.version} · 默认 context ${selectedReviewedModel.profile.default_context_window.toLocaleString()} · 默认 output ${selectedReviewedModel.profile.default_output_limit.toLocaleString()} · 可执行能力 ${selectedReviewedModel.profile.capabilities.join(' / ') || '无额外能力'}`}
+          description={`${selectedReviewedModel.profile.id}@${selectedReviewedModel.profile.version} · ${selectedReviewedModel.profile.provider} / ${selectedReviewedModel.profile.region} / ${selectedReviewedModel.profile.api_surface} · Operation ${selectedReviewedModel.operationIDs.join(' / ')} · 协议 ${selectedReviewedModel.profile.protocol_profile}${selectedReviewedModel.profile.protocol_profile_version ? `@${selectedReviewedModel.profile.protocol_profile_version}` : ''} · Catalog 证据 ${selectedReviewedModel.profile.catalog_evidence_state}（不代表 live/released）· 供应商上限 context ${selectedReviewedLimits.providerContextWindow ? selectedReviewedLimits.providerContextWindow.toLocaleString() : '未文档化'} / output ${selectedReviewedLimits.providerMaxOutput ? selectedReviewedLimits.providerMaxOutput.toLocaleString() : '未文档化或无固定上限'} · 当前可执行上限 context ${selectedReviewedLimits.executableContextWindow ? selectedReviewedLimits.executableContextWindow.toLocaleString() : '未建模'} / output ${selectedReviewedLimits.executableMaxOutput ? selectedReviewedLimits.executableMaxOutput.toLocaleString() : '未单独收窄'} · 请求默认 context ${selectedReviewedModel.profile.default_context_window.toLocaleString()} / output ${selectedReviewedModel.profile.default_output_limit.toLocaleString()}（${selectedReviewedModel.profile.default_output_authority}）· 官方文档能力 ${selectedReviewedModel.profile.provider_capabilities.join(' / ') || '无'} · 仓库已建模可执行能力 ${selectedReviewedModel.profile.capabilities.join(' / ') || (selectedReviewedModel.profile.catalog_evidence_state === 'locally_conformant' ? '严格文本基础合同' : '待逐项验证')}${selectedReviewedModel.profile.processing_tier_policy ? ` · Processing tier ${selectedReviewedModel.profile.processing_tier_policy}：default/flex/priority 已建模为请求级协议与运行证据；显式 flex/priority 目前只允许 cost_observation，不代表客户计费、live verified 或 released` : ''}`}
           style={{ marginBottom: 16 }}
         />}
       </>}
@@ -545,13 +885,15 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         extraText="缺少正整数 context_length 或 output_limit 的公共模型不可复用；请先在公共模型目录修复执行边界。"
       /> : <>
         <div className="ur-model-endpoint-form-grid">
-          {selectedReviewedModel ? <Form.Select
+          {selectedReviewedModel ? <Form.Input
             field="model_name"
             label={<span id="reviewed-public-model-id-label">公共模型 ID</span>}
             aria-labelledby="reviewed-public-model-id-label"
-            optionList={selectedReviewedModel.publicModelIDs.map(value => ({ label: value, value }))}
-            rules={[{ required: true, message: '必填' }]}
-            extraText="来自执行 Profile 的精确稳定别名；展示名称可单独修改。"
+            rules={[
+              { required: true, message: '必填' },
+              { validator: (_rule, value) => !value || /^[a-z0-9][a-z0-9._-]{0,99}$/.test(String(value).trim()), message: '只使用小写字母、数字、点、短横线或下划线' },
+            ]}
+            extraText="面向调用方的稳定模型 ID，可为新版本使用唯一 ID；供应商模型身份由下方 Profile 与上游模型独立锁定。"
           /> : <Form.Input field="model_name" label="公共模型 ID" placeholder="例如 deepseek-v4-flash" rules={[
             { required: true, message: '必填' },
             { validator: (_rule, value) => !value || /^[a-z0-9][a-z0-9._-]{0,99}$/.test(String(value).trim()), message: '只使用小写字母、数字、点、短横线或下划线' },
@@ -577,7 +919,11 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
               { required: true, message: '必填' },
               { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
             ]}
-            extraText={selectedReviewedModel ? '使用该 Profile 的已审查默认值；如需其他边界，请在公共模型目录单独审查。' : '面向调用者公开的模型级执行边界；不能为空或为 0。'}
+            extraText={selectedReviewedModel
+              ? selectedReviewedLimits?.executableContextWindow !== selectedReviewedLimits?.providerContextWindow
+                ? '使用该 Profile 的 UniRouter 已审查可执行 context 上限；供应商虽支持更大窗口，当前计费合同不能无损执行。'
+                : '使用该 Profile 已文档化的供应商 context 上限；Release 可以经审查后进一步收窄。'
+              : '面向调用者公开的模型级执行边界；不能为空或为 0。'}
           />
           <Form.InputNumber
             field="public_output_limit"
@@ -591,7 +937,13 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
               { required: true, message: '必填' },
               { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
             ]}
-            extraText={selectedReviewedModel ? '使用该 Profile 的已审查默认值；不自动扩大到供应商最大值。' : '面向调用者公开的单次输出边界；不能为空或为 0。'}
+            extraText={selectedReviewedModel
+              ? selectedReviewedLimits?.providerMaxOutput
+                ? '使用该 Profile 已文档化的供应商最大输出；Release 可以经审查后进一步收窄。'
+                : selectedReviewedLimits?.executableMaxOutput
+                  ? '供应商未文档化固定最大输出；使用该 Profile 的 UniRouter 已审查可执行策略上限，不能冒充供应商最大值。'
+                  : '供应商未文档化固定最大输出且没有单独可执行上限；暂以请求默认值作为安全公开上限。'
+              : '面向调用者公开的单次输出边界；不能为空或为 0。'}
           />
         </div>
       </>}
@@ -603,6 +955,16 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
         filter
         optionList={activeReviewedModel.upstreamModelIDs.map(value => ({ label: value, value }))}
         rules={[{ required: true, message: '必填' }]}
+        onChange={value => {
+          const upstreamModelID = String(value || '');
+          setSelectedUpstreamModelID(upstreamModelID);
+          const pricingDraft = officialPricingDraftFor(
+            activeReviewedModel.profile.id,
+            upstreamModelID,
+            activeReviewedModel.profile.region,
+          );
+          formApi?.setValue('pricing_draft_enabled', pricingDraftEnabledByDefault(pricingDraft));
+        }}
         extraText="只允许该 Profile 审查过的精确上游 ID；创建后的真实可用性仍由供应商模型列表与 Operation 探测确认。"
       /> : <Form.Input field="upstream_model" label="上游模型 / 部署 ID" rules={[
         { required: true, message: '必填' },
@@ -621,11 +983,15 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             { required: true, message: '必填' },
             { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
           ]}
-          extraText={activeReviewedModel ? '默认与公共模型 Profile 一致；Release 仍会冻结最终有效边界。' : '该精确供应商 Deployment 已核实的上下文执行边界。'}
+          extraText={activeReviewedModel
+            ? selectedReviewedLimits?.executableContextWindow !== selectedReviewedLimits?.providerContextWindow
+              ? '使用该 Profile 的 UniRouter 已审查可执行 context 上限；Release 仍会冻结最终有效边界。'
+              : '使用该 Profile 已文档化的供应商 context 上限；Release 仍会冻结最终有效边界。'
+            : '该精确供应商 Deployment 已核实的上下文执行边界。'}
         />
         <Form.InputNumber
           field="deployment_default_max_output"
-          label="Deployment 单次输出上限（Token）"
+          label={activeReviewedModel ? '请求默认单次输出（Profile 投影，Token）' : 'Deployment 默认单次输出（Token）'}
           min={1}
           max={maxCanonicalTokenLimit}
           precision={0}
@@ -635,9 +1001,33 @@ export default function ModelEndpointCreateSheet({ open, applications, onCancel,
             { required: true, message: '必填' },
             { validator: (_rule, value) => positiveCanonicalTokenLimit(value) > 0, message: '必须是正整数 Token' },
           ]}
-          extraText={activeReviewedModel ? '默认与公共模型 Profile 一致；不会自动写入供应商最大输出。' : '该精确供应商 Deployment 已核实的默认输出执行边界。'}
+          extraText={activeReviewedModel ? `Canonical 请求默认由 Profile 与公共 cap 决定；此字段保存相同投影供路由证据使用，不能作为独立的每 Deployment 覆盖。权威为 ${activeReviewedModel.profile.default_output_authority}；它不是供应商最大输出。` : '该精确供应商 Deployment 已核实的默认输出执行边界。'}
         />
       </div>
+
+      {activeReviewedModel && selectedOfficialPricingDraft?.state === 'available' && <>
+        <Banner
+          type={officialPricingDraftIsFresh(selectedOfficialPricingDraft) ? 'warning' : 'danger'}
+          closeIcon={null}
+          description={`待审核 Pricing Profile 草稿 · 地域 ${selectedOfficialPricingDraft.pricingRegion} · ${selectedOfficialPricingDraft.pricingScope} · ${selectedOfficialPricingDraft.currency}/百万 Token：输入 ${selectedOfficialPricingDraft.inputPrice} / 输出 ${selectedOfficialPricingDraft.outputPrice} / cacheRead ${selectedOfficialPricingDraft.cacheReadPrice} / cacheCreate ${selectedOfficialPricingDraft.cacheCreationPrice} · 来源获取 ${selectedOfficialPricingDraft.fetchedAt.slice(0, 10)} · 新鲜度截止 ${selectedOfficialPricingDraft.staleAfter.slice(0, 10)}${selectedOfficialPricingDraft.effectiveTo ? ` · 有效期截止 ${selectedOfficialPricingDraft.effectiveTo.slice(0, 10)}` : ''}。${selectedOfficialPricingDraft.reviewNote}${selectedOfficialPricingDraft.currency === 'USD' ? ' USD 草稿只保存原币审核证据；当前 CNY 请求结算不会批准或激活它。' : ''}`}
+          style={{ marginBottom: 12 }}
+        />
+        <Form.Checkbox
+          field="pricing_draft_enabled"
+          aria-label="同时创建待审核 Pricing Profile 草稿"
+          disabled={!officialPricingDraftIsFresh(selectedOfficialPricingDraft)}
+        >
+          {selectedOfficialPricingDraft.requiresPayGoConfirmation
+            ? '我确认这是普通按量 API Key，同时创建 provider_list 待审核草稿'
+            : '同时创建 provider_list 待审核草稿（不会批准、激活或切换计价权威）'}
+        </Form.Checkbox>
+      </>}
+      {activeReviewedModel && selectedOfficialPricingDraft?.state === 'manual_review_required' && <Banner
+        type="warning"
+        closeIcon={null}
+        description={`官方价格已记录（${selectedOfficialPricingDraft.pricingRegion} / ${selectedOfficialPricingDraft.currency}）：${selectedOfficialPricingDraft.documentedPricingSummary} Pricing Profile 不自动生成：${selectedOfficialPricingDraft.reason} 来源 ${selectedOfficialPricingDraft.sourceURL}`}
+        style={{ marginBottom: 12 }}
+      />}
 
       {connectionMode === 'existing' && existingBindings.length > 0 && <Form.RadioGroup
         field="credential_mode"

@@ -159,7 +159,12 @@ SELECT stable_release_id,canary_release_id,public_model_id,slot_version
 		if loadErr != nil {
 			return cutoverSnapshot{}, loadErr
 		}
-		if loadErr = loadAllCapabilities(ctx, tx, orgID, publicModelID, operationID, candidates); loadErr != nil {
+		if loadErr = loadAllCapabilities(
+			ctx, tx, orgID, publicModelID, operationID,
+			value.DeploymentRelease.ExecutionProfileID,
+			value.DeploymentRelease.ExecutionProfileVersion,
+			candidates,
+		); loadErr != nil {
 			return cutoverSnapshot{}, loadErr
 		}
 		value.Operations = append(value.Operations, cutoverOperationSnapshot{OperationID: operationID, Canonical: candidates})
@@ -181,44 +186,13 @@ func loadAllCapabilities(
 	ctx context.Context,
 	tx pgx.Tx,
 	orgID, publicModelID int64,
-	operationID string,
+	operationID, executionProfileID, executionProfileVersion string,
 	candidates []canonicalCandidate,
 ) error {
-	if len(candidates) == 0 {
-		return nil
-	}
-	rows, err := tx.Query(ctx, `
-SELECT capability.deployment_id,capability.capability_id,capability.support_state,
-       capability.evidence_state,capability.evidence_ref,
-       capability.verified_at,capability.revision
-  FROM model_deployment_capabilities capability
-  JOIN model_deployments deployment ON deployment.id=capability.deployment_id
- WHERE deployment.customer_org_id=$1 AND deployment.public_model_id=$2
-   AND capability.operation_id=$3
- ORDER BY capability.deployment_id,capability.capability_id`, orgID, publicModelID, operationID)
-	if err != nil {
-		return fmt.Errorf("%w: read cutover capability evidence: %v", ErrUnavailable, err)
-	}
-	defer rows.Close()
-	positions := make(map[int64]int, len(candidates))
-	for index := range candidates {
-		positions[candidates[index].DeploymentID] = index
-	}
-	for rows.Next() {
-		var deploymentID int64
-		var item capabilitySnapshot
-		if err := rows.Scan(&deploymentID, &item.ID, &item.SupportState, &item.EvidenceState,
-			&item.EvidenceRef, &item.VerifiedAt, &item.Revision); err != nil {
-			return fmt.Errorf("%w: scan cutover capability evidence: %v", ErrUnavailable, err)
-		}
-		if position, exists := positions[deploymentID]; exists {
-			candidates[position].Capabilities[item.ID] = item
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("%w: iterate cutover capability evidence: %v", ErrUnavailable, err)
-	}
-	return nil
+	return loadCapabilityEvidence(
+		ctx, tx, orgID, publicModelID, operationID,
+		executionProfileID, executionProfileVersion, nil, candidates,
+	)
 }
 
 type cutoverCredentialProof struct {

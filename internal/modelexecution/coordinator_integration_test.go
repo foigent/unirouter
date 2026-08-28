@@ -59,11 +59,17 @@ func TestCoordinatorCommitsOneTruthfulAttemptInEveryAuthorityMode(t *testing.T) 
 			require.Empty(t, decision.ProbeLeaseToken)
 			var attempts int
 			var channelID, channelKeyID *int64
+			var executionSnapshotHash, routeSnapshotHash *string
 			require.NoError(t, fixture.pool.QueryRow(t.Context(), `
-SELECT COUNT(*),MAX(channel_id),MAX(channel_key_id)
+SELECT COUNT(*),MAX(channel_id),MAX(channel_key_id),
+       MAX(execution_snapshot_hash),MAX(route_snapshot_hash)
   FROM billing_provider_attempts
- WHERE org_id=$1 AND request_id=$2`, fixture.orgID, identity.RequestID).Scan(&attempts, &channelID, &channelKeyID))
+ WHERE org_id=$1 AND request_id=$2`, fixture.orgID, identity.RequestID).Scan(
+				&attempts, &channelID, &channelKeyID, &executionSnapshotHash, &routeSnapshotHash,
+			))
 			require.Equal(t, 1, attempts)
+			require.NotNil(t, executionSnapshotHash)
+			require.Equal(t, plan.SnapshotHash, *executionSnapshotHash)
 			if test.mode == modelrouting.ModeCanonical {
 				require.Nil(t, channelID)
 				require.Nil(t, channelKeyID)
@@ -71,6 +77,15 @@ SELECT COUNT(*),MAX(channel_id),MAX(channel_key_id)
 				require.NotNil(t, channelID)
 				require.NotNil(t, channelKeyID)
 			}
+			if test.mode == modelrouting.ModeLegacy {
+				require.Nil(t, routeSnapshotHash, "legacy route evidence must remain immutable and snapshot-free")
+			}
+			_, err = fixture.pool.Exec(t.Context(), `
+UPDATE billing_provider_attempts
+   SET execution_snapshot_hash=$3
+ WHERE org_id=$1 AND request_id=$2`, fixture.orgID, identity.RequestID,
+				"mrs1_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+			require.ErrorContains(t, err, "model execution Plan snapshot is immutable")
 		})
 	}
 }
@@ -523,6 +538,7 @@ type executionFixture struct {
 	canonicalReleaseVersion             int64
 	model                               string
 	halfOpen                            bool
+	lastPlanSnapshotHash                string
 }
 
 func newExecutionFixture(t *testing.T, selectedV2, halfOpen bool) *executionFixture {
@@ -757,6 +773,7 @@ func (fixture *executionFixture) plan(t *testing.T, mode modelrouting.Mode, sele
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, plan.Routes)
+	fixture.lastPlanSnapshotHash = plan.SnapshotHash
 	return plan, plan.Routes[0]
 }
 
@@ -766,6 +783,7 @@ func (fixture *executionFixture) freeze(t *testing.T, suffix string) AttemptIden
 	result, err := fixture.billing.Freeze(t.Context(), billing.FreezeRequest{
 		RequestID: requestID, OrgID: fixture.orgID, APIKeyID: fixture.apiKeyID,
 		Model: fixture.model, EstimatedTokens: 1, SafetyFactor: "1", MinFreezeCents: 1,
+		ExecutionSnapshotHash: fixture.lastPlanSnapshotHash,
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success, result.ErrorDetail)
@@ -838,6 +856,7 @@ VALUES ($1,$2,$3,'personal','execution access',$4,$5,'active','',$6,
 		RequestID: requestID, OrgID: fixture.orgID, ProjectID: projectID, APIKeyID: apiKeyID,
 		AccessCredentialID: credentialID, CredentialRef: credentialRef, AccessGrantID: grantID,
 		Model: fixture.model, EstimatedTokens: 1, SafetyFactor: "1", MinFreezeCents: 1,
+		ExecutionSnapshotHash: fixture.lastPlanSnapshotHash,
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success, result.ErrorDetail)

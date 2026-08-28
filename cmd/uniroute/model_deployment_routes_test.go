@@ -99,6 +99,17 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 	orgApproval := serve(validMux, http.MethodPost, approvalPath, "not-json", auth.RoleOrgAdmin)
 	require.Equal(t, http.StatusForbidden, orgApproval.Code)
 	require.NotContains(t, orgApproval.Body.String(), "license_error", "approval RBAC must reject before the License gate")
+	capabilityBase := "/api/v1/model-deployments/1/operations/openai.chat_completions.v1/capabilities/streaming"
+	capabilityRead := serve(validMux, http.MethodGet, capabilityBase, "", auth.RoleOrgViewer)
+	require.NotEqual(t, http.StatusNotFound, capabilityRead.Code, capabilityRead.Body.String())
+	capabilityProbe := serve(validMux, http.MethodPost, capabilityBase+"/probes", "not-json", auth.RoleOrgAdmin)
+	require.Equal(t, http.StatusBadRequest, capabilityProbe.Code, capabilityProbe.Body.String())
+	require.Contains(t, capabilityProbe.Body.String(), "model_capability_qualification_invalid")
+	capabilityApproval := serve(validMux, http.MethodPost, capabilityBase+"/routing-approvals", "not-json", auth.RolePlatformAdmin)
+	require.Equal(t, http.StatusBadRequest, capabilityApproval.Code, capabilityApproval.Body.String())
+	require.Contains(t, capabilityApproval.Body.String(), "model_capability_qualification_invalid")
+	require.Equal(t, http.StatusForbidden,
+		serve(validMux, http.MethodPost, capabilityBase+"/routing-approvals", "not-json", auth.RoleOrgAdmin).Code)
 
 	missingLicenseMux := http.NewServeMux()
 	registerModelDeploymentRoutes(missingLicenseMux, handler, modelDeploymentRouteGuards{
@@ -120,6 +131,14 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 	approvalWithoutLicense := serve(missingLicenseMux, http.MethodPost, approvalPath, "not-json", auth.RolePlatformAdmin)
 	require.Equal(t, http.StatusForbidden, approvalWithoutLicense.Code)
 	require.Contains(t, approvalWithoutLicense.Body.String(), "license_error.missing")
+	capabilityReadWithoutLicense := serve(missingLicenseMux, http.MethodGet, capabilityBase, "", auth.RoleOrgViewer)
+	require.NotEqual(t, http.StatusForbidden, capabilityReadWithoutLicense.Code, capabilityReadWithoutLicense.Body.String())
+	capabilityProbeWithoutLicense := serve(missingLicenseMux, http.MethodPost, capabilityBase+"/probes", "not-json", auth.RoleOrgAdmin)
+	require.Equal(t, http.StatusForbidden, capabilityProbeWithoutLicense.Code)
+	require.Contains(t, capabilityProbeWithoutLicense.Body.String(), "license_error.missing")
+	capabilityApprovalWithoutLicense := serve(missingLicenseMux, http.MethodPost, capabilityBase+"/routing-approvals", "not-json", auth.RolePlatformAdmin)
+	require.Equal(t, http.StatusForbidden, capabilityApprovalWithoutLicense.Code)
+	require.Contains(t, capabilityApprovalWithoutLicense.Body.String(), "license_error.missing")
 	for _, safetyRequest := range []struct {
 		path string
 		body string

@@ -96,6 +96,7 @@
 | `docs/planning/PRD7-CACHE-SERVICE-CANDIDATE.md` | Accepted future Cache Service direction, service boundary, capacity planning triggers, SaaS cell reuse and non-authorization guardrails |
 | `docs/tech-ref/34-exact-response-cache.md` | Exact Response Cache V2: route-complete identity, encrypted Redis values, Shadow/Canary, current delivery identity, zero Provider/charge settlement and recovery |
 | `docs/tech-ref/40-invocation-optimization-v1.md` | Product-local invocation-optimization lifecycle, content-free deterministic assignment, conservative Compression evaluator and metadata-only evidence |
+| `docs/tech-ref/44-model-adaptation-required-baseline-v1.md` | Immutable 30-model requirement scope, exact surface/version policy and milestone acceptance classes; never a runtime, evidence, release or pricing authority |
 | `docs/tech-ref/35-provider-cogs-offline.md` | PRD7 Provider COGS offline contract, financial authority separation, exact attribution, capture gaps, replay and non-persistence boundary |
 | `docs/tech-ref/36-governance-simulation-v1.md` | PRD7 strict offline route/policy simulator, shared kernel, Provider Pack change classification and no-runtime-promotion lifecycle |
 | `docs/tech-ref/37-member-lifecycle-v1.md` | PRD7 IdP-neutral project-member lifecycle, effective-access convergence, session versioning and SCIM decision boundary |

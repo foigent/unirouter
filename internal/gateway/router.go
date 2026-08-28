@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/uniroute/unirouter/internal/db"
+	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"golang.org/x/sync/singleflight"
@@ -85,6 +86,10 @@ type RouteResult struct {
 	ReasoningProfile        string
 	CacheUsageProfile       string
 	ModelProtocolProfile    string
+	// PlanCapabilityRequirements is a read-only projection of the one normalized
+	// Plan capability authority identified by SnapshotVersion. Response handling
+	// may consume it but must never normalize or independently persist it.
+	PlanCapabilityRequirements []modelrouting.CapabilityRequirement
 }
 
 // MarkChannelSuccess records a successful request for a channel.

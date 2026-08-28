@@ -44,6 +44,7 @@ export type CanonicalConnection = {
   provider: string;
   base_url: string;
   adapter_type: string;
+  adapter_config?: Record<string, unknown>;
   admin_state: string;
   config_revision: number;
   retired_at?: string;
@@ -296,6 +297,88 @@ export type CanonicalOperationProbeResult = {
   evidence_ref?: string;
 };
 
+export type CanonicalCapabilityProbeView = {
+  capability_probe_id: number;
+  credential_binding_id?: number;
+  success: boolean;
+  provider_success: boolean;
+  current: boolean;
+  status_code: number;
+  latency_ms: number;
+  reported_model?: string;
+  error_summary?: string;
+  contract_error_code?: string;
+  finish_reason?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  reasoning_observed?: boolean;
+  tool_call_observed?: boolean;
+  structured_output_observed?: boolean;
+  tested_at: string;
+};
+
+export type CanonicalCapabilityQualification = {
+  contract_version: string;
+  deployment_id: number;
+  operation_id: CanonicalOperationID;
+  capability_id: string;
+  support_state: string;
+  support_revision: number;
+  execution_profile_id: string;
+  execution_profile_version: string;
+  protocol_profile_id: string;
+  protocol_profile_version: string;
+  probe_contract_id?: string;
+  probe_contract_version?: string;
+  probe_available: boolean;
+  probe_availability_reason_code: string;
+  state: 'not_probed' | 'probe_failed' | 'probe_stale' | 'probed_awaiting_approval' | 'approved_current' | string;
+  qualified: boolean;
+  qualification_state: string;
+  preferred_approval_id?: number;
+  preferred_capability_probe_id?: number;
+  latest_probe?: CanonicalCapabilityProbeView;
+};
+
+export type CanonicalCapabilityProbeResult = {
+  capability_probe_id: number;
+  deployment_id: number;
+  operation_id: CanonicalOperationID;
+  capability_id: string;
+  success: boolean;
+  provider_success: boolean;
+  current: boolean;
+  stale: boolean;
+  reason_code: string;
+  provider_reason_code: string;
+  contract_error_code?: string;
+  status_code: number;
+  latency_ms: number;
+  reported_model?: string;
+  finish_reason?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  reasoning_observed?: boolean;
+  tool_call_observed?: boolean;
+  structured_output_observed?: boolean;
+  evidence_ref?: string;
+};
+
+export type CanonicalCapabilityApprovalResult = {
+  approval_id: number;
+  capability_probe_id: number;
+  deployment_id: number;
+  operation_id: CanonicalOperationID;
+  capability_id: string;
+  qualified: boolean;
+  qualification_state: string;
+  evidence_ref: string;
+  approved_at: string;
+  idempotency_replay: boolean;
+};
+
 export const modelDeploymentApi = {
   list: (operationID?: CanonicalOperationID) => request<CanonicalModelApplicationProjection>(
     operationID ? `/model-deployments?operation=${encodeURIComponent(operationID)}` : '/model-deployments',
@@ -315,6 +398,31 @@ export const modelDeploymentApi = {
     input: CanonicalOperationProbeRequest,
   ) => request<CanonicalOperationProbeResult>(
     `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/probes`,
+    { method: 'POST', body: JSON.stringify(input) },
+  ),
+  getCapabilityQualification: (
+    deploymentID: number,
+    operationID: CanonicalOperationID,
+    capabilityID: string,
+  ) => request<CanonicalCapabilityQualification>(
+    `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/capabilities/${encodeURIComponent(capabilityID)}`,
+  ),
+  probeCapability: (
+    deploymentID: number,
+    operationID: CanonicalOperationID,
+    capabilityID: string,
+    input: { credential_binding_id: number },
+  ) => request<CanonicalCapabilityProbeResult>(
+    `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/capabilities/${encodeURIComponent(capabilityID)}/probes`,
+    { method: 'POST', body: JSON.stringify(input) },
+  ),
+  approveCapability: (
+    deploymentID: number,
+    operationID: CanonicalOperationID,
+    capabilityID: string,
+    input: { capability_probe_id: number; reason: string },
+  ) => request<CanonicalCapabilityApprovalResult>(
+    `/model-deployments/${deploymentID}/operations/${encodeURIComponent(operationID)}/capabilities/${encodeURIComponent(capabilityID)}/routing-approvals`,
     { method: 'POST', body: JSON.stringify(input) },
   ),
 };

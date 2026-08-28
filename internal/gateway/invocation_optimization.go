@@ -487,20 +487,20 @@ func (relay *Relay) serveResponseCacheHit(
 		writeError(w, http.StatusInternalServerError, "server_error", "response_cache.integrity_error", "Cached response failed validation")
 		return
 	}
-	if inspection := inspectNonStreamOutputTexts(responseMap); !inspection.complete() {
+	if inspection := inspectNonStreamOutputTextsForRoute(responseMap, route); !inspection.complete() {
 		relay.billing.Cancel(context.WithoutCancel(ctx), requestID, orgID)
 		writeError(w, http.StatusInternalServerError, "server_error", "response_cache.integrity_error", "Cached response failed validation")
 		return
 	}
 	if pinned := guardrailPinFromContext(ctx); pinned != nil {
-		result, refs := evaluateNonStreamOutputGuardrail(ctx, pinned, responseMap)
+		result, refs := evaluateNonStreamOutputGuardrailForProtocol(ctx, pinned, responseMap, route.ModelProtocolProfile)
 		relay.recordGuardrailResult(context.WithoutCancel(ctx), requestID, model, requestedModel, guardrail.StageNonStreamOutput, result, route, http.StatusOK, "")
 		if result.Decision == guardrail.DecisionBlock {
 			relay.billing.Cancel(context.WithoutCancel(ctx), requestID, orgID)
 			writeOutputGuardrailBlock(w, guardrailBlockedByUnavailable(result))
 			return
 		}
-		if err := applyOutputGuardrailTransform(result, refs); err != nil {
+		if err := applyProfileAwareOutputGuardrailTransform(route, result, refs); err != nil {
 			relay.billing.Cancel(context.WithoutCancel(ctx), requestID, orgID)
 			writeError(w, http.StatusInternalServerError, "server_error", "guardrail_error.transform_failed", "Failed to apply content policy safely")
 			return

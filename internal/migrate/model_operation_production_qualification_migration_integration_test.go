@@ -88,6 +88,8 @@ VALUES (1,1,1,'openai.chat_completions.v1',1,1,'allow','fixture',$1,$2)`, public
 	require.ErrorContains(t, insertShape("/v1/responses", nil), "runtime_route_revision_items_execution_binding_shape_check")
 	require.ErrorContains(t, insertShape(nil, modelqualification.ExecutorContractVersion), "runtime_route_revision_items_execution_binding_shape_check")
 
+	var originalSupportCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_operation_execution_support_bindings`).Scan(&originalSupportCount))
 	for _, mutation := range []struct {
 		statement string
 		message   string
@@ -112,7 +114,11 @@ VALUES (1,1,1,'openai.chat_completions.v1',1,1,'allow','fixture',$1,$2)`, public
 	}
 	var supportCount int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_operation_execution_support_bindings`).Scan(&supportCount))
-	require.Equal(t, 2, supportCount)
+	require.Equal(t, originalSupportCount, supportCount, "rejected writes must preserve every appended exact tuple")
+	var historicalSupportCount int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_operation_execution_support_bindings
+WHERE introduced_migration='000075_model_operation_production_qualification'`).Scan(&historicalSupportCount))
+	require.Equal(t, 2, historicalSupportCount, "M75's two historical identities remain present")
 }
 
 func TestModelOperationProductionQualificationDownRejectsFrozenEvidenceIntegration(t *testing.T) {

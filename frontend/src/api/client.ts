@@ -445,11 +445,11 @@ export const api = {
   // Users
   getOrganizations: (page = 1, pageSize = 100) =>
     legacyRequest(`/organizations?page=${page}&page_size=${pageSize}`),
-  bootstrapFirstCustomer: (organizationName: string, clientRequestId: string) =>
+  bootstrapFirstCustomer: (organizationName: string, clientRequestId: string, options?: { dryRun?: boolean }) =>
     legacyRequest('/bootstrap/first-customer', {
       method: 'POST',
       headers: { 'X-UniRouter-Client-Request-ID': clientRequestId },
-      body: JSON.stringify({ organization_name: organizationName }),
+      body: JSON.stringify({ organization_name: organizationName, ...(options?.dryRun ? { dry_run: true } : {}) }),
     }),
   getEnterpriseDirectorySources: (orgId?: number) =>
     legacyRequest(appendParams('/enterprise-directory/sources', { org_id: orgId })),

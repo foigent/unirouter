@@ -1,0 +1,96 @@
+{
+  "schema_version": "unirouter.endpoint-conformance-fixture.v1",
+  "fixture_id": "openai-responses-text.v2",
+  "profile_id": "unirouter.openai.responses.text.v2",
+  "request": {
+    "base_url": "https://api.openai.example",
+    "requested_model": "company-text",
+    "mapped_model": "gpt-5.6-sol",
+    "request_id": "fixture-responses-2",
+    "body": "{\"model\":\"company-text\",\"input\":\"synthetic fixture\",\"max_output_tokens\":64,\"stream\":false}",
+    "expected_method": "POST",
+    "expected_url": "https://api.openai.example/v1/responses",
+    "expected_request_id_header": "fixture-responses-2",
+    "expected_body": "{\"input\":\"synthetic fixture\",\"max_output_tokens\":64,\"model\":\"gpt-5.6-sol\",\"store\":false,\"stream\":false}"
+  },
+  "response": {
+    "status_code": 200,
+    "body": "{\"id\":\"resp_fixture_v2\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5.6-sol\",\"error\":null,\"incomplete_details\":null,\"output_text\":\"fixture response\",\"output\":[{\"id\":\"msg_fixture_v2\",\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"fixture response\"}]}],\"usage\":{\"input_tokens\":12,\"input_tokens_details\":{\"cached_tokens\":4,\"cache_write_tokens\":2},\"output_tokens\":3,\"total_tokens\":15}}",
+    "expected_outcome": {
+      "contract_version": "unirouter.endpoint-protocol.v1",
+      "profile_id": "unirouter.openai.responses.text.v2",
+      "provider_state": "completed",
+      "provider_object_id": "resp_fixture_v2",
+      "mapped_model": "gpt-5.6-sol",
+      "output_count": 1,
+      "units": [
+        {
+          "class": "input_tokens",
+          "quantity": "12",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "output_tokens",
+          "quantity": "3",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "cache_read_tokens",
+          "quantity": "4",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        },
+        {
+          "class": "cache_write_tokens",
+          "quantity": "2",
+          "authority": "provider_reported",
+          "finality": "final",
+          "charge_state": "provider_observed_not_customer_chargeable"
+        }
+      ]
+    }
+  },
+  "negative_requests": [
+    {
+      "case_id": "stream-type-rejected",
+      "body": "{\"model\":\"company-text\",\"input\":\"synthetic fixture\",\"stream\":\"true\"}",
+      "expected_code": "stream_invalid"
+    },
+    {
+      "case_id": "tools-rejected",
+      "body": "{\"model\":\"company-text\",\"input\":\"synthetic fixture\",\"tools\":[{\"type\":\"web_search\"}]}",
+      "expected_code": "unsupported_tools"
+    }
+  ],
+  "negative_responses": [
+    {
+      "case_id": "non-final-rejected",
+      "body": "{\"id\":\"resp_pending\",\"object\":\"response\",\"status\":\"in_progress\",\"model\":\"gpt-5.6-sol\",\"output\":[],\"usage\":null}",
+      "expected_code": "response_not_completed"
+    },
+    {
+      "case_id": "usage-mismatch-rejected",
+      "body": "{\"id\":\"resp_bad\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5.6-sol\",\"error\":null,\"incomplete_details\":null,\"output\":[{\"id\":\"msg_bad\",\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"x\"}]}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":3}}",
+      "expected_code": "usage_total_mismatch"
+    }
+  ],
+  "status_cases": [
+    {
+      "case_id": "rate-limit",
+      "status_code": 429,
+      "expected_failure_kind": "rate_limit",
+      "expected_retryable": true
+    },
+    {
+      "case_id": "auth-stop",
+      "status_code": 401,
+      "expected_failure_kind": "auth",
+      "expected_retryable": false
+    }
+  ]
+}

@@ -63,14 +63,23 @@ docker compose exec \
 docker compose stop backend
 ```
 
-首客户端点接受两个互斥且精确的 checkpoint：已有 second-integration reset
+首客户端点接受三个互斥且精确的 checkpoint：已有 second-integration reset
 产生的严格 post-reset 空壳，或当前完整迁移链产生、默认管理员已轮换密码并成功登录一次的
 fresh seed。源码 `local`/`development` fresh seed 只接受尚未登记发布的零值 release
 基线；正式 `staging`/`production` fresh seed 还必须先有唯一、非零且与当前 target
 schema 完全一致的 `release_state`/`release_history` 登记。登录的审计证据可以仍在 durable
 Outbox 待物化，也可以已经进入 `audit_logs`，关联的同一事件只算一次。
 
-只有全部事实匹配后，`POST /api/v1/bootstrap/first-customer` 才会在同一个
+第三种是受支持 reset 后正常启动生成的运行时壳：唯一平台管理员及 partner 根组织、
+自动 Default Project（无成员、预算或业务引用）、全零 CNY wallet、精确 reset
+设置与完整制品迁移账本。允许同一管理员正常登录产生的多条审计和历史会话，
+但当前提交会话仍必须有效；登录审计及 outbox 不得引用待移除项目。它不放宽
+fresh-install 的密码轮换或发布证据要求，不改变 canonical/probe 门禁。
+
+运维人员可在“部署与网络”的首次客户初始化入口先执行只读预检；API 同一请求体
+使用 `dry_run: true`，返回当前 checkpoint 和将移除的精确空壳对象，不分配组织 ID、
+写审计或保存提交 receipt。预检不是执行授权，提交时会重新核验完整前态。
+只有全部事实匹配且空壳对象的归位已获授权后，`POST /api/v1/bootstrap/first-customer` 才会在同一个
 `SERIALIZABLE` 事务内删除迁移种子中精确的 partner 零余额钱包、`Default Project`
 以及可选的默认管理员 `project_admin` membership，再创建唯一 active customer 和它的
 零余额钱包。任一额外数据、字段漂移或并发变化都返回 `409` 并回滚整个事务；该端点不创建

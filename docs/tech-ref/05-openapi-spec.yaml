@@ -341,9 +341,9 @@ paths:
   /v1/responses:
     post:
       tags: [Gateway]
-      summary: Strict OpenAI Responses non-stream text execution
+      summary: Strict OpenAI Responses text execution
       description: |
-        Executes only the exact M77-qualified `unirouter.openai.responses.text.v1` public profile. The caller's public model remains the downstream identity; provider mapping is private. The retained request budget is 8 MiB and the endpoint-protocol document is limited to 2 MiB. Only string `input`, optional string `instructions`, bounded metadata/plain-text controls, `store=false`, and `stream=false` are admitted. Tools, state, background work, reasoning controls, structured or multimodal input/output, include expansions, prompt templates, and unknown root or nested members fail before provider dispatch. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
+        Executes only an exact M77-qualified public Responses profile. V1 remains strict non-stream text. Current Sol/Terra/Luna Responses `@1.3.0` pin `unirouter.openai.responses.text.v2@1.0.0` and additionally admit exact core-text SSE when `stream=true`. The caller's public model remains the downstream identity; provider mapping is private. The retained request budget is 8 MiB and the endpoint-protocol document is limited to 2 MiB. All three current Profiles admit only `reasoning.effort=none|low|medium|high|xhigh|max`; omission preserves the provider default. Tools, state/replay, reasoning summaries or encrypted output, background work, structured or multimodal input/output, include expansions, prompt templates, and unknown root or nested members fail before provider dispatch. Exact text SSE validates event order, sequence, response identity, final usage and guarded text reconciliation; failed or incomplete streams do not settle. Response cache reads and writes are always bypassed. `Idempotency-Key` reserves metadata at most once for 24 hours and never stores or replays response bytes.
       security:
         - gatewayKey: []
       parameters:
@@ -368,6 +368,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PublicResponsesResponse"
+            text/event-stream:
+              schema:
+                type: string
+                description: Exact Responses v2 core-text SSE; available only when the selected immutable Profile supports streaming.
         "400": { $ref: "#/components/responses/PublicOpenAIError" }
         "401": { $ref: "#/components/responses/PublicOpenAIError" }
         "403": { $ref: "#/components/responses/PublicOpenAIError" }
@@ -949,7 +953,7 @@ paths:
     post:
       tags: [Admin]
       summary: Transactionally create or exactly reuse one model deployment and operation
-      description: "Requires an active Gateway License and Idempotency-Key. Existing IDs are explicit selectors and extra fields are exact assertions; no name-based connection lookup or fallback-to-first deployment occurs. A new public model may pin one exact repository-reviewed execution_profile_id/version; both fields are required together, their context/output limits are server-validated, and omission explicitly records unverified.chat rather than guessing from the model name. This profile pin is model metadata only: creation still does not imply a live probe, release, route, price, or caller authorization. Responses and Messages require the effective connection base_url to be a path-free HTTPS origin before any receipt or canonical row is written; invalid new input returns 400 and an incompatible selected connection returns 409 with code canonical_application_https_origin_required. The first committed mutation returns 201. An exact actor-scoped replay within 24 hours returns the current projection with the original reused-result, status 200, X-UniRouter-Idempotency-Replayed true, and X-UniRouter-Original-Request-ID. The receipt stores no raw key, request body, provider API key, or response body; using the same key with another normalized payload returns 409."
+      description: "Requires an active Gateway License and Idempotency-Key. Existing IDs are explicit selectors and extra fields are exact assertions; no name-based connection lookup or fallback-to-first deployment occurs. A new public model may pin one exact repository-reviewed execution_profile_id/version; both fields are required together, their context/output limits are server-validated, and omission explicitly records unverified.chat rather than guessing from the model name. For the exact compiled M88 DeepSeek V4 Flash Chat streaming tuple, creation also materializes only an enabled/declared capability projection after the compiled binding and database support contract agree exactly. This performs no provider call and creates no live probe, routing approval, route, Release, price, or caller authorization; no capability is inferred for any other tuple. Responses and Messages require the effective connection base_url to be a path-free HTTPS origin before any receipt or canonical row is written; invalid new input returns 400 and an incompatible selected connection returns 409 with code canonical_application_https_origin_required. The first committed mutation returns 201. An exact actor-scoped replay within 24 hours returns the current projection with the original reused-result, status 200, X-UniRouter-Idempotency-Replayed true, and X-UniRouter-Original-Request-ID. The receipt stores no raw key, request body, provider API key, or response body; using the same key with another normalized payload returns 409."
       security: [{ bearerAuth: [] }]
       parameters:
         - name: Idempotency-Key
@@ -1148,6 +1152,101 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ModelOperationProductionApproval" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}:
+    x-unirouter-rbac:
+      get: [platform_admin, org_admin, org_viewer]
+    get:
+      tags: [Admin]
+      summary: Read one exact typed capability qualification
+      description: "License-independent truth read for one exact deployment, operation, capability, Execution Profile, protocol Profile and probe contract. The preferred approval is selected deterministically for new Plans and cutover proofs. A frozen Plan remains bound to its recorded approval identity and pre-dispatch validates that receipt directly; a newer equivalent approval does not stale the in-flight Plan. Raw model_deployment_capabilities projection state is never routing authority. Qualification excludes transient credential cooldown and health revision; ordinary route health gates remain independent."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] } }
+      responses:
+        "200":
+          description: Sanitized current qualification, preferred approval and latest probe projection.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelCapabilityQualification" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/probes:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Run one server-owned typed capability probe
+      description: "Requires an active Gateway License. M89 and M92 support DeepSeek V4 Flash at the immutable deepseek.v4-flash.api@1.4.0 and @1.5.0 identities for OpenAI-compatible Chat Completions. M93 advances only Profile 1.5.0's five function-tool capability bindings under both exact Chat protocol identities to probe contract 2.0.0; it does not create a Profile, Protocol, Release or Alias. The server owns one fixed, bounded request for the selected capability; the streaming probe uses stream=true, stream_options.include_usage=true, thinking.type=disabled and max_tokens=64. Under the current SSE 2.0.0 probe contract, a successful streaming result must prove text/event-stream, legal content deltas, and a final single-choice chunk with no new content, a non-null finish_reason and usage, followed by [DONE]. Function-tools probe contract 2.0.0 uses the same exact-scoped provider response normalizer as runtime delivery before checking its semantic sentinel and usage. Historical probe evidence remains bound to its immutable exact contract and is never reinterpreted. A probe appends live_probed evidence only and never auto-approves routing. This action is one real supplier call; supplier cost unavailable is absent/unknown, never represented as CNY zero."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [credential_binding_id]
+              properties:
+                credential_binding_id: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Sanitized append-only typed probe receipt. success requires both provider contract success and unchanged exact inputs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelCapabilityProbeResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/routing-approvals:
+    x-unirouter-rbac:
+      post: [platform_admin]
+    post:
+      tags: [Admin]
+      summary: Approve exact typed capability evidence for the current environment route pool
+      description: "Requires an active Gateway License and current platform administrator. Appends one immutable approval bound to the exact successful probe, deployment, connection, operation, Execution Profile, protocol Profile, probe contract and stable revisions. Credential identity and revision are verified at approval time as source provenance, but later transient cooldown or health revision does not revoke the capability approval. Approval is qualification input only: it is not released status, SLA proof, long-term stability evidence or canonical cutover."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
+        - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [capability_probe_id, reason]
+              properties:
+                capability_probe_id: { type: integer, format: int64, minimum: 1 }
+                reason: { type: string, minLength: 1, maxLength: 512, description: Trimmed administrative reason; NUL and line breaks are rejected. }
+      responses:
+        "200":
+          description: Exact idempotent replay of the existing capability routing approval.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelCapabilityApprovalResult" }
+        "201":
+          description: Newly appended capability routing approval.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelCapabilityApprovalResult" }
         "400": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -3079,7 +3178,7 @@ paths:
   /api/v1/enterprise-finance/rate-cards/import-official-draft:
     x-unirouter-rbac:
       post: [platform_admin, billing_admin]
-    description: Atomically records an HTTPS source URL, source revision, fetched-at time, payload SHA-256, deterministic transform version, currency/unit contract and bounded-freshness window, then creates a complete provider_list draft with exact absolute amount/unit components. The draft may carry the same explicit UTC weekday/minute daily_price_bands contract as a manually created card. It performs no network fetch and never approves or activates the draft; an administrator may instead author a separate supplier_contracted override.
+    description: Atomically records an HTTPS source URL, source revision, fetched-at time, payload SHA-256, deterministic transform version, currency/unit contract and bounded-freshness window, then creates a single-currency CNY or USD provider_list draft with exact absolute amount/unit components. Mixed currencies are rejected. A USD import is retained only as review evidence and cannot pass the current CNY request-pricing approval gate. The draft may carry the same explicit UTC weekday/minute daily_price_bands contract as a manually created card. It performs no network fetch and never approves or activates the draft; an administrator may instead author a separate supplier_contracted override.
     post: *operation_create
 
   /api/v1/enterprise-finance/rate-cards/bootstrap-legacy-drafts:
@@ -4827,6 +4926,126 @@ components:
         current_connection_revision: { type: integer, format: int64, minimum: 1 }
         current_deployment_revision: { type: integer, format: int64, minimum: 1 }
         current_operation_revision: { type: integer, format: int64, minimum: 1 }
+    ModelCapabilityProbeView:
+      type: object
+      additionalProperties: false
+      required: [capability_probe_id, success, provider_success, current, status_code, latency_ms, tested_at]
+      properties:
+        capability_probe_id: { type: integer, format: int64, minimum: 1 }
+        credential_binding_id: { type: integer, format: int64, minimum: 1 }
+        success: { type: boolean }
+        provider_success: { type: boolean }
+        current: { type: boolean }
+        status_code: { type: integer, minimum: 0, maximum: 599 }
+        latency_ms: { type: integer, format: int64, minimum: 0 }
+        reported_model: { type: string, maxLength: 200 }
+        error_summary: { type: string, maxLength: 255 }
+        contract_error_code: { $ref: "#/components/schemas/ModelCapabilityContractErrorCode" }
+        finish_reason: { type: string }
+        prompt_tokens: { type: integer, format: int64, minimum: 0 }
+        completion_tokens: { type: integer, format: int64, minimum: 0 }
+        total_tokens: { type: integer, format: int64, minimum: 0 }
+        reasoning_observed: { type: boolean, description: The fixed typed probe observed non-empty reasoning content; private reasoning text is never returned. }
+        tool_call_observed: { type: boolean, description: The fixed typed probe observed the exact expected function call; arguments are not returned. }
+        structured_output_observed: { type: boolean, description: The fixed typed probe observed the exact expected JSON object; content is not returned. }
+        tested_at: { type: string, format: date-time }
+    ModelCapabilityQualification:
+      type: object
+      additionalProperties: false
+      required: [contract_version, deployment_id, operation_id, capability_id, support_state, support_revision, execution_profile_id, execution_profile_version, protocol_profile_id, protocol_profile_version, probe_available, probe_availability_reason_code, state, qualified, qualification_state]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-capability-qualification.v1] }
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id: { type: string, enum: [openai.chat_completions.v1] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
+        support_state: { type: string, enum: [enabled, unsupported] }
+        support_revision: { type: integer, format: int64, minimum: 1 }
+        execution_profile_id: { type: string, enum: [deepseek.v4-flash.api] }
+        execution_profile_version: { type: string, enum: [1.4.0, 1.5.0] }
+        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, openai.chat_completions] }
+        protocol_profile_version: { type: string, enum: [1.0.0] }
+        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1] }
+        probe_contract_version: { type: string, enum: [1.0.0, 2.0.0], description: "Exact version is selected by the model, operation, capability, Execution Profile, and protocol-profile tuple." }
+        probe_available: { type: boolean }
+        probe_availability_reason_code: { type: string }
+        state: { type: string, enum: [not_probed, probe_failed, probe_stale, probed_awaiting_approval, approved_current] }
+        qualified: { type: boolean }
+        qualification_state: { type: string }
+        preferred_approval_id: { type: integer, format: int64, minimum: 1 }
+        preferred_capability_probe_id: { type: integer, format: int64, minimum: 1 }
+        latest_probe: { $ref: "#/components/schemas/ModelCapabilityProbeView" }
+    ModelCapabilityProbeResult:
+      type: object
+      additionalProperties: false
+      required: [capability_probe_id, deployment_id, operation_id, capability_id, success, provider_success, current, stale, reason_code, provider_reason_code, status_code, latency_ms]
+      properties:
+        capability_probe_id: { type: integer, format: int64, minimum: 1 }
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id: { type: string, enum: [openai.chat_completions.v1] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
+        success: { type: boolean }
+        provider_success: { type: boolean }
+        current: { type: boolean }
+        stale: { type: boolean }
+        reason_code: { type: string }
+        provider_reason_code: { type: string }
+        contract_error_code: { $ref: "#/components/schemas/ModelCapabilityContractErrorCode" }
+        status_code: { type: integer, minimum: 0, maximum: 599 }
+        latency_ms: { type: integer, format: int64, minimum: 0 }
+        reported_model: { type: string, maxLength: 200 }
+        finish_reason: { type: string }
+        prompt_tokens: { type: integer, format: int64, minimum: 0 }
+        completion_tokens: { type: integer, format: int64, minimum: 0 }
+        total_tokens: { type: integer, format: int64, minimum: 0 }
+        reasoning_observed: { type: boolean }
+        tool_call_observed: { type: boolean }
+        structured_output_observed: { type: boolean }
+        evidence_ref: { type: string, pattern: '^capability_probe:[1-9][0-9]*$' }
+    ModelCapabilityContractErrorCode:
+      type: string
+      enum:
+        - content_type
+        - terminal_order
+        - data_after_done
+        - data_after_usage
+        - unsupported_field
+        - read
+        - response_too_large
+        - incomplete
+        - json
+        - model_changed
+        - reported_model
+        - choices
+        - final_usage
+        - usage_mixed_with_choices
+        - delta
+        - content
+        - reasoning_content
+        - tool_calls
+        - tool_call_identity
+        - tool_arguments
+        - delivery_shape
+        - structured_output
+        - finish_reason
+        - finish_reason_changed
+        - usage
+        - usage_total
+        - probe_contract
+    ModelCapabilityApprovalResult:
+      type: object
+      additionalProperties: false
+      required: [approval_id, capability_probe_id, deployment_id, operation_id, capability_id, qualified, qualification_state, evidence_ref, approved_at, idempotency_replay]
+      properties:
+        approval_id: { type: integer, format: int64, minimum: 1 }
+        capability_probe_id: { type: integer, format: int64, minimum: 1 }
+        deployment_id: { type: integer, format: int64, minimum: 1 }
+        operation_id: { type: string, enum: [openai.chat_completions.v1] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
+        qualified: { type: boolean }
+        qualification_state: { type: string }
+        evidence_ref: { type: string, pattern: '^capability_approval:[1-9][0-9]*$' }
+        approved_at: { type: string, format: date-time }
+        idempotency_replay: { type: boolean }
     ModelRouteSafetyResult:
       type: object
       additionalProperties: false
@@ -6399,7 +6618,7 @@ components:
     ModelExecutionProfile:
       type: object
       additionalProperties: false
-      required: [id, version, label, tokenizer_profile_id, tokenizer_profile_version, reasoning_profile, cache_usage_profile, protocol_profile, provider_context_window, provider_max_output, default_context_window, default_output_limit, provider_capabilities, capabilities, aliases, evidence_refs]
+      required: [id, version, label, tokenizer_profile_id, tokenizer_profile_version, reasoning_profile, cache_usage_profile, protocol_profile, provider_context_window, provider_max_output, default_context_window, default_output_limit, provider_capabilities, capabilities, always_required_capabilities, aliases, evidence_refs]
       properties:
         id: { type: string }
         version: { type: string }
@@ -6409,6 +6628,14 @@ components:
         reasoning_profile: { type: string }
         cache_usage_profile: { type: string }
         protocol_profile: { type: string }
+        upstream_model_family:
+          type: string
+          minLength: 1
+          description: Exact model family for a Profile address with typed upstream version identity; absent on historical unmodeled addresses.
+        upstream_version_policy:
+          type: string
+          enum: [pinned, floating]
+          description: Append-only per-Profile-address version policy; never inferred from a mutable current alias.
         provider_context_window: { type: integer, minimum: 0 }
         provider_max_output: { type: integer, minimum: 0 }
         default_context_window: { type: integer, minimum: 0 }
@@ -6422,6 +6649,11 @@ components:
           type: array
           uniqueItems: true
           description: Capabilities verified through UniRouter's current end-to-end execution path.
+          items: { type: string }
+        always_required_capabilities:
+          type: array
+          uniqueItems: true
+          description: Narrow supported subset that every invocation of this exact Profile must prove during route selection. Optional or provider-default-derived invocation requirements belong to the one normalized Plan snapshot, not this list.
           items: { type: string }
         aliases: { type: array, uniqueItems: true, items: { type: string } }
         evidence_refs: { type: array, uniqueItems: true, items: { type: string, format: uri } }
@@ -6562,8 +6794,15 @@ components:
           additionalProperties: { type: string, maxLength: 512 }
         temperature: { type: number, minimum: 0, maximum: 2 }
         top_p: { type: number, minimum: 0, maximum: 1 }
+        reasoning:
+          type: object
+          description: Profile-bound control; executable with current GPT-5.6 Sol/Terra/Luna Responses 1.3.0. Omission preserves the provider default.
+          additionalProperties: false
+          required: [effort]
+          properties:
+            effort: { type: string, enum: [none, low, medium, high, xhigh, max] }
         store: { type: boolean, enum: [false], default: false }
-        stream: { type: boolean, enum: [false], default: false }
+        stream: { type: boolean, default: false, description: "true is executable only with an exact Sol/Terra/Luna Responses v2 streaming Profile; other Profiles fail closed." }
         text:
           type: object
           additionalProperties: false

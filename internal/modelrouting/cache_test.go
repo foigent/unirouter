@@ -11,7 +11,11 @@ func TestPairedSnapshotCacheKeyVersionsBothAuthoritiesAsOneUnit(t *testing.T) {
 		func(item *snapshot) { item.Slot.Selected.RouteItemsHash += "x" },
 		func(item *snapshot) { item.LegacyRelease.RouteItemsHash += "x" },
 		func(item *snapshot) { item.RequestedOperationID = "openai.responses.v1" },
-		func(item *snapshot) { item.RequiredCapabilities = append(item.RequiredCapabilities, "vision") },
+		func(item *snapshot) {
+			item.CapabilityRequirements = append(item.CapabilityRequirements, CapabilityRequirement{
+				CapabilityID: "vision", Origins: []string{CapabilityOriginExplicitRequest},
+			})
+		},
 	}
 	for index, change := range changes {
 		changed := canonicalFixture()

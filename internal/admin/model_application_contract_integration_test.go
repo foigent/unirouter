@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,7 +22,9 @@ import (
 	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/integrationfixture"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/testutil"
@@ -86,6 +90,279 @@ RETURNING id`).Scan(&pathfulConnectionID))
 	require.Equal(t, "https://api.example.com", created.Application.Connection.BaseURL)
 }
 
+func TestCanonicalModelApplicationCurrentCapabilityRollsBackThroughM92Integration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := t.Context()
+	m93Body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000093_deepseek_function_tool_probe_contract_v2.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(m93Body))
+	require.NoError(t, err)
+	body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000092_deepseek_reasoning_tool_choice_contract.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(body))
+	require.NoError(t, err)
+	var migrationCount int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM schema_migrations
+	 WHERE version='000092_deepseek_reasoning_tool_choice_contract'`).Scan(&migrationCount))
+	require.Zero(t, migrationCount)
+	m92OnlyDir := t.TempDir()
+	m92Up, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000092_deepseek_reasoning_tool_choice_contract.up.sql"))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(m92OnlyDir, "000092_deepseek_reasoning_tool_choice_contract.up.sql"), m92Up, 0o600))
+	require.NoError(t, migrate.Run(ctx, pool, m92OnlyDir))
+
+	var orgID, userID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type)
+VALUES ('reviewed-binding-rollback-customer','active','customer') RETURNING id`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users
+ (org_id,username,password_hash,organization_role,role,status)
+VALUES ($1,'reviewed-binding-rollback-admin','fixture','org_admin','org_admin','active') RETURNING id`, orgID).Scan(&userID))
+	var proModelID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO model_registry (
+  org_id,model_name,display_name,provider_family,lifecycle,
+  execution_profile_id,execution_profile_version
+) VALUES ($1,'reviewed-deepseek-pro-rollback','Reviewed DeepSeek Pro rollback','deepseek','staging',
+          'deepseek.v4-pro.api','1.5.0')
+RETURNING id`, orgID).Scan(&proModelID))
+	conn, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, string(body))
+	require.ErrorContains(t, err, "cannot remove M92 with retained DeepSeek 1.5 model attachment")
+	_, rollbackErr := conn.Exec(ctx, "ROLLBACK")
+	require.NoError(t, rollbackErr)
+	conn.Release()
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_registry
+ WHERE id=$1 AND execution_profile_id='deepseek.v4-pro.api'
+   AND execution_profile_version='1.5.0'`, proModelID).Scan(&migrationCount))
+	require.Equal(t, 1, migrationCount)
+	_, err = pool.Exec(ctx, `
+UPDATE model_registry
+   SET execution_profile_version='1.4.0'
+ WHERE id=$1`, proModelID)
+	require.NoError(t, err)
+
+	var modelID, connectionID, deploymentID, bindingID int64
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO model_registry (
+  org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,
+  context_length,output_limit,execution_profile_id,execution_profile_version)
+VALUES ($1,'reviewed-deepseek-rollback','Reviewed DeepSeek rollback','deepseek','staging',TRUE,
+        393216,384000,'deepseek.v4-flash.api','1.5.0') RETURNING id`, orgID).Scan(&modelID))
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO provider_connections (
+  name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
+VALUES ('Reviewed DeepSeek rollback','deepseek','https://api.deepseek.com',
+        'openai_compatible','{"endpoint_path_mode":"base_relative"}','enabled',1)
+RETURNING id`).Scan(&connectionID))
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO model_deployments (
+  customer_org_id,public_model_id,connection_id,upstream_model,admin_state,
+  config_revision,max_context,default_max_output)
+VALUES ($1,$2,$3,'deepseek-v4-flash','enabled',1,393216,32768) RETURNING id`,
+		orgID, modelID, connectionID).Scan(&deploymentID))
+	_, err = pool.Exec(ctx, `
+INSERT INTO model_deployment_operations (
+  deployment_id,operation_id,support_state,evidence_state,evidence_ref,revision,
+  protocol_profile_id,protocol_profile_version)
+VALUES ($1,'openai.chat_completions.v1','enabled','declared','',1,
+        'protocol.deepseek-openai-chat.v4','1.0.0')`, deploymentID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,'openai.chat_completions.v1','streaming','enabled','declared',
+        'capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0',1)`, deploymentID)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO provider_credential_bindings (connection_id,key_enc,status,state_revision)
+VALUES ($1,'reviewed-binding-rollback-fixture','active',1) RETURNING id`, connectionID).Scan(&bindingID))
+	_, err = pool.Exec(ctx, `
+INSERT INTO credential_binding_deployments (binding_id,deployment_id,connection_id)
+VALUES ($1,$2,$3)`, bindingID, deploymentID, connectionID)
+	require.NoError(t, err)
+	assertCapability := func(wantRef string, wantRevision int64) {
+		t.Helper()
+		var evidenceRef string
+		var revision int64
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT evidence_ref,revision FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='streaming'`, deploymentID).Scan(&evidenceRef, &revision))
+		require.Equal(t, wantRef, evidenceRef)
+		require.Equal(t, wantRevision, revision)
+	}
+	assertCapability("capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0", 1)
+
+	conn, err = pool.Acquire(ctx)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, string(body))
+	require.ErrorContains(t, err, "cannot remove M92 with retained DeepSeek 1.5 model attachment")
+	_, rollbackErr = conn.Exec(ctx, "ROLLBACK")
+	require.NoError(t, rollbackErr)
+	conn.Release()
+	assertCapability("capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0", 1)
+
+	// Retain one exact Profile 1.5 capability probe. The evidence-specific
+	// guard precedes the attachment guard so the operator sees the strongest
+	// irreversible downgrade reason.
+	var connectionRevision, deploymentRevision, operationRevision, capabilityRevision int64
+	var bindingRevision int64
+	var linkCreated time.Time
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT connection.config_revision,deployment.config_revision,operation.revision,
+       capability.support_revision,binding.state_revision,link.created_at
+  FROM model_deployments deployment
+  JOIN provider_connections connection ON connection.id=deployment.connection_id
+  JOIN model_deployment_operations operation
+    ON operation.deployment_id=deployment.id
+   AND operation.operation_id='openai.chat_completions.v1'
+  JOIN model_deployment_capabilities capability
+    ON capability.deployment_id=deployment.id
+   AND capability.operation_id=operation.operation_id
+   AND capability.capability_id='streaming'
+  JOIN provider_credential_bindings binding
+    ON binding.id=$2 AND binding.connection_id=connection.id
+  JOIN credential_binding_deployments link
+    ON link.binding_id=binding.id AND link.deployment_id=deployment.id
+ WHERE deployment.id=$1`, deploymentID, bindingID).Scan(
+		&connectionRevision, &deploymentRevision, &operationRevision,
+		&capabilityRevision, &bindingRevision, &linkCreated,
+	))
+	_, err = pool.Exec(ctx, `
+INSERT INTO model_capability_probes (
+  customer_org_id,deployment_id,connection_id,operation_id,capability_id,
+  execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,
+  probe_contract_id,probe_contract_version,provider,base_url,adapter_type,adapter_config,
+  upstream_model,connection_revision,deployment_revision,operation_revision,
+  capability_support_revision,credential_binding_id,credential_state_revision,
+  credential_link_created_at,provider_success,success,status_code,latency_ms,
+  reported_model,error_summary,request_summary,response_summary,source_kind,source_ref,
+  source_fingerprint,tested_by)
+VALUES ($1,$2,$3,'openai.chat_completions.v1','streaming',
+        'deepseek.v4-flash.api','1.5.0','protocol.deepseek-openai-chat.v4','1.0.0',
+        'unirouter.capability-probe.deepseek-chat-sse.v1','2.0.0',
+        'deepseek','https://api.deepseek.com','openai_compatible','{"endpoint_path_mode":"base_relative"}',
+        'deepseek-v4-flash',$4,$5,$6,$7,$8,$9,$10,TRUE,TRUE,200,12,
+        'deepseek-v4-flash','','{}','{}','admin.model_capability_probe.v1','m92-retained',
+        'sha256:9292929292929292929292929292929292929292929292929292929292929292',$11)`,
+		orgID, deploymentID, connectionID, connectionRevision, deploymentRevision,
+		operationRevision, capabilityRevision, bindingID, bindingRevision, linkCreated, userID,
+	)
+	require.NoError(t, err)
+
+	conn, err = pool.Acquire(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+	_, err = conn.Exec(ctx, string(body))
+	require.ErrorContains(t, err, "cannot remove M92 with retained DeepSeek 1.5 qualification evidence")
+	_, rollbackErr = conn.Exec(ctx, "ROLLBACK")
+	require.NoError(t, rollbackErr)
+	var probeCount int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM schema_migrations
+ WHERE version='000092_deepseek_reasoning_tool_choice_contract'`).Scan(&migrationCount))
+	require.Equal(t, 1, migrationCount)
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_capability_probes
+ WHERE deployment_id=$1 AND execution_profile_version='1.5.0'`, deploymentID).Scan(&probeCount))
+	require.Equal(t, 1, probeCount)
+}
+
+func TestCanonicalModelApplicationReviewedProfileRejectsCrossProviderReuseIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	var orgID, userID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type)
+VALUES ('reviewed-binding-customer','active','customer') RETURNING id`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users
+ (org_id,username,password_hash,organization_role,role,status)
+VALUES ($1,'reviewed-binding-admin','fixture','org_admin','org_admin','active') RETURNING id`, orgID).Scan(&userID))
+	handler := NewHandler(pool, "reviewed-binding-jwt", []byte("0123456789abcdef01234567"), nil)
+	authorized := canonicalApplicationAuthorizedRequest(orgID, userID)
+	request := canonicalModelApplicationCreateRequest{
+		Connection: canonicalConnectionInput{
+			Name: "Reviewed DeepSeek", Provider: "deepseek", BaseURL: "https://api.deepseek.com",
+			AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`),
+		},
+		PublicModel: canonicalPublicModelInput{
+			ModelName: "reviewed-deepseek", ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.5.0",
+		},
+		Deployment: canonicalDeploymentInput{UpstreamModel: "deepseek-v4-flash"},
+		Credential: canonicalCredentialInput{APIKey: "reviewed-binding-fixture"},
+		Operation:  canonicalOperationInput{OperationID: string(modeloperation.IDChatCompletions)},
+	}
+	created := createCanonicalApplicationForTest(t, handler, authorized, request, http.StatusCreated)
+	require.Equal(t, "deepseek.v4-flash.api", created.Application.PublicModel.ExecutionProfileID)
+	require.Equal(t, "1.5.0", created.Application.PublicModel.ExecutionProfileVersion)
+	require.Equal(t, "protocol.deepseek-openai-chat.v4", created.Application.Operations[0].ProtocolProfileID)
+	require.Equal(t, "1.0.0", created.Application.Operations[0].ProtocolProfileVersion)
+	var declaredCapabilityCount int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND support_state='enabled' AND evidence_state='declared'`,
+		created.Application.Deployment.ID,
+	).Scan(&declaredCapabilityCount))
+	require.Equal(t, 9, declaredCapabilityCount)
+	var capabilitySupport, capabilityEvidence, capabilityEvidenceRef string
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT support_state,evidence_state,evidence_ref
+  FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='streaming'`, created.Application.Deployment.ID).Scan(
+		&capabilitySupport, &capabilityEvidence, &capabilityEvidenceRef,
+	))
+	require.Equal(t, "enabled", capabilitySupport)
+	require.Equal(t, "declared", capabilityEvidence)
+	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0", capabilityEvidenceRef)
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT evidence_ref FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='tools'`, created.Application.Deployment.ID).Scan(&capabilityEvidenceRef))
+	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-function-tools.v1@2.0.0", capabilityEvidenceRef)
+	qualificationTarget := fmt.Sprintf(
+		"/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/streaming",
+		created.Application.Deployment.ID,
+	)
+	qualificationRequest := authorized(http.MethodGet, qualificationTarget, "")
+	qualificationRequest.SetPathValue("deploymentID", strconv.FormatInt(created.Application.Deployment.ID, 10))
+	qualificationRequest.SetPathValue("operationID", "openai.chat_completions.v1")
+	qualificationRequest.SetPathValue("capabilityID", "streaming")
+	qualificationResponse := httptest.NewRecorder()
+	handler.GetCanonicalModelCapabilityQualification(qualificationResponse, qualificationRequest)
+	require.Equal(t, http.StatusOK, qualificationResponse.Code, qualificationResponse.Body.String())
+	var qualification modelCapabilityQualificationView
+	require.NoError(t, json.Unmarshal(qualificationResponse.Body.Bytes(), &qualification))
+	require.Equal(t, "not_probed", qualification.State)
+	require.True(t, qualification.ProbeAvailable)
+	aggregator := request
+	aggregator.Connection = canonicalConnectionInput{
+		Name: "Rejected aggregator", Provider: "openrouter", BaseURL: "https://openrouter.example/api/v1",
+		AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{}`),
+	}
+	aggregator.PublicModel = canonicalPublicModelInput{ID: created.Application.PublicModel.ID}
+	aggregator.Deployment.UpstreamModel = "deepseek/deepseek-v4-flash"
+	createCanonicalApplicationForTest(t, handler, authorized, aggregator, http.StatusBadRequest)
+	wrongOperation := request
+	wrongOperation.Connection = canonicalConnectionInput{ID: created.Application.Connection.ID}
+	wrongOperation.PublicModel = canonicalPublicModelInput{ID: created.Application.PublicModel.ID}
+	wrongOperation.Credential = canonicalCredentialInput{BindingID: created.Application.Credential.Bindings[0].ID}
+	wrongOperation.Operation.OperationID = string(modeloperation.IDEmbeddings)
+	createCanonicalApplicationForTest(t, handler, authorized, wrongOperation, http.StatusBadRequest)
+	var rejectedConnections, deployments, operations int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT
+ (SELECT COUNT(*) FROM provider_connections WHERE name='Rejected aggregator'),
+ (SELECT COUNT(*) FROM model_deployments WHERE customer_org_id=$1),
+ (SELECT COUNT(*) FROM model_deployment_operations WHERE deployment_id=$2)`,
+		orgID, created.Application.Deployment.ID).Scan(&rejectedConnections, &deployments, &operations))
+	require.Zero(t, rejectedConnections)
+	require.Equal(t, 1, deployments)
+	require.Equal(t, 1, operations)
+}
+
 func TestCanonicalModelApplicationUsesExactDeploymentOperationAndFiveIndependentAxesIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
@@ -104,14 +381,16 @@ RETURNING id`, orgID).Scan(&userID))
 
 	officialRequest := canonicalModelApplicationCreateRequest{
 		Connection: canonicalConnectionInput{
-			Name: "DeepSeek official", Provider: "deepseek", BaseURL: "https://api.deepseek.example/v1",
-			AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{}`),
+			Name: "DeepSeek official", Provider: "deepseek", BaseURL: "https://api.deepseek.com",
+			AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`),
 		},
 		PublicModel: canonicalPublicModelInput{
 			ModelName: "company-deepseek-v4-flash", DisplayName: "DeepSeek V4 Flash",
 			ProviderFamily: "deepseek", Lifecycle: "ga", ContextLength: canonicalTestPtr(128000),
 			OutputLimit: canonicalTestPtr(8192), ApprovedCatalog: canonicalTestPtr(true),
-			ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.1.0",
+			// This projection fixture intentionally spans providers and operations.
+			// It must not claim an official provider/surface-specific contract.
+			ExecutionProfileID: modelprofile.UnverifiedProfileID, ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
 		},
 		Deployment: canonicalDeploymentInput{
 			UpstreamModel: "deepseek-v4-flash", MaxContext: canonicalTestPtr(128000), DefaultMaxOutput: canonicalTestPtr(8192),
@@ -128,8 +407,8 @@ RETURNING id`, orgID).Scan(&userID))
 	require.Equal(t, "openai.chat_completions", official.Application.Operations[0].ProtocolProfileID)
 	require.Equal(t, "1.0.0", official.Application.Operations[0].ProtocolProfileVersion)
 	require.Equal(t, "declared", official.Application.Operations[0].EvidenceState)
-	require.Equal(t, "deepseek.v4-flash.api", official.Application.PublicModel.ExecutionProfileID)
-	require.Equal(t, "1.1.0", official.Application.PublicModel.ExecutionProfileVersion)
+	require.Equal(t, modelprofile.UnverifiedProfileID, official.Application.PublicModel.ExecutionProfileID)
+	require.Equal(t, modelprofile.UnverifiedProfileVersion, official.Application.PublicModel.ExecutionProfileVersion)
 	require.Nil(t, official.Application.Operations[0].VerifiedAt)
 	require.Equal(t, "enabled", official.Application.Connection.AdminState)
 	require.Equal(t, "ready", official.Application.Credential.State)
@@ -652,6 +931,43 @@ SELECT COUNT(*) FROM model_registry
 	require.Equal(t, "owner-model", modelName)
 	require.Equal(t, "Owner model display label", displayName)
 
+	// Model-governance writes share the same attachment invariant as canonical
+	// onboarding. Neither a historical target nor a current target may rewrite
+	// the execution identity of an already deployed public model.
+	historicalProfile := owner(http.MethodPut, "/api/v1/model-registry/"+strconv.FormatInt(created.Application.PublicModel.ID, 10), `{"execution_profile_id":"kimi.k2.7-code.api","execution_profile_version":"1.0.0"}`)
+	historicalProfile.SetPathValue("id", strconv.FormatInt(created.Application.PublicModel.ID, 10))
+	historicalProfileResponse := httptest.NewRecorder()
+	handler.UpdateModelRegistry(historicalProfileResponse, historicalProfile)
+	require.Equal(t, http.StatusBadRequest, historicalProfileResponse.Code, historicalProfileResponse.Body.String())
+	require.Contains(t, historicalProfileResponse.Body.String(), profileAttachmentErrorCode)
+
+	currentProfile := owner(http.MethodPut, "/api/v1/model-registry/"+strconv.FormatInt(created.Application.PublicModel.ID, 10), `{"execution_profile_id":"kimi.k3.api","execution_profile_version":"1.8.0"}`)
+	currentProfile.SetPathValue("id", strconv.FormatInt(created.Application.PublicModel.ID, 10))
+	currentProfileResponse := httptest.NewRecorder()
+	handler.UpdateModelRegistry(currentProfileResponse, currentProfile)
+	require.Equal(t, http.StatusConflict, currentProfileResponse.Code, currentProfileResponse.Body.String())
+	require.Contains(t, currentProfileResponse.Body.String(), deployedProfileIdentityImmutableErrorCode)
+	var retainedProfileID, retainedProfileVersion string
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT execution_profile_id,execution_profile_version
+  FROM model_registry WHERE id=$1`, created.Application.PublicModel.ID).Scan(&retainedProfileID, &retainedProfileVersion))
+	require.Equal(t, modelprofile.UnverifiedProfileID, retainedProfileID)
+	require.Equal(t, modelprofile.UnverifiedProfileVersion, retainedProfileVersion)
+
+	historicalCreate := owner(http.MethodPost, "/api/v1/model-registry", `{
+		"model_name":"historical-profile-must-not-persist",
+		"execution_profile_id":"kimi.k2.7-code.api",
+		"execution_profile_version":"1.0.0"
+	}`)
+	historicalCreateResponse := httptest.NewRecorder()
+	handler.CreateModelRegistry(historicalCreateResponse, historicalCreate)
+	require.Equal(t, http.StatusBadRequest, historicalCreateResponse.Code, historicalCreateResponse.Body.String())
+	var historicalCreateCount int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_registry
+ WHERE org_id=$1 AND model_name='historical-profile-must-not-persist'`, orgID).Scan(&historicalCreateCount))
+	require.Zero(t, historicalCreateCount)
+
 	var unboundModelID int64
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO model_registry (org_id,model_name,display_name,lifecycle)
@@ -663,6 +979,17 @@ VALUES ($1,'unbound-stable-model','Unbound stable model','staging') RETURNING id
 	require.Equal(t, http.StatusConflict, unboundResponse.Code, unboundResponse.Body.String())
 	require.NoError(t, pool.QueryRow(ctx, `SELECT model_name FROM model_registry WHERE id=$1`, unboundModelID).Scan(&modelName))
 	require.Equal(t, "unbound-stable-model", modelName)
+
+	unboundProfile := owner(http.MethodPut, "/api/v1/model-registry/"+strconv.FormatInt(unboundModelID, 10), `{"execution_profile_id":"kimi.k3.api","execution_profile_version":"1.8.0"}`)
+	unboundProfile.SetPathValue("id", strconv.FormatInt(unboundModelID, 10))
+	unboundProfileResponse := httptest.NewRecorder()
+	handler.UpdateModelRegistry(unboundProfileResponse, unboundProfile)
+	require.Equal(t, http.StatusOK, unboundProfileResponse.Code, unboundProfileResponse.Body.String())
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT execution_profile_id,execution_profile_version
+  FROM model_registry WHERE id=$1`, unboundModelID).Scan(&retainedProfileID, &retainedProfileVersion))
+	require.Equal(t, "kimi.k3.api", retainedProfileID)
+	require.Equal(t, "1.8.0", retainedProfileVersion)
 }
 
 func canonicalApplicationAuthorizedRequest(orgID, userID int64) func(string, string, string) *http.Request {

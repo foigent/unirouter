@@ -139,6 +139,95 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 	require.EqualValues(t, 1, unchangedProjects)
 
 	seedFreshBootstrapReleaseEvidence(t, pool)
+	for _, corruption := range []struct {
+		name, table, trigger, statement, failedCheck string
+	}{
+		{
+			name:    "same-count support provenance drift",
+			table:   "model_operation_execution_support_bindings",
+			trigger: "model_operation_execution_support_bindings_immutable",
+			statement: `UPDATE model_operation_execution_support_bindings
+			 SET introduced_migration='000999_unapproved_fixture'
+			 WHERE protocol_profile_id='unirouter.openai.responses.text.v2'`,
+			failedCheck: "check fresh compiled execution support: got 4 want 5",
+		},
+		{
+			name:    "extra support tuple",
+			table:   "model_operation_execution_support_bindings",
+			trigger: "model_operation_execution_support_bindings_immutable",
+			statement: `INSERT INTO model_operation_execution_support_bindings (
+			 operation_id,public_path,protocol_profile_id,protocol_profile_version,
+			 executor_contract_version,introduced_migration)
+			 VALUES ('fixture.future.v1','/v1/future','fixture.future','1.0.0',
+			 'fixture.future-executor.v1','000999_unapproved_fixture')`,
+			failedCheck: "check fresh compiled execution support count: got 6 want 5",
+		},
+		{
+			name:    "missing public extension",
+			table:   "model_operation_public_execution_contract_extensions",
+			trigger: "model_operation_public_execution_contract_extensions_immutable",
+			statement: `DELETE FROM model_operation_public_execution_contract_extensions
+			 WHERE protocol_profile_id='unirouter.anthropic.messages.text-tools.v3'`,
+			failedCheck: "check fresh public execution extension: got 4 want 5",
+		},
+		{
+			name:    "same-count capability probe contract drift",
+			table:   "model_capability_probe_contract_bindings",
+			trigger: "model_capability_probe_contract_bindings_immutable",
+			statement: `UPDATE model_capability_probe_contract_bindings
+			 SET expected_upstream_model='deepseek-v4-flash-drift'
+			 WHERE probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'`,
+			failedCheck: "check fresh capability probe contract binding: got 0 want 2",
+		},
+		{
+			name:    "extra capability probe contract binding",
+			table:   "model_capability_probe_contract_bindings",
+			trigger: "model_capability_probe_contract_bindings_immutable",
+			statement: `INSERT INTO model_capability_probe_contract_bindings (
+			 operation_id,capability_id,execution_profile_id,execution_profile_version,
+			 protocol_profile_id,protocol_profile_version,probe_contract_id,
+			 probe_contract_version,expected_provider,expected_upstream_model,
+			 public_path,introduced_migration)
+			 VALUES ('fixture.future.v1','streaming','fixture.future.api','1.0.0',
+			 'fixture.future.protocol','1.0.0','fixture.future.probe','1.0.0',
+			 'fixture','fixture-future','/v1/future',
+			 '000088_model_capability_execution_qualification')`,
+			failedCheck: "check fresh capability probe contract binding count: got 49 want 48",
+		},
+		{
+			name:    "missing current capability probe contract",
+			table:   "model_capability_current_probe_contracts",
+			trigger: "model_capability_current_probe_contracts_immutable",
+			statement: `DELETE FROM model_capability_current_probe_contracts
+			 WHERE probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'`,
+			failedCheck: "check fresh current capability probe contract: got 0 want 2",
+		},
+		{
+			name:    "missing tools current capability probe contract",
+			table:   "model_capability_current_probe_contracts",
+			trigger: "model_capability_current_probe_contracts_immutable",
+			statement: `DELETE FROM model_capability_current_probe_contracts
+			 WHERE capability_id='tools'
+			   AND protocol_profile_id='protocol.deepseek-openai-chat.v4'`,
+			failedCheck: "check fresh tools/JSON current capability probe contract: got 11 want 12",
+		},
+	} {
+		t.Run(corruption.name, func(t *testing.T) {
+			tx, err := pool.Begin(t.Context())
+			require.NoError(t, err)
+			defer func() { _ = tx.Rollback(t.Context()) }()
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/bootstrap/first-customer", nil)
+			require.NoError(t, handler.verifyFirstCustomerFreshMigrationCheckpoint(request, tx, adminID, adminOrgID))
+			// Fault injection is transaction-local in an isolated database. Rollback
+			// restores both the immutable trigger and the exact migration-owned rows.
+			_, err = tx.Exec(t.Context(), "ALTER TABLE "+corruption.table+" DISABLE TRIGGER "+corruption.trigger)
+			require.NoError(t, err)
+			_, err = tx.Exec(t.Context(), corruption.statement)
+			require.NoError(t, err)
+			require.ErrorContains(t, handler.verifyFirstCustomerFreshMigrationCheckpoint(request, tx, adminID, adminOrgID), corruption.failedCheck)
+			require.NoError(t, tx.Rollback(t.Context()))
+		})
+	}
 	response := serve("fresh-bootstrap-client-001")
 	require.Equal(t, http.StatusCreated, response.Code, response.Body.String())
 	var created firstCustomerBootstrapResult
@@ -339,7 +428,7 @@ func TestFirstCustomerBootstrapFailsClosedOnSchemaDriftIntegration(t *testing.T)
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
-		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000084_future_contract')`)
+		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000094_future_contract')`)
 		require.NoError(t, err)
 
 		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-002", "First Customer")

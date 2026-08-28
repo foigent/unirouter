@@ -418,6 +418,17 @@ func (b *Billing) RecoverExpiredStreamDeliveries(ctx context.Context, limit int)
 			UsageEstimateVersion: metering.GatewayCounterEstimateVersionV2,
 		}
 		if err := b.PersistSettlementUsage(ctx, settle); err != nil {
+			if errors.Is(err, ErrProviderFinalUsageRequired) {
+				// Checkpoints prove disclosure, not provider-final charge usage.
+				// Retain the pending reservation without a pricing payload or debit.
+				if finishErr := finish(StreamLeaseStateInterrupted, "provider_final_usage_missing"); finishErr != nil {
+					result.Failed++
+					recoveryErrors = append(recoveryErrors, finishErr)
+					continue
+				}
+				result.ProviderCostHeld++
+				continue
+			}
 			result.Failed++
 			recoveryErrors = append(recoveryErrors, fmt.Errorf("persist expired stream %s: %w", item.RequestID, err))
 			continue

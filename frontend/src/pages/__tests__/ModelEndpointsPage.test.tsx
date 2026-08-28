@@ -8,6 +8,7 @@ import ModelEndpointsPage from '../ModelEndpointsPage';
 import {
   canonicalOperationBaseURLForPreset,
   canonicalOperationOriginError,
+  providerPresetBaseURLError,
 } from '../../features/modelEndpoints/ModelEndpointCreateSheet';
 import { useAuthStore } from '../../store/auth';
 
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   create: vi.fn(),
   probe: vi.fn(),
+  getCapabilityQualification: vi.fn(),
   releaseList: vi.fn(),
   authorRelease: vi.fn(),
   lifecycleCurrent: vi.fn(),
@@ -27,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   cutoverLegacy: vi.fn(),
   rollbackLegacy: vi.fn(),
   profileList: vi.fn(),
+  importOfficialRateCardDraft: vi.fn(),
+  getRateCards: vi.fn(),
 }));
 
 vi.mock('../../api/modelDeploymentReleases', async importOriginal => {
@@ -66,6 +70,7 @@ vi.mock('../../api/modelDeployments', async importOriginal => {
       get: mocks.get,
       create: mocks.create,
       probe: mocks.probe,
+      getCapabilityQualification: mocks.getCapabilityQualification,
     },
   };
 });
@@ -75,6 +80,18 @@ vi.mock('../../api/modelExecutionProfiles', async importOriginal => {
   return {
     ...actual,
     modelExecutionProfileApi: { list: mocks.profileList },
+  };
+});
+
+vi.mock('../../api/enterpriseFinance', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../api/enterpriseFinance')>();
+  return {
+    ...actual,
+    enterpriseFinanceApi: {
+      ...actual.enterpriseFinanceApi,
+      importOfficialRateCardDraft: mocks.importOfficialRateCardDraft,
+      getRateCards: mocks.getRateCards,
+    },
   };
 });
 
@@ -123,6 +140,7 @@ function application(overrides: Record<string, unknown> = {}) {
       provider: 'deepseek',
       base_url: 'https://api.deepseek.com',
       adapter_type: 'openai_compatible',
+      adapter_config: {},
       admin_state: 'enabled',
       config_revision: 5,
     },
@@ -178,6 +196,38 @@ function application(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function executionProfile(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'deepseek.v4-flash.api',
+    version: '1.5.0',
+    label: 'DeepSeek V4 Flash 官方 API',
+    current: true,
+    tokenizer_profile_id: 'tokenizer.byte-upper.v1',
+    tokenizer_profile_version: '1.0.0',
+    reasoning_profile: 'reasoning.deepseek-v4-flash-thinking-toggle.v5',
+    cache_usage_profile: 'cache-usage.deepseek-v4.v1',
+    protocol_profile: 'protocol.deepseek-openai-chat.v4',
+    provider: 'deepseek',
+    region: 'cn',
+    api_surface: 'openai_chat_completions',
+    operations: ['openai.chat_completions.v1'],
+    endpoint_classes: ['deepseek_official_openai'],
+    upstream_model_ids: ['deepseek-v4-flash'],
+    default_output_authority: 'unirouter_policy',
+    catalog_evidence_state: 'locally_conformant',
+    provider_context_window: 1_000_000,
+    provider_max_output: 384_000,
+    executable_context_window: 1_000_000,
+    default_context_window: 1_000_000,
+    default_output_limit: 32_768,
+    provider_capabilities: ['streaming', 'reasoning', 'tools', 'prompt_cache'],
+    capabilities: ['streaming', 'reasoning', 'tools', 'prompt_cache'],
+    aliases: ['DeepSeek V4 Flash', 'DeepSeek-V4-Flash', 'deepseek-v4-flash'],
+    evidence_refs: ['https://example.test/deepseek-v4-flash'],
+    ...overrides,
+  };
+}
+
 function projection(applications = [application()]) {
   return {
     contract_version: 'unirouter.model-deployment.v1',
@@ -226,7 +276,7 @@ function renderPage(entry = '/channels') {
 async function chooseSelectOption(
   label: string,
   option: string | RegExp,
-  user = userEvent.setup({ skipHover: true, delay: null }),
+  user = userEvent.setup({ skipHover: true }),
 ) {
   const combobox = screen.getByRole('combobox', { name: label });
   await user.click(combobox);
@@ -249,7 +299,18 @@ async function chooseSelectOption(
   await waitFor(() => expect(currentChoice()).toBeTruthy());
   const choice = currentChoice();
   if (!choice) throw new Error(`missing option ${String(option)} for ${label}`);
+  const popup = choice.closest('[role="dialog"]');
+  if (!popup) throw new Error(`missing option popup for ${label}`);
+  // jsdom does not emit CSS animation events. Exercise the positioned popup,
+  // not the timing-dependent pre-positioning path where Semi disables motion.
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-show'));
+  fireEvent.animationEnd(popup);
   await user.click(choice);
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-hide'));
+  fireEvent.animationEnd(popup);
+  // Wait for the controlled Form.Select to commit before editing fields whose
+  // Input/Select identity changes with the provider template.
+  await waitFor(() => expect(combobox).toHaveTextContent(option));
   return choice;
 }
 
@@ -261,6 +322,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-24T12:00:00Z'));
     setRole('org_admin');
     mocks.list.mockResolvedValue(projection());
     mocks.releaseList.mockResolvedValue({
@@ -290,40 +352,201 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       idempotency_replay: false,
       reused: { connection: false, public_model: false, deployment: false, credential: false, operation: false },
     });
+    mocks.importOfficialRateCardDraft.mockResolvedValue({
+      import_state: 'draft', automatic_activation: false, network_fetch_performed: false,
+    });
+    mocks.getRateCards.mockResolvedValue({ data: [], total: 0 });
+    mocks.getCapabilityQualification.mockImplementation(async (
+      deploymentID: number, operationID: string, capabilityID: string,
+    ) => ({
+      contract_version: 'unirouter.model-capability-qualification.v1',
+      deployment_id: deploymentID,
+      operation_id: operationID,
+      capability_id: capabilityID,
+      support_state: 'enabled',
+      support_revision: 1,
+      execution_profile_id: 'deepseek.v4-flash.api',
+      execution_profile_version: '1.5.0',
+      protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
+      protocol_profile_version: '1.0.0',
+      probe_contract_id: capabilityID === 'streaming'
+        ? 'unirouter.capability-probe.deepseek-chat-sse.v1'
+        : 'unirouter.capability-probe.deepseek-chat-function-tools.v1',
+      probe_contract_version: capabilityID === 'streaming' ? '2.0.0' : '1.0.0',
+      probe_available: true,
+      probe_availability_reason_code: 'typed_probe_available',
+      state: 'not_probed',
+      qualified: false,
+      qualification_state: 'approval_missing',
+    }));
     mocks.profileList.mockResolvedValue({
       contract_version: 'unirouter.model-execution-profiles.v1',
-      data: [{
-        id: 'deepseek.v4-flash.api',
-        version: '1.1.0',
-        label: 'DeepSeek V4 Flash 官方 API',
-        tokenizer_profile_id: 'tokenizer.byte-upper.v1',
-        tokenizer_profile_version: '1.0.0',
-        reasoning_profile: 'reasoning.deepseek-thinking-toggle.v2',
-        cache_usage_profile: 'cache-usage.deepseek-v4.v1',
-        protocol_profile: 'protocol.deepseek-openai-chat.v1',
-        provider_context_window: 1_000_000,
-        provider_max_output: 384_000,
-        default_context_window: 1_000_000,
-        default_output_limit: 32_768,
-        provider_capabilities: ['reasoning', 'tools', 'prompt_cache'],
-        capabilities: ['reasoning', 'tools', 'prompt_cache'],
-        aliases: ['DeepSeek V4 Flash', 'DeepSeek-V4-Flash', 'deepseek-v4-flash'],
-        evidence_refs: ['https://example.test/deepseek-v4-flash'],
-      }],
+      data: [executionProfile()],
     });
   });
 
   it('derives the OpenAI Responses origin and rejects pathful public operation connections before submit', () => {
-    expect(canonicalOperationBaseURLForPreset('openai', 'openai.responses.v1')).toBe('https://api.openai.com');
+    expect(canonicalOperationBaseURLForPreset('openai-responses', 'openai.responses.v1')).toBe('https://api.openai.com');
     expect(canonicalOperationBaseURLForPreset('openai', 'openai.chat_completions.v1')).toBe('https://api.openai.com/v1');
     expect(canonicalOperationOriginError('openai.responses.v1', 'https://api.openai.com')).toBe('');
     expect(canonicalOperationOriginError('openai.responses.v1', 'https://api.openai.com/v1')).toMatch(/path-free HTTPS origin/);
     expect(canonicalOperationOriginError('anthropic.messages.v1', 'https://api.anthropic.com\u00a0')).toMatch(/ASCII/);
     expect(canonicalOperationOriginError('openai.chat_completions.v1', 'https://api.openai.com/v1')).toBe('');
+    expect(providerPresetBaseURLError(
+      'openai',
+      'openai.chat_completions.v1',
+      'https://api.openai.com/v1/',
+    )).toBe('');
+    expect(providerPresetBaseURLError(
+      'openai',
+      'openai.chat_completions.v1',
+      'https://arbitrary.example/v1',
+    )).toMatch(/OpenAI 官方模板/);
+    expect(providerPresetBaseURLError(
+      'openai',
+      'openai.chat_completions.v1',
+      'https://api.openai.com:443/v1',
+    )).toMatch(/OpenAI 官方模板/);
+    expect(providerPresetBaseURLError(
+      'openai',
+      'openai.chat_completions.v1',
+      'https://api.openai.com/v1?',
+    )).toMatch(/query 或 fragment/);
+    expect(providerPresetBaseURLError(
+      'openai-responses',
+      'openai.responses.v1',
+      'https://api.openai.com/v1',
+    )).toMatch(/path-free HTTPS origin/);
+    expect(providerPresetBaseURLError(
+      'openai',
+      'openai.responses.v1',
+      'https://api.openai.com',
+    )).toMatch(/Chat Completions 模板/);
+    expect(providerPresetBaseURLError(
+      'gemini',
+      'openai.chat_completions.v1',
+      'https://generativelanguage.googleapis.com/v1beta/openai/',
+    )).toBe('');
+    expect(providerPresetBaseURLError(
+      'gemini',
+      'openai.chat_completions.v1',
+      'https://arbitrary.example/v1beta/openai',
+    )).toMatch(/Gemini 官方模板/);
+    expect(providerPresetBaseURLError(
+      'gemini',
+      'openai.chat_completions.v1',
+      'https://generativelanguage.googleapis.com/v1beta/openai#',
+    )).toMatch(/query 或 fragment/);
+    expect(providerPresetBaseURLError(
+      'deepseek',
+      'openai.chat_completions.v1',
+      'https://api.deepseek.com/',
+    )).toBe('');
+    expect(providerPresetBaseURLError(
+      'deepseek',
+      'openai.chat_completions.v1',
+      'https://arbitrary.example',
+    )).toMatch(/DeepSeek 官方模板/);
+    expect(providerPresetBaseURLError(
+      'deepseek',
+      'openai.chat_completions.v1',
+      'https://api.deepseek.com/beta',
+    )).toMatch(/DeepSeek 官方模板/);
+    expect(providerPresetBaseURLError(
+      'deepseek',
+      'openai.chat_completions.v1',
+      'https://api.deepseek.com?',
+    )).toMatch(/query 或 fragment/);
+    expect(providerPresetBaseURLError(
+      'kimi',
+      'openai.chat_completions.v1',
+      'https://api.moonshot.cn/v1/',
+    )).toBe('');
+    for (const endpoint of [
+      'https://api.kimi.com/coding/v1',
+      'https://arbitrary.example/v1',
+      'https://api.moonshot.cn/v1/chat/completions',
+      'https://api.moonshot.cn:443/v1',
+      'https://api.moonshot.cn/v1?',
+    ]) {
+      expect(providerPresetBaseURLError(
+        'kimi',
+        'openai.chat_completions.v1',
+        endpoint,
+      )).toBeTruthy();
+    }
+    expect(providerPresetBaseURLError(
+      'minimax',
+      'openai.chat_completions.v1',
+      'https://api.minimaxi.com/v1/',
+    )).toBe('');
+    for (const endpoint of [
+      'https://arbitrary.example/v1',
+      'https://api.minimaxi.com',
+      'https://api.minimaxi.com/v1/chat/completions',
+      'https://api.minimaxi.com:443/v1',
+      'https://api.minimaxi.com/v1?',
+    ]) {
+      expect(providerPresetBaseURLError(
+        'minimax',
+        'openai.chat_completions.v1',
+        endpoint,
+      )).toBeTruthy();
+    }
+    expect(providerPresetBaseURLError(
+      'xai',
+      'openai.chat_completions.v1',
+      'https://api.x.ai/v1/',
+    )).toBe('');
+    for (const endpoint of [
+      'https://arbitrary.example/v1',
+      'https://api.x.ai',
+      'https://api.x.ai/v1/chat/completions',
+      'https://api.x.ai:443/v1',
+      'https://api.x.ai/v1?',
+    ]) {
+      expect(providerPresetBaseURLError(
+        'xai',
+        'openai.chat_completions.v1',
+        endpoint,
+      )).toBeTruthy();
+    }
+    expect(providerPresetBaseURLError(
+      'dashscope',
+      'openai.chat_completions.v1',
+      'https://workspace.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    )).toMatch(/独立 Profile 与价格证据/);
+    expect(providerPresetBaseURLError(
+      'dashscope',
+      'openai.chat_completions.v1',
+      'https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    )).toBe('');
+    for (const endpoint of [
+      'https://trial.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+      'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+      'https://nested.workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    ]) {
+      expect(providerPresetBaseURLError('dashscope', 'openai.chat_completions.v1', endpoint)).toBeTruthy();
+    }
+    expect(providerPresetBaseURLError(
+      'dashscope-shared',
+      'openai.chat_completions.v1',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    )).toBe('');
+    expect(providerPresetBaseURLError(
+      'dashscope-shared',
+      'openai.chat_completions.v1',
+      'https://trial.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    )).toBeTruthy();
+    expect(providerPresetBaseURLError(
+      'dashscope-shared',
+      'openai.chat_completions.v1',
+      'https://dashscope.aliyuncs.com/compatible-mode/v1?',
+    )).toMatch(/query 或 fragment/);
   });
 
   it('keeps the custom provider template selected when the execution Profile catalog is unavailable', async () => {
-    const user = userEvent.setup({ skipHover: true, delay: null });
+    const user = userEvent.setup({ skipHover: true });
     mocks.profileList.mockRejectedValueOnce(new Error('profile catalog unavailable'));
     renderPage();
 
@@ -338,6 +561,40 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: '接入模板' })).toHaveTextContent('自定义 OpenAI 兼容供应商'));
     expect(screen.getByLabelText('供应商标识')).not.toBeDisabled();
     expect(screen.getByLabelText('Base URL')).not.toBeDisabled();
+  });
+
+
+  it('projects the Gemini 3.7 processing-tier boundary without claiming billing or release', async () => {
+		mocks.profileList.mockResolvedValueOnce({
+			contract_version: 'unirouter.model-execution-profiles.v1',
+			data: [executionProfile({
+				id: 'gemini.3.7-flash.api',
+				version: '1.7.0',
+				label: 'Gemini 3.7 Flash OpenAI-compatible Core Chat 子集',
+				provider: 'gemini',
+				region: 'global',
+				protocol_profile: 'protocol.gemini-openai-chat.v6',
+				processing_tier_policy: 'processing-tier.gemini-openai-compatibility.v1',
+				endpoint_classes: ['gemini_openai_compatibility_v1beta'],
+				upstream_model_ids: ['gemini-3.7-flash'],
+				provider_context_window: 1_048_576,
+				provider_max_output: 65_536,
+				default_context_window: 1_048_576,
+				default_output_limit: 32_768,
+				provider_capabilities: ['streaming', 'service_tier'],
+				capabilities: ['streaming', 'service_tier'],
+				aliases: ['Gemini 3.7 Flash', 'gemini-3.7-flash'],
+			}),
+		],
+	});
+	const user = userEvent.setup({ skipHover: true, delay: null });
+	renderPage();
+
+	await user.click((await screen.findByText('接入模型')).closest('button')!);
+	await chooseSelectOption('接入模板', 'Google Gemini 官方', user);
+
+	expect(await screen.findByText(/processing-tier\.gemini-openai-compatibility\.v1/)).toBeTruthy();
+	expect(screen.getByText(/显式 flex\/priority 目前只允许 cost_observation，不代表客户计费、live verified 或 released/)).toBeTruthy();
   });
 
   it('flattens the list by exact deployment_id and operation_id and reads detail through the exact route', async () => {
@@ -406,6 +663,41 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(screen.getByText(/未分配到任何 canonical runtime release/)).toBeTruthy();
     expect(screen.getByText(/未针对调用者评估/)).toBeTruthy();
     expect(screen.getAllByText(/^ready$/i)).toHaveLength(1);
+  });
+
+  it('renders the exact capability qualification workflow for the current DeepSeek Flash profile', async () => {
+    const base = application();
+    const chat = application({
+      public_model: {
+        ...base.public_model,
+        execution_profile_version: '1.5.0',
+      },
+      operations: [{
+        ...base.operations[0],
+        operation_id: 'openai.chat_completions.v1',
+        protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
+        protocol_profile_version: '1.0.0',
+        execution_support: {
+          operation_id: 'openai.chat_completions.v1',
+          public_path: '/v1/chat/completions',
+          protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
+          protocol_profile_version: '1.0.0',
+          executor_contract_version: 'chat-completions.executor.v1',
+        },
+      }],
+    });
+    mocks.list.mockResolvedValue(projection([chat]));
+    mocks.get.mockResolvedValue(chat);
+
+    renderPage('/channels?deployment_id=41&operation_id=openai.chat_completions.v1');
+
+    expect(await screen.findByText('能力验证 · 流式输出（SSE）')).toBeTruthy();
+    expect(screen.getByText('能力验证 · Named tool_choice')).toBeTruthy();
+    expect(screen.getByText('能力验证 · JSON Object')).toBeTruthy();
+    await waitFor(() => expect(mocks.getCapabilityQualification).toHaveBeenCalledTimes(9));
+    expect(mocks.getCapabilityQualification).toHaveBeenCalledWith(
+      41, 'openai.chat_completions.v1', 'streaming',
+    );
   });
 
   it('links exact runtime membership from deployment detail into the canonical release workspace', async () => {
@@ -533,7 +825,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     await user.type(screen.getByLabelText('连接名称'), 'DeepSeek second deployment');
     await user.type(screen.getByLabelText('上游模型 / 部署 ID'), 'deepseek-v4-flash-second');
     fireEvent.change(screen.getByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
-    fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
+    fireEvent.change(screen.getByLabelText('Deployment 默认单次输出（Token）'), { target: { value: '4096' } });
     await user.type(screen.getByLabelText('供应商 API Key'), 'sk-test-only');
     await user.click(screen.getByRole('button', { name: '创建模型接入' }));
 
@@ -568,7 +860,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     fireEvent.change(screen.getByLabelText('公共模型单次输出上限（Token）'), { target: { value: '8192' } });
     await user.type(screen.getByLabelText('上游模型 / 部署 ID'), 'response-upstream');
     fireEvent.change(screen.getByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
-    fireEvent.change(screen.getByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
+    fireEvent.change(screen.getByLabelText('Deployment 默认单次输出（Token）'), { target: { value: '4096' } });
     await user.type(screen.getByLabelText('供应商 API Key'), 'sk-test-only');
 
     const createButton = screen.getByRole('button', { name: '创建模型接入' });
@@ -584,8 +876,97 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
-  it('creates through the canonical transaction with one retained idempotency key for an uncertain retry', async () => {
+  it('downgrades a malformed DeepSeek existing connection to custom instead of offering a reviewed profile', async () => {
+    const current = application();
+    mocks.list.mockResolvedValue(projection([application({
+      connection: {
+        ...current.connection,
+        adapter_config: { endpoint_path_mode: 'base_relative', unknown: true },
+      },
+    })]));
     const user = userEvent.setup({ skipHover: true, delay: null });
+    renderPage();
+
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(screen.getByText('复用现有连接', { exact: true }));
+    await chooseSelectOption('现有连接', /DeepSeek official/, user);
+
+    await waitFor(() => expect(screen.queryByLabelText('模型模板')).toBeNull());
+    expect(screen.getByLabelText('公共模型 ID')).not.toBeDisabled();
+  });
+
+  it('downgrades a Gemini existing connection with the default path mode to custom', async () => {
+    const current = application();
+    mocks.list.mockResolvedValue(projection([application({
+      connection: {
+        ...current.connection,
+        name: 'Gemini malformed path mode',
+        provider: 'gemini',
+        base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        adapter_config: {},
+      },
+    })]));
+    mocks.profileList.mockResolvedValueOnce({
+      contract_version: 'unirouter.model-execution-profiles.v1',
+      data: [executionProfile({
+        id: 'gemini.3.7-flash.api',
+        version: '1.6.0',
+        label: 'Gemini 3.7 Flash OpenAI-compatible Core Chat 子集',
+        provider: 'gemini',
+        region: 'global',
+        endpoint_classes: ['gemini_openai_compatibility_v1beta'],
+        upstream_model_ids: ['gemini-3.7-flash'],
+        aliases: ['Gemini 3.7 Flash', 'gemini-3.7-flash'],
+      })],
+    });
+    const user = userEvent.setup({ skipHover: true, delay: null });
+    renderPage();
+
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(screen.getByText('复用现有连接', { exact: true }));
+    await chooseSelectOption('现有连接', /Gemini malformed path mode/, user);
+
+    await waitFor(() => expect(screen.queryByLabelText('模型模板')).toBeNull());
+    expect(screen.getByLabelText('公共模型 ID')).not.toBeDisabled();
+  });
+
+  it('downgrades a Kimi Code subscription connection instead of offering platform profiles', async () => {
+    const current = application();
+    mocks.list.mockResolvedValue(projection([application({
+      connection: {
+        ...current.connection,
+        name: 'Kimi Code subscription',
+        provider: 'kimi',
+        base_url: 'https://api.kimi.com/coding/v1',
+        adapter_config: { endpoint_path_mode: 'canonical_v1' },
+      },
+    })]));
+    mocks.profileList.mockResolvedValueOnce({
+      contract_version: 'unirouter.model-execution-profiles.v1',
+      data: [executionProfile({
+        id: 'kimi.k3.api',
+        version: '1.6.0',
+        label: 'Kimi K3 官方 API',
+        provider: 'kimi',
+        region: 'cn',
+        endpoint_classes: ['kimi_platform_openai_v1'],
+        upstream_model_ids: ['kimi-k3'],
+        aliases: ['Kimi K3', 'kimi-k3'],
+      })],
+    });
+    const user = userEvent.setup({ skipHover: true, delay: null });
+    renderPage();
+
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await user.click(screen.getByText('复用现有连接', { exact: true }));
+    await chooseSelectOption('现有连接', /Kimi Code subscription/, user);
+
+    await waitFor(() => expect(screen.queryByLabelText('模型模板')).toBeNull());
+    expect(screen.getByLabelText('公共模型 ID')).not.toBeDisabled();
+  });
+
+  it('creates through the canonical transaction with one retained idempotency key for an uncertain retry', async () => {
+    const user = userEvent.setup({ skipHover: true });
     mocks.create
       .mockRejectedValueOnce(new TypeError('network unavailable'))
       .mockResolvedValueOnce({
@@ -598,7 +979,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     const createButton = (await screen.findByText('接入模型')).closest('button');
     expect(createButton).toBeTruthy();
     await user.click(createButton!);
-    await screen.findByText(/deepseek\.v4-flash\.api@1\.1\.0/);
+    await screen.findByText(/deepseek\.v4-flash\.api@1\.5\.0/);
     await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商', user);
     fireEvent.change(await screen.findByLabelText('连接名称'), { target: { value: 'DeepSeek new production' } });
     fireEvent.change(await screen.findByLabelText('供应商标识'), { target: { value: 'deepseek' } });
@@ -608,7 +989,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     fireEvent.change(await screen.findByLabelText('公共模型单次输出上限（Token）'), { target: { value: '8192' } });
     fireEvent.change(await screen.findByLabelText('上游模型 / 部署 ID'), { target: { value: 'deepseek-v5-202608' } });
     fireEvent.change(await screen.findByLabelText('Deployment 上下文上限（Token）'), { target: { value: '128000' } });
-    fireEvent.change(await screen.findByLabelText('Deployment 单次输出上限（Token）'), { target: { value: '4096' } });
+    fireEvent.change(await screen.findByLabelText('Deployment 默认单次输出（Token）'), { target: { value: '4096' } });
     await pasteValue(user, await screen.findByLabelText('供应商 API Key'), 'sk-test-only');
     await user.click(screen.getByRole('button', { name: '创建模型接入' }));
 
@@ -641,24 +1022,39 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
-    expect(await screen.findByText(/deepseek\.v4-flash\.api@1\.1\.0/)).toBeTruthy();
+    expect(await screen.findByText(/deepseek\.v4-flash\.api@1\.5\.0/)).toBeTruthy();
+    expect(screen.getByText(/deepseek \/ cn \/ openai_chat_completions/)).toBeTruthy();
+    expect(screen.getByText(/Catalog 证据 locally_conformant（不代表 live\/released）/)).toBeTruthy();
+    expect(screen.getByText(/这里只展示本地合同子集，不代表该模型已完整适配/)).toBeTruthy();
+    expect(screen.getByText(/供应商上限 context 1,000,000 \/ output 384,000/)).toBeTruthy();
+    expect(screen.getByText(/请求默认 context 1,000,000 \/ output 32,768/)).toBeTruthy();
+    expect(screen.getByText(/官方价格已记录（cn \/ CNY）/)).toBeTruthy();
+    expect(screen.queryByLabelText('同时创建待审核 Pricing Profile 草稿')).toBeNull();
     expect(screen.getByLabelText('供应商标识')).toBeDisabled();
     expect(screen.getByLabelText('Base URL')).toBeDisabled();
+    expect(screen.getByLabelText('公共模型 ID')).not.toBeDisabled();
     expect(screen.getByLabelText('公共模型上下文上限（Token）')).toBeDisabled();
-    expect(screen.getByLabelText('Deployment 单次输出上限（Token）')).toBeDisabled();
+    expect(screen.getByLabelText('请求默认单次输出（Profile 投影，Token）')).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('公共模型 ID'), { target: { value: 'deepseek-v4-flash-20260828' } });
+    });
 
     await pasteValue(user, screen.getByLabelText('供应商 API Key'), 'sk-test-only');
     await user.click(screen.getByRole('button', { name: '创建模型接入' }));
 
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
     expect(mocks.create.mock.calls[0][0]).toEqual(expect.objectContaining({
-      connection: expect.objectContaining({ provider: 'deepseek', base_url: 'https://api.deepseek.com' }),
+      connection: expect.objectContaining({
+        provider: 'deepseek', base_url: 'https://api.deepseek.com',
+        adapter_config: { endpoint_path_mode: 'base_relative' },
+      }),
       public_model: expect.objectContaining({
-        model_name: 'deepseek-v4-flash',
+        model_name: 'deepseek-v4-flash-20260828',
         context_length: 1_000_000,
-        output_limit: 32_768,
+        output_limit: 384_000,
         execution_profile_id: 'deepseek.v4-flash.api',
-        execution_profile_version: '1.1.0',
+        execution_profile_version: '1.5.0',
       }),
       deployment: expect.objectContaining({
         upstream_model: 'deepseek-v4-flash',
@@ -667,5 +1063,106 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       }),
       operation: { operation_id: 'openai.chat_completions.v1' },
     }));
+    expect(mocks.importOfficialRateCardDraft).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit Beijing workspace Host for the recommended Qwen preset', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
+    mocks.profileList.mockResolvedValueOnce({
+      contract_version: 'unirouter.model-execution-profiles.v1',
+      data: [executionProfile({
+        id: 'qwen.3.8-max.api',
+        version: '1.7.0',
+        label: 'Qwen3.8-Max 官方 API',
+        provider: 'dashscope',
+        region: 'cn-beijing',
+        endpoint_classes: ['dashscope_cn_beijing_workspace_payg', 'dashscope_cn_beijing_shared_payg'],
+        upstream_model_ids: ['qwen3.8-max'],
+        protocol_profile: 'opaque.profile.name.without.operation.hints',
+        default_output_authority: 'provider_documented',
+        provider_context_window: 1_000_000,
+        provider_max_output: 131_072,
+        default_context_window: 1_000_000,
+        default_output_limit: 131_072,
+        aliases: ['Qwen3.8-Max', 'qwen3.8-max'],
+      })],
+    });
+    renderPage();
+
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await chooseSelectOption('接入模板', '阿里云百炼（北京业务空间）', user);
+
+    expect(await screen.findByText(/qwen\.3\.8-max\.api@1\.7\.0/)).toBeTruthy();
+    expect(screen.getByText(/dashscope \/ cn-beijing \/ openai_chat_completions/)).toBeTruthy();
+    expect(screen.getAllByText(/provider_documented/)).toHaveLength(2);
+    expect(screen.getByText(/官方价格已记录（cn-beijing \/ CNY）/)).toBeTruthy();
+    expect(screen.getByLabelText('Base URL')).not.toBeDisabled();
+    expect(screen.getByLabelText('Base URL')).toHaveValue('');
+    await pasteValue(
+      user,
+      screen.getByLabelText('Base URL'),
+      'https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    );
+    expect(screen.getByLabelText('Base URL')).toHaveValue('https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1');
+  });
+
+  it('treats an exact official pricing draft readback as an idempotent replay after an uncertain import failure', async () => {
+    const user = userEvent.setup({ skipHover: true, delay: null });
+    mocks.importOfficialRateCardDraft.mockRejectedValueOnce(new TypeError('network unavailable'));
+    mocks.profileList.mockResolvedValueOnce({
+      contract_version: 'unirouter.model-execution-profiles.v1',
+      data: [executionProfile({
+        id: 'mimo.v2.5.api',
+        version: '1.6.0',
+        label: 'MiMo V2.5 官方 API',
+        provider: 'mimo',
+        endpoint_classes: ['provider_https'],
+        protocol_profile: 'protocol.mimo-openai-chat.v4',
+        provider_context_window: 1_000_000,
+        provider_max_output: 131_072,
+        default_context_window: 1_000_000,
+        default_output_limit: 32_768,
+        aliases: ['MiMo V2.5', 'mimo-v2.5'],
+        upstream_model_ids: ['mimo-v2.5'],
+      })],
+    });
+    mocks.getRateCards.mockResolvedValueOnce({
+      total: 1,
+      data: [{
+        id: 1,
+        card: {
+          rate_card_ref: 'onboarding-rate-mimo-cn-mimo-v2.5-retrieved-2026-08-24-official-onboarding-rate.v1-2e9d779a1629',
+          provider_ref: 'mimo', model_ref: 'mimo-v2.5', layer: 'provider_list',
+          version: 1, state: 'draft', effective_from: '2026-08-24T08:00:00Z', created_by: 'user:1',
+          components: [
+            ['input_tokens', '1000000'], ['output_tokens', '2000000'],
+            ['cache_read_tokens', '20000'], ['cache_creation_tokens', '0'],
+          ].map(([meter, value_minor]) => ({
+            meter, unit_quantity: '1000000', amount: { value_minor, currency: 'CNY', scale: 1_000_000 },
+          })),
+          daily_price_bands: [],
+        },
+        source_evidence: {
+          evidence_ref: 'onboarding-source-mimo-cn-mimo-v2.5-retrieved-2026-08-24-official-onboarding-rate.v1-2e9d779a1629',
+          source_kind: 'official_import', source_url: 'https://mimo.mi.com/docs/en-US/price/pay-as-you-go',
+          source_revision: 'retrieved-2026-08-24', fetched_at: '2026-08-24T08:00:00Z',
+          payload_sha256: 'sha256:2e9d779a162942b1b8afb359e4242084564b65f1a02bfc914ee91b24aae398fe',
+          transform_version: 'official-onboarding-rate.v1', last_success_at: '2026-08-24T08:00:00Z',
+          stale_after: '2026-08-31T08:00:00Z',
+        },
+      }],
+    });
+    renderPage();
+
+    await user.click((await screen.findByText('接入模型')).closest('button')!);
+    await chooseSelectOption('接入模板', '小米 MiMo 官方', user);
+    await screen.findByText(/^待审核 Pricing Profile 草稿 ·/);
+    await user.click(screen.getByLabelText('同时创建待审核 Pricing Profile 草稿'));
+    await pasteValue(user, screen.getByLabelText('供应商 API Key'), 'sk-test-only');
+    await user.click(screen.getByRole('button', { name: '创建模型接入' }));
+
+    await waitFor(() => expect(mocks.getRateCards).toHaveBeenCalledTimes(1));
+    expect(mocks.importOfficialRateCardDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.create).toHaveBeenCalledTimes(1);
   });
 });

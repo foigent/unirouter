@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,6 +34,13 @@ import (
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
+func toolChoiceConstraint(names []string, selected string) *modelrouting.FunctionToolChoiceConstraint {
+	return &modelrouting.FunctionToolChoiceConstraint{
+		DeclaredFunctionNames: slices.Clone(names),
+		SelectedFunctionName:  selected,
+	}
+}
+
 type executionPlannerStub struct {
 	mu       sync.Mutex
 	plan     modelrouting.Plan
@@ -50,6 +58,128 @@ type executionCountingGuardrailDetector struct {
 	calls *atomic.Int64
 }
 
+func TestInvocationCapabilityRequirementsForChatUsesExactReasoningEffortIdentity(t *testing.T) {
+	profile, ok := modelprofile.Lookup("doubao.seed-2.1-turbo.api", "1.1.0")
+	if !ok {
+		t.Fatal("Doubao Turbo candidate profile is unavailable")
+	}
+	tests := []struct {
+		name, body, origin string
+	}{
+		{name: "provider default", body: `{"model":"doubao-seed-2-1-turbo-260628","messages":[]}`, origin: modelrouting.CapabilityOriginProviderDefault},
+		{name: "explicit low", body: `{"model":"doubao-seed-2-1-turbo-260628","messages":[],"reasoning_effort":"low"}`, origin: modelrouting.CapabilityOriginExplicitRequest},
+		{name: "explicit minimal", body: `{"model":"doubao-seed-2-1-turbo-260628","messages":[],"reasoning_effort":"minimal"}`, origin: modelrouting.CapabilityOriginExplicitRequest},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evidence, err := validateChatExecutionProfileRequest([]byte(test.body), modelExecutionPlanForProfile(profile))
+			if err != nil {
+				t.Fatalf("validate exact profile request: %v", err)
+			}
+			requirements, err := invocationCapabilityRequirementsForChat(profile, evidence, []byte(test.body))
+			if err != nil {
+				t.Fatalf("derive invocation capability requirements: %v", err)
+			}
+			want := []modelrouting.CapabilityRequirement{{
+				CapabilityID: modelprofile.CapabilityReasoningEffort,
+				Origins:      []string{test.origin},
+			}}
+			if !slices.EqualFunc(want, requirements, func(left, right modelrouting.CapabilityRequirement) bool {
+				return left.CapabilityID == right.CapabilityID && slices.Equal(left.Origins, right.Origins)
+			}) {
+				t.Fatalf("requirements = %+v, want %+v", requirements, want)
+			}
+		})
+	}
+}
+
+func TestInvocationCapabilityRequirementsForDoubaoSeedEvolvingPreserveOrigin(t *testing.T) {
+	profile, ok := modelprofile.Lookup("doubao.seed-evolving.api", "1.3.0")
+	if !ok {
+		t.Fatal("Doubao Seed Evolving reasoning profile is unavailable")
+	}
+	tests := []struct {
+		name, body, capability, origin string
+	}{
+		{
+			name:       "provider default effort",
+			body:       `{"model":"doubao-seed-evolving","messages":[]}`,
+			capability: modelprofile.CapabilityReasoningEffort,
+			origin:     modelrouting.CapabilityOriginProviderDefault,
+		},
+		{
+			name:       "explicit thinking toggle",
+			body:       `{"model":"doubao-seed-evolving","messages":[],"thinking":{"type":"enabled"}}`,
+			capability: modelprofile.CapabilityReasoning,
+			origin:     modelrouting.CapabilityOriginExplicitRequest,
+		},
+		{
+			name:       "explicit high effort",
+			body:       `{"model":"doubao-seed-evolving","messages":[],"reasoning_effort":"high"}`,
+			capability: modelprofile.CapabilityReasoningEffort,
+			origin:     modelrouting.CapabilityOriginExplicitRequest,
+		},
+		{
+			name:       "explicit compatibility effort",
+			body:       `{"model":"doubao-seed-evolving","messages":[],"reasoning_effort":"xhigh"}`,
+			capability: modelprofile.CapabilityReasoningEffort,
+			origin:     modelrouting.CapabilityOriginExplicitRequest,
+		},
+		{
+			name:       "explicit disabled effort",
+			body:       `{"model":"doubao-seed-evolving","messages":[],"reasoning_effort":"minimal"}`,
+			capability: modelprofile.CapabilityReasoningEffort,
+			origin:     modelrouting.CapabilityOriginExplicitRequest,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			evidence, err := validateChatExecutionProfileRequest([]byte(test.body), modelExecutionPlanForProfile(profile))
+			if err != nil {
+				t.Fatalf("validate exact profile request: %v", err)
+			}
+			requirements, err := invocationCapabilityRequirementsForChat(profile, evidence, []byte(test.body))
+			if err != nil {
+				t.Fatalf("derive invocation capabilities: %v", err)
+			}
+			want := []modelrouting.CapabilityRequirement{{
+				CapabilityID: test.capability,
+				Origins:      []string{test.origin},
+			}}
+			if !slices.EqualFunc(want, requirements, func(left, right modelrouting.CapabilityRequirement) bool {
+				return left.CapabilityID == right.CapabilityID && slices.Equal(left.Origins, right.Origins)
+			}) {
+				t.Fatalf("requirements = %+v, want %+v", requirements, want)
+			}
+		})
+	}
+}
+
+func TestInvocationCapabilityRequirementsForChatPreservesCombinedReasoningControls(t *testing.T) {
+	profile, ok := modelprofile.Lookup("deepseek.v4-pro.api", "1.2.0")
+	if !ok {
+		t.Fatal("DeepSeek current profile is unavailable")
+	}
+	body := []byte(`{"model":"deepseek-v4-pro","messages":[{"role":"user","content":"hello"}],"thinking":{"type":"enabled"},"reasoning_effort":"max"}`)
+	evidence, err := validateChatExecutionProfileRequest(body, modelExecutionPlanForProfile(profile))
+	if err != nil {
+		t.Fatalf("validate combined reasoning controls: %v", err)
+	}
+	requirements, err := invocationCapabilityRequirementsForChat(profile, evidence, body)
+	if err != nil {
+		t.Fatalf("derive combined reasoning capabilities: %v", err)
+	}
+	want := []modelrouting.CapabilityRequirement{
+		{CapabilityID: modelprofile.CapabilityReasoning, Origins: []string{modelrouting.CapabilityOriginExplicitRequest}},
+		{CapabilityID: modelprofile.CapabilityReasoningEffort, Origins: []string{modelrouting.CapabilityOriginExplicitRequest}},
+	}
+	if !slices.EqualFunc(want, requirements, func(left, right modelrouting.CapabilityRequirement) bool {
+		return left.CapabilityID == right.CapabilityID && slices.Equal(left.Origins, right.Origins)
+	}) {
+		t.Fatalf("requirements = %+v, want %+v", requirements, want)
+	}
+}
+
 func (detector executionCountingGuardrailDetector) Version() string { return "test-v1" }
 
 func (detector executionCountingGuardrailDetector) Detect(_ guardrail.Context, text guardrail.Text, _ json.RawMessage) ([]guardrail.Finding, error) {
@@ -61,10 +191,61 @@ func (detector executionCountingGuardrailDetector) Detect(_ guardrail.Context, t
 }
 
 func (stub *executionPlannerStub) Plan(_ context.Context, request modelrouting.Request) (modelrouting.Plan, error) {
+	plan := stub.plan
+	recorded := request
+	if request.DeriveInvocationCapabilities != nil {
+		profile, ok := modelprofile.Lookup(plan.ExecutionProfileID, plan.ExecutionProfileVersion)
+		if !ok {
+			profile, ok = modelprofile.Lookup(modelprofile.UnverifiedProfileID, modelprofile.UnverifiedProfileVersion)
+		}
+		if !ok {
+			return modelrouting.Plan{}, errors.New("execution planner stub profile is unavailable")
+		}
+		requirements, err := modelrouting.ResolveCapabilityRequirements(profile, request)
+		if err != nil {
+			return modelrouting.Plan{}, err
+		}
+		recorded.DeriveInvocationCapabilities = nil
+		// This is a read-only test observation of the invocation-derived subset,
+		// not a Request that may be replayed into the Planner. The full Plan below
+		// remains the sole normalized authority and retains always-required origins.
+		recorded.InvocationCapabilities = invocationCapabilityObservation(requirements)
+		plan.CapabilityRequirements = requirements
+		plan.RequiredCapabilities = make([]string, len(requirements))
+		for index := range requirements {
+			plan.RequiredCapabilities[index] = requirements[index].CapabilityID
+		}
+	}
 	stub.mu.Lock()
-	stub.requests = append(stub.requests, request)
+	stub.requests = append(stub.requests, recorded)
 	stub.mu.Unlock()
-	return stub.plan, stub.err
+	return plan, stub.err
+}
+
+func invocationCapabilityObservation(requirements []modelrouting.CapabilityRequirement) []modelrouting.CapabilityRequirement {
+	observed := make([]modelrouting.CapabilityRequirement, 0, len(requirements))
+	for _, requirement := range requirements {
+		origins := make([]string, 0, len(requirement.Origins))
+		for _, origin := range requirement.Origins {
+			if origin != modelrouting.CapabilityOriginProfileAlwaysRequired {
+				origins = append(origins, origin)
+			}
+		}
+		if len(origins) > 0 {
+			observedRequirement := modelrouting.CapabilityRequirement{
+				CapabilityID: requirement.CapabilityID,
+				Origins:      origins,
+			}
+			if requirement.FunctionToolChoice != nil {
+				observedRequirement.FunctionToolChoice = toolChoiceConstraint(
+					requirement.FunctionToolChoice.DeclaredFunctionNames,
+					requirement.FunctionToolChoice.SelectedFunctionName,
+				)
+			}
+			observed = append(observed, observedRequirement)
+		}
+	}
+	return observed
 }
 
 type executionCoordinatorStub struct {
@@ -200,7 +381,8 @@ func executionTestPlan(t *testing.T, mode modelrouting.Mode, operation modeloper
 	plan := modelrouting.Plan{
 		AuthorityMode: mode, PublicModelID: evidence.PublicModelID, PublicModel: "public-model",
 		ModelOperationID: string(operation), PublicContextLimit: 128000, PublicOutputLimit: 8192,
-		ExecutionProfileID: modelprofile.UnverifiedProfileID, ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
+		RequestDefaultOutputLimit: 8192,
+		ExecutionProfileID:        modelprofile.UnverifiedProfileID, ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
 		TokenizerProfileID: modelprofile.TokenizerByteUpperID, TokenizerProfileVersion: modelprofile.TokenizerByteUpperVersion,
 		SnapshotHash:     evidence.SnapshotHash,
 		RuntimeReleaseID: evidence.RuntimeReleaseID, RuntimeReleaseRef: evidence.RuntimeReleaseRef,
@@ -208,6 +390,7 @@ func executionTestPlan(t *testing.T, mode modelrouting.Mode, operation modeloper
 	}
 	setExecutionTestProfile(t, &plan, modelprofile.UnverifiedProfileID, modelprofile.UnverifiedProfileVersion)
 	if mode == modelrouting.ModeLegacy {
+		plan.RequestDefaultOutputLimit = 0
 		plan.PublicModelID = 0
 		plan.SnapshotHash = "legacy-snapshot"
 		plan.RuntimeReleaseID = 0
@@ -231,6 +414,9 @@ func setExecutionTestProfile(t *testing.T, plan *modelrouting.Plan, id, version 
 	plan.ReasoningProfile = profile.ReasoningProfile
 	plan.CacheUsageProfile = profile.CacheUsageProfile
 	plan.ModelProtocolProfile = profile.ProtocolProfile
+	if profile.DefaultOutputLimit > 0 {
+		plan.RequestDefaultOutputLimit = profile.DefaultOutputLimit
+	}
 }
 
 func executionTestDB() *testutil.MockDB {
@@ -474,8 +660,61 @@ func TestModelExecutionCapabilityNoRoutePrecedesFreeze(t *testing.T) {
 	}
 	planner.mu.Lock()
 	defer planner.mu.Unlock()
-	if len(planner.requests) != 1 || len(planner.requests[0].RequiredCapabilities) != 1 || planner.requests[0].RequiredCapabilities[0] != modelCapabilityTools {
+	if len(planner.requests) != 1 || len(planner.requests[0].InvocationCapabilities) != 1 || planner.requests[0].InvocationCapabilities[0].CapabilityID != modelCapabilityTools {
 		t.Fatalf("planner did not receive exact tool capability: %#v", planner.requests)
+	}
+}
+
+func TestKnownTypedProviderExtensionsReachPlannerWithExactCapabilities(t *testing.T) {
+	tests := []struct {
+		name, profileID, profileVersion string
+		body, publicModel               string
+		want                            []string
+	}{
+		{name: "DeepSeek disabled reasoning is a baseline invocation", profileID: "deepseek.v4-flash.api", profileVersion: "1.4.0", publicModel: "deepseek-v4-flash", body: `{"model":"deepseek-v4-flash","messages":[],"thinking":{"type":"disabled"}}`, want: []string{}},
+		{name: "DeepSeek enabled reasoning requires route evidence", profileID: "deepseek.v4-flash.api", profileVersion: "1.4.0", publicModel: "deepseek-v4-flash", body: `{"model":"deepseek-v4-flash","messages":[],"thinking":{"type":"enabled"}}`, want: []string{"reasoning"}},
+		{name: "DeepSeek omitted provider-default reasoning requires route evidence", profileID: "deepseek.v4-flash.api", profileVersion: "1.4.0", publicModel: "deepseek-v4-flash", body: `{"model":"deepseek-v4-flash","messages":[]}`, want: []string{"reasoning_effort"}},
+		{name: "Qwen boolean false reasoning is a baseline invocation", profileID: "qwen.3.8-max.api", profileVersion: "1.8.0", publicModel: "qwen3.8-max", body: `{"model":"qwen3.8-max","messages":[],"enable_thinking":false}`, want: []string{}},
+		{name: "Qwen reasoning and tool stream", profileID: "qwen.3.8-max.api", profileVersion: "1.8.0", publicModel: "qwen3.8-max", body: `{"model":"qwen3.8-max","messages":[],"stream":true,"tools":[{"type":"function","function":{"name":"lookup","description":"Lookup"}}],"tool_stream":true,"enable_thinking":true,"thinking_budget":4096,"preserve_thinking":true}`, want: []string{"reasoning", "reasoning_budget", "streaming", "tool_stream", "tools"}},
+		{name: "Qwen search", profileID: "qwen.3.8-max.api", profileVersion: "1.7.0", publicModel: "qwen3.8-max", body: `{"model":"qwen3.8-max","messages":[],"enable_search":true,"search_options":{"search_strategy":"turbo"}}`, want: []string{"builtin_web_search_request", "reasoning"}},
+		{name: "Hy3 search", profileID: "hy3.api", profileVersion: "1.6.0", publicModel: "hy3", body: `{"model":"hy3","messages":[],"web_search_options":{"enable":true,"search_source":"lite"}}`, want: []string{"builtin_web_search_request"}},
+		{name: "Qwen explicit cache", profileID: "qwen.3.8-max.api", profileVersion: "1.7.0", publicModel: "qwen3.8-max", body: `{"model":"qwen3.8-max","prompt_cache_options":{"mode":"explicit","ttl":"30m"},"messages":[{"role":"system","content":[{"type":"text","text":"prefix","prompt_cache_breakpoint":{"mode":"explicit"}}]}]}`, want: []string{"explicit_prompt_cache", "prompt_cache", "reasoning"}},
+		{name: "Qwen remote media", profileID: "qwen.3.8-max.api", profileVersion: "1.7.0", publicModel: "qwen3.8-max", body: `{"model":"qwen3.8-max","messages":[{"role":"user","content":[{"type":"image_url","image_url":"https://example.test/image.webp"},{"type":"video_url","video_url":"https://example.test/video.mp4"}]}]}`, want: []string{"reasoning", "video", "vision"}},
+		{name: "MiMo remote media", profileID: "mimo.v2.5.api", profileVersion: "1.6.0", publicModel: "mimo-v2.5", body: `{"model":"mimo-v2.5","messages":[{"role":"user","content":[{"type":"input_audio","input_audio":{"data":"https://example.test/audio.wav"}},{"type":"video_url","video_url":"https://example.test/video.mp4","fps":1,"media_resolution":"default"}]}]}`, want: []string{"audio", "reasoning", "video"}},
+		{name: "Doubao Turbo provider-default effort", profileID: "doubao.seed-2.1-turbo.api", profileVersion: "1.1.0", publicModel: "doubao-seed-2-1-turbo-260628", body: `{"model":"doubao-seed-2-1-turbo-260628","messages":[]}`, want: []string{"reasoning_effort"}},
+		{name: "Doubao Turbo explicit disabled effort", profileID: "doubao.seed-2.1-turbo.api", profileVersion: "1.1.0", publicModel: "doubao-seed-2-1-turbo-260628", body: `{"model":"doubao-seed-2-1-turbo-260628","messages":[],"reasoning_effort":"minimal"}`, want: []string{"reasoning_effort"}},
+		{name: "Doubao Evolving plain Chat core", profileID: "doubao.seed-evolving.api", profileVersion: "1.2.0", publicModel: "doubao-seed-evolving", body: `{"model":"doubao-seed-evolving","messages":[]}`, want: []string{}},
+		{name: "Doubao Evolving provider-default reasoning", profileID: "doubao.seed-evolving.api", profileVersion: "1.3.0", publicModel: "doubao-seed-evolving", body: `{"model":"doubao-seed-evolving","messages":[]}`, want: []string{"reasoning_effort"}},
+		{name: "Doubao Evolving explicit thinking", profileID: "doubao.seed-evolving.api", profileVersion: "1.3.0", publicModel: "doubao-seed-evolving", body: `{"model":"doubao-seed-evolving","messages":[],"thinking":{"type":"enabled"}}`, want: []string{"reasoning"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encKey := []byte("0123456789abcdef0123456789abcdef")
+			plan := modelrouting.Plan{}
+			setExecutionTestProfile(t, &plan, test.profileID, test.profileVersion)
+			planner := &executionPlannerStub{plan: plan, err: modelrouting.ErrNoRoute}
+			relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+			if err := relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, planner, &executionCoordinatorStub{}, routingpolicy.Default()); err != nil {
+				t.Fatal(err)
+			}
+			recorder := httptest.NewRecorder()
+			relay.HandleChatCompletion(recorder, executionRequest(http.MethodPost, "/v1/chat/completions", "req-known-extension", test.body))
+			if recorder.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			planner.mu.Lock()
+			defer planner.mu.Unlock()
+			if len(planner.requests) != 1 {
+				t.Fatalf("planner requests=%#v want one request", planner.requests)
+			}
+			got := make([]string, len(planner.requests[0].InvocationCapabilities))
+			for index := range planner.requests[0].InvocationCapabilities {
+				got[index] = planner.requests[0].InvocationCapabilities[index].CapabilityID
+			}
+			if !slices.Equal(got, test.want) {
+				t.Fatalf("planner requests=%#v want capabilities=%v", planner.requests, test.want)
+			}
+		})
 	}
 }
 
@@ -501,15 +740,6 @@ func TestModelExecutionLimitsRejectBeforeFreezeAttemptAndNetwork(t *testing.T) {
 			body:     `{"model":"public-model","messages":[{"role":"user","content":"hello"}],"max_tokens":1}`,
 			wantCode: "validation_error.context_length_exceeded", handle: (*Relay).HandleChatCompletion,
 			editPlan: func(plan *modelrouting.Plan) { plan.Routes[0].MaxContext = 1 },
-		},
-		{
-			name:      "reasoning request without an exact implicit wire limit",
-			operation: modeloperation.IDChatCompletions, path: "/v1/chat/completions",
-			body:     `{"model":"public-model","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"high"}`,
-			wantCode: "validation_error.output_limit_required", handle: (*Relay).HandleChatCompletion,
-			editPlan: func(plan *modelrouting.Plan) {
-				setExecutionTestProfile(t, plan, "deepseek.v4-pro.api", "1.0.0")
-			},
 		},
 		{
 			name:      "K3 invalid reasoning effort",

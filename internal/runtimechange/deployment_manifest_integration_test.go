@@ -685,6 +685,28 @@ SELECT
 func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := t.Context()
+	for _, name := range []string{
+		"000093_deepseek_function_tool_probe_contract_v2.down.sql",
+		"000092_deepseek_reasoning_tool_choice_contract.down.sql",
+		"000091_deepseek_chat_tools_json_capabilities.down.sql",
+		"000090_deepseek_chat_reasoning_capabilities.down.sql",
+		"000089_deepseek_chat_sse_usage_contract_v2.down.sql",
+		"000088_model_capability_execution_qualification.down.sql",
+		"000087_anthropic_messages_tools_public_binding.down.sql",
+		"000086_exact_public_execution_bindings.down.sql",
+		"000085_model_execution_plan_freeze_fence.down.sql",
+	} {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+	}
+	currencyDraftDown, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(currencyDraftDown))
+	require.NoError(t, err)
 	unitMeterDown, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
 	))
@@ -1284,6 +1306,20 @@ func createCanonicalDeploymentFixture(
 	priority, weight int,
 ) canonicalDeploymentFixture {
 	t.Helper()
+	return createCanonicalDeploymentFixtureWithProduct(
+		t, pool, suffix, channelStatus, priority, weight,
+		"custom", "https://provider.invalid", "upstream-v2-model-"+suffix,
+	)
+}
+
+func createCanonicalDeploymentFixtureWithProduct(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	suffix, channelStatus string,
+	priority, weight int,
+	provider, baseURL, upstreamModel string,
+) canonicalDeploymentFixture {
+	t.Helper()
 	ctx := context.Background()
 	fixture := canonicalDeploymentFixture{
 		OrgID:              testutil.NewTestOrg(t, pool),
@@ -1296,7 +1332,7 @@ func createCanonicalDeploymentFixture(
 		ProtocolProfileID:  "integration.openai.chat.v1",
 		ProtocolVersion:    "1.0.0",
 	}
-	fixture.UpstreamModel = "upstream-" + fixture.ModelName
+	fixture.UpstreamModel = upstreamModel
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
 VALUES ($1,$2,'fixture','platform_admin','platform_admin','active') RETURNING id`,
@@ -1305,15 +1341,15 @@ VALUES ($1,$2,'fixture','platform_admin','platform_admin','active') RETURNING id
 INSERT INTO model_registry (
     org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,
     context_length,output_limit)
-VALUES ($1,$2,$2,'custom','ga',TRUE,128000,8192) RETURNING id`, fixture.OrgID, fixture.ModelName).Scan(&fixture.PublicModelID))
+VALUES ($1,$2,$2,$3,'ga',TRUE,128000,8192) RETURNING id`, fixture.OrgID, fixture.ModelName, provider).Scan(&fixture.PublicModelID))
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO channels (
     name,provider,base_url,models,model_mapping,adapter_type,adapter_config,
     priority,routing_weight,status,circuit_state,routing_epoch)
-VALUES ($1,'custom','https://provider.invalid',$2,jsonb_build_object($2::text,$3::text),
+VALUES ($1,$7,$8,$2,jsonb_build_object($2::text,$3::text),
         'openai_compatible','{}',$4,$5,$6,'healthy',1)
 RETURNING id,routing_epoch`, "v2-channel-"+suffix, fixture.ModelName,
-		fixture.UpstreamModel, priority, weight, channelStatus).Scan(
+		fixture.UpstreamModel, priority, weight, channelStatus, provider, baseURL).Scan(
 		&fixture.ChannelID, &fixture.ChannelEpoch,
 	))
 	var legacyKeyID int64
@@ -1323,8 +1359,8 @@ VALUES ($1,'fixture',$2,'active',1) RETURNING id`, fixture.ChannelID, fixture.Mo
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO provider_connections (
     legacy_channel_id,name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
-VALUES ($1,$2,'custom','https://provider.invalid','openai_compatible','{}','enabled',1)
-RETURNING id`, fixture.ChannelID, "v2-connection-"+suffix).Scan(&fixture.ConnectionID))
+VALUES ($1,$2,$3,$4,'openai_compatible','{}','enabled',1)
+RETURNING id`, fixture.ChannelID, "v2-connection-"+suffix, provider, baseURL).Scan(&fixture.ConnectionID))
 	require.NoError(t, pool.QueryRow(ctx, `
 INSERT INTO model_deployments (
     customer_org_id,public_model_id,connection_id,upstream_model,admin_state,

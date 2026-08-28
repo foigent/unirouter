@@ -23,12 +23,15 @@ func (profile descriptorOverrideProfile) Descriptor() Descriptor {
 func TestRegistryIsFixedAndDescriptorsAreDefensive(t *testing.T) {
 	registry := NewRegistry()
 	descriptors := registry.Descriptors()
-	if len(descriptors) != 4 {
-		t.Fatalf("descriptors=%d want 4", len(descriptors))
+	if len(descriptors) != 7 {
+		t.Fatalf("descriptors=%d want 7", len(descriptors))
 	}
 	want := []string{
 		ProfileOpenAIResponsesText,
+		ProfileOpenAIResponsesTextV2,
 		ProfileAnthropicMessagesText,
+		ProfileAnthropicMessagesTextV2,
+		ProfileAnthropicMessagesTextV3,
 		ProfileCohereRerankV2,
 		ProfileOpenAIImageGPT,
 	}
@@ -40,8 +43,8 @@ func TestRegistryIsFixedAndDescriptorsAreDefensive(t *testing.T) {
 			t.Fatalf("profile became charge authority: %+v", descriptor)
 		}
 	}
-	if descriptors[3].RuntimeState != RuntimeRepositoryImageV1 {
-		t.Fatalf("image runtime evidence drifted: %+v", descriptors[3])
+	if descriptors[6].RuntimeState != RuntimeRepositoryImageV1 {
+		t.Fatalf("image runtime evidence drifted: %+v", descriptors[6])
 	}
 	descriptors[0].SupportedModalities[0] = "mutated"
 	if NewRegistry().Descriptors()[0].SupportedModalities[0] != "text" {
@@ -89,6 +92,32 @@ func TestRegistryResolveRequiresExactProfileIdentity(t *testing.T) {
 	var unavailable *Registry
 	_, err := unavailable.Resolve(ProfileOpenAIResponsesText, "1.0.0")
 	assertProtocolConfigurationError(t, err, "registry_unavailable")
+}
+
+func TestResponsesV2StreamSelectionCannotUseNonStreamParser(t *testing.T) {
+	profile, err := NewRegistry().Resolve(ProfileOpenAIResponsesTextV2, "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, binding, err := profile.BuildRequest(context.Background(), BuildInput{
+		BaseURL: "https://api.openai.example", APIKey: "secret", RequestID: "req-stream-v2",
+		RequestedModel: "public-sol", MappedModel: "gpt-5.6-sol",
+		Body: []byte(`{"model":"public-sol","input":"hello","max_output_tokens":64,"stream":true}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := io.ReadAll(request.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope map[string]json.RawMessage
+	if json.Unmarshal(wire, &envelope) != nil || string(envelope["stream"]) != "true" ||
+		string(envelope["store"]) != "false" {
+		t.Fatalf("wire=%s", wire)
+	}
+	_, err = profile.ParseResponse(context.Background(), binding, http.StatusOK, []byte(`{}`))
+	assertProtocolConfigurationError(t, err, "streaming_response_requires_event_parser")
 }
 
 func TestRegistryNeverImplicitlySelectsLatestVersion(t *testing.T) {

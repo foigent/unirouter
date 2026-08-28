@@ -60,18 +60,19 @@ func NormalizeDeploymentDraft(request DeploymentDraftRequest) (DeploymentDraftRe
 		route.ProtocolProfileID = profileID
 		route.ProtocolProfileVersion = profileVersion
 		if modelqualification.IsQualificationRequired(route.ModelOperationID) {
-			binding, bindingErr := modelqualification.CompiledBinding(route.ModelOperationID)
-			if bindingErr != nil || route.PublicPath != binding.PublicPath ||
-				route.ProtocolProfileID != binding.ProtocolProfileID ||
-				route.ProtocolProfileVersion != binding.ProtocolProfileVersion ||
-				route.ExecutorContractVersion != binding.ExecutorContractVersion {
+			binding := modelqualification.Binding{
+				OperationID: route.ModelOperationID, PublicPath: route.PublicPath,
+				ProtocolProfileID: route.ProtocolProfileID, ProtocolProfileVersion: route.ProtocolProfileVersion,
+				ExecutorContractVersion: route.ExecutorContractVersion,
+			}
+			if modelqualification.ValidateCompiledBinding(binding) != nil {
 				return DeploymentDraftRequest{}, fmt.Errorf("%w: deployment_routes[%d] execution support binding", ErrInvalid, index)
 			}
 			if route.PublicExecutionBindingID != 0 || route.DeliveryContractVersion != "" ||
 				route.ChargeContractVersion != "" || route.IdempotencyContractVersion != "" {
 				return DeploymentDraftRequest{}, fmt.Errorf("%w: deployment_routes[%d] public execution binding is server-owned", ErrInvalid, index)
 			}
-			publicBinding, publicBindingErr := modelqualification.CompiledPublicBinding(route.ModelOperationID)
+			publicBinding, publicBindingErr := modelqualification.CompiledPublicBindingFor(binding)
 			if publicBindingErr != nil {
 				return DeploymentDraftRequest{}, fmt.Errorf("%w: deployment_routes[%d] public execution support", ErrInvalid, index)
 			}
@@ -419,7 +420,7 @@ SELECT deployment.customer_org_id,deployment.public_model_id,
 			qualificationExecutor != route.ExecutorContractVersion || currentHTTPSOrigin == "" {
 			return deploymentRouteRuntime{}, fmt.Errorf("%w: deployment operation lacks current production qualification", ErrConflict)
 		}
-		publicBinding, publicBindingErr := modelqualification.CompiledPublicBinding(route.ModelOperationID)
+		publicBinding, publicBindingErr := modelqualification.CompiledPublicBindingFor(binding)
 		if publicBindingErr != nil || route.DeliveryContractVersion != publicBinding.DeliveryContractVersion ||
 			route.ChargeContractVersion != publicBinding.ChargeContractVersion ||
 			route.IdempotencyContractVersion != publicBinding.IdempotencyContractVersion {
@@ -607,7 +608,7 @@ SELECT $1::BIGINT,$2::BIGINT,$3::BIGINT,$4::BIGINT,$5::INTEGER,
   FROM model_operation_execution_qualifications qualification
   JOIN model_deployments deployment ON deployment.id=qualification.deployment_id
   JOIN users actor ON actor.id=$6 AND actor.org_id=$7 AND actor.status='active'
-  JOIN model_operation_current_public_execution_contracts contract
+  JOIN model_operation_exact_public_execution_contracts contract
     ON contract.operation_id=qualification.operation_id
    AND contract.public_path=qualification.public_path
    AND contract.protocol_profile_id=qualification.protocol_profile_id

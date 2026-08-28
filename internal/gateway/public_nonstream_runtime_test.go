@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,22 +17,52 @@ import (
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 )
 
 type publicRuntimePlanner struct {
-	events *[]string
-	plan   modelrouting.Plan
+	events       *[]string
+	plan         modelrouting.Plan
+	requirements []modelrouting.CapabilityRequirement
 }
 
 func (planner *publicRuntimePlanner) Plan(_ context.Context, request modelrouting.Request) (modelrouting.Plan, error) {
 	*planner.events = append(*planner.events, "plan")
+	expectedPublicModel := planner.plan.PublicModel
+	if expectedPublicModel == "" {
+		expectedPublicModel = "public-text"
+	}
+	expectedOperation := planner.plan.ModelOperationID
+	if expectedOperation == "" {
+		expectedOperation = string(modeloperation.IDResponses)
+	}
 	if request.Mode != modelrouting.ModeCanonical || request.CustomerOrgID != 11 ||
-		request.PublicModel != "public-text" || request.ModelOperationID != string(modeloperation.IDResponses) {
+		request.PublicModel != expectedPublicModel || request.ModelOperationID != expectedOperation {
 		return modelrouting.Plan{}, errors.New("unexpected public plan request")
 	}
-	return planner.plan, nil
+	plan := planner.plan
+	if request.DeriveInvocationCapabilities != nil {
+		profile, ok := modelprofile.Lookup(plan.ExecutionProfileID, plan.ExecutionProfileVersion)
+		if !ok {
+			return modelrouting.Plan{}, errors.New("public planner fixture profile is unavailable")
+		}
+		requirements, err := request.DeriveInvocationCapabilities(profile)
+		if err != nil {
+			return modelrouting.Plan{}, err
+		}
+		slices.SortFunc(requirements, func(left, right modelrouting.CapabilityRequirement) int {
+			return strings.Compare(left.CapabilityID, right.CapabilityID)
+		})
+		plan.CapabilityRequirements = requirements
+		planner.requirements = slices.Clone(requirements)
+		plan.RequiredCapabilities = make([]string, len(requirements))
+		for index := range requirements {
+			plan.RequiredCapabilities[index] = requirements[index].CapabilityID
+		}
+	}
+	return plan, nil
 }
 
 type publicRuntimeCoordinator struct {
@@ -88,17 +119,18 @@ func (coordinator *publicRuntimeCoordinator) MarkCredentialRateLimited(context.C
 }
 
 type publicRuntimeBilling struct {
-	events       *[]string
-	freeze       []billing.FreezeRequest
-	completions  []billing.ProviderAttemptCompletion
-	prepared     []billing.SettleRequest
-	helds        []billing.SettleRequest
-	holdReasons  []string
-	deliveries   []billing.DeliveryEvent
-	settled      []billing.SettleRequest
-	cancelled    int
-	prepareError error
-	cancelError  error
+	events          *[]string
+	freeze          []billing.FreezeRequest
+	completions     []billing.ProviderAttemptCompletion
+	prepared        []billing.SettleRequest
+	helds           []billing.SettleRequest
+	holdReasons     []string
+	deliveries      []billing.DeliveryEvent
+	settled         []billing.SettleRequest
+	cancelled       int
+	prepareError    error
+	cancelError     error
+	completionError error
 }
 
 func (service *publicRuntimeBilling) Freeze(_ context.Context, request billing.FreezeRequest) (*billing.FreezeResult, error) {
@@ -110,7 +142,7 @@ func (service *publicRuntimeBilling) Freeze(_ context.Context, request billing.F
 func (service *publicRuntimeBilling) CompleteProviderAttempt(_ context.Context, request billing.ProviderAttemptCompletion) error {
 	*service.events = append(*service.events, "complete:"+request.Outcome)
 	service.completions = append(service.completions, request)
-	return nil
+	return service.completionError
 }
 
 func (service *publicRuntimeBilling) PrepareNonStreamDelivery(_ context.Context, request billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
@@ -204,7 +236,7 @@ func TestPublicNonStreamOrchestratorSuccessUsesExactOrderAndCanonicalBody(t *tes
 	if err := fixture.orchestrator.execute(t.Context(), writer, fixture.request); err != nil {
 		t.Fatal(err)
 	}
-	want := "guard:input,plan,build:ciphertext-1,build:ciphertext-2,freeze,authorize:1,provider:provider-1.example,guard:output,complete:response_accepted,health:success,prepare_delivery,delivery:write_started,customer_write,delivery:completed,settle"
+	want := "plan,guard:input,build:ciphertext-1,build:ciphertext-2,freeze,authorize:1,provider:provider-1.example,guard:output,complete:response_accepted,health:success,prepare_delivery,delivery:write_started,customer_write,delivery:completed,settle"
 	if got := strings.Join(events, ","); got != want {
 		t.Fatalf("order=%s\nwant=%s", got, want)
 	}
@@ -230,6 +262,392 @@ func TestPublicNonStreamOrchestratorSuccessUsesExactOrderAndCanonicalBody(t *tes
 	}
 }
 
+func TestPublicResponsesReasoningEffortIsBoundToExactExecutionProfile(t *testing.T) {
+	events := []string{}
+	fixture := newPublicRuntimeFixture(t, &events, 1)
+	fixture.request.Body = []byte(`{
+		"model":"public-text","input":"hello","max_output_tokens":64,
+		"reasoning":{"effort":"xhigh"}
+	}`)
+	fixture.planner.plan.ExecutionProfileVersion = "1.2.0"
+	fixture.planner.plan.RequiredCapabilities = []string{modelprofile.CapabilityReasoningEffort}
+	writer := &publicRuntimeWriter{events: &events}
+	if err := fixture.orchestrator.execute(t.Context(), writer, fixture.request); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fixture.providerBodies["provider-1.example"], `"reasoning":{"effort":"xhigh"}`) {
+		t.Fatalf("reasoning effort was not preserved: %s", fixture.providerBodies["provider-1.example"])
+	}
+
+	events = nil
+	terraCurrent := newPublicRuntimeFixture(t, &events, 1)
+	terraCurrent.request.Body = fixture.request.Body
+	terraCurrent.planner.plan.ExecutionProfileID = "openai.gpt-5.6-terra.responses"
+	terraCurrent.planner.plan.ExecutionProfileVersion = "1.2.0"
+	terraCurrent.planner.plan.RequiredCapabilities = []string{modelprofile.CapabilityReasoningEffort}
+	if err := terraCurrent.orchestrator.execute(t.Context(), &publicRuntimeWriter{events: &events}, terraCurrent.request); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(terraCurrent.providerBodies["provider-1.example"], `"reasoning":{"effort":"xhigh"}`) {
+		t.Fatalf("Terra reasoning effort was not preserved: %s", terraCurrent.providerBodies["provider-1.example"])
+	}
+
+	events = nil
+	lunaCurrent := newPublicRuntimeFixture(t, &events, 1)
+	lunaCurrent.request.Body = fixture.request.Body
+	lunaCurrent.planner.plan.ExecutionProfileID = "openai.gpt-5.6-luna.responses"
+	lunaCurrent.planner.plan.ExecutionProfileVersion = "1.2.0"
+	lunaCurrent.planner.plan.RequiredCapabilities = []string{modelprofile.CapabilityReasoningEffort}
+	if err := lunaCurrent.orchestrator.execute(t.Context(), &publicRuntimeWriter{events: &events}, lunaCurrent.request); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(lunaCurrent.providerBodies["provider-1.example"], `"reasoning":{"effort":"xhigh"}`) {
+		t.Fatalf("Luna reasoning effort was not preserved: %s", lunaCurrent.providerBodies["provider-1.example"])
+	}
+
+	events = nil
+	core := newPublicRuntimeFixture(t, &events, 1)
+	core.request.Body = fixture.request.Body
+	err := core.orchestrator.execute(t.Context(), &publicRuntimeWriter{events: &events}, core.request)
+	if !errors.Is(err, errPublicNonStreamRequestInvalid) || strings.Join(events, ",") != "plan" ||
+		len(core.billing.freeze) != 0 {
+		t.Fatalf("core profile crossed reasoning fence: err=%v events=%v freeze=%d", err, events, len(core.billing.freeze))
+	}
+
+	for _, profileID := range []string{"openai.gpt-5.6-terra.responses", "openai.gpt-5.6-luna.responses"} {
+		t.Run(profileID, func(t *testing.T) {
+			events = nil
+			coreSibling := newPublicRuntimeFixture(t, &events, 1)
+			coreSibling.request.Body = fixture.request.Body
+			coreSibling.planner.plan.ExecutionProfileID = profileID
+			err = coreSibling.orchestrator.execute(t.Context(), &publicRuntimeWriter{events: &events}, coreSibling.request)
+			if !errors.Is(err, errPublicNonStreamRequestInvalid) || strings.Join(events, ",") != "plan" ||
+				len(coreSibling.billing.freeze) != 0 {
+				t.Fatalf("core sibling crossed Sol reasoning fence: err=%v events=%v freeze=%d", err, events, len(coreSibling.billing.freeze))
+			}
+		})
+	}
+}
+
+func TestPublicClaudeSonnet5ContractDerivesProviderDefaultReasoningAndStrictMessagesPolicy(t *testing.T) {
+	profile, ok := modelprofile.Lookup("anthropic.claude-sonnet-5.api", "1.1.0")
+	if !ok {
+		t.Fatal("Claude Sonnet 5 exact Profile unavailable")
+	}
+	identity, err := modelqualification.CompiledPublicBinding(modelprofile.OperationAnthropicMessage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := publicRequestContractForProfile(profile, modelprofile.OperationAnthropicMessage, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contract.AnthropicMessages == nil || !contract.AnthropicMessages.RequireFinalUserMessage ||
+		!contract.AnthropicMessages.RefusalStopDetails ||
+		contract.AnthropicMessages.ResponseInferenceGeo || contract.AnthropicMessages.ResponseServiceTier ||
+		!slices.Equal(contract.AnthropicMessages.ForbiddenRootFields, []string{"temperature", "top_p"}) ||
+		!slices.Contains(contract.AnthropicMessages.AllowedResponseStops, "refusal") {
+		t.Fatalf("contract=%+v", contract)
+	}
+	body := []byte(`{"model":"public-claude","max_tokens":64,"messages":[{"role":"user","content":"hello"}]}`)
+	publicProfile, err := endpointprotocol.NewPublicNonStreamRegistry().Resolve(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := publicProfile.PrepareRequest(body, "public-claude", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requirements, err := publicInvocationCapabilityRequirements(profile, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requirements) != 1 || requirements[0].CapabilityID != modelprofile.CapabilityReasoning ||
+		!slices.Equal(requirements[0].Origins, []string{modelrouting.CapabilityOriginProviderDefault}) {
+		t.Fatalf("requirements=%+v", requirements)
+	}
+	if _, err := publicProfile.PrepareRequest(
+		[]byte(`{"model":"public-claude","max_tokens":64,"temperature":0.4,"messages":[{"role":"user","content":"hello"}]}`),
+		"public-claude", contract,
+	); err == nil {
+		t.Fatal("Sonnet 5 sampling override crossed the exact public contract")
+	}
+}
+
+func TestPublicClaudeSonnet5ControlsDeriveOriginsFromTypedPreparation(t *testing.T) {
+	profile, ok := modelprofile.Lookup("anthropic.claude-sonnet-5.api", "1.2.0")
+	if !ok {
+		t.Fatal("Claude Sonnet 5 controls Profile unavailable")
+	}
+	identity, err := modelqualification.CompiledPublicBinding(modelprofile.OperationAnthropicMessage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := publicRequestContractForProfile(profile, modelprofile.OperationAnthropicMessage, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contract.AnthropicMessages == nil || contract.AnthropicMessages.Reasoning == nil ||
+		!contract.AnthropicMessages.ResponseInferenceGeo || !contract.AnthropicMessages.ResponseServiceTier {
+		t.Fatalf("contract=%+v", contract)
+	}
+	reasoning := contract.AnthropicMessages.Reasoning
+	if reasoning.ThinkingObjectField != "thinking" || reasoning.OutputConfigObjectField != "output_config" ||
+		!slices.Equal(reasoning.AllowedThinkingTypes, []string{"adaptive", "disabled"}) ||
+		!slices.Equal(reasoning.AllowedEfforts, []string{"low", "medium", "high", "xhigh", "max"}) ||
+		reasoning.ThinkingProviderDefault != "adaptive" || reasoning.EffortProviderDefault != "high" {
+		t.Fatalf("reasoning=%+v", reasoning)
+	}
+	publicProfile, err := endpointprotocol.NewPublicNonStreamRegistry().Resolve(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name            string
+		body            string
+		reasoningOrigin string
+		effortOrigin    string
+	}{
+		{
+			name:            "provider defaults",
+			body:            `{"model":"public-claude","max_tokens":64,"messages":[{"role":"user","content":"hello"}]}`,
+			reasoningOrigin: modelrouting.CapabilityOriginProviderDefault,
+			effortOrigin:    modelrouting.CapabilityOriginProviderDefault,
+		},
+		{
+			name:            "explicit controls",
+			body:            `{"model":"public-claude","max_tokens":64,"thinking":{"type":"disabled"},"output_config":{"effort":"max"},"messages":[{"role":"user","content":"hello"}]}`,
+			reasoningOrigin: modelrouting.CapabilityOriginExplicitRequest,
+			effortOrigin:    modelrouting.CapabilityOriginExplicitRequest,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prepared, prepareErr := publicProfile.PrepareRequest([]byte(test.body), "public-claude", contract)
+			if prepareErr != nil {
+				t.Fatal(prepareErr)
+			}
+			requirements, deriveErr := publicInvocationCapabilityRequirements(profile, prepared)
+			if deriveErr != nil {
+				t.Fatal(deriveErr)
+			}
+			if len(requirements) != 2 || requirements[0].CapabilityID != modelprofile.CapabilityReasoning ||
+				requirements[0].Origins[0] != test.reasoningOrigin ||
+				requirements[1].CapabilityID != modelprofile.CapabilityReasoningEffort ||
+				requirements[1].Origins[0] != test.effortOrigin {
+				t.Fatalf("requirements=%+v", requirements)
+			}
+		})
+	}
+}
+
+func TestPublicClaudeOpus5ControlsModelDisabledThinkingEffortConstraint(t *testing.T) {
+	profile, ok := modelprofile.Lookup("anthropic.claude-opus-5.api", "1.1.0")
+	if !ok {
+		t.Fatal("Claude Opus 5 controls Profile unavailable")
+	}
+	identity, err := modelqualification.CompiledPublicBinding(modelprofile.OperationAnthropicMessage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := publicRequestContractForProfile(profile, modelprofile.OperationAnthropicMessage, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contract.AnthropicMessages == nil || contract.AnthropicMessages.Reasoning == nil ||
+		!contract.AnthropicMessages.ResponseInferenceGeo || !contract.AnthropicMessages.ResponseServiceTier ||
+		!slices.Equal(contract.AnthropicMessages.Reasoning.DisabledThinkingTypes, []string{"disabled"}) ||
+		!slices.Equal(contract.AnthropicMessages.Reasoning.EffortsAllowedDisabled, []string{"low", "medium", "high"}) {
+		t.Fatalf("contract=%+v", contract)
+	}
+	publicProfile, err := endpointprotocol.NewPublicNonStreamRegistry().Resolve(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := publicProfile.PrepareRequest(
+		[]byte(`{"model":"public-claude","max_tokens":64,"thinking":{"type":"disabled"},"output_config":{"effort":"high"},"messages":[{"role":"user","content":"hello"}]}`),
+		"public-claude", contract,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requirements, err := publicInvocationCapabilityRequirements(profile, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requirements) != 2 || requirements[0].Origins[0] != modelrouting.CapabilityOriginExplicitRequest ||
+		requirements[1].Origins[0] != modelrouting.CapabilityOriginExplicitRequest {
+		t.Fatalf("requirements=%+v", requirements)
+	}
+
+	for _, effort := range []string{"xhigh", "max"} {
+		t.Run("disabled "+effort+" fails before financial or provider authority", func(t *testing.T) {
+			events := []string{}
+			fixture := newPublicRuntimeFixture(t, &events, 1)
+			fixture.orchestrator.planner = &publicRuntimePlanner{events: &events, plan: modelrouting.Plan{
+				AuthorityMode: modelrouting.ModeCanonical,
+				PublicModel:   "public-claude", ModelOperationID: string(modeloperation.IDMessages),
+				ExecutionProfileID: "anthropic.claude-opus-5.api", ExecutionProfileVersion: "1.1.0",
+			}}
+			fixture.request.Operation = modeloperation.IDMessages
+			fixture.request.Path = modeloperation.PathMessages
+			fixture.request.Body = []byte(`{"model":"public-claude","max_tokens":64,"thinking":{"type":"disabled"},"output_config":{"effort":"` + effort + `"},"messages":[{"role":"user","content":"hello"}]}`)
+			fixture.request.PublicModel = "public-claude"
+			fixture.request.ResolvedModel = "public-claude"
+			err := fixture.orchestrator.execute(t.Context(), &publicRuntimeWriter{events: &events}, fixture.request)
+			if !errors.Is(err, errPublicNonStreamRequestInvalid) || strings.Join(events, ",") != "plan" ||
+				len(fixture.billing.freeze) != 0 || len(fixture.coordinator.attemptIDs) != 0 || len(fixture.providerBodies) != 0 {
+				t.Fatalf("invalid Opus combination crossed pre-dispatch fence: err=%v events=%v freeze=%d attempts=%d providerBodies=%v",
+					err, events, len(fixture.billing.freeze), len(fixture.coordinator.attemptIDs), fixture.providerBodies)
+			}
+		})
+	}
+}
+
+func TestPublicClaudeHaiku45ThinkingBudgetContractDerivesExactInvocationCapabilities(t *testing.T) {
+	profile, ok := modelprofile.Lookup("anthropic.claude-haiku-4.5.api", "1.1.0")
+	if !ok {
+		t.Fatal("Claude Haiku 4.5 thinking-budget Profile unavailable")
+	}
+	identity, err := modelqualification.CompiledPublicBinding(modelprofile.OperationAnthropicMessage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := publicRequestContractForProfile(profile, modelprofile.OperationAnthropicMessage, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contract.AnthropicMessages == nil || contract.AnthropicMessages.Reasoning == nil ||
+		!contract.AnthropicMessages.ResponseInferenceGeo || !contract.AnthropicMessages.ResponseServiceTier ||
+		!slices.Equal(contract.AnthropicMessages.ForbiddenRootFields, []string{"temperature", "top_p"}) {
+		t.Fatalf("contract=%+v", contract)
+	}
+	reasoning := contract.AnthropicMessages.Reasoning
+	if !slices.Equal(reasoning.AllowedThinkingTypes, []string{"enabled", "disabled"}) ||
+		reasoning.ThinkingProviderDefault != "disabled" || reasoning.BudgetField != "budget_tokens" ||
+		reasoning.BudgetMinimum != 1_024 || reasoning.BudgetMaximum != 63_999 ||
+		!slices.Equal(reasoning.BudgetRequiredTypes, []string{"enabled"}) ||
+		reasoning.ResponseThinkingTextMode != modelprofile.ReasoningResponseThinkingSummarized {
+		t.Fatalf("reasoning=%+v", reasoning)
+	}
+	publicProfile, err := endpointprotocol.NewPublicNonStreamRegistry().Resolve(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name        string
+		body        string
+		wantOrigins []string
+		wantCaps    []string
+		wantBudget  int64
+	}{
+		{
+			name:        "provider default disabled",
+			body:        `{"model":"public-claude","max_tokens":4096,"messages":[{"role":"user","content":"hello"}]}`,
+			wantCaps:    []string{modelprofile.CapabilityReasoning},
+			wantOrigins: []string{modelrouting.CapabilityOriginProviderDefault},
+		},
+		{
+			name:        "explicit enabled budget",
+			body:        `{"model":"public-claude","max_tokens":4096,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"hello"}]}`,
+			wantCaps:    []string{modelprofile.CapabilityReasoning, modelprofile.CapabilityReasoningBudget},
+			wantOrigins: []string{modelrouting.CapabilityOriginExplicitRequest, modelrouting.CapabilityOriginExplicitRequest},
+			wantBudget:  1024,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prepared, prepareErr := publicProfile.PrepareRequest([]byte(test.body), "public-claude", contract)
+			if prepareErr != nil {
+				t.Fatal(prepareErr)
+			}
+			if prepared.InvocationSemantics().ReasoningBudgetEffective != test.wantBudget {
+				t.Fatalf("semantics=%+v", prepared.InvocationSemantics())
+			}
+			requirements, deriveErr := publicInvocationCapabilityRequirements(profile, prepared)
+			if deriveErr != nil {
+				t.Fatal(deriveErr)
+			}
+			if len(requirements) != len(test.wantCaps) {
+				t.Fatalf("requirements=%+v", requirements)
+			}
+			for index := range requirements {
+				if requirements[index].CapabilityID != test.wantCaps[index] ||
+					!slices.Equal(requirements[index].Origins, []string{test.wantOrigins[index]}) {
+					t.Fatalf("requirements=%+v", requirements)
+				}
+			}
+		})
+	}
+}
+
+func TestPublicClaudeHaiku45InvalidThinkingBudgetsFailBeforeFreezeCredentialAndDispatch(t *testing.T) {
+	for name, body := range map[string]string{
+		"missing budget":            `{"model":"public-claude","max_tokens":4096,"thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hello"}]}`,
+		"budget below minimum":      `{"model":"public-claude","max_tokens":4096,"thinking":{"type":"enabled","budget_tokens":1023},"messages":[{"role":"user","content":"hello"}]}`,
+		"budget reaches max tokens": `{"model":"public-claude","max_tokens":4096,"thinking":{"type":"enabled","budget_tokens":4096},"messages":[{"role":"user","content":"hello"}]}`,
+		"adaptive thinking":         `{"model":"public-claude","max_tokens":4096,"thinking":{"type":"adaptive"},"messages":[{"role":"user","content":"hello"}]}`,
+		"effort":                    `{"model":"public-claude","max_tokens":4096,"output_config":{"effort":"high"},"messages":[{"role":"user","content":"hello"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			events := []string{}
+			fixture := newPublicRuntimeFixture(t, &events, 1)
+			fixture.orchestrator.planner = &publicRuntimePlanner{events: &events, plan: modelrouting.Plan{
+				AuthorityMode: modelrouting.ModeCanonical,
+				PublicModel:   "public-claude", ModelOperationID: string(modeloperation.IDMessages),
+				ExecutionProfileID: "anthropic.claude-haiku-4.5.api", ExecutionProfileVersion: "1.1.0",
+			}}
+			fixture.request.Operation = modeloperation.IDMessages
+			fixture.request.Path = modeloperation.PathMessages
+			fixture.request.Body = []byte(body)
+			fixture.request.PublicModel = "public-claude"
+			fixture.request.ResolvedModel = "public-claude"
+			err := fixture.orchestrator.execute(t.Context(), &publicRuntimeWriter{events: &events}, fixture.request)
+			if !errors.Is(err, errPublicNonStreamRequestInvalid) || strings.Join(events, ",") != "plan" ||
+				len(fixture.billing.freeze) != 0 || len(fixture.coordinator.attemptIDs) != 0 || len(fixture.providerBodies) != 0 {
+				t.Fatalf("invalid Haiku request crossed pre-dispatch fence: err=%v events=%v freeze=%d attempts=%d providerBodies=%v",
+					err, events, len(fixture.billing.freeze), len(fixture.coordinator.attemptIDs), fixture.providerBodies)
+			}
+		})
+	}
+}
+
+func TestPublicClaudeSonnet5InvalidControlsFailBeforeFreezeCredentialAndDispatch(t *testing.T) {
+	for name, body := range map[string]string{
+		"null thinking":      `{"model":"public-claude","max_tokens":64,"thinking":null,"messages":[{"role":"user","content":"hello"}]}`,
+		"unknown thinking":   `{"model":"public-claude","max_tokens":64,"thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hello"}]}`,
+		"thinking display":   `{"model":"public-claude","max_tokens":64,"thinking":{"type":"adaptive","display":"summarized"},"messages":[{"role":"user","content":"hello"}]}`,
+		"null output config": `{"model":"public-claude","max_tokens":64,"output_config":null,"messages":[{"role":"user","content":"hello"}]}`,
+		"unknown effort":     `{"model":"public-claude","max_tokens":64,"output_config":{"effort":"ultra"},"messages":[{"role":"user","content":"hello"}]}`,
+		"output format":      `{"model":"public-claude","max_tokens":64,"output_config":{"effort":"high","format":{"type":"json_schema"}},"messages":[{"role":"user","content":"hello"}]}`,
+		"sampling":           `{"model":"public-claude","max_tokens":64,"temperature":0.5,"messages":[{"role":"user","content":"hello"}]}`,
+		"assistant prefill":  `{"model":"public-claude","max_tokens":64,"messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"prefix"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			events := []string{}
+			fixture := newPublicRuntimeFixture(t, &events, 1)
+			plan := modelrouting.Plan{
+				AuthorityMode: modelrouting.ModeCanonical,
+				PublicModel:   "public-claude", ModelOperationID: string(modeloperation.IDMessages),
+				ExecutionProfileID: "anthropic.claude-sonnet-5.api", ExecutionProfileVersion: "1.2.0",
+			}
+			planner := &publicRuntimePlanner{events: &events, plan: plan}
+			fixture.orchestrator.planner = planner
+			fixture.request.Operation = modeloperation.IDMessages
+			fixture.request.Path = modeloperation.PathMessages
+			fixture.request.Body = []byte(body)
+			fixture.request.PublicModel = "public-claude"
+			fixture.request.ResolvedModel = "public-claude"
+			writer := &publicRuntimeWriter{events: &events}
+			err := fixture.orchestrator.execute(t.Context(), writer, fixture.request)
+			if !errors.Is(err, errPublicNonStreamRequestInvalid) || strings.Join(events, ",") != "plan" ||
+				len(fixture.billing.freeze) != 0 || len(fixture.coordinator.attemptIDs) != 0 ||
+				len(fixture.providerBodies) != 0 {
+				t.Fatalf("invalid request crossed pre-dispatch fence: err=%v events=%v freeze=%d attempts=%d providerBodies=%v",
+					err, events, len(fixture.billing.freeze), len(fixture.coordinator.attemptIDs), fixture.providerBodies)
+			}
+		})
+	}
+}
+
 func TestPublicNonStreamOrchestratorGuardFailureRetainsEvidenceWithoutDelivery(t *testing.T) {
 	for _, test := range []struct {
 		name      string
@@ -250,7 +668,7 @@ func TestPublicNonStreamOrchestratorGuardFailureRetainsEvidenceWithoutDelivery(t
 			if !errors.Is(err, errPublicNonStreamGuardFailed) || !errors.Is(err, test.wantCause) {
 				t.Fatalf("error=%v", err)
 			}
-			want := "guard:input,plan,build:ciphertext-1,freeze,authorize:1,provider:provider-1.example,guard:output,complete:response_accepted,health:success,hold:guardrail_withheld"
+			want := "plan,guard:input,build:ciphertext-1,freeze,authorize:1,provider:provider-1.example,guard:output,complete:response_accepted,health:success,hold:guardrail_withheld"
 			if got := strings.Join(events, ","); got != want {
 				t.Fatalf("order=%s\nwant=%s", got, want)
 			}
@@ -311,10 +729,97 @@ func TestPublicNonStreamOrchestratorExactM77FencePrecedesSecretFreezeAndNetwork(
 	if !errors.Is(err, errPublicNonStreamContractMismatch) {
 		t.Fatalf("error=%v", err)
 	}
-	if got := strings.Join(events, ","); got != "guard:input,plan" || len(fixture.billing.freeze) != 0 ||
+	if got := strings.Join(events, ","); got != "plan" || len(fixture.billing.freeze) != 0 ||
 		len(fixture.billing.completions) != 0 {
 		t.Fatalf("M75 route crossed exact fence: events=%s freeze=%d attempts=%d",
 			got, len(fixture.billing.freeze), len(fixture.billing.completions))
+	}
+}
+
+func TestPublicNonStreamOrchestratorOutputLimitFailsBeforeSecretFreezeAndNetwork(t *testing.T) {
+	events := []string{}
+	fixture := newPublicRuntimeFixture(t, &events, 1)
+	fixture.request.Body = []byte(`{"model":"public-text","input":"hello","max_output_tokens":8193}`)
+	err := fixture.orchestrator.execute(t.Context(), &publicRuntimeWriter{events: &events}, fixture.request)
+	if !errors.Is(err, errPublicNonStreamRequestInvalid) ||
+		strings.Join(events, ",") != "plan,guard:input" || len(fixture.billing.freeze) != 0 ||
+		len(fixture.coordinator.attemptIDs) != 0 || len(fixture.providerBodies) != 0 {
+		t.Fatalf("output bound crossed admission fence: err=%v events=%v", err, events)
+	}
+}
+
+func TestPublicNonStreamOrchestratorHistoricalUnverifiedBindingRemainsStrictV1(t *testing.T) {
+	for _, operation := range []modeloperation.ID{modeloperation.IDResponses, modeloperation.IDMessages} {
+		t.Run(string(operation), func(t *testing.T) {
+			events := []string{}
+			fixture := newPublicRuntimeFixture(t, &events, 1)
+			if operation == modeloperation.IDMessages {
+				fixture.planner.plan = publicRuntimePlanForProfileOperation(
+					t, 1, "anthropic.claude-sonnet-5.api", "1.1.0", operation,
+				)
+				fixture.request.Operation = operation
+				fixture.request.Path = modeloperation.PathMessages
+				fixture.request.Body = []byte(`{"model":"public-text","max_tokens":64,"messages":[{"role":"user","content":"hello"}]}`)
+			}
+			fixture.planner.plan.ExecutionProfileID = modelprofile.UnverifiedProfileID
+			fixture.planner.plan.ExecutionProfileVersion = modelprofile.UnverifiedProfileVersion
+			preparation, err := fixture.orchestrator.prepare(t.Context(), fixture.request, false)
+			if err != nil || preparation.identity.DeliveryContractVersion != endpointprotocol.PublicDeliveryContractV1 ||
+				len(fixture.planner.requirements) != 0 || len(fixture.billing.freeze) != 1 {
+				t.Fatalf("historical v1 preparation: err=%v requirements=%v", err, fixture.planner.requirements)
+			}
+		})
+	}
+}
+
+func TestPublicNonStreamOrchestratorHistoricalUnverifiedCannotAcquireCurrentCapabilities(t *testing.T) {
+	for _, name := range []string{"v2 binding", "stream", "reasoning", "tools"} {
+		t.Run(name, func(t *testing.T) {
+			events := []string{}
+			fixture := newPublicRuntimeFixture(t, &events, 1)
+			if name == "v2 binding" {
+				fixture.planner.plan = publicRuntimePlanForProfile(t, 1, "openai.gpt-5.6-sol.responses", "1.3.0")
+			}
+			fixture.planner.plan.ExecutionProfileID = modelprofile.UnverifiedProfileID
+			fixture.planner.plan.ExecutionProfileVersion = modelprofile.UnverifiedProfileVersion
+			switch name {
+			case "reasoning":
+				fixture.request.Body = []byte(`{"model":"public-text","input":"hello","max_output_tokens":64,"reasoning":{"effort":"high"}}`)
+			case "tools":
+				fixture.request.Body = []byte(`{"model":"public-text","input":"hello","max_output_tokens":64,"tools":[{"type":"web_search"}]}`)
+			}
+			_, err := fixture.orchestrator.prepare(t.Context(), fixture.request, name == "stream")
+			if (!errors.Is(err, errPublicNonStreamRequestInvalid) && !errors.Is(err, errPublicNonStreamContractMismatch)) ||
+				strings.Join(events, ",") != "plan" || len(fixture.billing.freeze) != 0 ||
+				len(fixture.coordinator.attemptIDs) != 0 || len(fixture.providerBodies) != 0 {
+				t.Fatalf("historical profile gained capabilities: err=%v events=%v", err, events)
+			}
+		})
+	}
+}
+
+func TestPublicNonStreamOrchestratorSelectsExactResponsesV2BindingForAddressableProfile(t *testing.T) {
+	events := []string{}
+	fixture := newPublicRuntimeFixture(t, &events, 1)
+	fixture.planner.plan = publicRuntimePlanForProfile(
+		t, 1, "openai.gpt-5.6-sol.responses", "1.3.0",
+	)
+	writer := &publicRuntimeWriter{events: &events}
+	if err := fixture.orchestrator.execute(t.Context(), writer, fixture.request); err != nil {
+		t.Fatal(err)
+	}
+	route := fixture.planner.plan.Routes[0]
+	if route.ProtocolProfileID != endpointprotocol.ProfileOpenAIResponsesTextV2 ||
+		route.ProtocolProfileVersion != "1.0.0" ||
+		route.ExecutorContractVersion != modelqualification.ResponsesDualExecutorContractV1 ||
+		route.PublicEvidence == nil ||
+		route.PublicEvidence.DeliveryContractVersion != endpointprotocol.PublicResponsesDeliveryContractV2 {
+		t.Fatalf("v2 route identity=%+v evidence=%+v", route, route.PublicEvidence)
+	}
+	if len(fixture.billing.freeze) != 1 ||
+		fixture.billing.freeze[0].ExecutionSnapshotHash != fixture.planner.plan.SnapshotHash ||
+		len(fixture.coordinator.attemptIDs) != 1 || writer.body.Len() == 0 {
+		t.Fatalf("v2 execution freeze=%+v attempts=%v body=%q", fixture.billing.freeze, fixture.coordinator.attemptIDs, writer.body.String())
 	}
 }
 
@@ -347,7 +852,7 @@ func TestPublicNonStreamOrchestratorExactM77FenceRejectsPlanEvidenceDriftBeforeS
 			if !errors.Is(err, errPublicNonStreamContractMismatch) {
 				t.Fatalf("error=%v", err)
 			}
-			if got := strings.Join(events, ","); got != "guard:input,plan" || len(fixture.billing.freeze) != 0 ||
+			if got := strings.Join(events, ","); got != "plan" || len(fixture.billing.freeze) != 0 ||
 				len(fixture.billing.completions) != 0 || len(fixture.coordinator.attemptIDs) != 0 {
 				t.Fatalf("drift crossed early fence: events=%s freeze=%d completions=%d attempts=%d",
 					got, len(fixture.billing.freeze), len(fixture.billing.completions), len(fixture.coordinator.attemptIDs))
@@ -388,7 +893,7 @@ func TestPublicNonStreamOrchestratorExactM77FenceRejectsStaticRouteDriftBeforeSe
 			if !errors.Is(err, errPublicNonStreamContractMismatch) {
 				t.Fatalf("error=%v", err)
 			}
-			if got := strings.Join(events, ","); got != "guard:input,plan" || len(fixture.billing.freeze) != 0 ||
+			if got := strings.Join(events, ","); got != "plan" || len(fixture.billing.freeze) != 0 ||
 				len(fixture.billing.completions) != 0 || len(fixture.coordinator.attemptIDs) != 0 {
 				t.Fatalf("static drift crossed early fence: events=%s freeze=%d completions=%d attempts=%d",
 					got, len(fixture.billing.freeze), len(fixture.billing.completions), len(fixture.coordinator.attemptIDs))
@@ -406,7 +911,7 @@ func TestPublicNonStreamOrchestratorHealthNonAppliedRetainsLiabilityAndStopsDeli
 	if !errors.Is(err, errPublicNonStreamHealthFailed) {
 		t.Fatalf("error=%v", err)
 	}
-	want := "guard:input,plan,build:ciphertext-1,freeze,authorize:1,provider:provider-1.example,guard:output,complete:response_accepted,health:success,hold:provider_attempt_unresolved"
+	want := "plan,guard:input,build:ciphertext-1,freeze,authorize:1,provider:provider-1.example,guard:output,complete:response_accepted,health:success,hold:provider_attempt_unresolved"
 	if got := strings.Join(events, ","); got != want {
 		t.Fatalf("order=%s\nwant=%s", got, want)
 	}
@@ -434,7 +939,7 @@ func TestPublicNonStreamOrchestratorUnknownLiabilityRemainsPendingWithoutCancelO
 		t.Fatalf("unknown liability mishandled: err=%v cancel=%d completions=%+v",
 			err, fixture.billing.cancelled, fixture.billing.completions)
 	}
-	want := "guard:input,plan,build:ciphertext-1,build:ciphertext-2,freeze,authorize:1,provider:unknown,complete:outcome_unknown,health:provider_failure"
+	want := "plan,guard:input,build:ciphertext-1,build:ciphertext-2,freeze,authorize:1,provider:unknown,complete:outcome_unknown,health:provider_failure"
 	if got := strings.Join(events, ","); got != want || len(fixture.billing.prepared) != 0 ||
 		len(fixture.billing.deliveries) != 0 || len(fixture.billing.settled) != 0 {
 		t.Fatalf("unknown liability order=%s prepared=%d delivery=%d settle=%d",
@@ -456,7 +961,7 @@ func TestPublicNonStreamOrchestratorUnusableSuccessRemainsPendingWithoutCancelOr
 		t.Fatalf("unusable success mishandled: err=%v cancel=%d completions=%+v",
 			err, fixture.billing.cancelled, fixture.billing.completions)
 	}
-	want := "guard:input,plan,build:ciphertext-1,build:ciphertext-2,freeze,authorize:1,provider:provider-1.example,complete:response_unusable,health:provider_failure"
+	want := "plan,guard:input,build:ciphertext-1,build:ciphertext-2,freeze,authorize:1,provider:provider-1.example,complete:response_unusable,health:provider_failure"
 	if got := strings.Join(events, ","); got != want || len(fixture.billing.prepared) != 0 ||
 		len(fixture.billing.deliveries) != 0 || len(fixture.billing.settled) != 0 {
 		t.Fatalf("unusable success order=%s prepared=%d delivery=%d settle=%d",
@@ -583,7 +1088,39 @@ func newPublicRuntimeFixture(t *testing.T, events *[]string, routeCount int) *pu
 
 func publicRuntimePlan(t *testing.T, routeCount int) modelrouting.Plan {
 	t.Helper()
-	identity, err := modelqualification.CompiledPublicBinding(string(modeloperation.IDResponses))
+	return publicRuntimePlanForProfile(t, routeCount, "openai.gpt-5.6-sol.responses", "1.1.0")
+}
+
+func publicRuntimePlanForProfile(
+	t *testing.T,
+	routeCount int,
+	executionProfileID string,
+	executionProfileVersion string,
+) modelrouting.Plan {
+	return publicRuntimePlanForProfileOperation(
+		t, routeCount, executionProfileID, executionProfileVersion, modeloperation.IDResponses,
+	)
+}
+
+func publicRuntimePlanForProfileOperation(
+	t *testing.T,
+	routeCount int,
+	executionProfileID string,
+	executionProfileVersion string,
+	operation modeloperation.ID,
+) modelrouting.Plan {
+	t.Helper()
+	profile, ok := modelprofile.Lookup(executionProfileID, executionProfileVersion)
+	if !ok {
+		t.Fatalf("profile %s@%s is unavailable", executionProfileID, executionProfileVersion)
+	}
+	binding, err := modelqualification.CompiledBindingFor(
+		string(operation), profile.ProtocolProfile, profile.ProtocolProfileVersion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := modelqualification.CompiledPublicBindingFor(binding)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +1138,7 @@ func publicRuntimePlan(t *testing.T, routeCount int) modelrouting.Plan {
 			PublicModelID:           1, DeploymentID: int64(index + 1), ConnectionID: int64(index + 10),
 			CredentialBindingID: int64(index + 20), ConnectionRevision: 1, DeploymentRevision: 1,
 			CircuitRevision: 1, CredentialStateRevision: 1, CredentialLinkedAt: now,
-			ModelOperationID: string(modeloperation.IDResponses), OperationRevision: 1,
+			ModelOperationID: string(operation), OperationRevision: 1,
 			ProtocolProfileID: identity.ProfileID, ProtocolProfileVersion: identity.ProfileVersion,
 			OperationEvidenceState: "production_approved", OperationEvidenceRef: "test:public-runtime",
 			OperationVerifiedAt: &now, CapabilityEvidence: []executionevidence.CapabilityEntry{},
@@ -631,7 +1168,8 @@ func publicRuntimePlan(t *testing.T, routeCount int) modelrouting.Plan {
 	}
 	return modelrouting.Plan{
 		AuthorityMode: modelrouting.ModeCanonical, PublicModelID: 1, PublicModel: "public-text",
-		ModelOperationID: string(modeloperation.IDResponses), PublicContextLimit: 128000, PublicOutputLimit: 8192,
+		ModelOperationID: string(operation), PublicContextLimit: 128000, PublicOutputLimit: 8192,
+		ExecutionProfileID: executionProfileID, ExecutionProfileVersion: executionProfileVersion,
 		SnapshotHash:     "mrs1_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		RuntimeReleaseID: 51, RuntimeReleaseRef: "rcr_public_runtime", RuntimeStage: "active", SlotVersion: 1,
 		Routes: routes,

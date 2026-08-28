@@ -31,11 +31,18 @@ func TestProviderAttemptPersistsCanonicalAndTruthfulVerifyEvidence(t *testing.T)
 	canonical := seedProviderAttemptCanonicalEvidence(t, pool, orgID, model)
 
 	requestID := "attempt-evidence-canonical"
-	freezeForInvariantTest(t, b, orgID, model, requestID, 100)
+	freezeForInvariantTestWithSnapshot(t, b, orgID, model, requestID, 100, canonical.SnapshotHash)
 	start := providerAttemptFixture(requestID, "attempt-canonical", orgID, 1, 1)
 	start.ChannelID = 0
 	start.ChannelKeyID = 0
+	start.ExecutionSnapshotHash = canonical.SnapshotHash
 	start.RouteEvidence = &canonical
+	wrongSnapshot := canonical
+	wrongSnapshot.SnapshotHash = "mrs1_" + strings.Repeat("d", 64)
+	wrongSnapshotStart := start
+	wrongSnapshotStart.ExecutionSnapshotHash = wrongSnapshot.SnapshotHash
+	wrongSnapshotStart.RouteEvidence = &wrongSnapshot
+	require.ErrorIs(t, b.BeginProviderAttempt(t.Context(), wrongSnapshotStart), ErrProviderAttemptConflict)
 
 	tx, err := pool.Begin(t.Context())
 	require.NoError(t, err)
@@ -72,7 +79,7 @@ SELECT route_authority_mode,route_execution_contract_source,route_evidence_hash,
 	require.Nil(t, storedChannelKeyID)
 
 	verifyRequestID := "attempt-evidence-verify-legacy"
-	freezeForInvariantTest(t, b, orgID, model, verifyRequestID, 100)
+	freezeForInvariantTestWithSnapshot(t, b, orgID, model, verifyRequestID, 100, canonical.SnapshotHash)
 	verify := canonical
 	verify.AuthorityMode = executionevidence.ModeVerify
 	verify.ExecutionContractSource = executionevidence.ContractSourceLegacyAdapter
@@ -92,6 +99,7 @@ SELECT route_authority_mode,route_execution_contract_source,route_evidence_hash,
 	verifyStart := providerAttemptFixture(verifyRequestID, "attempt-verify-legacy", orgID, 1, 1)
 	verifyStart.ChannelID = verify.LegacyChannelID
 	verifyStart.ChannelKeyID = verify.LegacyChannelKeyID
+	verifyStart.ExecutionSnapshotHash = verify.SnapshotHash
 	verifyStart.RouteEvidence = &verify
 	require.NoError(t, b.BeginProviderAttempt(t.Context(), verifyStart))
 
@@ -118,10 +126,11 @@ func TestProviderAttemptPersistsEvidenceV2AndExactPublicProjectionIntegration(t 
 	b := NewBilling(pool, nil)
 	evidence := seedProviderAttemptPublicEvidenceV2(t, pool, orgID, model)
 	requestID := "attempt-evidence-public-v2"
-	freezeForInvariantTest(t, b, orgID, model, requestID, 100)
+	freezeForInvariantTestWithSnapshot(t, b, orgID, model, requestID, 100, evidence.SnapshotHash)
 	start := providerAttemptFixture(requestID, "attempt-public-v2", orgID, 1, 1)
 	start.ChannelID = 0
 	start.ChannelKeyID = 0
+	start.ExecutionSnapshotHash = evidence.SnapshotHash
 	start.Endpoint = modeloperation.PathResponses
 	start.PublicRouteEvidence = &evidence
 	v1Public, err := evidence.RouteEvidenceV1()
@@ -253,10 +262,11 @@ func TestOwnedProviderAttemptAndTerminalHealthFenceAreReplaySafe(t *testing.T) {
 	b := NewBilling(pool, nil)
 	evidence := seedProviderAttemptCanonicalEvidence(t, pool, orgID, model)
 	requestID := "attempt-owned-health-fence"
-	freezeForInvariantTest(t, b, orgID, model, requestID, 100)
+	freezeForInvariantTestWithSnapshot(t, b, orgID, model, requestID, 100, evidence.SnapshotHash)
 	start := providerAttemptFixture(requestID, "attempt-owned", orgID, 1, 1)
 	start.ChannelID = 0
 	start.ChannelKeyID = 0
+	start.ExecutionSnapshotHash = evidence.SnapshotHash
 	start.RouteEvidence = &evidence
 	ownerHash := "sha256:" + strings.Repeat("1", 64)
 	otherOwnerHash := "sha256:" + strings.Repeat("2", 64)
@@ -385,6 +395,50 @@ UPDATE billing_provider_attempts SET health_outcome='success'
 	_, err = pool.Exec(t.Context(), `
 UPDATE provider_connections SET admin_state='disabled' WHERE id=$1`, evidence.ConnectionID)
 	require.NoError(t, err)
+	// This test deliberately continues into the pre-M85 schema to exercise the
+	// older dispatch-fence rollback guard. Discard only the M85-owned binding;
+	// the provider-attempt evidence that M73 must reject remains intact.
+	_, err = pool.Exec(t.Context(), `ALTER TABLE freeze_idempotency DISABLE TRIGGER freeze_execution_snapshot_immutable`)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `ALTER TABLE billing_provider_attempts DISABLE TRIGGER provider_attempt_execution_snapshot_immutable`)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `
+UPDATE freeze_idempotency SET execution_snapshot_hash=NULL WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `
+UPDATE billing_provider_attempts SET execution_snapshot_hash=NULL WHERE org_id=$1 AND request_id=$2`, orgID, requestID)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `ALTER TABLE freeze_idempotency ENABLE TRIGGER freeze_execution_snapshot_immutable`)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `ALTER TABLE billing_provider_attempts ENABLE TRIGGER provider_attempt_execution_snapshot_immutable`)
+	require.NoError(t, err)
+	// The newer public-binding migrations must be reversed before the M85
+	// guard can permit this isolated fixture to enter the legacy schema.
+	for _, name := range []string{
+		"000093_deepseek_function_tool_probe_contract_v2.down.sql",
+		"000092_deepseek_reasoning_tool_choice_contract.down.sql",
+		"000091_deepseek_chat_tools_json_capabilities.down.sql",
+		"000090_deepseek_chat_reasoning_capabilities.down.sql",
+		"000089_deepseek_chat_sse_usage_contract_v2.down.sql",
+		"000088_model_capability_execution_qualification.down.sql",
+		"000087_anthropic_messages_tools_public_binding.down.sql",
+		"000086_exact_public_execution_bindings.down.sql",
+	} {
+		down, readErr := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, readErr)
+		_, err = pool.Exec(t.Context(), string(down))
+		require.NoError(t, err, name)
+	}
+	planFenceDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000085_model_execution_plan_freeze_fence.down.sql",
+	))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(planFenceDownSQL))
+	require.NoError(t, err)
+	currencyDraftDownSQL, err := os.ReadFile(filepath.Join(
+		testutil.MigrationsDir(t), "000084_official_rate_source_currency_drafts.down.sql",
+	))
+	require.NoError(t, err)
 	unitMeterDownSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing.down.sql",
 	))
@@ -408,6 +462,8 @@ UPDATE provider_connections SET admin_state='disabled' WHERE id=$1`, evidence.Co
 	authoringDownSQL, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000078_atomic_model_release_authoring.down.sql",
 	))
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), string(currencyDraftDownSQL))
 	require.NoError(t, err)
 	_, err = pool.Exec(t.Context(), string(unitMeterDownSQL))
 	require.NoError(t, err)
@@ -449,10 +505,11 @@ func TestReleasedUndispatchedAttemptResolvesLiabilityAndDoesNotBlockTheNextAttem
 	b := NewBilling(pool, nil)
 	evidence := seedProviderAttemptCanonicalEvidence(t, pool, orgID, model)
 	requestID := "attempt-released-undispatched"
-	freezeForInvariantTest(t, b, orgID, model, requestID, 100)
+	freezeForInvariantTestWithSnapshot(t, b, orgID, model, requestID, 100, evidence.SnapshotHash)
 	start := providerAttemptFixture(requestID, "attempt-released-one", orgID, 1, 2)
 	start.ChannelID = 0
 	start.ChannelKeyID = 0
+	start.ExecutionSnapshotHash = evidence.SnapshotHash
 	start.RouteEvidence = &evidence
 	evidenceHash, err := executionevidence.Digest(evidence)
 	require.NoError(t, err)
@@ -536,10 +593,11 @@ func TestTerminalHealthFenceRejectsOutOfSequenceAttemptStates(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			requestID := fmt.Sprintf("attempt-health-sequence-%d", index)
 			attemptID := fmt.Sprintf("attempt-sequence-%d", index)
-			freezeForInvariantTest(t, b, orgID, model, requestID, 100)
+			freezeForInvariantTestWithSnapshot(t, b, orgID, model, requestID, 100, evidence.SnapshotHash)
 			start := providerAttemptFixture(requestID, attemptID, orgID, 1, 1)
 			start.ChannelID = 0
 			start.ChannelKeyID = 0
+			start.ExecutionSnapshotHash = evidence.SnapshotHash
 			start.RouteEvidence = &evidence
 			ownerHash := "sha256:" + strings.Repeat(fmt.Sprintf("%x", index+5), 64)
 			tx, txErr := pool.Begin(t.Context())

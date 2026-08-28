@@ -19,6 +19,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"github.com/uniroute/unirouter/internal/modeldeployment"
 	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
@@ -87,14 +88,15 @@ type canonicalDeployment struct {
 }
 
 type canonicalConnectionAxis struct {
-	ID             int64      `json:"id"`
-	Name           string     `json:"name"`
-	Provider       string     `json:"provider"`
-	BaseURL        string     `json:"base_url"`
-	AdapterType    string     `json:"adapter_type"`
-	AdminState     string     `json:"admin_state"`
-	ConfigRevision int64      `json:"config_revision"`
-	RetiredAt      *time.Time `json:"retired_at,omitempty"`
+	ID             int64           `json:"id"`
+	Name           string          `json:"name"`
+	Provider       string          `json:"provider"`
+	BaseURL        string          `json:"base_url"`
+	AdapterType    string          `json:"adapter_type"`
+	AdapterConfig  json.RawMessage `json:"adapter_config"`
+	AdminState     string          `json:"admin_state"`
+	ConfigRevision int64           `json:"config_revision"`
+	RetiredAt      *time.Time      `json:"retired_at,omitempty"`
 }
 
 type canonicalCredentialAxis struct {
@@ -306,9 +308,17 @@ type canonicalOperationInput struct {
 }
 
 type canonicalConnectionIdentity struct {
-	ID          int64
-	Provider    string
-	AdapterType string
+	ID            int64
+	Provider      string
+	BaseURL       string
+	AdapterType   string
+	AdapterConfig json.RawMessage
+}
+
+type canonicalPublicModelIdentity struct {
+	ID                      int64
+	ExecutionProfileID      string
+	ExecutionProfileVersion string
 }
 
 type canonicalApplicationReadStore interface {
@@ -619,12 +629,19 @@ func (h *Handler) createCanonicalModelApplicationWithReadbackAndIdempotency(
 	if err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
-	publicModelID, publicModelReused, err := ensureCanonicalPublicModel(ctx, tx, orgID, request.PublicModel, connection.Provider)
+	publicModel, publicModelReused, err := ensureCanonicalPublicModel(ctx, tx, orgID, request.PublicModel, connection.Provider)
 	if err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
-	deploymentID, deploymentReused, err := ensureCanonicalDeployment(ctx, tx, orgID, publicModelID, connection.ID, request.Deployment)
+	request.Operation = resolveCanonicalCapabilityOperationProfile(publicModel, request.Operation)
+	if err := validateCanonicalProfileProductBinding(publicModel, connection, request.Deployment.UpstreamModel, request.Operation); err != nil {
+		return canonicalModelApplicationCreateResult{}, err
+	}
+	deploymentID, deploymentReused, err := ensureCanonicalDeployment(ctx, tx, orgID, publicModel.ID, connection.ID, request.Deployment)
 	if err != nil {
+		return canonicalModelApplicationCreateResult{}, err
+	}
+	if err := validateCanonicalNewDeploymentProfile(publicModel, deploymentReused); err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
 	bindingID, credentialReused, err := ensureCanonicalCredentialBinding(ctx, tx, connection.ID, deploymentID, request.Credential.BindingID, encryptedKey)
@@ -635,9 +652,15 @@ func (h *Handler) createCanonicalModelApplicationWithReadbackAndIdempotency(
 	if err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
+	if err := ensureCanonicalDeclaredCapabilities(
+		ctx, tx, deploymentID, publicModel, connection,
+		request.Deployment.UpstreamModel, request.Operation,
+	); err != nil {
+		return canonicalModelApplicationCreateResult{}, err
+	}
 	if err := insertAuditEntry(ctx, tx, "model_deployment.create", "model_deployment", strconv.FormatInt(deploymentID, 10), map[string]interface{}{
 		"after": map[string]interface{}{
-			"customer_org_id": orgID, "connection_id": connection.ID, "public_model_id": publicModelID,
+			"customer_org_id": orgID, "connection_id": connection.ID, "public_model_id": publicModel.ID,
 			"deployment_id": deploymentID, "credential_binding_id": bindingID,
 			"operation_id":             request.Operation.OperationID,
 			"protocol_profile_id":      request.Operation.ProtocolProfileID,
@@ -707,6 +730,9 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 			request.PublicModel.Lifecycle = "staging"
 		}
 		if request.PublicModel.ExecutionProfileID == "" && request.PublicModel.ExecutionProfileVersion == "" {
+			if modelprofile.HasAmbiguousCurrentAlias(request.PublicModel.ModelName) {
+				return request, errCanonicalApplicationInvalid
+			}
 			request.PublicModel.ExecutionProfileID = modelprofile.UnverifiedProfileID
 			request.PublicModel.ExecutionProfileVersion = modelprofile.UnverifiedProfileVersion
 		}
@@ -738,14 +764,35 @@ func normalizeCanonicalApplicationCreate(request canonicalModelApplicationCreate
 			return request, errCanonicalApplicationInvalid
 		}
 		if request.PublicModel.ID == 0 && profile.ID != modelprofile.UnverifiedProfileID {
-			if request.PublicModel.ContextLength == nil && profile.DefaultContextWindow > 0 {
-				request.PublicModel.ContextLength = canonicalApplicationIntPointer(profile.DefaultContextWindow)
+			defaultPublicContextLimit := modelprofile.DefaultPublicContextLimit(profile)
+			defaultPublicOutputLimit := modelprofile.DefaultPublicOutputLimit(profile)
+			if request.PublicModel.ContextLength == nil && defaultPublicContextLimit > 0 {
+				request.PublicModel.ContextLength = canonicalApplicationIntPointer(defaultPublicContextLimit)
 			}
-			if request.PublicModel.OutputLimit == nil && profile.DefaultOutputLimit > 0 {
-				request.PublicModel.OutputLimit = canonicalApplicationIntPointer(profile.DefaultOutputLimit)
+			if request.PublicModel.OutputLimit == nil && defaultPublicOutputLimit > 0 {
+				request.PublicModel.OutputLimit = canonicalApplicationIntPointer(defaultPublicOutputLimit)
 			}
 			if request.PublicModel.ContextLength == nil || request.PublicModel.OutputLimit == nil ||
 				modelprofile.ValidateEffectiveLimits(profile, *request.PublicModel.ContextLength, *request.PublicModel.OutputLimit) != nil {
+				return request, errCanonicalApplicationInvalid
+			}
+			if request.Deployment.MaxContext == nil {
+				request.Deployment.MaxContext = canonicalApplicationIntPointer(*request.PublicModel.ContextLength)
+			}
+			expectedRequestDefault := modelprofile.DefaultRequestOutputLimit(profile, *request.PublicModel.OutputLimit)
+			if request.Deployment.DefaultMaxOutput == nil {
+				request.Deployment.DefaultMaxOutput = canonicalApplicationIntPointer(expectedRequestDefault)
+			}
+			if *request.Deployment.MaxContext > *request.PublicModel.ContextLength ||
+				*request.Deployment.DefaultMaxOutput > *request.PublicModel.OutputLimit ||
+				// Canonical request default is model-level because one request can
+				// fan out across multiple routes. Until the planner owns a distinct
+				// per-deployment default-selection contract, this stored field is a
+				// projection/evidence value and must not advertise an inert override.
+				*request.Deployment.DefaultMaxOutput != expectedRequestDefault ||
+				modelprofile.ValidateEffectiveLimits(
+					profile, *request.Deployment.MaxContext, *request.Deployment.DefaultMaxOutput,
+				) != nil {
 				return request, errCanonicalApplicationInvalid
 			}
 		}
@@ -890,10 +937,79 @@ func resolveCanonicalOperationProfile(input canonicalOperationInput, adapterType
 	return input, nil
 }
 
+// resolveCanonicalCapabilityOperationProfile is intentionally narrow: a
+// compiled capability contract may refine the generic protocol selected by
+// adapter type only when it publishes an exact preferred protocol for this
+// immutable execution Profile. This does not infer support from provider
+// documentation or widen other model surfaces.
+func resolveCanonicalCapabilityOperationProfile(
+	publicModel canonicalPublicModelIdentity,
+	operation canonicalOperationInput,
+) canonicalOperationInput {
+	preferred, err := modelcapabilityqualification.ResolvePreferredOperationProtocol(
+		operation.OperationID,
+		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
+	)
+	if err != nil {
+		return operation
+	}
+	if _, err := modelcapabilityqualification.ResolveAll(
+		operation.OperationID,
+		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
+		preferred.ProtocolProfileID, preferred.ProtocolProfileVersion,
+	); err == nil {
+		operation.ProtocolProfileID = preferred.ProtocolProfileID
+		operation.ProtocolProfileVersion = preferred.ProtocolProfileVersion
+	}
+	return operation
+}
+
 func validCanonicalProviderBaseURL(raw string) bool {
 	parsed, err := url.Parse(raw)
 	return err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != "" &&
 		parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
+}
+
+func validateCanonicalProfileProductBinding(
+	publicModel canonicalPublicModelIdentity,
+	connection canonicalConnectionIdentity,
+	upstreamModel string,
+	operation canonicalOperationInput,
+) error {
+	profile, ok := modelprofile.Lookup(publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion)
+	if !ok {
+		return errCanonicalApplicationInvalid
+	}
+	endpointPathMode := ""
+	if modelprofile.RequiredEndpointPathMode(profile) != "" {
+		var err error
+		endpointPathMode, err = adapters.EffectiveEndpointPathMode(connection.AdapterType, connection.AdapterConfig)
+		if err != nil {
+			return errCanonicalApplicationInvalid
+		}
+	}
+	if err := modelprofile.ValidateProductBinding(profile, modelprofile.ProductBinding{
+		Provider: connection.Provider, BaseURL: connection.BaseURL,
+		AdapterType: connection.AdapterType, EndpointPathMode: endpointPathMode, OperationID: operation.OperationID,
+		ProtocolProfileID: operation.ProtocolProfileID, ProtocolProfileVersion: operation.ProtocolProfileVersion,
+		UpstreamModel: upstreamModel,
+	}); err != nil {
+		return errCanonicalApplicationInvalid
+	}
+	return nil
+}
+
+func validateCanonicalNewDeploymentProfile(publicModel canonicalPublicModelIdentity, deploymentReused bool) error {
+	if deploymentReused || modelprofile.ValidateNewAttachment(
+		publicModel.ExecutionProfileID,
+		publicModel.ExecutionProfileVersion,
+	) == nil {
+		return nil
+	}
+	// Historical Profiles remain valid for reads, routing, sealed releases,
+	// and exact reuse of an existing deployment. They are not an onboarding
+	// surface: the caller rolls a failed new attachment back with its transaction.
+	return errCanonicalApplicationInvalid
 }
 
 func validateCanonicalCustomerOrg(ctx context.Context, tx pgx.Tx, orgID int64) error {
@@ -986,7 +1102,8 @@ SELECT pc.id,pc.name,pc.provider,pc.base_url,pc.adapter_type,pc.adapter_config,p
 		if len(input.AdapterConfig) > 0 && adapters.DefaultRegistry().ValidateConfig(adapterType, input.AdapterConfig) != nil {
 			return canonicalConnectionIdentity{}, false, errCanonicalApplicationInvalid
 		}
-		identity.Provider, identity.AdapterType = provider, adapterType
+		identity.Provider, identity.BaseURL, identity.AdapterType = provider, baseURL, adapterType
+		identity.AdapterConfig = json.RawMessage(adapterConfig)
 		return identity, true, nil
 	}
 	// No implicit lookup: two connections may intentionally share the same
@@ -998,7 +1115,10 @@ VALUES ($1,$2,$3,$4,$5::jsonb,'enabled') RETURNING id`,
 		input.Name, input.Provider, input.BaseURL, input.AdapterType, string(input.AdapterConfig)).Scan(&id); err != nil {
 		return canonicalConnectionIdentity{}, false, fmt.Errorf("create canonical provider connection: %w", err)
 	}
-	return canonicalConnectionIdentity{ID: id, Provider: input.Provider, AdapterType: input.AdapterType}, false, nil
+	return canonicalConnectionIdentity{
+		ID: id, Provider: input.Provider, BaseURL: input.BaseURL,
+		AdapterType: input.AdapterType, AdapterConfig: json.RawMessage(input.AdapterConfig),
+	}, false, nil
 }
 
 func canonicalJSONEqual(left, right []byte) bool {
@@ -1010,7 +1130,7 @@ func canonicalJSONEqual(left, right []byte) bool {
 	return bytes.Equal(leftCanonical, rightCanonical)
 }
 
-func ensureCanonicalPublicModel(ctx context.Context, tx pgx.Tx, orgID int64, input canonicalPublicModelInput, provider string) (int64, bool, error) {
+func ensureCanonicalPublicModel(ctx context.Context, tx pgx.Tx, orgID int64, input canonicalPublicModelInput, provider string) (canonicalPublicModelIdentity, bool, error) {
 	if input.ID > 0 {
 		var modelName, displayName, providerFamily, lifecycle, executionProfileID, executionProfileVersion string
 		var contextLength, outputLimit int
@@ -1023,9 +1143,9 @@ SELECT model_name,display_name,provider_family,lifecycle,context_length,output_l
 			&executionProfileID, &executionProfileVersion,
 		); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return 0, false, errCanonicalApplicationNotFound
+				return canonicalPublicModelIdentity{}, false, errCanonicalApplicationNotFound
 			}
-			return 0, false, fmt.Errorf("read canonical public model: %w", err)
+			return canonicalPublicModelIdentity{}, false, fmt.Errorf("read canonical public model: %w", err)
 		}
 		if (input.ModelName != "" && modelName != input.ModelName) ||
 			(input.DisplayName != "" && displayName != input.DisplayName) ||
@@ -1038,19 +1158,21 @@ SELECT model_name,display_name,provider_family,lifecycle,context_length,output_l
 			(input.ExecutionProfileVersion != "" && executionProfileVersion != input.ExecutionProfileVersion) {
 			// Never treat a mutable spelling as a selector. Once a caller supplies
 			// an ID, any additional field is an assertion, not a mutation.
-			return 0, false, errCanonicalApplicationConflict
+			return canonicalPublicModelIdentity{}, false, errCanonicalApplicationConflict
 		}
 		if lifecycle == "retired" {
-			return 0, false, modeldeployment.ErrRetiredIdentity
+			return canonicalPublicModelIdentity{}, false, modeldeployment.ErrRetiredIdentity
 		}
-		return input.ID, true, nil
+		return canonicalPublicModelIdentity{
+			ID: input.ID, ExecutionProfileID: executionProfileID, ExecutionProfileVersion: executionProfileVersion,
+		}, true, nil
 	}
 	providerFamily := input.ProviderFamily
 	if providerFamily == "" {
 		providerFamily = provider
 	}
 	if len(providerFamily) > 50 || strings.ContainsAny(providerFamily, "\x00\r\n") {
-		return 0, false, errCanonicalApplicationInvalid
+		return canonicalPublicModelIdentity{}, false, errCanonicalApplicationInvalid
 	}
 	var id int64
 	contextLength, outputLimit, approved := 0, 0, false
@@ -1072,10 +1194,12 @@ ON CONFLICT (org_id,model_name) DO NOTHING
 RETURNING id`, orgID, input.ModelName, input.DisplayName, providerFamily, input.Lifecycle,
 		contextLength, outputLimit, approved, input.ExecutionProfileID, input.ExecutionProfileVersion).Scan(&id)
 	if err == nil {
-		return id, false, nil
+		return canonicalPublicModelIdentity{
+			ID: id, ExecutionProfileID: input.ExecutionProfileID, ExecutionProfileVersion: input.ExecutionProfileVersion,
+		}, false, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return 0, false, fmt.Errorf("create canonical public model: %w", err)
+		return canonicalPublicModelIdentity{}, false, fmt.Errorf("create canonical public model: %w", err)
 	}
 	var existingDisplayName, existingProviderFamily, existingLifecycle, existingExecutionProfileID, existingExecutionProfileVersion string
 	var existingContextLength, existingOutputLimit int
@@ -1090,10 +1214,10 @@ SELECT id,display_name,provider_family,lifecycle,context_length,output_limit,app
 		&existingContextLength, &existingOutputLimit, &existingApproved,
 		&existingExecutionProfileID, &existingExecutionProfileVersion,
 	); err != nil {
-		return 0, false, fmt.Errorf("reuse canonical public model: %w", err)
+		return canonicalPublicModelIdentity{}, false, fmt.Errorf("reuse canonical public model: %w", err)
 	}
 	if existingLifecycle == "retired" {
-		return 0, false, modeldeployment.ErrRetiredIdentity
+		return canonicalPublicModelIdentity{}, false, modeldeployment.ErrRetiredIdentity
 	}
 	// ID=0 is a deterministic create-or-exact-retry contract, never an
 	// implicit natural-key update. Normalized defaults are part of that
@@ -1108,9 +1232,11 @@ SELECT id,display_name,provider_family,lifecycle,context_length,output_limit,app
 		existingApproved != approved ||
 		existingExecutionProfileID != input.ExecutionProfileID ||
 		existingExecutionProfileVersion != input.ExecutionProfileVersion {
-		return 0, false, errCanonicalApplicationConflict
+		return canonicalPublicModelIdentity{}, false, errCanonicalApplicationConflict
 	}
-	return id, true, nil
+	return canonicalPublicModelIdentity{
+		ID: id, ExecutionProfileID: existingExecutionProfileID, ExecutionProfileVersion: existingExecutionProfileVersion,
+	}, true, nil
 }
 
 func ensureCanonicalDeployment(ctx context.Context, tx pgx.Tx, orgID, publicModelID, connectionID int64, input canonicalDeploymentInput) (int64, bool, error) {
@@ -1225,6 +1351,93 @@ SELECT protocol_profile_id,protocol_profile_version,support_state
 	return true, nil
 }
 
+// ensureCanonicalDeclaredCapabilities materializes only capabilities for which
+// the compiled Profile contract and the migration-owned support tuple agree
+// exactly. It records supported/declared state; it never creates probe,
+// approval, Release, or routing evidence and never overwrites an existing
+// explicit support decision.
+func ensureCanonicalDeclaredCapabilities(
+	ctx context.Context,
+	tx pgx.Tx,
+	deploymentID int64,
+	publicModel canonicalPublicModelIdentity,
+	connection canonicalConnectionIdentity,
+	upstreamModel string,
+	operation canonicalOperationInput,
+) error {
+	bindings, err := modelcapabilityqualification.ResolveAll(
+		operation.OperationID,
+		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
+		operation.ProtocolProfileID, operation.ProtocolProfileVersion,
+	)
+	if errors.Is(err, modelcapabilityqualification.ErrUnsupported) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolve canonical capability declaration: %w", err)
+	}
+	for _, binding := range bindings {
+		if connection.Provider != binding.ExpectedProvider || upstreamModel != binding.ExpectedUpstreamModel {
+			return errCanonicalApplicationConflict
+		}
+
+		var databaseBinding modelcapabilityqualification.Binding
+		err = tx.QueryRow(ctx, `
+SELECT current_contract.operation_id,current_contract.capability_id,
+       current_contract.execution_profile_id,current_contract.execution_profile_version,
+       current_contract.protocol_profile_id,current_contract.protocol_profile_version,
+       current_contract.probe_contract_id,current_contract.probe_contract_version,
+       contract.expected_provider,contract.expected_upstream_model,contract.public_path
+  FROM model_capability_current_probe_contracts current_contract
+  JOIN model_capability_probe_contract_bindings contract
+    ON contract.operation_id=current_contract.operation_id
+   AND contract.capability_id=current_contract.capability_id
+   AND contract.execution_profile_id=current_contract.execution_profile_id
+   AND contract.execution_profile_version=current_contract.execution_profile_version
+   AND contract.protocol_profile_id=current_contract.protocol_profile_id
+   AND contract.protocol_profile_version=current_contract.protocol_profile_version
+   AND contract.probe_contract_id=current_contract.probe_contract_id
+   AND contract.probe_contract_version=current_contract.probe_contract_version
+ WHERE current_contract.operation_id=$1 AND current_contract.capability_id=$2
+   AND current_contract.execution_profile_id=$3
+   AND current_contract.execution_profile_version=$4
+   AND current_contract.protocol_profile_id=$5
+   AND current_contract.protocol_profile_version=$6`,
+			binding.OperationID, binding.CapabilityID,
+			binding.ExecutionProfileID, binding.ExecutionProfileVersion,
+			binding.ProtocolProfileID, binding.ProtocolProfileVersion,
+		).Scan(
+			&databaseBinding.OperationID, &databaseBinding.CapabilityID,
+			&databaseBinding.ExecutionProfileID, &databaseBinding.ExecutionProfileVersion,
+			&databaseBinding.ProtocolProfileID, &databaseBinding.ProtocolProfileVersion,
+			&databaseBinding.ProbeContractID, &databaseBinding.ProbeContractVersion,
+			&databaseBinding.ExpectedProvider, &databaseBinding.ExpectedUpstreamModel,
+			&databaseBinding.PublicPath,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errCanonicalApplicationConflict
+		}
+		if err != nil {
+			return fmt.Errorf("read canonical capability declaration contract: %w", err)
+		}
+		if databaseBinding != binding {
+			return errCanonicalApplicationConflict
+		}
+
+		evidenceRef := "capability_contract:" + binding.ProbeContractID + "@" + binding.ProbeContractVersion
+		if _, err := tx.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,$2,$3,'enabled','declared',$4,1)
+ON CONFLICT (deployment_id,operation_id,capability_id) DO NOTHING`,
+			deploymentID, binding.OperationID, binding.CapabilityID, evidenceRef,
+		); err != nil {
+			return fmt.Errorf("declare canonical model capability: %w", err)
+		}
+	}
+	return nil
+}
+
 func (h *Handler) loadCanonicalModelApplications(ctx context.Context, orgID, deploymentID int64, operationID string) (canonicalModelApplicationProjection, error) {
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
@@ -1266,7 +1479,8 @@ SELECT mr.id,mr.model_name,mr.display_name,mr.provider_family,mr.lifecycle,
        md.id,md.upstream_model,md.admin_state,md.config_revision,md.priority,
        md.routing_weight,md.max_context,md.default_max_output,md.degradation_threshold,
        md.circuit_state,md.circuit_revision,md.fail_count,md.retired_at,
-       pc.id,pc.name,pc.provider,pc.base_url,pc.adapter_type,pc.admin_state,
+	       pc.id,pc.name,pc.provider,pc.base_url,pc.adapter_type,
+	       COALESCE(pc.adapter_config,'{}'::jsonb),pc.admin_state,
        pc.config_revision,pc.retired_at,
        slot.slot_version,slot.canary_basis_points,
        stable.release_ref,stable.stage,stable.version,
@@ -1308,7 +1522,8 @@ SELECT mr.id,mr.model_name,mr.display_name,mr.provider_family,mr.lifecycle,
 			&item.Deployment.DegradationThreshold, &item.Deployment.CircuitState,
 			&item.Deployment.CircuitRevision, &item.Deployment.FailCount, &deploymentRetired,
 			&item.Connection.ID, &item.Connection.Name, &item.Connection.Provider,
-			&item.Connection.BaseURL, &item.Connection.AdapterType, &item.Connection.AdminState,
+			&item.Connection.BaseURL, &item.Connection.AdapterType, &item.Connection.AdapterConfig,
+			&item.Connection.AdminState,
 			&item.Connection.ConfigRevision, &connectionRetired,
 			&slotVersion, &canaryBPS, &stableRef, &stableStage, &stableVersion,
 			&canaryRef, &canaryStage, &canaryVersion,
@@ -1522,7 +1737,7 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
   JOIN model_registry public_model
     ON public_model.id=md.public_model_id AND public_model.org_id=md.customer_org_id
   JOIN model_deployment_operations operation ON operation.deployment_id=md.id
-  LEFT JOIN model_operation_current_execution_support_bindings execution_support
+  LEFT JOIN model_operation_exact_execution_support_bindings execution_support
     ON execution_support.operation_id=operation.operation_id
    AND execution_support.protocol_profile_id=operation.protocol_profile_id
    AND execution_support.protocol_profile_version=operation.protocol_profile_version

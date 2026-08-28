@@ -257,6 +257,26 @@ func canonicalOperationProbeSpecFor(operation modeloperation.ID) (canonicalOpera
 	}
 }
 
+func canonicalOperationProbeSpecForProfile(
+	operation modeloperation.ID,
+	profileID, profileVersion string,
+) (canonicalOperationProbeSpec, error) {
+	if operation != modeloperation.IDResponses && operation != modeloperation.IDMessages {
+		return canonicalOperationProbeSpecFor(operation)
+	}
+	binding, err := modelqualification.CompiledBindingFor(string(operation), profileID, profileVersion)
+	if err != nil {
+		return canonicalOperationProbeSpec{}, errCanonicalOperationProbeUnsupported
+	}
+	if _, err := endpointprotocol.NewRegistry().Resolve(binding.ProtocolProfileID, binding.ProtocolProfileVersion); err != nil {
+		return canonicalOperationProbeSpec{}, errCanonicalOperationProbeUnsupported
+	}
+	return canonicalOperationProbeSpec{
+		ProfileID: binding.ProtocolProfileID, ProfileVersion: binding.ProtocolProfileVersion,
+		SourceKind: modelqualification.LiveProbeSourceKind, ExecutionBinding: &binding,
+	}, nil
+}
+
 func (h *Handler) probeCanonicalModelOperation(
 	ctx context.Context,
 	orgID, actorID, deploymentID int64,
@@ -427,7 +447,9 @@ SELECT created_at,created_at<=transaction_timestamp() FROM credential_binding_de
 }
 
 func validateCanonicalOperationProbeSnapshot(snapshot canonicalOperationProbeSnapshot) error {
-	spec, err := canonicalOperationProbeSpecFor(modeloperation.ID(snapshot.OperationID))
+	spec, err := canonicalOperationProbeSpecForProfile(
+		modeloperation.ID(snapshot.OperationID), snapshot.ProfileID, snapshot.ProfileVersion,
+	)
 	if err != nil {
 		return err
 	}
@@ -462,7 +484,9 @@ func (h *Handler) executeCanonicalOperationProbe(
 	snapshot canonicalOperationProbeSnapshot,
 	probeText, requestID string,
 ) canonicalOperationProbeOutcome {
-	spec, err := canonicalOperationProbeSpecFor(modeloperation.ID(snapshot.OperationID))
+	spec, err := canonicalOperationProbeSpecForProfile(
+		modeloperation.ID(snapshot.OperationID), snapshot.ProfileID, snapshot.ProfileVersion,
+	)
 	if err != nil {
 		return canonicalOperationProbeOutcome{ReasonCode: "operation_unsupported"}
 	}
@@ -709,7 +733,9 @@ func (h *Handler) persistCanonicalOperationProbe(
 	sourceRef string,
 	audit auditMeta,
 ) (canonicalOperationProbeResponse, error) {
-	spec, err := canonicalOperationProbeSpecFor(modeloperation.ID(snapshot.OperationID))
+	spec, err := canonicalOperationProbeSpecForProfile(
+		modeloperation.ID(snapshot.OperationID), snapshot.ProfileID, snapshot.ProfileVersion,
+	)
 	if err != nil {
 		return canonicalOperationProbeResponse{}, err
 	}
@@ -1024,7 +1050,9 @@ func canonicalOperationProbeFingerprintSourceKind(operationID string) string {
 }
 
 func canonicalOperationProbeFingerprintBinding(snapshot canonicalOperationProbeSnapshot) string {
-	spec, err := canonicalOperationProbeSpecFor(modeloperation.ID(snapshot.OperationID))
+	spec, err := canonicalOperationProbeSpecForProfile(
+		modeloperation.ID(snapshot.OperationID), snapshot.ProfileID, snapshot.ProfileVersion,
+	)
 	if err != nil || spec.ExecutionBinding == nil {
 		return ""
 	}

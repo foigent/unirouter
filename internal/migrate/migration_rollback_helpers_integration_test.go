@@ -21,6 +21,16 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000093_deepseek_function_tool_probe_contract_v2.down.sql",
+	"000092_deepseek_reasoning_tool_choice_contract.down.sql",
+	"000091_deepseek_chat_tools_json_capabilities.down.sql",
+	"000090_deepseek_chat_reasoning_capabilities.down.sql",
+	"000089_deepseek_chat_sse_usage_contract_v2.down.sql",
+	"000088_model_capability_execution_qualification.down.sql",
+	"000087_anthropic_messages_tools_public_binding.down.sql",
+	"000086_exact_public_execution_bindings.down.sql",
+	"000085_model_execution_plan_freeze_fence.down.sql",
+	"000084_official_rate_source_currency_drafts.down.sql",
 	"000083_versioned_unit_meter_billing.down.sql",
 	"000082_sealed_model_execution_contracts.down.sql",
 	"000081_versioned_model_execution_profiles.down.sql",
@@ -66,6 +76,16 @@ func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 	orderedNames := make([]string, 0, len(names)+4)
 	seen := make(map[string]struct{}, len(names)+4)
 	for _, name := range []string{
+		"000093_deepseek_function_tool_probe_contract_v2.down.sql",
+		"000092_deepseek_reasoning_tool_choice_contract.down.sql",
+		"000091_deepseek_chat_tools_json_capabilities.down.sql",
+		"000090_deepseek_chat_reasoning_capabilities.down.sql",
+		"000089_deepseek_chat_sse_usage_contract_v2.down.sql",
+		"000088_model_capability_execution_qualification.down.sql",
+		"000087_anthropic_messages_tools_public_binding.down.sql",
+		"000086_exact_public_execution_bindings.down.sql",
+		"000085_model_execution_plan_freeze_fence.down.sql",
+		"000084_official_rate_source_currency_drafts.down.sql",
 		"000083_versioned_unit_meter_billing.down.sql",
 		"000082_sealed_model_execution_contracts.down.sql",
 		"000081_versioned_model_execution_profiles.down.sql",

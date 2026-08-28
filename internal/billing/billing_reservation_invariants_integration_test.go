@@ -45,14 +45,26 @@ func newReservationFixture(t *testing.T, balance, granted int) (*pgxpool.Pool, i
 }
 
 func freezeForInvariantTest(t *testing.T, b *Billing, orgID int64, model, requestID string, amount int) *FreezeResult {
+	return freezeForInvariantTestWithSnapshot(t, b, orgID, model, requestID, amount, "")
+}
+
+func freezeForInvariantTestWithSnapshot(
+	t *testing.T,
+	b *Billing,
+	orgID int64,
+	model, requestID string,
+	amount int,
+	executionSnapshotHash string,
+) *FreezeResult {
 	t.Helper()
 	result, err := b.Freeze(t.Context(), FreezeRequest{
-		RequestID:       requestID,
-		OrgID:           orgID,
-		Model:           model,
-		EstimatedTokens: 1,
-		SafetyFactor:    "1",
-		MinFreezeCents:  int64(amount),
+		RequestID:             requestID,
+		OrgID:                 orgID,
+		Model:                 model,
+		EstimatedTokens:       1,
+		SafetyFactor:          "1",
+		MinFreezeCents:        int64(amount),
+		ExecutionSnapshotHash: executionSnapshotHash,
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success, "%s: %s", result.ErrorCode, result.ErrorDetail)
@@ -81,6 +93,39 @@ func TestP6F18FreezeDoesNotReenterSingleConnectionPool(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success)
+}
+
+func TestFreezeReplayRejectsChangedExecutionSnapshot(t *testing.T) {
+	pool, orgID, model := newReservationFixture(t, 1000, 0)
+	b := NewBilling(pool, nil)
+	requestID := "op_execution_snapshot_replay"
+	snapshotA := "mrs1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	snapshotB := "mrs1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	first := freezeForInvariantTestWithSnapshot(t, b, orgID, model, requestID, 100, snapshotA)
+	replay := freezeForInvariantTestWithSnapshot(t, b, orgID, model, requestID, 100, snapshotA)
+	require.Equal(t, first.AmountMicros, replay.AmountMicros)
+
+	conflict, err := b.Freeze(t.Context(), FreezeRequest{
+		RequestID:             requestID,
+		OrgID:                 orgID,
+		Model:                 model,
+		EstimatedTokens:       1,
+		SafetyFactor:          "1",
+		MinFreezeCents:        100,
+		ExecutionSnapshotHash: snapshotB,
+	})
+	require.NoError(t, err)
+	require.False(t, conflict.Success)
+	require.Equal(t, "request_identity_conflict", conflict.ErrorCode)
+	require.Contains(t, conflict.ErrorDetail, "Plan snapshot changed")
+
+	var storedSnapshot string
+	require.NoError(t, pool.QueryRow(t.Context(), `
+SELECT execution_snapshot_hash
+  FROM freeze_idempotency
+ WHERE org_id=$1 AND request_id=$2`, orgID, requestID).Scan(&storedSnapshot))
+	require.Equal(t, snapshotA, storedSnapshot)
 }
 
 func TestP6F18AvailableBalanceDoesNotSubtractHeldFundsTwice(t *testing.T) {

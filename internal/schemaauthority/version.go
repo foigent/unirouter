@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000083_versioned_unit_meter_billing"
+const LatestSupportedMigration = "000093_deepseek_function_tool_probe_contract_v2"

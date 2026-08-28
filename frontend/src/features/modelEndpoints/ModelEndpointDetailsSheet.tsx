@@ -8,6 +8,7 @@ import {
 } from '../../api/modelDeployments';
 import { LatencyText, StatusTag, Surface } from '../../ui';
 import { formatDateTime } from '../../utils/formatDate';
+import ModelCapabilityQualificationPanel from './ModelCapabilityQualificationPanel';
 
 const { Text } = Typography;
 
@@ -15,6 +16,7 @@ type Props = {
   selected?: CanonicalModelApplication;
   operation?: CanonicalOperation;
   canManage: boolean;
+  canApproveCapabilities: boolean;
   gatewayLicensed: boolean;
   gatewayRestriction: string;
   workingBindingID: number;
@@ -149,6 +151,24 @@ export default function ModelEndpointDetailsSheet(props: Props) {
           </Space>}
         </div>
       </Surface>
+
+      {operation.operation_id === 'openai.chat_completions.v1' &&
+        selected.public_model.execution_profile_id === 'deepseek.v4-flash.api' &&
+        ['1.4.0', '1.5.0'].includes(selected.public_model.execution_profile_version) && <>
+          {(['streaming', 'reasoning', 'reasoning_effort', 'tools', 'function_tools',
+            'tool_choice_auto', 'tool_choice_named', 'tool_choice_required', 'json_object'] as const).map(capabilityID => (
+            <ModelCapabilityQualificationPanel
+              key={capabilityID}
+              selected={selected}
+              operation={operation}
+              canManage={props.canManage}
+              canApprove={props.canApproveCapabilities}
+              gatewayLicensed={props.gatewayLicensed}
+              gatewayRestriction={props.gatewayRestriction}
+              capabilityID={capabilityID}
+            />
+          ))}
+        </>}
 
       <Surface title="4 · Canonical Runtime" description="只展示不可变发布/slot 的当前归属；探测通过不会自动产生 runtime membership。">
         <Space vertical align="start">

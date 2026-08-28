@@ -1,8 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.23
-> **日期**：2026-08-23
+> **版本**：v1.24
+> **日期**：2026-08-24
 > **用途**：运维人员部署和维护 UniRouter 的操作手册
+> **变更记录**：v1.24 增加 `000084` 官方价格来源 CNY/USD 审核草稿、CNY 结算 fail-closed、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.23 增加 `000083` 版本化非 Token 计费证据、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.22 增加 `000082` canonical Release 执行 Profile/上下文上限密封、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.21 增加 `000081` 版本化模型执行 Profile、历史模型不推断、guarded down 与非滚动升级边界。
@@ -1166,6 +1167,29 @@ rate/meter evidence、非零 non-token cost，或来源表已经记录
 durable M83 证据且没有新版 unit-contract source evidence 时，guarded down 才能恢复
 M82 schema。
 
+### 3.21 `000084` official rate-source currency drafts 与 guarded down
+
+M84 只把 `enterprise_finance_rate_source_evidence.currency` 从 `CNY` 放宽为单一
+`CNY|USD`，用于保留 Gemini、OpenAI、xAI、Anthropic 的官方原币审核草稿。Rate Card
+审批、激活、request quote、钱包、Freeze/settlement 和 Outbox 仍要求 micro-CNY；USD
+草稿必须在 approval 阶段 fail closed，不得做隐式汇率转换。
+
+M83→M84 是 schema-ceiling 变化，必须停止全部 M83 backend，由唯一 migration owner
+升级并确认 ledger 精确等于 M84 artifact，再启动 M84 stable/canary。不得让 M83 与 M84
+进程共用数据库。升级后只读检查：
+
+```sql
+SELECT version FROM schema_migrations ORDER BY version;
+SELECT pg_get_constraintdef(oid)
+  FROM pg_constraint
+ WHERE conname='enterprise_finance_rate_source_currency_check';
+```
+
+约束必须只允许 `CNY` 与 `USD`。smoke 应导入一个 USD `provider_list` draft，确认来源
+证据保留 USD、草稿不自动批准/激活，并确认 approval 返回 CNY request-pricing 未就绪。
+M84 down 在 schema mutation 前拒绝 later migration 或任何非 CNY 来源证据；存在 USD
+草稿时必须 roll forward，不得删除来源证据来迁就 M83 binary。
+
 ---
 
 ## 四、备份与恢复
@@ -2124,7 +2148,7 @@ docker compose --env-file payload/deploy/.env \
   -f payload/deploy/docker-compose.yml stop backend
 ```
 
-`first-customer` 有两个互斥 checkpoint。一个是已获授权的 second-integration reset
+`first-customer` 有三个互斥 checkpoint。一个是已获授权的 second-integration reset
 产生的严格 post-reset 空壳：保留 active local platform admin 与组织壳，其余 reset-owned
 产品表为空。另一个是当前完整迁移链的精确 fresh seed：seed admin 已轮换密码、仅有一个
 有效登录 session，且恰有一个逻辑 login 审计；该证据可以仍是 durable Outbox pending
@@ -2141,6 +2165,22 @@ admin `project_admin` membership，再创建唯一 active customer 及其零余�
 随后导入 customer-bound License 时，首装唯一的 reviewed customer project 必须使用
 `slug=default`；最终 canonical 重启会复用该项目，不得再自动占用第二个 active-project
 License seat。
+
+第三个 checkpoint 接受受支持 reset 后已由正常启动生成的运行时壳，而不是 fresh
+seed 的宽松兜底：必须是唯一 active local platform admin（reset 已推进 auth epoch）、
+唯一 active partner 根组织、精确自动项目形状、全零 CNY wallet、reset 设置、完整制品
+迁移账本和空业务表。项目成员、预算、业务引用、非登录审计或登录审计/outbox 的项目
+引用均拒绝。可以保留同一管理员的多个合法登录记录及历史会话；提交时仍锁定并重新
+验证当前会话。License/Release 等平台状态、admin/verifier、平台组织及登录证据不修改。
+
+在平台运维的“部署与网络”入口输入客户名称，先执行只读预检。对应 API 请求体为
+`{"organization_name":"<approved customer name>","dry_run":true}`；使用现有认证和
+client-request-id 合同，不输出凭据。预检列出 `would_remove.project_id` 和
+`would_remove.zero_wallet_org_id`（strict-reset 无空壳对象），不写入任何数据或 receipt。
+操作者应确认这些精确对象的归位权限后再提交；预检结果不绕过提交时重新执行的完整
+SERIALIZABLE 检查。runtime-reset 只原子移除该自动空项目和全零钱包，并创建独立客户及
+其零余额钱包；客户默认项目按原有启动流程生成。失败不得通过删除审计、改组织类型、
+手工 SQL、reset 或伪造 probe 来凑前态。此步骤不授权任何供应商流量或 canonical 切换。
 
 确认 backend 已停止后，手工把 `payload/deploy/.env` 的
 `MODEL_ROUTE_AUTHORITY` 改为 `canonical`、

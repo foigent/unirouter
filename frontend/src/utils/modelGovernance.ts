@@ -42,6 +42,16 @@ export function modelExecutionProfileKey(profile: Pick<ModelExecutionProfile, 'i
   return `${profile.id}@${profile.version}`;
 }
 
+// New bindings may select only the server-declared current Profile. An edit
+// may retain its exact historical binding without making that version
+// attachable to another model.
+export function executionProfilesAvailableForBinding(
+  profiles: ModelExecutionProfile[],
+  retainedProfileKey = '',
+) {
+  return profiles.filter(profile => profile.current === true || modelExecutionProfileKey(profile) === retainedProfileKey);
+}
+
 export interface ModelAlias {
   id: number;
   alias: string;

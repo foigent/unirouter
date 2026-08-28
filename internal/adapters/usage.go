@@ -16,6 +16,7 @@ const (
 	CacheUsageSchemaDeepSeekV1  = "deepseek.prompt_cache.v1"
 	CacheUsageSchemaAnthropicV1 = "anthropic.prompt_cache.v1"
 	CacheUsageSchemaKimiV1      = modelprofile.CacheUsageWireMoonshotCachedTokensV1
+	CacheUsageSchemaQwenV1      = modelprofile.CacheUsageWireQwenContextCacheV1
 
 	CacheUsageStatusNotReported       = "not_reported"
 	CacheUsageStatusReadReported      = "cache_read_reported"
@@ -286,8 +287,9 @@ type openAIUsageWire struct {
 	TotalTokens      *int            `json:"total_tokens"`
 	CachedTokens     json.RawMessage `json:"cached_tokens,omitempty"`
 	PromptDetails    *struct {
-		CachedTokens     *int `json:"cached_tokens"`
-		CacheWriteTokens *int `json:"cache_write_tokens"`
+		CachedTokens             *int `json:"cached_tokens"`
+		CacheWriteTokens         *int `json:"cache_write_tokens"`
+		CacheCreationInputTokens *int `json:"cache_creation_input_tokens"`
 	} `json:"prompt_tokens_details,omitempty"`
 	PromptCacheHitTokens  *int `json:"prompt_cache_hit_tokens,omitempty"`
 	PromptCacheMissTokens *int `json:"prompt_cache_miss_tokens,omitempty"`
@@ -328,7 +330,7 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 		return NewMissingUsage(), false, nil
 	}
 	wire := envelope.Usage
-	if err := validateOpenAIUsageWire(wire); err != nil {
+	if err := validateOpenAIUsageCoreWire(wire); err != nil {
 		return Usage{}, false, err
 	}
 	if wire.PromptTokens == nil || (endpoint == EndpointChatCompletions && wire.CompletionTokens == nil) {
@@ -345,10 +347,13 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 			return Usage{}, false, err
 		}
 		if wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil ||
-			(wire.PromptDetails != nil && wire.PromptDetails.CacheWriteTokens != nil) {
+			(wire.PromptDetails != nil && (wire.PromptDetails.CacheWriteTokens != nil || wire.PromptDetails.CacheCreationInputTokens != nil)) {
 			return Usage{}, true, fmt.Errorf("Kimi cache profile requires top-level cached_tokens instead of another cache schema")
 		}
 		if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
+			if err := validateOptionalUsageCounters(optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens}); err != nil {
+				return Usage{}, true, err
+			}
 			if !cacheReported {
 				return Usage{}, true, fmt.Errorf("Kimi cache profile requires top-level cached_tokens instead of another cache schema")
 			}
@@ -376,8 +381,14 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 	// prompt partition. These counters become billing truth only when the sealed
 	// execution profile names the exact DeepSeek wire schema.
 	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireDeepSeekHitMissV1 {
+		if err := validateOptionalUsageCounters(
+			optionalUsageCounter{name: "prompt_cache_hit_tokens", value: wire.PromptCacheHitTokens},
+			optionalUsageCounter{name: "prompt_cache_miss_tokens", value: wire.PromptCacheMissTokens},
+		); err != nil {
+			return Usage{}, true, err
+		}
 		if (len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens)) ||
-			(wire.PromptDetails != nil && wire.PromptDetails.CacheWriteTokens != nil) {
+			(wire.PromptDetails != nil && (wire.PromptDetails.CacheWriteTokens != nil || wire.PromptDetails.CacheCreationInputTokens != nil)) {
 			return Usage{}, true, fmt.Errorf("DeepSeek cache profile requires prompt_cache_hit_tokens and prompt_cache_miss_tokens instead of another cache schema")
 		}
 		cacheReported := wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil
@@ -385,6 +396,9 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 			return Usage{}, true, fmt.Errorf("DeepSeek prompt-cache usage requires both hit and miss counters")
 		}
 		if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
+			if err := validateOptionalUsageCounters(optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens}); err != nil {
+				return Usage{}, true, err
+			}
 			if !cacheReported {
 				return Usage{}, true, fmt.Errorf("DeepSeek cache profile requires prompt_cache_hit_tokens and prompt_cache_miss_tokens instead of another cache schema")
 			}
@@ -414,48 +428,117 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 		}
 	}
 
-	// OpenAI reports cache reads and, on the current Chat Completions contract,
-	// cache writes as disjoint subsets of prompt_tokens. The v1 schema remains
-	// for cached_tokens-only responses; v2 is explicit when cache_write_tokens
-	// is present. No token class is inferred from a pricing table.
-	if wire.PromptDetails != nil && wire.PromptDetails.CacheWriteTokens != nil {
-		cached := valueOrZero(wire.PromptDetails.CachedTokens)
-		created := *wire.PromptDetails.CacheWriteTokens
-		status := CacheUsageStatusWriteReported
-		if wire.PromptDetails.CachedTokens != nil {
-			status = CacheUsageStatusReadWriteReported
+	// Qwen's OpenAI-compatible context-cache response partitions explicit
+	// cache creation and cache reads inside prompt_tokens_details. The same
+	// cached_tokens field also carries implicit-cache hits, so the request-side
+	// cache mode must remain separate pricing evidence.
+	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireQwenContextCacheV1 {
+		if (len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens)) ||
+			wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil ||
+			(wire.PromptDetails != nil && wire.PromptDetails.CacheWriteTokens != nil) {
+			return Usage{}, true, fmt.Errorf("Qwen cache profile requires prompt_tokens_details cache counters without another cache schema")
 		}
-		usage, err := NewCacheAwareUsage(
-			promptTokens,
-			promptTokens-cached-created,
-			cached,
-			created,
-			completionTokens,
-			totalTokens,
-			source,
-			CacheUsageSchemaOpenAIV2,
-			status,
-		)
-		return usage, true, err
+		var cachedTokens, creationTokens int
+		var cachedReported, creationReported bool
+		if wire.PromptDetails != nil {
+			if err := validateOptionalUsageCounters(
+				optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens},
+				optionalUsageCounter{name: "prompt_tokens_details.cache_creation_input_tokens", value: wire.PromptDetails.CacheCreationInputTokens},
+			); err != nil {
+				return Usage{}, true, err
+			}
+			if wire.PromptDetails.CachedTokens != nil {
+				cachedTokens, cachedReported = *wire.PromptDetails.CachedTokens, true
+			}
+			if wire.PromptDetails.CacheCreationInputTokens != nil {
+				creationTokens, creationReported = *wire.PromptDetails.CacheCreationInputTokens, true
+			}
+		}
+		if cachedReported || creationReported {
+			status := CacheUsageStatusReadWriteReported
+			if !creationReported {
+				status = CacheUsageStatusReadReported
+			} else if !cachedReported {
+				status = CacheUsageStatusWriteReported
+			}
+			usage, err := NewCacheAwareUsage(
+				promptTokens, promptTokens-cachedTokens-creationTokens,
+				cachedTokens, creationTokens, completionTokens, totalTokens,
+				source, CacheUsageSchemaQwenV1, status,
+			)
+			return usage, true, err
+		}
 	}
 
-	// Older OpenAI-compatible responses expose only the cached read subset.
-	if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
-		cached := *wire.PromptDetails.CachedTokens
-		usage, err := NewCacheAwareUsage(
-			promptTokens,
-			promptTokens-cached,
-			cached,
-			0,
-			completionTokens,
-			totalTokens,
-			source,
-			CacheUsageSchemaOpenAIV1,
-			CacheUsageStatusReadReported,
-		)
-		return usage, true, err
+	// GPT-5.6 reports cache reads and writes as separate prompt token classes.
+	// Both fields are required to remain inside prompt_tokens_details so a
+	// similarly named provider extension cannot silently become billing truth.
+	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireOpenAIReadWriteV1 {
+		if (len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens)) ||
+			wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil ||
+			(wire.PromptDetails != nil && wire.PromptDetails.CacheCreationInputTokens != nil) {
+			return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details cached_tokens/cache_write_tokens without another cache schema", cacheContract.ProfileID)
+		}
+		if wire.PromptDetails != nil && (wire.PromptDetails.CachedTokens != nil || wire.PromptDetails.CacheWriteTokens != nil) {
+			if err := validateOptionalUsageCounters(
+				optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens},
+				optionalUsageCounter{name: "prompt_tokens_details.cache_write_tokens", value: wire.PromptDetails.CacheWriteTokens},
+			); err != nil {
+				return Usage{}, true, err
+			}
+			cached := valueOrZero(wire.PromptDetails.CachedTokens)
+			written := valueOrZero(wire.PromptDetails.CacheWriteTokens)
+			status := CacheUsageStatusReadWriteReported
+			if wire.PromptDetails.CachedTokens == nil {
+				status = CacheUsageStatusWriteReported
+			} else if wire.PromptDetails.CacheWriteTokens == nil {
+				status = CacheUsageStatusReadReported
+			}
+			usage, err := NewCacheAwareUsage(
+				promptTokens, promptTokens-cached-written, cached, written,
+				completionTokens, totalTokens, source, CacheUsageSchemaOpenAIV2, status,
+			)
+			return usage, true, err
+		}
 	}
 
+	// OpenAI-compatible profiles such as GLM and MiMo report only cache reads in
+	// prompt_tokens_details.cached_tokens. The profile rejects top-level,
+	// hit/miss, and cache-write counters rather than treating a different
+	// provider schema as equivalent billing evidence.
+	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireOpenAICachedTokensV1 {
+		if (len(wire.CachedTokens) > 0 && !isJSONNullUsage(wire.CachedTokens)) ||
+			wire.PromptCacheHitTokens != nil || wire.PromptCacheMissTokens != nil ||
+			(wire.PromptDetails != nil && (wire.PromptDetails.CacheWriteTokens != nil || wire.PromptDetails.CacheCreationInputTokens != nil)) {
+			return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details.cached_tokens without another cache schema", cacheContract.ProfileID)
+		}
+		if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
+			if err := validateOptionalUsageCounters(optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens}); err != nil {
+				return Usage{}, true, err
+			}
+			cached := *wire.PromptDetails.CachedTokens
+			usage, err := NewCacheAwareUsage(
+				promptTokens,
+				promptTokens-cached,
+				cached,
+				0,
+				completionTokens,
+				totalTokens,
+				source,
+				CacheUsageSchemaOpenAIV1,
+				CacheUsageStatusReadReported,
+			)
+			return usage, true, err
+		}
+		if cacheContract.RequireReadCounter {
+			return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details.cached_tokens, including an authoritative zero", cacheContract.ProfileID)
+		}
+	}
+
+	// Cache-looking fields from an unmodeled or unknown profile remain in the
+	// preserved provider response but cannot partition usage or affect billing.
+	// OpenAI itself receives an explicit cache contract when its model profiles
+	// are adapted; wire-shape similarity is not authority.
 	usage, err := NewUsage(
 		promptTokens,
 		completionTokens,
@@ -465,7 +548,7 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 	return usage, true, err
 }
 
-func validateOpenAIUsageWire(wire *openAIUsageWire) error {
+func validateOpenAIUsageCoreWire(wire *openAIUsageWire) error {
 	if wire == nil {
 		return nil
 	}
@@ -473,14 +556,6 @@ func validateOpenAIUsageWire(wire *openAIUsageWire) error {
 		{name: "prompt_tokens", value: wire.PromptTokens},
 		{name: "completion_tokens", value: wire.CompletionTokens},
 		{name: "total_tokens", value: wire.TotalTokens},
-		{name: "prompt_cache_hit_tokens", value: wire.PromptCacheHitTokens},
-		{name: "prompt_cache_miss_tokens", value: wire.PromptCacheMissTokens},
-	}
-	if wire.PromptDetails != nil {
-		counters = append(counters,
-			optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens},
-			optionalUsageCounter{name: "prompt_tokens_details.cache_write_tokens", value: wire.PromptDetails.CacheWriteTokens},
-		)
 	}
 	return validateOptionalUsageCounters(counters...)
 }

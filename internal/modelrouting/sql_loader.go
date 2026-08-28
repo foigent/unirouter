@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,7 +36,6 @@ func loadSQLSnapshot(ctx context.Context, tx pgx.Tx, request Request, forcedRele
 	value := snapshot{
 		Mode: request.Mode, CustomerOrgID: request.CustomerOrgID,
 		PublicModel: request.PublicModel, RequestedOperationID: request.ModelOperationID,
-		RequiredCapabilities:    append([]string(nil), request.RequiredCapabilities...),
 		ExecutionProfileID:      modelprofile.UnverifiedProfileID,
 		ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
 	}
@@ -85,6 +85,15 @@ SELECT id,lifecycle,context_length,output_limit,execution_profile_id,execution_p
 		}
 		value.Legacy = legacy
 	}
+	profile, ok := modelprofile.Lookup(value.ExecutionProfileID, value.ExecutionProfileVersion)
+	if !ok {
+		return snapshot{}, fmt.Errorf("%w: unknown model execution profile %s@%s", ErrManifestStale, value.ExecutionProfileID, value.ExecutionProfileVersion)
+	}
+	value.CapabilityRequirements, err = ResolveCapabilityRequirements(profile, request)
+	if err != nil {
+		return snapshot{}, err
+	}
+	value.CapabilitiesResolved = true
 	// Legacy mode must remain the exact pre-cutover authority. In particular it
 	// does not read normalized manifests, canonical projections, operation rows,
 	// probes or capability evidence and therefore cannot be broken by an
@@ -141,7 +150,11 @@ SELECT id,lifecycle,context_length,output_limit,execution_profile_id,execution_p
 	if err != nil {
 		return snapshot{}, err
 	}
-	if err := loadCapabilities(ctx, tx, value.CustomerOrgID, value.PublicModelID, operation, request.RequiredCapabilities, canonical); err != nil {
+	if err := loadCapabilities(
+		ctx, tx, value.CustomerOrgID, value.PublicModelID, operation,
+		value.ExecutionProfileID, value.ExecutionProfileVersion,
+		capabilityIDs(value.CapabilityRequirements), canonical,
+	); err != nil {
 		return snapshot{}, err
 	}
 	value.Canonical = canonical
@@ -520,19 +533,71 @@ SELECT deployment.id,deployment.public_model_id,deployment.connection_id,
 	return result, nil
 }
 
-func loadCapabilities(ctx context.Context, tx pgx.Tx, orgID, publicModelID int64, operationID string, required []string, candidates []canonicalCandidate) error {
+func loadCapabilities(
+	ctx context.Context,
+	tx pgx.Tx,
+	orgID, publicModelID int64,
+	operationID, executionProfileID, executionProfileVersion string,
+	required []string,
+	candidates []canonicalCandidate,
+) error {
 	if len(required) == 0 || len(candidates) == 0 {
 		return nil
+	}
+	return loadCapabilityEvidence(
+		ctx, tx, orgID, publicModelID, operationID,
+		executionProfileID, executionProfileVersion, required, candidates,
+	)
+}
+
+func loadCapabilityEvidence(
+	ctx context.Context,
+	tx pgx.Tx,
+	orgID, publicModelID int64,
+	operationID, executionProfileID, executionProfileVersion string,
+	required []string,
+	candidates []canonicalCandidate,
+) error {
+	if len(candidates) == 0 {
+		return nil
+	}
+	capabilityFilter := ""
+	arguments := []interface{}{orgID, publicModelID, operationID, executionProfileID, executionProfileVersion}
+	if len(required) > 0 {
+		capabilityFilter = " AND capability.capability_id=ANY($6::varchar[])"
+		arguments = append(arguments, required)
 	}
 	rows, err := tx.Query(ctx, `
 SELECT capability.deployment_id,capability.capability_id,capability.support_state,
        capability.evidence_state,capability.evidence_ref,
-       capability.verified_at,capability.revision
+       capability.verified_at,capability.revision,
+       current_contract.probe_contract_id,current_contract.probe_contract_version,
+       qualification.approval_id,qualification.approved_at
   FROM model_deployment_capabilities capability
   JOIN model_deployments deployment ON deployment.id=capability.deployment_id
+  JOIN model_deployment_operations operation
+    ON operation.deployment_id=capability.deployment_id
+   AND operation.operation_id=capability.operation_id
+  LEFT JOIN model_capability_current_probe_contracts current_contract
+    ON current_contract.operation_id=capability.operation_id
+   AND current_contract.capability_id=capability.capability_id
+   AND current_contract.execution_profile_id=$4
+   AND current_contract.execution_profile_version=$5
+   AND current_contract.protocol_profile_id=operation.protocol_profile_id
+   AND current_contract.protocol_profile_version=operation.protocol_profile_version
+  LEFT JOIN model_capability_execution_qualifications qualification
+    ON qualification.deployment_id=capability.deployment_id
+   AND qualification.operation_id=capability.operation_id
+   AND qualification.capability_id=capability.capability_id
+   AND qualification.execution_profile_id=$4
+   AND qualification.execution_profile_version=$5
+   AND qualification.protocol_profile_id=operation.protocol_profile_id
+   AND qualification.protocol_profile_version=operation.protocol_profile_version
+   AND qualification.probe_contract_id=current_contract.probe_contract_id
+   AND qualification.probe_contract_version=current_contract.probe_contract_version
  WHERE deployment.customer_org_id=$1 AND deployment.public_model_id=$2
-   AND capability.operation_id=$3 AND capability.capability_id=ANY($4::varchar[])
- ORDER BY capability.deployment_id,capability.capability_id`, orgID, publicModelID, operationID, required)
+	AND capability.operation_id=$3`+capabilityFilter+`
+ ORDER BY capability.deployment_id,capability.capability_id`, arguments...)
 	if err != nil {
 		return fmt.Errorf("%w: read capability evidence: %v", ErrUnavailable, err)
 	}
@@ -544,9 +609,23 @@ SELECT capability.deployment_id,capability.capability_id,capability.support_stat
 	for rows.Next() {
 		var deploymentID int64
 		var item capabilitySnapshot
+		var probeContractID, probeContractVersion *string
+		var approvalID *int64
+		var approvedAt *time.Time
 		if err := rows.Scan(&deploymentID, &item.ID, &item.SupportState, &item.EvidenceState,
-			&item.EvidenceRef, &item.VerifiedAt, &item.Revision); err != nil {
+			&item.EvidenceRef, &item.VerifiedAt, &item.Revision,
+			&probeContractID, &probeContractVersion, &approvalID, &approvedAt); err != nil {
 			return fmt.Errorf("%w: scan capability evidence: %v", ErrUnavailable, err)
+		}
+		if probeContractID != nil {
+			if approvalID == nil || approvedAt == nil || *approvalID <= 0 {
+				continue
+			}
+			item.SupportState = "enabled"
+			item.EvidenceState = "production_approved"
+			item.EvidenceRef = "capability_approval:" + strconv.FormatInt(*approvalID, 10)
+			item.VerifiedAt = approvedAt
+			item.Revision = *approvalID
 		}
 		if position, exists := positions[deploymentID]; exists {
 			candidates[position].Capabilities[item.ID] = item

@@ -172,6 +172,30 @@ func TestOfficialRateDraftImportIsAtomicEvidenceBackedAndNeverActive(t *testing.
 	require.Equal(t, "revision-7", listed[0].SourceEvidence.SourceRevision)
 	require.Equal(t, RateSourceUnitComponents, listed[0].SourceEvidence.UnitContract)
 
+	usdComponents := make([]RateComponent, len(components)-1)
+	for index, component := range components[:len(components)-1] {
+		usdComponents[index] = component
+		usdComponents[index].Amount.Currency = "USD"
+	}
+	usdRecord, err := store.ImportOfficialRateCardDraft(ctx, OfficialRateDraftImport{
+		Card: RateCard{
+			RateCardRef: "official-usd-rate", OrgID: orgID, ProviderRef: "openai", ModelRef: "gpt-5.6-sol",
+			EffectiveFrom: fetchedAt, Components: usdComponents,
+		},
+		Evidence: RateSourceEvidence{
+			EvidenceRef: "official-usd-source", SourceURL: "https://example.invalid/usd-pricing",
+			SourceRevision: "revision-usd-1", FetchedAt: fetchedAt,
+			PayloadSHA256:    "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+			TransformVersion: "official-transform.v1", LastSuccessAt: fetchedAt,
+			StaleAfter: fetchedAt.Add(24 * time.Hour),
+		},
+	}, "user:703")
+	require.NoError(t, err)
+	require.Equal(t, "USD", usdRecord.SourceEvidence.Currency)
+	require.Equal(t, RateDraft, usdRecord.Card.State)
+	_, err = store.ApproveRateCard(ctx, orgID, usdRecord.Card.RateCardRef, usdRecord.Card.Version, "user:704")
+	require.ErrorIs(t, err, ErrRequestPricingNotReady)
+
 	// A broken card causes the entire import to roll back, including evidence.
 	broken := OfficialRateDraftImport{
 		Card: RateCard{

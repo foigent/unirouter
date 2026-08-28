@@ -132,7 +132,7 @@ func TestVerifiedTokenizerProfilesAdmitLargeToolEnvelopeBeforeFreeze(t *testing.
 			require.NoError(t, relay.SetModelExecutionRuntime(modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default()))
 			batch, err := relay.prepareModelExecutionRoutes(
 				context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
-				"public-model", "public-model", "req-verified-tokenizer-profile", nil,
+				"public-model", "public-model", "req-verified-tokenizer-profile",
 				modelExecutionRequestLimits{EstimatedInputTokens: byteUpper.InputTokens, ExplicitOutputTokens: intPointer(1), EstimateVersion: byteUpper.Version},
 				body, time.Now(),
 			)
@@ -376,10 +376,11 @@ func TestAdmissionRejectsLargeStructuredInputsBeforeFreezeOrDispatch(t *testing.
 	}
 }
 
-func TestPlannerPublicOutputLimitIsTheImplicitHardReservation(t *testing.T) {
+func TestPlannerRequestDefaultOutputLimitIsTheImplicitHardReservation(t *testing.T) {
 	encKey := []byte("0123456789abcdef0123456789abcdef")
 	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://provider.test", encKey, nil)
 	plan.PublicOutputLimit = 4_321
+	plan.RequestDefaultOutputLimit = 1_234
 	planner := &executionPlannerStub{plan: plan}
 	coordinator := &executionCoordinatorStub{}
 	var frozen billing.FreezeRequest
@@ -394,8 +395,8 @@ func TestPlannerPublicOutputLimitIsTheImplicitHardReservation(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 	relay.HandleChatCompletion(recorder, executionRequest(http.MethodPost, "/v1/chat/completions", "req-public-output", `{"model":"public-model","messages":[{"role":"user","content":"hello"}]}`))
-	if frozen.ReservedCompletionTokens != plan.PublicOutputLimit || frozen.EstimatedTokens != frozen.EstimatedInputTokens+plan.PublicOutputLimit {
-		t.Fatalf("planner public output was not the Freeze hard bound: %+v", frozen)
+	if frozen.ReservedCompletionTokens != plan.RequestDefaultOutputLimit || frozen.EstimatedTokens != frozen.EstimatedInputTokens+plan.RequestDefaultOutputLimit {
+		t.Fatalf("planner request default was not the Freeze hard bound: %+v", frozen)
 	}
 	if coordinator.authorizeCount.Load() != 1 {
 		t.Fatalf("short text did not pass normal admission: authorize=%d status=%d body=%s", coordinator.authorizeCount.Load(), recorder.Code, recorder.Body.String())
@@ -428,7 +429,7 @@ func TestPlannerPublicOutputLimitIsTheImplicitHardReservation(t *testing.T) {
 	}
 	legacyBatch, err := legacyRelay.prepareModelExecutionRoutes(
 		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
-		"public-model", "public-model", "req-legacy-output-wire", nil,
+		"public-model", "public-model", "req-legacy-output-wire",
 		modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
 		[]byte(`{"model":"public-model","messages":[{"role":"user","content":"hello"}]}`), time.Now(),
 	)
@@ -453,17 +454,20 @@ func TestImplicitOutputLimitUsesExactOpenAICompatibleWireContract(t *testing.T) 
 	newPlan := func(mode modelrouting.Mode) modelrouting.Plan {
 		plan := executionTestPlan(t, mode, modeloperation.IDChatCompletions, "https://api.deepseek.example", encKey, nil)
 		setExecutionTestProfile(t, &plan, "deepseek.v4-flash.api", "1.0.0")
-		plan.PublicOutputLimit = 2_048
+		plan.PublicOutputLimit = 384_000
+		plan.RequestDefaultOutputLimit = 32_768
 		plan.Routes[0].Provider = "deepseek"
 		plan.Routes[0].UpstreamModel = "deepseek-v4-flash"
 		plan.Routes[0].ProtocolProfileID = "openai.chat_completions"
 		plan.Routes[0].ProtocolProfileVersion = "1.0.0"
 		return plan
 	}
-	probeOnly := newPlan(modelrouting.ModeCanonical).Routes[0]
+	probePlan := newPlan(modelrouting.ModeCanonical)
+	setExecutionTestProfile(t, &probePlan, modelprofile.UnverifiedProfileID, modelprofile.UnverifiedProfileVersion)
+	probeOnly := probePlan.Routes[0]
 	probeOnly.ProtocolProfileID = "legacy.channel_model_probe"
 	probeOnly.ProtocolProfileVersion = "v1"
-	if _, supported := providerOutputLimitField(newPlan(modelrouting.ModeCanonical), probeOnly, nil); supported {
+	if _, supported := providerOutputLimitField(probePlan, probeOnly, nil); supported {
 		t.Fatal("probe profile was incorrectly promoted to an execution wire contract")
 	}
 	for _, mode := range []modelrouting.Mode{modelrouting.ModeCanonical, modelrouting.ModeVerify} {
@@ -475,15 +479,15 @@ func TestImplicitOutputLimitUsesExactOpenAICompatibleWireContract(t *testing.T) 
 			}
 			batch, err := relay.prepareModelExecutionRoutes(
 				context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
-				"public-model", "public-model", "req-deepseek-output-contract", nil,
+				"public-model", "public-model", "req-deepseek-output-contract",
 				modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
 				[]byte(`{"model":"public-model","messages":[{"role":"user","content":"hello"}]}`), time.Now(),
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if batch.limits.EstimatedOutputTokens != plan.PublicOutputLimit || batch.limits.ProviderOutputLimit != plan.PublicOutputLimit {
-				t.Fatalf("public output cap was not reserved: %+v", batch.limits)
+			if batch.limits.EstimatedOutputTokens != plan.RequestDefaultOutputLimit || batch.limits.ProviderOutputLimit != plan.RequestDefaultOutputLimit {
+				t.Fatalf("request default output was not reserved: %+v", batch.limits)
 			}
 			actualBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
 			if err != nil {
@@ -493,7 +497,7 @@ func TestImplicitOutputLimitUsesExactOpenAICompatibleWireContract(t *testing.T) 
 			if err := json.Unmarshal(actualBody, &payload); err != nil {
 				t.Fatal(err)
 			}
-			if string(payload["max_tokens"]) != "2048" || payload["max_completion_tokens"] != nil || string(payload["model"]) != `"deepseek-v4-flash"` {
+			if string(payload["max_tokens"]) != "32768" || payload["max_completion_tokens"] != nil || string(payload["model"]) != `"deepseek-v4-flash"` {
 				t.Fatalf("DeepSeek/OpenAI-compatible hard cap contract mismatch: %s", actualBody)
 			}
 		})
@@ -506,40 +510,57 @@ func TestImplicitOutputLimitUsesExactOpenAICompatibleWireContract(t *testing.T) 
 
 	_, err := relay.prepareModelExecutionRoutes(
 		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
-		"public-model", "public-model", "req-reasoning-output-contract", []string{modelCapabilityReasoning},
+		"public-model", "public-model", "req-reasoning-output-contract",
 		modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
 		[]byte(`{"model":"public-model","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"high"}`), time.Now(),
 	)
-	if !errors.Is(err, errModelExecutionOutputLimitRequired) {
-		t.Fatalf("reasoning profile field was guessed instead of failing closed: %v", err)
+	if !errors.Is(err, modelrouting.ErrInvalidRequest) {
+		t.Fatalf("historical reasoning profile field was accepted instead of failing closed: %v", err)
 	}
 
 	explicit := 128
-	batch, err := relay.prepareModelExecutionRoutes(
+	_, err = relay.prepareModelExecutionRoutes(
 		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
-		"public-model", "public-model", "req-reasoning-explicit-output", []string{modelCapabilityReasoning},
+		"public-model", "public-model", "req-reasoning-explicit-output",
 		modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &explicit, EstimateVersion: chatAdmissionEstimateVersion},
 		[]byte(`{"model":"public-model","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"high","max_completion_tokens":128}`), time.Now(),
+	)
+	if !errors.Is(err, modelrouting.ErrInvalidRequest) {
+		t.Fatalf("explicit output must not retroactively enable historical reasoning semantics: %v", err)
+	}
+
+	current := newPlan(modelrouting.ModeCanonical)
+	setExecutionTestProfile(t, &current, "deepseek.v4-flash.api", "1.2.0")
+	currentRelay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	if err := currentRelay.SetModelExecutionRuntime(modelrouting.ModeCanonical, &executionPlannerStub{plan: current}, &executionCoordinatorStub{}, routingpolicy.Default()); err != nil {
+		t.Fatal(err)
+	}
+	currentBatch, err := currentRelay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"public-model", "public-model", "req-current-reasoning-output-contract",
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
+		[]byte(`{"model":"public-model","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"high"}`), time.Now(),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	actualBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
+	currentBody, err := providerRequestBody(currentBatch.routes[0].upstreamRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(actualBody), `"max_completion_tokens":128`) || strings.Contains(string(actualBody), `"max_tokens"`) {
-		t.Fatalf("explicit reasoning output field was rewritten: %s", actualBody)
+	if !strings.Contains(string(currentBody), `"max_tokens":32768`) || strings.Contains(string(currentBody), `"max_completion_tokens"`) {
+		t.Fatalf("current typed reasoning request default was not injected: %s", currentBody)
 	}
 }
 
-func TestMiniMaxVerifiedProtocolInjectsOfficialCompletionLimitForReasoning(t *testing.T) {
+func TestMiniMaxCurrentVerifiedProtocolInjectsOfficialCompletionLimit(t *testing.T) {
 	encKey := []byte("0123456789abcdef0123456789abcdef")
-	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://api.minimaxi.com", encKey, nil)
-	setExecutionTestProfile(t, &plan, "minimax.m2.7.token-plan", "1.0.0")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://api.minimaxi.com/v1", encKey, nil)
+	setExecutionTestProfile(t, &plan, "minimax.m2.7.token-plan", "1.2.0")
 	plan.PublicContextLimit = 204_800
-	plan.PublicOutputLimit = 65_536
+	plan.PublicOutputLimit = 204_800
 	plan.Routes[0].Provider = "minimax"
+	plan.Routes[0].AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"canonical_v1"}`)
 	plan.Routes[0].UpstreamModel = "MiniMax-M2.7"
 	plan.Routes[0].ProtocolProfileID = "openai.chat_completions"
 	plan.Routes[0].ProtocolProfileVersion = "1.0.0"
@@ -551,7 +572,7 @@ func TestMiniMaxVerifiedProtocolInjectsOfficialCompletionLimitForReasoning(t *te
 	))
 	batch, err := relay.prepareModelExecutionRoutes(
 		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
-		"MiniMax-M2.7", "MiniMax-M2.7", "req-minimax-output-contract", []string{modelCapabilityReasoning},
+		"MiniMax-M2.7", "MiniMax-M2.7", "req-minimax-output-contract",
 		modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
 		[]byte(`{"model":"MiniMax-M2.7","messages":[{"role":"user","content":"hello"}]}`), time.Now(),
 	)
@@ -564,6 +585,282 @@ func TestMiniMaxVerifiedProtocolInjectsOfficialCompletionLimitForReasoning(t *te
 	require.NoError(t, json.Unmarshal(actualBody, &payload))
 	require.Equal(t, "65536", string(payload["max_completion_tokens"]))
 	require.Nil(t, payload["max_tokens"])
+}
+
+func TestCurrentMiniMaxProfilesPrepareExactOutputFieldsAndOfficialURL(t *testing.T) {
+	for _, test := range []struct {
+		name, profileID, upstreamModel   string
+		context, maximum, requestDefault int
+	}{
+		{name: "M2.7", profileID: "minimax.m2.7.token-plan", upstreamModel: "MiniMax-M2.7", context: 204_800, maximum: 204_800, requestDefault: 65_536},
+		{name: "M2.5 highspeed", profileID: "minimax.m2.5-highspeed.token-plan", upstreamModel: "MiniMax-M2.5-highspeed", context: 204_800, maximum: 204_800, requestDefault: 65_536},
+		{name: "M3", profileID: "minimax.m3.token-plan", upstreamModel: "MiniMax-M3", context: 1_000_000, maximum: 524_288, requestDefault: 131_072},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			encKey := []byte("0123456789abcdef0123456789abcdef")
+			plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://api.minimaxi.com/v1", encKey, nil)
+			setExecutionTestProfile(t, &plan, test.profileID, "1.2.0")
+			plan.PublicContextLimit = test.context
+			plan.PublicOutputLimit = test.maximum
+			plan.Routes[0].Provider = "minimax"
+			plan.Routes[0].AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"canonical_v1"}`)
+			plan.Routes[0].UpstreamModel = test.upstreamModel
+			plan.Routes[0].ProtocolProfileID = "openai.chat_completions"
+			plan.Routes[0].ProtocolProfileVersion = "1.0.0"
+			plan.Routes[0].MaxContext = test.context
+			plan.Routes[0].DefaultMaxOutput = test.requestDefault
+
+			relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+			require.NoError(t, relay.SetModelExecutionRuntime(
+				modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
+			))
+
+			batch, err := relay.prepareModelExecutionRoutes(
+				context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+				test.upstreamModel, test.upstreamModel, "req-minimax-current-default-"+test.name,
+				modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
+				[]byte(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hello"}]}`, test.upstreamModel)), time.Now(),
+			)
+			require.NoError(t, err)
+			require.Equal(t, test.requestDefault, batch.limits.ProviderOutputLimit)
+			require.Len(t, batch.routes, 1)
+			actualBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
+			require.NoError(t, err)
+			var payload map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(actualBody, &payload))
+			require.Equal(t, fmt.Sprintf("%d", test.requestDefault), string(payload["max_completion_tokens"]))
+			require.Nil(t, payload["max_tokens"])
+			require.Equal(t, "https://api.minimaxi.com/v1/chat/completions", batch.routes[0].upstreamRequest.URL.String())
+
+			for _, field := range []string{"max_tokens", "max_completion_tokens"} {
+				// The typed contract test covers the provider field maximum. The
+				// complete route must also reserve non-zero prompt tokens inside the
+				// total context budget, so use a distinct above-default value here.
+				explicit := test.requestDefault + 1
+				body := []byte(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hello"}],%q:%d}`, test.upstreamModel, field, explicit))
+				explicitBatch, err := relay.prepareModelExecutionRoutes(
+					context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+					test.upstreamModel, test.upstreamModel, "req-minimax-current-explicit-"+field+test.name,
+					modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &explicit, EstimateVersion: chatAdmissionEstimateVersion},
+					body, time.Now(),
+				)
+				require.NoError(t, err, field)
+				require.Equal(t, explicit, explicitBatch.limits.EstimatedOutputTokens)
+				require.Zero(t, explicitBatch.limits.ProviderOutputLimit)
+				explicitBody, err := providerRequestBody(explicitBatch.routes[0].upstreamRequest)
+				require.NoError(t, err)
+				var explicitPayload map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal(explicitBody, &explicitPayload))
+				require.Equal(t, fmt.Sprintf("%d", explicit), string(explicitPayload[field]))
+			}
+		})
+	}
+}
+
+func TestGrok46CoreChatInjectsPolicyDefaultAndUsesExactOfficialURL(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://api.x.ai/v1", encKey, nil)
+	setExecutionTestProfile(t, &plan, "xai.grok-4.6.api", "1.1.0")
+	plan.PublicContextLimit = 500_000
+	plan.PublicOutputLimit = 131_072
+	plan.Routes[0].Provider = "xai"
+	plan.Routes[0].AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"canonical_v1"}`)
+	plan.Routes[0].UpstreamModel = "grok-4.6"
+	plan.Routes[0].ProtocolProfileID = "openai.chat_completions"
+	plan.Routes[0].ProtocolProfileVersion = "1.0.0"
+	plan.Routes[0].MaxContext = 500_000
+	plan.Routes[0].DefaultMaxOutput = 32_768
+
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	require.NoError(t, relay.SetModelExecutionRuntime(
+		modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
+	))
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"grok-4.6", "grok-4.6", "req-grok-core-default",
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
+		[]byte(`{"model":"grok-4.6","messages":[{"role":"user","content":"hello"}]}`), time.Now(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 32_768, batch.limits.ProviderOutputLimit)
+	require.Equal(t, "https://api.x.ai/v1/chat/completions", batch.routes[0].upstreamRequest.URL.String())
+	actualBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
+	require.NoError(t, err)
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(actualBody, &payload))
+	require.Equal(t, "32768", string(payload["max_tokens"]))
+	require.Nil(t, payload["max_completion_tokens"])
+
+	explicit := 131_072
+	explicitBatch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"grok-4.6", "grok-4.6", "req-grok-core-explicit",
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &explicit, EstimateVersion: chatAdmissionEstimateVersion},
+		[]byte(`{"model":"grok-4.6","messages":[{"role":"user","content":"hello"}],"max_tokens":131072}`), time.Now(),
+	)
+	require.NoError(t, err)
+	explicitBody, err := providerRequestBody(explicitBatch.routes[0].upstreamRequest)
+	require.NoError(t, err)
+	require.Contains(t, string(explicitBody), `"max_tokens":131072`)
+	require.NotContains(t, string(explicitBody), "max_completion_tokens")
+}
+
+func TestQwen38MaxVerifiedProtocolInjectsOfficialDefaultCompletionLimit(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://dashscope.aliyuncs.com/compatible-mode/v1", encKey, nil)
+	setExecutionTestProfile(t, &plan, "qwen.3.8-max.api", "1.1.0")
+	plan.PublicContextLimit = 1_000_000
+	plan.PublicOutputLimit = 131_072
+	plan.Routes[0].Provider = "dashscope"
+	plan.Routes[0].UpstreamModel = "qwen3.8-max"
+	plan.Routes[0].ProtocolProfileID = "openai.chat_completions"
+	plan.Routes[0].ProtocolProfileVersion = "1.0.0"
+	plan.Routes[0].MaxContext = 1_000_000
+
+	field, supported := providerOutputLimitField(plan, plan.Routes[0], nil)
+	require.True(t, supported)
+	require.Equal(t, "max_completion_tokens", field)
+
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	require.NoError(t, relay.SetModelExecutionRuntime(
+		modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
+	))
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"qwen3.8-max", "qwen3.8-max", "req-qwen-output-contract",
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
+		[]byte(`{"model":"qwen3.8-max","messages":[{"role":"user","content":"hello"}]}`), time.Now(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 131_072, batch.limits.ProviderOutputLimit)
+	require.Len(t, batch.routes, 1)
+	actualBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
+	require.NoError(t, err)
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(actualBody, &payload))
+	require.Equal(t, "131072", string(payload["max_completion_tokens"]))
+	require.Nil(t, payload["max_tokens"])
+}
+
+func TestQwen38ExtensionsRemainInProviderPayloadAndAdmissionCount(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://dashscope.aliyuncs.com/compatible-mode/v1", encKey, nil)
+	setExecutionTestProfile(t, &plan, "qwen.3.8-max.api", "1.8.0")
+	plan.PublicContextLimit = 1_000_000
+	plan.PublicOutputLimit = 131_072
+	plan.Routes[0].Provider = "dashscope"
+	plan.Routes[0].UpstreamModel = "qwen3.8-max"
+	plan.Routes[0].ProtocolProfileID = "openai.chat_completions"
+	plan.Routes[0].ProtocolProfileVersion = "1.0.0"
+	plan.Routes[0].MaxContext = 1_000_000
+
+	body := []byte(`{"model":"qwen3.8-max","messages":[{"role":"assistant","content":"answer","reasoning_content":"complete chain"},{"role":"user","content":"hello"}],"stream":true,"tools":[{"type":"function","function":{"name":"lookup","description":"Lookup"}}],"tool_stream":true,"enable_thinking":true,"thinking_budget":4096,"preserve_thinking":true,"max_tokens":131072}`)
+	expectedAdmission, err := estimateChatAdmissionForPlan(body, plan)
+	require.NoError(t, err)
+	withoutExtensions, err := estimateChatAdmissionForPlan([]byte(`{"model":"qwen3.8-max","messages":[{"role":"assistant","content":"answer","reasoning_content":"complete chain"},{"role":"user","content":"hello"}],"stream":true,"tools":[{"type":"function","function":{"name":"lookup","description":"Lookup"}}],"max_tokens":131072}`), plan)
+	require.NoError(t, err)
+	require.Greater(t, expectedAdmission.InputTokens, withoutExtensions.InputTokens)
+
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	require.NoError(t, relay.SetModelExecutionRuntime(
+		modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
+	))
+	explicitOutput := 131_072
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"qwen3.8-max", "qwen3.8-max", "req-qwen-extension-payload",
+		modelExecutionRequestLimits{ExplicitOutputTokens: &explicitOutput}, body, time.Now(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, expectedAdmission.InputTokens, batch.limits.EstimatedInputTokens)
+	require.Len(t, batch.routes, 1)
+	actualBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
+	require.NoError(t, err)
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(actualBody, &payload))
+	require.Equal(t, "true", string(payload["enable_thinking"]))
+	require.Equal(t, "4096", string(payload["thinking_budget"]))
+	require.Equal(t, "true", string(payload["preserve_thinking"]))
+	require.Equal(t, "true", string(payload["tool_stream"]))
+	require.Equal(t, "131072", string(payload["max_tokens"]))
+}
+
+func TestGLM53VerifiedProtocolInjectsOfficialDefaultMaxTokens(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://open.bigmodel.cn/api/paas/v4", encKey, nil)
+	setExecutionTestProfile(t, &plan, "glm.5.3.api", "1.3.0")
+	plan.PublicContextLimit = 1_000_000
+	plan.PublicOutputLimit = 65_536
+	plan.Routes[0].Provider = "glm"
+	plan.Routes[0].AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)
+	plan.Routes[0].UpstreamModel = "glm-5.3"
+	plan.Routes[0].ProtocolProfileID = "openai.chat_completions"
+	plan.Routes[0].ProtocolProfileVersion = "1.0.0"
+	plan.Routes[0].MaxContext = 1_000_000
+
+	field, supported := providerOutputLimitField(plan, plan.Routes[0], nil)
+	require.True(t, supported)
+	require.Equal(t, "max_tokens", field)
+
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	require.NoError(t, relay.SetModelExecutionRuntime(
+		modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
+	))
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"glm-5.3", "glm-5.3", "req-glm-output-contract",
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
+		[]byte(`{"model":"glm-5.3","messages":[{"role":"user","content":"hello"}]}`), time.Now(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 65_536, batch.limits.ProviderOutputLimit)
+	require.Len(t, batch.routes, 1)
+	actualBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
+	require.NoError(t, err)
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(actualBody, &payload))
+	require.Equal(t, "65536", string(payload["max_tokens"]))
+	require.Nil(t, payload["max_completion_tokens"])
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", batch.routes[0].upstreamRequest.URL.String())
+}
+
+func TestGLM5VTurboVerifiedProtocolInjectsOfficialDefaultMaxTokens(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions, "https://open.bigmodel.cn/api/paas/v4", encKey, nil)
+	setExecutionTestProfile(t, &plan, "glm.5v-turbo.api", "1.3.0")
+	plan.PublicContextLimit = 200_000
+	plan.PublicOutputLimit = 65_536
+	plan.Routes[0].Provider = "glm"
+	plan.Routes[0].AdapterConfig = json.RawMessage(`{"endpoint_path_mode":"base_relative"}`)
+	plan.Routes[0].UpstreamModel = "glm-5v-turbo"
+	plan.Routes[0].ProtocolProfileID = "openai.chat_completions"
+	plan.Routes[0].ProtocolProfileVersion = "1.0.0"
+	plan.Routes[0].MaxContext = 200_000
+
+	field, supported := providerOutputLimitField(plan, plan.Routes[0], nil)
+	require.True(t, supported)
+	require.Equal(t, "max_tokens", field)
+
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	require.NoError(t, relay.SetModelExecutionRuntime(
+		modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
+	))
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"glm-5v-turbo", "glm-5v-turbo", "req-glm5v-output-contract",
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
+		[]byte(`{"model":"glm-5v-turbo","messages":[{"role":"user","content":"hello"}]}`), time.Now(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, 65_536, batch.limits.ProviderOutputLimit)
+	require.Len(t, batch.routes, 1)
+	actualBody, err := providerRequestBody(batch.routes[0].upstreamRequest)
+	require.NoError(t, err)
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(actualBody, &payload))
+	require.Equal(t, "65536", string(payload["max_tokens"]))
+	require.Nil(t, payload["max_completion_tokens"])
+	require.Equal(t, "https://open.bigmodel.cn/api/paas/v4/chat/completions", batch.routes[0].upstreamRequest.URL.String())
 }
 
 func TestChatProviderFailuresHaveOneTopologyNeutralExhaustedResponse(t *testing.T) {

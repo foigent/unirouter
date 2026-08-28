@@ -481,6 +481,7 @@ func main() {
 		log.Fatalf("Invalid payload safety configuration: %v", err)
 	}
 	relay := gateway.NewRelay(postgres.Pool, redisClient.Client, router, sharedPolicyBilling, sensitiveFilter, encKey)
+	relay.SetBillingAdmissionReadinessInspector(billingSvc)
 	sharedPolicyBilling.SetEarlyRateAdmissionEvidenceSink(relay)
 	if err := relay.SetModelExecutionRuntime(
 		cfg.ModelRouteAuthority, executionPlanner, executionCoordinator, effectiveConfig.RoutingPolicy.Config,
@@ -918,6 +919,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">POST</td><td><code>/api/v1/model-deployments</code></td><td>Transactionally create or exactly replay one deployment operation; requires a Gateway License and Idempotency-Key (24-hour actor-scoped receipt)</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/probes</code></td><td>Run one bounded real provider probe for Chat Completions, Embeddings, Responses or Messages; the latter two require the exact endpointprotocol profile and immutable public path</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/production-approvals</code></td><td>Platform-admin append-only approval of one exact current Responses or Messages HTTPS probe; qualification only, with no public route or provider dispatch</td></tr>
+<tr><td class="method">GET</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}</code></td><td>Read the exact typed capability probe, approval and current qualification projection</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/probes</code></td><td>Run one server-owned typed capability probe; M88 initially supports only DeepSeek V4 Flash Chat streaming</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/model-deployments/{deploymentID}/operations/{operationID}/capabilities/{capabilityID}/routing-approvals</code></td><td>Platform-admin append-only approval for the exact current typed capability evidence to enter the current environment route pool</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/provider-connections/{connectionID}/pause</code></td><td>Emergency-pause one provider connection without changing sibling deployment states; available without a Gateway License</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/provider-credential-bindings/{bindingID}/revoke</code></td><td>Irreversibly retire and scrub one provider credential binding; available without a Gateway License</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-deployment-releases</code></td><td>Read tenant-scoped public models, exact server-owned authoring baselines/options and actionable canonical v2 releases without a Gateway License</td></tr>
@@ -1005,7 +1009,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 <tr><td class="method">PUT</td><td><code>/api/v1/license</code></td><td>Import offline license (platform admin)</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/users</code></td><td>List users</td></tr>
 <tr><td class="method">POST</td><td><code>/api/v1/users</code></td><td>Create user</td></tr>
-<tr><td class="method">POST</td><td><code>/api/v1/bootstrap/first-customer</code></td><td>Create first customer and zero wallet from an exact post-reset or current fresh-migration checkpoint; fresh production requires recorded release evidence</td></tr>
+<tr><td class="method">POST</td><td><code>/api/v1/bootstrap/first-customer</code></td><td>First customer from exact strict-reset, runtime-reset shell or fresh-migration state; dry_run=true previews without writes; fresh production still requires recorded release evidence</td></tr>
 <tr><td class="method">PUT</td><td><code>/api/v1/users/{id}</code></td><td>Update user</td></tr>
 <tr><td class="method">DELETE</td><td><code>/api/v1/users/{id}</code></td><td>Delete user</td></tr>
 <tr><td class="method">GET</td><td><code>/api/v1/model-prices</code></td><td>List model prices (platform, organization, or billing admin)</td></tr>

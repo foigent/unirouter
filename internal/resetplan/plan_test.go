@@ -47,8 +47,8 @@ func TestBuildHasStableSemanticScopeAndVariableArtifactIdentity(t *testing.T) {
 	if first.Summary.ReviewRequiredCount != 0 || first.Summary.ProtectedCount != len(protectedTables) {
 		t.Fatalf("unexpected classification summary: %+v", first.Summary)
 	}
-	if first.Summary.TableCount != 119 || first.Summary.ResetCandidateCount != 109 ||
-		first.Summary.ProtectedCount != 8 || first.Summary.ProtectedPartialCount != 1 ||
+	if first.Summary.TableCount != 123 || first.Summary.ResetCandidateCount != 111 ||
+		first.Summary.ProtectedCount != 10 || first.Summary.ProtectedPartialCount != 1 ||
 		first.Summary.SchemaLedgerCount != 1 {
 		t.Fatalf("reset classification cardinality drifted: %+v", first.Summary)
 	}
@@ -84,20 +84,20 @@ func TestBuildRequiresNewSourceExactAdminAndCompleteClassification(t *testing.T)
 	}
 }
 
-func TestBuildSupportsExactSchema79AndRejectsPreviousOrFutureMax(t *testing.T) {
+func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing.T) {
 	current := completeSnapshot()
 	plan, err := Build(current, testTarget(), "source-a", "source-b", time.Unix(0, 0))
 	if err != nil {
-		t.Fatalf("Build schema 79: %v", err)
+		t.Fatalf("Build current schema: %v", err)
 	}
 	if got := plan.Schema.MigrationVersions[len(plan.Schema.MigrationVersions)-1]; got != schemaauthority.LatestSupportedMigration {
 		t.Fatalf("latest migration = %q, want %q", got, schemaauthority.LatestSupportedMigration)
 	}
-	if plan.Summary.TableCount != 119 || plan.Summary.ResetCandidateCount != 109 || plan.Summary.ReviewRequiredCount != 0 {
-		t.Fatalf("schema 79 changed reviewed table classification: %+v", plan.Summary)
+	if plan.Summary.TableCount != 123 || plan.Summary.ResetCandidateCount != 111 || plan.Summary.ReviewRequiredCount != 0 {
+		t.Fatalf("current schema changed reviewed table classification: %+v", plan.Summary)
 	}
 	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+5 {
-		t.Fatalf("schema 79 compatibility trigger missing from reset contract: %+v", plan.Schema)
+		t.Fatalf("current schema compatibility trigger missing from reset contract: %+v", plan.Schema)
 	}
 	if plan.SelectedAdmin.OrganizationRole != "platform_admin" || plan.SelectedAdmin.Role != "platform_admin" {
 		t.Fatalf("selected admin identity axes drifted: %+v", plan.SelectedAdmin)
@@ -110,7 +110,7 @@ func TestBuildSupportsExactSchema79AndRejectsPreviousOrFutureMax(t *testing.T) {
 	}
 
 	future := completeSnapshot()
-	future.MigrationVersions = append(future.MigrationVersions, "000084_future_contract")
+	future.MigrationVersions = append(future.MigrationVersions, "000094_future_contract")
 	if _, err := Build(future, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil || !strings.Contains(err.Error(), "reset_support_migration") {
 		t.Fatalf("future migration error = %v", err)
 	}

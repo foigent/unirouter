@@ -526,7 +526,7 @@ SELECT deployment.id,operation.operation_id,connection.config_revision,
   LEFT JOIN model_operation_execution_qualifications qualification
     ON qualification.deployment_id=operation.deployment_id
    AND qualification.operation_id=operation.operation_id
-  LEFT JOIN model_operation_current_public_execution_contracts contract
+  LEFT JOIN model_operation_exact_public_execution_contracts contract
     ON contract.operation_id=qualification.operation_id
    AND contract.public_path=qualification.public_path
    AND contract.protocol_profile_id=qualification.protocol_profile_id

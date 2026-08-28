@@ -3,6 +3,52 @@
   "schema_sha256": "sha256:75a3f5a6bf601c8b041f2f1f6aef00f0a97e55d72422d1cb0222b9d74391222f",
   "profiles": [
     {
+      "profile_id": "unirouter.anthropic.messages.text-tools.v3",
+      "profile_version": "1.0.0",
+      "runtime_state": "local_contract_only",
+      "manifest_sha256": "sha256:263a7e8776552e5b57a5981aed0fc5d3e508a4e27faac75658c0ca104152e429",
+      "fixtures": [
+        {
+          "fixture_id": "anthropic-messages-text-tools.v3",
+          "sha256": "sha256:9f66927977c3390c07118f2d61c6dfc3fb2d931c620853db23825fb0ab083617"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "anthropic-messages-text-tools.v3/request",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text-tools.v3/response",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text-tools.v3/negative-request/server-tool-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text-tools.v3/negative-request/undeclared-choice-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text-tools.v3/negative-response/undeclared-tool-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text-tools.v3/negative-response/tool-stop-mismatch-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text-tools.v3/status/rate-limit-retry",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text-tools.v3/status/overloaded-retry",
+          "passed": true
+        }
+      ]
+    },
+    {
       "profile_id": "unirouter.anthropic.messages.text.v1",
       "profile_version": "1.0.0",
       "runtime_state": "local_contract_only",
@@ -60,6 +106,52 @@
         },
         {
           "case_id": "anthropic-messages-text.v1/status/overloaded-retry",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "profile_id": "unirouter.anthropic.messages.text.v2",
+      "profile_version": "1.0.0",
+      "runtime_state": "local_contract_only",
+      "manifest_sha256": "sha256:9b81c950d63c00e3253b0ec0649c2cb006b49ffd99c984729ab1cfd1c75d9327",
+      "fixtures": [
+        {
+          "fixture_id": "anthropic-messages-text.v2",
+          "sha256": "sha256:f39b178cf190b9e8344eaca66c7f366a1e5b07740ffe6b17cab4b816851c23c3"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "anthropic-messages-text.v2/request",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text.v2/response",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text.v2/negative-request/tools-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text.v2/negative-request/stream-type-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text.v2/negative-response/tool-use-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text.v2/negative-response/cache-partition-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text.v2/status/rate-limit-retry",
+          "passed": true
+        },
+        {
+          "case_id": "anthropic-messages-text.v2/status/overloaded-retry",
           "passed": true
         }
       ]
@@ -221,12 +313,58 @@
           "passed": true
         }
       ]
+    },
+    {
+      "profile_id": "unirouter.openai.responses.text.v2",
+      "profile_version": "1.0.0",
+      "runtime_state": "local_contract_only",
+      "manifest_sha256": "sha256:a4c779fb50c5e874e60b0de3833ba7e9dcc9b4b26ca83f22b1c7d916f0f413ba",
+      "fixtures": [
+        {
+          "fixture_id": "openai-responses-text.v2",
+          "sha256": "sha256:2ec50649c405ae336389f34385108f812041c7e5c0747eae96fe49880f617b34"
+        }
+      ],
+      "cases": [
+        {
+          "case_id": "openai-responses-text.v2/request",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v2/response",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v2/negative-request/stream-type-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v2/negative-request/tools-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v2/negative-response/non-final-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v2/negative-response/usage-mismatch-rejected",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v2/status/rate-limit",
+          "passed": true
+        },
+        {
+          "case_id": "openai-responses-text.v2/status/auth-stop",
+          "passed": true
+        }
+      ]
     }
   ],
   "summary": {
-    "profiles": 4,
-    "cases": 41,
-    "passed": 41,
+    "profiles": 7,
+    "cases": 65,
+    "passed": 65,
     "failed": 0
   }
 }

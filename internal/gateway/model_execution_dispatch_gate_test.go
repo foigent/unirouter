@@ -120,7 +120,7 @@ func TestResponsesAndMessagesGatewayFenceFollowsPlannerAndPrecedesProviderPrepar
 
 			batch, err := relay.prepareModelExecutionRoutes(
 				context.Background(), test.operation, adapters.EndpointChatCompletions,
-				"public-model", "public-model", "req-dispatch-fence", nil,
+				"public-model", "public-model", "req-dispatch-fence",
 				modelExecutionRequestLimits{EstimatedInputTokens: 1, EstimateVersion: chatAdmissionEstimateVersion},
 				[]byte(`{"model":"public-model"}`), time.Now(),
 			)

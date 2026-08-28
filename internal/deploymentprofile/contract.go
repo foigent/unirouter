@@ -74,7 +74,7 @@ type EndpointProfile struct {
 func EndpointProfiles() []EndpointProfile {
 	return []EndpointProfile{
 		{ProfileID: EndpointOpenAIChat, DisplayName: "OpenAI Chat Completions", Paths: []string{"/v1/chat/completions", "/v1/models"}, RuntimeState: "runtime_supported", EvidenceLevel: "verified", Streaming: true},
-		{ProfileID: EndpointOpenAIResponses, DisplayName: "OpenAI Responses (strict non-stream text)", Paths: []string{"/v1/responses"}, RuntimeState: "runtime_supported", EvidenceLevel: EvidenceRepositoryRuntimeVerified, Streaming: false},
+		{ProfileID: EndpointOpenAIResponses, DisplayName: "OpenAI Responses (strict text; exact stream subset)", Paths: []string{"/v1/responses"}, RuntimeState: "runtime_supported", EvidenceLevel: EvidenceRepositoryRuntimeVerified, Streaming: true},
 		{ProfileID: EndpointAnthropicMessages, DisplayName: "Anthropic Messages (strict non-stream text)", Paths: []string{"/v1/messages"}, RuntimeState: "runtime_supported", EvidenceLevel: EvidenceRepositoryRuntimeVerified, Streaming: false},
 	}
 }

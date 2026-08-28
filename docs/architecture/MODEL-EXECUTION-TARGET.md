@@ -70,15 +70,15 @@ writes remain supported. Draining old binaries is still an orchestration
 responsibility; no environment value or database check proves that a separate
 old process has exited.
 
-The executable schema ceiling is `000083`. After either normal migration or
+The executable schema ceiling is `000084`. After either normal migration or
 `SKIP_MIGRATION`, the backend requires the complete ordered database migration
 ledger to equal the binary artifact ledger before customer-baseline
 initialization or HTTP bind. Missing, extra, future, duplicate, reordered and
-empty ledgers fail closed. Ceiling changes are consequently non-rolling: an M82
-stable and M83 canary cannot both be ready on one database. Drain and stop the
-old fleet, let one migration owner advance the database to M83, then start M83
+empty ledgers fail closed. Ceiling changes are consequently non-rolling: an M83
+stable and M84 canary cannot both be ready on one database. Drain and stop the
+old fleet, let one migration owner advance the database to M84, then start M84
 stable/canary; a secondary may skip migrations only when the database is already
-exact M83. M81 adds an explicit versioned execution-profile identity to every
+exact M84. M81 adds an explicit versioned execution-profile identity to every
 model. Historical rows migrate to `unverified.chat@1.0.0`; migration never guesses
 a tokenizer, context limit or provider contract from a mutable model name. A
 reviewed profile freezes tokenizer, reasoning, cache-usage and protocol identities

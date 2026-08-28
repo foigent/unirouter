@@ -4,6 +4,175 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.7] - 2026-08-28
+
+### Fixed
+
+- Normalized DeepSeek V4 Flash's optional SDK-only function-tool `index` at the
+  exact provider/model/Chat boundary, preserving the existing Profile `1.5.0`,
+  protocol v4, Release and Alias. Runtime delivery and function-tool Probe v2
+  reuse one normalizer; valid lexical non-negative integer indexes are removed
+  from the canonical response while unrelated fields remain fail-closed.
+- Added M93's ten immutable Probe v2 bindings for the five existing function-tool
+  capabilities under Profile `1.5.0`'s two exact Chat protocol identities. Old
+  v1 receipts remain historical but no longer qualify current routing.
+- Made the Developer Console surface a terminal SSE error and its request and
+  billing status after an HTTP 200 stream, instead of displaying the failed
+  stream as an empty successful response.
+
+### Evidence boundary
+
+- This UI contract does not create, qualify, release or route a model by itself.
+  Those control-plane records and any supplier calls remain separately verified
+  on development/test.
+- M93's Probe v2/normalizer correction and the terminal-stream UI correction are
+  locally conformant only until their exact artifact is deployed, probed,
+  approved and exercised through the development/test UI. They do not reinterpret
+  v1 evidence or authorize Production.
+
+## [1.2.6] - 2026-08-28
+
+### Fixed
+
+- Kept reviewed onboarding strict about the exact Execution Profile and upstream
+  provider model while allowing the administrator to choose a unique, stable
+  public model ID. This lets a new immutable deployment replace an older public
+  identity through an audited Alias cutover without treating that caller-facing
+  ID as a provider model alias.
+
+### Evidence boundary
+
+- This onboarding contract does not create, qualify, release or route a model by
+  itself. Those control-plane records and any supplier calls remain separately
+  verified on development/test.
+
+## [1.2.5] - 2026-08-28
+
+### Fixed
+
+- Added immutable DeepSeek V4 Flash and Pro Profile `1.5.0` identities that
+  preserve the provider-default thinking mode while rejecting explicit
+  `tool_choice` values that the active reasoning surface cannot honor. A
+  redundant explicit `auto` is normalized to the provider default; named and
+  required choices remain available only when thinking is explicitly disabled.
+- Added M92 exact capability-contract bindings for DeepSeek V4 Flash Profile
+  `1.5.0`, taught canonical onboarding to materialize every migration-approved
+  capability for an exact Profile tuple, and advanced startup schema authority
+  to M92. Historical Profile, Release, probe and approval evidence remains
+  immutable and version scoped.
+- Updated the Admin capability workflow and OpenAPI projection for Profile
+  `1.5.0`; clean rollback is supported only before any Profile `1.5.0`
+  attachment or qualification evidence exists. A retained Flash/Pro model
+  attachment, probe or approval prevents destructive downgrade.
+
+### Evidence boundary
+
+- Local request, migration, bootstrap and UI tests do not transfer the existing
+  Target Profile `1.4.0` live evidence to `1.5.0`. Deployment, new exact probes,
+  routing approvals, ordinary supplier calls and any public-model traffic switch
+  remain separately bounded and must be verified on development/test.
+
+## [1.2.4] - 2026-08-28
+
+### Added
+
+- Added exact DeepSeek V4 Flash Chat qualification contracts for reasoning,
+  reasoning effort, fixed function tools, auto/named/required tool choice and
+  JSON Object. Migrations M90/M91 add only declared support projections;
+  immutable typed probe and approval receipts remain required before routing.
+- Added one guided Admin capability workflow for the new exact contracts and
+  bounded Developer Console scenarios for reasoning, fixed no-side-effect tools
+  and JSON Object. Arbitrary provider payloads and private reasoning text are
+  not retained by the qualification evidence.
+
+### Fixed
+
+- Preserved terminal usage and finish reason in the streaming Developer Console
+  result, and prevented `thinking=disabled` from being sent together with
+  `reasoning_effort`.
+- Advanced the binary schema authority to M91, extended current-schema rollback
+  fixtures, made M90/M91 downgrade fail closed on stable identity drift, and
+  updated fresh-customer bootstrap to validate all 20 exact probe bindings and
+  18 current contracts.
+- Updated the OpenAPI capability qualification contract and negative tests so
+  schema, bootstrap, UI and runtime consumers agree on the same finite set.
+
+### Evidence boundary
+
+- Local typed, migration, bootstrap, rollback and UI evidence does not by itself
+  prove provider-live qualification, routing approval, customer billing,
+  Release or canonical promotion. Paid tests remain separately bounded.
+
+## [1.2.3] - 2026-08-24
+
+### Added
+
+- Added exact versioned onboarding Profiles and official Provider presets for
+  the retained catalog: 30 upstream model entries and 33 API-surface identities,
+  with exact upstream IDs, explicit operations, provider limits, request defaults,
+  bounded protocol subsets and separately recorded documentation evidence.
+- Added dated CNY or USD official-price candidates. Flat, reviewable schedules
+  can create provider-list drafts; context-, tier-, cache-TTL-, storage- or
+  tool-dependent prices remain visible as `manual_review_required` instead of
+  being flattened into an inaccurate rate.
+- Added migration `000084_official_rate_source_currency_drafts`, allowing USD
+  only on official review-source evidence while retaining CNY-only request
+  pricing approval, activation, wallet and settlement contracts.
+- Added M85 Plan-to-Freeze/attempt snapshot fences, M86 coexisting exact public
+  Responses/Messages v1/v2 bindings and the bounded M87 Messages function-tool
+  binding. Historical Profile and sealed Release identities remain addressable;
+  referenced evidence prevents destructive rollback. These schema changes
+  require an explicitly approved non-rolling deployment, not a live promotion.
+- Added the bounded M88 capability-qualification authority: append-only typed
+  probe and approval receipts, deterministic preferred approval for new Plans
+  and cutover, and exact bound-receipt revalidation for in-flight Plans. This
+  release exposes only DeepSeek V4 Flash Chat streaming qualification. The
+  migration and canonical deployment creator materialize its exact
+  `enabled/declared` support projection only when the compiled and database
+  contracts agree; they never call the provider or create live, approval,
+  route, Release or pricing authority, and never overwrite an existing support
+  decision.
+
+### Fixed
+
+- Separated documented provider maximum output from the default output used
+  when a request omits an explicit limit, including the DeepSeek V4 384K
+  maximum and the reviewed defaults for Kimi, MiniMax and the new catalog.
+- Rejected mixed-currency official drafts and guarded M84 rollback when retained
+  non-CNY evidence would be lost; no implicit FX conversion was introduced.
+- Derived invocation capability requirements from the exact typed Profile in
+  the same route snapshot, rather than requiring every supported capability.
+  Normalized capability evidence through one timestamp/hash authority and kept
+  historical strict public-v1 execution isolated from newer capabilities.
+- Rejected public output-limit violations before credentials/Freeze, serialized
+  M85 rollback against evidence writers and migration discovery, and corrected
+  onboarding/status claims to distinguish local subsets from full adaptation.
+- Kept public stream response, terminal-health and delivery ordering consistent
+  with the durable attempt ledger; preserved actual rejected/transport status
+  and prevented checkpoint estimates from charging provider-final-only contracts.
+  Updated M86 attempt/call-log/trace constraints to consume exact public bindings.
+- Required explicit GPT surface selection for ambiguous governance aliases;
+  populated new public limits from executable maxima without changing existing
+  lower limits or mistaking request defaults for provider maxima.
+- Kept fresh-install bootstrap compatible with the exact M86/M87 protocol seed
+  additions while retaining dirty-state, provenance, schema and Release guards.
+- Prevented mutable capability projection rows from authorizing M88-typed
+  routes without a current receipt-aware qualification. Equivalent newer
+  approvals do not invalidate an already frozen Plan; stable contract drift
+  still fails closed, while transient credential cooldown remains a separate
+  route-health gate. M88 rollback removes only its untouched declaration
+  marker; retained probe, approval or execution evidence blocks destructive
+  rollback, and a down/up replay restores only the exact supported tuple.
+
+### Evidence boundary
+
+- B1 retains only the explicitly approved bounded implementation batch; it is
+  not completion of every model's provider-documented capabilities. Local
+  conformance is capability-specific. Provider-live, canary and release evidence
+  remain separate; no paid traffic, deployment or canonical switch is authorized
+  by this changelog. USD prices remain review-only drafts, and nonstandard tiers
+  cannot debit prepaid customer wallets.
+
 ## [1.2.2] - 2026-08-24
 
 ### Fixed

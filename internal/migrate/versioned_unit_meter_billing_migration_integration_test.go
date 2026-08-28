@@ -16,6 +16,9 @@ import (
 func TestVersionedUnitMeterBillingMigrationIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
+	execMigrationDown(t, ctx, pool, "000085_model_execution_plan_freeze_fence.down.sql")
+	execMigrationDown(t, ctx, pool, "000084_official_rate_source_currency_drafts.down.sql")
+	var err error
 
 	var columnCount int
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -33,7 +36,7 @@ SELECT COUNT(*)
 
 	var orgID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name) VALUES ('m83-unit-meter-test') RETURNING id`).Scan(&orgID))
-	_, err := pool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 INSERT INTO enterprise_finance_rate_source_evidence (
   org_id,evidence_ref,source_kind,source_url,source_revision,fetched_at,
   payload_sha256,transform_version,currency,unit_contract,last_success_at,

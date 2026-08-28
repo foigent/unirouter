@@ -88,6 +88,10 @@ func TestChatAndEmbeddingsHaveNoLegacyRouterFallbackSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read relay source: %v", err)
 	}
+	laterByHandler := map[string][]string{
+		"HandleChatCompletion": {"pinGuardrail", "prepareModelExecutionPlan", "materializeModelExecutionRoutes", "billing.Freeze", "client.Do"},
+		"HandleEmbeddings":     {"pinGuardrail", "prepareModelExecutionRoutes", "billing.Freeze", "client.Do"},
+	}
 	for _, name := range []string{"HandleChatCompletion", "HandleEmbeddings"} {
 		body := relayMethodSource(t, string(source), name)
 		guard := strings.Index(body, "requireModelExecutionRuntime")
@@ -102,7 +106,7 @@ func TestChatAndEmbeddingsHaveNoLegacyRouterFallbackSource(t *testing.T) {
 				t.Fatalf("%s retained legacy routing source %q", name, forbidden)
 			}
 		}
-		for _, later := range []string{"pinGuardrail", "prepareModelExecutionRoutes", "billing.Freeze", "client.Do"} {
+		for _, later := range laterByHandler[name] {
 			position := strings.Index(body, later)
 			if position < 0 || position < guard {
 				t.Fatalf("%s runtime guard does not precede %q", name, later)

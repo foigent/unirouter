@@ -199,6 +199,10 @@ export default function DeveloperConsolePage() {
   const [playgroundModel, setPlaygroundModel] = useState('');
   const [playgroundPrompt, setPlaygroundPrompt] = useState('请用一句话返回当前项目的健康检查结果。');
   const [playgroundMode, setPlaygroundMode] = useState('non_stream');
+  const [playgroundMaxTokens, setPlaygroundMaxTokens] = useState('');
+  const [playgroundThinking, setPlaygroundThinking] = useState('');
+  const [playgroundReasoningEffort, setPlaygroundReasoningEffort] = useState('');
+  const [playgroundScenario, setPlaygroundScenario] = useState('text');
   const [playgroundLoading, setPlaygroundLoading] = useState(false);
   const [playgroundResult, setPlaygroundResult] = useState<{
     status: number;
@@ -207,7 +211,11 @@ export default function DeveloperConsolePage() {
     cost_micros?: string;
     total_tokens?: number;
     latency_ms?: number;
+    headers_ms?: number;
+    usage?: unknown;
+    finish_reason?: string;
     usage_source?: string;
+    billing_status?: string;
     doc_url?: string;
     error?: string;
   } | null>(null);
@@ -248,8 +256,29 @@ export default function DeveloperConsolePage() {
     return values.filter((value, index) => values.indexOf(value) === index);
   }, [models]);
 
-  const sampleModel = modelOptions[0] || (modelGovernanceLicensed ? 'company-chat' : '<APPROVED_MODEL_OR_ALIAS>');
-  const effectivePlaygroundModel = playgroundModel || (modelGovernanceLicensed ? sampleModel : '');
+  useEffect(() => {
+    // Choose an initial catalog model once; a later refresh must not silently
+    // replace a selected model that is no longer available.
+    if (modelGovernanceLicensed && !playgroundModel && modelOptions.length) {
+      setPlaygroundModel(modelOptions[0]);
+    }
+  }, [modelGovernanceLicensed, modelOptions, playgroundModel]);
+
+  const handlePlaygroundModelChange = (value: unknown) => {
+    const nextModel = String(value || '');
+    if (nextModel !== playgroundModel) {
+      setPlaygroundThinking('');
+      setPlaygroundReasoningEffort('');
+      setPlaygroundScenario('text');
+    }
+    setPlaygroundModel(nextModel);
+  };
+  const effectivePlaygroundModel = modelGovernanceLicensed
+    ? (modelOptions.includes(playgroundModel) ? playgroundModel : '')
+    : playgroundModel.trim();
+  const maxTokensText = playgroundMaxTokens.trim();
+  const maxTokensInvalid = Boolean(maxTokensText) &&
+    (!/^[1-9][0-9]*$/.test(maxTokensText) || !Number.isSafeInteger(Number(maxTokensText)));
   const sampleKey = createdKey?.key || '<YOUR_PROJECT_API_KEY>';
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://your-unirouter.example';
 
@@ -375,6 +404,10 @@ export default function DeveloperConsolePage() {
     setLookupResult(null);
     setPlaygroundKey('');
     setPlaygroundModel('');
+    setPlaygroundThinking('');
+    setPlaygroundReasoningEffort('');
+    setPlaygroundScenario('text');
+    setPlaygroundMaxTokens('');
     setPlaygroundResult(null);
     setCreatedKey(null);
     setDataLoading(true);
@@ -478,15 +511,36 @@ export default function DeveloperConsolePage() {
   const handlePlaygroundRun = async () => {
     const key = playgroundKey.trim();
     const prompt = playgroundPrompt.trim();
-    if (!key || !prompt || !effectivePlaygroundModel) {
+    if (!key || !prompt || !effectivePlaygroundModel || maxTokensInvalid) {
       Toast.warning('请填写项目访问凭证、模型和提示词');
       return;
     }
     setPlaygroundLoading(true);
     setPlaygroundResult(null);
     const started = performance.now();
+    let responseStatus = 0;
+    let headersMS: number | undefined;
+    const elapsed = () => Math.max(0, Math.round(performance.now() - started));
     try {
       const stream = playgroundMode === 'stream';
+      const functionTool = {
+        type: 'function',
+        function: {
+          name: 'unirouter_ui_echo',
+          description: 'Return a supplied test value through a function call.',
+          parameters: {
+            type: 'object',
+            properties: { value: { type: 'string' } },
+            required: ['value'],
+            additionalProperties: false,
+          },
+        },
+      };
+      const toolChoice = playgroundScenario === 'function_auto' ? 'auto'
+        : playgroundScenario === 'function_required' ? 'required'
+          : playgroundScenario === 'function_named'
+            ? { type: 'function', function: { name: 'unirouter_ui_echo' } }
+            : undefined;
       const response = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -497,9 +551,15 @@ export default function DeveloperConsolePage() {
           model: effectivePlaygroundModel,
           stream,
           messages: [{ role: 'user', content: prompt }],
+          ...(maxTokensText ? { max_tokens: Number(maxTokensText) } : {}),
+          ...(playgroundThinking ? { thinking: { type: playgroundThinking } } : {}),
+          ...(playgroundReasoningEffort ? { reasoning_effort: playgroundReasoningEffort } : {}),
+          ...(toolChoice ? { tools: [functionTool], tool_choice: toolChoice } : {}),
+          ...(playgroundScenario === 'json_object' ? { response_format: { type: 'json_object' } } : {}),
         }),
       });
-      const latency = Math.max(0, Math.round(performance.now() - started));
+      responseStatus = response.status;
+      headersMS = elapsed();
 
       if (stream && response.ok && response.body) {
         const reader = response.body.getReader();
@@ -507,6 +567,8 @@ export default function DeveloperConsolePage() {
         let buffer = '';
         let content = '';
         let finalMeta: any = null;
+        let finishReason: string | undefined;
+        let streamError: any = null;
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -521,12 +583,28 @@ export default function DeveloperConsolePage() {
             try {
               const chunk = JSON.parse(data);
               content += chunk?.choices?.[0]?.delta?.content || '';
-              if (chunk?._uniroute) finalMeta = chunk._uniroute;
+              if (typeof chunk?.choices?.[0]?.finish_reason === 'string') {
+                finishReason = chunk.choices[0].finish_reason;
+              }
+              if (chunk?._uniroute) finalMeta = { ...(finalMeta || {}), ...chunk._uniroute };
               if (chunk?.usage) finalMeta = { ...(finalMeta || {}), usage: chunk.usage };
+              if (chunk?.error) streamError = chunk.error;
             } catch {
               // Ignore malformed SSE lines from intermediaries; the gateway error path is handled below.
             }
           }
+        }
+        if (streamError) {
+          setPlaygroundResult({
+            status: response.status,
+            content: '',
+            request_id: streamError?.request_id || finalMeta?.request_id,
+            latency_ms: elapsed(),
+            headers_ms: headersMS,
+            billing_status: streamError?.billing_status || finalMeta?.billing_status,
+            error: [streamError?.code, streamError?.message].filter(Boolean).join('：') || '流式响应失败',
+          });
+          return;
         }
         setPlaygroundResult({
           status: response.status,
@@ -534,39 +612,57 @@ export default function DeveloperConsolePage() {
           request_id: finalMeta?.request_id,
           cost_micros: finalMeta?.cost?.charged_cost_micros,
           total_tokens: finalMeta?.usage?.total_tokens,
-          latency_ms: latency,
+          latency_ms: elapsed(),
+          headers_ms: headersMS,
+          usage: finalMeta?.usage,
+          finish_reason: finishReason,
           usage_source: finalMeta?.usage_source,
         });
         return;
       }
 
-      const payload = await response.json().catch(() => null);
+      const payload = await response.json().catch(() => {
+        throw new Error('响应不是合法 JSON；不能作为成功的模型输出。');
+      });
       if (!response.ok) {
         const error = payload?.error;
         setPlaygroundResult({
           status: response.status,
           content: '',
-          latency_ms: latency,
-          error: error?.message || `HTTP ${response.status}`,
+          latency_ms: elapsed(),
+          headers_ms: headersMS,
+          error: (typeof error === 'string' ? error : error?.message) || `HTTP ${response.status}`,
           doc_url: error?.doc_url,
         });
         return;
       }
+      const responseMessage = payload?.choices?.[0]?.message;
+      const responseHasText = typeof responseMessage?.content === 'string';
+      const responseHasToolCalls = Array.isArray(responseMessage?.tool_calls) && responseMessage.tool_calls.length > 0;
+      if (!payload || payload.error || !Array.isArray(payload.choices) || (!responseHasText && !responseHasToolCalls)) {
+        throw new Error('响应不符合 Chat 文本或工具调用合同；不能作为成功的模型输出。');
+      }
       const uniroute = payload?._uniroute || {};
       setPlaygroundResult({
         status: response.status,
-        content: payload?.choices?.[0]?.message?.content || JSON.stringify(payload, null, 2),
+        content: responseHasToolCalls
+          ? JSON.stringify(responseMessage.tool_calls, null, 2)
+          : responseMessage.content || '(空文本响应)',
         request_id: uniroute?.request_id || payload?.id,
         cost_micros: uniroute?.cost?.charged_cost_micros,
         total_tokens: payload?.usage?.total_tokens,
-        latency_ms: latency,
+        latency_ms: elapsed(),
+        headers_ms: headersMS,
+        usage: payload.usage,
+        finish_reason: payload.choices[0].finish_reason,
         usage_source: uniroute?.usage_source || payload?.usage_source,
       });
     } catch (err: any) {
       setPlaygroundResult({
-        status: 0,
+        status: responseStatus,
         content: '',
-        latency_ms: 0,
+        latency_ms: elapsed(),
+        headers_ms: headersMS,
         error: err?.message || '调试请求失败',
       });
     } finally {
@@ -883,16 +979,17 @@ export default function DeveloperConsolePage() {
                     />
                     {modelGovernanceLicensed ? (
                       <Select
+                        aria-labelledby="playground-model-label"
                         value={effectivePlaygroundModel}
                         optionList={modelOptions.map(model => ({ label: model, value: model }))}
-                        onChange={(value) => setPlaygroundModel(String(value || ''))}
+                        onChange={handlePlaygroundModelChange}
                         style={{ width: 220 }}
                         placeholder="选择已批准模型或别名"
                       />
                     ) : (
                       <Input
                         value={playgroundModel}
-                        onChange={setPlaygroundModel}
+                        onChange={handlePlaygroundModelChange}
                         style={{ width: 220 }}
                         placeholder="输入现有模型或别名"
                       />
@@ -904,10 +1001,73 @@ export default function DeveloperConsolePage() {
                         { label: '流式', value: 'stream' },
                       ]}
                       onChange={(value) => setPlaygroundMode(String(value || 'non_stream'))}
+                      disabled={playgroundScenario !== 'text'}
                       style={{ width: 120 }}
                     />
-                    <Button type="primary" icon={<IconBolt />} loading={playgroundLoading} onClick={handlePlaygroundRun}>运行</Button>
+                    <Button type="primary" icon={<IconBolt />} loading={playgroundLoading}
+                      disabled={!effectivePlaygroundModel || dataLoading || Boolean(projectDataError) || maxTokensInvalid}
+                      onClick={handlePlaygroundRun}>运行</Button>
                   </div>
+                  <Text id="playground-model-label" type="tertiary">调试模型</Text>
+                  {modelGovernanceLicensed && !modelOptions.length && <Text type="warning">项目没有可选的稳定模型，不能运行调试请求。</Text>}
+                  {modelGovernanceLicensed && modelOptions.length > 0 && playgroundModel && !effectivePlaygroundModel &&
+                    <Text type="warning">之前选择的模型已不在当前目录，请重新选择；不会自动切换到其他模型。</Text>}
+                  <div className="ur-inline-controls" style={{ marginTop: 12 }}>
+                    <label>
+                      <Text>max_tokens（可选）</Text>
+                      <Input aria-label="max_tokens（可选）" value={playgroundMaxTokens}
+                        onChange={setPlaygroundMaxTokens} placeholder="例如 128；留空不发送" style={{ width: 230 }} />
+                    </label>
+                    <div>
+                      <Text id="playground-thinking-label">thinking.type（可选）</Text>
+                      <Select aria-labelledby="playground-thinking-label" value={playgroundThinking}
+                        onChange={value => {
+                          const next = String(value || '');
+                          setPlaygroundThinking(next);
+                          if (next === 'disabled') setPlaygroundReasoningEffort('');
+                        }}
+                        optionList={[
+                          { label: '不指定（不发送）', value: '' },
+                          { label: 'disabled（关闭）', value: 'disabled' },
+                          { label: 'enabled（开启）', value: 'enabled' },
+                        ]} style={{ width: 200 }} />
+                    </div>
+                    <div>
+                      <Text id="playground-reasoning-effort-label">reasoning_effort（可选）</Text>
+                      <Select aria-labelledby="playground-reasoning-effort-label" value={playgroundReasoningEffort}
+                        onChange={value => {
+                          const next = String(value || '');
+                          setPlaygroundReasoningEffort(next);
+                          if (next) setPlaygroundThinking('');
+                        }}
+                        optionList={[
+                          { label: '不指定（不发送）', value: '' },
+                          { label: 'low', value: 'low' },
+                          { label: 'medium', value: 'medium' },
+                          { label: 'high', value: 'high' },
+                          { label: 'xhigh', value: 'xhigh' },
+                          { label: 'max', value: 'max' },
+                        ]} style={{ width: 210 }} />
+                    </div>
+                    <div>
+                      <Text id="playground-scenario-label">能力场景</Text>
+                      <Select aria-labelledby="playground-scenario-label" value={playgroundScenario}
+                        onChange={value => {
+                          const next = String(value || 'text');
+                          setPlaygroundScenario(next);
+                          if (next !== 'text') setPlaygroundMode('non_stream');
+                        }}
+                        optionList={[
+                          { label: '普通文本', value: 'text' },
+                          { label: 'Function Tool · auto', value: 'function_auto' },
+                          { label: 'Function Tool · required', value: 'function_required' },
+                          { label: 'Function Tool · named', value: 'function_named' },
+                          { label: 'JSON Object', value: 'json_object' },
+                        ]} style={{ width: 220 }} />
+                    </div>
+                  </div>
+                  <Text type="tertiary">这些字段仅在显式填写时发送；thinking 与 reasoning_effort 是供应商或 surface 扩展，并非所有模型都支持。值域和输出上限仍由精确 Profile 校验；留空不是零输出，也不是供应商最大输出。</Text>
+                  {maxTokensInvalid && <Text type="danger">max_tokens 必须是正整数。</Text>}
                   {!modelGovernanceLicensed && <Text type="warning">{modelGovernanceRestriction} 调试仍可使用管理员提供的现有模型或别名。</Text>}
                   <TextArea
                     value={playgroundPrompt}
@@ -921,11 +1081,16 @@ export default function DeveloperConsolePage() {
                   {playgroundResult ? (
                     <>
                       <div className="ur-chip-row">
-                        <StatusTag status={playgroundResult.status}>{playgroundResult.status || 'network_error'}</StatusTag>
+                        <StatusTag status={playgroundResult.error ? 'failed' : playgroundResult.status}>
+                          {playgroundResult.error ? 'response_error' : playgroundResult.status || 'network_error'}
+                        </StatusTag>
+                        {playgroundResult.error && playgroundResult.status > 0 && <Text>HTTP {playgroundResult.status}</Text>}
                         {playgroundResult.request_id && <Text code>{playgroundResult.request_id}</Text>}
                         {playgroundResult.total_tokens !== undefined && <StatusTag status="tokens">{playgroundResult.total_tokens} tokens</StatusTag>}
                         {playgroundResult.cost_micros !== undefined && <MoneyText micros={playgroundResult.cost_micros} precision={6} tone="cost" />}
-                        {playgroundResult.latency_ms !== undefined && <Text type="tertiary">{playgroundResult.latency_ms}ms</Text>}
+                        {playgroundResult.latency_ms !== undefined && <Text type="tertiary">客户端完整耗时 {playgroundResult.latency_ms}ms</Text>}
+                        {playgroundResult.headers_ms !== undefined && <Text type="tertiary">响应头耗时 {playgroundResult.headers_ms}ms</Text>}
+                        {playgroundResult.billing_status && <Text type="tertiary">billing_status：{playgroundResult.billing_status}</Text>}
                       </div>
                       {playgroundResult.error ? (
                         <div className="ur-playground-error">
@@ -935,6 +1100,12 @@ export default function DeveloperConsolePage() {
                       ) : (
                         <pre className="ur-dev-code">{playgroundResult.content}</pre>
                       )}
+                      {playgroundResult.finish_reason && <Text>finish_reason：{playgroundResult.finish_reason}</Text>}
+                      {playgroundResult.finish_reason === 'length' && <Text type="warning">输出达到上限，响应可能未完成。</Text>}
+                      {playgroundResult.usage !== undefined && <details>
+                        <summary>usage（响应原值）</summary>
+                        <pre className="ur-dev-code">{JSON.stringify(playgroundResult.usage, null, 2)}</pre>
+                      </details>}
                     </>
                   ) : (
                     <EmptyState title="等待运行" description="填写项目 Key、现有模型或别名后运行一次测试。" minHeight={180} />
