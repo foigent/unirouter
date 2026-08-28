@@ -154,14 +154,21 @@ export default function ModelEndpointDetailsSheet(props: Props) {
 
       {operation.operation_id === 'openai.chat_completions.v1' &&
         selected.public_model.execution_profile_id === 'deepseek.v4-flash.api' &&
-        selected.public_model.execution_profile_version === '1.4.0' && <ModelCapabilityQualificationPanel
-          selected={selected}
-          operation={operation}
-          canManage={props.canManage}
-          canApprove={props.canApproveCapabilities}
-          gatewayLicensed={props.gatewayLicensed}
-          gatewayRestriction={props.gatewayRestriction}
-        />}
+        selected.public_model.execution_profile_version === '1.4.0' && <>
+          {(['streaming', 'reasoning', 'reasoning_effort', 'tools', 'function_tools',
+            'tool_choice_auto', 'tool_choice_named', 'tool_choice_required', 'json_object'] as const).map(capabilityID => (
+            <ModelCapabilityQualificationPanel
+              key={capabilityID}
+              selected={selected}
+              operation={operation}
+              canManage={props.canManage}
+              canApprove={props.canApproveCapabilities}
+              gatewayLicensed={props.gatewayLicensed}
+              gatewayRestriction={props.gatewayRestriction}
+              capabilityID={capabilityID}
+            />
+          ))}
+        </>}
 
       <Surface title="4 · Canonical Runtime" description="只展示不可变发布/slot 的当前归属；探测通过不会自动产生 runtime membership。">
         <Space vertical align="start">

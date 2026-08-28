@@ -177,6 +177,72 @@ describe('ModelCapabilityQualificationPanel', () => {
     expect(screen.getByText('provider_stream_contract_invalid')).toBeInTheDocument();
   });
 
+  it('uses the same two-stage workflow for typed reasoning without exposing reasoning text', async () => {
+    let confirmationConfig: any;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      confirmationConfig = config;
+      return { destroy: vi.fn(), update: vi.fn() } as any;
+    });
+    mocks.getQualification.mockResolvedValue({
+      ...baseQualification,
+      capability_id: 'reasoning',
+      probe_contract_id: 'unirouter.capability-probe.deepseek-chat-reasoning.v1',
+      probe_contract_version: '1.0.0',
+      state: 'probed_awaiting_approval',
+      latest_probe: {
+        capability_probe_id: 503,
+        success: true,
+        provider_success: true,
+        current: true,
+        status_code: 200,
+        latency_ms: 640,
+        finish_reason: 'stop',
+        prompt_tokens: 12,
+        completion_tokens: 7,
+        total_tokens: 19,
+        reasoning_observed: true,
+        tested_at: '2026-08-27T01:00:00Z',
+      },
+    });
+    mocks.probeCapability.mockResolvedValue({
+      capability_probe_id: 504,
+      deployment_id: 41,
+      operation_id: 'openai.chat_completions.v1',
+      capability_id: 'reasoning',
+      success: true,
+      provider_success: true,
+      current: true,
+      stale: false,
+      reason_code: 'ok',
+      provider_reason_code: 'ok',
+      status_code: 200,
+      latency_ms: 610,
+      reasoning_observed: true,
+    });
+
+    render(<ModelCapabilityQualificationPanel
+      selected={selected}
+      operation={operation}
+      canManage
+      canApprove
+      gatewayLicensed
+      gatewayRestriction=""
+      capabilityID="reasoning"
+    />);
+
+    expect(await screen.findByText('reasoning evidence: observed')).toBeInTheDocument();
+    expect(screen.queryByText(/private reasoning/iu)).not.toBeInTheDocument();
+    const probeButton = screen.getByRole('button', { name: /运行思考模式能力探测（预计 1 次调用）/u });
+    fireEvent.click(probeButton);
+    expect(confirmationConfig.title).toBe('运行思考模式能力探测？');
+    const content = render(confirmationConfig.content);
+    expect(content.getByText(/不会保存私有思维文本/u)).toBeInTheDocument();
+    await act(async () => { await confirmationConfig.onOk(); });
+    await waitFor(() => expect(mocks.probeCapability).toHaveBeenCalledWith(
+      41, 'openai.chat_completions.v1', 'reasoning', { credential_binding_id: 91 },
+    ));
+  });
+
   it('ignores a late qualification response after the exact target changes', async () => {
     let resolveA: (value: typeof baseQualification) => void = () => undefined;
     const delayedA = new Promise<typeof baseQualification>(resolve => { resolveA = resolve; });

@@ -133,6 +133,8 @@ SELECT evidence_ref,revision FROM model_deployment_capabilities
 		wantRef      string
 		wantRevision int64
 	}{
+		{name: "000091_deepseek_chat_tools_json_capabilities.down.sql"},
+		{name: "000090_deepseek_chat_reasoning_capabilities.down.sql"},
 		{
 			name:         "000089_deepseek_chat_sse_usage_contract_v2.down.sql",
 			wantRef:      "capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@1.0.0",

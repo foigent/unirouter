@@ -185,6 +185,48 @@ func TestModelExecutionMigrationsJoinSharedLifecycleLockBeforeTableLocks(t *test
 				"model_deployment_capabilities", "model_capability_probes", "schema_migrations",
 			},
 		},
+		{
+			name:           "90 up",
+			file:           "000090_deepseek_chat_reasoning_capabilities.up.sql",
+			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "schema_migrations",
+			},
+		},
+		{
+			name:           "90 down",
+			file:           "000090_deepseek_chat_reasoning_capabilities.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "model_capability_probes",
+				"model_capability_routing_approvals", "schema_migrations",
+			},
+		},
+		{
+			name:           "91 up",
+			file:           "000091_deepseek_chat_tools_json_capabilities.up.sql",
+			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "schema_migrations",
+			},
+		},
+		{
+			name:           "91 down",
+			file:           "000091_deepseek_chat_tools_json_capabilities.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "model_capability_probes",
+				"model_capability_routing_approvals", "schema_migrations",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -235,6 +277,8 @@ func TestModelExecutionGuardedDownsLockBeforeLedgerAndEvidenceChecks(t *testing.
 		"000082_sealed_model_execution_contracts.down.sql",
 		"000088_model_capability_execution_qualification.down.sql",
 		"000089_deepseek_chat_sse_usage_contract_v2.down.sql",
+		"000090_deepseek_chat_reasoning_capabilities.down.sql",
+		"000091_deepseek_chat_tools_json_capabilities.down.sql",
 	} {
 		t.Run(file, func(t *testing.T) {
 			body, err := os.ReadFile("../../migrations/" + file)

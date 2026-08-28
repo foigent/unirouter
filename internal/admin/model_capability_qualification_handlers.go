@@ -21,6 +21,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"github.com/uniroute/unirouter/internal/modeldeployment"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/strictjson"
 )
@@ -67,6 +68,9 @@ type modelCapabilityProbeResult struct {
 	PromptTokens       int64  `json:"prompt_tokens,omitempty"`
 	CompletionTokens   int64  `json:"completion_tokens,omitempty"`
 	TotalTokens        int64  `json:"total_tokens,omitempty"`
+	ReasoningObserved  bool   `json:"reasoning_observed,omitempty"`
+	ToolCallObserved   bool   `json:"tool_call_observed,omitempty"`
+	StructuredObserved bool   `json:"structured_output_observed,omitempty"`
 	EvidenceRef        string `json:"evidence_ref,omitempty"`
 }
 
@@ -121,6 +125,9 @@ type modelCapabilityProbeView struct {
 	PromptTokens        int64     `json:"prompt_tokens,omitempty"`
 	CompletionTokens    int64     `json:"completion_tokens,omitempty"`
 	TotalTokens         int64     `json:"total_tokens,omitempty"`
+	ReasoningObserved   bool      `json:"reasoning_observed,omitempty"`
+	ToolCallObserved    bool      `json:"tool_call_observed,omitempty"`
+	StructuredObserved  bool      `json:"structured_output_observed,omitempty"`
 	TestedAt            time.Time `json:"tested_at"`
 }
 
@@ -164,20 +171,23 @@ type modelCapabilitySnapshot struct {
 }
 
 type modelCapabilityProbeOutcome struct {
-	ProviderSuccess   bool
-	ContractSuccess   bool
-	StatusCode        int
-	LatencyMS         int64
-	ReasonCode        string
-	ContractErrorCode string
-	ReportedModel     string
-	FinishReason      string
-	PromptTokens      int64
-	CompletionTokens  int64
-	TotalTokens       int64
-	ResponseBytes     int
-	DataEventCount    int
-	DeltaCount        int
+	ProviderSuccess    bool
+	ContractSuccess    bool
+	StatusCode         int
+	LatencyMS          int64
+	ReasonCode         string
+	ContractErrorCode  string
+	ReportedModel      string
+	FinishReason       string
+	PromptTokens       int64
+	CompletionTokens   int64
+	TotalTokens        int64
+	ResponseBytes      int
+	DataEventCount     int
+	DeltaCount         int
+	ReasoningObserved  bool
+	ToolCallObserved   bool
+	StructuredObserved bool
 }
 
 func (h *Handler) GetCanonicalModelCapabilityQualification(w http.ResponseWriter, r *http.Request) {
@@ -485,14 +495,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 	if err != nil || strings.TrimSpace(secret) == "" {
 		return modelCapabilityProbeOutcome{ReasonCode: "credential_unavailable"}
 	}
-	body, err := json.Marshal(map[string]interface{}{
-		"model":          snapshot.UpstreamModel,
-		"messages":       []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}},
-		"max_tokens":     64,
-		"stream":         true,
-		"stream_options": map[string]bool{"include_usage": true},
-		"thinking":       map[string]string{"type": "disabled"},
-	})
+	body, err := buildModelCapabilityProbeRequestBody(snapshot)
 	if err != nil {
 		return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed"}
 	}
@@ -534,27 +537,149 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		return outcome
 	}
 	outcome.ProviderSuccess = true
-	observation, err := modelcapabilityqualification.ValidateDeepSeekChatSSE(
-		snapshot.ProbeContractID, snapshot.ProbeContractVersion,
-		response.Header.Get("Content-Type"), response.Body,
-	)
-	outcome.LatencyMS = time.Since(started).Milliseconds()
-	outcome.ReportedModel = observation.ReportedModel
-	outcome.FinishReason = observation.FinishReason
-	outcome.PromptTokens = observation.PromptTokens
-	outcome.CompletionTokens = observation.CompletionTokens
-	outcome.TotalTokens = observation.TotalTokens
-	outcome.ResponseBytes = observation.ResponseBytes
-	outcome.DataEventCount = observation.DataEventCount
-	outcome.DeltaCount = observation.DeltaCount
-	if err != nil {
-		outcome.ReasonCode = "provider_stream_contract_invalid"
-		outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekSSEErrorCode(err)
+	switch snapshot.ProbeContractID {
+	case modelcapabilityqualification.DeepSeekChatSSEProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatSSE(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion,
+			response.Header.Get("Content-Type"), response.Body,
+		)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.DataEventCount = observation.DataEventCount
+		outcome.DeltaCount = observation.DeltaCount
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_stream_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekSSEErrorCode(validationErr)
+			return outcome
+		}
+	case modelcapabilityqualification.DeepSeekChatReasoningProbeContractID,
+		modelcapabilityqualification.DeepSeekChatReasoningEffortProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatReasoning(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion,
+			response.Header.Get("Content-Type"), response.Body,
+		)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.ReasoningObserved = observation.ReasoningSeen
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_reasoning_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekReasoningErrorCode(validationErr)
+			return outcome
+		}
+	case modelcapabilityqualification.DeepSeekChatFunctionToolsProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatFunctionTools(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion,
+			response.Header.Get("Content-Type"), response.Body,
+		)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.ToolCallObserved = observation.ToolCallObserved
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_function_tools_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekCoreErrorCode(validationErr)
+			return outcome
+		}
+	case modelcapabilityqualification.DeepSeekChatJSONObjectProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatJSONObject(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion,
+			response.Header.Get("Content-Type"), response.Body,
+		)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.StructuredObserved = observation.StructuredOutputObserved
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_json_object_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekCoreErrorCode(validationErr)
+			return outcome
+		}
+	default:
+		outcome.LatencyMS = time.Since(started).Milliseconds()
+		outcome.ReasonCode = "probe_contract_unsupported"
 		return outcome
 	}
+	outcome.LatencyMS = time.Since(started).Milliseconds()
 	outcome.ContractSuccess = true
 	outcome.ReasonCode = "ok"
 	return outcome
+}
+
+func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]byte, error) {
+	payload := map[string]interface{}{
+		"model":      snapshot.UpstreamModel,
+		"max_tokens": 64,
+		"stream":     false,
+	}
+	switch snapshot.ProbeContractID {
+	case modelcapabilityqualification.DeepSeekChatSSEProbeContractID:
+		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}}
+		payload["stream"] = true
+		payload["stream_options"] = map[string]bool{"include_usage": true}
+		payload["thinking"] = map[string]string{"type": "disabled"}
+	case modelcapabilityqualification.DeepSeekChatReasoningProbeContractID:
+		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}}
+		payload["max_tokens"] = 512
+		payload["thinking"] = map[string]string{"type": "enabled"}
+	case modelcapabilityqualification.DeepSeekChatReasoningEffortProbeContractID:
+		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}}
+		payload["max_tokens"] = 512
+		payload["reasoning_effort"] = "low"
+	case modelcapabilityqualification.DeepSeekChatFunctionToolsProbeContractID:
+		payload["messages"] = []map[string]string{{"role": "user", "content": "Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}}
+		payload["max_tokens"] = 256
+		payload["thinking"] = map[string]string{"type": "disabled"}
+		payload["tools"] = []map[string]interface{}{{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "unirouter_probe_echo", "description": "Return the supplied probe value through a function call.",
+				"parameters": map[string]interface{}{
+					"type": "object", "properties": map[string]interface{}{
+						"value": map[string]string{"type": "string"},
+					}, "required": []string{"value"}, "additionalProperties": false,
+				},
+			},
+		}}
+		switch snapshot.CapabilityID {
+		case modelprofile.CapabilityToolChoiceAuto:
+			payload["tool_choice"] = "auto"
+		case modelprofile.CapabilityToolChoiceNamed:
+			payload["tool_choice"] = map[string]interface{}{
+				"type": "function", "function": map[string]string{"name": "unirouter_probe_echo"},
+			}
+		default:
+			payload["tool_choice"] = "required"
+		}
+	case modelcapabilityqualification.DeepSeekChatJSONObjectProbeContractID:
+		payload["messages"] = []map[string]string{
+			{"role": "system", "content": "Return valid JSON only."},
+			{"role": "user", "content": `Return exactly {"status":"UNIROUTER_JSON_PROBE_OK"}.`},
+		}
+		payload["max_tokens"] = 64
+		payload["thinking"] = map[string]string{"type": "disabled"}
+		payload["response_format"] = map[string]string{"type": "json_object"}
+	default:
+		return nil, errModelCapabilityUnsupported
+	}
+	return json.Marshal(payload)
 }
 
 func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64, snapshot modelCapabilitySnapshot, outcome modelCapabilityProbeOutcome, sourceRef string, audit auditMeta) (modelCapabilityProbeResult, error) {
@@ -587,21 +712,27 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 	if !currentProof {
 		reasonCode = "configuration_changed_during_probe"
 	}
-	requestSummary, _ := json.Marshal(map[string]interface{}{
+	requestSummaryFields := map[string]interface{}{
 		"deployment_id": snapshot.DeploymentID, "operation_id": snapshot.OperationID,
 		"capability_id": snapshot.CapabilityID, "credential_binding_id": snapshot.CredentialBindingID,
 		"execution_profile_id": snapshot.ExecutionProfileID, "execution_profile_version": snapshot.ExecutionProfileVersion,
 		"protocol_profile_id": snapshot.ProtocolProfileID, "protocol_profile_version": snapshot.ProtocolProfileVersion,
 		"probe_contract_id": snapshot.ProbeContractID, "probe_contract_version": snapshot.ProbeContractVersion,
-		"stream": true, "stream_options_include_usage": true, "thinking_type": "disabled", "max_tokens": 64,
-	})
+	}
+	for key, value := range modelCapabilityProbeRequestContractSummary(snapshot.ProbeContractID, snapshot.CapabilityID) {
+		requestSummaryFields[key] = value
+	}
+	requestSummary, _ := json.Marshal(requestSummaryFields)
 	responseSummary, _ := json.Marshal(map[string]interface{}{
 		"provider_success": outcome.ProviderSuccess, "contract_success": outcome.ContractSuccess,
 		"current": currentProof, "reason_code": reasonCode, "provider_reason_code": outcome.ReasonCode,
 		"contract_error_code": outcome.ContractErrorCode,
 		"response_bytes":      outcome.ResponseBytes, "data_event_count": outcome.DataEventCount,
 		"delta_count": outcome.DeltaCount, "finish_reason": outcome.FinishReason,
-		"usage": map[string]int64{"prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": outcome.TotalTokens},
+		"reasoning_observed":         outcome.ReasoningObserved,
+		"tool_call_observed":         outcome.ToolCallObserved,
+		"structured_output_observed": outcome.StructuredObserved,
+		"usage":                      map[string]int64{"prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": outcome.TotalTokens},
 	})
 	fingerprint := modelCapabilityProbeFingerprint(snapshot, outcome, sourceRef)
 	errorSummary := ""
@@ -670,6 +801,8 @@ UPDATE model_deployment_capabilities
 		StatusCode:        outcome.StatusCode, LatencyMS: outcome.LatencyMS, ReportedModel: outcome.ReportedModel,
 		FinishReason: outcome.FinishReason, PromptTokens: outcome.PromptTokens,
 		CompletionTokens: outcome.CompletionTokens, TotalTokens: outcome.TotalTokens,
+		ReasoningObserved: outcome.ReasoningObserved, ToolCallObserved: outcome.ToolCallObserved,
+		StructuredObserved: outcome.StructuredObserved,
 	}
 	if success {
 		result.EvidenceRef = evidenceRef
@@ -692,6 +825,43 @@ UPDATE model_deployment_capabilities
 		h.routingController.Invalidate()
 	}
 	return result, nil
+}
+
+func modelCapabilityProbeRequestContractSummary(probeContractID, capabilityID string) map[string]interface{} {
+	switch probeContractID {
+	case modelcapabilityqualification.DeepSeekChatSSEProbeContractID:
+		return map[string]interface{}{
+			"stream": true, "stream_options_include_usage": true,
+			"thinking_type": "disabled", "max_tokens": 64,
+		}
+	case modelcapabilityqualification.DeepSeekChatReasoningProbeContractID:
+		return map[string]interface{}{
+			"stream": false, "thinking_type": "enabled", "max_tokens": 512,
+		}
+	case modelcapabilityqualification.DeepSeekChatReasoningEffortProbeContractID:
+		return map[string]interface{}{
+			"stream": false, "reasoning_effort": "low", "max_tokens": 512,
+		}
+	case modelcapabilityqualification.DeepSeekChatFunctionToolsProbeContractID:
+		choice := "required"
+		switch capabilityID {
+		case modelprofile.CapabilityToolChoiceAuto:
+			choice = "auto"
+		case modelprofile.CapabilityToolChoiceNamed:
+			choice = "named"
+		}
+		return map[string]interface{}{
+			"stream": false, "thinking_type": "disabled", "max_tokens": 256,
+			"function_name": "unirouter_probe_echo", "tool_choice": choice,
+		}
+	case modelcapabilityqualification.DeepSeekChatJSONObjectProbeContractID:
+		return map[string]interface{}{
+			"stream": false, "thinking_type": "disabled", "max_tokens": 64,
+			"response_format_type": "json_object",
+		}
+	default:
+		return map[string]interface{}{}
+	}
 }
 
 func sameModelCapabilitySnapshot(before, current modelCapabilitySnapshot) bool {
@@ -982,9 +1152,12 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 	if err == nil {
 		latest.Current = latestCurrent
 		var summary struct {
-			FinishReason      string `json:"finish_reason"`
-			ContractErrorCode string `json:"contract_error_code"`
-			Usage             struct {
+			FinishReason       string `json:"finish_reason"`
+			ContractErrorCode  string `json:"contract_error_code"`
+			ReasoningObserved  bool   `json:"reasoning_observed"`
+			ToolCallObserved   bool   `json:"tool_call_observed"`
+			StructuredObserved bool   `json:"structured_output_observed"`
+			Usage              struct {
 				PromptTokens     int64 `json:"prompt_tokens"`
 				CompletionTokens int64 `json:"completion_tokens"`
 				TotalTokens      int64 `json:"total_tokens"`
@@ -993,6 +1166,9 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 		_ = json.Unmarshal(responseSummary, &summary)
 		latest.FinishReason = summary.FinishReason
 		latest.ContractErrorCode = summary.ContractErrorCode
+		latest.ReasoningObserved = summary.ReasoningObserved
+		latest.ToolCallObserved = summary.ToolCallObserved
+		latest.StructuredObserved = summary.StructuredObserved
 		latest.PromptTokens = summary.Usage.PromptTokens
 		latest.CompletionTokens = summary.Usage.CompletionTokens
 		latest.TotalTokens = summary.Usage.TotalTokens

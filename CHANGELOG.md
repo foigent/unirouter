@@ -4,6 +4,37 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.4] - 2026-08-28
+
+### Added
+
+- Added exact DeepSeek V4 Flash Chat qualification contracts for reasoning,
+  reasoning effort, fixed function tools, auto/named/required tool choice and
+  JSON Object. Migrations M90/M91 add only declared support projections;
+  immutable typed probe and approval receipts remain required before routing.
+- Added one guided Admin capability workflow for the new exact contracts and
+  bounded Developer Console scenarios for reasoning, fixed no-side-effect tools
+  and JSON Object. Arbitrary provider payloads and private reasoning text are
+  not retained by the qualification evidence.
+
+### Fixed
+
+- Preserved terminal usage and finish reason in the streaming Developer Console
+  result, and prevented `thinking=disabled` from being sent together with
+  `reasoning_effort`.
+- Advanced the binary schema authority to M91, extended current-schema rollback
+  fixtures, made M90/M91 downgrade fail closed on stable identity drift, and
+  updated fresh-customer bootstrap to validate all 20 exact probe bindings and
+  18 current contracts.
+- Updated the OpenAPI capability qualification contract and negative tests so
+  schema, bootstrap, UI and runtime consumers agree on the same finite set.
+
+### Evidence boundary
+
+- Local typed, migration, bootstrap, rollback and UI evidence does not by itself
+  prove provider-live qualification, routing approval, customer billing,
+  Release or canonical promotion. Paid tests remain separately bounded.
+
 ## [1.2.3] - 2026-08-24
 
 ### Added

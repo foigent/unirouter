@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-08-27.
+> Snapshot date: 2026-08-28.
 > This document is not a claim that every provider-documented feature is production supported.
 
 The current product-scope candidate is
@@ -120,6 +120,68 @@ not executable here. Media/search/cache subsets do not imply full provider
 parity or a complete price contract. Official USD prices remain review drafts;
 nonstandard tiers cannot debit customer wallets. No entry is declared fully
 adapted, provider-live-verified or released by this table.
+
+### DeepSeek Flash UI completion batch — live evidence plus local M90/M91 candidate, 2026-08-28
+
+The current finite batch remains one product identity and one operation:
+
+`deepseek.v4-flash.api@1.4.0 × OpenAI-compatible Chat Completions`.
+
+It does not authorize another model, surface, canonical switch, customer
+settlement or Release. Development/test currently runs exact commit
+`eeb170c561b1c09837d17ff412f04077273037be` / tree
+`767187d324704da2ca3f20d21309773d404b4eac`; that is Target evidence for the
+deployed M89-era artifact, not for the local changes below.
+
+The ordinary test account is user 39 in customer 2 / Default Project 86. Its
+model-restricted key 83 remains active only for this approved test batch; no
+secret is recorded here. The product owner approved a cumulative maximum of 20
+supplier calls and CNY 5. Seven supplier calls have been consumed. The latest
+two successful UI calls are:
+
+- Supplier call 6: non-empty SSE stream with explicit `thinking=disabled`.
+  Request `op_ce3c68c4be82840191e6bbd7f4dfa30e` returned HTTP 200,
+  `STREAM_OK`, terminal `finish_reason=stop`, provider-reported final usage
+  10 input + 3 output = 13 tokens, one canonical attempt and zero customer
+  charge. The wallet remained zero. This closes only the exact deployed
+  streaming slice as `canary_live_verified`.
+- Supplier call 7: non-stream explicit `max_tokens=4` with
+  `thinking=disabled`. Request `op_3ff9153305c46ab1cc3a52eb6f865446`
+  returned HTTP 200, `OK`, `finish_reason=stop` and provider-reported final
+  usage 8 + 1 = 9 tokens. A UI request with `max_tokens=384001` was rejected
+  before provider attempt, Freeze or call-log creation. This locally and live
+  verifies the Profile's 384K ceiling boundary without claiming that 384K was
+  generated.
+
+The deployed stream response was correct, but the workbench discarded terminal
+`finish_reason` and raw usage while reading SSE. The local candidate now retains
+both fields in UI state; its real `ReadableStream` regression test passes. This
+UI correction is not yet Target-verified.
+
+M90 and M91 are the bounded local continuation. M90 adds typed qualification
+for explicit `thinking=enabled` and `reasoning_effort=low`; the validator records
+only that non-empty reasoning evidence existed, never the private reasoning
+text. M91 adds fixed no-side-effect function-tool probes for `tools`,
+`function_tools` and auto/named/required tool choice, plus a fixed JSON Object
+probe. The Admin UI reuses one two-stage probe/approval component for every
+capability; the developer workbench exposes only fixed function-tool and JSON
+scenarios rather than arbitrary provider JSON. Exact current and historical
+Chat surface tuples are migration-owned; mismatched tuples stay absent and an
+explicit `unsupported` decision is preserved.
+
+Focused local evidence currently passed:
+
+- typed validator and Admin handler tests, including private-data non-retention;
+- isolated PostgreSQL M90/M91 exact projection, guarded down and reapply tests;
+- DeepSeek Profile/routing/endpoint/gateway capability tests;
+- capability panel and developer workbench suites, 39 tests;
+- frontend type/API/react compatibility checks and `git diff --check`.
+
+Reasoning, tools/tool-choice, JSON Object, repeated-prefix cacheRead, fixed SDK
+workflow and the local UI changes remain `locally_conformant` only. No M90/M91
+Target migration, typed live probe, capability approval, ordinary public call,
+push, CI or Release has occurred. Zero customer charge is not zero supplier
+cost, and the remaining 13-call/CNY-budget ceiling is unchanged.
 
 ### B1 correction checkpoint — local candidate only
 

@@ -1168,7 +1168,7 @@ paths:
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
-        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] } }
       responses:
         "200":
           description: Sanitized current qualification, preferred approval and latest probe projection.
@@ -1190,7 +1190,7 @@ paths:
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
-        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] } }
       requestBody:
         required: true
         content:
@@ -1224,7 +1224,7 @@ paths:
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
-        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] } }
       requestBody:
         required: true
         content:
@@ -4945,6 +4945,9 @@ components:
         prompt_tokens: { type: integer, format: int64, minimum: 0 }
         completion_tokens: { type: integer, format: int64, minimum: 0 }
         total_tokens: { type: integer, format: int64, minimum: 0 }
+        reasoning_observed: { type: boolean, description: The fixed typed probe observed non-empty reasoning content; private reasoning text is never returned. }
+        tool_call_observed: { type: boolean, description: The fixed typed probe observed the exact expected function call; arguments are not returned. }
+        structured_output_observed: { type: boolean, description: The fixed typed probe observed the exact expected JSON object; content is not returned. }
         tested_at: { type: string, format: date-time }
     ModelCapabilityQualification:
       type: object
@@ -4954,15 +4957,15 @@ components:
         contract_version: { type: string, enum: [unirouter.model-capability-qualification.v1] }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
         support_state: { type: string, enum: [enabled, unsupported] }
         support_revision: { type: integer, format: int64, minimum: 1 }
         execution_profile_id: { type: string, enum: [deepseek.v4-flash.api] }
         execution_profile_version: { type: string, enum: [1.4.0] }
         protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, openai.chat_completions] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
-        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1] }
-        probe_contract_version: { type: string, enum: [2.0.0] }
+        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1] }
+        probe_contract_version: { type: string, enum: [1.0.0, 2.0.0], description: "Exact version is selected by the model, operation, capability, Execution Profile, and protocol-profile tuple." }
         probe_available: { type: boolean }
         probe_availability_reason_code: { type: string }
         state: { type: string, enum: [not_probed, probe_failed, probe_stale, probed_awaiting_approval, approved_current] }
@@ -4979,7 +4982,7 @@ components:
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
         success: { type: boolean }
         provider_success: { type: boolean }
         current: { type: boolean }
@@ -4994,6 +4997,9 @@ components:
         prompt_tokens: { type: integer, format: int64, minimum: 0 }
         completion_tokens: { type: integer, format: int64, minimum: 0 }
         total_tokens: { type: integer, format: int64, minimum: 0 }
+        reasoning_observed: { type: boolean }
+        tool_call_observed: { type: boolean }
+        structured_output_observed: { type: boolean }
         evidence_ref: { type: string, pattern: '^capability_probe:[1-9][0-9]*$' }
     ModelCapabilityContractErrorCode:
       type: string
@@ -5008,11 +5014,17 @@ components:
         - incomplete
         - json
         - model_changed
+        - reported_model
         - choices
         - final_usage
         - usage_mixed_with_choices
         - delta
         - content
+        - reasoning_content
+        - tool_calls
+        - tool_call_identity
+        - tool_arguments
+        - structured_output
         - finish_reason
         - finish_reason_changed
         - usage
@@ -5027,7 +5039,7 @@ components:
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
         qualified: { type: boolean }
         qualification_state: { type: string }
         evidence_ref: { type: string, pattern: '^capability_approval:[1-9][0-9]*$' }

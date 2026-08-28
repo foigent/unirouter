@@ -204,8 +204,8 @@ func TestResetInspectBuildIncludesM88ProtectedCapabilityContractsIntegration(t *
 	}
 	require.Contains(t, protectedByName, "model_capability_probe_contract_bindings")
 	require.Contains(t, protectedByName, "model_capability_current_probe_contracts")
-	require.EqualValues(t, 2, protectedByName["model_capability_probe_contract_bindings"].RowCount)
-	require.EqualValues(t, 2, protectedByName["model_capability_current_probe_contracts"].RowCount)
+	require.EqualValues(t, 20, protectedByName["model_capability_probe_contract_bindings"].RowCount)
+	require.EqualValues(t, 18, protectedByName["model_capability_current_probe_contracts"].RowCount)
 
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)

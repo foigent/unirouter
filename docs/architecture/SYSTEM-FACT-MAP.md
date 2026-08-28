@@ -8,13 +8,22 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The local candidate's executable PostgreSQL compatibility ceiling is `000089`.
+The local candidate's executable PostgreSQL compatibility ceiling is `000091`.
 M85–M87 batch inclusion is tracked in
 [B1 scope](../tech-ref/44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26);
 M88 is the separately bounded local capability-qualification candidate described
 in the current status document. M89 preserves M88's immutable `@1.0.0` probe
 contract and promotes only the exact DeepSeek Flash Chat current binding to the
-new `@2.0.0` final-choice usage contract. This source ceiling alone does not prove a
+new `@2.0.0` final-choice usage contract. M90 adds exact reasoning and
+reasoning-effort typed qualification bindings for DeepSeek Flash Chat. M91 adds
+the exact tools, function-tools, auto/named/required tool-choice and JSON Object
+bindings. Both reuse M88's append-only receipt plus receipt-aware qualification
+authority; they create only `enabled/declared` projections and do not infer live
+support, approval, routing, Release or pricing from a Profile claim. Their fixed
+probe contracts accept no administrator-supplied provider payload and retain
+only bounded response facts, never private reasoning text or arbitrary tool
+arguments. M90/M91 are local candidates, not Target facts. This source ceiling
+alone does not prove a
 deployment. The separately authorized
 [B2 Target checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#b2-target-deployment-and-bounded-zero-call-acceptance--2026-08-26)
 records the 86-entry M87 ledger after a non-rolling maintenance window on

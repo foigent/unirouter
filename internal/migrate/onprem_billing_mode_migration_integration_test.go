@@ -187,6 +187,32 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	for _, successor := range []struct {
+		name    string
+		version string
+	}{
+		{"000091_deepseek_chat_tools_json_capabilities.down.sql", "000091_deepseek_chat_tools_json_capabilities"},
+		{"000090_deepseek_chat_reasoning_capabilities.down.sql", "000090_deepseek_chat_reasoning_capabilities"},
+	} {
+		if name == successor.name {
+			break
+		}
+		var applied bool
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, successor.version,
+		).Scan(&applied))
+		if applied {
+			execMigrationDown(t, ctx, pool, successor.name)
+		}
+	}
+	if name == "000091_deepseek_chat_tools_json_capabilities.down.sql" ||
+		name == "000090_deepseek_chat_reasoning_capabilities.down.sql" {
+		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, string(down))
+		require.NoError(t, err, name)
+		return
+	}
 	if name != "000089_deepseek_chat_sse_usage_contract_v2.down.sql" {
 		var deepSeekSSEV2Applied bool
 		require.NoError(t, pool.QueryRow(ctx, `

@@ -442,7 +442,39 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			  AND expected_upstream_model='deepseek-v4-flash'
 			  AND public_path='/v1/chat/completions'
 			  AND introduced_migration='000088_model_capability_execution_qualification'`, want: 2},
-		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 4},
+		{name: "fresh reasoning capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND (capability_id,probe_contract_id) IN (
+			    ('reasoning','unirouter.capability-probe.deepseek-chat-reasoning.v1'),
+			    ('reasoning_effort','unirouter.capability-probe.deepseek-chat-reasoning-effort.v1'))
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_version='1.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000090_deepseek_chat_reasoning_capabilities'`, want: 4},
+		{name: "fresh tools/JSON capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND (capability_id,probe_contract_id) IN (
+			    ('tools','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('function_tools','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_auto','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_named','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_required','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('json_object','unirouter.capability-probe.deepseek-chat-json-object.v1'))
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_version='1.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000091_deepseek_chat_tools_json_capabilities'`, want: 12},
+		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 20},
 		{name: "fresh current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
 			WHERE operation_id='openai.chat_completions.v1'
 			  AND capability_id='streaming'
@@ -452,7 +484,31 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			  AND protocol_profile_version='1.0.0'
 			  AND probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'
 			  AND probe_contract_version='2.0.0'`, want: 2},
-		{name: "fresh current capability probe contract count", query: "SELECT COUNT(*) FROM model_capability_current_probe_contracts", want: 2},
+		{name: "fresh reasoning current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND (capability_id,probe_contract_id) IN (
+			    ('reasoning','unirouter.capability-probe.deepseek-chat-reasoning.v1'),
+			    ('reasoning_effort','unirouter.capability-probe.deepseek-chat-reasoning-effort.v1'))
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_version='1.0.0'`, want: 4},
+		{name: "fresh tools/JSON current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND (capability_id,probe_contract_id) IN (
+			    ('tools','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('function_tools','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_auto','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_named','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('tool_choice_required','unirouter.capability-probe.deepseek-chat-function-tools.v1'),
+			    ('json_object','unirouter.capability-probe.deepseek-chat-json-object.v1'))
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.4.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_version='1.0.0'`, want: 12},
+		{name: "fresh current capability probe contract count", query: "SELECT COUNT(*) FROM model_capability_current_probe_contracts", want: 18},
 		{name: "fresh known public tables", query: `SELECT COUNT(*) FROM pg_catalog.pg_tables
 			WHERE schemaname='public' AND tablename=ANY($1::text[])`, args: []any{expectedTables}, want: int64(len(expectedTables))},
 		{name: "fresh exact public table inventory", query: "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public'", want: int64(len(expectedTables))},

@@ -201,6 +201,8 @@ export default function DeveloperConsolePage() {
   const [playgroundMode, setPlaygroundMode] = useState('non_stream');
   const [playgroundMaxTokens, setPlaygroundMaxTokens] = useState('');
   const [playgroundThinking, setPlaygroundThinking] = useState('');
+  const [playgroundReasoningEffort, setPlaygroundReasoningEffort] = useState('');
+  const [playgroundScenario, setPlaygroundScenario] = useState('text');
   const [playgroundLoading, setPlaygroundLoading] = useState(false);
   const [playgroundResult, setPlaygroundResult] = useState<{
     status: number;
@@ -263,7 +265,11 @@ export default function DeveloperConsolePage() {
 
   const handlePlaygroundModelChange = (value: unknown) => {
     const nextModel = String(value || '');
-    if (nextModel !== playgroundModel) setPlaygroundThinking('');
+    if (nextModel !== playgroundModel) {
+      setPlaygroundThinking('');
+      setPlaygroundReasoningEffort('');
+      setPlaygroundScenario('text');
+    }
     setPlaygroundModel(nextModel);
   };
   const effectivePlaygroundModel = modelGovernanceLicensed
@@ -398,6 +404,8 @@ export default function DeveloperConsolePage() {
     setPlaygroundKey('');
     setPlaygroundModel('');
     setPlaygroundThinking('');
+    setPlaygroundReasoningEffort('');
+    setPlaygroundScenario('text');
     setPlaygroundMaxTokens('');
     setPlaygroundResult(null);
     setCreatedKey(null);
@@ -514,6 +522,24 @@ export default function DeveloperConsolePage() {
     const elapsed = () => Math.max(0, Math.round(performance.now() - started));
     try {
       const stream = playgroundMode === 'stream';
+      const functionTool = {
+        type: 'function',
+        function: {
+          name: 'unirouter_ui_echo',
+          description: 'Return a supplied test value through a function call.',
+          parameters: {
+            type: 'object',
+            properties: { value: { type: 'string' } },
+            required: ['value'],
+            additionalProperties: false,
+          },
+        },
+      };
+      const toolChoice = playgroundScenario === 'function_auto' ? 'auto'
+        : playgroundScenario === 'function_required' ? 'required'
+          : playgroundScenario === 'function_named'
+            ? { type: 'function', function: { name: 'unirouter_ui_echo' } }
+            : undefined;
       const response = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -526,6 +552,9 @@ export default function DeveloperConsolePage() {
           messages: [{ role: 'user', content: prompt }],
           ...(maxTokensText ? { max_tokens: Number(maxTokensText) } : {}),
           ...(playgroundThinking ? { thinking: { type: playgroundThinking } } : {}),
+          ...(playgroundReasoningEffort ? { reasoning_effort: playgroundReasoningEffort } : {}),
+          ...(toolChoice ? { tools: [functionTool], tool_choice: toolChoice } : {}),
+          ...(playgroundScenario === 'json_object' ? { response_format: { type: 'json_object' } } : {}),
         }),
       });
       responseStatus = response.status;
@@ -537,6 +566,7 @@ export default function DeveloperConsolePage() {
         let buffer = '';
         let content = '';
         let finalMeta: any = null;
+        let finishReason: string | undefined;
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -551,7 +581,10 @@ export default function DeveloperConsolePage() {
             try {
               const chunk = JSON.parse(data);
               content += chunk?.choices?.[0]?.delta?.content || '';
-              if (chunk?._uniroute) finalMeta = chunk._uniroute;
+              if (typeof chunk?.choices?.[0]?.finish_reason === 'string') {
+                finishReason = chunk.choices[0].finish_reason;
+              }
+              if (chunk?._uniroute) finalMeta = { ...(finalMeta || {}), ...chunk._uniroute };
               if (chunk?.usage) finalMeta = { ...(finalMeta || {}), usage: chunk.usage };
             } catch {
               // Ignore malformed SSE lines from intermediaries; the gateway error path is handled below.
@@ -566,6 +599,8 @@ export default function DeveloperConsolePage() {
           total_tokens: finalMeta?.usage?.total_tokens,
           latency_ms: elapsed(),
           headers_ms: headersMS,
+          usage: finalMeta?.usage,
+          finish_reason: finishReason,
           usage_source: finalMeta?.usage_source,
         });
         return;
@@ -586,14 +621,18 @@ export default function DeveloperConsolePage() {
         });
         return;
       }
-      if (!payload || payload.error || !Array.isArray(payload.choices) ||
-        typeof payload.choices[0]?.message?.content !== 'string') {
-        throw new Error('响应不符合 Chat 文本响应合同；不能作为成功的模型输出。');
+      const responseMessage = payload?.choices?.[0]?.message;
+      const responseHasText = typeof responseMessage?.content === 'string';
+      const responseHasToolCalls = Array.isArray(responseMessage?.tool_calls) && responseMessage.tool_calls.length > 0;
+      if (!payload || payload.error || !Array.isArray(payload.choices) || (!responseHasText && !responseHasToolCalls)) {
+        throw new Error('响应不符合 Chat 文本或工具调用合同；不能作为成功的模型输出。');
       }
       const uniroute = payload?._uniroute || {};
       setPlaygroundResult({
         status: response.status,
-        content: payload.choices[0].message.content || '(空文本响应)',
+        content: responseHasToolCalls
+          ? JSON.stringify(responseMessage.tool_calls, null, 2)
+          : responseMessage.content || '(空文本响应)',
         request_id: uniroute?.request_id || payload?.id,
         cost_micros: uniroute?.cost?.charged_cost_micros,
         total_tokens: payload?.usage?.total_tokens,
@@ -947,6 +986,7 @@ export default function DeveloperConsolePage() {
                         { label: '流式', value: 'stream' },
                       ]}
                       onChange={(value) => setPlaygroundMode(String(value || 'non_stream'))}
+                      disabled={playgroundScenario !== 'text'}
                       style={{ width: 120 }}
                     />
                     <Button type="primary" icon={<IconBolt />} loading={playgroundLoading}
@@ -966,15 +1006,52 @@ export default function DeveloperConsolePage() {
                     <div>
                       <Text id="playground-thinking-label">thinking.type（可选）</Text>
                       <Select aria-labelledby="playground-thinking-label" value={playgroundThinking}
-                        onChange={value => setPlaygroundThinking(String(value || ''))}
+                        onChange={value => {
+                          const next = String(value || '');
+                          setPlaygroundThinking(next);
+                          if (next === 'disabled') setPlaygroundReasoningEffort('');
+                        }}
                         optionList={[
                           { label: '不指定（不发送）', value: '' },
                           { label: 'disabled（关闭）', value: 'disabled' },
                           { label: 'enabled（开启）', value: 'enabled' },
                         ]} style={{ width: 200 }} />
                     </div>
+                    <div>
+                      <Text id="playground-reasoning-effort-label">reasoning_effort（可选）</Text>
+                      <Select aria-labelledby="playground-reasoning-effort-label" value={playgroundReasoningEffort}
+                        onChange={value => {
+                          const next = String(value || '');
+                          setPlaygroundReasoningEffort(next);
+                          if (next) setPlaygroundThinking('');
+                        }}
+                        optionList={[
+                          { label: '不指定（不发送）', value: '' },
+                          { label: 'low', value: 'low' },
+                          { label: 'medium', value: 'medium' },
+                          { label: 'high', value: 'high' },
+                          { label: 'xhigh', value: 'xhigh' },
+                          { label: 'max', value: 'max' },
+                        ]} style={{ width: 210 }} />
+                    </div>
+                    <div>
+                      <Text id="playground-scenario-label">能力场景</Text>
+                      <Select aria-labelledby="playground-scenario-label" value={playgroundScenario}
+                        onChange={value => {
+                          const next = String(value || 'text');
+                          setPlaygroundScenario(next);
+                          if (next !== 'text') setPlaygroundMode('non_stream');
+                        }}
+                        optionList={[
+                          { label: '普通文本', value: 'text' },
+                          { label: 'Function Tool · auto', value: 'function_auto' },
+                          { label: 'Function Tool · required', value: 'function_required' },
+                          { label: 'Function Tool · named', value: 'function_named' },
+                          { label: 'JSON Object', value: 'json_object' },
+                        ]} style={{ width: 220 }} />
+                    </div>
                   </div>
-                  <Text type="tertiary">这些字段仅在显式填写时发送；thinking 是供应商扩展，并非所有模型都支持。值域和输出上限仍由精确 Profile 校验；留空不是零输出，也不是供应商最大输出。</Text>
+                  <Text type="tertiary">这些字段仅在显式填写时发送；thinking 与 reasoning_effort 是供应商或 surface 扩展，并非所有模型都支持。值域和输出上限仍由精确 Profile 校验；留空不是零输出，也不是供应商最大输出。</Text>
                   {maxTokensInvalid && <Text type="danger">max_tokens 必须是正整数。</Text>}
                   {!modelGovernanceLicensed && <Text type="warning">{modelGovernanceRestriction} 调试仍可使用管理员提供的现有模型或别名。</Text>}
                   <TextArea

@@ -312,6 +312,9 @@ export type CanonicalCapabilityProbeView = {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
+  reasoning_observed?: boolean;
+  tool_call_observed?: boolean;
+  structured_output_observed?: boolean;
   tested_at: string;
 };
 
@@ -357,6 +360,9 @@ export type CanonicalCapabilityProbeResult = {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
+  reasoning_observed?: boolean;
+  tool_call_observed?: boolean;
+  structured_output_observed?: boolean;
   evidence_ref?: string;
 };
 

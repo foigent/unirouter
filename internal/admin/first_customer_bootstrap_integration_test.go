@@ -192,7 +192,7 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			 'fixture.future.protocol','1.0.0','fixture.future.probe','1.0.0',
 			 'fixture','fixture-future','/v1/future',
 			 '000088_model_capability_execution_qualification')`,
-			failedCheck: "check fresh capability probe contract binding count: got 5 want 4",
+			failedCheck: "check fresh capability probe contract binding count: got 21 want 20",
 		},
 		{
 			name:    "missing current capability probe contract",
@@ -201,6 +201,15 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			statement: `DELETE FROM model_capability_current_probe_contracts
 			 WHERE probe_contract_id='unirouter.capability-probe.deepseek-chat-sse.v1'`,
 			failedCheck: "check fresh current capability probe contract: got 0 want 2",
+		},
+		{
+			name:    "missing tools current capability probe contract",
+			table:   "model_capability_current_probe_contracts",
+			trigger: "model_capability_current_probe_contracts_immutable",
+			statement: `DELETE FROM model_capability_current_probe_contracts
+			 WHERE capability_id='tools'
+			   AND protocol_profile_id='protocol.deepseek-openai-chat.v4'`,
+			failedCheck: "check fresh tools/JSON current capability probe contract: got 11 want 12",
 		},
 	} {
 		t.Run(corruption.name, func(t *testing.T) {
@@ -419,7 +428,7 @@ func TestFirstCustomerBootstrapFailsClosedOnSchemaDriftIntegration(t *testing.T)
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
-		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000089_future_contract')`)
+		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000092_future_contract')`)
 		require.NoError(t, err)
 
 		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-002", "First Customer")

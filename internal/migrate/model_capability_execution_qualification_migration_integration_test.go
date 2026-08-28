@@ -26,6 +26,249 @@ type m88CapabilityFixture struct {
 	linkCreated  time.Time
 }
 
+func TestDeepSeekChatReasoningCapabilityMigrationProjectsOnlyExactTuplesIntegration(t *testing.T) {
+	pool, _ := setupMigratedThrough(t, "000089_deepseek_chat_sse_usage_contract_v2.up.sql")
+	ctx := t.Context()
+	m90Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000090_deepseek_chat_reasoning_capabilities.up.sql")
+	exactDeploymentID, legacyDeploymentID, mismatchDeploymentID, unsupportedDeploymentID := insertPreM88CapabilityProjectionFixtures(t, pool)
+	_, err := pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,'openai.chat_completions.v1','reasoning','unsupported','declared','operator-decision',1)`,
+		unsupportedDeploymentID)
+	require.NoError(t, err)
+	require.NoError(t, migrate.Run(ctx, pool, m90Dir))
+
+	assertDeclared := func(deploymentID int64, capabilityID, contractID string) {
+		t.Helper()
+		var supportState, evidenceState, evidenceRef string
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT support_state,evidence_state,evidence_ref
+  FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id=$2`, deploymentID, capabilityID).Scan(&supportState, &evidenceState, &evidenceRef))
+		require.Equal(t, "enabled", supportState)
+		require.Equal(t, "declared", evidenceState)
+		require.Equal(t, "capability_contract:"+contractID+"@1.0.0", evidenceRef)
+	}
+	for _, deploymentID := range []int64{exactDeploymentID, legacyDeploymentID} {
+		assertDeclared(deploymentID, "reasoning", "unirouter.capability-probe.deepseek-chat-reasoning.v1")
+		assertDeclared(deploymentID, "reasoning_effort", "unirouter.capability-probe.deepseek-chat-reasoning-effort.v1")
+	}
+	var mismatchCount int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND capability_id IN ('reasoning','reasoning_effort')`, mismatchDeploymentID).Scan(&mismatchCount))
+	require.Zero(t, mismatchCount)
+	var supportState, evidenceRef string
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT support_state,evidence_ref FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND capability_id='reasoning'`, unsupportedDeploymentID).Scan(&supportState, &evidenceRef))
+	require.Equal(t, "unsupported", supportState)
+	require.Equal(t, "operator-decision", evidenceRef)
+
+	execMigrationDown(t, ctx, pool, "000090_deepseek_chat_reasoning_capabilities.down.sql")
+	for _, deploymentID := range []int64{exactDeploymentID, legacyDeploymentID} {
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND capability_id IN ('reasoning','reasoning_effort')`, deploymentID).Scan(&mismatchCount))
+		require.Zero(t, mismatchCount)
+	}
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT support_state,evidence_ref FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND capability_id='reasoning'`, unsupportedDeploymentID).Scan(&supportState, &evidenceRef))
+	require.Equal(t, "unsupported", supportState)
+	require.Equal(t, "operator-decision", evidenceRef)
+
+	require.NoError(t, migrate.Run(ctx, pool, m90Dir))
+	for _, deploymentID := range []int64{exactDeploymentID, legacyDeploymentID} {
+		assertDeclared(deploymentID, "reasoning", "unirouter.capability-probe.deepseek-chat-reasoning.v1")
+		assertDeclared(deploymentID, "reasoning_effort", "unirouter.capability-probe.deepseek-chat-reasoning-effort.v1")
+	}
+}
+
+func TestDeepSeekChatReasoningCapabilityMigrationRefusesDownWithRetainedEvidenceIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := t.Context()
+	execMigrationDown(t, ctx, pool, "000091_deepseek_chat_tools_json_capabilities.down.sql")
+	fixture := insertM88CapabilityFixture(t, pool, "reasoning-down-evidence")
+	_, err := pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,'openai.chat_completions.v1','reasoning','enabled','declared',
+        'capability_contract:unirouter.capability-probe.deepseek-chat-reasoning.v1@1.0.0',1)`, fixture.deploymentID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+INSERT INTO model_capability_probes (
+  customer_org_id,deployment_id,connection_id,operation_id,capability_id,
+  execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,
+  probe_contract_id,probe_contract_version,provider,base_url,adapter_type,adapter_config,
+  upstream_model,connection_revision,deployment_revision,operation_revision,
+  capability_support_revision,credential_binding_id,credential_state_revision,
+  credential_link_created_at,provider_success,success,status_code,latency_ms,
+  reported_model,error_summary,request_summary,response_summary,source_kind,source_ref,
+  source_fingerprint,tested_by)
+VALUES ($1,$2,$3,'openai.chat_completions.v1','reasoning',
+        'deepseek.v4-flash.api','1.4.0','protocol.deepseek-openai-chat.v4','1.0.0',
+        'unirouter.capability-probe.deepseek-chat-reasoning.v1','1.0.0',
+        'deepseek','https://api.deepseek.com','openai_compatible','{}',
+        'deepseek-v4-flash',1,1,1,1,$4,1,$5,TRUE,TRUE,200,12,
+        'deepseek-v4-flash','','{}','{}','admin.model_capability_probe.v1','m90-retained',
+        'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',$6)`,
+		fixture.orgID, fixture.deploymentID, fixture.connectionID,
+		fixture.bindingID, fixture.linkCreated, fixture.userID)
+	require.NoError(t, err)
+
+	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000090_deepseek_chat_reasoning_capabilities.down.sql"))
+	require.NoError(t, err)
+	conn, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+	_, err = conn.Exec(ctx, string(down))
+	require.ErrorContains(t, err, "cannot remove M90 with retained DeepSeek reasoning probe evidence")
+	_, rollbackErr := conn.Exec(ctx, "ROLLBACK")
+	require.NoError(t, rollbackErr)
+}
+
+func TestDeepSeekChatReasoningCapabilityMigrationRefusesDownAfterStableIdentityDriftIntegration(t *testing.T) {
+	pool, _ := setupMigratedThrough(t, "000089_deepseek_chat_sse_usage_contract_v2.up.sql")
+	ctx := t.Context()
+	_, _, mismatchDeploymentID, _ := insertPreM88CapabilityProjectionFixtures(t, pool)
+	m90Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000090_deepseek_chat_reasoning_capabilities.up.sql")
+	require.NoError(t, migrate.Run(ctx, pool, m90Dir))
+	_, err := pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,'openai.chat_completions.v1','reasoning','enabled','declared',
+        'capability_contract:unirouter.capability-probe.deepseek-chat-reasoning.v1@1.0.0',1)`, mismatchDeploymentID)
+	require.NoError(t, err)
+
+	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000090_deepseek_chat_reasoning_capabilities.down.sql"))
+	require.NoError(t, err)
+	conn, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+	_, err = conn.Exec(ctx, string(down))
+	require.ErrorContains(t, err, "cannot remove M90 after DeepSeek reasoning projection identity drift")
+	_, rollbackErr := conn.Exec(ctx, "ROLLBACK")
+	require.NoError(t, rollbackErr)
+}
+
+func TestDeepSeekChatToolsJSONCapabilityMigrationProjectsOnlyExactTuplesIntegration(t *testing.T) {
+	pool, _ := setupMigratedThrough(t, "000090_deepseek_chat_reasoning_capabilities.up.sql")
+	ctx := t.Context()
+	exactDeploymentID, legacyDeploymentID, mismatchDeploymentID, unsupportedDeploymentID := insertPreM88CapabilityProjectionFixtures(t, pool)
+	_, err := pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,'openai.chat_completions.v1','tools','unsupported','declared','operator-decision',1)`, unsupportedDeploymentID)
+	require.NoError(t, err)
+	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+
+	capabilities := []string{"tools", "function_tools", "tool_choice_auto", "tool_choice_named", "tool_choice_required", "json_object"}
+	for _, deploymentID := range []int64{exactDeploymentID, legacyDeploymentID} {
+		var count int
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id=ANY($2) AND support_state='enabled' AND evidence_state='declared'`,
+			deploymentID, capabilities).Scan(&count))
+		require.Equal(t, len(capabilities), count)
+	}
+	var count int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND capability_id=ANY($2)`, mismatchDeploymentID, capabilities).Scan(&count))
+	require.Zero(t, count)
+	var supportState, evidenceRef string
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT support_state,evidence_ref FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND capability_id='tools'`, unsupportedDeploymentID).Scan(&supportState, &evidenceRef))
+	require.Equal(t, "unsupported", supportState)
+	require.Equal(t, "operator-decision", evidenceRef)
+
+	execMigrationDown(t, ctx, pool, "000091_deepseek_chat_tools_json_capabilities.down.sql")
+	for _, deploymentID := range []int64{exactDeploymentID, legacyDeploymentID} {
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND capability_id=ANY($2)`, deploymentID, capabilities).Scan(&count))
+		require.Zero(t, count)
+	}
+	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	for _, deploymentID := range []int64{exactDeploymentID, legacyDeploymentID} {
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND capability_id=ANY($2) AND support_state='enabled'`,
+			deploymentID, capabilities).Scan(&count))
+		require.Equal(t, len(capabilities), count)
+	}
+}
+
+func TestDeepSeekChatToolsJSONCapabilityMigrationRefusesDownWithRetainedEvidenceIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := t.Context()
+	fixture := insertM88CapabilityFixture(t, pool, "tools-down-evidence")
+	_, err := pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,'openai.chat_completions.v1','tools','enabled','declared',
+        'capability_contract:unirouter.capability-probe.deepseek-chat-function-tools.v1@1.0.0',1)`, fixture.deploymentID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+INSERT INTO model_capability_probes (
+  customer_org_id,deployment_id,connection_id,operation_id,capability_id,
+  execution_profile_id,execution_profile_version,protocol_profile_id,protocol_profile_version,
+  probe_contract_id,probe_contract_version,provider,base_url,adapter_type,adapter_config,
+  upstream_model,connection_revision,deployment_revision,operation_revision,
+  capability_support_revision,credential_binding_id,credential_state_revision,
+  credential_link_created_at,provider_success,success,status_code,latency_ms,
+  reported_model,error_summary,request_summary,response_summary,source_kind,source_ref,
+  source_fingerprint,tested_by)
+VALUES ($1,$2,$3,'openai.chat_completions.v1','tools',
+        'deepseek.v4-flash.api','1.4.0','protocol.deepseek-openai-chat.v4','1.0.0',
+        'unirouter.capability-probe.deepseek-chat-function-tools.v1','1.0.0',
+        'deepseek','https://api.deepseek.com','openai_compatible','{}',
+        'deepseek-v4-flash',1,1,1,1,$4,1,$5,TRUE,TRUE,200,12,
+        'deepseek-v4-flash','','{}','{}','admin.model_capability_probe.v1','m91-retained',
+        'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',$6)`,
+		fixture.orgID, fixture.deploymentID, fixture.connectionID,
+		fixture.bindingID, fixture.linkCreated, fixture.userID)
+	require.NoError(t, err)
+
+	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000091_deepseek_chat_tools_json_capabilities.down.sql"))
+	require.NoError(t, err)
+	conn, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+	_, err = conn.Exec(ctx, string(down))
+	require.ErrorContains(t, err, "cannot remove M91 with retained DeepSeek tools/JSON probe evidence")
+	_, rollbackErr := conn.Exec(ctx, "ROLLBACK")
+	require.NoError(t, rollbackErr)
+}
+
+func TestDeepSeekChatToolsJSONCapabilityMigrationRefusesDownAfterStableIdentityDriftIntegration(t *testing.T) {
+	pool, _ := setupMigratedThrough(t, "000090_deepseek_chat_reasoning_capabilities.up.sql")
+	ctx := t.Context()
+	_, _, mismatchDeploymentID, _ := insertPreM88CapabilityProjectionFixtures(t, pool)
+	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	_, err := pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,'openai.chat_completions.v1','tools','enabled','declared',
+        'capability_contract:unirouter.capability-probe.deepseek-chat-function-tools.v1@1.0.0',1)`, mismatchDeploymentID)
+	require.NoError(t, err)
+
+	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000091_deepseek_chat_tools_json_capabilities.down.sql"))
+	require.NoError(t, err)
+	conn, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+	_, err = conn.Exec(ctx, string(down))
+	require.ErrorContains(t, err, "cannot remove M91 after DeepSeek tools/JSON projection identity drift")
+	_, rollbackErr := conn.Exec(ctx, "ROLLBACK")
+	require.NoError(t, rollbackErr)
+}
+
 func TestDeepSeekChatSSEContractV2MigrationPreservesHistoricalContractIntegration(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000088_model_capability_execution_qualification.up.sql")
 	ctx := t.Context()
@@ -60,6 +303,7 @@ func TestDeepSeekChatSSEContractV2MigrationRefusesDownWithRetainedEvidenceIntegr
 	pool := testutil.SetupMigratedTestDB(t)
 	fixture := insertM88CapabilityFixture(t, pool, "v2-down-evidence")
 	insertM88CapabilityProbe(t, pool, fixture, 1, "v2-down-evidence")
+	execMigrationDown(t, t.Context(), pool, "000090_deepseek_chat_reasoning_capabilities.down.sql")
 
 	down, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t), "000089_deepseek_chat_sse_usage_contract_v2.down.sql",

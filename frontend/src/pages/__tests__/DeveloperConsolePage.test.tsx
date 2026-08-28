@@ -184,7 +184,7 @@ describe('DeveloperConsolePage', () => {
       await screen.findByText('Company Chat');
       fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
       fireEvent.change(screen.getByLabelText('max_tokens（可选）'), { target: { value: '128' } });
-      await chooseWorkbenchOption('thinking.type（可选）', /disabled/);
+      await chooseWorkbenchOption('reasoning_effort（可选）', /^low$/);
       await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
       await screen.findByText('OK');
       const [path, init] = fetchMock.mock.calls[0];
@@ -192,9 +192,136 @@ describe('DeveloperConsolePage', () => {
       expect(JSON.parse(String(init?.body))).toEqual({
         model: 'company-chat', stream: false,
         messages: [{ role: 'user', content: '请用一句话返回当前项目的健康检查结果。' }],
-        max_tokens: 128, thinking: { type: 'disabled' },
+        max_tokens: 128, reasoning_effort: 'low',
       });
       expect(screen.getByText(/"prompt_cache_hit_tokens": 4/)).toBeTruthy();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('never sends disabled thinking together with reasoning_effort', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }), { status: 200 }));
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      await chooseWorkbenchOption('thinking.type（可选）', /disabled/);
+      await chooseWorkbenchOption('reasoning_effort（可选）', /^low$/);
+      await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      await screen.findByText('OK');
+      const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+      expect(payload).toMatchObject({ reasoning_effort: 'low' });
+      expect(payload).not.toHaveProperty('thinking');
+
+      await chooseWorkbenchOption('thinking.type（可选）', /disabled/);
+      await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      const secondPayload = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+      expect(secondPayload).toMatchObject({ thinking: { type: 'disabled' } });
+      expect(secondPayload).not.toHaveProperty('reasoning_effort');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('sends only the fixed function-tool scenario and renders tool_calls', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      id: 'chatcmpl-ui-tool',
+      choices: [{
+        message: {
+          role: 'assistant', content: null,
+          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'unirouter_ui_echo', arguments: '{"value":"OK"}' } }],
+        },
+        finish_reason: 'tool_calls',
+      }],
+      usage: { prompt_tokens: 20, completion_tokens: 9, total_tokens: 29 },
+    }), { status: 200 }));
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      await chooseWorkbenchOption('能力场景', /Function Tool · required/);
+      await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      await screen.findByText(/unirouter_ui_echo/u);
+      const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+      expect(payload.stream).toBe(false);
+      expect(payload.tool_choice).toBe('required');
+      expect(payload.tools).toHaveLength(1);
+      expect(payload.tools[0].function.name).toBe('unirouter_ui_echo');
+      expect(payload).not.toHaveProperty('response_format');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('sends the typed JSON Object scenario without arbitrary schema fields', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      id: 'chatcmpl-ui-json',
+      choices: [{ message: { role: 'assistant', content: '{"status":"OK"}' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 15, completion_tokens: 5, total_tokens: 20 },
+    }), { status: 200 }));
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      await chooseWorkbenchOption('能力场景', /JSON Object/);
+      await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
+      await screen.findByText('{"status":"OK"}');
+      const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+      expect(payload.stream).toBe(false);
+      expect(payload.response_format).toEqual({ type: 'json_object' });
+      expect(payload).not.toHaveProperty('tools');
+      expect(payload).not.toHaveProperty('tool_choice');
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('shows terminal usage and finish reason from a streaming response', async () => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode([
+          'data: {"choices":[{"delta":{"content":"STREAM"},"finish_reason":null}]}',
+          'data: {"choices":[{"delta":{"content":"_OK"},"finish_reason":"stop"}]}',
+          'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13},"_uniroute":{"request_id":"op-stream-ui","cost":{"charged_cost_micros":"0"},"usage_source":"upstream"}}',
+          'data: [DONE]',
+          '',
+        ].join('\n')));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }));
+    try {
+      renderPage();
+      await screen.findByText('Company Chat');
+      fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+      const mode = screen.getAllByRole('combobox').find(node => node.getAttribute('style')?.includes('width: 120px'));
+      expect(mode).toBeTruthy();
+      await userEvent.click(mode!);
+      await waitFor(() => expect(mode).toHaveAttribute('aria-expanded', 'true'));
+      const controlledID = mode!.getAttribute('aria-controls');
+      expect(controlledID).toBeTruthy();
+      const options = Array.from(document.querySelectorAll<HTMLElement>(`[id="${controlledID}"]`)).flatMap(list => within(list).queryAllByRole('option'));
+      const streamOption = options.find(option => option.textContent === '流式');
+      expect(streamOption).toBeTruthy();
+      await userEvent.click(streamOption!);
+      await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
+
+      await screen.findByText('STREAM_OK');
+      expect(screen.getByText('finish_reason：stop')).toBeTruthy();
+      expect(screen.getByText('13 tokens')).toBeTruthy();
+      expect(screen.getByText(/"prompt_tokens": 10/)).toBeTruthy();
+      expect(screen.getByText(/"completion_tokens": 3/)).toBeTruthy();
+      expect(screen.getByText(/"total_tokens": 13/)).toBeTruthy();
+      expect(screen.getByText('op-stream-ui')).toBeTruthy();
     } finally {
       fetchMock.mockRestore();
     }
@@ -217,6 +344,8 @@ describe('DeveloperConsolePage', () => {
       await screen.findByText('Company Chat');
       fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
       await chooseWorkbenchOption('thinking.type（可选）', /disabled/);
+      await chooseWorkbenchOption('reasoning_effort（可选）', /^low$/);
+      await chooseWorkbenchOption('能力场景', /Function Tool · required/);
       mockGetModelCatalog.mockResolvedValue({ data: [{ ...MODELS.data[0], model_name: 'model-b', aliases: '', display_name: 'Replacement' }], total: 1 });
       fireEvent.click(screen.getByText('刷新'));
       await screen.findByText('Replacement');
@@ -228,6 +357,8 @@ describe('DeveloperConsolePage', () => {
       const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
       expect(payload.model).toBe('model-b');
       expect(payload).not.toHaveProperty('thinking');
+      expect(payload).not.toHaveProperty('reasoning_effort');
+      expect(payload).not.toHaveProperty('tools');
     } finally {
       fetchMock.mockRestore();
     }
@@ -246,12 +377,16 @@ describe('DeveloperConsolePage', () => {
       fireEvent.change(modelInput, { target: { value: 'model-a' } });
       fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
       await chooseWorkbenchOption('thinking.type（可选）', /disabled/);
+      await chooseWorkbenchOption('reasoning_effort（可选）', /^low$/);
+      await chooseWorkbenchOption('能力场景', /Function Tool · required/);
       fireEvent.change(modelInput, { target: { value: 'model-b' } });
       fireEvent.click(screen.getByRole('button', { name: /运行$/ }));
       await screen.findByText('switched OK');
       const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
       expect(payload.model).toBe('model-b');
       expect(payload).not.toHaveProperty('thinking');
+      expect(payload).not.toHaveProperty('reasoning_effort');
+      expect(payload).not.toHaveProperty('tools');
     } finally {
       fetchMock.mockRestore();
     }
@@ -311,6 +446,7 @@ describe('DeveloperConsolePage', () => {
       const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
       expect(payload).not.toHaveProperty('max_tokens');
       expect(payload).not.toHaveProperty('thinking');
+      expect(payload).not.toHaveProperty('reasoning_effort');
     } finally {
       fetchMock.mockRestore();
       nowMock.mockRestore();
