@@ -4,6 +4,14 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.9] - 2026-08-29
+
+### Fixed
+
+- Exposed the existing DeepSeek V4 Pro Chat Core capability qualification
+  workflow in the deployment details UI, matching the M94 exact Profile
+  bindings without changing protocol, Profile or qualification authority.
+
 ## [1.2.8] - 2026-08-29
 
 ### Added

@@ -700,6 +700,61 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     );
   });
 
+  it('renders the same exact capability qualification workflow for DeepSeek Pro 1.5', async () => {
+    const base = application();
+    const pro = application({
+      public_model: {
+        ...base.public_model,
+        model_name: 'deepseek-v4-pro',
+        display_name: 'DeepSeek V4 Pro',
+        execution_profile_id: 'deepseek.v4-pro.api',
+        execution_profile_version: '1.5.0',
+      },
+      operations: [{
+        ...base.operations[0],
+        operation_id: 'openai.chat_completions.v1',
+        protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
+        protocol_profile_version: '1.0.0',
+      }],
+    });
+    mocks.list.mockResolvedValue(projection([pro]));
+    mocks.get.mockResolvedValue(pro);
+
+    renderPage('/channels?deployment_id=41&operation_id=openai.chat_completions.v1');
+
+    expect(await screen.findByText('能力验证 · 流式输出（SSE）')).toBeTruthy();
+    expect(screen.getByText('能力验证 · 推理强度')).toBeTruthy();
+    expect(screen.getByText('能力验证 · JSON Object')).toBeTruthy();
+    await waitFor(() => expect(mocks.getCapabilityQualification).toHaveBeenCalledTimes(9));
+  });
+
+  it('does not offer Pro capability qualification for the unbound generic Chat tuple', async () => {
+    const base = application();
+    const genericPro = application({
+      public_model: {
+        ...base.public_model,
+        model_name: 'deepseek-v4-pro',
+        display_name: 'DeepSeek V4 Pro',
+        execution_profile_id: 'deepseek.v4-pro.api',
+        execution_profile_version: '1.5.0',
+      },
+      operations: [{
+        ...base.operations[0],
+        operation_id: 'openai.chat_completions.v1',
+        protocol_profile_id: 'openai.chat_completions',
+        protocol_profile_version: '1.0.0',
+      }],
+    });
+    mocks.list.mockResolvedValue(projection([genericPro]));
+    mocks.get.mockResolvedValue(genericPro);
+
+    renderPage('/channels?deployment_id=41&operation_id=openai.chat_completions.v1');
+
+    expect(await screen.findByText('3 · Operation 支持与探测证据')).toBeTruthy();
+    expect(screen.queryByText('能力验证 · 流式输出（SSE）')).toBeNull();
+    expect(mocks.getCapabilityQualification).not.toHaveBeenCalled();
+  });
+
   it('links exact runtime membership from deployment detail into the canonical release workspace', async () => {
     const base = application();
     const withStableMembership = application({

@@ -32,6 +32,23 @@ const operationLabels: Record<string, string> = {
   'anthropic.messages.v1': 'Anthropic Messages',
 };
 
+const deepSeekChatCoreQualificationTuples = new Set([
+  'deepseek.v4-flash.api@1.4.0|openai.chat_completions@1.0.0',
+  'deepseek.v4-flash.api@1.4.0|protocol.deepseek-openai-chat.v4@1.0.0',
+  'deepseek.v4-flash.api@1.5.0|openai.chat_completions@1.0.0',
+  'deepseek.v4-flash.api@1.5.0|protocol.deepseek-openai-chat.v4@1.0.0',
+  'deepseek.v4-pro.api@1.5.0|protocol.deepseek-openai-chat.v4@1.0.0',
+]);
+
+function supportsDeepSeekChatCoreQualification(selected: CanonicalModelApplication, operation: CanonicalOperation) {
+  if (operation.operation_id !== 'openai.chat_completions.v1') return false;
+  const exactTuple = [
+    `${selected.public_model.execution_profile_id}@${selected.public_model.execution_profile_version}`,
+    `${operation.protocol_profile_id}@${operation.protocol_profile_version}`,
+  ].join('|');
+  return deepSeekChatCoreQualificationTuples.has(exactTuple);
+}
+
 function runtimeMembershipSummary(operation: CanonicalOperation) {
   const stable = operation.runtime.stable_membership;
   const canary = operation.runtime.canary_membership;
@@ -152,9 +169,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
         </div>
       </Surface>
 
-      {operation.operation_id === 'openai.chat_completions.v1' &&
-        selected.public_model.execution_profile_id === 'deepseek.v4-flash.api' &&
-        ['1.4.0', '1.5.0'].includes(selected.public_model.execution_profile_version) && <>
+      {supportsDeepSeekChatCoreQualification(selected, operation) && <>
           {(['streaming', 'reasoning', 'reasoning_effort', 'tools', 'function_tools',
             'tool_choice_auto', 'tool_choice_named', 'tool_choice_required', 'json_object'] as const).map(capabilityID => (
             <ModelCapabilityQualificationPanel
