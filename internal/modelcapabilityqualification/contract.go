@@ -161,23 +161,42 @@ var deepSeekFlashCoreBindings = func() []Binding {
 	return bindings
 }()
 
+// deepSeekFlashCurrentBindings publishes the same typed probe grammar for the
+// append-only Profile which corrected reasoning/tool-choice composition. Probe
+// and approval evidence remains exact-version scoped, so no 1.4.0 receipt can
+// qualify a 1.5.0 deployment.
+var deepSeekFlashCurrentBindings = func() []Binding {
+	historical := []Binding{
+		deepSeekFlashStreaming, deepSeekFlashLegacyStreaming,
+		deepSeekFlashReasoning, deepSeekFlashLegacyReasoning,
+		deepSeekFlashReasoningEffort, deepSeekFlashLegacyReasoningEffort,
+	}
+	historical = append(historical, deepSeekFlashCoreBindings...)
+	current := make([]Binding, 0, len(historical))
+	for _, binding := range historical {
+		binding.ExecutionProfileVersion = "1.5.0"
+		current = append(current, binding)
+	}
+	return current
+}()
+
+func allBindings() []Binding {
+	bindings := []Binding{
+		deepSeekFlashStreaming, deepSeekFlashLegacyStreaming,
+		deepSeekFlashReasoning, deepSeekFlashLegacyReasoning,
+		deepSeekFlashReasoningEffort, deepSeekFlashLegacyReasoningEffort,
+	}
+	bindings = append(bindings, deepSeekFlashCoreBindings...)
+	bindings = append(bindings, deepSeekFlashCurrentBindings...)
+	return bindings
+}
+
 func Resolve(
 	operationID, capabilityID,
 	executionProfileID, executionProfileVersion,
 	protocolProfileID, protocolProfileVersion string,
 ) (Binding, error) {
-	for _, candidate := range [...]Binding{
-		deepSeekFlashStreaming, deepSeekFlashLegacyStreaming,
-		deepSeekFlashReasoning, deepSeekFlashLegacyReasoning,
-		deepSeekFlashReasoningEffort, deepSeekFlashLegacyReasoningEffort,
-	} {
-		if candidate.OperationID == operationID && candidate.CapabilityID == capabilityID &&
-			candidate.ExecutionProfileID == executionProfileID && candidate.ExecutionProfileVersion == executionProfileVersion &&
-			candidate.ProtocolProfileID == protocolProfileID && candidate.ProtocolProfileVersion == protocolProfileVersion {
-			return candidate, nil
-		}
-	}
-	for _, candidate := range deepSeekFlashCoreBindings {
+	for _, candidate := range allBindings() {
 		if candidate.OperationID == operationID && candidate.CapabilityID == capabilityID &&
 			candidate.ExecutionProfileID == executionProfileID && candidate.ExecutionProfileVersion == executionProfileVersion &&
 			candidate.ProtocolProfileID == protocolProfileID && candidate.ProtocolProfileVersion == protocolProfileVersion {
@@ -187,6 +206,30 @@ func Resolve(
 	return Binding{}, fmt.Errorf("%w: %s/%s %s@%s %s@%s", ErrUnsupported,
 		operationID, capabilityID, executionProfileID, executionProfileVersion,
 		protocolProfileID, protocolProfileVersion)
+}
+
+// ResolveAll returns every compiled capability binding for one exact
+// deployment operation tuple. Callers must still match each returned binding
+// against the migration-owned current-contract row before materializing a
+// declared capability.
+func ResolveAll(
+	operationID, executionProfileID, executionProfileVersion,
+	protocolProfileID, protocolProfileVersion string,
+) ([]Binding, error) {
+	bindings := make([]Binding, 0, 9)
+	for _, candidate := range allBindings() {
+		if candidate.OperationID == operationID &&
+			candidate.ExecutionProfileID == executionProfileID && candidate.ExecutionProfileVersion == executionProfileVersion &&
+			candidate.ProtocolProfileID == protocolProfileID && candidate.ProtocolProfileVersion == protocolProfileVersion {
+			bindings = append(bindings, candidate)
+		}
+	}
+	if len(bindings) == 0 {
+		return nil, fmt.Errorf("%w: %s %s@%s %s@%s", ErrUnsupported,
+			operationID, executionProfileID, executionProfileVersion,
+			protocolProfileID, protocolProfileVersion)
+	}
+	return bindings, nil
 }
 
 func DeepSeekFlashStreamingBinding() Binding { return deepSeekFlashStreaming }
@@ -203,4 +246,8 @@ func DeepSeekFlashLegacyReasoningEffortBinding() Binding { return deepSeekFlashL
 
 func DeepSeekFlashCoreBindings() []Binding {
 	return append([]Binding(nil), deepSeekFlashCoreBindings...)
+}
+
+func DeepSeekFlashCurrentBindings() []Binding {
+	return append([]Binding(nil), deepSeekFlashCurrentBindings...)
 }

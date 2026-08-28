@@ -474,7 +474,17 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			  AND expected_upstream_model='deepseek-v4-flash'
 			  AND public_path='/v1/chat/completions'
 			  AND introduced_migration='000091_deepseek_chat_tools_json_capabilities'`, want: 12},
-		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 20},
+		{name: "fresh DeepSeek 1.5 capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.5.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'
+			  AND expected_provider='deepseek'
+			  AND expected_upstream_model='deepseek-v4-flash'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000092_deepseek_reasoning_tool_choice_contract'`, want: 18},
+		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 38},
 		{name: "fresh current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
 			WHERE operation_id='openai.chat_completions.v1'
 			  AND capability_id='streaming'
@@ -508,7 +518,13 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
 			  AND protocol_profile_version='1.0.0'
 			  AND probe_contract_version='1.0.0'`, want: 12},
-		{name: "fresh current capability probe contract count", query: "SELECT COUNT(*) FROM model_capability_current_probe_contracts", want: 18},
+		{name: "fresh DeepSeek 1.5 current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND execution_profile_id='deepseek.v4-flash.api'
+			  AND execution_profile_version='1.5.0'
+			  AND protocol_profile_id IN ('protocol.deepseek-openai-chat.v4','openai.chat_completions')
+			  AND protocol_profile_version='1.0.0'`, want: 18},
+		{name: "fresh current capability probe contract count", query: "SELECT COUNT(*) FROM model_capability_current_probe_contracts", want: 36},
 		{name: "fresh known public tables", query: `SELECT COUNT(*) FROM pg_catalog.pg_tables
 			WHERE schemaname='public' AND tablename=ANY($1::text[])`, args: []any{expectedTables}, want: int64(len(expectedTables))},
 		{name: "fresh exact public table inventory", query: "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public'", want: int64(len(expectedTables))},

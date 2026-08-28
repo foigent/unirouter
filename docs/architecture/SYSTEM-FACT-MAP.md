@@ -8,7 +8,7 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The local candidate's executable PostgreSQL compatibility ceiling is `000091`.
+The local candidate's executable PostgreSQL compatibility ceiling is `000092`.
 M85–M87 batch inclusion is tracked in
 [B1 scope](../tech-ref/44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26);
 M88 is the separately bounded local capability-qualification candidate described
@@ -17,13 +17,17 @@ contract and promotes only the exact DeepSeek Flash Chat current binding to the
 new `@2.0.0` final-choice usage contract. M90 adds exact reasoning and
 reasoning-effort typed qualification bindings for DeepSeek Flash Chat. M91 adds
 the exact tools, function-tools, auto/named/required tool-choice and JSON Object
-bindings. Both reuse M88's append-only receipt plus receipt-aware qualification
+bindings. M92 adds the exact DeepSeek Flash Profile 1.5 capability bindings
+after the reasoning/tool-choice composition correction; it does not reinterpret
+Profile 1.4 receipts. All four reuse M88's append-only receipt plus receipt-aware qualification
 authority; they create only `enabled/declared` projections and do not infer live
 support, approval, routing, Release or pricing from a Profile claim. Their fixed
 probe contracts accept no administrator-supplied provider payload and retain
 only bounded response facts, never private reasoning text or arbitrary tool
-arguments. M90/M91 are local candidates, not Target facts. This source ceiling
-alone does not prove a
+arguments. M90/M91 are deployed Target facts at the checkpoint below; M92 is a
+local candidate only. M92 can be downgraded only while no Flash/Pro Profile 1.5
+model attachment, probe or approval exists; the guard prevents an M91 binary
+from inheriting a durable Profile identity that it cannot interpret. This source ceiling alone does not prove a
 deployment. The separately authorized
 [B2 Target checkpoint](../tech-ref/42-model-execution-profile-capability-status.md#b2-target-deployment-and-bounded-zero-call-acceptance--2026-08-26)
 records the 86-entry M87 ledger after a non-rolling maintenance window on
@@ -48,10 +52,13 @@ artifact `08d0ef8e5cee7e1bff515d5751e7a9bdd452f16f`. Its automatic CI
 33050163111 and protocol-conformance CI 33050163136 passed before a non-rolling
 maintenance deployment. It was later superseded by parser-diagnostics commit
 `56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and caller-scoped readiness UI
-commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`. Stable, canary and frontend now
-use the exact 4c6 artifacts; canonical model-route authority remains enabled with compatibility
-disabled, and that M88 deployment performed no canonical cutover. The database
-has the exact 87-entry M88 ledger.
+commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`, then by the versioned SSE
+contract and M90/M91 capability batch. Stable, canary and frontend now use exact
+commit `6ff5cbf1c3917b218cffc212163a4756d1f794eb`, tree
+`d0084d90240126301e14075e5d608246f46109f8`, version 1.2.4 and schema M91;
+canonical model-route authority remains enabled with compatibility disabled.
+Profile 1.5/M92 remains local and has no Target probe, approval, route or Release
+evidence.
 Following explicit authorization to create a test account and test through the
 UI, user 38 was created as customer 2's ordinary member / project 86 user and
 successfully logged in. UI authoring/first activation created Release 22,
@@ -83,6 +90,10 @@ prove zero supplier cost. Customer-side manual acceptance remains deferred.
 The product owner later increased the cumulative test ceiling to 20 calls/CNY 5,
 including probe 1; this is spending authority, not evidence of further calls or
 a change to caller-identity, capability or Release requirements.
+On 2026-08-28 the owner removed the call-count ceiling for the Flash closure
+while retaining a cumulative CNY 5 supplier-spend ceiling and approved an
+audited alias cutover after the replacement Profile 1.5 identity is qualified
+and sealed. This does not authorize another model or a Production release.
 The M88 Admin workflow subsequently issued one typed streaming probe. The
 provider returned HTTP 200, but the original deployed validator rejected its
 stream contract and recorded only a generic sanitized error. Parser-diagnostics

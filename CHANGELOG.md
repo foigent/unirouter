@@ -4,6 +4,32 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.5] - 2026-08-28
+
+### Fixed
+
+- Added immutable DeepSeek V4 Flash and Pro Profile `1.5.0` identities that
+  preserve the provider-default thinking mode while rejecting explicit
+  `tool_choice` values that the active reasoning surface cannot honor. A
+  redundant explicit `auto` is normalized to the provider default; named and
+  required choices remain available only when thinking is explicitly disabled.
+- Added M92 exact capability-contract bindings for DeepSeek V4 Flash Profile
+  `1.5.0`, taught canonical onboarding to materialize every migration-approved
+  capability for an exact Profile tuple, and advanced startup schema authority
+  to M92. Historical Profile, Release, probe and approval evidence remains
+  immutable and version scoped.
+- Updated the Admin capability workflow and OpenAPI projection for Profile
+  `1.5.0`; clean rollback is supported only before any Profile `1.5.0`
+  attachment or qualification evidence exists. A retained Flash/Pro model
+  attachment, probe or approval prevents destructive downgrade.
+
+### Evidence boundary
+
+- Local request, migration, bootstrap and UI tests do not transfer the existing
+  Target Profile `1.4.0` live evidence to `1.5.0`. Deployment, new exact probes,
+  routing approvals, ordinary supplier calls and any public-model traffic switch
+  remain separately bounded and must be verified on development/test.
+
 ## [1.2.4] - 2026-08-28
 
 ### Added

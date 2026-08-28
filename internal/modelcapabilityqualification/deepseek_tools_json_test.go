@@ -54,3 +54,25 @@ func TestCompiledDeepSeekCoreBindingsAreExact(t *testing.T) {
 		require.Equal(t, binding, resolved)
 	}
 }
+
+func TestCompiledDeepSeekCurrentProfileBindingsAreExactAndComplete(t *testing.T) {
+	bindings := DeepSeekFlashCurrentBindings()
+	require.Len(t, bindings, 18)
+	for _, binding := range bindings {
+		require.Equal(t, "1.5.0", binding.ExecutionProfileVersion)
+		resolved, err := Resolve(binding.OperationID, binding.CapabilityID,
+			binding.ExecutionProfileID, binding.ExecutionProfileVersion,
+			binding.ProtocolProfileID, binding.ProtocolProfileVersion)
+		require.NoError(t, err)
+		require.Equal(t, binding, resolved)
+	}
+
+	for _, protocolProfileID := range []string{"protocol.deepseek-openai-chat.v4", "openai.chat_completions"} {
+		resolved, err := ResolveAll(
+			"openai.chat_completions.v1", "deepseek.v4-flash.api", "1.5.0",
+			protocolProfileID, "1.0.0",
+		)
+		require.NoError(t, err)
+		require.Len(t, resolved, 9)
+	}
+}

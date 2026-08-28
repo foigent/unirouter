@@ -415,6 +415,7 @@ UPDATE billing_provider_attempts SET execution_snapshot_hash=NULL WHERE org_id=$
 	// The newer public-binding migrations must be reversed before the M85
 	// guard can permit this isolated fixture to enter the legacy schema.
 	for _, name := range []string{
+		"000092_deepseek_reasoning_tool_choice_contract.down.sql",
 		"000091_deepseek_chat_tools_json_capabilities.down.sql",
 		"000090_deepseek_chat_reasoning_capabilities.down.sql",
 		"000089_deepseek_chat_sse_usage_contract_v2.down.sql",

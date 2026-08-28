@@ -227,6 +227,27 @@ func TestModelExecutionMigrationsJoinSharedLifecycleLockBeforeTableLocks(t *test
 				"model_capability_routing_approvals", "schema_migrations",
 			},
 		},
+		{
+			name:           "92 up",
+			file:           "000092_deepseek_reasoning_tool_choice_contract.up.sql",
+			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "schema_migrations",
+			},
+		},
+		{
+			name:           "92 down",
+			file:           "000092_deepseek_reasoning_tool_choice_contract.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "model_capability_probes",
+				"model_capability_routing_approvals", "schema_migrations",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -279,6 +300,7 @@ func TestModelExecutionGuardedDownsLockBeforeLedgerAndEvidenceChecks(t *testing.
 		"000089_deepseek_chat_sse_usage_contract_v2.down.sql",
 		"000090_deepseek_chat_reasoning_capabilities.down.sql",
 		"000091_deepseek_chat_tools_json_capabilities.down.sql",
+		"000092_deepseek_reasoning_tool_choice_contract.down.sql",
 	} {
 		t.Run(file, func(t *testing.T) {
 			body, err := os.ReadFile("../../migrations/" + file)

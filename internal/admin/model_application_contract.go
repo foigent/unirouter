@@ -1343,7 +1343,7 @@ SELECT protocol_profile_id,protocol_profile_version,support_state
 }
 
 // ensureCanonicalDeclaredCapabilities materializes only capabilities for which
-// the compiled Profile contract and M88's migration-owned support tuple agree
+// the compiled Profile contract and the migration-owned support tuple agree
 // exactly. It records supported/declared state; it never creates probe,
 // approval, Release, or routing evidence and never overwrites an existing
 // explicit support decision.
@@ -1356,8 +1356,8 @@ func ensureCanonicalDeclaredCapabilities(
 	upstreamModel string,
 	operation canonicalOperationInput,
 ) error {
-	binding, err := modelcapabilityqualification.Resolve(
-		operation.OperationID, modelprofile.CapabilityStreaming,
+	bindings, err := modelcapabilityqualification.ResolveAll(
+		operation.OperationID,
 		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
 		operation.ProtocolProfileID, operation.ProtocolProfileVersion,
 	)
@@ -1367,12 +1367,13 @@ func ensureCanonicalDeclaredCapabilities(
 	if err != nil {
 		return fmt.Errorf("resolve canonical capability declaration: %w", err)
 	}
-	if connection.Provider != binding.ExpectedProvider || upstreamModel != binding.ExpectedUpstreamModel {
-		return errCanonicalApplicationConflict
-	}
+	for _, binding := range bindings {
+		if connection.Provider != binding.ExpectedProvider || upstreamModel != binding.ExpectedUpstreamModel {
+			return errCanonicalApplicationConflict
+		}
 
-	var databaseBinding modelcapabilityqualification.Binding
-	err = tx.QueryRow(ctx, `
+		var databaseBinding modelcapabilityqualification.Binding
+		err = tx.QueryRow(ctx, `
 SELECT current_contract.operation_id,current_contract.capability_id,
        current_contract.execution_profile_id,current_contract.execution_profile_version,
        current_contract.protocol_profile_id,current_contract.protocol_profile_version,
@@ -1393,36 +1394,37 @@ SELECT current_contract.operation_id,current_contract.capability_id,
    AND current_contract.execution_profile_version=$4
    AND current_contract.protocol_profile_id=$5
    AND current_contract.protocol_profile_version=$6`,
-		binding.OperationID, binding.CapabilityID,
-		binding.ExecutionProfileID, binding.ExecutionProfileVersion,
-		binding.ProtocolProfileID, binding.ProtocolProfileVersion,
-	).Scan(
-		&databaseBinding.OperationID, &databaseBinding.CapabilityID,
-		&databaseBinding.ExecutionProfileID, &databaseBinding.ExecutionProfileVersion,
-		&databaseBinding.ProtocolProfileID, &databaseBinding.ProtocolProfileVersion,
-		&databaseBinding.ProbeContractID, &databaseBinding.ProbeContractVersion,
-		&databaseBinding.ExpectedProvider, &databaseBinding.ExpectedUpstreamModel,
-		&databaseBinding.PublicPath,
-	)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return errCanonicalApplicationConflict
-	}
-	if err != nil {
-		return fmt.Errorf("read canonical capability declaration contract: %w", err)
-	}
-	if databaseBinding != binding {
-		return errCanonicalApplicationConflict
-	}
+			binding.OperationID, binding.CapabilityID,
+			binding.ExecutionProfileID, binding.ExecutionProfileVersion,
+			binding.ProtocolProfileID, binding.ProtocolProfileVersion,
+		).Scan(
+			&databaseBinding.OperationID, &databaseBinding.CapabilityID,
+			&databaseBinding.ExecutionProfileID, &databaseBinding.ExecutionProfileVersion,
+			&databaseBinding.ProtocolProfileID, &databaseBinding.ProtocolProfileVersion,
+			&databaseBinding.ProbeContractID, &databaseBinding.ProbeContractVersion,
+			&databaseBinding.ExpectedProvider, &databaseBinding.ExpectedUpstreamModel,
+			&databaseBinding.PublicPath,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errCanonicalApplicationConflict
+		}
+		if err != nil {
+			return fmt.Errorf("read canonical capability declaration contract: %w", err)
+		}
+		if databaseBinding != binding {
+			return errCanonicalApplicationConflict
+		}
 
-	evidenceRef := "capability_contract:" + binding.ProbeContractID + "@" + binding.ProbeContractVersion
-	if _, err := tx.Exec(ctx, `
+		evidenceRef := "capability_contract:" + binding.ProbeContractID + "@" + binding.ProbeContractVersion
+		if _, err := tx.Exec(ctx, `
 INSERT INTO model_deployment_capabilities (
   deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
 VALUES ($1,$2,$3,'enabled','declared',$4,1)
 ON CONFLICT (deployment_id,operation_id,capability_id) DO NOTHING`,
-		deploymentID, binding.OperationID, binding.CapabilityID, evidenceRef,
-	); err != nil {
-		return fmt.Errorf("declare canonical model capability: %w", err)
+			deploymentID, binding.OperationID, binding.CapabilityID, evidenceRef,
+		); err != nil {
+			return fmt.Errorf("declare canonical model capability: %w", err)
+		}
 	}
 	return nil
 }

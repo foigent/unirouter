@@ -620,7 +620,7 @@ func TestLegacyProviderBundlesRemainImmutableWhenTypedProtocolsAdvance(t *testin
 
 	deepSeekCurrent, ok := Match("DeepSeek V4 Pro")
 	require.True(t, ok)
-	require.Equal(t, "1.4.0", deepSeekCurrent.Version)
+	require.Equal(t, "1.5.0", deepSeekCurrent.Version)
 	require.Equal(t, "protocol.deepseek-openai-chat.v4", deepSeekCurrent.ProtocolProfile)
 	require.Equal(t, []string{EndpointClassDeepSeekOfficialOpenAI}, deepSeekCurrent.EndpointClasses)
 	require.Contains(t, deepSeekCurrent.Capabilities, CapabilityStreaming)
@@ -2132,14 +2132,14 @@ func TestLatestDeepSeekProfilesAcceptOnlyDocumentedCompatibilityEffortAliases(t 
 		compatibility map[string]string
 	}{
 		{
-			model: "DeepSeek V4 Flash", version: "1.4.0",
-			reasoningID:   "reasoning.deepseek-v4-flash-thinking-toggle.v4",
+			model: "DeepSeek V4 Flash", version: "1.5.0",
+			reasoningID:   "reasoning.deepseek-v4-flash-thinking-toggle.v5",
 			allowed:       []string{"low", "high", "max"},
 			compatibility: map[string]string{"medium": "high", "xhigh": "high"},
 		},
 		{
-			model: "DeepSeek V4 Pro", version: "1.4.0",
-			reasoningID:   "reasoning.deepseek-v4-pro-thinking-toggle.v4",
+			model: "DeepSeek V4 Pro", version: "1.5.0",
+			reasoningID:   "reasoning.deepseek-v4-pro-thinking-toggle.v5",
 			allowed:       []string{"low", "high", "max"},
 			compatibility: map[string]string{"medium": "high", "xhigh": "high"},
 		},

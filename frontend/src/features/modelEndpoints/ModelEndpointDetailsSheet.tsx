@@ -154,7 +154,7 @@ export default function ModelEndpointDetailsSheet(props: Props) {
 
       {operation.operation_id === 'openai.chat_completions.v1' &&
         selected.public_model.execution_profile_id === 'deepseek.v4-flash.api' &&
-        selected.public_model.execution_profile_version === '1.4.0' && <>
+        ['1.4.0', '1.5.0'].includes(selected.public_model.execution_profile_version) && <>
           {(['streaming', 'reasoning', 'reasoning_effort', 'tools', 'function_tools',
             'tool_choice_auto', 'tool_choice_named', 'tool_choice_required', 'json_object'] as const).map(capabilityID => (
             <ModelCapabilityQualificationPanel

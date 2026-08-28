@@ -191,6 +191,7 @@ func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, na
 		name    string
 		version string
 	}{
+		{"000092_deepseek_reasoning_tool_choice_contract.down.sql", "000092_deepseek_reasoning_tool_choice_contract"},
 		{"000091_deepseek_chat_tools_json_capabilities.down.sql", "000091_deepseek_chat_tools_json_capabilities"},
 		{"000090_deepseek_chat_reasoning_capabilities.down.sql", "000090_deepseek_chat_reasoning_capabilities"},
 	} {
@@ -205,7 +206,8 @@ func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, na
 			execMigrationDown(t, ctx, pool, successor.name)
 		}
 	}
-	if name == "000091_deepseek_chat_tools_json_capabilities.down.sql" ||
+	if name == "000092_deepseek_reasoning_tool_choice_contract.down.sql" ||
+		name == "000091_deepseek_chat_tools_json_capabilities.down.sql" ||
 		name == "000090_deepseek_chat_reasoning_capabilities.down.sql" {
 		down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), name))
 		require.NoError(t, err)

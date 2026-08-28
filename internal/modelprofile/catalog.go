@@ -945,9 +945,11 @@ var immutableProfileEndpointClassOverrides = map[string][]string{
 	"deepseek.v4-flash.api@1.2.0":             {EndpointClassDeepSeekOfficialOpenAI},
 	"deepseek.v4-flash.api@1.3.0":             {EndpointClassDeepSeekOfficialOpenAI},
 	"deepseek.v4-flash.api@1.4.0":             {EndpointClassDeepSeekOfficialOpenAI},
+	"deepseek.v4-flash.api@1.5.0":             {EndpointClassDeepSeekOfficialOpenAI},
 	"deepseek.v4-pro.api@1.2.0":               {EndpointClassDeepSeekOfficialOpenAI},
 	"deepseek.v4-pro.api@1.3.0":               {EndpointClassDeepSeekOfficialOpenAI},
 	"deepseek.v4-pro.api@1.4.0":               {EndpointClassDeepSeekOfficialOpenAI},
+	"deepseek.v4-pro.api@1.5.0":               {EndpointClassDeepSeekOfficialOpenAI},
 	"kimi.k2.6.api@1.6.0":                     {EndpointClassKimiPlatformOpenAIV1},
 	"kimi.k2.6.api@1.7.0":                     {EndpointClassKimiPlatformOpenAIV1},
 	"kimi.k2.7-code.api@1.2.0":                {EndpointClassKimiPlatformOpenAIV1},
@@ -1141,8 +1143,8 @@ func currentProfile(version string) currentProfileManifest {
 // invalidate or reinterpret its historical ID@version rows.
 var currentProfileManifests = map[string]currentProfileManifest{
 	UnverifiedProfileID:                 currentProfile(UnverifiedProfileVersion),
-	"deepseek.v4-flash.api":             currentProfile("1.4.0"),
-	"deepseek.v4-pro.api":               currentProfile("1.4.0"),
+	"deepseek.v4-flash.api":             currentProfile("1.5.0"),
+	"deepseek.v4-pro.api":               currentProfile("1.5.0"),
 	"kimi.k2.6.api":                     currentProfile("1.7.0"),
 	"kimi.k2.7-code.api":                currentProfile("1.3.0"),
 	"kimi.k3.api":                       currentProfile("1.8.0"),
@@ -2247,6 +2249,14 @@ func legacyConformantProviderProfiles() []Profile {
 				toolHistory.ReasoningProfile = "reasoning.deepseek-v4-pro-thinking-toggle.v4"
 			}
 			profiles = append(profiles, toolHistory)
+			toolChoiceCompatibility := clone(toolHistory)
+			toolChoiceCompatibility.Version = "1.5.0"
+			if existing.ID == "deepseek.v4-flash.api" {
+				toolChoiceCompatibility.ReasoningProfile = "reasoning.deepseek-v4-flash-thinking-toggle.v5"
+			} else {
+				toolChoiceCompatibility.ReasoningProfile = "reasoning.deepseek-v4-pro-thinking-toggle.v5"
+			}
+			profiles = append(profiles, toolChoiceCompatibility)
 
 		case existing.ID == "kimi.k2.6.api" && existing.Version == "1.5.0":
 			promoted := clone(existing)

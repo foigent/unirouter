@@ -701,6 +701,44 @@ var reasoningContracts = map[string]ReasoningContract{
 		},
 		AllowedToolChoices: []string{"none", "auto", "required", "named"},
 	},
+	"reasoning.deepseek-v4-flash-thinking-toggle.v5": {
+		ProfileID: "reasoning.deepseek-v4-flash-thinking-toggle.v5",
+		Mode:      ReasoningModeToggle,
+		ToggleControl: ReasoningControlContract{
+			Field: "thinking", AllowedValues: []string{"enabled", "disabled"}, ProviderDefault: "enabled",
+		},
+		EffortControl: ReasoningControlContract{
+			Field: "reasoning_effort", AllowedValues: []string{"low", "high", "max"}, ProviderDefault: "high",
+			CompatibilityValues: map[string]string{"medium": "high", "xhigh": "high"},
+		},
+		DefaultAuthority:                          ReasoningDefaultProvider,
+		PreserveAssistantReasoningForTools:        true,
+		PreserveAssistantReasoningForToolRequests: true,
+		ForbiddenRequestFieldsWhileActive: []string{
+			"temperature", "top_p", "presence_penalty", "frequency_penalty",
+		},
+		UnsupportedRequestFieldsWhileActive: []string{"tool_choice"},
+		AllowedToolChoices:                  []string{"none", "auto", "required", "named"},
+	},
+	"reasoning.deepseek-v4-pro-thinking-toggle.v5": {
+		ProfileID: "reasoning.deepseek-v4-pro-thinking-toggle.v5",
+		Mode:      ReasoningModeToggle,
+		ToggleControl: ReasoningControlContract{
+			Field: "thinking", AllowedValues: []string{"enabled", "disabled"}, ProviderDefault: "enabled",
+		},
+		EffortControl: ReasoningControlContract{
+			Field: "reasoning_effort", AllowedValues: []string{"low", "high", "max"}, ProviderDefault: "high",
+			CompatibilityValues: map[string]string{"medium": "high", "xhigh": "high"},
+		},
+		DefaultAuthority:                          ReasoningDefaultProvider,
+		PreserveAssistantReasoningForTools:        true,
+		PreserveAssistantReasoningForToolRequests: true,
+		ForbiddenRequestFieldsWhileActive: []string{
+			"temperature", "top_p", "presence_penalty", "frequency_penalty",
+		},
+		UnsupportedRequestFieldsWhileActive: []string{"tool_choice"},
+		AllowedToolChoices:                  []string{"none", "auto", "required", "named"},
+	},
 	"reasoning.minimax-m3-adaptive-embedded.v1": {
 		ProfileID: "reasoning.minimax-m3-adaptive-embedded.v1",
 		Mode:      ReasoningModeToggle,

@@ -192,7 +192,7 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			 'fixture.future.protocol','1.0.0','fixture.future.probe','1.0.0',
 			 'fixture','fixture-future','/v1/future',
 			 '000088_model_capability_execution_qualification')`,
-			failedCheck: "check fresh capability probe contract binding count: got 21 want 20",
+			failedCheck: "check fresh capability probe contract binding count: got 39 want 38",
 		},
 		{
 			name:    "missing current capability probe contract",

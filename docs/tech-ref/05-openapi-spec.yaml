@@ -1185,7 +1185,7 @@ paths:
     post:
       tags: [Admin]
       summary: Run one server-owned typed capability probe
-      description: "Requires an active Gateway License. M89 supports only DeepSeek V4 Flash at deepseek.v4-flash.api@1.4.0, OpenAI-compatible Chat Completions, and streaming. The server owns the fixed prompt and bounded request: stream=true, stream_options.include_usage=true, thinking.type=disabled and max_tokens=64. Under the current 2.0.0 probe contract, a successful result must prove text/event-stream, legal content deltas, and a final single-choice chunk with no new content, a non-null finish_reason and usage, followed by [DONE]. Historical 1.0.0 evidence remains bound to its immutable empty-choice usage contract and is never reinterpreted. A probe appends live_probed evidence only and never auto-approves routing. This action is one real supplier call; supplier cost unavailable is absent/unknown, never represented as CNY zero."
+      description: "Requires an active Gateway License. M89 and M92 support DeepSeek V4 Flash at the immutable deepseek.v4-flash.api@1.4.0 and @1.5.0 identities for OpenAI-compatible Chat Completions. The server owns one fixed, bounded request for the selected capability; the streaming probe uses stream=true, stream_options.include_usage=true, thinking.type=disabled and max_tokens=64. Under the current SSE 2.0.0 probe contract, a successful streaming result must prove text/event-stream, legal content deltas, and a final single-choice chunk with no new content, a non-null finish_reason and usage, followed by [DONE]. Historical 1.0.0 SSE evidence remains bound to its immutable empty-choice usage contract and is never reinterpreted. A probe appends live_probed evidence only and never auto-approves routing. This action is one real supplier call; supplier cost unavailable is absent/unknown, never represented as CNY zero."
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -4961,7 +4961,7 @@ components:
         support_state: { type: string, enum: [enabled, unsupported] }
         support_revision: { type: integer, format: int64, minimum: 1 }
         execution_profile_id: { type: string, enum: [deepseek.v4-flash.api] }
-        execution_profile_version: { type: string, enum: [1.4.0] }
+        execution_profile_version: { type: string, enum: [1.4.0, 1.5.0] }
         protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, openai.chat_completions] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
         probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1] }

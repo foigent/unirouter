@@ -33,14 +33,19 @@ exact 08d artifacts after a non-rolling maintenance deployment. That artifact
 was subsequently superseded by the bounded parser-diagnostics commit
 `56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and the caller-scoped readiness UI
 commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`; the latter passed automatic CI
-33058690558 (successful unchanged-code rerun) and protocol CI 33058690563.
-Stable, canary and frontend now run the exact 4c6 artifacts; the schema ledger
-remains M88/87 entries. Canonical model-route authority remains enabled with
-compatibility disabled; no canonical cutover was performed by that deployment.
-None of these deployments changed the Source Instance, identities, pricing or
-Release.
+33058690558 (successful unchanged-code rerun) and protocol CI 33058690563. The
+versioned SSE contract commit `eeb170c561b1c09837d17ff412f04077273037be`
+and the M90/M91 capability batch then superseded it. Stable, canary and frontend
+now run exact commit `6ff5cbf1c3917b218cffc212163a4756d1f794eb`, tree
+`d0084d90240126301e14075e5d608246f46109f8`, version 1.2.4 and schema M91 after
+the approved non-rolling upgrade; PR 339's exact CI was green. Canonical
+model-route authority is enabled with compatibility disabled. This software
+deployment did not itself change the Source Instance, public-model identity,
+pricing or sealed runtime Release.
 The product owner initially approved the exact DeepSeek 3-call/CNY-1 envelope
-below, then increased the cumulative test ceiling to 20 calls/CNY 5.
+below, then increased the cumulative test ceiling to 20 calls/CNY 5. On
+2026-08-28 the call-count ceiling was removed for this Flash closure while the
+cumulative supplier-spend ceiling remained CNY 5.
 Its first supported connectivity probe passed. The first generic-client request
 was then made through the ordinary-user UI and failed before Freeze or provider
 dispatch because canonical routing incorrectly treated an explicitly disabled
@@ -78,8 +83,8 @@ and Release claims still require their own exact identity/evidence.
 <!-- current-profile-inventory:start -->
 | Current exact Profile | Surface |
 |---|---|
-| `deepseek.v4-flash.api@1.4.0` | Chat |
-| `deepseek.v4-pro.api@1.4.0` | Chat |
+| `deepseek.v4-flash.api@1.5.0` | Chat |
+| `deepseek.v4-pro.api@1.5.0` | Chat |
 | `kimi.k2.6.api@1.7.0` | Kimi Platform Chat |
 | `kimi.k2.7-code.api@1.3.0` | Kimi Platform Chat |
 | `kimi.k3.api@1.8.0` | Kimi Platform Chat |
@@ -121,23 +126,28 @@ parity or a complete price contract. Official USD prices remain review drafts;
 nonstandard tiers cannot debit customer wallets. No entry is declared fully
 adapted, provider-live-verified or released by this table.
 
-### DeepSeek Flash UI completion batch — live evidence plus local M90/M91 candidate, 2026-08-28
+### DeepSeek Flash UI completion batch — Target 1.4 evidence plus local 1.5/M92 correction, 2026-08-28
 
-The current finite batch remains one product identity and one operation:
+The current finite batch remains one model family, one surface and one
+operation. Its new local attachment identity is:
 
-`deepseek.v4-flash.api@1.4.0 × OpenAI-compatible Chat Completions`.
+`deepseek.v4-flash.api@1.5.0 × OpenAI-compatible Chat Completions`.
 
 It does not authorize another model, surface, canonical switch, customer
 settlement or Release. Development/test currently runs exact commit
-`eeb170c561b1c09837d17ff412f04077273037be` / tree
-`767187d324704da2ca3f20d21309773d404b4eac`; that is Target evidence for the
-deployed M89-era artifact, not for the local changes below.
+`6ff5cbf1c3917b218cffc212163a4756d1f794eb` / tree
+`d0084d90240126301e14075e5d608246f46109f8`, version 1.2.4 and schema M91.
+Its active public model and sealed Release still bind immutable Profile
+`deepseek.v4-flash.api@1.4.0`. That Target evidence cannot qualify the local
+Profile 1.5/M92 correction below.
 
 The ordinary test account is user 39 in customer 2 / Default Project 86. Its
-model-restricted key 83 remains active only for this approved test batch; no
-secret is recorded here. The product owner approved a cumulative maximum of 20
-supplier calls and CNY 5. Seven supplier calls have been consumed. The latest
-two successful UI calls are:
+model-restricted keys 83 and 84 remain active only for this approved test batch;
+no secret is recorded here. The product owner removed the call-count ceiling for
+this Flash closure while retaining a cumulative CNY 5 supplier-spend ceiling.
+Eighteen supplier calls preceded that decision. Calls remain short and typed;
+there is no automatic retry or unbounded failover. The following calls 6 and 7 are retained as earlier
+successful UI checkpoints:
 
 - Supplier call 6: non-empty SSE stream with explicit `thinking=disabled`.
   Request `op_ce3c68c4be82840191e6bbd7f4dfa30e` returned HTTP 200,
@@ -153,10 +163,43 @@ two successful UI calls are:
   verifies the Profile's 384K ceiling boundary without claiming that 384K was
   generated.
 
+The approved public-identity transition does not rewrite model 677 or sealed
+Release 22. A new immutable public model identity
+`deepseek-v4-flash-20260828` will bind Profile 1.5, reuse the explicitly selected
+DeepSeek connection and credential binding, complete exact qualification and
+receive its own sealed Release. Only after those checks pass may the active
+organization alias `deepseek-v4-flash` point to the new identity. Disabling that
+alias restores resolution to the historical direct model name; the cutover does
+not retire or mutate Profile 1.4 evidence.
+
 The deployed stream response was correct, but the workbench discarded terminal
 `finish_reason` and raw usage while reading SSE. The local candidate now retains
 both fields in UI state; its real `ReadableStream` regression test passes. This
 UI correction is not yet Target-verified.
+
+Later UI and typed-capability work reached calls 16–18. Call 16 verified the
+deployed Profile 1.4 reasoning path. Call 17 exercised `tool_choice=auto`, but
+the Developer Console's `max_tokens=64` fixture capped the result before the
+expected function-call assertion, so it is not positive tools evidence. Call
+18 sent a named choice while omitting the thinking control; because DeepSeek
+defaults thinking to enabled, the provider rejected the combination. The local
+Profile 1.4 contract had allowed that impossible composition, while individual
+Admin tool probes had forced `thinking=disabled` and therefore could not reveal
+the defect. No retry was made.
+
+The append-only correction creates DeepSeek Flash and Pro Profile 1.5 with
+reasoning contract v5. Under active/default thinking, explicit `required`,
+named and `none` choices fail before Freeze or credential use; redundant
+explicit `auto` with tools is normalized to omission, preserving the provider
+default. Named/required choices remain valid when thinking is explicitly
+disabled. Historical Profile 1.4 and all sealed evidence remain unchanged.
+M92 adds only Flash 1.5's exact nine-capability probe bindings for the two
+already-supported Chat protocol identities. Canonical onboarding now
+materializes all exact migration-approved capabilities rather than streaming
+alone. Empty-attachment M92 rollback is tested; any retained Flash/Pro Profile
+1.5 model attachment, probe or approval blocks downgrade before mutation. These
+changes are locally conformant only and have made no Target write or supplier
+call.
 
 M90 and M91 are the bounded local continuation. M90 adds typed qualification
 for explicit `thinking=enabled` and `reasoning_effort=low`; the validator records
@@ -1351,7 +1394,9 @@ Earlier closed local milestone:
 
 `DeepSeek V4 Pro × official standard Chat × tools-request reasoning replay differential`.
 
-The current/new-attachment pointer selects `deepseek.v4-pro.api@1.4.0`;
+At that milestone the current/new-attachment pointer selected
+`deepseek.v4-pro.api@1.4.0`; it is now historical and the current append-only
+Profile 1.5 correction is described above.
 historical `@1.3.0` remains addressable and cannot receive a new attachment.
 Pro reuses the reviewed Chat v4 exact history and runtime replay rule through
 its own immutable reasoning v4 identity. Its model-specific tests reject
@@ -1365,8 +1410,9 @@ Earlier closed local milestone:
 
 `DeepSeek V4 Flash × official standard Chat × tools-request multi-turn reasoning replay`.
 
-The current/new-attachment pointer now selects
-`deepseek.v4-flash.api@1.4.0`; historical `@1.3.0` remains addressable with its
+At that milestone the current/new-attachment pointer selected
+`deepseek.v4-flash.api@1.4.0`; it is now historical and the current append-only
+Profile 1.5 correction is described above. Historical `@1.3.0` remains addressable with its
 single-turn/exact-response contract and cannot receive a new attachment. The
 new immutable reasoning v4 and Chat v4 contracts require every assistant
 history message to preserve non-empty `reasoning_content` whenever reasoning
@@ -2744,8 +2790,8 @@ The following are still real gaps:
 | Kimi K2.6 | 262,144 context; thinking toggle and optional preserved thinking; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache and built-in search | current `kimi.k2.6.api@1.7.0`; exact frozen tokenizer admission; typed fixed parameters/keep; exact non-stream function tools with omitted/none/auto choice, complete history and declared-function response consistency; standard JSON Object; final-assistant Partial; Kimi cache usage; MIME-bounded inline image/video; one serial non-stream `$web_search` call with exact unit-meter evidence, including thinking-enabled requests | `tool_choice:null`, required/named/parallel and function-tool streaming; provider-file/remote-URL media; large-media estimator; target live capability conformance; streaming search metering; Dynamic Tools are not a K2.6 claim |
 | Kimi K2.7 Code | 262,144 context and 32K default output; text/image/video; thinking-only with preserved thinking; ToolCalls, JSON Mode, Partial Mode and automatic cache | current `kimi.k2.7-code.api@1.3.0` on Kimi API Platform; typed required-thinking/fixed parameters; exact non-stream function tools with omitted/none/auto choice, complete reasoning-preserving history and declared-function response consistency; standard JSON Object; final-assistant Partial; Kimi cache usage; MIME-bounded inline media | `tool_choice:null`, required/named/parallel and function-tool streaming; target live capability conformance; large/file media; highspeed and separate subscription Coding identities; Anthropic coding conformance |
 | Kimi K3 | 1M provider maximum with a 256K current customer default; 131,072 default and 1,048,576 maximum output; always-on reasoning; `low/high/max`; tools, JSON Object/Schema, Partial, dynamic tools, built-in search, vision/video and automatic cache | current `kimi.k3.api@1.8.0`; typed effort/fixed-parameter constraints; exact non-stream top-level plus system-message Dynamic Tools with one visible-name Plan constraint and omitted/none/auto/required choice; exact tool history/response; standard JSON; final-assistant Partial; Kimi cache usage; MIME-bounded inline image/video; one serial non-stream `$web_search` call with exact unit-meter evidence; historical `@1.6.0/@1.7.0` remain addressable | named choice remains fail-closed because K3 reasoning is always active; provider-file/remote-URL media; large-media estimator; function-tool and search streaming metering; full target live multi-turn/capability conformance |
-| DeepSeek V4 Flash | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache. Vision belongs to the separate `deepseek-v4-flash-vision-exp` model | current `deepseek.v4-flash.api@1.4.0`; standard OpenAI-compatible Chat; typed `low/high/max` reasoning plus `medium/xhigh -> high` compatibility; non-stream omitted/none/auto/required/named function choice; single Plan declared/selected-function authority; exact per-choice tool response and function-history validation; active tools requests conservatively require non-empty reasoning replay for all assistant history; standard-surface strict/parallel rejection; profile-bound cache hit/miss usage; versioned 1M/384K provider limits. Historical `@1.2.0/@1.3.0` remain addressable | streaming tools; beta strict tools; live multi-turn/operation conformance; prefix beta; full Responses/Anthropic operations; Files/FIM; separate vision model qualification |
-| DeepSeek V4 Pro | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache | current `deepseek.v4-pro.api@1.4.0`; its own immutable reasoning identity models `low/high/max` with `medium/xhigh -> high`, while reviewed standard Chat v4 provides non-stream omitted/none/auto/required/named function choice, one Plan declared/selected-function authority, exact response/history consistency and conservative active-tools reasoning replay; profile-bound cache hit/miss usage and 1M/384K provider limits remain. Historical `@1.2.0/@1.3.0` are addressable | tool streaming; beta strict tools; live multi-turn conformance; beta/native/Files/FIM operations; pricing, billing and Release remain open |
+| DeepSeek V4 Flash | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache. Vision belongs to the separate `deepseek-v4-flash-vision-exp` model | current `deepseek.v4-flash.api@1.5.0`; standard OpenAI-compatible Chat; typed `low/high/max` reasoning plus `medium/xhigh -> high` compatibility; with active/default thinking, omitted choice and redundant explicit auto use provider-default selection while explicit none/required/named fail closed; explicit none/auto/required/named are available only with thinking disabled; single Plan declared/selected-function authority; exact per-choice tool response and function-history validation; active tools requests conservatively require non-empty reasoning replay for all assistant history; standard-surface strict/parallel rejection; profile-bound cache hit/miss usage; versioned 1M/384K provider limits. Historical `@1.2.0/@1.3.0/@1.4.0` remain addressable | Profile 1.5 Target/live qualification; streaming tools; beta strict tools; live multi-turn/operation conformance; prefix beta; full Responses/Anthropic operations; Files/FIM; separate vision model qualification |
+| DeepSeek V4 Pro | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache | current `deepseek.v4-pro.api@1.5.0`; its own immutable reasoning identity models `low/high/max` with `medium/xhigh -> high`; active/default thinking rejects explicit none/required/named and normalizes redundant explicit auto to provider-default omission, while the reviewed standard Chat v4 tool-choice subset remains available with thinking disabled; one Plan declared/selected-function authority, exact response/history consistency and conservative active-tools reasoning replay; profile-bound cache hit/miss usage and 1M/384K provider limits remain. Historical `@1.2.0/@1.3.0/@1.4.0` are addressable | Profile 1.5 Target/live qualification; tool streaming; beta strict tools; live multi-turn conformance; beta/native/Files/FIM operations; pricing, billing and Release remain open |
 | Qwen3.8-Max | DashScope CN Beijing OpenAI-compatible Chat; 1M context; 131,072 maximum output in normal and thinking modes; thinking defaults and controls; preserved thinking; tools/tool stream; structured output; image/video; cache; Beijing search | `qwen.3.8-max.api@1.8.0`; typed reasoning/preserve contract; both output fields bounded at 131,072; provider extensions pass complete admission/prepare/payload paths; inherited tools, structured-output, cache, inline/HTTPS media and search request contracts remain exact-profile gated; old `@1.7.0` remains addressable with its historical reasoning v1 | live provider validation; region-specific identities beyond Beijing; search/cache pricing and live meter evidence; Release |
 | MiniMax M2.5/M2.7/M3 | M2.x 204,800 total window; M3 1M and image/video input; M3 adaptive/disabled thinking; M2.x required thinking; tools and automatic nested cache usage; M3 Chat supports standard/priority tier; Token Plan is quota/subscription access | M2.5-highspeed and M2.7 current `@1.5.0`, plus M3 current `@1.7.0`, all carry exact non-stream function request/history/response contracts—with provider-default auto but no explicit tool-choice/parallel wire claim—on top of exact automatic cache-read and reasoning contracts; M3 also retains bounded inline-JPEG and standard/priority tier support. Cache/vision/tier/reasoning/tool invocation origins remain distinct in one Plan snapshot; exact tokenizer only for M2.7; MiniMax response-envelope normalization is fail-closed. M3's four official CNY tier/context bands are projected as review-only evidence without flattening them into a Rate Card | M3 video, remote/other image formats and full media limits; the existing generic video validator is not sufficient for executable M3 support; streaming tools and explicit tool-choice/parallel controls remain unsupported by this exact surface contract; tier/context-band Rate Card selection, an approved public CNY CustomerChargeQuote and actual delivered-tier evidence are absent; M2.x/M3 split reasoning remains rejected pending a consistent exact replay contract; Token Plan quota evidence. Customer wallet cost remains zero until an approved public CNY price contract exists |
 | Gemini 3.7 Flash | OpenAI-compatible Chat supports Standard, Flex and Priority tiers; Flex has long latency and no automatic Standard fallback; Priority may report Standard delivery | `gemini.3.7-flash.api@1.7.0`; core Chat subset plus typed request/effective/observed tier evidence, pre-Freeze cost-observation gate and bounded Flex timeout chain | tier-aware CNY CustomerChargeQuote; native USD supplier cost; live tier response validation; Release; native Gemini cache/search/media surfaces |

@@ -12,11 +12,16 @@ func TestDeepSeekV4ProToolHistoryPromotionIsAppendOnly(t *testing.T) {
 	require.False(t, historical.Current)
 	require.Equal(t, "protocol.deepseek-openai-chat.v3", historical.ProtocolProfile)
 
-	candidate, ok := Lookup("deepseek.v4-pro.api", "1.4.0")
+	history, ok := Lookup("deepseek.v4-pro.api", "1.4.0")
+	require.True(t, ok)
+	require.False(t, history.Current)
+	require.Equal(t, "reasoning.deepseek-v4-pro-thinking-toggle.v4", history.ReasoningProfile)
+
+	candidate, ok := Lookup("deepseek.v4-pro.api", "1.5.0")
 	require.True(t, ok)
 	require.True(t, candidate.Current)
 	require.Equal(t, "protocol.deepseek-openai-chat.v4", candidate.ProtocolProfile)
-	require.Equal(t, "reasoning.deepseek-v4-pro-thinking-toggle.v4", candidate.ReasoningProfile)
+	require.Equal(t, "reasoning.deepseek-v4-pro-thinking-toggle.v5", candidate.ReasoningProfile)
 	require.Equal(t, []string{EndpointClassDeepSeekOfficialOpenAI}, candidate.EndpointClasses)
 
 	protocol, ok := ResolveChatProtocolContract(candidate.ProtocolProfile)
@@ -26,6 +31,9 @@ func TestDeepSeekV4ProToolHistoryPromotionIsAppendOnly(t *testing.T) {
 	reasoning, ok := ResolveReasoningContract(candidate.ReasoningProfile)
 	require.True(t, ok)
 	require.True(t, reasoning.PreserveAssistantReasoningForToolRequests)
+	require.False(t, reasoning.NamedToolChoiceWhileReasoning)
+	require.False(t, reasoning.RequiredToolChoiceWhileReasoning)
+	require.Equal(t, []string{"tool_choice"}, reasoning.UnsupportedRequestFieldsWhileActive)
 	require.Equal(t, []string{"low", "high", "max"}, reasoning.EffortControl.AllowedValues)
 	require.Equal(t, map[string]string{"medium": "high", "xhigh": "high"}, reasoning.EffortControl.CompatibilityValues)
 	require.NoError(t, ValidateExecutableComponents(candidate))

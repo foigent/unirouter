@@ -207,6 +207,7 @@ SELECT COUNT(*) FROM model_deployment_capabilities
 func TestDeepSeekChatToolsJSONCapabilityMigrationRefusesDownWithRetainedEvidenceIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
+	execMigrationDown(t, ctx, pool, "000092_deepseek_reasoning_tool_choice_contract.down.sql")
 	fixture := insertM88CapabilityFixture(t, pool, "tools-down-evidence")
 	_, err := pool.Exec(ctx, `
 INSERT INTO model_deployment_capabilities (
@@ -251,6 +252,7 @@ func TestDeepSeekChatToolsJSONCapabilityMigrationRefusesDownAfterStableIdentityD
 	ctx := t.Context()
 	_, _, mismatchDeploymentID, _ := insertPreM88CapabilityProjectionFixtures(t, pool)
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	execMigrationDown(t, ctx, pool, "000092_deepseek_reasoning_tool_choice_contract.down.sql")
 	_, err := pool.Exec(ctx, `
 INSERT INTO model_deployment_capabilities (
   deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
@@ -292,11 +294,11 @@ SELECT COUNT(*) FROM model_capability_current_probe_contracts
 		require.Equal(t, currentV2, actualCurrentV2)
 	}
 
-	assertVersions(2, 2, 2)
+	assertVersions(2, 4, 4)
 	execMigrationDown(t, ctx, pool, "000089_deepseek_chat_sse_usage_contract_v2.down.sql")
 	assertVersions(2, 0, 0)
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
-	assertVersions(2, 2, 2)
+	assertVersions(2, 4, 4)
 }
 
 func TestDeepSeekChatSSEContractV2MigrationRefusesDownWithRetainedEvidenceIntegration(t *testing.T) {

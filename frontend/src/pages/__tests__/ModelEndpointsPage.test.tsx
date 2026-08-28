@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   create: vi.fn(),
   probe: vi.fn(),
+  getCapabilityQualification: vi.fn(),
   releaseList: vi.fn(),
   authorRelease: vi.fn(),
   lifecycleCurrent: vi.fn(),
@@ -69,6 +70,7 @@ vi.mock('../../api/modelDeployments', async importOriginal => {
       get: mocks.get,
       create: mocks.create,
       probe: mocks.probe,
+      getCapabilityQualification: mocks.getCapabilityQualification,
     },
   };
 });
@@ -197,14 +199,14 @@ function application(overrides: Record<string, unknown> = {}) {
 function executionProfile(overrides: Record<string, unknown> = {}) {
   return {
     id: 'deepseek.v4-flash.api',
-    version: '1.2.0',
+    version: '1.5.0',
     label: 'DeepSeek V4 Flash 官方 API',
     current: true,
     tokenizer_profile_id: 'tokenizer.byte-upper.v1',
     tokenizer_profile_version: '1.0.0',
-    reasoning_profile: 'reasoning.deepseek-thinking-toggle.v2',
+    reasoning_profile: 'reasoning.deepseek-v4-flash-thinking-toggle.v5',
     cache_usage_profile: 'cache-usage.deepseek-v4.v1',
-    protocol_profile: 'protocol.deepseek-openai-chat.v2',
+    protocol_profile: 'protocol.deepseek-openai-chat.v4',
     provider: 'deepseek',
     region: 'cn',
     api_surface: 'openai_chat_completions',
@@ -354,6 +356,29 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
       import_state: 'draft', automatic_activation: false, network_fetch_performed: false,
     });
     mocks.getRateCards.mockResolvedValue({ data: [], total: 0 });
+    mocks.getCapabilityQualification.mockImplementation(async (
+      deploymentID: number, operationID: string, capabilityID: string,
+    ) => ({
+      contract_version: 'unirouter.model-capability-qualification.v1',
+      deployment_id: deploymentID,
+      operation_id: operationID,
+      capability_id: capabilityID,
+      support_state: 'enabled',
+      support_revision: 1,
+      execution_profile_id: 'deepseek.v4-flash.api',
+      execution_profile_version: '1.5.0',
+      protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
+      protocol_profile_version: '1.0.0',
+      probe_contract_id: capabilityID === 'streaming'
+        ? 'unirouter.capability-probe.deepseek-chat-sse.v1'
+        : 'unirouter.capability-probe.deepseek-chat-function-tools.v1',
+      probe_contract_version: capabilityID === 'streaming' ? '2.0.0' : '1.0.0',
+      probe_available: true,
+      probe_availability_reason_code: 'typed_probe_available',
+      state: 'not_probed',
+      qualified: false,
+      qualification_state: 'approval_missing',
+    }));
     mocks.profileList.mockResolvedValue({
       contract_version: 'unirouter.model-execution-profiles.v1',
       data: [executionProfile()],
@@ -640,6 +665,41 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(screen.getAllByText(/^ready$/i)).toHaveLength(1);
   });
 
+  it('renders the exact capability qualification workflow for the current DeepSeek Flash profile', async () => {
+    const base = application();
+    const chat = application({
+      public_model: {
+        ...base.public_model,
+        execution_profile_version: '1.5.0',
+      },
+      operations: [{
+        ...base.operations[0],
+        operation_id: 'openai.chat_completions.v1',
+        protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
+        protocol_profile_version: '1.0.0',
+        execution_support: {
+          operation_id: 'openai.chat_completions.v1',
+          public_path: '/v1/chat/completions',
+          protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
+          protocol_profile_version: '1.0.0',
+          executor_contract_version: 'chat-completions.executor.v1',
+        },
+      }],
+    });
+    mocks.list.mockResolvedValue(projection([chat]));
+    mocks.get.mockResolvedValue(chat);
+
+    renderPage('/channels?deployment_id=41&operation_id=openai.chat_completions.v1');
+
+    expect(await screen.findByText('能力验证 · 流式输出（SSE）')).toBeTruthy();
+    expect(screen.getByText('能力验证 · Named tool_choice')).toBeTruthy();
+    expect(screen.getByText('能力验证 · JSON Object')).toBeTruthy();
+    await waitFor(() => expect(mocks.getCapabilityQualification).toHaveBeenCalledTimes(9));
+    expect(mocks.getCapabilityQualification).toHaveBeenCalledWith(
+      41, 'openai.chat_completions.v1', 'streaming',
+    );
+  });
+
   it('links exact runtime membership from deployment detail into the canonical release workspace', async () => {
     const base = application();
     const withStableMembership = application({
@@ -919,7 +979,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     const createButton = (await screen.findByText('接入模型')).closest('button');
     expect(createButton).toBeTruthy();
     await user.click(createButton!);
-    await screen.findByText(/deepseek\.v4-flash\.api@1\.2\.0/);
+    await screen.findByText(/deepseek\.v4-flash\.api@1\.5\.0/);
     await chooseSelectOption('接入模板', '自定义 OpenAI 兼容供应商', user);
     fireEvent.change(await screen.findByLabelText('连接名称'), { target: { value: 'DeepSeek new production' } });
     fireEvent.change(await screen.findByLabelText('供应商标识'), { target: { value: 'deepseek' } });
@@ -962,7 +1022,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     renderPage();
 
     await user.click((await screen.findByText('接入模型')).closest('button')!);
-    expect(await screen.findByText(/deepseek\.v4-flash\.api@1\.2\.0/)).toBeTruthy();
+    expect(await screen.findByText(/deepseek\.v4-flash\.api@1\.5\.0/)).toBeTruthy();
     expect(screen.getByText(/deepseek \/ cn \/ openai_chat_completions/)).toBeTruthy();
     expect(screen.getByText(/Catalog 证据 locally_conformant（不代表 live\/released）/)).toBeTruthy();
     expect(screen.getByText(/这里只展示本地合同子集，不代表该模型已完整适配/)).toBeTruthy();
@@ -989,7 +1049,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
         context_length: 1_000_000,
         output_limit: 384_000,
         execution_profile_id: 'deepseek.v4-flash.api',
-        execution_profile_version: '1.2.0',
+        execution_profile_version: '1.5.0',
       }),
       deployment: expect.objectContaining({
         upstream_model: 'deepseek-v4-flash',
