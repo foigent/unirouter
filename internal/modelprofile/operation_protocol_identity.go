@@ -1,0 +1,137 @@
+package modelprofile
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/uniroute/unirouter/internal/endpointprotocol"
+)
+
+const ChatOperationProtocolBindingVersionV1 = "1.0.0"
+
+var ErrOperationProtocolIdentityInvalid = errors.New("model operation protocol identity is invalid")
+
+// OperationProtocolIdentity is the server-owned protocol override for one
+// exact model Profile operation. A zero value is never a fallback identity:
+// callers retain their independently validated canonical base operation only
+// when ResolveOperationProtocolIdentity returns found=false and err=nil.
+type OperationProtocolIdentity struct {
+	OperationID            string
+	ProtocolProfileID      string
+	ProtocolProfileVersion string
+}
+
+// immutableChatOperationProtocolBindings is an append-only declaration of
+// reviewed Chat contracts which may override a new attachment's generic Chat
+// operation identity. Merely registering a Chat validation contract does not
+// grant onboarding authority.
+var immutableChatOperationProtocolBindings = map[string]string{
+	"protocol.deepseek-openai-chat.v4": ChatOperationProtocolBindingVersionV1,
+}
+
+// ResolveOperationProtocolIdentity returns only an exact typed override. It
+// does not derive authority from evidence, capabilities, provider strings, or
+// the current Chat contract registry, and it never returns a base fallback.
+func ResolveOperationProtocolIdentity(
+	profileID, profileVersion, requestedOperation string,
+) (OperationProtocolIdentity, bool, error) {
+	profile, ok := lookupAddressableProfile(profileID, profileVersion)
+	if !ok {
+		return OperationProtocolIdentity{}, false, fmt.Errorf(
+			"%w: unknown execution Profile %s@%s",
+			ErrOperationProtocolIdentityInvalid, profileID, profileVersion,
+		)
+	}
+	return resolveOperationProtocolIdentity(profile, requestedOperation)
+}
+
+func resolveOperationProtocolIdentity(
+	profile Profile, requestedOperation string,
+) (OperationProtocolIdentity, bool, error) {
+	if profile.LegacyProtocolAuthority != isImmutableLegacyProtocolAuthority(profile.ID, profile.Version) {
+		return OperationProtocolIdentity{}, false, fmt.Errorf(
+			"%w: legacy protocol authority is not immutable for %s@%s",
+			ErrOperationProtocolIdentityInvalid, profile.ID, profile.Version,
+		)
+	}
+
+	endpointIdentity, endpointDeclared := immutableProfileEndpointProtocolIdentity(profile.ID, profile.Version)
+	chatBindingVersion, chatDeclared := immutableChatOperationProtocolBindings[profile.ProtocolProfile]
+	authorityCount := 0
+	if endpointDeclared {
+		authorityCount++
+	}
+	if chatDeclared {
+		authorityCount++
+	}
+
+	if profile.ID == UnverifiedProfileID || profile.LegacyProtocolAuthority {
+		if authorityCount != 0 {
+			return OperationProtocolIdentity{}, false, fmt.Errorf(
+				"%w: unverified or legacy Profile %s@%s declares typed protocol authority",
+				ErrOperationProtocolIdentityInvalid, profile.ID, profile.Version,
+			)
+		}
+		return OperationProtocolIdentity{}, false, nil
+	}
+
+	executionIdentity, executionDeclared := immutableProfileExecutionIdentity(profile.ID, profile.Version)
+	if !executionDeclared || profile.APISurface != executionIdentity.APISurface ||
+		len(profile.Operations) != 1 || len(executionIdentity.Operations) != 1 ||
+		profile.Operations[0] != executionIdentity.Operations[0] ||
+		profile.Operations[0] != requestedOperation {
+		return OperationProtocolIdentity{}, false, fmt.Errorf(
+			"%w: operation %s does not match %s@%s",
+			ErrOperationProtocolIdentityInvalid, requestedOperation, profile.ID, profile.Version,
+		)
+	}
+	if authorityCount == 0 {
+		return OperationProtocolIdentity{}, false, nil
+	}
+	if authorityCount != 1 {
+		return OperationProtocolIdentity{}, false, fmt.Errorf(
+			"%w: ambiguous protocol authority for %s@%s",
+			ErrOperationProtocolIdentityInvalid, profile.ID, profile.Version,
+		)
+	}
+
+	if endpointDeclared {
+		if profile.ProtocolProfile != endpointIdentity.ProfileID ||
+			profile.ProtocolProfileVersion != endpointIdentity.ProfileVersion {
+			return OperationProtocolIdentity{}, false, fmt.Errorf(
+				"%w: frozen endpoint identity does not match %s@%s",
+				ErrOperationProtocolIdentityInvalid, profile.ID, profile.Version,
+			)
+		}
+		if _, err := endpointprotocol.NewRegistry().Resolve(
+			endpointIdentity.ProfileID, endpointIdentity.ProfileVersion,
+		); err != nil {
+			return OperationProtocolIdentity{}, false, fmt.Errorf(
+				"%w: frozen endpoint contract is unavailable for %s@%s",
+				ErrOperationProtocolIdentityInvalid, profile.ID, profile.Version,
+			)
+		}
+		return OperationProtocolIdentity{
+			OperationID: requestedOperation, ProtocolProfileID: endpointIdentity.ProfileID,
+			ProtocolProfileVersion: endpointIdentity.ProfileVersion,
+		}, true, nil
+	}
+
+	if profile.APISurface != APISurfaceOpenAIChat || profile.ProtocolProfileVersion != "" {
+		return OperationProtocolIdentity{}, false, fmt.Errorf(
+			"%w: Chat binding is incompatible with %s@%s",
+			ErrOperationProtocolIdentityInvalid, profile.ID, profile.Version,
+		)
+	}
+	contract, ok := ResolveChatProtocolContract(profile.ProtocolProfile)
+	if !ok || contract.ProfileID != profile.ProtocolProfile {
+		return OperationProtocolIdentity{}, false, fmt.Errorf(
+			"%w: Chat contract %s is unavailable",
+			ErrOperationProtocolIdentityInvalid, profile.ProtocolProfile,
+		)
+	}
+	return OperationProtocolIdentity{
+		OperationID: requestedOperation, ProtocolProfileID: profile.ProtocolProfile,
+		ProtocolProfileVersion: chatBindingVersion,
+	}, true, nil
+}

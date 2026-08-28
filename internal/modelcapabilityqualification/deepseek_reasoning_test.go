@@ -25,6 +25,24 @@ func TestDeepSeekChatReasoningProbeContractsAcceptBoundedEvidence(t *testing.T) 
 	}
 }
 
+func TestDeepSeekChatReasoningProbeUsesBindingOwnedProModelIdentity(t *testing.T) {
+	body := `{"model":"deepseek-v4-pro","choices":[{"finish_reason":"stop","message":{"content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private reasoning"}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`
+	observation, err := ValidateDeepSeekChatReasoningForModel(
+		DeepSeekChatReasoningProbeContractID, DeepSeekChatReasoningProbeContractVersion,
+		"deepseek-v4-pro", "application/json", strings.NewReader(body),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "deepseek-v4-pro", observation.ReportedModel)
+	require.True(t, observation.ReasoningSeen)
+
+	_, err = ValidateDeepSeekChatReasoningForModel(
+		DeepSeekChatReasoningProbeContractID, DeepSeekChatReasoningProbeContractVersion,
+		"deepseek-v4-flash", "application/json", strings.NewReader(body),
+	)
+	require.ErrorIs(t, err, ErrInvalidDeepSeekReasoning)
+	require.Equal(t, "reported_model", DeepSeekReasoningErrorCode(err))
+}
+
 func TestDeepSeekChatReasoningProbeRejectsMissingOrInvalidEvidence(t *testing.T) {
 	valid := `{"model":"deepseek-v4-flash","choices":[{"finish_reason":"stop","message":{"content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"work"}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`
 	tests := []struct {

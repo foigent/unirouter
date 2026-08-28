@@ -3206,15 +3206,24 @@ func All() []Profile {
 }
 
 func Lookup(id, version string) (Profile, bool) {
+	profile, ok := lookupAddressableProfile(id, version)
+	if !ok || ValidateExecutableComponents(profile) != nil {
+		return Profile{}, false
+	}
+	manifest, current := currentProfileManifests[profile.ID]
+	profile.Current = current && manifest.Version == profile.Version
+	return profile, true
+}
+
+// lookupAddressableProfile returns the immutable catalog row without deriving
+// execution validity from mutable evidence or capability projections. Narrow
+// identity resolvers may use it only when they independently validate every
+// identity field they consume; ordinary callers must continue to use Lookup.
+func lookupAddressableProfile(id, version string) (Profile, bool) {
 	id = strings.TrimSpace(id)
 	version = strings.TrimSpace(version)
 	for _, profile := range catalog {
 		if profile.ID == id && profile.Version == version {
-			if ValidateExecutableComponents(profile) != nil {
-				return Profile{}, false
-			}
-			manifest, current := currentProfileManifests[profile.ID]
-			profile.Current = current && manifest.Version == profile.Version
 			return clone(profile), true
 		}
 	}

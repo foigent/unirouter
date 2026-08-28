@@ -4,6 +4,33 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.8] - 2026-08-29
+
+### Added
+
+- Added M94's exact DeepSeek V4 Pro Chat Core qualification bindings for the
+  current Profile `1.5.0` and protocol v4 tuple. The nine routing capabilities
+  retain independent Probe, Approval and qualification evidence; no generic
+  tuple, grouped approval authority or additional surface is introduced.
+
+### Fixed
+
+- Moved reviewed Chat attachment protocol selection out of capability
+  qualification and into an immutable, model-profile-owned operation protocol
+  identity resolver. Invalid or ambiguous typed declarations now fail closed;
+  a legitimate absence of typed authority preserves only the independently
+  validated server-owned base identity.
+- Reused DeepSeek V4's exact response normalizer and Probe grammars for Pro
+  without changing the existing canonical Chat response contract or creating a
+  model-identity upgrade for an SDK-only tool-call index.
+
+### Evidence boundary
+
+- The resolver and M94 migration are locally conformant after focused unit and
+  PostgreSQL integration tests. DeepSeek V4 Pro remains unreleased and is not
+  live verified until the exact artifact is deployed, probed, approved and
+  exercised through development/test.
+
 ## [1.2.7] - 2026-08-28
 
 ### Fixed

@@ -45,19 +45,6 @@ type Binding struct {
 	PublicPath              string
 }
 
-// OperationProtocol identifies the exact protocol contract which new
-// attachments for one immutable model execution Profile must use. Capability
-// bindings remain the support authority; this smaller identity only prevents
-// onboarding callers from independently guessing a protocol from adapter or
-// provider strings.
-type OperationProtocol struct {
-	OperationID             string
-	ExecutionProfileID      string
-	ExecutionProfileVersion string
-	ProtocolProfileID       string
-	ProtocolProfileVersion  string
-}
-
 var deepSeekFlashStreaming = Binding{
 	OperationID:             string(modeloperation.IDChatCompletions),
 	CapabilityID:            modelprofile.CapabilityStreaming,
@@ -197,18 +184,22 @@ var deepSeekFlashCurrentBindings = func() []Binding {
 	return current
 }()
 
-var preferredOperationProtocols = []OperationProtocol{
-	{
-		OperationID:        string(modeloperation.IDChatCompletions),
-		ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.4.0",
-		ProtocolProfileID: "protocol.deepseek-openai-chat.v4", ProtocolProfileVersion: "1.0.0",
-	},
-	{
-		OperationID:        string(modeloperation.IDChatCompletions),
-		ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.5.0",
-		ProtocolProfileID: "protocol.deepseek-openai-chat.v4", ProtocolProfileVersion: "1.0.0",
-	},
-}
+// deepSeekProCurrentBindings reuses the already versioned DeepSeek Chat probe
+// grammar for the current Pro Profile, but publishes only the reviewed v4
+// operation identity. Unlike Flash, Pro has no retained generic attachment or
+// sealed execution evidence that requires a second protocol tuple.
+var deepSeekProCurrentBindings = func() []Binding {
+	bindings := make([]Binding, 0, 9)
+	for _, binding := range deepSeekFlashCurrentBindings {
+		if binding.ProtocolProfileID != "protocol.deepseek-openai-chat.v4" {
+			continue
+		}
+		binding.ExecutionProfileID = "deepseek.v4-pro.api"
+		binding.ExpectedUpstreamModel = "deepseek-v4-pro"
+		bindings = append(bindings, binding)
+	}
+	return bindings
+}()
 
 func allBindings() []Binding {
 	bindings := []Binding{
@@ -218,6 +209,7 @@ func allBindings() []Binding {
 	}
 	bindings = append(bindings, deepSeekFlashCoreBindings...)
 	bindings = append(bindings, deepSeekFlashCurrentBindings...)
+	bindings = append(bindings, deepSeekProCurrentBindings...)
 	return bindings
 }
 
@@ -262,25 +254,6 @@ func ResolveAll(
 	return bindings, nil
 }
 
-// ResolvePreferredOperationProtocol returns the explicit compiled protocol
-// identity for a new attachment. It does not select a capability receipt or
-// infer provider support; the returned tuple must still resolve through
-// ResolveAll and the migration-owned support registry before capabilities are
-// materialized.
-func ResolvePreferredOperationProtocol(
-	operationID, executionProfileID, executionProfileVersion string,
-) (OperationProtocol, error) {
-	for _, candidate := range preferredOperationProtocols {
-		if candidate.OperationID == operationID &&
-			candidate.ExecutionProfileID == executionProfileID &&
-			candidate.ExecutionProfileVersion == executionProfileVersion {
-			return candidate, nil
-		}
-	}
-	return OperationProtocol{}, fmt.Errorf("%w: preferred operation protocol %s %s@%s", ErrUnsupported,
-		operationID, executionProfileID, executionProfileVersion)
-}
-
 func DeepSeekFlashStreamingBinding() Binding { return deepSeekFlashStreaming }
 
 func DeepSeekFlashLegacyStreamingBinding() Binding { return deepSeekFlashLegacyStreaming }
@@ -299,4 +272,8 @@ func DeepSeekFlashCoreBindings() []Binding {
 
 func DeepSeekFlashCurrentBindings() []Binding {
 	return append([]Binding(nil), deepSeekFlashCurrentBindings...)
+}
+
+func DeepSeekProCurrentBindings() []Binding {
+	return append([]Binding(nil), deepSeekProCurrentBindings...)
 }

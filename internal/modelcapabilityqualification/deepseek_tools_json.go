@@ -62,6 +62,21 @@ func ValidateDeepSeekChatFunctionTools(
 	probeContractID, probeContractVersion, contentType string,
 	reader io.Reader,
 ) (DeepSeekCoreObservation, error) {
+	return ValidateDeepSeekChatFunctionToolsForModel(
+		probeContractID, probeContractVersion, "deepseek-v4-flash", contentType, reader,
+	)
+}
+
+// ValidateDeepSeekChatFunctionToolsForModel applies the shared DeepSeek Chat
+// function-tool grammar to one exact binding-owned upstream model.
+func ValidateDeepSeekChatFunctionToolsForModel(
+	probeContractID, probeContractVersion, expectedModel, contentType string,
+	reader io.Reader,
+) (DeepSeekCoreObservation, error) {
+	expectedModel = strings.TrimSpace(expectedModel)
+	if expectedModel == "" || safeReportedModel(expectedModel) != expectedModel {
+		return DeepSeekCoreObservation{}, invalidDeepSeekCore("expected_model")
+	}
 	if probeContractID != DeepSeekChatFunctionToolsProbeContractID ||
 		(probeContractVersion != DeepSeekChatCoreProbeContractVersion &&
 			probeContractVersion != DeepSeekChatFunctionToolsProbeContractV2) {
@@ -72,8 +87,8 @@ func ValidateDeepSeekChatFunctionTools(
 		return observation, err
 	}
 	if probeContractVersion == DeepSeekChatFunctionToolsProbeContractV2 {
-		normalized, _, err := adapters.NormalizeDeepSeekFlashChatToolResponse(
-			"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", body,
+		normalized, _, err := adapters.NormalizeDeepSeekV4ChatToolResponse(
+			"deepseek", expectedModel, "protocol.deepseek-openai-chat.v4", body,
 		)
 		if err != nil {
 			return observation, invalidDeepSeekCore("delivery_shape", err)
@@ -101,7 +116,7 @@ func ValidateDeepSeekChatFunctionTools(
 		return observation, invalidDeepSeekCore("json", err)
 	}
 	observation.ReportedModel = safeReportedModel(payload.Model)
-	if observation.ReportedModel != "deepseek-v4-flash" {
+	if observation.ReportedModel != expectedModel {
 		return observation, invalidDeepSeekCore("reported_model")
 	}
 	if len(payload.Choices) != 1 {
@@ -135,6 +150,21 @@ func ValidateDeepSeekChatJSONObject(
 	probeContractID, probeContractVersion, contentType string,
 	reader io.Reader,
 ) (DeepSeekCoreObservation, error) {
+	return ValidateDeepSeekChatJSONObjectForModel(
+		probeContractID, probeContractVersion, "deepseek-v4-flash", contentType, reader,
+	)
+}
+
+// ValidateDeepSeekChatJSONObjectForModel validates one exact binding-owned
+// DeepSeek model without creating a model-specific JSON probe contract.
+func ValidateDeepSeekChatJSONObjectForModel(
+	probeContractID, probeContractVersion, expectedModel, contentType string,
+	reader io.Reader,
+) (DeepSeekCoreObservation, error) {
+	expectedModel = strings.TrimSpace(expectedModel)
+	if expectedModel == "" || safeReportedModel(expectedModel) != expectedModel {
+		return DeepSeekCoreObservation{}, invalidDeepSeekCore("expected_model")
+	}
 	if probeContractID != DeepSeekChatJSONObjectProbeContractID ||
 		probeContractVersion != DeepSeekChatCoreProbeContractVersion {
 		return DeepSeekCoreObservation{}, invalidDeepSeekCore("probe_contract")
@@ -157,7 +187,7 @@ func ValidateDeepSeekChatJSONObject(
 		return observation, invalidDeepSeekCore("json", err)
 	}
 	observation.ReportedModel = safeReportedModel(payload.Model)
-	if observation.ReportedModel != "deepseek-v4-flash" {
+	if observation.ReportedModel != expectedModel {
 		return observation, invalidDeepSeekCore("reported_model")
 	}
 	if len(payload.Choices) != 1 || payload.Choices[0].FinishReason != "stop" {

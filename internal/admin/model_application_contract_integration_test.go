@@ -93,6 +93,10 @@ RETURNING id`).Scan(&pathfulConnectionID))
 func TestCanonicalModelApplicationCurrentCapabilityRollsBackThroughM92Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
+	m94Body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000094_deepseek_v4_pro_chat_core_qualification.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(m94Body))
+	require.NoError(t, err)
 	m93Body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000093_deepseek_function_tool_probe_contract_v2.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(m93Body))
@@ -323,6 +327,30 @@ SELECT evidence_ref FROM model_deployment_capabilities
  WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
    AND capability_id='tools'`, created.Application.Deployment.ID).Scan(&capabilityEvidenceRef))
 	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-function-tools.v1@2.0.0", capabilityEvidenceRef)
+
+	proRequest := request
+	proRequest.Connection = canonicalConnectionInput{ID: created.Application.Connection.ID}
+	proRequest.PublicModel = canonicalPublicModelInput{
+		ModelName: "reviewed-deepseek-pro", ExecutionProfileID: "deepseek.v4-pro.api", ExecutionProfileVersion: "1.5.0",
+	}
+	proRequest.Deployment = canonicalDeploymentInput{UpstreamModel: "deepseek-v4-pro"}
+	proRequest.Credential = canonicalCredentialInput{BindingID: created.Application.Credential.Bindings[0].ID}
+	pro := createCanonicalApplicationForTest(t, handler, authorized, proRequest, http.StatusCreated)
+	require.Equal(t, "protocol.deepseek-openai-chat.v4", pro.Application.Operations[0].ProtocolProfileID)
+	require.Equal(t, modelprofile.ChatOperationProtocolBindingVersionV1, pro.Application.Operations[0].ProtocolProfileVersion)
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND support_state='enabled' AND evidence_state='declared'`,
+		pro.Application.Deployment.ID,
+	).Scan(&declaredCapabilityCount))
+	require.Equal(t, 9, declaredCapabilityCount)
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT evidence_ref FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='tools'`, pro.Application.Deployment.ID).Scan(&capabilityEvidenceRef))
+	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-function-tools.v1@2.0.0", capabilityEvidenceRef)
+
 	qualificationTarget := fmt.Sprintf(
 		"/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/streaming",
 		created.Application.Deployment.ID,
@@ -359,7 +387,7 @@ SELECT evidence_ref FROM model_deployment_capabilities
  (SELECT COUNT(*) FROM model_deployment_operations WHERE deployment_id=$2)`,
 		orgID, created.Application.Deployment.ID).Scan(&rejectedConnections, &deployments, &operations))
 	require.Zero(t, rejectedConnections)
-	require.Equal(t, 1, deployments)
+	require.Equal(t, 2, deployments)
 	require.Equal(t, 1, operations)
 }
 

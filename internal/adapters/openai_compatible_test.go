@@ -1284,9 +1284,9 @@ func TestKimiTopLevelCacheUsagePreservesZeroAndRejectsContradiction(t *testing.T
 	}
 }
 
-func TestNormalizeDeepSeekFlashChatToolResponseIsExactScopedAndLossless(t *testing.T) {
+func TestNormalizeDeepSeekV4ChatToolResponseIsExactScopedAndLossless(t *testing.T) {
 	body := []byte(`{"id":"chatcmpl-deepseek","model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","tool_calls":[{"index":999999999999999999999999999999999999999,"id":"call_1","type":"function","function":{"name":"echo","arguments":"{}"}}]}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
-	normalized, changed, err := NormalizeDeepSeekFlashChatToolResponse(
+	normalized, changed, err := NormalizeDeepSeekV4ChatToolResponse(
 		"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", body,
 	)
 	require.NoError(t, err)
@@ -1300,7 +1300,7 @@ func TestNormalizeDeepSeekFlashChatToolResponseIsExactScopedAndLossless(t *testi
 	require.Equal(t, "call_1", tool["id"])
 
 	unknown := []byte(strings.Replace(string(body), `"index":999999999999999999999999999999999999999,"id"`, `"index":0,"unexpected":true,"id"`, 1))
-	normalized, changed, err = NormalizeDeepSeekFlashChatToolResponse(
+	normalized, changed, err = NormalizeDeepSeekV4ChatToolResponse(
 		"deepseek", "deepseek-v4-flash", "openai.chat_completions", unknown,
 	)
 	require.NoError(t, err)
@@ -1309,18 +1309,32 @@ func TestNormalizeDeepSeekFlashChatToolResponseIsExactScopedAndLossless(t *testi
 
 	for _, invalid := range []string{`null`, `"0"`, `-1`, `0.5`, `1e2`, `01`} {
 		mutated := []byte(strings.Replace(string(body), `999999999999999999999999999999999999999`, invalid, 1))
-		_, _, normalizeErr := NormalizeDeepSeekFlashChatToolResponse(
+		_, _, normalizeErr := NormalizeDeepSeekV4ChatToolResponse(
 			"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", mutated,
 		)
 		require.Error(t, normalizeErr, invalid)
 	}
 
+	proBody := []byte(strings.Replace(string(body), "deepseek-v4-flash", "deepseek-v4-pro", 1))
+	proNormalized, proApplied, proErr := NormalizeDeepSeekV4ChatToolResponse(
+		"deepseek", "deepseek-v4-pro", "protocol.deepseek-openai-chat.v4", proBody,
+	)
+	require.NoError(t, proErr)
+	require.True(t, proApplied)
+	require.NotContains(t, string(proNormalized), `"index":999999999999999999999999999999999999999`)
+	proGeneric, proGenericApplied, proGenericErr := NormalizeDeepSeekV4ChatToolResponse(
+		"deepseek", "deepseek-v4-pro", "openai.chat_completions", proBody,
+	)
+	require.NoError(t, proGenericErr)
+	require.False(t, proGenericApplied)
+	require.Equal(t, proBody, proGeneric)
+
 	for _, scope := range []struct{ provider, model, protocol string }{
 		{"other", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4"},
-		{"deepseek", "deepseek-v4-pro", "protocol.deepseek-openai-chat.v4"},
+		{"deepseek", "deepseek-v4-other", "protocol.deepseek-openai-chat.v4"},
 		{"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v3"},
 	} {
-		unchanged, applied, scopeErr := NormalizeDeepSeekFlashChatToolResponse(scope.provider, scope.model, scope.protocol, body)
+		unchanged, applied, scopeErr := NormalizeDeepSeekV4ChatToolResponse(scope.provider, scope.model, scope.protocol, body)
 		require.NoError(t, scopeErr)
 		require.False(t, applied)
 		require.Equal(t, body, unchanged)

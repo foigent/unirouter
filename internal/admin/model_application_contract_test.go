@@ -354,6 +354,52 @@ func TestCanonicalProfileProductBindingRejectsForgedDeepSeekEndpoint(t *testing.
 	}
 }
 
+func TestCanonicalTypedOperationProfileUsesExactOverrideAndPropagatesInvalidAuthority(t *testing.T) {
+	t.Parallel()
+	base, err := resolveCanonicalOperationProfile(
+		canonicalOperationInput{OperationID: modelprofile.OperationOpenAIChat},
+		adapters.TypeOpenAICompatible,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, err := resolveCanonicalTypedOperationProfile(canonicalPublicModelIdentity{
+		ID: 45, ExecutionProfileID: "deepseek.v4-pro.api", ExecutionProfileVersion: "1.5.0",
+	}, base)
+	if err != nil {
+		t.Fatalf("resolve DeepSeek Pro typed operation: %v", err)
+	}
+	if resolved.ProtocolProfileID != "protocol.deepseek-openai-chat.v4" ||
+		resolved.ProtocolProfileVersion != modelprofile.ChatOperationProtocolBindingVersionV1 {
+		t.Fatalf("resolved operation=%+v", resolved)
+	}
+
+	unmapped, err := resolveCanonicalTypedOperationProfile(canonicalPublicModelIdentity{
+		ID: 46, ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
+	}, base)
+	if err != nil {
+		t.Fatalf("unmapped Kimi base operation rejected: %v", err)
+	}
+	if unmapped != base {
+		t.Fatalf("NoAuthority changed canonical base: got=%+v want=%+v", unmapped, base)
+	}
+
+	_, err = resolveCanonicalTypedOperationProfile(canonicalPublicModelIdentity{
+		ID: 47, ExecutionProfileID: "deepseek.v4-pro.api", ExecutionProfileVersion: "1.5.0",
+	}, canonicalOperationInput{OperationID: modelprofile.OperationOpenAIResponses})
+	if !errors.Is(err, errCanonicalApplicationInvalid) {
+		t.Fatalf("operation mismatch error=%v want invalid", err)
+	}
+
+	_, err = resolveCanonicalTypedOperationProfile(canonicalPublicModelIdentity{
+		ID: 48, ExecutionProfileID: "missing.profile", ExecutionProfileVersion: "1.0.0",
+	}, base)
+	if !errors.Is(err, errCanonicalApplicationInvalid) {
+		t.Fatalf("unknown typed identity error=%v want invalid", err)
+	}
+}
+
 func TestCanonicalProfileProductBindingSeparatesKimiPlatformFromCodingSubscription(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
