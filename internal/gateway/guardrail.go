@@ -723,7 +723,7 @@ func inspectNonStreamOutputTextsForRoute(response map[string]interface{}, route 
 		protocolProfile = route.ModelProtocolProfile
 	}
 	inspection := inspectNonStreamOutputTextsForProtocol(response, protocolProfile)
-	inspectDeepSeekFlashNormalizedToolResponse(response, route, &inspection)
+	inspectDeepSeekV4NormalizedToolResponse(response, route, &inspection)
 	inspectFunctionToolChoiceResponse(route, &inspection)
 	if routeRequiresPlanCapability(route, modelprofile.CapabilityStrictJSONSchema) {
 		inspectStrictJSONSchemaResponse(response, &inspection)
@@ -731,21 +731,25 @@ func inspectNonStreamOutputTextsForRoute(response map[string]interface{}, route 
 	return inspection
 }
 
-// The exact DeepSeek Flash response normalizer removes every valid provider
-// tool-call index before delivery. Any child index that remains on the current
-// generic tuple therefore represents an invalid normalization result and must
-// fail closed. This assertion is route-scoped so it does not narrow the shared
-// generic OpenAI-compatible contract for other providers.
-func inspectDeepSeekFlashNormalizedToolResponse(
+// The exact DeepSeek V4 response normalizer removes every valid provider
+// tool-call index from the reviewed v4 tuple and from Flash's retained generic
+// tuple. Pro has no reviewed generic tuple, so its generic response is not
+// normalized and any child index is rejected here. This assertion is
+// route-scoped so it does not narrow the shared generic OpenAI-compatible
+// contract for other providers.
+func inspectDeepSeekV4NormalizedToolResponse(
 	response map[string]interface{},
 	route *RouteResult,
 	inspection *nonStreamOutputInspection,
 ) {
-	if route == nil || inspection == nil ||
-		!strings.EqualFold(strings.TrimSpace(route.Channel.Provider), "deepseek") ||
-		strings.TrimSpace(route.MappedModel) != "deepseek-v4-flash" ||
-		(route.ModelProtocolProfile != "protocol.deepseek-openai-chat.v4" &&
-			route.ModelProtocolProfile != "openai.chat_completions") {
+	if route == nil || inspection == nil {
+		return
+	}
+	protocolProfile := strings.TrimSpace(route.ModelProtocolProfile)
+	mappedModel := strings.TrimSpace(route.MappedModel)
+	if !strings.EqualFold(strings.TrimSpace(route.Channel.Provider), "deepseek") ||
+		(mappedModel != "deepseek-v4-flash" && mappedModel != "deepseek-v4-pro") ||
+		(protocolProfile != "protocol.deepseek-openai-chat.v4" && protocolProfile != "openai.chat_completions") {
 		return
 	}
 	choices, ok := response["choices"].([]interface{})

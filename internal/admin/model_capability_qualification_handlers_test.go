@@ -37,10 +37,11 @@ func TestModelCapabilityProbePreservesSafeContractFailureEvidence(t *testing.T) 
 	outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 		Provider: "deepseek", BaseURL: "https://api.deepseek.com",
 		AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
-		UpstreamModel:        "deepseek-v4-flash",
-		EncryptedSecret:      encrypted,
-		ProbeContractID:      modelcapabilityqualification.DeepSeekChatSSEProbeContractID,
-		ProbeContractVersion: modelcapabilityqualification.DeepSeekChatSSEProbeContractCurrentVersion,
+		UpstreamModel:         "deepseek-v4-flash",
+		ExpectedUpstreamModel: "deepseek-v4-flash",
+		EncryptedSecret:       encrypted,
+		ProbeContractID:       modelcapabilityqualification.DeepSeekChatSSEProbeContractID,
+		ProbeContractVersion:  modelcapabilityqualification.DeepSeekChatSSEProbeContractCurrentVersion,
 	}, "capability-probe-test")
 
 	require.True(t, outcome.ProviderSuccess)
@@ -106,7 +107,7 @@ func TestModelCapabilityReasoningProbeUsesTypedRequestAndDoesNotReturnPrivateRea
 			outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 				Provider: "deepseek", BaseURL: "https://api.deepseek.com",
 				AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
-				UpstreamModel: "deepseek-v4-flash", EncryptedSecret: encrypted,
+				UpstreamModel: "deepseek-v4-flash", ExpectedUpstreamModel: "deepseek-v4-flash", EncryptedSecret: encrypted,
 				ProbeContractID:      test.contractID,
 				ProbeContractVersion: modelcapabilityqualification.DeepSeekChatReasoningProbeContractVersion,
 			}, "capability-reasoning-probe-test")
@@ -181,7 +182,7 @@ func TestModelCapabilityToolsAndJSONObjectProbesUseFixedContracts(t *testing.T) 
 			outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 				Provider: "deepseek", BaseURL: "https://api.deepseek.com",
 				AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
-				UpstreamModel: "deepseek-v4-flash", EncryptedSecret: encrypted,
+				UpstreamModel: "deepseek-v4-flash", ExpectedUpstreamModel: "deepseek-v4-flash", EncryptedSecret: encrypted,
 				CapabilityID: test.capabilityID, ProbeContractID: test.contractID,
 				ProbeContractVersion: modelcapabilityqualification.DeepSeekChatCoreProbeContractVersion,
 			}, "capability-core-probe-test")

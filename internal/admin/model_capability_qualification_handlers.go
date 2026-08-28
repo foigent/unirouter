@@ -539,8 +539,8 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 	outcome.ProviderSuccess = true
 	switch snapshot.ProbeContractID {
 	case modelcapabilityqualification.DeepSeekChatSSEProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatSSE(
-			snapshot.ProbeContractID, snapshot.ProbeContractVersion,
+		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatSSEForModel(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
 			response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel
@@ -559,8 +559,8 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		}
 	case modelcapabilityqualification.DeepSeekChatReasoningProbeContractID,
 		modelcapabilityqualification.DeepSeekChatReasoningEffortProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatReasoning(
-			snapshot.ProbeContractID, snapshot.ProbeContractVersion,
+		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatReasoningForModel(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
 			response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel
@@ -577,8 +577,8 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			return outcome
 		}
 	case modelcapabilityqualification.DeepSeekChatFunctionToolsProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatFunctionTools(
-			snapshot.ProbeContractID, snapshot.ProbeContractVersion,
+		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatFunctionToolsForModel(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
 			response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel
@@ -595,8 +595,8 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			return outcome
 		}
 	case modelcapabilityqualification.DeepSeekChatJSONObjectProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatJSONObject(
-			snapshot.ProbeContractID, snapshot.ProbeContractVersion,
+		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatJSONObjectForModel(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
 			response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel

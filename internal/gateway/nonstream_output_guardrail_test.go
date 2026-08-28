@@ -115,6 +115,54 @@ func TestDeepSeekToolResponseNormalizationFailsClosedUnderCurrentGenericTuple(t 
 	require.False(t, inspectNonStreamOutputTextsForRoute(unknownSibling, route).complete())
 }
 
+func TestDeepSeekProToolResponseNormalizationMeetsV4DeliveryContract(t *testing.T) {
+	body := []byte(`{"id":"chatcmpl-deepseek-pro","object":"chat.completion","created":1787504000,"model":"deepseek-v4-pro","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":8,"completion_tokens":4,"total_tokens":12}}`)
+	response, err := adapters.NewOpenAICompatible().ParseResponse(context.Background(), adapters.ResponseInput{
+		Endpoint: adapters.EndpointChatCompletions, StatusCode: http.StatusOK,
+		Channel:           models.Channel{Provider: "deepseek", AdapterType: adapters.TypeOpenAICompatible},
+		UpstreamModel:     "deepseek-v4-pro",
+		ProtocolProfile:   "protocol.deepseek-openai-chat.v4",
+		CacheUsageProfile: "cache-usage.deepseek-v4.v1",
+		Body:              body,
+	})
+	require.NoError(t, err)
+	var envelope map[string]interface{}
+	require.NoError(t, decodeJSONUseNumber(response.Body, &envelope))
+	route := &RouteResult{
+		Channel:              models.Channel{Provider: "deepseek"},
+		MappedModel:          "deepseek-v4-pro",
+		ModelProtocolProfile: "protocol.deepseek-openai-chat.v4",
+	}
+	inspection := inspectNonStreamOutputTextsForProtocol(envelope, "protocol.deepseek-openai-chat.v4")
+	inspectDeepSeekV4NormalizedToolResponse(envelope, route, &inspection)
+	require.True(t, inspection.complete(), inspection.incompletePaths)
+	tool := envelope["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})["tool_calls"].([]interface{})[0].(map[string]interface{})
+	require.NotContains(t, tool, "index")
+}
+
+func TestDeepSeekProGenericToolResponseIsNotNormalizedAndFailsClosed(t *testing.T) {
+	body := []byte(`{"id":"chatcmpl-deepseek-pro","object":"chat.completion","created":1787504000,"model":"deepseek-v4-pro","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":8,"completion_tokens":4,"total_tokens":12}}`)
+	response, err := adapters.NewOpenAICompatible().ParseResponse(context.Background(), adapters.ResponseInput{
+		Endpoint: adapters.EndpointChatCompletions, StatusCode: http.StatusOK,
+		Channel:         models.Channel{Provider: "deepseek", AdapterType: adapters.TypeOpenAICompatible},
+		UpstreamModel:   "deepseek-v4-pro",
+		ProtocolProfile: "openai.chat_completions",
+		Body:            body,
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, string(body), string(response.Body))
+	var envelope map[string]interface{}
+	require.NoError(t, decodeJSONUseNumber(response.Body, &envelope))
+	route := &RouteResult{
+		Channel:              models.Channel{Provider: "deepseek"},
+		MappedModel:          "deepseek-v4-pro",
+		ModelProtocolProfile: "openai.chat_completions",
+	}
+	inspection := inspectNonStreamOutputTextsForRoute(envelope, route)
+	require.False(t, inspection.complete())
+	require.Contains(t, inspection.incompletePaths, "choices[0].message.tool_calls[0].index")
+}
+
 func TestDeepSeekCanonicalToolResponseCanBeReplayedAsNextTurnHistory(t *testing.T) {
 	raw := []byte(`{"id":"chatcmpl-deepseek","object":"chat.completion","created":1787504000,"model":"deepseek-v4-flash","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}}],"usage":{"prompt_tokens":8,"completion_tokens":4,"total_tokens":12}}`)
 	response, err := adapters.NewOpenAICompatible().ParseResponse(context.Background(), adapters.ResponseInput{

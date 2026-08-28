@@ -8,13 +8,29 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable source and development/test PostgreSQL compatibility ceiling is
-`000093_deepseek_function_tool_probe_contract_v2`. Development/test stable,
-canary and frontend run exact commit
+The executable source PostgreSQL compatibility ceiling is
+`000094_deepseek_v4_pro_chat_core_qualification`; development/test remains at
+`000093_deepseek_function_tool_probe_contract_v2` until the separately recorded
+non-rolling deployment. Development/test stable, canary and frontend run exact commit
 `18c7153fbdc0b1a9ed2b1d4898893f0dc687dd47`, tree
 `5721a8488c68ff4d596a4dd5ad3c57e3f639f400`, version 1.2.7; the database has
 92 ordered migration rows ending at M93. This is Target evidence for that exact
 environment, not Production or Release-state evidence.
+
+M94 is a source-level candidate that publishes the nine existing DeepSeek Chat
+Core probe contracts for only the exact `deepseek.v4-pro.api@1.5.0 ×
+protocol.deepseek-openai-chat.v4@1.0.0` tuple. It creates declared projections
+only for an already exact-matching Pro deployment and adds no generic tuple,
+live evidence, Approval, Release, Alias, pricing or traffic authority. Its down
+path refuses retained Pro probes/approvals or advanced projections before any
+deletion. Until the exact artifact is deployed, M94 is local/CI evidence only.
+
+New reviewed Chat attachments resolve typed operation protocol identity from an
+explicit append-only model-profile mapping, not from capability qualification,
+catalog evidence or the mere existence of a Chat validator. The immutable Chat
+operation-binding V1 is `1.0.0`; no typed declaration preserves only the
+independently validated server-owned base operation, while invalid, ambiguous,
+unverified or legacy typed declarations fail closed.
 
 M85–M87 batch inclusion is tracked in
 [B1 scope](../tech-ref/44-model-adaptation-required-baseline-v1.md#5-b1-finite-integration-batch--2026-08-26);

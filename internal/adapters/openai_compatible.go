@@ -154,12 +154,12 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 				return nil, meterErr
 			}
 			usage.MeterUsage = meterUsage
-			// DeepSeek Flash can emit an SDK-only per-tool-call index which is
+			// DeepSeek V4 can emit an SDK-only per-tool-call index which is
 			// not part of UniRouter's immutable v4 delivery contract. Normalize
 			// that one exact wire variation before the shared delivery guardrail.
 			// Invalid values deliberately remain in the body so the guardrail can
 			// fail closed without discarding already parsed provider usage.
-			if normalizedBody, _, normalizeErr := NormalizeDeepSeekFlashChatToolResponse(
+			if normalizedBody, _, normalizeErr := NormalizeDeepSeekV4ChatToolResponse(
 				in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile, responseBody,
 			); normalizeErr == nil {
 				responseBody = normalizedBody
@@ -195,10 +195,10 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 	return normalized, nil
 }
 
-// NormalizeDeepSeekFlashChatToolResponse removes only the optional
+// NormalizeDeepSeekV4ChatToolResponse removes only the optional
 // choices[].message.tool_calls[].index wire member emitted by DeepSeek V4
-// Flash Chat Completions. UniRouter's canonical v4 response identifies tool
-// calls by id/type/function, so the child index has no public semantic role.
+// Flash or Pro Chat Completions. UniRouter's canonical v4 response identifies
+// tool calls by id/type/function, so the child index has no public semantic role.
 //
 // The scope is intentionally exact. Other providers, models and protocols are
 // returned unchanged. An index, when present, must be a non-null JSON number
@@ -207,21 +207,23 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 // numeric ceiling; the existing response-body limit remains the resource
 // boundary. Unknown sibling fields are retained for the delivery guardrail to
 // reject under the immutable protocol contract.
-func NormalizeDeepSeekFlashChatToolResponse(provider, upstreamModel, protocolProfile string, body []byte) ([]byte, bool, error) {
+func NormalizeDeepSeekV4ChatToolResponse(provider, upstreamModel, protocolProfile string, body []byte) ([]byte, bool, error) {
+	upstreamModel = strings.TrimSpace(upstreamModel)
+	protocolProfile = strings.TrimSpace(protocolProfile)
 	if !strings.EqualFold(strings.TrimSpace(provider), "deepseek") ||
-		strings.TrimSpace(upstreamModel) != "deepseek-v4-flash" ||
-		(strings.TrimSpace(protocolProfile) != "protocol.deepseek-openai-chat.v4" &&
-			strings.TrimSpace(protocolProfile) != "openai.chat_completions") {
+		!((upstreamModel == "deepseek-v4-flash" &&
+			(protocolProfile == "protocol.deepseek-openai-chat.v4" || protocolProfile == "openai.chat_completions")) ||
+			(upstreamModel == "deepseek-v4-pro" && protocolProfile == "protocol.deepseek-openai-chat.v4")) {
 		return body, false, nil
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return body, false, fmt.Errorf("decode DeepSeek Flash Chat response: %w", err)
+		return body, false, fmt.Errorf("decode DeepSeek V4 Chat response: %w", err)
 	}
 	var choices []map[string]json.RawMessage
 	if rawChoices, ok := envelope["choices"]; ok {
 		if err := json.Unmarshal(rawChoices, &choices); err != nil {
-			return body, false, fmt.Errorf("decode DeepSeek Flash Chat choices: %w", err)
+			return body, false, fmt.Errorf("decode DeepSeek V4 Chat choices: %w", err)
 		}
 	}
 	changed := false
@@ -232,7 +234,7 @@ func NormalizeDeepSeekFlashChatToolResponse(provider, upstreamModel, protocolPro
 		}
 		var message map[string]json.RawMessage
 		if err := json.Unmarshal(rawMessage, &message); err != nil {
-			return body, false, fmt.Errorf("decode DeepSeek Flash Chat choices[%d].message: %w", choiceIndex, err)
+			return body, false, fmt.Errorf("decode DeepSeek V4 Chat choices[%d].message: %w", choiceIndex, err)
 		}
 		rawToolCalls, ok := message["tool_calls"]
 		if !ok || bytes.Equal(bytes.TrimSpace(rawToolCalls), []byte("null")) {
@@ -240,7 +242,7 @@ func NormalizeDeepSeekFlashChatToolResponse(provider, upstreamModel, protocolPro
 		}
 		var toolCalls []map[string]json.RawMessage
 		if err := json.Unmarshal(rawToolCalls, &toolCalls); err != nil {
-			return body, false, fmt.Errorf("decode DeepSeek Flash Chat choices[%d].message.tool_calls: %w", choiceIndex, err)
+			return body, false, fmt.Errorf("decode DeepSeek V4 Chat choices[%d].message.tool_calls: %w", choiceIndex, err)
 		}
 		choiceChanged := false
 		for toolIndex := range toolCalls {
@@ -249,7 +251,7 @@ func NormalizeDeepSeekFlashChatToolResponse(provider, upstreamModel, protocolPro
 				continue
 			}
 			if !isLexicalNonnegativeJSONInteger(rawIndex) {
-				return body, false, fmt.Errorf("DeepSeek Flash Chat choices[%d].message.tool_calls[%d].index must be a non-negative decimal integer", choiceIndex, toolIndex)
+				return body, false, fmt.Errorf("DeepSeek V4 Chat choices[%d].message.tool_calls[%d].index must be a non-negative decimal integer", choiceIndex, toolIndex)
 			}
 			delete(toolCalls[toolIndex], "index")
 			choiceChanged = true
@@ -260,12 +262,12 @@ func NormalizeDeepSeekFlashChatToolResponse(provider, upstreamModel, protocolPro
 		}
 		encodedToolCalls, err := json.Marshal(toolCalls)
 		if err != nil {
-			return body, false, fmt.Errorf("encode DeepSeek Flash Chat tool calls: %w", err)
+			return body, false, fmt.Errorf("encode DeepSeek V4 Chat tool calls: %w", err)
 		}
 		message["tool_calls"] = encodedToolCalls
 		encodedMessage, err := json.Marshal(message)
 		if err != nil {
-			return body, false, fmt.Errorf("encode DeepSeek Flash Chat message: %w", err)
+			return body, false, fmt.Errorf("encode DeepSeek V4 Chat message: %w", err)
 		}
 		choices[choiceIndex]["message"] = encodedMessage
 	}
@@ -274,12 +276,12 @@ func NormalizeDeepSeekFlashChatToolResponse(provider, upstreamModel, protocolPro
 	}
 	encodedChoices, err := json.Marshal(choices)
 	if err != nil {
-		return body, false, fmt.Errorf("encode DeepSeek Flash Chat choices: %w", err)
+		return body, false, fmt.Errorf("encode DeepSeek V4 Chat choices: %w", err)
 	}
 	envelope["choices"] = encodedChoices
 	normalized, err := json.Marshal(envelope)
 	if err != nil {
-		return body, false, fmt.Errorf("encode DeepSeek Flash Chat response: %w", err)
+		return body, false, fmt.Errorf("encode DeepSeek V4 Chat response: %w", err)
 	}
 	return normalized, true, nil
 }

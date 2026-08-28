@@ -65,6 +65,21 @@ func ValidateDeepSeekChatReasoning(
 	probeContractID, probeContractVersion, contentType string,
 	reader io.Reader,
 ) (DeepSeekReasoningObservation, error) {
+	return ValidateDeepSeekChatReasoningForModel(
+		probeContractID, probeContractVersion, "deepseek-v4-flash", contentType, reader,
+	)
+}
+
+// ValidateDeepSeekChatReasoningForModel validates one exact binding-owned
+// DeepSeek model without changing the shared reasoning probe grammar.
+func ValidateDeepSeekChatReasoningForModel(
+	probeContractID, probeContractVersion, expectedModel, contentType string,
+	reader io.Reader,
+) (DeepSeekReasoningObservation, error) {
+	expectedModel = strings.TrimSpace(expectedModel)
+	if expectedModel == "" || safeReportedModel(expectedModel) != expectedModel {
+		return DeepSeekReasoningObservation{}, invalidDeepSeekReasoning("expected_model")
+	}
 	if (probeContractID != DeepSeekChatReasoningProbeContractID &&
 		probeContractID != DeepSeekChatReasoningEffortProbeContractID) ||
 		probeContractVersion != DeepSeekChatReasoningProbeContractVersion {
@@ -103,7 +118,7 @@ func ValidateDeepSeekChatReasoning(
 		return observation, invalidDeepSeekReasoning("json")
 	}
 	observation.ReportedModel = safeReportedModel(payload.Model)
-	if observation.ReportedModel != "deepseek-v4-flash" {
+	if observation.ReportedModel != expectedModel {
 		return observation, invalidDeepSeekReasoning("reported_model")
 	}
 	if len(payload.Choices) != 1 {

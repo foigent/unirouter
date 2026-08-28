@@ -83,6 +83,22 @@ func ValidateDeepSeekChatSSE(
 	probeContractID, probeContractVersion, contentType string,
 	reader io.Reader,
 ) (DeepSeekSSEObservation, error) {
+	return ValidateDeepSeekChatSSEForModel(
+		probeContractID, probeContractVersion, "deepseek-v4-flash", contentType, reader,
+	)
+}
+
+// ValidateDeepSeekChatSSEForModel applies the same immutable DeepSeek Chat SSE
+// grammar to one binding-owned upstream model identity. The expected model is
+// supplied by the exact capability contract, never by the client request.
+func ValidateDeepSeekChatSSEForModel(
+	probeContractID, probeContractVersion, expectedModel, contentType string,
+	reader io.Reader,
+) (DeepSeekSSEObservation, error) {
+	expectedModel = strings.TrimSpace(expectedModel)
+	if expectedModel == "" || safeReportedModel(expectedModel) != expectedModel {
+		return DeepSeekSSEObservation{}, invalidDeepSeekSSE("expected_model")
+	}
 	usageMode, err := deepSeekSSEUsageModeForContract(probeContractID, probeContractVersion)
 	if err != nil {
 		return DeepSeekSSEObservation{}, err
@@ -151,6 +167,9 @@ func ValidateDeepSeekChatSSE(
 	}
 	if err := process(); err != nil {
 		return observed(), err
+	}
+	if observation.ReportedModel != expectedModel {
+		return observed(), invalidDeepSeekSSE("reported_model")
 	}
 	if !observation.DoneSeen || !observation.UsageSeen || observation.FinishReason == "" || observation.ContentDeltaCount == 0 {
 		return observed(), invalidDeepSeekSSE("incomplete")

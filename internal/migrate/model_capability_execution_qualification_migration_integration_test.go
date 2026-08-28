@@ -178,9 +178,10 @@ SELECT capability_probe_id,customer_org_id,deployment_id,connection_id,operation
        credential_state_revision,credential_link_created_at,$2,$3,'retain exact v2 evidence',
        'admin.model_capability_routing_approval.v1','capability_probe:' || capability_probe_id::TEXT
   FROM model_capability_probes WHERE capability_probe_id=$1
-RETURNING approval_id`, probeID, fixture.userID, fixture.orgID).Scan(&approvalID))
+	RETURNING approval_id`, probeID, fixture.userID, fixture.orgID).Scan(&approvalID))
 	require.Positive(t, approvalID)
 
+	execMigrationDown(t, ctx, pool, "000094_deepseek_v4_pro_chat_core_qualification.down.sql")
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000093_deepseek_function_tool_probe_contract_v2.down.sql"))
 	require.NoError(t, err)
 	conn, err := pool.Acquire(ctx)
@@ -222,10 +223,11 @@ func TestModelCapabilityQualificationDeepSeekFunctionToolProbeV2RefusesDownAfter
 
 	_, err := pool.Exec(ctx, `
 UPDATE model_deployment_operations
-   SET protocol_profile_id='unverified.chat', revision=revision+1
+	   SET protocol_profile_id='unverified.chat', revision=revision+1
  WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'`, fixture.deploymentID)
 	require.NoError(t, err)
 
+	execMigrationDown(t, ctx, pool, "000094_deepseek_v4_pro_chat_core_qualification.down.sql")
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000093_deepseek_function_tool_probe_contract_v2.down.sql"))
 	require.NoError(t, err)
 	conn, err := pool.Acquire(ctx)
@@ -527,11 +529,11 @@ SELECT COUNT(*) FROM model_capability_current_probe_contracts
 		require.Equal(t, currentV2, actualCurrentV2)
 	}
 
-	assertVersions(2, 4, 4)
+	assertVersions(2, 5, 5)
 	execMigrationDown(t, ctx, pool, "000089_deepseek_chat_sse_usage_contract_v2.down.sql")
 	assertVersions(2, 0, 0)
 	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
-	assertVersions(2, 4, 4)
+	assertVersions(2, 5, 5)
 }
 
 func TestDeepSeekChatSSEContractV2MigrationRefusesDownWithRetainedEvidenceIntegration(t *testing.T) {

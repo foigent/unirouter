@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/modeloperation"
 )
 
 func TestDeepSeekChatFunctionToolsProbeAcceptsOnlyExactToolCall(t *testing.T) {
@@ -113,38 +112,58 @@ func TestCompiledDeepSeekCurrentProfileBindingsAreExactAndComplete(t *testing.T)
 	}
 }
 
-func TestResolvePreferredOperationProtocolUsesExactProfileIdentity(t *testing.T) {
-	tests := []struct {
-		profileVersion  string
-		protocolProfile string
-	}{
-		{profileVersion: "1.4.0", protocolProfile: "protocol.deepseek-openai-chat.v4"},
-		{profileVersion: "1.5.0", protocolProfile: "protocol.deepseek-openai-chat.v4"},
-	}
-	for _, test := range tests {
-		t.Run(test.profileVersion, func(t *testing.T) {
-			preferred, err := ResolvePreferredOperationProtocol(
-				string(modeloperation.IDChatCompletions), "deepseek.v4-flash.api", test.profileVersion,
-			)
-			require.NoError(t, err)
-			require.Equal(t, test.protocolProfile, preferred.ProtocolProfileID)
-			require.Equal(t, "1.0.0", preferred.ProtocolProfileVersion)
-			_, err = ResolveAll(
-				preferred.OperationID,
-				preferred.ExecutionProfileID, preferred.ExecutionProfileVersion,
-				preferred.ProtocolProfileID, preferred.ProtocolProfileVersion,
-			)
-			require.NoError(t, err)
-		})
+func TestCompiledDeepSeekProCurrentBindingsUseOnlyReviewedV4Identity(t *testing.T) {
+	bindings := DeepSeekProCurrentBindings()
+	require.Len(t, bindings, 9)
+	for _, binding := range bindings {
+		require.Equal(t, "deepseek.v4-pro.api", binding.ExecutionProfileID)
+		require.Equal(t, "1.5.0", binding.ExecutionProfileVersion)
+		require.Equal(t, "protocol.deepseek-openai-chat.v4", binding.ProtocolProfileID)
+		require.Equal(t, "1.0.0", binding.ProtocolProfileVersion)
+		require.Equal(t, "deepseek-v4-pro", binding.ExpectedUpstreamModel)
+		resolved, err := Resolve(binding.OperationID, binding.CapabilityID,
+			binding.ExecutionProfileID, binding.ExecutionProfileVersion,
+			binding.ProtocolProfileID, binding.ProtocolProfileVersion)
+		require.NoError(t, err)
+		require.Equal(t, binding, resolved)
 	}
 
-	_, err := ResolvePreferredOperationProtocol(
-		string(modeloperation.IDChatCompletions), "deepseek.v4-flash.api", "1.6.0",
+	resolved, err := ResolveAll(
+		"openai.chat_completions.v1", "deepseek.v4-pro.api", "1.5.0",
+		"protocol.deepseek-openai-chat.v4", "1.0.0",
+	)
+	require.NoError(t, err)
+	require.Len(t, resolved, 9)
+	_, err = ResolveAll(
+		"openai.chat_completions.v1", "deepseek.v4-pro.api", "1.5.0",
+		"openai.chat_completions", "1.0.0",
 	)
 	require.ErrorIs(t, err, ErrUnsupported)
+}
 
-	_, err = ResolvePreferredOperationProtocol(
-		string(modeloperation.IDChatCompletions), "deepseek.v4-flash.api", "9.9.9",
+func TestDeepSeekProCoreValidatorsUseBindingOwnedModelIdentity(t *testing.T) {
+	toolBody := `{"model":"deepseek-v4-pro","choices":[{"finish_reason":"tool_calls","message":{"content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29}}`
+	toolObservation, err := ValidateDeepSeekChatFunctionToolsForModel(
+		DeepSeekChatFunctionToolsProbeContractID, DeepSeekChatFunctionToolsProbeContractV2,
+		"deepseek-v4-pro", "application/json", strings.NewReader(toolBody),
 	)
-	require.ErrorIs(t, err, ErrUnsupported)
+	require.NoError(t, err)
+	require.Equal(t, "deepseek-v4-pro", toolObservation.ReportedModel)
+	require.True(t, toolObservation.ToolCallObserved)
+
+	jsonBody := `{"model":"deepseek-v4-pro","choices":[{"finish_reason":"stop","message":{"content":"{\"status\":\"UNIROUTER_JSON_PROBE_OK\"}"}}],"usage":{"prompt_tokens":15,"completion_tokens":5,"total_tokens":20}}`
+	jsonObservation, err := ValidateDeepSeekChatJSONObjectForModel(
+		DeepSeekChatJSONObjectProbeContractID, DeepSeekChatCoreProbeContractVersion,
+		"deepseek-v4-pro", "application/json", strings.NewReader(jsonBody),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "deepseek-v4-pro", jsonObservation.ReportedModel)
+	require.True(t, jsonObservation.StructuredOutputObserved)
+
+	_, err = ValidateDeepSeekChatJSONObjectForModel(
+		DeepSeekChatJSONObjectProbeContractID, DeepSeekChatCoreProbeContractVersion,
+		"deepseek-v4-flash", "application/json", strings.NewReader(jsonBody),
+	)
+	require.ErrorIs(t, err, ErrInvalidDeepSeekCoreCapability)
+	require.Equal(t, "reported_model", DeepSeekCoreErrorCode(err))
 }

@@ -65,6 +65,32 @@ func TestDeepSeekChatSSEProbeContractV2AcceptsDocumentedFinalChoiceUsage(t *test
 	}
 }
 
+func TestDeepSeekChatSSEProbeUsesBindingOwnedProModelIdentity(t *testing.T) {
+	body := strings.Join([]string{
+		`data: {"model":"deepseek-v4-pro","choices":[{"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
+		"",
+		`data: {"model":"deepseek-v4-pro","choices":[{"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":null}],"usage":null}`,
+		"",
+		`data: {"model":"deepseek-v4-pro","choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	observation, err := ValidateDeepSeekChatSSEForModel(
+		DeepSeekChatSSEProbeContractID, DeepSeekChatSSEProbeContractCurrentVersion,
+		"deepseek-v4-pro", "text/event-stream", strings.NewReader(body),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "deepseek-v4-pro", observation.ReportedModel)
+
+	_, err = ValidateDeepSeekChatSSEForModel(
+		DeepSeekChatSSEProbeContractID, DeepSeekChatSSEProbeContractCurrentVersion,
+		"deepseek-v4-flash", "text/event-stream", strings.NewReader(body),
+	)
+	require.ErrorIs(t, err, ErrInvalidDeepSeekSSE)
+	require.Equal(t, "reported_model", DeepSeekSSEErrorCode(err))
+}
+
 func TestDeepSeekChatSSEProbeContractVersionsDoNotReinterpretEachOther(t *testing.T) {
 	historical := strings.Join([]string{
 		`data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`,

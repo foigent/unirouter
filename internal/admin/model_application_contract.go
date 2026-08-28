@@ -633,7 +633,10 @@ func (h *Handler) createCanonicalModelApplicationWithReadbackAndIdempotency(
 	if err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
-	request.Operation = resolveCanonicalCapabilityOperationProfile(publicModel, request.Operation)
+	request.Operation, err = resolveCanonicalTypedOperationProfile(publicModel, request.Operation)
+	if err != nil {
+		return canonicalModelApplicationCreateResult{}, err
+	}
 	if err := validateCanonicalProfileProductBinding(publicModel, connection, request.Deployment.UpstreamModel, request.Operation); err != nil {
 		return canonicalModelApplicationCreateResult{}, err
 	}
@@ -937,31 +940,27 @@ func resolveCanonicalOperationProfile(input canonicalOperationInput, adapterType
 	return input, nil
 }
 
-// resolveCanonicalCapabilityOperationProfile is intentionally narrow: a
-// compiled capability contract may refine the generic protocol selected by
-// adapter type only when it publishes an exact preferred protocol for this
-// immutable execution Profile. This does not infer support from provider
-// documentation or widen other model surfaces.
-func resolveCanonicalCapabilityOperationProfile(
+// resolveCanonicalTypedOperationProfile applies only a modelprofile-owned
+// exact protocol override to the independently validated canonical base
+// operation. NoAuthority preserves that base; an invalid typed declaration is
+// never silently downgraded to it.
+func resolveCanonicalTypedOperationProfile(
 	publicModel canonicalPublicModelIdentity,
 	operation canonicalOperationInput,
-) canonicalOperationInput {
-	preferred, err := modelcapabilityqualification.ResolvePreferredOperationProtocol(
-		operation.OperationID,
+) (canonicalOperationInput, error) {
+	override, found, err := modelprofile.ResolveOperationProtocolIdentity(
 		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
+		operation.OperationID,
 	)
 	if err != nil {
-		return operation
+		return canonicalOperationInput{}, errCanonicalApplicationInvalid
 	}
-	if _, err := modelcapabilityqualification.ResolveAll(
-		operation.OperationID,
-		publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
-		preferred.ProtocolProfileID, preferred.ProtocolProfileVersion,
-	); err == nil {
-		operation.ProtocolProfileID = preferred.ProtocolProfileID
-		operation.ProtocolProfileVersion = preferred.ProtocolProfileVersion
+	if !found {
+		return operation, nil
 	}
-	return operation
+	operation.ProtocolProfileID = override.ProtocolProfileID
+	operation.ProtocolProfileVersion = override.ProtocolProfileVersion
+	return operation, nil
 }
 
 func validCanonicalProviderBaseURL(raw string) bool {

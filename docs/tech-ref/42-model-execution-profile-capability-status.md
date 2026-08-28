@@ -9,6 +9,44 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
+## Active delivery batch — DeepSeek V4 Pro Chat Core
+
+The active source batch is `DeepSeek V4 Pro × OpenAI-compatible Chat × Core
+Conformance`. It is limited to the current `deepseek.v4-pro.api@1.5.0` Profile,
+the exact `protocol.deepseek-openai-chat.v4@1.0.0` operation tuple and nine
+independent capability qualifications: streaming, reasoning, reasoning effort,
+tools, function tools, tool choice auto/named/required and JSON Object. M94
+publishes only those exact bindings; it does not create a generic tuple,
+Approval, Release, Alias, pricing or traffic authority.
+
+The batch first removes onboarding's dependency on capability qualification for
+preferred protocol selection. An explicit, append-only model-profile mapping
+owns the immutable Chat operation-binding V1 identity; absence of an override
+preserves only the independently validated server-owned base operation, while
+invalid or ambiguous typed declarations fail closed. Capability evidence,
+catalog evidence and Chat-contract registration cannot create this identity.
+
+Within the delivery batch, non-streaming text, cache-read/usage mapping and the
+UI/fixed-SDK closeout remain distinct evidence checkpoints rather than new
+routing Approval types. One Active Milestone is advanced at a time, followed by
+one shared gate, push, CI, non-rolling development/test deployment and bounded
+Target closeout. Grouped capability approval remains `valid_deferred` with
+`design_status=candidate`, `runtime_authority=none`,
+`requirement_baseline=none` and explicit future product approval required; it is
+not part of this batch.
+
+The version 1.2.8 / schema-M94 source candidate has passed its final local
+gate: release metadata and diff checks, repository-wide Go vet and race tests,
+the complete Admin and migration PostgreSQL integration suites, the affected
+gateway/billing/runtime-change integration suites, and frontend type, contract,
+test and production-build checks. The gate exposed and closed two fixture
+regressions without widening runtime scope: the typed-override resolver now
+preserves an independently validated Chat/Responses/Embeddings base for an
+unverified Profile with no typed declaration, and predecessor rollback tests
+remove M94 before exercising M93 while the SSE contract inventory counts M94's
+one Pro binding. This is Local evidence only; no 1.2.8 commit, CI artifact,
+Target migration, Pro probe, supplier call, Release or Alias is claimed here.
+
 ## Delivery snapshot — DeepSeek Flash Chat completion, development/test
 
 As of 2026-08-29, the exact reviewed artifact is commit
