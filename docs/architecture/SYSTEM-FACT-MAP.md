@@ -8,22 +8,25 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable source PostgreSQL compatibility ceiling is
-`000094_deepseek_v4_pro_chat_core_qualification`; development/test remains at
-`000093_deepseek_function_tool_probe_contract_v2` until the separately recorded
-non-rolling deployment. Development/test stable, canary and frontend run exact commit
-`18c7153fbdc0b1a9ed2b1d4898893f0dc687dd47`, tree
-`5721a8488c68ff4d596a4dd5ad3c57e3f639f400`, version 1.2.7; the database has
-92 ordered migration rows ending at M93. This is Target evidence for that exact
-environment, not Production or Release-state evidence.
+The executable source and development/test PostgreSQL compatibility ceiling is
+`000094_deepseek_v4_pro_chat_core_qualification`. Development/test stable,
+canary and frontend run exact commit
+`2c0b068f85b7db0880e6970b1e600df6cd822cc1`, tree
+`d1c62f0fc613b05e87e90e8bcda36b3e07780f19`, version 1.2.10; the database has
+93 ordered migration rows ending at M94. Stable and canary use exact backend
+image `sha256:5d7378713e24abd690e245c6888a6a6ac5f1f7786304b7f7377b2b2f45a4acf8`;
+frontend uses exact image
+`sha256:b65970ffef1e715300782b0fef9d8710861f09fc60ade32ede9ca7042ab93a84`.
+This is Target evidence for that exact environment, not Production evidence.
 
-M94 is a source-level candidate that publishes the nine existing DeepSeek Chat
-Core probe contracts for only the exact `deepseek.v4-pro.api@1.5.0 ×
+M94 publishes the nine existing DeepSeek Chat Core probe contracts for only the
+exact `deepseek.v4-pro.api@1.5.0 ×
 protocol.deepseek-openai-chat.v4@1.0.0` tuple. It creates declared projections
 only for an already exact-matching Pro deployment and adds no generic tuple,
 live evidence, Approval, Release, Alias, pricing or traffic authority. Its down
 path refuses retained Pro probes/approvals or advanced projections before any
-deletion. Until the exact artifact is deployed, M94 is local/CI evidence only.
+deletion. Target probe, Approval and Release evidence remains independently
+scoped and is recorded in the capability-status document.
 
 New reviewed Chat attachments resolve typed operation protocol identity from an
 explicit append-only model-profile mapping, not from capability qualification,
@@ -53,7 +56,7 @@ authority; they create only `enabled/declared` projections and do not infer live
 support, approval, routing, Release or pricing from a Profile claim. Their fixed
 probe contracts accept no administrator-supplied provider payload and retain
 only bounded response facts, never private reasoning text or arbitrary tool
-arguments. M88–M93 are deployed Target facts only for the exact artifact and
+arguments. M88–M94 are deployed Target facts only for the exact artifact and
 environment recorded above. M92 can be downgraded only while no Flash/Pro Profile 1.5
 model attachment, probe or approval exists; the guard prevents an M91 binary
 from inheriting a durable Profile identity that it cannot interpret. M93
@@ -86,9 +89,9 @@ maintenance deployment. It was later superseded by parser-diagnostics commit
 `56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and caller-scoped readiness UI
 commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`, then by the versioned SSE
 contract, M90/M91 capability batch and historical M92 checkpoint
-`c4ee78fc3eb41f144e72000d01917f41d7470bfb`. The current M93 artifact and
+`c4ee78fc3eb41f144e72000d01917f41d7470bfb`. The current M94 artifact and
 Target evidence are recorded at the start of this section and in the
-[completion snapshot](../tech-ref/42-model-execution-profile-capability-status.md#delivery-snapshot--deepseek-flash-chat-completion-developmenttest).
+[current Target snapshot](../tech-ref/42-model-execution-profile-capability-status.md#current-target-snapshot--1210--m94--pro-exact-tuple).
 Canonical model-route authority remains enabled with compatibility disabled.
 The active organization Alias resolves to public model 697, whose sealed active
 Release 23 remains bound to immutable Profile 1.5. M93 did not change that

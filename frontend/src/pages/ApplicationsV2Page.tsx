@@ -10,12 +10,14 @@ import { EmptyState, PageHeader, StatusTag, Surface } from '../ui';
 import { IntentRequestIDs } from '../utils/intentRequestId';
 import { customerContextBlockerCopy, effectiveCustomerOrgID, resolveCustomerContext } from '../utils/customerContext';
 import { loadAllPages } from '../utils/loadAllPages';
+import { parseSortedModelList } from '../utils/modelList';
 import { projectOption } from '../utils/projectDisplay';
 
 const { Text } = Typography;
 
 type Project = { id: number; org_id: number; name: string; slug?: string; status: string; current_user_membership_role?: string };
 type ApplicationScope = { projectID: number; applicationID?: number; applicationRef?: string };
+type ProjectMember = { user_id: number; username: string; status: string; membership_role: string };
 
 const applicationKindOptions = [
   { value: 'service', label: '服务应用' },
@@ -85,11 +87,15 @@ export default function ApplicationsV2Page() {
   const [formApi, setFormApi] = useState<any>(null);
   const [mutating, setMutating] = useState(false);
   const [secret, setSecret] = useState<IssuedCredential | null>(null);
+	const [sponsorOptions, setSponsorOptions] = useState<Array<{ value: number; label: string }>>([]);
+	const [sponsorLoading, setSponsorLoading] = useState(false);
+	const [sponsorError, setSponsorError] = useState('');
 	const [drawerScope, setDrawerScope] = useState<ApplicationScope | null>(null);
 	const currentProjectID = useRef<number | undefined>(selectedProjectID);
 	const currentApplicationRef = useRef(selectedApplicationRef);
 	const applicationsGeneration = useRef(0);
 	const accessGeneration = useRef(0);
+	const sponsorGeneration = useRef(0);
 	currentProjectID.current = selectedProjectID;
 	currentApplicationRef.current = selectedApplicationRef;
 
@@ -279,7 +285,39 @@ export default function ApplicationsV2Page() {
 		setDrawerScope(scope);
 		setDrawer(kind);
 	};
-	const closeDrawer = () => { setDrawer(null); setDrawerScope(null); };
+	const openRequestDrawer = async (application: WorkloadApplication) => {
+		const scope = applicationScope(application);
+		if (!isCurrentScope(scope)) {
+			Toast.warning('应用范围已切换，请重新选择。');
+			return;
+		}
+		setDrawerScope(scope);
+		setDrawer('request');
+		setSponsorOptions([]);
+		setSponsorError('');
+		setSponsorLoading(true);
+		const generation = ++sponsorGeneration.current;
+		try {
+			const members = await loadAllPages<ProjectMember>((page, size) => api.getProjectMembers(application.project_id, page, size));
+			if (!isCurrentScope(scope) || sponsorGeneration.current !== generation) return;
+			setSponsorOptions(members
+				.filter((member) => member.user_id > 0 && member.status === 'active')
+				.map((member) => ({ value: member.user_id, label: `${member.username} · ${member.membership_role}` })));
+		} catch {
+			if (isCurrentScope(scope) && sponsorGeneration.current === generation) setSponsorError('无法读取当前项目的有效成员；未提交应用访问申请。');
+		} finally {
+			if (isCurrentScope(scope) && sponsorGeneration.current === generation) setSponsorLoading(false);
+		}
+	};
+	const closeDrawer = () => {
+		sponsorGeneration.current++;
+		setDrawer(null); setDrawerScope(null); setSponsorOptions([]); setSponsorError(''); setSponsorLoading(false);
+	};
+	useEffect(() => {
+		if (!drawer || !drawerScope || isCurrentScope(drawerScope)) return;
+		sponsorGeneration.current++;
+		setDrawer(null); setDrawerScope(null); setSponsorOptions([]); setSponsorError(''); setSponsorLoading(false);
+	}, [drawer, drawerScope, isCurrentScope, selectedApplicationRef, selectedProjectID]);
 
   const submitApplication = async (values: Record<string, any>) => {
     const project = projects.find((item) => item.id === selectedProjectID);
@@ -330,15 +368,16 @@ export default function ApplicationsV2Page() {
     }
   };
 
-  const requestAccess = async () => {
+  const requestAccess = async (sponsorUserID: number, expectedScope: ApplicationScope | null) => {
 	const application = selectedApplication;
-	if (!application || !user) return;
-	const scope = applicationScope(application);
-	if (!isCurrentScope(scope)) {
+	if (!application || !user || sponsorUserID <= 0 || !expectedScope ||
+		application.id !== expectedScope.applicationID || application.application_ref !== expectedScope.applicationRef ||
+		application.project_id !== expectedScope.projectID || !isCurrentScope(expectedScope)) {
 		Toast.warning('应用范围已切换；未提交旧范围请求。');
 		return;
 	}
-	const intent = `workload-request:${application.id}:${application.revision}`;
+	const scope = expectedScope;
+	const intent = `workload-request:${application.id}:${application.revision}:${sponsorUserID}`;
     setMutating(true);
     try {
       const result = await accessApi.createRequest({
@@ -347,7 +386,7 @@ export default function ApplicationsV2Page() {
         request_kind: 'workload_service',
         requested_scope: { project_role: 'project_user', scope_mode: 'project_default', models: [], endpoints: [] },
 		environment: application.environment, production_use: application.production_use,
-        submission_mode: 'delegated', sponsor_user_id: user.id,
+		submission_mode: 'delegated', sponsor_user_id: sponsorUserID,
       }, intents.get(intent));
       intents.complete(intent);
 	  if (isCurrentScope(scope)) {
@@ -363,7 +402,7 @@ export default function ApplicationsV2Page() {
 	} finally { setMutating(false); if (isCurrentScope(scope)) closeDrawer(); }
   };
 
-  const issueCredential = async (values: { name: string; allowed_ips?: string }) => {
+  const issueCredential = async (values: { name: string; allowed_ips?: string; allowed_models?: string }) => {
 	const application = selectedApplication;
 	const grant = activeGrant;
 	const scope = drawerScope;
@@ -371,11 +410,12 @@ export default function ApplicationsV2Page() {
 		Toast.warning('应用或有效授权已切换；未签发 Key。');
 		return;
 	}
-	const intent = `workload-issue:${grant.grant_ref}:${values.name.trim()}:${(values.allowed_ips || '').trim()}`;
+	const allowedModels = parseSortedModelList(values.allowed_models);
+	const intent = `workload-issue:${grant.grant_ref}:${values.name.trim()}:${(values.allowed_ips || '').trim()}:${allowedModels.join(',')}`;
     setMutating(true);
     try {
 	  const issued = await accessApi.issueCredential(grant.grant_ref, {
-        name: values.name.trim(), allowed_ips: (values.allowed_ips || '').trim(), allowed_models: [], allowed_endpoints: [],
+        name: values.name.trim(), allowed_ips: (values.allowed_ips || '').trim(), allowed_models: allowedModels, allowed_endpoints: [],
       }, intents.get(intent));
       intents.complete(intent);
 	  if (isCurrentScope(scope)) {
@@ -564,7 +604,7 @@ export default function ApplicationsV2Page() {
                     : <Table columns={applicationColumns} dataSource={applications} rowKey="id" pagination={false} loading={applicationsLoading} empty={<EmptyState title="当前项目暂无应用" />} />}
           </Surface>
           {selectedApplication && <>
-            <Surface title={selectedApplication.display_name} description={`${applicationKindLabel(selectedApplication.kind)} · ${environmentLabel(selectedApplication.environment)}`} actions={<Space><Button disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived'} onClick={() => openApplicationDrawer('edit', selectedApplication)}>编辑</Button><Button disabled={!selectedApplication.can_request_access || mutating} onClick={requestAccess}>申请应用访问</Button><Button type="danger" disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived' || mutating} onClick={archiveApplication}>归档</Button></Space>}>
+            <Surface title={selectedApplication.display_name} description={`${applicationKindLabel(selectedApplication.kind)} · ${environmentLabel(selectedApplication.environment)}`} actions={<Space><Button disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived'} onClick={() => openApplicationDrawer('edit', selectedApplication)}>编辑</Button><Button disabled={!selectedApplication.can_request_access || mutating} onClick={() => organizationRole === 'platform_admin' ? openRequestDrawer(selectedApplication) : requestAccess(Number(user?.id || 0), applicationScope(selectedApplication))}>申请应用访问</Button><Button type="danger" disabled={!selectedApplication.can_manage || selectedApplication.status === 'archived' || mutating} onClick={archiveApplication}>归档</Button></Space>}>
               <Space wrap><Tag>{applicationKindLabel(selectedApplication.kind)}</Tag><Tag>{environmentLabel(selectedApplication.environment)}</Tag>{selectedApplication.production_use && <Tag color="red">生产用途</Tag>}<Tag color={selectedApplication.can_manage ? 'green' : 'grey'}>{selectedApplication.can_manage ? '可管理' : '只读'}</Tag></Space>
 			  <details style={{ marginTop: 12 }}><summary>高级审计标识</summary><div style={{ marginTop: 8 }}><Text code>Application: {selectedApplication.application_ref}</Text><br /><Text code>Logical identity: {selectedApplication.logical_ref}</Text><br /><Text type="tertiary">{selectedApplication.identity_contract_version}</Text></div></details>
             </Surface>
@@ -607,8 +647,22 @@ export default function ApplicationsV2Page() {
       </SideSheet>
 
       <Modal title="创建应用 API Key" visible={drawer === 'credential'} onCancel={closeDrawer} footer={null}>
-        <Form getFormApi={setFormApi} onSubmit={issueCredential}><Form.Input field="name" label="Key 名称" rules={[{ required: true, message: '必填' }]} /><Form.Input field="allowed_ips" label="允许的 IP / CIDR（可选）" /><div style={{ textAlign: 'right' }}><Button onClick={closeDrawer}>取消</Button><Button htmlType="submit" type="primary" loading={mutating} style={{ marginLeft: 8 }}>创建</Button></div></Form>
+        <Form getFormApi={setFormApi} onSubmit={issueCredential}>
+          <Form.Input field="name" label="Key 名称" rules={[{ required: true, message: '必填' }]} />
+          <Form.Input field="allowed_models" label="允许模型（可选）" placeholder="留空继承项目模型范围；多个模型用逗号分隔" />
+          <Text type="tertiary" size="small">填写精确模型或别名只会收窄此 Key 的范围，不会扩大应用 Grant 或项目权限。</Text>
+          <Form.Input field="allowed_ips" label="允许的 IP / CIDR（可选）" />
+          <div style={{ textAlign: 'right' }}><Button onClick={closeDrawer}>取消</Button><Button htmlType="submit" type="primary" loading={mutating} style={{ marginLeft: 8 }}>创建</Button></div>
+        </Form>
       </Modal>
+
+	  <Modal title="选择应用访问 Sponsor" visible={drawer === 'request'} onCancel={closeDrawer} footer={null}>
+		<Form getFormApi={setFormApi} onSubmit={(values) => requestAccess(Number(values.sponsor_user_id || 0), drawerScope)}>
+		  <Text type="tertiary">Sponsor 必须是当前客户、当前项目中的有效业务成员；平台管理员身份不能替代业务主体。</Text>
+		  {sponsorError ? <Text type="danger">{sponsorError}</Text> : <Form.Select field="sponsor_user_id" label="业务 Sponsor" aria-label="业务 Sponsor" optionList={sponsorOptions} loading={sponsorLoading} disabled={sponsorLoading || sponsorOptions.length === 0} rules={[{ required: true, message: '请选择业务 Sponsor' }]} style={{ width: '100%', marginTop: 12 }} />}
+		  <div style={{ textAlign: 'right', marginTop: 20 }}><Button onClick={closeDrawer}>取消</Button><Button htmlType="submit" type="primary" disabled={sponsorLoading || !!sponsorError || sponsorOptions.length === 0} loading={mutating} style={{ marginLeft: 8 }}>提交申请</Button></div>
+		</Form>
+	  </Modal>
 
       <Modal title="一次性应用 API Key" visible={!!secret} onOk={() => setSecret(null)} onCancel={() => setSecret(null)} okText="我已安全保存" cancelButtonProps={{ style: { display: 'none' } }} maskClosable={false} closeOnEsc={false}>
         {secret?.secret_available && secret.key ? <><Text type="warning">关闭后系统不会保留或再次显示完整 Key。</Text><div style={{ marginTop: 12, wordBreak: 'break-all' }}><Text code copyable>{secret.key}</Text></div></> : <Text type="warning">这次请求是之前成功操作的安全重放，原 Key 无法再次显示。请安全轮换当前有效版本以获得新 Key。</Text>}
