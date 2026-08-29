@@ -124,7 +124,7 @@ func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 
 func TestKimiK26SuccessfulStreamProbeFramesAreDeliverable(t *testing.T) {
 	frames := []string{
-		`{"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""},"finish_reason":null}],"usage":null}`,
 		`{"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":0}}`,
 	}
 	bodyParts := make([]string, 0, len(frames)+2)
@@ -135,14 +135,30 @@ func TestKimiK26SuccessfulStreamProbeFramesAreDeliverable(t *testing.T) {
 	body := strings.Join(bodyParts, "\n\n")
 	_, err := modelcapabilityqualification.ValidateKimiChatSSE(
 		modelcapabilityqualification.KimiChatSSEProbeContractID,
-		modelcapabilityqualification.KimiChatCoreProbeContractVersion,
+		modelcapabilityqualification.KimiChatSSEProbeContractVersionV2,
 		"kimi-k2.6", "text/event-stream", strings.NewReader(body),
 	)
 	require.NoError(t, err)
 
 	for _, raw := range frames {
-		frame, err := parseGuardedStreamFrameForProtocol([]byte(raw), "protocol.kimi-openai-chat.v5")
+		normalized, err := normalizeProviderStreamFrameForRoute(&RouteResult{
+			Channel: models.Channel{Provider: "kimi"}, MappedModel: "kimi-k2.6",
+			ModelProtocolProfile: "protocol.kimi-openai-chat.v5",
+		}, []byte(raw))
+		require.NoError(t, err)
+		frame, err := parseGuardedStreamFrameForProtocol(normalized, "protocol.kimi-openai-chat.v5")
 		require.NoError(t, err)
 		require.False(t, frame.unsupported)
 	}
+}
+
+func TestKimiK26StreamNormalizationRejectsDuplicateMembersBeforeDelivery(t *testing.T) {
+	route := &RouteResult{
+		Channel: models.Channel{Provider: "kimi"}, MappedModel: "kimi-k2.6",
+		ModelProtocolProfile: "protocol.kimi-openai-chat.v5",
+	}
+	_, err := normalizeProviderStreamFrameForRoute(route, []byte(
+		`{"choices":[{"index":0,"delta":{"content":"sensitive","\u0063ontent":"safe","reasoning_content":""},"finish_reason":null}]}`,
+	))
+	require.Error(t, err)
 }

@@ -686,6 +686,7 @@ func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgx
 	t.Helper()
 	ctx := t.Context()
 	for _, name := range []string{
+		"000096_kimi_k26_stream_probe_contract_v2.down.sql",
 		"000095_kimi_k26_chat_core_qualification.down.sql",
 		"000094_deepseek_v4_pro_chat_core_qualification.down.sql",
 		"000093_deepseek_function_tool_probe_contract_v2.down.sql",

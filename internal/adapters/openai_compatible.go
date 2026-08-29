@@ -12,6 +12,7 @@ import (
 
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
 type OpenAICompatible struct{}
@@ -282,6 +283,78 @@ func NormalizeDeepSeekV4ChatToolResponse(provider, upstreamModel, protocolProfil
 	normalized, err := json.Marshal(envelope)
 	if err != nil {
 		return body, false, fmt.Errorf("encode DeepSeek V4 Chat response: %w", err)
+	}
+	return normalized, true, nil
+}
+
+// NormalizeKimiK26ChatStreamChunk removes only an empty
+// choices[].delta.reasoning_content member from the exact Kimi K2.6 Platform
+// Chat v5 stream. Kimi can emit the empty member while thinking is disabled;
+// it carries no canonical text, usage, tool, or finish semantics. Non-empty
+// reasoning remains available to the delivery guardrail, invalid types fail
+// closed, and unknown siblings are retained for the guardrail to inspect.
+func NormalizeKimiK26ChatStreamChunk(provider, upstreamModel, protocolProfile string, body []byte) ([]byte, bool, error) {
+	if !strings.EqualFold(strings.TrimSpace(provider), "kimi") ||
+		strings.TrimSpace(upstreamModel) != "kimi-k2.6" ||
+		strings.TrimSpace(protocolProfile) != "protocol.kimi-openai-chat.v5" {
+		return body, false, nil
+	}
+	// Reject duplicate members before map decoding can collapse them. Runtime
+	// and Probe v2 both call this function, so neither can reinterpret an
+	// ambiguous provider frame while removing the empty reasoning member.
+	if err := strictjson.Validate(body); err != nil {
+		return body, false, fmt.Errorf("validate Kimi K2.6 Chat stream chunk: %w", err)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return body, false, fmt.Errorf("decode Kimi K2.6 Chat stream chunk: %w", err)
+	}
+	var choices []map[string]json.RawMessage
+	if rawChoices, ok := envelope["choices"]; ok {
+		if err := json.Unmarshal(rawChoices, &choices); err != nil {
+			return body, false, fmt.Errorf("decode Kimi K2.6 Chat stream choices: %w", err)
+		}
+	}
+	changed := false
+	for choiceIndex := range choices {
+		rawDelta, ok := choices[choiceIndex]["delta"]
+		if !ok || bytes.Equal(bytes.TrimSpace(rawDelta), []byte("null")) {
+			continue
+		}
+		var delta map[string]json.RawMessage
+		if err := json.Unmarshal(rawDelta, &delta); err != nil {
+			return body, false, fmt.Errorf("decode Kimi K2.6 Chat choices[%d].delta: %w", choiceIndex, err)
+		}
+		rawReasoning, present := delta["reasoning_content"]
+		if !present || bytes.Equal(bytes.TrimSpace(rawReasoning), []byte("null")) {
+			continue
+		}
+		var reasoning string
+		if err := json.Unmarshal(rawReasoning, &reasoning); err != nil {
+			return body, false, fmt.Errorf("Kimi K2.6 Chat choices[%d].delta.reasoning_content must be a string or null", choiceIndex)
+		}
+		if reasoning != "" {
+			continue
+		}
+		delete(delta, "reasoning_content")
+		encodedDelta, err := json.Marshal(delta)
+		if err != nil {
+			return body, false, fmt.Errorf("encode Kimi K2.6 Chat choices[%d].delta: %w", choiceIndex, err)
+		}
+		choices[choiceIndex]["delta"] = encodedDelta
+		changed = true
+	}
+	if !changed {
+		return body, false, nil
+	}
+	encodedChoices, err := json.Marshal(choices)
+	if err != nil {
+		return body, false, fmt.Errorf("encode Kimi K2.6 Chat stream choices: %w", err)
+	}
+	envelope["choices"] = encodedChoices
+	normalized, err := json.Marshal(envelope)
+	if err != nil {
+		return body, false, fmt.Errorf("encode Kimi K2.6 Chat stream chunk: %w", err)
 	}
 	return normalized, true, nil
 }

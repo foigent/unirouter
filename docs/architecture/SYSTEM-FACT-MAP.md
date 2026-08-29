@@ -8,16 +8,32 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable source and development/test PostgreSQL compatibility ceiling is
-`000094_deepseek_v4_pro_chat_core_qualification`. Development/test stable,
+The executable local source candidate is version 1.2.14 with PostgreSQL
+compatibility ceiling `000096_kimi_k26_stream_probe_contract_v2`.
+Development/test remains the independently verified predecessor: stable,
 canary and frontend run exact commit
-`2c0b068f85b7db0880e6970b1e600df6cd822cc1`, tree
-`d1c62f0fc613b05e87e90e8bcda36b3e07780f19`, version 1.2.10; the database has
-93 ordered migration rows ending at M94. Stable and canary use exact backend
-image `sha256:5d7378713e24abd690e245c6888a6a6ac5f1f7786304b7f7377b2b2f45a4acf8`;
-frontend uses exact image
-`sha256:b65970ffef1e715300782b0fef9d8710861f09fc60ade32ede9ca7042ab93a84`.
-This is Target evidence for that exact environment, not Production evidence.
+`f91be73a81c48b674c33b4c0508ddde70c888f8f`, tree
+`54778e08fe23d0b332e94258528a1fe653e77183`, version 1.2.13, with the database
+ending at `000095_kimi_k26_chat_core_qualification`; database and Redis
+readiness are healthy. M96 is not Target evidence until a matching artifact is
+gated and deployed. These are development/test facts, not Production evidence.
+
+M95 publishes six existing Kimi Chat Core probe grammars only for exact Profile
+`kimi.k2.6.api@1.7.0` and protocol
+`protocol.kimi-openai-chat.v5@1.0.0`: streaming, reasoning, tools, function
+tools, automatic tool choice and JSON Object. It does not authorize K2.7/K3,
+add a generic tuple, create live evidence or approval, alter routing, publish a
+Release or activate pricing. The first K2.6 operation probe and public
+non-stream request succeeded; the first streaming Probe reached the provider
+but failed v1 delivery validation on a semantically empty delta reasoning
+member. The failed receipt remains immutable and unapproved.
+
+M96 advances only that exact K2.6 streaming Probe binding to v2. One
+exact-scoped normalizer is shared by runtime and Probe v2; it removes only an
+empty-string `choices[].delta.reasoning_content`, preserves non-empty reasoning
+and unknown siblings, and rejects invalid types. M96 does not change the
+Execution Profile, Chat protocol, Release, alias, pricing, Planner or the other
+five K2.6 capability contracts. Historical v1 evidence is never reinterpreted.
 
 M94 publishes the nine existing DeepSeek Chat Core probe contracts for only the
 exact `deepseek.v4-pro.api@1.5.0 ×
@@ -56,8 +72,8 @@ authority; they create only `enabled/declared` projections and do not infer live
 support, approval, routing, Release or pricing from a Profile claim. Their fixed
 probe contracts accept no administrator-supplied provider payload and retain
 only bounded response facts, never private reasoning text or arbitrary tool
-arguments. M88–M94 are deployed Target facts only for the exact artifact and
-environment recorded above. M92 can be downgraded only while no Flash/Pro Profile 1.5
+arguments. M88–M95 are deployed Target facts only for the exact artifact and
+environment recorded above; M96 remains a local source candidate. M92 can be downgraded only while no Flash/Pro Profile 1.5
 model attachment, probe or approval exists; the guard prevents an M91 binary
 from inheriting a durable Profile identity that it cannot interpret. M93
 downgrade is blocked only by retained function-tool Probe v2 evidence or
@@ -89,9 +105,9 @@ maintenance deployment. It was later superseded by parser-diagnostics commit
 `56d6fc646cf7a7895ac96c09ddbb885d0f91e4f0` and caller-scoped readiness UI
 commit `4c6a92b2863663eb9b544cb7a8c87462ab897741`, then by the versioned SSE
 contract, M90/M91 capability batch and historical M92 checkpoint
-`c4ee78fc3eb41f144e72000d01917f41d7470bfb`. The current M94 artifact and
+`c4ee78fc3eb41f144e72000d01917f41d7470bfb`. The current M95 artifact and
 Target evidence are recorded at the start of this section and in the
-[current Target snapshot](../tech-ref/42-model-execution-profile-capability-status.md#current-target-snapshot--1210--m94--pro-exact-tuple).
+[active Kimi delivery batch](../tech-ref/42-model-execution-profile-capability-status.md#active-delivery-batch--kimi-k26-chat).
 Canonical model-route authority remains enabled with compatibility disabled.
 The active organization Alias resolves to public model 697, whose sealed active
 Release 23 remains bound to immutable Profile 1.5. M93 did not change that

@@ -9,12 +9,10 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-For development/test Target identity, the final 1.2.12 snapshot below
-supersedes the older 1.2.10 Target block still present in the release-bearing
-System Fact Map. Repository policy requires any Fact Map edit to ship with a
-new artifact version; synchronizing that projection is therefore deferred to
-the next authorized release-bearing batch rather than manufacturing a doc-only
-1.2.13 artifact. Runtime and deployment evidence remain the current authority.
+For development/test Target identity, the Kimi 1.2.13/M95 checkpoint in the
+active batch below supersedes the earlier Pro 1.2.12/M94 snapshot. The local
+1.2.14/M96 source remains a candidate until its exact artifact, migration and
+runtime identities are independently verified on Target.
 
 ## Completed delivery batch — DeepSeek V4 Pro Chat Core Target closeout
 
@@ -129,23 +127,48 @@ billing, Production and broader provider parity remain unclaimed.
 
 ## Active delivery batch — Kimi K2.6 Chat
 
-The next Active Milestone is `Kimi K2.6 × OpenAI-compatible Chat ×
-non-streaming text`. The Kimi series in the current inventory is K2.6,
-K2.7 Code and K3; K2.7 does not denote a separate general-chat model. The
-authorized K2.6 live budget is at most 20 supplier calls and CNY 5, but no call
-may occur until the exact matrix is frozen and the user enters the prepared Kimi
-Open Platform credential once through the supported UI.
+The completed first milestone is `Kimi K2.6 × OpenAI-compatible Chat ×
+non-streaming text`; the current Active Milestone is the same exact tuple ×
+streaming. The Kimi series in the current inventory is K2.6, K2.7 Code and K3;
+K2.7 does not denote a separate general-chat model. The authorized K2.6 live
+budget remains at most 20 supplier calls and CNY 5 with no automatic retry.
 
-The current local source candidate is version 1.2.13 with schema ceiling M95.
-It prepares one finite K2.6 Chat Core Delivery Batch: an exact Profile-scoped
+Development/test currently runs exact main merge commit
+`f91be73a81c48b674c33b4c0508ddde70c888f8f`, tree
+`54778e08fe23d0b332e94258528a1fe653e77183`, version 1.2.13 and schema M95;
+stable, canary, frontend, database and Redis readiness are healthy. It publishes
+one finite K2.6 Chat Core Delivery Batch: an exact Profile-scoped
 operation-protocol binding plus typed probe contracts for streaming, reasoning,
 tools, function tools, automatic tool choice and JSON Object. Those contracts
 and their local tests are batch preparation, not live evidence and not six
 prematurely closed milestones. M95 creates only declared projections for the
 exact `kimi.k2.6.api@1.7.0 × protocol.kimi-openai-chat.v5@1.0.0` tuple; it does
 not bind K2.7/K3, create a generic tuple, call Kimi, approve routing, change a
-Release/Alias or activate pricing. The development/test Target remains the
-1.2.12/M94 snapshot until an exact artifact is gated and deployed.
+Release/Alias or activate pricing.
+
+The supported UI created deployment 4 for upstream `kimi-k2.6` on connection
+10 and exact Profile/protocol above. Operation probe 4 succeeded with provider
+HTTP 200 and provider-reported model `kimi-k2.6`. Release 25 is active only for
+that model-local exact tuple; it does not change canonical routing or publish
+pricing. A public non-stream request with thinking explicitly disabled returned
+HTTP 200 and `K2.6 OK`, with provider-reported usage of 15 input, 8 output and
+23 total tokens. The request settled in `cost_observation` mode with calculated
+customer cost, charged customer cost and wallet movement all zero. These are
+live execution facts, not a supplier native-cost Observation.
+
+The first typed streaming Probe, under immutable Probe Contract v1, reached the
+provider successfully (HTTP 200) but failed delivery validation because the
+disabled-thinking SSE emitted an empty-string
+`choices[].delta.reasoning_content`. That failed Probe remains immutable and
+unapproved; Planner correctly remains fail closed. The local source candidate
+is therefore version 1.2.14 with schema ceiling M96. Its exact-scoped shared
+normalizer removes only that semantically empty member for Kimi K2.6 Chat v5,
+while preserving non-empty reasoning and unknown siblings and rejecting invalid
+types. Runtime and Probe v2 consume the same normalizer. M96 advances only the
+streaming Probe binding to v2; it does not change the Execution Profile, Chat
+protocol, Release, alias, pricing, Planner or the other five capability
+contracts. The three supplier calls so far are the operation probe, successful
+non-stream request and failed v1 streaming Probe.
 
 The Kimi probe validators and the Gateway delivery guard currently remain two
 parsing implementations. Cross-delivery fixtures are required for this batch,

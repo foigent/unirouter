@@ -10,6 +10,8 @@ import (
 	"mime"
 	"strconv"
 	"strings"
+
+	"github.com/uniroute/unirouter/internal/adapters"
 )
 
 const (
@@ -200,7 +202,9 @@ func ValidateKimiChatSSE(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
-	if probeContractID != KimiChatSSEProbeContractID || probeContractVersion != KimiChatCoreProbeContractVersion {
+	if probeContractID != KimiChatSSEProbeContractID ||
+		(probeContractVersion != KimiChatCoreProbeContractVersion &&
+			probeContractVersion != KimiChatSSEProbeContractVersionV2) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
 	if safeReportedModel(strings.TrimSpace(expectedModel)) != strings.TrimSpace(expectedModel) || strings.TrimSpace(expectedModel) == "" {
@@ -238,6 +242,15 @@ func ValidateKimiChatSSE(
 		}
 		if observation.DoneSeen || usageSeen {
 			return invalidKimiChat("data_after_terminal")
+		}
+		if probeContractVersion == KimiChatSSEProbeContractVersionV2 {
+			normalized, _, normalizeErr := adapters.NormalizeKimiK26ChatStreamChunk(
+				"kimi", expectedModel, "protocol.kimi-openai-chat.v5", []byte(payload),
+			)
+			if normalizeErr != nil {
+				return invalidKimiChat("delivery_shape", normalizeErr)
+			}
+			payload = string(normalized)
 		}
 		var chunk struct {
 			ID                string `json:"id"`

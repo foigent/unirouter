@@ -12,6 +12,7 @@ import (
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
 func TestModelCapabilityProbePreservesSafeContractFailureEvidence(t *testing.T) {
@@ -250,7 +251,7 @@ func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 			contractID:                  modelcapabilityqualification.KimiChatSSEProbeContractID,
 			contentType:                 "text/event-stream",
 			responseBody: strings.Join([]string{
-				`data: {"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":null}],"usage":null}`,
+				`data: {"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""},"finish_reason":null}],"usage":null}`,
 				`data: {"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":0}}`,
 				`data: [DONE]`, "",
 			}, "\n\n"),
@@ -282,12 +283,16 @@ func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 					Body:       io.NopCloser(strings.NewReader(test.responseBody)),
 				}, nil
 			}))
+			probeContractVersion := modelcapabilityqualification.KimiChatCoreProbeContractVersion
+			if test.capabilityID == modelprofile.CapabilityStreaming {
+				probeContractVersion = modelcapabilityqualification.KimiChatSSEProbeContractVersionV2
+			}
 			outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 				Provider: "kimi", BaseURL: "https://api.moonshot.cn/v1",
 				AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
 				UpstreamModel: "kimi-k2.6", ExpectedUpstreamModel: "kimi-k2.6", EncryptedSecret: encrypted,
 				CapabilityID: test.capabilityID, ProbeContractID: test.contractID,
-				ProbeContractVersion: modelcapabilityqualification.KimiChatCoreProbeContractVersion,
+				ProbeContractVersion: probeContractVersion,
 			}, "kimi-k26-capability-probe-test")
 			require.True(t, outcome.ProviderSuccess)
 			require.True(t, outcome.ContractSuccess)
