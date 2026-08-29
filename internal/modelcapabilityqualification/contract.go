@@ -23,6 +23,11 @@ const (
 	DeepSeekChatFunctionToolsProbeContractV2   = "2.0.0"
 	DeepSeekChatJSONObjectProbeContractID      = "unirouter.capability-probe.deepseek-chat-json-object.v1"
 	DeepSeekChatCoreProbeContractVersion       = "1.0.0"
+	KimiChatSSEProbeContractID                 = "unirouter.capability-probe.kimi-chat-sse.v1"
+	KimiChatReasoningProbeContractID           = "unirouter.capability-probe.kimi-chat-reasoning.v1"
+	KimiChatFunctionToolsProbeContractID       = "unirouter.capability-probe.kimi-chat-function-tools.v1"
+	KimiChatJSONObjectProbeContractID          = "unirouter.capability-probe.kimi-chat-json-object.v1"
+	KimiChatCoreProbeContractVersion           = "1.0.0"
 	ProbeSourceKind                            = "admin.model_capability_probe.v1"
 	ApprovalSourceKind                         = "admin.model_capability_routing_approval.v1"
 )
@@ -201,6 +206,36 @@ var deepSeekProCurrentBindings = func() []Binding {
 	return bindings
 }()
 
+// kimiK26CurrentBindings publishes only the exact current K2.6 Chat tuple.
+// K2.7 Code reuses the same validation contract but does not receive
+// attachment or routing authority until its own milestone publishes an exact
+// binding and live evidence.
+var kimiK26CurrentBindings = func() []Binding {
+	capabilities := []struct {
+		CapabilityID    string
+		ProbeContractID string
+	}{
+		{modelprofile.CapabilityStreaming, KimiChatSSEProbeContractID},
+		{modelprofile.CapabilityReasoning, KimiChatReasoningProbeContractID},
+		{modelprofile.CapabilityTools, KimiChatFunctionToolsProbeContractID},
+		{modelprofile.CapabilityFunctionTools, KimiChatFunctionToolsProbeContractID},
+		{modelprofile.CapabilityToolChoiceAuto, KimiChatFunctionToolsProbeContractID},
+		{modelprofile.CapabilityJSONObject, KimiChatJSONObjectProbeContractID},
+	}
+	bindings := make([]Binding, 0, len(capabilities))
+	for _, capability := range capabilities {
+		bindings = append(bindings, Binding{
+			OperationID: string(modeloperation.IDChatCompletions), CapabilityID: capability.CapabilityID,
+			ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
+			ProtocolProfileID: "protocol.kimi-openai-chat.v5", ProtocolProfileVersion: "1.0.0",
+			ProbeContractID: capability.ProbeContractID, ProbeContractVersion: KimiChatCoreProbeContractVersion,
+			ExpectedProvider: "kimi", ExpectedUpstreamModel: "kimi-k2.6",
+			PublicPath: modeloperation.PathChatCompletions,
+		})
+	}
+	return bindings
+}()
+
 func allBindings() []Binding {
 	bindings := []Binding{
 		deepSeekFlashStreaming, deepSeekFlashLegacyStreaming,
@@ -210,6 +245,7 @@ func allBindings() []Binding {
 	bindings = append(bindings, deepSeekFlashCoreBindings...)
 	bindings = append(bindings, deepSeekFlashCurrentBindings...)
 	bindings = append(bindings, deepSeekProCurrentBindings...)
+	bindings = append(bindings, kimiK26CurrentBindings...)
 	return bindings
 }
 
@@ -276,4 +312,8 @@ func DeepSeekFlashCurrentBindings() []Binding {
 
 func DeepSeekProCurrentBindings() []Binding {
 	return append([]Binding(nil), deepSeekProCurrentBindings...)
+}
+
+func KimiK26CurrentBindings() []Binding {
+	return append([]Binding(nil), kimiK26CurrentBindings...)
 }

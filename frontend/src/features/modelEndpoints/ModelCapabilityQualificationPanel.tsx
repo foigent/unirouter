@@ -34,12 +34,12 @@ const capabilityPresentation: Record<QualifiedCapabilityID, {
     probeContractSummary: '服务端固定使用 SSE、最终 usage 与 [DONE] 合同；不会接受任意测试 JSON，也不会自动批准路由资格。',
   },
   reasoning: {
-    title: '能力验证 · 显式思考模式',
+    title: '能力验证 · 思考模式',
     shortName: '思考模式能力',
-    description: '验证当前精确部署是否接受显式 thinking=enabled，并返回可审计但不泄露私有思维文本的 reasoning 证据。',
-    defaultReason: '已审阅当前环境的显式思考模式探测证据',
+    description: '验证当前精确部署是否按服务端 typed contract 执行显式或供应商默认思考模式，并返回可审计但不泄露私有思维文本的 reasoning 证据。',
+    defaultReason: '已审阅当前环境的 typed 思考模式探测证据',
     emptyEvidence: '尚未运行 typed reasoning probe。',
-    probeContractSummary: '服务端固定使用非流式 thinking=enabled、精确答案、reasoning 存在性与最终 usage 合同；不会保存私有思维文本。',
+    probeContractSummary: '服务端按 exact Probe Contract 固定思考模式、精确答案、reasoning 存在性与最终 usage；不会保存私有思维文本，也不会由前端决定 wire 参数。',
   },
   reasoning_effort: {
     title: '能力验证 · 推理强度',

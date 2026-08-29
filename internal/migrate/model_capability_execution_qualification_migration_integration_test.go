@@ -181,6 +181,7 @@ SELECT capability_probe_id,customer_org_id,deployment_id,connection_id,operation
 	RETURNING approval_id`, probeID, fixture.userID, fixture.orgID).Scan(&approvalID))
 	require.Positive(t, approvalID)
 
+	execMigrationDown(t, ctx, pool, "000095_kimi_k26_chat_core_qualification.down.sql")
 	execMigrationDown(t, ctx, pool, "000094_deepseek_v4_pro_chat_core_qualification.down.sql")
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000093_deepseek_function_tool_probe_contract_v2.down.sql"))
 	require.NoError(t, err)
@@ -227,6 +228,7 @@ UPDATE model_deployment_operations
  WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'`, fixture.deploymentID)
 	require.NoError(t, err)
 
+	execMigrationDown(t, ctx, pool, "000095_kimi_k26_chat_core_qualification.down.sql")
 	execMigrationDown(t, ctx, pool, "000094_deepseek_v4_pro_chat_core_qualification.down.sql")
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000093_deepseek_function_tool_probe_contract_v2.down.sql"))
 	require.NoError(t, err)

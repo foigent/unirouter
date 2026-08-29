@@ -39,16 +39,41 @@ func TestOperationProtocolIdentityRegistriesAreExactAndIndependent(t *testing.T)
 		require.NoError(t, err, address)
 	}
 
-	for protocolProfileID, bindingVersion := range immutableChatOperationProtocolBindings {
-		contract, ok := ResolveChatProtocolContract(protocolProfileID)
-		require.True(t, ok, protocolProfileID)
-		require.Equal(t, protocolProfileID, contract.ProfileID)
+	for binding, bindingVersion := range immutableChatOperationProtocolBindings {
+		contract, ok := ResolveChatProtocolContract(binding.ProtocolProfileID)
+		require.True(t, ok, binding.ProtocolProfileID)
+		require.Equal(t, binding.ProtocolProfileID, contract.ProfileID)
 		require.Equal(t, ChatOperationProtocolBindingVersionV1, bindingVersion)
+		profile, ok := Lookup(binding.ProfileID, binding.ProfileVersion)
+		require.True(t, ok, binding.ProfileID+"@"+binding.ProfileVersion)
+		require.Equal(t, binding.ProtocolProfileID, profile.ProtocolProfile)
+	}
+}
+
+func TestCurrentAttachableProfilesResolveOperationProtocolIdentityWithoutEvidence(t *testing.T) {
+	for _, profile := range All() {
+		if !profile.Current || profile.ID == UnverifiedProfileID {
+			continue
+		}
+		address := profile.ID + "@" + profile.Version
+		require.NoError(t, ValidateNewAttachment(profile.ID, profile.Version), address)
+		require.Len(t, profile.Operations, 1, address)
+		identity, found, err := ResolveOperationProtocolIdentity(
+			profile.ID, profile.Version, profile.Operations[0],
+		)
+		require.NoError(t, err, address)
+		if !found {
+			require.Equal(t, OperationProtocolIdentity{}, identity, address)
+			continue
+		}
+		require.Equal(t, profile.Operations[0], identity.OperationID, address)
+		require.NotEmpty(t, identity.ProtocolProfileID, address)
+		require.NotEmpty(t, identity.ProtocolProfileVersion, address)
 	}
 }
 
 func TestChatContractDoesNotCreateOperationBindingAuthority(t *testing.T) {
-	profile, ok := Lookup("kimi.k2.6.api", "1.7.0")
+	profile, ok := Lookup("kimi.k2.7-code.api", "1.3.0")
 	require.True(t, ok)
 	_, contractExists := ResolveChatProtocolContract(profile.ProtocolProfile)
 	require.True(t, contractExists)
@@ -57,6 +82,25 @@ func TestChatContractDoesNotCreateOperationBindingAuthority(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, found)
 	require.Equal(t, OperationProtocolIdentity{}, identity)
+}
+
+func TestResolveOperationProtocolIdentityUsesExplicitKimiK26BindingOnly(t *testing.T) {
+	identity, found, err := ResolveOperationProtocolIdentity(
+		"kimi.k2.6.api", "1.7.0", OperationOpenAIChat,
+	)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, OperationProtocolIdentity{
+		OperationID: OperationOpenAIChat, ProtocolProfileID: "protocol.kimi-openai-chat.v5",
+		ProtocolProfileVersion: ChatOperationProtocolBindingVersionV1,
+	}, identity)
+
+	for _, address := range [][2]string{{"kimi.k2.7-code.api", "1.3.0"}, {"kimi.k3.api", "1.8.0"}} {
+		identity, found, err := ResolveOperationProtocolIdentity(address[0], address[1], OperationOpenAIChat)
+		require.NoError(t, err, address[0])
+		require.False(t, found, address[0])
+		require.Equal(t, OperationProtocolIdentity{}, identity, address[0])
+	}
 }
 
 func TestExistingAttachmentProtocolCompatibilityIsExactAndDoesNotAuthorizePro(t *testing.T) {
@@ -98,12 +142,25 @@ func TestOperationProtocolIdentityFailsClosedOnInvalidDeclarations(t *testing.T)
 	unverified, ok := Lookup(UnverifiedProfileID, UnverifiedProfileVersion)
 	require.True(t, ok)
 	unverified.ProtocolProfile = "protocol.deepseek-openai-chat.v4"
+	immutableChatOperationProtocolBindings[chatOperationProtocolBindingKey{
+		ProfileID: unverified.ID, ProfileVersion: unverified.Version, ProtocolProfileID: unverified.ProtocolProfile,
+	}] = ChatOperationProtocolBindingVersionV1
+	t.Cleanup(func() {
+		delete(immutableChatOperationProtocolBindings, chatOperationProtocolBindingKey{
+			ProfileID: unverified.ID, ProfileVersion: unverified.Version, ProtocolProfileID: unverified.ProtocolProfile,
+		})
+	})
 	_, _, err = resolveOperationProtocolIdentity(unverified, OperationOpenAIChat)
 	require.ErrorIs(t, err, ErrOperationProtocolIdentityInvalid)
 
 	legacy, ok := Lookup("deepseek.v4-pro.api", "1.1.0")
 	require.True(t, ok)
 	legacy.ProtocolProfile = "protocol.deepseek-openai-chat.v4"
+	legacyBinding := chatOperationProtocolBindingKey{
+		ProfileID: legacy.ID, ProfileVersion: legacy.Version, ProtocolProfileID: legacy.ProtocolProfile,
+	}
+	immutableChatOperationProtocolBindings[legacyBinding] = ChatOperationProtocolBindingVersionV1
+	t.Cleanup(func() { delete(immutableChatOperationProtocolBindings, legacyBinding) })
 	_, _, err = resolveOperationProtocolIdentity(legacy, OperationOpenAIChat)
 	require.ErrorIs(t, err, ErrOperationProtocolIdentityInvalid)
 

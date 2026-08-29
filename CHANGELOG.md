@@ -4,6 +4,30 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.13] - 2026-08-29
+
+### Added
+
+- Added an exact Kimi K2.6 OpenAI-compatible Chat operation identity and six
+  typed capability qualification contracts for streaming, provider-default
+  reasoning, tools, function tools, automatic tool choice and JSON Object.
+- Added strict Kimi probe response validation and cross-contract fixtures that
+  show accepted fixtures pass the current Gateway delivery-shape and guard
+  parsers. Public UI and fixed-SDK delivery remain separate Target checkpoints.
+
+### Changed
+
+- Scoped immutable Chat operation bindings by exact Execution Profile address,
+  preventing the shared Kimi v5 validation contract from implicitly granting
+  K2.7 Code onboarding authority during the K2.6 milestone.
+
+### Evidence boundary
+
+- M95 publishes only declared Kimi K2.6 contracts. It does not create live
+  Probe or Approval evidence, qualify a route, activate pricing, publish a
+  Release, change an alias, or call the provider. K2.7 Code remains outside
+  this release's execution authority.
+
 ## [1.2.12] - 2026-08-29
 
 ### Fixed
