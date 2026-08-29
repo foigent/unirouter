@@ -9,7 +9,7 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-## Active delivery batch — DeepSeek V4 Pro Chat Core
+## Active delivery batch — DeepSeek V4 Pro Chat Core Target closeout
 
 The active source batch is `DeepSeek V4 Pro × OpenAI-compatible Chat × Core
 Conformance`. It is limited to the current `deepseek.v4-pro.api@1.5.0` Profile,
@@ -28,24 +28,67 @@ catalog evidence and Chat-contract registration cannot create this identity.
 
 Within the delivery batch, non-streaming text, cache-read/usage mapping and the
 UI/fixed-SDK closeout remain distinct evidence checkpoints rather than new
-routing Approval types. One Active Milestone is advanced at a time, followed by
-one shared gate, push, CI, non-rolling development/test deployment and bounded
-Target closeout. Grouped capability approval remains `valid_deferred` with
+routing Approval types. One Active Milestone is advanced at a time. Grouped
+capability approval remains `valid_deferred` with
 `design_status=candidate`, `runtime_authority=none`,
 `requirement_baseline=none` and explicit future product approval required; it is
 not part of this batch.
 
-The version 1.2.8 / schema-M94 source candidate has passed its final local
-gate: release metadata and diff checks, repository-wide Go vet and race tests,
-the complete Admin and migration PostgreSQL integration suites, the affected
-gateway/billing/runtime-change integration suites, and frontend type, contract,
-test and production-build checks. The gate exposed and closed two fixture
-regressions without widening runtime scope: the typed-override resolver now
-preserves an independently validated Chat/Responses/Embeddings base for an
-unverified Profile with no typed declaration, and predecessor rollback tests
-remove M94 before exercising M93 while the SSE contract inventory counts M94's
-one Pro binding. This is Local evidence only; no 1.2.8 commit, CI artifact,
-Target migration, Pro probe, supplier call, Release or Alias is claimed here.
+### Current Target snapshot — 1.2.10 / M94 / Pro exact tuple
+
+As of 2026-08-29, development/test stable, canary and frontend run the exact
+main merge commit `2c0b068f85b7db0880e6970b1e600df6cd822cc1`, tree
+`d1c62f0fc613b05e87e90e8bcda36b3e07780f19`, version 1.2.10. Stable and
+canary use backend image
+`sha256:5d7378713e24abd690e245c6888a6a6ac5f1f7786304b7f7377b2b2f45a4acf8`;
+frontend uses
+`sha256:b65970ffef1e715300782b0fef9d8710861f09fc60ade32ede9ca7042ab93a84`.
+Both public and local readiness return database and Redis healthy. The database
+has 93 ordered migration rows ending at
+`000094_deepseek_v4_pro_chat_core_qualification`. The non-rolling window stopped
+the old backends/frontend before one migration owner advanced the shared
+database, then started exact-ledger stable, canary and frontend. The protected
+pre-upgrade backup remains on Target under the deployment-evidence directory;
+its private contents are not part of this document.
+
+PR #340 (CI run 33212334966), PR #341 (33216249020) and the final operation-
+evidence correction PR #342 (33229132370) each passed all five required jobs
+before merge. The extra diffs were live-found, independently gated corrections:
+they do not support a claim that the batch used only one push or one CI run.
+The final frontend no longer owns a DeepSeek Profile/protocol allowlist;
+`capability_probe_contracts` is a server-owned exact-operation projection, and
+the UI renders only the returned contracts. This removes the Pro-specific UI
+authority duplication rather than deferring it to K2.6.
+
+Deployment 3 is bound to `deepseek.v4-pro.api@1.5.0 ×
+protocol.deepseek-openai-chat.v4@1.0.0 × openai.chat_completions.v1`. Exact
+operation probe 3 succeeded against provider-reported `deepseek-v4-pro` and
+advanced the operation revision to 2. The nine Profile-scoped capability probes
+were then rerun and separately approved under that revision: streaming
+(approval 33), reasoning (34), reasoning effort (35), tools (36), function
+tools (37), tool choice auto/named/required (38/39/40) and JSON Object (41).
+All nine receipt-aware qualifications are `qualified`; no grouped command was
+used. UI evidence includes valid SSE termination/final usage, reasoning and
+effort semantics, tool calls, the three tool-choice variants and JSON output.
+
+The UI also authored, sealed and initially activated Release 24 for the exact
+Pro tuple. Authoring receipt
+`rcr_deployment_20260829t035153_e25908a1c4fbf97dbb541745` binds route hash
+`sha256:c6496aac675f5756c8a7a5f55abc053dbecb2e9efca8ab67f9090226ed47763e`;
+lifecycle receipt 3 moved the model-local slot from 0 to 1. This does not change
+the platform-wide route authority, enable compatibility, publish pricing or
+constitute a Production release. The pre-existing runtime configuration remains
+canonical route authority with compatibility disabled and async media disabled.
+
+This Pro batch has used 19 of its approved maximum 20 supplier calls: nine
+earlier capability probes on the superseded operation revision, then the exact
+operation probe and nine current capability probes above. The last authorized
+call is reserved for one fixed-version generic SDK public workflow. Customer
+wallet balance, authorization and charged cost remain zero. The CNY 5 value is
+an authorized supplier-spend ceiling, not a supplier invoice or native-cost
+Observation. The fixed-SDK checkpoint is still pending because the supported
+ordinary-user credential flow must be completed without a database or access-
+control bypass; until then, the Pro Target batch is not fully closed.
 
 ## Delivery snapshot — DeepSeek Flash Chat completion, development/test
 

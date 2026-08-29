@@ -11,6 +11,7 @@ import { pasteValue } from '../../test/user';
 
 const clientMocks = {
   getContract: vi.fn(), getProjects: vi.fn(), getApplications: vi.fn(), getCredentials: vi.fn(),
+  getProjectMembers: vi.fn(),
   createApplication: vi.fn(), updateApplication: vi.fn(), archiveApplication: vi.fn(),
 };
 
@@ -26,6 +27,7 @@ vi.mock('../../api/client', () => ({
     getProjects: (...args: any[]) => clientMocks.getProjects(...args),
     getWorkloadApplications: (...args: any[]) => clientMocks.getApplications(...args),
     getWorkloadApplicationCredentials: (...args: any[]) => clientMocks.getCredentials(...args),
+    getProjectMembers: (...args: any[]) => clientMocks.getProjectMembers(...args),
     createWorkloadApplication: (...args: any[]) => clientMocks.createApplication(...args),
     updateWorkloadApplication: (...args: any[]) => clientMocks.updateApplication(...args),
     archiveWorkloadApplication: (...args: any[]) => clientMocks.archiveApplication(...args),
@@ -79,6 +81,29 @@ const grantFor = (applicationID: number, projectID: number, grantRef: string, st
   valid_from: '2026-08-09T00:00:00Z', policy_reason_codes: ['workload_project_default_auto'], decision_reason_codes: [],
   created_at: '2026-08-09T00:00:00Z', updated_at: '2026-08-09T00:00:00Z',
 });
+
+async function chooseSelectOption(label: string, option: string, user = userEvent.setup()) {
+  const combobox = screen.getByRole('combobox', { name: label });
+  await user.click(combobox);
+  await waitFor(() => expect(combobox).toHaveAttribute('aria-expanded', 'true'));
+  const controlledID = combobox.getAttribute('aria-controls');
+  if (!controlledID) throw new Error(`missing controlled option list for ${label}`);
+  const currentChoice = () => Array.from(document.querySelectorAll<HTMLElement>('[id]'))
+    .filter(node => node.id === controlledID)
+    .flatMap(node => Array.from(node.querySelectorAll<HTMLElement>('[role="option"]')))
+    .find(node => node.textContent === option);
+  await waitFor(() => expect(currentChoice()).toBeTruthy());
+  const choice = currentChoice();
+  if (!choice) throw new Error(`missing option ${option} for ${label}`);
+  const popup = choice.closest('[role="dialog"]');
+  if (!popup) throw new Error(`missing option popup for ${label}`);
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-show'));
+  fireEvent.animationEnd(popup);
+  await user.click(choice);
+  await waitFor(() => expect(popup).toHaveClass('semi-tooltip-animation-hide'));
+  fireEvent.animationEnd(popup);
+  await waitFor(() => expect(combobox).toHaveTextContent(option));
+}
 
 const credentialFor = (credentialRef: string, grantRef: string, keyID: number, effectiveStatus = 'active') => ({
   id: keyID - 10, credential_ref: credentialRef, grant_ref: grantRef, name: `${credentialRef} runtime`,
@@ -163,6 +188,10 @@ describe('ApplicationsV2Page', () => {
     });
     clientMocks.getProjects.mockResolvedValue({ data: [{ id: 11, org_id: 1, name: '理赔 POC', status: 'active', current_user_membership_role: 'project_admin' }], total: 1 });
     clientMocks.getApplications.mockResolvedValue({ data: [application], total: 1 });
+    clientMocks.getProjectMembers.mockResolvedValue({ data: [
+      { user_id: 40, username: 'customer-sponsor', status: 'active', membership_role: 'project_user' },
+      { user_id: 41, username: 'disabled-member', status: 'disabled', membership_role: 'project_user' },
+    ], total: 2 });
     clientMocks.createApplication.mockResolvedValue({
       ...application,
       id: 45,
@@ -187,6 +216,10 @@ describe('ApplicationsV2Page', () => {
     }], pagination: { limit: 50, has_more: false }, scope: 'project' });
     accessMocks.previewLegacy.mockResolvedValue({ mutation: false, data: [{ object_type: 'workload_application', object_id: 44, object_ref: 'app_legacy', classification: 'review_required', reason_code: 'interactive_client_requires_review', migration_status: 'review_required', automatic_migration: false, client_profiles: [] }], total: 1 });
     accessMocks.issueCredential.mockResolvedValue({ secret_available: false, recovery_action: 'rotate again' });
+    accessMocks.createRequest.mockResolvedValue({
+      request: { request_ref: 'req-workload', status: 'approved', revision: 1 },
+      grant: { grant_ref: 'grant-workload', status: 'active' },
+    });
     accessMocks.rotateCredential.mockResolvedValue({ credential: { secret_available: false, recovery_action: 'rotate again' } });
     accessMocks.revokeCredential.mockResolvedValue({ status: 'revoked' });
   });
@@ -326,6 +359,58 @@ describe('ApplicationsV2Page', () => {
     expect(payload).not.toHaveProperty('logical_ref');
   });
 
+  it('requires a platform administrator to select an active customer project Sponsor', async () => {
+    const user = userEvent.setup();
+    accessMocks.listProjectGrants.mockResolvedValue({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    await user.click(await screen.findByRole('button', { name: '申请应用访问' }));
+    expect(await screen.findByText(/平台管理员身份不能替代业务主体/)).toBeTruthy();
+    expect(clientMocks.getProjectMembers).toHaveBeenCalledWith(11, 1, 100);
+    await chooseSelectOption('业务 Sponsor', 'customer-sponsor · project_user', user);
+    await user.click(screen.getByRole('button', { name: '提交申请' }));
+
+    await waitFor(() => expect(accessMocks.createRequest).toHaveBeenCalledWith(expect.objectContaining({
+      org_id: 1,
+      project_id: 11,
+      subject: { type: 'workload_application', workload_application_id: 31 },
+      sponsor_user_id: 40,
+    }), expect.any(String)));
+    expect(accessMocks.createRequest.mock.calls[0][0].sponsor_user_id).not.toBe(1);
+  });
+
+  it('keeps an in-organization administrator as the direct Sponsor', async () => {
+    useAuthStore.setState({
+      token: 'token', isAuthenticated: true, profileLoading: false,
+      user: { id: 7, username: 'org-admin', organization_role: 'org_admin', role: 'admin', org_id: 1, org_name: '总部', customer_context: { state: 'ready', org_id: 1, org_name: '总部' } },
+    });
+    accessMocks.listProjectGrants.mockResolvedValue({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole('button', { name: '申请应用访问' }));
+    await waitFor(() => expect(accessMocks.createRequest).toHaveBeenCalledWith(expect.objectContaining({ sponsor_user_id: 7 }), expect.any(String)));
+    expect(screen.queryByRole('combobox', { name: '业务 Sponsor' })).toBeNull();
+  });
+
+  it('closes a frozen Sponsor decision when the selected Application changes and ignores the late member response', async () => {
+    const user = userEvent.setup();
+    const members = deferred<any>();
+    clientMocks.getApplications.mockResolvedValue({ data: [application, applicationSameProjectB], total: 2 });
+    clientMocks.getProjectMembers.mockReturnValue(members.promise);
+    accessMocks.listProjectGrants.mockResolvedValue({ data: [], pagination: { limit: 50, has_more: false }, scope: 'project' });
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /><ScopeSwitches /></MemoryRouter>);
+
+    await user.click(await screen.findByRole('button', { name: '申请应用访问' }));
+    expect(await screen.findByText(/平台管理员身份不能替代业务主体/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'show-app-b-same-project' }));
+    expect((await screen.findAllByText('Project B Agent')).length).toBeGreaterThan(0);
+    members.resolve({ data: [{ user_id: 40, username: 'customer-sponsor', status: 'active', membership_role: 'project_user' }], total: 1 });
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '业务 Sponsor' })).toHaveAttribute('aria-disabled', 'true'));
+    expect(screen.getByRole('button', { name: '提交申请' })).toBeDisabled();
+    expect(accessMocks.createRequest).not.toHaveBeenCalled();
+  });
+
   it('treats an archived application as read-only terminal history', async () => {
     clientMocks.getApplications.mockResolvedValue({
       data: [{ ...application, status: 'archived', can_manage: true, can_request_access: false }],
@@ -430,9 +515,12 @@ describe('ApplicationsV2Page', () => {
 
     await user.click(screen.getByRole('button', { name: /创建应用 Key/ }));
     await pasteValue(user, await screen.findByLabelText('Key 名称'), 'project-b-runtime');
+    await pasteValue(user, screen.getByLabelText('允许模型（可选）'), ' deepseek-v4-pro，deepseek-v4-pro ');
     await user.click(screen.getByRole('button', { name: '创建' }));
 
-    await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalledWith('grant-project-b', expect.objectContaining({ name: 'project-b-runtime' }), expect.any(String)));
+    await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalledWith('grant-project-b', expect.objectContaining({
+      name: 'project-b-runtime', allowed_models: ['deepseek-v4-pro'],
+    }), expect.any(String)));
     expect(accessMocks.issueCredential).not.toHaveBeenCalledWith('grant-project-a', expect.anything(), expect.anything());
   }, 30_000);
 
@@ -456,6 +544,30 @@ describe('ApplicationsV2Page', () => {
     await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalled());
     expect(await screen.findByText('1/1')).toBeTruthy();
     expect(clientMocks.getApplications.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('reuses one credential intent for equivalent server-normalized model order after an uncertain response', async () => {
+    const user = userEvent.setup();
+    accessMocks.issueCredential
+      .mockRejectedValueOnce(new Error('transport uncertain'))
+      .mockResolvedValueOnce({ secret_available: false, recovery_action: 'rotate again' });
+    render(<MemoryRouter initialEntries={['/applications?project_id=11&application_ref=app_claims_agent']}><WorkloadApplicationsPage /></MemoryRouter>);
+
+    await user.click(await screen.findByRole('button', { name: /创建应用 Key/ }));
+    await pasteValue(user, await screen.findByLabelText('Key 名称'), 'ordered-runtime');
+    const models = screen.getByLabelText('允许模型（可选）');
+    await pasteValue(user, models, 'zeta,deepseek-v4-pro');
+    await user.click(screen.getByRole('button', { name: '创建' }));
+    await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalledTimes(1));
+
+    await user.clear(models);
+    await pasteValue(user, models, 'deepseek-v4-pro,zeta');
+    await user.click(screen.getByRole('button', { name: '创建' }));
+    await waitFor(() => expect(accessMocks.issueCredential).toHaveBeenCalledTimes(2));
+
+    expect(accessMocks.issueCredential.mock.calls[0][1].allowed_models).toEqual(['deepseek-v4-pro', 'zeta']);
+    expect(accessMocks.issueCredential.mock.calls[1][1].allowed_models).toEqual(['deepseek-v4-pro', 'zeta']);
+    expect(accessMocks.issueCredential.mock.calls[0][2]).toBe(accessMocks.issueCredential.mock.calls[1][2]);
   });
 
   it('binds credential rotation to the currently displayed exact Grant after adverse response ordering', async () => {
@@ -558,8 +670,12 @@ describe('ApplicationsV2Page', () => {
     fireEvent.click(await screen.findByRole('button', { name: '编辑' }));
     fireEvent.click(screen.getByRole('button', { name: 'show-app-b' }));
     expect((await screen.findAllByText('Project B Agent')).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    const closingSheet = document.querySelector<HTMLElement>('.semi-sidesheet-inner');
+    expect(closingSheet).toBeTruthy();
+    await waitFor(() => expect(closingSheet).toHaveClass('semi-sidesheet-animation-content_hide_right'));
+    fireEvent.animationEnd(closingSheet!);
 
+    await waitFor(() => expect(screen.queryByRole('button', { name: '保存' })).toBeNull());
     await waitFor(() => expect(clientMocks.updateApplication).not.toHaveBeenCalled());
   }, 30_000);
 

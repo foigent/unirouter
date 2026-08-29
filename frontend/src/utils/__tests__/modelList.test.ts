@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeModelList, parseModelList } from '../modelList';
+import { normalizeModelList, parseModelList, parseSortedModelList } from '../modelList';
 
 describe('model list parsing', () => {
   it('uses one canonical rule for strings and form arrays', () => {
@@ -18,5 +18,10 @@ describe('model list parsing', () => {
     expect(normalizeModelList('deepseek-v4-flash; deepseek-v4-pro；deepseek-v4-flash')).toBe(
       'deepseek-v4-flash,deepseek-v4-pro',
     );
+  });
+
+  it('matches the service UTF-8 byte order for semantic retry identity', () => {
+    expect(parseSortedModelList('模型😀,模型￿,b,a,b')).toEqual(['a', 'b', '模型￿', '模型😀']);
+    expect(parseSortedModelList('b,a')).toEqual(parseSortedModelList('a,b'));
   });
 });

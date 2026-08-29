@@ -20,3 +20,20 @@ export function parseModelList(value: unknown): string[] {
 export function normalizeModelList(value: unknown): string {
   return parseModelList(value).join(',');
 }
+
+function compareUTF8(left: string, right: string): number {
+  const encoder = new TextEncoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+  const length = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < length; index += 1) {
+    if (leftBytes[index] !== rightBytes[index]) return leftBytes[index] - rightBytes[index];
+  }
+  return leftBytes.length - rightBytes.length;
+}
+
+// The access service uses Go's sort.Strings before hashing the semantic
+// operation. Keep client retry identity byte-for-byte aligned with that order.
+export function parseSortedModelList(value: unknown): string[] {
+  return parseModelList(value).sort(compareUTF8);
+}

@@ -4,6 +4,23 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.11] - 2026-08-29
+
+### Fixed
+
+- Required a platform administrator to select an active member of the exact
+  customer project as the business Sponsor for a workload-application access
+  request; operator identity no longer substitutes for customer authority.
+- Exposed the existing grant-bounded `allowed_models` input when issuing an
+  application Key. An exact model list narrows the Key while an empty value
+  continues to inherit the project's dynamic model scope.
+
+### Evidence boundary
+
+- The backend still revalidates Sponsor, project, Grant and credential scope.
+  This UI repair does not promote a model lifecycle, create pricing or aliases,
+  widen a Grant, alter routing, or issue provider traffic.
+
 ## [1.2.10] - 2026-08-29
 
 ### Fixed

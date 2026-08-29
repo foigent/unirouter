@@ -39,8 +39,16 @@ and executable enforcement remain applicable.
 
 ### MAR-005 Keep operation protocol identity independent from capability evidence
 
-- Invariant: Capability, catalog and live-evidence state cannot create a deployment operation protocol identity; a typed override must come from one explicit immutable identity declaration, while an invalid or ambiguous declaration fails closed instead of falling back to a generic protocol.
+- Invariant: Capability, catalog and live-evidence state cannot create a deployment operation protocol identity; a typed override must come from one explicit immutable identity declaration, while an invalid or ambiguous declaration fails closed instead of falling back to a generic protocol. Admin capability eligibility must likewise be projected by the service rather than recreated as a frontend Profile/protocol allowlist.
 - Scope/Trigger: Canonical onboarding or attachment of a reviewed Profile to Chat, Responses, Messages or another typed operation surface.
-- Enforcement: The server first resolves and validates the canonical base operation, then applies only a model-profile-owned exact override. `found=false` returns no fallback identity and preserves the caller-owned Chat, Responses or Embeddings base; resolver errors terminate onboarding. Unverified or legacy Profiles cannot carry typed declarations, and Chat contract registration alone grants no binding authority.
-- Authority: `internal/modelprofile/operation_protocol_identity.go`; `internal/modelprofile/operation_protocol_identity_test.go`; `internal/admin/model_application_contract.go`; `internal/admin/model_application_contract_test.go`; `internal/admin/model_application_contract_integration_test.go`.
+- Enforcement: The server first resolves and validates the canonical base operation, then applies only a model-profile-owned exact override. `found=false` returns no fallback identity and preserves the caller-owned Chat, Responses or Embeddings base; resolver errors terminate onboarding. Unverified or legacy Profiles cannot carry typed declarations, and Chat contract registration alone grants no binding authority. The canonical operation projection returns exact `capability_probe_contracts`; the UI renders that projection and has positive Pro/Flash plus unbound-generic regressions instead of owning provider tuples.
+- Authority: `internal/modelprofile/operation_protocol_identity.go`; `internal/modelprofile/operation_protocol_identity_test.go`; `internal/admin/model_application_contract.go`; `internal/admin/model_application_contract_test.go`; `internal/admin/model_application_contract_integration_test.go`; `frontend/src/features/modelEndpoints/ModelEndpointDetailsSheet.tsx`; `frontend/src/pages/__tests__/ModelEndpointsPage.test.tsx`.
+- Status: active
+
+### MAR-006 Keep customer sponsorship separate from platform operation
+
+- Invariant: A platform operator may administer a workload-access flow but cannot substitute its own identity for the customer project member who supplies business sponsorship; credential scope can only narrow an approved Grant.
+- Scope/Trigger: Platform-admin model validation that creates a workload Application, access request or application credential in another customer organization.
+- Enforcement: The UI freezes the exact Application scope, loads only active members from its project, requires an explicit Sponsor, ignores late cross-scope responses and sends a server-normalized model allowlist. The backend remains authoritative for Sponsor membership, Grant containment and credential scope.
+- Authority: `frontend/src/pages/ApplicationsV2Page.tsx`; `frontend/src/pages/__tests__/WorkloadApplicationsPage.test.tsx`; `frontend/src/utils/modelList.ts`; `frontend/src/utils/__tests__/modelList.test.ts`; `internal/accessprovisioning/service.go`; `internal/accessgrantboundary/resolver.go`; `internal/admin/workload_application_handlers.go`.
 - Status: active
