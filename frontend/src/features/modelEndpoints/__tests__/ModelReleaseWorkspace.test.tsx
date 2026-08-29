@@ -402,6 +402,43 @@ describe('ModelReleaseWorkspace', () => {
     expect(mocks.author.mock.calls[2][1]).not.toBe(mocks.author.mock.calls[1][1]);
   });
 
+  it('reports a general authoring state conflict instead of claiming every 409 is baseline drift', async () => {
+    const warningToast = vi.spyOn(Toast, 'warning');
+    mocks.author.mockRejectedValue(new ApiError('conflict', 409, {
+      code: 'canonical_deployment_release_authoring_conflict',
+    }));
+    renderWorkspace();
+
+    fireEvent.click((await screen.findByText('编排新 Release')).closest('button')!);
+    fireEvent.click(await screen.findByLabelText('选择 deployment 41 openai.responses.v1'));
+    fireEvent.change(screen.getByLabelText('Authoring reason'), { target: { value: 'conflicting candidate' } });
+    fireEvent.click(screen.getByRole('button', { name: '生成 Sealed Validated Release' }));
+
+    await waitFor(() => expect(mocks.author).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(warningToast).toHaveBeenCalledWith(
+      'Release 编排与当前服务端事实冲突；不会自动重试，正在刷新当前事实。',
+    ));
+    expect(mocks.author).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reinterpret an idempotency 409 as state drift', async () => {
+    const errorToast = vi.spyOn(Toast, 'error');
+    const warningToast = vi.spyOn(Toast, 'warning');
+    mocks.author.mockRejectedValue(new ApiError('idempotency key conflict', 409, {
+      code: 'canonical_deployment_release_authoring_idempotency_conflict',
+    }));
+    renderWorkspace();
+
+    fireEvent.click((await screen.findByText('编排新 Release')).closest('button')!);
+    fireEvent.click(await screen.findByLabelText('选择 deployment 41 openai.responses.v1'));
+    fireEvent.change(screen.getByLabelText('Authoring reason'), { target: { value: 'duplicate key candidate' } });
+    fireEvent.click(screen.getByRole('button', { name: '生成 Sealed Validated Release' }));
+
+    await waitFor(() => expect(errorToast).toHaveBeenCalledWith('idempotency key conflict'));
+    expect(warningToast).not.toHaveBeenCalled();
+    expect(mocks.releaseList).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a successful authoring receipt authoritative when the follow-up read refresh fails', async () => {
     const errorToast = vi.spyOn(Toast, 'error');
     const warningToast = vi.spyOn(Toast, 'warning');

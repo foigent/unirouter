@@ -152,6 +152,11 @@ export type CanonicalOperation = {
   probe_reason_code: string;
   probe_available: boolean;
   probe_availability_reason_code: string;
+  capability_probe_contracts: Array<{
+    capability_id: string;
+    probe_contract_id: string;
+    probe_contract_version: string;
+  }>;
   execution_support?: CanonicalExecutionSupport;
   production_qualification: CanonicalProductionQualification;
   latest_probe?: CanonicalOperationProbe;

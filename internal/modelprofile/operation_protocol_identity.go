@@ -29,6 +29,44 @@ var immutableChatOperationProtocolBindings = map[string]string{
 	"protocol.deepseek-openai-chat.v4": ChatOperationProtocolBindingVersionV1,
 }
 
+type operationProtocolIdentityKey struct {
+	ProfileID              string
+	ProfileVersion         string
+	OperationID            string
+	ProtocolProfileID      string
+	ProtocolProfileVersion string
+}
+
+// immutableExistingAttachmentOperationProtocolIdentities preserves only the
+// exact historical operation identities already used by supported existing
+// attachments. It does not authorize new attachment and is intentionally
+// independent from capability qualification evidence.
+var immutableExistingAttachmentOperationProtocolIdentities = map[operationProtocolIdentityKey]struct{}{
+	{
+		ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.4.0",
+		OperationID: OperationOpenAIChat, ProtocolProfileID: "openai.chat_completions",
+		ProtocolProfileVersion: ChatOperationProtocolBindingVersionV1,
+	}: {},
+	{
+		ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.5.0",
+		OperationID: OperationOpenAIChat, ProtocolProfileID: "openai.chat_completions",
+		ProtocolProfileVersion: ChatOperationProtocolBindingVersionV1,
+	}: {},
+}
+
+// IsImmutableExistingAttachmentOperationProtocolIdentity reports whether one
+// exact stored operation identity is an append-only compatibility identity for
+// an already attached Profile. It never changes new-attachment eligibility.
+func IsImmutableExistingAttachmentOperationProtocolIdentity(
+	profileID, profileVersion, operationID, protocolProfileID, protocolProfileVersion string,
+) bool {
+	_, ok := immutableExistingAttachmentOperationProtocolIdentities[operationProtocolIdentityKey{
+		ProfileID: profileID, ProfileVersion: profileVersion, OperationID: operationID,
+		ProtocolProfileID: protocolProfileID, ProtocolProfileVersion: protocolProfileVersion,
+	}]
+	return ok
+}
+
 // ResolveOperationProtocolIdentity returns only an exact typed override. It
 // does not derive authority from evidence, capabilities, provider strings, or
 // the current Chat contract registry, and it never returns a base fallback.

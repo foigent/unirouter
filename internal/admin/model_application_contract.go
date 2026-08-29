@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -118,29 +119,36 @@ type canonicalCredentialBindingRef struct {
 }
 
 type canonicalOperationAxis struct {
-	OperationID             string                           `json:"operation_id"`
-	ProtocolProfileID       string                           `json:"protocol_profile_id"`
-	ProtocolProfileVersion  string                           `json:"protocol_profile_version"`
-	SupportState            string                           `json:"support_state"`
-	EvidenceState           string                           `json:"evidence_state"`
-	EvidenceRef             string                           `json:"evidence_ref,omitempty"`
-	Revision                int64                            `json:"revision"`
-	VerifiedAt              *time.Time                       `json:"verified_at,omitempty"`
-	CircuitState            string                           `json:"circuit_state"`
-	CircuitRevision         int64                            `json:"circuit_revision"`
-	CircuitFailCount        int                              `json:"circuit_fail_count"`
-	ProbedBindingCount      int                              `json:"probed_binding_count"`
-	CurrentSuccessCount     int                              `json:"current_success_count"`
-	CurrentFailureCount     int                              `json:"current_failure_count"`
-	StaleProbedBindingCount int                              `json:"stale_probed_binding_count"`
-	ProbeState              string                           `json:"probe_state"`
-	ProbeReasonCode         string                           `json:"probe_reason_code"`
-	ProbeAvailable          bool                             `json:"probe_available"`
-	ProbeAvailabilityReason string                           `json:"probe_availability_reason_code"`
-	ExecutionSupport        *canonicalExecutionSupport       `json:"execution_support,omitempty"`
-	ProductionQualification canonicalProductionQualification `json:"production_qualification"`
-	LatestProbe             *canonicalOperationProbeView     `json:"latest_probe,omitempty"`
-	Runtime                 canonicalOperationRuntimeAxis    `json:"runtime"`
+	OperationID              string                                `json:"operation_id"`
+	ProtocolProfileID        string                                `json:"protocol_profile_id"`
+	ProtocolProfileVersion   string                                `json:"protocol_profile_version"`
+	SupportState             string                                `json:"support_state"`
+	EvidenceState            string                                `json:"evidence_state"`
+	EvidenceRef              string                                `json:"evidence_ref,omitempty"`
+	Revision                 int64                                 `json:"revision"`
+	VerifiedAt               *time.Time                            `json:"verified_at,omitempty"`
+	CircuitState             string                                `json:"circuit_state"`
+	CircuitRevision          int64                                 `json:"circuit_revision"`
+	CircuitFailCount         int                                   `json:"circuit_fail_count"`
+	ProbedBindingCount       int                                   `json:"probed_binding_count"`
+	CurrentSuccessCount      int                                   `json:"current_success_count"`
+	CurrentFailureCount      int                                   `json:"current_failure_count"`
+	StaleProbedBindingCount  int                                   `json:"stale_probed_binding_count"`
+	ProbeState               string                                `json:"probe_state"`
+	ProbeReasonCode          string                                `json:"probe_reason_code"`
+	ProbeAvailable           bool                                  `json:"probe_available"`
+	ProbeAvailabilityReason  string                                `json:"probe_availability_reason_code"`
+	CapabilityProbeContracts []canonicalCapabilityProbeContractRef `json:"capability_probe_contracts"`
+	ExecutionSupport         *canonicalExecutionSupport            `json:"execution_support,omitempty"`
+	ProductionQualification  canonicalProductionQualification      `json:"production_qualification"`
+	LatestProbe              *canonicalOperationProbeView          `json:"latest_probe,omitempty"`
+	Runtime                  canonicalOperationRuntimeAxis         `json:"runtime"`
+}
+
+type canonicalCapabilityProbeContractRef struct {
+	CapabilityID         string `json:"capability_id"`
+	ProbeContractID      string `json:"probe_contract_id"`
+	ProbeContractVersion string `json:"probe_contract_version"`
 }
 
 type canonicalExecutionSupport struct {
@@ -1656,6 +1664,36 @@ SELECT md.id,b.id,b.status,b.state_revision,b.fail_count,b.last_used_at,b.cooldo
 	return nil
 }
 
+func canonicalCapabilityProbeContractsForExactOperation(
+	operationID, executionProfileID, executionProfileVersion,
+	protocolProfileID, protocolProfileVersion string,
+) ([]canonicalCapabilityProbeContractRef, error) {
+	bindings, err := modelcapabilityqualification.ResolveAll(
+		operationID, executionProfileID, executionProfileVersion,
+		protocolProfileID, protocolProfileVersion,
+	)
+	if errors.Is(err, modelcapabilityqualification.ErrUnsupported) {
+		return make([]canonicalCapabilityProbeContractRef, 0), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]canonicalCapabilityProbeContractRef, 0, len(bindings))
+	seen := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		if _, duplicate := seen[binding.CapabilityID]; duplicate {
+			return nil, fmt.Errorf("duplicate capability probe contract: %s", binding.CapabilityID)
+		}
+		seen[binding.CapabilityID] = struct{}{}
+		refs = append(refs, canonicalCapabilityProbeContractRef{
+			CapabilityID: binding.CapabilityID, ProbeContractID: binding.ProbeContractID,
+			ProbeContractVersion: binding.ProbeContractVersion,
+		})
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].CapabilityID < refs[j].CapabilityID })
+	return refs, nil
+}
+
 func (h *Handler) loadCanonicalOperations(ctx context.Context, store canonicalApplicationReadStore, orgID, deploymentID int64, operationFilter string, index map[int64]int, applications []canonicalModelApplication) error {
 	rows, err := store.Query(ctx, `
 SELECT md.id,operation.operation_id,operation.protocol_profile_id,
@@ -1809,7 +1847,8 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 		var ownerID int64
 		operation := canonicalOperationAxis{
 			ProbeState: "missing", ProbeReasonCode: "no_probe_recorded",
-			ProductionQualification: canonicalProductionQualification{State: "not_required"},
+			ProductionQualification:  canonicalProductionQualification{State: "not_required"},
+			CapabilityProbeContracts: make([]canonicalCapabilityProbeContractRef, 0),
 		}
 		var verifiedAt sql.NullTime
 		var probeID, probeStatus, probeLatency, connectionRevision, deploymentRevision, credentialRevision sql.NullInt64
@@ -1890,11 +1929,28 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 				operation.ProductionQualification.ProbeID = &value
 			}
 		}
-		if spec, specErr := canonicalOperationProbeSpecFor(modeloperation.ID(operation.OperationID)); specErr == nil &&
-			spec.ProfileID == operation.ProtocolProfileID && spec.ProfileVersion == operation.ProtocolProfileVersion {
+		position, exists := index[ownerID]
+		if !exists {
+			return fmt.Errorf("canonical operation owner missing")
+		}
+		publicModel := applications[position].PublicModel
+		capabilityProbeContracts, contractErr := canonicalCapabilityProbeContractsForExactOperation(
+			operation.OperationID,
+			publicModel.ExecutionProfileID, publicModel.ExecutionProfileVersion,
+			operation.ProtocolProfileID, operation.ProtocolProfileVersion,
+		)
+		if contractErr != nil {
+			return fmt.Errorf("resolve canonical capability probe contracts: %w", contractErr)
+		}
+		operation.CapabilityProbeContracts = capabilityProbeContracts
+		if _, specErr := canonicalOperationProbeSpecForExactProfile(
+			modeloperation.ID(operation.OperationID), publicModel.ExecutionProfileID,
+			publicModel.ExecutionProfileVersion, operation.ProtocolProfileID,
+			operation.ProtocolProfileVersion,
+		); specErr == nil {
 			operation.ProbeAvailable = true
 			operation.ProbeAvailabilityReason = "exact_probe_contract_available"
-		} else if specErr == nil {
+		} else if _, operationErr := canonicalOperationProbeSpecFor(modeloperation.ID(operation.OperationID)); operationErr == nil {
 			operation.ProbeAvailabilityReason = "operation_profile_not_probeable"
 		} else {
 			operation.ProbeAvailabilityReason = "operation_probe_contract_unavailable"
@@ -1934,10 +1990,6 @@ SELECT md.id,operation.operation_id,operation.protocol_profile_id,
 			operation.ProbeState, operation.ProbeReasonCode = "stale", "binding_probe_revision_stale"
 		case operation.ProbedBindingCount > 0:
 			operation.ProbeState, operation.ProbeReasonCode = "unknown", "probed_binding_has_no_boolean_outcome"
-		}
-		position, exists := index[ownerID]
-		if !exists {
-			return fmt.Errorf("canonical operation owner missing")
 		}
 		operation.CircuitState = applications[position].Deployment.CircuitState
 		operation.CircuitRevision = applications[position].Deployment.CircuitRevision

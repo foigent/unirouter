@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 )
 
@@ -254,10 +256,61 @@ func TestCanonicalOperationProbeSupportsFourExactOperationContracts(t *testing.T
 	require.Equal(t, modelqualification.ResponsesDualExecutorContractV1, v2.ExecutionBinding.ExecutorContractVersion)
 	require.Equal(t, endpointprotocol.ProfileOpenAIResponsesTextV2, v2.ProfileID)
 
+	responsesExact, err := canonicalOperationProbeSpecForExactProfile(
+		modeloperation.IDResponses,
+		"openai.gpt-5.6-sol.responses", "1.3.0",
+		endpointprotocol.ProfileOpenAIResponsesTextV2, "1.0.0",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, responsesExact.ExecutionBinding)
+	require.Equal(t, endpointprotocol.ProfileOpenAIResponsesTextV2, responsesExact.ProfileID)
+
+	messagesExact, err := canonicalOperationProbeSpecForExactProfile(
+		modeloperation.IDMessages,
+		"anthropic.claude-sonnet-5.api", "1.4.0",
+		endpointprotocol.ProfileAnthropicMessagesTextV3, "1.0.0",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, messagesExact.ExecutionBinding)
+	require.Equal(t, endpointprotocol.ProfileAnthropicMessagesTextV3, messagesExact.ProfileID)
+
 	_, err = canonicalOperationProbeSpecForProfile(
 		modeloperation.IDResponses,
 		endpointprotocol.ProfileOpenAIResponsesTextV2,
 		"2.0.0",
+	)
+	require.ErrorIs(t, err, errCanonicalOperationProbeUnsupported)
+
+	deepSeek, err := canonicalOperationProbeSpecForExactProfile(
+		modeloperation.IDChatCompletions,
+		"deepseek.v4-pro.api", "1.5.0",
+		"protocol.deepseek-openai-chat.v4", "1.0.0",
+	)
+	require.NoError(t, err)
+	require.Equal(t, adapters.EndpointChatCompletions, deepSeek.Endpoint)
+	require.Equal(t, "protocol.deepseek-openai-chat.v4", deepSeek.ProfileID)
+	require.Equal(t, "1.0.0", deepSeek.ProfileVersion)
+	require.Nil(t, deepSeek.ExecutionBinding)
+
+	_, err = canonicalOperationProbeSpecForExactProfile(
+		modeloperation.IDChatCompletions,
+		"deepseek.v4-pro.api", "1.5.0",
+		"openai.chat_completions", "1.0.0",
+	)
+	require.ErrorIs(t, err, errCanonicalOperationProbeUnsupported)
+
+	flashLegacy, err := canonicalOperationProbeSpecForExactProfile(
+		modeloperation.IDChatCompletions,
+		"deepseek.v4-flash.api", "1.5.0",
+		"openai.chat_completions", "1.0.0",
+	)
+	require.NoError(t, err)
+	require.Equal(t, "openai.chat_completions", flashLegacy.ProfileID)
+
+	_, err = canonicalOperationProbeSpecForExactProfile(
+		modeloperation.IDChatCompletions,
+		"deepseek.v4-pro.api", "1.5.0",
+		"openai.unmapped-chat", "1.0.0",
 	)
 	require.ErrorIs(t, err, errCanonicalOperationProbeUnsupported)
 }
@@ -419,7 +472,9 @@ func TestCanonicalOperationProbeRouteInputsExcludeOnlyOperationEvidenceRevision(
 		OperationID: string(modeloperation.IDChatCompletions), OperationSupportState: "enabled",
 		OperationEvidenceState: "declared", OperationRevision: 4,
 		ProfileID: "openai.chat_completions", ProfileVersion: "1.0.0",
-		EncryptedSecret: "ciphertext", CredentialStatus: "active", CredentialRevision: 5,
+		ExecutionProfileID:      modelprofile.UnverifiedProfileID,
+		ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
+		EncryptedSecret:         "ciphertext", CredentialStatus: "active", CredentialRevision: 5,
 		CredentialEligible: true, LinkEligible: true,
 		LinkCreatedAt: time.Date(2026, 8, 20, 1, 2, 3, 0, time.UTC),
 	}
@@ -447,6 +502,34 @@ func TestCanonicalOperationProbeRouteInputsExcludeOnlyOperationEvidenceRevision(
 	}
 }
 
+func TestCanonicalOperationProbeExactChatAuthorityFailsClosedBeforeDispatch(t *testing.T) {
+	snapshot := canonicalOperationProbeSnapshot{
+		CustomerOrgID: 41, DeploymentID: 51, ConnectionID: 61, CredentialBindingID: 71,
+		ConnectionState: "enabled", ConnectionRevision: 2,
+		DeploymentState: "enabled", DeploymentRevision: 3, UpstreamModel: "deepseek-v4-pro",
+		OperationID: string(modeloperation.IDChatCompletions), OperationSupportState: "enabled",
+		OperationEvidenceState: "declared", OperationRevision: 4,
+		ProfileID: "protocol.deepseek-openai-chat.v4", ProfileVersion: "1.0.0",
+		ExecutionProfileID: "deepseek.v4-pro.api", ExecutionProfileVersion: "1.5.0",
+		EncryptedSecret: "ciphertext", CredentialStatus: "active", CredentialRevision: 5,
+		CredentialEligible: true, LinkEligible: true,
+		LinkCreatedAt: time.Date(2026, 8, 29, 1, 2, 3, 0, time.UTC),
+	}
+	require.NoError(t, validateCanonicalOperationProbeSnapshot(snapshot))
+
+	unknownProfile := snapshot
+	unknownProfile.ExecutionProfileID = "unknown.profile"
+	require.ErrorIs(t, validateCanonicalOperationProbeSnapshot(unknownProfile), errCanonicalOperationProbeUnsupported)
+
+	mismatchedProtocol := snapshot
+	mismatchedProtocol.ProfileVersion = "2.0.0"
+	require.ErrorIs(t, validateCanonicalOperationProbeSnapshot(mismatchedProtocol), errCanonicalOperationProbeUnsupported)
+
+	genericProtocol := snapshot
+	genericProtocol.ProfileID = "openai.chat_completions"
+	require.ErrorIs(t, validateCanonicalOperationProbeSnapshot(genericProtocol), errCanonicalOperationProbeUnsupported)
+}
+
 func canonicalOperationProbeUnitSnapshot(t *testing.T, operation modeloperation.ID, encrypted string) canonicalOperationProbeSnapshot {
 	t.Helper()
 	spec, err := canonicalOperationProbeSpecFor(operation)
@@ -456,7 +539,9 @@ func canonicalOperationProbeUnitSnapshot(t *testing.T, operation modeloperation.
 		AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{}`),
 		UpstreamModel: "upstream-exact", OperationID: string(operation),
 		ProfileID: spec.ProfileID, ProfileVersion: spec.ProfileVersion,
-		EncryptedSecret: encrypted,
+		ExecutionProfileID:      modelprofile.UnverifiedProfileID,
+		ExecutionProfileVersion: modelprofile.UnverifiedProfileVersion,
+		EncryptedSecret:         encrypted,
 	}
 	if spec.ExecutionBinding != nil {
 		snapshot.BaseURL = "https://provider.example"

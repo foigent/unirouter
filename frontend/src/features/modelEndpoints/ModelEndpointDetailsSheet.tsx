@@ -8,7 +8,7 @@ import {
 } from '../../api/modelDeployments';
 import { LatencyText, StatusTag, Surface } from '../../ui';
 import { formatDateTime } from '../../utils/formatDate';
-import ModelCapabilityQualificationPanel from './ModelCapabilityQualificationPanel';
+import ModelCapabilityQualificationPanel, { isQualifiedCapabilityID } from './ModelCapabilityQualificationPanel';
 
 const { Text } = Typography;
 
@@ -31,23 +31,6 @@ const operationLabels: Record<string, string> = {
   'openai.responses.v1': 'Responses',
   'anthropic.messages.v1': 'Anthropic Messages',
 };
-
-const deepSeekChatCoreQualificationTuples = new Set([
-  'deepseek.v4-flash.api@1.4.0|openai.chat_completions@1.0.0',
-  'deepseek.v4-flash.api@1.4.0|protocol.deepseek-openai-chat.v4@1.0.0',
-  'deepseek.v4-flash.api@1.5.0|openai.chat_completions@1.0.0',
-  'deepseek.v4-flash.api@1.5.0|protocol.deepseek-openai-chat.v4@1.0.0',
-  'deepseek.v4-pro.api@1.5.0|protocol.deepseek-openai-chat.v4@1.0.0',
-]);
-
-function supportsDeepSeekChatCoreQualification(selected: CanonicalModelApplication, operation: CanonicalOperation) {
-  if (operation.operation_id !== 'openai.chat_completions.v1') return false;
-  const exactTuple = [
-    `${selected.public_model.execution_profile_id}@${selected.public_model.execution_profile_version}`,
-    `${operation.protocol_profile_id}@${operation.protocol_profile_version}`,
-  ].join('|');
-  return deepSeekChatCoreQualificationTuples.has(exactTuple);
-}
 
 function runtimeMembershipSummary(operation: CanonicalOperation) {
   const stable = operation.runtime.stable_membership;
@@ -169,20 +152,19 @@ export default function ModelEndpointDetailsSheet(props: Props) {
         </div>
       </Surface>
 
-      {supportsDeepSeekChatCoreQualification(selected, operation) && <>
-          {(['streaming', 'reasoning', 'reasoning_effort', 'tools', 'function_tools',
-            'tool_choice_auto', 'tool_choice_named', 'tool_choice_required', 'json_object'] as const).map(capabilityID => (
+      {operation.capability_probe_contracts.length > 0 && <>
+          {operation.capability_probe_contracts.map(contract => isQualifiedCapabilityID(contract.capability_id) ? (
             <ModelCapabilityQualificationPanel
-              key={capabilityID}
+              key={contract.capability_id}
               selected={selected}
               operation={operation}
               canManage={props.canManage}
               canApprove={props.canApproveCapabilities}
               gatewayLicensed={props.gatewayLicensed}
               gatewayRestriction={props.gatewayRestriction}
-              capabilityID={capabilityID}
+              capabilityID={contract.capability_id}
             />
-          ))}
+          ) : null)}
         </>}
 
       <Surface title="4 · Canonical Runtime" description="只展示不可变发布/slot 的当前归属；探测通过不会自动产生 runtime membership。">

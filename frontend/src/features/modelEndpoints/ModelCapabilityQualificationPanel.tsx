@@ -13,7 +13,7 @@ import { endpointError } from './presentation';
 
 const { Text } = Typography;
 
-type QualifiedCapabilityID = 'streaming' | 'reasoning' | 'reasoning_effort' |
+export type QualifiedCapabilityID = 'streaming' | 'reasoning' | 'reasoning_effort' |
   'tools' | 'function_tools' | 'tool_choice_auto' | 'tool_choice_named' |
   'tool_choice_required' | 'json_object';
 
@@ -86,6 +86,10 @@ const capabilityPresentation: Record<QualifiedCapabilityID, {
     probeContractSummary: '服务端固定 JSON 提示和 response_format=json_object；响应必须是无重复字段的精确对象。',
   },
 };
+
+export function isQualifiedCapabilityID(value: string): value is QualifiedCapabilityID {
+  return Object.prototype.hasOwnProperty.call(capabilityPresentation, value);
+}
 
 type Props = {
   selected: CanonicalModelApplication;
