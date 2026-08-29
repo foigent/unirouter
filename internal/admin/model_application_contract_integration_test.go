@@ -338,6 +338,11 @@ SELECT evidence_ref FROM model_deployment_capabilities
 	pro := createCanonicalApplicationForTest(t, handler, authorized, proRequest, http.StatusCreated)
 	require.Equal(t, "protocol.deepseek-openai-chat.v4", pro.Application.Operations[0].ProtocolProfileID)
 	require.Equal(t, modelprofile.ChatOperationProtocolBindingVersionV1, pro.Application.Operations[0].ProtocolProfileVersion)
+	require.True(t, pro.Application.Operations[0].ProbeAvailable)
+	require.Equal(t, "exact_probe_contract_available", pro.Application.Operations[0].ProbeAvailabilityReason)
+	require.Len(t, pro.Application.Operations[0].CapabilityProbeContracts, 9)
+	require.Equal(t, "function_tools", pro.Application.Operations[0].CapabilityProbeContracts[0].CapabilityID)
+	require.Equal(t, "tools", pro.Application.Operations[0].CapabilityProbeContracts[8].CapabilityID)
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM model_deployment_capabilities
  WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'

@@ -4,6 +4,29 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.10] - 2026-08-29
+
+### Fixed
+
+- Made exact reviewed Chat operation probes consume the same immutable
+  Execution Profile operation-protocol identity used by onboarding, so a
+  DeepSeek V4 Pro deployment can produce the operation evidence required by
+  Release authoring without weakening fail-closed routing.
+- Replaced the frontend DeepSeek Profile/protocol qualification allowlist with
+  a server-owned exact capability-probe contract projection. The frontend now
+  renders only presentation contracts it understands, while each capability's
+  Probe, Approval and qualification remains independently authoritative.
+- Stopped labelling every Release authoring conflict as baseline drift; only
+  the server's explicit general authoring-conflict code triggers the neutral
+  refresh message, while idempotency and other errors preserve their exact
+  reason.
+
+### Evidence boundary
+
+- These changes repair administration reachability and evidence projection;
+  they do not create capability evidence, qualify a route, publish a Release,
+  change pricing or authorize provider traffic. Target proof remains separate.
+
 ## [1.2.9] - 2026-08-29
 
 ### Fixed

@@ -17,8 +17,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/customercontext"
+	"github.com/uniroute/unirouter/internal/gateway"
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
+	"github.com/uniroute/unirouter/internal/runtimechange"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -147,6 +150,170 @@ SELECT detail::text FROM audit_logs
 			require.NotContains(t, responseSummary, forbidden)
 			require.NotContains(t, auditDetail, forbidden)
 		}
+	})
+
+	t.Run("reviewed DeepSeek exact Chat probe unlocks release without rewriting capability evidence", func(t *testing.T) {
+		policy := routingpolicy.Default()
+		router, err := gateway.NewRouterWithPolicy(pool, policy)
+		require.NoError(t, err)
+		manager, err := runtimechange.NewManager(pool, router, policy)
+		require.NoError(t, err)
+		router.SetRuntimeResolver(manager)
+		handler := NewHandlerWithAPIKeyHashSecret(
+			pool, "canonical-probe-jwt", "canonical-probe-hash", encryptionKey, nil,
+		)
+		handler.SetRuntimeChangeManager(manager)
+
+		created := createCanonicalApplicationForTest(t, handler, authorized, canonicalModelApplicationCreateRequest{
+			Connection: canonicalConnectionInput{
+				Name: "DeepSeek Pro exact operation probe", Provider: "deepseek",
+				BaseURL: "https://api.deepseek.com", AdapterType: "openai_compatible",
+				AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`),
+			},
+			PublicModel: canonicalPublicModelInput{
+				ModelName: "deepseek-pro-exact-probe", ExecutionProfileID: "deepseek.v4-pro.api",
+				ExecutionProfileVersion: "1.5.0",
+			},
+			Deployment: canonicalDeploymentInput{UpstreamModel: "deepseek-v4-pro"},
+			Credential: canonicalCredentialInput{APIKey: "deepseek-pro-probe-secret"},
+			Operation:  canonicalOperationInput{OperationID: string(modeloperation.IDChatCompletions)},
+		}, http.StatusCreated)
+		deploymentID := created.Application.Deployment.ID
+		bindingID := created.Application.Credential.Bindings[0].ID
+		publicModelID := created.Application.PublicModel.ID
+		var operatorOrgID, platformUserID int64
+		require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO orgs (name,status,org_type)
+VALUES ('deepseek-pro-probe-operator','active','platform') RETURNING id`).Scan(&operatorOrgID))
+		require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO users (org_id,username,password_hash,organization_role,role,status)
+VALUES ($1,'deepseek-pro-probe-platform-admin','fixture','platform_admin','platform_admin','active')
+RETURNING id`, operatorOrgID).Scan(&platformUserID))
+		platformAuthorized := canonicalOperationProbeAuthorizedRequest(
+			operatorOrgID, orgID, platformUserID, auth.RolePlatformAdmin,
+		)
+
+		handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(request *http.Request) (*http.Response, error) {
+			require.Equal(t, "/chat/completions", request.URL.Path)
+			body, readErr := io.ReadAll(request.Body)
+			require.NoError(t, readErr)
+			var payload map[string]interface{}
+			require.NoError(t, json.Unmarshal(body, &payload))
+			require.Equal(t, "deepseek-v4-pro", payload["model"])
+			if payload["stream"] == true {
+				stream := strings.Join([]string{
+					`data: {"model":"deepseek-v4-pro","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}`,
+					"",
+					`data: {"model":"deepseek-v4-pro","choices":[{"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":null}],"usage":null}`,
+					"",
+					`data: {"model":"deepseek-v4-pro","choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24}}`,
+					"", "data: [DONE]", "",
+				}, "\r\n")
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"text/event-stream; charset=utf-8"}},
+					Body:       io.NopCloser(strings.NewReader(stream)),
+				}, nil
+			}
+			return canonicalProbeHTTPResponse(http.StatusOK, `{"model":"deepseek-v4-pro","choices":[{"message":{"content":"OK"}}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`), nil
+		}))
+
+		capabilityTarget := fmt.Sprintf(
+			"/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/streaming",
+			deploymentID,
+		)
+		capabilityProbeRequest := platformAuthorized(http.MethodPost, capabilityTarget+"/probes",
+			fmt.Sprintf(`{"credential_binding_id":%d}`, bindingID))
+		capabilityProbeRequest.SetPathValue("deploymentID", strconv.FormatInt(deploymentID, 10))
+		capabilityProbeRequest.SetPathValue("operationID", string(modeloperation.IDChatCompletions))
+		capabilityProbeRequest.SetPathValue("capabilityID", "streaming")
+		capabilityProbeResponse := httptest.NewRecorder()
+		handler.ProbeCanonicalModelCapability(capabilityProbeResponse, capabilityProbeRequest)
+		require.Equal(t, http.StatusOK, capabilityProbeResponse.Code, capabilityProbeResponse.Body.String())
+		var capabilityProbe modelCapabilityProbeResult
+		require.NoError(t, json.Unmarshal(capabilityProbeResponse.Body.Bytes(), &capabilityProbe))
+
+		approvalRequest := platformAuthorized(http.MethodPost, capabilityTarget+"/routing-approvals",
+			fmt.Sprintf(`{"capability_probe_id":%d,"reason":"exact Pro separation regression"}`, capabilityProbe.CapabilityProbeID))
+		approvalRequest.SetPathValue("deploymentID", strconv.FormatInt(deploymentID, 10))
+		approvalRequest.SetPathValue("operationID", string(modeloperation.IDChatCompletions))
+		approvalRequest.SetPathValue("capabilityID", "streaming")
+		approvalResponse := httptest.NewRecorder()
+		handler.ApproveCanonicalModelCapabilityRouting(approvalResponse, approvalRequest)
+		require.Equal(t, http.StatusCreated, approvalResponse.Code, approvalResponse.Body.String())
+		var approval modelCapabilityApprovalResult
+		require.NoError(t, json.Unmarshal(approvalResponse.Body.Bytes(), &approval))
+		require.True(t, approval.Qualified)
+
+		before := serveCanonicalDeploymentReleaseCollection(t, handler, authorized, http.StatusOK)
+		beforeModel := canonicalDeploymentReleaseCollectionModel(t, before, publicModelID)
+		require.NotNil(t, beforeModel.Authoring.Baseline)
+		_, _ = serveCanonicalDeploymentReleaseAuthoring(t, handler, authorized,
+			canonicalDeploymentReleaseAuthoringRequest{
+				PublicModelID: publicModelID, Baseline: *beforeModel.Authoring.Baseline,
+				Selections: []runtimechange.DeploymentReleaseSelection{{
+					DeploymentID: deploymentID, OperationID: string(modeloperation.IDChatCompletions),
+				}},
+				Reason: "operation evidence must remain independent",
+			},
+			"deepseek-pro-before-operation-probe", http.StatusConflict,
+		)
+
+		result := serveCanonicalOperationProbeForTest(
+			t, handler, authorized, deploymentID, string(modeloperation.IDChatCompletions),
+			bindingID, "exact DeepSeek probe", http.StatusOK,
+		)
+		require.True(t, result.Success)
+		require.True(t, result.OperationAdvanced)
+
+		after := serveCanonicalDeploymentReleaseCollection(t, handler, authorized, http.StatusOK)
+		afterModel := canonicalDeploymentReleaseCollectionModel(t, after, publicModelID)
+		require.NotNil(t, afterModel.Authoring.Baseline)
+		receipt, _ := serveCanonicalDeploymentReleaseAuthoring(t, handler, authorized,
+			canonicalDeploymentReleaseAuthoringRequest{
+				PublicModelID: publicModelID, Baseline: *afterModel.Authoring.Baseline,
+				Selections: []runtimechange.DeploymentReleaseSelection{{
+					DeploymentID: deploymentID, OperationID: string(modeloperation.IDChatCompletions),
+				}},
+				Reason: "exact Pro operation evidence unlocks authoring",
+			},
+			"deepseek-pro-after-operation-probe", http.StatusCreated,
+		)
+		var releaseProfileID, releaseProfileVersion string
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT execution_profile_id,execution_profile_version
+  FROM runtime_change_releases WHERE release_ref=$1`, receipt.Release.ReleaseRef,
+		).Scan(&releaseProfileID, &releaseProfileVersion))
+		require.Equal(t, "deepseek.v4-pro.api", releaseProfileID)
+		require.Equal(t, "1.5.0", releaseProfileVersion)
+
+		var operationEvidence, probeProfileID, probeProfileVersion, capabilityEvidence, capabilityRef string
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT operation.evidence_state,probe.probe_profile_id,probe.probe_profile_version,
+       capability.evidence_state,capability.evidence_ref
+  FROM model_deployment_operations operation
+  JOIN model_deployment_probes probe ON probe.probe_id=$2
+  JOIN model_deployment_capabilities capability
+    ON capability.deployment_id=operation.deployment_id
+   AND capability.operation_id=operation.operation_id
+   AND capability.capability_id='streaming'
+ WHERE operation.deployment_id=$1 AND operation.operation_id=$3`,
+			deploymentID, result.ProbeID, modeloperation.IDChatCompletions,
+		).Scan(&operationEvidence, &probeProfileID, &probeProfileVersion,
+			&capabilityEvidence, &capabilityRef))
+		require.Equal(t, "live_probed", operationEvidence)
+		require.Equal(t, "protocol.deepseek-openai-chat.v4", probeProfileID)
+		require.Equal(t, "1.0.0", probeProfileVersion)
+		require.Equal(t, "production_approved", capabilityEvidence)
+		require.Equal(t, "capability_approval:"+strconv.FormatInt(approval.ApprovalID, 10), capabilityRef)
+		var currentCapabilityQualifications int
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_capability_execution_qualifications
+ WHERE deployment_id=$1 AND operation_id=$2 AND capability_id='streaming'`,
+			deploymentID, modeloperation.IDChatCompletions,
+		).Scan(&currentCapabilityQualifications))
+		require.Zero(t, currentCapabilityQualifications,
+			"operation evidence revision must not rewrite capability evidence; it makes the prior exact qualification stale")
 	})
 
 	t.Run("unlinked exact binding and foreign organization never dispatch", func(t *testing.T) {

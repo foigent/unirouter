@@ -169,6 +169,7 @@ function application(overrides: Record<string, unknown> = {}) {
       probe_reason_code: 'binding_probe_revision_stale',
       probe_available: true,
       probe_availability_reason_code: 'exact_probe_contract_available',
+      capability_probe_contracts: [],
       execution_support: {
         operation_id: 'openai.responses.v1',
         public_path: '/v1/responses',
@@ -677,6 +678,14 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
         operation_id: 'openai.chat_completions.v1',
         protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
         protocol_profile_version: '1.0.0',
+        capability_probe_contracts: [
+          'streaming', 'reasoning', 'reasoning_effort', 'tools', 'function_tools',
+          'tool_choice_auto', 'tool_choice_named', 'tool_choice_required', 'json_object',
+        ].map(capability_id => ({
+          capability_id,
+          probe_contract_id: `probe.${capability_id}`,
+          probe_contract_version: '1.0.0',
+        })),
         execution_support: {
           operation_id: 'openai.chat_completions.v1',
           public_path: '/v1/chat/completions',
@@ -715,6 +724,14 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
         operation_id: 'openai.chat_completions.v1',
         protocol_profile_id: 'protocol.deepseek-openai-chat.v4',
         protocol_profile_version: '1.0.0',
+        capability_probe_contracts: [
+          'streaming', 'reasoning', 'reasoning_effort', 'tools', 'function_tools',
+          'tool_choice_auto', 'tool_choice_named', 'tool_choice_required', 'json_object',
+        ].map(capability_id => ({
+          capability_id,
+          probe_contract_id: `probe.${capability_id}`,
+          probe_contract_version: '1.0.0',
+        })),
       }],
     });
     mocks.list.mockResolvedValue(projection([pro]));
@@ -743,6 +760,7 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
         operation_id: 'openai.chat_completions.v1',
         protocol_profile_id: 'openai.chat_completions',
         protocol_profile_version: '1.0.0',
+        capability_probe_contracts: [],
       }],
     });
     mocks.list.mockResolvedValue(projection([genericPro]));

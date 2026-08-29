@@ -59,6 +59,21 @@ func TestChatContractDoesNotCreateOperationBindingAuthority(t *testing.T) {
 	require.Equal(t, OperationProtocolIdentity{}, identity)
 }
 
+func TestExistingAttachmentProtocolCompatibilityIsExactAndDoesNotAuthorizePro(t *testing.T) {
+	require.True(t, IsImmutableExistingAttachmentOperationProtocolIdentity(
+		"deepseek.v4-flash.api", "1.5.0", OperationOpenAIChat,
+		"openai.chat_completions", ChatOperationProtocolBindingVersionV1,
+	))
+	require.False(t, IsImmutableExistingAttachmentOperationProtocolIdentity(
+		"deepseek.v4-pro.api", "1.5.0", OperationOpenAIChat,
+		"openai.chat_completions", ChatOperationProtocolBindingVersionV1,
+	))
+	require.False(t, IsImmutableExistingAttachmentOperationProtocolIdentity(
+		"deepseek.v4-flash.api", "1.5.0", OperationOpenAIResponses,
+		"openai.chat_completions", ChatOperationProtocolBindingVersionV1,
+	))
+}
+
 func TestUnverifiedProfileNeverOverridesServerOwnedBaseOperation(t *testing.T) {
 	for _, operation := range []string{
 		OperationOpenAIChat,

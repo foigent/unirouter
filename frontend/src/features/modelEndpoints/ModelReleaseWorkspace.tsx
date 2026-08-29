@@ -74,6 +74,12 @@ function errorText(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function apiErrorCode(error: unknown) {
+  if (!(error instanceof ApiError) || !error.payload || typeof error.payload !== 'object') return '';
+  const code = (error.payload as { code?: unknown }).code;
+  return typeof code === 'string' ? code : '';
+}
+
 function shouldRotateIntent(error: unknown) {
   return error instanceof ApiError && error.status >= 400 && error.status < 500;
 }
@@ -291,8 +297,9 @@ export default function ModelReleaseWorkspace({
       }
     } catch (error) {
       if (shouldRotateIntent(error)) authorIntent.current = null;
-      if (error instanceof ApiError && error.status === 409) {
-        Toast.warning('Authoring baseline 已变化；不会自动重试，正在刷新当前事实。');
+      if (error instanceof ApiError && error.status === 409
+        && apiErrorCode(error) === 'canonical_deployment_release_authoring_conflict') {
+        Toast.warning('Release 编排与当前服务端事实冲突；不会自动重试，正在刷新当前事实。');
         try {
           await refreshFacts();
         } catch (refreshError) {

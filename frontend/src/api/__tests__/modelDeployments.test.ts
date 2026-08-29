@@ -37,6 +37,7 @@ function operation(overrides: Partial<CanonicalOperation> = {}): CanonicalOperat
     probe_reason_code: 'no_probe_recorded',
     probe_available: false,
     probe_availability_reason_code: 'operation_probe_contract_unavailable',
+    capability_probe_contracts: [],
     production_qualification: { required: false, qualified: false, state: 'not_required' },
     runtime: { state: 'unassigned', reason_code: 'no_runtime_membership' },
     ...overrides,

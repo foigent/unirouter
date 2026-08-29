@@ -22,6 +22,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/modeldeployment"
 	"github.com/uniroute/unirouter/internal/modeloperation"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelqualification"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/strictjson"
@@ -83,34 +84,36 @@ type canonicalOperationProbeResponse struct {
 }
 
 type canonicalOperationProbeSnapshot struct {
-	CustomerOrgID          int64
-	DeploymentID           int64
-	ConnectionID           int64
-	CredentialBindingID    int64
-	ConnectionName         string
-	Provider               string
-	BaseURL                string
-	AdapterType            string
-	AdapterConfig          json.RawMessage
-	ConnectionState        string
-	ConnectionRevision     int64
-	UpstreamModel          string
-	DeploymentState        string
-	DeploymentRevision     int64
-	OperationID            string
-	OperationSupportState  string
-	OperationEvidenceState string
-	OperationRevision      int64
-	ProfileID              string
-	ProfileVersion         string
-	EncryptedSecret        string
-	CredentialStatus       string
-	CredentialRevision     int64
-	CredentialCooldown     *time.Time
-	CredentialEligible     bool
-	LinkCreatedAt          time.Time
-	LinkEligible           bool
-	Actor                  canonicalOperationProbeActorSnapshot
+	CustomerOrgID           int64
+	DeploymentID            int64
+	ConnectionID            int64
+	CredentialBindingID     int64
+	ConnectionName          string
+	Provider                string
+	BaseURL                 string
+	AdapterType             string
+	AdapterConfig           json.RawMessage
+	ConnectionState         string
+	ConnectionRevision      int64
+	UpstreamModel           string
+	DeploymentState         string
+	DeploymentRevision      int64
+	OperationID             string
+	OperationSupportState   string
+	OperationEvidenceState  string
+	OperationRevision       int64
+	ProfileID               string
+	ProfileVersion          string
+	ExecutionProfileID      string
+	ExecutionProfileVersion string
+	EncryptedSecret         string
+	CredentialStatus        string
+	CredentialRevision      int64
+	CredentialCooldown      *time.Time
+	CredentialEligible      bool
+	LinkCreatedAt           time.Time
+	LinkEligible            bool
+	Actor                   canonicalOperationProbeActorSnapshot
 }
 
 type canonicalOperationProbeActorSnapshot struct {
@@ -277,6 +280,40 @@ func canonicalOperationProbeSpecForProfile(
 	}, nil
 }
 
+func canonicalOperationProbeSpecForExactProfile(
+	operation modeloperation.ID,
+	executionProfileID, executionProfileVersion,
+	protocolProfileID, protocolProfileVersion string,
+) (canonicalOperationProbeSpec, error) {
+	identity, found, err := modelprofile.ResolveOperationProtocolIdentity(
+		executionProfileID, executionProfileVersion, string(operation),
+	)
+	if err != nil {
+		return canonicalOperationProbeSpec{}, errCanonicalOperationProbeUnsupported
+	}
+	if found {
+		if identity.ProtocolProfileID == protocolProfileID &&
+			identity.ProtocolProfileVersion == protocolProfileVersion {
+			if operation == modeloperation.IDResponses || operation == modeloperation.IDMessages {
+				return canonicalOperationProbeSpecForProfile(
+					operation, protocolProfileID, protocolProfileVersion,
+				)
+			}
+			return canonicalOperationProbeSpec{
+				Endpoint: adapters.EndpointChatCompletions, ProfileID: protocolProfileID,
+				ProfileVersion: protocolProfileVersion, SourceKind: canonicalOperationProbeSourceKind,
+			}, nil
+		}
+		if !modelprofile.IsImmutableExistingAttachmentOperationProtocolIdentity(
+			executionProfileID, executionProfileVersion, string(operation),
+			protocolProfileID, protocolProfileVersion,
+		) {
+			return canonicalOperationProbeSpec{}, errCanonicalOperationProbeUnsupported
+		}
+	}
+	return canonicalOperationProbeSpecFor(operation)
+}
+
 func (h *Handler) probeCanonicalModelOperation(
 	ctx context.Context,
 	orgID, actorID, deploymentID int64,
@@ -397,9 +434,9 @@ func lockCanonicalOperationProbeRows(
 	bindingID int64,
 	operationForUpdate bool,
 ) (canonicalOperationProbeSnapshot, error) {
-	lockClause := "FOR SHARE OF deployment,connection,operation,binding"
+	lockClause := "FOR SHARE OF deployment,connection,public_model,operation,binding"
 	if operationForUpdate {
-		lockClause = "FOR SHARE OF deployment,connection,binding FOR UPDATE OF operation"
+		lockClause = "FOR SHARE OF deployment,connection,public_model,binding FOR UPDATE OF operation"
 	}
 	query := `
 SELECT deployment.customer_org_id,deployment.id,deployment.connection_id,binding.id,
@@ -408,10 +445,14 @@ SELECT deployment.customer_org_id,deployment.id,deployment.connection_id,binding
        deployment.upstream_model,deployment.admin_state,deployment.config_revision,
        operation.operation_id,operation.support_state,operation.evidence_state,
        operation.revision,operation.protocol_profile_id,operation.protocol_profile_version,
+	   public_model.execution_profile_id,public_model.execution_profile_version,
        binding.key_enc,binding.status,binding.state_revision,binding.cooldown_until,
        (binding.cooldown_until IS NULL OR binding.cooldown_until<=transaction_timestamp())
   FROM model_deployments deployment
   JOIN provider_connections connection ON connection.id=deployment.connection_id
+	JOIN model_registry public_model
+	  ON public_model.id=deployment.public_model_id
+	 AND public_model.org_id=deployment.customer_org_id
   JOIN model_deployment_operations operation
     ON operation.deployment_id=deployment.id AND operation.operation_id=$3
   JOIN provider_credential_bindings binding
@@ -426,6 +467,7 @@ SELECT deployment.customer_org_id,deployment.id,deployment.connection_id,binding
 		&snapshot.UpstreamModel, &snapshot.DeploymentState, &snapshot.DeploymentRevision,
 		&snapshot.OperationID, &snapshot.OperationSupportState, &snapshot.OperationEvidenceState,
 		&snapshot.OperationRevision, &snapshot.ProfileID, &snapshot.ProfileVersion,
+		&snapshot.ExecutionProfileID, &snapshot.ExecutionProfileVersion,
 		&snapshot.EncryptedSecret, &snapshot.CredentialStatus, &snapshot.CredentialRevision,
 		&snapshot.CredentialCooldown, &snapshot.CredentialEligible,
 	); err != nil {
@@ -447,8 +489,9 @@ SELECT created_at,created_at<=transaction_timestamp() FROM credential_binding_de
 }
 
 func validateCanonicalOperationProbeSnapshot(snapshot canonicalOperationProbeSnapshot) error {
-	spec, err := canonicalOperationProbeSpecForProfile(
-		modeloperation.ID(snapshot.OperationID), snapshot.ProfileID, snapshot.ProfileVersion,
+	spec, err := canonicalOperationProbeSpecForExactProfile(
+		modeloperation.ID(snapshot.OperationID), snapshot.ExecutionProfileID,
+		snapshot.ExecutionProfileVersion, snapshot.ProfileID, snapshot.ProfileVersion,
 	)
 	if err != nil {
 		return err
@@ -484,8 +527,9 @@ func (h *Handler) executeCanonicalOperationProbe(
 	snapshot canonicalOperationProbeSnapshot,
 	probeText, requestID string,
 ) canonicalOperationProbeOutcome {
-	spec, err := canonicalOperationProbeSpecForProfile(
-		modeloperation.ID(snapshot.OperationID), snapshot.ProfileID, snapshot.ProfileVersion,
+	spec, err := canonicalOperationProbeSpecForExactProfile(
+		modeloperation.ID(snapshot.OperationID), snapshot.ExecutionProfileID,
+		snapshot.ExecutionProfileVersion, snapshot.ProfileID, snapshot.ProfileVersion,
 	)
 	if err != nil {
 		return canonicalOperationProbeOutcome{ReasonCode: "operation_unsupported"}
@@ -733,8 +777,9 @@ func (h *Handler) persistCanonicalOperationProbe(
 	sourceRef string,
 	audit auditMeta,
 ) (canonicalOperationProbeResponse, error) {
-	spec, err := canonicalOperationProbeSpecForProfile(
-		modeloperation.ID(snapshot.OperationID), snapshot.ProfileID, snapshot.ProfileVersion,
+	spec, err := canonicalOperationProbeSpecForExactProfile(
+		modeloperation.ID(snapshot.OperationID), snapshot.ExecutionProfileID,
+		snapshot.ExecutionProfileVersion, snapshot.ProfileID, snapshot.ProfileVersion,
 	)
 	if err != nil {
 		return canonicalOperationProbeResponse{}, err
@@ -1018,6 +1063,8 @@ func canonicalOperationProbeRouteInputsMatch(before, current canonicalOperationP
 		before.CredentialRevision == current.CredentialRevision &&
 		before.OperationID == current.OperationID &&
 		before.UpstreamModel == current.UpstreamModel &&
+		before.ExecutionProfileID == current.ExecutionProfileID &&
+		before.ExecutionProfileVersion == current.ExecutionProfileVersion &&
 		before.ProfileID == current.ProfileID && before.ProfileVersion == current.ProfileVersion &&
 		before.LinkCreatedAt.Equal(current.LinkCreatedAt)
 }
@@ -1050,8 +1097,9 @@ func canonicalOperationProbeFingerprintSourceKind(operationID string) string {
 }
 
 func canonicalOperationProbeFingerprintBinding(snapshot canonicalOperationProbeSnapshot) string {
-	spec, err := canonicalOperationProbeSpecForProfile(
-		modeloperation.ID(snapshot.OperationID), snapshot.ProfileID, snapshot.ProfileVersion,
+	spec, err := canonicalOperationProbeSpecForExactProfile(
+		modeloperation.ID(snapshot.OperationID), snapshot.ExecutionProfileID,
+		snapshot.ExecutionProfileVersion, snapshot.ProfileID, snapshot.ProfileVersion,
 	)
 	if err != nil || spec.ExecutionBinding == nil {
 		return ""
