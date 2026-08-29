@@ -30,6 +30,7 @@ const (
 	KimiChatFunctionToolsProbeContractID       = "unirouter.capability-probe.kimi-chat-function-tools.v1"
 	KimiChatJSONObjectProbeContractID          = "unirouter.capability-probe.kimi-chat-json-object.v1"
 	KimiChatCoreProbeContractVersion           = "1.0.0"
+	KimiChatCoreProbeContractVersionV2         = "2.0.0"
 	ProbeSourceKind                            = "admin.model_capability_probe.v1"
 	ApprovalSourceKind                         = "admin.model_capability_routing_approval.v1"
 )
@@ -226,7 +227,7 @@ var kimiK26CurrentBindings = func() []Binding {
 	}
 	bindings := make([]Binding, 0, len(capabilities))
 	for _, capability := range capabilities {
-		probeContractVersion := KimiChatCoreProbeContractVersion
+		probeContractVersion := KimiChatCoreProbeContractVersionV2
 		if capability.CapabilityID == modelprofile.CapabilityStreaming {
 			probeContractVersion = KimiChatSSEProbeContractVersionV3
 		}

@@ -4,6 +4,24 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.16] - 2026-08-30
+
+### Fixed
+
+- Accepted Kimi K2.6's bounded numeric non-stream usage details for prompt
+  cache and completion reasoning while preserving top-level cache authority,
+  exact token totals and strict rejection of every other unknown usage member.
+- Published non-stream Probe Contract v2 for reasoning, tools, function tools,
+  automatic tool choice and JSON Object so the live failed reasoning v1 Probe
+  remains immutable and stale rather than being reinterpreted.
+
+### Evidence boundary
+
+- M98 advances only the five exact Kimi K2.6 non-streaming Probe contracts. It
+  does not change streaming v3, the Execution Profile, Chat protocol, Release,
+  alias, pricing, Planner, UI or canonical traffic, and it creates no live
+  Probe or Approval evidence by itself.
+
 ## [1.2.15] - 2026-08-30
 
 ### Fixed

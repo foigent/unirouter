@@ -8,14 +8,14 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable local source candidate is version 1.2.15 with PostgreSQL
-compatibility ceiling `000097_kimi_k26_stream_choice_usage_probe_v3`.
+The executable local source candidate is version 1.2.16 with PostgreSQL
+compatibility ceiling `000098_kimi_k26_nonstream_usage_probe_v2`.
 Development/test remains the independently verified predecessor: stable,
 canary and frontend run exact commit
-`3c943ed43e03c528fac01806abec48814335f3ce`, tree
-`e6195a370a0bc3ebe08c240eb0a4542e0ce29a80`, version 1.2.14, with the database
-ending at `000096_kimi_k26_stream_probe_contract_v2`; database and Redis
-readiness are healthy. M97 is not Target evidence until a matching artifact is
+`9d826704aead1cfbb569cbb4b3e008524ad243b8`, tree
+`5b16215505d0ab50e678b037c3cf57c1d7e97ca9`, version 1.2.15, with the database
+ending at `000097_kimi_k26_stream_choice_usage_probe_v3`; database and Redis
+readiness are healthy. M98 is not Target evidence until a matching artifact is
 gated and deployed. These are development/test facts, not Production evidence.
 
 M95 publishes six existing Kimi Chat Core probe grammars only for exact Profile
@@ -43,6 +43,20 @@ choice-level usage shape, still requires the standard top-level usage frame and
 requires repeated token totals to match. It does not change runtime delivery, the Execution
 Profile, Chat protocol, Release, alias, pricing, Planner or the other five
 capability contracts. Historical v1/v2 evidence is never reinterpreted.
+
+The Target v3 streaming Probe then succeeded and was separately approved for
+the exact K2.6 tuple. The following reasoning Probe reached Kimi with HTTP 200
+but failed historical non-stream Probe v1 JSON validation. That failure is
+consistent with bounded provider usage details already accepted by runtime and
+observed on the live streaming surface; private provider content was not
+inspected or promoted as a new authority. The failed receipt remains immutable and
+unapproved. M98 advances only the
+five non-streaming bindings to Probe Contract v2, accepting bounded numeric
+`prompt_tokens_details.cached_tokens` and
+`completion_tokens_details.reasoning_tokens` while preserving the top-level
+Kimi cache authority, exact totals and strict unknown-field rejection. M98 does
+not alter streaming v3, the Execution Profile, Chat protocol, Release, alias,
+pricing, Planner, UI or traffic, and creates no live evidence by itself.
 
 M94 publishes the nine existing DeepSeek Chat Core probe contracts for only the
 exact `deepseek.v4-pro.api@1.5.0 ×
@@ -81,8 +95,8 @@ authority; they create only `enabled/declared` projections and do not infer live
 support, approval, routing, Release or pricing from a Profile claim. Their fixed
 probe contracts accept no administrator-supplied provider payload and retain
 only bounded response facts, never private reasoning text or arbitrary tool
-arguments. M88–M96 are deployed Target facts only for the exact artifact and
-environment recorded above; M97 remains a local source candidate. M92 can be downgraded only while no Flash/Pro Profile 1.5
+arguments. M88–M97 are deployed Target facts only for the exact artifact and
+environment recorded above; M98 remains a local source candidate. M92 can be downgraded only while no Flash/Pro Profile 1.5
 model attachment, probe or approval exists; the guard prevents an M91 binary
 from inheriting a durable Profile identity that it cannot interpret. M93
 downgrade is blocked only by retained function-tool Probe v2 evidence or
