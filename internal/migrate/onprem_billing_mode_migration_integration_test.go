@@ -191,6 +191,7 @@ func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, na
 		name    string
 		version string
 	}{
+		{"000095_kimi_k26_chat_core_qualification.down.sql", "000095_kimi_k26_chat_core_qualification"},
 		{"000094_deepseek_v4_pro_chat_core_qualification.down.sql", "000094_deepseek_v4_pro_chat_core_qualification"},
 		{"000093_deepseek_function_tool_probe_contract_v2.down.sql", "000093_deepseek_function_tool_probe_contract_v2"},
 		{"000092_deepseek_reasoning_tool_choice_contract.down.sql", "000092_deepseek_reasoning_tool_choice_contract"},
@@ -208,7 +209,8 @@ func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, na
 			execMigrationDown(t, ctx, pool, successor.name)
 		}
 	}
-	if name == "000094_deepseek_v4_pro_chat_core_qualification.down.sql" ||
+	if name == "000095_kimi_k26_chat_core_qualification.down.sql" ||
+		name == "000094_deepseek_v4_pro_chat_core_qualification.down.sql" ||
 		name == "000093_deepseek_function_tool_probe_contract_v2.down.sql" ||
 		name == "000092_deepseek_reasoning_tool_choice_contract.down.sql" ||
 		name == "000091_deepseek_chat_tools_json_capabilities.down.sql" ||

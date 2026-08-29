@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"gopkg.in/yaml.v3"
 )
 
@@ -83,6 +85,136 @@ func TestOpenAPIModelCatalogRBACPreservesStableArrayShape(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("model-catalog x-unirouter-rbac.get must remain the canonical string-array contract: got=%v want=%v", got, want)
 	}
+}
+
+func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t *testing.T) {
+	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
+	if err != nil {
+		t.Fatalf("read OpenAPI spec: %v", err)
+	}
+	schema := openAPISchemaSection(t, string(specBytes), "ModelCapabilityQualification")
+
+	bindings := []modelcapabilityqualification.Binding{
+		modelcapabilityqualification.DeepSeekFlashStreamingBinding(),
+		modelcapabilityqualification.DeepSeekFlashLegacyStreamingBinding(),
+		modelcapabilityqualification.DeepSeekFlashReasoningBinding(),
+		modelcapabilityqualification.DeepSeekFlashLegacyReasoningBinding(),
+		modelcapabilityqualification.DeepSeekFlashReasoningEffortBinding(),
+		modelcapabilityqualification.DeepSeekFlashLegacyReasoningEffortBinding(),
+	}
+	bindings = append(bindings, modelcapabilityqualification.DeepSeekFlashCoreBindings()...)
+	bindings = append(bindings, modelcapabilityqualification.DeepSeekFlashCurrentBindings()...)
+	bindings = append(bindings, modelcapabilityqualification.DeepSeekProCurrentBindings()...)
+	bindings = append(bindings, modelcapabilityqualification.KimiK26CurrentBindings()...)
+
+	uniqueSorted := func(values []string) []string {
+		seen := make(map[string]struct{}, len(values))
+		for _, value := range values {
+			seen[value] = struct{}{}
+		}
+		result := make([]string, 0, len(seen))
+		for value := range seen {
+			result = append(result, value)
+		}
+		sort.Strings(result)
+		return result
+	}
+	compiled := map[string][]string{}
+	for _, binding := range bindings {
+		compiled["operation_id"] = append(compiled["operation_id"], binding.OperationID)
+		compiled["capability_id"] = append(compiled["capability_id"], binding.CapabilityID)
+		compiled["execution_profile_id"] = append(compiled["execution_profile_id"], binding.ExecutionProfileID)
+		compiled["execution_profile_version"] = append(compiled["execution_profile_version"], binding.ExecutionProfileVersion)
+		compiled["protocol_profile_id"] = append(compiled["protocol_profile_id"], binding.ProtocolProfileID)
+		compiled["protocol_profile_version"] = append(compiled["protocol_profile_version"], binding.ProtocolProfileVersion)
+		compiled["probe_contract_id"] = append(compiled["probe_contract_id"], binding.ProbeContractID)
+		compiled["probe_contract_version"] = append(compiled["probe_contract_version"], binding.ProbeContractVersion)
+	}
+
+	for name, values := range compiled {
+		got := uniqueSorted(openAPIFlowEnum(t, schema, name))
+		want := uniqueSorted(values)
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("ModelCapabilityQualification.%s enum drifted from compiled bindings: got=%v want=%v", name, got, want)
+		}
+	}
+}
+
+func TestOpenAPIModelCapabilityContractErrorCodesCoverKimiValidators(t *testing.T) {
+	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
+	if err != nil {
+		t.Fatalf("read OpenAPI spec: %v", err)
+	}
+	schema := openAPISchemaSection(t, string(specBytes), "ModelCapabilityContractErrorCode")
+	declared := make(map[string]struct{})
+	for _, line := range strings.Split(schema, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "- ") {
+			declared[strings.TrimSpace(strings.TrimPrefix(line, "- "))] = struct{}{}
+		}
+	}
+	for _, code := range []string{
+		"probe_contract", "expected_model", "content_type", "terminal_order", "data_after_terminal",
+		"json", "reported_model", "usage_order", "choices", "reasoning_content", "content",
+		"finish_reason", "unsupported_field", "read", "response_too_large", "tool_calls",
+		"tool_call_identity", "tool_arguments", "structured_output", "usage", "usage_total", "cached_tokens",
+	} {
+		if _, ok := declared[code]; !ok {
+			t.Fatalf("ModelCapabilityContractErrorCode omits Kimi validator code %q", code)
+		}
+	}
+}
+
+func openAPISchemaSection(t *testing.T, spec, name string) string {
+	t.Helper()
+	lines := strings.Split(spec, "\n")
+	start := -1
+	for index, line := range lines {
+		if line == "    "+name+":" {
+			start = index
+			break
+		}
+	}
+	if start == -1 {
+		t.Fatalf("OpenAPI schema %s is missing", name)
+	}
+	end := len(lines)
+	for index := start + 1; index < len(lines); index++ {
+		line := lines[index]
+		if strings.HasPrefix(line, "    ") && len(line) > 4 && line[4] != ' ' && strings.HasSuffix(strings.TrimSpace(line), ":") {
+			end = index
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
+func openAPIFlowEnum(t *testing.T, schema, property string) []string {
+	t.Helper()
+	marker := "\n        " + property + ": {"
+	start := strings.Index(schema, marker)
+	if start < 0 {
+		t.Fatalf("OpenAPI property %s is missing", property)
+	}
+	line := schema[start+1:]
+	if end := strings.IndexByte(line, '\n'); end >= 0 {
+		line = line[:end]
+	}
+	enumStart := strings.Index(line, "enum: [")
+	if enumStart < 0 {
+		t.Fatalf("OpenAPI property %s has no flow enum", property)
+	}
+	values := line[enumStart+len("enum: ["):]
+	if end := strings.IndexByte(values, ']'); end >= 0 {
+		values = values[:end]
+	} else {
+		t.Fatalf("OpenAPI property %s has an unterminated flow enum", property)
+	}
+	parts := strings.Split(values, ",")
+	for index := range parts {
+		parts[index] = strings.TrimSpace(parts[index])
+	}
+	return parts
 }
 
 func TestOpenAPIWalletRepresentsUnprovisionedStateWithoutMutationAuthority(t *testing.T) {

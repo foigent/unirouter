@@ -612,6 +612,79 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			outcome.ContractErrorCode = modelcapabilityqualification.DeepSeekCoreErrorCode(validationErr)
 			return outcome
 		}
+	case modelcapabilityqualification.KimiChatSSEProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateKimiChatSSE(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
+			response.Header.Get("Content-Type"), response.Body,
+		)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.DataEventCount = observation.DataEventCount
+		outcome.DeltaCount = observation.DeltaCount
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_stream_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatErrorCode(validationErr)
+			return outcome
+		}
+	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateKimiChatReasoning(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
+			response.Header.Get("Content-Type"), response.Body,
+		)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.ReasoningObserved = observation.ReasoningObserved
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_reasoning_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatErrorCode(validationErr)
+			return outcome
+		}
+	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateKimiChatFunctionTools(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
+			response.Header.Get("Content-Type"), response.Body,
+		)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.ToolCallObserved = observation.ToolCallObserved
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_function_tools_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatErrorCode(validationErr)
+			return outcome
+		}
+	case modelcapabilityqualification.KimiChatJSONObjectProbeContractID:
+		observation, validationErr := modelcapabilityqualification.ValidateKimiChatJSONObject(
+			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
+			response.Header.Get("Content-Type"), response.Body,
+		)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.StructuredObserved = observation.StructuredOutputObserved
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_json_object_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatErrorCode(validationErr)
+			return outcome
+		}
 	default:
 		outcome.LatencyMS = time.Since(started).Milliseconds()
 		outcome.ReasonCode = "probe_contract_unsupported"
@@ -674,6 +747,45 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 			{"role": "user", "content": `Return exactly {"status":"UNIROUTER_JSON_PROBE_OK"}.`},
 		}
 		payload["max_tokens"] = 64
+		payload["thinking"] = map[string]string{"type": "disabled"}
+		payload["response_format"] = map[string]string{"type": "json_object"}
+	case modelcapabilityqualification.KimiChatSSEProbeContractID:
+		delete(payload, "max_tokens")
+		payload["max_completion_tokens"] = 64
+		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}}
+		payload["stream"] = true
+		payload["stream_options"] = map[string]bool{"include_usage": true}
+		payload["thinking"] = map[string]string{"type": "disabled"}
+	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
+		delete(payload, "max_tokens")
+		payload["max_completion_tokens"] = 512
+		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}}
+		// Omission is deliberate: the probe proves K2.6's provider-default
+		// thinking path, which is the path used by an ordinary invocation.
+	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
+		delete(payload, "max_tokens")
+		payload["max_completion_tokens"] = 256
+		payload["messages"] = []map[string]string{{"role": "user", "content": "Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}}
+		payload["thinking"] = map[string]string{"type": "disabled"}
+		payload["tools"] = []map[string]interface{}{{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "unirouter_probe_echo", "description": "Return the supplied probe value through a function call.",
+				"parameters": map[string]interface{}{
+					"type": "object", "properties": map[string]interface{}{
+						"value": map[string]string{"type": "string"},
+					}, "required": []string{"value"}, "additionalProperties": false,
+				},
+			},
+		}}
+		payload["tool_choice"] = "auto"
+	case modelcapabilityqualification.KimiChatJSONObjectProbeContractID:
+		delete(payload, "max_tokens")
+		payload["max_completion_tokens"] = 64
+		payload["messages"] = []map[string]string{
+			{"role": "system", "content": "Return valid JSON only."},
+			{"role": "user", "content": `Return exactly {"status":"UNIROUTER_JSON_PROBE_OK"}.`},
+		}
 		payload["thinking"] = map[string]string{"type": "disabled"}
 		payload["response_format"] = map[string]string{"type": "json_object"}
 	default:
@@ -857,6 +969,25 @@ func modelCapabilityProbeRequestContractSummary(probeContractID, capabilityID st
 	case modelcapabilityqualification.DeepSeekChatJSONObjectProbeContractID:
 		return map[string]interface{}{
 			"stream": false, "thinking_type": "disabled", "max_tokens": 64,
+			"response_format_type": "json_object",
+		}
+	case modelcapabilityqualification.KimiChatSSEProbeContractID:
+		return map[string]interface{}{
+			"stream": true, "stream_options_include_usage": true,
+			"thinking_type": "disabled", "max_completion_tokens": 64,
+		}
+	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
+		return map[string]interface{}{
+			"stream": false, "thinking_type": "provider_default_enabled", "max_completion_tokens": 512,
+		}
+	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
+		return map[string]interface{}{
+			"stream": false, "thinking_type": "disabled", "max_completion_tokens": 256,
+			"function_name": "unirouter_probe_echo", "tool_choice": "auto",
+		}
+	case modelcapabilityqualification.KimiChatJSONObjectProbeContractID:
+		return map[string]interface{}{
+			"stream": false, "thinking_type": "disabled", "max_completion_tokens": 64,
 			"response_format_type": "json_object",
 		}
 	default:

@@ -1185,7 +1185,7 @@ paths:
     post:
       tags: [Admin]
       summary: Run one server-owned typed capability probe
-      description: "Requires an active Gateway License. M89 and M92 support DeepSeek V4 Flash at the immutable deepseek.v4-flash.api@1.4.0 and @1.5.0 identities for OpenAI-compatible Chat Completions. M93 advances only Flash Profile 1.5.0's five function-tool capability bindings under both retained exact Chat protocol identities to probe contract 2.0.0. M94 publishes the same nine reviewed Chat-core probe grammars for deepseek.v4-pro.api@1.5.0 under only protocol.deepseek-openai-chat.v4@1.0.0; it does not create a Profile, Protocol, Release or Alias. The server owns one fixed, bounded request for the selected capability; the streaming probe uses stream=true, stream_options.include_usage=true, thinking.type=disabled and max_tokens=64. Under the current SSE 2.0.0 probe contract, a successful streaming result must prove text/event-stream, legal content deltas, the exact binding-owned reported model, and a final single-choice chunk with no new content, a non-null finish_reason and usage, followed by [DONE]. Function-tools probe contract 2.0.0 uses the same exact-scoped provider response normalizer as runtime delivery before checking its semantic sentinel and usage. Historical probe evidence remains bound to its immutable exact contract and is never reinterpreted. A probe appends live_probed evidence only and never auto-approves routing. This action is one real supplier call; supplier cost unavailable is absent/unknown, never represented as CNY zero."
+      description: "Requires an active Gateway License. M89 and M92 support DeepSeek V4 Flash at the immutable deepseek.v4-flash.api@1.4.0 and @1.5.0 identities for OpenAI-compatible Chat Completions. M93 advances only Flash Profile 1.5.0's five function-tool capability bindings under both retained exact Chat protocol identities to probe contract 2.0.0. M94 publishes the same nine reviewed Chat-core probe grammars for deepseek.v4-pro.api@1.5.0 under only protocol.deepseek-openai-chat.v4@1.0.0. M95 publishes six Kimi K2.6 Chat-core probe grammars for kimi.k2.6.api@1.7.0 under only protocol.kimi-openai-chat.v5@1.0.0. These migrations do not create a Profile, Protocol, Release or Alias. The server owns one fixed, bounded request for the selected capability. DeepSeek streaming uses stream=true, stream_options.include_usage=true, thinking.type=disabled and max_tokens=64; Kimi K2.6 uses the same stream controls with max_completion_tokens=64, as required by its exact v5 request contract. A successful streaming result must prove text/event-stream, legal content deltas, the exact binding-owned reported model, authoritative terminal usage and [DONE] under the selected immutable probe contract. Historical probe evidence remains bound to its exact contract and is never reinterpreted. A probe appends live_probed evidence only and never auto-approves routing. This action is one real supplier call; supplier cost unavailable is absent/unknown, never represented as CNY zero."
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
@@ -4960,11 +4960,11 @@ components:
         capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
         support_state: { type: string, enum: [enabled, unsupported] }
         support_revision: { type: integer, format: int64, minimum: 1 }
-        execution_profile_id: { type: string, enum: [deepseek.v4-flash.api] }
-        execution_profile_version: { type: string, enum: [1.4.0, 1.5.0] }
-        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, openai.chat_completions] }
+        execution_profile_id: { type: string, enum: [deepseek.v4-flash.api, deepseek.v4-pro.api, kimi.k2.6.api] }
+        execution_profile_version: { type: string, enum: [1.4.0, 1.5.0, 1.7.0] }
+        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, openai.chat_completions, protocol.kimi-openai-chat.v5] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
-        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1] }
+        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1] }
         probe_contract_version: { type: string, enum: [1.0.0, 2.0.0], description: "Exact version is selected by the model, operation, capability, Execution Profile, and protocol-profile tuple." }
         probe_available: { type: boolean }
         probe_availability_reason_code: { type: string }
@@ -5008,16 +5008,19 @@ components:
         - terminal_order
         - data_after_done
         - data_after_usage
+        - data_after_terminal
         - unsupported_field
         - read
         - response_too_large
         - incomplete
         - json
         - model_changed
+        - expected_model
         - reported_model
         - choices
         - final_usage
         - usage_mixed_with_choices
+        - usage_order
         - delta
         - content
         - reasoning_content
@@ -5030,6 +5033,7 @@ components:
         - finish_reason_changed
         - usage
         - usage_total
+        - cached_tokens
         - probe_contract
     ModelCapabilityApprovalResult:
       type: object

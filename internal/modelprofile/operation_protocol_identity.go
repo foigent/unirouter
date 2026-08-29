@@ -21,12 +21,23 @@ type OperationProtocolIdentity struct {
 	ProtocolProfileVersion string
 }
 
-// immutableChatOperationProtocolBindings is an append-only declaration of
-// reviewed Chat contracts which may override a new attachment's generic Chat
-// operation identity. Merely registering a Chat validation contract does not
-// grant onboarding authority.
-var immutableChatOperationProtocolBindings = map[string]string{
-	"protocol.deepseek-openai-chat.v4": ChatOperationProtocolBindingVersionV1,
+type chatOperationProtocolBindingKey struct {
+	ProfileID         string
+	ProfileVersion    string
+	ProtocolProfileID string
+}
+
+// immutableChatOperationProtocolBindings is an append-only, exact-Profile
+// declaration of reviewed Chat contracts which may override a new
+// attachment's generic Chat operation identity. Merely registering a Chat
+// validation contract, or reusing that contract from another Profile, does
+// not grant onboarding authority.
+var immutableChatOperationProtocolBindings = map[chatOperationProtocolBindingKey]string{
+	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.4.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}: ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.5.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}: ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "deepseek.v4-pro.api", ProfileVersion: "1.4.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:   ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "deepseek.v4-pro.api", ProfileVersion: "1.5.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:   ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "kimi.k2.6.api", ProfileVersion: "1.7.0", ProtocolProfileID: "protocol.kimi-openai-chat.v5"}:             ChatOperationProtocolBindingVersionV1,
 }
 
 type operationProtocolIdentityKey struct {
@@ -94,7 +105,9 @@ func resolveOperationProtocolIdentity(
 	}
 
 	endpointIdentity, endpointDeclared := immutableProfileEndpointProtocolIdentity(profile.ID, profile.Version)
-	chatBindingVersion, chatDeclared := immutableChatOperationProtocolBindings[profile.ProtocolProfile]
+	chatBindingVersion, chatDeclared := immutableChatOperationProtocolBindings[chatOperationProtocolBindingKey{
+		ProfileID: profile.ID, ProfileVersion: profile.Version, ProtocolProfileID: profile.ProtocolProfile,
+	}]
 	authorityCount := 0
 	if endpointDeclared {
 		authorityCount++

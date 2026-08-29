@@ -197,3 +197,102 @@ func TestModelCapabilityToolsAndJSONObjectProbesUseFixedContracts(t *testing.T) 
 		})
 	}
 }
+
+func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
+	encryptionKey := []byte("0123456789abcdef01234567")
+	encrypted, err := auth.EncryptKey([]byte("provider-secret"), encryptionKey)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name, capabilityID, contractID, contentType, responseBody string
+		expectedMaxCompletionTokens                               float64
+		assertBody                                                func(*testing.T, map[string]interface{})
+		assertOutcome                                             func(*testing.T, modelCapabilityProbeOutcome)
+	}{
+		{
+			name: "provider default reasoning", capabilityID: "reasoning",
+			expectedMaxCompletionTokens: 512,
+			contractID:                  modelcapabilityqualification.KimiChatReasoningProbeContractID,
+			contentType:                 "application/json",
+			responseBody:                `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"cached_tokens":0}}`,
+			assertBody: func(t *testing.T, payload map[string]interface{}) {
+				require.NotContains(t, payload, "thinking")
+				require.Equal(t, false, payload["stream"])
+			},
+			assertOutcome: func(t *testing.T, outcome modelCapabilityProbeOutcome) { require.True(t, outcome.ReasoningObserved) },
+		},
+		{
+			name: "auto function tools", capabilityID: "tool_choice_auto",
+			expectedMaxCompletionTokens: 256,
+			contractID:                  modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
+			contentType:                 "application/json",
+			responseBody:                `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29}}`,
+			assertBody: func(t *testing.T, payload map[string]interface{}) {
+				require.Equal(t, "auto", payload["tool_choice"])
+				require.Equal(t, "disabled", payload["thinking"].(map[string]interface{})["type"])
+			},
+			assertOutcome: func(t *testing.T, outcome modelCapabilityProbeOutcome) { require.True(t, outcome.ToolCallObserved) },
+		},
+		{
+			name: "json object", capabilityID: "json_object",
+			expectedMaxCompletionTokens: 64,
+			contractID:                  modelcapabilityqualification.KimiChatJSONObjectProbeContractID,
+			contentType:                 "application/json",
+			responseBody:                `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":"{\"status\":\"UNIROUTER_JSON_PROBE_OK\"}"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":15,"completion_tokens":5,"total_tokens":20}}`,
+			assertBody: func(t *testing.T, payload map[string]interface{}) {
+				require.Equal(t, "json_object", payload["response_format"].(map[string]interface{})["type"])
+			},
+			assertOutcome: func(t *testing.T, outcome modelCapabilityProbeOutcome) { require.True(t, outcome.StructuredObserved) },
+		},
+		{
+			name: "streaming", capabilityID: "streaming",
+			expectedMaxCompletionTokens: 64,
+			contractID:                  modelcapabilityqualification.KimiChatSSEProbeContractID,
+			contentType:                 "text/event-stream",
+			responseBody: strings.Join([]string{
+				`data: {"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":null}],"usage":null}`,
+				`data: {"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":0}}`,
+				`data: [DONE]`, "",
+			}, "\n\n"),
+			assertBody: func(t *testing.T, payload map[string]interface{}) {
+				require.Equal(t, true, payload["stream"])
+				require.Equal(t, true, payload["stream_options"].(map[string]interface{})["include_usage"])
+			},
+			assertOutcome: func(t *testing.T, outcome modelCapabilityProbeOutcome) {
+				require.Equal(t, 3, outcome.DataEventCount)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := NewHandler(nil, "capability-jwt", encryptionKey, nil)
+			handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(request *http.Request) (*http.Response, error) {
+				body, readErr := io.ReadAll(request.Body)
+				require.NoError(t, readErr)
+				var payload map[string]interface{}
+				require.NoError(t, json.Unmarshal(body, &payload))
+				require.Equal(t, "kimi-k2.6", payload["model"])
+				require.NotContains(t, payload, "max_tokens")
+				require.Equal(t, test.expectedMaxCompletionTokens, payload["max_completion_tokens"])
+				test.assertBody(t, payload)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{test.contentType}},
+					Body:       io.NopCloser(strings.NewReader(test.responseBody)),
+				}, nil
+			}))
+			outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
+				Provider: "kimi", BaseURL: "https://api.moonshot.cn/v1",
+				AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
+				UpstreamModel: "kimi-k2.6", ExpectedUpstreamModel: "kimi-k2.6", EncryptedSecret: encrypted,
+				CapabilityID: test.capabilityID, ProbeContractID: test.contractID,
+				ProbeContractVersion: modelcapabilityqualification.KimiChatCoreProbeContractVersion,
+			}, "kimi-k26-capability-probe-test")
+			require.True(t, outcome.ProviderSuccess)
+			require.True(t, outcome.ContractSuccess)
+			require.Equal(t, "ok", outcome.ReasonCode)
+			test.assertOutcome(t, outcome)
+		})
+	}
+}

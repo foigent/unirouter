@@ -507,7 +507,17 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			  AND expected_upstream_model='deepseek-v4-pro'
 			  AND public_path='/v1/chat/completions'
 			  AND introduced_migration='000094_deepseek_v4_pro_chat_core_qualification'`, want: 9},
-		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 57},
+		{name: "fresh Kimi K2.6 capability probe contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND execution_profile_id='kimi.k2.6.api'
+			  AND execution_profile_version='1.7.0'
+			  AND protocol_profile_id='protocol.kimi-openai-chat.v5'
+			  AND protocol_profile_version='1.0.0'
+			  AND expected_provider='kimi'
+			  AND expected_upstream_model='kimi-k2.6'
+			  AND public_path='/v1/chat/completions'
+			  AND introduced_migration='000095_kimi_k26_chat_core_qualification'`, want: 6},
+		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 63},
 		{name: "fresh current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
 			WHERE operation_id='openai.chat_completions.v1'
 			  AND capability_id='streaming'
@@ -562,7 +572,13 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			  AND execution_profile_version='1.5.0'
 			  AND protocol_profile_id='protocol.deepseek-openai-chat.v4'
 			  AND protocol_profile_version='1.0.0'`, want: 9},
-		{name: "fresh current capability probe contract count", query: "SELECT COUNT(*) FROM model_capability_current_probe_contracts", want: 45},
+		{name: "fresh Kimi K2.6 current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND execution_profile_id='kimi.k2.6.api'
+			  AND execution_profile_version='1.7.0'
+			  AND protocol_profile_id='protocol.kimi-openai-chat.v5'
+			  AND protocol_profile_version='1.0.0'`, want: 6},
+		{name: "fresh current capability probe contract count", query: "SELECT COUNT(*) FROM model_capability_current_probe_contracts", want: 51},
 		{name: "fresh known public tables", query: `SELECT COUNT(*) FROM pg_catalog.pg_tables
 			WHERE schemaname='public' AND tablename=ANY($1::text[])`, args: []any{expectedTables}, want: int64(len(expectedTables))},
 		{name: "fresh exact public table inventory", query: "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public'", want: int64(len(expectedTables))},

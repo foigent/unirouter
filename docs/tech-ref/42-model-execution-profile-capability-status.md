@@ -136,6 +136,28 @@ authorized K2.6 live budget is at most 20 supplier calls and CNY 5, but no call
 may occur until the exact matrix is frozen and the user enters the prepared Kimi
 Open Platform credential once through the supported UI.
 
+The current local source candidate is version 1.2.13 with schema ceiling M95.
+It prepares one finite K2.6 Chat Core Delivery Batch: an exact Profile-scoped
+operation-protocol binding plus typed probe contracts for streaming, reasoning,
+tools, function tools, automatic tool choice and JSON Object. Those contracts
+and their local tests are batch preparation, not live evidence and not six
+prematurely closed milestones. M95 creates only declared projections for the
+exact `kimi.k2.6.api@1.7.0 × protocol.kimi-openai-chat.v5@1.0.0` tuple; it does
+not bind K2.7/K3, create a generic tuple, call Kimi, approve routing, change a
+Release/Alias or activate pricing. The development/test Target remains the
+1.2.12/M94 snapshot until an exact artifact is gated and deployed.
+
+The Kimi probe validators and the Gateway delivery guard currently remain two
+parsing implementations. Cross-delivery fixtures are required for this batch,
+and public UI/SDK delivery remains necessary evidence; a successful Probe alone
+must not be described as complete delivery proof. This is a bounded architecture
+warning rather than a second runtime authority. Before any next provider adds a
+third provider-specific full JSON/SSE envelope parser, the shared
+OpenAI-compatible delivery-shape boundary must be re-evaluated. If a Kimi Probe
+succeeds while the same exact tuple is withheld by public delivery shape, the
+warning becomes a blocker immediately. No shared parser refactor is authorized
+merely by this checkpoint.
+
 K2.6 then advances one milestone at a time through streaming, thinking, tools,
 JSON and usage/cache-read mapping. Non-stream latency evidence records gateway
 stages, connection establishment or reuse, response headers, full provider

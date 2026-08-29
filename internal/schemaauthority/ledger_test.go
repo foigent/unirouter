@@ -37,7 +37,7 @@ func TestExpectedLedgerRejectsEmptyAndArtifactCeilingMismatch(t *testing.T) {
 	}{
 		{name: "empty artifact", wantErr: "migration artifact ledger is empty"},
 		{name: "older artifact ceiling", version: "000078_atomic_model_release_authoring", wantErr: "artifact ceiling"},
-		{name: "future artifact ceiling", version: "000094_future_contract", wantErr: "artifact ceiling"},
+		{name: "future artifact ceiling", version: "000096_future_contract", wantErr: "artifact ceiling"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -67,7 +67,7 @@ func TestVerifyLedgerRejectsIncompleteOrExpandedDatabaseIdentity(t *testing.T) {
 		{name: "exact", actual: slices.Clone(expected)},
 		{name: "missing", actual: []string{expected[0], expected[2]}, wantErr: "missing=[000078_atomic_model_release_authoring]"},
 		{name: "extra", actual: []string{expected[0], "000077_unexpected_contract", expected[1], expected[2]}, wantErr: "extra=[000077_unexpected_contract]"},
-		{name: "future", actual: append(slices.Clone(expected), "000094_future_contract"), wantErr: "extra=[000094_future_contract]"},
+		{name: "future", actual: append(slices.Clone(expected), "000096_future_contract"), wantErr: "extra=[000096_future_contract]"},
 		{name: "duplicate", actual: []string{expected[0], expected[1], expected[1], expected[2]}, wantErr: "duplicate migration"},
 		{name: "empty", actual: []string{}, wantErr: "database schema ledger is empty"},
 	}

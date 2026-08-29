@@ -93,6 +93,10 @@ RETURNING id`).Scan(&pathfulConnectionID))
 func TestCanonicalModelApplicationCurrentCapabilityRollsBackThroughM92Integration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := t.Context()
+	m95Body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(m95Body))
+	require.NoError(t, err)
 	m94Body, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000094_deepseek_v4_pro_chat_core_qualification.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(m94Body))
@@ -356,6 +360,32 @@ SELECT evidence_ref FROM model_deployment_capabilities
    AND capability_id='tools'`, pro.Application.Deployment.ID).Scan(&capabilityEvidenceRef))
 	require.Equal(t, "capability_contract:unirouter.capability-probe.deepseek-chat-function-tools.v1@2.0.0", capabilityEvidenceRef)
 
+	kimiRequest := request
+	kimiRequest.Connection = canonicalConnectionInput{
+		Name: "Reviewed Kimi", Provider: "kimi", BaseURL: "https://api.moonshot.cn/v1",
+		AdapterType: "openai_compatible", AdapterConfig: json.RawMessage(`{}`),
+	}
+	kimiRequest.PublicModel = canonicalPublicModelInput{
+		ModelName: "reviewed-kimi-k26", ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
+	}
+	kimiRequest.Deployment = canonicalDeploymentInput{UpstreamModel: "kimi-k2.6"}
+	kimiRequest.Credential = canonicalCredentialInput{APIKey: "reviewed-kimi-binding-fixture"}
+	kimi := createCanonicalApplicationForTest(t, handler, authorized, kimiRequest, http.StatusCreated)
+	require.Equal(t, "protocol.kimi-openai-chat.v5", kimi.Application.Operations[0].ProtocolProfileID)
+	require.Equal(t, modelprofile.ChatOperationProtocolBindingVersionV1, kimi.Application.Operations[0].ProtocolProfileVersion)
+	require.True(t, kimi.Application.Operations[0].ProbeAvailable)
+	require.Equal(t, "exact_probe_contract_available", kimi.Application.Operations[0].ProbeAvailabilityReason)
+	require.Len(t, kimi.Application.Operations[0].CapabilityProbeContracts, 6)
+	require.Equal(t, "function_tools", kimi.Application.Operations[0].CapabilityProbeContracts[0].CapabilityID)
+	require.Equal(t, "tools", kimi.Application.Operations[0].CapabilityProbeContracts[5].CapabilityID)
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND support_state='enabled' AND evidence_state='declared'`,
+		kimi.Application.Deployment.ID,
+	).Scan(&declaredCapabilityCount))
+	require.Equal(t, 6, declaredCapabilityCount)
+
 	qualificationTarget := fmt.Sprintf(
 		"/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/streaming",
 		created.Application.Deployment.ID,
@@ -392,7 +422,7 @@ SELECT evidence_ref FROM model_deployment_capabilities
  (SELECT COUNT(*) FROM model_deployment_operations WHERE deployment_id=$2)`,
 		orgID, created.Application.Deployment.ID).Scan(&rejectedConnections, &deployments, &operations))
 	require.Zero(t, rejectedConnections)
-	require.Equal(t, 2, deployments)
+	require.Equal(t, 3, deployments)
 	require.Equal(t, 1, operations)
 }
 
