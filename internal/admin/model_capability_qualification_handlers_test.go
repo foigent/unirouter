@@ -284,7 +284,7 @@ func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 					Body:       io.NopCloser(strings.NewReader(test.responseBody)),
 				}, nil
 			}))
-			probeContractVersion := modelcapabilityqualification.KimiChatCoreProbeContractVersion
+			probeContractVersion := modelcapabilityqualification.KimiChatCoreProbeContractVersionV2
 			if test.capabilityID == modelprofile.CapabilityStreaming {
 				probeContractVersion = modelcapabilityqualification.KimiChatSSEProbeContractVersionV3
 			}

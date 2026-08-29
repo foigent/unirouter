@@ -67,6 +67,43 @@ type KimiChatObservation struct {
 	ResponseBytes            int
 }
 
+type kimiJSONNumber string
+
+func (number *kimiJSONNumber) UnmarshalJSON(raw []byte) error {
+	value := string(bytes.TrimSpace(raw))
+	if !kimiIntegerLexeme(value) {
+		return errors.New("not a JSON integer")
+	}
+	*number = kimiJSONNumber(value)
+	return nil
+}
+
+func kimiIntegerLexeme(value string) bool {
+	if value == "" {
+		return false
+	}
+	if value[0] == '-' {
+		value = value[1:]
+		if value == "" {
+			return false
+		}
+	}
+	if value == "0" {
+		return true
+	}
+	if value[0] < '1' || value[0] > '9' {
+		return false
+	}
+	for index := 1; index < len(value); index++ {
+		if value[index] < '0' || value[index] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func (number kimiJSONNumber) jsonNumber() json.Number { return json.Number(number) }
+
 type kimiChatUsage struct {
 	PromptTokens     json.Number  `json:"prompt_tokens"`
 	CompletionTokens json.Number  `json:"completion_tokens"`
@@ -84,6 +121,19 @@ type kimiChatStreamUsage struct {
 	} `json:"prompt_tokens_details,omitempty"`
 	CompletionDetails *struct {
 		ReasoningTokens *json.Number `json:"reasoning_tokens,omitempty"`
+	} `json:"completion_tokens_details,omitempty"`
+}
+
+type kimiChatCoreV2Usage struct {
+	PromptTokens     kimiJSONNumber  `json:"prompt_tokens"`
+	CompletionTokens kimiJSONNumber  `json:"completion_tokens"`
+	TotalTokens      kimiJSONNumber  `json:"total_tokens"`
+	CachedTokens     *kimiJSONNumber `json:"cached_tokens,omitempty"`
+	PromptDetails    *struct {
+		CachedTokens *kimiJSONNumber `json:"cached_tokens,omitempty"`
+	} `json:"prompt_tokens_details,omitempty"`
+	CompletionDetails *struct {
+		ReasoningTokens *kimiJSONNumber `json:"reasoning_tokens,omitempty"`
 	} `json:"completion_tokens_details,omitempty"`
 }
 
@@ -115,17 +165,21 @@ type kimiChatCompletion struct {
 		FinishReason string          `json:"finish_reason"`
 		Logprobs     json.RawMessage `json:"logprobs,omitempty"`
 	} `json:"choices"`
-	Usage kimiChatUsage `json:"usage"`
+	Usage json.RawMessage `json:"usage"`
+}
+
+func kimiChatCoreProbeContractSupported(version string) bool {
+	return version == KimiChatCoreProbeContractVersion || version == KimiChatCoreProbeContractVersionV2
 }
 
 func ValidateKimiChatReasoning(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
-	if probeContractID != KimiChatReasoningProbeContractID || probeContractVersion != KimiChatCoreProbeContractVersion {
+	if probeContractID != KimiChatReasoningProbeContractID || !kimiChatCoreProbeContractSupported(probeContractVersion) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
-	payload, observation, err := readKimiChatCompletion(expectedModel, contentType, reader)
+	payload, observation, err := readKimiChatCompletion(expectedModel, contentType, reader, probeContractVersion)
 	if err != nil {
 		return observation, err
 	}
@@ -151,10 +205,10 @@ func ValidateKimiChatFunctionTools(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
-	if probeContractID != KimiChatFunctionToolsProbeContractID || probeContractVersion != KimiChatCoreProbeContractVersion {
+	if probeContractID != KimiChatFunctionToolsProbeContractID || !kimiChatCoreProbeContractSupported(probeContractVersion) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
-	payload, observation, err := readKimiChatCompletion(expectedModel, contentType, reader)
+	payload, observation, err := readKimiChatCompletion(expectedModel, contentType, reader, probeContractVersion)
 	if err != nil {
 		return observation, err
 	}
@@ -183,10 +237,10 @@ func ValidateKimiChatJSONObject(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
-	if probeContractID != KimiChatJSONObjectProbeContractID || probeContractVersion != KimiChatCoreProbeContractVersion {
+	if probeContractID != KimiChatJSONObjectProbeContractID || !kimiChatCoreProbeContractSupported(probeContractVersion) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
-	payload, observation, err := readKimiChatCompletion(expectedModel, contentType, reader)
+	payload, observation, err := readKimiChatCompletion(expectedModel, contentType, reader, probeContractVersion)
 	if err != nil {
 		return observation, err
 	}
@@ -422,16 +476,78 @@ func decodeKimiStreamUsage(raw json.RawMessage, probeContractVersion string) (ki
 		}
 		return usage, nil
 	}
-	var streamUsage kimiChatStreamUsage
-	if err := decodeKimiJSONStrict(raw, &streamUsage); err != nil {
+	return decodeKimiDetailedUsage(raw)
+}
+
+func decodeKimiCompletionUsage(raw json.RawMessage, probeContractVersion string) (kimiChatUsage, error) {
+	if !kimiJSONValuePresent(raw) {
+		return kimiChatUsage{}, invalidKimiChat("usage")
+	}
+	if probeContractVersion == KimiChatCoreProbeContractVersion {
+		var usage kimiChatUsage
+		if err := decodeKimiJSONStrict(raw, &usage); err != nil {
+			return kimiChatUsage{}, invalidKimiChat("json", err)
+		}
+		return usage, nil
+	}
+	if probeContractVersion != KimiChatCoreProbeContractVersionV2 {
+		return kimiChatUsage{}, invalidKimiChat("probe_contract")
+	}
+	usage, err := decodeKimiCoreV2Usage(raw)
+	if err != nil {
+		var validationErr *kimiChatValidationError
+		if errors.As(err, &validationErr) && validationErr.code == "usage" {
+			return kimiChatUsage{}, invalidKimiChat("json", err)
+		}
+	}
+	return usage, err
+}
+
+func decodeKimiDetailedUsage(raw json.RawMessage) (kimiChatUsage, error) {
+	var detailed kimiChatStreamUsage
+	if err := decodeKimiJSONStrict(raw, &detailed); err != nil {
 		return kimiChatUsage{}, invalidKimiChat("usage", err)
 	}
-	usage := kimiChatUsage{
-		PromptTokens: streamUsage.PromptTokens, CompletionTokens: streamUsage.CompletionTokens,
-		TotalTokens: streamUsage.TotalTokens, CachedTokens: streamUsage.CachedTokens,
+	return validateKimiDetailedUsage(detailed)
+}
+
+func decodeKimiCoreV2Usage(raw json.RawMessage) (kimiChatUsage, error) {
+	var wire kimiChatCoreV2Usage
+	if err := decodeKimiJSONStrict(raw, &wire); err != nil {
+		return kimiChatUsage{}, invalidKimiChat("usage", err)
 	}
-	if streamUsage.PromptDetails != nil && streamUsage.PromptDetails.CachedTokens != nil {
-		detailCached, err := parseKimiNonnegativeInteger(*streamUsage.PromptDetails.CachedTokens)
+	detailed := kimiChatStreamUsage{
+		PromptTokens: wire.PromptTokens.jsonNumber(), CompletionTokens: wire.CompletionTokens.jsonNumber(),
+		TotalTokens: wire.TotalTokens.jsonNumber(), CachedTokens: kimiJSONNumberPointer(wire.CachedTokens),
+	}
+	if wire.PromptDetails != nil {
+		detailed.PromptDetails = &struct {
+			CachedTokens *json.Number `json:"cached_tokens,omitempty"`
+		}{CachedTokens: kimiJSONNumberPointer(wire.PromptDetails.CachedTokens)}
+	}
+	if wire.CompletionDetails != nil {
+		detailed.CompletionDetails = &struct {
+			ReasoningTokens *json.Number `json:"reasoning_tokens,omitempty"`
+		}{ReasoningTokens: kimiJSONNumberPointer(wire.CompletionDetails.ReasoningTokens)}
+	}
+	return validateKimiDetailedUsage(detailed)
+}
+
+func kimiJSONNumberPointer(number *kimiJSONNumber) *json.Number {
+	if number == nil {
+		return nil
+	}
+	value := number.jsonNumber()
+	return &value
+}
+
+func validateKimiDetailedUsage(detailed kimiChatStreamUsage) (kimiChatUsage, error) {
+	usage := kimiChatUsage{
+		PromptTokens: detailed.PromptTokens, CompletionTokens: detailed.CompletionTokens,
+		TotalTokens: detailed.TotalTokens, CachedTokens: detailed.CachedTokens,
+	}
+	if detailed.PromptDetails != nil && detailed.PromptDetails.CachedTokens != nil {
+		detailCached, err := parseKimiNonnegativeInteger(*detailed.PromptDetails.CachedTokens)
 		if err != nil {
 			return kimiChatUsage{}, invalidKimiChat("cached_tokens", err)
 		}
@@ -446,12 +562,12 @@ func decodeKimiStreamUsage(raw json.RawMessage, probeContractVersion string) (ki
 			return kimiChatUsage{}, invalidKimiChat("cached_tokens_conflict")
 		}
 	}
-	if streamUsage.CompletionDetails != nil && streamUsage.CompletionDetails.ReasoningTokens != nil {
-		reasoningTokens, err := parseKimiNonnegativeInteger(*streamUsage.CompletionDetails.ReasoningTokens)
+	if detailed.CompletionDetails != nil && detailed.CompletionDetails.ReasoningTokens != nil {
+		reasoningTokens, err := parseKimiNonnegativeInteger(*detailed.CompletionDetails.ReasoningTokens)
 		if err != nil {
 			return kimiChatUsage{}, invalidKimiChat("reasoning_tokens", err)
 		}
-		completionTokens, err := parseKimiNonnegativeInteger(streamUsage.CompletionTokens)
+		completionTokens, err := parseKimiNonnegativeInteger(detailed.CompletionTokens)
 		if err != nil || reasoningTokens > completionTokens {
 			return kimiChatUsage{}, invalidKimiChat("reasoning_tokens", err)
 		}
@@ -459,7 +575,7 @@ func decodeKimiStreamUsage(raw json.RawMessage, probeContractVersion string) (ki
 	return usage, nil
 }
 
-func readKimiChatCompletion(expectedModel, contentType string, reader io.Reader) (kimiChatCompletion, KimiChatObservation, error) {
+func readKimiChatCompletion(expectedModel, contentType string, reader io.Reader, probeContractVersion string) (kimiChatCompletion, KimiChatObservation, error) {
 	expectedModel = strings.TrimSpace(expectedModel)
 	if expectedModel == "" || safeReportedModel(expectedModel) != expectedModel {
 		return kimiChatCompletion{}, KimiChatObservation{}, invalidKimiChat("expected_model")
@@ -485,7 +601,11 @@ func readKimiChatCompletion(expectedModel, contentType string, reader io.Reader)
 	if observation.ReportedModel != expectedModel {
 		return payload, observation, invalidKimiChat("reported_model")
 	}
-	if err := applyKimiUsage(&observation, payload.Usage); err != nil {
+	usage, err := decodeKimiCompletionUsage(payload.Usage, probeContractVersion)
+	if err != nil {
+		return payload, observation, err
+	}
+	if err := applyKimiUsage(&observation, usage); err != nil {
 		return payload, observation, err
 	}
 	return payload, observation, nil

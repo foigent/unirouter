@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-08-29.
+> Snapshot date: 2026-08-30.
 > This document is not a claim that every provider-documented feature is production supported.
 
 The current product-scope candidate is
@@ -9,10 +9,48 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-For development/test Target identity, the Kimi 1.2.14/M96 checkpoint in the
-active batch below supersedes the earlier Pro 1.2.12/M94 snapshot. The local
-1.2.15/M97 source remains a candidate until its exact artifact, migration and
-runtime identities are independently verified on Target.
+For development/test Target identity, the exact Kimi 1.2.15/M97 checkpoint in
+the active batch below supersedes the earlier 1.2.14/M96 and Pro 1.2.12/M94
+snapshots. The local 1.2.16/M98 source remains a candidate until its exact
+artifact, migration and runtime identities are independently verified on
+Target.
+
+## Active delivery batch — Kimi K2.6 Chat Core Conformance
+
+Development/test stable, canary and frontend run exact commit
+`9d826704aead1cfbb569cbb4b3e008524ad243b8`, tree
+`5b16215505d0ab50e678b037c3cf57c1d7e97ca9`, version 1.2.15, with 97 ordered
+migration rows ending at
+`000097_kimi_k26_stream_choice_usage_probe_v3`. Stable/canary/frontend/Nginx,
+database and Redis readiness are healthy; this is canary/test evidence, not
+Production or released evidence. No canonical switch occurred.
+
+The exact K2.6 operation Probe and first public non-stream text request
+succeeded. Streaming Probe v1 and v2 reached the provider but failed on two
+distinct live wire variations; their receipts remain immutable and unapproved.
+Streaming Probe v3 then succeeded with HTTP 200, valid SSE termination and
+final usage, and approval 42 currently qualifies only streaming for the exact
+`kimi.k2.6.api@1.7.0 × protocol.kimi-openai-chat.v5@1.0.0` tuple.
+
+The next single Active Milestone is `Kimi K2.6 × OpenAI-compatible Chat ×
+reasoning`. Probe 47 reached the provider with HTTP 200 but historical core
+Probe v1 rejected the non-stream usage envelope with contract error `json`;
+the precise rejected member was not inspected or promoted as a new authority,
+while the
+failure is consistent with bounded usage details observed on the live streaming
+surface. It is immutable and unapproved. M98/1.2.16 is a source candidate that advances
+only reasoning, tools, function tools, automatic tool choice and JSON Object to
+core Probe Contract v2 for bounded numeric cache/reasoning usage details.
+Streaming v3, the Execution Profile, Chat protocol, Release, alias, pricing,
+Planner, UI and canonical traffic are unchanged. M98 creates no Probe,
+Approval, live or release evidence by itself.
+
+Six supplier calls have been made in this K2.6 batch: the exact operation
+Probe, one public non-stream request, two failed streaming Probes, the
+successful streaming v3 Probe and the failed reasoning v1 Probe. There was no
+automatic retry. The approved batch ceiling remains 20 calls and CNY 5; the
+CNY value is a supplier-spend authorization ceiling, not a native supplier
+cost Observation.
 
 ## Completed delivery batch — DeepSeek V4 Pro Chat Core Target closeout
 

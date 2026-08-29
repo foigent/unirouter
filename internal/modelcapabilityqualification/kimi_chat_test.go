@@ -26,7 +26,7 @@ func TestCompiledKimiK26BindingsAreExactAndDoNotAuthorizeSiblingModels(t *testin
 		if binding.CapabilityID == modelprofile.CapabilityStreaming {
 			require.Equal(t, KimiChatSSEProbeContractVersionV3, binding.ProbeContractVersion)
 		} else {
-			require.Equal(t, KimiChatCoreProbeContractVersion, binding.ProbeContractVersion)
+			require.Equal(t, KimiChatCoreProbeContractVersionV2, binding.ProbeContractVersion)
 		}
 		require.Equal(t, "kimi.k2.6.api", binding.ExecutionProfileID)
 		require.Equal(t, "1.7.0", binding.ExecutionProfileVersion)
@@ -64,6 +64,45 @@ func TestKimiChatReasoningProbeProvesProviderDefaultThinking(t *testing.T) {
 	)
 	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
 	require.Equal(t, "reasoning_content", KimiChatErrorCode(err))
+}
+
+func TestKimiChatCoreProbeV2AcceptsOnlyBoundedUsageDetails(t *testing.T) {
+	body := kimiProbeEnvelopePrefix + `"choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private reasoning"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"cached_tokens":3,"prompt_tokens_details":{"cached_tokens":3},"completion_tokens_details":{"reasoning_tokens":5}}}`
+
+	_, err := ValidateKimiChatReasoning(
+		KimiChatReasoningProbeContractID, KimiChatCoreProbeContractVersion,
+		"kimi-k2.6", "application/json", strings.NewReader(body),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "json", KimiChatErrorCode(err), "historical v1 must not reinterpret new wire members")
+
+	observation, err := ValidateKimiChatReasoning(
+		KimiChatReasoningProbeContractID, KimiChatCoreProbeContractVersionV2,
+		"kimi-k2.6", "application/json", strings.NewReader(body),
+	)
+	require.NoError(t, err)
+	require.True(t, observation.ReasoningObserved)
+	require.Equal(t, int64(3), observation.CachedTokens)
+
+	tests := []struct {
+		name, body, code string
+	}{
+		{"unknown usage sibling", strings.Replace(body, `"reasoning_tokens":5`, `"reasoning_tokens":5,"other":1`, 1), "json"},
+		{"non numeric reasoning", strings.Replace(body, `"reasoning_tokens":5`, `"reasoning_tokens":"5"`, 1), "json"},
+		{"reasoning exceeds completion", strings.Replace(body, `"reasoning_tokens":5`, `"reasoning_tokens":8`, 1), "reasoning_tokens"},
+		{"cache mirror conflict", strings.Replace(body, `"prompt_tokens_details":{"cached_tokens":3}`, `"prompt_tokens_details":{"cached_tokens":2}`, 1), "cached_tokens_conflict"},
+		{"cache mirror without authority", strings.Replace(body, `,"cached_tokens":3`, ``, 1), "cached_tokens"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ValidateKimiChatReasoning(
+				KimiChatReasoningProbeContractID, KimiChatCoreProbeContractVersionV2,
+				"kimi-k2.6", "application/json", strings.NewReader(test.body),
+			)
+			require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+			require.Equal(t, test.code, KimiChatErrorCode(err))
+		})
+	}
 }
 
 func TestKimiChatFunctionToolsProbeUsesExactAutoCompatibleShape(t *testing.T) {

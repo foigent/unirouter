@@ -60,11 +60,11 @@ func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 		{
 			name: "reasoning", capability: modelprofile.CapabilityReasoning,
 			contractID: modelcapabilityqualification.KimiChatReasoningProbeContractID,
-			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"cached_tokens":0}}`,
+			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"cached_tokens":0,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":4}}}`,
 			validate: func(body string) error {
 				_, err := modelcapabilityqualification.ValidateKimiChatReasoning(
 					modelcapabilityqualification.KimiChatReasoningProbeContractID,
-					modelcapabilityqualification.KimiChatCoreProbeContractVersion,
+					modelcapabilityqualification.KimiChatCoreProbeContractVersionV2,
 					"kimi-k2.6", "application/json", strings.NewReader(body),
 				)
 				return err
@@ -73,11 +73,11 @@ func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 		{
 			name: "tools", capability: modelprofile.CapabilityToolChoiceAuto,
 			contractID: modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
-			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29}}`,
+			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":0}}}`,
 			validate: func(body string) error {
 				_, err := modelcapabilityqualification.ValidateKimiChatFunctionTools(
 					modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
-					modelcapabilityqualification.KimiChatCoreProbeContractVersion,
+					modelcapabilityqualification.KimiChatCoreProbeContractVersionV2,
 					"kimi-k2.6", "application/json", strings.NewReader(body),
 				)
 				return err
@@ -86,11 +86,11 @@ func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 		{
 			name: "json object", capability: modelprofile.CapabilityJSONObject,
 			contractID: modelcapabilityqualification.KimiChatJSONObjectProbeContractID,
-			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":"{\"status\":\"UNIROUTER_JSON_PROBE_OK\"}"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":15,"completion_tokens":5,"total_tokens":20}}`,
+			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":"{\"status\":\"UNIROUTER_JSON_PROBE_OK\"}"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":15,"completion_tokens":5,"total_tokens":20,"cached_tokens":0,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0}}}`,
 			validate: func(body string) error {
 				_, err := modelcapabilityqualification.ValidateKimiChatJSONObject(
 					modelcapabilityqualification.KimiChatJSONObjectProbeContractID,
-					modelcapabilityqualification.KimiChatCoreProbeContractVersion,
+					modelcapabilityqualification.KimiChatCoreProbeContractVersionV2,
 					"kimi-k2.6", "application/json", strings.NewReader(body),
 				)
 				return err
