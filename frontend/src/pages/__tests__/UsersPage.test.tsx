@@ -127,6 +127,26 @@ describe('UsersPage enterprise identity presentation', () => {
 	await waitFor(() => expect(mocks.updateUser).toHaveBeenCalledWith(9, { organization_role: 'member', status: 'active' }));
   });
 
+  it('surfaces the workload sponsor conflict when offboarding is blocked', async () => {
+    const user = userEvent.setup();
+    mocks.deleteUser.mockRejectedValue(new ApiError(
+      'Workload sponsorship must be reassigned or revoked',
+      409,
+      { code: 'active_workload_sponsorship' },
+    ));
+
+    render(<UsersPage />);
+
+    await screen.findByText('local-user');
+    await user.click(screen.getByRole('button', { name: '离场用户 local-user' }));
+    await user.click(await screen.findByRole('button', { name: 'confirm' }));
+
+    expect(await screen.findByText(
+      '该账号仍是活动 Workload 授权的业务 Sponsor。请先归档相关应用或撤销旧授权；如需保留应用访问，请建立由其他 Sponsor 承担的新授权，并撤销旧授权后再离场。',
+    )).toBeTruthy();
+    expect(mocks.deleteUser).toHaveBeenCalledWith(8);
+  });
+
   it('does not present an empty user directory before the initial request completes', async () => {
     const usersRequest = deferred<any>();
     mocks.getUsers.mockReturnValue(usersRequest.promise);

@@ -4,6 +4,23 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.12] - 2026-08-29
+
+### Fixed
+
+- Preserved the backend's `active_workload_sponsorship` diagnosis when an
+  administrator attempts to offboard a business Sponsor that still owns an
+  active workload authorization. The UI now directs the operator to archive
+  the related application or revoke the old authorization; retaining access
+  requires a new independently sponsored authorization followed by revocation
+  of the old authorization. This replaces the generic delete failure.
+
+### Evidence boundary
+
+- The backend sponsorship invariant and atomic offboarding transaction are
+  unchanged. This frontend correction does not reassign a Sponsor, revoke a
+  Grant, change routing or create provider traffic.
+
 ## [1.2.11] - 2026-08-29
 
 ### Fixed
