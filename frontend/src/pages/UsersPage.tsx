@@ -167,7 +167,14 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
           await api.deleteUser(u.id);
           Toast.success('账号已离场');
           load();
-        } catch { Toast.error('删除失败'); }
+        } catch (error) {
+          const code = error instanceof ApiError ? apiErrorCode(error) : '';
+          if (code === 'active_workload_sponsorship') {
+            Toast.error('该账号仍是活动 Workload 授权的业务 Sponsor；请先归档临时应用、撤销授权，或重新建立由其他 Sponsor 承担的授权。');
+            return;
+          }
+          Toast.error('账号离场失败');
+        }
       },
     });
   };
