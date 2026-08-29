@@ -4,6 +4,26 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.14] - 2026-08-29
+
+### Fixed
+
+- Normalized only an empty-string `choices[].delta.reasoning_content` member
+  from the exact Kimi K2.6 OpenAI-compatible Chat v5 SSE surface. Runtime
+  delivery and the streaming capability Probe now consume the same
+  exact-scoped normalizer; non-empty reasoning remains visible, invalid types
+  fail closed and unknown siblings remain subject to the existing guardrail.
+- Published streaming Probe Contract v2 so the failed live v1 sample remains
+  immutable and stale rather than being silently reinterpreted by the new
+  software artifact.
+
+### Evidence boundary
+
+- M96 changes only the Kimi K2.6 streaming Probe interpretation contract. It
+  does not change the Execution Profile, Chat protocol, Release, alias, pricing
+  or the other five K2.6 capability contracts, and it creates no live Probe or
+  Approval evidence by itself.
+
 ## [1.2.13] - 2026-08-29
 
 ### Added

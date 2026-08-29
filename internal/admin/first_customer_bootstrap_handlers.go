@@ -517,7 +517,17 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			  AND expected_upstream_model='kimi-k2.6'
 			  AND public_path='/v1/chat/completions'
 			  AND introduced_migration='000095_kimi_k26_chat_core_qualification'`, want: 6},
-		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 63},
+		{name: "fresh Kimi K2.6 stream probe v2 contract binding", query: `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND capability_id='streaming'
+			  AND execution_profile_id='kimi.k2.6.api'
+			  AND execution_profile_version='1.7.0'
+			  AND protocol_profile_id='protocol.kimi-openai-chat.v5'
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_id='unirouter.capability-probe.kimi-chat-sse.v1'
+			  AND probe_contract_version='2.0.0'
+			  AND introduced_migration='000096_kimi_k26_stream_probe_contract_v2'`, want: 1},
+		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 64},
 		{name: "fresh current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
 			WHERE operation_id='openai.chat_completions.v1'
 			  AND capability_id='streaming'
@@ -578,6 +588,15 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			  AND execution_profile_version='1.7.0'
 			  AND protocol_profile_id='protocol.kimi-openai-chat.v5'
 			  AND protocol_profile_version='1.0.0'`, want: 6},
+		{name: "fresh Kimi K2.6 current stream probe v2 contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+			WHERE operation_id='openai.chat_completions.v1'
+			  AND capability_id='streaming'
+			  AND execution_profile_id='kimi.k2.6.api'
+			  AND execution_profile_version='1.7.0'
+			  AND protocol_profile_id='protocol.kimi-openai-chat.v5'
+			  AND protocol_profile_version='1.0.0'
+			  AND probe_contract_id='unirouter.capability-probe.kimi-chat-sse.v1'
+			  AND probe_contract_version='2.0.0'`, want: 1},
 		{name: "fresh current capability probe contract count", query: "SELECT COUNT(*) FROM model_capability_current_probe_contracts", want: 51},
 		{name: "fresh known public tables", query: `SELECT COUNT(*) FROM pg_catalog.pg_tables
 			WHERE schemaname='public' AND tablename=ANY($1::text[])`, args: []any{expectedTables}, want: int64(len(expectedTables))},

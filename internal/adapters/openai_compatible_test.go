@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
 type roundTripFunc func(req *http.Request) (*http.Response, error)
@@ -1337,6 +1338,49 @@ func TestNormalizeDeepSeekV4ChatToolResponseIsExactScopedAndLossless(t *testing.
 		unchanged, applied, scopeErr := NormalizeDeepSeekV4ChatToolResponse(scope.provider, scope.model, scope.protocol, body)
 		require.NoError(t, scopeErr)
 		require.False(t, applied)
+		require.Equal(t, body, unchanged)
+	}
+}
+
+func TestNormalizeKimiK26ChatStreamChunkRemovesOnlyEmptyReasoningContent(t *testing.T) {
+	body := []byte(`{"id":"chunk","model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"ok","reasoning_content":"","unknown":true},"finish_reason":null}],"usage":null}`)
+	normalized, changed, err := NormalizeKimiK26ChatStreamChunk(
+		"kimi", "kimi-k2.6", "protocol.kimi-openai-chat.v5", body,
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NotContains(t, string(normalized), `"reasoning_content"`)
+	require.Contains(t, string(normalized), `"unknown":true`)
+	require.Contains(t, string(normalized), `"content":"ok"`)
+
+	nonEmpty := []byte(strings.Replace(string(body), `"reasoning_content":""`, `"reasoning_content":"work"`, 1))
+	unchanged, changed, err := NormalizeKimiK26ChatStreamChunk(
+		"kimi", "kimi-k2.6", "protocol.kimi-openai-chat.v5", nonEmpty,
+	)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, nonEmpty, unchanged)
+
+	invalid := []byte(strings.Replace(string(body), `"reasoning_content":""`, `"reasoning_content":{}`, 1))
+	_, _, err = NormalizeKimiK26ChatStreamChunk(
+		"kimi", "kimi-k2.6", "protocol.kimi-openai-chat.v5", invalid,
+	)
+	require.Error(t, err)
+
+	duplicate := []byte(`{"choices":[{"delta":{"content":"sensitive","\u0063ontent":"safe","reasoning_content":""}}]}`)
+	_, _, err = NormalizeKimiK26ChatStreamChunk(
+		"kimi", "kimi-k2.6", "protocol.kimi-openai-chat.v5", duplicate,
+	)
+	require.ErrorIs(t, err, strictjson.ErrDuplicateKey)
+
+	for _, scope := range []struct{ provider, model, protocol string }{
+		{"other", "kimi-k2.6", "protocol.kimi-openai-chat.v5"},
+		{"kimi", "kimi-k3", "protocol.kimi-openai-chat.v5"},
+		{"kimi", "kimi-k2.6", "protocol.kimi-openai-chat.v4"},
+	} {
+		unchanged, changed, err := NormalizeKimiK26ChatStreamChunk(scope.provider, scope.model, scope.protocol, body)
+		require.NoError(t, err)
+		require.False(t, changed)
 		require.Equal(t, body, unchanged)
 	}
 }

@@ -143,6 +143,7 @@ SELECT row_to_json(binding)::text FROM model_operation_public_execution_bindings
 	original := readBinding()
 	for cycle := 0; cycle < 2; cycle++ {
 		for _, name := range []string{
+			"000096_kimi_k26_stream_probe_contract_v2.down.sql",
 			"000095_kimi_k26_chat_core_qualification.down.sql",
 			"000094_deepseek_v4_pro_chat_core_qualification.down.sql",
 			"000093_deepseek_function_tool_probe_contract_v2.down.sql",
@@ -193,6 +194,7 @@ func TestPublicModelExecutionAuthorityExactBindingsRollbackProtectsSealedEvidenc
 				capabilities: []string{modelprofile.CapabilityReasoning, modelprofile.CapabilityReasoningEffort},
 			})
 			for _, capabilityDownName := range []string{
+				"000096_kimi_k26_stream_probe_contract_v2.down.sql",
 				"000095_kimi_k26_chat_core_qualification.down.sql",
 				"000094_deepseek_v4_pro_chat_core_qualification.down.sql",
 				"000093_deepseek_function_tool_probe_contract_v2.down.sql",
@@ -462,6 +464,7 @@ FROM billing_provider_attempts a WHERE org_id=$1 AND request_id=$2 AND attempt_i
 	defer conn.Release()
 	var down []byte
 	for _, name := range []string{
+		"000096_kimi_k26_stream_probe_contract_v2.down.sql",
 		"000095_kimi_k26_chat_core_qualification.down.sql",
 		"000094_deepseek_v4_pro_chat_core_qualification.down.sql",
 		"000093_deepseek_function_tool_probe_contract_v2.down.sql",

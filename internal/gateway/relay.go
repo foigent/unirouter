@@ -1698,6 +1698,13 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 // relayStreamRequest handles streaming SSE responses.
 // Background checks signal through channels; one serialized writer owns every
 // downstream Write+Flush pair, and the main goroutine owns resp.Body lifecycle.
+func normalizeProviderStreamFrameForRoute(route *RouteResult, data []byte) ([]byte, error) {
+	normalized, _, err := adapters.NormalizeKimiK26ChatStreamChunk(
+		route.Channel.Provider, route.MappedModel, route.ModelProtocolProfile, data,
+	)
+	return normalized, err
+}
+
 func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWriter, resp *http.Response, route *RouteResult, requestID string, orgID, keyID int64, model, requestedModel, clientIP string, messages []Message, reqLog *logger.Logger, requestStart time.Time, estimatedTokens int, adapter adapters.Adapter, upstreamRequestID string, stopProbeLeaseFn ...func()) {
 	stopProbeLease := func() {}
 	if len(stopProbeLeaseFn) > 0 && stopProbeLeaseFn[0] != nil {
@@ -2150,6 +2157,13 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		return true
 	}
 	enqueueGuardedFrame := func(data []byte, doneAfter, authoritativeUsage bool) bool {
+		normalized, normalizeErr := normalizeProviderStreamFrameForRoute(route, data)
+		if normalizeErr != nil {
+			streamPayloadInvalid = true
+			streamTerminationCode = "upstream_stream_invalid_frame"
+			return false
+		}
+		data = normalized
 		parsed, parseErr := parseGuardedStreamFrameForProtocol(data, route.ModelProtocolProfile)
 		if parseErr != nil || parsed.unsupported {
 			if streamGuardrailProfile.Enforced {

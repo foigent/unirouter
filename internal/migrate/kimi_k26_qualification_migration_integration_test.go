@@ -31,7 +31,8 @@ func TestModelCapabilityQualificationKimiK26MaterializesExactTupleAndBlocksUnsaf
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	ctx := t.Context()
 	fixture := insertM95KimiCapabilityFixture(t, pool, "exact", "protocol.kimi-openai-chat.v5")
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	m95Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
+	require.NoError(t, migrate.Run(ctx, pool, m95Dir))
 	assertM95KimiAuthorityState(t, pool, 6, 6)
 
 	var projections int
@@ -56,7 +57,8 @@ func TestModelCapabilityQualificationKimiK26DownRefusesRetainedProbeIntegration(
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	ctx := t.Context()
 	fixture := insertM95KimiCapabilityFixture(t, pool, "retained-probe", "protocol.kimi-openai-chat.v5")
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	m95Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
+	require.NoError(t, migrate.Run(ctx, pool, m95Dir))
 
 	var operationRevision, capabilityRevision int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -109,7 +111,8 @@ func TestModelCapabilityQualificationKimiK26DoesNotUpgradeGenericAttachmentInteg
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	ctx := t.Context()
 	fixture := insertM95KimiCapabilityFixture(t, pool, "generic", "openai.chat_completions")
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	m95Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000095_kimi_k26_chat_core_qualification.up.sql")
+	require.NoError(t, migrate.Run(ctx, pool, m95Dir))
 
 	var projections int
 	require.NoError(t, pool.QueryRow(ctx, `

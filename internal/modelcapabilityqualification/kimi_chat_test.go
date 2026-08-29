@@ -23,6 +23,11 @@ func TestCompiledKimiK26BindingsAreExactAndDoNotAuthorizeSiblingModels(t *testin
 	}
 	for index, binding := range bindings {
 		require.Equal(t, wantCapabilities[index], binding.CapabilityID)
+		if binding.CapabilityID == modelprofile.CapabilityStreaming {
+			require.Equal(t, KimiChatSSEProbeContractVersionV2, binding.ProbeContractVersion)
+		} else {
+			require.Equal(t, KimiChatCoreProbeContractVersion, binding.ProbeContractVersion)
+		}
 		require.Equal(t, "kimi.k2.6.api", binding.ExecutionProfileID)
 		require.Equal(t, "1.7.0", binding.ExecutionProfileVersion)
 		require.Equal(t, "protocol.kimi-openai-chat.v5", binding.ProtocolProfileID)
@@ -116,6 +121,40 @@ func TestKimiChatSSEProbeRequiresTerminalUsageAndDone(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, observation.DoneSeen)
 	require.Equal(t, int64(2), observation.CachedTokens)
+
+	emptyReasoning := strings.Replace(
+		body,
+		`"content":"UNIROUTER_STREAM_PROBE_OK"`,
+		`"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""`,
+		1,
+	)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatCoreProbeContractVersion,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(emptyReasoning),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "reasoning_content", KimiChatErrorCode(err))
+
+	observation, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV2,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(emptyReasoning),
+	)
+	require.NoError(t, err)
+	require.True(t, observation.DoneSeen)
+	require.Equal(t, int64(2), observation.CachedTokens)
+
+	duplicateBeforeNormalization := strings.Replace(
+		emptyReasoning,
+		`"content":"UNIROUTER_STREAM_PROBE_OK"`,
+		`"content":"sensitive","\u0063ontent":"UNIROUTER_STREAM_PROBE_OK"`,
+		1,
+	)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV2,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(duplicateBeforeNormalization),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "delivery_shape", KimiChatErrorCode(err))
 
 	usageBeforeFinish := strings.Replace(body, `"finish_reason":"stop"`, `"finish_reason":null`, 1)
 	_, err = ValidateKimiChatSSE(

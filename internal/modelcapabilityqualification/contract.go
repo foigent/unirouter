@@ -24,6 +24,7 @@ const (
 	DeepSeekChatJSONObjectProbeContractID      = "unirouter.capability-probe.deepseek-chat-json-object.v1"
 	DeepSeekChatCoreProbeContractVersion       = "1.0.0"
 	KimiChatSSEProbeContractID                 = "unirouter.capability-probe.kimi-chat-sse.v1"
+	KimiChatSSEProbeContractVersionV2          = "2.0.0"
 	KimiChatReasoningProbeContractID           = "unirouter.capability-probe.kimi-chat-reasoning.v1"
 	KimiChatFunctionToolsProbeContractID       = "unirouter.capability-probe.kimi-chat-function-tools.v1"
 	KimiChatJSONObjectProbeContractID          = "unirouter.capability-probe.kimi-chat-json-object.v1"
@@ -224,11 +225,15 @@ var kimiK26CurrentBindings = func() []Binding {
 	}
 	bindings := make([]Binding, 0, len(capabilities))
 	for _, capability := range capabilities {
+		probeContractVersion := KimiChatCoreProbeContractVersion
+		if capability.CapabilityID == modelprofile.CapabilityStreaming {
+			probeContractVersion = KimiChatSSEProbeContractVersionV2
+		}
 		bindings = append(bindings, Binding{
 			OperationID: string(modeloperation.IDChatCompletions), CapabilityID: capability.CapabilityID,
 			ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
 			ProtocolProfileID: "protocol.kimi-openai-chat.v5", ProtocolProfileVersion: "1.0.0",
-			ProbeContractID: capability.ProbeContractID, ProbeContractVersion: KimiChatCoreProbeContractVersion,
+			ProbeContractID: capability.ProbeContractID, ProbeContractVersion: probeContractVersion,
 			ExpectedProvider: "kimi", ExpectedUpstreamModel: "kimi-k2.6",
 			PublicPath: modeloperation.PathChatCompletions,
 		})
