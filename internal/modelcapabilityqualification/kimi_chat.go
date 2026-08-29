@@ -74,6 +74,19 @@ type kimiChatUsage struct {
 	CachedTokens     *json.Number `json:"cached_tokens,omitempty"`
 }
 
+type kimiChatStreamUsage struct {
+	PromptTokens     json.Number  `json:"prompt_tokens"`
+	CompletionTokens json.Number  `json:"completion_tokens"`
+	TotalTokens      json.Number  `json:"total_tokens"`
+	CachedTokens     *json.Number `json:"cached_tokens,omitempty"`
+	PromptDetails    *struct {
+		CachedTokens *json.Number `json:"cached_tokens,omitempty"`
+	} `json:"prompt_tokens_details,omitempty"`
+	CompletionDetails *struct {
+		ReasoningTokens *json.Number `json:"reasoning_tokens,omitempty"`
+	} `json:"completion_tokens_details,omitempty"`
+}
+
 type kimiChatToolCall struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"`
@@ -204,7 +217,8 @@ func ValidateKimiChatSSE(
 ) (KimiChatObservation, error) {
 	if probeContractID != KimiChatSSEProbeContractID ||
 		(probeContractVersion != KimiChatCoreProbeContractVersion &&
-			probeContractVersion != KimiChatSSEProbeContractVersionV2) {
+			probeContractVersion != KimiChatSSEProbeContractVersionV2 &&
+			probeContractVersion != KimiChatSSEProbeContractVersionV3) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
 	if safeReportedModel(strings.TrimSpace(expectedModel)) != strings.TrimSpace(expectedModel) || strings.TrimSpace(expectedModel) == "" {
@@ -221,7 +235,32 @@ func ValidateKimiChatSSE(
 	var observation KimiChatObservation
 	var content strings.Builder
 	var dataLines []string
-	finished, usageSeen := false, false
+	finished, usageSeen, topLevelUsageSeen, usageOnlySeen := false, false, false, false
+	recordUsage := func(raw json.RawMessage) error {
+		usage, err := decodeKimiStreamUsage(raw, probeContractVersion)
+		if err != nil {
+			return err
+		}
+		var candidate KimiChatObservation
+		if err := applyKimiUsage(&candidate, usage); err != nil {
+			return err
+		}
+		if usageSeen {
+			if candidate.PromptTokens != observation.PromptTokens ||
+				candidate.CompletionTokens != observation.CompletionTokens ||
+				candidate.TotalTokens != observation.TotalTokens ||
+				candidate.CachedTokens != observation.CachedTokens {
+				return invalidKimiChat("usage_conflict")
+			}
+			return nil
+		}
+		observation.PromptTokens = candidate.PromptTokens
+		observation.CompletionTokens = candidate.CompletionTokens
+		observation.TotalTokens = candidate.TotalTokens
+		observation.CachedTokens = candidate.CachedTokens
+		usageSeen = true
+		return nil
+	}
 	observed := func() KimiChatObservation {
 		observation.ResponseBytes = KimiChatMaxResponseBytes + 1 - int(limited.N)
 		return observation
@@ -234,16 +273,17 @@ func ValidateKimiChatSSE(
 		dataLines = dataLines[:0]
 		observation.DataEventCount++
 		if payload == "[DONE]" {
-			if observation.DoneSeen || !finished || !usageSeen {
+			if observation.DoneSeen || !finished || !usageSeen || !topLevelUsageSeen {
 				return invalidKimiChat("terminal_order")
 			}
 			observation.DoneSeen = true
 			return nil
 		}
-		if observation.DoneSeen || usageSeen {
+		if observation.DoneSeen || usageOnlySeen {
 			return invalidKimiChat("data_after_terminal")
 		}
-		if probeContractVersion == KimiChatSSEProbeContractVersionV2 {
+		if probeContractVersion == KimiChatSSEProbeContractVersionV2 ||
+			probeContractVersion == KimiChatSSEProbeContractVersionV3 {
 			normalized, _, normalizeErr := adapters.NormalizeKimiK26ChatStreamChunk(
 				"kimi", expectedModel, "protocol.kimi-openai-chat.v5", []byte(payload),
 			)
@@ -267,8 +307,9 @@ func ValidateKimiChatSSE(
 				} `json:"delta"`
 				FinishReason json.RawMessage `json:"finish_reason"`
 				Logprobs     json.RawMessage `json:"logprobs,omitempty"`
+				Usage        json.RawMessage `json:"usage,omitempty"`
 			} `json:"choices"`
-			Usage *kimiChatUsage `json:"usage"`
+			Usage json.RawMessage `json:"usage"`
 		}
 		if err := decodeKimiJSONStrict([]byte(payload), &chunk); err != nil {
 			return invalidKimiChat("json", err)
@@ -278,13 +319,14 @@ func ValidateKimiChatSSE(
 		}
 		observation.ReportedModel = chunk.Model
 		if len(chunk.Choices) == 0 {
-			if !finished || chunk.Usage == nil {
+			if !finished || !kimiJSONValuePresent(chunk.Usage) {
 				return invalidKimiChat("usage_order")
 			}
-			if err := applyKimiUsage(&observation, *chunk.Usage); err != nil {
+			if err := recordUsage(chunk.Usage); err != nil {
 				return err
 			}
-			usageSeen = true
+			topLevelUsageSeen = true
+			usageOnlySeen = true
 			return nil
 		}
 		if len(chunk.Choices) != 1 || finished {
@@ -308,14 +350,25 @@ func ValidateKimiChatSSE(
 			}
 			finished = true
 		}
-		if chunk.Usage != nil {
+		if len(choice.Usage) != 0 && probeContractVersion != KimiChatSSEProbeContractVersionV3 {
+			return invalidKimiChat("usage_order")
+		}
+		if kimiJSONValuePresent(choice.Usage) {
 			if !finished {
 				return invalidKimiChat("usage_order")
 			}
-			if err := applyKimiUsage(&observation, *chunk.Usage); err != nil {
+			if err := recordUsage(choice.Usage); err != nil {
 				return err
 			}
-			usageSeen = true
+		}
+		if kimiJSONValuePresent(chunk.Usage) {
+			if !finished {
+				return invalidKimiChat("usage_order")
+			}
+			if err := recordUsage(chunk.Usage); err != nil {
+				return err
+			}
+			topLevelUsageSeen = true
 		}
 		return nil
 	}
@@ -351,6 +404,59 @@ func ValidateKimiChatSSE(
 		return observed(), invalidKimiChat("content")
 	}
 	return observed(), nil
+}
+
+func kimiJSONValuePresent(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) != 0 && !bytes.Equal(trimmed, []byte("null"))
+}
+
+func decodeKimiStreamUsage(raw json.RawMessage, probeContractVersion string) (kimiChatUsage, error) {
+	if !kimiJSONValuePresent(raw) {
+		return kimiChatUsage{}, invalidKimiChat("usage")
+	}
+	if probeContractVersion != KimiChatSSEProbeContractVersionV3 {
+		var usage kimiChatUsage
+		if err := decodeKimiJSONStrict(raw, &usage); err != nil {
+			return kimiChatUsage{}, invalidKimiChat("usage", err)
+		}
+		return usage, nil
+	}
+	var streamUsage kimiChatStreamUsage
+	if err := decodeKimiJSONStrict(raw, &streamUsage); err != nil {
+		return kimiChatUsage{}, invalidKimiChat("usage", err)
+	}
+	usage := kimiChatUsage{
+		PromptTokens: streamUsage.PromptTokens, CompletionTokens: streamUsage.CompletionTokens,
+		TotalTokens: streamUsage.TotalTokens, CachedTokens: streamUsage.CachedTokens,
+	}
+	if streamUsage.PromptDetails != nil && streamUsage.PromptDetails.CachedTokens != nil {
+		detailCached, err := parseKimiNonnegativeInteger(*streamUsage.PromptDetails.CachedTokens)
+		if err != nil {
+			return kimiChatUsage{}, invalidKimiChat("cached_tokens", err)
+		}
+		if usage.CachedTokens == nil {
+			return kimiChatUsage{}, invalidKimiChat("cached_tokens")
+		}
+		topCached, err := parseKimiNonnegativeInteger(*usage.CachedTokens)
+		if err != nil {
+			return kimiChatUsage{}, invalidKimiChat("cached_tokens", err)
+		}
+		if topCached != detailCached {
+			return kimiChatUsage{}, invalidKimiChat("cached_tokens_conflict")
+		}
+	}
+	if streamUsage.CompletionDetails != nil && streamUsage.CompletionDetails.ReasoningTokens != nil {
+		reasoningTokens, err := parseKimiNonnegativeInteger(*streamUsage.CompletionDetails.ReasoningTokens)
+		if err != nil {
+			return kimiChatUsage{}, invalidKimiChat("reasoning_tokens", err)
+		}
+		completionTokens, err := parseKimiNonnegativeInteger(streamUsage.CompletionTokens)
+		if err != nil || reasoningTokens > completionTokens {
+			return kimiChatUsage{}, invalidKimiChat("reasoning_tokens", err)
+		}
+	}
+	return usage, nil
 }
 
 func readKimiChatCompletion(expectedModel, contentType string, reader io.Reader) (kimiChatCompletion, KimiChatObservation, error) {

@@ -24,7 +24,7 @@ func TestCompiledKimiK26BindingsAreExactAndDoNotAuthorizeSiblingModels(t *testin
 	for index, binding := range bindings {
 		require.Equal(t, wantCapabilities[index], binding.CapabilityID)
 		if binding.CapabilityID == modelprofile.CapabilityStreaming {
-			require.Equal(t, KimiChatSSEProbeContractVersionV2, binding.ProbeContractVersion)
+			require.Equal(t, KimiChatSSEProbeContractVersionV3, binding.ProbeContractVersion)
 		} else {
 			require.Equal(t, KimiChatCoreProbeContractVersion, binding.ProbeContractVersion)
 		}
@@ -143,6 +143,99 @@ func TestKimiChatSSEProbeRequiresTerminalUsageAndDone(t *testing.T) {
 	require.True(t, observation.DoneSeen)
 	require.Equal(t, int64(2), observation.CachedTokens)
 
+	choiceUsage := strings.Join([]string{
+		`data: {"id":"chatcmpl-kimi-probe","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}],"usage":null}`,
+		`data: {"id":"chatcmpl-kimi-probe","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""},"finish_reason":null}],"usage":null}`,
+		`data: {"id":"chatcmpl-kimi-probe","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2,"completion_tokens_details":{"reasoning_tokens":1}}}]}`,
+		`data: {"id":"chatcmpl-kimi-probe","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2,"completion_tokens_details":{"reasoning_tokens":1}}}`,
+		`data: [DONE]`,
+		"",
+	}, "\n\n")
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV2,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(choiceUsage),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	legacyNullableChoiceUsage := strings.Replace(
+		choiceUsage,
+		`"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2,"completion_tokens_details":{"reasoning_tokens":1}}`,
+		`"usage":null`,
+		1,
+	)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV2,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(legacyNullableChoiceUsage),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+
+	observation, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV3,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(choiceUsage),
+	)
+	require.NoError(t, err)
+	require.True(t, observation.DoneSeen)
+	require.Equal(t, int64(2), observation.CachedTokens)
+
+	choiceUsageWithoutTopLevel := strings.Replace(
+		choiceUsage,
+		`data: {"id":"chatcmpl-kimi-probe","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2,"completion_tokens_details":{"reasoning_tokens":1}}}`+"\n\n",
+		"",
+		1,
+	)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV3,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(choiceUsageWithoutTopLevel),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "terminal_order", KimiChatErrorCode(err))
+
+	conflictingUsage := strings.Replace(
+		choiceUsage,
+		`"choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24`,
+		`"choices":[],"usage":{"prompt_tokens":17,"completion_tokens":8,"total_tokens":25`,
+		1,
+	)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV3,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(conflictingUsage),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "usage_conflict", KimiChatErrorCode(err))
+
+	nestedOnlyCache := strings.Replace(
+		choiceUsage,
+		`,"cached_tokens":2,"completion_tokens_details"`,
+		`,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details"`,
+		2,
+	)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV3,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(nestedOnlyCache),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "cached_tokens", KimiChatErrorCode(err))
+
+	conflictingCachedTokens := strings.Replace(
+		choiceUsage,
+		`,"cached_tokens":2,"completion_tokens_details"`,
+		`,"cached_tokens":2,"prompt_tokens_details":{"cached_tokens":3},"completion_tokens_details"`,
+		1,
+	)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV3,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(conflictingCachedTokens),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "cached_tokens_conflict", KimiChatErrorCode(err))
+
+	reasoningExceedsCompletion := strings.Replace(choiceUsage, `"reasoning_tokens":1`, `"reasoning_tokens":9`, 1)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV3,
+		"kimi-k2.6", "text/event-stream", strings.NewReader(reasoningExceedsCompletion),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "reasoning_tokens", KimiChatErrorCode(err))
+
 	duplicateBeforeNormalization := strings.Replace(
 		emptyReasoning,
 		`"content":"UNIROUTER_STREAM_PROBE_OK"`,
@@ -150,7 +243,7 @@ func TestKimiChatSSEProbeRequiresTerminalUsageAndDone(t *testing.T) {
 		1,
 	)
 	_, err = ValidateKimiChatSSE(
-		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV2,
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV3,
 		"kimi-k2.6", "text/event-stream", strings.NewReader(duplicateBeforeNormalization),
 	)
 	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)

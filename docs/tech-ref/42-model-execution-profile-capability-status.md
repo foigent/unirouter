@@ -9,9 +9,9 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-For development/test Target identity, the Kimi 1.2.13/M95 checkpoint in the
+For development/test Target identity, the Kimi 1.2.14/M96 checkpoint in the
 active batch below supersedes the earlier Pro 1.2.12/M94 snapshot. The local
-1.2.14/M96 source remains a candidate until its exact artifact, migration and
+1.2.15/M97 source remains a candidate until its exact artifact, migration and
 runtime identities are independently verified on Target.
 
 ## Completed delivery batch — DeepSeek V4 Pro Chat Core Target closeout
@@ -134,8 +134,8 @@ K2.7 does not denote a separate general-chat model. The authorized K2.6 live
 budget remains at most 20 supplier calls and CNY 5 with no automatic retry.
 
 Development/test currently runs exact main merge commit
-`f91be73a81c48b674c33b4c0508ddde70c888f8f`, tree
-`54778e08fe23d0b332e94258528a1fe653e77183`, version 1.2.13 and schema M95;
+`3c943ed43e03c528fac01806abec48814335f3ce`, tree
+`e6195a370a0bc3ebe08c240eb0a4542e0ce29a80`, version 1.2.14 and schema M96;
 stable, canary, frontend, database and Redis readiness are healthy. It publishes
 one finite K2.6 Chat Core Delivery Batch: an exact Profile-scoped
 operation-protocol binding plus typed probe contracts for streaming, reasoning,
@@ -160,15 +160,24 @@ The first typed streaming Probe, under immutable Probe Contract v1, reached the
 provider successfully (HTTP 200) but failed delivery validation because the
 disabled-thinking SSE emitted an empty-string
 `choices[].delta.reasoning_content`. That failed Probe remains immutable and
-unapproved; Planner correctly remains fail closed. The local source candidate
-is therefore version 1.2.14 with schema ceiling M96. Its exact-scoped shared
+unapproved; Planner correctly remained fail closed. M96's exact-scoped shared
 normalizer removes only that semantically empty member for Kimi K2.6 Chat v5,
 while preserving non-empty reasoning and unknown siblings and rejecting invalid
 types. Runtime and Probe v2 consume the same normalizer. M96 advances only the
 streaming Probe binding to v2; it does not change the Execution Profile, Chat
 protocol, Release, alias, pricing, Planner or the other five capability
-contracts. The three supplier calls so far are the operation probe, successful
-non-stream request and failed v1 streaming Probe.
+contracts.
+
+The Target v2 streaming Probe then reached the provider with HTTP 200 but
+failed strict Probe parsing on Kimi's bounded choice-level terminal usage
+before the standard top-level usage frame. That v2 receipt also remains
+immutable and unapproved. The local source candidate is version 1.2.15 with
+schema ceiling M97. Probe Contract v3 accepts only bounded numeric
+choice-level terminal usage, still requires the standard top-level usage frame
+and requires repeated token totals to match. It does not change runtime delivery, the
+Execution Profile, Chat protocol, Release, alias, pricing, Planner or the other
+five capability contracts. The four supplier calls so far are the operation
+probe, successful non-stream request and failed v1/v2 streaming Probes.
 
 The Kimi probe validators and the Gateway delivery guard currently remain two
 parsing implementations. Cross-delivery fixtures are required for this batch,

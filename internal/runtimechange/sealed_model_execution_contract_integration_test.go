@@ -51,6 +51,7 @@ UPDATE model_registry
 		// Keep the historical M82 rollback fixture at its supported predecessor;
 		// the newer exact-public and Plan fences are independently guarded.
 		for _, name := range []string{
+			"000097_kimi_k26_stream_choice_usage_probe_v3.down.sql",
 			"000096_kimi_k26_stream_probe_contract_v2.down.sql",
 			"000095_kimi_k26_chat_core_qualification.down.sql",
 			"000094_deepseek_v4_pro_chat_core_qualification.down.sql",

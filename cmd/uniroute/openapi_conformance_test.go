@@ -158,6 +158,7 @@ func TestOpenAPIModelCapabilityContractErrorCodesCoverKimiValidators(t *testing.
 		"json", "reported_model", "usage_order", "choices", "reasoning_content", "content",
 		"finish_reason", "unsupported_field", "read", "response_too_large", "tool_calls",
 		"tool_call_identity", "tool_arguments", "structured_output", "usage", "usage_total", "cached_tokens",
+		"usage_conflict", "cached_tokens_conflict", "reasoning_tokens",
 	} {
 		if _, ok := declared[code]; !ok {
 			t.Fatalf("ModelCapabilityContractErrorCode omits Kimi validator code %q", code)

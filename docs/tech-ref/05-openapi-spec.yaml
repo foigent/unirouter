@@ -4965,7 +4965,7 @@ components:
         protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, openai.chat_completions, protocol.kimi-openai-chat.v5] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
         probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1] }
-        probe_contract_version: { type: string, enum: [1.0.0, 2.0.0], description: "Exact version is selected by the model, operation, capability, Execution Profile, and protocol-profile tuple." }
+        probe_contract_version: { type: string, enum: [1.0.0, 2.0.0, 3.0.0], description: "Exact version is selected by the model, operation, capability, Execution Profile, and protocol-profile tuple." }
         probe_available: { type: boolean }
         probe_availability_reason_code: { type: string }
         state: { type: string, enum: [not_probed, probe_failed, probe_stale, probed_awaiting_approval, approved_current] }
@@ -5033,7 +5033,10 @@ components:
         - finish_reason_changed
         - usage
         - usage_total
+        - usage_conflict
         - cached_tokens
+        - cached_tokens_conflict
+        - reasoning_tokens
         - probe_contract
     ModelCapabilityApprovalResult:
       type: object

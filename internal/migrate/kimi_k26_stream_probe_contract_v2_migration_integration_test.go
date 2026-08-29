@@ -55,7 +55,8 @@ func TestModelCapabilityQualificationKimiK26StreamProbeContractV2DownRefusesReta
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "stream-v2-retained", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	m96Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
+	require.NoError(t, migrate.Run(ctx, pool, m96Dir))
 	insertKimiK26StreamProbeFixture(t, pool, fixture, "2.0.0", true, "m96-retained-v2")
 
 	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.down.sql"))
@@ -69,7 +70,8 @@ func TestModelCapabilityQualificationKimiK26StreamProbeContractV2DownRefusesProj
 	pool, _ := setupMigratedThrough(t, "000094_deepseek_v4_pro_chat_core_qualification.up.sql")
 	fixture := insertM95KimiCapabilityFixture(t, pool, "stream-v2-drift", "protocol.kimi-openai-chat.v5")
 	ctx := t.Context()
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	m96Dir := migrationsThrough(t, testutil.MigrationsDir(t), "000096_kimi_k26_stream_probe_contract_v2.up.sql")
+	require.NoError(t, migrate.Run(ctx, pool, m96Dir))
 
 	_, err := pool.Exec(ctx, `
 UPDATE model_deployment_operations
