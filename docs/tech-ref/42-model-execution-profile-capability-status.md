@@ -9,9 +9,16 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-## Active delivery batch — DeepSeek V4 Pro Chat Core Target closeout
+For development/test Target identity, the final 1.2.12 snapshot below
+supersedes the older 1.2.10 Target block still present in the release-bearing
+System Fact Map. Repository policy requires any Fact Map edit to ship with a
+new artifact version; synchronizing that projection is therefore deferred to
+the next authorized release-bearing batch rather than manufacturing a doc-only
+1.2.13 artifact. Runtime and deployment evidence remain the current authority.
 
-The active source batch is `DeepSeek V4 Pro × OpenAI-compatible Chat × Core
+## Completed delivery batch — DeepSeek V4 Pro Chat Core Target closeout
+
+The completed source batch is `DeepSeek V4 Pro × OpenAI-compatible Chat × Core
 Conformance`. It is limited to the current `deepseek.v4-pro.api@1.5.0` Profile,
 the exact `protocol.deepseek-openai-chat.v4@1.0.0` operation tuple and nine
 independent capability qualifications: streaming, reasoning, reasoning effort,
@@ -34,27 +41,34 @@ capability approval remains `valid_deferred` with
 `requirement_baseline=none` and explicit future product approval required; it is
 not part of this batch.
 
-### Current Target snapshot — 1.2.10 / M94 / Pro exact tuple
+### Final Target snapshot — 1.2.12 / M94 / Pro exact tuple
 
 As of 2026-08-29, development/test stable, canary and frontend run the exact
-main merge commit `2c0b068f85b7db0880e6970b1e600df6cd822cc1`, tree
-`d1c62f0fc613b05e87e90e8bcda36b3e07780f19`, version 1.2.10. Stable and
+main merge commit `7748346e3f9e0862de7bb085fbf80904c88f05c1`, tree
+`2f9e258e8e63a5bc433673fbbfc4c87646bf2d55`, version 1.2.12. Stable and
 canary use backend image
-`sha256:5d7378713e24abd690e245c6888a6a6ac5f1f7786304b7f7377b2b2f45a4acf8`;
+`sha256:fe860a88c9b7b0803e5412056d9c89b70880e68f0b592ff2c8be8679b129ad16`;
 frontend uses
-`sha256:b65970ffef1e715300782b0fef9d8710861f09fc60ade32ede9ca7042ab93a84`.
+`sha256:cf255bf1bf45eb948a5e3b8531bd8613367c85eee392ceedf15c2b3007d72ea0`.
 Both public and local readiness return database and Redis healthy. The database
 has 93 ordered migration rows ending at
-`000094_deepseek_v4_pro_chat_core_qualification`. The non-rolling window stopped
-the old backends/frontend before one migration owner advanced the shared
-database, then started exact-ledger stable, canary and frontend. The protected
-pre-upgrade backup remains on Target under the deployment-evidence directory;
-its private contents are not part of this document.
+`000094_deepseek_v4_pro_chat_core_qualification`; 1.2.12 did not change schema.
+The release worktree is clean at that exact commit/tree. Runtime identity now
+reports 1.2.12/`7748346e...`, while the pre-existing environment remains
+canonical route authority with compatibility disabled and async media disabled.
+The protected pre-upgrade backup remains on Target under the deployment-evidence
+directory; its private contents are not part of this document.
 
 PR #340 (CI run 33212334966), PR #341 (33216249020) and the final operation-
 evidence correction PR #342 (33229132370) each passed all five required jobs
 before merge. The extra diffs were live-found, independently gated corrections:
 they do not support a claim that the batch used only one push or one CI run.
+The supported customer-authority repair PR #343 passed all five jobs in CI run
+33235124887 and merged as `acc2fe7c75e2644328b4e2eb8d9b1e9071e037e0`.
+The final Sponsor-diagnostic UI correction PR #344 passed all five jobs in CI
+run 33240368418 and merged as the deployed `7748346e...` artifact. The latter
+changes only the operator diagnosis and does not alter sponsorship, Grants,
+routing or provider traffic.
 The final frontend no longer owns a DeepSeek Profile/protocol allowlist;
 `capability_probe_contracts` is a server-owned exact-operation projection, and
 the UI renders only the returned contracts. This removes the Pro-specific UI
@@ -80,26 +94,74 @@ the platform-wide route authority, enable compatibility, publish pricing or
 constitute a Production release. The pre-existing runtime configuration remains
 canonical route authority with compatibility disabled and async media disabled.
 
-This Pro batch has used 19 of its approved maximum 20 supplier calls: nine
+This Pro batch used its approved maximum 20 supplier calls: nine
 earlier capability probes on the superseded operation revision, then the exact
-operation probe and nine current capability probes above. The last authorized
-call is reserved for one fixed-version generic SDK public workflow. Customer
-wallet balance, authorization and charged cost remain zero. The CNY 5 value is
+operation probe, nine current capability probes above and one final
+`openai-python@3.5.0` public workflow. That last request
+`op_2f4c76e0702b47944c602b53cc8f0e6b` / attempt
+`att_490a6e4dcea569533578966cac41fd81` returned HTTP 200 and `PRO_SDK_OK`,
+with provider-reported final usage of 15 input, zero cache-read and 4 output
+tokens. It bound deployment 3, the exact v4 protocol identity and Release 24.
+Its billing mode was `cost_observation`; Freeze, calculated customer cost,
+charged customer cost and wallet movement were all zero. The CNY 5 value remains
 an authorized supplier-spend ceiling, not a supplier invoice or native-cost
-Observation. The fixed-SDK checkpoint is still pending because the supported
-ordinary-user credential flow must be completed without a database or access-
-control bypass; until then, the Pro Target batch is not fully closed.
+Observation.
 
-## Delivery snapshot — DeepSeek Flash Chat completion, development/test
+The SDK workload Application was then archived through the supported UI. Grants
+12/13 are revoked, task-scoped Keys 88/89/90 are disabled, and user 40 is
+disabled/offboarded with no project membership or live session. The first
+offboarding attempt correctly failed and rolled back atomically while active
+sponsorship remained; archiving removed that blocker without reassigning a
+Sponsor or creating replacement access. The wallet remains CNY with zero
+balance, grant, freeze and cumulative spend. Browser readback on the deployed
+frontend shows V1.2.12, the exact Pro Profile/output ceiling and all nine
+server-projected capability sections. No supplier call was made during the
+1.2.12 deployment or this final readback.
 
-As of 2026-08-29, the exact reviewed artifact is commit
+The deployment used an incremental Git bundle against the actual Git common
+object store of the active Target release; a full-history bundle was not used.
+The supported retention workflow removed exactly 21 authorized historical
+images and BuildKit cache older than 168 hours without removing containers,
+volumes, database state, backups or release directories. The deployed 1.2.12
+images and release are now explicitly retained. This exact Pro Chat Core subset
+is `canary_live_verified` on development/test; pricing activation, customer
+billing, Production and broader provider parity remain unclaimed.
+
+## Active delivery batch — Kimi K2.6 Chat
+
+The next Active Milestone is `Kimi K2.6 × OpenAI-compatible Chat ×
+non-streaming text`. The Kimi series in the current inventory is K2.6,
+K2.7 Code and K3; K2.7 does not denote a separate general-chat model. The
+authorized K2.6 live budget is at most 20 supplier calls and CNY 5, but no call
+may occur until the exact matrix is frozen and the user enters the prepared Kimi
+Open Platform credential once through the supported UI.
+
+K2.6 then advances one milestone at a time through streaming, thinking, tools,
+JSON and usage/cache-read mapping. Non-stream latency evidence records gateway
+stages, connection establishment or reuse, response headers, full provider
+response and downstream completion; it does not report first-token or SSE
+metrics. Streaming separately records first content event, downstream first
+content, inter-chunk gaps and completion, excluding headers and keepalive
+comments from first-token claims. Cold and reused connections stay distinct,
+and a small live sample reports individual observations rather than P95/P99.
+Direct-provider comparison, if needed, must use the same region, model, prompt,
+connection temperature and streaming mode. Contract-preserving fast-path work
+is permitted only after measurements identify stable UniRouter-added latency or
+buffering; it is not part of this milestone by default.
+
+## Historical delivery snapshot — DeepSeek Flash Chat completion
+
+> Retained evidence from the Flash closeout. It does not describe the current
+> development/test artifact, which is the final 1.2.12 Target snapshot above.
+
+At that 2026-08-29 checkpoint, the exact reviewed artifact was commit
 `18c7153fbdc0b1a9ed2b1d4898893f0dc687dd47`, tree
 `5721a8488c68ff4d596a4dd5ad3c57e3f639f400`, version 1.2.7 and schema ceiling
 `000093_deepseek_function_tool_probe_contract_v2`. Automatic CI run
 33187407637 and protocol-conformance run 33187407720 both passed on that exact
-commit. Development/test stable, canary and frontend run images built from
-`18c7153fbdc0`; both backends are healthy. The database has 92 ordered migration
-rows with M93 as its maximum. Canonical model-route authority remains enabled
+commit. Development/test stable, canary and frontend then ran images built from
+`18c7153fbdc0`; both backends were healthy. The database had 92 ordered migration
+rows with M93 as its maximum. Canonical model-route authority was enabled
 with compatibility disabled; this batch did not change the Source Instance,
 public-model identity, Profile, protocol, sealed Release 23, Alias, pricing or
 Production traffic.
@@ -2765,13 +2827,17 @@ The repository already contains the correct structural start:
   validates `reasoning_effort=low|high|max`; omission preserves each provider
   default. The current profiles also reject non-provider sampling values and
   invalid model-specific `tool_choice` combinations before dispatch.
-- Current DeepSeek Flash/Pro `@1.4.0` use the immutable v4 thinking/tool-history
-  contract: `low/high/max`, with `medium/xhigh -> high` compatibility while
-  preserving the original wire value. Non-stream `none/auto/required/named`
-  choices are permitted under active thinking. Unknown effort, disabled thinking
-  plus effort, ineffective sampling and missing reasoning replay in assistant
-  history of an active-thinking tools request fail closed. Earlier exact
-  versions retain their historical restrictions; they are not reinterpreted.
+- Current DeepSeek Flash/Pro `@1.5.0` use the immutable v5 reasoning/tool-choice
+  composition over the reviewed Chat v4 history contract: `low/high/max`, with
+  `medium/xhigh -> high` compatibility while preserving the original wire
+  value. Under active/default thinking, omitted choice and redundant explicit
+  `auto` preserve provider-default selection while explicit
+  `none`/`required`/named choices fail closed; with thinking explicitly disabled,
+  non-stream `none`/`auto`/`required`/named choices remain available. Unknown
+  effort, disabled thinking plus effort, ineffective sampling and missing
+  reasoning replay in assistant history of an active-thinking tools request
+  fail closed. Earlier exact versions retain their historical restrictions;
+  they are not reinterpreted.
 - Kimi Platform top-level `usage.cached_tokens` and DeepSeek hit/miss counters
   have profile-bound usage parsers. A generic OpenAI-compatible route cannot
   turn DeepSeek-shaped fields into billing evidence. Generic nested
@@ -2905,8 +2971,8 @@ The following are still real gaps:
 | Kimi K2.6 | 262,144 context; thinking toggle and optional preserved thinking; text/image/video; ToolCalls, JSON Mode, Partial Mode, automatic cache and built-in search | current `kimi.k2.6.api@1.7.0`; exact frozen tokenizer admission; typed fixed parameters/keep; exact non-stream function tools with omitted/none/auto choice, complete history and declared-function response consistency; standard JSON Object; final-assistant Partial; Kimi cache usage; MIME-bounded inline image/video; one serial non-stream `$web_search` call with exact unit-meter evidence, including thinking-enabled requests | `tool_choice:null`, required/named/parallel and function-tool streaming; provider-file/remote-URL media; large-media estimator; target live capability conformance; streaming search metering; Dynamic Tools are not a K2.6 claim |
 | Kimi K2.7 Code | 262,144 context and 32K default output; text/image/video; thinking-only with preserved thinking; ToolCalls, JSON Mode, Partial Mode and automatic cache | current `kimi.k2.7-code.api@1.3.0` on Kimi API Platform; typed required-thinking/fixed parameters; exact non-stream function tools with omitted/none/auto choice, complete reasoning-preserving history and declared-function response consistency; standard JSON Object; final-assistant Partial; Kimi cache usage; MIME-bounded inline media | `tool_choice:null`, required/named/parallel and function-tool streaming; target live capability conformance; large/file media; highspeed and separate subscription Coding identities; Anthropic coding conformance |
 | Kimi K3 | 1M provider maximum with a 256K current customer default; 131,072 default and 1,048,576 maximum output; always-on reasoning; `low/high/max`; tools, JSON Object/Schema, Partial, dynamic tools, built-in search, vision/video and automatic cache | current `kimi.k3.api@1.8.0`; typed effort/fixed-parameter constraints; exact non-stream top-level plus system-message Dynamic Tools with one visible-name Plan constraint and omitted/none/auto/required choice; exact tool history/response; standard JSON; final-assistant Partial; Kimi cache usage; MIME-bounded inline image/video; one serial non-stream `$web_search` call with exact unit-meter evidence; historical `@1.6.0/@1.7.0` remain addressable | named choice remains fail-closed because K3 reasoning is always active; provider-file/remote-URL media; large-media estimator; function-tool and search streaming metering; full target live multi-turn/capability conformance |
-| DeepSeek V4 Flash | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache. Vision belongs to the separate `deepseek-v4-flash-vision-exp` model | current `deepseek.v4-flash.api@1.5.0`; standard OpenAI-compatible Chat; typed `low/high/max` reasoning plus `medium/xhigh -> high` compatibility; with active/default thinking, omitted choice and redundant explicit auto use provider-default selection while explicit none/required/named fail closed; explicit none/auto/required/named are available only with thinking disabled; single Plan declared/selected-function authority; exact per-choice tool response and function-history validation; active tools requests conservatively require non-empty reasoning replay for all assistant history; standard-surface strict/parallel rejection; profile-bound cache hit/miss usage; versioned 1M/384K provider limits. Historical `@1.2.0/@1.3.0/@1.4.0` remain addressable | Profile 1.5 Target/live qualification; streaming tools; beta strict tools; live multi-turn/operation conformance; prefix beta; full Responses/Anthropic operations; Files/FIM; separate vision model qualification |
-| DeepSeek V4 Pro | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache | current `deepseek.v4-pro.api@1.5.0`; its own immutable reasoning identity models `low/high/max` with `medium/xhigh -> high`; active/default thinking rejects explicit none/required/named and normalizes redundant explicit auto to provider-default omission, while the reviewed standard Chat v4 tool-choice subset remains available with thinking disabled; one Plan declared/selected-function authority, exact response/history consistency and conservative active-tools reasoning replay; profile-bound cache hit/miss usage and 1M/384K provider limits remain. Historical `@1.2.0/@1.3.0/@1.4.0` are addressable | Profile 1.5 Target/live qualification; tool streaming; beta strict tools; live multi-turn conformance; beta/native/Files/FIM operations; pricing, billing and Release remain open |
+| DeepSeek V4 Flash | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache. Vision belongs to the separate `deepseek-v4-flash-vision-exp` model | current `deepseek.v4-flash.api@1.5.0`; standard OpenAI-compatible Chat; typed `low/high/max` reasoning plus `medium/xhigh -> high` compatibility; with active/default thinking, omitted choice and redundant explicit auto use provider-default selection while explicit none/required/named fail closed; explicit none/auto/required/named are available only with thinking disabled; single Plan declared/selected-function authority; exact per-choice tool response and function-history validation; active tools requests conservatively require non-empty reasoning replay for all assistant history; standard-surface strict/parallel rejection; profile-bound cache hit/miss usage; versioned 1M/384K provider limits; the bounded Chat subset has development/test public UI/SDK evidence and retained Release 23. Historical `@1.2.0/@1.3.0/@1.4.0` remain addressable | streaming tools; beta strict tools; broader live multi-turn/operation conformance; prefix beta; full Responses/Anthropic operations; Files/FIM; separate vision model qualification; pricing/customer billing and Production release |
+| DeepSeek V4 Pro | Chat, native Responses and Anthropic surfaces; thinking toggle/effort; tools; JSON; prefix completion; FIM; Files; KV cache | current `deepseek.v4-pro.api@1.5.0`; its own immutable reasoning identity models `low/high/max` with `medium/xhigh -> high`; active/default thinking rejects explicit none/required/named and normalizes redundant explicit auto to provider-default omission, while the reviewed standard Chat v4 tool-choice subset remains available with thinking disabled; one Plan declared/selected-function authority, exact response/history consistency and conservative active-tools reasoning replay; profile-bound cache hit/miss usage and 1M/384K provider limits remain; the exact Chat Core tuple has nine Target-qualified capabilities, fixed-SDK delivery evidence and model-local stable Release 24. Historical `@1.2.0/@1.3.0/@1.4.0` are addressable | tool streaming; beta strict tools; broader live multi-turn conformance; beta/native/Files/FIM operations; pricing/customer billing and Production release |
 | Qwen3.8-Max | DashScope CN Beijing OpenAI-compatible Chat; 1M context; 131,072 maximum output in normal and thinking modes; thinking defaults and controls; preserved thinking; tools/tool stream; structured output; image/video; cache; Beijing search | `qwen.3.8-max.api@1.8.0`; typed reasoning/preserve contract; both output fields bounded at 131,072; provider extensions pass complete admission/prepare/payload paths; inherited tools, structured-output, cache, inline/HTTPS media and search request contracts remain exact-profile gated; old `@1.7.0` remains addressable with its historical reasoning v1 | live provider validation; region-specific identities beyond Beijing; search/cache pricing and live meter evidence; Release |
 | MiniMax M2.5/M2.7/M3 | M2.x 204,800 total window; M3 1M and image/video input; M3 adaptive/disabled thinking; M2.x required thinking; tools and automatic nested cache usage; M3 Chat supports standard/priority tier; Token Plan is quota/subscription access | M2.5-highspeed and M2.7 current `@1.5.0`, plus M3 current `@1.7.0`, all carry exact non-stream function request/history/response contracts—with provider-default auto but no explicit tool-choice/parallel wire claim—on top of exact automatic cache-read and reasoning contracts; M3 also retains bounded inline-JPEG and standard/priority tier support. Cache/vision/tier/reasoning/tool invocation origins remain distinct in one Plan snapshot; exact tokenizer only for M2.7; MiniMax response-envelope normalization is fail-closed. M3's four official CNY tier/context bands are projected as review-only evidence without flattening them into a Rate Card | M3 video, remote/other image formats and full media limits; the existing generic video validator is not sufficient for executable M3 support; streaming tools and explicit tool-choice/parallel controls remain unsupported by this exact surface contract; tier/context-band Rate Card selection, an approved public CNY CustomerChargeQuote and actual delivered-tier evidence are absent; M2.x/M3 split reasoning remains rejected pending a consistent exact replay contract; Token Plan quota evidence. Customer wallet cost remains zero until an approved public CNY price contract exists |
 | Gemini 3.7 Flash | OpenAI-compatible Chat supports Standard, Flex and Priority tiers; Flex has long latency and no automatic Standard fallback; Priority may report Standard delivery | `gemini.3.7-flash.api@1.7.0`; core Chat subset plus typed request/effective/observed tier evidence, pre-Freeze cost-observation gate and bounded Flex timeout chain | tier-aware CNY CustomerChargeQuote; native USD supplier cost; live tier response validation; Release; native Gemini cache/search/media surfaces |
