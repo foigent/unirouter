@@ -21,6 +21,7 @@ var enterpriseFinanceDownMigrations = []string{
 }
 
 var prd8RuntimeControlDownMigrations = []string{
+	"000097_kimi_k26_stream_choice_usage_probe_v3.down.sql",
 	"000096_kimi_k26_stream_probe_contract_v2.down.sql",
 	"000095_kimi_k26_chat_core_qualification.down.sql",
 	"000094_deepseek_v4_pro_chat_core_qualification.down.sql",
@@ -79,6 +80,7 @@ func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 	orderedNames := make([]string, 0, len(names)+4)
 	seen := make(map[string]struct{}, len(names)+4)
 	for _, name := range []string{
+		"000097_kimi_k26_stream_choice_usage_probe_v3.down.sql",
 		"000096_kimi_k26_stream_probe_contract_v2.down.sql",
 		"000095_kimi_k26_chat_core_qualification.down.sql",
 		"000094_deepseek_v4_pro_chat_core_qualification.down.sql",

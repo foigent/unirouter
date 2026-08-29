@@ -252,7 +252,8 @@ func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 			contentType:                 "text/event-stream",
 			responseBody: strings.Join([]string{
 				`data: {"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""},"finish_reason":null}],"usage":null}`,
-				`data: {"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":0}}`,
+				`data: {"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":1}}}]}`,
+				`data: {"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":1}}}`,
 				`data: [DONE]`, "",
 			}, "\n\n"),
 			assertBody: func(t *testing.T, payload map[string]interface{}) {
@@ -260,7 +261,7 @@ func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 				require.Equal(t, true, payload["stream_options"].(map[string]interface{})["include_usage"])
 			},
 			assertOutcome: func(t *testing.T, outcome modelCapabilityProbeOutcome) {
-				require.Equal(t, 3, outcome.DataEventCount)
+				require.Equal(t, 4, outcome.DataEventCount)
 			},
 		},
 	}
@@ -285,7 +286,7 @@ func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 			}))
 			probeContractVersion := modelcapabilityqualification.KimiChatCoreProbeContractVersion
 			if test.capabilityID == modelprofile.CapabilityStreaming {
-				probeContractVersion = modelcapabilityqualification.KimiChatSSEProbeContractVersionV2
+				probeContractVersion = modelcapabilityqualification.KimiChatSSEProbeContractVersionV3
 			}
 			outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 				Provider: "kimi", BaseURL: "https://api.moonshot.cn/v1",

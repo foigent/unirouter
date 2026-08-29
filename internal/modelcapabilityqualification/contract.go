@@ -25,6 +25,7 @@ const (
 	DeepSeekChatCoreProbeContractVersion       = "1.0.0"
 	KimiChatSSEProbeContractID                 = "unirouter.capability-probe.kimi-chat-sse.v1"
 	KimiChatSSEProbeContractVersionV2          = "2.0.0"
+	KimiChatSSEProbeContractVersionV3          = "3.0.0"
 	KimiChatReasoningProbeContractID           = "unirouter.capability-probe.kimi-chat-reasoning.v1"
 	KimiChatFunctionToolsProbeContractID       = "unirouter.capability-probe.kimi-chat-function-tools.v1"
 	KimiChatJSONObjectProbeContractID          = "unirouter.capability-probe.kimi-chat-json-object.v1"
@@ -227,7 +228,7 @@ var kimiK26CurrentBindings = func() []Binding {
 	for _, capability := range capabilities {
 		probeContractVersion := KimiChatCoreProbeContractVersion
 		if capability.CapabilityID == modelprofile.CapabilityStreaming {
-			probeContractVersion = KimiChatSSEProbeContractVersionV2
+			probeContractVersion = KimiChatSSEProbeContractVersionV3
 		}
 		bindings = append(bindings, Binding{
 			OperationID: string(modeloperation.IDChatCompletions), CapabilityID: capability.CapabilityID,

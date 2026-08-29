@@ -4,6 +4,23 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.15] - 2026-08-30
+
+### Fixed
+
+- Accepted Kimi K2.6's bounded choice-level terminal stream usage, including
+  numeric cached/reasoning detail counters, while still requiring the standard
+  top-level usage frame and identical repeated token totals.
+- Published streaming Probe Contract v3 so the live failed v2 Probe remains
+  immutable and stale rather than being reinterpreted by the repaired parser.
+
+### Evidence boundary
+
+- M97 advances only the exact Kimi K2.6 streaming Probe contract. It does not
+  change the Execution Profile, Chat protocol, Release, alias, pricing,
+  routing framework, UI or the other five K2.6 capability contracts, and it
+  creates no live Probe or Approval evidence by itself.
+
 ## [1.2.14] - 2026-08-29
 
 ### Fixed

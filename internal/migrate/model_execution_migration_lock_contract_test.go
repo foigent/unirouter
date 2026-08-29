@@ -249,6 +249,27 @@ func TestModelExecutionMigrationsJoinSharedLifecycleLockBeforeTableLocks(t *test
 			},
 		},
 		{
+			name:           "97 up",
+			file:           "000097_kimi_k26_stream_choice_usage_probe_v3.up.sql",
+			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "schema_migrations",
+			},
+		},
+		{
+			name:           "97 down",
+			file:           "000097_kimi_k26_stream_choice_usage_probe_v3.down.sql",
+			firstProtected: "DO $$",
+			lockedTables: []string{
+				"model_capability_probe_contract_bindings", "model_capability_current_probe_contracts",
+				"model_deployment_capabilities", "model_deployment_operations", "model_deployments",
+				"provider_connections", "model_registry", "model_capability_probes",
+				"model_capability_routing_approvals", "schema_migrations",
+			},
+		},
+		{
 			name:           "95 up",
 			file:           "000095_kimi_k26_chat_core_qualification.up.sql",
 			firstProtected: "DROP TRIGGER model_capability_probe_contract_bindings_immutable",
@@ -389,6 +410,7 @@ func TestModelExecutionGuardedDownsLockBeforeLedgerAndEvidenceChecks(t *testing.
 		"000094_deepseek_v4_pro_chat_core_qualification.down.sql",
 		"000095_kimi_k26_chat_core_qualification.down.sql",
 		"000096_kimi_k26_stream_probe_contract_v2.down.sql",
+		"000097_kimi_k26_stream_choice_usage_probe_v3.down.sql",
 	} {
 		t.Run(file, func(t *testing.T) {
 			body, err := os.ReadFile("../../migrations/" + file)

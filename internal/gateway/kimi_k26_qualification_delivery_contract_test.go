@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
@@ -125,7 +127,8 @@ func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 func TestKimiK26SuccessfulStreamProbeFramesAreDeliverable(t *testing.T) {
 	frames := []string{
 		`{"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""},"finish_reason":null}],"usage":null}`,
-		`{"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":0}}`,
+		`{"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":1}}}]}`,
+		`{"id":"chatcmpl-kimi","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.6","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":1}}}`,
 	}
 	bodyParts := make([]string, 0, len(frames)+2)
 	for _, frame := range frames {
@@ -135,10 +138,17 @@ func TestKimiK26SuccessfulStreamProbeFramesAreDeliverable(t *testing.T) {
 	body := strings.Join(bodyParts, "\n\n")
 	_, err := modelcapabilityqualification.ValidateKimiChatSSE(
 		modelcapabilityqualification.KimiChatSSEProbeContractID,
-		modelcapabilityqualification.KimiChatSSEProbeContractVersionV2,
+		modelcapabilityqualification.KimiChatSSEProbeContractVersionV3,
 		"kimi-k2.6", "text/event-stream", strings.NewReader(body),
 	)
 	require.NoError(t, err)
+	usage, present, err := adapters.ParseOpenAICompatibleUsageWithCacheProfile(
+		[]byte(frames[2]), adapters.EndpointChatCompletions,
+		metering.UsageSourceUpstream, "cache-usage.kimi-platform.v1",
+	)
+	require.NoError(t, err)
+	require.True(t, present)
+	require.Equal(t, 0, usage.CacheReadTokens)
 
 	for _, raw := range frames {
 		normalized, err := normalizeProviderStreamFrameForRoute(&RouteResult{
