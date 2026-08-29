@@ -141,7 +141,9 @@ describe('UsersPage enterprise identity presentation', () => {
     await user.click(screen.getByRole('button', { name: '离场用户 local-user' }));
     await user.click(await screen.findByRole('button', { name: 'confirm' }));
 
-    expect(await screen.findByText(/该账号仍是活动 Workload 授权的业务 Sponsor/)).toBeTruthy();
+    expect(await screen.findByText(
+      '该账号仍是活动 Workload 授权的业务 Sponsor。请先归档相关应用或撤销旧授权；如需保留应用访问，请建立由其他 Sponsor 承担的新授权，并撤销旧授权后再离场。',
+    )).toBeTruthy();
     expect(mocks.deleteUser).toHaveBeenCalledWith(8);
   });
 

@@ -170,7 +170,7 @@ export default function UsersPage({ embedded = false }: { embedded?: boolean }) 
         } catch (error) {
           const code = error instanceof ApiError ? apiErrorCode(error) : '';
           if (code === 'active_workload_sponsorship') {
-            Toast.error('该账号仍是活动 Workload 授权的业务 Sponsor；请先归档临时应用、撤销授权，或重新建立由其他 Sponsor 承担的授权。');
+            Toast.error('该账号仍是活动 Workload 授权的业务 Sponsor。请先归档相关应用或撤销旧授权；如需保留应用访问，请建立由其他 Sponsor 承担的新授权，并撤销旧授权后再离场。');
             return;
           }
           Toast.error('账号离场失败');

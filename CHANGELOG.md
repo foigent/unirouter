@@ -11,9 +11,9 @@ those build identities do not replace the product version.
 - Preserved the backend's `active_workload_sponsorship` diagnosis when an
   administrator attempts to offboard a business Sponsor that still owns an
   active workload authorization. The UI now directs the operator to archive
-  the temporary application, revoke its authorization, or establish a new
-  independently sponsored authorization instead of reporting a generic delete
-  failure.
+  the related application or revoke the old authorization; retaining access
+  requires a new independently sponsored authorization followed by revocation
+  of the old authorization. This replaces the generic delete failure.
 
 ### Evidence boundary
 
