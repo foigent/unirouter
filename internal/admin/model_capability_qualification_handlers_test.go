@@ -322,6 +322,7 @@ func TestKimiK26FailedProbeReturnsOnlyBoundedSchemaDiagnostic(t *testing.T) {
 	}, "kimi-k26-safe-diagnostic-test")
 	require.True(t, outcome.ProviderSuccess)
 	require.False(t, outcome.ContractSuccess)
-	require.Equal(t, "json_unknown_field_private_payload", outcome.ContractErrorCode)
-	require.NotContains(t, outcome.ContractErrorCode, "must-not-leak")
+	require.Equal(t, "json_unknown_field", outcome.ContractErrorCode)
+	require.Equal(t, "private_payload", outcome.DiagnosticMember)
+	require.NotContains(t, outcome.DiagnosticMember, "must-not-leak")
 }

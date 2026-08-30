@@ -260,4 +260,34 @@ SELECT response_summary::text,error_summary
 	require.Equal(t, failed.CapabilityProbeID, failedView.LatestProbe.CapabilityProbeID)
 	require.Equal(t, "unsupported_field", failedView.LatestProbe.ContractErrorCode)
 	require.NotContains(t, failedGetResponse.Body.String(), rawProviderMarker)
+
+	// 1.2.18 could persist a safe member inside the immutable error-code. Simulate
+	// that historical row without changing production immutability, then prove
+	// the 1.2.19 read projection separates the member and leaves storage intact.
+	_, err = pool.Exec(t.Context(), `ALTER TABLE model_capability_probes DISABLE TRIGGER model_capability_probes_append_only`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `ALTER TABLE model_capability_probes ENABLE TRIGGER model_capability_probes_append_only`)
+	})
+	_, err = pool.Exec(t.Context(), `
+UPDATE model_capability_probes
+   SET response_summary=jsonb_set(response_summary,'{contract_error_code}',
+       '"json_unknown_field_provider_extension"'::jsonb)
+ WHERE capability_probe_id=$1`, failed.CapabilityProbeID)
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `ALTER TABLE model_capability_probes ENABLE TRIGGER model_capability_probes_append_only`)
+	require.NoError(t, err)
+
+	legacyGetResponse := httptest.NewRecorder()
+	handler.GetCanonicalModelCapabilityQualification(legacyGetResponse, failedGetRequest)
+	require.Equal(t, http.StatusOK, legacyGetResponse.Code, legacyGetResponse.Body.String())
+	var legacyView modelCapabilityQualificationView
+	require.NoError(t, json.Unmarshal(legacyGetResponse.Body.Bytes(), &legacyView))
+	require.NotNil(t, legacyView.LatestProbe)
+	require.Equal(t, "json_unknown_field", legacyView.LatestProbe.ContractErrorCode)
+	require.Equal(t, "provider_extension", legacyView.LatestProbe.DiagnosticMember)
+	require.NoError(t, pool.QueryRow(t.Context(), `
+SELECT response_summary->>'contract_error_code'
+  FROM model_capability_probes WHERE capability_probe_id=$1`, failed.CapabilityProbeID).Scan(&storedSummary))
+	require.Equal(t, "json_unknown_field_provider_extension", storedSummary)
 }

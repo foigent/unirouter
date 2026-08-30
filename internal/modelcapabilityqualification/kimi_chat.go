@@ -52,35 +52,65 @@ func KimiChatErrorCode(err error) string {
 	return ""
 }
 
-// KimiChatDiagnosticCode projects only a bounded schema category from a
-// validation failure. It never includes provider values or raw response text.
-// The base Kimi probe error code remains the qualification contract authority;
-// this diagnostic exists only to make a failed immutable Probe actionable.
-func KimiChatDiagnosticCode(err error) string {
+// KimiChatDiagnostic projects a stable failure category and, when safe, a
+// separately bounded, syntax-constrained provider-controlled member identifier.
+// The member is diagnostic evidence only: it is not part of the error-code
+// identity, and its value and the complete raw response body are not returned.
+type KimiChatDiagnostic struct {
+	Code   string
+	Member string
+}
+
+func DescribeKimiChatDiagnostic(err error) KimiChatDiagnostic {
 	var validationErr *kimiChatValidationError
 	if !errors.As(err, &validationErr) {
-		return ""
+		return KimiChatDiagnostic{}
 	}
 	if validationErr.code != "json" || validationErr.cause == nil {
-		return validationErr.code
+		return KimiChatDiagnostic{Code: validationErr.code}
 	}
 	const unknownFieldPrefix = "json: unknown field \""
 	message := validationErr.cause.Error()
 	if strings.HasPrefix(message, unknownFieldPrefix) && strings.HasSuffix(message, "\"") {
 		field := strings.TrimSuffix(strings.TrimPrefix(message, unknownFieldPrefix), "\"")
 		if kimiDiagnosticIdentifier(field) {
-			return "json_unknown_field_" + field
+			return KimiChatDiagnostic{Code: "json_unknown_field", Member: field}
 		}
-		return "json_unknown_field"
+		return KimiChatDiagnostic{Code: "json_unknown_field"}
 	}
 	var typeError *json.UnmarshalTypeError
 	if errors.As(validationErr.cause, &typeError) {
-		return "json_type_mismatch"
+		return KimiChatDiagnostic{Code: "json_type_mismatch"}
 	}
 	if strings.Contains(strings.ToLower(message), "duplicate") {
-		return "json_duplicate_field"
+		return KimiChatDiagnostic{Code: "json_duplicate_field"}
 	}
-	return "json_decode_error"
+	return KimiChatDiagnostic{Code: "json_decode_error"}
+}
+
+func KimiChatDiagnosticCode(err error) string {
+	return DescribeKimiChatDiagnostic(err).Code
+}
+
+// CanonicalizeKimiChatDiagnostic preserves immutable 1.2.18 summaries while
+// projecting their historical dynamic unknown-field code through the stable
+// 1.2.19 API shape. It never mutates stored evidence.
+func CanonicalizeKimiChatDiagnostic(code, member string) KimiChatDiagnostic {
+	const legacyUnknownFieldPrefix = "json_unknown_field_"
+	if strings.HasPrefix(code, legacyUnknownFieldPrefix) {
+		legacyMember := strings.TrimPrefix(code, legacyUnknownFieldPrefix)
+		if kimiDiagnosticIdentifier(legacyMember) {
+			return KimiChatDiagnostic{Code: "json_unknown_field", Member: legacyMember}
+		}
+		return KimiChatDiagnostic{Code: "json_unknown_field"}
+	}
+	if code == "json_unknown_field" {
+		if kimiDiagnosticIdentifier(member) {
+			return KimiChatDiagnostic{Code: code, Member: member}
+		}
+		return KimiChatDiagnostic{Code: code}
+	}
+	return KimiChatDiagnostic{Code: code}
 }
 
 func kimiDiagnosticIdentifier(value string) bool {

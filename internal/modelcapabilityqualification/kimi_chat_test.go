@@ -184,15 +184,33 @@ func TestKimiChatDiagnosticCodeNeverProjectsProviderValues(t *testing.T) {
 	)
 	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
 	require.Equal(t, "json", KimiChatErrorCode(err))
-	require.Equal(t, "json_unknown_field_provider_extension", KimiChatDiagnosticCode(err))
-	require.NotContains(t, KimiChatDiagnosticCode(err), "secret-value")
+	diagnostic := DescribeKimiChatDiagnostic(err)
+	require.Equal(t, "json_unknown_field", diagnostic.Code)
+	require.Equal(t, "provider_extension", diagnostic.Member)
+	require.NotContains(t, diagnostic.Member, "secret-value")
 
 	unsafeName := strings.Replace(body, "provider_extension", "private value", 1)
 	_, err = ValidateKimiChatFunctionTools(
 		KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV3,
 		"kimi-k2.6", "application/json", strings.NewReader(unsafeName),
 	)
-	require.Equal(t, "json_unknown_field", KimiChatDiagnosticCode(err))
+	diagnostic = DescribeKimiChatDiagnostic(err)
+	require.Equal(t, "json_unknown_field", diagnostic.Code)
+	require.Empty(t, diagnostic.Member)
+}
+
+func TestCanonicalizeKimiChatDiagnosticProjectsHistoricalDynamicCodeWithoutMutation(t *testing.T) {
+	diagnostic := CanonicalizeKimiChatDiagnostic("json_unknown_field_provider_extension", "")
+	require.Equal(t, "json_unknown_field", diagnostic.Code)
+	require.Equal(t, "provider_extension", diagnostic.Member)
+
+	diagnostic = CanonicalizeKimiChatDiagnostic("json_unknown_field_private value", "")
+	require.Equal(t, "json_unknown_field", diagnostic.Code)
+	require.Empty(t, diagnostic.Member)
+
+	diagnostic = CanonicalizeKimiChatDiagnostic("json_type_mismatch", "untrusted_member")
+	require.Equal(t, "json_type_mismatch", diagnostic.Code)
+	require.Empty(t, diagnostic.Member)
 }
 
 func TestKimiChatJSONObjectProbeRejectsUnknownEnvelopeFields(t *testing.T) {

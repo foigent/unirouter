@@ -8,7 +8,7 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable local source candidate is version 1.2.18 with PostgreSQL
+The executable local source candidate is version 1.2.19 with PostgreSQL
 compatibility ceiling `000099_kimi_k26_function_tools_probe_v3`.
 Development/test stable, canary and frontend independently run exact commit
 `b08ab57c19c656a688b226c900d38f6f601afd3a`, tree
@@ -16,7 +16,7 @@ Development/test stable, canary and frontend independently run exact commit
 migration rows ending at `000099_kimi_k26_function_tools_probe_v3`; stable,
 canary, frontend and Nginx share the frozen `unirouter` Compose project and
 exact configuration chain, and database, Redis and both backend readiness
-checks are healthy. Version 1.2.18 remains a local diagnostic candidate until
+checks are healthy. Version 1.2.19 remains a local diagnostic candidate until
 a matching artifact is gated and deployed. These are development/test facts,
 not Production evidence.
 
@@ -70,9 +70,12 @@ delivery boundary for bounded numeric usage extensions without making unknown
 counters authoritative. It does not change the Execution Profile, Chat
 protocol, Release, alias, pricing, Planner, UI or traffic. Tools Probe 50 under
 v3 also reached Kimi with HTTP 200 but failed strict JSON decoding; the receipt
-is immutable and unapproved. The local 1.2.18 candidate adds only a bounded
-schema diagnostic to failed Kimi Probe evidence, without persisting provider
-values or raw response content and without widening the v3 acceptance set.
+is immutable and unapproved. The local 1.2.19 candidate adds only a stable
+schema diagnostic category plus a separately bounded, syntax-constrained,
+provider-controlled member identifier to failed Kimi Probe evidence. The member
+is not an error-code, capability, usage, billing or routing authority; its value
+and the complete raw response body are not retained, and the v3 acceptance set
+is unchanged.
 
 M94 publishes the nine existing DeepSeek Chat Core probe contracts for only the
 exact `deepseek.v4-pro.api@1.5.0 ×

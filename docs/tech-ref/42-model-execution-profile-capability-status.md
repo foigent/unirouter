@@ -11,7 +11,7 @@ authorities project what the repository can currently do.
 
 For development/test Target identity, the exact Kimi 1.2.17/M99 checkpoint in
 the active batch below supersedes the earlier M96/M97/M98 and Pro M94
-snapshots. The local 1.2.18 source remains a diagnostic candidate until its
+snapshots. The local 1.2.19 source remains a diagnostic candidate until its
 exact artifact and runtime identities are independently verified on Target.
 
 ## Active delivery batch — Kimi K2.6 Chat Core Conformance
@@ -41,9 +41,12 @@ authority. It is immutable and unapproved. M99 then advanced only tools,
 function tools and automatic tool choice to Function Tools Probe Contract v3
 for the existing bounded delivery shape. Probe 50 under v3 also reached the
 provider with HTTP 200 but failed strict JSON decoding; its receipt is likewise
-immutable and unapproved. The local 1.2.18 candidate adds only a bounded
-schema diagnostic for such failures. It does not change the acceptance set or
-persist provider values or raw response content. Streaming v3, reasoning/JSON
+immutable and unapproved. The local 1.2.19 candidate adds only a stable schema
+diagnostic category and a separately bounded, syntax-constrained,
+provider-controlled member identifier for such failures. The member is
+diagnostic evidence rather than an error-code or execution authority; its value
+and the complete raw response body are not retained. The acceptance set is
+unchanged. Streaming v3, reasoning/JSON
 v2, the Execution Profile, Chat protocol, Release, alias, pricing, Planner, UI
 and canonical traffic are unchanged.
 
@@ -222,8 +225,9 @@ both succeeded and were approved separately. Tools Probe 49 then returned HTTP
 only tools, function tools and automatic tool choice to Function Tools Probe
 v3. Tools Probe 50 under v3 also returned HTTP 200 but failed strict JSON
 decoding; both failed receipts remain immutable and unapproved. The local
-1.2.18 diagnostic candidate projects only a bounded schema category and safe
-member identifier, never provider values or a raw response, and does not alter
+1.2.19 diagnostic candidate projects a stable schema category and a separately
+bounded, syntax-constrained provider-controlled member identifier; it retains
+neither the member value nor the complete raw response body and does not alter
 the v3 acceptance set. Nine supplier calls have been made, with no automatic
 retry.
 

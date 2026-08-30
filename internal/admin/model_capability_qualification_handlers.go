@@ -61,6 +61,7 @@ type modelCapabilityProbeResult struct {
 	ReasonCode         string `json:"reason_code"`
 	ProviderReasonCode string `json:"provider_reason_code"`
 	ContractErrorCode  string `json:"contract_error_code,omitempty"`
+	DiagnosticMember   string `json:"diagnostic_member,omitempty"`
 	StatusCode         int    `json:"status_code"`
 	LatencyMS          int64  `json:"latency_ms"`
 	ReportedModel      string `json:"reported_model,omitempty"`
@@ -121,6 +122,7 @@ type modelCapabilityProbeView struct {
 	ReportedModel       string    `json:"reported_model,omitempty"`
 	ErrorSummary        string    `json:"error_summary,omitempty"`
 	ContractErrorCode   string    `json:"contract_error_code,omitempty"`
+	DiagnosticMember    string    `json:"diagnostic_member,omitempty"`
 	FinishReason        string    `json:"finish_reason,omitempty"`
 	PromptTokens        int64     `json:"prompt_tokens,omitempty"`
 	CompletionTokens    int64     `json:"completion_tokens,omitempty"`
@@ -177,6 +179,7 @@ type modelCapabilityProbeOutcome struct {
 	LatencyMS          int64
 	ReasonCode         string
 	ContractErrorCode  string
+	DiagnosticMember   string
 	ReportedModel      string
 	FinishReason       string
 	PromptTokens       int64
@@ -188,6 +191,12 @@ type modelCapabilityProbeOutcome struct {
 	ReasoningObserved  bool
 	ToolCallObserved   bool
 	StructuredObserved bool
+}
+
+func applyKimiChatDiagnostic(outcome *modelCapabilityProbeOutcome, err error) {
+	diagnostic := modelcapabilityqualification.DescribeKimiChatDiagnostic(err)
+	outcome.ContractErrorCode = diagnostic.Code
+	outcome.DiagnosticMember = diagnostic.Member
 }
 
 func (h *Handler) GetCanonicalModelCapabilityQualification(w http.ResponseWriter, r *http.Request) {
@@ -628,7 +637,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_stream_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatDiagnosticCode(validationErr)
+			applyKimiChatDiagnostic(&outcome, validationErr)
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
@@ -646,7 +655,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_reasoning_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatDiagnosticCode(validationErr)
+			applyKimiChatDiagnostic(&outcome, validationErr)
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
@@ -664,7 +673,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_function_tools_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatDiagnosticCode(validationErr)
+			applyKimiChatDiagnostic(&outcome, validationErr)
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatJSONObjectProbeContractID:
@@ -682,7 +691,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_json_object_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatDiagnosticCode(validationErr)
+			applyKimiChatDiagnostic(&outcome, validationErr)
 			return outcome
 		}
 	default:
@@ -839,6 +848,7 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 		"provider_success": outcome.ProviderSuccess, "contract_success": outcome.ContractSuccess,
 		"current": currentProof, "reason_code": reasonCode, "provider_reason_code": outcome.ReasonCode,
 		"contract_error_code": outcome.ContractErrorCode,
+		"diagnostic_member":   outcome.DiagnosticMember,
 		"response_bytes":      outcome.ResponseBytes, "data_event_count": outcome.DataEventCount,
 		"delta_count": outcome.DeltaCount, "finish_reason": outcome.FinishReason,
 		"reasoning_observed":         outcome.ReasoningObserved,
@@ -909,8 +919,8 @@ UPDATE model_deployment_capabilities
 		CapabilityProbeID: probeID, DeploymentID: snapshot.DeploymentID, OperationID: snapshot.OperationID,
 		CapabilityID: snapshot.CapabilityID, Success: success, ProviderSuccess: outcome.ProviderSuccess,
 		Current: currentProof, Stale: !currentProof, ReasonCode: reasonCode, ProviderReasonCode: outcome.ReasonCode,
-		ContractErrorCode: outcome.ContractErrorCode,
-		StatusCode:        outcome.StatusCode, LatencyMS: outcome.LatencyMS, ReportedModel: outcome.ReportedModel,
+		ContractErrorCode: outcome.ContractErrorCode, DiagnosticMember: outcome.DiagnosticMember,
+		StatusCode: outcome.StatusCode, LatencyMS: outcome.LatencyMS, ReportedModel: outcome.ReportedModel,
 		FinishReason: outcome.FinishReason, PromptTokens: outcome.PromptTokens,
 		CompletionTokens: outcome.CompletionTokens, TotalTokens: outcome.TotalTokens,
 		ReasoningObserved: outcome.ReasoningObserved, ToolCallObserved: outcome.ToolCallObserved,
@@ -1285,6 +1295,7 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 		var summary struct {
 			FinishReason       string `json:"finish_reason"`
 			ContractErrorCode  string `json:"contract_error_code"`
+			DiagnosticMember   string `json:"diagnostic_member"`
 			ReasoningObserved  bool   `json:"reasoning_observed"`
 			ToolCallObserved   bool   `json:"tool_call_observed"`
 			StructuredObserved bool   `json:"structured_output_observed"`
@@ -1295,8 +1306,12 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 			} `json:"usage"`
 		}
 		_ = json.Unmarshal(responseSummary, &summary)
+		diagnostic := modelcapabilityqualification.CanonicalizeKimiChatDiagnostic(
+			summary.ContractErrorCode, summary.DiagnosticMember,
+		)
 		latest.FinishReason = summary.FinishReason
-		latest.ContractErrorCode = summary.ContractErrorCode
+		latest.ContractErrorCode = diagnostic.Code
+		latest.DiagnosticMember = diagnostic.Member
 		latest.ReasoningObserved = summary.ReasoningObserved
 		latest.ToolCallObserved = summary.ToolCallObserved
 		latest.StructuredObserved = summary.StructuredObserved

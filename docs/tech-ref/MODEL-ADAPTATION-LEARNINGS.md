@@ -68,3 +68,11 @@ and executable enforcement remain applicable.
 - Enforcement: The deployment preflight reads the same Compose labels from stable, canary, frontend and Nginx, freezes `--project-name unirouter`, the protected env-file path and all overlays in a secret-free manifest, applies the 80 percent/8 GiB storage gate, and follows the non-rolling CLI migration sequence in the runbook.
 - Authority: `docs/ops/deployment-runbook.md` section 9.10.1; `scripts/docker-storage-preflight.sh`; `cmd/uniroute/main.go` exact runtime-schema gate; `internal/schemaauthority/version.go`.
 - Status: active
+
+### MAR-009 Separate stable failure identity from provider-controlled diagnostics
+
+- Invariant: A provider-controlled response member may be retained only as bounded diagnostic evidence; it cannot create a dynamic error-code identity or become capability, usage, billing, routing or release authority.
+- Scope/Trigger: Typed provider Probe or delivery validation needs to expose why a strict schema rejected an otherwise successful provider response.
+- Enforcement: OpenAPI keeps `contract_error_code` closed and stores a syntax-constrained member identifier in a separate field without its value or the complete raw response body. The read projection splits historical 1.2.18 dynamic Kimi codes without rewriting immutable Probe summaries.
+- Authority: `internal/modelcapabilityqualification/kimi_chat.go`; `internal/modelcapabilityqualification/kimi_chat_test.go` tests `TestKimiChatDiagnosticCodeNeverProjectsProviderValues` and `TestCanonicalizeKimiChatDiagnosticProjectsHistoricalDynamicCodeWithoutMutation`; `internal/admin/model_capability_qualification_handlers_integration_test.go` test `TestDeepSeekStreamingCapabilityProbeAndApprovalFlowIntegration`; `cmd/uniroute/openapi_conformance_test.go` test `TestOpenAPIModelCapabilityContractErrorCodesCoverKimiValidators`; `docs/tech-ref/05-openapi-spec.yaml` schemas `ModelCapabilityContractErrorCode` and `ModelCapabilityProbeResult`.
+- Status: active

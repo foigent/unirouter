@@ -4,13 +4,35 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.19] - 2026-08-30
+
+### Fixed
+
+- Kept Kimi capability Probe `contract_error_code` values stable and moved a
+  syntax-constrained unknown JSON member identifier into the separately bounded
+  `diagnostic_member` evidence field. Provider-controlled member names no
+  longer create dynamic error-code identities.
+- Added the repository-level model-adaptation learning closeout pointer so an
+  independently shipped Delivery Batch cannot rely on long-chat memory for its
+  required learning-file inspection and report.
+
+### Evidence boundary
+
+- The diagnostic member remains provider-controlled, bounded to 64 ASCII
+  identifier characters and non-authoritative for capability, usage, billing,
+  routing or release. The member value and complete raw response body are not
+  returned.
+- This patch does not change the Kimi Probe acceptance set, migration ceiling,
+  Profile, protocol, Probe contract, Release, alias, pricing, routing, billing
+  or canonical traffic and creates no live evidence by itself.
+
 ## [1.2.18] - 2026-08-30
 
 ### Fixed
 
 - Added a bounded, schema-only diagnostic projection for failed Kimi capability
-  Probes. It can identify a safe unknown member name or the decode category,
-  but never persists provider values or the raw response body.
+  Probes. It can identify a syntax-constrained unknown member name or the decode
+  category, but never persists the member value or complete raw response body.
 - Kept the Probe acceptance set and qualification decision unchanged: the
   diagnostic makes an immutable failure actionable and cannot turn it into
   successful evidence.
