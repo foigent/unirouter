@@ -57,6 +57,7 @@ services:
       args:
         RUNTIME_VERSION: ${RUNTIME_VERSION:-local}
         RUNTIME_COMMIT: ${RUNTIME_COMMIT:-unknown}
+        RUNTIME_TREE: ${RUNTIME_TREE:-unknown}
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
         # Keep the source canary on the same explicit development trust mode as
         # stable. Customer releases never use this source-build overlay.
@@ -98,6 +99,8 @@ services:
       MODEL_ROUTE_COMPATIBILITY_ENABLED: ${MODEL_ROUTE_COMPATIBILITY_ENABLED:-false}
       RUNTIME_VERSION: ${RUNTIME_VERSION:-}
       RUNTIME_COMMIT: ${RUNTIME_COMMIT:-}
+      RUNTIME_TREE: ${RUNTIME_TREE:-}
+      RUNTIME_IMAGE_DIGEST: ${RUNTIME_IMAGE_DIGEST:-}
       COMPLETED_EXECUTION_FEED_ENABLED: ${COMPLETED_EXECUTION_FEED_ENABLED:-false}
       COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE: ${COMPLETED_EXECUTION_FEED_SOURCE_INSTANCE:-}
       COMPLETED_EXECUTION_FEED_REFERENCE_MODE: ${COMPLETED_EXECUTION_FEED_REFERENCE_MODE:-legacy}

@@ -38,6 +38,7 @@ import (
 	"github.com/uniroute/unirouter/internal/middleware"
 	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/modelauthz"
+	"github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modelgov"
 	"github.com/uniroute/unirouter/internal/modeloperation"
@@ -57,10 +58,12 @@ import (
 	"github.com/uniroute/unirouter/internal/xinsightconnector"
 )
 
-// buildVersion and buildCommit are set by release builds through -ldflags.
+// buildVersion, buildCommit and buildTree are set by release builds through
+// -ldflags. Runtime environment values are development-only fallbacks.
 var (
 	buildVersion string
 	buildCommit  string
+	buildTree    string
 )
 
 func main() {
@@ -100,6 +103,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load schema authority: %v", err)
 	}
+	if err := modelcapabilitypublication.VerifyArtifactPublicationInventory(migrationsDir, expectedSchemaLedger); err != nil {
+		log.Fatalf("Capability-contract publication artifact gate failed: %v", err)
+	}
 
 	// Run migrations (skip for canary instances sharing the same DB)
 	if cfg.SkipMigration {
@@ -112,6 +118,9 @@ func main() {
 	}
 	if err := requireExactRuntimeSchema(context.Background(), postgres.Pool, expectedSchemaLedger); err != nil {
 		log.Fatalf("Schema authority startup gate failed: %v", err)
+	}
+	if err := modelcapabilitypublication.VerifyRuntimeStaticProjection(context.Background(), postgres.Pool, expectedSchemaLedger); err != nil {
+		log.Fatalf("Capability-contract static projection startup gate failed: %v", err)
 	}
 	baseline, err := customercontext.EnsureBaseline(context.Background(), postgres.Pool)
 	if err != nil {
@@ -1493,6 +1502,7 @@ func applyBuildRuntimeMetadata(cfg *config.Config) {
 	}
 	cfg.RuntimeVersion = runtimeMetadataValue(cfg.RuntimeVersion, buildVersion)
 	cfg.RuntimeCommit = runtimeMetadataValue(cfg.RuntimeCommit, buildCommit)
+	cfg.RuntimeTree = runtimeMetadataValue(cfg.RuntimeTree, buildTree)
 }
 
 func runtimeMetadataValue(configured, injected string) string {

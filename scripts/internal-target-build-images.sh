@@ -80,6 +80,7 @@ if [[ "${head_commit}" != "${runtime_commit}" ]]; then
   echo "internal target image build: RUNTIME_COMMIT does not equal checkout HEAD" >&2
   exit 2
 fi
+runtime_tree="$(git rev-parse "${runtime_commit}^{tree}")"
 if [[ -n "$(git status --porcelain=v1 --untracked-files=normal)" ]]; then
   echo "internal target image build: checkout is not clean; refuse an unrepeatable image" >&2
   exit 2
@@ -185,6 +186,7 @@ if [[ "${backend_needs_build}" == true ]]; then
     --label "org.opencontainers.image.version=${runtime_version}" \
     --build-arg "RUNTIME_VERSION=${runtime_version}" \
     --build-arg "RUNTIME_COMMIT=${runtime_commit}" \
+    --build-arg "RUNTIME_TREE=${runtime_tree}" \
     --build-arg "GOPROXY=${go_proxy}" \
     --build-arg UNIROUTER_RELEASE_TRUST_MODE=development \
     --tag "${backend_image}" .
