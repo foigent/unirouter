@@ -1,22 +1,32 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> **2026-08-30 Kimi K2.6 current checkpoint:** development/test stable, canary
-> and frontend run exact commit `457083198a6684aee5bd18c606e6e13fa263345f`,
-> tree `a8ac4a7577295c7aacf1cc525f279ff91538a2e1`, version 1.2.19, with 98
-> ordered migrations ending at `000099_kimi_k26_function_tools_probe_v3`.
-> Stable, canary, frontend and Nginx share the frozen `unirouter` Compose
-> project and exact configuration chain; both backends, PostgreSQL and Redis
-> are healthy. Streaming and reasoning are separately qualified for exact
-> `kimi.k2.6.api@1.7.0 × protocol.kimi-openai-chat.v5@1.0.0`; failed tools
-> Probes 49/v2 and 50/v3 remain immutable and unapproved. A later v3 Probe on
-> Target 1.2.19 projected stable diagnostic `json_unknown_field` and bounded
-> member `index`; it is likewise immutable and unapproved. The local
-> 1.2.20/M100 candidate normalizes only the optional non-stream child tool-call
-> index and publishes Function Tools Probe v4 for the same exact tuple. Current
-> batch usage is 10 of the approved 20 supplier calls; CNY 5 is
-> an authorization ceiling, not observed supplier cost. Canonical routing,
-> compatibility, pricing, customer billing and Production claims are unchanged.
+> Repository source is 1.2.21 for this documentation/release-metadata
+> correction; no new runtime artifact or Target deployment is implied.
+> **2026-08-30 Kimi K2.6 Chat Core Target closeout:** development/test stable,
+> canary and frontend run exact main merge
+> `cf2bee4bbee7074e91661400f5edf61ca2c08f32`, tree
+> `64a25957ef2549923604cf6048802730d90b9be8`, version 1.2.20, with 99
+> ordered migrations ending at
+> `000100_kimi_k26_function_tools_tool_index_normalizer`. Stable and canary use
+> backend image
+> `sha256:9d41b58b8933c8afac8dfd2063875afa48f95c6a5a71a984d7c3c2ef758fc981`;
+> frontend uses
+> `sha256:9c2bab768263f982c3f6dd0b07c1d73f2d4602f70e56567c3e2701543d98e14d`.
+> Both backends, PostgreSQL and Redis are healthy. Exact deployment 4 now has
+> six separately qualified capabilities: streaming (Probe 46 / Approval 42),
+> reasoning (48/43), function tools (52/44), tools (53/45), automatic tool
+> choice (54/46) and JSON Object (55/47). A fixed `openai-python@3.5.0`
+> closeout then passed two-request cache-read, streaming and function-tool
+> workflows. Call logs 399–402 are HTTP 200 and provider-reported/final; the
+> second identical 7,698-input-token request reports all 7,698 as cache-read.
+> The finite batch used 18 of the approved 20 supplier calls with no automatic
+> provider retry. The workload Application is archived, Grant 14 is revoked,
+> Keys 91/92/93 are disabled, and the CNY wallet, freeze, spend and transaction
+> count remain zero. CNY 5 is an authorization ceiling, not observed supplier
+> cost. Release/Alias/canonical routing, compatibility, pricing, customer
+> billing and Production claims are unchanged; this exact Chat Core subset is
+> `canary_live_verified` on development/test, not `released` or Production.
 > **2026-08-17 maintenance-debt/Node-runtime Target closeout:** PR #300
 > upgraded GitHub-owned workflow actions to their Node 24 generation, removed
 > the unused Channels compatibility page and obsolete Compose version field,

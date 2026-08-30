@@ -4,6 +4,25 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.21] - 2026-08-30
+
+### Documentation
+
+- Recorded the exact Kimi K2.6 Chat Core development/test closeout: deployed
+  1.2.20/M100 artifact identity, six independent capability qualifications,
+  fixed OpenAI SDK delivery and cache-read evidence, the 18-of-20 bounded-call
+  total, zero customer wallet movement, and supported test-access cleanup.
+- Removed the duplicated stale Kimi active-batch snapshot so the current-status,
+  capability-status and system-fact entrypoints agree.
+
+### Evidence boundary
+
+- This is a documentation and release-metadata correction only. It changes no
+  runtime contract, schema, Profile, Probe, Approval, Release, Alias, pricing,
+  billing, credential, route, provider traffic or Target deployment. The
+  development/test Target remains the exact 1.2.20/M100 artifact recorded in
+  the status documents.
+
 ## [1.2.20] - 2026-08-30
 
 ### Fixed

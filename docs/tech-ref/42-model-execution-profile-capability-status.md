@@ -9,56 +9,75 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-For development/test Target identity, the exact Kimi 1.2.19/M99 checkpoint in
-the active batch below supersedes the earlier M96/M97/M98 and Pro M94
-snapshots. The local 1.2.20/M100 source remains a candidate until its exact
-artifact and runtime identities are independently verified on Target.
+For development/test Target identity, the exact Kimi 1.2.20/M100 closeout in
+the completed batch below supersedes the earlier M95–M99 and Pro M94
+snapshots. Local, CI, artifact, Target, provider and customer-wallet evidence
+remain separate; this closeout does not promote pricing, canonical traffic or
+Production state. Repository source 1.2.21 records this documentation-only
+closeout and is not a new Target runtime artifact.
 
-## Active delivery batch — Kimi K2.6 Chat Core Conformance
+## Completed delivery batch — Kimi K2.6 Chat Core Target closeout
 
-Development/test stable, canary and frontend run exact commit
-`457083198a6684aee5bd18c606e6e13fa263345f`, tree
-`a8ac4a7577295c7aacf1cc525f279ff91538a2e1`, version 1.2.19, with 98 ordered
-migration rows ending at
-`000099_kimi_k26_function_tools_probe_v3`. Stable/canary/frontend/Nginx share
-the frozen `unirouter` Compose project and exact configuration chain;
-database and Redis readiness are healthy; this is canary/test evidence, not
-Production or released evidence. No canonical switch occurred.
+Development/test stable, canary and frontend run exact main merge
+`cf2bee4bbee7074e91661400f5edf61ca2c08f32`, tree
+`64a25957ef2549923604cf6048802730d90b9be8`, version 1.2.20. Stable and
+canary use backend image
+`sha256:9d41b58b8933c8afac8dfd2063875afa48f95c6a5a71a984d7c3c2ef758fc981`;
+frontend uses
+`sha256:9c2bab768263f982c3f6dd0b07c1d73f2d4602f70e56567c3e2701543d98e14d`.
+The database has 99 ordered migration rows ending at
+`000100_kimi_k26_function_tools_tool_index_normalizer`; both backends,
+PostgreSQL and Redis are healthy. PR #353 head
+`e7ca4b9e4003743f7fe3b97ee69cdf05f061667a` passed Change Routing, Backend,
+Frontend, Browser E2E and Docker in CI run 33293953378 before merging as the
+deployed commit. This is development/test evidence, not Production or released
+evidence. No canonical switch occurred.
 
-The exact K2.6 operation Probe and first public non-stream text request
-succeeded. Streaming Probe v1 and v2 reached the provider but failed on two
-distinct live wire variations; their receipts remain immutable and unapproved.
-Streaming Probe v3 then succeeded with HTTP 200, valid SSE termination and
-final usage, and approval 42 currently qualifies only streaming for the exact
-`kimi.k2.6.api@1.7.0 × protocol.kimi-openai-chat.v5@1.0.0` tuple.
+Deployment 4 is bound to `kimi.k2.6.api@1.7.0 ×
+protocol.kimi-openai-chat.v5@1.0.0 × openai.chat_completions.v1`. The exact
+operation Probe and public non-stream text request succeeded. Six independent
+capability qualifications are current for that exact tuple: streaming Probe
+46 / Approval 42 under Probe Contract v3, reasoning 48/43 under v2, function
+tools 52/44 under v4, tools 53/45 under v4, automatic tool choice 54/46 under
+v4 and JSON Object 55/47 under v2. Historical failed Probe receipts remain
+immutable and unapproved; M100 does not reinterpret them or change the
+Execution Profile, Chat protocol, Release, Alias, pricing, Planner, UI or
+canonical traffic.
 
-Reasoning Probe 48 succeeded with HTTP 200 and approval 43 now qualifies only
-reasoning for the exact tuple. The next single Active Milestone is `Kimi K2.6 ×
-OpenAI-compatible Chat × tools`. Probe 49 reached the provider with HTTP 200
-but Function Tools Probe v2 rejected the response envelope with contract error
-`json`; the precise private response was not captured or promoted as a new
-authority. It is immutable and unapproved. M99 then advanced only tools,
-function tools and automatic tool choice to Function Tools Probe Contract v3
-for the existing bounded delivery shape. Probe 50 under v3 also reached the
-provider with HTTP 200 but failed strict JSON decoding; its receipt is likewise
-immutable and unapproved. Target 1.2.19 then exposed the stable diagnostic
-`json_unknown_field` with bounded member `index` on another v3 Probe. That live
-sample identified the optional non-stream
-`choices[].message.tool_calls[].index` wire member; no field value or raw
-response was retained. The local 1.2.20/M100 candidate uses the same
-exact-scoped normalizer as runtime and publishes Function Tools Probe v4 only
-for tools, function tools and automatic tool choice. Streaming v3,
-reasoning/JSON v2, the Execution Profile, Chat protocol, Release, alias,
-pricing, Planner, UI and canonical traffic are unchanged.
+A fixed `openai-python@3.5.0` client then exercised the exact public model
+`kimi-k2.6` through four provider attempts with retries disabled. Call logs
+399 and 400 are two identical non-stream requests: each reports 7,698 input
+and 9 output tokens, while the second reports all 7,698 input tokens as
+`moonshot.cached_tokens.v1` cache-read evidence. Call log 401 is a valid
+11-chunk SSE delivery with provider-reported final usage of 17 input and 9
+output tokens. Call log 402 returns one function tool call with
+`finish_reason=tool_calls` and provider-reported final usage of 79 input and 26
+output tokens. All four rows are HTTP 200, bind deployment 4 and the exact Chat
+operation, and produce no customer charge, wallet movement or transaction;
+there is no activated CustomerChargeQuote.
 
-Ten supplier calls have been made in this K2.6 batch: the exact operation
-Probe, one public non-stream request, two failed streaming Probes, the
-successful streaming v3 Probe, the failed reasoning v1 Probe, successful
-reasoning Probe 48, failed tools Probe 49, failed tools Probe 50 and the final
-v3 diagnostic Probe that identified member `index`. There was no automatic
-retry. The approved batch ceiling remains 20 calls and CNY 5; the CNY value is
-a supplier-spend authorization ceiling, not a native supplier cost
-Observation.
+The finite batch used 18 of the approved 20 supplier calls. Two local SDK
+starts failed before any HTTP request—first at sandbox network admission and
+then at proxy-client initialization—and are not supplier calls or automatic
+provider retries. The CNY 5 limit remains an authorization ceiling; UniRouter
+has no invoice or supplier-reported native-cost Observation for this batch.
+The customer wallet remains CNY 0 with zero granted balance, freeze,
+cumulative spend and transactions. The supported UI archived workload
+Application 6 after the SDK closeout, revoked Grant 14 and disabled task-scoped
+Keys 91/92/93 while
+preserving immutable Probe, Approval, call and audit evidence.
+
+The Kimi Probe validators and Gateway delivery guard still contain separate
+envelope parsing. Cross-delivery fixtures and the public SDK evidence above
+prevent this closeout from treating Probe approval alone as delivery proof.
+Before another provider adds a third provider-specific full envelope parser,
+the shared OpenAI-compatible delivery-shape boundary must be re-evaluated.
+M95–M100 also demonstrate repeated static contract publication; that repetition
+must be measured in a separate bounded design batch before another comparable
+provider integration. Neither warning authorizes a manifest framework or
+reopens this closed delivery batch. This exact K2.6 Chat Core subset is
+`canary_live_verified` on development/test; pricing activation, customer
+billing, Production and broader Kimi parity remain unclaimed.
 
 ## Completed delivery batch — DeepSeek V4 Pro Chat Core Target closeout
 
@@ -170,103 +189,6 @@ volumes, database state, backups or release directories. The deployed 1.2.12
 images and release are now explicitly retained. This exact Pro Chat Core subset
 is `canary_live_verified` on development/test; pricing activation, customer
 billing, Production and broader provider parity remain unclaimed.
-
-## Active delivery batch — Kimi K2.6 Chat
-
-The completed milestones are `Kimi K2.6 × OpenAI-compatible Chat ×
-non-streaming text`, streaming and reasoning; the current Active Milestone is
-the same exact tuple × tools. The Kimi series in the current inventory is K2.6, K2.7 Code and K3;
-K2.7 does not denote a separate general-chat model. The authorized K2.6 live
-budget remains at most 20 supplier calls and CNY 5 with no automatic retry.
-
-Development/test currently runs exact main merge commit
-`457083198a6684aee5bd18c606e6e13fa263345f`, tree
-`a8ac4a7577295c7aacf1cc525f279ff91538a2e1`, version 1.2.19 and schema M99;
-stable, canary, frontend, database and Redis readiness are healthy. It publishes
-one finite K2.6 Chat Core Delivery Batch: an exact Profile-scoped
-operation-protocol binding plus typed probe contracts for streaming, reasoning,
-tools, function tools, automatic tool choice and JSON Object. Those contracts
-and their local tests are batch preparation, not live evidence and not six
-prematurely closed milestones. M95 creates only declared projections for the
-exact `kimi.k2.6.api@1.7.0 × protocol.kimi-openai-chat.v5@1.0.0` tuple; it does
-not bind K2.7/K3, create a generic tuple, call Kimi, approve routing, change a
-Release/Alias or activate pricing.
-
-The supported UI created deployment 4 for upstream `kimi-k2.6` on connection
-10 and exact Profile/protocol above. Operation probe 4 succeeded with provider
-HTTP 200 and provider-reported model `kimi-k2.6`. Release 25 is active only for
-that model-local exact tuple; it does not change canonical routing or publish
-pricing. A public non-stream request with thinking explicitly disabled returned
-HTTP 200 and `K2.6 OK`, with provider-reported usage of 15 input, 8 output and
-23 total tokens. The request settled in `cost_observation` mode with calculated
-customer cost, charged customer cost and wallet movement all zero. These are
-live execution facts, not a supplier native-cost Observation.
-
-The first typed streaming Probe, under immutable Probe Contract v1, reached the
-provider successfully (HTTP 200) but failed delivery validation because the
-disabled-thinking SSE emitted an empty-string
-`choices[].delta.reasoning_content`. That failed Probe remains immutable and
-unapproved; Planner correctly remained fail closed. M96's exact-scoped shared
-normalizer removes only that semantically empty member for Kimi K2.6 Chat v5,
-while preserving non-empty reasoning and unknown siblings and rejecting invalid
-types. Runtime and Probe v2 consume the same normalizer. M96 advances only the
-streaming Probe binding to v2; it does not change the Execution Profile, Chat
-protocol, Release, alias, pricing, Planner or the other five capability
-contracts.
-
-The Target v2 streaming Probe then reached the provider with HTTP 200 but
-failed strict Probe parsing on Kimi's bounded choice-level terminal usage
-before the standard top-level usage frame. That v2 receipt also remains
-immutable and unapproved. Probe Contract v3 accepts only bounded numeric
-choice-level terminal usage, still requires the standard top-level usage frame
-and requires repeated token totals to match. It does not change runtime delivery, the
-Execution Profile, Chat protocol, Release, alias, pricing, Planner or the other
-five capability contracts. The v3 streaming Probe and later reasoning Probe 48
-both succeeded and were approved separately. Tools Probe 49 then returned HTTP
-200 but failed Function Tools Probe v2 strict JSON validation. M99 advanced
-only tools, function tools and automatic tool choice to Function Tools Probe
-v3. Tools Probe 50 under v3 also returned HTTP 200 but failed strict JSON
-decoding; both failed receipts remain immutable and unapproved. Target 1.2.19
-then projected the next v3 failure as stable code `json_unknown_field` and
-bounded member `index`, without retaining the member value or raw response.
-The local 1.2.20/M100 candidate shares the runtime's exact-scoped non-stream
-child tool-call index normalizer with Function Tools Probe v4. Historical v3
-evidence remains immutable, unknown siblings still fail closed, and no model or
-protocol identity changes. Ten supplier calls have been made, with no automatic
-retry.
-
-The Kimi probe validators and the Gateway delivery guard currently remain two
-parsing implementations. Cross-delivery fixtures are required for this batch,
-and public UI/SDK delivery remains necessary evidence; a successful Probe alone
-must not be described as complete delivery proof. This is a bounded architecture
-warning rather than a second runtime authority. Before any next provider adds a
-third provider-specific full JSON/SSE envelope parser, the shared
-OpenAI-compatible delivery-shape boundary must be re-evaluated. If a Kimi Probe
-succeeds while the same exact tuple is withheld by public delivery shape, the
-warning becomes a blocker immediately. No shared parser refactor is authorized
-merely by this checkpoint.
-
-M95–M100 are six consecutive control-data publications for the same K2.6
-surface. They added no new table or Planner/UI state, but their repeated SQL
-tuples, fixed-count assertions and OpenAPI projections must be measured at the
-K2.6 closeout. If the next provider requires another comparable provider-
-specific envelope parser or repeats the same publication structure, integration
-stops for a bounded declarative-contract review. This is `valid_deferred`, not
-authorization for a manifest framework or a reason to interrupt the current
-tools milestone.
-
-K2.6 then advances one milestone at a time through streaming, thinking, tools,
-JSON and usage/cache-read mapping. Non-stream latency evidence records gateway
-stages, connection establishment or reuse, response headers, full provider
-response and downstream completion; it does not report first-token or SSE
-metrics. Streaming separately records first content event, downstream first
-content, inter-chunk gaps and completion, excluding headers and keepalive
-comments from first-token claims. Cold and reused connections stay distinct,
-and a small live sample reports individual observations rather than P95/P99.
-Direct-provider comparison, if needed, must use the same region, model, prompt,
-connection temperature and streaming mode. Contract-preserving fast-path work
-is permitted only after measurements identify stable UniRouter-added latency or
-buffering; it is not part of this milestone by default.
 
 ## Historical delivery snapshot — DeepSeek Flash Chat completion
 
