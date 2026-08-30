@@ -176,6 +176,25 @@ func TestKimiChatFunctionToolsProbeV3AlignsWithRuntimeUsageShapeWithoutPromoting
 	}
 }
 
+func TestKimiChatDiagnosticCodeNeverProjectsProviderValues(t *testing.T) {
+	body := kimiProbeEnvelopePrefix + `"provider_extension":"secret-value","choices":[],"usage":{}}`
+	_, err := ValidateKimiChatFunctionTools(
+		KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV3,
+		"kimi-k2.6", "application/json", strings.NewReader(body),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "json", KimiChatErrorCode(err))
+	require.Equal(t, "json_unknown_field_provider_extension", KimiChatDiagnosticCode(err))
+	require.NotContains(t, KimiChatDiagnosticCode(err), "secret-value")
+
+	unsafeName := strings.Replace(body, "provider_extension", "private value", 1)
+	_, err = ValidateKimiChatFunctionTools(
+		KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV3,
+		"kimi-k2.6", "application/json", strings.NewReader(unsafeName),
+	)
+	require.Equal(t, "json_unknown_field", KimiChatDiagnosticCode(err))
+}
+
 func TestKimiChatJSONObjectProbeRejectsUnknownEnvelopeFields(t *testing.T) {
 	body := kimiProbeEnvelopePrefix + `"choices":[{"index":0,"message":{"role":"assistant","content":"{\"status\":\"UNIROUTER_JSON_PROBE_OK\"}"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":15,"completion_tokens":5,"total_tokens":20}}`
 	observation, err := ValidateKimiChatJSONObject(

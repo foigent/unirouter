@@ -4,6 +4,24 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.18] - 2026-08-30
+
+### Fixed
+
+- Added a bounded, schema-only diagnostic projection for failed Kimi capability
+  Probes. It can identify a safe unknown member name or the decode category,
+  but never persists provider values or the raw response body.
+- Kept the Probe acceptance set and qualification decision unchanged: the
+  diagnostic makes an immutable failure actionable and cannot turn it into
+  successful evidence.
+
+### Evidence boundary
+
+- Development/test M99 Probe 50 remains immutable, failed and unapproved. This
+  patch changes no migration, Profile, protocol, Probe contract, Release,
+  alias, pricing, routing, billing, UI or canonical traffic, and creates no
+  live or release evidence by itself.
+
 ## [1.2.17] - 2026-08-30
 
 ### Fixed

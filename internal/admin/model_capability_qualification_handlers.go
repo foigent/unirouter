@@ -628,7 +628,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_stream_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatErrorCode(validationErr)
+			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatDiagnosticCode(validationErr)
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
@@ -646,7 +646,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_reasoning_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatErrorCode(validationErr)
+			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatDiagnosticCode(validationErr)
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
@@ -664,7 +664,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_function_tools_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatErrorCode(validationErr)
+			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatDiagnosticCode(validationErr)
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatJSONObjectProbeContractID:
@@ -682,7 +682,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
 			outcome.ReasonCode = "provider_json_object_contract_invalid"
-			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatErrorCode(validationErr)
+			outcome.ContractErrorCode = modelcapabilityqualification.KimiChatDiagnosticCode(validationErr)
 			return outcome
 		}
 	default:

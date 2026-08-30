@@ -52,6 +52,53 @@ func KimiChatErrorCode(err error) string {
 	return ""
 }
 
+// KimiChatDiagnosticCode projects only a bounded schema category from a
+// validation failure. It never includes provider values or raw response text.
+// The base Kimi probe error code remains the qualification contract authority;
+// this diagnostic exists only to make a failed immutable Probe actionable.
+func KimiChatDiagnosticCode(err error) string {
+	var validationErr *kimiChatValidationError
+	if !errors.As(err, &validationErr) {
+		return ""
+	}
+	if validationErr.code != "json" || validationErr.cause == nil {
+		return validationErr.code
+	}
+	const unknownFieldPrefix = "json: unknown field \""
+	message := validationErr.cause.Error()
+	if strings.HasPrefix(message, unknownFieldPrefix) && strings.HasSuffix(message, "\"") {
+		field := strings.TrimSuffix(strings.TrimPrefix(message, unknownFieldPrefix), "\"")
+		if kimiDiagnosticIdentifier(field) {
+			return "json_unknown_field_" + field
+		}
+		return "json_unknown_field"
+	}
+	var typeError *json.UnmarshalTypeError
+	if errors.As(validationErr.cause, &typeError) {
+		return "json_type_mismatch"
+	}
+	if strings.Contains(strings.ToLower(message), "duplicate") {
+		return "json_duplicate_field"
+	}
+	return "json_decode_error"
+}
+
+func kimiDiagnosticIdentifier(value string) bool {
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '_' || character == '-' || character == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 type KimiChatObservation struct {
 	ReportedModel            string
 	FinishReason             string

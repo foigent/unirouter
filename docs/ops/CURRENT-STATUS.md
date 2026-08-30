@@ -2,16 +2,18 @@
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
 > **2026-08-30 Kimi K2.6 current checkpoint:** development/test stable, canary
-> and frontend run exact commit `2461f257e156f7b90cfafe890d76c1b3ccfd3d0a`,
-> tree `649b3f3eb95e4e4adba88635f00cc09c2843402a`, version 1.2.16, with 97
-> ordered migrations ending at `000098_kimi_k26_nonstream_usage_probe_v2`.
-> Both backends, PostgreSQL and Redis are healthy. Streaming and reasoning are
-> separately qualified for exact `kimi.k2.6.api@1.7.0 ×
-> protocol.kimi-openai-chat.v5@1.0.0`; failed tools Probe 49 remains immutable
-> and unapproved. The local 1.2.17/M99 candidate advances only the three
-> Function Tools bindings to Probe v3 and is not yet Target, live or release
-> evidence. Current batch usage is 8 of the approved 20 supplier calls; CNY 5
-> is an authorization ceiling, not observed supplier cost. Canonical routing,
+> and frontend run exact commit `b08ab57c19c656a688b226c900d38f6f601afd3a`,
+> tree `19bbae705499128fb50f5ce724d9e44c2256cd78`, version 1.2.17, with 98
+> ordered migrations ending at `000099_kimi_k26_function_tools_probe_v3`.
+> Stable, canary, frontend and Nginx share the frozen `unirouter` Compose
+> project and exact configuration chain; both backends, PostgreSQL and Redis
+> are healthy. Streaming and reasoning are separately qualified for exact
+> `kimi.k2.6.api@1.7.0 × protocol.kimi-openai-chat.v5@1.0.0`; failed tools
+> Probes 49/v2 and 50/v3 remain immutable and unapproved. The local 1.2.18
+> candidate adds only a bounded schema diagnostic for failed Kimi Probes; it
+> does not change the acceptance set or persist provider values or raw response
+> content. Current batch usage is 9 of the approved 20 supplier calls; CNY 5 is
+> an authorization ceiling, not observed supplier cost. Canonical routing,
 > compatibility, pricing, customer billing and Production claims are unchanged.
 > **2026-08-17 maintenance-debt/Node-runtime Target closeout:** PR #300
 > upgraded GitHub-owned workflow actions to their Node 24 generation, removed

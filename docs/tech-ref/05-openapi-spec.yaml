@@ -5003,41 +5003,49 @@ components:
         evidence_ref: { type: string, pattern: '^capability_probe:[1-9][0-9]*$' }
     ModelCapabilityContractErrorCode:
       type: string
-      enum:
-        - content_type
-        - terminal_order
-        - data_after_done
-        - data_after_usage
-        - data_after_terminal
-        - unsupported_field
-        - read
-        - response_too_large
-        - incomplete
-        - json
-        - model_changed
-        - expected_model
-        - reported_model
-        - choices
-        - final_usage
-        - usage_mixed_with_choices
-        - usage_order
-        - delta
-        - content
-        - reasoning_content
-        - tool_calls
-        - tool_call_identity
-        - tool_arguments
-        - delivery_shape
-        - structured_output
-        - finish_reason
-        - finish_reason_changed
-        - usage
-        - usage_total
-        - usage_conflict
-        - cached_tokens
-        - cached_tokens_conflict
-        - reasoning_tokens
-        - probe_contract
+      maxLength: 83
+      description: Bounded contract failure category. Kimi JSON diagnostics may append only a safe unknown member identifier; provider values and raw response content are never returned.
+      oneOf:
+        - enum:
+            - content_type
+            - terminal_order
+            - data_after_done
+            - data_after_usage
+            - data_after_terminal
+            - unsupported_field
+            - read
+            - response_too_large
+            - incomplete
+            - json
+            - json_unknown_field
+            - json_type_mismatch
+            - json_duplicate_field
+            - json_decode_error
+            - model_changed
+            - expected_model
+            - reported_model
+            - choices
+            - final_usage
+            - usage_mixed_with_choices
+            - usage_order
+            - delta
+            - content
+            - reasoning_content
+            - tool_calls
+            - tool_call_identity
+            - tool_arguments
+            - delivery_shape
+            - structured_output
+            - finish_reason
+            - finish_reason_changed
+            - usage
+            - usage_total
+            - usage_conflict
+            - cached_tokens
+            - cached_tokens_conflict
+            - reasoning_tokens
+            - probe_contract
+        - pattern: '^json_unknown_field_[A-Za-z0-9_.-]{1,64}$'
     ModelCapabilityApprovalResult:
       type: object
       additionalProperties: false

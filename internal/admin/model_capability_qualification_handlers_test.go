@@ -302,3 +302,26 @@ func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 		})
 	}
 }
+
+func TestKimiK26FailedProbeReturnsOnlyBoundedSchemaDiagnostic(t *testing.T) {
+	encryptionKey := []byte("0123456789abcdef01234567")
+	encrypted, err := auth.EncryptKey([]byte("provider-secret"), encryptionKey)
+	require.NoError(t, err)
+	handler := NewHandler(nil, "capability-jwt", encryptionKey, nil)
+	handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(*http.Request) (*http.Response, error) {
+		body := `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","private_payload":"must-not-leak","choices":[],"usage":{}}`
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	}))
+	outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
+		Provider: "kimi", BaseURL: "https://api.moonshot.cn/v1",
+		AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
+		UpstreamModel: "kimi-k2.6", ExpectedUpstreamModel: "kimi-k2.6", EncryptedSecret: encrypted,
+		CapabilityID:         modelprofile.CapabilityTools,
+		ProbeContractID:      modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
+		ProbeContractVersion: modelcapabilityqualification.KimiChatFunctionToolsProbeContractVersionV3,
+	}, "kimi-k26-safe-diagnostic-test")
+	require.True(t, outcome.ProviderSuccess)
+	require.False(t, outcome.ContractSuccess)
+	require.Equal(t, "json_unknown_field_private_payload", outcome.ContractErrorCode)
+	require.NotContains(t, outcome.ContractErrorCode, "must-not-leak")
+}
