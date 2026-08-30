@@ -1,6 +1,18 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
+> **2026-08-30 Kimi K2.6 current checkpoint:** development/test stable, canary
+> and frontend run exact commit `2461f257e156f7b90cfafe890d76c1b3ccfd3d0a`,
+> tree `649b3f3eb95e4e4adba88635f00cc09c2843402a`, version 1.2.16, with 97
+> ordered migrations ending at `000098_kimi_k26_nonstream_usage_probe_v2`.
+> Both backends, PostgreSQL and Redis are healthy. Streaming and reasoning are
+> separately qualified for exact `kimi.k2.6.api@1.7.0 ×
+> protocol.kimi-openai-chat.v5@1.0.0`; failed tools Probe 49 remains immutable
+> and unapproved. The local 1.2.17/M99 candidate advances only the three
+> Function Tools bindings to Probe v3 and is not yet Target, live or release
+> evidence. Current batch usage is 8 of the approved 20 supplier calls; CNY 5
+> is an authorization ceiling, not observed supplier cost. Canonical routing,
+> compatibility, pricing, customer billing and Production claims are unchanged.
 > **2026-08-17 maintenance-debt/Node-runtime Target closeout:** PR #300
 > upgraded GitHub-owned workflow actions to their Node 24 generation, removed
 > the unused Channels compatibility page and obsolete Compose version field,

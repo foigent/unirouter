@@ -4,6 +4,27 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.17] - 2026-08-30
+
+### Fixed
+
+- Aligned the exact Kimi K2.6 Function Tools capability Probe with the public
+  Chat delivery boundary for bounded numeric provider usage extensions and the
+  already modeled nullable response members. Only modeled core, cache and
+  reasoning counters remain qualification authority; unknown numeric counters
+  are never promoted into usage or billing authority.
+- Preserved the immutable v1/v2 acceptance sets, strict tool identity and
+  arguments, exact finish semantics, duplicate-member rejection and fail-closed
+  handling of every response member outside the existing delivery boundary.
+
+### Evidence boundary
+
+- M99 advances only the exact Kimi K2.6 tools, function-tools and automatic
+  tool-choice bindings to Function Tools Probe Contract v3. It does not change
+  the Execution Profile, Chat protocol, Release, alias, pricing, Planner, UI or
+  canonical traffic, and it creates no live Probe or Approval evidence by
+  itself. Failed Probe 49 remains immutable and unapproved.
+
 ## [1.2.16] - 2026-08-30
 
 ### Fixed

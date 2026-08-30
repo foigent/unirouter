@@ -1916,6 +1916,76 @@ docker compose \
   up -d --no-build
 ```
 
+#### 9.10.1 development/test schema-ceiling 部署的唯一受支持顺序
+
+development/test 的现存 Compose project 是 `unirouter`，不是根据当前
+worktree 目录名推导的默认值。每次部署必须显式传入
+`--project-name unirouter`，并显式列出完整 Compose file chain。发布前先从
+stable、canary、frontend 和 Nginx 容器的
+`com.docker.compose.project.config_files` 标签读取当前链；四者必须
+一致。新发布只替换 release-scoped 源文件与当次 runtime-identity
+overlay；TLS 与已批准的 site-local overlays 必须逐项保留。当次 evidence
+目录必须保存不含 secret 的 project、env-file 路径和有序 config-file
+manifest。不得依赖 Compose 目录推导、缺省 overlay 或历史命令记忆。
+
+当次审核后应把唯一 Compose 命令定义为 shell 数组，后续步骤不得
+临时增删 `-f`：
+
+```bash
+target_project=unirouter
+target_env_file=/opt/unirouter/.env
+target_compose=(docker compose --project-name "${target_project}" \
+  --env-file "${target_env_file}" \
+  -f "${release_dir}/docker-compose.yml" \
+  -f "${release_dir}/docker-compose.canary.yml" \
+  -f "${release_dir}/deploy/internal-target-images.override.yml" \
+  -f /opt/unirouter/tls/docker-compose.https.yml \
+  "${approved_site_overlay_args[@]}" \
+  -f "${current_runtime_identity_overlay}")
+
+test "${target_project}" = unirouter
+test -f "${target_env_file}"
+test "$(stat -c %a "${target_env_file}")" = 600
+"${target_compose[@]}" config >/dev/null
+"${release_dir}/scripts/docker-storage-preflight.sh" --path /var/lib/docker
+```
+
+`approved_site_overlay_args` 必须是当次 manifest 中已复核的有序 `-f path`
+参数，不允许空白猜测。preflight 还必须读回候选 backend 与
+backend-canary 均为 `SKIP_MIGRATION=true`，两者引用同一 backend
+image，候选 image label 的完整 commit/version 与 exact worktree 一致。
+任一不符即停止。
+
+对于 migration ceiling 变化，stable/canary 本身不是 migration owner。必须
+先排空并停止两个旧 backend，再用候选 backend image 启动不绑定
+HTTP 端口的 CLI one-off 容器执行受支持的 `./uniroute migrate up`。
+读回 exact ledger 后才可以重建 stable/canary：
+
+```bash
+"${target_compose[@]}" stop backend backend-canary
+"${target_compose[@]}" run --rm --no-deps \
+  -e SKIP_MIGRATION=false backend ./uniroute migrate up
+"${target_compose[@]}" run --rm --no-deps \
+  -e SKIP_MIGRATION=true backend ./uniroute migrate status
+"${target_compose[@]}" up -d --no-build --no-deps --force-recreate \
+  backend backend-canary
+```
+
+两个 backend readiness、exact image ID 和 schema gate 通过后，再按
+`frontend` → `nginx` 顺序执行 `--force-recreate`。即使镜像或 Nginx
+基础 image 可复用，容器的 Compose config-file/provenance 标签也必须指向
+当次 exact release：
+
+```bash
+"${target_compose[@]}" up -d --no-build --no-deps --force-recreate frontend
+"${target_compose[@]}" up -d --no-build --no-deps --force-recreate nginx
+"${target_compose[@]}" ps
+```
+
+任一阶段失败都应保持旧流量已排空状态，不得让旧二进制与新
+schema 共享写入。迁移已提交后的恢复路径是修正候选并 roll-forward，
+不是在已有新 evidence 时盲目回退 schema。
+
 所有长期 Compose 服务默认使用 Docker `json-file` 日志轮转：单文件 20 MiB、最多
 3 个文件。可通过 `DOCKER_LOG_MAX_SIZE` 和 `DOCKER_LOG_MAX_FILES` 在部署环境调整，
 但不能留空或移除 `logging` 合同。日志参数只在容器创建时生效；修改后必须按

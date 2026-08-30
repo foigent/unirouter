@@ -192,7 +192,7 @@ func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotati
 			 'fixture.future.protocol','1.0.0','fixture.future.probe','1.0.0',
 			 'fixture','fixture-future','/v1/future',
 			 '000088_model_capability_execution_qualification')`,
-			failedCheck: "check fresh capability probe contract binding count: got 71 want 70",
+			failedCheck: "check fresh capability probe contract binding count: got 74 want 73",
 		},
 		{
 			name:    "missing current capability probe contract",
@@ -428,7 +428,7 @@ func TestFirstCustomerBootstrapFailsClosedOnSchemaDriftIntegration(t *testing.T)
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
-		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000099_future_contract')`)
+		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000100_future_contract')`)
 		require.NoError(t, err)
 
 		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-002", "First Customer")
