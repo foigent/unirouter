@@ -335,15 +335,26 @@ func TestKimiK27ProbeRequestsUseExactRequiredThinkingContract(t *testing.T) {
 		modelcapabilityqualification.KimiChatJSONObjectProbeContractID,
 	} {
 		t.Run(contractID, func(t *testing.T) {
-			body, err := buildModelCapabilityProbeRequestBody(modelCapabilitySnapshot{
+			snapshot := modelCapabilitySnapshot{
 				ExecutionProfileID: "kimi.k2.7-code.api", ExecutionProfileVersion: "1.3.0",
 				UpstreamModel: "kimi-k2.7-code", ProbeContractID: contractID,
 				CapabilityID: modelprofile.CapabilityTools,
-			})
+			}
+			body, err := buildModelCapabilityProbeRequestBody(snapshot)
 			require.NoError(t, err)
 			var payload map[string]interface{}
 			require.NoError(t, json.Unmarshal(body, &payload))
 			require.Equal(t, map[string]interface{}{"type": "enabled", "keep": "all"}, payload["thinking"])
+			summary, err := summarizeModelCapabilityProbeRequest(snapshot, body)
+			require.NoError(t, err)
+			require.Equal(t, "enabled", summary["thinking_type"])
+			require.Equal(t, "all", summary["thinking_keep"])
+			if contractID == modelcapabilityqualification.KimiChatSSEProbeContractID {
+				require.Equal(t, true, summary["stream"])
+				require.Equal(t, true, summary["stream_options_include_usage"])
+			} else {
+				require.Equal(t, false, summary["stream"], "only the SSE contract may stream")
+			}
 		})
 	}
 
@@ -355,6 +366,13 @@ func TestKimiK27ProbeRequestsUseExactRequiredThinkingContract(t *testing.T) {
 	var k26Payload map[string]interface{}
 	require.NoError(t, json.Unmarshal(k26Body, &k26Payload))
 	require.Equal(t, map[string]interface{}{"type": "disabled"}, k26Payload["thinking"])
+	k26Summary, err := summarizeModelCapabilityProbeRequest(modelCapabilitySnapshot{
+		ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
+		UpstreamModel: "kimi-k2.6", ProbeContractID: modelcapabilityqualification.KimiChatSSEProbeContractID,
+	}, k26Body)
+	require.NoError(t, err)
+	require.Equal(t, "disabled", k26Summary["thinking_type"])
+	require.NotContains(t, k26Summary, "thinking_keep")
 
 	_, err = buildModelCapabilityProbeRequestBody(modelCapabilitySnapshot{
 		ExecutionProfileID: "kimi.k2.7-code.api", ExecutionProfileVersion: "1.2.0",

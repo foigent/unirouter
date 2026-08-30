@@ -239,7 +239,7 @@ func generateVerify(final Baseline, declaration Declaration, digest string) []by
 	var b strings.Builder
 	writeHeader(&b, declaration, digest, "verify")
 	writeStaticVerification(&b, final, "post-commit publication")
-	return []byte(b.String())
+	return []byte(strings.TrimRight(b.String(), "\n") + "\n")
 }
 
 func generateDown(predecessor Baseline, declaration Declaration, digest string) []byte {

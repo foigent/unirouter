@@ -191,6 +191,7 @@ type modelCapabilityProbeOutcome struct {
 	ReasoningObserved  bool
 	ToolCallObserved   bool
 	StructuredObserved bool
+	RequestSummary     map[string]interface{}
 }
 
 func applyKimiChatDiagnostic(outcome *modelCapabilityProbeOutcome, err error) {
@@ -500,17 +501,24 @@ func (h *Handler) probeCanonicalModelCapability(ctx context.Context, orgID, acto
 }
 
 func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot modelCapabilitySnapshot, requestID string) modelCapabilityProbeOutcome {
-	secret, err := auth.DecryptKey(snapshot.EncryptedSecret, h.encKey)
-	if err != nil || strings.TrimSpace(secret) == "" {
-		return modelCapabilityProbeOutcome{ReasonCode: "credential_unavailable"}
-	}
 	body, err := buildModelCapabilityProbeRequestBody(snapshot)
 	if err != nil {
 		return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed"}
 	}
+	requestSummary, err := summarizeModelCapabilityProbeRequest(snapshot, body)
+	if err != nil {
+		return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed"}
+	}
+	outcome := modelCapabilityProbeOutcome{RequestSummary: requestSummary}
+	secret, err := auth.DecryptKey(snapshot.EncryptedSecret, h.encKey)
+	if err != nil || strings.TrimSpace(secret) == "" {
+		outcome.ReasonCode = "credential_unavailable"
+		return outcome
+	}
 	adapter, err := adapters.DefaultRegistry().Get(snapshot.AdapterType)
 	if err != nil {
-		return modelCapabilityProbeOutcome{ReasonCode: "adapter_unavailable"}
+		outcome.ReasonCode = "adapter_unavailable"
+		return outcome
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, modelCapabilityProbeTimeout)
 	defer cancel()
@@ -524,18 +532,23 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		RequestID:      requestID,
 	})
 	if err != nil {
-		return modelCapabilityProbeOutcome{ReasonCode: "request_build_failed"}
+		outcome.ReasonCode = "request_build_failed"
+		return outcome
 	}
 	started := time.Now()
 	response, err := h.canonicalOperationProbeDoer().Do(request)
 	if err != nil {
-		return modelCapabilityProbeOutcome{LatencyMS: time.Since(started).Milliseconds(), ReasonCode: "provider_request_failed"}
+		outcome.LatencyMS = time.Since(started).Milliseconds()
+		outcome.ReasonCode = "provider_request_failed"
+		return outcome
 	}
 	if response == nil || response.Body == nil {
-		return modelCapabilityProbeOutcome{LatencyMS: time.Since(started).Milliseconds(), ReasonCode: "provider_response_invalid"}
+		outcome.LatencyMS = time.Since(started).Milliseconds()
+		outcome.ReasonCode = "provider_response_invalid"
+		return outcome
 	}
 	defer response.Body.Close()
-	outcome := modelCapabilityProbeOutcome{StatusCode: response.StatusCode}
+	outcome.StatusCode = response.StatusCode
 	if outcome.StatusCode < 100 || outcome.StatusCode > 599 {
 		outcome.StatusCode = 0
 	}
@@ -888,7 +901,7 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 		"protocol_profile_id": snapshot.ProtocolProfileID, "protocol_profile_version": snapshot.ProtocolProfileVersion,
 		"probe_contract_id": snapshot.ProbeContractID, "probe_contract_version": snapshot.ProbeContractVersion,
 	}
-	for key, value := range modelCapabilityProbeRequestContractSummary(snapshot.ProbeContractID, snapshot.CapabilityID) {
+	for key, value := range outcome.RequestSummary {
 		requestSummaryFields[key] = value
 	}
 	requestSummary, _ := json.Marshal(requestSummaryFields)
@@ -997,60 +1010,72 @@ UPDATE model_deployment_capabilities
 	return result, nil
 }
 
-func modelCapabilityProbeRequestContractSummary(probeContractID, capabilityID string) map[string]interface{} {
-	switch probeContractID {
-	case modelcapabilityqualification.DeepSeekChatSSEProbeContractID:
-		return map[string]interface{}{
-			"stream": true, "stream_options_include_usage": true,
-			"thinking_type": "disabled", "max_tokens": 64,
-		}
-	case modelcapabilityqualification.DeepSeekChatReasoningProbeContractID:
-		return map[string]interface{}{
-			"stream": false, "thinking_type": "enabled", "max_tokens": 512,
-		}
-	case modelcapabilityqualification.DeepSeekChatReasoningEffortProbeContractID:
-		return map[string]interface{}{
-			"stream": false, "reasoning_effort": "low", "max_tokens": 512,
-		}
-	case modelcapabilityqualification.DeepSeekChatFunctionToolsProbeContractID:
-		choice := "required"
-		switch capabilityID {
-		case modelprofile.CapabilityToolChoiceAuto:
-			choice = "auto"
-		case modelprofile.CapabilityToolChoiceNamed:
-			choice = "named"
-		}
-		return map[string]interface{}{
-			"stream": false, "thinking_type": "disabled", "max_tokens": 256,
-			"function_name": "unirouter_probe_echo", "tool_choice": choice,
-		}
-	case modelcapabilityqualification.DeepSeekChatJSONObjectProbeContractID:
-		return map[string]interface{}{
-			"stream": false, "thinking_type": "disabled", "max_tokens": 64,
-			"response_format_type": "json_object",
-		}
-	case modelcapabilityqualification.KimiChatSSEProbeContractID:
-		return map[string]interface{}{
-			"stream": true, "stream_options_include_usage": true,
-			"thinking_type": "disabled", "max_completion_tokens": 64,
-		}
-	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
-		return map[string]interface{}{
-			"stream": false, "thinking_type": "provider_default_enabled", "max_completion_tokens": 512,
-		}
-	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
-		return map[string]interface{}{
-			"stream": false, "thinking_type": "disabled", "max_completion_tokens": 256,
-			"function_name": "unirouter_probe_echo", "tool_choice": "auto",
-		}
-	case modelcapabilityqualification.KimiChatJSONObjectProbeContractID:
-		return map[string]interface{}{
-			"stream": false, "thinking_type": "disabled", "max_completion_tokens": 64,
-			"response_format_type": "json_object",
-		}
-	default:
-		return map[string]interface{}{}
+func summarizeModelCapabilityProbeRequest(snapshot modelCapabilitySnapshot, body []byte) (map[string]interface{}, error) {
+	var payload struct {
+		Stream              bool            `json:"stream"`
+		MaxTokens           *int64          `json:"max_tokens"`
+		MaxCompletionTokens *int64          `json:"max_completion_tokens"`
+		ReasoningEffort     string          `json:"reasoning_effort"`
+		Thinking            json.RawMessage `json:"thinking"`
+		StreamOptions       struct {
+			IncludeUsage bool `json:"include_usage"`
+		} `json:"stream_options"`
+		ResponseFormat struct {
+			Type string `json:"type"`
+		} `json:"response_format"`
+		ToolChoice json.RawMessage `json:"tool_choice"`
+		Tools      []struct {
+			Function struct {
+				Name string `json:"name"`
+			} `json:"function"`
+		} `json:"tools"`
 	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("decode server-owned capability probe request summary: %w", err)
+	}
+	summary := map[string]interface{}{"stream": payload.Stream}
+	if payload.MaxTokens != nil {
+		summary["max_tokens"] = *payload.MaxTokens
+	}
+	if payload.MaxCompletionTokens != nil {
+		summary["max_completion_tokens"] = *payload.MaxCompletionTokens
+	}
+	if payload.ReasoningEffort != "" {
+		summary["reasoning_effort"] = payload.ReasoningEffort
+	}
+	if len(payload.Thinking) != 0 && string(payload.Thinking) != "null" {
+		var thinking struct {
+			Type string `json:"type"`
+			Keep string `json:"keep"`
+		}
+		if err := json.Unmarshal(payload.Thinking, &thinking); err != nil || thinking.Type == "" {
+			return nil, fmt.Errorf("decode server-owned capability probe thinking summary")
+		}
+		summary["thinking_type"] = thinking.Type
+		if thinking.Keep != "" {
+			summary["thinking_keep"] = thinking.Keep
+		}
+	} else if snapshot.ProbeContractID == modelcapabilityqualification.KimiChatReasoningProbeContractID {
+		summary["thinking_type"] = "provider_default_enabled"
+	}
+	if payload.StreamOptions.IncludeUsage {
+		summary["stream_options_include_usage"] = true
+	}
+	if payload.ResponseFormat.Type != "" {
+		summary["response_format_type"] = payload.ResponseFormat.Type
+	}
+	if len(payload.Tools) != 0 && payload.Tools[0].Function.Name != "" {
+		summary["function_name"] = payload.Tools[0].Function.Name
+	}
+	if len(payload.ToolChoice) != 0 && string(payload.ToolChoice) != "null" {
+		var choice string
+		if err := json.Unmarshal(payload.ToolChoice, &choice); err == nil {
+			summary["tool_choice"] = choice
+		} else {
+			summary["tool_choice"] = "named"
+		}
+	}
+	return summary, nil
 }
 
 func sameModelCapabilitySnapshot(before, current modelCapabilitySnapshot) bool {

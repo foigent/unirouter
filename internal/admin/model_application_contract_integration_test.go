@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -444,6 +445,57 @@ SELECT evidence_ref FROM model_deployment_capabilities
 SELECT COUNT(*) FROM model_capability_execution_qualifications
  WHERE deployment_id=$1 AND qualified`, k27.Application.Deployment.ID).Scan(&qualifiedCount))
 	require.Zero(t, qualifiedCount, "declared projections must not create Probe, Approval, or route qualification")
+
+	var platformOrgID, platformUserID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type)
+VALUES ('reviewed-kimi-k27-platform','active','platform') RETURNING id`).Scan(&platformOrgID))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users
+ (org_id,username,password_hash,organization_role,role,status)
+VALUES ($1,'reviewed-kimi-k27-platform-admin','fixture','platform_admin','platform_admin','active')
+RETURNING id`, platformOrgID).Scan(&platformUserID))
+	handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(request *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(request.Body)
+		require.NoError(t, err)
+		var payload map[string]interface{}
+		require.NoError(t, json.Unmarshal(body, &payload))
+		require.Equal(t, "kimi-k2.7-code", payload["model"])
+		require.Equal(t, map[string]interface{}{"type": "enabled", "keep": "all"}, payload["thinking"])
+		require.EqualValues(t, 64, payload["max_completion_tokens"])
+		require.NotContains(t, payload, "max_tokens")
+		stream := strings.Join([]string{
+			`data: {"id":"chatcmpl-k27","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.7-code","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"private reasoning"},"finish_reason":null}],"usage":null}`,
+			`data: {"id":"chatcmpl-k27","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.7-code","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""},"finish_reason":null}],"usage":null}`,
+			`data: {"id":"chatcmpl-k27","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.7-code","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}}]}`,
+			`data: {"id":"chatcmpl-k27","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.7-code","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}}`,
+			`data: [DONE]`, "",
+		}, "\n\n")
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream))}, nil
+	}))
+	platform := canonicalOperationProbeAuthorizedRequest(platformOrgID, orgID, platformUserID, auth.RolePlatformAdmin)
+	probeTarget := fmt.Sprintf(
+		"/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/streaming/probes",
+		k27.Application.Deployment.ID,
+	)
+	probeRequest := platform(http.MethodPost, probeTarget,
+		fmt.Sprintf(`{"credential_binding_id":%d}`, k27.Application.Credential.Bindings[0].ID))
+	probeRequest.SetPathValue("deploymentID", strconv.FormatInt(k27.Application.Deployment.ID, 10))
+	probeRequest.SetPathValue("operationID", "openai.chat_completions.v1")
+	probeRequest.SetPathValue("capabilityID", "streaming")
+	probeResponse := httptest.NewRecorder()
+	handler.ProbeCanonicalModelCapability(probeResponse, probeRequest)
+	require.Equal(t, http.StatusOK, probeResponse.Code, probeResponse.Body.String())
+	var persistedProbe modelCapabilityProbeResult
+	require.NoError(t, json.Unmarshal(probeResponse.Body.Bytes(), &persistedProbe))
+	require.True(t, persistedProbe.Success)
+	var storedThinkingType, storedThinkingKeep, storedOutputLimit string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT
+ request_summary->>'thinking_type',request_summary->>'thinking_keep',request_summary->>'max_completion_tokens'
+ FROM model_capability_probes WHERE capability_probe_id=$1`, persistedProbe.CapabilityProbeID).Scan(
+		&storedThinkingType, &storedThinkingKeep, &storedOutputLimit,
+	))
+	require.Equal(t, "enabled", storedThinkingType)
+	require.Equal(t, "all", storedThinkingKeep)
+	require.Equal(t, "64", storedOutputLimit)
 
 	qualificationTarget := fmt.Sprintf(
 		"/api/v1/model-deployments/%d/operations/openai.chat_completions.v1/capabilities/streaming",

@@ -52,6 +52,60 @@ func TestKimiK26FixedProbeRequestsPassExactProfileValidationAndAdmission(t *test
 	}
 }
 
+func TestKimiK27FixedProbeRequestsPassExactProfileValidationAndAdmission(t *testing.T) {
+	plan := executionProfilePlan(t, "kimi.k2.7-code.api", "1.3.0")
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "streaming required thinking",
+			body: `{"model":"kimi-k2.7-code","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}],"max_completion_tokens":64,"stream":true,"stream_options":{"include_usage":true},"thinking":{"type":"enabled","keep":"all"}}`,
+		},
+		{
+			name: "reasoning required thinking",
+			body: `{"model":"kimi-k2.7-code","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}],"max_completion_tokens":512,"stream":false,"thinking":{"type":"enabled","keep":"all"}}`,
+		},
+		{
+			name: "automatic function tools required thinking",
+			body: `{"model":"kimi-k2.7-code","messages":[{"role":"user","content":"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}],"max_completion_tokens":256,"stream":false,"thinking":{"type":"enabled","keep":"all"},"tools":[{"type":"function","function":{"name":"unirouter_probe_echo","description":"Return the supplied probe value through a function call.","parameters":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false}}}],"tool_choice":"auto"}`,
+		},
+		{
+			name: "json object required thinking",
+			body: `{"model":"kimi-k2.7-code","messages":[{"role":"system","content":"Return valid JSON only."},{"role":"user","content":"Return exactly {\"status\":\"UNIROUTER_JSON_PROBE_OK\"}."}],"max_completion_tokens":64,"stream":false,"thinking":{"type":"enabled","keep":"all"},"response_format":{"type":"json_object"}}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := []byte(test.body)
+			evidence, err := validateChatExecutionProfileRequest(body, plan)
+			require.NoError(t, err)
+			evidence.bindAdmissionBody(body)
+			_, err = estimateChatAdmissionForValidatedPlan(body, plan, evidence)
+			require.NoError(t, err)
+
+			disabled := strings.Replace(test.body, `"type":"enabled","keep":"all"`, `"type":"disabled"`, 1)
+			_, err = validateChatExecutionProfileRequest([]byte(disabled), plan)
+			require.Error(t, err, "K2.7 required-thinking Probe must not degrade to the K2.6 disabled form")
+
+			legacyOutput := strings.Replace(test.body, "max_completion_tokens", "max_tokens", 1)
+			_, err = validateChatExecutionProfileRequest([]byte(legacyOutput), plan)
+			require.Error(t, err, "K2.7 v5 Probe must not use the legacy output field")
+		})
+	}
+
+	k26Plan := executionProfilePlan(t, "kimi.k2.6.api", "1.7.0")
+	k26Historical := []byte(`{"model":"kimi-k2.6","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}],"max_completion_tokens":64,"stream":true,"stream_options":{"include_usage":true},"thinking":{"type":"disabled"}}`)
+	k26Evidence, err := validateChatExecutionProfileRequest(k26Historical, k26Plan)
+	require.NoError(t, err, "the historical K2.6 Probe request must remain valid")
+	k26Evidence.bindAdmissionBody(k26Historical)
+	_, err = estimateChatAdmissionForValidatedPlan(k26Historical, k26Plan, k26Evidence)
+	require.NoError(t, err)
+	_, err = validateChatExecutionProfileRequest(k26Historical, plan)
+	require.Error(t, err, "the K2.6 disabled-thinking Probe must not be admitted under K2.7")
+}
+
 func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 	tests := []struct {
 		name, body, capability, contractID string
