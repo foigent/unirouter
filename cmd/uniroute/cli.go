@@ -17,6 +17,8 @@ import (
 	"github.com/uniroute/unirouter/internal/config"
 	"github.com/uniroute/unirouter/internal/db"
 	"github.com/uniroute/unirouter/internal/migrate"
+	"github.com/uniroute/unirouter/internal/modelcapabilitypublication"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
 )
@@ -56,6 +58,8 @@ func runCLIWithAdminPasswordInput(ctx context.Context, args []string, cfg *confi
 		return true, runAdminCLIWithPasswordInput(ctx, args[1:], cfg, input)
 	case "migrate":
 		return true, runMigrateCLI(ctx, args[1:], cfg)
+	case "capability-contract-publication":
+		return true, runCapabilityContractPublicationCLI(ctx, args[1:], cfg)
 	case "model-route-authority":
 		return true, runModelRouteAuthorityCLI(ctx, args[1:], cfg)
 	case "reset":
@@ -262,6 +266,13 @@ func runMigrateCLI(ctx context.Context, args []string, cfg *config.Config) error
 
 	switch args[0] {
 	case "up":
+		expectedLedger, err := schemaauthority.ExpectedLedger(migrationsDir)
+		if err != nil {
+			return err
+		}
+		if err := modelcapabilitypublication.VerifyArtifactPublicationInventory(migrationsDir, expectedLedger); err != nil {
+			return err
+		}
 		return migrate.Run(ctx, postgres.Pool, migrationsDir)
 	case "status":
 		return printMigrationStatus(ctx, cfg, migrationsDir)

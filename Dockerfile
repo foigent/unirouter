@@ -2,6 +2,7 @@ FROM golang:1.25.12-alpine AS builder
 WORKDIR /app
 ARG RUNTIME_VERSION=local
 ARG RUNTIME_COMMIT=unknown
+ARG RUNTIME_TREE=unknown
 ARG GOPROXY=https://proxy.golang.org,direct
 ARG UNIROUTER_RELEASE_TRUST_MODE=release
 ARG UNIROUTER_LICENSE_TRUST_BUNDLE_B64=
@@ -40,6 +41,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
         case "${#RUNTIME_COMMIT}" in \
           40|64) ;; \
           *) echo "release builds require a complete 40- or 64-character runtime commit" >&2; exit 1 ;; \
+        esac; \
+        case "${RUNTIME_TREE}" in \
+          ''|*[!0-9a-f]*) echo "release builds require a lowercase hexadecimal runtime tree" >&2; exit 1 ;; \
+        esac; \
+        case "${#RUNTIME_TREE}" in \
+          40|64) ;; \
+          *) echo "release builds require a complete 40- or 64-character runtime tree" >&2; exit 1 ;; \
         esac ;; \
       development) ;; \
       *) echo "UNIROUTER_RELEASE_TRUST_MODE must be release or development" >&2; exit 1 ;; \
@@ -48,6 +56,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -ldflags="-s -w \
         -X main.buildVersion=${RUNTIME_VERSION} \
         -X main.buildCommit=${RUNTIME_COMMIT} \
+        -X main.buildTree=${RUNTIME_TREE} \
         -X github.com/uniroute/unirouter/internal/releasetrust.buildMode=${UNIROUTER_RELEASE_TRUST_MODE} \
         -X github.com/uniroute/unirouter/internal/releasetrust.embeddedLicenseKeyRingBase64=${UNIROUTER_LICENSE_TRUST_BUNDLE_B64} \
         -X github.com/uniroute/unirouter/internal/releasetrust.embeddedUpgradeKeyRingBase64=${UNIROUTER_UPGRADE_TRUST_BUNDLE_B64}" \

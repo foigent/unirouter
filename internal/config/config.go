@@ -81,6 +81,8 @@ type Config struct {
 	RuntimeDeploymentRole                string
 	RuntimeVersion                       string
 	RuntimeCommit                        string
+	RuntimeTree                          string
+	RuntimeImageDigest                   string
 	ModelRouteAuthority                  modelrouting.Mode
 	ModelRouteCompatibilityEnabled       bool
 	PrometheusURL                        string
@@ -725,6 +727,8 @@ func Load() (*Config, error) {
 		RuntimeDeploymentRole:                getEnvStr("RUNTIME_DEPLOYMENT_ROLE", "stable"),
 		RuntimeVersion:                       getEnvStr("RUNTIME_VERSION", ""),
 		RuntimeCommit:                        getEnvStr("RUNTIME_COMMIT", ""),
+		RuntimeTree:                          getEnvStr("RUNTIME_TREE", ""),
+		RuntimeImageDigest:                   getEnvStr("RUNTIME_IMAGE_DIGEST", ""),
 		ModelRouteAuthority:                  modelrouting.Mode(getEnvStr("MODEL_ROUTE_AUTHORITY", string(modelrouting.ModeCanonical))),
 		ModelRouteCompatibilityEnabled:       modelRouteCompatibilityEnabled,
 		PrometheusURL:                        strings.TrimRight(getEnvStr("PROMETHEUS_URL", ""), "/"),

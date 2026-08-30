@@ -7,9 +7,9 @@ package modelcapabilityqualification
 import (
 	"errors"
 	"fmt"
+	"sort"
 
-	"github.com/uniroute/unirouter/internal/modeloperation"
-	"github.com/uniroute/unirouter/internal/modelprofile"
+	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 )
 
 const (
@@ -55,209 +55,23 @@ type Binding struct {
 	PublicPath              string
 }
 
-var deepSeekFlashStreaming = Binding{
-	OperationID:             string(modeloperation.IDChatCompletions),
-	CapabilityID:            modelprofile.CapabilityStreaming,
-	ExecutionProfileID:      "deepseek.v4-flash.api",
-	ExecutionProfileVersion: "1.4.0",
-	ProtocolProfileID:       "protocol.deepseek-openai-chat.v4",
-	ProtocolProfileVersion:  "1.0.0",
-	ProbeContractID:         DeepSeekChatSSEProbeContractID,
-	ProbeContractVersion:    DeepSeekChatSSEProbeContractCurrentVersion,
-	ExpectedProvider:        "deepseek",
-	ExpectedUpstreamModel:   "deepseek-v4-flash",
-	PublicPath:              modeloperation.PathChatCompletions,
-}
-
-// deepSeekFlashLegacyStreaming preserves the exact Chat surface already
-// sealed by pre-M88 DeepSeek Flash Releases. The execution Profile, provider,
-// upstream model and probe contract remain exact; only the historical
-// operation protocol identity differs from new attachments.
-var deepSeekFlashLegacyStreaming = Binding{
-	OperationID:             string(modeloperation.IDChatCompletions),
-	CapabilityID:            modelprofile.CapabilityStreaming,
-	ExecutionProfileID:      "deepseek.v4-flash.api",
-	ExecutionProfileVersion: "1.4.0",
-	ProtocolProfileID:       "openai.chat_completions",
-	ProtocolProfileVersion:  "1.0.0",
-	ProbeContractID:         DeepSeekChatSSEProbeContractID,
-	ProbeContractVersion:    DeepSeekChatSSEProbeContractCurrentVersion,
-	ExpectedProvider:        "deepseek",
-	ExpectedUpstreamModel:   "deepseek-v4-flash",
-	PublicPath:              modeloperation.PathChatCompletions,
-}
-
-var deepSeekFlashReasoning = Binding{
-	OperationID:             string(modeloperation.IDChatCompletions),
-	CapabilityID:            modelprofile.CapabilityReasoning,
-	ExecutionProfileID:      "deepseek.v4-flash.api",
-	ExecutionProfileVersion: "1.4.0",
-	ProtocolProfileID:       "protocol.deepseek-openai-chat.v4",
-	ProtocolProfileVersion:  "1.0.0",
-	ProbeContractID:         DeepSeekChatReasoningProbeContractID,
-	ProbeContractVersion:    DeepSeekChatReasoningProbeContractVersion,
-	ExpectedProvider:        "deepseek",
-	ExpectedUpstreamModel:   "deepseek-v4-flash",
-	PublicPath:              modeloperation.PathChatCompletions,
-}
-
-var deepSeekFlashLegacyReasoning = Binding{
-	OperationID:             string(modeloperation.IDChatCompletions),
-	CapabilityID:            modelprofile.CapabilityReasoning,
-	ExecutionProfileID:      "deepseek.v4-flash.api",
-	ExecutionProfileVersion: "1.4.0",
-	ProtocolProfileID:       "openai.chat_completions",
-	ProtocolProfileVersion:  "1.0.0",
-	ProbeContractID:         DeepSeekChatReasoningProbeContractID,
-	ProbeContractVersion:    DeepSeekChatReasoningProbeContractVersion,
-	ExpectedProvider:        "deepseek",
-	ExpectedUpstreamModel:   "deepseek-v4-flash",
-	PublicPath:              modeloperation.PathChatCompletions,
-}
-
-var deepSeekFlashReasoningEffort = Binding{
-	OperationID:             string(modeloperation.IDChatCompletions),
-	CapabilityID:            modelprofile.CapabilityReasoningEffort,
-	ExecutionProfileID:      "deepseek.v4-flash.api",
-	ExecutionProfileVersion: "1.4.0",
-	ProtocolProfileID:       "protocol.deepseek-openai-chat.v4",
-	ProtocolProfileVersion:  "1.0.0",
-	ProbeContractID:         DeepSeekChatReasoningEffortProbeContractID,
-	ProbeContractVersion:    DeepSeekChatReasoningProbeContractVersion,
-	ExpectedProvider:        "deepseek",
-	ExpectedUpstreamModel:   "deepseek-v4-flash",
-	PublicPath:              modeloperation.PathChatCompletions,
-}
-
-var deepSeekFlashLegacyReasoningEffort = Binding{
-	OperationID:             string(modeloperation.IDChatCompletions),
-	CapabilityID:            modelprofile.CapabilityReasoningEffort,
-	ExecutionProfileID:      "deepseek.v4-flash.api",
-	ExecutionProfileVersion: "1.4.0",
-	ProtocolProfileID:       "openai.chat_completions",
-	ProtocolProfileVersion:  "1.0.0",
-	ProbeContractID:         DeepSeekChatReasoningEffortProbeContractID,
-	ProbeContractVersion:    DeepSeekChatReasoningProbeContractVersion,
-	ExpectedProvider:        "deepseek",
-	ExpectedUpstreamModel:   "deepseek-v4-flash",
-	PublicPath:              modeloperation.PathChatCompletions,
-}
-
-var deepSeekFlashCoreBindings = func() []Binding {
-	capabilities := []struct {
-		CapabilityID    string
-		ProbeContractID string
-	}{
-		{modelprofile.CapabilityTools, DeepSeekChatFunctionToolsProbeContractID},
-		{modelprofile.CapabilityFunctionTools, DeepSeekChatFunctionToolsProbeContractID},
-		{modelprofile.CapabilityToolChoiceAuto, DeepSeekChatFunctionToolsProbeContractID},
-		{modelprofile.CapabilityToolChoiceNamed, DeepSeekChatFunctionToolsProbeContractID},
-		{modelprofile.CapabilityToolChoiceReq, DeepSeekChatFunctionToolsProbeContractID},
-		{modelprofile.CapabilityJSONObject, DeepSeekChatJSONObjectProbeContractID},
+func allBindings() ([]Binding, error) {
+	compiled, err := publication.CurrentBindings()
+	if err != nil {
+		return nil, fmt.Errorf("load compiled capability publication: %w", err)
 	}
-	protocols := []string{"protocol.deepseek-openai-chat.v4", "openai.chat_completions"}
-	bindings := make([]Binding, 0, len(capabilities)*len(protocols))
-	for _, capability := range capabilities {
-		for _, protocolProfileID := range protocols {
-			bindings = append(bindings, Binding{
-				OperationID: string(modeloperation.IDChatCompletions), CapabilityID: capability.CapabilityID,
-				ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.4.0",
-				ProtocolProfileID: protocolProfileID, ProtocolProfileVersion: "1.0.0",
-				ProbeContractID: capability.ProbeContractID, ProbeContractVersion: DeepSeekChatCoreProbeContractVersion,
-				ExpectedProvider: "deepseek", ExpectedUpstreamModel: "deepseek-v4-flash",
-				PublicPath: modeloperation.PathChatCompletions,
-			})
-		}
-	}
-	return bindings
-}()
-
-// deepSeekFlashCurrentBindings publishes the same typed probe grammar for the
-// append-only Profile which corrected reasoning/tool-choice composition. Probe
-// and approval evidence remains exact-version scoped, so no 1.4.0 receipt can
-// qualify a 1.5.0 deployment.
-var deepSeekFlashCurrentBindings = func() []Binding {
-	historical := []Binding{
-		deepSeekFlashStreaming, deepSeekFlashLegacyStreaming,
-		deepSeekFlashReasoning, deepSeekFlashLegacyReasoning,
-		deepSeekFlashReasoningEffort, deepSeekFlashLegacyReasoningEffort,
-	}
-	historical = append(historical, deepSeekFlashCoreBindings...)
-	current := make([]Binding, 0, len(historical))
-	for _, binding := range historical {
-		binding.ExecutionProfileVersion = "1.5.0"
-		if binding.ProbeContractID == DeepSeekChatFunctionToolsProbeContractID {
-			binding.ProbeContractVersion = DeepSeekChatFunctionToolsProbeContractV2
-		}
-		current = append(current, binding)
-	}
-	return current
-}()
-
-// deepSeekProCurrentBindings reuses the already versioned DeepSeek Chat probe
-// grammar for the current Pro Profile, but publishes only the reviewed v4
-// operation identity. Unlike Flash, Pro has no retained generic attachment or
-// sealed execution evidence that requires a second protocol tuple.
-var deepSeekProCurrentBindings = func() []Binding {
-	bindings := make([]Binding, 0, 9)
-	for _, binding := range deepSeekFlashCurrentBindings {
-		if binding.ProtocolProfileID != "protocol.deepseek-openai-chat.v4" {
-			continue
-		}
-		binding.ExecutionProfileID = "deepseek.v4-pro.api"
-		binding.ExpectedUpstreamModel = "deepseek-v4-pro"
-		bindings = append(bindings, binding)
-	}
-	return bindings
-}()
-
-// kimiK26CurrentBindings publishes only the exact current K2.6 Chat tuple.
-// K2.7 Code reuses the same validation contract but does not receive
-// attachment or routing authority until its own milestone publishes an exact
-// binding and live evidence.
-var kimiK26CurrentBindings = func() []Binding {
-	capabilities := []struct {
-		CapabilityID    string
-		ProbeContractID string
-	}{
-		{modelprofile.CapabilityStreaming, KimiChatSSEProbeContractID},
-		{modelprofile.CapabilityReasoning, KimiChatReasoningProbeContractID},
-		{modelprofile.CapabilityTools, KimiChatFunctionToolsProbeContractID},
-		{modelprofile.CapabilityFunctionTools, KimiChatFunctionToolsProbeContractID},
-		{modelprofile.CapabilityToolChoiceAuto, KimiChatFunctionToolsProbeContractID},
-		{modelprofile.CapabilityJSONObject, KimiChatJSONObjectProbeContractID},
-	}
-	bindings := make([]Binding, 0, len(capabilities))
-	for _, capability := range capabilities {
-		probeContractVersion := KimiChatCoreProbeContractVersionV2
-		if capability.CapabilityID == modelprofile.CapabilityStreaming {
-			probeContractVersion = KimiChatSSEProbeContractVersionV3
-		} else if capability.ProbeContractID == KimiChatFunctionToolsProbeContractID {
-			probeContractVersion = KimiChatFunctionToolsProbeContractVersionV4
-		}
+	bindings := make([]Binding, 0, len(compiled))
+	for _, candidate := range compiled {
 		bindings = append(bindings, Binding{
-			OperationID: string(modeloperation.IDChatCompletions), CapabilityID: capability.CapabilityID,
-			ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
-			ProtocolProfileID: "protocol.kimi-openai-chat.v5", ProtocolProfileVersion: "1.0.0",
-			ProbeContractID: capability.ProbeContractID, ProbeContractVersion: probeContractVersion,
-			ExpectedProvider: "kimi", ExpectedUpstreamModel: "kimi-k2.6",
-			PublicPath: modeloperation.PathChatCompletions,
+			OperationID: candidate.OperationID, CapabilityID: candidate.CapabilityID,
+			ExecutionProfileID: candidate.ExecutionProfileID, ExecutionProfileVersion: candidate.ExecutionProfileVersion,
+			ProtocolProfileID: candidate.ProtocolProfileID, ProtocolProfileVersion: candidate.ProtocolProfileVersion,
+			ProbeContractID: candidate.ProbeContractID, ProbeContractVersion: candidate.ProbeContractVersion,
+			ExpectedProvider: candidate.ExpectedProvider, ExpectedUpstreamModel: candidate.ExpectedUpstreamModel,
+			PublicPath: candidate.PublicPath,
 		})
 	}
-	return bindings
-}()
-
-func allBindings() []Binding {
-	bindings := []Binding{
-		deepSeekFlashStreaming, deepSeekFlashLegacyStreaming,
-		deepSeekFlashReasoning, deepSeekFlashLegacyReasoning,
-		deepSeekFlashReasoningEffort, deepSeekFlashLegacyReasoningEffort,
-	}
-	bindings = append(bindings, deepSeekFlashCoreBindings...)
-	bindings = append(bindings, deepSeekFlashCurrentBindings...)
-	bindings = append(bindings, deepSeekProCurrentBindings...)
-	bindings = append(bindings, kimiK26CurrentBindings...)
-	return bindings
+	return bindings, nil
 }
 
 func Resolve(
@@ -265,7 +79,11 @@ func Resolve(
 	executionProfileID, executionProfileVersion,
 	protocolProfileID, protocolProfileVersion string,
 ) (Binding, error) {
-	for _, candidate := range allBindings() {
+	bindings, err := allBindings()
+	if err != nil {
+		return Binding{}, err
+	}
+	for _, candidate := range bindings {
 		if candidate.OperationID == operationID && candidate.CapabilityID == capabilityID &&
 			candidate.ExecutionProfileID == executionProfileID && candidate.ExecutionProfileVersion == executionProfileVersion &&
 			candidate.ProtocolProfileID == protocolProfileID && candidate.ProtocolProfileVersion == protocolProfileVersion {
@@ -286,7 +104,11 @@ func ResolveAll(
 	protocolProfileID, protocolProfileVersion string,
 ) ([]Binding, error) {
 	bindings := make([]Binding, 0, 9)
-	for _, candidate := range allBindings() {
+	compiled, err := allBindings()
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range compiled {
 		if candidate.OperationID == operationID &&
 			candidate.ExecutionProfileID == executionProfileID && candidate.ExecutionProfileVersion == executionProfileVersion &&
 			candidate.ProtocolProfileID == protocolProfileID && candidate.ProtocolProfileVersion == protocolProfileVersion {
@@ -301,30 +123,99 @@ func ResolveAll(
 	return bindings, nil
 }
 
-func DeepSeekFlashStreamingBinding() Binding { return deepSeekFlashStreaming }
+func DeepSeekFlashStreamingBinding() Binding {
+	return mustResolve("openai.chat_completions.v1", "streaming", "deepseek.v4-flash.api", "1.4.0", "protocol.deepseek-openai-chat.v4", "1.0.0")
+}
 
-func DeepSeekFlashLegacyStreamingBinding() Binding { return deepSeekFlashLegacyStreaming }
+func DeepSeekFlashLegacyStreamingBinding() Binding {
+	return mustResolve("openai.chat_completions.v1", "streaming", "deepseek.v4-flash.api", "1.4.0", "openai.chat_completions", "1.0.0")
+}
 
-func DeepSeekFlashReasoningBinding() Binding { return deepSeekFlashReasoning }
+func DeepSeekFlashReasoningBinding() Binding {
+	return mustResolve("openai.chat_completions.v1", "reasoning", "deepseek.v4-flash.api", "1.4.0", "protocol.deepseek-openai-chat.v4", "1.0.0")
+}
 
-func DeepSeekFlashLegacyReasoningBinding() Binding { return deepSeekFlashLegacyReasoning }
+func DeepSeekFlashLegacyReasoningBinding() Binding {
+	return mustResolve("openai.chat_completions.v1", "reasoning", "deepseek.v4-flash.api", "1.4.0", "openai.chat_completions", "1.0.0")
+}
 
-func DeepSeekFlashReasoningEffortBinding() Binding { return deepSeekFlashReasoningEffort }
+func DeepSeekFlashReasoningEffortBinding() Binding {
+	return mustResolve("openai.chat_completions.v1", "reasoning_effort", "deepseek.v4-flash.api", "1.4.0", "protocol.deepseek-openai-chat.v4", "1.0.0")
+}
 
-func DeepSeekFlashLegacyReasoningEffortBinding() Binding { return deepSeekFlashLegacyReasoningEffort }
+func DeepSeekFlashLegacyReasoningEffortBinding() Binding {
+	return mustResolve("openai.chat_completions.v1", "reasoning_effort", "deepseek.v4-flash.api", "1.4.0", "openai.chat_completions", "1.0.0")
+}
 
 func DeepSeekFlashCoreBindings() []Binding {
-	return append([]Binding(nil), deepSeekFlashCoreBindings...)
+	all := mustResolveAll("openai.chat_completions.v1", "deepseek.v4-flash.api", "1.4.0", "")
+	bindings := make([]Binding, 0, 12)
+	for _, binding := range all {
+		if binding.CapabilityID != "streaming" && binding.CapabilityID != "reasoning" && binding.CapabilityID != "reasoning_effort" {
+			bindings = append(bindings, binding)
+		}
+	}
+	return bindings
 }
 
 func DeepSeekFlashCurrentBindings() []Binding {
-	return append([]Binding(nil), deepSeekFlashCurrentBindings...)
+	return mustResolveAll("openai.chat_completions.v1", "deepseek.v4-flash.api", "1.5.0", "")
 }
 
 func DeepSeekProCurrentBindings() []Binding {
-	return append([]Binding(nil), deepSeekProCurrentBindings...)
+	return mustResolveAll("openai.chat_completions.v1", "deepseek.v4-pro.api", "1.5.0", "")
 }
 
 func KimiK26CurrentBindings() []Binding {
-	return append([]Binding(nil), kimiK26CurrentBindings...)
+	return mustResolveAll("openai.chat_completions.v1", "kimi.k2.6.api", "1.7.0", "")
+}
+
+func mustResolve(operationID, capabilityID, profileID, profileVersion, protocolID, protocolVersion string) Binding {
+	binding, err := Resolve(operationID, capabilityID, profileID, profileVersion, protocolID, protocolVersion)
+	if err != nil {
+		panic(err)
+	}
+	return binding
+}
+
+func mustResolveAll(operationID, profileID, profileVersion, protocolID string) []Binding {
+	all, err := allBindings()
+	if err != nil {
+		panic(err)
+	}
+	bindings := make([]Binding, 0, 12)
+	for _, binding := range all {
+		if binding.OperationID == operationID && binding.ExecutionProfileID == profileID &&
+			binding.ExecutionProfileVersion == profileVersion && (protocolID == "" || binding.ProtocolProfileID == protocolID) {
+			bindings = append(bindings, binding)
+		}
+	}
+	if len(bindings) == 0 {
+		panic(fmt.Errorf("%w: no compiled bindings for %s %s@%s", ErrUnsupported, operationID, profileID, profileVersion))
+	}
+	sort.SliceStable(bindings, func(i, j int) bool {
+		left, right := capabilityOrder(bindings[i].CapabilityID), capabilityOrder(bindings[j].CapabilityID)
+		if left != right {
+			return left < right
+		}
+		leftTyped := bindings[i].ProtocolProfileID != "openai.chat_completions"
+		rightTyped := bindings[j].ProtocolProfileID != "openai.chat_completions"
+		if leftTyped != rightTyped {
+			return leftTyped
+		}
+		return bindings[i].ProtocolProfileID < bindings[j].ProtocolProfileID
+	})
+	return bindings
+}
+
+func capabilityOrder(capabilityID string) int {
+	order := map[string]int{
+		"streaming": 0, "reasoning": 1, "reasoning_effort": 2,
+		"tools": 3, "function_tools": 4, "tool_choice_auto": 5,
+		"tool_choice_named": 6, "tool_choice_required": 7, "json_object": 8,
+	}
+	if index, exists := order[capabilityID]; exists {
+		return index
+	}
+	return len(order)
 }

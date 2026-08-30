@@ -8,10 +8,11 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source is version 1.2.21 with the unchanged PostgreSQL compatibility
-ceiling `000100_kimi_k26_function_tools_tool_index_normalizer`; 1.2.21 changes
-only documentation and release metadata. Development/test stable, canary and
-frontend remain on version 1.2.20 and independently run exact main merge
+Repository source candidate is version 1.2.22 with the unchanged PostgreSQL
+compatibility ceiling `000100_kimi_k26_function_tools_tool_index_normalizer`.
+It adds Strict Capability Contract Publication V1 without applying a Target
+publication or changing current model capability state. Development/test
+stable, canary and frontend remain on version 1.2.20 and independently run exact main merge
 `cf2bee4bbee7074e91661400f5edf61ca2c08f32`, tree
 `64a25957ef2549923604cf6048802730d90b9be8`, with 99 ordered migration rows
 ending at M100. Stable and canary use backend image

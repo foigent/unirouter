@@ -60,3 +60,22 @@ COMMIT;
 		}
 	}
 }
+
+func TestValidateExactLedgerPrefix(t *testing.T) {
+	artifact := []string{"000001_first", "000002_second", "000003_third"}
+	for _, actual := range [][]string{nil, {"000001_first"}, {"000001_first", "000002_second"}} {
+		if err := validateExactLedgerPrefix(actual, artifact, "000002_second"); err != nil {
+			t.Fatalf("exact prefix %v rejected: %v", actual, err)
+		}
+	}
+	for _, actual := range [][]string{
+		{"000002_second"},
+		{"000001_first", "000003_third"},
+		{"000001_first", "000002_second", "000003_third"},
+		{"000001_first", "000002_unknown"},
+	} {
+		if err := validateExactLedgerPrefix(actual, artifact, "000002_second"); err == nil {
+			t.Fatalf("non-prefix ledger %v accepted", actual)
+		}
+	}
+}

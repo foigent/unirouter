@@ -73,23 +73,24 @@ func TestRootHandlerReturnsStandardNotFoundForUnknownPath(t *testing.T) {
 }
 
 func TestApplyBuildRuntimeMetadata(t *testing.T) {
-	oldVersion, oldCommit := buildVersion, buildCommit
+	oldVersion, oldCommit, oldTree := buildVersion, buildCommit, buildTree
 	t.Cleanup(func() {
-		buildVersion, buildCommit = oldVersion, oldCommit
+		buildVersion, buildCommit, buildTree = oldVersion, oldCommit, oldTree
 	})
 	buildVersion = "2026.07.08"
 	buildCommit = "abc1234"
+	buildTree = "def5678"
 
 	cfg := &config.Config{}
 	applyBuildRuntimeMetadata(cfg)
-	if cfg.RuntimeVersion != "2026.07.08" || cfg.RuntimeCommit != "abc1234" {
-		t.Fatalf("expected build metadata fallback, got version=%q commit=%q", cfg.RuntimeVersion, cfg.RuntimeCommit)
+	if cfg.RuntimeVersion != "2026.07.08" || cfg.RuntimeCommit != "abc1234" || cfg.RuntimeTree != "def5678" {
+		t.Fatalf("expected build metadata fallback, got version=%q commit=%q tree=%q", cfg.RuntimeVersion, cfg.RuntimeCommit, cfg.RuntimeTree)
 	}
 
-	cfg = &config.Config{RuntimeVersion: "configured-version", RuntimeCommit: "configured-commit"}
+	cfg = &config.Config{RuntimeVersion: "configured-version", RuntimeCommit: "configured-commit", RuntimeTree: "configured-tree"}
 	applyBuildRuntimeMetadata(cfg)
-	if cfg.RuntimeVersion != "2026.07.08" || cfg.RuntimeCommit != "abc1234" {
-		t.Fatalf("immutable build metadata should win, got version=%q commit=%q", cfg.RuntimeVersion, cfg.RuntimeCommit)
+	if cfg.RuntimeVersion != "2026.07.08" || cfg.RuntimeCommit != "abc1234" || cfg.RuntimeTree != "def5678" {
+		t.Fatalf("immutable build metadata should win, got version=%q commit=%q tree=%q", cfg.RuntimeVersion, cfg.RuntimeCommit, cfg.RuntimeTree)
 	}
 }
 

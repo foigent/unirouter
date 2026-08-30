@@ -4,6 +4,28 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.22] - 2026-08-31
+
+### Added
+
+- Added Strict Capability Contract Publication V1: deterministic declaration-
+  owned migration generation, exact Target planning, explicit install/apply/
+  guarded-recovery commands and read-only startup compatibility verification.
+- Bound every publication to the exact artifact, migration bytes, ledger
+  predecessor, compiled declaration, immutable Plan and declared deployment-
+  projection transitions. Publication up/down now rejects incomplete writer
+  hooks, forged projection predecessors and declaration/migration inventory
+  drift before any authorized write.
+
+### Evidence boundary
+
+- This source candidate adds no schema migration and performs no Target apply,
+  deployment, K2.7/K3 operation, provider call, credential, billing, Release,
+  Alias, canonical or Production change. The development/test Target remains
+  the exact 1.2.20/M100 closeout recorded in the current-status documents.
+- Local Go/vet checks and exact-commit independent reviews passed; required
+  PostgreSQL, frontend, Docker and full routed evidence are delegated to PR CI.
+
 ## [1.2.21] - 2026-08-30
 
 ### Documentation

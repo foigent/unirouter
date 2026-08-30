@@ -792,6 +792,7 @@ jobs:
           if docker build \
             --build-arg RUNTIME_VERSION=1.0.0-ci \
             --build-arg RUNTIME_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --build-arg RUNTIME_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
             --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
             --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiM2JvVTZyMWtOMXhNY1VtMmh0cFk4ZE0zR3A2ZVE2ZHFiVnZjT1hKWm5qTT0ifQ \
             --build-arg 'UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=invalid -X injected=value' \
@@ -803,6 +804,7 @@ jobs:
           docker build \
             --build-arg RUNTIME_VERSION=1.0.0-ci \
             --build-arg RUNTIME_COMMIT=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --build-arg RUNTIME_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
             --build-arg UNIROUTER_RELEASE_TRUST_MODE=release \
             --build-arg UNIROUTER_LICENSE_TRUST_BUNDLE_B64=eyJsaWNlbnNlLWNpIjoiM2JvVTZyMWtOMXhNY1VtMmh0cFk4ZE0zR3A2ZVE2ZHFiVnZjT1hKWm5qTT0ifQ \
             --build-arg UNIROUTER_UPGRADE_TRUST_BUNDLE_B64=eyJ1cGdyYWRlLWNpIjoiaTlRLzlSVm5YNjlqZDhNbWJzWVdCa1RIOHRIWk9rdng2c3l4cTJvNjFlMD0ifQ \

@@ -13,8 +13,9 @@ For development/test Target identity, the exact Kimi 1.2.20/M100 closeout in
 the completed batch below supersedes the earlier M95–M99 and Pro M94
 snapshots. Local, CI, artifact, Target, provider and customer-wallet evidence
 remain separate; this closeout does not promote pricing, canonical traffic or
-Production state. Repository source 1.2.21 records this documentation-only
-closeout and is not a new Target runtime artifact.
+Production state. Repository source candidate 1.2.22 adds Strict Capability
+Contract Publication V1 with no schema or Target apply; it is not a new Target
+runtime artifact and does not promote any model capability.
 
 ## Completed delivery batch — Kimi K2.6 Chat Core Target closeout
 
