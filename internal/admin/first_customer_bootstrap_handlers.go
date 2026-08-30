@@ -555,7 +555,7 @@ func (h *Handler) verifyFirstCustomerFreshMigrationCheckpoint(r *http.Request, t
 			   AND probe_contract_id='unirouter.capability-probe.kimi-chat-function-tools.v1'
 			   AND probe_contract_version='3.0.0'
 			   AND introduced_migration='000099_kimi_k26_function_tools_probe_v3'`, want: 3},
-		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 70},
+		{name: "fresh capability probe contract binding count", query: "SELECT COUNT(*) FROM model_capability_probe_contract_bindings", want: 73},
 		{name: "fresh current capability probe contract", query: `SELECT COUNT(*) FROM model_capability_current_probe_contracts
 			WHERE operation_id='openai.chat_completions.v1'
 			  AND capability_id='streaming'
