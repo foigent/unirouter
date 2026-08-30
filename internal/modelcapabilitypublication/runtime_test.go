@@ -34,7 +34,7 @@ func TestVerifyArtifactPublicationInventoryRejectsUncompiledMarkedMigration(t *t
 func TestVerifyArtifactPublicationInventoryIgnoresOrdinaryMigration(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, BaselineMigrationM100+".up.sql"), []byte("SELECT 1;\n"), 0o600))
-	require.NoError(t, VerifyArtifactPublicationInventory(dir, []string{BaselineMigrationM100}))
+	require.NoError(t, verifyArtifactPublicationInventory(dir, []string{BaselineMigrationM100}, nil))
 
 	wire, err := os.ReadFile(filepath.Join(dir, BaselineMigrationM100+".up.sql"))
 	require.NoError(t, err)

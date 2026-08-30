@@ -11,16 +11,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/migrate"
 	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
-	"github.com/uniroute/unirouter/internal/testutil"
+	"github.com/uniroute/unirouter/internal/testdb"
 )
 
 const updateBaselineEnvironment = "UPDATE_CAPABILITY_CONTRACT_BASELINE"
 
 func TestBaselineM100MatchesFreshDatabase(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	m100Dir, expectedLedger := migrationsThroughM100(t, testutil.MigrationsDir(t))
+	m100Dir, expectedLedger := migrationsThroughM100(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.Run(ctx, pool, m100Dir))
 
 	baseline, err := publication.ExportBaseline(ctx, pool, expectedLedger)

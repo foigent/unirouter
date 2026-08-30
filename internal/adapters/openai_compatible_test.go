@@ -1356,6 +1356,22 @@ func TestNormalizeOpenAICompatibleChatToolCallIndexIsExactScopedAndLossless(t *t
 	require.False(t, kimiWrongProtocolApplied)
 	require.Equal(t, kimiBody, kimiWrongProtocol)
 
+	kimiK27Body := []byte(strings.ReplaceAll(string(body), "deepseek-v4-flash", "kimi-k2.7-code"))
+	kimiK27Normalized, kimiK27Applied, kimiK27Err := NormalizeOpenAICompatibleChatToolCallIndex(
+		"kimi", "kimi-k2.7-code", "protocol.kimi-openai-chat.v5", kimiK27Body,
+	)
+	require.NoError(t, kimiK27Err)
+	require.True(t, kimiK27Applied)
+	require.NotContains(t, string(kimiK27Normalized), `"index":999999999999999999999999999999999999999`)
+
+	kimiK3Body := []byte(strings.ReplaceAll(string(body), "deepseek-v4-flash", "kimi-k3"))
+	kimiK3Unchanged, kimiK3Applied, kimiK3Err := NormalizeOpenAICompatibleChatToolCallIndex(
+		"kimi", "kimi-k3", "protocol.kimi-openai-chat.v5", kimiK3Body,
+	)
+	require.NoError(t, kimiK3Err)
+	require.False(t, kimiK3Applied)
+	require.Equal(t, kimiK3Body, kimiK3Unchanged)
+
 	for _, duplicate := range []string{
 		strings.Replace(string(kimiBody), `"id":"call_1"`, `"id":"shadow","id":"call_1"`, 1),
 		strings.Replace(string(kimiBody), `"id":"call_1"`, `"id":"shadow","\u0069d":"call_1"`, 1),

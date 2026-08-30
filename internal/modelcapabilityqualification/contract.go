@@ -26,6 +26,7 @@ const (
 	KimiChatSSEProbeContractID                  = "unirouter.capability-probe.kimi-chat-sse.v1"
 	KimiChatSSEProbeContractVersionV2           = "2.0.0"
 	KimiChatSSEProbeContractVersionV3           = "3.0.0"
+	KimiChatSSEProbeContractVersionV4           = "4.0.0"
 	KimiChatReasoningProbeContractID            = "unirouter.capability-probe.kimi-chat-reasoning.v1"
 	KimiChatFunctionToolsProbeContractID        = "unirouter.capability-probe.kimi-chat-function-tools.v1"
 	KimiChatJSONObjectProbeContractID           = "unirouter.capability-probe.kimi-chat-json-object.v1"

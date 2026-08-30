@@ -315,6 +315,9 @@ func ValidateKimiChatFunctionTools(
 	if len(choice.Message.ToolCalls) != 1 {
 		return observation, invalidKimiChat("tool_calls")
 	}
+	if err := validateKimiK27RequiredReasoning(expectedModel, choice.Message.ReasoningContent); err != nil {
+		return observation, err
+	}
 	call := choice.Message.ToolCalls[0]
 	if strings.TrimSpace(call.ID) == "" || call.Type != "function" || call.Function.Name != "unirouter_probe_echo" {
 		return observation, invalidKimiChat("tool_call_identity")
@@ -362,8 +365,22 @@ func ValidateKimiChatJSONObject(
 	if len(choice.Message.ToolCalls) != 0 {
 		return observation, invalidKimiChat("tool_calls")
 	}
+	if err := validateKimiK27RequiredReasoning(expectedModel, choice.Message.ReasoningContent); err != nil {
+		return observation, err
+	}
 	observation.StructuredOutputObserved = true
 	return observation, nil
+}
+
+func validateKimiK27RequiredReasoning(expectedModel string, raw json.RawMessage) error {
+	if strings.TrimSpace(expectedModel) != "kimi-k2.7-code" {
+		return nil
+	}
+	var reasoning string
+	if json.Unmarshal(raw, &reasoning) != nil || strings.TrimSpace(reasoning) == "" {
+		return invalidKimiChat("reasoning_content")
+	}
+	return nil
 }
 
 func ValidateKimiChatSSE(
@@ -373,7 +390,8 @@ func ValidateKimiChatSSE(
 	if probeContractID != KimiChatSSEProbeContractID ||
 		(probeContractVersion != KimiChatCoreProbeContractVersion &&
 			probeContractVersion != KimiChatSSEProbeContractVersionV2 &&
-			probeContractVersion != KimiChatSSEProbeContractVersionV3) {
+			probeContractVersion != KimiChatSSEProbeContractVersionV3 &&
+			probeContractVersion != KimiChatSSEProbeContractVersionV4) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
 	if safeReportedModel(strings.TrimSpace(expectedModel)) != strings.TrimSpace(expectedModel) || strings.TrimSpace(expectedModel) == "" {
@@ -447,6 +465,11 @@ func ValidateKimiChatSSE(
 			}
 			payload = string(normalized)
 		}
+		if probeContractVersion == KimiChatSSEProbeContractVersionV4 {
+			if validationErr := strictjson.Validate([]byte(payload)); validationErr != nil {
+				return invalidKimiChat("json", validationErr)
+			}
+		}
 		var chunk struct {
 			ID                string `json:"id"`
 			Object            string `json:"object"`
@@ -490,7 +513,16 @@ func ValidateKimiChatSSE(
 		choice := chunk.Choices[0]
 		observation.DeltaCount++
 		if len(choice.Delta.ReasoningContent) != 0 && string(choice.Delta.ReasoningContent) != "null" {
-			return invalidKimiChat("reasoning_content")
+			if probeContractVersion != KimiChatSSEProbeContractVersionV4 {
+				return invalidKimiChat("reasoning_content")
+			}
+			var reasoning string
+			if json.Unmarshal(choice.Delta.ReasoningContent, &reasoning) != nil {
+				return invalidKimiChat("reasoning_content")
+			}
+			if strings.TrimSpace(reasoning) != "" {
+				observation.ReasoningObserved = true
+			}
 		}
 		if len(choice.Delta.Content) != 0 && string(choice.Delta.Content) != "null" {
 			var delta string
@@ -505,7 +537,8 @@ func ValidateKimiChatSSE(
 			}
 			finished = true
 		}
-		if len(choice.Usage) != 0 && probeContractVersion != KimiChatSSEProbeContractVersionV3 {
+		if len(choice.Usage) != 0 && probeContractVersion != KimiChatSSEProbeContractVersionV3 &&
+			probeContractVersion != KimiChatSSEProbeContractVersionV4 {
 			return invalidKimiChat("usage_order")
 		}
 		if kimiJSONValuePresent(choice.Usage) {
@@ -558,6 +591,9 @@ func ValidateKimiChatSSE(
 	if !observation.DoneSeen || strings.TrimSpace(content.String()) != "UNIROUTER_STREAM_PROBE_OK" {
 		return observed(), invalidKimiChat("content")
 	}
+	if probeContractVersion == KimiChatSSEProbeContractVersionV4 && !observation.ReasoningObserved {
+		return observed(), invalidKimiChat("reasoning_content")
+	}
 	return observed(), nil
 }
 
@@ -574,7 +610,8 @@ func decodeKimiStreamUsage(raw json.RawMessage, probeContractVersion string) (ki
 	if !kimiJSONValuePresent(raw) {
 		return kimiChatUsage{}, invalidKimiChat("usage")
 	}
-	if probeContractVersion != KimiChatSSEProbeContractVersionV3 {
+	if probeContractVersion != KimiChatSSEProbeContractVersionV3 &&
+		probeContractVersion != KimiChatSSEProbeContractVersionV4 {
 		var usage kimiChatUsage
 		if err := decodeKimiJSONStrict(raw, &usage); err != nil {
 			return kimiChatUsage{}, invalidKimiChat("usage", err)

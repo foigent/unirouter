@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/customercontext"
 	"github.com/uniroute/unirouter/internal/middleware"
-	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/outbox"
 	"github.com/uniroute/unirouter/internal/resetplan"
 	"github.com/uniroute/unirouter/internal/schemaauthority"
@@ -68,7 +67,7 @@ func TestFirstCustomerBootstrapCreatesOnlyOrganizationZeroWalletAndAuditIntegrat
 func TestFirstCustomerBootstrapAcceptsExactFreshMigrationSeedAfterPasswordRotationIntegration(t *testing.T) {
 	pool := testutil.SetupIsolatedTestDB(t)
 	migrationsDir := testutil.MigrationsDir(t)
-	require.NoError(t, migrate.Run(t.Context(), pool, migrationsDir))
+	require.NoError(t, testutil.InstallExactTestArtifact(t.Context(), pool, migrationsDir))
 	baseline, err := customercontext.EnsureBaseline(t.Context(), pool)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, baseline.Customer.OrganizationID)
@@ -428,7 +427,7 @@ func TestFirstCustomerBootstrapFailsClosedOnSchemaDriftIntegration(t *testing.T)
 		pool := testutil.SetupMigratedTestDB(t)
 		adminID, adminOrgID := seedFirstCustomerBootstrapAdmin(t, pool)
 		handler := NewHandler(pool, "bootstrap-integration-jwt", []byte("0123456789abcdef01234567"), nil)
-		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000101_future_contract')`)
+		_, err := pool.Exec(context.Background(), `INSERT INTO schema_migrations (version) VALUES ('000102_future_contract')`)
 		require.NoError(t, err)
 
 		response := serveFirstCustomerBootstrap(t, handler, adminID, adminOrgID, "platform_admin", "bootstrap-schema-002", "First Customer")

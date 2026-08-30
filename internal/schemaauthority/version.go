@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000100_kimi_k26_function_tools_tool_index_normalizer"
+const LatestSupportedMigration = "000101_kimi_k27_chat_core_qualification"

@@ -326,3 +326,39 @@ func TestKimiK26FailedProbeReturnsOnlyBoundedSchemaDiagnostic(t *testing.T) {
 	require.Equal(t, "private_payload", outcome.DiagnosticMember)
 	require.NotContains(t, outcome.DiagnosticMember, "must-not-leak")
 }
+
+func TestKimiK27ProbeRequestsUseExactRequiredThinkingContract(t *testing.T) {
+	for _, contractID := range []string{
+		modelcapabilityqualification.KimiChatSSEProbeContractID,
+		modelcapabilityqualification.KimiChatReasoningProbeContractID,
+		modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.KimiChatJSONObjectProbeContractID,
+	} {
+		t.Run(contractID, func(t *testing.T) {
+			body, err := buildModelCapabilityProbeRequestBody(modelCapabilitySnapshot{
+				ExecutionProfileID: "kimi.k2.7-code.api", ExecutionProfileVersion: "1.3.0",
+				UpstreamModel: "kimi-k2.7-code", ProbeContractID: contractID,
+				CapabilityID: modelprofile.CapabilityTools,
+			})
+			require.NoError(t, err)
+			var payload map[string]interface{}
+			require.NoError(t, json.Unmarshal(body, &payload))
+			require.Equal(t, map[string]interface{}{"type": "enabled", "keep": "all"}, payload["thinking"])
+		})
+	}
+
+	k26Body, err := buildModelCapabilityProbeRequestBody(modelCapabilitySnapshot{
+		ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
+		UpstreamModel: "kimi-k2.6", ProbeContractID: modelcapabilityqualification.KimiChatSSEProbeContractID,
+	})
+	require.NoError(t, err)
+	var k26Payload map[string]interface{}
+	require.NoError(t, json.Unmarshal(k26Body, &k26Payload))
+	require.Equal(t, map[string]interface{}{"type": "disabled"}, k26Payload["thinking"])
+
+	_, err = buildModelCapabilityProbeRequestBody(modelCapabilitySnapshot{
+		ExecutionProfileID: "kimi.k2.7-code.api", ExecutionProfileVersion: "1.2.0",
+		UpstreamModel: "kimi-k2.7-code", ProbeContractID: modelcapabilityqualification.KimiChatSSEProbeContractID,
+	})
+	require.ErrorIs(t, err, errModelCapabilityUnsupported)
+}

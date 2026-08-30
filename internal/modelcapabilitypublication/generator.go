@@ -18,6 +18,113 @@ type GeneratedMigration struct {
 	VerifySQL []byte
 }
 
+type migrationArtifactFile struct {
+	suffix string
+	wire   []byte
+}
+
+type migrationArtifactWriter struct {
+	link func(string, string) error
+}
+
+// WriteGeneratedMigrationFiles materializes one compiled declaration as an
+// all-or-nothing, fail-if-exists repository artifact set. It never writes a
+// database and never overwrites an existing user file.
+func WriteGeneratedMigrationFiles(dir string, predecessor Baseline, declaration Declaration) error {
+	return writeGeneratedMigrationFiles(dir, predecessor, declaration, migrationArtifactWriter{link: os.Link})
+}
+
+func writeGeneratedMigrationFiles(dir string, predecessor Baseline, declaration Declaration, writer migrationArtifactWriter) error {
+	generated, err := GenerateMigration(predecessor, declaration)
+	if err != nil {
+		return err
+	}
+	if writer.link == nil {
+		return fmt.Errorf("%w: migration artifact linker is required", ErrInvalidDeclaration)
+	}
+	files := []migrationArtifactFile{
+		{suffix: ".up.sql", wire: generated.UpSQL},
+		{suffix: ".down.sql", wire: generated.DownSQL},
+		{suffix: ".verify.sql", wire: generated.VerifySQL},
+	}
+	for _, file := range files {
+		path := filepath.Join(dir, declaration.PublicationID+file.suffix)
+		if _, statErr := os.Lstat(path); statErr == nil {
+			return fmt.Errorf("%w: generated publication artifact already exists: %s", ErrInvalidDeclaration, path)
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("inspect generated publication artifact %s: %w", path, statErr)
+		}
+	}
+
+	type stagedArtifact struct{ staged, final string }
+	staged := make([]stagedArtifact, 0, len(files))
+	linked := make([]string, 0, len(files))
+	cleanup := func() {
+		for _, path := range linked {
+			_ = os.Remove(path)
+		}
+		for _, artifact := range staged {
+			_ = os.Remove(artifact.staged)
+		}
+	}
+	for _, file := range files {
+		temporary, createErr := os.CreateTemp(dir, "."+declaration.PublicationID+file.suffix+".*.staged")
+		if createErr != nil {
+			cleanup()
+			return fmt.Errorf("stage generated publication artifact: %w", createErr)
+		}
+		artifact := stagedArtifact{staged: temporary.Name(), final: filepath.Join(dir, declaration.PublicationID+file.suffix)}
+		staged = append(staged, artifact)
+		if chmodErr := temporary.Chmod(0o644); chmodErr != nil {
+			_ = temporary.Close()
+			cleanup()
+			return fmt.Errorf("set generated publication artifact mode: %w", chmodErr)
+		}
+		if _, writeErr := temporary.Write(file.wire); writeErr != nil {
+			_ = temporary.Close()
+			cleanup()
+			return fmt.Errorf("write generated publication artifact: %w", writeErr)
+		}
+		if syncErr := temporary.Sync(); syncErr != nil {
+			_ = temporary.Close()
+			cleanup()
+			return fmt.Errorf("sync generated publication artifact: %w", syncErr)
+		}
+		if closeErr := temporary.Close(); closeErr != nil {
+			cleanup()
+			return fmt.Errorf("close generated publication artifact: %w", closeErr)
+		}
+	}
+	for _, artifact := range staged {
+		if linkErr := writer.link(artifact.staged, artifact.final); linkErr != nil {
+			cleanup()
+			return fmt.Errorf("publish generated publication artifact %s: %w", artifact.final, linkErr)
+		}
+		linked = append(linked, artifact.final)
+	}
+	for _, artifact := range staged {
+		if removeErr := os.Remove(artifact.staged); removeErr != nil {
+			cleanup()
+			return fmt.Errorf("remove staged publication artifact %s: %w", artifact.staged, removeErr)
+		}
+	}
+	directory, err := os.Open(dir)
+	if err != nil {
+		cleanup()
+		return fmt.Errorf("open publication artifact directory: %w", err)
+	}
+	if err := directory.Sync(); err != nil {
+		_ = directory.Close()
+		cleanup()
+		return fmt.Errorf("sync publication artifact directory: %w", err)
+	}
+	if err := directory.Close(); err != nil {
+		cleanup()
+		return fmt.Errorf("close publication artifact directory: %w", err)
+	}
+	return nil
+}
+
 // GenerateMigration emits deterministic migration artifacts for one
 // declaration. Environment-specific exact rows remain in the approved Plan
 // and are applied by the explicit publication executor, never by re-running a

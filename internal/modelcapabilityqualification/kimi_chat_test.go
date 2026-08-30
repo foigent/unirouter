@@ -10,7 +10,7 @@ import (
 
 const kimiProbeEnvelopePrefix = `{"id":"chatcmpl-kimi-probe","object":"chat.completion","created":1787932800,"model":"kimi-k2.6",`
 
-func TestCompiledKimiK26BindingsAreExactAndDoNotAuthorizeSiblingModels(t *testing.T) {
+func TestCompiledKimiBindingsRemainExactPerExecutionProfile(t *testing.T) {
 	bindings := KimiK26CurrentBindings()
 	require.Len(t, bindings, 6)
 	wantCapabilities := []string{
@@ -43,11 +43,111 @@ func TestCompiledKimiK26BindingsAreExactAndDoNotAuthorizeSiblingModels(t *testin
 		require.Equal(t, binding, resolved)
 	}
 
-	_, err := ResolveAll(
+	k27, err := ResolveAll(
 		"openai.chat_completions.v1", "kimi.k2.7-code.api", "1.3.0",
 		"protocol.kimi-openai-chat.v5", "1.0.0",
 	)
+	require.NoError(t, err)
+	require.Len(t, k27, 6)
+	for _, binding := range k27 {
+		require.Equal(t, "kimi.k2.7-code.api", binding.ExecutionProfileID)
+		require.Equal(t, "1.3.0", binding.ExecutionProfileVersion)
+		require.Equal(t, "kimi-k2.7-code", binding.ExpectedUpstreamModel)
+	}
+
+	_, err = ResolveAll(
+		"openai.chat_completions.v1", "kimi.k3.api", "1.8.0",
+		"protocol.kimi-openai-chat.v5", "1.0.0",
+	)
 	require.ErrorIs(t, err, ErrUnsupported)
+}
+
+func TestKimiK27RequiredThinkingProbeContractsReuseOnlyExactReviewedGrammar(t *testing.T) {
+	usage := `{"prompt_tokens":24,"completion_tokens":12,"total_tokens":36,"cached_tokens":4,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":7}}`
+	reasoningBody := `{"id":"chatcmpl-k27","object":"chat.completion","created":1787932800,"model":"kimi-k2.7-code","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private reasoning"},"finish_reason":"stop","logprobs":null}],"usage":` + usage + `}`
+	reasoning, err := ValidateKimiChatReasoning(
+		KimiChatReasoningProbeContractID, KimiChatCoreProbeContractVersionV2,
+		"kimi-k2.7-code", "application/json", strings.NewReader(reasoningBody),
+	)
+	require.NoError(t, err)
+	require.True(t, reasoning.ReasoningObserved)
+
+	toolsBody := `{"id":"chatcmpl-k27","object":"chat.completion","created":1787932800,"model":"kimi-k2.7-code","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"private reasoning","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":` + usage + `}`
+	tools, err := ValidateKimiChatFunctionTools(
+		KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV4,
+		"kimi-k2.7-code", "application/json", strings.NewReader(toolsBody),
+	)
+	require.NoError(t, err)
+	require.True(t, tools.ToolCallObserved)
+
+	jsonBody := `{"id":"chatcmpl-k27","object":"chat.completion","created":1787932800,"model":"kimi-k2.7-code","choices":[{"index":0,"message":{"role":"assistant","content":"{\"status\":\"UNIROUTER_JSON_PROBE_OK\"}","reasoning_content":"private reasoning"},"finish_reason":"stop","logprobs":null}],"usage":` + usage + `}`
+	structured, err := ValidateKimiChatJSONObject(
+		KimiChatJSONObjectProbeContractID, KimiChatCoreProbeContractVersionV2,
+		"kimi-k2.7-code", "application/json", strings.NewReader(jsonBody),
+	)
+	require.NoError(t, err)
+	require.True(t, structured.StructuredOutputObserved)
+
+	for name, body := range map[string]string{"tools": toolsBody, "json": jsonBody} {
+		t.Run(name+" rejects missing required reasoning", func(t *testing.T) {
+			withoutReasoning := strings.Replace(body, `,"reasoning_content":"private reasoning"`, "", 1)
+			if name == "tools" {
+				_, err = ValidateKimiChatFunctionTools(
+					KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV4,
+					"kimi-k2.7-code", "application/json", strings.NewReader(withoutReasoning),
+				)
+			} else {
+				_, err = ValidateKimiChatJSONObject(
+					KimiChatJSONObjectProbeContractID, KimiChatCoreProbeContractVersionV2,
+					"kimi-k2.7-code", "application/json", strings.NewReader(withoutReasoning),
+				)
+			}
+			require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+			require.Equal(t, "reasoning_content", KimiChatErrorCode(err))
+		})
+	}
+}
+
+func TestKimiK27SSEProbeV4RequiresReasoningAndPreservesOlderContracts(t *testing.T) {
+	body := strings.Join([]string{
+		`data: {"id":"chatcmpl-k27","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.7-code","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"private reasoning"},"finish_reason":null}],"usage":null}`,
+		`data: {"id":"chatcmpl-k27","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.7-code","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""},"finish_reason":null}],"usage":null}`,
+		`data: {"id":"chatcmpl-k27","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.7-code","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}}]}`,
+		`data: {"id":"chatcmpl-k27","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k2.7-code","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}}`,
+		`data: [DONE]`, "",
+	}, "\n\n")
+
+	observation, err := ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV4,
+		"kimi-k2.7-code", "text/event-stream", strings.NewReader(body),
+	)
+	require.NoError(t, err)
+	require.True(t, observation.DoneSeen)
+	require.True(t, observation.ReasoningObserved)
+	require.Equal(t, int64(2), observation.CachedTokens)
+
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV3,
+		"kimi-k2.7-code", "text/event-stream", strings.NewReader(body),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "reasoning_content", KimiChatErrorCode(err))
+
+	withoutReasoning := strings.Replace(body, `"reasoning_content":"private reasoning"`, `"reasoning_content":""`, 1)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV4,
+		"kimi-k2.7-code", "text/event-stream", strings.NewReader(withoutReasoning),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "reasoning_content", KimiChatErrorCode(err))
+
+	duplicate := strings.Replace(body, `"content":"UNIROUTER_STREAM_PROBE_OK"`, `"content":"shadow","\u0063ontent":"UNIROUTER_STREAM_PROBE_OK"`, 1)
+	_, err = ValidateKimiChatSSE(
+		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV4,
+		"kimi-k2.7-code", "text/event-stream", strings.NewReader(duplicate),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "json", KimiChatErrorCode(err))
 }
 
 func TestKimiChatReasoningProbeProvesProviderDefaultThinking(t *testing.T) {

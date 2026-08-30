@@ -711,6 +711,10 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		"max_tokens": 64,
 		"stream":     false,
 	}
+	kimiThinking, kimiRequiredThinking, err := resolveKimiProbeThinking(snapshot)
+	if err != nil {
+		return nil, err
+	}
 	switch snapshot.ProbeContractID {
 	case modelcapabilityqualification.DeepSeekChatSSEProbeContractID:
 		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}}
@@ -764,18 +768,28 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}}
 		payload["stream"] = true
 		payload["stream_options"] = map[string]bool{"include_usage": true}
-		payload["thinking"] = map[string]string{"type": "disabled"}
+		if kimiRequiredThinking {
+			payload["thinking"] = kimiThinking
+		} else {
+			payload["thinking"] = map[string]string{"type": "disabled"}
+		}
 	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
 		delete(payload, "max_tokens")
 		payload["max_completion_tokens"] = 512
 		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}}
-		// Omission is deliberate: the probe proves K2.6's provider-default
-		// thinking path, which is the path used by an ordinary invocation.
+		if kimiRequiredThinking {
+			payload["thinking"] = kimiThinking
+		}
+		// K2.6 deliberately omits thinking to prove its provider-default path.
 	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
 		delete(payload, "max_tokens")
 		payload["max_completion_tokens"] = 256
 		payload["messages"] = []map[string]string{{"role": "user", "content": "Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}}
-		payload["thinking"] = map[string]string{"type": "disabled"}
+		if kimiRequiredThinking {
+			payload["thinking"] = kimiThinking
+		} else {
+			payload["thinking"] = map[string]string{"type": "disabled"}
+		}
 		payload["tools"] = []map[string]interface{}{{
 			"type": "function",
 			"function": map[string]interface{}{
@@ -795,12 +809,46 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 			{"role": "system", "content": "Return valid JSON only."},
 			{"role": "user", "content": `Return exactly {"status":"UNIROUTER_JSON_PROBE_OK"}.`},
 		}
-		payload["thinking"] = map[string]string{"type": "disabled"}
+		if kimiRequiredThinking {
+			payload["thinking"] = kimiThinking
+		} else {
+			payload["thinking"] = map[string]string{"type": "disabled"}
+		}
 		payload["response_format"] = map[string]string{"type": "json_object"}
 	default:
 		return nil, errModelCapabilityUnsupported
 	}
 	return json.Marshal(payload)
+}
+
+func resolveKimiProbeThinking(snapshot modelCapabilitySnapshot) (map[string]string, bool, error) {
+	thinking, required, err := resolveKimiRequiredThinkingContract(
+		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion,
+	)
+	if err != nil {
+		return nil, false, errModelCapabilityUnsupported
+	}
+	return thinking, required, nil
+}
+
+func resolveKimiRequiredThinkingContract(profileID, profileVersion string) (map[string]string, bool, error) {
+	if profileID != "kimi.k2.7-code.api" {
+		return nil, false, nil
+	}
+	if profileVersion != "1.3.0" {
+		return nil, false, fmt.Errorf("unsupported Kimi required-thinking Profile %s@%s", profileID, profileVersion)
+	}
+	profile, ok := modelprofile.Lookup(profileID, profileVersion)
+	if !ok {
+		return nil, false, fmt.Errorf("unknown Kimi required-thinking Profile %s@%s", profileID, profileVersion)
+	}
+	contract, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
+	if !ok || contract.Mode != modelprofile.ReasoningModeRequired ||
+		contract.ToggleControl.Field != "thinking" || contract.ToggleControl.ProviderDefault != "enabled" ||
+		contract.ThinkingKeepProviderDefault != "all" {
+		return nil, false, fmt.Errorf("invalid Kimi required-thinking contract for %s@%s", profileID, profileVersion)
+	}
+	return map[string]string{"type": "enabled", "keep": "all"}, true, nil
 }
 
 func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64, snapshot modelCapabilitySnapshot, outcome modelCapabilityProbeOutcome, sourceRef string, audit auditMeta) (modelCapabilityProbeResult, error) {
