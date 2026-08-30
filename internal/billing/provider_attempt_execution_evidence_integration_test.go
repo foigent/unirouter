@@ -414,6 +414,9 @@ UPDATE billing_provider_attempts SET execution_snapshot_hash=NULL WHERE org_id=$
 	require.NoError(t, err)
 	// The newer public-binding migrations must be reversed before the M85
 	// guard can permit this isolated fixture to enter the legacy schema.
+	require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+		t.Context(), pool, testutil.MigrationsDir(t),
+	))
 	for _, name := range []string{
 		"000100_kimi_k26_function_tools_tool_index_normalizer.down.sql",
 		"000099_kimi_k26_function_tools_probe_v3.down.sql",

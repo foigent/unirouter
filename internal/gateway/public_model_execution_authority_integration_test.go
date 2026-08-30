@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
@@ -45,14 +46,11 @@ const (
 	publicGatewayPGFingerprintSecret     = "m77-public-fingerprint-secret"
 )
 
-func publicGatewayPGDowngradeKimiK27PublicationForLegacyRollbackTest(t *testing.T, pool interface {
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
-}) {
+func publicGatewayPGDowngradeKimiK27PublicationForLegacyRollbackTest(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	down, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000101_kimi_k27_chat_core_qualification.down.sql"))
-	require.NoError(t, err)
-	_, err = pool.Exec(t.Context(), string(down))
-	require.NoError(t, err, "legacy rollback fixture must start from the exact M100 ceiling")
+	require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+		t.Context(), pool, testutil.MigrationsDir(t),
+	), "legacy rollback fixture must start from the exact M100 ceiling")
 }
 
 func TestPublicResponsesExactProfileCapabilityEvidenceLoadsThroughSQLPlannerIntegration(t *testing.T) {
