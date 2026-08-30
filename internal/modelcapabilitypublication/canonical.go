@@ -426,7 +426,7 @@ func validatePlanFields(plan Plan, requireDigest bool) error {
 			if item.Expected == nil || item.ExpectedAffectedRows != 1 {
 				return fmt.Errorf("%w: projection update requires exact pre-state and one affected row", ErrInvalidDeclaration)
 			}
-			if err := validateDeploymentProjection(*item.Expected); err != nil {
+			if err := validateDeploymentProjectionPredecessor(*item.Expected); err != nil {
 				return err
 			}
 			if !sameDeploymentProjectionIdentity(*item.Expected, item.Final) ||
@@ -562,6 +562,28 @@ func validateDeploymentProjection(projection DeploymentProjection) error {
 		"evidence_ref":   projection.EvidenceRef,
 	} {
 		if err := validateText(name, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDeploymentProjectionPredecessor(projection DeploymentProjection) error {
+	if projection.DeploymentID <= 0 || projection.Revision <= 0 || projection.SupportRevision <= 0 {
+		return fmt.Errorf("%w: invalid deployment projection predecessor numeric identity", ErrInvalidDeclaration)
+	}
+	for name, value := range map[string]string{
+		"operation_id":   projection.OperationID,
+		"capability_id":  projection.CapabilityID,
+		"support_state":  projection.SupportState,
+		"evidence_state": projection.EvidenceState,
+	} {
+		if err := validateText(name, value); err != nil {
+			return err
+		}
+	}
+	if projection.EvidenceRef != "" {
+		if err := validateText("evidence_ref", projection.EvidenceRef); err != nil {
 			return err
 		}
 	}

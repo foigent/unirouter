@@ -403,8 +403,8 @@ func TestGuardedDownRejectsForgedUpdatePredecessorBeforeWriteIntegration(t *test
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `INSERT INTO model_deployment_capabilities (
 deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision,support_revision)
-VALUES ($1,'openai.chat_completions.v1','fixture.publication.v1','enabled','declared',$2,4,2)`,
-		deploymentID, declaration.DeclaredProjectionEffects[0].ExpectedContractRef)
+VALUES ($1,'openai.chat_completions.v1','streaming','enabled','declared',$2,4,2)`, deploymentID,
+		declaration.DeclaredProjectionEffects[0].ExpectedContractRef)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `ALTER TABLE model_deployment_capabilities ENABLE TRIGGER USER`)
 	require.NoError(t, err)
@@ -584,11 +584,34 @@ func fixtureDeclaration() Declaration {
 }
 
 func fixtureUpdateDeclaration() Declaration {
-	declaration := fixtureDeclaration()
-	declaration.DeclaredProjectionEffects[0].ExpectedContractRef =
-		"capability_contract:unirouter.capability-probe.fixture.v0@0.9.0"
-	declaration.DeclaredProjectionEffects[0].AllowInsert = false
-	return declaration
+	const contractID = "unirouter.capability-probe.deepseek-chat-sse.v1"
+	return Declaration{
+		SchemaVersion: DeclarationSchemaV1, PublicationID: fixturePublicationM101,
+		ExpectedStaticPredecessor: BaselineMigrationM100, ExpectedSchemaPredecessor: BaselineMigrationM100,
+		BindingAppends: []Binding{{
+			OperationID: "openai.chat_completions.v1", CapabilityID: "streaming",
+			ExecutionProfileID: "deepseek.v4-pro.api", ExecutionProfileVersion: "1.5.0",
+			ProtocolProfileID: "protocol.deepseek-openai-chat.v4", ProtocolProfileVersion: "1.0.0",
+			ProbeContractID: contractID, ProbeContractVersion: "3.0.0",
+			ExpectedProvider: "deepseek", ExpectedUpstreamModel: "deepseek-v4-pro",
+			PublicPath: "/v1/chat/completions", IntroducedMigration: fixturePublicationM101,
+		}},
+		SelectorTransitions: []SelectorTransition{{
+			OperationID: "openai.chat_completions.v1", CapabilityID: "streaming",
+			ExecutionProfileID: "deepseek.v4-pro.api", ExecutionProfileVersion: "1.5.0",
+			ProtocolProfileID: "protocol.deepseek-openai-chat.v4", ProtocolProfileVersion: "1.0.0",
+			ExpectedPredecessor: &ContractIdentity{ProbeContractID: contractID, ProbeContractVersion: "2.0.0"},
+			Final:               ContractIdentity{ProbeContractID: contractID, ProbeContractVersion: "3.0.0"},
+		}},
+		DeclaredProjectionEffects: []ProjectionEffect{{
+			OperationID: "openai.chat_completions.v1", CapabilityID: "streaming",
+			ExecutionProfileID: "deepseek.v4-pro.api", ExecutionProfileVersion: "1.5.0",
+			ProtocolProfileID: "protocol.deepseek-openai-chat.v4", ProtocolProfileVersion: "1.0.0",
+			ExpectedProvider: "deepseek", ExpectedUpstreamModel: "deepseek-v4-pro",
+			ExpectedContractRef: "capability_contract:" + contractID + "@2.0.0",
+			FinalContractRef:    "capability_contract:" + contractID + "@3.0.0",
+		}},
+	}
 }
 
 func seedPublicationDeployment(t *testing.T, ctx context.Context, pool interface {

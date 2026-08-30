@@ -23,8 +23,8 @@ those build identities do not replace the product version.
   deployment, K2.7/K3 operation, provider call, credential, billing, Release,
   Alias, canonical or Production change. The development/test Target remains
   the exact 1.2.20/M100 closeout recorded in the current-status documents.
-- Local Go/vet and PostgreSQL suites and two exact-commit independent reviews
-  passed; Docker and full routed evidence are delegated to PR CI.
+- Local Go/vet checks and exact-commit independent reviews passed; required
+  PostgreSQL, frontend, Docker and full routed evidence are delegated to PR CI.
 
 ## [1.2.21] - 2026-08-30
 
