@@ -4941,6 +4941,7 @@ components:
         reported_model: { type: string, maxLength: 200 }
         error_summary: { type: string, maxLength: 255 }
         contract_error_code: { $ref: "#/components/schemas/ModelCapabilityContractErrorCode" }
+        diagnostic_member: { type: string, maxLength: 64, pattern: '^[A-Za-z0-9_.-]{1,64}$', description: "Bounded provider-controlled member identifier retained only as diagnostic evidence; it is not an error-code, capability, usage or billing authority." }
         finish_reason: { type: string }
         prompt_tokens: { type: integer, format: int64, minimum: 0 }
         completion_tokens: { type: integer, format: int64, minimum: 0 }
@@ -4990,6 +4991,7 @@ components:
         reason_code: { type: string }
         provider_reason_code: { type: string }
         contract_error_code: { $ref: "#/components/schemas/ModelCapabilityContractErrorCode" }
+        diagnostic_member: { type: string, maxLength: 64, pattern: '^[A-Za-z0-9_.-]{1,64}$', description: "Bounded, syntax-constrained provider-controlled member identifier retained only as diagnostic evidence; the member value and complete raw response body are not returned." }
         status_code: { type: integer, minimum: 0, maximum: 599 }
         latency_ms: { type: integer, format: int64, minimum: 0 }
         reported_model: { type: string, maxLength: 200 }
@@ -5003,49 +5005,46 @@ components:
         evidence_ref: { type: string, pattern: '^capability_probe:[1-9][0-9]*$' }
     ModelCapabilityContractErrorCode:
       type: string
-      maxLength: 83
-      description: Bounded contract failure category. Kimi JSON diagnostics may append only a safe unknown member identifier; provider values and raw response content are never returned.
-      oneOf:
-        - enum:
-            - content_type
-            - terminal_order
-            - data_after_done
-            - data_after_usage
-            - data_after_terminal
-            - unsupported_field
-            - read
-            - response_too_large
-            - incomplete
-            - json
-            - json_unknown_field
-            - json_type_mismatch
-            - json_duplicate_field
-            - json_decode_error
-            - model_changed
-            - expected_model
-            - reported_model
-            - choices
-            - final_usage
-            - usage_mixed_with_choices
-            - usage_order
-            - delta
-            - content
-            - reasoning_content
-            - tool_calls
-            - tool_call_identity
-            - tool_arguments
-            - delivery_shape
-            - structured_output
-            - finish_reason
-            - finish_reason_changed
-            - usage
-            - usage_total
-            - usage_conflict
-            - cached_tokens
-            - cached_tokens_conflict
-            - reasoning_tokens
-            - probe_contract
-        - pattern: '^json_unknown_field_[A-Za-z0-9_.-]{1,64}$'
+      description: Stable contract failure category. Provider-controlled member identifiers are reported separately and never alter this code identity.
+      enum:
+        - content_type
+        - terminal_order
+        - data_after_done
+        - data_after_usage
+        - data_after_terminal
+        - unsupported_field
+        - read
+        - response_too_large
+        - incomplete
+        - json
+        - json_unknown_field
+        - json_type_mismatch
+        - json_duplicate_field
+        - json_decode_error
+        - model_changed
+        - expected_model
+        - reported_model
+        - choices
+        - final_usage
+        - usage_mixed_with_choices
+        - usage_order
+        - delta
+        - content
+        - reasoning_content
+        - tool_calls
+        - tool_call_identity
+        - tool_arguments
+        - delivery_shape
+        - structured_output
+        - finish_reason
+        - finish_reason_changed
+        - usage
+        - usage_total
+        - usage_conflict
+        - cached_tokens
+        - cached_tokens_conflict
+        - reasoning_tokens
+        - probe_contract
     ModelCapabilityApprovalResult:
       type: object
       additionalProperties: false

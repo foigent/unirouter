@@ -159,7 +159,8 @@ describe('ModelCapabilityQualificationPanel', () => {
         status_code: 200,
         latency_ms: 984,
         error_summary: 'provider_stream_contract_invalid',
-        contract_error_code: 'unsupported_field',
+        contract_error_code: 'json_unknown_field',
+        diagnostic_member: 'provider_extension',
         tested_at: '2026-08-27T01:00:00Z',
       },
     });
@@ -173,7 +174,7 @@ describe('ModelCapabilityQualificationPanel', () => {
       gatewayRestriction=""
     />);
 
-    expect(await screen.findByText('合同校验：unsupported_field')).toBeInTheDocument();
+    expect(await screen.findByText('合同校验：json_unknown_field（成员：provider_extension）')).toBeInTheDocument();
     expect(screen.getByText('provider_stream_contract_invalid')).toBeInTheDocument();
   });
 

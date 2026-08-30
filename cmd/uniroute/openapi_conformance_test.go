@@ -165,8 +165,12 @@ func TestOpenAPIModelCapabilityContractErrorCodesCoverKimiValidators(t *testing.
 			t.Fatalf("ModelCapabilityContractErrorCode omits Kimi validator code %q", code)
 		}
 	}
-	if !strings.Contains(schema, "^json_unknown_field_[A-Za-z0-9_.-]{1,64}$") {
-		t.Fatal("ModelCapabilityContractErrorCode omits the bounded Kimi unknown-field diagnostic pattern")
+	if strings.Contains(schema, "json_unknown_field_") {
+		t.Fatal("ModelCapabilityContractErrorCode must not embed provider-controlled member identifiers")
+	}
+	probeSchema := openAPISchemaSection(t, string(specBytes), "ModelCapabilityProbeResult")
+	if !strings.Contains(probeSchema, "diagnostic_member:") || !strings.Contains(probeSchema, "^[A-Za-z0-9_.-]{1,64}$") {
+		t.Fatal("ModelCapabilityProbeResult omits the separately bounded diagnostic member")
 	}
 }
 

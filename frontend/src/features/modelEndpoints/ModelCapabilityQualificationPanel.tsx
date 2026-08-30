@@ -212,7 +212,8 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
       } else if (result.provider_success && result.stale) {
         Toast.warning(`供应商${presentation.shortName}响应成功，但配置已漂移；证据仅保留为历史记录`);
       } else {
-        Toast.error(`${presentation.shortName}探测未通过：${result.contract_error_code || result.reason_code || result.provider_reason_code}`);
+        const diagnostic = result.diagnostic_member ? `（成员：${result.diagnostic_member}）` : '';
+        Toast.error(`${presentation.shortName}探测未通过：${result.contract_error_code || result.reason_code || result.provider_reason_code}${diagnostic}`);
       }
       await load();
     } catch (probeError) {
@@ -323,7 +324,10 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
             {qualification.latest_probe.total_tokens !== undefined && <Text>usage: {qualification.latest_probe.prompt_tokens || 0} + {qualification.latest_probe.completion_tokens || 0} = {qualification.latest_probe.total_tokens}</Text>}
           </Space>
           {qualification.latest_probe.error_summary && <Text type="danger">{qualification.latest_probe.error_summary}</Text>}
-          {qualification.latest_probe.contract_error_code && <Text type="danger">合同校验：{qualification.latest_probe.contract_error_code}</Text>}
+          {qualification.latest_probe.contract_error_code && <Text type="danger">
+            合同校验：{qualification.latest_probe.contract_error_code}
+            {qualification.latest_probe.diagnostic_member ? `（成员：${qualification.latest_probe.diagnostic_member}）` : ''}
+          </Text>}
         </div> : <Text type="tertiary">{presentation.emptyEvidence}</Text>}
 
         {qualification.qualified && <Banner
