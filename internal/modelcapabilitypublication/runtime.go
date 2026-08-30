@@ -9,10 +9,10 @@ import (
 	"strings"
 )
 
-// VerifyArtifactPublicationInventory proves that every declaration-owned
-// migration in the artifact has one compiled declaration with the same exact
-// identity. Extra compiled declarations are inactive candidates and do not
-// become database current state merely by being present in the binary.
+// VerifyArtifactPublicationInventory proves the artifact has a bijection
+// between compiled post-M100 declarations and exact generated publication
+// migrations. A compiled declaration can never silently affect runtime
+// qualification without an artifact migration and ledger identity.
 func VerifyArtifactPublicationInventory(migrationsDir string, artifactLedger []string) error {
 	declarations, err := CompiledDeclarations()
 	if err != nil {
@@ -24,6 +24,9 @@ func VerifyArtifactPublicationInventory(migrationsDir string, artifactLedger []s
 func verifyArtifactPublicationInventory(migrationsDir string, artifactLedger []string, declarations []Declaration) error {
 	declared := make(map[string]struct{}, len(declarations))
 	for _, declaration := range declarations {
+		if _, duplicate := declared[declaration.PublicationID]; duplicate {
+			return fmt.Errorf("%w: duplicate compiled declaration %s", ErrInvalidDeclaration, declaration.PublicationID)
+		}
 		declared[declaration.PublicationID] = struct{}{}
 	}
 	entries, err := os.ReadDir(migrationsDir)
@@ -47,12 +50,29 @@ func verifyArtifactPublicationInventory(migrationsDir string, artifactLedger []s
 			}
 		}
 	}
+	predecessor, err := CompiledBaseline()
+	if err != nil {
+		return err
+	}
 	for _, declaration := range declarations {
-		if !slices.Contains(artifactLedger, declaration.PublicationID) {
-			continue
+		index := slices.Index(artifactLedger, declaration.PublicationID)
+		if index < 0 {
+			return fmt.Errorf("%w: compiled declaration %s lacks an artifact migration identity", ErrInvalidDeclaration,
+				declaration.PublicationID)
+		}
+		if index == 0 || artifactLedger[index-1] != declaration.ExpectedSchemaPredecessor {
+			return fmt.Errorf("%w: compiled declaration %s does not follow exact schema predecessor %s", ErrInvalidDeclaration,
+				declaration.PublicationID, declaration.ExpectedSchemaPredecessor)
 		}
 		if _, exists := marked[declaration.PublicationID]; !exists {
-			return fmt.Errorf("%w: active declaration %s lacks a marked migration", ErrInvalidDeclaration, declaration.PublicationID)
+			return fmt.Errorf("%w: compiled declaration %s lacks a marked migration", ErrInvalidDeclaration, declaration.PublicationID)
+		}
+		if err := VerifyGeneratedMigrationFiles(migrationsDir, predecessor, declaration); err != nil {
+			return err
+		}
+		predecessor, err = Fold(predecessor, []Declaration{declaration})
+		if err != nil {
+			return err
 		}
 	}
 	return nil

@@ -48,3 +48,32 @@ func TestVerifyArtifactPublicationInventoryRejectsActiveDeclarationWithoutMarker
 	err := verifyArtifactPublicationInventory(dir, []string{BaselineMigrationM100, declaration.PublicationID}, []Declaration{declaration})
 	require.ErrorContains(t, err, "lacks a marked migration")
 }
+
+func TestVerifyArtifactPublicationInventoryRejectsDeclarationWithoutArtifactMigration(t *testing.T) {
+	dir := t.TempDir()
+	declaration := fixtureDeclaration()
+	writeGeneratedPublicationFixture(t, dir, declaration)
+	err := verifyArtifactPublicationInventory(dir, []string{BaselineMigrationM100}, []Declaration{declaration})
+	require.ErrorContains(t, err, "lacks an artifact migration identity")
+}
+
+func TestVerifyArtifactPublicationInventoryAcceptsExactGeneratedBijection(t *testing.T) {
+	dir := t.TempDir()
+	declaration := fixtureDeclaration()
+	writeGeneratedPublicationFixture(t, dir, declaration)
+	require.NoError(t, verifyArtifactPublicationInventory(dir,
+		[]string{BaselineMigrationM100, declaration.PublicationID}, []Declaration{declaration}))
+}
+
+func writeGeneratedPublicationFixture(t *testing.T, dir string, declaration Declaration) {
+	t.Helper()
+	baseline, err := CompiledBaseline()
+	require.NoError(t, err)
+	generated, err := GenerateMigration(baseline, declaration)
+	require.NoError(t, err)
+	for suffix, wire := range map[string][]byte{
+		".up.sql": generated.UpSQL, ".down.sql": generated.DownSQL, ".verify.sql": generated.VerifySQL,
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, declaration.PublicationID+suffix), wire, 0o600))
+	}
+}

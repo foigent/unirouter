@@ -92,6 +92,12 @@ func RunPublication(ctx context.Context, pool *pgxpool.Pool, dir string, allowed
 	if hooks.Version == "" || len(allowedMigrations) == 0 || allowedMigrations[len(allowedMigrations)-1] != hooks.Version {
 		return fmt.Errorf("publication migration and exact allowed prefix are required")
 	}
+	if len(hooks.ExpectedUpSHA256) == 0 || strings.TrimSpace(hooks.ExpectedVerifySHA256) == "" {
+		return fmt.Errorf("publication requires exact migration and verifier digests")
+	}
+	if hooks.Before == nil || hooks.ApplyProjection == nil || hooks.VerifyInTx == nil || hooks.VerifyPostCommit == nil {
+		return fmt.Errorf("publication requires complete Plan validation, projection, and verification hooks")
+	}
 	return run(ctx, pool, dir, runOptions{
 		allowedMigrations: append([]string(nil), allowedMigrations...),
 		publication:       &hooks,
@@ -115,6 +121,12 @@ func RunPublicationDown(ctx context.Context, pool *pgxpool.Pool, dir string, hoo
 	if strings.TrimSpace(hooks.Version) == "" {
 		return fmt.Errorf("publication down requires an exact version")
 	}
+	if len(hooks.ExpectedUpSHA256) == 0 || strings.TrimSpace(hooks.ExpectedDownSHA256) == "" {
+		return fmt.Errorf("publication down requires exact migration digests")
+	}
+	if hooks.Before == nil || hooks.RevertProjection == nil || hooks.VerifyInTx == nil || hooks.VerifyPostCommit == nil {
+		return fmt.Errorf("publication down requires complete Plan validation, projection, and verification hooks")
+	}
 	return WithSessionLock(ctx, pool, func(conn *pgxpool.Conn) error {
 		files, err := migrationFiles(dir)
 		if err != nil {
@@ -123,10 +135,8 @@ func RunPublicationDown(ctx context.Context, pool *pgxpool.Pool, dir string, hoo
 		if err := verifyExpectedUpMigrationDigests(dir, files, hooks.ExpectedUpSHA256); err != nil {
 			return err
 		}
-		if hooks.Before != nil {
-			if err := hooks.Before(ctx, conn); err != nil {
-				return fmt.Errorf("validate publication recovery context: %w", err)
-			}
+		if err := hooks.Before(ctx, conn); err != nil {
+			return fmt.Errorf("validate publication recovery context: %w", err)
 		}
 		path := filepath.Join(dir, hooks.Version+".down.sql")
 		wire, err := os.ReadFile(path)
@@ -143,29 +153,23 @@ func RunPublicationDown(ctx context.Context, pool *pgxpool.Pool, dir string, hoo
 		if err != nil {
 			return fmt.Errorf("begin guarded publication down: %w", err)
 		}
-		if hooks.RevertProjection != nil {
-			if err := hooks.RevertProjection(ctx, tx); err != nil {
-				_ = tx.Rollback(ctx)
-				return fmt.Errorf("revert exact publication projection: %w", err)
-			}
+		if err := hooks.RevertProjection(ctx, tx); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("revert exact publication projection: %w", err)
 		}
 		if _, err := tx.Exec(ctx, migrationTransactionBody(string(wire))); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("execute %s: %w", path, err)
 		}
-		if hooks.VerifyInTx != nil {
-			if err := hooks.VerifyInTx(ctx, tx); err != nil {
-				_ = tx.Rollback(ctx)
-				return fmt.Errorf("verify guarded publication down: %w", err)
-			}
+		if err := hooks.VerifyInTx(ctx, tx); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("verify guarded publication down: %w", err)
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("commit guarded publication down: %w", err)
 		}
-		if hooks.VerifyPostCommit != nil {
-			if err := hooks.VerifyPostCommit(ctx, conn); err != nil {
-				return fmt.Errorf("verify committed publication down: %w", err)
-			}
+		if err := hooks.VerifyPostCommit(ctx, conn); err != nil {
+			return fmt.Errorf("verify committed publication down: %w", err)
 		}
 		return nil
 	})
@@ -275,7 +279,7 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 			return fmt.Errorf("publication verifier %s does not match the approved artifact bytes", verifyPath)
 		}
 	}
-	if options.publication != nil && options.publication.Before != nil {
+	if options.publication != nil {
 		if err := options.publication.Before(ctx, conn); err != nil {
 			return fmt.Errorf("revalidate publication plan before apply: %w", err)
 		}
@@ -320,17 +324,13 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 			return fmt.Errorf("execute %s: %w", fname, err)
 		}
 		if options.publication != nil && version == options.publication.Version {
-			if options.publication.ApplyProjection != nil {
-				if err := options.publication.ApplyProjection(ctx, tx); err != nil {
-					_ = tx.Rollback(ctx)
-					return fmt.Errorf("apply exact publication projection %s: %w", fname, err)
-				}
+			if err := options.publication.ApplyProjection(ctx, tx); err != nil {
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("apply exact publication projection %s: %w", fname, err)
 			}
-			if options.publication.VerifyInTx != nil {
-				if err := options.publication.VerifyInTx(ctx, tx); err != nil {
-					_ = tx.Rollback(ctx)
-					return fmt.Errorf("verify publication final state %s: %w", fname, err)
-				}
+			if err := options.publication.VerifyInTx(ctx, tx); err != nil {
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("verify publication final state %s: %w", fname, err)
 			}
 		}
 
@@ -350,10 +350,8 @@ func run(ctx context.Context, pool *pgxpool.Pool, dir string, options runOptions
 			if _, err := conn.Exec(ctx, string(publicationVerifyWire)); err != nil {
 				return fmt.Errorf("execute committed publication verifier %s: %w", verifyPath, err)
 			}
-			if options.publication.VerifyPostCommit != nil {
-				if err := options.publication.VerifyPostCommit(ctx, conn); err != nil {
-					return fmt.Errorf("verify committed publication %s: %w", fname, err)
-				}
+			if err := options.publication.VerifyPostCommit(ctx, conn); err != nil {
+				return fmt.Errorf("verify committed publication %s: %w", fname, err)
 			}
 		}
 	}

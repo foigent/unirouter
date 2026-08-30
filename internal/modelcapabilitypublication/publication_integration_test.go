@@ -149,6 +149,58 @@ VALUES ($1,'openai.chat_completions.v1','fixture.publication.v1','enabled','decl
 	assertPublicationAbsent(t, ctx, pool)
 }
 
+func TestStrictPublicationRejectsIncompleteUpHooksBeforeWriteIntegration(t *testing.T) {
+	pool := testutil.SetupIsolatedTestDB(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
+	seedPublicationDeployment(t, ctx, pool)
+	baseline, err := CompiledBaseline()
+	require.NoError(t, err)
+	declaration := fixtureDeclaration()
+	artifact := ArtifactIdentity{Kind: ArtifactKindSource, Commit: strings.Repeat("1", 40), Tree: strings.Repeat("2", 40), Version: "fixture",
+		PublisherExecutableDigest: "sha256:" + strings.Repeat("3", 64)}
+	authority := fixturePlanAuthority(t, migrationDir, artifactLedger, artifact, baseline, declaration)
+	plan, err := PlanTarget(ctx, pool, "integration", authority)
+	require.NoError(t, err)
+	hooks, err := HooksForPlan("integration", authority, plan)
+	require.NoError(t, err)
+	hooks.ApplyProjection = nil
+	err = migrate.RunPublication(ctx, pool, migrationDir, plan.ApplyMigrations, hooks)
+	require.ErrorContains(t, err, "requires complete Plan validation")
+	assertPublicationAbsent(t, ctx, pool)
+}
+
+func TestStrictPublicationRejectsIncompleteDownHooksBeforeWriteIntegration(t *testing.T) {
+	pool := testutil.SetupIsolatedTestDB(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
+	seedPublicationDeployment(t, ctx, pool)
+	baseline, err := CompiledBaseline()
+	require.NoError(t, err)
+	declaration := fixtureDeclaration()
+	artifact := ArtifactIdentity{Kind: ArtifactKindSource, Commit: strings.Repeat("1", 40), Tree: strings.Repeat("2", 40), Version: "fixture",
+		PublisherExecutableDigest: "sha256:" + strings.Repeat("3", 64)}
+	authority := fixturePlanAuthority(t, migrationDir, artifactLedger, artifact, baseline, declaration)
+	plan, err := PlanTarget(ctx, pool, "integration", authority)
+	require.NoError(t, err)
+	hooks, err := HooksForPlan("integration", authority, plan)
+	require.NoError(t, err)
+	require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, plan.ApplyMigrations, hooks))
+	downHooks, err := DownHooksForPlan("integration", authority, plan)
+	require.NoError(t, err)
+	downHooks.RevertProjection = nil
+	err = migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks)
+	require.ErrorContains(t, err, "requires complete Plan validation")
+	var ledgerCount int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=$1`, fixturePublicationM101).Scan(&ledgerCount))
+	require.Equal(t, int64(1), ledgerCount)
+	require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+}
+
 func TestStrictPublicationUpdatesOnlyDeclaredProjectionLifecycleIntegration(t *testing.T) {
 	pool := testutil.SetupIsolatedTestDB(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
@@ -329,15 +381,58 @@ VALUES ($1,'openai.chat_completions.v1','fixture.unrelated','enabled','declared'
 	})
 	forged, err = FinalizePlan(forged)
 	require.NoError(t, err)
-	downHooks, err := DownHooksForPlan("integration", authority, forged)
-	require.NoError(t, err)
-	err = migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks)
-	require.ErrorContains(t, err, "projection coverage")
+	_, err = DownHooksForPlan("integration", authority, forged)
+	require.ErrorContains(t, err, "not authorized by an exact declaration effect")
 	var rowCount, ledgerCount int64
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_deployment_capabilities
 WHERE deployment_id=$1 AND capability_id='fixture.unrelated'`, deploymentID).Scan(&rowCount))
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=$1`, fixturePublicationM101).Scan(&ledgerCount))
 	require.Equal(t, int64(1), rowCount)
+	require.Equal(t, int64(1), ledgerCount)
+}
+
+func TestGuardedDownRejectsForgedUpdatePredecessorBeforeWriteIntegration(t *testing.T) {
+	pool := testutil.SetupIsolatedTestDB(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	declaration := fixtureUpdateDeclaration()
+	migrationDir, artifactLedger := fixturePublicationArtifactForDeclaration(t, testutil.MigrationsDir(t), declaration)
+	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
+	deploymentID := seedPublicationDeployment(t, ctx, pool)
+	_, err := pool.Exec(ctx, `ALTER TABLE model_deployment_capabilities DISABLE TRIGGER USER`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO model_deployment_capabilities (
+deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision,support_revision)
+VALUES ($1,'openai.chat_completions.v1','fixture.publication.v1','enabled','declared',$2,4,2)`,
+		deploymentID, declaration.DeclaredProjectionEffects[0].ExpectedContractRef)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `ALTER TABLE model_deployment_capabilities ENABLE TRIGGER USER`)
+	require.NoError(t, err)
+
+	baseline, err := CompiledBaseline()
+	require.NoError(t, err)
+	artifact := ArtifactIdentity{Kind: ArtifactKindSource, Commit: strings.Repeat("1", 40), Tree: strings.Repeat("2", 40), Version: "fixture",
+		PublisherExecutableDigest: "sha256:" + strings.Repeat("3", 64)}
+	authority := fixturePlanAuthority(t, migrationDir, artifactLedger, artifact, baseline, declaration)
+	plan, err := PlanTarget(ctx, pool, "integration", authority)
+	require.NoError(t, err)
+	require.Equal(t, ProjectionActionUpdate, plan.ProjectionItems[0].Action)
+	hooks, err := HooksForPlan("integration", authority, plan)
+	require.NoError(t, err)
+	require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, plan.ApplyMigrations, hooks))
+
+	forged := plan
+	forged.ProjectionItems = append([]ProjectionPlanItem(nil), plan.ProjectionItems...)
+	forgedExpected := *forged.ProjectionItems[0].Expected
+	forgedExpected.EvidenceRef = "capability_contract:forged-predecessor@9.9.9"
+	forged.ProjectionItems[0].Expected = &forgedExpected
+	forged, err = FinalizePlan(forged)
+	require.NoError(t, err)
+	_, err = DownHooksForPlan("integration", authority, forged)
+	require.ErrorContains(t, err, "not authorized by an exact declaration effect")
+	require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+	var ledgerCount int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=$1`, fixturePublicationM101).Scan(&ledgerCount))
 	require.Equal(t, int64(1), ledgerCount)
 }
 
@@ -416,6 +511,10 @@ SELECT 'publication-freeze-fixture', customer_org_id, 'frozen', 'fixture',
 }
 
 func fixturePublicationArtifact(t *testing.T, source string) (string, []string) {
+	return fixturePublicationArtifactForDeclaration(t, source, fixtureDeclaration())
+}
+
+func fixturePublicationArtifactForDeclaration(t *testing.T, source string, declaration Declaration) (string, []string) {
 	t.Helper()
 	target := t.TempDir()
 	entries, err := os.ReadDir(source)
@@ -432,7 +531,7 @@ func fixturePublicationArtifact(t *testing.T, source string) (string, []string) 
 	}
 	baseline, err := CompiledBaseline()
 	require.NoError(t, err)
-	generated, err := GenerateMigration(baseline, fixtureDeclaration())
+	generated, err := GenerateMigration(baseline, declaration)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(target, fixturePublicationM101+".up.sql"), generated.UpSQL, 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(target, fixturePublicationM101+".down.sql"), generated.DownSQL, 0o600))
@@ -482,6 +581,14 @@ func fixtureDeclaration() Declaration {
 			FinalContractRef: "capability_contract:unirouter.capability-probe.fixture.v1@1.0.0", AllowInsert: true,
 		}},
 	}
+}
+
+func fixtureUpdateDeclaration() Declaration {
+	declaration := fixtureDeclaration()
+	declaration.DeclaredProjectionEffects[0].ExpectedContractRef =
+		"capability_contract:unirouter.capability-probe.fixture.v0@0.9.0"
+	declaration.DeclaredProjectionEffects[0].AllowInsert = false
+	return declaration
 }
 
 func seedPublicationDeployment(t *testing.T, ctx context.Context, pool interface {

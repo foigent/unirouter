@@ -140,6 +140,9 @@ func ValidatePlanAuthority(authority PlanAuthority, plan Plan) error {
 	if err := ValidatePlan(plan); err != nil {
 		return err
 	}
+	if plan.Validation != ValidationValid {
+		return fmt.Errorf("%w: only a valid Plan can exercise publication authority", ErrPlanConflict)
+	}
 	if plan.PublicationID != authority.Declaration.PublicationID || plan.Artifact != authority.Artifact ||
 		!slices.Equal(plan.ArtifactMigrationLedger, authority.ArtifactMigrationLedger) ||
 		!slices.Equal(plan.ArtifactMigrationFiles, authority.ArtifactMigrationFiles) ||
@@ -164,6 +167,46 @@ func ValidatePlanAuthority(authority PlanAuthority, plan Plan) error {
 	}
 	if got.ThroughMigration != want.ThroughMigration || !slices.Equal(got.Bindings, want.Bindings) || !slices.Equal(got.Selectors, want.Selectors) {
 		return fmt.Errorf("%w: Plan static projection does not match compiled declaration fold", ErrPlanConflict)
+	}
+	if err := validateProjectionPlanAuthority(authority.Declaration, plan); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateProjectionPlanAuthority(declaration Declaration, plan Plan) error {
+	declaration = NormalizeDeclaration(declaration)
+	for _, item := range plan.ProjectionItems {
+		matched := false
+		for _, effect := range declaration.DeclaredProjectionEffects {
+			if item.Final.OperationID != effect.OperationID || item.Final.CapabilityID != effect.CapabilityID {
+				continue
+			}
+			switch item.Action {
+			case ProjectionActionInsert:
+				matched = effect.AllowInsert && item.Expected == nil &&
+					item.Final.SupportState == "enabled" && item.Final.EvidenceState == "declared" &&
+					item.Final.EvidenceRef == effect.FinalContractRef && item.Final.VerifiedAt == nil &&
+					item.Final.Revision == 1 && item.Final.SupportRevision == 1
+			case ProjectionActionUpdate:
+				matched = item.Expected != nil &&
+					item.Expected.SupportState == "enabled" && item.Expected.EvidenceState == "declared" &&
+					item.Expected.EvidenceRef == effect.ExpectedContractRef &&
+					item.Final.SupportState == "enabled" && item.Final.EvidenceState == "declared" &&
+					item.Final.EvidenceRef == effect.FinalContractRef
+			case ProjectionActionNoOp:
+				matched = item.Expected != nil && *item.Expected == item.Final &&
+					item.Final.SupportState == "enabled" && item.Final.EvidenceState == "declared" &&
+					item.Final.EvidenceRef == effect.FinalContractRef
+			}
+			if matched {
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("%w: projection item is not authorized by an exact declaration effect: %s", ErrPlanConflict,
+				deploymentProjectionKey(item.Final))
+		}
 	}
 	return nil
 }

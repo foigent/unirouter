@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/uniroute/unirouter/internal/strictjson"
 )
@@ -425,6 +426,17 @@ func validatePlanFields(plan Plan, requireDigest bool) error {
 			if item.Expected == nil || item.ExpectedAffectedRows != 1 {
 				return fmt.Errorf("%w: projection update requires exact pre-state and one affected row", ErrInvalidDeclaration)
 			}
+			if err := validateDeploymentProjection(*item.Expected); err != nil {
+				return err
+			}
+			if !sameDeploymentProjectionIdentity(*item.Expected, item.Final) ||
+				item.Expected.SupportState != item.Final.SupportState ||
+				item.Expected.EvidenceState != item.Final.EvidenceState ||
+				!sameProjectionTime(item.Expected.VerifiedAt, item.Final.VerifiedAt) ||
+				item.Expected.SupportRevision != item.Final.SupportRevision ||
+				item.Final.Revision != item.Expected.Revision+1 {
+				return fmt.Errorf("%w: projection update is not a deterministic same-row transition", ErrInvalidDeclaration)
+			}
 		case ProjectionActionNoOp:
 			if item.Expected == nil || *item.Expected != item.Final || item.ExpectedAffectedRows != 0 {
 				return fmt.Errorf("%w: projection no-op must preserve one exact row", ErrInvalidDeclaration)
@@ -435,6 +447,18 @@ func validatePlanFields(plan Plan, requireDigest bool) error {
 		return fmt.Errorf("%w: plan digest is required", ErrInvalidDeclaration)
 	}
 	return nil
+}
+
+func sameDeploymentProjectionIdentity(left, right DeploymentProjection) bool {
+	return left.DeploymentID == right.DeploymentID && left.OperationID == right.OperationID &&
+		left.CapabilityID == right.CapabilityID
+}
+
+func sameProjectionTime(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
 }
 
 func validateBinding(binding Binding) error {

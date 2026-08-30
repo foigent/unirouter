@@ -323,10 +323,17 @@ The generated up migration and its exact Plan executor must together:
    without the publication ledger is `unledgered_publication_state`, never a
    no-op, and generated SQL must not use `ON CONFLICT DO NOTHING` to hide it;
 8. have the Plan executor verify each projection action's expected affected
-   rows and the complete final static and explicitly mutated deployment
-   projection in the same transaction;
+   rows, bind every update predecessor and deterministic final transition to
+   one exact declared effect, and verify the complete final static and
+   explicitly mutated deployment projection in the same transaction;
 9. restore every static or projection trigger opened by its respective writer
    before returning to the migration runner.
+
+The migration runner rejects publication up or guarded-down execution unless
+the caller supplies every Plan-validation, projection-mutation, in-transaction
+verification and post-commit verification callback. A publication with no
+dynamic projection rows uses explicit no-op callbacks; omission never means
+permission to skip a control.
 
 The runner inserts the migration ledger row in the same transaction and then
 commits. Any conflict, unexpected row count, undeclared promotion or trigger
@@ -564,17 +571,21 @@ write.
 - The database projection remains the only runtime SQL query authority.
 - Backend startup never inserts, updates or synchronizes static contracts.
 - Ordinary backend startup and plain `migrate up` validate the compiled
-  publication inventory before invoking the migration runner, then refuse to
-  cross a pending declaration-owned publication. A missing or drifted marker
-  therefore fails before any migration write. Only the explicit Strict V1
-  install, upgrade, publication apply or recovery owner supplies publication
-  context.
+  publication inventory before invoking the migration runner. Every compiled
+  post-M100 declaration must have one exact marked artifact migration whose
+  generated up/down/verify bytes match the declaration and folded predecessor,
+  and every marked publication migration must have one compiled declaration.
+  Startup then refuses to cross a pending declaration-owned publication. A
+  missing, unpaired or drifted artifact therefore fails before any migration
+  write. Only the explicit Strict V1 install, upgrade, publication apply or
+  recovery owner supplies publication context.
 - Normal runtime request paths must not mutate the two static tables.
 - Development/test V1 keeps the current shared database role but requires the
   maintenance window and single owner. This is an explicit limitation, not a
   least-privilege claim.
-- Artifact declarations may contain extra historical or inactive candidates;
-  only database current selectors are executable.
+- The artifact may retain historical declaration/migration pairs, but a
+  declaration without its exact artifact migration is invalid rather than an
+  inactive runtime candidate. Only database current selectors are executable.
 - Missing compiled support, content mismatch, an unknown selector or an exact
   tuple mismatch fails closed for that tuple and through the existing startup
   gates where applicable.
