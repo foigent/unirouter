@@ -18,7 +18,8 @@ func TestP6F18BStreamSettlementRecoveryMigrationUpDownGuardAndRollForward(t *tes
 	ctx := context.Background()
 	migrationsDir := testutil.MigrationsDir(t)
 	runMigrationsBeforeP6F18B(t, pool, migrationsDir)
-	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))
+	throughP6F18BDir := migrationsThroughP6F18B(t, migrationsDir)
+	require.NoError(t, migrate.Run(ctx, pool, throughP6F18BDir))
 
 	assertUp := func() {
 		t.Helper()
@@ -62,13 +63,13 @@ func TestP6F18BStreamSettlementRecoveryMigrationUpDownGuardAndRollForward(t *tes
 	).Scan(&ledger))
 	require.Zero(t, ledger)
 
-	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))
+	require.NoError(t, migrate.Run(ctx, pool, throughP6F18BDir))
 	assertUp()
 	_, err = pool.Exec(ctx,
 		`INSERT INTO freeze_idempotency (
-		    request_id, org_id, frozen_amount_micros, reserved_balance_micros,
+		    request_id, org_id, frozen_amount, reserved_balance_amount,
 		    status, output_started_at
-		 ) VALUES ('op_p6f18b_down_guard', 9001, 10000, 10000, 'settlement_pending', NOW())`)
+		 ) VALUES ('op_p6f18b_down_guard', 9001, 1, 1, 'settlement_pending', NOW())`)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
 	require.ErrorContains(t, err, "P6-F18B down refused")
@@ -90,4 +91,22 @@ func runMigrationsBeforeP6F18B(t *testing.T, pool *pgxpool.Pool, migrationsDir s
 		require.NoError(t, os.WriteFile(filepath.Join(preP6F18BDir, name), body, 0o600))
 	}
 	require.NoError(t, migrate.Run(context.Background(), pool, preP6F18BDir))
+}
+
+func migrationsThroughP6F18B(t *testing.T, migrationsDir string) string {
+	t.Helper()
+	throughDir := t.TempDir()
+	const p6F18BMigration = "000023_prd6_stream_settlement_recovery.up.sql"
+	entries, err := os.ReadDir(migrationsDir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") || name > p6F18BMigration {
+			continue
+		}
+		body, readErr := os.ReadFile(filepath.Join(migrationsDir, name))
+		require.NoError(t, readErr)
+		require.NoError(t, os.WriteFile(filepath.Join(throughDir, name), body, 0o600))
+	}
+	return throughDir
 }

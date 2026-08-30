@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -42,7 +41,7 @@ SELECT jsonb_agg(to_jsonb(b) ORDER BY operation_id)::text
 FROM model_operation_current_public_execution_contracts b`).Scan(&legacyBindings))
 
 	for cycle := 0; cycle < 2; cycle++ {
-		require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+		require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 		var freezeHash, attemptHash *string
 		require.NoError(t, pool.QueryRow(ctx, `
 SELECT f.execution_snapshot_hash,a.execution_snapshot_hash

@@ -1,6 +1,7 @@
 package modelcapabilitypublication
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,4 +57,54 @@ func TestDecodeDeclarationRejectsDuplicateAndUnknownMembers(t *testing.T) {
 func TestMigrationIDMatchesLedgerColumnWidth(t *testing.T) {
 	require.NoError(t, validateMigrationID("migration", "000101_"+strings.Repeat("a", 57)))
 	require.Error(t, validateMigrationID("migration", "000101_"+strings.Repeat("a", 58)))
+}
+
+func TestWriteGeneratedMigrationFilesIsAtomicAndFailIfExists(t *testing.T) {
+	baseline, err := CompiledBaseline()
+	require.NoError(t, err)
+	declaration := fixtureDeclaration()
+
+	for _, existingSuffix := range []string{".up.sql", ".down.sql", ".verify.sql"} {
+		t.Run("existing "+existingSuffix, func(t *testing.T) {
+			dir := t.TempDir()
+			existing := filepath.Join(dir, declaration.PublicationID+existingSuffix)
+			require.NoError(t, os.WriteFile(existing, []byte("user-owned\n"), 0o600))
+			err := WriteGeneratedMigrationFiles(dir, baseline, declaration)
+			require.ErrorContains(t, err, "already exists")
+			entries, readErr := os.ReadDir(dir)
+			require.NoError(t, readErr)
+			require.Len(t, entries, 1)
+			wire, readErr := os.ReadFile(existing)
+			require.NoError(t, readErr)
+			require.Equal(t, "user-owned\n", string(wire))
+		})
+	}
+
+	t.Run("mid-finalization failure", func(t *testing.T) {
+		dir := t.TempDir()
+		links := 0
+		err := writeGeneratedMigrationFiles(dir, baseline, declaration, migrationArtifactWriter{link: func(oldPath, newPath string) error {
+			links++
+			if links == 2 {
+				return errors.New("injected link failure")
+			}
+			return os.Link(oldPath, newPath)
+		}})
+		require.ErrorContains(t, err, "injected link failure")
+		entries, readErr := os.ReadDir(dir)
+		require.NoError(t, readErr)
+		require.Empty(t, entries)
+	})
+
+	t.Run("success", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, WriteGeneratedMigrationFiles(dir, baseline, declaration))
+		require.NoError(t, VerifyGeneratedMigrationFiles(dir, baseline, declaration))
+		entries, readErr := os.ReadDir(dir)
+		require.NoError(t, readErr)
+		require.Len(t, entries, 3)
+		for _, entry := range entries {
+			require.False(t, strings.Contains(entry.Name(), ".staged"))
+		}
+	})
 }

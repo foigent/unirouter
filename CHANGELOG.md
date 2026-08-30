@@ -4,6 +4,28 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.23] - 2026-08-31
+
+### Added
+
+- Published the exact `kimi.k2.7-code.api@1.3.0 ×
+  protocol.kimi-openai-chat.v5@1.0.0` Chat Core declaration through Strict
+  Capability Contract Publication V1. M101 appends six Profile-scoped bindings
+  and selectors without a generic tuple, Profile change, Release, Alias,
+  pricing activation or routing qualification.
+- Added K2.7 required-thinking capability probes, the exact K2.7 non-stream
+  tool-call index normalization scope, strict SSE v4 reasoning/usage
+  validation and an all-or-nothing local migration artifact generator.
+
+### Evidence boundary
+
+- M101 is static publication authority only. It creates no Probe, Approval,
+  Release, price, customer charge or canonical route. Target deployment and
+  bounded Kimi provider validation remain separate post-CI evidence.
+- K2.7 Dynamic Tools, built-in search, media, highspeed/Coding subscription
+  identity, required/named/parallel tool choice and function-tool streaming
+  remain outside this Chat Core batch.
+
 ## [1.2.22] - 2026-08-31
 
 ### Added

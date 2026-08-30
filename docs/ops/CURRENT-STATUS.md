@@ -1,10 +1,13 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Repository source candidate is 1.2.22 for Strict Capability Contract
-> Publication V1 with the unchanged M100 schema ceiling. No Target publication
-> apply, runtime artifact deployment or model capability promotion is implied;
-> development/test remains on the exact 1.2.20/M100 closeout below.
+> Repository source candidate is 1.2.23/M101 for the exact Kimi K2.7 Code Chat
+> Core static declaration. Development/test currently runs the Publication V1
+> framework at exact 1.2.22/M100 main merge
+> `781f913e8a8e1e594e94bddedfc4886bd81cea0d`, tree
+> `77dc8ad2dff86cd9b5c67e1de3ceb62cf8223676`. M101 has not yet been applied;
+> no K2.7 Probe, Approval, Release, Alias, price or route qualification is
+> implied. The K2.6 live closeout below remains the latest model evidence.
 > **2026-08-30 Kimi K2.6 Chat Core Target closeout:** development/test stable,
 > canary and frontend run exact main merge
 > `cf2bee4bbee7074e91661400f5edf61ca2c08f32`, tree

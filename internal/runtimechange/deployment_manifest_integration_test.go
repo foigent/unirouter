@@ -685,6 +685,9 @@ SELECT
 func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := t.Context()
+	require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+		ctx, pool, testutil.MigrationsDir(t),
+	))
 	for _, name := range []string{
 		"000100_kimi_k26_function_tools_tool_index_normalizer.down.sql",
 		"000099_kimi_k26_function_tools_probe_v3.down.sql",

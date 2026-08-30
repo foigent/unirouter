@@ -13,16 +13,87 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/migrate"
-	"github.com/uniroute/unirouter/internal/testutil"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
+	"github.com/uniroute/unirouter/internal/testdb"
 )
 
 const fixturePublicationM101 = "000101_capability_contract_publication_fixture"
 
-func TestStrictPublicationAppliesExactPlanAndRecoveryIsReadOnlyIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+func TestKimiK27M101ActualArtifactsGuardedRoundTripIntegration(t *testing.T) {
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir := testdb.MigrationsDir(t)
+	artifactLedger, err := schemaauthority.ExpectedLedger(migrationDir)
+	require.NoError(t, err)
+	require.Equal(t, "000101_kimi_k27_chat_core_qualification", artifactLedger[len(artifactLedger)-1])
+	require.NoError(t, VerifyArtifactPublicationInventory(migrationDir, artifactLedger))
+	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
+
+	declaration, predecessor, err := CompiledPublication("000101_kimi_k27_chat_core_qualification")
+	require.NoError(t, err)
+	artifact := ArtifactIdentity{
+		Kind: ArtifactKindSource, Commit: strings.Repeat("1", 40), Tree: strings.Repeat("2", 40),
+		Version: "k27-m101-integration", PublisherExecutableDigest: "sha256:" + strings.Repeat("3", 64),
+	}
+	authority := fixturePlanAuthority(t, migrationDir, artifactLedger, artifact, predecessor, declaration)
+	plan, err := PlanTarget(ctx, pool, "integration", authority)
+	require.NoError(t, err)
+	require.Equal(t, ValidationValid, plan.Validation)
+	var appendCount, promotionCount int
+	for _, item := range plan.BindingItems {
+		if item.Action == BindingActionAppend {
+			appendCount++
+		}
+	}
+	for _, item := range plan.SelectorItems {
+		if item.Action == SelectorActionPromotion {
+			promotionCount++
+		}
+	}
+	require.Equal(t, 6, appendCount)
+	require.Equal(t, 6, promotionCount)
+	require.Empty(t, plan.ProjectionItems, "M100 fixture has no exact K2.7 Deployment")
+	hooks, err := HooksForPlan("integration", authority, plan)
+	require.NoError(t, err)
+	require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, plan.ApplyMigrations, hooks))
+	require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+
+	downHooks, err := DownHooksForPlan("integration", authority, plan)
+	require.NoError(t, err)
+	require.NoError(t, migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks))
+	var ledgerCount, bindingCount, selectorCount int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=$1`, declaration.PublicationID).Scan(&ledgerCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_probe_contract_bindings WHERE introduced_migration=$1`, declaration.PublicationID).Scan(&bindingCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_current_probe_contracts WHERE execution_profile_id='kimi.k2.7-code.api' AND execution_profile_version='1.3.0'`).Scan(&selectorCount))
+	require.Zero(t, ledgerCount)
+	require.Zero(t, bindingCount)
+	require.Zero(t, selectorCount)
+
+	require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, plan.ApplyMigrations, hooks))
+	require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+	_, err = pool.Exec(ctx, `ALTER TABLE billing_provider_attempts RENAME TO billing_provider_attempts_k27_original`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `CREATE TABLE billing_provider_attempts (
+route_capability_evidence JSONB NOT NULL, execution_snapshot_hash VARCHAR(69))`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO billing_provider_attempts (route_capability_evidence)
+VALUES ('[{"capability_id":"streaming","evidence_ref":"capability_contract:unirouter.capability-probe.kimi-chat-sse.v1@4.0.0"}]'::jsonb)`)
+	require.NoError(t, err)
+	downHooks, err = DownHooksForPlan("integration", authority, plan)
+	require.NoError(t, err)
+	err = migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks)
+	require.ErrorContains(t, err, "retained provider-attempt capability evidence")
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=$1`, declaration.PublicationID).Scan(&ledgerCount))
+	require.Equal(t, int64(1), ledgerCount)
+	require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+}
+
+func TestStrictPublicationAppliesExactPlanAndRecoveryIsReadOnlyIntegration(t *testing.T) {
+	pool := testdb.SetupIsolated(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	deploymentID := seedPublicationDeployment(t, ctx, pool)
 
@@ -123,10 +194,10 @@ WHERE deployment_id=$1 AND capability_id='fixture.publication.v1'`, deploymentID
 }
 
 func TestStrictPublicationRejectsPostPlanProjectionDriftAtomicallyIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	deploymentID := seedPublicationDeployment(t, ctx, pool)
 	baseline, err := CompiledBaseline()
@@ -150,10 +221,10 @@ VALUES ($1,'openai.chat_completions.v1','fixture.publication.v1','enabled','decl
 }
 
 func TestStrictPublicationRejectsIncompleteUpHooksBeforeWriteIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	seedPublicationDeployment(t, ctx, pool)
 	baseline, err := CompiledBaseline()
@@ -173,10 +244,10 @@ func TestStrictPublicationRejectsIncompleteUpHooksBeforeWriteIntegration(t *test
 }
 
 func TestStrictPublicationRejectsIncompleteDownHooksBeforeWriteIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	seedPublicationDeployment(t, ctx, pool)
 	baseline, err := CompiledBaseline()
@@ -202,10 +273,10 @@ func TestStrictPublicationRejectsIncompleteDownHooksBeforeWriteIntegration(t *te
 }
 
 func TestStrictPublicationUpdatesOnlyDeclaredProjectionLifecycleIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	declaredDeploymentID := seedPublicationDeployment(t, ctx, pool)
 	var liveConnectionID, liveDeploymentID int64
@@ -267,10 +338,10 @@ FROM model_deployment_capabilities WHERE deployment_id=$1 AND capability_id='fix
 }
 
 func TestStrictPublicationRequiresVerifierBeforeAnyWriteIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	seedPublicationDeployment(t, ctx, pool)
 	baseline, err := CompiledBaseline()
@@ -291,10 +362,10 @@ func TestStrictPublicationRequiresVerifierBeforeAnyWriteIntegration(t *testing.T
 }
 
 func TestStrictPublicationRejectsMigrationByteDriftBeforeAnyWriteIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	seedPublicationDeployment(t, ctx, pool)
 	baseline, err := CompiledBaseline()
@@ -326,7 +397,7 @@ func TestStrictPublicationRejectsMigrationByteDriftBeforeAnyWriteIntegration(t *
 }
 
 func TestRunThroughRejectsNonPrefixLedgerBeforeMigrationWriteIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
 	_, err := pool.Exec(ctx, `CREATE TABLE schema_migrations (
@@ -335,7 +406,7 @@ version VARCHAR(64) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`
 	_, err = pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ('000002_non_prefix_fixture')`)
 	require.NoError(t, err)
 
-	err = migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), BaselineMigrationM100)
+	err = migrate.RunThrough(ctx, pool, testdb.MigrationsDir(t), BaselineMigrationM100)
 	require.ErrorContains(t, err, "not the exact artifact prefix")
 	var orgsTable *string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT to_regclass('public.orgs')::text`).Scan(&orgsTable))
@@ -346,10 +417,10 @@ version VARCHAR(64) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`
 }
 
 func TestGuardedDownRejectsForgedProjectionPlanIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	deploymentID := seedPublicationDeployment(t, ctx, pool)
 	baseline, err := CompiledBaseline()
@@ -392,11 +463,11 @@ WHERE deployment_id=$1 AND capability_id='fixture.unrelated'`, deploymentID).Sca
 }
 
 func TestGuardedDownRejectsForgedUpdatePredecessorBeforeWriteIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
 	declaration := fixtureUpdateDeclaration()
-	migrationDir, artifactLedger := fixturePublicationArtifactForDeclaration(t, testutil.MigrationsDir(t), declaration)
+	migrationDir, artifactLedger := fixturePublicationArtifactForDeclaration(t, testdb.MigrationsDir(t), declaration)
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	deploymentID := seedPublicationDeployment(t, ctx, pool)
 	_, err := pool.Exec(ctx, `ALTER TABLE model_deployment_capabilities DISABLE TRIGGER USER`)
@@ -437,10 +508,10 @@ VALUES ($1,'openai.chat_completions.v1','streaming','enabled','declared',$2,4,2)
 }
 
 func TestStrictPublicationDownRefusesRetainedProviderAttemptEvidenceIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	seedPublicationDeployment(t, ctx, pool)
 	baseline, err := CompiledBaseline()
@@ -477,10 +548,10 @@ VALUES ('[{"capability_id":"fixture.publication.v1","evidence_ref":"capability_c
 }
 
 func TestStrictPublicationDownRefusesRetainedFreezeSnapshotIntegration(t *testing.T) {
-	pool := testutil.SetupIsolatedTestDB(t)
+	pool := testdb.SetupIsolated(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
-	migrationDir, artifactLedger := fixturePublicationArtifact(t, testutil.MigrationsDir(t))
+	migrationDir, artifactLedger := fixturePublicationArtifact(t, testdb.MigrationsDir(t))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 	deploymentID := seedPublicationDeployment(t, ctx, pool)
 	baseline, err := CompiledBaseline()

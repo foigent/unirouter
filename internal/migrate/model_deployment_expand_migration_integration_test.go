@@ -15,7 +15,7 @@ import (
 )
 
 func TestModelDeploymentExpandMigratesFrom68WithoutGuessingOrganizationAndRollsBack(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000071_model_execution_evidence.up.sql")
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
 	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
@@ -31,7 +31,7 @@ INSERT INTO channel_keys (channel_id,key_enc,status,state_epoch)
 VALUES ($1,'encrypted-fixture','active',3)
 RETURNING id`, channelID).Scan(&keyID))
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000071_model_execution_evidence"))
 
 	var connections, credentials, deployments, capabilities int
 	var latestProbeView, deploymentColumn, attemptColumn, ledger bool
@@ -135,11 +135,11 @@ SELECT to_regclass('public.provider_connections') IS NULL,
 	require.True(t, deploymentColumn)
 	require.True(t, ledger)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000069_model_deployment_expand"))
 }
 
 func TestModelDeploymentExpandEnforcesTenantAttributionAndSurrogateIdentity(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000071_model_execution_evidence.up.sql")
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
 	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
@@ -246,7 +246,7 @@ SELECT EXISTS (
 }
 
 func TestModelDeploymentExpandRollbackRejectsCrossTenantAttribution(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000071_model_execution_evidence.up.sql")
 	ctx := context.Background()
 
 	var customerOrgID, otherOrgID, channelID int64
@@ -300,7 +300,7 @@ SELECT EXISTS (SELECT 1 FROM schema_migrations
 func TestModelDeploymentExpandRollbackRejectsNonLegacyCanonicalEvidence(t *testing.T) {
 	for _, evidenceKind := range []string{"connection", "deployment", "binding", "operation", "capability", "probe"} {
 		t.Run(evidenceKind, func(t *testing.T) {
-			pool := testutil.SetupMigratedTestDB(t)
+			pool, _ := setupMigratedThrough(t, "000071_model_execution_evidence.up.sql")
 			ctx := context.Background()
 			var orgID, channelID int64
 			require.NoError(t, pool.QueryRow(ctx, `
@@ -387,7 +387,7 @@ SELECT EXISTS (SELECT 1 FROM schema_migrations
 }
 
 func TestModelDeploymentExpandRollbackAllowsExactLegacyProjection(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000071_model_execution_evidence.up.sql")
 	ctx := context.Background()
 	var orgID, userID, channelID, keyID int64
 	require.NoError(t, pool.QueryRow(ctx, `

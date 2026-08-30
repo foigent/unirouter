@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/billing"
 	"github.com/uniroute/unirouter/internal/endpointprotocol"
@@ -27,7 +28,6 @@ import (
 	"github.com/uniroute/unirouter/internal/guardrail"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
-	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/modelauthz"
 	"github.com/uniroute/unirouter/internal/modelexecution"
 	"github.com/uniroute/unirouter/internal/modeloperation"
@@ -45,6 +45,13 @@ const (
 	publicGatewayPGIdempotencyHashSecret = "m77-public-idempotency-hash-secret"
 	publicGatewayPGFingerprintSecret     = "m77-public-fingerprint-secret"
 )
+
+func publicGatewayPGDowngradeKimiK27PublicationForLegacyRollbackTest(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+		t.Context(), pool, testutil.MigrationsDir(t),
+	), "legacy rollback fixture must start from the exact M100 ceiling")
+}
 
 func TestPublicResponsesExactProfileCapabilityEvidenceLoadsThroughSQLPlannerIntegration(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
@@ -142,6 +149,7 @@ SELECT row_to_json(binding)::text FROM model_operation_public_execution_bindings
 	}
 	original := readBinding()
 	for cycle := 0; cycle < 2; cycle++ {
+		publicGatewayPGDowngradeKimiK27PublicationForLegacyRollbackTest(t, pool)
 		for _, name := range []string{
 			"000100_kimi_k26_function_tools_tool_index_normalizer.down.sql",
 			"000099_kimi_k26_function_tools_probe_v3.down.sql",
@@ -165,7 +173,7 @@ SELECT row_to_json(binding)::text FROM model_operation_public_execution_bindings
 			require.NoError(t, err)
 		}
 		require.Equal(t, original, readBinding(), "downgrade must preserve the sealed v1 binding")
-		require.NoError(t, migrate.Run(t.Context(), pool, testutil.MigrationsDir(t)))
+		require.NoError(t, testutil.InstallExactTestArtifact(t.Context(), pool, testutil.MigrationsDir(t)))
 		require.Equal(t, original, readBinding(), "upgrade must not reinterpret the sealed v1 binding")
 		plan, err := fixture.planner.Plan(t.Context(), modelrouting.Request{
 			Mode: modelrouting.ModeCanonical, CustomerOrgID: fixture.orgID,
@@ -197,6 +205,7 @@ func TestPublicModelExecutionAuthorityExactBindingsRollbackProtectsSealedEvidenc
 				id: tc.profileID, version: tc.version, baseURL: origin, upstreamModel: tc.upstream,
 				capabilities: []string{modelprofile.CapabilityReasoning, modelprofile.CapabilityReasoningEffort},
 			})
+			publicGatewayPGDowngradeKimiK27PublicationForLegacyRollbackTest(t, pool)
 			for _, capabilityDownName := range []string{
 				"000100_kimi_k26_function_tools_tool_index_normalizer.down.sql",
 				"000099_kimi_k26_function_tools_probe_v3.down.sql",
@@ -271,6 +280,7 @@ func TestPublicModelExecutionAuthorityStreamFailuresPreserveFinancialOutcomeInte
 					t.Skip("shared receipt-failure recovery contract is covered by Responses")
 				}
 				pool := testutil.SetupMigratedTestDB(t)
+				publicGatewayPGDowngradeKimiK27PublicationForLegacyRollbackTest(t, pool)
 				suite := newPublicGatewayPGSuite(t, pool, "stream-financial-"+tc.name)
 				profile := publicGatewayPGExecutionProfile{
 					id: "openai.gpt-5.6-sol.responses", version: "1.3.0",

@@ -17,17 +17,22 @@ func TestP6F33MigrationQuarantinesExistingWebhooksWithoutDeletingThem(t *testing
 	ctx := context.Background()
 	allMigrationsDir := testutil.MigrationsDir(t)
 	preP6Dir := t.TempDir()
+	throughP6Dir := t.TempDir()
+	const p6Migration = "000020_prd6_notification_webhook_scope_verification.up.sql"
 
 	entries, err := os.ReadDir(allMigrationsDir)
 	require.NoError(t, err)
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") || name >= "000020_" {
+		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") || name > p6Migration {
 			continue
 		}
 		body, readErr := os.ReadFile(filepath.Join(allMigrationsDir, name))
 		require.NoError(t, readErr)
-		require.NoError(t, os.WriteFile(filepath.Join(preP6Dir, name), body, 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(throughP6Dir, name), body, 0o600))
+		if name < p6Migration {
+			require.NoError(t, os.WriteFile(filepath.Join(preP6Dir, name), body, 0o600))
+		}
 	}
 	require.NoError(t, migrate.Run(ctx, pool, preP6Dir))
 
@@ -58,7 +63,7 @@ func TestP6F33MigrationQuarantinesExistingWebhooksWithoutDeletingThem(t *testing
 	)
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.Run(ctx, pool, allMigrationsDir))
+	require.NoError(t, migrate.Run(ctx, pool, throughP6Dir))
 
 	rows, err := pool.Query(ctx,
 		`SELECT name, enabled, scope_verified, scope_quarantine_previous_enabled
@@ -165,7 +170,7 @@ func TestP6F33MigrationQuarantinesExistingWebhooksWithoutDeletingThem(t *testing
 	_, err = pool.Exec(ctx, `DELETE FROM notification_webhooks WHERE id = $1`, verifiedID)
 	require.Error(t, err, "rollback lockdown must retain rows for safe roll-forward review")
 
-	require.NoError(t, migrate.Run(ctx, pool, allMigrationsDir), "down ledger removal must permit a safe roll-forward")
+	require.NoError(t, migrate.Run(ctx, pool, throughP6Dir), "down ledger removal must permit a safe roll-forward")
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM information_schema.columns
 		 WHERE table_schema = 'public'

@@ -73,7 +73,7 @@ func TestCurrentAttachableProfilesResolveOperationProtocolIdentityWithoutEvidenc
 }
 
 func TestChatContractDoesNotCreateOperationBindingAuthority(t *testing.T) {
-	profile, ok := Lookup("kimi.k2.7-code.api", "1.3.0")
+	profile, ok := Lookup("kimi.k3.api", "1.8.0")
 	require.True(t, ok)
 	_, contractExists := ResolveChatProtocolContract(profile.ProtocolProfile)
 	require.True(t, contractExists)
@@ -84,23 +84,20 @@ func TestChatContractDoesNotCreateOperationBindingAuthority(t *testing.T) {
 	require.Equal(t, OperationProtocolIdentity{}, identity)
 }
 
-func TestResolveOperationProtocolIdentityUsesExplicitKimiK26BindingOnly(t *testing.T) {
-	identity, found, err := ResolveOperationProtocolIdentity(
-		"kimi.k2.6.api", "1.7.0", OperationOpenAIChat,
-	)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, OperationProtocolIdentity{
-		OperationID: OperationOpenAIChat, ProtocolProfileID: "protocol.kimi-openai-chat.v5",
-		ProtocolProfileVersion: ChatOperationProtocolBindingVersionV1,
-	}, identity)
-
-	for _, address := range [][2]string{{"kimi.k2.7-code.api", "1.3.0"}, {"kimi.k3.api", "1.8.0"}} {
+func TestResolveOperationProtocolIdentityUsesExplicitKimiK2xBindingsOnly(t *testing.T) {
+	for _, address := range [][2]string{{"kimi.k2.6.api", "1.7.0"}, {"kimi.k2.7-code.api", "1.3.0"}} {
 		identity, found, err := ResolveOperationProtocolIdentity(address[0], address[1], OperationOpenAIChat)
 		require.NoError(t, err, address[0])
-		require.False(t, found, address[0])
-		require.Equal(t, OperationProtocolIdentity{}, identity, address[0])
+		require.True(t, found, address[0])
+		require.Equal(t, OperationProtocolIdentity{
+			OperationID: OperationOpenAIChat, ProtocolProfileID: "protocol.kimi-openai-chat.v5",
+			ProtocolProfileVersion: ChatOperationProtocolBindingVersionV1,
+		}, identity, address[0])
 	}
+	identity, found, err := ResolveOperationProtocolIdentity("kimi.k3.api", "1.8.0", OperationOpenAIChat)
+	require.NoError(t, err)
+	require.False(t, found)
+	require.Equal(t, OperationProtocolIdentity{}, identity)
 }
 
 func TestExistingAttachmentProtocolCompatibilityIsExactAndDoesNotAuthorizePro(t *testing.T) {

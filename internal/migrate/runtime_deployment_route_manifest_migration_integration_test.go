@@ -21,7 +21,7 @@ import (
 )
 
 func TestRuntimeDeploymentRouteManifestRollbackAllowsSealedV1CompatibilityEvidence(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000071_model_execution_evidence.up.sql")
 	ctx := context.Background()
 	var orgID, userID, publicModelID, channelID, connectionID, deploymentID, secondDeploymentID, releaseID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -165,11 +165,11 @@ SELECT EXISTS(SELECT 1 FROM runtime_change_releases WHERE id=$1 AND candidate_ve
 	require.True(t, releaseRetained)
 	require.True(t, metadataDropped)
 	require.True(t, ledgerDropped)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000070_runtime_deployment_route_manifest"))
 }
 
 func TestRuntimeDeploymentRouteManifestSealRejectsStaleConnectionAndDeploymentPins(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000070_runtime_deployment_route_manifest.up.sql")
 	ctx := context.Background()
 	var orgID, userID, publicModelID, connectionID, deploymentID, bindingID, releaseID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -265,7 +265,7 @@ UPDATE runtime_change_releases SET route_items_sealed_at=NOW() WHERE id=$1`, rel
 }
 
 func TestRuntimeDeploymentRouteManifestRollbackFailsClosedOnCanonicalEvidence(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000071_model_execution_evidence.up.sql")
 	ctx := context.Background()
 	var orgID, userID, publicModelID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -315,7 +315,7 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 }
 
 func TestRuntimeDeploymentRouteManifestMigrationNeverInfersNonLegacyProfile(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000071_model_execution_evidence.up.sql")
 	ctx := context.Background()
 	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
 	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
@@ -337,7 +337,7 @@ INSERT INTO model_deployment_operations (
 VALUES ($1,'openai.chat_completions.v1','enabled','declared','pre-profile-writer',1)`, deploymentID)
 	require.NoError(t, err)
 
-	err = migrate.Run(ctx, pool, testutil.MigrationsDir(t))
+	err = migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000070_runtime_deployment_route_manifest")
 	require.ErrorContains(t, err, "non-legacy operations require an explicit protocol profile")
 	var ledger, profileColumn bool
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -350,11 +350,11 @@ SELECT EXISTS(SELECT 1 FROM schema_migrations
 	require.False(t, profileColumn, "failed migration transaction must not leave partial profile columns")
 	_, err = pool.Exec(ctx, `DELETE FROM model_deployment_operations WHERE deployment_id=$1`, deploymentID)
 	require.NoError(t, err)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000070_runtime_deployment_route_manifest"))
 }
 
 func TestRuntimeDeploymentRouteManifestRequiresExplicitNonLegacyProfile(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000070_runtime_deployment_route_manifest.up.sql")
 	ctx := context.Background()
 	var orgID, publicModelID, connectionID, deploymentID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -395,7 +395,7 @@ VALUES ($1,'legacy.any.v1','enabled','declared','explicit-legacy-compatibility',
 }
 
 func TestRuntimeDeploymentAdminSafetyContractionPreservesRevisionAndResumeInvalidatesEvidence(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000070_runtime_deployment_route_manifest.up.sql")
 	ctx := context.Background()
 	var orgID, publicModelID, connectionID, deploymentID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -464,7 +464,7 @@ UPDATE provider_connections
 }
 
 func TestRuntimeDeploymentRouteManifestRollbackRefusesExplicitProfileLoss(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000071_model_execution_evidence.up.sql")
 	ctx := context.Background()
 	var orgID, publicModelID, connectionID, deploymentID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -493,7 +493,7 @@ VALUES ($1,'openai.chat_completions.v1','enabled','declared','explicit-profile',
 }
 
 func TestRuntimeDeploymentProbeLeaseUsesStrictRevisionNeutralCAS(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000070_runtime_deployment_route_manifest.up.sql")
 	ctx := context.Background()
 	var orgID, publicModelID, connectionID, deploymentID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -576,7 +576,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 }
 
 func TestRuntimeDeploymentRevisionGuardsAllowNativeCASAndExactLegacyCatchup(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, _ := setupMigratedThrough(t, "000070_runtime_deployment_route_manifest.up.sql")
 	ctx := context.Background()
 	var orgID, publicModelID, channelID, channelKeyID, connectionID, deploymentID, bindingID int64
 	require.NoError(t, pool.QueryRow(ctx, `

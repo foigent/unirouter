@@ -81,7 +81,7 @@ WHERE table_schema='public'
 	).Scan(&ledger))
 	require.Zero(t, ledger)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000060_xinsight_connector_cp1"))
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM schema_migrations WHERE version='000060_xinsight_connector_cp1'`,
 	).Scan(&ledger))

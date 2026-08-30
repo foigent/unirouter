@@ -84,7 +84,7 @@ SELECT
 	_, err = pool.Exec(ctx, string(down))
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000083_versioned_unit_meter_billing"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT
   EXISTS(SELECT 1 FROM schema_migrations WHERE version='000083_versioned_unit_meter_billing'),

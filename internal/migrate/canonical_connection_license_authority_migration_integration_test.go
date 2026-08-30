@@ -13,7 +13,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -65,7 +64,7 @@ VALUES ('m79-lock-writer','custom','https://m79-lock-writer.invalid',
 		}
 	})
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 	downgradeObservationProviderCostReconciliationForM79Test(t, pool)
 	_, err = pool.Exec(ctx, `
 INSERT INTO commercial_license_entitlements (
@@ -267,14 +266,14 @@ INSERT INTO provider_connections (
   name,provider,base_url,adapter_type,adapter_config,admin_state,config_revision)
 VALUES ('m79-unsafe-native','custom','https://m79-unsafe.invalid',
         'openai_compatible','{}','enabled',1) RETURNING id`).Scan(&unsafeNativeID))
-	err = migrate.Run(ctx, pool, testutil.MigrationsDir(t))
+	err = testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t))
 	require.ErrorContains(t, err, "enabled provider connections exceed signed active_channels limit")
 	_, err = pool.Exec(ctx, `
 UPDATE provider_connections
    SET admin_state='retired',retired_at=NOW(),config_revision=config_revision+1
  WHERE id=$1`, unsafeNativeID)
 	require.NoError(t, err)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 	assertCommercialLimitTrigger(t, pool, "channels", "channels_commercial_limit", false)
 	assertCommercialLimitTrigger(t, pool, "provider_connections", "provider_connections_commercial_limit", true)
 }

@@ -538,7 +538,10 @@ func (h *Handler) executeCanonicalOperationProbe(
 	if err != nil || strings.TrimSpace(secret) == "" {
 		return canonicalOperationProbeOutcome{ReasonCode: "credential_unavailable"}
 	}
-	body, err := canonicalOperationProbePayload(modeloperation.ID(snapshot.OperationID), snapshot.UpstreamModel, probeText)
+	body, err := canonicalOperationProbePayload(
+		modeloperation.ID(snapshot.OperationID), snapshot.UpstreamModel, probeText,
+		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion,
+	)
 	if err != nil {
 		return canonicalOperationProbeOutcome{ReasonCode: "request_build_failed"}
 	}
@@ -703,16 +706,29 @@ func newCanonicalOperationProbeHTTPClient() *http.Client {
 	}
 }
 
-func canonicalOperationProbePayload(operation modeloperation.ID, upstreamModel, probeText string) ([]byte, error) {
+func canonicalOperationProbePayload(
+	operation modeloperation.ID,
+	upstreamModel, probeText, executionProfileID, executionProfileVersion string,
+) ([]byte, error) {
 	if probeText == "" {
 		probeText = "UniRouter connectivity probe"
 	}
 	switch operation {
 	case modeloperation.IDChatCompletions:
-		return json.Marshal(map[string]interface{}{
+		payload := map[string]interface{}{
 			"model": upstreamModel, "stream": false, "max_tokens": 1,
 			"messages": []map[string]string{{"role": "user", "content": probeText}},
-		})
+		}
+		thinking, required, err := resolveKimiRequiredThinkingContract(executionProfileID, executionProfileVersion)
+		if err != nil {
+			return nil, err
+		}
+		if required {
+			delete(payload, "max_tokens")
+			payload["max_completion_tokens"] = 64
+			payload["thinking"] = thinking
+		}
+		return json.Marshal(payload)
 	case modeloperation.IDEmbeddings:
 		return json.Marshal(map[string]interface{}{"model": upstreamModel, "input": probeText})
 	case modeloperation.IDResponses:

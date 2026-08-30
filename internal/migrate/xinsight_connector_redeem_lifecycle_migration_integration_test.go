@@ -35,7 +35,7 @@ VALUES ($1,$2,$3,'project.second-integration',
 	)
 	require.NoError(t, err)
 
-	err = migrate.Run(ctx, pool, testutil.MigrationsDir(t))
+	err = migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle")
 	require.ErrorContains(t, err, "existing control bearer lacks expiry and redeem identities")
 
 	var columns, ledger, bindings int
@@ -68,7 +68,7 @@ VALUES ($1,$2,$3,'opaque-encrypted-invitation')`,
 		redeemLifecycleInstallationID, orgID, projectID,
 	)
 	require.NoError(t, err)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 
 	var columns, ledger int
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -120,11 +120,6 @@ UPDATE xinsight_connector_control_bindings
 SET invitation_token_enc='opaque-revived-invitation'
 WHERE installation_id=$1`, redeemLifecycleInstallationID)
 	require.Error(t, err, "control_active must not regain invitation authority")
-	rollbackEmptyMigrations(t, pool, []string{
-		"000064_rate_card_request_pricing_authority.down.sql",
-		"000063_onprem_billing_mode.down.sql",
-	})
-
 	down, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000062_xinsight_connector_redeem_lifecycle.down.sql",
@@ -149,12 +144,7 @@ VALUES ($1,$2,$3,'opaque-encrypted-invitation')`,
 		redeemLifecycleInstallationID, orgID, projectID,
 	)
 	require.NoError(t, err)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
-	rollbackEmptyMigrations(t, pool, []string{
-		"000064_rate_card_request_pricing_authority.down.sql",
-		"000063_onprem_billing_mode.down.sql",
-	})
-
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 	down, err := os.ReadFile(filepath.Join(
 		testutil.MigrationsDir(t),
 		"000062_xinsight_connector_redeem_lifecycle.down.sql",
@@ -187,7 +177,7 @@ WHERE installation_id=$1
   AND control_token_enc IS NULL`, redeemLifecycleInstallationID).Scan(&staged))
 	require.Equal(t, 1, staged, "schema-61-representable invitation authority must survive rollback")
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM schema_migrations
 WHERE version='000062_xinsight_connector_redeem_lifecycle'`).Scan(&ledger))

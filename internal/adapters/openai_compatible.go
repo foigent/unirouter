@@ -311,7 +311,8 @@ func openAICompatibleChatToolCallIndexScope(provider, upstreamModel, protocolPro
 			(protocolProfile == "protocol.deepseek-openai-chat.v4" || protocolProfile == "openai.chat_completions")) ||
 			(upstreamModel == "deepseek-v4-pro" && protocolProfile == "protocol.deepseek-openai-chat.v4")
 	case "kimi":
-		return upstreamModel == "kimi-k2.6" && protocolProfile == "protocol.kimi-openai-chat.v5"
+		return (upstreamModel == "kimi-k2.6" || upstreamModel == "kimi-k2.7-code") &&
+			protocolProfile == "protocol.kimi-openai-chat.v5"
 	default:
 		return false
 	}

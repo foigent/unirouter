@@ -49,7 +49,7 @@ SELECT to_regclass('public.channel_model_probes') IS NOT NULL,
 	require.False(t, tableExists)
 	require.False(t, ledgerExists)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000065_model_endpoint_projection"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT to_regclass('public.channel_model_probes') IS NOT NULL,
        EXISTS (SELECT 1 FROM schema_migrations WHERE version='000065_model_endpoint_projection')`).Scan(&tableExists, &ledgerExists))

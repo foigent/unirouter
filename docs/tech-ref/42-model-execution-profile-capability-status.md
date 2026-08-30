@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-08-30.
+> Snapshot date: 2026-08-31.
 > This document is not a claim that every provider-documented feature is production supported.
 
 The current product-scope candidate is
@@ -9,13 +9,15 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-For development/test Target identity, the exact Kimi 1.2.20/M100 closeout in
-the completed batch below supersedes the earlier M95–M99 and Pro M94
-snapshots. Local, CI, artifact, Target, provider and customer-wallet evidence
-remain separate; this closeout does not promote pricing, canonical traffic or
-Production state. Repository source candidate 1.2.22 adds Strict Capability
-Contract Publication V1 with no schema or Target apply; it is not a new Target
-runtime artifact and does not promote any model capability.
+Development/test currently runs exact 1.2.22/M100 main merge
+`781f913e8a8e1e594e94bddedfc4886bd81cea0d`, tree
+`77dc8ad2dff86cd9b5c67e1de3ceb62cf8223676`, with Publication V1 deployed
+and no post-M100 declaration applied. Repository source candidate 1.2.23/M101
+adds only the exact K2.7 Code Chat Core static publication. Local, CI,
+artifact, Target, provider and customer-wallet evidence remain separate; M101
+does not itself create Probe, Approval, pricing, canonical traffic or
+Production state. The exact K2.6 1.2.20/M100 closeout below remains the latest
+completed model-evidence batch.
 
 ## Completed delivery batch — Kimi K2.6 Chat Core Target closeout
 

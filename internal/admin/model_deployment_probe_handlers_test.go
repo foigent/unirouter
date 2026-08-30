@@ -292,6 +292,17 @@ func TestCanonicalOperationProbeSupportsFourExactOperationContracts(t *testing.T
 	require.Equal(t, "1.0.0", deepSeek.ProfileVersion)
 	require.Nil(t, deepSeek.ExecutionBinding)
 
+	kimiK27, err := canonicalOperationProbeSpecForExactProfile(
+		modeloperation.IDChatCompletions,
+		"kimi.k2.7-code.api", "1.3.0",
+		"protocol.kimi-openai-chat.v5", "1.0.0",
+	)
+	require.NoError(t, err)
+	require.Equal(t, adapters.EndpointChatCompletions, kimiK27.Endpoint)
+	require.Equal(t, "protocol.kimi-openai-chat.v5", kimiK27.ProfileID)
+	require.Equal(t, "1.0.0", kimiK27.ProfileVersion)
+	require.Nil(t, kimiK27.ExecutionBinding)
+
 	_, err = canonicalOperationProbeSpecForExactProfile(
 		modeloperation.IDChatCompletions,
 		"deepseek.v4-pro.api", "1.5.0",
@@ -313,6 +324,35 @@ func TestCanonicalOperationProbeSupportsFourExactOperationContracts(t *testing.T
 		"openai.unmapped-chat", "1.0.0",
 	)
 	require.ErrorIs(t, err, errCanonicalOperationProbeUnsupported)
+}
+
+func TestCanonicalOperationProbePayloadUsesExactKimiK27RequiredThinking(t *testing.T) {
+	body, err := canonicalOperationProbePayload(
+		modeloperation.IDChatCompletions, "kimi-k2.7-code", "safe",
+		"kimi.k2.7-code.api", "1.3.0",
+	)
+	require.NoError(t, err)
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &payload))
+	require.JSONEq(t, `{"type":"enabled","keep":"all"}`, string(payload["thinking"]))
+	require.JSONEq(t, `64`, string(payload["max_completion_tokens"]))
+	require.NotContains(t, payload, "max_tokens")
+
+	k26, err := canonicalOperationProbePayload(
+		modeloperation.IDChatCompletions, "kimi-k2.6", "safe",
+		"kimi.k2.6.api", "1.7.0",
+	)
+	require.NoError(t, err)
+	payload = map[string]json.RawMessage{}
+	require.NoError(t, json.Unmarshal(k26, &payload))
+	require.JSONEq(t, `1`, string(payload["max_tokens"]))
+	require.NotContains(t, payload, "thinking")
+
+	_, err = canonicalOperationProbePayload(
+		modeloperation.IDChatCompletions, "kimi-k2.7-code", "safe",
+		"kimi.k2.7-code.api", "1.2.0",
+	)
+	require.Error(t, err)
 }
 
 func TestCanonicalOperationProbeHandlerRejectsUnsupportedOperationBeforeStorageOrFallback(t *testing.T) {

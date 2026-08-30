@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimechange"
@@ -50,6 +49,9 @@ UPDATE model_registry
 	reverseLaterBindings := func() {
 		// Keep the historical M82 rollback fixture at its supported predecessor;
 		// the newer exact-public and Plan fences are independently guarded.
+		require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+			ctx, pool, testutil.MigrationsDir(t),
+		))
 		for _, name := range []string{
 			"000100_kimi_k26_function_tools_tool_index_normalizer.down.sql",
 			"000099_kimi_k26_function_tools_probe_v3.down.sql",
@@ -103,7 +105,7 @@ SELECT
             AND column_name='execution_profile_id')`).Scan(&migrationPresent, &pinColumnsPresent))
 	require.False(t, migrationPresent)
 	require.False(t, pinColumnsPresent)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 	backfilled, err := manager.GetDeploymentRelease(ctx, initial.ReleaseRef)
 	require.NoError(t, err)
 	assertSealedExecutionContract(t, backfilled, "kimi.k3.api", "1.1.0", 262144, 32768)

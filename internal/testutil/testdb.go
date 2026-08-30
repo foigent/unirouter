@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -17,7 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/migrate"
+	publication "github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/money"
+	"github.com/uniroute/unirouter/internal/schemaauthority"
+	"github.com/uniroute/unirouter/internal/testdb"
 )
 
 var migratedTestDBTemplate struct {
@@ -31,11 +32,7 @@ var migratedTestDBTemplate struct {
 // TestDB_DSN returns the test database DSN from environment or default.
 // Uses uniroute_test database to avoid polluting development data.
 func TestDB_DSN() string {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		dsn = "postgres://uniroute:uniroute@localhost:5432/uniroute_test?sslmode=disable"
-	}
-	return dsn
+	return testdb.DSN()
 }
 
 // SetupTestDB connects to uniroute_test, truncates all business tables,
@@ -70,53 +67,7 @@ func SetupTestDB(t *testing.T) *pgxpool.Pool {
 // SetupIsolatedTestDB creates a temporary PostgreSQL database for integration
 // tests that must run migrations from a clean schema.
 func SetupIsolatedTestDB(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-
-	baseDSN := TestDB_DSN()
-	adminDSN, tempDSN, dbName, err := tempDatabaseDSNs(baseDSN)
-	require.NoError(t, err, "build temporary database DSN")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	adminPool, err := pgxpool.New(ctx, adminDSN)
-	if err != nil {
-		testDatabaseUnavailable(t, "cannot connect to PostgreSQL admin database: %v", err)
-	}
-	if err := adminPool.Ping(ctx); err != nil {
-		adminPool.Close()
-		testDatabaseUnavailable(t, "cannot ping PostgreSQL admin database: %v", err)
-	}
-
-	if _, err := adminPool.Exec(ctx, `CREATE DATABASE `+quoteIdent(dbName)); err != nil {
-		adminPool.Close()
-		testDatabaseUnavailable(t, "cannot create temporary test database %s: %v", dbName, err)
-	}
-
-	pool, err := pgxpool.New(ctx, tempDSN)
-	if err != nil {
-		_ = dropTemporaryDatabase(ctx, adminPool, dbName)
-		adminPool.Close()
-		testDatabaseUnavailable(t, "cannot connect to temporary test database %s: %v", dbName, err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		_ = dropTemporaryDatabase(ctx, adminPool, dbName)
-		adminPool.Close()
-		testDatabaseUnavailable(t, "cannot ping temporary test database %s: %v", dbName, err)
-	}
-
-	t.Cleanup(func() {
-		pool.Close()
-		dropCtx, dropCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer dropCancel()
-		if err := dropTemporaryDatabase(dropCtx, adminPool, dbName); err != nil {
-			t.Errorf("drop temporary test database %s: %v", dbName, err)
-		}
-		adminPool.Close()
-	})
-
-	return pool
+	return testdb.SetupIsolated(t)
 }
 
 // SetupMigratedTestDB creates a clean temporary database and applies all repo migrations.
@@ -128,7 +79,7 @@ func SetupMigratedTestDB(t *testing.T) *pgxpool.Pool {
 	pool := SetupIsolatedTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	require.NoError(t, migrate.Run(ctx, pool, MigrationsDir(t)), "run migrations in isolated test database")
+	require.NoError(t, runStrictTestArtifactInstall(ctx, pool, MigrationsDir(t)), "install exact test artifact schema")
 	TruncateAll(t, pool)
 	return pool
 }
@@ -256,7 +207,7 @@ func ensureMigratedTestDBTemplate(t *testing.T, baseDSN string) (*pgxpool.Pool, 
 		adminPool.Close()
 		testDatabaseUnavailable(t, "cannot ping migrated template database %s: %v", templateName, err)
 	}
-	if err := migrate.Run(ctx, templatePool, MigrationsDir(t)); err != nil {
+	if err := runStrictTestArtifactInstall(ctx, templatePool, MigrationsDir(t)); err != nil {
 		templatePool.Close()
 		_ = dropTemporaryDatabase(ctx, adminPool, templateName)
 		adminPool.Close()
@@ -273,44 +224,125 @@ func ensureMigratedTestDBTemplate(t *testing.T, baseDSN string) (*pgxpool.Pool, 
 
 // MigrationsDir returns the repository migrations directory from the testutil package location.
 func MigrationsDir(t *testing.T) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	require.True(t, ok, "resolve testutil path")
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations"))
+	return testdb.MigrationsDir(t)
 }
 
 func tempDatabaseDSNs(baseDSN string) (adminDSN, tempDSN, dbName string, err error) {
-	parsed, err := url.Parse(baseDSN)
-	if err != nil {
-		return "", "", "", err
-	}
-	dbName = fmt.Sprintf("uniroute_it_%d_%d", os.Getpid(), time.Now().UnixNano())
-	admin := *parsed
-	admin.Path = "/postgres"
-	temp := *parsed
-	temp.Path = "/" + dbName
-	return admin.String(), temp.String(), dbName, nil
+	return testdb.TempDatabaseDSNs(baseDSN)
 }
 
 func quoteIdent(value string) string {
-	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+	return testdb.QuoteIdent(value)
 }
 
 func dropTemporaryDatabase(ctx context.Context, adminPool *pgxpool.Pool, dbName string) error {
-	// The test pool is closed before this runs, so a regular DROP both avoids
-	// requiring pg_signal_backend and exposes real connection leaks instead of
-	// terminating unrelated sessions from a privileged CI role.
-	_, err := adminPool.Exec(ctx, `DROP DATABASE IF EXISTS `+quoteIdent(dbName))
-	return err
+	return testdb.Drop(ctx, adminPool, dbName)
 }
 
 func testDatabaseUnavailable(t *testing.T, format string, args ...any) {
-	t.Helper()
-	required := strings.TrimSpace(os.Getenv("REQUIRE_TEST_DATABASE"))
-	if required == "1" || strings.EqualFold(required, "true") {
-		t.Fatalf(format, args...)
+	testdb.Unavailable(t, format, args...)
+}
+
+func runStrictTestArtifactInstall(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
+	artifactLedger, err := schemaauthority.ExpectedLedger(migrationsDir)
+	if err != nil {
+		return err
 	}
-	t.Skipf(format, args...)
+	if err := publication.VerifyArtifactPublicationInventory(migrationsDir, artifactLedger); err != nil {
+		return err
+	}
+	if err := migrate.RunThrough(ctx, pool, migrationsDir, publication.BaselineMigrationM100); err != nil {
+		return err
+	}
+	declarations, err := publication.CompiledDeclarations()
+	if err != nil {
+		return err
+	}
+	if len(declarations) == 0 {
+		if err := migrate.Run(ctx, pool, migrationsDir); err != nil {
+			return err
+		}
+		return publication.VerifyRuntimeStaticProjection(ctx, pool, artifactLedger)
+	}
+	files, err := publication.ReadArtifactMigrationFiles(migrationsDir, artifactLedger)
+	if err != nil {
+		return err
+	}
+	artifact := publication.ArtifactIdentity{
+		Kind: publication.ArtifactKindSource, Commit: strings.Repeat("1", 40), Tree: strings.Repeat("2", 40),
+		Version: "integration-test", PublisherExecutableDigest: "sha256:" + strings.Repeat("3", 64),
+	}
+	for _, compiled := range declarations {
+		declaration, predecessor, err := publication.CompiledPublication(compiled.PublicationID)
+		if err != nil {
+			return err
+		}
+		if err := publication.VerifyGeneratedMigrationFiles(migrationsDir, predecessor, declaration); err != nil {
+			return err
+		}
+		downDigest, verifyDigest, err := publication.ReadPublicationAuxiliaryDigests(migrationsDir, declaration.PublicationID)
+		if err != nil {
+			return err
+		}
+		authority := publication.PlanAuthority{
+			Artifact: artifact, ArtifactMigrationLedger: artifactLedger, ArtifactMigrationFiles: files,
+			PublicationDownSHA256: downDigest, PublicationVerifySHA256: verifyDigest,
+			Predecessor: predecessor, Declaration: declaration,
+		}
+		plan, err := publication.PlanTarget(ctx, pool, "integration-test", authority)
+		if err != nil {
+			return err
+		}
+		if plan.Validation != publication.ValidationValid {
+			return fmt.Errorf("test artifact publication %s conflicts with clean install: %v", declaration.PublicationID, plan.Conflicts)
+		}
+		hooks, err := publication.HooksForPlan("integration-test", authority, plan)
+		if err != nil {
+			return err
+		}
+		if err := migrate.RunPublication(ctx, pool, migrationsDir, plan.ApplyMigrations, hooks); err != nil {
+			return err
+		}
+	}
+	// Apply any trailing ordinary migrations. A missed declaration-owned
+	// migration still fails closed in migrate.Run instead of being bypassed.
+	if err := migrate.Run(ctx, pool, migrationsDir); err != nil {
+		return err
+	}
+	return publication.VerifyRuntimeStaticProjection(ctx, pool, artifactLedger)
+}
+
+// InstallExactTestArtifact installs the repository's complete test artifact
+// through the same explicit declaration-publication path required by Strict
+// V1. It intentionally does not truncate migration seed data.
+func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
+	return runStrictTestArtifactInstall(ctx, pool, migrationsDir)
+}
+
+// RewindKimiK27PublicationForLegacyMigrationTest removes the exact M101 test
+// artifact when a historical rollback fixture must establish the M100 schema
+// ceiling first. It executes the generated guarded down migration only when
+// M101 is present; production recovery continues to require the original Plan
+// and the supported Publication V1 owner path.
+func RewindKimiK27PublicationForLegacyMigrationTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
+	const publicationID = "000101_kimi_k27_chat_core_qualification"
+	var applied bool
+	if err := pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, publicationID,
+	).Scan(&applied); err != nil {
+		return fmt.Errorf("query Kimi K2.7 publication test ledger: %w", err)
+	}
+	if !applied {
+		return nil
+	}
+	down, err := os.ReadFile(filepath.Join(migrationsDir, publicationID+".down.sql"))
+	if err != nil {
+		return fmt.Errorf("read Kimi K2.7 publication test rollback: %w", err)
+	}
+	if _, err := pool.Exec(ctx, string(down)); err != nil {
+		return fmt.Errorf("rewind Kimi K2.7 publication test artifact: %w", err)
+	}
+	return nil
 }
 
 // TruncateAll truncates all business tables in dependency order.

@@ -8,17 +8,14 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.22 with the unchanged PostgreSQL
-compatibility ceiling `000100_kimi_k26_function_tools_tool_index_normalizer`.
-It adds Strict Capability Contract Publication V1 without applying a Target
-publication or changing current model capability state. Development/test
-stable, canary and frontend remain on version 1.2.20 and independently run exact main merge
-`cf2bee4bbee7074e91661400f5edf61ca2c08f32`, tree
-`64a25957ef2549923604cf6048802730d90b9be8`, with 99 ordered migration rows
-ending at M100. Stable and canary use backend image
-`sha256:9d41b58b8933c8afac8dfd2063875afa48f95c6a5a71a984d7c3c2ef758fc981`;
-frontend uses
-`sha256:9c2bab768263f982c3f6dd0b07c1d73f2d4602f70e56567c3e2701543d98e14d`.
+Repository source candidate is version 1.2.23 with PostgreSQL compatibility
+ceiling `000101_kimi_k27_chat_core_qualification`. M101 is the first
+declaration-owned capability publication after the immutable M100 baseline;
+it appends only the exact K2.7 Code Chat Core static contracts and creates no
+live qualification. Development/test currently remains on exact version
+1.2.22/M100 main merge `781f913e8a8e1e594e94bddedfc4886bd81cea0d`,
+tree `77dc8ad2dff86cd9b5c67e1de3ceb62cf8223676`, with Publication V1 deployed
+but no post-M100 declaration applied.
 Stable, canary, frontend and Nginx share the frozen `unirouter` Compose project
 and exact configuration chain, and database, Redis and both backend readiness
 checks are healthy. These are development/test facts, not Production evidence.
@@ -81,6 +78,12 @@ routes both runtime and Probe through one exact-scoped lexical non-negative
 integer normalizer. Unknown siblings remain fail closed; v3 evidence is never
 reinterpreted. M100 changes no Profile, protocol, Release, alias, pricing,
 Planner, UI, billing or traffic authority.
+
+M101 declares six exact K2.7 Code Profile 1.3 Chat v5 bindings: streaming v4,
+reasoning v2, tools/function-tools/automatic tool choice v4 and JSON Object v2.
+It does not declare a generic or K3 tuple. Its generated migration changes
+only static binding/selector projection; any exact Deployment projection is
+planned separately, and Probe/Approval/qualification remain dynamic evidence.
 
 On the exact 1.2.20 Target, deployment 4 has six independently qualified Kimi
 K2.6 Chat Core capabilities: streaming Probe 46 / Approval 42, reasoning

@@ -56,7 +56,7 @@ func TestObservationProviderCostReconciliationMigrationIntegration(t *testing.T)
 		require.False(t, triggerPresent)
 		require.False(t, ledgerPresent)
 
-		require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+		require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000080_observation_provider_cost_reconciliation"))
 		require.NoError(t, pool.QueryRow(ctx, `
 			SELECT
 			  EXISTS(SELECT 1 FROM information_schema.columns

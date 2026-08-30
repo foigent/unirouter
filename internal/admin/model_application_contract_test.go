@@ -386,11 +386,22 @@ func TestCanonicalTypedOperationProfileUsesExactOverrideAndPropagatesInvalidAuth
 		t.Fatalf("resolved Kimi operation=%+v", kimi)
 	}
 
-	unmapped, err := resolveCanonicalTypedOperationProfile(canonicalPublicModelIdentity{
+	kimiK27, err := resolveCanonicalTypedOperationProfile(canonicalPublicModelIdentity{
 		ID: 49, ExecutionProfileID: "kimi.k2.7-code.api", ExecutionProfileVersion: "1.3.0",
 	}, base)
 	if err != nil {
-		t.Fatalf("unmapped Kimi K2.7 base operation rejected: %v", err)
+		t.Fatalf("resolve Kimi K2.7 typed operation: %v", err)
+	}
+	if kimiK27.ProtocolProfileID != "protocol.kimi-openai-chat.v5" ||
+		kimiK27.ProtocolProfileVersion != modelprofile.ChatOperationProtocolBindingVersionV1 {
+		t.Fatalf("resolved Kimi K2.7 operation=%+v", kimiK27)
+	}
+
+	unmapped, err := resolveCanonicalTypedOperationProfile(canonicalPublicModelIdentity{
+		ID: 50, ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.6.0",
+	}, base)
+	if err != nil {
+		t.Fatalf("unmapped Kimi K3 base operation rejected: %v", err)
 	}
 	if unmapped != base {
 		t.Fatalf("NoAuthority changed canonical base: got=%+v want=%+v", unmapped, base)

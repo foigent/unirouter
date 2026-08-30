@@ -44,7 +44,7 @@ func TestCallLogRouteIdentityMigrationBackfillsOnlyAuthoritativeAttempts(t *test
 		 ('route-migration-unproven',$1,'model-b','provider-b','duplicate-name',NULL,200)`, orgID)
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000067_call_log_route_identity"))
 	var provenRoute int64
 	var unprovenRoute *int64
 	require.NoError(t, pool.QueryRow(ctx, `

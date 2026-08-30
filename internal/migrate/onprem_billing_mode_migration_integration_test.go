@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -26,7 +25,7 @@ VALUES (
     'op_billing_mode_historical',960001,'frozen','historical-price-v1',
     120000,120000)`)
 	require.NoError(t, err)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 
 	var mode string
 	var admissionCalculatedCost int64
@@ -65,7 +64,7 @@ WHERE conname IN (
 func TestOnPremBillingModeMigrationCleanRollbackAndReapply(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000062_xinsight_connector_redeem_lifecycle.up.sql")
 	ctx := context.Background()
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 
 	execMigrationDown(t, ctx, pool, "000071_model_execution_evidence.down.sql")
 	execMigrationDown(t, ctx, pool, "000070_runtime_deployment_route_manifest.down.sql")
@@ -102,7 +101,7 @@ SELECT COUNT(*) FROM schema_migrations
 WHERE version='000063_onprem_billing_mode'`).Scan(&ledger))
 	require.Zero(t, ledger)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM schema_migrations
 WHERE version='000063_onprem_billing_mode'`).Scan(&ledger))
@@ -139,7 +138,7 @@ WHERE version IN ('000063_onprem_billing_mode','000064_rate_card_request_pricing
 func TestOnPremBillingModeMigrationRefusesObservationEvidenceRollbackAtomically(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000062_xinsight_connector_redeem_lifecycle.up.sql")
 	ctx := context.Background()
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 
 	_, err := pool.Exec(ctx, `
 INSERT INTO freeze_idempotency (
@@ -187,6 +186,9 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
+	require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+		ctx, pool, testutil.MigrationsDir(t),
+	))
 	for _, successor := range []struct {
 		name    string
 		version string
