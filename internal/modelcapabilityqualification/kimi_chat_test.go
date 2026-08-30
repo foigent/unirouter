@@ -26,7 +26,7 @@ func TestCompiledKimiK26BindingsAreExactAndDoNotAuthorizeSiblingModels(t *testin
 		if binding.CapabilityID == modelprofile.CapabilityStreaming {
 			require.Equal(t, KimiChatSSEProbeContractVersionV3, binding.ProbeContractVersion)
 		} else if binding.ProbeContractID == KimiChatFunctionToolsProbeContractID {
-			require.Equal(t, KimiChatFunctionToolsProbeContractVersionV3, binding.ProbeContractVersion)
+			require.Equal(t, KimiChatFunctionToolsProbeContractVersionV4, binding.ProbeContractVersion)
 		} else {
 			require.Equal(t, KimiChatCoreProbeContractVersionV2, binding.ProbeContractVersion)
 		}
@@ -173,6 +173,57 @@ func TestKimiChatFunctionToolsProbeV3AlignsWithRuntimeUsageShapeWithoutPromoting
 			"kimi-k2.6", "application/json", strings.NewReader(mutation),
 		)
 		require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	}
+}
+
+func TestKimiChatFunctionToolsProbeV4NormalizesOnlyNonStreamToolCallIndex(t *testing.T) {
+	body := kimiProbeEnvelopePrefix + `"service_tier":"standard","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"","tool_calls":[{"index":999999999999999999999999999999999999999,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":0,"provider_tool_tokens":4}}}`
+
+	_, err := ValidateKimiChatFunctionTools(
+		KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV3,
+		"kimi-k2.6", "application/json", strings.NewReader(body),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe, "historical v3 must retain its immutable acceptance set")
+	require.Equal(t, "json", KimiChatErrorCode(err))
+
+	observation, err := ValidateKimiChatFunctionTools(
+		KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV4,
+		"kimi-k2.6", "application/json", strings.NewReader(body),
+	)
+	require.NoError(t, err)
+	require.True(t, observation.ToolCallObserved)
+	require.Equal(t, int64(29), observation.TotalTokens)
+
+	for _, invalid := range []string{`null`, `"0"`, `-1`, `0.5`, `1e2`, `01`} {
+		t.Run("invalid_index_"+strings.NewReplacer("-", "negative_", ".", "decimal_", `"`, "quote_").Replace(invalid), func(t *testing.T) {
+			mutated := strings.Replace(body, "999999999999999999999999999999999999999", invalid, 1)
+			_, err := ValidateKimiChatFunctionTools(
+				KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV4,
+				"kimi-k2.6", "application/json", strings.NewReader(mutated),
+			)
+			require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+		})
+	}
+
+	unknownSibling := strings.Replace(body, `"id":"call_1"`, `"unexpected":true,"id":"call_1"`, 1)
+	_, err = ValidateKimiChatFunctionTools(
+		KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV4,
+		"kimi-k2.6", "application/json", strings.NewReader(unknownSibling),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "json", KimiChatErrorCode(err))
+
+	for _, duplicate := range []string{
+		strings.Replace(body, `"id":"call_1"`, `"id":"shadow","id":"call_1"`, 1),
+		strings.Replace(body, `"id":"call_1"`, `"id":"shadow","\u0069d":"call_1"`, 1),
+	} {
+		_, err = ValidateKimiChatFunctionTools(
+			KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV4,
+			"kimi-k2.6", "application/json", strings.NewReader(duplicate),
+		)
+		require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+		require.Equal(t, "json", KimiChatErrorCode(err))
+		require.Equal(t, "json_duplicate_field", KimiChatDiagnosticCode(err))
 	}
 }
 

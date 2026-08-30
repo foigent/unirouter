@@ -258,7 +258,14 @@ func kimiChatCoreProbeContractSupported(version string) bool {
 }
 
 func kimiChatFunctionToolsProbeContractSupported(version string) bool {
-	return kimiChatCoreProbeContractSupported(version) || version == KimiChatFunctionToolsProbeContractVersionV3
+	return kimiChatCoreProbeContractSupported(version) ||
+		version == KimiChatFunctionToolsProbeContractVersionV3 ||
+		version == KimiChatFunctionToolsProbeContractVersionV4
+}
+
+func kimiChatFunctionToolsV3DeliveryShape(version string) bool {
+	return version == KimiChatFunctionToolsProbeContractVersionV3 ||
+		version == KimiChatFunctionToolsProbeContractVersionV4
 }
 
 func ValidateKimiChatReasoning(
@@ -315,7 +322,7 @@ func ValidateKimiChatFunctionTools(
 	var arguments struct {
 		Value string `json:"value"`
 	}
-	if probeContractVersion == KimiChatFunctionToolsProbeContractVersionV3 {
+	if kimiChatFunctionToolsV3DeliveryShape(probeContractVersion) {
 		if err := strictjson.Validate([]byte(call.Function.Arguments)); err != nil {
 			return observation, invalidKimiChat("tool_arguments", err)
 		}
@@ -588,7 +595,7 @@ func decodeKimiCompletionUsage(raw json.RawMessage, probeContractVersion string)
 		}
 		return usage, nil
 	}
-	if probeContractVersion == KimiChatFunctionToolsProbeContractVersionV3 {
+	if kimiChatFunctionToolsV3DeliveryShape(probeContractVersion) {
 		return decodeKimiFunctionToolsV3Usage(raw)
 	}
 	if probeContractVersion != KimiChatCoreProbeContractVersionV2 {
@@ -757,16 +764,25 @@ func readKimiChatCompletion(expectedModel, contentType string, reader io.Reader,
 	if limited.N <= 0 {
 		return kimiChatCompletion{}, observation, invalidKimiChat("response_too_large")
 	}
-	if probeContractVersion == KimiChatFunctionToolsProbeContractVersionV3 {
+	if kimiChatFunctionToolsV3DeliveryShape(probeContractVersion) {
 		if err := strictjson.Validate(body); err != nil {
 			return kimiChatCompletion{}, observation, invalidKimiChat("json", err)
 		}
+	}
+	if probeContractVersion == KimiChatFunctionToolsProbeContractVersionV4 {
+		normalized, _, normalizeErr := adapters.NormalizeOpenAICompatibleChatToolCallIndex(
+			"kimi", expectedModel, "protocol.kimi-openai-chat.v5", body,
+		)
+		if normalizeErr != nil {
+			return kimiChatCompletion{}, observation, invalidKimiChat("delivery_shape", normalizeErr)
+		}
+		body = normalized
 	}
 	var payload kimiChatCompletion
 	if err := decodeKimiJSONStrict(body, &payload); err != nil {
 		return kimiChatCompletion{}, observation, invalidKimiChat("json", err)
 	}
-	if probeContractVersion != KimiChatFunctionToolsProbeContractVersionV3 {
+	if !kimiChatFunctionToolsV3DeliveryShape(probeContractVersion) {
 		if kimiJSONFieldPresent(payload.ServiceTier) || kimiJSONFieldPresent(payload.Metadata) {
 			return kimiChatCompletion{}, observation, invalidKimiChat("json")
 		}

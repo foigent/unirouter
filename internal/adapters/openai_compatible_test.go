@@ -1285,9 +1285,9 @@ func TestKimiTopLevelCacheUsagePreservesZeroAndRejectsContradiction(t *testing.T
 	}
 }
 
-func TestNormalizeDeepSeekV4ChatToolResponseIsExactScopedAndLossless(t *testing.T) {
+func TestNormalizeOpenAICompatibleChatToolCallIndexIsExactScopedAndLossless(t *testing.T) {
 	body := []byte(`{"id":"chatcmpl-deepseek","model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","tool_calls":[{"index":999999999999999999999999999999999999999,"id":"call_1","type":"function","function":{"name":"echo","arguments":"{}"}}]}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
-	normalized, changed, err := NormalizeDeepSeekV4ChatToolResponse(
+	normalized, changed, err := NormalizeOpenAICompatibleChatToolCallIndex(
 		"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", body,
 	)
 	require.NoError(t, err)
@@ -1301,7 +1301,7 @@ func TestNormalizeDeepSeekV4ChatToolResponseIsExactScopedAndLossless(t *testing.
 	require.Equal(t, "call_1", tool["id"])
 
 	unknown := []byte(strings.Replace(string(body), `"index":999999999999999999999999999999999999999,"id"`, `"index":0,"unexpected":true,"id"`, 1))
-	normalized, changed, err = NormalizeDeepSeekV4ChatToolResponse(
+	normalized, changed, err = NormalizeOpenAICompatibleChatToolCallIndex(
 		"deepseek", "deepseek-v4-flash", "openai.chat_completions", unknown,
 	)
 	require.NoError(t, err)
@@ -1310,20 +1310,20 @@ func TestNormalizeDeepSeekV4ChatToolResponseIsExactScopedAndLossless(t *testing.
 
 	for _, invalid := range []string{`null`, `"0"`, `-1`, `0.5`, `1e2`, `01`} {
 		mutated := []byte(strings.Replace(string(body), `999999999999999999999999999999999999999`, invalid, 1))
-		_, _, normalizeErr := NormalizeDeepSeekV4ChatToolResponse(
+		_, _, normalizeErr := NormalizeOpenAICompatibleChatToolCallIndex(
 			"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v4", mutated,
 		)
 		require.Error(t, normalizeErr, invalid)
 	}
 
 	proBody := []byte(strings.Replace(string(body), "deepseek-v4-flash", "deepseek-v4-pro", 1))
-	proNormalized, proApplied, proErr := NormalizeDeepSeekV4ChatToolResponse(
+	proNormalized, proApplied, proErr := NormalizeOpenAICompatibleChatToolCallIndex(
 		"deepseek", "deepseek-v4-pro", "protocol.deepseek-openai-chat.v4", proBody,
 	)
 	require.NoError(t, proErr)
 	require.True(t, proApplied)
 	require.NotContains(t, string(proNormalized), `"index":999999999999999999999999999999999999999`)
-	proGeneric, proGenericApplied, proGenericErr := NormalizeDeepSeekV4ChatToolResponse(
+	proGeneric, proGenericApplied, proGenericErr := NormalizeOpenAICompatibleChatToolCallIndex(
 		"deepseek", "deepseek-v4-pro", "openai.chat_completions", proBody,
 	)
 	require.NoError(t, proGenericErr)
@@ -1335,10 +1335,35 @@ func TestNormalizeDeepSeekV4ChatToolResponseIsExactScopedAndLossless(t *testing.
 		{"deepseek", "deepseek-v4-other", "protocol.deepseek-openai-chat.v4"},
 		{"deepseek", "deepseek-v4-flash", "protocol.deepseek-openai-chat.v3"},
 	} {
-		unchanged, applied, scopeErr := NormalizeDeepSeekV4ChatToolResponse(scope.provider, scope.model, scope.protocol, body)
+		unchanged, applied, scopeErr := NormalizeOpenAICompatibleChatToolCallIndex(scope.provider, scope.model, scope.protocol, body)
 		require.NoError(t, scopeErr)
 		require.False(t, applied)
 		require.Equal(t, body, unchanged)
+	}
+
+	kimiBody := []byte(strings.ReplaceAll(string(body), "deepseek-v4-flash", "kimi-k2.6"))
+	kimiNormalized, kimiApplied, kimiErr := NormalizeOpenAICompatibleChatToolCallIndex(
+		"kimi", "kimi-k2.6", "protocol.kimi-openai-chat.v5", kimiBody,
+	)
+	require.NoError(t, kimiErr)
+	require.True(t, kimiApplied)
+	require.NotContains(t, string(kimiNormalized), `"index":999999999999999999999999999999999999999`)
+
+	kimiWrongProtocol, kimiWrongProtocolApplied, kimiWrongProtocolErr := NormalizeOpenAICompatibleChatToolCallIndex(
+		"kimi", "kimi-k2.6", "openai.chat_completions", kimiBody,
+	)
+	require.NoError(t, kimiWrongProtocolErr)
+	require.False(t, kimiWrongProtocolApplied)
+	require.Equal(t, kimiBody, kimiWrongProtocol)
+
+	for _, duplicate := range []string{
+		strings.Replace(string(kimiBody), `"id":"call_1"`, `"id":"shadow","id":"call_1"`, 1),
+		strings.Replace(string(kimiBody), `"id":"call_1"`, `"id":"shadow","\u0069d":"call_1"`, 1),
+	} {
+		_, _, duplicateErr := NormalizeOpenAICompatibleChatToolCallIndex(
+			"kimi", "kimi-k2.6", "protocol.kimi-openai-chat.v5", []byte(duplicate),
+		)
+		require.ErrorIs(t, duplicateErr, strictjson.ErrDuplicateKey)
 	}
 }
 
@@ -1385,7 +1410,7 @@ func TestNormalizeKimiK26ChatStreamChunkRemovesOnlyEmptyReasoningContent(t *test
 	}
 }
 
-func TestOpenAICompatibleParseResponseNormalizesDeepSeekFlashToolCallIndex(t *testing.T) {
+func TestOpenAICompatibleParseResponseNormalizesReviewedNonStreamToolCallIndex(t *testing.T) {
 	body := []byte(`{"id":"chatcmpl-deepseek","model":"deepseek-v4-flash","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"echo","arguments":"{}"}}]}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
 	response, err := NewOpenAICompatible().ParseResponse(context.Background(), ResponseInput{
 		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK,
@@ -1408,6 +1433,30 @@ func TestOpenAICompatibleParseResponseNormalizesDeepSeekFlashToolCallIndex(t *te
 	require.NoError(t, err)
 	require.EqualValues(t, 2, response.Usage.TotalTokens)
 	require.Contains(t, string(response.Body), `"index":null`)
+
+	kimiBody := []byte(strings.ReplaceAll(string(body), "deepseek-v4-flash", "kimi-k2.6"))
+	response, err = NewOpenAICompatible().ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK,
+		Channel:       models.Channel{Provider: "kimi", AdapterType: TypeOpenAICompatible},
+		UpstreamModel: "kimi-k2.6", ProtocolProfile: "protocol.kimi-openai-chat.v5", Body: kimiBody,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, response.Usage.TotalTokens)
+	require.NoError(t, json.Unmarshal(response.Body, &envelope))
+	tool = envelope["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})["tool_calls"].([]interface{})[0].(map[string]interface{})
+	require.NotContains(t, tool, "index")
+
+	for _, duplicate := range []string{
+		strings.Replace(string(kimiBody), `"id":"call_1"`, `"id":"shadow","id":"call_1"`, 1),
+		strings.Replace(string(kimiBody), `"id":"call_1"`, `"id":"shadow","\u0069d":"call_1"`, 1),
+	} {
+		_, duplicateErr := NewOpenAICompatible().ParseResponse(context.Background(), ResponseInput{
+			Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK,
+			Channel:       models.Channel{Provider: "kimi", AdapterType: TypeOpenAICompatible},
+			UpstreamModel: "kimi-k2.6", ProtocolProfile: "protocol.kimi-openai-chat.v5", Body: []byte(duplicate),
+		})
+		require.ErrorIs(t, duplicateErr, strictjson.ErrDuplicateKey)
+	}
 }
 
 func TestOpenAICompatibleClassifyHTTPStatus(t *testing.T) {

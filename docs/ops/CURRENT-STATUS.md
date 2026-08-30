@@ -2,17 +2,19 @@
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
 > **2026-08-30 Kimi K2.6 current checkpoint:** development/test stable, canary
-> and frontend run exact commit `b08ab57c19c656a688b226c900d38f6f601afd3a`,
-> tree `19bbae705499128fb50f5ce724d9e44c2256cd78`, version 1.2.17, with 98
+> and frontend run exact commit `457083198a6684aee5bd18c606e6e13fa263345f`,
+> tree `a8ac4a7577295c7aacf1cc525f279ff91538a2e1`, version 1.2.19, with 98
 > ordered migrations ending at `000099_kimi_k26_function_tools_probe_v3`.
 > Stable, canary, frontend and Nginx share the frozen `unirouter` Compose
 > project and exact configuration chain; both backends, PostgreSQL and Redis
 > are healthy. Streaming and reasoning are separately qualified for exact
 > `kimi.k2.6.api@1.7.0 × protocol.kimi-openai-chat.v5@1.0.0`; failed tools
-> Probes 49/v2 and 50/v3 remain immutable and unapproved. The local 1.2.18
-> candidate adds only a bounded schema diagnostic for failed Kimi Probes; it
-> does not change the acceptance set or persist provider values or raw response
-> content. Current batch usage is 9 of the approved 20 supplier calls; CNY 5 is
+> Probes 49/v2 and 50/v3 remain immutable and unapproved. A later v3 Probe on
+> Target 1.2.19 projected stable diagnostic `json_unknown_field` and bounded
+> member `index`; it is likewise immutable and unapproved. The local
+> 1.2.20/M100 candidate normalizes only the optional non-stream child tool-call
+> index and publishes Function Tools Probe v4 for the same exact tuple. Current
+> batch usage is 10 of the approved 20 supplier calls; CNY 5 is
 > an authorization ceiling, not observed supplier cost. Canonical routing,
 > compatibility, pricing, customer billing and Production claims are unchanged.
 > **2026-08-17 maintenance-debt/Node-runtime Target closeout:** PR #300

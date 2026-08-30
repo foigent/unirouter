@@ -87,7 +87,7 @@ func ValidateDeepSeekChatFunctionToolsForModel(
 		return observation, err
 	}
 	if probeContractVersion == DeepSeekChatFunctionToolsProbeContractV2 {
-		normalized, _, err := adapters.NormalizeDeepSeekV4ChatToolResponse(
+		normalized, _, err := adapters.NormalizeOpenAICompatibleChatToolCallIndex(
 			"deepseek", expectedModel, "protocol.deepseek-openai-chat.v4", body,
 		)
 		if err != nil {

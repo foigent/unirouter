@@ -8,16 +8,17 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable local source candidate is version 1.2.19 with PostgreSQL
-compatibility ceiling `000099_kimi_k26_function_tools_probe_v3`.
+The executable local source candidate is version 1.2.20 with PostgreSQL
+compatibility ceiling
+`000100_kimi_k26_function_tools_tool_index_normalizer`.
 Development/test stable, canary and frontend independently run exact commit
-`b08ab57c19c656a688b226c900d38f6f601afd3a`, tree
-`19bbae705499128fb50f5ce724d9e44c2256cd78`, version 1.2.17, with 98 ordered
+`457083198a6684aee5bd18c606e6e13fa263345f`, tree
+`a8ac4a7577295c7aacf1cc525f279ff91538a2e1`, version 1.2.19, with 98 ordered
 migration rows ending at `000099_kimi_k26_function_tools_probe_v3`; stable,
 canary, frontend and Nginx share the frozen `unirouter` Compose project and
 exact configuration chain, and database, Redis and both backend readiness
-checks are healthy. Version 1.2.19 remains a local diagnostic candidate until
-a matching artifact is gated and deployed. These are development/test facts,
+checks are healthy. Version 1.2.20/M100 remains a local candidate until a
+matching artifact is gated and deployed. These are development/test facts,
 not Production evidence.
 
 M95 publishes six existing Kimi Chat Core probe grammars only for exact Profile
@@ -70,12 +71,14 @@ delivery boundary for bounded numeric usage extensions without making unknown
 counters authoritative. It does not change the Execution Profile, Chat
 protocol, Release, alias, pricing, Planner, UI or traffic. Tools Probe 50 under
 v3 also reached Kimi with HTTP 200 but failed strict JSON decoding; the receipt
-is immutable and unapproved. The local 1.2.19 candidate adds only a stable
-schema diagnostic category plus a separately bounded, syntax-constrained,
-provider-controlled member identifier to failed Kimi Probe evidence. The member
-is not an error-code, capability, usage, billing or routing authority; its value
-and the complete raw response body are not retained, and the v3 acceptance set
-is unchanged.
+is immutable and unapproved. Target 1.2.19 projected that failure as stable
+code `json_unknown_field` and bounded member `index`, identifying only the
+optional non-stream `choices[].message.tool_calls[].index` wire member. M100
+publishes Function Tools Probe Contract v4 for the same three capabilities and
+routes both runtime and Probe through one exact-scoped lexical non-negative
+integer normalizer. Unknown siblings remain fail closed; v3 evidence is never
+reinterpreted. M100 changes no Profile, protocol, Release, alias, pricing,
+Planner, UI, billing or traffic authority.
 
 M94 publishes the nine existing DeepSeek Chat Core probe contracts for only the
 exact `deepseek.v4-pro.api@1.5.0 ×

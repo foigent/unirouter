@@ -4,6 +4,28 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.20] - 2026-08-30
+
+### Fixed
+
+- Normalized the optional non-stream
+  `choices[].message.tool_calls[].index` wire member for the exact Kimi K2.6
+  Chat v5 tuple using the same bounded normalizer as public runtime delivery.
+  Only a lexical non-negative JSON integer is accepted; streaming indexes and
+  every unknown sibling remain unchanged and fail closed under their existing
+  contracts. Duplicate JSON members, including escaped-equivalent names, are
+  rejected before usage or delivery maps can apply last-wins semantics.
+- Published Kimi Function Tools Probe Contract v4 for only tools, function
+  tools and automatic tool choice, while retaining the failed v3 Probe as
+  immutable historical evidence.
+
+### Evidence boundary
+
+- M100 is a control-data publication plus shared decoder correction. It does
+  not change the Execution Profile, Chat protocol, Release, alias, pricing,
+  Planner, UI, customer billing or canonical traffic and creates no live Probe
+  or Approval evidence by itself.
+
 ## [1.2.19] - 2026-08-30
 
 ### Fixed
