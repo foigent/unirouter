@@ -13,26 +13,27 @@ import (
 )
 
 const (
-	DeepSeekChatSSEProbeContractID             = "unirouter.capability-probe.deepseek-chat-sse.v1"
-	DeepSeekChatSSEProbeContractVersionV1      = "1.0.0"
-	DeepSeekChatSSEProbeContractCurrentVersion = "2.0.0"
-	DeepSeekChatReasoningProbeContractID       = "unirouter.capability-probe.deepseek-chat-reasoning.v1"
-	DeepSeekChatReasoningEffortProbeContractID = "unirouter.capability-probe.deepseek-chat-reasoning-effort.v1"
-	DeepSeekChatReasoningProbeContractVersion  = "1.0.0"
-	DeepSeekChatFunctionToolsProbeContractID   = "unirouter.capability-probe.deepseek-chat-function-tools.v1"
-	DeepSeekChatFunctionToolsProbeContractV2   = "2.0.0"
-	DeepSeekChatJSONObjectProbeContractID      = "unirouter.capability-probe.deepseek-chat-json-object.v1"
-	DeepSeekChatCoreProbeContractVersion       = "1.0.0"
-	KimiChatSSEProbeContractID                 = "unirouter.capability-probe.kimi-chat-sse.v1"
-	KimiChatSSEProbeContractVersionV2          = "2.0.0"
-	KimiChatSSEProbeContractVersionV3          = "3.0.0"
-	KimiChatReasoningProbeContractID           = "unirouter.capability-probe.kimi-chat-reasoning.v1"
-	KimiChatFunctionToolsProbeContractID       = "unirouter.capability-probe.kimi-chat-function-tools.v1"
-	KimiChatJSONObjectProbeContractID          = "unirouter.capability-probe.kimi-chat-json-object.v1"
-	KimiChatCoreProbeContractVersion           = "1.0.0"
-	KimiChatCoreProbeContractVersionV2         = "2.0.0"
-	ProbeSourceKind                            = "admin.model_capability_probe.v1"
-	ApprovalSourceKind                         = "admin.model_capability_routing_approval.v1"
+	DeepSeekChatSSEProbeContractID              = "unirouter.capability-probe.deepseek-chat-sse.v1"
+	DeepSeekChatSSEProbeContractVersionV1       = "1.0.0"
+	DeepSeekChatSSEProbeContractCurrentVersion  = "2.0.0"
+	DeepSeekChatReasoningProbeContractID        = "unirouter.capability-probe.deepseek-chat-reasoning.v1"
+	DeepSeekChatReasoningEffortProbeContractID  = "unirouter.capability-probe.deepseek-chat-reasoning-effort.v1"
+	DeepSeekChatReasoningProbeContractVersion   = "1.0.0"
+	DeepSeekChatFunctionToolsProbeContractID    = "unirouter.capability-probe.deepseek-chat-function-tools.v1"
+	DeepSeekChatFunctionToolsProbeContractV2    = "2.0.0"
+	DeepSeekChatJSONObjectProbeContractID       = "unirouter.capability-probe.deepseek-chat-json-object.v1"
+	DeepSeekChatCoreProbeContractVersion        = "1.0.0"
+	KimiChatSSEProbeContractID                  = "unirouter.capability-probe.kimi-chat-sse.v1"
+	KimiChatSSEProbeContractVersionV2           = "2.0.0"
+	KimiChatSSEProbeContractVersionV3           = "3.0.0"
+	KimiChatReasoningProbeContractID            = "unirouter.capability-probe.kimi-chat-reasoning.v1"
+	KimiChatFunctionToolsProbeContractID        = "unirouter.capability-probe.kimi-chat-function-tools.v1"
+	KimiChatJSONObjectProbeContractID           = "unirouter.capability-probe.kimi-chat-json-object.v1"
+	KimiChatCoreProbeContractVersion            = "1.0.0"
+	KimiChatCoreProbeContractVersionV2          = "2.0.0"
+	KimiChatFunctionToolsProbeContractVersionV3 = "3.0.0"
+	ProbeSourceKind                             = "admin.model_capability_probe.v1"
+	ApprovalSourceKind                          = "admin.model_capability_routing_approval.v1"
 )
 
 var ErrUnsupported = errors.New("model capability qualification contract is unsupported")
@@ -230,6 +231,8 @@ var kimiK26CurrentBindings = func() []Binding {
 		probeContractVersion := KimiChatCoreProbeContractVersionV2
 		if capability.CapabilityID == modelprofile.CapabilityStreaming {
 			probeContractVersion = KimiChatSSEProbeContractVersionV3
+		} else if capability.ProbeContractID == KimiChatFunctionToolsProbeContractID {
+			probeContractVersion = KimiChatFunctionToolsProbeContractVersionV3
 		}
 		bindings = append(bindings, Binding{
 			OperationID: string(modeloperation.IDChatCompletions), CapabilityID: capability.CapabilityID,

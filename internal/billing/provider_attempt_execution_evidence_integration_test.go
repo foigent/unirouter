@@ -415,6 +415,7 @@ UPDATE billing_provider_attempts SET execution_snapshot_hash=NULL WHERE org_id=$
 	// The newer public-binding migrations must be reversed before the M85
 	// guard can permit this isolated fixture to enter the legacy schema.
 	for _, name := range []string{
+		"000099_kimi_k26_function_tools_probe_v3.down.sql",
 		"000098_kimi_k26_nonstream_usage_probe_v2.down.sql",
 		"000097_kimi_k26_stream_choice_usage_probe_v3.down.sql",
 		"000096_kimi_k26_stream_probe_contract_v2.down.sql",

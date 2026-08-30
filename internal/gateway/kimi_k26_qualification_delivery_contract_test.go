@@ -73,11 +73,11 @@ func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 		{
 			name: "tools", capability: modelprofile.CapabilityToolChoiceAuto,
 			contractID: modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
-			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":0}}}`,
+			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","service_tier":"standard","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":0,"provider_tool_tokens":4}}}`,
 			validate: func(body string) error {
 				_, err := modelcapabilityqualification.ValidateKimiChatFunctionTools(
 					modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
-					modelcapabilityqualification.KimiChatCoreProbeContractVersionV2,
+					modelcapabilityqualification.KimiChatFunctionToolsProbeContractVersionV3,
 					"kimi-k2.6", "application/json", strings.NewReader(body),
 				)
 				return err

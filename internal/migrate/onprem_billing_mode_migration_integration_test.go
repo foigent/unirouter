@@ -191,6 +191,7 @@ func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, na
 		name    string
 		version string
 	}{
+		{"000099_kimi_k26_function_tools_probe_v3.down.sql", "000099_kimi_k26_function_tools_probe_v3"},
 		{"000098_kimi_k26_nonstream_usage_probe_v2.down.sql", "000098_kimi_k26_nonstream_usage_probe_v2"},
 		{"000097_kimi_k26_stream_choice_usage_probe_v3.down.sql", "000097_kimi_k26_stream_choice_usage_probe_v3"},
 		{"000096_kimi_k26_stream_probe_contract_v2.down.sql", "000096_kimi_k26_stream_probe_contract_v2"},
@@ -212,7 +213,8 @@ func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, na
 			execMigrationDown(t, ctx, pool, successor.name)
 		}
 	}
-	if name == "000098_kimi_k26_nonstream_usage_probe_v2.down.sql" ||
+	if name == "000099_kimi_k26_function_tools_probe_v3.down.sql" ||
+		name == "000098_kimi_k26_nonstream_usage_probe_v2.down.sql" ||
 		name == "000097_kimi_k26_stream_choice_usage_probe_v3.down.sql" ||
 		name == "000096_kimi_k26_stream_probe_contract_v2.down.sql" ||
 		name == "000095_kimi_k26_chat_core_qualification.down.sql" ||

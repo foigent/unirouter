@@ -9,19 +9,18 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-For development/test Target identity, the exact Kimi 1.2.15/M97 checkpoint in
-the active batch below supersedes the earlier 1.2.14/M96 and Pro 1.2.12/M94
-snapshots. The local 1.2.16/M98 source remains a candidate until its exact
-artifact, migration and runtime identities are independently verified on
-Target.
+For development/test Target identity, the exact Kimi 1.2.16/M98 checkpoint in
+the active batch below supersedes the earlier M96/M97 and Pro M94 snapshots.
+The local 1.2.17/M99 source remains a candidate until its exact artifact,
+migration and runtime identities are independently verified on Target.
 
 ## Active delivery batch — Kimi K2.6 Chat Core Conformance
 
 Development/test stable, canary and frontend run exact commit
-`9d826704aead1cfbb569cbb4b3e008524ad243b8`, tree
-`5b16215505d0ab50e678b037c3cf57c1d7e97ca9`, version 1.2.15, with 97 ordered
+`2461f257e156f7b90cfafe890d76c1b3ccfd3d0a`, tree
+`649b3f3eb95e4e4adba88635f00cc09c2843402a`, version 1.2.16, with 97 ordered
 migration rows ending at
-`000097_kimi_k26_stream_choice_usage_probe_v3`. Stable/canary/frontend/Nginx,
+`000098_kimi_k26_nonstream_usage_probe_v2`. Stable/canary/frontend/Nginx,
 database and Redis readiness are healthy; this is canary/test evidence, not
 Production or released evidence. No canonical switch occurred.
 
@@ -32,23 +31,23 @@ Streaming Probe v3 then succeeded with HTTP 200, valid SSE termination and
 final usage, and approval 42 currently qualifies only streaming for the exact
 `kimi.k2.6.api@1.7.0 × protocol.kimi-openai-chat.v5@1.0.0` tuple.
 
-The next single Active Milestone is `Kimi K2.6 × OpenAI-compatible Chat ×
-reasoning`. Probe 47 reached the provider with HTTP 200 but historical core
-Probe v1 rejected the non-stream usage envelope with contract error `json`;
-the precise rejected member was not inspected or promoted as a new authority,
-while the
-failure is consistent with bounded usage details observed on the live streaming
-surface. It is immutable and unapproved. M98/1.2.16 is a source candidate that advances
-only reasoning, tools, function tools, automatic tool choice and JSON Object to
-core Probe Contract v2 for bounded numeric cache/reasoning usage details.
-Streaming v3, the Execution Profile, Chat protocol, Release, alias, pricing,
-Planner, UI and canonical traffic are unchanged. M98 creates no Probe,
+Reasoning Probe 48 succeeded with HTTP 200 and approval 43 now qualifies only
+reasoning for the exact tuple. The next single Active Milestone is `Kimi K2.6 ×
+OpenAI-compatible Chat × tools`. Probe 49 reached the provider with HTTP 200
+but Function Tools Probe v2 rejected the response envelope with contract error
+`json`; the precise private response was not captured or promoted as a new
+authority. It is immutable and unapproved. M99/1.2.17 is a source candidate that
+advances only tools, function tools and automatic tool choice to Function Tools
+Probe Contract v3 for the existing bounded delivery shape. Streaming v3,
+reasoning/JSON v2, the Execution Profile, Chat protocol, Release, alias,
+pricing, Planner, UI and canonical traffic are unchanged. M99 creates no Probe,
 Approval, live or release evidence by itself.
 
-Six supplier calls have been made in this K2.6 batch: the exact operation
+Eight supplier calls have been made in this K2.6 batch: the exact operation
 Probe, one public non-stream request, two failed streaming Probes, the
-successful streaming v3 Probe and the failed reasoning v1 Probe. There was no
-automatic retry. The approved batch ceiling remains 20 calls and CNY 5; the
+successful streaming v3 Probe, the failed reasoning v1 Probe, successful
+reasoning Probe 48 and failed tools Probe 49. There was no automatic retry. The
+approved batch ceiling remains 20 calls and CNY 5; the
 CNY value is a supplier-spend authorization ceiling, not a native supplier
 cost Observation.
 
@@ -165,15 +164,15 @@ billing, Production and broader provider parity remain unclaimed.
 
 ## Active delivery batch — Kimi K2.6 Chat
 
-The completed first milestone is `Kimi K2.6 × OpenAI-compatible Chat ×
-non-streaming text`; the current Active Milestone is the same exact tuple ×
-streaming. The Kimi series in the current inventory is K2.6, K2.7 Code and K3;
+The completed milestones are `Kimi K2.6 × OpenAI-compatible Chat ×
+non-streaming text`, streaming and reasoning; the current Active Milestone is
+the same exact tuple × tools. The Kimi series in the current inventory is K2.6, K2.7 Code and K3;
 K2.7 does not denote a separate general-chat model. The authorized K2.6 live
 budget remains at most 20 supplier calls and CNY 5 with no automatic retry.
 
 Development/test currently runs exact main merge commit
-`3c943ed43e03c528fac01806abec48814335f3ce`, tree
-`e6195a370a0bc3ebe08c240eb0a4542e0ce29a80`, version 1.2.14 and schema M96;
+`2461f257e156f7b90cfafe890d76c1b3ccfd3d0a`, tree
+`649b3f3eb95e4e4adba88635f00cc09c2843402a`, version 1.2.16 and schema M98;
 stable, canary, frontend, database and Redis readiness are healthy. It publishes
 one finite K2.6 Chat Core Delivery Batch: an exact Profile-scoped
 operation-protocol binding plus typed probe contracts for streaming, reasoning,
@@ -209,13 +208,16 @@ contracts.
 The Target v2 streaming Probe then reached the provider with HTTP 200 but
 failed strict Probe parsing on Kimi's bounded choice-level terminal usage
 before the standard top-level usage frame. That v2 receipt also remains
-immutable and unapproved. The local source candidate is version 1.2.15 with
-schema ceiling M97. Probe Contract v3 accepts only bounded numeric
+immutable and unapproved. Probe Contract v3 accepts only bounded numeric
 choice-level terminal usage, still requires the standard top-level usage frame
 and requires repeated token totals to match. It does not change runtime delivery, the
 Execution Profile, Chat protocol, Release, alias, pricing, Planner or the other
-five capability contracts. The four supplier calls so far are the operation
-probe, successful non-stream request and failed v1/v2 streaming Probes.
+five capability contracts. The v3 streaming Probe and later reasoning Probe 48
+both succeeded and were approved separately. Tools Probe 49 then returned HTTP
+200 but failed Function Tools Probe v2 strict JSON validation. M99/1.2.17 is a
+local candidate that advances only tools, function tools and automatic tool
+choice to Function Tools Probe v3; it creates no live evidence by itself. Eight
+supplier calls have been made, with no automatic retry.
 
 The Kimi probe validators and the Gateway delivery guard currently remain two
 parsing implementations. Cross-delivery fixtures are required for this batch,

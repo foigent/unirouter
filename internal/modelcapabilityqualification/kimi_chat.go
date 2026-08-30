@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
 const (
@@ -150,26 +151,37 @@ type kimiChatMessage struct {
 	Role             string             `json:"role"`
 	Content          json.RawMessage    `json:"content"`
 	ReasoningContent json.RawMessage    `json:"reasoning_content,omitempty"`
+	Reasoning        json.RawMessage    `json:"reasoning,omitempty"`
+	Refusal          json.RawMessage    `json:"refusal,omitempty"`
 	ToolCalls        []kimiChatToolCall `json:"tool_calls,omitempty"`
 }
 
+type kimiChatChoice struct {
+	Index        int             `json:"index"`
+	Message      kimiChatMessage `json:"message"`
+	Text         json.RawMessage `json:"text,omitempty"`
+	FinishReason string          `json:"finish_reason"`
+	Logprobs     json.RawMessage `json:"logprobs,omitempty"`
+}
+
 type kimiChatCompletion struct {
-	ID                string `json:"id"`
-	Object            string `json:"object"`
-	Created           int64  `json:"created"`
-	Model             string `json:"model"`
-	SystemFingerprint string `json:"system_fingerprint,omitempty"`
-	Choices           []struct {
-		Index        int             `json:"index"`
-		Message      kimiChatMessage `json:"message"`
-		FinishReason string          `json:"finish_reason"`
-		Logprobs     json.RawMessage `json:"logprobs,omitempty"`
-	} `json:"choices"`
-	Usage json.RawMessage `json:"usage"`
+	ID                string           `json:"id"`
+	Object            string           `json:"object"`
+	Created           int64            `json:"created"`
+	Model             string           `json:"model"`
+	SystemFingerprint string           `json:"system_fingerprint,omitempty"`
+	ServiceTier       json.RawMessage  `json:"service_tier,omitempty"`
+	Metadata          json.RawMessage  `json:"metadata,omitempty"`
+	Choices           []kimiChatChoice `json:"choices"`
+	Usage             json.RawMessage  `json:"usage"`
 }
 
 func kimiChatCoreProbeContractSupported(version string) bool {
 	return version == KimiChatCoreProbeContractVersion || version == KimiChatCoreProbeContractVersionV2
+}
+
+func kimiChatFunctionToolsProbeContractSupported(version string) bool {
+	return kimiChatCoreProbeContractSupported(version) || version == KimiChatFunctionToolsProbeContractVersionV3
 }
 
 func ValidateKimiChatReasoning(
@@ -205,7 +217,7 @@ func ValidateKimiChatFunctionTools(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
-	if probeContractID != KimiChatFunctionToolsProbeContractID || !kimiChatCoreProbeContractSupported(probeContractVersion) {
+	if probeContractID != KimiChatFunctionToolsProbeContractID || !kimiChatFunctionToolsProbeContractSupported(probeContractVersion) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
 	payload, observation, err := readKimiChatCompletion(expectedModel, contentType, reader, probeContractVersion)
@@ -225,6 +237,11 @@ func ValidateKimiChatFunctionTools(
 	}
 	var arguments struct {
 		Value string `json:"value"`
+	}
+	if probeContractVersion == KimiChatFunctionToolsProbeContractVersionV3 {
+		if err := strictjson.Validate([]byte(call.Function.Arguments)); err != nil {
+			return observation, invalidKimiChat("tool_arguments", err)
+		}
 	}
 	if err := decodeKimiJSONStrict([]byte(call.Function.Arguments), &arguments); err != nil || arguments.Value != "UNIROUTER_TOOL_PROBE_OK" {
 		return observation, invalidKimiChat("tool_arguments", err)
@@ -465,6 +482,10 @@ func kimiJSONValuePresent(raw json.RawMessage) bool {
 	return len(trimmed) != 0 && !bytes.Equal(trimmed, []byte("null"))
 }
 
+func kimiJSONFieldPresent(raw json.RawMessage) bool {
+	return len(bytes.TrimSpace(raw)) != 0
+}
+
 func decodeKimiStreamUsage(raw json.RawMessage, probeContractVersion string) (kimiChatUsage, error) {
 	if !kimiJSONValuePresent(raw) {
 		return kimiChatUsage{}, invalidKimiChat("usage")
@@ -490,6 +511,9 @@ func decodeKimiCompletionUsage(raw json.RawMessage, probeContractVersion string)
 		}
 		return usage, nil
 	}
+	if probeContractVersion == KimiChatFunctionToolsProbeContractVersionV3 {
+		return decodeKimiFunctionToolsV3Usage(raw)
+	}
 	if probeContractVersion != KimiChatCoreProbeContractVersionV2 {
 		return kimiChatUsage{}, invalidKimiChat("probe_contract")
 	}
@@ -501,6 +525,69 @@ func decodeKimiCompletionUsage(raw json.RawMessage, probeContractVersion string)
 		}
 	}
 	return usage, err
+}
+
+// Function Tools Probe v3 aligns only the delivery-shape boundary with the
+// public Chat runtime. Provider usage extensions are accepted when they remain
+// a bounded JSON tree of integer counters, but only the explicitly modeled
+// Kimi core/cache/reasoning counters below contribute to qualification
+// observations. Unknown counters never become usage or billing authority.
+func decodeKimiFunctionToolsV3Usage(raw json.RawMessage) (kimiChatUsage, error) {
+	if err := strictjson.Validate(raw); err != nil {
+		return kimiChatUsage{}, invalidKimiChat("json", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value interface{}
+	if err := decoder.Decode(&value); err != nil {
+		return kimiChatUsage{}, invalidKimiChat("json", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return kimiChatUsage{}, invalidKimiChat("json", err)
+	}
+	if !kimiUsageDeliveryShapeSupported(value) {
+		return kimiChatUsage{}, invalidKimiChat("json")
+	}
+	var wire kimiChatCoreV2Usage
+	decoder = json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&wire); err != nil {
+		return kimiChatUsage{}, invalidKimiChat("json", err)
+	}
+	detailed := kimiChatStreamUsage{
+		PromptTokens: wire.PromptTokens.jsonNumber(), CompletionTokens: wire.CompletionTokens.jsonNumber(),
+		TotalTokens: wire.TotalTokens.jsonNumber(), CachedTokens: kimiJSONNumberPointer(wire.CachedTokens),
+	}
+	if wire.PromptDetails != nil {
+		detailed.PromptDetails = &struct {
+			CachedTokens *json.Number `json:"cached_tokens,omitempty"`
+		}{CachedTokens: kimiJSONNumberPointer(wire.PromptDetails.CachedTokens)}
+	}
+	if wire.CompletionDetails != nil {
+		detailed.CompletionDetails = &struct {
+			ReasoningTokens *json.Number `json:"reasoning_tokens,omitempty"`
+		}{ReasoningTokens: kimiJSONNumberPointer(wire.CompletionDetails.ReasoningTokens)}
+	}
+	return validateKimiDetailedUsage(detailed)
+}
+
+func kimiUsageDeliveryShapeSupported(value interface{}) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case json.Number:
+		_, err := typed.Int64()
+		return err == nil
+	case map[string]interface{}:
+		for _, nested := range typed {
+			if !kimiUsageDeliveryShapeSupported(nested) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func decodeKimiDetailedUsage(raw json.RawMessage) (kimiChatUsage, error) {
@@ -593,9 +680,26 @@ func readKimiChatCompletion(expectedModel, contentType string, reader io.Reader,
 	if limited.N <= 0 {
 		return kimiChatCompletion{}, observation, invalidKimiChat("response_too_large")
 	}
+	if probeContractVersion == KimiChatFunctionToolsProbeContractVersionV3 {
+		if err := strictjson.Validate(body); err != nil {
+			return kimiChatCompletion{}, observation, invalidKimiChat("json", err)
+		}
+	}
 	var payload kimiChatCompletion
 	if err := decodeKimiJSONStrict(body, &payload); err != nil {
 		return kimiChatCompletion{}, observation, invalidKimiChat("json", err)
+	}
+	if probeContractVersion != KimiChatFunctionToolsProbeContractVersionV3 {
+		if kimiJSONFieldPresent(payload.ServiceTier) || kimiJSONFieldPresent(payload.Metadata) {
+			return kimiChatCompletion{}, observation, invalidKimiChat("json")
+		}
+		for _, choice := range payload.Choices {
+			if kimiJSONFieldPresent(choice.Text) || kimiJSONFieldPresent(choice.Message.Reasoning) || kimiJSONFieldPresent(choice.Message.Refusal) {
+				return kimiChatCompletion{}, observation, invalidKimiChat("json")
+			}
+		}
+	} else if err := validateKimiFunctionToolsV3DeliveryFields(payload); err != nil {
+		return kimiChatCompletion{}, observation, err
 	}
 	observation.ReportedModel = safeReportedModel(payload.Model)
 	if observation.ReportedModel != expectedModel {
@@ -611,12 +715,36 @@ func readKimiChatCompletion(expectedModel, contentType string, reader io.Reader,
 	return payload, observation, nil
 }
 
-func validateKimiSingleChoice(payload kimiChatCompletion, observation *KimiChatObservation, finishReason string) (*struct {
-	Index        int             `json:"index"`
-	Message      kimiChatMessage `json:"message"`
-	FinishReason string          `json:"finish_reason"`
-	Logprobs     json.RawMessage `json:"logprobs,omitempty"`
-}, error) {
+func validateKimiFunctionToolsV3DeliveryFields(payload kimiChatCompletion) error {
+	if kimiJSONValuePresent(payload.ServiceTier) {
+		var value string
+		if json.Unmarshal(payload.ServiceTier, &value) != nil {
+			return invalidKimiChat("delivery_shape")
+		}
+	}
+	for _, choice := range payload.Choices {
+		if kimiJSONValuePresent(choice.Text) {
+			return invalidKimiChat("delivery_shape")
+		}
+		for _, field := range []json.RawMessage{
+			choice.Message.Content,
+			choice.Message.ReasoningContent,
+			choice.Message.Reasoning,
+			choice.Message.Refusal,
+		} {
+			if !kimiJSONValuePresent(field) {
+				continue
+			}
+			var value string
+			if json.Unmarshal(field, &value) != nil {
+				return invalidKimiChat("delivery_shape")
+			}
+		}
+	}
+	return nil
+}
+
+func validateKimiSingleChoice(payload kimiChatCompletion, observation *KimiChatObservation, finishReason string) (*kimiChatChoice, error) {
 	if len(payload.Choices) != 1 || payload.Choices[0].FinishReason != finishReason {
 		return nil, invalidKimiChat("finish_reason")
 	}
