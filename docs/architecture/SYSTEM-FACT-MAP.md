@@ -8,18 +8,19 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-The executable local source candidate is version 1.2.20 with PostgreSQL
-compatibility ceiling
-`000100_kimi_k26_function_tools_tool_index_normalizer`.
-Development/test stable, canary and frontend independently run exact commit
-`457083198a6684aee5bd18c606e6e13fa263345f`, tree
-`a8ac4a7577295c7aacf1cc525f279ff91538a2e1`, version 1.2.19, with 98 ordered
-migration rows ending at `000099_kimi_k26_function_tools_probe_v3`; stable,
-canary, frontend and Nginx share the frozen `unirouter` Compose project and
-exact configuration chain, and database, Redis and both backend readiness
-checks are healthy. Version 1.2.20/M100 remains a local candidate until a
-matching artifact is gated and deployed. These are development/test facts,
-not Production evidence.
+Repository source is version 1.2.21 with the unchanged PostgreSQL compatibility
+ceiling `000100_kimi_k26_function_tools_tool_index_normalizer`; 1.2.21 changes
+only documentation and release metadata. Development/test stable, canary and
+frontend remain on version 1.2.20 and independently run exact main merge
+`cf2bee4bbee7074e91661400f5edf61ca2c08f32`, tree
+`64a25957ef2549923604cf6048802730d90b9be8`, with 99 ordered migration rows
+ending at M100. Stable and canary use backend image
+`sha256:9d41b58b8933c8afac8dfd2063875afa48f95c6a5a71a984d7c3c2ef758fc981`;
+frontend uses
+`sha256:9c2bab768263f982c3f6dd0b07c1d73f2d4602f70e56567c3e2701543d98e14d`.
+Stable, canary, frontend and Nginx share the frozen `unirouter` Compose project
+and exact configuration chain, and database, Redis and both backend readiness
+checks are healthy. These are development/test facts, not Production evidence.
 
 M95 publishes six existing Kimi Chat Core probe grammars only for exact Profile
 `kimi.k2.6.api@1.7.0` and protocol
@@ -80,6 +81,17 @@ integer normalizer. Unknown siblings remain fail closed; v3 evidence is never
 reinterpreted. M100 changes no Profile, protocol, Release, alias, pricing,
 Planner, UI, billing or traffic authority.
 
+On the exact 1.2.20 Target, deployment 4 has six independently qualified Kimi
+K2.6 Chat Core capabilities: streaming Probe 46 / Approval 42, reasoning
+48/43, function tools 52/44, tools 53/45, automatic tool choice 54/46 and JSON
+Object 55/47. Public fixed-SDK call logs 399–402 prove non-stream delivery,
+provider-reported cache-read, SSE final usage and function-tool delivery. The
+batch used 18 of 20 authorized supplier calls; CNY 5 remains only the spend
+ceiling because no supplier invoice/native-cost Observation exists. Workload
+Application 6 is archived, Grant 14 is revoked, Keys 91/92/93 are disabled and
+the CNY wallet and transaction count remain zero. These facts do not change
+Release, Alias, canonical routing, pricing or customer billing authority.
+
 M94 publishes the nine existing DeepSeek Chat Core probe contracts for only the
 exact `deepseek.v4-pro.api@1.5.0 ×
 protocol.deepseek-openai-chat.v4@1.0.0` tuple. It creates declared projections
@@ -117,7 +129,7 @@ authority; they create only `enabled/declared` projections and do not infer live
 support, approval, routing, Release or pricing from a Profile claim. Their fixed
 probe contracts accept no administrator-supplied provider payload and retain
 only bounded response facts, never private reasoning text or arbitrary tool
-arguments. M88–M99 are deployed Target facts only for the exact artifact and
+arguments. M88–M100 are deployed Target facts only for the exact artifact and
 environment recorded above. M92 can be downgraded only while no Flash/Pro Profile 1.5
 model attachment, probe or approval exists; the guard prevents an M91 binary
 from inheriting a durable Profile identity that it cannot interpret. M93
