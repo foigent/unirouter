@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -19,7 +18,7 @@ func TestSecondIntegrationResetSupportMigrationUpDownAndRollForward(t *testing.T
 	ctx := context.Background()
 	assertSecondIntegrationResetSupportContract(t, pool, false)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 	assertSecondIntegrationResetSupportContract(t, pool, true)
 	// This test owns the 000057 lifecycle. Reverse the later empty role-axis
 	// migration first so 000057's own rollback guard remains the evidence under
@@ -97,7 +96,7 @@ func TestSecondIntegrationResetSupportMigrationUpDownAndRollForward(t *testing.T
 	require.NoError(t, err)
 	assertSecondIntegrationResetSupportContract(t, pool, false)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 	assertSecondIntegrationResetSupportContract(t, pool, true)
 }
 

@@ -37,7 +37,7 @@ func TestEnterpriseProjectRoleSeparationMigrationCanonicalizesBothAxes(t *testin
 		($1,$2,'project_admin'), ($1,$3,'project_developer')`, projectID, orgAdminID, memberID)
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000058_enterprise_project_role_separation"))
 
 	var organizationRole, compatibilityRole, membershipRole string
 	require.NoError(t, pool.QueryRow(ctx,
@@ -274,7 +274,7 @@ func TestEnterpriseProjectRoleSeparationMigrationCanonicalizesBothAxes(t *testin
 func TestEnterpriseProjectRoleSeparationDownFailsClosedForNonMemberMembership(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectID, userID int64
@@ -297,7 +297,7 @@ func TestEnterpriseProjectRoleSeparationDownFailsClosedForNonMemberMembership(t 
 func TestEnterpriseProjectRoleSeparationDownFailsClosedForHeterogeneousMemberRoles(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectA, projectB, userID int64
@@ -322,7 +322,7 @@ func TestEnterpriseProjectRoleSeparationDownFailsClosedForHeterogeneousMemberRol
 func TestEnterpriseProjectRoleSeparationDownRestoresRepresentableLegacyState(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectID, userID int64
@@ -349,7 +349,7 @@ func TestEnterpriseProjectRoleSeparationDownRestoresRepresentableLegacyState(t *
 func TestEnterpriseProjectRoleSeparationDownWaitsForConcurrentWriterThenFailsClosed(t *testing.T) {
 	pool, _ := setupMigratedThrough(t, "000057_second_integration_reset_support.up.sql")
 	ctx := context.Background()
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000062_xinsight_connector_redeem_lifecycle"))
 	rollbackEmptyMigrations(t, pool, []string{"000062_xinsight_connector_redeem_lifecycle.down.sql", "000061_xinsight_connector_cp2a_phase_contract.down.sql", "000060_xinsight_connector_cp1.down.sql", "000059_enterprise_access_provisioning.down.sql"})
 
 	var orgID, projectA, projectB, userID int64
@@ -445,7 +445,7 @@ func TestEnterpriseProjectRoleSeparationFutureMigrationFirstSerializesDownAndPre
 	runnerPool := enterpriseRoleRunnerPool(t, ctx, pool, runnerApplicationName)
 	runnerResult := make(chan error, 1)
 	go func() {
-		runnerResult <- migrate.Run(ctx, runnerPool, testutil.MigrationsDir(t))
+		runnerResult <- migrate.RunThrough(ctx, runnerPool, testutil.MigrationsDir(t), "000059_enterprise_access_provisioning")
 	}()
 	runnerPID := waitForApplicationBlockedBy(t, pool, runnerApplicationName, holderPID)
 	require.True(t, backendHoldsMigrationAdvisoryLock(t, pool, runnerPID), "production 000059 migrator must hold the lifecycle lock before its table locks")
@@ -537,7 +537,7 @@ func TestEnterpriseProjectRoleSeparationDownFirstSerializesFutureMigrationAndFor
 	runnerPool := enterpriseRoleRunnerPool(t, ctx, pool, runnerApplicationName)
 	runnerResult := make(chan error, 1)
 	go func() {
-		runnerResult <- migrate.Run(ctx, runnerPool, testutil.MigrationsDir(t))
+		runnerResult <- migrate.RunThrough(ctx, runnerPool, testutil.MigrationsDir(t), "000059_enterprise_access_provisioning")
 	}()
 	waitForApplicationBlockedBy(t, pool, runnerApplicationName, downPID)
 

@@ -63,7 +63,7 @@ func TestDeepSeekV4ProQualificationDownRefusesRetainedProbeIntegration(t *testin
 	pool, _ := setupMigratedThrough(t, "000093_deepseek_function_tool_probe_contract_v2.up.sql")
 	ctx := t.Context()
 	fixture := insertM94ProCapabilityFixture(t, pool, "retained-probe")
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000094_deepseek_v4_pro_chat_core_qualification"))
 
 	var probeID int64
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -113,7 +113,7 @@ INSERT INTO model_deployment_capabilities (
 		fixture.deploymentID)
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000094_deepseek_v4_pro_chat_core_qualification"))
 	assertM94ProAuthorityState(t, pool, fixture.deploymentID, 9, 9, 10)
 	execMigrationDown(t, ctx, pool, "000094_deepseek_v4_pro_chat_core_qualification.down.sql")
 	assertM94ProAuthorityState(t, pool, fixture.deploymentID, 0, 0, 2)
@@ -171,7 +171,7 @@ INSERT INTO model_deployment_capabilities (
 		flashDeploymentID)
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000094_deepseek_v4_pro_chat_core_qualification"))
 	assertM94ProAuthorityState(t, pool, fixture.deploymentID, 9, 9, 9)
 	execMigrationDown(t, ctx, pool, "000094_deepseek_v4_pro_chat_core_qualification.down.sql")
 	assertM94ProAuthorityState(t, pool, fixture.deploymentID, 0, 0, 0)
@@ -187,7 +187,7 @@ func TestDeepSeekV4ProQualificationDownRejectsProjectionIdentityDriftAtomicallyI
 	pool, _ := setupMigratedThrough(t, "000093_deepseek_function_tool_probe_contract_v2.up.sql")
 	ctx := t.Context()
 	fixture := insertM94ProCapabilityFixture(t, pool, "identity-drift")
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000094_deepseek_v4_pro_chat_core_qualification"))
 	assertM94ProAuthorityState(t, pool, fixture.deploymentID, 9, 9, 9)
 
 	_, err := pool.Exec(ctx, `

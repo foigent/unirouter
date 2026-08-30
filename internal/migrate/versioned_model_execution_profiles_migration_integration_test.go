@@ -37,7 +37,7 @@ INSERT INTO model_registry (
 VALUES ($1,'MiniMax-M2.7','MiniMax M2.7','minimax','ga',204800,65536,'reasoning,tools')
 RETURNING id`, orgID).Scan(&modelID))
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts"))
 	var profileID, profileVersion string
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT execution_profile_id,execution_profile_version
@@ -103,7 +103,7 @@ SELECT
 	require.True(t, ledgerPresent)
 	require.True(t, profileColumnsPresent)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000082_sealed_model_execution_contracts"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT execution_profile_id,execution_profile_version
   FROM model_registry WHERE id=$1`, modelID).Scan(&profileID, &profileVersion))

@@ -14,9 +14,8 @@ import (
 )
 
 func TestP6F07DistributedLimitPolicyMigrationUpDownGuardAndRollForward(t *testing.T) {
-	pool := testutil.SetupMigratedTestDB(t)
+	pool, migrationsDir := setupMigratedThrough(t, "000024_prd6_distributed_limit_policy.up.sql")
 	ctx := context.Background()
-	migrationsDir := testutil.MigrationsDir(t)
 
 	assertUp := func() {
 		t.Helper()
@@ -36,14 +35,6 @@ func TestP6F07DistributedLimitPolicyMigrationUpDownGuardAndRollForward(t *testin
 	}
 	assertUp()
 
-	// Schema 59 owns family-stable policy selectors that depend on the legacy
-	// policy_labels column. Exercise the migration in valid reverse order.
-	rollbackEmptyMigrations(t, pool, []string{
-		"000062_xinsight_connector_redeem_lifecycle.down.sql",
-		"000061_xinsight_connector_cp2a_phase_contract.down.sql",
-		"000060_xinsight_connector_cp1.down.sql",
-		"000059_enterprise_access_provisioning.down.sql",
-	})
 	downSQL, err := os.ReadFile(filepath.Join(migrationsDir, "000024_prd6_distributed_limit_policy.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))
@@ -63,7 +54,7 @@ func TestP6F07DistributedLimitPolicyMigrationUpDownGuardAndRollForward(t *testin
 	require.Zero(t, columnCount)
 	require.Zero(t, ledgerCount)
 
-	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))
+	require.NoError(t, migrate.RunThrough(ctx, pool, migrationsDir, "000024_prd6_distributed_limit_policy"))
 	assertUp()
 
 	orgID := testutil.NewTestOrg(t, pool)

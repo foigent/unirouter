@@ -98,7 +98,7 @@ func TestV1MicroPrecisionLedgerMigrationConvertsAndGuardsDowngrade(t *testing.T)
 	var oldBalance int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT balance FROM wallets WHERE org_id=$1`, orgID).Scan(&oldBalance))
 	require.Equal(t, 123, oldBalance)
-	require.NoError(t, migrate.Run(ctx, pool, migrationsDir))
+	require.NoError(t, migrate.RunThrough(ctx, pool, migrationsDir, "000036_v1_micro_precision_ledger"))
 
 	_, err = pool.Exec(ctx, `UPDATE wallets SET balance_micros=balance_micros+10000 WHERE org_id=$1`, orgID)
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestV1MicroPrecisionLedgerMigrationRefusesActiveFinancialState(t *testing.T
 		) VALUES ('v1_micro_active', $1, 1, 1, 'frozen', 'pv2_active')`, orgID)
 	require.NoError(t, err)
 
-	err = migrate.Run(ctx, pool, migrationsDir)
+	err = migrate.RunThrough(ctx, pool, migrationsDir, "000036_v1_micro_precision_ledger")
 	require.ErrorContains(t, err, "active billing reservations exist")
 
 	var ledger, oldColumn, newColumn int
@@ -167,7 +167,7 @@ func TestV1MicroPrecisionLedgerMigrationRefusesInvalidPriceAuthority(t *testing.
 		VALUES ('v1-micro-invalid-price', -0.1, 1)`)
 	require.NoError(t, err)
 
-	err = migrate.Run(ctx, pool, migrationsDir)
+	err = migrate.RunThrough(ctx, pool, migrationsDir, "000036_v1_micro_precision_ledger")
 	require.ErrorContains(t, err, "model price authority is outside the exact supported range")
 
 	var ledger, oldColumn, newColumn int
@@ -196,7 +196,7 @@ func TestV1MicroPrecisionLedgerMigrationRefusesUnrepresentableEffectivePrice(t *
 		VALUES ('v1-micro-overflow-price', 999999999999.999999, 1)`)
 	require.NoError(t, err)
 
-	err = migrate.Run(ctx, pool, migrationsDir)
+	err = migrate.RunThrough(ctx, pool, migrationsDir, "000036_v1_micro_precision_ledger")
 	require.ErrorContains(t, err, "effective model price exceeds micro-CNY int64 range")
 
 	var ledger, oldColumn, newColumn int

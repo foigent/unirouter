@@ -82,7 +82,7 @@ func TestRuntimeAssignmentProjectionMigrationIsCanonicalAndReversible(t *testing
 	require.False(t, viewExists)
 	require.False(t, ledgerExists)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000066_runtime_assignment_projection"))
 	require.NoError(t, pool.QueryRow(ctx, `
 		SELECT to_regclass('public.runtime_channel_assignments_v1') IS NOT NULL,
 		       EXISTS (SELECT 1 FROM schema_migrations WHERE version='000066_runtime_assignment_projection')`,

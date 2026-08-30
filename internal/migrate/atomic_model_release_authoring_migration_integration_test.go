@@ -14,7 +14,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/governancesim"
-	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/migrate/testdata/m77artifact"
 	"github.com/uniroute/unirouter/internal/routingpolicy"
 	"github.com/uniroute/unirouter/internal/runtimechange"
@@ -145,7 +144,7 @@ VALUES ($1,1,'create','none','draft',$2,0,1,
 		releaseID, userID)
 	require.NoError(t, err)
 
-	err = migrate.Run(ctx, pool, testutil.MigrationsDir(t))
+	err = testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t))
 	require.ErrorContains(t, err, "seal every canonical v2 draft with the M77 artifact SealDeploymentDraft")
 	var ledgerApplied, receiptTableExists, receiptColumnExists bool
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -181,7 +180,7 @@ SELECT stage,version,route_items_sealed_at IS NOT NULL
 	require.EqualValues(t, 2, sealedVersion)
 	require.True(t, sealedAtPresent)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 	var historicalReceiptNull bool
 	var historicalEventCount, historicalCreateCount, historicalValidateCount int
 	require.NoError(t, pool.QueryRow(ctx, `
@@ -273,7 +272,7 @@ SELECT
 	require.True(t, receiptColumnRemoved)
 	require.True(t, creatorConstraintRestored)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT EXISTS(SELECT 1 FROM schema_migrations
               WHERE version='000078_atomic_model_release_authoring')`).Scan(&ledgerApplied))

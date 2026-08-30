@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/uniroute/unirouter/internal/migrate"
 	"github.com/uniroute/unirouter/internal/testutil"
 )
 
@@ -34,7 +33,7 @@ VALUES ('projection-history-trace',$1,'provider.response_accepted','provider',
         'duplicate-model','duplicate-provider','duplicate-channel')`, orgID)
 	require.NoError(t, err)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)))
 	var callSource, traceSource *string
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT route_evidence_source FROM call_logs
@@ -56,7 +55,7 @@ SELECT route_evidence_source FROM request_trace_events
 
 	execMigrationDown(t, ctx, pool, "000073_model_execution_dispatch_fence.down.sql")
 	execMigrationDown(t, ctx, pool, "000072_execution_evidence_projection.down.sql")
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)),
+	require.NoError(t, testutil.InstallExactTestArtifact(ctx, pool, testutil.MigrationsDir(t)),
 		"nullable historical rows must permit an ordered rollback and reapply")
 }
 

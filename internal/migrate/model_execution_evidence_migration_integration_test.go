@@ -54,7 +54,7 @@ SELECT EXISTS(
             AND column_name='route_evidence_version')`, orgID).Scan(&historyRetained, &evidenceColumnsDropped))
 	require.True(t, historyRetained)
 	require.True(t, evidenceColumnsDropped)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000071_model_execution_evidence"))
 }
 
 func TestModelExecutionEvidenceMigrationRejectsPartialBundlesAndFreezesReceipt(t *testing.T) {

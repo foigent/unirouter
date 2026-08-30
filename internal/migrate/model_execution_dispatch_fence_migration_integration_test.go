@@ -38,7 +38,7 @@ SELECT COUNT(*) FROM information_schema.columns
    AND column_name IN ('dispatch_owner_hash','health_outcome','health_applied_at')`).Scan(&columns))
 	require.Zero(t, columns)
 
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000073_model_execution_dispatch_fence"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT COUNT(*) FROM information_schema.columns
  WHERE table_schema='public' AND table_name='billing_provider_attempts'

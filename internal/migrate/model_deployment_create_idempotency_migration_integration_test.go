@@ -89,7 +89,7 @@ UPDATE model_deployment_create_receipts SET idempotency_key_hash=repeat('c',64)
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT to_regclass('public.model_deployment_create_receipts') IS NOT NULL`).Scan(&tableExists))
 	require.False(t, tableExists)
-	require.NoError(t, migrate.Run(ctx, pool, testutil.MigrationsDir(t)))
+	require.NoError(t, migrate.RunThrough(ctx, pool, testutil.MigrationsDir(t), "000074_model_deployment_create_idempotency"))
 	require.NoError(t, pool.QueryRow(ctx, `
 SELECT to_regclass('public.model_deployment_create_receipts') IS NOT NULL`).Scan(&tableExists))
 	require.True(t, tableExists)
