@@ -1,8 +1,9 @@
 # Deployment Runbook（部署运维手册）
 
-> **版本**：v1.24
-> **日期**：2026-08-24
+> **版本**：v1.25
+> **日期**：2026-08-30
 > **用途**：运维人员部署和维护 UniRouter 的操作手册
+> **变更记录**：v1.25 收敛 development/test 的同 ceiling 与升 ceiling 部署为同一显式 Compose project/file-chain 权威，并增加 168h 默认、120h 磁盘压力模式的受保护 BuildKit 清理边界。
 > **变更记录**：v1.24 增加 `000084` 官方价格来源 CNY/USD 审核草稿、CNY 结算 fail-closed、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.23 增加 `000083` 版本化非 Token 计费证据、非滚动升级与 guarded down 边界。
 > **变更记录**：v1.22 增加 `000082` canonical Release 执行 Profile/上下文上限密封、非滚动升级与 guarded down 边界。
@@ -1792,25 +1793,18 @@ done | sort | uniq -c
 M82→M83），不要执行本节命令；按 3.20 停止整个旧 fleet、由唯一 migration owner
 升级，再启动新 stable/canary。
 
-```bash
-# 1. 停止 canary
-docker compose -f docker-compose.yml -f docker-compose.canary.yml stop backend-canary
+本节不得使用缺省 `docker compose` 命令。先完整执行 9.10.1 的
+project/config-label、env-file、exact image、存储和备份 preflight，并冻结同一个
+`target_compose` 数组。当前与候选 binary 的 schema ceiling、候选
+`./uniroute migrate status` 和数据库 ledger 必须三者精确一致；本路径不运行
+`migrate up`。镜像只能由已验证的 exact release 构建/复用流程产生，不能在活动
+release 目录中临时执行 ad-hoc `docker compose build`。
 
-# 2. 备份数据库
-docker compose exec postgres pg_dump -U uniroute uniroute > pre_upgrade_$(date +%Y%m%d).sql
-
-# 3. 重建 stable（新代码）
-export RUNTIME_VERSION="$(date +%Y%m%d.%H%M)"
-export RUNTIME_COMMIT="$(git rev-parse HEAD)"
-docker compose build backend
-docker compose up -d backend
-
-# 4. 验证
-curl http://localhost:8080/health/ready
-
-# 5. 停止外层 Nginx（可选，如果不需要持续 canary）
-docker compose -f docker-compose.yml -f docker-compose.canary.yml stop nginx
-```
+然后使用冻结的 `target_compose` 先 `--force-recreate` canary，完成直连 readiness
+和只读身份验证后，再 `--force-recreate` stable。stable/canary 均通过后，只有在
+frontend artifact 或 Compose provenance 变化时，才按 `frontend` → `nginx` 顺序
+重建；最终读回四个容器完全相同的 project/config-files 标签和 exact image ID。
+Provider 调用、Release/alias/canonical 变化不属于部署 smoke，不得由本节自动触发。
 
 ### 9.9 PRD2 HA readiness smoke
 
@@ -2060,7 +2054,11 @@ scripts/docker-image-retention-maintenance.sh \
 
 apply 会在每个删除前重新核对完整 image ID、创建时间、全部 tags、容器引用和 keep
 集合；任何漂移立即停止。它只删除已确认的 UniRouter candidate，并调用 Docker
-原生 builder prune 清理超过 7 天的未使用 BuildKit cache。它不删除容器、volume、
+原生 builder prune 清理超过 `--cache-until` 的未使用 BuildKit cache。例行维护保持
+`168h`；只有 80%/8 GiB preflight 已失败、168h 模式无法恢复门槛且精确 dry-run
+仍保护 N/N-1/N-2、基础 image、备份和 evidence 时，才允许用 `120h` 作为磁盘压力
+模式重新 dry-run 并单独 apply。120h 后仍不能通过时，应检查重复 build、containerd
+layer 和旧镜像或扩盘，不能继续机械缩短为 72h/24h。它不删除容器、volume、
 数据库、备份、release 目录或非 UniRouter 镜像。
 
 这些工具只按需安装和运行，不启用 systemd timer、cron 或其他自动删除：
