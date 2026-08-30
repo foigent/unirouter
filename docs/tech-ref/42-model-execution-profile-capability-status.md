@@ -9,16 +9,16 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-For development/test Target identity, the exact Kimi 1.2.17/M99 checkpoint in
+For development/test Target identity, the exact Kimi 1.2.19/M99 checkpoint in
 the active batch below supersedes the earlier M96/M97/M98 and Pro M94
-snapshots. The local 1.2.19 source remains a diagnostic candidate until its
-exact artifact and runtime identities are independently verified on Target.
+snapshots. The local 1.2.20/M100 source remains a candidate until its exact
+artifact and runtime identities are independently verified on Target.
 
 ## Active delivery batch — Kimi K2.6 Chat Core Conformance
 
 Development/test stable, canary and frontend run exact commit
-`b08ab57c19c656a688b226c900d38f6f601afd3a`, tree
-`19bbae705499128fb50f5ce724d9e44c2256cd78`, version 1.2.17, with 98 ordered
+`457083198a6684aee5bd18c606e6e13fa263345f`, tree
+`a8ac4a7577295c7aacf1cc525f279ff91538a2e1`, version 1.2.19, with 98 ordered
 migration rows ending at
 `000099_kimi_k26_function_tools_probe_v3`. Stable/canary/frontend/Nginx share
 the frozen `unirouter` Compose project and exact configuration chain;
@@ -41,22 +41,24 @@ authority. It is immutable and unapproved. M99 then advanced only tools,
 function tools and automatic tool choice to Function Tools Probe Contract v3
 for the existing bounded delivery shape. Probe 50 under v3 also reached the
 provider with HTTP 200 but failed strict JSON decoding; its receipt is likewise
-immutable and unapproved. The local 1.2.19 candidate adds only a stable schema
-diagnostic category and a separately bounded, syntax-constrained,
-provider-controlled member identifier for such failures. The member is
-diagnostic evidence rather than an error-code or execution authority; its value
-and the complete raw response body are not retained. The acceptance set is
-unchanged. Streaming v3, reasoning/JSON
-v2, the Execution Profile, Chat protocol, Release, alias, pricing, Planner, UI
-and canonical traffic are unchanged.
+immutable and unapproved. Target 1.2.19 then exposed the stable diagnostic
+`json_unknown_field` with bounded member `index` on another v3 Probe. That live
+sample identified the optional non-stream
+`choices[].message.tool_calls[].index` wire member; no field value or raw
+response was retained. The local 1.2.20/M100 candidate uses the same
+exact-scoped normalizer as runtime and publishes Function Tools Probe v4 only
+for tools, function tools and automatic tool choice. Streaming v3,
+reasoning/JSON v2, the Execution Profile, Chat protocol, Release, alias,
+pricing, Planner, UI and canonical traffic are unchanged.
 
-Nine supplier calls have been made in this K2.6 batch: the exact operation
+Ten supplier calls have been made in this K2.6 batch: the exact operation
 Probe, one public non-stream request, two failed streaming Probes, the
 successful streaming v3 Probe, the failed reasoning v1 Probe, successful
-reasoning Probe 48, failed tools Probe 49 and failed tools Probe 50. There was
-no automatic retry. The approved batch ceiling remains 20 calls and CNY 5; the
-CNY value is a supplier-spend authorization ceiling, not a native supplier
-cost Observation.
+reasoning Probe 48, failed tools Probe 49, failed tools Probe 50 and the final
+v3 diagnostic Probe that identified member `index`. There was no automatic
+retry. The approved batch ceiling remains 20 calls and CNY 5; the CNY value is
+a supplier-spend authorization ceiling, not a native supplier cost
+Observation.
 
 ## Completed delivery batch — DeepSeek V4 Pro Chat Core Target closeout
 
@@ -178,8 +180,8 @@ K2.7 does not denote a separate general-chat model. The authorized K2.6 live
 budget remains at most 20 supplier calls and CNY 5 with no automatic retry.
 
 Development/test currently runs exact main merge commit
-`b08ab57c19c656a688b226c900d38f6f601afd3a`, tree
-`19bbae705499128fb50f5ce724d9e44c2256cd78`, version 1.2.17 and schema M99;
+`457083198a6684aee5bd18c606e6e13fa263345f`, tree
+`a8ac4a7577295c7aacf1cc525f279ff91538a2e1`, version 1.2.19 and schema M99;
 stable, canary, frontend, database and Redis readiness are healthy. It publishes
 one finite K2.6 Chat Core Delivery Batch: an exact Profile-scoped
 operation-protocol binding plus typed probe contracts for streaming, reasoning,
@@ -224,11 +226,13 @@ both succeeded and were approved separately. Tools Probe 49 then returned HTTP
 200 but failed Function Tools Probe v2 strict JSON validation. M99 advanced
 only tools, function tools and automatic tool choice to Function Tools Probe
 v3. Tools Probe 50 under v3 also returned HTTP 200 but failed strict JSON
-decoding; both failed receipts remain immutable and unapproved. The local
-1.2.19 diagnostic candidate projects a stable schema category and a separately
-bounded, syntax-constrained provider-controlled member identifier; it retains
-neither the member value nor the complete raw response body and does not alter
-the v3 acceptance set. Nine supplier calls have been made, with no automatic
+decoding; both failed receipts remain immutable and unapproved. Target 1.2.19
+then projected the next v3 failure as stable code `json_unknown_field` and
+bounded member `index`, without retaining the member value or raw response.
+The local 1.2.20/M100 candidate shares the runtime's exact-scoped non-stream
+child tool-call index normalizer with Function Tools Probe v4. Historical v3
+evidence remains immutable, unknown siblings still fail closed, and no model or
+protocol identity changes. Ten supplier calls have been made, with no automatic
 retry.
 
 The Kimi probe validators and the Gateway delivery guard currently remain two
@@ -242,7 +246,7 @@ succeeds while the same exact tuple is withheld by public delivery shape, the
 warning becomes a blocker immediately. No shared parser refactor is authorized
 merely by this checkpoint.
 
-M95–M99 are five consecutive control-data publications for the same K2.6
+M95–M100 are six consecutive control-data publications for the same K2.6
 surface. They added no new table or Planner/UI state, but their repeated SQL
 tuples, fixed-count assertions and OpenAPI projections must be measured at the
 K2.6 closeout. If the next provider requires another comparable provider-

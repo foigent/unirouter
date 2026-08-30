@@ -73,11 +73,11 @@ func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 		{
 			name: "tools", capability: modelprofile.CapabilityToolChoiceAuto,
 			contractID: modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
-			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","service_tier":"standard","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":0,"provider_tool_tokens":4}}}`,
+			body:       `{"id":"chatcmpl-kimi","object":"chat.completion","created":1787932800,"model":"kimi-k2.6","service_tier":"standard","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":0,"completion_tokens_details":{"reasoning_tokens":0,"provider_tool_tokens":4}}}`,
 			validate: func(body string) error {
 				_, err := modelcapabilityqualification.ValidateKimiChatFunctionTools(
 					modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
-					modelcapabilityqualification.KimiChatFunctionToolsProbeContractVersionV3,
+					modelcapabilityqualification.KimiChatFunctionToolsProbeContractVersionV4,
 					"kimi-k2.6", "application/json", strings.NewReader(body),
 				)
 				return err
@@ -101,8 +101,19 @@ func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			require.NoError(t, test.validate(test.body))
+			canonicalBody := []byte(test.body)
+			if test.capability == modelprofile.CapabilityToolChoiceAuto {
+				var changed bool
+				var err error
+				canonicalBody, changed, err = adapters.NormalizeOpenAICompatibleChatToolCallIndex(
+					"kimi", "kimi-k2.6", "protocol.kimi-openai-chat.v5", canonicalBody,
+				)
+				require.NoError(t, err)
+				require.True(t, changed)
+				require.NotContains(t, string(canonicalBody), `"tool_calls":[{"index"`)
+			}
 			var response map[string]interface{}
-			require.NoError(t, decodeJSONUseNumber([]byte(test.body), &response))
+			require.NoError(t, decodeJSONUseNumber(canonicalBody, &response))
 			route := &RouteResult{
 				Channel: models.Channel{Provider: "kimi"}, MappedModel: "kimi-k2.6",
 				ModelProtocolProfile: "protocol.kimi-openai-chat.v5",

@@ -138,6 +138,18 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 	usage := NewMissingUsage()
 	responseBody := in.Body
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
+		// The exact tuples whose non-stream tool-call index is normalized must
+		// reject duplicate JSON members before usage or delivery parsing can
+		// collapse them with last-wins map semantics. Invalid index values remain
+		// available to the later delivery guardrail so provider usage can still be
+		// retained, but an ambiguous document is never accepted as usage evidence.
+		if in.Endpoint == EndpointChatCompletions && openAICompatibleChatToolCallIndexScope(
+			in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile,
+		) {
+			if err := strictjson.Validate(responseBody); err != nil {
+				return nil, fmt.Errorf("validate OpenAI-compatible Chat response: %w", err)
+			}
+		}
 		var err error
 		var usagePresent bool
 		usage, usagePresent, err = ParseOpenAICompatibleUsageWithCacheProfile(
@@ -155,12 +167,13 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 				return nil, meterErr
 			}
 			usage.MeterUsage = meterUsage
-			// DeepSeek V4 can emit an SDK-only per-tool-call index which is
-			// not part of UniRouter's immutable v4 delivery contract. Normalize
-			// that one exact wire variation before the shared delivery guardrail.
+			// Some explicitly reviewed OpenAI-compatible Chat tuples can emit an
+			// SDK-only per-tool-call index which is not part of UniRouter's
+			// immutable canonical delivery contract. Normalize that one exact
+			// wire variation before the shared delivery guardrail.
 			// Invalid values deliberately remain in the body so the guardrail can
 			// fail closed without discarding already parsed provider usage.
-			if normalizedBody, _, normalizeErr := NormalizeDeepSeekV4ChatToolResponse(
+			if normalizedBody, _, normalizeErr := NormalizeOpenAICompatibleChatToolCallIndex(
 				in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile, responseBody,
 			); normalizeErr == nil {
 				responseBody = normalizedBody
@@ -196,10 +209,12 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 	return normalized, nil
 }
 
-// NormalizeDeepSeekV4ChatToolResponse removes only the optional
-// choices[].message.tool_calls[].index wire member emitted by DeepSeek V4
-// Flash or Pro Chat Completions. UniRouter's canonical v4 response identifies
-// tool calls by id/type/function, so the child index has no public semantic role.
+// NormalizeOpenAICompatibleChatToolCallIndex removes only the optional
+// choices[].message.tool_calls[].index wire member emitted by an explicitly
+// reviewed OpenAI-compatible Chat tuple. UniRouter's canonical non-streaming
+// response identifies tool calls by id/type/function, so the child index has no
+// public semantic role. Streaming tool-call indexes remain untouched because
+// they are required to assemble argument fragments.
 //
 // The scope is intentionally exact. Other providers, models and protocols are
 // returned unchanged. An index, when present, must be a non-null JSON number
@@ -208,23 +223,25 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 // numeric ceiling; the existing response-body limit remains the resource
 // boundary. Unknown sibling fields are retained for the delivery guardrail to
 // reject under the immutable protocol contract.
-func NormalizeDeepSeekV4ChatToolResponse(provider, upstreamModel, protocolProfile string, body []byte) ([]byte, bool, error) {
+func NormalizeOpenAICompatibleChatToolCallIndex(provider, upstreamModel, protocolProfile string, body []byte) ([]byte, bool, error) {
 	upstreamModel = strings.TrimSpace(upstreamModel)
 	protocolProfile = strings.TrimSpace(protocolProfile)
-	if !strings.EqualFold(strings.TrimSpace(provider), "deepseek") ||
-		!((upstreamModel == "deepseek-v4-flash" &&
-			(protocolProfile == "protocol.deepseek-openai-chat.v4" || protocolProfile == "openai.chat_completions")) ||
-			(upstreamModel == "deepseek-v4-pro" && protocolProfile == "protocol.deepseek-openai-chat.v4")) {
+	if !openAICompatibleChatToolCallIndexScope(provider, upstreamModel, protocolProfile) {
 		return body, false, nil
+	}
+	// Validate before any map decoding so ordinary and escaped-equivalent
+	// duplicate members cannot be collapsed while the safe index is removed.
+	if err := strictjson.Validate(body); err != nil {
+		return body, false, fmt.Errorf("validate OpenAI-compatible Chat response: %w", err)
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return body, false, fmt.Errorf("decode DeepSeek V4 Chat response: %w", err)
+		return body, false, fmt.Errorf("decode OpenAI-compatible Chat response: %w", err)
 	}
 	var choices []map[string]json.RawMessage
 	if rawChoices, ok := envelope["choices"]; ok {
 		if err := json.Unmarshal(rawChoices, &choices); err != nil {
-			return body, false, fmt.Errorf("decode DeepSeek V4 Chat choices: %w", err)
+			return body, false, fmt.Errorf("decode OpenAI-compatible Chat choices: %w", err)
 		}
 	}
 	changed := false
@@ -235,7 +252,7 @@ func NormalizeDeepSeekV4ChatToolResponse(provider, upstreamModel, protocolProfil
 		}
 		var message map[string]json.RawMessage
 		if err := json.Unmarshal(rawMessage, &message); err != nil {
-			return body, false, fmt.Errorf("decode DeepSeek V4 Chat choices[%d].message: %w", choiceIndex, err)
+			return body, false, fmt.Errorf("decode OpenAI-compatible Chat choices[%d].message: %w", choiceIndex, err)
 		}
 		rawToolCalls, ok := message["tool_calls"]
 		if !ok || bytes.Equal(bytes.TrimSpace(rawToolCalls), []byte("null")) {
@@ -243,7 +260,7 @@ func NormalizeDeepSeekV4ChatToolResponse(provider, upstreamModel, protocolProfil
 		}
 		var toolCalls []map[string]json.RawMessage
 		if err := json.Unmarshal(rawToolCalls, &toolCalls); err != nil {
-			return body, false, fmt.Errorf("decode DeepSeek V4 Chat choices[%d].message.tool_calls: %w", choiceIndex, err)
+			return body, false, fmt.Errorf("decode OpenAI-compatible Chat choices[%d].message.tool_calls: %w", choiceIndex, err)
 		}
 		choiceChanged := false
 		for toolIndex := range toolCalls {
@@ -252,7 +269,7 @@ func NormalizeDeepSeekV4ChatToolResponse(provider, upstreamModel, protocolProfil
 				continue
 			}
 			if !isLexicalNonnegativeJSONInteger(rawIndex) {
-				return body, false, fmt.Errorf("DeepSeek V4 Chat choices[%d].message.tool_calls[%d].index must be a non-negative decimal integer", choiceIndex, toolIndex)
+				return body, false, fmt.Errorf("OpenAI-compatible Chat choices[%d].message.tool_calls[%d].index must be a non-negative decimal integer", choiceIndex, toolIndex)
 			}
 			delete(toolCalls[toolIndex], "index")
 			choiceChanged = true
@@ -285,6 +302,19 @@ func NormalizeDeepSeekV4ChatToolResponse(provider, upstreamModel, protocolProfil
 		return body, false, fmt.Errorf("encode DeepSeek V4 Chat response: %w", err)
 	}
 	return normalized, true, nil
+}
+
+func openAICompatibleChatToolCallIndexScope(provider, upstreamModel, protocolProfile string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "deepseek":
+		return (upstreamModel == "deepseek-v4-flash" &&
+			(protocolProfile == "protocol.deepseek-openai-chat.v4" || protocolProfile == "openai.chat_completions")) ||
+			(upstreamModel == "deepseek-v4-pro" && protocolProfile == "protocol.deepseek-openai-chat.v4")
+	case "kimi":
+		return upstreamModel == "kimi-k2.6" && protocolProfile == "protocol.kimi-openai-chat.v5"
+	default:
+		return false
+	}
 }
 
 // NormalizeKimiK26ChatStreamChunk removes only an empty

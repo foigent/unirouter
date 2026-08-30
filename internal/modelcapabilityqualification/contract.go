@@ -32,6 +32,7 @@ const (
 	KimiChatCoreProbeContractVersion            = "1.0.0"
 	KimiChatCoreProbeContractVersionV2          = "2.0.0"
 	KimiChatFunctionToolsProbeContractVersionV3 = "3.0.0"
+	KimiChatFunctionToolsProbeContractVersionV4 = "4.0.0"
 	ProbeSourceKind                             = "admin.model_capability_probe.v1"
 	ApprovalSourceKind                          = "admin.model_capability_routing_approval.v1"
 )
@@ -232,7 +233,7 @@ var kimiK26CurrentBindings = func() []Binding {
 		if capability.CapabilityID == modelprofile.CapabilityStreaming {
 			probeContractVersion = KimiChatSSEProbeContractVersionV3
 		} else if capability.ProbeContractID == KimiChatFunctionToolsProbeContractID {
-			probeContractVersion = KimiChatFunctionToolsProbeContractVersionV3
+			probeContractVersion = KimiChatFunctionToolsProbeContractVersionV4
 		}
 		bindings = append(bindings, Binding{
 			OperationID: string(modeloperation.IDChatCompletions), CapabilityID: capability.CapabilityID,
