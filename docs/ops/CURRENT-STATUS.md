@@ -15,12 +15,18 @@
 > Fixed `openai-python@3.5.0` with `max_retries=0` delivered non-stream text,
 > live `reasoning_effort=low`, auto/required tools, JSON Object and cache-read
 > evidence on the exact route. Public SDK streaming calls 414 and 415 each made
-> one provider attempt and returned HTTP 503; the successful typed SSE Probe is
-> qualification evidence and is not substituted for public SDK delivery. The
+> one provider attempt and returned HTTP 503. A separately authorized paired
+> diagnosis on 2026-09-01 then produced one successful direct provider stream
+> and public SDK call 421 through UniRouter with the same semantic request
+> digest. The diagnostic stopped at `4/20` execution slots and `2/20` provider
+> attempts (one direct, one UniRouter); the point-in-time success closes the
+> bounded streaming checkpoint but does not prove a streaming SLA. The original
 > batch used all 20 authorized supplier calls. Wallet movement and transactions
-> remain zero; CNY 5 is an authorization ceiling, not a supplier invoice or
-> `SupplierCostObservation`. The temporary Key and `project_default` Grant are
-> revoked and the Application is archived. Exact evidence:
+> remain zero; both CNY 5 amounts are authorization ceilings, not supplier
+> invoices or `SupplierCostObservation`. Both temporary Keys and
+> `project_default` Grants are revoked and both Applications are archived. The
+> exact development/test Core subset is now `canary_live_verified`, not
+> capability maturity `released`, Production, Alias or canonical. Exact evidence:
 > `docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md`.
 > **2026-08-31 Kimi K2.7 Code Chat Core Target closeout:** development/test
 > previously ran exact 1.2.23/M101 main merge
