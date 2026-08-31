@@ -115,11 +115,11 @@ func TestKimiK3FixedProbeRequestsPassExactProfileValidationAndAdmission(t *testi
 	}{
 		{
 			name: "streaming always-on reasoning",
-			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}],"max_completion_tokens":64,"stream":true,"stream_options":{"include_usage":true}}`,
+			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}],"max_completion_tokens":512,"stream":true,"stream_options":{"include_usage":true},"reasoning_effort":"low"}`,
 		},
 		{
 			name: "provider default reasoning",
-			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}],"max_completion_tokens":512,"stream":false}`,
+			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}],"max_completion_tokens":4096,"stream":false}`,
 		},
 		{
 			name: "explicit low reasoning effort",
@@ -127,15 +127,15 @@ func TestKimiK3FixedProbeRequestsPassExactProfileValidationAndAdmission(t *testi
 		},
 		{
 			name: "automatic function tools",
-			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}],"max_completion_tokens":256,"stream":false,"tools":[` + tool + `],"tool_choice":"auto"}`,
+			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}],"max_completion_tokens":512,"stream":false,"reasoning_effort":"low","tools":[` + tool + `],"tool_choice":"auto"}`,
 		},
 		{
 			name: "required function tools",
-			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}],"max_completion_tokens":256,"stream":false,"tools":[` + tool + `],"tool_choice":"required"}`,
+			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}],"max_completion_tokens":512,"stream":false,"reasoning_effort":"low","tools":[` + tool + `],"tool_choice":"required"}`,
 		},
 		{
 			name: "json object",
-			body: `{"model":"kimi-k3","messages":[{"role":"system","content":"Return valid JSON only."},{"role":"user","content":"Return exactly {\"status\":\"UNIROUTER_JSON_PROBE_OK\"}."}],"max_completion_tokens":64,"stream":false,"response_format":{"type":"json_object"}}`,
+			body: `{"model":"kimi-k3","messages":[{"role":"system","content":"Return valid JSON only."},{"role":"user","content":"Return exactly {\"status\":\"UNIROUTER_JSON_PROBE_OK\"}."}],"max_completion_tokens":512,"stream":false,"reasoning_effort":"low","response_format":{"type":"json_object"}}`,
 		},
 	}
 

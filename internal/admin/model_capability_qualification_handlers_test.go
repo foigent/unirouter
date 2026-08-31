@@ -384,46 +384,51 @@ func TestKimiK27ProbeRequestsUseExactRequiredThinkingContract(t *testing.T) {
 func TestKimiK3ProbeRequestsUseAlwaysOnReasoningWithoutThinkingToggle(t *testing.T) {
 	tests := []struct {
 		name, contractID, capabilityID string
+		expectedMaxCompletionTokens    float64
 		assertPayload                  func(*testing.T, map[string]interface{})
 	}{
 		{
 			name: "streaming", contractID: modelcapabilityqualification.KimiChatSSEProbeContractID,
-			capabilityID: modelprofile.CapabilityStreaming,
+			capabilityID: modelprofile.CapabilityStreaming, expectedMaxCompletionTokens: 512,
 			assertPayload: func(t *testing.T, payload map[string]interface{}) {
 				require.Equal(t, true, payload["stream"])
 				require.Equal(t, true, payload["stream_options"].(map[string]interface{})["include_usage"])
+				require.Equal(t, "low", payload["reasoning_effort"])
 			},
 		},
 		{
 			name: "provider default reasoning", contractID: modelcapabilityqualification.KimiChatReasoningProbeContractID,
-			capabilityID: modelprofile.CapabilityReasoning,
+			capabilityID: modelprofile.CapabilityReasoning, expectedMaxCompletionTokens: 4096,
 		},
 		{
 			name: "low reasoning effort", contractID: modelcapabilityqualification.KimiChatReasoningEffortProbeContractID,
-			capabilityID: modelprofile.CapabilityReasoningEffort,
+			capabilityID: modelprofile.CapabilityReasoningEffort, expectedMaxCompletionTokens: 512,
 			assertPayload: func(t *testing.T, payload map[string]interface{}) {
 				require.Equal(t, "low", payload["reasoning_effort"])
 			},
 		},
 		{
 			name: "automatic tool choice", contractID: modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
-			capabilityID: modelprofile.CapabilityToolChoiceAuto,
+			capabilityID: modelprofile.CapabilityToolChoiceAuto, expectedMaxCompletionTokens: 512,
 			assertPayload: func(t *testing.T, payload map[string]interface{}) {
 				require.Equal(t, "auto", payload["tool_choice"])
+				require.Equal(t, "low", payload["reasoning_effort"])
 			},
 		},
 		{
 			name: "required tool choice", contractID: modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
-			capabilityID: modelprofile.CapabilityToolChoiceReq,
+			capabilityID: modelprofile.CapabilityToolChoiceReq, expectedMaxCompletionTokens: 512,
 			assertPayload: func(t *testing.T, payload map[string]interface{}) {
 				require.Equal(t, "required", payload["tool_choice"])
+				require.Equal(t, "low", payload["reasoning_effort"])
 			},
 		},
 		{
 			name: "json object", contractID: modelcapabilityqualification.KimiChatJSONObjectProbeContractID,
-			capabilityID: modelprofile.CapabilityJSONObject,
+			capabilityID: modelprofile.CapabilityJSONObject, expectedMaxCompletionTokens: 512,
 			assertPayload: func(t *testing.T, payload map[string]interface{}) {
 				require.Equal(t, "json_object", payload["response_format"].(map[string]interface{})["type"])
+				require.Equal(t, "low", payload["reasoning_effort"])
 			},
 		},
 	}
@@ -440,6 +445,7 @@ func TestKimiK3ProbeRequestsUseAlwaysOnReasoningWithoutThinkingToggle(t *testing
 			var payload map[string]interface{}
 			require.NoError(t, json.Unmarshal(body, &payload))
 			require.NotContains(t, payload, "thinking")
+			require.Equal(t, test.expectedMaxCompletionTokens, payload["max_completion_tokens"])
 			if test.assertPayload != nil {
 				test.assertPayload(t, payload)
 			}
