@@ -4,6 +4,26 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.24] - 2026-08-31
+
+### Documentation
+
+- Recorded the exact Kimi K2.7 Code Chat Core development/test closeout:
+  Publication V1 M101 apply, later-created Deployment projections, six
+  independent capability qualifications, fixed-SDK text/stream/tools/
+  multi-turn/JSON/cache evidence, the 17-of-20 bounded-call total and temporary
+  access cleanup.
+- Distinguished the `project_default` Grant from its K2.7-only credential and
+  kept the CNY 5 authorization ceiling separate from absent supplier invoice or
+  SupplierCostObservation authority.
+
+### Evidence boundary
+
+- This is a documentation and release-metadata correction only. It changes no
+  runtime contract, schema, Profile, Probe, Approval, Release, Alias, pricing,
+  billing, credential, route, provider traffic or Target deployment. The
+  development/test Target remains exact 1.2.23/M101.
+
 ## [1.2.23] - 2026-08-31
 
 ### Added
