@@ -280,6 +280,11 @@ func TestKimiK26SuccessfulStreamProbeFramesAreDeliverable(t *testing.T) {
 }
 
 func TestKimiK3SuccessfulProbeFixturesAreDeliverable(t *testing.T) {
+	exactProfile, ok := modelprofile.Lookup("kimi.k3.api", "1.9.0")
+	require.True(t, ok)
+	require.Equal(t, "reasoning.kimi-k3-effort.v2", exactProfile.ReasoningProfile)
+	require.Equal(t, "protocol.kimi-openai-chat.k3.v5", exactProfile.ProtocolProfile)
+
 	usageV1 := `{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":2}`
 	usageV2 := `{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":2,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}`
 	tests := []struct {
@@ -342,9 +347,13 @@ func TestKimiK3SuccessfulProbeFixturesAreDeliverable(t *testing.T) {
 			var response map[string]interface{}
 			require.NoError(t, decodeJSONUseNumber([]byte(test.body), &response))
 			route := &RouteResult{
-				Channel: models.Channel{Provider: "kimi"}, MappedModel: "kimi-k3",
-				ModelProtocolProfile: "protocol.kimi-openai-chat.k3.v5",
-				ReasoningProfile:     "reasoning.kimi-k3-effort.v1",
+				Channel:                 models.Channel{Provider: "kimi"},
+				MappedModel:             "kimi-k3",
+				ExecutionProfileID:      exactProfile.ID,
+				ExecutionProfileVersion: exactProfile.Version,
+				ModelProtocolProfile:    exactProfile.ProtocolProfile,
+				ReasoningProfile:        exactProfile.ReasoningProfile,
+				CacheUsageProfile:       exactProfile.CacheUsageProfile,
 			}
 			if test.capability == modelprofile.CapabilityToolChoiceReq {
 				route.PlanCapabilityRequirements = []modelrouting.CapabilityRequirement{{
@@ -380,9 +389,13 @@ func TestKimiK3SuccessfulProbeFixturesAreDeliverable(t *testing.T) {
 	require.True(t, observation.ReasoningObserved)
 
 	route := &RouteResult{
-		Channel: models.Channel{Provider: "kimi"}, MappedModel: "kimi-k3",
-		ModelProtocolProfile: "protocol.kimi-openai-chat.k3.v5",
-		ReasoningProfile:     "reasoning.kimi-k3-effort.v1",
+		Channel:                 models.Channel{Provider: "kimi"},
+		MappedModel:             "kimi-k3",
+		ExecutionProfileID:      exactProfile.ID,
+		ExecutionProfileVersion: exactProfile.Version,
+		ModelProtocolProfile:    exactProfile.ProtocolProfile,
+		ReasoningProfile:        exactProfile.ReasoningProfile,
+		CacheUsageProfile:       exactProfile.CacheUsageProfile,
 	}
 	for _, raw := range frames {
 		normalized, err := normalizeProviderStreamFrameForRoute(route, []byte(raw))
