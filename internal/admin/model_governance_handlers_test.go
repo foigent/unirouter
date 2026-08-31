@@ -252,7 +252,7 @@ func TestUpdateModelRegistryRejectsProfileIdentityMutationAfterDeployment(t *tes
 	h := newTestHandler(&testutil.MockDB{BeginFn: func(context.Context) (pgx.Tx, error) { return tx, nil }})
 	req := httptest.NewRequest(http.MethodPut, "/model-registry/10", strings.NewReader(`{
 		"execution_profile_id":"kimi.k3.api",
-		"execution_profile_version":"1.8.0"
+		"execution_profile_version":"1.9.0"
 	}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", "10")

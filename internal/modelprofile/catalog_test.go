@@ -412,7 +412,7 @@ func TestCatalogHasExactlyOneExplicitCurrentVersionPerProfileID(t *testing.T) {
 func TestNewAttachmentEligibilityUsesTheCurrentManifestWithoutInvalidatingHistory(t *testing.T) {
 	require.NoError(t, ValidateNewAttachment("kimi.k2.6.api", "1.7.0"))
 	require.NoError(t, ValidateNewAttachment("kimi.k2.7-code.api", "1.3.0"))
-	require.NoError(t, ValidateNewAttachment("kimi.k3.api", "1.8.0"))
+	require.NoError(t, ValidateNewAttachment("kimi.k3.api", "1.9.0"))
 	require.NoError(t, ValidateNewAttachment(UnverifiedProfileID, UnverifiedProfileVersion))
 
 	for _, historical := range []struct{ id, version string }{
@@ -420,6 +420,7 @@ func TestNewAttachmentEligibilityUsesTheCurrentManifestWithoutInvalidatingHistor
 		{id: "kimi.k2.6.api", version: "1.5.0"},
 		{id: "kimi.k2.7-code.api", version: "1.2.0"},
 		{id: "kimi.k2.7-code.api", version: "1.1.0"},
+		{id: "kimi.k3.api", version: "1.8.0"},
 		{id: "kimi.k3.api", version: "1.7.0"},
 		{id: "kimi.k3.api", version: "1.6.0"},
 		{id: "kimi.k3.api", version: "1.5.0"},
@@ -1974,7 +1975,7 @@ func TestKimiComponentContractsAreVersionedAndDefensive(t *testing.T) {
 	k3, ok := Match("kimi-k3")
 	require.True(t, ok)
 	require.Equal(t, "kimi.k3.api", k3.ID)
-	require.Equal(t, "1.8.0", k3.Version)
+	require.Equal(t, "1.9.0", k3.Version)
 	require.Equal(t, "protocol.kimi-openai-chat.k3.v5", k3.ProtocolProfile)
 	require.Equal(t, "reasoning.kimi-k3-effort.v2", k3.ReasoningProfile)
 	require.Equal(t, "cache-usage.kimi-platform.v1", k3.CacheUsageProfile)
@@ -1982,7 +1983,9 @@ func TestKimiComponentContractsAreVersionedAndDefensive(t *testing.T) {
 	require.Equal(t, []string{"kimi-k3"}, k3.UpstreamModelIDs)
 	require.Equal(t, []string{"Kimi K3", "kimi-k3"}, k3.Aliases)
 	require.Contains(t, k3.ProviderCapabilities, "dynamic_tools")
+	require.Contains(t, k3.ProviderCapabilities, CapabilityReasoningEffort)
 	require.Contains(t, k3.Capabilities, "dynamic_tools")
+	require.Contains(t, k3.Capabilities, CapabilityReasoningEffort)
 	require.Contains(t, k3.Capabilities, "partial_mode")
 	require.Contains(t, k3.ProviderCapabilities, "builtin_web_search")
 	require.Contains(t, k3.Capabilities, "builtin_web_search")

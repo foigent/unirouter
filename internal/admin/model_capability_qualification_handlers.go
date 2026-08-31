@@ -653,7 +653,8 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			applyKimiChatDiagnostic(&outcome, validationErr)
 			return outcome
 		}
-	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
+	case modelcapabilityqualification.KimiChatReasoningProbeContractID,
+		modelcapabilityqualification.KimiChatReasoningEffortProbeContractID:
 		observation, validationErr := modelcapabilityqualification.ValidateKimiChatReasoning(
 			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
 			response.Header.Get("Content-Type"), response.Body,
@@ -724,7 +725,7 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		"max_tokens": 64,
 		"stream":     false,
 	}
-	kimiThinking, kimiRequiredThinking, err := resolveKimiProbeThinking(snapshot)
+	kimiThinking, kimiRequiredThinking, kimiAlwaysOnThinking, err := resolveKimiProbeThinking(snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -783,7 +784,7 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		payload["stream_options"] = map[string]bool{"include_usage": true}
 		if kimiRequiredThinking {
 			payload["thinking"] = kimiThinking
-		} else {
+		} else if !kimiAlwaysOnThinking {
 			payload["thinking"] = map[string]string{"type": "disabled"}
 		}
 	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
@@ -794,13 +795,21 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 			payload["thinking"] = kimiThinking
 		}
 		// K2.6 deliberately omits thinking to prove its provider-default path.
+	case modelcapabilityqualification.KimiChatReasoningEffortProbeContractID:
+		if !kimiAlwaysOnThinking || kimiRequiredThinking {
+			return nil, errModelCapabilityUnsupported
+		}
+		delete(payload, "max_tokens")
+		payload["max_completion_tokens"] = 512
+		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}}
+		payload["reasoning_effort"] = "low"
 	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
 		delete(payload, "max_tokens")
 		payload["max_completion_tokens"] = 256
 		payload["messages"] = []map[string]string{{"role": "user", "content": "Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}}
 		if kimiRequiredThinking {
 			payload["thinking"] = kimiThinking
-		} else {
+		} else if !kimiAlwaysOnThinking {
 			payload["thinking"] = map[string]string{"type": "disabled"}
 		}
 		payload["tools"] = []map[string]interface{}{{
@@ -814,7 +823,11 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 				},
 			},
 		}}
-		payload["tool_choice"] = "auto"
+		if snapshot.CapabilityID == modelprofile.CapabilityToolChoiceReq {
+			payload["tool_choice"] = "required"
+		} else {
+			payload["tool_choice"] = "auto"
+		}
 	case modelcapabilityqualification.KimiChatJSONObjectProbeContractID:
 		delete(payload, "max_tokens")
 		payload["max_completion_tokens"] = 64
@@ -824,7 +837,7 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		}
 		if kimiRequiredThinking {
 			payload["thinking"] = kimiThinking
-		} else {
+		} else if !kimiAlwaysOnThinking {
 			payload["thinking"] = map[string]string{"type": "disabled"}
 		}
 		payload["response_format"] = map[string]string{"type": "json_object"}
@@ -834,14 +847,32 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 	return json.Marshal(payload)
 }
 
-func resolveKimiProbeThinking(snapshot modelCapabilitySnapshot) (map[string]string, bool, error) {
+func resolveKimiProbeThinking(snapshot modelCapabilitySnapshot) (map[string]string, bool, bool, error) {
 	thinking, required, err := resolveKimiRequiredThinkingContract(
 		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion,
 	)
 	if err != nil {
-		return nil, false, errModelCapabilityUnsupported
+		return nil, false, false, errModelCapabilityUnsupported
 	}
-	return thinking, required, nil
+	if required {
+		return thinking, true, false, nil
+	}
+	if snapshot.ExecutionProfileID != "kimi.k3.api" {
+		return nil, false, false, nil
+	}
+	if snapshot.ExecutionProfileVersion != "1.9.0" {
+		return nil, false, false, errModelCapabilityUnsupported
+	}
+	profile, ok := modelprofile.Lookup(snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion)
+	if !ok {
+		return nil, false, false, errModelCapabilityUnsupported
+	}
+	contract, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
+	if !ok || contract.Mode != modelprofile.ReasoningModeAlwaysOn ||
+		contract.EffortControl.Field != "reasoning_effort" || contract.EffortControl.ProviderDefault != "max" {
+		return nil, false, false, errModelCapabilityUnsupported
+	}
+	return nil, false, true, nil
 }
 
 func resolveKimiRequiredThinkingContract(profileID, profileVersion string) (map[string]string, bool, error) {
@@ -1055,8 +1086,16 @@ func summarizeModelCapabilityProbeRequest(snapshot modelCapabilitySnapshot, body
 		if thinking.Keep != "" {
 			summary["thinking_keep"] = thinking.Keep
 		}
-	} else if snapshot.ProbeContractID == modelcapabilityqualification.KimiChatReasoningProbeContractID {
-		summary["thinking_type"] = "provider_default_enabled"
+	} else {
+		_, _, kimiAlwaysOnThinking, err := resolveKimiProbeThinking(snapshot)
+		if err != nil {
+			return nil, fmt.Errorf("resolve server-owned capability probe thinking summary")
+		}
+		if kimiAlwaysOnThinking ||
+			snapshot.ProbeContractID == modelcapabilityqualification.KimiChatReasoningProbeContractID ||
+			snapshot.ProbeContractID == modelcapabilityqualification.KimiChatReasoningEffortProbeContractID {
+			summary["thinking_type"] = "provider_default_enabled"
+		}
 	}
 	if payload.StreamOptions.IncludeUsage {
 		summary["stream_options_include_usage"] = true

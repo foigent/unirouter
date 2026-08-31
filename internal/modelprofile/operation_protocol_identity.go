@@ -39,6 +39,7 @@ var immutableChatOperationProtocolBindings = map[chatOperationProtocolBindingKey
 	{ProfileID: "deepseek.v4-pro.api", ProfileVersion: "1.5.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:   ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "kimi.k2.6.api", ProfileVersion: "1.7.0", ProtocolProfileID: "protocol.kimi-openai-chat.v5"}:             ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "kimi.k2.7-code.api", ProfileVersion: "1.3.0", ProtocolProfileID: "protocol.kimi-openai-chat.v5"}:        ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "kimi.k3.api", ProfileVersion: "1.9.0", ProtocolProfileID: "protocol.kimi-openai-chat.k3.v5"}:            ChatOperationProtocolBindingVersionV1,
 }
 
 type operationProtocolIdentityKey struct {

@@ -957,6 +957,7 @@ var immutableProfileEndpointClassOverrides = map[string][]string{
 	"kimi.k3.api@1.6.0":                       {EndpointClassKimiPlatformOpenAIV1},
 	"kimi.k3.api@1.7.0":                       {EndpointClassKimiPlatformOpenAIV1},
 	"kimi.k3.api@1.8.0":                       {EndpointClassKimiPlatformOpenAIV1},
+	"kimi.k3.api@1.9.0":                       {EndpointClassKimiPlatformOpenAIV1},
 	"minimax.m2.7.token-plan@1.2.0":           {EndpointClassMiniMaxCNOpenAIV1},
 	"minimax.m2.7.token-plan@1.3.0":           {EndpointClassMiniMaxCNOpenAIV1},
 	"minimax.m2.7.token-plan@1.4.0":           {EndpointClassMiniMaxCNOpenAIV1},
@@ -1147,7 +1148,7 @@ var currentProfileManifests = map[string]currentProfileManifest{
 	"deepseek.v4-pro.api":               currentProfile("1.5.0"),
 	"kimi.k2.6.api":                     currentProfile("1.7.0"),
 	"kimi.k2.7-code.api":                currentProfile("1.3.0"),
-	"kimi.k3.api":                       currentProfile("1.8.0"),
+	"kimi.k3.api":                       currentProfile("1.9.0"),
 	"minimax.m2.7.token-plan":           currentProfile("1.5.0"),
 	"minimax.m2.5-highspeed.token-plan": currentProfile("1.5.0"),
 	"minimax.m3.token-plan":             currentProfile("1.7.0"),
@@ -2317,6 +2318,11 @@ func legacyConformantProviderProfiles() []Profile {
 			dynamicCandidate.ProtocolProfile = "protocol.kimi-openai-chat.k3.v5"
 			dynamicCandidate.Capabilities = append(dynamicCandidate.Capabilities, CapabilityDynamicTools)
 			profiles = append(profiles, dynamicCandidate)
+			effortCandidate := clone(dynamicCandidate)
+			effortCandidate.Version = "1.9.0"
+			effortCandidate.ProviderCapabilities = append(effortCandidate.ProviderCapabilities, CapabilityReasoningEffort)
+			effortCandidate.Capabilities = append(effortCandidate.Capabilities, CapabilityReasoningEffort)
+			profiles = append(profiles, effortCandidate)
 
 		case (existing.ID == "minimax.m2.7.token-plan" ||
 			existing.ID == "minimax.m2.5-highspeed.token-plan" ||

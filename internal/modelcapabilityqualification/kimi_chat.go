@@ -257,6 +257,17 @@ func kimiChatCoreProbeContractSupported(version string) bool {
 	return version == KimiChatCoreProbeContractVersion || version == KimiChatCoreProbeContractVersionV2
 }
 
+func kimiChatReasoningProbeContractSupported(contractID, version string) bool {
+	switch contractID {
+	case KimiChatReasoningProbeContractID:
+		return kimiChatCoreProbeContractSupported(version)
+	case KimiChatReasoningEffortProbeContractID:
+		return version == KimiChatReasoningEffortProbeContractVersion
+	default:
+		return false
+	}
+}
+
 func kimiChatFunctionToolsProbeContractSupported(version string) bool {
 	return kimiChatCoreProbeContractSupported(version) ||
 		version == KimiChatFunctionToolsProbeContractVersionV3 ||
@@ -272,7 +283,7 @@ func ValidateKimiChatReasoning(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
-	if probeContractID != KimiChatReasoningProbeContractID || !kimiChatCoreProbeContractSupported(probeContractVersion) {
+	if !kimiChatReasoningProbeContractSupported(probeContractID, probeContractVersion) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
 	payload, observation, err := readKimiChatCompletion(expectedModel, contentType, reader, probeContractVersion)

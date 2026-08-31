@@ -1,8 +1,10 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Repository source candidate is 1.2.24/M101; 1.2.24 is a documentation and
-> release-metadata closeout only. Development/test remains on the independently
+> Repository source candidate is 1.2.25/M102. M102 is an uncommitted local
+> Kimi K3 Profile 1.9 Chat Core publication candidate; it creates no Target,
+> Probe, Approval, qualification, Release, pricing or provider-call evidence.
+> Development/test remains on the independently
 > verified 1.2.23/M101 main merge
 > `76763701461e1ccfdb80ec8e32d7c3009c9208f8`, tree
 > `3a84f73250ae344cc180c43572f6da18185aa738`. Publication V1 applied the exact

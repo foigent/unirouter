@@ -26,7 +26,7 @@ func TestKimiK27M101ActualArtifactsGuardedRoundTripIntegration(t *testing.T) {
 	migrationDir := testdb.MigrationsDir(t)
 	artifactLedger, err := schemaauthority.ExpectedLedger(migrationDir)
 	require.NoError(t, err)
-	require.Equal(t, "000101_kimi_k27_chat_core_qualification", artifactLedger[len(artifactLedger)-1])
+	require.Contains(t, artifactLedger, "000101_kimi_k27_chat_core_qualification")
 	require.NoError(t, VerifyArtifactPublicationInventory(migrationDir, artifactLedger))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 
@@ -87,6 +87,71 @@ VALUES ('[{"capability_id":"streaming","evidence_ref":"capability_contract:uniro
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=$1`, declaration.PublicationID).Scan(&ledgerCount))
 	require.Equal(t, int64(1), ledgerCount)
 	require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+}
+
+func TestKimiK3M102ActualArtifactsGuardedRoundTripIntegration(t *testing.T) {
+	pool := testdb.SetupIsolated(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	migrationDir := testdb.MigrationsDir(t)
+	artifactLedger, err := schemaauthority.ExpectedLedger(migrationDir)
+	require.NoError(t, err)
+	require.Equal(t, "000102_kimi_k3_chat_core_qualification", artifactLedger[len(artifactLedger)-1])
+	require.NoError(t, VerifyArtifactPublicationInventory(migrationDir, artifactLedger))
+	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
+
+	artifact := ArtifactIdentity{
+		Kind: ArtifactKindSource, Commit: strings.Repeat("4", 40), Tree: strings.Repeat("5", 40),
+		Version: "k3-m102-integration", PublisherExecutableDigest: "sha256:" + strings.Repeat("6", 64),
+	}
+	for _, publicationID := range []string{
+		"000101_kimi_k27_chat_core_qualification",
+		"000102_kimi_k3_chat_core_qualification",
+	} {
+		declaration, predecessor, err := CompiledPublication(publicationID)
+		require.NoError(t, err)
+		authority := fixturePlanAuthority(t, migrationDir, artifactLedger, artifact, predecessor, declaration)
+		plan, err := PlanTarget(ctx, pool, "integration", authority)
+		require.NoError(t, err)
+		require.Equal(t, ValidationValid, plan.Validation)
+		require.Empty(t, plan.ProjectionItems, "baseline has no exact deployment for %s", publicationID)
+		if publicationID == "000102_kimi_k3_chat_core_qualification" {
+			var appendCount, promotionCount int
+			for _, item := range plan.BindingItems {
+				if item.Action == BindingActionAppend {
+					appendCount++
+				}
+			}
+			for _, item := range plan.SelectorItems {
+				if item.Action == SelectorActionPromotion {
+					promotionCount++
+				}
+			}
+			require.Equal(t, 8, appendCount)
+			require.Equal(t, 8, promotionCount)
+		}
+		hooks, err := HooksForPlan("integration", authority, plan)
+		require.NoError(t, err)
+		require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, plan.ApplyMigrations, hooks))
+		require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+
+		if publicationID != "000102_kimi_k3_chat_core_qualification" {
+			continue
+		}
+		downHooks, err := DownHooksForPlan("integration", authority, plan)
+		require.NoError(t, err)
+		require.NoError(t, migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks))
+		var ledgerCount, bindingCount, selectorCount int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=$1`, publicationID).Scan(&ledgerCount))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_probe_contract_bindings WHERE introduced_migration=$1`, publicationID).Scan(&bindingCount))
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_current_probe_contracts WHERE execution_profile_id='kimi.k3.api' AND execution_profile_version='1.9.0'`).Scan(&selectorCount))
+		require.Zero(t, ledgerCount)
+		require.Zero(t, bindingCount)
+		require.Zero(t, selectorCount)
+
+		require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, plan.ApplyMigrations, hooks))
+		require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+	}
 }
 
 func TestStrictPublicationAppliesExactPlanAndRecoveryIsReadOnlyIntegration(t *testing.T) {
