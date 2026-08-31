@@ -143,12 +143,16 @@ func NormalizeDeclaration(declaration Declaration) Declaration {
 	declaration.BindingAppends = append([]Binding(nil), declaration.BindingAppends...)
 	declaration.SelectorTransitions = append([]SelectorTransition(nil), declaration.SelectorTransitions...)
 	declaration.DeclaredProjectionEffects = append([]ProjectionEffect(nil), declaration.DeclaredProjectionEffects...)
+	declaration.ProfileAttachmentGuards = append([]ProfileAttachmentGuard(nil), declaration.ProfileAttachmentGuards...)
 	slices.SortFunc(declaration.BindingAppends, func(a, b Binding) int { return strings.Compare(bindingKey(a), bindingKey(b)) })
 	slices.SortFunc(declaration.SelectorTransitions, func(a, b SelectorTransition) int {
 		return strings.Compare(selectorTransitionKey(a), selectorTransitionKey(b))
 	})
 	slices.SortFunc(declaration.DeclaredProjectionEffects, func(a, b ProjectionEffect) int {
 		return strings.Compare(projectionEffectKey(a), projectionEffectKey(b))
+	})
+	slices.SortFunc(declaration.ProfileAttachmentGuards, func(a, b ProfileAttachmentGuard) int {
+		return strings.Compare(profileAttachmentGuardKey(a), profileAttachmentGuardKey(b))
 	})
 	return declaration
 }
@@ -286,6 +290,17 @@ func ValidateDeclaration(declaration Declaration) error {
 			return fmt.Errorf("%w: duplicate projection effect %s", ErrInvalidDeclaration, key)
 		}
 		seenEffects[key] = struct{}{}
+	}
+	seenAttachmentGuards := make(map[string]struct{}, len(declaration.ProfileAttachmentGuards))
+	for _, guard := range declaration.ProfileAttachmentGuards {
+		if err := validateProfileAttachmentGuard(guard); err != nil {
+			return err
+		}
+		key := profileAttachmentGuardKey(guard)
+		if _, exists := seenAttachmentGuards[key]; exists {
+			return fmt.Errorf("%w: duplicate Profile attachment guard %s", ErrInvalidDeclaration, key)
+		}
+		seenAttachmentGuards[key] = struct{}{}
 	}
 	return nil
 }
@@ -550,6 +565,13 @@ func validateProjectionEffect(effect ProjectionEffect) error {
 	return nil
 }
 
+func validateProfileAttachmentGuard(guard ProfileAttachmentGuard) error {
+	if err := validateText("profile_attachment_guard.execution_profile_id", guard.ExecutionProfileID); err != nil {
+		return err
+	}
+	return validateText("profile_attachment_guard.execution_profile_version", guard.ExecutionProfileVersion)
+}
+
 func validateDeploymentProjection(projection DeploymentProjection) error {
 	if projection.DeploymentID <= 0 || projection.Revision <= 0 || projection.SupportRevision <= 0 {
 		return fmt.Errorf("%w: invalid deployment projection numeric identity", ErrInvalidDeclaration)
@@ -633,6 +655,10 @@ func projectionEffectKey(effect ProjectionEffect) string {
 	return strings.Join([]string{effect.OperationID, effect.CapabilityID, effect.ExecutionProfileID,
 		effect.ExecutionProfileVersion, effect.ProtocolProfileID, effect.ProtocolProfileVersion,
 		effect.ExpectedProvider, effect.ExpectedUpstreamModel}, "\x00")
+}
+
+func profileAttachmentGuardKey(guard ProfileAttachmentGuard) string {
+	return guard.ExecutionProfileID + "\x00" + guard.ExecutionProfileVersion
 }
 
 func deploymentProjectionKey(projection DeploymentProjection) string {

@@ -1,6 +1,6 @@
 -- unirouter:capability-contract-publication-v1
 -- publication: 000102_kimi_k3_chat_core_qualification
--- declaration-sha256: 7f00e210152760613059d3779e30b1e3088764fb0c750a597a2e6a776ebf3c38
+-- declaration-sha256: a8d6178ca8238cc03fce345a847d8dba4b13665a42d9ba90af9a127aa5c040f5
 -- artifact: verify
 
 DO $$

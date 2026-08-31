@@ -106,6 +106,58 @@ func TestKimiK27FixedProbeRequestsPassExactProfileValidationAndAdmission(t *test
 	require.Error(t, err, "the K2.6 disabled-thinking Probe must not be admitted under K2.7")
 }
 
+func TestKimiK3FixedProbeRequestsPassExactProfileValidationAndAdmission(t *testing.T) {
+	plan := executionProfilePlan(t, "kimi.k3.api", "1.9.0")
+	tool := `{"type":"function","function":{"name":"unirouter_probe_echo","description":"Return the supplied probe value through a function call.","parameters":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false}}}`
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "streaming always-on reasoning",
+			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_STREAM_PROBE_OK"}],"max_completion_tokens":64,"stream":true,"stream_options":{"include_usage":true}}`,
+		},
+		{
+			name: "provider default reasoning",
+			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}],"max_completion_tokens":512,"stream":false}`,
+		},
+		{
+			name: "explicit low reasoning effort",
+			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}],"max_completion_tokens":512,"stream":false,"reasoning_effort":"low"}`,
+		},
+		{
+			name: "automatic function tools",
+			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}],"max_completion_tokens":256,"stream":false,"tools":[` + tool + `],"tool_choice":"auto"}`,
+		},
+		{
+			name: "required function tools",
+			body: `{"model":"kimi-k3","messages":[{"role":"user","content":"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}],"max_completion_tokens":256,"stream":false,"tools":[` + tool + `],"tool_choice":"required"}`,
+		},
+		{
+			name: "json object",
+			body: `{"model":"kimi-k3","messages":[{"role":"system","content":"Return valid JSON only."},{"role":"user","content":"Return exactly {\"status\":\"UNIROUTER_JSON_PROBE_OK\"}."}],"max_completion_tokens":64,"stream":false,"response_format":{"type":"json_object"}}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := []byte(test.body)
+			require.NotContains(t, test.body, `"thinking"`)
+			evidence, err := validateChatExecutionProfileRequest(body, plan)
+			require.NoError(t, err)
+			evidence.bindAdmissionBody(body)
+			_, err = estimateChatAdmissionForValidatedPlan(body, plan, evidence)
+			require.NoError(t, err)
+
+			withK2Thinking := strings.Replace(test.body, `"stream":false`, `"stream":false,"thinking":{"type":"enabled","keep":"all"}`, 1)
+			if withK2Thinking != test.body {
+				_, err = validateChatExecutionProfileRequest([]byte(withK2Thinking), plan)
+				require.Error(t, err, "K3 must not inherit a K2 thinking request contract")
+			}
+		})
+	}
+}
+
 func TestKimiK26SuccessfulNonStreamProbeFixturesAreDeliverable(t *testing.T) {
 	tests := []struct {
 		name, body, capability, contractID string
@@ -222,6 +274,120 @@ func TestKimiK26SuccessfulStreamProbeFramesAreDeliverable(t *testing.T) {
 		}, []byte(raw))
 		require.NoError(t, err)
 		frame, err := parseGuardedStreamFrameForProtocol(normalized, "protocol.kimi-openai-chat.v5")
+		require.NoError(t, err)
+		require.False(t, frame.unsupported)
+	}
+}
+
+func TestKimiK3SuccessfulProbeFixturesAreDeliverable(t *testing.T) {
+	usageV1 := `{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":2}`
+	usageV2 := `{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":2,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}`
+	tests := []struct {
+		name, body, capability string
+		validate               func(string) error
+	}{
+		{
+			name: "reasoning", capability: modelprofile.CapabilityReasoning,
+			body: `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private reasoning"},"finish_reason":"stop","logprobs":null}],"usage":` + usageV2 + `}`,
+			validate: func(body string) error {
+				_, err := modelcapabilityqualification.ValidateKimiChatReasoning(
+					modelcapabilityqualification.KimiChatReasoningProbeContractID,
+					modelcapabilityqualification.KimiChatCoreProbeContractVersionV2,
+					"kimi-k3", "application/json", strings.NewReader(body),
+				)
+				return err
+			},
+		},
+		{
+			name: "reasoning effort", capability: modelprofile.CapabilityReasoningEffort,
+			body: `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private reasoning"},"finish_reason":"stop","logprobs":null}],"usage":` + usageV1 + `}`,
+			validate: func(body string) error {
+				_, err := modelcapabilityqualification.ValidateKimiChatReasoning(
+					modelcapabilityqualification.KimiChatReasoningEffortProbeContractID,
+					modelcapabilityqualification.KimiChatReasoningEffortProbeContractVersion,
+					"kimi-k3", "application/json", strings.NewReader(body),
+				)
+				return err
+			},
+		},
+		{
+			name: "required tools", capability: modelprofile.CapabilityToolChoiceReq,
+			body: `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"select tool","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":` + usageV2 + `}`,
+			validate: func(body string) error {
+				_, err := modelcapabilityqualification.ValidateKimiChatFunctionTools(
+					modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
+					modelcapabilityqualification.KimiChatFunctionToolsProbeContractVersionV4,
+					"kimi-k3", "application/json", strings.NewReader(body),
+				)
+				return err
+			},
+		},
+		{
+			name: "json object", capability: modelprofile.CapabilityJSONObject,
+			body: `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"{\"status\":\"UNIROUTER_JSON_PROBE_OK\"}","reasoning_content":"private reasoning"},"finish_reason":"stop","logprobs":null}],"usage":` + usageV2 + `}`,
+			validate: func(body string) error {
+				_, err := modelcapabilityqualification.ValidateKimiChatJSONObject(
+					modelcapabilityqualification.KimiChatJSONObjectProbeContractID,
+					modelcapabilityqualification.KimiChatCoreProbeContractVersionV2,
+					"kimi-k3", "application/json", strings.NewReader(body),
+				)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.NoError(t, test.validate(test.body))
+			var response map[string]interface{}
+			require.NoError(t, decodeJSONUseNumber([]byte(test.body), &response))
+			route := &RouteResult{
+				Channel: models.Channel{Provider: "kimi"}, MappedModel: "kimi-k3",
+				ModelProtocolProfile: "protocol.kimi-openai-chat.k3.v5",
+				ReasoningProfile:     "reasoning.kimi-k3-effort.v1",
+			}
+			if test.capability == modelprofile.CapabilityToolChoiceReq {
+				route.PlanCapabilityRequirements = []modelrouting.CapabilityRequirement{{
+					CapabilityID: modelprofile.CapabilityToolChoiceReq,
+					Origins:      []string{modelrouting.CapabilityOriginExplicitRequest},
+					FunctionToolChoice: &modelrouting.FunctionToolChoiceConstraint{
+						DeclaredFunctionNames: []string{"unirouter_probe_echo"},
+					},
+				}}
+			}
+			require.True(t, inspectNonStreamOutputTextsForRoute(response, route).complete())
+		})
+	}
+
+	frames := []string{
+		`{"id":"chatcmpl-k3","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"private reasoning"},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-k3","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""},"finish_reason":null}],"usage":null}`,
+		`{"id":"chatcmpl-k3","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":` + usageV2 + `}]}`,
+		`{"id":"chatcmpl-k3","object":"chat.completion.chunk","created":1787932800,"model":"kimi-k3","choices":[],"usage":` + usageV2 + `}`,
+	}
+	parts := make([]string, 0, len(frames)+2)
+	for _, frame := range frames {
+		parts = append(parts, "data: "+frame)
+	}
+	parts = append(parts, "data: [DONE]", "")
+	observation, err := modelcapabilityqualification.ValidateKimiChatSSE(
+		modelcapabilityqualification.KimiChatSSEProbeContractID,
+		modelcapabilityqualification.KimiChatSSEProbeContractVersionV4,
+		"kimi-k3", "text/event-stream", strings.NewReader(strings.Join(parts, "\n\n")),
+	)
+	require.NoError(t, err)
+	require.True(t, observation.DoneSeen)
+	require.True(t, observation.ReasoningObserved)
+
+	route := &RouteResult{
+		Channel: models.Channel{Provider: "kimi"}, MappedModel: "kimi-k3",
+		ModelProtocolProfile: "protocol.kimi-openai-chat.k3.v5",
+		ReasoningProfile:     "reasoning.kimi-k3-effort.v1",
+	}
+	for _, raw := range frames {
+		normalized, err := normalizeProviderStreamFrameForRoute(route, []byte(raw))
+		require.NoError(t, err)
+		frame, err := parseGuardedStreamFrameForProtocol(normalized, route.ModelProtocolProfile)
 		require.NoError(t, err)
 		require.False(t, frame.unsupported)
 	}

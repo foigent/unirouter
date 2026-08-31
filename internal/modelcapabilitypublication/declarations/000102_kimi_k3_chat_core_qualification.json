@@ -32,5 +32,8 @@
     {"operation_id":"openai.chat_completions.v1","capability_id":"tool_choice_auto","execution_profile_id":"kimi.k3.api","execution_profile_version":"1.9.0","protocol_profile_id":"protocol.kimi-openai-chat.k3.v5","protocol_profile_version":"1.0.0","expected_provider":"kimi","expected_upstream_model":"kimi-k3","expected_contract_ref":"","final_contract_ref":"capability_contract:unirouter.capability-probe.kimi-chat-function-tools.v1@4.0.0","allow_insert":true},
     {"operation_id":"openai.chat_completions.v1","capability_id":"tool_choice_required","execution_profile_id":"kimi.k3.api","execution_profile_version":"1.9.0","protocol_profile_id":"protocol.kimi-openai-chat.k3.v5","protocol_profile_version":"1.0.0","expected_provider":"kimi","expected_upstream_model":"kimi-k3","expected_contract_ref":"","final_contract_ref":"capability_contract:unirouter.capability-probe.kimi-chat-function-tools.v1@4.0.0","allow_insert":true},
     {"operation_id":"openai.chat_completions.v1","capability_id":"json_object","execution_profile_id":"kimi.k3.api","execution_profile_version":"1.9.0","protocol_profile_id":"protocol.kimi-openai-chat.k3.v5","protocol_profile_version":"1.0.0","expected_provider":"kimi","expected_upstream_model":"kimi-k3","expected_contract_ref":"","final_contract_ref":"capability_contract:unirouter.capability-probe.kimi-chat-json-object.v1@2.0.0","allow_insert":true}
+  ],
+  "profile_attachment_guards": [
+    {"execution_profile_id":"kimi.k3.api","execution_profile_version":"1.9.0"}
   ]
 }

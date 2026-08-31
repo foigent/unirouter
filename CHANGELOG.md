@@ -26,9 +26,10 @@ those build identities do not replace the product version.
   billing or canonical route. Dynamic Tools, JSON Schema, search and media are
   not projected by this Core publication and remain fail closed without their
   own route evidence.
-- This source candidate has not been committed, pushed, deployed or exercised
-  against Kimi. Development/test remains exact 1.2.23/M101; Target publication,
-  deployment and bounded provider validation require separate authorization.
+- This source candidate exists only in local candidate commits on the K3
+  branch; it has not been pushed, deployed or exercised against Kimi.
+  Development/test remains exact 1.2.23/M101; Target publication, deployment
+  and bounded provider validation require separate authorization.
 
 ## [1.2.24] - 2026-08-31
 

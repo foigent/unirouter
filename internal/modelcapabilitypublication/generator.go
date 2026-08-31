@@ -246,17 +246,7 @@ func generateDown(predecessor Baseline, declaration Declaration, digest string) 
 	var b strings.Builder
 	writeHeader(&b, declaration, digest, "down")
 	b.WriteString("BEGIN;\n\nSELECT pg_advisory_xact_lock(86420517831702491);\n\n")
-	b.WriteString(`LOCK TABLE model_capability_probe_contract_bindings,
-    model_capability_current_probe_contracts,
-    model_deployment_capabilities,
-    model_capability_probes,
-    model_capability_routing_approvals,
-    freeze_idempotency,
-    billing_provider_attempts,
-    schema_migrations
-    IN SHARE ROW EXCLUSIVE MODE;
-
-`)
+	writeDownLockTables(&b, declaration)
 	fmt.Fprintf(&b, `DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM schema_migrations WHERE version > %s) THEN
@@ -321,7 +311,37 @@ COMMIT;
 	return []byte(b.String())
 }
 
+func writeDownLockTables(b *strings.Builder, declaration Declaration) {
+	b.WriteString(`LOCK TABLE model_capability_probe_contract_bindings,
+    model_capability_current_probe_contracts,
+    model_deployment_capabilities,
+    model_capability_probes,
+    model_capability_routing_approvals,
+    freeze_idempotency,
+    billing_provider_attempts`)
+	if len(declaration.ProfileAttachmentGuards) != 0 {
+		b.WriteString(",\n    model_registry")
+	}
+	b.WriteString(`,
+    schema_migrations
+    IN SHARE ROW EXCLUSIVE MODE;
+
+`)
+}
+
 func writeDownEvidenceChecks(b *strings.Builder, declaration Declaration) {
+	for _, guard := range declaration.ProfileAttachmentGuards {
+		fmt.Fprintf(b, `DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM model_registry
+                WHERE execution_profile_id=%s AND execution_profile_version=%s) THEN
+        RAISE EXCEPTION 'retained Profile attachment prevents guarded publication downgrade';
+    END IF;
+END;
+$$;
+
+`, sqlLiteral(guard.ExecutionProfileID), sqlLiteral(guard.ExecutionProfileVersion))
+	}
 	b.WriteString(`DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM freeze_idempotency WHERE execution_snapshot_hash IS NOT NULL)

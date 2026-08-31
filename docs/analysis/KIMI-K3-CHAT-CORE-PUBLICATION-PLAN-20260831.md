@@ -1,6 +1,6 @@
 # Kimi K3 Chat Core Publication Plan — 2026-08-31
 
-> Status: closing-review candidate after adjudicated pre-code findings; no
+> Status: local code candidate under independent candidate-review closeout; no
 > runtime, Target or publication authority.
 >
 > Active Delivery Batch: `Kimi K3 × Kimi Platform OpenAI-compatible Chat ×
@@ -121,6 +121,13 @@ the declaration and verified byte-for-byte; it is not hand-written. It changes
 control data only and creates no schema table, Deployment, Probe, Approval,
 Release or live qualification.
 
+The declaration also contains one exact down-only Profile attachment guard for
+`kimi.k3.api@1.9.0`. It grants no attachment or execution authority. A guarded
+M102 downgrade must lock and reject any retained `model_registry` row bound to
+that exact Profile before deleting bindings, selectors or the migration ledger;
+the source-level hook and generated SQL must independently enforce the same
+invariant. Historical Profiles and unrelated model rows are not targets.
+
 Target projection planning retains the frozen classification:
 
 - no exact K3 Deployment: publish binding/selector only, with no projection
@@ -176,8 +183,9 @@ Required local evidence before a stable candidate includes:
 
 1. exact eight-binding declaration, absent predecessors and no sibling/generic
    tuple;
-2. deterministic M101 to M102 generation, apply, verify, guarded down/reapply
-   and retained-evidence rollback refusal;
+2. deterministic M101 to M102 generation, apply, verify, guarded down/reapply,
+   retained-evidence rollback refusal and exact K3 1.9 Profile-attachment
+   rollback refusal through the actual PostgreSQL artifact path;
 3. exact absent/declared/unledgered/mismatch/dynamic-lifecycle/non-exact
    projection cases;
 4. later-created exact Deployment projection plus route fail-closed behavior;

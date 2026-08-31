@@ -124,6 +124,15 @@ type ProjectionEffect struct {
 	AllowInsert             bool   `json:"allow_insert"`
 }
 
+// ProfileAttachmentGuard declares an exact append-only execution Profile that
+// the predecessor artifact cannot interpret. It grants no attachment or
+// publication authority; guarded down uses it only to refuse rollback while a
+// durable model_registry row still references that identity.
+type ProfileAttachmentGuard struct {
+	ExecutionProfileID      string `json:"execution_profile_id"`
+	ExecutionProfileVersion string `json:"execution_profile_version"`
+}
+
 type Baseline struct {
 	SchemaVersion    string     `json:"schema_version"`
 	ThroughMigration string     `json:"through_migration"`
@@ -132,13 +141,14 @@ type Baseline struct {
 }
 
 type Declaration struct {
-	SchemaVersion             string               `json:"schema_version"`
-	PublicationID             string               `json:"publication_id"`
-	ExpectedStaticPredecessor string               `json:"expected_static_predecessor"`
-	ExpectedSchemaPredecessor string               `json:"expected_schema_predecessor"`
-	BindingAppends            []Binding            `json:"binding_appends"`
-	SelectorTransitions       []SelectorTransition `json:"selector_transitions"`
-	DeclaredProjectionEffects []ProjectionEffect   `json:"declared_projection_effects"`
+	SchemaVersion             string                   `json:"schema_version"`
+	PublicationID             string                   `json:"publication_id"`
+	ExpectedStaticPredecessor string                   `json:"expected_static_predecessor"`
+	ExpectedSchemaPredecessor string                   `json:"expected_schema_predecessor"`
+	BindingAppends            []Binding                `json:"binding_appends"`
+	SelectorTransitions       []SelectorTransition     `json:"selector_transitions"`
+	DeclaredProjectionEffects []ProjectionEffect       `json:"declared_projection_effects"`
+	ProfileAttachmentGuards   []ProfileAttachmentGuard `json:"profile_attachment_guards,omitempty"`
 }
 
 type ArtifactIdentity struct {

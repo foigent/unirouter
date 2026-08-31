@@ -16,6 +16,9 @@ func TestKimiK3ChatCoreDeclarationIsExactAndDoesNotAuthorizeExcludedCapabilities
 	require.Len(t, declaration.BindingAppends, 8)
 	require.Len(t, declaration.SelectorTransitions, 8)
 	require.Len(t, declaration.DeclaredProjectionEffects, 8)
+	require.Equal(t, []ProfileAttachmentGuard{{
+		ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.9.0",
+	}}, declaration.ProfileAttachmentGuards)
 
 	wantVersions := map[string]string{
 		"streaming":            "4.0.0",

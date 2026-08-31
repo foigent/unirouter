@@ -26,6 +26,20 @@ func TestGeneratedPublicationIsDeterministicAndKeepsTargetRowsInPlan(t *testing.
 	require.Contains(t, string(first.VerifySQL), "post-commit publication")
 }
 
+func TestGeneratedPublicationGuardedDownRefusesDeclaredProfileAttachments(t *testing.T) {
+	baseline, err := CompiledBaseline()
+	require.NoError(t, err)
+	declaration := fixtureDeclaration()
+	declaration.ProfileAttachmentGuards = []ProfileAttachmentGuard{{
+		ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.9.0",
+	}}
+	generated, err := GenerateMigration(baseline, declaration)
+	require.NoError(t, err)
+	require.Contains(t, string(generated.DownSQL), "billing_provider_attempts,\n    model_registry,\n    schema_migrations")
+	require.Contains(t, string(generated.DownSQL), "retained Profile attachment prevents guarded publication downgrade")
+	require.Contains(t, string(generated.DownSQL), "execution_profile_id='kimi.k3.api' AND execution_profile_version='1.9.0'")
+}
+
 func TestVerifyGeneratedMigrationFilesRejectsDrift(t *testing.T) {
 	baseline, err := CompiledBaseline()
 	require.NoError(t, err)

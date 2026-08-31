@@ -15,9 +15,10 @@ Development/test runs exact 1.2.23/M101 main merge
 publication authority only; the later Target actions created an exact
 Deployment, six independent capability Probe/Approval qualifications, Release
 26 and bounded UI/fixed-SDK evidence. Repository source candidate 1.2.25/M102
-adds the uncommitted K3 Profile 1.9 Chat Core static publication candidate and
-is not claimed as the Target artifact. Local, CI, artifact, Target, provider
-and customer-wallet evidence remain separate.
+exists only in local candidate commits on the K3 branch, adds the K3 Profile
+1.9 Chat Core static publication candidate, and has not been pushed or
+deployed. It is not claimed as the Target artifact. Local, CI, artifact,
+Target, provider and customer-wallet evidence remain separate.
 
 ## Completed delivery batch — Kimi K2.7 Code Chat Core Target closeout
 

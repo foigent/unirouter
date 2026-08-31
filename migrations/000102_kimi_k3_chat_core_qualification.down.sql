@@ -1,6 +1,6 @@
 -- unirouter:capability-contract-publication-v1
 -- publication: 000102_kimi_k3_chat_core_qualification
--- declaration-sha256: 7f00e210152760613059d3779e30b1e3088764fb0c750a597a2e6a776ebf3c38
+-- declaration-sha256: a8d6178ca8238cc03fce345a847d8dba4b13665a42d9ba90af9a127aa5c040f5
 -- artifact: down
 
 BEGIN;
@@ -14,6 +14,7 @@ LOCK TABLE model_capability_probe_contract_bindings,
     model_capability_routing_approvals,
     freeze_idempotency,
     billing_provider_attempts,
+    model_registry,
     schema_migrations
     IN SHARE ROW EXCLUSIVE MODE;
 
@@ -24,6 +25,15 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version='000102_kimi_k3_chat_core_qualification') THEN
         RAISE EXCEPTION 'capability publication ledger is missing';
+    END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM model_registry
+                WHERE execution_profile_id='kimi.k3.api' AND execution_profile_version='1.9.0') THEN
+        RAISE EXCEPTION 'retained Profile attachment prevents guarded publication downgrade';
     END IF;
 END;
 $$;

@@ -18,9 +18,10 @@ main merge `76763701461e1ccfdb80ec8e32d7c3009c9208f8`, tree
 the later-created exact Deployment 5 received declared projections from the
 server-owned current bindings. Six receipt-aware capability qualifications,
 Release 26 and bounded public UI/SDK evidence close only the approved K2.7 Chat
-Core subset. M102 is an uncommitted local candidate that adds only eight exact
-K3 Profile 1.9 Chat Core static bindings and selectors. It is not claimed as a
-Target artifact and creates no live qualification by itself.
+Core subset. M102 exists only in local candidate commits on the K3 branch and
+adds only eight exact K3 Profile 1.9 Chat Core static bindings and selectors.
+It has not been pushed or deployed, is not claimed as a Target artifact and
+creates no live qualification by itself.
 Stable, canary, frontend and Nginx share the frozen `unirouter` Compose project
 and exact configuration chain, and database, Redis and both backend readiness
 checks are healthy. These are development/test facts, not Production evidence.
