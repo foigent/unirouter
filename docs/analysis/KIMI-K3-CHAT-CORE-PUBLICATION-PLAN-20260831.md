@@ -1,7 +1,9 @@
 # Kimi K3 Chat Core Publication Plan — 2026-08-31
 
-> Status: local code candidate under independent candidate-review closeout; no
-> runtime, Target or publication authority.
+> Status: historical independently reviewed implementation plan. The exact
+> source and Target outcome is recorded in
+> `docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md`; this plan does not
+> retroactively become runtime or product authority.
 >
 > Active Delivery Batch: `Kimi K3 × Kimi Platform OpenAI-compatible Chat ×
 > Core Conformance`.
@@ -277,6 +279,6 @@ The current placement of dynamic Target snapshots in release-bearing
 `SYSTEM-FACT-MAP.md` is a separate `valid_deferred` process issue. A future
 batch may evaluate keeping dynamic snapshots primarily in non-release-bearing
 Current Status/evidence while retaining stable architecture and authority
-facts in the System Fact Map. It does not reopen K2.7 or enter K3 Core. Target
-UI may correctly continue to show deployed `1.2.23`; docs-only source candidate
-`1.2.24` must not be deployed merely for display parity.
+facts in the System Fact Map. It does not reopen K2.7 or enter K3 Core. The
+pre-execution statement that Target UI could remain on 1.2.23 is historical;
+current Target identity belongs only to the closeout evidence.

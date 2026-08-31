@@ -1,12 +1,29 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Repository source candidate is 1.2.25/M102. M102 exists only in local
-> candidate commits on the K3 branch and has not been pushed or deployed. It
-> creates no Target, Probe, Approval, qualification, Release, pricing or
-> provider-call evidence.
-> Development/test remains on the independently
-> verified 1.2.23/M101 main merge
+> Repository source candidate is 1.2.29/M102; 1.2.29 is a documentation-only
+> closeout and is not deployed merely to align the UI version. Development/test
+> runs exact 1.2.28/M102 merge
+> `16bf398aed4122c52a174a4d3340b4bc399cd3b7`, tree
+> `a6efc7c13aadcb3fa235f3665b430fd94becf9aa`. Stable/canary and frontend use
+> the exact 1.2.28 backend/frontend images, both backends are healthy, and the
+> ordered database ledger ends at M102. Exact Deployment 6 has eight current
+> K3 Profile 1.9 capability qualifications. Release 27 and its initial stable
+> activation establish a development/test test route only: public model 817
+> remains `staging` and unapproved for the catalog, so this is not capability
+> maturity `released`, Production, Alias or a global canonical switch.
+> Fixed `openai-python@3.5.0` with `max_retries=0` delivered non-stream text,
+> live `reasoning_effort=low`, auto/required tools, JSON Object and cache-read
+> evidence on the exact route. Public SDK streaming calls 414 and 415 each made
+> one provider attempt and returned HTTP 503; the successful typed SSE Probe is
+> qualification evidence and is not substituted for public SDK delivery. The
+> batch used all 20 authorized supplier calls. Wallet movement and transactions
+> remain zero; CNY 5 is an authorization ceiling, not a supplier invoice or
+> `SupplierCostObservation`. The temporary Key and `project_default` Grant are
+> revoked and the Application is archived. Exact evidence:
+> `docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md`.
+> **2026-08-31 Kimi K2.7 Code Chat Core Target closeout:** development/test
+> previously ran exact 1.2.23/M101 main merge
 > `76763701461e1ccfdb80ec8e32d7c3009c9208f8`, tree
 > `3a84f73250ae344cc180c43572f6da18185aa738`. Publication V1 applied the exact
 > K2.7 Code Chat Core declaration, a later exact Deployment received the
