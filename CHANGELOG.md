@@ -4,6 +4,19 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.28] - 2026-08-31
+
+### Fixed
+
+- Routed the Kimi K3 `reasoning_effort` Probe v1 through the existing bounded
+  detailed-usage decoder after live Probe receipt 67 returned the already
+  modeled `completion_tokens_details` member. The contract continues to accept
+  only the explicit cache/reasoning counters and rejects unknown siblings,
+  non-integer counters and inconsistent totals.
+- Preserved Kimi reasoning Probe v1 historical semantics and all K3 Profile,
+  protocol, M102 and qualification identities. Failed Probe receipt 67 remains
+  immutable; this source change does not retry or approve any capability.
+
 ## [1.2.27] - 2026-08-31
 
 ### Fixed

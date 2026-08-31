@@ -285,7 +285,6 @@ func TestKimiK3SuccessfulProbeFixturesAreDeliverable(t *testing.T) {
 	require.Equal(t, "reasoning.kimi-k3-effort.v2", exactProfile.ReasoningProfile)
 	require.Equal(t, "protocol.kimi-openai-chat.k3.v5", exactProfile.ProtocolProfile)
 
-	usageV1 := `{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":2}`
 	usageV2 := `{"prompt_tokens":20,"completion_tokens":9,"total_tokens":29,"cached_tokens":2,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}`
 	tests := []struct {
 		name, body, capability string
@@ -305,7 +304,7 @@ func TestKimiK3SuccessfulProbeFixturesAreDeliverable(t *testing.T) {
 		},
 		{
 			name: "reasoning effort", capability: modelprofile.CapabilityReasoningEffort,
-			body: `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private reasoning"},"finish_reason":"stop","logprobs":null}],"usage":` + usageV1 + `}`,
+			body: `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private reasoning"},"finish_reason":"stop","logprobs":null}],"usage":` + usageV2 + `}`,
 			validate: func(body string) error {
 				_, err := modelcapabilityqualification.ValidateKimiChatReasoning(
 					modelcapabilityqualification.KimiChatReasoningEffortProbeContractID,
