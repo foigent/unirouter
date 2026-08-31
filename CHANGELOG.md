@@ -4,6 +4,20 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.27] - 2026-08-31
+
+### Fixed
+
+- Extended the existing strict non-streaming `tool_calls[].index` normalizer to
+  the exact Kimi K3 Chat v5 tuple after live Probe receipt 63 showed that K3
+  emits the same optional, non-authoritative child index as K2.6/K2.7. The
+  normalizer still rejects duplicate members and invalid index types, removes
+  only that reviewed path, preserves `choices[].index`, and leaves unknown
+  siblings for the canonical delivery guardrail.
+- Kept Profile 1.9, protocol K3 v5, Probe Contract v4, M102, routing and billing
+  identities unchanged. Failed Probe receipts 62/63 remain immutable; no
+  capability is approved or retried by this source change.
+
 ## [1.2.26] - 2026-08-31
 
 ### Fixed

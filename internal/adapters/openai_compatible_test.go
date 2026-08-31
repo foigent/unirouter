@@ -1365,12 +1365,24 @@ func TestNormalizeOpenAICompatibleChatToolCallIndexIsExactScopedAndLossless(t *t
 	require.NotContains(t, string(kimiK27Normalized), `"index":999999999999999999999999999999999999999`)
 
 	kimiK3Body := []byte(strings.ReplaceAll(string(body), "deepseek-v4-flash", "kimi-k3"))
-	kimiK3Unchanged, kimiK3Applied, kimiK3Err := NormalizeOpenAICompatibleChatToolCallIndex(
+	kimiK3Normalized, kimiK3Applied, kimiK3Err := NormalizeOpenAICompatibleChatToolCallIndex(
 		"kimi", "kimi-k3", "protocol.kimi-openai-chat.v5", kimiK3Body,
 	)
 	require.NoError(t, kimiK3Err)
-	require.False(t, kimiK3Applied)
-	require.Equal(t, kimiK3Body, kimiK3Unchanged)
+	require.True(t, kimiK3Applied)
+	require.NotContains(t, string(kimiK3Normalized), `"index":999999999999999999999999999999999999999`)
+	kimiK3RuntimeNormalized, kimiK3RuntimeApplied, kimiK3RuntimeErr := NormalizeOpenAICompatibleChatToolCallIndex(
+		"kimi", "kimi-k3", "protocol.kimi-openai-chat.k3.v5", kimiK3Body,
+	)
+	require.NoError(t, kimiK3RuntimeErr)
+	require.True(t, kimiK3RuntimeApplied)
+	require.NotContains(t, string(kimiK3RuntimeNormalized), `"index":999999999999999999999999999999999999999`)
+	kimiK3Generic, kimiK3GenericApplied, kimiK3GenericErr := NormalizeOpenAICompatibleChatToolCallIndex(
+		"kimi", "kimi-k3", "openai.chat_completions", kimiK3Body,
+	)
+	require.NoError(t, kimiK3GenericErr)
+	require.False(t, kimiK3GenericApplied)
+	require.Equal(t, kimiK3Body, kimiK3Generic)
 
 	for _, duplicate := range []string{
 		strings.Replace(string(kimiBody), `"id":"call_1"`, `"id":"shadow","id":"call_1"`, 1),
@@ -1455,6 +1467,18 @@ func TestOpenAICompatibleParseResponseNormalizesReviewedNonStreamToolCallIndex(t
 		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK,
 		Channel:       models.Channel{Provider: "kimi", AdapterType: TypeOpenAICompatible},
 		UpstreamModel: "kimi-k2.6", ProtocolProfile: "protocol.kimi-openai-chat.v5", Body: kimiBody,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, response.Usage.TotalTokens)
+	require.NoError(t, json.Unmarshal(response.Body, &envelope))
+	tool = envelope["choices"].([]interface{})[0].(map[string]interface{})["message"].(map[string]interface{})["tool_calls"].([]interface{})[0].(map[string]interface{})
+	require.NotContains(t, tool, "index")
+
+	kimiK3Body := []byte(strings.ReplaceAll(string(body), "deepseek-v4-flash", "kimi-k3"))
+	response, err = NewOpenAICompatible().ParseResponse(context.Background(), ResponseInput{
+		Endpoint: EndpointChatCompletions, StatusCode: http.StatusOK,
+		Channel:       models.Channel{Provider: "kimi", AdapterType: TypeOpenAICompatible},
+		UpstreamModel: "kimi-k3", ProtocolProfile: "protocol.kimi-openai-chat.k3.v5", Body: kimiK3Body,
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, response.Usage.TotalTokens)

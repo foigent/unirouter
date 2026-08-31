@@ -325,6 +325,15 @@ func TestKimiChatFunctionToolsProbeV4NormalizesOnlyNonStreamToolCallIndex(t *tes
 	require.True(t, observation.ToolCallObserved)
 	require.Equal(t, int64(29), observation.TotalTokens)
 
+	k3Body := strings.Replace(body, `"model":"kimi-k2.6"`, `"model":"kimi-k3"`, 1)
+	k3Observation, err := ValidateKimiChatFunctionTools(
+		KimiChatFunctionToolsProbeContractID, KimiChatFunctionToolsProbeContractVersionV4,
+		"kimi-k3", "application/json", strings.NewReader(k3Body),
+	)
+	require.NoError(t, err)
+	require.True(t, k3Observation.ToolCallObserved)
+	require.Equal(t, int64(29), k3Observation.TotalTokens)
+
 	for _, invalid := range []string{`null`, `"0"`, `-1`, `0.5`, `1e2`, `01`} {
 		t.Run("invalid_index_"+strings.NewReplacer("-", "negative_", ".", "decimal_", `"`, "quote_").Replace(invalid), func(t *testing.T) {
 			mutated := strings.Replace(body, "999999999999999999999999999999999999999", invalid, 1)

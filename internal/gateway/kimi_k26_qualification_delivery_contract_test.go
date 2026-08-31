@@ -317,7 +317,7 @@ func TestKimiK3SuccessfulProbeFixturesAreDeliverable(t *testing.T) {
 		},
 		{
 			name: "required tools", capability: modelprofile.CapabilityToolChoiceReq,
-			body: `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"select tool","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":` + usageV2 + `}`,
+			body: `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":"select tool","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]},"finish_reason":"tool_calls","logprobs":null}],"usage":` + usageV2 + `}`,
 			validate: func(body string) error {
 				_, err := modelcapabilityqualification.ValidateKimiChatFunctionTools(
 					modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
@@ -344,8 +344,19 @@ func TestKimiK3SuccessfulProbeFixturesAreDeliverable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			require.NoError(t, test.validate(test.body))
+			canonicalBody := []byte(test.body)
+			if test.capability == modelprofile.CapabilityToolChoiceReq {
+				var changed bool
+				var err error
+				canonicalBody, changed, err = adapters.NormalizeOpenAICompatibleChatToolCallIndex(
+					"kimi", "kimi-k3", exactProfile.ProtocolProfile, canonicalBody,
+				)
+				require.NoError(t, err)
+				require.True(t, changed)
+				require.NotContains(t, string(canonicalBody), `"tool_calls":[{"index"`)
+			}
 			var response map[string]interface{}
-			require.NoError(t, decodeJSONUseNumber([]byte(test.body), &response))
+			require.NoError(t, decodeJSONUseNumber(canonicalBody, &response))
 			route := &RouteResult{
 				Channel:                 models.Channel{Provider: "kimi"},
 				MappedModel:             "kimi-k3",
