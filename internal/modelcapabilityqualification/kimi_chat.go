@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
@@ -279,14 +280,80 @@ func kimiChatFunctionToolsV3DeliveryShape(version string) bool {
 		version == KimiChatFunctionToolsProbeContractVersionV4
 }
 
+func legacyKimiChatProbeBinding(probeContractID, probeContractVersion, expectedModel string) Binding {
+	binding := Binding{
+		OperationID: "openai.chat_completions.v1", ProbeContractID: probeContractID,
+		ProbeContractVersion: probeContractVersion, ExpectedProvider: "kimi",
+		ExpectedUpstreamModel: expectedModel, PublicPath: "/v1/chat/completions",
+		ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+	}
+	switch strings.TrimSpace(expectedModel) {
+	case "kimi-k2.6":
+		binding.ExecutionProfileID = "kimi.k2.6.api"
+		binding.ExecutionProfileVersion = "1.7.0"
+		binding.ProtocolProfileID = "protocol.kimi-openai-chat.v5"
+	case "kimi-k2.7-code":
+		binding.ExecutionProfileID = "kimi.k2.7-code.api"
+		binding.ExecutionProfileVersion = "1.3.0"
+		binding.ProtocolProfileID = "protocol.kimi-openai-chat.v5"
+	case "kimi-k3":
+		binding.ExecutionProfileID = "kimi.k3.api"
+		binding.ExecutionProfileVersion = "1.9.0"
+		binding.ProtocolProfileID = "protocol.kimi-openai-chat.k3.v5"
+	}
+	return binding
+}
+
+func kimiChatNonStreamMechanics(binding Binding) (adapters.ChatNonStreamMechanics, error) {
+	expectedProfileID, expectedProfileVersion, expectedProtocol := "", "", ""
+	switch strings.TrimSpace(binding.ExpectedUpstreamModel) {
+	case "kimi-k2.6":
+		expectedProfileID, expectedProfileVersion, expectedProtocol = "kimi.k2.6.api", "1.7.0", "protocol.kimi-openai-chat.v5"
+	case "kimi-k2.7-code":
+		expectedProfileID, expectedProfileVersion, expectedProtocol = "kimi.k2.7-code.api", "1.3.0", "protocol.kimi-openai-chat.v5"
+	case "kimi-k3":
+		expectedProfileID, expectedProfileVersion, expectedProtocol = "kimi.k3.api", "1.9.0", "protocol.kimi-openai-chat.k3.v5"
+	default:
+		return adapters.ChatNonStreamMechanics{}, invalidKimiChat("expected_model")
+	}
+	if !strings.EqualFold(strings.TrimSpace(binding.ExpectedProvider), "kimi") ||
+		strings.TrimSpace(binding.OperationID) != "openai.chat_completions.v1" ||
+		strings.TrimSpace(binding.ExecutionProfileID) != expectedProfileID ||
+		strings.TrimSpace(binding.ExecutionProfileVersion) != expectedProfileVersion ||
+		strings.TrimSpace(binding.ProtocolProfileID) != expectedProtocol ||
+		strings.TrimSpace(binding.ProtocolProfileVersion) != modelprofile.ChatOperationProtocolBindingVersionV1 ||
+		strings.TrimSpace(binding.PublicPath) != "/v1/chat/completions" {
+		return adapters.ChatNonStreamMechanics{}, invalidKimiChat("probe_contract")
+	}
+	mechanics := adapters.ChatNonStreamMechanics{}
+	if binding.ProbeContractID == KimiChatReasoningEffortProbeContractID ||
+		kimiChatFunctionToolsV3DeliveryShape(binding.ProbeContractVersion) {
+		mechanics.RejectDuplicateMembers = true
+	}
+	if binding.ProbeContractID == KimiChatFunctionToolsProbeContractID &&
+		binding.ProbeContractVersion == KimiChatFunctionToolsProbeContractVersionV4 {
+		mechanics.NormalizeToolCallIndex = true
+	}
+	return mechanics, nil
+}
+
 func ValidateKimiChatReasoning(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
-	if !kimiChatReasoningProbeContractSupported(probeContractID, probeContractVersion) {
+	return ValidateKimiChatReasoningForBinding(
+		legacyKimiChatProbeBinding(probeContractID, probeContractVersion, expectedModel),
+		contentType, reader,
+	)
+}
+
+func ValidateKimiChatReasoningForBinding(
+	binding Binding, contentType string, reader io.Reader,
+) (KimiChatObservation, error) {
+	if !kimiChatReasoningProbeContractSupported(binding.ProbeContractID, binding.ProbeContractVersion) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
-	payload, observation, err := readKimiChatCompletion(probeContractID, expectedModel, contentType, reader, probeContractVersion)
+	payload, observation, err := readKimiChatCompletion(binding, contentType, reader)
 	if err != nil {
 		return observation, err
 	}
@@ -312,10 +379,20 @@ func ValidateKimiChatFunctionTools(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
-	if probeContractID != KimiChatFunctionToolsProbeContractID || !kimiChatFunctionToolsProbeContractSupported(probeContractVersion) {
+	return ValidateKimiChatFunctionToolsForBinding(
+		legacyKimiChatProbeBinding(probeContractID, probeContractVersion, expectedModel),
+		contentType, reader,
+	)
+}
+
+func ValidateKimiChatFunctionToolsForBinding(
+	binding Binding, contentType string, reader io.Reader,
+) (KimiChatObservation, error) {
+	if binding.ProbeContractID != KimiChatFunctionToolsProbeContractID ||
+		!kimiChatFunctionToolsProbeContractSupported(binding.ProbeContractVersion) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
-	payload, observation, err := readKimiChatCompletion(probeContractID, expectedModel, contentType, reader, probeContractVersion)
+	payload, observation, err := readKimiChatCompletion(binding, contentType, reader)
 	if err != nil {
 		return observation, err
 	}
@@ -326,7 +403,7 @@ func ValidateKimiChatFunctionTools(
 	if len(choice.Message.ToolCalls) != 1 {
 		return observation, invalidKimiChat("tool_calls")
 	}
-	if err := validateKimiK27RequiredReasoning(expectedModel, choice.Message.ReasoningContent); err != nil {
+	if err := validateKimiK27RequiredReasoning(binding.ExpectedUpstreamModel, choice.Message.ReasoningContent); err != nil {
 		return observation, err
 	}
 	call := choice.Message.ToolCalls[0]
@@ -336,7 +413,7 @@ func ValidateKimiChatFunctionTools(
 	var arguments struct {
 		Value string `json:"value"`
 	}
-	if kimiChatFunctionToolsV3DeliveryShape(probeContractVersion) {
+	if kimiChatFunctionToolsV3DeliveryShape(binding.ProbeContractVersion) {
 		if err := strictjson.Validate([]byte(call.Function.Arguments)); err != nil {
 			return observation, invalidKimiChat("tool_arguments", err)
 		}
@@ -352,10 +429,20 @@ func ValidateKimiChatJSONObject(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
-	if probeContractID != KimiChatJSONObjectProbeContractID || !kimiChatCoreProbeContractSupported(probeContractVersion) {
+	return ValidateKimiChatJSONObjectForBinding(
+		legacyKimiChatProbeBinding(probeContractID, probeContractVersion, expectedModel),
+		contentType, reader,
+	)
+}
+
+func ValidateKimiChatJSONObjectForBinding(
+	binding Binding, contentType string, reader io.Reader,
+) (KimiChatObservation, error) {
+	if binding.ProbeContractID != KimiChatJSONObjectProbeContractID ||
+		!kimiChatCoreProbeContractSupported(binding.ProbeContractVersion) {
 		return KimiChatObservation{}, invalidKimiChat("probe_contract")
 	}
-	payload, observation, err := readKimiChatCompletion(probeContractID, expectedModel, contentType, reader, probeContractVersion)
+	payload, observation, err := readKimiChatCompletion(binding, contentType, reader)
 	if err != nil {
 		return observation, err
 	}
@@ -376,7 +463,7 @@ func ValidateKimiChatJSONObject(
 	if len(choice.Message.ToolCalls) != 0 {
 		return observation, invalidKimiChat("tool_calls")
 	}
-	if err := validateKimiK27RequiredReasoning(expectedModel, choice.Message.ReasoningContent); err != nil {
+	if err := validateKimiK27RequiredReasoning(binding.ExpectedUpstreamModel, choice.Message.ReasoningContent); err != nil {
 		return observation, err
 	}
 	observation.StructuredOutputObserved = true
@@ -804,10 +891,14 @@ func validateKimiDetailedUsage(detailed kimiChatStreamUsage) (kimiChatUsage, err
 	return usage, nil
 }
 
-func readKimiChatCompletion(probeContractID, expectedModel, contentType string, reader io.Reader, probeContractVersion string) (kimiChatCompletion, KimiChatObservation, error) {
-	expectedModel = strings.TrimSpace(expectedModel)
+func readKimiChatCompletion(binding Binding, contentType string, reader io.Reader) (kimiChatCompletion, KimiChatObservation, error) {
+	expectedModel := strings.TrimSpace(binding.ExpectedUpstreamModel)
 	if expectedModel == "" || safeReportedModel(expectedModel) != expectedModel {
 		return kimiChatCompletion{}, KimiChatObservation{}, invalidKimiChat("expected_model")
+	}
+	mechanics, err := kimiChatNonStreamMechanics(binding)
+	if err != nil {
+		return kimiChatCompletion{}, KimiChatObservation{}, err
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil || mediaType != "application/json" {
@@ -822,26 +913,25 @@ func readKimiChatCompletion(probeContractID, expectedModel, contentType string, 
 	if limited.N <= 0 {
 		return kimiChatCompletion{}, observation, invalidKimiChat("response_too_large")
 	}
-	if probeContractID == KimiChatReasoningEffortProbeContractID ||
-		kimiChatFunctionToolsV3DeliveryShape(probeContractVersion) {
-		if err := strictjson.Validate(body); err != nil {
-			return kimiChatCompletion{}, observation, invalidKimiChat("json", err)
-		}
+	if err := adapters.ValidateOpenAICompatibleChatNonStreamDocument(body, mechanics); err != nil {
+		return kimiChatCompletion{}, observation, invalidKimiChat("json", err)
 	}
-	if probeContractVersion == KimiChatFunctionToolsProbeContractVersionV4 {
-		normalized, _, normalizeErr := adapters.NormalizeOpenAICompatibleChatToolCallIndex(
-			"kimi", expectedModel, "protocol.kimi-openai-chat.v5", body,
-		)
-		if normalizeErr != nil {
-			return kimiChatCompletion{}, observation, invalidKimiChat("delivery_shape", normalizeErr)
-		}
-		body = normalized
+	prepared, prepareErr := adapters.PrepareOpenAICompatibleChatNonStreamDocument(
+		binding.ExpectedProvider, expectedModel, binding.ProtocolProfileID,
+		binding.ProtocolProfileVersion, body, mechanics,
+	)
+	if prepareErr != nil {
+		return kimiChatCompletion{}, observation, invalidKimiChat("probe_contract", prepareErr)
 	}
+	if prepared.DeliveryIssue != adapters.ChatNonStreamDeliveryIssueNone {
+		return kimiChatCompletion{}, observation, invalidKimiChat("delivery_shape")
+	}
+	body = prepared.Body
 	var payload kimiChatCompletion
 	if err := decodeKimiJSONStrict(body, &payload); err != nil {
 		return kimiChatCompletion{}, observation, invalidKimiChat("json", err)
 	}
-	if !kimiChatFunctionToolsV3DeliveryShape(probeContractVersion) {
+	if !kimiChatFunctionToolsV3DeliveryShape(binding.ProbeContractVersion) {
 		if kimiJSONFieldPresent(payload.ServiceTier) || kimiJSONFieldPresent(payload.Metadata) {
 			return kimiChatCompletion{}, observation, invalidKimiChat("json")
 		}
@@ -857,7 +947,7 @@ func readKimiChatCompletion(probeContractID, expectedModel, contentType string, 
 	if observation.ReportedModel != expectedModel {
 		return payload, observation, invalidKimiChat("reported_model")
 	}
-	usage, err := decodeKimiCompletionUsage(payload.Usage, probeContractID, probeContractVersion)
+	usage, err := decodeKimiCompletionUsage(payload.Usage, binding.ProbeContractID, binding.ProbeContractVersion)
 	if err != nil {
 		return payload, observation, err
 	}

@@ -382,6 +382,46 @@ func TestKimiChatFunctionToolsProbeV4NormalizesOnlyNonStreamToolCallIndex(t *tes
 	}
 }
 
+func TestKimiChatNonStreamBindingAndHistoricalRootDiagnosticsRemainExact(t *testing.T) {
+	binding := legacyKimiChatProbeBinding(
+		KimiChatFunctionToolsProbeContractID,
+		KimiChatFunctionToolsProbeContractVersionV4,
+		"kimi-k2.6",
+	)
+	mismatch := binding
+	mismatch.ProtocolProfileVersion = "2.0.0"
+	_, err := ValidateKimiChatFunctionToolsForBinding(
+		mismatch, "application/json", strings.NewReader(`{}`),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "probe_contract", KimiChatErrorCode(err))
+
+	tests := []struct {
+		name, contractID, version, body, wantCode string
+	}{
+		{name: "core v1 null", contractID: KimiChatReasoningProbeContractID, version: KimiChatCoreProbeContractVersion, body: `null`, wantCode: "reported_model"},
+		{name: "core v2 array", contractID: KimiChatReasoningProbeContractID, version: KimiChatCoreProbeContractVersionV2, body: `[]`, wantCode: "json"},
+		{name: "effort v1 scalar", contractID: KimiChatReasoningEffortProbeContractID, version: KimiChatReasoningEffortProbeContractVersion, body: `1`, wantCode: "json"},
+		{name: "tools v3 null", contractID: KimiChatFunctionToolsProbeContractID, version: KimiChatFunctionToolsProbeContractVersionV3, body: `null`, wantCode: "reported_model"},
+		{name: "tools v3 array", contractID: KimiChatFunctionToolsProbeContractID, version: KimiChatFunctionToolsProbeContractVersionV3, body: `[]`, wantCode: "json"},
+		{name: "tools v4 null", contractID: KimiChatFunctionToolsProbeContractID, version: KimiChatFunctionToolsProbeContractVersionV4, body: `null`, wantCode: "reported_model"},
+		{name: "tools v4 array", contractID: KimiChatFunctionToolsProbeContractID, version: KimiChatFunctionToolsProbeContractVersionV4, body: `[]`, wantCode: "delivery_shape"},
+		{name: "tools v4 scalar", contractID: KimiChatFunctionToolsProbeContractID, version: KimiChatFunctionToolsProbeContractVersionV4, body: `1`, wantCode: "delivery_shape"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			binding := legacyKimiChatProbeBinding(test.contractID, test.version, "kimi-k2.6")
+			if test.contractID == KimiChatFunctionToolsProbeContractID {
+				_, err = ValidateKimiChatFunctionToolsForBinding(binding, "application/json", strings.NewReader(test.body))
+			} else {
+				_, err = ValidateKimiChatReasoningForBinding(binding, "application/json", strings.NewReader(test.body))
+			}
+			require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+			require.Equal(t, test.wantCode, KimiChatErrorCode(err))
+		})
+	}
+}
+
 func TestKimiChatDiagnosticCodeNeverProjectsProviderValues(t *testing.T) {
 	body := kimiProbeEnvelopePrefix + `"provider_extension":"secret-value","choices":[],"usage":{}}`
 	_, err := ValidateKimiChatFunctionTools(

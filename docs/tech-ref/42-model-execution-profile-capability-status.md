@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-08-31.
+> Snapshot date: 2026-09-01.
 > This document is not a claim that every provider-documented feature is production supported.
 
 The current product-scope candidate is
@@ -17,11 +17,13 @@ Deployment 6, eight independent capability Probe/Approval qualifications and
 development/test Release 27. The Release and initial stable-slot activation
 establish only a test route. Public model 817 remains `staging` and outside the
 approved catalog, so no `released`, Production, Alias or global canonical claim
-is made. Repository source candidate 1.2.29/M102 is a documentation-only
-closeout and is not the deployed Target artifact. Local, CI, artifact, Target,
-provider, SDK-delivery and customer-wallet evidence remain separate.
+is made. Repository source candidate 1.2.30/M102 converges one exact Kimi
+non-stream preparation seam without changing Profile, protocol, Probe contract,
+qualification or database identity; it is not the deployed Target artifact.
+Local, CI, artifact, Target, provider, SDK-delivery and customer-wallet evidence
+remain separate.
 
-## Kimi K3 Chat Core Target outcome — qualified with a public streaming gap
+## Kimi K3 Chat Core Target outcome — bounded Core canary live verified
 
 The exact tuple is `kimi.k3.api@1.9.0 ×
 protocol.kimi-openai-chat.k3.v5@1.0.0 × openai.chat_completions.v1`. M102 used
@@ -44,10 +46,13 @@ Fixed `openai-python@3.5.0` with `max_retries=0` created public call logs
 Object and the two-request cache workflow succeeded with provider-reported
 final usage; the second cache request reported 1,536 read tokens. Public SDK
 streaming calls 414 and 415 were separate single-attempt requests and both
-returned provider HTTP 503 with missing usage. The typed SSE qualification
-therefore remains valid capability evidence but does not prove the missing
-public SDK delivery checkpoint. Local tests cover `low|high|max`; only `low`
-has live public evidence.
+returned provider HTTP 503 with missing usage. A separately authorized paired
+diagnosis on 2026-09-01 then produced one successful direct provider stream
+and public SDK call 421 through UniRouter using the same semantic request
+digest. The diagnostic stopped at 4/20 execution slots and 2/20 provider
+attempts (one direct and one UniRouter). This closes the bounded point-in-time
+public streaming checkpoint without proving a streaming SLA. Local tests cover
+`low|high|max`; only `low` has live public evidence.
 
 The batch used all 20 authorized supplier calls: one operation Probe, eleven
 capability Probe attempts and eight SDK requests. No automatic retry ran. The
@@ -58,10 +63,10 @@ is only the authorization ceiling because no supplier invoice or
 execution evidence remains retained. Exact evidence is
 `docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md`.
 
-This outcome is accurately described as exact development/test capability
-qualification plus bounded non-stream public-delivery verification. It is not
-fully public-SDK verified while streaming remains 503, and it is not
-`canary_live_verified`, `released` or Production.
+The paired diagnostic used a separate authorization and stopped at 2 provider
+attempts; its unused allowance does not transfer. The exact bounded Core subset is now
+accurately `canary_live_verified` on development/test. That is not an SLA,
+capability maturity `released`, Production, Alias or canonical authority.
 
 ## Completed delivery batch — Kimi K2.7 Code Chat Core Target closeout
 
@@ -147,11 +152,13 @@ Application 6 after the SDK closeout, revoked Grant 14 and disabled task-scoped
 Keys 91/92/93 while
 preserving immutable Probe, Approval, call and audit evidence.
 
-The Kimi Probe validators and Gateway delivery guard still contain separate
-envelope parsing. Cross-delivery fixtures and the public SDK evidence above
-prevent this closeout from treating Probe approval alone as delivery proof.
-Before another provider adds a third provider-specific full envelope parser,
-the shared OpenAI-compatible delivery-shape boundary must be re-evaluated.
+Kimi non-stream Probe and Runtime now share one exact-binding-selected JSON
+ambiguity/tool-index preparation seam, but their complete typed Probe schema
+and Gateway delivery guard remain distinct. Cross-delivery fixtures and the
+public SDK evidence above therefore still prevent Probe approval alone from
+being treated as delivery proof. Before another provider adds a third
+provider-specific full envelope parser, the remaining shared
+OpenAI-compatible delivery-shape boundary must be re-evaluated.
 M95–M100 also demonstrate repeated static contract publication; that repetition
 must be measured in a separate bounded design batch before another comparable
 provider integration. Neither warning authorizes a manifest framework or

@@ -1,8 +1,10 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Repository source candidate is 1.2.29/M102; 1.2.29 is a documentation-only
-> closeout and is not deployed merely to align the UI version. Development/test
+> Repository source candidate is 1.2.30/M102; it converges the exact Kimi
+> non-stream document-ambiguity/tool-index preparation seam without changing
+> any Profile, protocol, Probe contract, qualification or database identity.
+> It is not deployed merely to align the UI version. Development/test
 > runs exact 1.2.28/M102 merge
 > `16bf398aed4122c52a174a4d3340b4bc399cd3b7`, tree
 > `a6efc7c13aadcb3fa235f3665b430fd94becf9aa`. Stable/canary and frontend use

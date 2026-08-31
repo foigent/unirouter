@@ -65,27 +65,30 @@ func (r *Router) Policy() routingpolicy.Config {
 
 // RouteResult contains the selected channel, key, and mapped model name.
 type RouteResult struct {
-	Channel                 models.Channel
-	ChannelKey              models.ChannelKey
-	MappedModel             string
-	RoutingPolicyVersion    string
-	SnapshotVersion         string
-	SnapshotSource          string
-	SnapshotDegraded        bool
-	CandidateCount          int
-	ExcludedCount           int
-	ExclusionReasons        string
-	SelectionReason         string
-	RequiresProbe           bool
-	ProbeToken              string
-	RuntimeReleaseRef       string
-	RuntimeStage            string
-	RuntimeAssignmentID     string
-	ExecutionProfileID      string
-	ExecutionProfileVersion string
-	ReasoningProfile        string
-	CacheUsageProfile       string
-	ModelProtocolProfile    string
+	Channel                         models.Channel
+	ChannelKey                      models.ChannelKey
+	MappedModel                     string
+	RoutingPolicyVersion            string
+	SnapshotVersion                 string
+	SnapshotSource                  string
+	SnapshotDegraded                bool
+	CandidateCount                  int
+	ExcludedCount                   int
+	ExclusionReasons                string
+	SelectionReason                 string
+	RequiresProbe                   bool
+	ProbeToken                      string
+	RuntimeReleaseRef               string
+	RuntimeStage                    string
+	RuntimeAssignmentID             string
+	ModelOperationID                string
+	ExecutionProfileID              string
+	ExecutionProfileVersion         string
+	ReasoningProfile                string
+	CacheUsageProfile               string
+	ModelProtocolProfile            string
+	OperationProtocolProfileID      string
+	OperationProtocolProfileVersion string
 	// PlanCapabilityRequirements is a read-only projection of the one normalized
 	// Plan capability authority identified by SnapshotVersion. Response handling
 	// may consume it but must never normalize or independently persist it.

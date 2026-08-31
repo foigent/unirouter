@@ -4,6 +4,31 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.30] - 2026-09-01
+
+### Changed
+
+- Converged the exact Kimi K2.6, K2.7 Code and K3 non-stream Chat runtime and
+  capability-Probe paths on one bounded document-ambiguity and child
+  `tool_calls[].index` preparation seam. Exact Profile, operation, protocol ID
+  and immutable operation-binding version select the existing mechanics; no
+  provider-family inheritance or new policy/version authority was added.
+- Preserved published Probe-contract acceptance sets and customer-delivery
+  fail-closed behavior. Duplicate or malformed JSON still fails before usage;
+  a syntactically valid but structurally undeliverable tool tree retains
+  validated provider token usage for the existing evidence hold and remains
+  rejected by the canonical delivery guardrail.
+- Carried the exact operation protocol ID/version through canonical routing and
+  reused a `UseNumber` object decoded from the final normalized response body,
+  while retaining the existing fallback decoder for all unaffected adapters.
+
+### Scope
+
+- This release changes no schema, migration, Profile, protocol, Probe contract,
+  qualification, Release, Alias, canonical route, pricing or billing authority.
+  Streaming, provider characterization and MiniMax/GLM promotion remain outside
+  this batch.
+
 ## [1.2.29] - 2026-08-31
 
 ### Documentation

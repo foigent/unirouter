@@ -137,13 +137,23 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 	_ = ctx
 	usage := NewMissingUsage()
 	responseBody := in.Body
+	var deliveryObject map[string]interface{}
+	var deliveryObjectBody []byte
 	if in.StatusCode >= 200 && in.StatusCode < 300 {
+		kimiMechanics, exactKimiChat, mechanicsErr := kimiRuntimeChatNonStreamMechanics(in)
+		if mechanicsErr != nil {
+			return nil, mechanicsErr
+		}
 		// The exact tuples whose non-stream tool-call index is normalized must
 		// reject duplicate JSON members before usage or delivery parsing can
 		// collapse them with last-wins map semantics. Invalid index values remain
 		// available to the later delivery guardrail so provider usage can still be
 		// retained, but an ambiguous document is never accepted as usage evidence.
-		if in.Endpoint == EndpointChatCompletions && openAICompatibleChatToolCallIndexScope(
+		if exactKimiChat {
+			if err := ValidateOpenAICompatibleChatNonStreamDocument(responseBody, kimiMechanics); err != nil {
+				return nil, fmt.Errorf("validate exact Kimi Chat response: %w", err)
+			}
+		} else if in.Endpoint == EndpointChatCompletions && openAICompatibleChatToolCallIndexScope(
 			in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile,
 		) {
 			if err := strictjson.Validate(responseBody); err != nil {
@@ -162,9 +172,31 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 			return nil, fmt.Errorf("cache profile %s requires final response usage with prompt_tokens_details.cached_tokens", cacheContract.ProfileID)
 		}
 		if in.Endpoint == EndpointChatCompletions {
+			var exactKimiDeliveryIssue ChatNonStreamDeliveryIssue
+			if exactKimiChat {
+				prepared, prepareErr := PrepareOpenAICompatibleChatNonStreamDocument(
+					in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile,
+					in.OperationProtocolProfileVersion, responseBody, kimiMechanics,
+				)
+				if prepareErr != nil {
+					return nil, fmt.Errorf("prepare exact Kimi Chat response: %w", prepareErr)
+				}
+				exactKimiDeliveryIssue = prepared.DeliveryIssue
+				if exactKimiDeliveryIssue == ChatNonStreamDeliveryIssueNone {
+					responseBody = prepared.Body
+				}
+			}
 			meterUsage, meterErr := parseBuiltinToolMeterUsage(in.Body, in.ProtocolProfile)
 			if meterErr != nil {
-				return nil, meterErr
+				// An exact Kimi document already classified as delivery-invalid
+				// may also be impossible to traverse for builtin-tool metering.
+				// Retain the independently validated token usage and let the
+				// canonical guardrail withhold the original body. A structurally
+				// valid document still requires exact meter evidence.
+				if !exactKimiChat || exactKimiDeliveryIssue == ChatNonStreamDeliveryIssueNone {
+					return nil, meterErr
+				}
+				meterUsage = []metering.MeterQuantity{}
 			}
 			usage.MeterUsage = meterUsage
 			// Some explicitly reviewed OpenAI-compatible Chat tuples can emit an
@@ -173,10 +205,12 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 			// wire variation before the shared delivery guardrail.
 			// Invalid values deliberately remain in the body so the guardrail can
 			// fail closed without discarding already parsed provider usage.
-			if normalizedBody, _, normalizeErr := NormalizeOpenAICompatibleChatToolCallIndex(
-				in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile, responseBody,
-			); normalizeErr == nil {
-				responseBody = normalizedBody
+			if !exactKimiChat {
+				if normalizedBody, _, normalizeErr := NormalizeOpenAICompatibleChatToolCallIndex(
+					in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile, responseBody,
+				); normalizeErr == nil {
+					responseBody = normalizedBody
+				}
 			}
 			responseBody, err = normalizeMiniMaxOpenAIEnvelope(in.Channel.Provider, responseBody)
 			if err != nil {
@@ -186,13 +220,21 @@ func (a *OpenAICompatible) ParseResponse(ctx context.Context, in ResponseInput) 
 			if err != nil {
 				return nil, fmt.Errorf("normalize provider cache usage: %w", err)
 			}
+			if exactKimiChat {
+				if object, objectErr := decodeOpenAICompatibleChatNonStreamObject(responseBody); objectErr == nil {
+					deliveryObject = object
+					deliveryObjectBody = responseBody
+				}
+			}
 		}
 	}
 	normalized := &NormalizedResponse{
-		StatusCode: in.StatusCode,
-		Header:     in.Header,
-		Body:       responseBody,
-		Usage:      usage,
+		StatusCode:         in.StatusCode,
+		Header:             in.Header,
+		Body:               responseBody,
+		DeliveryObject:     deliveryObject,
+		DeliveryObjectBody: deliveryObjectBody,
+		Usage:              usage,
 		Meta: ProviderMeta{
 			Provider:       in.Channel.Provider,
 			ChannelID:      in.Channel.ID,
