@@ -414,7 +414,7 @@ UPDATE billing_provider_attempts SET execution_snapshot_hash=NULL WHERE org_id=$
 	require.NoError(t, err)
 	// The newer public-binding migrations must be reversed before the M85
 	// guard can permit this isolated fixture to enter the legacy schema.
-	require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+	require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
 		t.Context(), pool, testutil.MigrationsDir(t),
 	))
 	for _, name := range []string{

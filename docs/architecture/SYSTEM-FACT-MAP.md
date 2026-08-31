@@ -8,8 +8,8 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.24 with PostgreSQL compatibility
-ceiling `000101_kimi_k27_chat_core_qualification`. M101 is the first
+Repository source candidate is version 1.2.25 with PostgreSQL compatibility
+ceiling `000102_kimi_k3_chat_core_qualification`. M101 is the first
 declaration-owned capability publication after the immutable M100 baseline;
 it appends only the exact K2.7 Code Chat Core static contracts and creates no
 live qualification by itself. Development/test runs exact version 1.2.23/M101
@@ -18,8 +18,10 @@ main merge `76763701461e1ccfdb80ec8e32d7c3009c9208f8`, tree
 the later-created exact Deployment 5 received declared projections from the
 server-owned current bindings. Six receipt-aware capability qualifications,
 Release 26 and bounded public UI/SDK evidence close only the approved K2.7 Chat
-Core subset. Version 1.2.24 changes documentation/release metadata only and is
-not claimed as the Target artifact.
+Core subset. M102 exists only in local candidate commits on the K3 branch and
+adds only eight exact K3 Profile 1.9 Chat Core static bindings and selectors.
+It has not been pushed or deployed, is not claimed as a Target artifact and
+creates no live qualification by itself.
 Stable, canary, frontend and Nginx share the frozen `unirouter` Compose project
 and exact configuration chain, and database, Redis and both backend readiness
 checks are healthy. These are development/test facts, not Production evidence.
@@ -88,6 +90,13 @@ reasoning v2, tools/function-tools/automatic tool choice v4 and JSON Object v2.
 It does not declare a generic or K3 tuple. Its generated migration changes
 only static binding/selector projection; any exact Deployment projection is
 planned separately, and Probe/Approval/qualification remain dynamic evidence.
+
+M102 declares eight exact K3 Profile 1.9 Chat v5 bindings: streaming v4,
+reasoning v2, reasoning effort v1, tools/function-tools/automatic/required tool
+choice v4 and JSON Object v2. It does not declare a generic or historical K3
+tuple and does not project Dynamic Tools, JSON Schema, search or media. Profile
+1.8 remains historically addressable; M102 creates no Probe, Approval,
+qualification, Release, Alias, pricing, billing or traffic authority.
 
 On the exact 1.2.23 Target, Deployment 5 has six independently qualified K2.7
 Chat Core capabilities: function tools Probe 56 / Approval 48, JSON Object

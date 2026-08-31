@@ -28,6 +28,8 @@ const (
 	KimiChatSSEProbeContractVersionV3           = "3.0.0"
 	KimiChatSSEProbeContractVersionV4           = "4.0.0"
 	KimiChatReasoningProbeContractID            = "unirouter.capability-probe.kimi-chat-reasoning.v1"
+	KimiChatReasoningEffortProbeContractID      = "unirouter.capability-probe.kimi-chat-reasoning-effort.v1"
+	KimiChatReasoningEffortProbeContractVersion = "1.0.0"
 	KimiChatFunctionToolsProbeContractID        = "unirouter.capability-probe.kimi-chat-function-tools.v1"
 	KimiChatJSONObjectProbeContractID           = "unirouter.capability-probe.kimi-chat-json-object.v1"
 	KimiChatCoreProbeContractVersion            = "1.0.0"
@@ -169,6 +171,14 @@ func DeepSeekProCurrentBindings() []Binding {
 
 func KimiK26CurrentBindings() []Binding {
 	return mustResolveAll("openai.chat_completions.v1", "kimi.k2.6.api", "1.7.0", "")
+}
+
+func KimiK27CurrentBindings() []Binding {
+	return mustResolveAll("openai.chat_completions.v1", "kimi.k2.7-code.api", "1.3.0", "")
+}
+
+func KimiK3CurrentBindings() []Binding {
+	return mustResolveAll("openai.chat_completions.v1", "kimi.k3.api", "1.9.0", "")
 }
 
 func mustResolve(operationID, capabilityID, profileID, profileVersion, protocolID, protocolVersion string) Binding {

@@ -380,3 +380,80 @@ func TestKimiK27ProbeRequestsUseExactRequiredThinkingContract(t *testing.T) {
 	})
 	require.ErrorIs(t, err, errModelCapabilityUnsupported)
 }
+
+func TestKimiK3ProbeRequestsUseAlwaysOnReasoningWithoutThinkingToggle(t *testing.T) {
+	tests := []struct {
+		name, contractID, capabilityID string
+		assertPayload                  func(*testing.T, map[string]interface{})
+	}{
+		{
+			name: "streaming", contractID: modelcapabilityqualification.KimiChatSSEProbeContractID,
+			capabilityID: modelprofile.CapabilityStreaming,
+			assertPayload: func(t *testing.T, payload map[string]interface{}) {
+				require.Equal(t, true, payload["stream"])
+				require.Equal(t, true, payload["stream_options"].(map[string]interface{})["include_usage"])
+			},
+		},
+		{
+			name: "provider default reasoning", contractID: modelcapabilityqualification.KimiChatReasoningProbeContractID,
+			capabilityID: modelprofile.CapabilityReasoning,
+		},
+		{
+			name: "low reasoning effort", contractID: modelcapabilityqualification.KimiChatReasoningEffortProbeContractID,
+			capabilityID: modelprofile.CapabilityReasoningEffort,
+			assertPayload: func(t *testing.T, payload map[string]interface{}) {
+				require.Equal(t, "low", payload["reasoning_effort"])
+			},
+		},
+		{
+			name: "automatic tool choice", contractID: modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
+			capabilityID: modelprofile.CapabilityToolChoiceAuto,
+			assertPayload: func(t *testing.T, payload map[string]interface{}) {
+				require.Equal(t, "auto", payload["tool_choice"])
+			},
+		},
+		{
+			name: "required tool choice", contractID: modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,
+			capabilityID: modelprofile.CapabilityToolChoiceReq,
+			assertPayload: func(t *testing.T, payload map[string]interface{}) {
+				require.Equal(t, "required", payload["tool_choice"])
+			},
+		},
+		{
+			name: "json object", contractID: modelcapabilityqualification.KimiChatJSONObjectProbeContractID,
+			capabilityID: modelprofile.CapabilityJSONObject,
+			assertPayload: func(t *testing.T, payload map[string]interface{}) {
+				require.Equal(t, "json_object", payload["response_format"].(map[string]interface{})["type"])
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := modelCapabilitySnapshot{
+				ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.9.0",
+				UpstreamModel: "kimi-k3", ProbeContractID: test.contractID,
+				CapabilityID: test.capabilityID,
+			}
+			body, err := buildModelCapabilityProbeRequestBody(snapshot)
+			require.NoError(t, err)
+			var payload map[string]interface{}
+			require.NoError(t, json.Unmarshal(body, &payload))
+			require.NotContains(t, payload, "thinking")
+			if test.assertPayload != nil {
+				test.assertPayload(t, payload)
+			}
+			summary, err := summarizeModelCapabilityProbeRequest(snapshot, body)
+			require.NoError(t, err)
+			require.Equal(t, "provider_default_enabled", summary["thinking_type"])
+			require.NotContains(t, summary, "thinking_keep")
+		})
+	}
+
+	_, err := buildModelCapabilityProbeRequestBody(modelCapabilitySnapshot{
+		ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.8.0",
+		UpstreamModel: "kimi-k3", ProbeContractID: modelcapabilityqualification.KimiChatSSEProbeContractID,
+		CapabilityID: modelprofile.CapabilityStreaming,
+	})
+	require.ErrorIs(t, err, errModelCapabilityUnsupported)
+}

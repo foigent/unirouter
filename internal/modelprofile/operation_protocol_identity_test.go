@@ -84,13 +84,17 @@ func TestChatContractDoesNotCreateOperationBindingAuthority(t *testing.T) {
 	require.Equal(t, OperationProtocolIdentity{}, identity)
 }
 
-func TestResolveOperationProtocolIdentityUsesExplicitKimiK2xBindingsOnly(t *testing.T) {
-	for _, address := range [][2]string{{"kimi.k2.6.api", "1.7.0"}, {"kimi.k2.7-code.api", "1.3.0"}} {
+func TestResolveOperationProtocolIdentityUsesExplicitKimiChatBindingsOnly(t *testing.T) {
+	for _, address := range [][3]string{
+		{"kimi.k2.6.api", "1.7.0", "protocol.kimi-openai-chat.v5"},
+		{"kimi.k2.7-code.api", "1.3.0", "protocol.kimi-openai-chat.v5"},
+		{"kimi.k3.api", "1.9.0", "protocol.kimi-openai-chat.k3.v5"},
+	} {
 		identity, found, err := ResolveOperationProtocolIdentity(address[0], address[1], OperationOpenAIChat)
 		require.NoError(t, err, address[0])
 		require.True(t, found, address[0])
 		require.Equal(t, OperationProtocolIdentity{
-			OperationID: OperationOpenAIChat, ProtocolProfileID: "protocol.kimi-openai-chat.v5",
+			OperationID: OperationOpenAIChat, ProtocolProfileID: address[2],
 			ProtocolProfileVersion: ChatOperationProtocolBindingVersionV1,
 		}, identity, address[0])
 	}

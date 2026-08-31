@@ -681,6 +681,56 @@ func TestCanonicalRoutingKeepsStrictAndGenericJSONSchemaCapabilitiesDistinct(t *
 	}
 }
 
+func TestKimiK3CoreDoesNotAuthorizeDynamicToolsOrJSONSchemaRouting(t *testing.T) {
+	profile, ok := modelprofile.Lookup("kimi.k3.api", "1.9.0")
+	if !ok {
+		t.Fatal("Kimi K3 Profile 1.9 missing")
+	}
+	for _, capability := range []string{modelprofile.CapabilityDynamicTools, modelprofile.CapabilityJSONSchema} {
+		t.Run(capability, func(t *testing.T) {
+			value := canonicalFixture()
+			value.Canonical = value.Canonical[:1]
+			value.Manifest = value.Manifest[:1]
+			value.ExecutionProfileID = profile.ID
+			value.ExecutionProfileVersion = profile.Version
+			value.PublicContextLimit = profile.DefaultContextWindow
+			value.PublicOutputLimit = profile.DefaultOutputLimit
+			candidate := &value.Canonical[0]
+			candidate.Provider = "kimi"
+			candidate.BaseURL = "https://api.moonshot.cn/v1"
+			candidate.AdapterType = "openai_compatible"
+			candidate.AdapterConfig = json.RawMessage(`{}`)
+			candidate.AdapterConfigDigest = adapterDigest(candidate.AdapterConfig)
+			candidate.UpstreamModel = "kimi-k3"
+			candidate.MaxContext = profile.DefaultContextWindow
+			candidate.DefaultMaxOutput = profile.DefaultOutputLimit
+			for index := range candidate.Bindings {
+				candidate.Bindings[index].Probe.UpstreamModel = candidate.UpstreamModel
+				candidate.Bindings[index].Probe.HTTPSOrigin = candidate.BaseURL
+				candidate.Bindings[index].Probe.ProfileID = profile.ProtocolProfile
+				candidate.Bindings[index].Probe.ProfileVersion = modelprofile.ChatOperationProtocolBindingVersionV1
+			}
+			candidate.ProtocolProfileID = profile.ProtocolProfile
+			candidate.ProtocolProfileVersion = modelprofile.ChatOperationProtocolBindingVersionV1
+			value.Manifest[0].ProtocolProfileID = candidate.ProtocolProfileID
+			value.Manifest[0].ProtocolProfileVersion = candidate.ProtocolProfileVersion
+			candidate.Manifest = &value.Manifest[0]
+			value.Slot.Selected.RouteItemsHash = manifestDigest(value.Manifest)
+			value.Slot.Selected.RouteItemsCount = len(value.Manifest)
+			value.Slot.Stable = value.Slot.Selected
+			request := requestFor(ModeCanonical, "k3-core-excluded-"+capability)
+			request.InvocationCapabilities = invocationRequirements(capability)
+			plan, err := planFixture(t, value, request)
+			if !errors.Is(err, ErrNoRoute) || len(plan.Routes) != 0 ||
+				!slices.ContainsFunc(plan.Exclusions, func(item Exclusion) bool {
+					return item.Reason == "unsupported_capability:"+capability
+				}) {
+				t.Fatalf("K3 Core route for %s = %#v, %v, want fail closed", capability, plan, err)
+			}
+		})
+	}
+}
+
 func TestCanonicalRoutingRequiresEveryQwenExtensionCapabilityEvidence(t *testing.T) {
 	required := []string{
 		modelprofile.CapabilityReasoning,

@@ -55,9 +55,23 @@ func TestCompiledKimiBindingsRemainExactPerExecutionProfile(t *testing.T) {
 		require.Equal(t, "kimi-k2.7-code", binding.ExpectedUpstreamModel)
 	}
 
+	k3, err := ResolveAll(
+		"openai.chat_completions.v1", "kimi.k3.api", "1.9.0",
+		"protocol.kimi-openai-chat.k3.v5", "1.0.0",
+	)
+	require.NoError(t, err)
+	require.Len(t, k3, 8)
+	for _, binding := range k3 {
+		require.Equal(t, "kimi.k3.api", binding.ExecutionProfileID)
+		require.Equal(t, "1.9.0", binding.ExecutionProfileVersion)
+		require.Equal(t, "kimi-k3", binding.ExpectedUpstreamModel)
+		require.NotEqual(t, modelprofile.CapabilityDynamicTools, binding.CapabilityID)
+		require.NotEqual(t, modelprofile.CapabilityJSONSchema, binding.CapabilityID)
+	}
+
 	_, err = ResolveAll(
 		"openai.chat_completions.v1", "kimi.k3.api", "1.8.0",
-		"protocol.kimi-openai-chat.v5", "1.0.0",
+		"protocol.kimi-openai-chat.k3.v5", "1.0.0",
 	)
 	require.ErrorIs(t, err, ErrUnsupported)
 }
@@ -166,6 +180,23 @@ func TestKimiChatReasoningProbeProvesProviderDefaultThinking(t *testing.T) {
 	)
 	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
 	require.Equal(t, "reasoning_content", KimiChatErrorCode(err))
+}
+
+func TestKimiChatReasoningEffortUsesExistingReasoningDeliveryShape(t *testing.T) {
+	body := `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"cached_tokens":0}}`
+	observation, err := ValidateKimiChatReasoning(
+		KimiChatReasoningEffortProbeContractID, KimiChatReasoningEffortProbeContractVersion,
+		"kimi-k3", "application/json", strings.NewReader(body),
+	)
+	require.NoError(t, err)
+	require.True(t, observation.ReasoningObserved)
+	require.Equal(t, "kimi-k3", observation.ReportedModel)
+
+	_, err = ValidateKimiChatReasoning(
+		KimiChatReasoningEffortProbeContractID, KimiChatCoreProbeContractVersionV2,
+		"kimi-k3", "application/json", strings.NewReader(body),
+	)
+	require.Error(t, err, "the effort identity must not inherit later reasoning contract versions")
 }
 
 func TestKimiChatCoreProbeV2AcceptsOnlyBoundedUsageDetails(t *testing.T) {

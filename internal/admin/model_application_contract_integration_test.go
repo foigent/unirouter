@@ -446,6 +446,39 @@ SELECT COUNT(*) FROM model_capability_execution_qualifications
  WHERE deployment_id=$1 AND qualified`, k27.Application.Deployment.ID).Scan(&qualifiedCount))
 	require.Zero(t, qualifiedCount, "declared projections must not create Probe, Approval, or route qualification")
 
+	k3Request := request
+	k3Request.Connection = canonicalConnectionInput{ID: kimi.Application.Connection.ID}
+	k3Request.PublicModel = canonicalPublicModelInput{
+		ModelName: "reviewed-kimi-k3", ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.9.0",
+	}
+	k3Request.Deployment = canonicalDeploymentInput{UpstreamModel: "kimi-k3"}
+	k3Request.Credential = canonicalCredentialInput{BindingID: kimi.Application.Credential.Bindings[0].ID}
+	k3 := createCanonicalApplicationForTest(t, handler, authorized, k3Request, http.StatusCreated)
+	require.Equal(t, "protocol.kimi-openai-chat.k3.v5", k3.Application.Operations[0].ProtocolProfileID)
+	require.Equal(t, modelprofile.ChatOperationProtocolBindingVersionV1, k3.Application.Operations[0].ProtocolProfileVersion)
+	require.True(t, k3.Application.Operations[0].ProbeAvailable)
+	require.Equal(t, "exact_probe_contract_available", k3.Application.Operations[0].ProbeAvailabilityReason)
+	require.Len(t, k3.Application.Operations[0].CapabilityProbeContracts, 8)
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND support_state='enabled' AND evidence_state='declared'`,
+		k3.Application.Deployment.ID,
+	).Scan(&declaredCapabilityCount))
+	require.Equal(t, 8, declaredCapabilityCount)
+	for _, excluded := range []string{modelprofile.CapabilityDynamicTools, modelprofile.CapabilityJSONSchema} {
+		var excludedCount int
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id=$2`, k3.Application.Deployment.ID, excluded).Scan(&excludedCount))
+		require.Zero(t, excludedCount, "excluded capability %s must not receive a declared projection", excluded)
+	}
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM model_capability_execution_qualifications
+ WHERE deployment_id=$1 AND qualified`, k3.Application.Deployment.ID).Scan(&qualifiedCount))
+	require.Zero(t, qualifiedCount, "K3 declared projections must not create Probe, Approval, or route qualification")
+
 	var platformOrgID, platformUserID int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type)
 VALUES ('reviewed-kimi-k27-platform','active','platform') RETURNING id`).Scan(&platformOrgID))
@@ -533,7 +566,7 @@ RETURNING id`, platformOrgID).Scan(&platformUserID))
  (SELECT COUNT(*) FROM model_deployment_operations WHERE deployment_id=$2)`,
 		orgID, created.Application.Deployment.ID).Scan(&rejectedConnections, &deployments, &operations))
 	require.Zero(t, rejectedConnections)
-	require.Equal(t, 4, deployments)
+	require.Equal(t, 5, deployments)
 	require.Equal(t, 1, operations)
 }
 
@@ -1115,7 +1148,7 @@ SELECT COUNT(*) FROM model_registry
 	require.Equal(t, http.StatusBadRequest, historicalProfileResponse.Code, historicalProfileResponse.Body.String())
 	require.Contains(t, historicalProfileResponse.Body.String(), profileAttachmentErrorCode)
 
-	currentProfile := owner(http.MethodPut, "/api/v1/model-registry/"+strconv.FormatInt(created.Application.PublicModel.ID, 10), `{"execution_profile_id":"kimi.k3.api","execution_profile_version":"1.8.0"}`)
+	currentProfile := owner(http.MethodPut, "/api/v1/model-registry/"+strconv.FormatInt(created.Application.PublicModel.ID, 10), `{"execution_profile_id":"kimi.k3.api","execution_profile_version":"1.9.0"}`)
 	currentProfile.SetPathValue("id", strconv.FormatInt(created.Application.PublicModel.ID, 10))
 	currentProfileResponse := httptest.NewRecorder()
 	handler.UpdateModelRegistry(currentProfileResponse, currentProfile)
@@ -1154,7 +1187,7 @@ VALUES ($1,'unbound-stable-model','Unbound stable model','staging') RETURNING id
 	require.NoError(t, pool.QueryRow(ctx, `SELECT model_name FROM model_registry WHERE id=$1`, unboundModelID).Scan(&modelName))
 	require.Equal(t, "unbound-stable-model", modelName)
 
-	unboundProfile := owner(http.MethodPut, "/api/v1/model-registry/"+strconv.FormatInt(unboundModelID, 10), `{"execution_profile_id":"kimi.k3.api","execution_profile_version":"1.8.0"}`)
+	unboundProfile := owner(http.MethodPut, "/api/v1/model-registry/"+strconv.FormatInt(unboundModelID, 10), `{"execution_profile_id":"kimi.k3.api","execution_profile_version":"1.9.0"}`)
 	unboundProfile.SetPathValue("id", strconv.FormatInt(unboundModelID, 10))
 	unboundProfileResponse := httptest.NewRecorder()
 	handler.UpdateModelRegistry(unboundProfileResponse, unboundProfile)
@@ -1163,7 +1196,7 @@ VALUES ($1,'unbound-stable-model','Unbound stable model','staging') RETURNING id
 SELECT execution_profile_id,execution_profile_version
   FROM model_registry WHERE id=$1`, unboundModelID).Scan(&retainedProfileID, &retainedProfileVersion))
 	require.Equal(t, "kimi.k3.api", retainedProfileID)
-	require.Equal(t, "1.8.0", retainedProfileVersion)
+	require.Equal(t, "1.9.0", retainedProfileVersion)
 }
 
 func canonicalApplicationAuthorizedRequest(orgID, userID int64) func(string, string, string) *http.Request {

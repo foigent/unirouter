@@ -42,7 +42,7 @@ func TestKimiK3ExactDynamicFunctionToolsPromotionIsAppendOnly(t *testing.T) {
 
 	dynamicCandidate, ok := Lookup("kimi.k3.api", "1.8.0")
 	require.True(t, ok)
-	require.True(t, dynamicCandidate.Current)
+	require.False(t, dynamicCandidate.Current)
 	require.Equal(t, "protocol.kimi-openai-chat.k3.v5", dynamicCandidate.ProtocolProfile)
 	require.Contains(t, dynamicCandidate.Capabilities, CapabilityDynamicTools)
 	require.Contains(t, dynamicCandidate.Capabilities, CapabilityFunctionTools)
@@ -58,5 +58,16 @@ func TestKimiK3ExactDynamicFunctionToolsPromotionIsAppendOnly(t *testing.T) {
 	require.True(t, dynamicProtocol.ExactFunctionToolHistoryModeled)
 	require.True(t, dynamicProtocol.ExactFunctionToolResponseModeled)
 	require.NoError(t, ValidateExecutableComponents(dynamicCandidate))
-	require.NoError(t, ValidateNewAttachment(dynamicCandidate.ID, dynamicCandidate.Version))
+	require.Error(t, ValidateNewAttachment(dynamicCandidate.ID, dynamicCandidate.Version))
+
+	effortCandidate, ok := Lookup("kimi.k3.api", "1.9.0")
+	require.True(t, ok)
+	require.True(t, effortCandidate.Current)
+	require.Equal(t, dynamicCandidate.ProtocolProfile, effortCandidate.ProtocolProfile)
+	require.Equal(t, dynamicCandidate.ReasoningProfile, effortCandidate.ReasoningProfile)
+	require.Contains(t, effortCandidate.ProviderCapabilities, CapabilityReasoningEffort)
+	require.Contains(t, effortCandidate.Capabilities, CapabilityReasoningEffort)
+	require.Contains(t, effortCandidate.Capabilities, CapabilityDynamicTools)
+	require.NoError(t, ValidateExecutableComponents(effortCandidate))
+	require.NoError(t, ValidateNewAttachment(effortCandidate.ID, effortCandidate.Version))
 }

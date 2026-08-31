@@ -186,7 +186,7 @@ WHERE org_id=960002 AND request_id='op_billing_mode_observation'
 
 func execMigrationDown(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
-	require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+	require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
 		ctx, pool, testutil.MigrationsDir(t),
 	))
 	for _, successor := range []struct {

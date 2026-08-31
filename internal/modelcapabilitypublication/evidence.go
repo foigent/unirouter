@@ -10,6 +10,17 @@ import (
 // still exists. Freeze snapshots do not expose a reversible capability tuple,
 // so their downgrade boundary is deliberately global and conservative.
 func verifyNoRetainedPublicationEvidence(ctx context.Context, q rowQuerier, declaration Declaration) error {
+	for _, guard := range declaration.ProfileAttachmentGuards {
+		var attachments int64
+		if err := q.QueryRow(ctx, `SELECT COUNT(*) FROM model_registry
+WHERE execution_profile_id=$1 AND execution_profile_version=$2`,
+			guard.ExecutionProfileID, guard.ExecutionProfileVersion).Scan(&attachments); err != nil {
+			return fmt.Errorf("check retained Profile attachments: %w", err)
+		}
+		if attachments != 0 {
+			return fmt.Errorf("%w: retained Profile attachment prevents publication down", ErrPlanConflict)
+		}
+	}
 	var frozen int64
 	if err := q.QueryRow(ctx, `SELECT
     (SELECT COUNT(*) FROM freeze_idempotency WHERE execution_snapshot_hash IS NOT NULL) +

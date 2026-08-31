@@ -4,6 +4,33 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.25] - 2026-08-31
+
+### Added
+
+- Added append-only `kimi.k3.api@1.9.0`, preserving Profile 1.8 semantics while
+  adding the exact `reasoning_effort` execution contract and immutable Kimi K3
+  Chat v5 operation binding. Profile 1.8 remains historically addressable but
+  is no longer eligible for new attachment.
+- Generated M102 through Strict Capability Contract Publication V1. It appends
+  only eight exact K3 Profile 1.9 Chat Core bindings and selectors: streaming,
+  reasoning, reasoning effort, tools, function tools, automatic/required tool
+  choice and JSON Object.
+- Added server-owned K3 probes that preserve always-on reasoning by omitting
+  the K2.x `thinking` toggle, use `reasoning_effort=low` for the effort probe
+  and require exact `tool_choice=required` for that capability.
+
+### Evidence boundary
+
+- M102 creates no Probe, Approval, qualification, Release, Alias, pricing,
+  billing or canonical route. Dynamic Tools, JSON Schema, search and media are
+  not projected by this Core publication and remain fail closed without their
+  own route evidence.
+- This source candidate exists only in local candidate commits on the K3
+  branch; it has not been pushed, deployed or exercised against Kimi.
+  Development/test remains exact 1.2.23/M101; Target publication, deployment
+  and bounded provider validation require separate authorization.
+
 ## [1.2.24] - 2026-08-31
 
 ### Documentation

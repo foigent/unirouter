@@ -80,7 +80,7 @@ var enterpriseDirectoryDownMigrations = []string{
 func rollbackEmptyMigrations(t *testing.T, pool *pgxpool.Pool, names []string) {
 	t.Helper()
 	ctx := context.Background()
-	require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+	require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
 		ctx, pool, testutil.MigrationsDir(t),
 	))
 	orderedNames := make([]string, 0, len(names)+4)

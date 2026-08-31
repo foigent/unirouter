@@ -606,7 +606,7 @@ func TestCanonicalNewDeploymentRejectsHistoricalProfileButAllowsExactReuse(t *te
 	for _, current := range []canonicalPublicModelIdentity{
 		{ID: 47, ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0"},
 		{ID: 48, ExecutionProfileID: "kimi.k2.7-code.api", ExecutionProfileVersion: "1.3.0"},
-		{ID: 49, ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.8.0"},
+		{ID: 49, ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.9.0"},
 		{ID: 50, ExecutionProfileID: "minimax.m2.7.token-plan", ExecutionProfileVersion: "1.5.0"},
 		{ID: 51, ExecutionProfileID: "minimax.m2.5-highspeed.token-plan", ExecutionProfileVersion: "1.5.0"},
 		{ID: 52, ExecutionProfileID: "minimax.m3.token-plan", ExecutionProfileVersion: "1.7.0"},

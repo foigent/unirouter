@@ -106,6 +106,8 @@ func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t
 	bindings = append(bindings, modelcapabilityqualification.DeepSeekFlashCurrentBindings()...)
 	bindings = append(bindings, modelcapabilityqualification.DeepSeekProCurrentBindings()...)
 	bindings = append(bindings, modelcapabilityqualification.KimiK26CurrentBindings()...)
+	bindings = append(bindings, modelcapabilityqualification.KimiK27CurrentBindings()...)
+	bindings = append(bindings, modelcapabilityqualification.KimiK3CurrentBindings()...)
 
 	uniqueSorted := func(values []string) []string {
 		seen := make(map[string]struct{}, len(values))
