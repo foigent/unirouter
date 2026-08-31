@@ -3,6 +3,7 @@ package adapters
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -30,29 +31,46 @@ func exactKimiK26ResponseInput(body []byte) ResponseInput {
 }
 
 func TestKimiRuntimeChatNonStreamMechanicsRequireExactIdentity(t *testing.T) {
-	in := exactKimiK26ResponseInput(nil)
-	mechanics, found, err := kimiRuntimeChatNonStreamMechanics(in)
-	require.NoError(t, err)
-	require.True(t, found)
-	require.Equal(t, ChatNonStreamMechanics{RejectDuplicateMembers: true, NormalizeToolCallIndex: true}, mechanics)
+	profiles := []struct {
+		name, profileID, profileVersion, upstreamModel, protocolProfile string
+	}{
+		{name: "K2.6", profileID: "kimi.k2.6.api", profileVersion: "1.7.0", upstreamModel: "kimi-k2.6", protocolProfile: "protocol.kimi-openai-chat.v5"},
+		{name: "K2.7 Code", profileID: "kimi.k2.7-code.api", profileVersion: "1.3.0", upstreamModel: "kimi-k2.7-code", protocolProfile: "protocol.kimi-openai-chat.v5"},
+		{name: "K3", profileID: "kimi.k3.api", profileVersion: "1.9.0", upstreamModel: "kimi-k3", protocolProfile: "protocol.kimi-openai-chat.k3.v5"},
+	}
+	for _, profile := range profiles {
+		t.Run(profile.name, func(t *testing.T) {
+			in := exactKimiK26ResponseInput(nil)
+			in.ExecutionProfileID = profile.profileID
+			in.ExecutionProfileVersion = profile.profileVersion
+			in.UpstreamModel = profile.upstreamModel
+			in.ProtocolProfile = profile.protocolProfile
+			in.OperationProtocolProfileID = profile.protocolProfile
 
-	for name, mutate := range map[string]func(*ResponseInput){
-		"operation":        func(in *ResponseInput) { in.ModelOperationID = "openai.responses.v1" },
-		"profile version":  func(in *ResponseInput) { in.ExecutionProfileVersion = "1.6.0" },
-		"protocol id":      func(in *ResponseInput) { in.OperationProtocolProfileID = "openai.chat_completions" },
-		"protocol version": func(in *ResponseInput) { in.OperationProtocolProfileVersion = "2.0.0" },
-	} {
-		t.Run(name, func(t *testing.T) {
-			mismatch := in
-			mutate(&mismatch)
-			_, found, err := kimiRuntimeChatNonStreamMechanics(mismatch)
-			if name == "profile version" {
-				require.NoError(t, err)
-				require.False(t, found, "historical profiles retain their existing fallback behavior")
-				return
+			mechanics, found, err := kimiRuntimeChatNonStreamMechanics(in)
+			require.NoError(t, err)
+			require.True(t, found)
+			require.Equal(t, ChatNonStreamMechanics{RejectDuplicateMembers: true, NormalizeToolCallIndex: true}, mechanics)
+
+			for name, mutate := range map[string]func(*ResponseInput){
+				"operation":        func(in *ResponseInput) { in.ModelOperationID = "openai.responses.v1" },
+				"profile version":  func(in *ResponseInput) { in.ExecutionProfileVersion = "0.0.0" },
+				"protocol id":      func(in *ResponseInput) { in.OperationProtocolProfileID = "openai.chat_completions" },
+				"protocol version": func(in *ResponseInput) { in.OperationProtocolProfileVersion = "2.0.0" },
+			} {
+				t.Run(name, func(t *testing.T) {
+					mismatch := in
+					mutate(&mismatch)
+					_, found, err := kimiRuntimeChatNonStreamMechanics(mismatch)
+					if name == "profile version" {
+						require.NoError(t, err)
+						require.False(t, found, "historical profiles retain their existing fallback behavior")
+						return
+					}
+					require.Error(t, err)
+					require.False(t, found)
+				})
 			}
-			require.Error(t, err)
-			require.False(t, found)
 		})
 	}
 }
@@ -166,4 +184,25 @@ func TestOpenAICompatibleParseResponseUsesExactKimiPreparedBodyAndRetainsUsageOn
 	mismatch.OperationProtocolProfileVersion = "2.0.0"
 	_, err = adapter.ParseResponse(context.Background(), mismatch)
 	require.Error(t, err)
+}
+
+func TestOpenAICompatibleExactKimiDeliveryObjectUsesFinalCacheProjectedBody(t *testing.T) {
+	adapter := NewOpenAICompatible()
+	body := []byte(`{"id":"chatcmpl-kimi-cache","model":"kimi-k2.6","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"cached_tokens":80,"prompt_tokens_details":{"cached_tokens":null,"audio_tokens":3}}}`)
+	in := exactKimiK26ResponseInput(body)
+	in.CacheUsageProfile = "cache-usage.kimi-platform.v1"
+
+	response, err := adapter.ParseResponse(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, 80, response.Usage.CacheReadTokens)
+	require.True(t, bytes.Equal(response.Body, response.DeliveryObjectBody))
+	require.NotNil(t, response.DeliveryObject)
+
+	usage, ok := response.DeliveryObject["usage"].(map[string]interface{})
+	require.True(t, ok)
+	promptDetails, ok := usage["prompt_tokens_details"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, json.Number("80"), usage["cached_tokens"])
+	require.Equal(t, json.Number("80"), promptDetails["cached_tokens"])
+	require.Equal(t, json.Number("3"), promptDetails["audio_tokens"])
 }
