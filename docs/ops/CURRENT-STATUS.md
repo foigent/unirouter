@@ -1,13 +1,18 @@
 # UniRouter Current Status
 
 > Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Repository source candidate is 1.2.23/M101 for the exact Kimi K2.7 Code Chat
-> Core static declaration. Development/test currently runs the Publication V1
-> framework at exact 1.2.22/M100 main merge
-> `781f913e8a8e1e594e94bddedfc4886bd81cea0d`, tree
-> `77dc8ad2dff86cd9b5c67e1de3ceb62cf8223676`. M101 has not yet been applied;
-> no K2.7 Probe, Approval, Release, Alias, price or route qualification is
-> implied. The K2.6 live closeout below remains the latest model evidence.
+> Repository source candidate is 1.2.24/M101; 1.2.24 is a documentation and
+> release-metadata closeout only. Development/test remains on the independently
+> verified 1.2.23/M101 main merge
+> `76763701461e1ccfdb80ec8e32d7c3009c9208f8`, tree
+> `3a84f73250ae344cc180c43572f6da18185aa738`. Publication V1 applied the exact
+> K2.7 Code Chat Core declaration, a later exact Deployment received the
+> server-owned projections, and six capability qualifications plus bounded
+> UI/fixed-SDK evidence closed the approved subset. The batch used 17 of 20
+> calls, customer-wallet movement remained zero, and the temporary Key, Grant
+> and Application are revoked/archived. CNY 5 remains an authorization ceiling,
+> not a SupplierCostObservation. Exact evidence:
+> `docs/ops/evidence/V1-KIMI-K27-CHAT-CORE-TARGET-20260831.md`.
 > **2026-08-30 Kimi K2.6 Chat Core Target closeout:** development/test stable,
 > canary and frontend run exact main merge
 > `cf2bee4bbee7074e91661400f5edf61ca2c08f32`, tree

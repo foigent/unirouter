@@ -8,14 +8,18 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.23 with PostgreSQL compatibility
+Repository source candidate is version 1.2.24 with PostgreSQL compatibility
 ceiling `000101_kimi_k27_chat_core_qualification`. M101 is the first
 declaration-owned capability publication after the immutable M100 baseline;
 it appends only the exact K2.7 Code Chat Core static contracts and creates no
-live qualification. Development/test currently remains on exact version
-1.2.22/M100 main merge `781f913e8a8e1e594e94bddedfc4886bd81cea0d`,
-tree `77dc8ad2dff86cd9b5c67e1de3ceb62cf8223676`, with Publication V1 deployed
-but no post-M100 declaration applied.
+live qualification by itself. Development/test runs exact version 1.2.23/M101
+main merge `76763701461e1ccfdb80ec8e32d7c3009c9208f8`, tree
+`3a84f73250ae344cc180c43572f6da18185aa738`. Publication V1 applied M101, and
+the later-created exact Deployment 5 received declared projections from the
+server-owned current bindings. Six receipt-aware capability qualifications,
+Release 26 and bounded public UI/SDK evidence close only the approved K2.7 Chat
+Core subset. Version 1.2.24 changes documentation/release metadata only and is
+not claimed as the Target artifact.
 Stable, canary, frontend and Nginx share the frozen `unirouter` Compose project
 and exact configuration chain, and database, Redis and both backend readiness
 checks are healthy. These are development/test facts, not Production evidence.
@@ -84,6 +88,16 @@ reasoning v2, tools/function-tools/automatic tool choice v4 and JSON Object v2.
 It does not declare a generic or K3 tuple. Its generated migration changes
 only static binding/selector projection; any exact Deployment projection is
 planned separately, and Probe/Approval/qualification remain dynamic evidence.
+
+On the exact 1.2.23 Target, Deployment 5 has six independently qualified K2.7
+Chat Core capabilities: function tools Probe 56 / Approval 48, JSON Object
+57/49, reasoning 58/50, streaming 59/51, automatic tool choice 60/52 and tools
+61/53. Fixed-SDK call logs 403–412 prove public text, streaming, function tools,
+typed multi-turn history, JSON and cache-read delivery. The finite batch used
+17 of 20 authorized supplier calls without automatic retry; the customer wallet
+remained zero and no SupplierCostObservation exists. The temporary Application
+7 and Grant 15 are archived/revoked, and its K2.7-only credential 35 is revoked.
+See `docs/ops/evidence/V1-KIMI-K27-CHAT-CORE-TARGET-20260831.md`.
 
 On the exact 1.2.20 Target, deployment 4 has six independently qualified Kimi
 K2.6 Chat Core capabilities: streaming Probe 46 / Approval 42, reasoning

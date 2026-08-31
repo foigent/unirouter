@@ -9,15 +9,47 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-Development/test currently runs exact 1.2.22/M100 main merge
-`781f913e8a8e1e594e94bddedfc4886bd81cea0d`, tree
-`77dc8ad2dff86cd9b5c67e1de3ceb62cf8223676`, with Publication V1 deployed
-and no post-M100 declaration applied. Repository source candidate 1.2.23/M101
-adds only the exact K2.7 Code Chat Core static publication. Local, CI,
-artifact, Target, provider and customer-wallet evidence remain separate; M101
-does not itself create Probe, Approval, pricing, canonical traffic or
-Production state. The exact K2.6 1.2.20/M100 closeout below remains the latest
-completed model-evidence batch.
+Development/test runs exact 1.2.23/M101 main merge
+`76763701461e1ccfdb80ec8e32d7c3009c9208f8`, tree
+`3a84f73250ae344cc180c43572f6da18185aa738`. M101 itself remains static
+publication authority only; the later Target actions created an exact
+Deployment, six independent capability Probe/Approval qualifications, Release
+26 and bounded UI/fixed-SDK evidence. Repository source candidate 1.2.24/M101
+only records this closeout and is not claimed as the Target artifact. Local,
+CI, artifact, Target, provider and customer-wallet evidence remain separate.
+
+## Completed delivery batch — Kimi K2.7 Code Chat Core Target closeout
+
+Publication V1 applied M101 with exact plan digest
+`da98b72d71a46265f2db5d818bca568c3e59408c65b726a1b5ff3de07cafb3bc`.
+The administrator UI then created exact Deployment 5 for public model 806,
+Profile `kimi.k2.7-code.api@1.3.0`, protocol
+`protocol.kimi-openai-chat.v5@1.0.0` and Chat Completions. The later attachment
+received six declared projections from the server-owned current binding.
+
+The exact tuple has six independent current qualifications: function tools
+Probe 56 / Approval 48, JSON Object 57/49, reasoning 58/50, streaming 59/51,
+automatic tool choice 60/52 and tools 61/53. Release 26 binds the exact model,
+Deployment and operation on the development/test stable route; it is not a
+Production release or canonical switch.
+
+Fixed `openai-python@3.5.0` with `max_retries=0` produced call logs 403–412 for
+text, streaming, function tools, typed multi-turn history, JSON Object and a
+two-request cache workflow. The repeated 750-token prompt reported 750
+cache-read tokens. One 64-token streaming request was correctly terminated by
+the gateway output-limit guard after upstream HTTP 200; the evidence-driven
+512-token request succeeded without retrying the failed request. The full
+batch used 17 of 20 approved supplier calls. Wallet balance, grant, freeze,
+spend and transactions remained zero; CNY 5 is only an authorization ceiling
+because no supplier invoice or SupplierCostObservation exists.
+
+The temporary Application 7 used a `project_default` Grant 15; only credential
+35 narrowed access to `kimi-k2.7-code`. After SDK closeout the credential and
+Grant were revoked and the Application archived. Exact evidence is recorded in
+`docs/ops/evidence/V1-KIMI-K27-CHAT-CORE-TARGET-20260831.md`. Dynamic Tools,
+search, media, highspeed/subscription identities, required/named/parallel tool
+choice, function-tool streaming, pricing, customer billing, canonical traffic,
+Production, K3 and MiniMax remain outside this batch.
 
 ## Completed delivery batch — Kimi K2.6 Chat Core Target closeout
 
