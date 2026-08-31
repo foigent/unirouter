@@ -183,7 +183,7 @@ func TestKimiChatReasoningProbeProvesProviderDefaultThinking(t *testing.T) {
 }
 
 func TestKimiChatReasoningEffortUsesExistingReasoningDeliveryShape(t *testing.T) {
-	body := `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"cached_tokens":0}}`
+	body := `{"id":"chatcmpl-k3","object":"chat.completion","created":1787932800,"model":"kimi-k3","choices":[{"index":0,"message":{"role":"assistant","content":"UNIROUTER_REASONING_PROBE_OK","reasoning_content":"private"},"finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"cached_tokens":0,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":5}}}`
 	observation, err := ValidateKimiChatReasoning(
 		KimiChatReasoningEffortProbeContractID, KimiChatReasoningEffortProbeContractVersion,
 		"kimi-k3", "application/json", strings.NewReader(body),
@@ -191,6 +191,21 @@ func TestKimiChatReasoningEffortUsesExistingReasoningDeliveryShape(t *testing.T)
 	require.NoError(t, err)
 	require.True(t, observation.ReasoningObserved)
 	require.Equal(t, "kimi-k3", observation.ReportedModel)
+	require.Equal(t, int64(0), observation.CachedTokens)
+
+	_, err = ValidateKimiChatReasoning(
+		KimiChatReasoningEffortProbeContractID, KimiChatReasoningEffortProbeContractVersion,
+		"kimi-k3", "application/json", strings.NewReader(strings.Replace(body, `"reasoning_tokens":5`, `"reasoning_tokens":5,"unmodeled":1`, 1)),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "json", KimiChatErrorCode(err))
+
+	_, err = ValidateKimiChatReasoning(
+		KimiChatReasoningEffortProbeContractID, KimiChatReasoningEffortProbeContractVersion,
+		"kimi-k3", "application/json", strings.NewReader(strings.Replace(body, `"reasoning_tokens":5`, `"reasoning_tokens":5,"reasoning_tokens":5`, 1)),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "json", KimiChatErrorCode(err))
 
 	_, err = ValidateKimiChatReasoning(
 		KimiChatReasoningEffortProbeContractID, KimiChatCoreProbeContractVersionV2,
