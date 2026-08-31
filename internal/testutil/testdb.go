@@ -319,28 +319,33 @@ func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migration
 	return runStrictTestArtifactInstall(ctx, pool, migrationsDir)
 }
 
-// RewindKimiK27PublicationForLegacyMigrationTest removes the exact M101 test
-// artifact when a historical rollback fixture must establish the M100 schema
-// ceiling first. It executes the generated guarded down migration only when
-// M101 is present; production recovery continues to require the original Plan
-// and the supported Publication V1 owner path.
-func RewindKimiK27PublicationForLegacyMigrationTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	const publicationID = "000101_kimi_k27_chat_core_qualification"
-	var applied bool
-	if err := pool.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, publicationID,
-	).Scan(&applied); err != nil {
-		return fmt.Errorf("query Kimi K2.7 publication test ledger: %w", err)
-	}
-	if !applied {
-		return nil
-	}
-	down, err := os.ReadFile(filepath.Join(migrationsDir, publicationID+".down.sql"))
-	if err != nil {
-		return fmt.Errorf("read Kimi K2.7 publication test rollback: %w", err)
-	}
-	if _, err := pool.Exec(ctx, string(down)); err != nil {
-		return fmt.Errorf("rewind Kimi K2.7 publication test artifact: %w", err)
+// RewindCapabilityPublicationsForLegacyMigrationTest removes declaration-owned
+// test publications in reverse ledger order when a historical rollback fixture
+// must establish the M100 schema ceiling first. It executes each generated,
+// guarded down migration only when that exact publication is present;
+// production recovery continues to require the original Plan and the supported
+// Publication V1 owner path.
+func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
+	for _, publicationID := range []string{
+		"000102_kimi_k3_chat_core_qualification",
+		"000101_kimi_k27_chat_core_qualification",
+	} {
+		var applied bool
+		if err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, publicationID,
+		).Scan(&applied); err != nil {
+			return fmt.Errorf("query capability publication test ledger %s: %w", publicationID, err)
+		}
+		if !applied {
+			continue
+		}
+		down, err := os.ReadFile(filepath.Join(migrationsDir, publicationID+".down.sql"))
+		if err != nil {
+			return fmt.Errorf("read capability publication test rollback %s: %w", publicationID, err)
+		}
+		if _, err := pool.Exec(ctx, string(down)); err != nil {
+			return fmt.Errorf("rewind capability publication test artifact %s: %w", publicationID, err)
+		}
 	}
 	return nil
 }

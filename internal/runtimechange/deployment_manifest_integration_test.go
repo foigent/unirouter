@@ -685,7 +685,7 @@ SELECT
 func downgradeCanonicalConnectionLicenseAuthorityForTest(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := t.Context()
-	require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+	require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
 		ctx, pool, testutil.MigrationsDir(t),
 	))
 	for _, name := range []string{

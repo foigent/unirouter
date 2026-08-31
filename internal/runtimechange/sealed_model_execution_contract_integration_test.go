@@ -49,7 +49,7 @@ UPDATE model_registry
 	reverseLaterBindings := func() {
 		// Keep the historical M82 rollback fixture at its supported predecessor;
 		// the newer exact-public and Plan fences are independently guarded.
-		require.NoError(t, testutil.RewindKimiK27PublicationForLegacyMigrationTest(
+		require.NoError(t, testutil.RewindCapabilityPublicationsForLegacyMigrationTest(
 			ctx, pool, testutil.MigrationsDir(t),
 		))
 		for _, name := range []string{
