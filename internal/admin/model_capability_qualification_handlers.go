@@ -720,6 +720,10 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 }
 
 func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]byte, error) {
+	const (
+		kimiK3DefaultReasoningProbeMaxCompletionTokens  = 4096
+		kimiK3BoundedCapabilityProbeMaxCompletionTokens = 512
+	)
 	payload := map[string]interface{}{
 		"model":      snapshot.UpstreamModel,
 		"max_tokens": 64,
@@ -784,7 +788,10 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		payload["stream_options"] = map[string]bool{"include_usage": true}
 		if kimiRequiredThinking {
 			payload["thinking"] = kimiThinking
-		} else if !kimiAlwaysOnThinking {
+		} else if kimiAlwaysOnThinking {
+			payload["max_completion_tokens"] = kimiK3BoundedCapabilityProbeMaxCompletionTokens
+			payload["reasoning_effort"] = "low"
+		} else {
 			payload["thinking"] = map[string]string{"type": "disabled"}
 		}
 	case modelcapabilityqualification.KimiChatReasoningProbeContractID:
@@ -793,6 +800,8 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		payload["messages"] = []map[string]string{{"role": "user", "content": "Reply with exactly: UNIROUTER_REASONING_PROBE_OK"}}
 		if kimiRequiredThinking {
 			payload["thinking"] = kimiThinking
+		} else if kimiAlwaysOnThinking {
+			payload["max_completion_tokens"] = kimiK3DefaultReasoningProbeMaxCompletionTokens
 		}
 		// K2.6 deliberately omits thinking to prove its provider-default path.
 	case modelcapabilityqualification.KimiChatReasoningEffortProbeContractID:
@@ -809,7 +818,10 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		payload["messages"] = []map[string]string{{"role": "user", "content": "Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}}
 		if kimiRequiredThinking {
 			payload["thinking"] = kimiThinking
-		} else if !kimiAlwaysOnThinking {
+		} else if kimiAlwaysOnThinking {
+			payload["max_completion_tokens"] = kimiK3BoundedCapabilityProbeMaxCompletionTokens
+			payload["reasoning_effort"] = "low"
+		} else {
 			payload["thinking"] = map[string]string{"type": "disabled"}
 		}
 		payload["tools"] = []map[string]interface{}{{
@@ -837,7 +849,10 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		}
 		if kimiRequiredThinking {
 			payload["thinking"] = kimiThinking
-		} else if !kimiAlwaysOnThinking {
+		} else if kimiAlwaysOnThinking {
+			payload["max_completion_tokens"] = kimiK3BoundedCapabilityProbeMaxCompletionTokens
+			payload["reasoning_effort"] = "low"
+		} else {
 			payload["thinking"] = map[string]string{"type": "disabled"}
 		}
 		payload["response_format"] = map[string]string{"type": "json_object"}

@@ -4,6 +4,20 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.26] - 2026-08-31
+
+### Fixed
+
+- Bound Kimi K3 typed streaming, tool and JSON probes to the already modeled
+  `reasoning_effort=low` control and raised their bounded completion budget to
+  512 tokens, preventing always-on default-max reasoning from exhausting the
+  earlier 64/256-token probe budget before the asserted response contract.
+- Raised only the provider-default K3 reasoning probe budget to 4,096 tokens;
+  it still omits `reasoning_effort`, while the independent effort probe remains
+  the sole representative `low` evidence. K2.6 and K2.7 probe requests are
+  unchanged, and no Probe contract identity, migration, Release or pricing
+  authority is advanced.
+
 ## [1.2.25] - 2026-08-31
 
 ### Added
