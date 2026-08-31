@@ -4,6 +4,30 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.29] - 2026-08-31
+
+### Documentation
+
+- Recorded the exact Kimi K3 Chat Core development/test outcome: M102
+  Publication V1, the later-created exact Deployment, eight current capability
+  qualifications, the development/test-only stable test route, bounded
+  fixed-SDK non-stream/tools/JSON/cache evidence and temporary access cleanup.
+- Kept capability qualification separate from public SDK delivery. The typed
+  SSE Probe is qualified, while two separately counted public SDK streaming
+  requests returned provider HTTP 503 and remain an explicit external-delivery
+  gap rather than being reported as success.
+- Recorded all 20 authorized supplier calls, `max_retries=0`, the zero customer
+  wallet/transaction result and the absence of supplier invoice or
+  `SupplierCostObservation`. CNY 5 remains only the approved spend ceiling.
+
+### Evidence boundary
+
+- This is a documentation and release-metadata correction only. It changes no
+  runtime contract, M102 data, Profile, Probe, Approval, Release, route,
+  pricing, billing, credential or Target deployment. Development/test remains
+  exact 1.2.28/M102; its stable-slot activation is not `released`, Production,
+  Alias or global canonical authority.
+
 ## [1.2.28] - 2026-08-31
 
 ### Fixed

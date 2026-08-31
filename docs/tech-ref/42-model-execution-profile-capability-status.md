@@ -9,16 +9,59 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-Development/test runs exact 1.2.23/M101 main merge
-`76763701461e1ccfdb80ec8e32d7c3009c9208f8`, tree
-`3a84f73250ae344cc180c43572f6da18185aa738`. M101 itself remains static
-publication authority only; the later Target actions created an exact
-Deployment, six independent capability Probe/Approval qualifications, Release
-26 and bounded UI/fixed-SDK evidence. Repository source candidate 1.2.25/M102
-exists only in local candidate commits on the K3 branch, adds the K3 Profile
-1.9 Chat Core static publication candidate, and has not been pushed or
-deployed. It is not claimed as the Target artifact. Local, CI, artifact,
-Target, provider and customer-wallet evidence remain separate.
+Development/test runs exact 1.2.28/M102 merge
+`16bf398aed4122c52a174a4d3340b4bc399cd3b7`, tree
+`a6efc7c13aadcb3fa235f3665b430fd94becf9aa`. M102 published only the exact K3
+Profile 1.9 Chat Core static contracts; later Target actions created exact
+Deployment 6, eight independent capability Probe/Approval qualifications and
+development/test Release 27. The Release and initial stable-slot activation
+establish only a test route. Public model 817 remains `staging` and outside the
+approved catalog, so no `released`, Production, Alias or global canonical claim
+is made. Repository source candidate 1.2.29/M102 is a documentation-only
+closeout and is not the deployed Target artifact. Local, CI, artifact, Target,
+provider, SDK-delivery and customer-wallet evidence remain separate.
+
+## Kimi K3 Chat Core Target outcome — qualified with a public streaming gap
+
+The exact tuple is `kimi.k3.api@1.9.0 ×
+protocol.kimi-openai-chat.k3.v5@1.0.0 × openai.chat_completions.v1`. M102 used
+Publication V1 plan digest
+`905790bd90914c648259ea3b78ba7af80d11d325bb3acc4fae150e0dd1254af5`,
+appended eight exact bindings, promoted eight selectors and left Deployment
+projection empty because the exact Deployment was created later. The
+server-owned attachment path then materialized the eight declared rows without
+creating a Probe, Approval or route qualification.
+
+Operation Probe 6 succeeded. The exact Deployment now has eight current
+receipt-aware qualifications: function tools 64/54, JSON Object 65/55,
+reasoning 66/56, reasoning effort 68/57, streaming 69/58, automatic tool choice
+70/59, required tool choice 71/60 and tools 72/61. Failed receipts 62, 63 and
+67 remain immutable and unapproved. The fixes released as 1.2.26–1.2.28 did
+not change Profile 1.9, protocol K3 v5, M102 or reinterpret those receipts.
+
+Fixed `openai-python@3.5.0` with `max_retries=0` created public call logs
+413–420. Text plus live reasoning effort `low`, automatic/required tools, JSON
+Object and the two-request cache workflow succeeded with provider-reported
+final usage; the second cache request reported 1,536 read tokens. Public SDK
+streaming calls 414 and 415 were separate single-attempt requests and both
+returned provider HTTP 503 with missing usage. The typed SSE qualification
+therefore remains valid capability evidence but does not prove the missing
+public SDK delivery checkpoint. Local tests cover `low|high|max`; only `low`
+has live public evidence.
+
+The batch used all 20 authorized supplier calls: one operation Probe, eleven
+capability Probe attempts and eight SDK requests. No automatic retry ran. The
+CNY wallet, freeze, cumulative spend and transaction count remain zero. CNY 5
+is only the authorization ceiling because no supplier invoice or
+`SupplierCostObservation` exists. Application 8 is archived, its
+`project_default` Grant 16 and K3-only credential 36 are revoked, and immutable
+execution evidence remains retained. Exact evidence is
+`docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md`.
+
+This outcome is accurately described as exact development/test capability
+qualification plus bounded non-stream public-delivery verification. It is not
+fully public-SDK verified while streaming remains 503, and it is not
+`canary_live_verified`, `released` or Production.
 
 ## Completed delivery batch — Kimi K2.7 Code Chat Core Target closeout
 

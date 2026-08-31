@@ -8,20 +8,23 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.25 with PostgreSQL compatibility
-ceiling `000102_kimi_k3_chat_core_qualification`. M101 is the first
-declaration-owned capability publication after the immutable M100 baseline;
-it appends only the exact K2.7 Code Chat Core static contracts and creates no
-live qualification by itself. Development/test runs exact version 1.2.23/M101
-main merge `76763701461e1ccfdb80ec8e32d7c3009c9208f8`, tree
-`3a84f73250ae344cc180c43572f6da18185aa738`. Publication V1 applied M101, and
-the later-created exact Deployment 5 received declared projections from the
-server-owned current bindings. Six receipt-aware capability qualifications,
-Release 26 and bounded public UI/SDK evidence close only the approved K2.7 Chat
-Core subset. M102 exists only in local candidate commits on the K3 branch and
-adds only eight exact K3 Profile 1.9 Chat Core static bindings and selectors.
-It has not been pushed or deployed, is not claimed as a Target artifact and
-creates no live qualification by itself.
+Repository source candidate is version 1.2.29 with PostgreSQL compatibility
+ceiling `000102_kimi_k3_chat_core_qualification`; 1.2.29 is a documentation-only
+closeout and is not deployed. M101 is the first declaration-owned capability
+publication after the immutable M100 baseline, and M102 appends only the exact
+K3 Profile 1.9 Chat Core static contracts. Neither publication creates live
+qualification by itself. Development/test runs exact version 1.2.28/M102 main
+merge `16bf398aed4122c52a174a4d3340b4bc399cd3b7`, tree
+`a6efc7c13aadcb3fa235f3665b430fd94becf9aa`. The later-created exact Deployment
+6 received declared projections from the server-owned current bindings and now
+has eight receipt-aware capability qualifications. Release 27 and its stable
+slot establish only a development/test test route: public model 817 remains
+`staging` and `approved_catalog=false`, so this is not product maturity
+`released`, Production, Alias or global canonical authority. Fixed-SDK public
+delivery separately proves the bounded non-stream subset; two public streaming
+requests returned provider HTTP 503 and remain an explicit delivery gap. Exact
+evidence is in
+`docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md`.
 Stable, canary, frontend and Nginx share the frozen `unirouter` Compose project
 and exact configuration chain, and database, Redis and both backend readiness
 checks are healthy. These are development/test facts, not Production evidence.
