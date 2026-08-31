@@ -617,10 +617,13 @@ func compatibilityRouteFromExecutionPlan(plan modelrouting.Plan, route modelrout
 		CandidateCount: len(plan.Routes), ExcludedCount: len(plan.Exclusions),
 		SelectionReason: route.SelectionReason, RequiresProbe: route.RequiresProbe,
 		RuntimeReleaseRef: plan.RuntimeReleaseRef, RuntimeStage: plan.RuntimeStage,
+		ModelOperationID:   plan.ModelOperationID,
 		ExecutionProfileID: plan.ExecutionProfileID, ExecutionProfileVersion: plan.ExecutionProfileVersion,
 		ReasoningProfile: plan.ReasoningProfile, CacheUsageProfile: plan.CacheUsageProfile,
-		ModelProtocolProfile:       plan.ModelProtocolProfile,
-		PlanCapabilityRequirements: cloneGatewayPlanCapabilityRequirements(plan.CapabilityRequirements),
+		ModelProtocolProfile:            plan.ModelProtocolProfile,
+		OperationProtocolProfileID:      route.ProtocolProfileID,
+		OperationProtocolProfileVersion: route.ProtocolProfileVersion,
+		PlanCapabilityRequirements:      cloneGatewayPlanCapabilityRequirements(plan.CapabilityRequirements),
 	}
 }
 

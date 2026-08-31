@@ -1396,15 +1396,20 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 		adapter = adapters.NewOpenAICompatible()
 	}
 	normalized, err := adapter.ParseResponse(ctx, adapters.ResponseInput{
-		Endpoint:          adapters.EndpointChatCompletions,
-		StatusCode:        resp.StatusCode,
-		Header:            resp.Header,
-		Body:              body,
-		Channel:           route.Channel,
-		RequestedModel:    requestedModel,
-		UpstreamModel:     route.MappedModel,
-		CacheUsageProfile: route.CacheUsageProfile,
-		ProtocolProfile:   route.ModelProtocolProfile,
+		Endpoint:                        adapters.EndpointChatCompletions,
+		StatusCode:                      resp.StatusCode,
+		Header:                          resp.Header,
+		Body:                            body,
+		Channel:                         route.Channel,
+		RequestedModel:                  requestedModel,
+		UpstreamModel:                   route.MappedModel,
+		ModelOperationID:                route.ModelOperationID,
+		ExecutionProfileID:              route.ExecutionProfileID,
+		ExecutionProfileVersion:         route.ExecutionProfileVersion,
+		CacheUsageProfile:               route.CacheUsageProfile,
+		ProtocolProfile:                 route.ModelProtocolProfile,
+		OperationProtocolProfileID:      route.OperationProtocolProfileID,
+		OperationProtocolProfileVersion: route.OperationProtocolProfileVersion,
 	})
 	if err != nil {
 		reqLog.Error("Failed to parse adapter response: %v", err)
@@ -1457,8 +1462,15 @@ func (relay *Relay) relayNonStreamRequest(ctx context.Context, w http.ResponseWr
 	if len(responseBody) == 0 {
 		responseBody = body
 	}
-	var responseMap map[string]interface{}
-	if err := decodeJSONUseNumber(responseBody, &responseMap); err != nil || responseMap == nil {
+	responseMap := normalized.DeliveryObject
+	if responseMap != nil && !bytes.Equal(normalized.DeliveryObjectBody, responseBody) {
+		responseMap = nil
+	}
+	var responseMapErr error
+	if responseMap == nil {
+		responseMapErr = decodeJSONUseNumber(responseBody, &responseMap)
+	}
+	if responseMapErr != nil || responseMap == nil {
 		stopProbeLease()
 		healthAuthorityFailed := false
 		if healthErr := relay.applyRouteHealth(context.WithoutCancel(ctx), route, executionHealthProviderFailure); healthErr != nil {

@@ -981,6 +981,9 @@ func TestModelExecutionAppliedCanonicalDispatchesChatAndEmbeddingsWithExactProje
 			}
 			if compat.ExecutionProfileID != plan.ExecutionProfileID ||
 				compat.ExecutionProfileVersion != plan.ExecutionProfileVersion ||
+				compat.ModelOperationID != plan.ModelOperationID ||
+				compat.OperationProtocolProfileID != plan.Routes[0].ProtocolProfileID ||
+				compat.OperationProtocolProfileVersion != plan.Routes[0].ProtocolProfileVersion ||
 				compat.ReasoningProfile != plan.ReasoningProfile ||
 				compat.CacheUsageProfile != plan.CacheUsageProfile {
 				t.Fatalf("canonical adapter view lost model profile authority: %+v", compat)

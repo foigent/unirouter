@@ -291,6 +291,10 @@ func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 			outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 				Provider: "kimi", BaseURL: "https://api.moonshot.cn/v1",
 				AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
+				OperationID:        "openai.chat_completions.v1",
+				ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
+				ProtocolProfileID: "protocol.kimi-openai-chat.v5", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+				ExpectedProvider: "kimi", PublicPath: "/v1/chat/completions",
 				UpstreamModel: "kimi-k2.6", ExpectedUpstreamModel: "kimi-k2.6", EncryptedSecret: encrypted,
 				CapabilityID: test.capabilityID, ProbeContractID: test.contractID,
 				ProbeContractVersion: probeContractVersion,
@@ -315,6 +319,10 @@ func TestKimiK26FailedProbeReturnsOnlyBoundedSchemaDiagnostic(t *testing.T) {
 	outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 		Provider: "kimi", BaseURL: "https://api.moonshot.cn/v1",
 		AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
+		OperationID:        "openai.chat_completions.v1",
+		ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
+		ProtocolProfileID: "protocol.kimi-openai-chat.v5", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		ExpectedProvider: "kimi", PublicPath: "/v1/chat/completions",
 		UpstreamModel: "kimi-k2.6", ExpectedUpstreamModel: "kimi-k2.6", EncryptedSecret: encrypted,
 		CapabilityID:         modelprofile.CapabilityTools,
 		ProbeContractID:      modelcapabilityqualification.KimiChatFunctionToolsProbeContractID,

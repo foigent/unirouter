@@ -4073,6 +4073,61 @@ func TestNonStreamUnsupportedKnownTextShapeIsWithheld(t *testing.T) {
 	}
 }
 
+func TestExactKimiNonStreamStructuralIssueRetainsProviderUsageAndIsWithheld(t *testing.T) {
+	var holdReason string
+	var held billing.SettleRequest
+	deliveryPrepared := false
+	b := &mockBilling{
+		holdOutputFn: func(_ context.Context, req billing.SettleRequest, reason string) error {
+			held = req
+			holdReason = reason
+			return nil
+		},
+		prepareDeliveryFn: func(context.Context, billing.SettleRequest) (*billing.PrepareDeliveryResult, error) {
+			deliveryPrepared = true
+			return nil, nil
+		},
+	}
+	relay := newTestRelay(&testutil.MockDB{}, b)
+	route := &RouteResult{
+		Channel:                         models.Channel{ID: 1, Provider: "kimi", Name: "kimi", AdapterType: adapters.TypeOpenAICompatible},
+		ChannelKey:                      models.ChannelKey{ID: 1},
+		MappedModel:                     "kimi-k2.6",
+		ModelOperationID:                "openai.chat_completions.v1",
+		ExecutionProfileID:              "kimi.k2.6.api",
+		ExecutionProfileVersion:         "1.7.0",
+		ModelProtocolProfile:            "protocol.kimi-openai-chat.v5",
+		OperationProtocolProfileID:      "protocol.kimi-openai-chat.v5",
+		OperationProtocolProfileVersion: "1.0.0",
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"chatcmpl-kimi-shape","model":"kimi-k2.6","choices":"invalid","usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`,
+		)),
+	}
+	ctx := context.WithValue(context.Background(), middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxKeyID, int64(2))
+	ctx = contextWithRouteAttempt(ctx, 1, 1)
+	ctx = contextWithAttemptID(ctx, "att-kimi-shape")
+	recorder := httptest.NewRecorder()
+
+	relay.relayNonStreamRequest(
+		ctx, recorder, resp, route, "req-kimi-shape", 1, 2,
+		"kimi-public", "kimi-public", "127.0.0.1", logger.New(logger.Fields{}),
+		time.Now(), adapters.NewOpenAICompatible(), 2, 3, "upstream-kimi-shape",
+	)
+
+	require.Equal(t, http.StatusBadGateway, recorder.Code)
+	require.False(t, deliveryPrepared)
+	require.Equal(t, billing.OutputHoldReasonProviderResponseUnusable, holdReason)
+	require.Equal(t, 2, held.PromptTokens)
+	require.Equal(t, 3, held.CompletionTokens)
+	require.Equal(t, metering.UsagePurposeProviderEvidence, held.UsagePurpose)
+	require.Equal(t, "att-kimi-shape", held.AttemptID)
+}
+
 func TestP6F10OutputTransformRejectsChangedContentPath(t *testing.T) {
 	response := map[string]interface{}{
 		"choices": []interface{}{map[string]interface{}{

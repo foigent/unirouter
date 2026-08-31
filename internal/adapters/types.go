@@ -80,25 +80,32 @@ type RequestInput struct {
 }
 
 type ResponseInput struct {
-	Endpoint          Endpoint
-	StatusCode        int
-	Header            http.Header
-	Body              []byte
-	Channel           models.Channel
-	RequestedModel    string
-	UpstreamModel     string
-	CacheUsageProfile string
-	ProtocolProfile   string
-	TTFTMillis        int
+	Endpoint                        Endpoint
+	StatusCode                      int
+	Header                          http.Header
+	Body                            []byte
+	Channel                         models.Channel
+	RequestedModel                  string
+	UpstreamModel                   string
+	ModelOperationID                string
+	ExecutionProfileID              string
+	ExecutionProfileVersion         string
+	CacheUsageProfile               string
+	ProtocolProfile                 string
+	OperationProtocolProfileID      string
+	OperationProtocolProfileVersion string
+	TTFTMillis                      int
 }
 
 type NormalizedResponse struct {
-	StatusCode int
-	Header     http.Header
-	Body       []byte
-	Usage      Usage
-	Meta       ProviderMeta
-	Error      *NormalizedError
+	StatusCode         int
+	Header             http.Header
+	Body               []byte
+	DeliveryObject     map[string]interface{}
+	DeliveryObjectBody []byte
+	Usage              Usage
+	Meta               ProviderMeta
+	Error              *NormalizedError
 }
 
 type StreamState struct {
