@@ -4,6 +4,30 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.31] - 2026-09-01
+
+### Changed
+
+- Converged Kimi K2.6, K2.7 Code and K3 OpenAI-compatible Chat streaming on
+  bounded SSE framing, current-Kimi usage comparison, terminal `[DONE]`
+  handling and exact operation-binding selection. Runtime remains delivery,
+  guardrail, backpressure, billing and receipt authority; capability Probes
+  retain their existing typed-model, sentinel, reasoning and diagnostic
+  authority.
+- Preserved historical Profile and non-Kimi streaming behavior. Kimi streaming
+  tools remain unsupported, and malformed framing plus incompatible usage or
+  finish-reason shapes continue to fail closed. Runtime stops at the first
+  valid `[DONE]` without disclosing later provider bytes, while Probe retains
+  its bounded whole-body trailing-data diagnostics.
+
+### Scope
+
+- This change creates or updates no actual Release object, external release
+  status, tag, artifact, current pointer, Release binding, promotion or
+  lifecycle mechanism. It changes no Profile, Protocol, Probe, schema,
+  migration, pricing, Alias or canonical-route identity and provides no
+  Target, deployment, Provider-integration or Production evidence.
+
 ## [1.2.30] - 2026-09-01
 
 ### Changed
