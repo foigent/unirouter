@@ -96,7 +96,7 @@ func TestKimiK3M102ActualArtifactsGuardedRoundTripIntegration(t *testing.T) {
 	migrationDir := testdb.MigrationsDir(t)
 	artifactLedger, err := schemaauthority.ExpectedLedger(migrationDir)
 	require.NoError(t, err)
-	require.Equal(t, "000102_kimi_k3_chat_core_qualification", artifactLedger[len(artifactLedger)-1])
+	require.Contains(t, artifactLedger, "000102_kimi_k3_chat_core_qualification")
 	require.NoError(t, VerifyArtifactPublicationInventory(migrationDir, artifactLedger))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 
@@ -194,6 +194,111 @@ WHERE execution_profile_id='kimi.k3.api' AND execution_profile_version='1.9.0'`)
 	require.Equal(t, int64(1), ledgerCount)
 	require.Equal(t, int64(8), bindingCount)
 	require.Equal(t, int64(8), selectorCount)
+}
+
+func TestMiniMaxM3GLM53M103ActualArtifactsGuardedRoundTripIntegration(t *testing.T) {
+	pool := testdb.SetupIsolated(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	migrationDir := testdb.MigrationsDir(t)
+	artifactLedger, err := schemaauthority.ExpectedLedger(migrationDir)
+	require.NoError(t, err)
+	require.Equal(t, "000103_minimax_m3_glm53_function_tools_qualification", artifactLedger[len(artifactLedger)-1])
+	require.NoError(t, VerifyArtifactPublicationInventory(migrationDir, artifactLedger))
+	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
+
+	artifact := ArtifactIdentity{
+		Kind: ArtifactKindSource, Commit: strings.Repeat("7", 40), Tree: strings.Repeat("8", 40),
+		Version: "minimax-glm-m103-integration", PublisherExecutableDigest: "sha256:" + strings.Repeat("9", 64),
+	}
+	var m103Plan Plan
+	var m103Authority PlanAuthority
+	for _, publicationID := range []string{
+		"000101_kimi_k27_chat_core_qualification",
+		"000102_kimi_k3_chat_core_qualification",
+		"000103_minimax_m3_glm53_function_tools_qualification",
+	} {
+		declaration, predecessor, err := CompiledPublication(publicationID)
+		require.NoError(t, err)
+		authority := fixturePlanAuthority(t, migrationDir, artifactLedger, artifact, predecessor, declaration)
+		plan, err := PlanTarget(ctx, pool, "integration", authority)
+		require.NoError(t, err)
+		require.Equal(t, ValidationValid, plan.Validation)
+		require.Empty(t, plan.ProjectionItems, "baseline has no exact deployment for %s", publicationID)
+		if publicationID == "000103_minimax_m3_glm53_function_tools_qualification" {
+			var appendCount, promotionCount int
+			for _, item := range plan.BindingItems {
+				if item.Action == BindingActionAppend {
+					appendCount++
+				}
+			}
+			for _, item := range plan.SelectorItems {
+				if item.Action == SelectorActionPromotion {
+					promotionCount++
+				}
+			}
+			require.Equal(t, 2, appendCount)
+			require.Equal(t, 2, promotionCount)
+			m103Plan = plan
+			m103Authority = authority
+		}
+		hooks, err := HooksForPlan("integration", authority, plan)
+		require.NoError(t, err)
+		require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, plan.ApplyMigrations, hooks))
+		require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+	}
+
+	var orgID, retainedModelID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type)
+VALUES ('glm-m103-retained-profile','active','customer') RETURNING id`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO model_registry (
+org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,context_length,output_limit,
+execution_profile_id,execution_profile_version)
+VALUES ($1,'glm-m103-retained-profile','GLM M103 retained Profile','glm','staging',TRUE,202752,131072,
+'glm.5.3.api','1.8.0') RETURNING id`, orgID).Scan(&retainedModelID))
+
+	downHooks, err := DownHooksForPlan("integration", m103Authority, m103Plan)
+	require.NoError(t, err)
+	err = migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks)
+	require.ErrorContains(t, err, "retained Profile attachment prevents publication down")
+	assertMiniMaxGLMPublicationPresent(t, ctx, pool)
+
+	_, err = pool.Exec(ctx, `DELETE FROM model_registry WHERE id=$1`, retainedModelID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `DELETE FROM orgs WHERE id=$1`, orgID)
+	require.NoError(t, err)
+	require.NoError(t, migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks))
+	var ledgerCount, bindingCount, selectorCount int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=$1`, m103Plan.PublicationID).Scan(&ledgerCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_probe_contract_bindings WHERE introduced_migration=$1`, m103Plan.PublicationID).Scan(&bindingCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+WHERE (execution_profile_id='minimax.m3.token-plan' AND execution_profile_version='1.7.0')
+   OR (execution_profile_id='glm.5.3.api' AND execution_profile_version='1.8.0')`).Scan(&selectorCount))
+	require.Zero(t, ledgerCount)
+	require.Zero(t, bindingCount)
+	require.Zero(t, selectorCount)
+
+	hooks, err := HooksForPlan("integration", m103Authority, m103Plan)
+	require.NoError(t, err)
+	require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, m103Plan.ApplyMigrations, hooks))
+	require.NoError(t, VerifyPlanFinal(ctx, pool, m103Plan))
+}
+
+func assertMiniMaxGLMPublicationPresent(t *testing.T, ctx context.Context, pool interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}) {
+	t.Helper()
+	var ledgerCount, bindingCount, selectorCount int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations
+WHERE version='000103_minimax_m3_glm53_function_tools_qualification'`).Scan(&ledgerCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_probe_contract_bindings
+WHERE introduced_migration='000103_minimax_m3_glm53_function_tools_qualification'`).Scan(&bindingCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+WHERE (execution_profile_id='minimax.m3.token-plan' AND execution_profile_version='1.7.0')
+   OR (execution_profile_id='glm.5.3.api' AND execution_profile_version='1.8.0')`).Scan(&selectorCount))
+	require.Equal(t, int64(1), ledgerCount)
+	require.Equal(t, int64(2), bindingCount)
+	require.Equal(t, int64(2), selectorCount)
 }
 
 func TestStrictPublicationAppliesExactPlanAndRecoveryIsReadOnlyIntegration(t *testing.T) {

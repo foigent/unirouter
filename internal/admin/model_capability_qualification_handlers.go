@@ -716,6 +716,33 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			applyKimiChatDiagnostic(&outcome, validationErr)
 			return outcome
 		}
+	case modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID:
+		normalized, normalizeErr := normalizeOpenAIChatFunctionToolsProbeResponse(
+			probeCtx, adapter, snapshot, response,
+		)
+		if normalizeErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_function_tools_contract_invalid"
+			outcome.ContractErrorCode = "delivery_shape"
+			return outcome
+		}
+		observation, validationErr := modelcapabilityqualification.ValidateNormalizedOpenAIChatFunctionToolsForBinding(
+			modelCapabilityProbeBindingFromSnapshot(snapshot), normalized.Header.Get("Content-Type"), bytes.NewReader(normalized.Body),
+		)
+		outcome.ReportedModel = observation.ReportedModel
+		outcome.FinishReason = observation.FinishReason
+		outcome.PromptTokens = observation.PromptTokens
+		outcome.CompletionTokens = observation.CompletionTokens
+		outcome.TotalTokens = observation.TotalTokens
+		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.ToolCallObserved = observation.ToolCallObserved
+		if validationErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.ReasonCode = "provider_function_tools_contract_invalid"
+			outcome.ContractErrorCode = modelcapabilityqualification.OpenAIChatFunctionToolsErrorCode(validationErr)
+			return outcome
+		}
 	default:
 		outcome.LatencyMS = time.Since(started).Milliseconds()
 		outcome.ReasonCode = "probe_contract_unsupported"
@@ -864,10 +891,51 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 			payload["thinking"] = map[string]string{"type": "disabled"}
 		}
 		payload["response_format"] = map[string]string{"type": "json_object"}
+	case modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID:
+		return modelcapabilityqualification.BuildOpenAIChatFunctionToolsProbeRequest(
+			modelCapabilityProbeBindingFromSnapshot(snapshot),
+		)
 	default:
 		return nil, errModelCapabilityUnsupported
 	}
 	return json.Marshal(payload)
+}
+
+func normalizeOpenAIChatFunctionToolsProbeResponse(
+	ctx context.Context, adapter adapters.Adapter, snapshot modelCapabilitySnapshot, response *http.Response,
+) (*adapters.NormalizedResponse, error) {
+	limited := &io.LimitedReader{R: response.Body, N: modelcapabilityqualification.OpenAIChatFunctionToolsMaxResponseBytes + 1}
+	body, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if limited.N <= 0 {
+		return nil, fmt.Errorf("function-tools Probe response exceeds bounded size")
+	}
+	// Validate before the adapter's safe provider-envelope normalization can
+	// decode through maps and erase ordinary or escaped-equivalent duplicate
+	// members. The adapter still owns normalization; this preserves the raw
+	// document's ambiguity as a fail-closed Probe fact.
+	if err := strictjson.Validate(body); err != nil {
+		return nil, fmt.Errorf("function-tools Probe raw response is ambiguous: %w", err)
+	}
+	profile, ok := modelprofile.Lookup(snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion)
+	if !ok {
+		return nil, fmt.Errorf("function-tools Probe Profile is unavailable")
+	}
+	return adapter.ParseResponse(ctx, adapters.ResponseInput{
+		Endpoint: adapters.EndpointChatCompletions, StatusCode: response.StatusCode, Header: response.Header, Body: body,
+		Channel: models.Channel{
+			Name: "typed-capability-probe", Provider: snapshot.Provider, BaseURL: snapshot.BaseURL,
+			AdapterType: snapshot.AdapterType, AdapterConfig: snapshot.AdapterConfig,
+		},
+		RequestedModel: snapshot.UpstreamModel, UpstreamModel: snapshot.UpstreamModel,
+		ModelOperationID:   snapshot.OperationID,
+		ExecutionProfileID: snapshot.ExecutionProfileID, ExecutionProfileVersion: snapshot.ExecutionProfileVersion,
+		CacheUsageProfile: profile.CacheUsageProfile, ProtocolProfile: snapshot.ProtocolProfileID,
+		OperationProtocolProfileID: snapshot.ProtocolProfileID, OperationProtocolProfileVersion: snapshot.ProtocolProfileVersion,
+	})
 }
 
 func resolveKimiProbeThinking(snapshot modelCapabilitySnapshot) (map[string]string, bool, bool, error) {

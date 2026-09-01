@@ -375,6 +375,49 @@ func TestMiniMaxProductBindingAcceptsOnlyOfficialChinaOpenAIEndpoint(t *testing.
 	require.Error(t, ValidateProductBinding(m27, wrongVariant))
 }
 
+func TestGLM53CurrentProductBindingAcceptsOnlyOfficialOpenPlatformEndpoint(t *testing.T) {
+	profile, ok := Lookup("glm.5.3.api", "1.8.0")
+	require.True(t, ok)
+	require.Equal(t, []string{EndpointClassGLMOfficialOpenAIV4}, profile.EndpointClasses)
+	binding := ProductBinding{
+		Provider: "glm", BaseURL: "https://open.bigmodel.cn/api/paas/v4",
+		AdapterType: "openai_compatible", EndpointPathMode: EndpointPathModeBaseRelative,
+		OperationID: OperationOpenAIChat, UpstreamModel: "glm-5.3",
+	}
+	require.NoError(t, ValidateProductBinding(profile, binding))
+	binding.BaseURL += "/"
+	require.NoError(t, ValidateProductBinding(profile, binding))
+
+	for _, endpoint := range []string{
+		"https://arbitrary.example/api/paas/v4",
+		"https://open.bigmodel.cn",
+		"https://open.bigmodel.cn/api/paas/v4/chat/completions",
+		"https://open.bigmodel.cn/api/coding/paas/v4",
+		"https://open.bigmodel.cn:443/api/paas/v4",
+		"http://open.bigmodel.cn/api/paas/v4",
+	} {
+		candidate := binding
+		candidate.BaseURL = endpoint
+		require.Error(t, ValidateProductBinding(profile, candidate), endpoint)
+	}
+	wrongMode := binding
+	wrongMode.BaseURL = "https://open.bigmodel.cn/api/paas/v4"
+	wrongMode.EndpointPathMode = EndpointPathModeCanonicalV1
+	require.Error(t, ValidateProductBinding(profile, wrongMode))
+
+	historical, ok := Lookup("glm.5.3.api", "1.7.0")
+	require.True(t, ok)
+	require.Equal(t, []string{EndpointClassProviderHTTPS}, historical.EndpointClasses)
+	historicalBinding := ProductBinding{
+		Provider: "glm", BaseURL: "https://compatible.example/v1",
+		AdapterType: "openai_compatible", EndpointPathMode: EndpointPathModeCanonicalV1,
+		OperationID: OperationOpenAIChat, UpstreamModel: "glm-5.3",
+	}
+	require.NoError(t, ValidateProductBinding(historical, historicalBinding), "historical generic HTTPS path remains available")
+	require.Error(t, ValidateNewAttachment(historical.ID, historical.Version))
+	require.NoError(t, ValidateNewAttachment(profile.ID, profile.Version))
+}
+
 func TestGrok46ProductBindingAcceptsOnlyExactOfficialOpenAIV1Endpoint(t *testing.T) {
 	profile, ok := Lookup("xai.grok-4.6.api", "1.1.0")
 	require.True(t, ok)

@@ -17,9 +17,10 @@ Deployment 6, eight independent capability Probe/Approval qualifications and
 development/test Release 27. The Release and initial stable-slot activation
 establish only a test route. Public model 817 remains `staging` and outside the
 approved catalog, so no `released`, Production, Alias or global canonical claim
-is made. Repository source candidate 1.2.30/M102 converges one exact Kimi
-non-stream preparation seam without changing Profile, protocol, Probe contract,
-qualification or database identity; it is not the deployed Target artifact.
+is made. Repository source candidate 1.2.33/M103 adds the exact official
+open-platform GLM 5.3 Profile and one declaration-owned MiniMax M3/GLM 5.3
+Function Tools plan over shared qualification mechanics with separate Probe
+identities; M103 is not applied and is not the deployed Target artifact.
 Local, CI, artifact, Target, provider, SDK-delivery and customer-wallet evidence
 remain separate.
 
@@ -365,7 +366,7 @@ and Release claims still require their own exact identity/evidence.
 | `minimax.m3.token-plan@1.7.0` | MiniMax CN Chat / Token Plan |
 | `minimax.m2.5-highspeed.token-plan@1.5.0` | MiniMax CN Chat / Token Plan |
 | `minimax.m2.7.token-plan@1.5.0` | MiniMax CN Chat / Token Plan |
-| `glm.5.3.api@1.7.0` | GLM CN Chat |
+| `glm.5.3.api@1.8.0` | GLM official open-platform Chat |
 | `glm.5.2.api@1.7.0` | GLM CN Chat |
 | `glm.5v-turbo.api@1.10.0` | GLM CN Chat |
 | `qwen.3.8-max.api@1.8.0` | DashScope Beijing Chat |

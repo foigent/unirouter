@@ -76,6 +76,7 @@ func ValidateProductBinding(profile Profile, binding ProductBinding) error {
 func requiredEndpointPathMode(endpointClass string) string {
 	switch endpointClass {
 	case EndpointClassGeminiOpenAICompatibility, EndpointClassDeepSeekOfficialOpenAI,
+		EndpointClassGLMOfficialOpenAIV4,
 		EndpointClassDoubaoArkBeijingOpenAIV3:
 		return EndpointPathModeBaseRelative
 	case EndpointClassOpenAIOfficialOrigin, EndpointClassOpenAIOfficialV1,
@@ -170,6 +171,13 @@ func ClassifyEndpoint(provider, rawBaseURL string) (string, error) {
 			return EndpointClassMiniMaxCNOpenAIV1, nil
 		}
 		return "", fmt.Errorf("MiniMax endpoint must be the official China OpenAI API root")
+	}
+	if provider == "glm" {
+		if parsed.Port() == "" && strings.EqualFold(parsed.Hostname(), "open.bigmodel.cn") &&
+			strings.TrimSuffix(parsed.EscapedPath(), "/") == "/api/paas/v4" {
+			return EndpointClassGLMOfficialOpenAIV4, nil
+		}
+		return "", fmt.Errorf("GLM endpoint must be the official open platform OpenAI API root")
 	}
 	if provider == "xai" {
 		if parsed.Port() == "" && strings.EqualFold(parsed.Hostname(), "api.x.ai") &&

@@ -619,6 +619,7 @@ const (
 	EndpointClassDeepSeekOfficialOpenAI         = "deepseek_official_openai"
 	EndpointClassKimiPlatformOpenAIV1           = "kimi_platform_openai_v1"
 	EndpointClassMiniMaxCNOpenAIV1              = "minimax_cn_openai_v1"
+	EndpointClassGLMOfficialOpenAIV4            = "glm_official_openai_v4"
 	EndpointClassXAIOfficialOpenAIV1            = "xai_official_openai_v1"
 	EndpointClassAnthropicOfficialOrigin        = "anthropic_official_origin"
 	EndpointClassDoubaoArkBeijingOpenAIV3       = "doubao_ark_cn_beijing_openai_v3"
@@ -972,6 +973,7 @@ var immutableProfileEndpointClassOverrides = map[string][]string{
 	"minimax.m3.token-plan@1.5.0":             {EndpointClassMiniMaxCNOpenAIV1},
 	"minimax.m3.token-plan@1.6.0":             {EndpointClassMiniMaxCNOpenAIV1},
 	"minimax.m3.token-plan@1.7.0":             {EndpointClassMiniMaxCNOpenAIV1},
+	"glm.5.3.api@1.8.0":                       {EndpointClassGLMOfficialOpenAIV4},
 
 	"qwen.3.8-max.api@1.7.0":   {EndpointClassDashScopeBeijingWorkspacePayGo, EndpointClassDashScopeBeijingSharedPayGo},
 	"qwen.3.8-max.api@1.8.0":   {EndpointClassDashScopeBeijingWorkspacePayGo, EndpointClassDashScopeBeijingSharedPayGo},
@@ -1152,7 +1154,7 @@ var currentProfileManifests = map[string]currentProfileManifest{
 	"minimax.m2.7.token-plan":           currentProfile("1.5.0"),
 	"minimax.m2.5-highspeed.token-plan": currentProfile("1.5.0"),
 	"minimax.m3.token-plan":             currentProfile("1.7.0"),
-	"glm.5.3.api":                       currentProfile("1.7.0"),
+	"glm.5.3.api":                       currentProfile("1.8.0"),
 	"glm.5.2.api":                       currentProfile("1.7.0"),
 	"glm.5v-turbo.api":                  currentProfile("1.10.0"),
 	"qwen.3.8-max.api":                  currentProfile("1.8.0"),
@@ -2472,6 +2474,28 @@ func legacyConformantProviderProfiles() []Profile {
 // become routing or admission authority.
 func currentProviderProfiles() []Profile {
 	return []Profile{
+		{
+			ID: "glm.5.3.api", Version: "1.8.0", Label: "GLM-5.3 官方开放平台 API（精确 Function Tools）",
+			TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+			ReasoningProfile: "reasoning.glm-5.3-required.v1", CacheUsageProfile: "cache-usage.glm-openai.v1",
+			ProtocolProfile:       "protocol.glm-openai-chat.v5",
+			ProviderContextWindow: 1_000_000, ProviderMaxOutput: 131_072,
+			DefaultContextWindow: 1_000_000, DefaultOutputLimit: 65_536,
+			ProviderCapabilities: []string{"streaming", "reasoning", "reasoning_effort", "tools", "tool_choice", "json_object", "prompt_cache"},
+			Capabilities: []string{
+				CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+				CapabilityToolChoiceAuto, CapabilityJSONObject, CapabilityPromptCache,
+			},
+			Aliases: []string{"GLM-5.3", "glm-5.3"},
+			EvidenceRefs: []string{
+				"https://docs.bigmodel.cn/cn/api/introduction",
+				"https://docs.bigmodel.cn/cn/guide/develop/openai/introduction",
+				"https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3",
+				"https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode",
+				"https://docs.bigmodel.cn/cn/guide/capabilities/function-calling",
+				"https://bigmodel.cn/pricing",
+			},
+		},
 		{
 			ID: "glm.5.3.api", Version: "1.7.0", Label: "GLM-5.3 官方 API",
 			TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,

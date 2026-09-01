@@ -939,7 +939,10 @@ func TestCurrentProviderProfilesPreserveDocumentedMaximumAndRequestDefault(t *te
 			require.Equal(t, test.protocolRef, profile.ProtocolProfile)
 			require.NotEmpty(t, profile.ProviderCapabilities)
 			if test.model == "glm-5.3" {
-				require.Equal(t, []string{CapabilityStreaming, "reasoning", "tools", "json_object", "prompt_cache"}, profile.Capabilities)
+				require.Equal(t, []string{
+					CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+					CapabilityToolChoiceAuto, CapabilityJSONObject, CapabilityPromptCache,
+				}, profile.Capabilities)
 			} else if test.model == "glm-5.2" {
 				require.Equal(t, []string{CapabilityStreaming, "reasoning", "tools", "json_object", "prompt_cache"}, profile.Capabilities)
 			} else if test.model == "glm-5v-turbo" {
@@ -1956,9 +1959,13 @@ func TestGLM53JSONObjectIsVersionedAndLocallyModeled(t *testing.T) {
 func TestGLM53CacheReadUsageIsVersionedAndLocallyModeled(t *testing.T) {
 	profile, ok := Match("glm-5.3")
 	require.True(t, ok)
-	require.Equal(t, "1.7.0", profile.Version)
+	require.Equal(t, "1.8.0", profile.Version)
 	require.Equal(t, "cache-usage.glm-openai.v1", profile.CacheUsageProfile)
-	require.Equal(t, []string{CapabilityStreaming, "reasoning", "tools", "json_object", "prompt_cache"}, profile.Capabilities)
+	require.Equal(t, []string{
+		CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+		CapabilityToolChoiceAuto, CapabilityJSONObject, CapabilityPromptCache,
+	}, profile.Capabilities)
+	require.Equal(t, []string{EndpointClassGLMOfficialOpenAIV4}, profile.EndpointClasses)
 
 	contract, ok := ResolveCacheUsageContract(profile.CacheUsageProfile)
 	require.True(t, ok)
@@ -1969,6 +1976,11 @@ func TestGLM53CacheReadUsageIsVersionedAndLocallyModeled(t *testing.T) {
 	jsonObject, ok := Lookup("glm.5.3.api", "1.6.0")
 	require.True(t, ok)
 	require.Equal(t, "cache-usage.glm-documented.v1", jsonObject.CacheUsageProfile)
+
+	historical, ok := Lookup("glm.5.3.api", "1.7.0")
+	require.True(t, ok)
+	require.Equal(t, []string{CapabilityStreaming, "reasoning", "tools", "json_object", "prompt_cache"}, historical.Capabilities)
+	require.Equal(t, []string{EndpointClassProviderHTTPS}, historical.EndpointClasses)
 }
 
 func TestKimiComponentContractsAreVersionedAndDefensive(t *testing.T) {

@@ -4,6 +4,28 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.33] - 2026-09-01
+
+### Changed
+
+- Added append-only `glm.5.3.api@1.8.0` for the ordinary GLM open platform at
+  `https://open.bigmodel.cn/api/paas/v4`, using `base_relative` paths. Coding
+  Plan and generic HTTPS endpoints remain outside this exact identity.
+- Added separate MiniMax M3 and GLM 5.3 Function Tools Probe contracts over one
+  shared request-builder and adapter-normalized validator path. Exact output
+  limit, reasoning, tool-choice and MiniMax response-replay semantics remain
+  provider-specific and fail closed.
+- Added deterministic M103 Publication V1 artifacts for one compatible logical
+  plan containing the two exact bindings. The plan shares an M102 predecessor
+  and rollback boundary without collapsing provider, Profile, protocol or
+  Probe identities.
+
+### Scope
+
+- This metadata records a source batch only. M103 is not applied and no live
+  Probe, Approval, qualification, Release object, tag, artifact, Provider call,
+  Target deployment, route, traffic or Production state is created or changed.
+
 ## [1.2.32] - 2026-09-01
 
 ### Changed
