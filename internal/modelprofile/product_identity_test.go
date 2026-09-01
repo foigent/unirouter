@@ -418,6 +418,31 @@ func TestGLM53CurrentProductBindingAcceptsOnlyOfficialOpenPlatformEndpoint(t *te
 	require.NoError(t, ValidateNewAttachment(profile.ID, profile.Version))
 }
 
+func TestGLMToggleFunctionToolsProductBindingsAcceptOnlyOfficialOpenPlatformEndpoint(t *testing.T) {
+	for _, identity := range []struct{ profileID, version, upstream string }{
+		{"glm.5.2.api", "1.8.0", "glm-5.2"},
+		{"glm.5.1.api", "1.0.0", "glm-5.1"},
+		{"glm.5-turbo.api", "1.0.0", "glm-5-turbo"},
+		{"glm.5.api", "1.0.0", "glm-5"},
+		{"glm.5v-turbo.api", "1.11.0", "glm-5v-turbo"},
+	} {
+		t.Run(identity.upstream, func(t *testing.T) {
+			profile, ok := Lookup(identity.profileID, identity.version)
+			require.True(t, ok)
+			require.Equal(t, []string{EndpointClassGLMOfficialOpenAIV4}, profile.EndpointClasses)
+			require.Equal(t, EndpointPathModeBaseRelative, RequiredEndpointPathMode(profile))
+			binding := ProductBinding{
+				Provider: "glm", BaseURL: "https://open.bigmodel.cn/api/paas/v4", AdapterType: "openai_compatible",
+				EndpointPathMode: EndpointPathModeBaseRelative, OperationID: OperationOpenAIChat,
+				ProtocolProfileID: profile.ProtocolProfile, ProtocolProfileVersion: "1.0.0", UpstreamModel: identity.upstream,
+			}
+			require.NoError(t, ValidateProductBinding(profile, binding))
+			binding.BaseURL = "https://example.test/api/paas/v4"
+			require.Error(t, ValidateProductBinding(profile, binding))
+		})
+	}
+}
+
 func TestGrok46ProductBindingAcceptsOnlyExactOfficialOpenAIV1Endpoint(t *testing.T) {
 	profile, ok := Lookup("xai.grok-4.6.api", "1.1.0")
 	require.True(t, ok)

@@ -95,6 +95,33 @@ var openAIChatFunctionToolsBindingIdentities = map[string][]openAIChatFunctionTo
 		protocolID: "protocol.glm-openai-chat.v5", protocolVersion: "1.0.0",
 		provider: "glm", upstreamModel: "glm-5.3", path: "/v1/chat/completions",
 	}},
+	GLMToggleChatFunctionToolsProbeContractID: {
+		{
+			profileID: "glm.5.2.api", profileVersion: "1.8.0",
+			protocolID: "protocol.glm-openai-chat.v6", protocolVersion: "1.0.0",
+			provider: "glm", upstreamModel: "glm-5.2", path: "/v1/chat/completions",
+		},
+		{
+			profileID: "glm.5.1.api", profileVersion: "1.0.0",
+			protocolID: "protocol.glm-openai-chat.v6", protocolVersion: "1.0.0",
+			provider: "glm", upstreamModel: "glm-5.1", path: "/v1/chat/completions",
+		},
+		{
+			profileID: "glm.5-turbo.api", profileVersion: "1.0.0",
+			protocolID: "protocol.glm-openai-chat.v6", protocolVersion: "1.0.0",
+			provider: "glm", upstreamModel: "glm-5-turbo", path: "/v1/chat/completions",
+		},
+		{
+			profileID: "glm.5.api", profileVersion: "1.0.0",
+			protocolID: "protocol.glm-openai-chat.v6", protocolVersion: "1.0.0",
+			provider: "glm", upstreamModel: "glm-5", path: "/v1/chat/completions",
+		},
+		{
+			profileID: "glm.5v-turbo.api", profileVersion: "1.11.0",
+			protocolID: "protocol.glm-openai-chat.glm5v.v5", protocolVersion: "1.0.0",
+			provider: "glm", upstreamModel: "glm-5v-turbo", path: "/v1/chat/completions",
+		},
+	},
 }
 
 func openAIChatFunctionToolsIdentity(binding Binding) (openAIChatFunctionToolsBindingIdentity, bool) {

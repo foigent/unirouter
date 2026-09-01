@@ -45,6 +45,11 @@ var immutableChatOperationProtocolBindings = map[chatOperationProtocolBindingKey
 	{ProfileID: "minimax.m2.7.payg", ProfileVersion: "1.0.0", ProtocolProfileID: "protocol.minimax-m2-openai-chat.v7"}:           ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "minimax.m2.7-highspeed.payg", ProfileVersion: "1.0.0", ProtocolProfileID: "protocol.minimax-m2-openai-chat.v7"}: ChatOperationProtocolBindingVersionV1,
 	{ProfileID: "glm.5.3.api", ProfileVersion: "1.8.0", ProtocolProfileID: "protocol.glm-openai-chat.v5"}:                        ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5.2.api", ProfileVersion: "1.8.0", ProtocolProfileID: "protocol.glm-openai-chat.v6"}:                        ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5.1.api", ProfileVersion: "1.0.0", ProtocolProfileID: "protocol.glm-openai-chat.v6"}:                        ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5-turbo.api", ProfileVersion: "1.0.0", ProtocolProfileID: "protocol.glm-openai-chat.v6"}:                    ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5.api", ProfileVersion: "1.0.0", ProtocolProfileID: "protocol.glm-openai-chat.v6"}:                          ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5v-turbo.api", ProfileVersion: "1.11.0", ProtocolProfileID: "protocol.glm-openai-chat.glm5v.v5"}:            ChatOperationProtocolBindingVersionV1,
 }
 
 type operationProtocolIdentityKey struct {

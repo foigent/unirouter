@@ -108,6 +108,11 @@ func TestResolveOperationProtocolIdentityUsesRepresentativeReuseBatchBindings(t 
 	for _, address := range [][3]string{
 		{"minimax.m3.token-plan", "1.7.0", "protocol.minimax-m3-openai-chat.v9"},
 		{"glm.5.3.api", "1.8.0", "protocol.glm-openai-chat.v5"},
+		{"glm.5.2.api", "1.8.0", "protocol.glm-openai-chat.v6"},
+		{"glm.5.1.api", "1.0.0", "protocol.glm-openai-chat.v6"},
+		{"glm.5-turbo.api", "1.0.0", "protocol.glm-openai-chat.v6"},
+		{"glm.5.api", "1.0.0", "protocol.glm-openai-chat.v6"},
+		{"glm.5v-turbo.api", "1.11.0", "protocol.glm-openai-chat.glm5v.v5"},
 	} {
 		identity, found, err := ResolveOperationProtocolIdentity(address[0], address[1], OperationOpenAIChat)
 		require.NoError(t, err, address[0])

@@ -912,6 +912,39 @@ func miniMaxM2FunctionToolsContract(profileID string) ChatProtocolContract {
 	return miniMaxExactFunctionToolsContract(miniMaxM2CacheReadChatContract(profileID))
 }
 
+func glmOpenAIChatV5Contract(profileID string) ChatProtocolContract {
+	return ChatProtocolContract{
+		ProfileID:        profileID,
+		StreamingModeled: true, Streaming: true,
+		OutputLimitModeled: true, OutputLimitField: "max_tokens", OutputLimitMin: 1, OutputLimitMax: 131_072,
+		FunctionToolsModeled: true, FunctionTools: true, MaxFunctionTools: 128,
+		FunctionToolDescriptionRequired: true, FunctionToolParametersRequired: true,
+		FunctionToolChoices: []string{"auto"}, FunctionToolChoiceRequiresTools: true,
+		ResponseFormatModeled: true, ResponseFormatTypes: []string{"text", "json_object"},
+	}
+}
+
+func glm5VChatV4Contract(profileID string) ChatProtocolContract {
+	return ChatProtocolContract{
+		ProfileID:        profileID,
+		StreamingModeled: true, Streaming: true,
+		OutputLimitModeled: true, OutputLimitField: "max_tokens", OutputLimitMin: 1, OutputLimitMax: 131_072,
+		FunctionToolsModeled: true, FunctionTools: true, MaxFunctionTools: 128,
+		FunctionToolDescriptionRequired: true, FunctionToolParametersRequired: true,
+		FunctionToolChoices: []string{"auto"}, FunctionToolChoiceRequiresTools: true,
+		ResponseFormatModeled: true,
+		InlineImageDataURL:    true, RemoteImageHTTPSURL: true,
+		InlineImageMIMETypes: []string{"image/png", "image/jpeg"},
+		RemoteVideoHTTPSURL:  true, RemoteFileHTTPSURL: true,
+		RemoteFileExtensions: []string{".txt", ".pdf"}, ExclusiveMediaKinds: true,
+	}
+}
+
+func glmExactFunctionToolsContract(contract ChatProtocolContract) ChatProtocolContract {
+	contract.FunctionToolInvocationCapabilitiesModeled = true
+	return contract
+}
+
 func doubaoSeed21ChatCoreContract(profileID string) ChatProtocolContract {
 	return ChatProtocolContract{
 		ProfileID:                          profileID,
@@ -1279,48 +1312,10 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 		RemoteVideoHTTPSURL:             true,
 		ExclusiveMediaKinds:             true,
 	},
-	"protocol.glm-openai-chat.glm5v.v4": {
-		ProfileID:                       "protocol.glm-openai-chat.glm5v.v4",
-		StreamingModeled:                true,
-		Streaming:                       true,
-		OutputLimitModeled:              true,
-		OutputLimitField:                "max_tokens",
-		OutputLimitMin:                  1,
-		OutputLimitMax:                  131_072,
-		FunctionToolsModeled:            true,
-		FunctionTools:                   true,
-		MaxFunctionTools:                128,
-		FunctionToolDescriptionRequired: true,
-		FunctionToolParametersRequired:  true,
-		FunctionToolChoices:             []string{"auto"},
-		FunctionToolChoiceRequiresTools: true,
-		ResponseFormatModeled:           true,
-		InlineImageDataURL:              true,
-		RemoteImageHTTPSURL:             true,
-		InlineImageMIMETypes:            []string{"image/png", "image/jpeg"},
-		RemoteVideoHTTPSURL:             true,
-		RemoteFileHTTPSURL:              true,
-		RemoteFileExtensions:            []string{".txt", ".pdf"},
-		ExclusiveMediaKinds:             true,
-	},
-	"protocol.glm-openai-chat.v5": {
-		ProfileID:                       "protocol.glm-openai-chat.v5",
-		StreamingModeled:                true,
-		Streaming:                       true,
-		OutputLimitModeled:              true,
-		OutputLimitField:                "max_tokens",
-		OutputLimitMin:                  1,
-		OutputLimitMax:                  131_072,
-		FunctionToolsModeled:            true,
-		FunctionTools:                   true,
-		MaxFunctionTools:                128,
-		FunctionToolDescriptionRequired: true,
-		FunctionToolParametersRequired:  true,
-		FunctionToolChoices:             []string{"auto"},
-		FunctionToolChoiceRequiresTools: true,
-		ResponseFormatModeled:           true,
-		ResponseFormatTypes:             []string{"text", "json_object"},
-	},
+	"protocol.glm-openai-chat.glm5v.v4": glm5VChatV4Contract("protocol.glm-openai-chat.glm5v.v4"),
+	"protocol.glm-openai-chat.glm5v.v5": glmExactFunctionToolsContract(glm5VChatV4Contract("protocol.glm-openai-chat.glm5v.v5")),
+	"protocol.glm-openai-chat.v5":       glmOpenAIChatV5Contract("protocol.glm-openai-chat.v5"),
+	"protocol.glm-openai-chat.v6":       glmExactFunctionToolsContract(glmOpenAIChatV5Contract("protocol.glm-openai-chat.v6")),
 	"protocol.glm-openai-chat.v4": {
 		ProfileID:                       "protocol.glm-openai-chat.v4",
 		StreamingModeled:                true,

@@ -219,12 +219,27 @@ func TestRepresentativeFunctionToolsProbesUseSharedNormalizedMechanics(t *testin
 			responseBody: `{"id":"chatcmpl-minimax","object":"chat.completion","model":"MiniMax-M3","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","name":"MiniMax AI","audio_content":"","content":"<think>probe</think>","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"prompt_tokens_details":{"cached_tokens":3}},"input_sensitive":false,"output_sensitive":false,"input_sensitive_type":0,"output_sensitive_type":0,"output_sensitive_int":0,"base_resp":{"status_code":0,"status_msg":"success"}}`,
 		},
 		{
+			name: "minimax payg m2 exact binding", provider: "minimax", baseURL: "https://api.minimaxi.com/v1",
+			adapterConfig: `{}`, upstreamModel: "MiniMax-M2.7",
+			profileID: "minimax.m2.7.payg", profileVersion: "1.0.0",
+			protocolID: "protocol.minimax-m2-openai-chat.v7", contractID: modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
+			responseBody: `{"id":"chatcmpl-minimax","object":"chat.completion","model":"MiniMax-M2.7","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","name":"MiniMax AI","audio_content":"","content":"<think>probe</think>","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"prompt_tokens_details":{"cached_tokens":3}},"input_sensitive":false,"output_sensitive":false,"input_sensitive_type":0,"output_sensitive_type":0,"output_sensitive_int":0,"base_resp":{"status_code":0,"status_msg":"success"}}`,
+		},
+		{
 			name: "glm official open platform", provider: "glm", baseURL: "https://open.bigmodel.cn/api/paas/v4",
 			adapterConfig: `{"endpoint_path_mode":"base_relative"}`, upstreamModel: "glm-5.3",
 			profileID: "glm.5.3.api", profileVersion: "1.8.0",
 			protocolID: "protocol.glm-openai-chat.v5", contractID: modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
 			responseBody:     `{"id":"chatcmpl-glm","object":"chat.completion","model":"glm-5.3","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`,
 			expectedThinking: "enabled", expectedToolChoice: "auto",
+		},
+		{
+			name: "glm toggle family exact binding", provider: "glm", baseURL: "https://open.bigmodel.cn/api/paas/v4",
+			adapterConfig: `{"endpoint_path_mode":"base_relative"}`, upstreamModel: "glm-5.1",
+			profileID: "glm.5.1.api", profileVersion: "1.0.0",
+			protocolID: "protocol.glm-openai-chat.v6", contractID: modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID,
+			responseBody:       `{"id":"chatcmpl-glm","object":"chat.completion","model":"glm-5.1","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"probe","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`,
+			expectedToolChoice: "auto",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

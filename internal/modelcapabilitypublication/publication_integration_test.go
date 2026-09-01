@@ -308,7 +308,7 @@ func TestMiniMaxPAYGM104ActualArtifactsGuardedRoundTripPreservesM103Integration(
 	migrationDir := testdb.MigrationsDir(t)
 	artifactLedger, err := schemaauthority.ExpectedLedger(migrationDir)
 	require.NoError(t, err)
-	require.Equal(t, "000104_minimax_payg_function_tools_qualification", artifactLedger[len(artifactLedger)-1])
+	require.Contains(t, artifactLedger, "000104_minimax_payg_function_tools_qualification")
 	require.NoError(t, VerifyArtifactPublicationInventory(migrationDir, artifactLedger))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 
@@ -389,6 +389,112 @@ WHERE execution_profile_id IN ('minimax.m3.payg','minimax.m2.7.payg','minimax.m2
 	require.NoError(t, err)
 	require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, m104Plan.ApplyMigrations, hooks))
 	require.NoError(t, VerifyPlanFinal(ctx, pool, m104Plan))
+}
+
+func TestGLMToggleM105ActualArtifactsGuardedRoundTripPreservesM104Integration(t *testing.T) {
+	pool := testdb.SetupIsolated(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
+	defer cancel()
+	migrationDir := testdb.MigrationsDir(t)
+	artifactLedger, err := schemaauthority.ExpectedLedger(migrationDir)
+	require.NoError(t, err)
+	require.Equal(t, "000105_glm_toggle_function_tools_qualification", artifactLedger[len(artifactLedger)-1])
+	require.NoError(t, VerifyArtifactPublicationInventory(migrationDir, artifactLedger))
+	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
+
+	artifact := ArtifactIdentity{
+		Kind: ArtifactKindSource, Commit: strings.Repeat("d", 40), Tree: strings.Repeat("e", 40),
+		Version: "glm-toggle-m105-integration", PublisherExecutableDigest: "sha256:" + strings.Repeat("f", 64),
+	}
+	var m105Plan Plan
+	var m105Authority PlanAuthority
+	for _, publicationID := range []string{
+		"000101_kimi_k27_chat_core_qualification",
+		"000102_kimi_k3_chat_core_qualification",
+		"000103_minimax_m3_glm53_function_tools_qualification",
+		"000104_minimax_payg_function_tools_qualification",
+		"000105_glm_toggle_function_tools_qualification",
+	} {
+		declaration, predecessor, err := CompiledPublication(publicationID)
+		require.NoError(t, err)
+		authority := fixturePlanAuthority(t, migrationDir, artifactLedger, artifact, predecessor, declaration)
+		plan, err := PlanTarget(ctx, pool, "integration", authority)
+		require.NoError(t, err)
+		require.Equal(t, ValidationValid, plan.Validation)
+		require.Empty(t, plan.ProjectionItems)
+		if publicationID == "000105_glm_toggle_function_tools_qualification" {
+			var appendCount, promotionCount int
+			for _, item := range plan.BindingItems {
+				if item.Action == BindingActionAppend {
+					appendCount++
+				}
+			}
+			for _, item := range plan.SelectorItems {
+				if item.Action == SelectorActionPromotion {
+					promotionCount++
+				}
+			}
+			require.Equal(t, 5, appendCount)
+			require.Equal(t, 5, promotionCount)
+			m105Plan = plan
+			m105Authority = authority
+		}
+		hooks, err := HooksForPlan("integration", authority, plan)
+		require.NoError(t, err)
+		require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, plan.ApplyMigrations, hooks))
+		require.NoError(t, VerifyPlanFinal(ctx, pool, plan))
+	}
+
+	var orgID, retainedModelID int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO orgs (name,status,org_type)
+VALUES ('glm-m105-retained-profile','active','customer') RETURNING id`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO model_registry (
+org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,context_length,output_limit,
+execution_profile_id,execution_profile_version)
+VALUES ($1,'glm-m105-retained-profile','GLM M105 retained Profile','glm','staging',TRUE,200000,65536,
+'glm.5.1.api','1.0.0') RETURNING id`, orgID).Scan(&retainedModelID))
+
+	downHooks, err := DownHooksForPlan("integration", m105Authority, m105Plan)
+	require.NoError(t, err)
+	err = migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks)
+	require.ErrorContains(t, err, "retained Profile attachment prevents publication down")
+	assertMiniMaxGLMPublicationPresent(t, ctx, pool)
+
+	_, err = pool.Exec(ctx, `DELETE FROM model_registry WHERE id=$1`, retainedModelID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `DELETE FROM orgs WHERE id=$1`, orgID)
+	require.NoError(t, err)
+	require.NoError(t, migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks))
+
+	var ledgerCount, bindingCount, selectorCount int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=$1`, m105Plan.PublicationID).Scan(&ledgerCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_probe_contract_bindings WHERE introduced_migration=$1`, m105Plan.PublicationID).Scan(&bindingCount))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM model_capability_current_probe_contracts
+WHERE execution_profile_id IN ('glm.5.2.api','glm.5.1.api','glm.5-turbo.api','glm.5.api','glm.5v-turbo.api')
+  AND probe_contract_id='unirouter.capability-probe.glm-toggle-chat-function-tools.v1'`).Scan(&selectorCount))
+	require.Zero(t, ledgerCount)
+	require.Zero(t, bindingCount)
+	require.Zero(t, selectorCount)
+	assertMiniMaxGLMPublicationPresent(t, ctx, pool)
+
+	hooks, err := HooksForPlan("integration", m105Authority, m105Plan)
+	require.NoError(t, err)
+	require.NoError(t, migrate.RunPublication(ctx, pool, migrationDir, m105Plan.ApplyMigrations, hooks))
+	require.NoError(t, VerifyPlanFinal(ctx, pool, m105Plan))
+
+	_, err = pool.Exec(ctx, `ALTER TABLE billing_provider_attempts RENAME TO billing_provider_attempts_m105_original`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `CREATE TABLE billing_provider_attempts (
+route_capability_evidence JSONB NOT NULL, execution_snapshot_hash VARCHAR(69))`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO billing_provider_attempts (route_capability_evidence)
+VALUES ('[{"capability_id":"function_tools","evidence_ref":"capability_contract:unirouter.capability-probe.glm-toggle-chat-function-tools.v1@1.0.0"}]'::jsonb)`)
+	require.NoError(t, err)
+	downHooks, err = DownHooksForPlan("integration", m105Authority, m105Plan)
+	require.NoError(t, err)
+	err = migrate.RunPublicationDown(ctx, pool, migrationDir, downHooks)
+	require.ErrorContains(t, err, "retained provider-attempt capability evidence")
+	require.NoError(t, VerifyPlanFinal(ctx, pool, m105Plan))
 }
 
 func TestStrictPublicationAppliesExactPlanAndRecoveryIsReadOnlyIntegration(t *testing.T) {

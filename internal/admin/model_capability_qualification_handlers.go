@@ -717,7 +717,10 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			return outcome
 		}
 	case modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
-		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID:
+		modelcapabilityqualification.MiniMaxPAYGM3ChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID:
 		normalized, normalizeErr := normalizeOpenAIChatFunctionToolsProbeResponse(
 			probeCtx, adapter, snapshot, response,
 		)
@@ -892,7 +895,10 @@ func buildModelCapabilityProbeRequestBody(snapshot modelCapabilitySnapshot) ([]b
 		}
 		payload["response_format"] = map[string]string{"type": "json_object"}
 	case modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
-		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID:
+		modelcapabilityqualification.MiniMaxPAYGM3ChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID:
 		return modelcapabilityqualification.BuildOpenAIChatFunctionToolsProbeRequest(
 			modelCapabilityProbeBindingFromSnapshot(snapshot),
 		)

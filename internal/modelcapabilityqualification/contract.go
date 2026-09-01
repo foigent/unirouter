@@ -40,6 +40,7 @@ const (
 	MiniMaxPAYGM3ChatFunctionToolsProbeContractID = "unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1"
 	MiniMaxPAYGM2ChatFunctionToolsProbeContractID = "unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1"
 	GLMChatFunctionToolsProbeContractID           = "unirouter.capability-probe.glm-chat-function-tools.v1"
+	GLMToggleChatFunctionToolsProbeContractID     = "unirouter.capability-probe.glm-toggle-chat-function-tools.v1"
 	OpenAIChatFunctionToolsProbeContractVersion   = "1.0.0"
 	ProbeSourceKind                               = "admin.model_capability_probe.v1"
 	ApprovalSourceKind                            = "admin.model_capability_routing_approval.v1"
@@ -204,6 +205,20 @@ func MiniMaxPAYGCurrentBindings() []Binding {
 
 func GLM53CurrentBindings() []Binding {
 	return mustResolveAll("openai.chat_completions.v1", "glm.5.3.api", "1.8.0", "")
+}
+
+func GLMToggleCurrentBindings() []Binding {
+	bindings := make([]Binding, 0, 5)
+	for _, profile := range []struct{ id, version string }{
+		{"glm.5.2.api", "1.8.0"},
+		{"glm.5.1.api", "1.0.0"},
+		{"glm.5-turbo.api", "1.0.0"},
+		{"glm.5.api", "1.0.0"},
+		{"glm.5v-turbo.api", "1.11.0"},
+	} {
+		bindings = append(bindings, mustResolveAll("openai.chat_completions.v1", profile.id, profile.version, "")...)
+	}
+	return bindings
 }
 
 func mustResolve(operationID, capabilityID, profileID, profileVersion, protocolID, protocolVersion string) Binding {

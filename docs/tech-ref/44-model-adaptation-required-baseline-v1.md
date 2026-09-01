@@ -46,10 +46,10 @@ evidence, Release and Pricing Profile authorities and is summarized in
 
 ## 2. Exact product-identity candidate
 
-The candidate upstream model count is **31**. Surface-specific and commercial
+The candidate upstream model count is **35**. Surface-specific and commercial
 access identities remain separate: the three parked MiniMax Token Plan rows
 are retained while three PAYG rows are current candidates, and each GPT model
-requires both Responses and Chat Completions. This yields **36 exact product
+requires both Responses and Chat Completions. This yields **40 exact product
 identities**. `E`, `D`, `F` and `N` mean `execution_required`,
 `documentation_required`, `deferred` and `not_applicable` respectively.
 
@@ -87,7 +87,11 @@ Core columns are exact capability milestones:
 | `minimax.m2.7.token-plan` | MiniMax | CN | MiniMax OpenAI-compatible Chat / Token Plan | `MiniMax-M2.7` / pinned commercial identity | F | F | F | F | F | F | F | F | F | F |
 | `glm.5.3.api` | GLM | CN | OpenAI-compatible Chat | `glm-5.3` / pinned | E | E | E | E | E | E | E | E | E | E |
 | `glm.5.2.api` | GLM | CN | OpenAI-compatible Chat | `glm-5.2` / pinned | E | E | E | E | E | E | E | E | E | E |
+| `glm.5.1.api` | GLM | CN | OpenAI-compatible Chat | `glm-5.1` / pinned | E | E | E | E | E | E | E | E | E | E |
+| `glm.5-turbo.api` | GLM | CN | OpenAI-compatible Chat | `glm-5-turbo` / pinned | E | E | E | E | E | E | E | E | E | E |
+| `glm.5.api` | GLM | CN | OpenAI-compatible Chat | `glm-5` / pinned | E | E | E | E | E | E | E | E | E | E |
 | `glm.5v-turbo.api` | GLM | CN | OpenAI-compatible Chat | `glm-5v-turbo` / pinned | E | E | E | E | E | E | E | E | E | E |
+| `glm.5.3-flash.api` | GLM | CN | multimodal OpenAI-compatible Chat candidate | `glm-5.3-flash` / pinned; executable surface pending exact contract | D | D | D | D | D | D | D | D | D | D |
 | `qwen.3.8-max.api` | DashScope | CN Beijing | workspace OpenAI-compatible Chat | `qwen3.8-max` / pinned, region/workspace explicit | E | E | E | E | E | E | E | E | E | E |
 | `qwen.3.7-plus.api` | DashScope | CN Beijing | workspace OpenAI-compatible Chat | `qwen3.7-plus` / pinned, region/workspace explicit | E | E | E | E | E | E | E | E | E | E |
 | `qwen.3.7-flash.api` | DashScope | CN Beijing | workspace OpenAI-compatible Chat | `qwen3.7-flash` / pinned, region/workspace explicit | E | E | E | E | E | E | E | E | E | E |
@@ -117,7 +121,7 @@ documented provider support alone cannot close or create it.
 
 ## 3. Exact additional-capability dispositions
 
-For all 36 identities, multimodal media, Partial Mode, Dynamic Tools, built-in
+For all 40 identities, multimodal media, Partial Mode, Dynamic Tools, built-in
 search and search charging are `documentation_required` unless an explicit
 product decision promotes an exact row. This requires truthful implementation-
 state verification and forbids inference from generic compatibility or provider

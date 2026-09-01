@@ -17,13 +17,20 @@ Deployment 6, eight independent capability Probe/Approval qualifications and
 development/test Release 27. The Release and initial stable-slot activation
 establish only a test route. Public model 817 remains `staging` and outside the
 approved catalog, so no `released`, Production, Alias or global canonical claim
-is made. Repository source candidate 1.2.34/M104 adds three exact MiniMax PAYG
+is made. Repository source candidate 1.2.35/M105 builds on 1.2.34/M104. M104 adds three exact MiniMax PAYG
 Profiles (M3, M2.7 and M2.7 Highspeed), explicit Chat operation bindings and
 one declaration-owned Function Tools plan over shared mechanics with separate
-M3 and parameterized M2 Probe identities. Historical Token Plan Profiles and
+M3 and parameterized M2 Probe identities. M105 advances GLM-5.2 and
+GLM-5V-Turbo and adds GLM-5.1, GLM-5-Turbo and GLM-5 as exact official
+open-platform Chat Profiles. Those five exact identities share a toggle-family
+Function Tools Probe validator while preserving model-specific Profile,
+protocol, reasoning, evidence and approval identities. GLM-5V-Turbo's M105
+binding is pure-text Function Tools evidence and does not qualify media plus
+tools. GLM-5.3-Flash remains outside the executable M105 binding set pending a
+separate exact multimodal operation contract. Historical Token Plan Profiles and
 M103 remain addressable but are not eligible for new attachment. The
-development/test Target independently runs exact 1.2.33/M103; M104 is not
-applied and is not the deployed Target artifact.
+development/test Target independently runs exact 1.2.33/M103; M104 and M105 are
+not applied and neither is the deployed Target artifact.
 Local, CI, artifact, Target, provider, SDK-delivery and customer-wallet evidence
 remain separate.
 
@@ -351,7 +358,7 @@ DeepSeek Flash Chat subset is `canary_live_verified` on development/test; it
 does not promote another model, prove full provider parity, constitute customer
 manual acceptance or change `release_state`.
 
-There are **30 upstream model entries and 33 current surface identities**.
+There are **33 upstream model entries and 36 current surface identities**.
 The table is a code projection of exact new-attachment pointers, not a Baseline
 approval or proof that each model satisfies the full capability matrix.
 Recorded local milestones cover bounded subsets. Local/CI, the historical
@@ -370,8 +377,11 @@ and Release claims still require their own exact identity/evidence.
 | `minimax.m2.7.payg@1.0.0` | MiniMax CN Chat / PAYG |
 | `minimax.m2.7-highspeed.payg@1.0.0` | MiniMax CN Chat / PAYG |
 | `glm.5.3.api@1.8.0` | GLM official open-platform Chat |
-| `glm.5.2.api@1.7.0` | GLM CN Chat |
-| `glm.5v-turbo.api@1.10.0` | GLM CN Chat |
+| `glm.5.2.api@1.8.0` | GLM official open-platform Chat |
+| `glm.5.1.api@1.0.0` | GLM official open-platform Chat |
+| `glm.5-turbo.api@1.0.0` | GLM official open-platform Chat |
+| `glm.5.api@1.0.0` | GLM official open-platform Chat |
+| `glm.5v-turbo.api@1.11.0` | GLM official open-platform multimodal Chat; M105 qualifies pure-text Function Tools only |
 | `qwen.3.8-max.api@1.8.0` | DashScope Beijing Chat |
 | `qwen.3.7-plus.api@1.7.0` | DashScope Beijing Chat |
 | `qwen.3.7-flash.api@1.7.0` | DashScope Beijing Chat |

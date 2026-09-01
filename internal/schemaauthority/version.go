@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000104_minimax_payg_function_tools_qualification"
+const LatestSupportedMigration = "000105_glm_toggle_function_tools_qualification"

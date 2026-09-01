@@ -111,6 +111,7 @@ func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t
 	bindings = append(bindings, modelcapabilityqualification.MiniMaxM3CurrentBindings()...)
 	bindings = append(bindings, modelcapabilityqualification.MiniMaxPAYGCurrentBindings()...)
 	bindings = append(bindings, modelcapabilityqualification.GLM53CurrentBindings()...)
+	bindings = append(bindings, modelcapabilityqualification.GLMToggleCurrentBindings()...)
 
 	uniqueSorted := func(values []string) []string {
 		seen := make(map[string]struct{}, len(values))
