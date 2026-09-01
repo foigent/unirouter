@@ -1,13 +1,19 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.34/M104. It adds three exact MiniMax PAYG
-> Profiles (M3, M2.7 and M2.7 Highspeed), explicit Chat operation identities,
-> new PAYG-specific Function Tools Probe identities and deterministic M104
-> Publication artifacts. Historical Token Plan Profiles and M103 remain
-> addressable; they are not rewritten or eligible for new attachment. The GLM
-> onboarding preset now selects the existing exact official endpoint class.
-> M104 is source-only: it has not been applied and creates no live Probe,
-> Approval, qualification, Release, route or Target authority.
+> Repository source candidate is 1.2.35/M105, building on 1.2.34/M104. M104
+> adds three exact MiniMax PAYG Profiles (M3, M2.7 and M2.7 Highspeed),
+> explicit Chat operation identities, PAYG-specific Function Tools Probe
+> identities and deterministic M104 Publication artifacts. Historical Token
+> Plan Profiles and M103 remain addressable and are not rewritten. M105 adds
+> append-only exact GLM Profiles for GLM-5.2, GLM-5.1, GLM-5-Turbo, GLM-5 and
+> GLM-5V-Turbo, an immutable toggle-family Function Tools Probe over shared
+> validator mechanics, immutable protocol successors that model Function
+> Tools without reinterpreting history, and deterministic M105 Publication
+> artifacts. GLM-5V-Turbo is qualified only for pure-text Function Tools;
+> media-plus-tools and GLM-5.3-Flash remain outside the executable M105 binding
+> set. M104 and M105 are source-only: neither has been applied, and neither
+> creates live Probe, Approval, qualification, Release, route or Target
+> authority.
 >
 > The development/test Target currently runs exact 1.2.33/M103 main merge
 > `a4e197fe34d4d151e72fac68658693746455e12f`, tree
