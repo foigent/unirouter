@@ -8,10 +8,12 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.30 with PostgreSQL compatibility
-ceiling `000102_kimi_k3_chat_core_qualification`. It converges one exact Kimi
-non-stream document-ambiguity/tool-index preparation seam without changing
-static or dynamic database authority and is not deployed. M101 is the first
+Repository source candidate is version 1.2.33 with PostgreSQL compatibility
+ceiling `000103_minimax_m3_glm53_function_tools_qualification`. It adds the
+exact official open-platform GLM 5.3 Profile, shared MiniMax M3/GLM 5.3
+Function Tools Probe mechanics under two exact provider contract identities,
+and one compatible declaration-owned Publication Plan. M103 is not applied or
+deployed and creates no live qualification or execution authority. M101 is the first
 declaration-owned capability publication after the immutable M100 baseline,
 and M102 appends only the exact
 K3 Profile 1.9 Chat Core static contracts. Neither publication creates live
@@ -105,6 +107,17 @@ choice v4 and JSON Object v2. It does not declare a generic or historical K3
 tuple and does not project Dynamic Tools, JSON Schema, search or media. Profile
 1.8 remains historically addressable; M102 creates no Probe, Approval,
 qualification, Release, Alias, pricing, billing or traffic authority.
+
+M103 declares one exact `function_tools` binding each for MiniMax M3 Profile
+1.7/Chat v9 and GLM 5.3 Profile 1.8/Chat v5. The two bindings share bounded
+request construction, adapter-normalized response validation and cross-delivery
+mechanics, while retaining separate Probe contract identities for their exact
+output-limit, reasoning, tool-choice and response-replay semantics. GLM Profile
+1.8 binds only `https://open.bigmodel.cn/api/paas/v4` with `base_relative`
+paths; it does not cover Coding Plan or generic HTTPS endpoints. M103 is one
+logical plan because both absent selectors share M102 as predecessor and the
+same static apply/rollback boundary; it creates no Probe, Approval,
+qualification, Release, Alias, pricing, billing, Provider or traffic authority.
 
 On the exact 1.2.23 Target, Deployment 5 has six independently qualified K2.7
 Chat Core capabilities: function tools Probe 56 / Approval 48, JSON Object

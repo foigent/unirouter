@@ -144,7 +144,7 @@ func TestFirstCustomerRuntimeBootstrapRejectsDriftIntegration(t *testing.T) {
 		{"login resource drift", `UPDATE audit_logs SET resource='project'`},
 		{"unapproved setting", `INSERT INTO settings(key,value) VALUES ('fixture.setting','true'::jsonb)`},
 		{"ledger gap", `DELETE FROM schema_migrations WHERE version='000010_prd2_model_governance'`},
-		{"future ledger", `INSERT INTO schema_migrations(version) VALUES ('000103_future_contract')`},
+		{"future ledger", `INSERT INTO schema_migrations(version) VALUES ('999999_future_contract')`},
 		{"unknown table", `CREATE TABLE unexpected_business_state(id bigint PRIMARY KEY)`},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -4961,11 +4961,11 @@ components:
         capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
         support_state: { type: string, enum: [enabled, unsupported] }
         support_revision: { type: integer, format: int64, minimum: 1 }
-        execution_profile_id: { type: string, enum: [deepseek.v4-flash.api, deepseek.v4-pro.api, kimi.k2.6.api, kimi.k2.7-code.api, kimi.k3.api] }
-        execution_profile_version: { type: string, enum: [1.3.0, 1.4.0, 1.5.0, 1.7.0, 1.9.0] }
-        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, openai.chat_completions, protocol.kimi-openai-chat.v5, protocol.kimi-openai-chat.k3.v5] }
+        execution_profile_id: { type: string, enum: [deepseek.v4-flash.api, deepseek.v4-pro.api, glm.5.3.api, kimi.k2.6.api, kimi.k2.7-code.api, kimi.k3.api, minimax.m3.token-plan] }
+        execution_profile_version: { type: string, enum: [1.3.0, 1.4.0, 1.5.0, 1.7.0, 1.8.0, 1.9.0] }
+        protocol_profile_id: { type: string, enum: [protocol.deepseek-openai-chat.v4, protocol.glm-openai-chat.v5, openai.chat_completions, protocol.kimi-openai-chat.v5, protocol.kimi-openai-chat.k3.v5, protocol.minimax-m3-openai-chat.v9] }
         protocol_profile_version: { type: string, enum: [1.0.0] }
-        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-reasoning-effort.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1] }
+        probe_contract_id: { type: string, enum: [unirouter.capability-probe.deepseek-chat-sse.v1, unirouter.capability-probe.deepseek-chat-reasoning.v1, unirouter.capability-probe.deepseek-chat-reasoning-effort.v1, unirouter.capability-probe.deepseek-chat-function-tools.v1, unirouter.capability-probe.deepseek-chat-json-object.v1, unirouter.capability-probe.glm-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-sse.v1, unirouter.capability-probe.kimi-chat-reasoning.v1, unirouter.capability-probe.kimi-chat-reasoning-effort.v1, unirouter.capability-probe.kimi-chat-function-tools.v1, unirouter.capability-probe.kimi-chat-json-object.v1, unirouter.capability-probe.minimax-chat-function-tools.v1] }
         probe_contract_version: { type: string, enum: [1.0.0, 2.0.0, 3.0.0, 4.0.0], description: "Exact version is selected by the model, operation, capability, Execution Profile, and protocol-profile tuple." }
         probe_available: { type: boolean }
         probe_availability_reason_code: { type: string }

@@ -1858,6 +1858,14 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			ProtocolProfileVersion: route.OperationProtocolProfileVersion, CacheUsageProfile: route.CacheUsageProfile,
 		},
 	)
+	deepSeekStreamMechanics, currentDeepSeekStream, deepSeekStreamSetupErr := adapters.ResolveDeepSeekRuntimeChatStreamMechanics(
+		adapters.DeepSeekChatStreamRuntimeIdentity{
+			OperationID: route.ModelOperationID, ExecutionProfileID: route.ExecutionProfileID,
+			ExecutionProfileVersion: route.ExecutionProfileVersion, Provider: route.Channel.Provider,
+			UpstreamModel: route.MappedModel, ProtocolProfileID: route.OperationProtocolProfileID,
+			ProtocolProfileVersion: route.OperationProtocolProfileVersion, CacheUsageProfile: route.CacheUsageProfile,
+		},
+	)
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), streamPolicy.MaxSSELineBytes)
 	if currentKimiStream {
@@ -2015,13 +2023,21 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	exactStreamState := exactStreamStateForProtocol(route.ModelProtocolProfile)
 	var kimiStreamAssembler *adapters.ChatSSEEventAssembler
 	var kimiStreamState *adapters.KimiChatStreamState
+	var deepSeekStreamState *adapters.DeepSeekChatStreamState
 	if currentKimiStream && kimiStreamSetupErr == nil {
 		kimiStreamAssembler, kimiStreamSetupErr = adapters.NewChatSSEEventAssembler(streamPolicy.MaxSSELineBytes)
 	}
 	if currentKimiStream && kimiStreamSetupErr == nil {
 		kimiStreamState, kimiStreamSetupErr = adapters.NewKimiChatStreamState(kimiStreamMechanics)
 	}
-	if kimiStreamSetupErr != nil {
+	if currentDeepSeekStream && deepSeekStreamSetupErr == nil {
+		deepSeekStreamState, deepSeekStreamSetupErr = adapters.NewDeepSeekChatStreamState(deepSeekStreamMechanics)
+	}
+	streamMechanicsSetupErr := kimiStreamSetupErr
+	if streamMechanicsSetupErr == nil {
+		streamMechanicsSetupErr = deepSeekStreamSetupErr
+	}
+	if streamMechanicsSetupErr != nil {
 		streamPayloadInvalid = true
 		streamTerminationCode = "upstream_stream_invalid_frame"
 	}
@@ -2044,7 +2060,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 	}
 
-	done := kimiStreamSetupErr != nil
+	done := streamMechanicsSetupErr != nil
 	skipRawEventSeparator := false
 	recordPartialDelivery := func() bool {
 		if deliveryPartialRecorded {
@@ -2216,6 +2232,23 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 			streamTerminationCode = "upstream_stream_invalid_frame"
 			return false
 		}
+		if currentDeepSeekStream {
+			choiceCount := 0
+			if parsed.choiceFrame {
+				choiceCount = 1
+			}
+			finishReason := ""
+			if parsed.terminal {
+				finishReason = "observed"
+			}
+			if stateErr := deepSeekStreamState.AcceptRuntimeFacts(adapters.DeepSeekChatStreamFacts{
+				ChoiceCount: choiceCount, FinishReason: finishReason, HasUsage: authoritativeUsage,
+			}); stateErr != nil {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+				return false
+			}
+		}
 		if parsed.choiceFrame {
 			providerFinishReasonObserved = parsed.terminal
 		}
@@ -2381,6 +2414,14 @@ streamLoop:
 			}
 			data := field.value
 			if data == "[DONE]" {
+				if currentDeepSeekStream {
+					if stateErr := deepSeekStreamState.AcceptDone(); stateErr != nil {
+						streamPayloadInvalid = true
+						streamTerminationCode = "upstream_stream_invalid_frame"
+						done = true
+						continue
+					}
+				}
 				providerTerminalObserved = true
 				if !flushGuardrailBuffer() {
 					done = true
@@ -2433,6 +2474,12 @@ streamLoop:
 				}
 			}
 			if chunk.Done {
+				if currentDeepSeekStream {
+					if stateErr := deepSeekStreamState.AcceptDone(); stateErr != nil {
+						streamPayloadInvalid = true
+						streamTerminationCode = "upstream_stream_invalid_frame"
+					}
+				}
 				if stateErr := exactStreamState.validateDone(); stateErr != nil {
 					streamPayloadInvalid = true
 					streamTerminationCode = "upstream_stream_invalid_frame"
@@ -2459,6 +2506,14 @@ streamLoop:
 		}
 
 		if hasField && field.name == "data" && field.value == "[DONE]" {
+			if currentDeepSeekStream {
+				if stateErr := deepSeekStreamState.AcceptDone(); stateErr != nil {
+					streamPayloadInvalid = true
+					streamTerminationCode = "upstream_stream_invalid_frame"
+					done = true
+					continue
+				}
+			}
 			if stateErr := exactStreamState.validateDone(); stateErr != nil {
 				streamPayloadInvalid = true
 				streamTerminationCode = "upstream_stream_invalid_frame"
@@ -2589,7 +2644,16 @@ streamLoop:
 			done = true
 		}
 	}
-	if scanErr == nil && !currentKimiStream && !providerTerminalObserved && streamTerminationCode == "" {
+	if scanErr == nil && currentDeepSeekStream && !providerTerminalObserved && streamTerminationCode == "" {
+		if stateErr := deepSeekStreamState.FinishEOF(); stateErr != nil {
+			streamPayloadInvalid = true
+			streamTerminationCode = "upstream_stream_invalid_frame"
+		} else {
+			providerTerminalObserved = true
+			done = true
+		}
+	}
+	if scanErr == nil && !currentKimiStream && !currentDeepSeekStream && !providerTerminalObserved && streamTerminationCode == "" {
 		if stateErr := exactStreamState.validateCleanEOF(providerFinishReasonObserved); stateErr != nil {
 			if exactStreamState != nil {
 				streamPayloadInvalid = true

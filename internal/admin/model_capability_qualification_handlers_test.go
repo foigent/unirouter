@@ -13,6 +13,7 @@ import (
 	"github.com/uniroute/unirouter/internal/auth"
 	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"github.com/uniroute/unirouter/internal/modelprofile"
+	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
 func TestModelCapabilityProbePreservesSafeContractFailureEvidence(t *testing.T) {
@@ -38,11 +39,12 @@ func TestModelCapabilityProbePreservesSafeContractFailureEvidence(t *testing.T) 
 	outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 		Provider: "deepseek", BaseURL: "https://api.deepseek.com",
 		AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
-		UpstreamModel:         "deepseek-v4-flash",
-		ExpectedUpstreamModel: "deepseek-v4-flash",
-		EncryptedSecret:       encrypted,
-		ProbeContractID:       modelcapabilityqualification.DeepSeekChatSSEProbeContractID,
-		ProbeContractVersion:  modelcapabilityqualification.DeepSeekChatSSEProbeContractCurrentVersion,
+		UpstreamModel: "deepseek-v4-flash", OperationID: modelprofile.OperationOpenAIChat,
+		CapabilityID: "streaming", ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.5.0",
+		ProtocolProfileID: "protocol.deepseek-openai-chat.v4", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		ExpectedProvider: "deepseek", ExpectedUpstreamModel: "deepseek-v4-flash", PublicPath: "/v1/chat/completions",
+		EncryptedSecret: encrypted, ProbeContractID: modelcapabilityqualification.DeepSeekChatSSEProbeContractID,
+		ProbeContractVersion: modelcapabilityqualification.DeepSeekChatSSEProbeContractCurrentVersion,
 	}, "capability-probe-test")
 
 	require.True(t, outcome.ProviderSuccess)
@@ -196,6 +198,112 @@ func TestModelCapabilityToolsAndJSONObjectProbesUseFixedContracts(t *testing.T) 
 			require.NotContains(t, string(safeOutcome), "UNIROUTER_TOOL_PROBE_OK")
 			require.NotContains(t, string(safeOutcome), "UNIROUTER_JSON_PROBE_OK")
 		})
+	}
+}
+
+func TestRepresentativeFunctionToolsProbesUseSharedNormalizedMechanics(t *testing.T) {
+	encryptionKey := []byte("0123456789abcdef01234567")
+	encrypted, err := auth.EncryptKey([]byte("provider-secret"), encryptionKey)
+	require.NoError(t, err)
+
+	for _, test := range []struct {
+		name, provider, baseURL, adapterConfig, upstreamModel string
+		profileID, profileVersion, protocolID, contractID     string
+		responseBody, expectedThinking, expectedToolChoice    string
+	}{
+		{
+			name: "minimax normalized envelope", provider: "minimax", baseURL: "https://api.minimaxi.com/v1",
+			adapterConfig: `{}`, upstreamModel: "MiniMax-M3",
+			profileID: "minimax.m3.token-plan", profileVersion: "1.7.0",
+			protocolID: "protocol.minimax-m3-openai-chat.v9", contractID: modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
+			responseBody: `{"id":"chatcmpl-minimax","object":"chat.completion","model":"MiniMax-M3","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","name":"MiniMax AI","audio_content":"","content":"<think>probe</think>","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"prompt_tokens_details":{"cached_tokens":3}},"input_sensitive":false,"output_sensitive":false,"input_sensitive_type":0,"output_sensitive_type":0,"output_sensitive_int":0,"base_resp":{"status_code":0,"status_msg":"success"}}`,
+		},
+		{
+			name: "glm official open platform", provider: "glm", baseURL: "https://open.bigmodel.cn/api/paas/v4",
+			adapterConfig: `{"endpoint_path_mode":"base_relative"}`, upstreamModel: "glm-5.3",
+			profileID: "glm.5.3.api", profileVersion: "1.8.0",
+			protocolID: "protocol.glm-openai-chat.v5", contractID: modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
+			responseBody:     `{"id":"chatcmpl-glm","object":"chat.completion","model":"glm-5.3","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`,
+			expectedThinking: "enabled", expectedToolChoice: "auto",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := NewHandler(nil, "capability-jwt", encryptionKey, nil)
+			handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(request *http.Request) (*http.Response, error) {
+				body, readErr := io.ReadAll(request.Body)
+				require.NoError(t, readErr)
+				var payload map[string]interface{}
+				require.NoError(t, json.Unmarshal(body, &payload))
+				require.Equal(t, test.upstreamModel, payload["model"])
+				require.Equal(t, false, payload["stream"])
+				if test.provider == "minimax" {
+					require.Equal(t, float64(256), payload["max_completion_tokens"])
+					require.NotContains(t, payload, "max_tokens")
+				} else {
+					require.Equal(t, float64(256), payload["max_tokens"])
+					require.NotContains(t, payload, "max_completion_tokens")
+				}
+				require.Len(t, payload["tools"], 1)
+				if test.expectedThinking == "" {
+					require.NotContains(t, payload, "thinking")
+				} else {
+					require.Equal(t, test.expectedThinking, payload["thinking"].(map[string]interface{})["type"])
+				}
+				if test.expectedToolChoice == "" {
+					require.NotContains(t, payload, "tool_choice")
+				} else {
+					require.Equal(t, test.expectedToolChoice, payload["tool_choice"])
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(test.responseBody)),
+				}, nil
+			}))
+
+			outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
+				Provider: test.provider, BaseURL: test.baseURL,
+				AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(test.adapterConfig),
+				UpstreamModel: test.upstreamModel, OperationID: modelprofile.OperationOpenAIChat,
+				CapabilityID:       modelprofile.CapabilityFunctionTools,
+				ExecutionProfileID: test.profileID, ExecutionProfileVersion: test.profileVersion,
+				ProtocolProfileID: test.protocolID, ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+				ExpectedProvider: test.provider, ExpectedUpstreamModel: test.upstreamModel, PublicPath: "/v1/chat/completions",
+				EncryptedSecret: encrypted, ProbeContractID: test.contractID,
+				ProbeContractVersion: modelcapabilityqualification.OpenAIChatFunctionToolsProbeContractVersion,
+			}, "representative-function-tools-probe")
+
+			require.True(t, outcome.ProviderSuccess)
+			require.True(t, outcome.ContractSuccess)
+			require.True(t, outcome.ToolCallObserved)
+			require.Equal(t, "ok", outcome.ReasonCode)
+			require.Equal(t, int64(19), outcome.TotalTokens)
+		})
+	}
+}
+
+func TestRepresentativeFunctionToolsProbeRejectsRawDuplicatesBeforeMiniMaxEnvelopeNormalization(t *testing.T) {
+	snapshot := modelCapabilitySnapshot{
+		Provider: "minimax", BaseURL: "https://api.minimaxi.com/v1",
+		AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
+		UpstreamModel: "MiniMax-M3", OperationID: modelprofile.OperationOpenAIChat,
+		CapabilityID:       modelprofile.CapabilityFunctionTools,
+		ExecutionProfileID: "minimax.m3.token-plan", ExecutionProfileVersion: "1.7.0",
+		ProtocolProfileID: "protocol.minimax-m3-openai-chat.v9", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+	}
+	for _, body := range []string{
+		`{"choices":[],"base_resp":{"status_code":0,"status_msg":"success"},"base_resp":{"status_code":0,"status_msg":"success"}}`,
+		`{"choices":[],"base_resp":{"status_code":0,"status_msg":"success"},"\u0062ase_resp":{"status_code":0,"status_msg":"success"}}`,
+	} {
+		response := &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}
+		_, err := normalizeOpenAIChatFunctionToolsProbeResponse(
+			context.Background(), adapters.NewOpenAICompatible(), snapshot, response,
+		)
+		require.ErrorIs(t, err, strictjson.ErrDuplicateKey)
 	}
 }
 

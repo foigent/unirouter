@@ -2238,6 +2238,186 @@ func exactKimiStreamRoute(profileID string) *RouteResult {
 	}
 }
 
+func exactDeepSeekStreamRoute(profileID string) *RouteResult {
+	mappedModel := "deepseek-v4-flash"
+	if profileID == "deepseek.v4-pro.api" {
+		mappedModel = "deepseek-v4-pro"
+	}
+	return &RouteResult{
+		Channel:    models.Channel{ID: 1, Name: "deepseek", Provider: "deepseek", AdapterType: adapters.TypeOpenAICompatible},
+		ChannelKey: models.ChannelKey{ID: 1}, MappedModel: mappedModel,
+		ModelOperationID: "openai.chat_completions.v1", ExecutionProfileID: profileID, ExecutionProfileVersion: "1.5.0",
+		CacheUsageProfile: "cache-usage.deepseek-v4.v1", ModelProtocolProfile: "protocol.deepseek-openai-chat.v4",
+		OperationProtocolProfileID:      "protocol.deepseek-openai-chat.v4",
+		OperationProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+	}
+}
+
+func exactExistingGenericDeepSeekFlashStreamRoute() *RouteResult {
+	route := exactDeepSeekStreamRoute("deepseek.v4-flash.api")
+	route.ModelProtocolProfile = "openai.chat_completions"
+	route.OperationProtocolProfileID = "openai.chat_completions"
+	return route
+}
+
+func TestRelayStreamRequest_CurrentDeepSeekUsesSharedRuntimeCompatibilityState(t *testing.T) {
+	for _, test := range []struct {
+		name, profileID, sse string
+	}{
+		{
+			name: "Flash preserves first DONE without Probe terminal evidence", profileID: "deepseek.v4-flash.api",
+			sse: `data: {"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}` + "\n\ndata: [DONE]\n\n",
+		},
+		{
+			name: "Pro preserves clean EOF after supported finish", profileID: "deepseek.v4-pro.api",
+			sse: `data: {"model":"deepseek-v4-pro","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop"}]}` + "\n\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var settled billing.SettleRequest
+			relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+				settleFn: func(_ context.Context, request billing.SettleRequest) (*billing.SettleResult, error) {
+					settled = request
+					return &billing.SettleResult{SettleID: 1, Success: true}, nil
+				},
+			})
+			resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(test.sse))}
+			recorder := httptest.NewRecorder()
+			ctx := contextWithAttemptID(contextWithRouteAttempt(context.Background(), 1, 1), "att-deepseek-compatible")
+			relay.relayStreamRequest(
+				ctx, recorder, resp, exactDeepSeekStreamRoute(test.profileID), "req-deepseek-compatible", 1, 1,
+				"deepseek-public", "deepseek-public", "127.0.0.1", []Message{{Role: "user", Content: "hello"}},
+				logger.New(logger.Fields{}), time.Now(), 64, adapters.NewOpenAICompatible(), "upstream-deepseek-compatible",
+			)
+			require.NotContains(t, recorder.Body.String(), `"code":"stream_error.invalid_frame"`)
+			require.Equal(t, 1, strings.Count(recorder.Body.String(), "data: [DONE]"))
+			require.Equal(t, metering.UsageSourceCounterV2, settled.UsageSource)
+		})
+	}
+}
+
+func TestRelayStreamRequest_DeepSeekRuntimeCompatibilityEdgesRemainUnchanged(t *testing.T) {
+	t.Run("existing generic Flash attachment keeps the generic Runtime path", func(t *testing.T) {
+		var settled billing.SettleRequest
+		relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+			settleFn: func(_ context.Context, request billing.SettleRequest) (*billing.SettleResult, error) {
+				settled = request
+				return &billing.SettleResult{SettleID: 1, Success: true}, nil
+			},
+		})
+		sse := `data: {"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}` + "\n\ndata: [DONE]\n\n"
+		resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(sse))}
+		recorder := httptest.NewRecorder()
+		ctx := contextWithAttemptID(contextWithRouteAttempt(context.Background(), 1, 1), "att-deepseek-generic")
+		relay.relayStreamRequest(
+			ctx, recorder, resp, exactExistingGenericDeepSeekFlashStreamRoute(), "req-deepseek-generic", 1, 1,
+			"deepseek-public", "deepseek-public", "127.0.0.1", nil, logger.New(logger.Fields{}),
+			time.Now(), 64, adapters.NewOpenAICompatible(), "upstream-deepseek-generic",
+		)
+		require.NotContains(t, recorder.Body.String(), `"code":"stream_error.invalid_frame"`)
+		require.Equal(t, 1, strings.Count(recorder.Body.String(), "data: [DONE]"))
+		require.Equal(t, metering.UsageSourceCounterV2, settled.UsageSource)
+	})
+
+	t.Run("terminal then nonterminal choice still rejects clean EOF", func(t *testing.T) {
+		relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
+		sse := strings.Join([]string{
+			`data: {"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop"}]}`,
+			`data: {"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":"later"},"finish_reason":null}]}`,
+			"",
+		}, "\n\n")
+		resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(sse))}
+		recorder := httptest.NewRecorder()
+		ctx := contextWithAttemptID(contextWithRouteAttempt(context.Background(), 1, 1), "att-deepseek-latest-choice")
+		relay.relayStreamRequest(
+			ctx, recorder, resp, exactDeepSeekStreamRoute("deepseek.v4-flash.api"), "req-deepseek-latest-choice", 1, 1,
+			"deepseek-public", "deepseek-public", "127.0.0.1", nil, logger.New(logger.Fields{}),
+			time.Now(), 64, adapters.NewOpenAICompatible(), "upstream-deepseek-latest-choice",
+		)
+		require.Contains(t, recorder.Body.String(), `"code":"stream_error.invalid_frame"`)
+	})
+}
+
+func TestRelayStreamRequest_CurrentDeepSeekDoesNotGainProbeFramingAcceptance(t *testing.T) {
+	for _, test := range []struct {
+		name, sse, want string
+	}{
+		{
+			name: "multi data event remains invalid",
+			sse: strings.Join([]string{
+				`data: {"model":"deepseek-v4-flash",`,
+				`data: "choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop"}]}`,
+				"", "data: [DONE]", "",
+			}, "\n"),
+			want: `"code":"stream_error.invalid_frame"`,
+		},
+		{
+			name: "provider error remains classified before lifecycle facts",
+			sse:  `data: {"error":{"type":"provider_error","message":"private-secret"}}` + "\n\n",
+			want: `"code":"upstream_error.stream_failed"`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
+			resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(test.sse))}
+			recorder := httptest.NewRecorder()
+			ctx := contextWithAttemptID(contextWithRouteAttempt(context.Background(), 1, 1), "att-deepseek-framing")
+			relay.relayStreamRequest(
+				ctx, recorder, resp, exactDeepSeekStreamRoute("deepseek.v4-flash.api"), "req-deepseek-framing", 1, 1,
+				"deepseek-public", "deepseek-public", "127.0.0.1", nil, logger.New(logger.Fields{}),
+				time.Now(), 64, adapters.NewOpenAICompatible(), "upstream-deepseek-framing",
+			)
+			require.Contains(t, recorder.Body.String(), test.want)
+			require.NotContains(t, recorder.Body.String(), "private-secret")
+		})
+	}
+}
+
+func TestRelayStreamRequest_CurrentDeepSeekPreservesCacheUsageAuthority(t *testing.T) {
+	valid := strings.Join([]string{
+		`data: {"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}],"usage":null}`,
+		`data: {"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"prompt_cache_hit_tokens":4,"prompt_cache_miss_tokens":12,"prompt_tokens_details":{"cached_tokens":4}}}`,
+		"data: [DONE]", "",
+	}, "\n\n")
+	var settled billing.SettleRequest
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+		settleFn: func(_ context.Context, request billing.SettleRequest) (*billing.SettleResult, error) {
+			settled = request
+			return &billing.SettleResult{SettleID: 1, Success: true}, nil
+		},
+	})
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(valid))}
+	recorder := httptest.NewRecorder()
+	ctx := contextWithAttemptID(contextWithRouteAttempt(context.Background(), 1, 1), "att-deepseek-usage")
+	relay.relayStreamRequest(
+		ctx, recorder, resp, exactDeepSeekStreamRoute("deepseek.v4-flash.api"), "req-deepseek-usage", 1, 1,
+		"deepseek-public", "deepseek-public", "127.0.0.1", nil, logger.New(logger.Fields{}),
+		time.Now(), 64, adapters.NewOpenAICompatible(), "upstream-deepseek-usage",
+	)
+	require.NotContains(t, recorder.Body.String(), `"code":"stream_error.invalid_frame"`)
+	require.Equal(t, metering.UsageSourceUpstream, settled.UsageSource)
+	require.Equal(t, 4, settled.CacheReadTokens)
+	require.Equal(t, 12, settled.UncachedPromptTokens)
+
+	for name, usage := range map[string]string{
+		"partial hit miss":   `{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"prompt_cache_hit_tokens":4}`,
+		"conflicting mirror": `{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"prompt_cache_hit_tokens":4,"prompt_cache_miss_tokens":12,"prompt_tokens_details":{"cached_tokens":3}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := `data: {"model":"deepseek-v4-flash","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop"}],"usage":` + usage + `}` + "\n\ndata: [DONE]\n\n"
+			failureRelay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
+			failureResponse := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(invalid))}
+			failureRecorder := httptest.NewRecorder()
+			failureRelay.relayStreamRequest(
+				ctx, failureRecorder, failureResponse, exactDeepSeekStreamRoute("deepseek.v4-flash.api"), "req-deepseek-usage-invalid", 1, 1,
+				"deepseek-public", "deepseek-public", "127.0.0.1", nil, logger.New(logger.Fields{}),
+				time.Now(), 64, adapters.NewOpenAICompatible(), "upstream-deepseek-usage-invalid",
+			)
+			require.Contains(t, failureRecorder.Body.String(), `"code":"stream_error.invalid_frame"`)
+		})
+	}
+}
+
 func TestRelayStreamRequest_CurrentKimiUsesSharedTerminalUsageAndDeliveryPreparation(t *testing.T) {
 	var settled billing.SettleRequest
 	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{

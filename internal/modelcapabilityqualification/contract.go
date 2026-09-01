@@ -36,6 +36,9 @@ const (
 	KimiChatCoreProbeContractVersionV2          = "2.0.0"
 	KimiChatFunctionToolsProbeContractVersionV3 = "3.0.0"
 	KimiChatFunctionToolsProbeContractVersionV4 = "4.0.0"
+	MiniMaxChatFunctionToolsProbeContractID     = "unirouter.capability-probe.minimax-chat-function-tools.v1"
+	GLMChatFunctionToolsProbeContractID         = "unirouter.capability-probe.glm-chat-function-tools.v1"
+	OpenAIChatFunctionToolsProbeContractVersion = "1.0.0"
 	ProbeSourceKind                             = "admin.model_capability_probe.v1"
 	ApprovalSourceKind                          = "admin.model_capability_routing_approval.v1"
 )
@@ -179,6 +182,14 @@ func KimiK27CurrentBindings() []Binding {
 
 func KimiK3CurrentBindings() []Binding {
 	return mustResolveAll("openai.chat_completions.v1", "kimi.k3.api", "1.9.0", "")
+}
+
+func MiniMaxM3CurrentBindings() []Binding {
+	return mustResolveAll("openai.chat_completions.v1", "minimax.m3.token-plan", "1.7.0", "")
+}
+
+func GLM53CurrentBindings() []Binding {
+	return mustResolveAll("openai.chat_completions.v1", "glm.5.3.api", "1.8.0", "")
 }
 
 func mustResolve(operationID, capabilityID, profileID, profileVersion, protocolID, protocolVersion string) Binding {

@@ -212,3 +212,49 @@ func TestCompiledDeepSeekStreamingBindingIsExact(t *testing.T) {
 		binding.ExecutionProfileID, "1.3.0", binding.ProtocolProfileID, binding.ProtocolProfileVersion)
 	require.ErrorIs(t, err, ErrUnsupported)
 }
+
+func TestDeepSeekChatSSEProductionEntryRequiresCompleteCurrentBinding(t *testing.T) {
+	validBody := func(model string) string {
+		return strings.Join([]string{
+			`data: {"model":"` + model + `","choices":[{"delta":{"content":"ok"},"finish_reason":null}],"usage":null}`,
+			"",
+			`data: {"model":"` + model + `","choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+			"", `data: [DONE]`, "",
+		}, "\n")
+	}
+	for _, bindings := range [][]Binding{DeepSeekFlashCurrentBindings(), DeepSeekProCurrentBindings()} {
+		var streaming Binding
+		for _, binding := range bindings {
+			if binding.CapabilityID == "streaming" {
+				streaming = binding
+				break
+			}
+		}
+		require.NotEmpty(t, streaming.ExecutionProfileID)
+		observation, err := ValidateDeepSeekChatSSEForBinding(
+			streaming, "text/event-stream", strings.NewReader(validBody(streaming.ExpectedUpstreamModel)),
+		)
+		require.NoError(t, err)
+		require.Equal(t, streaming.ExpectedUpstreamModel, observation.ReportedModel)
+
+		for name, mutate := range map[string]func(*Binding){
+			"operation": func(value *Binding) { value.OperationID = "openai.responses.v1" },
+			"profile":   func(value *Binding) { value.ExecutionProfileVersion = "9.9.9" },
+			"protocol":  func(value *Binding) { value.ProtocolProfileID = "protocol.deepseek-openai-chat.v3" },
+			"contract":  func(value *Binding) { value.ProbeContractVersion = "1.0.0" },
+			"provider":  func(value *Binding) { value.ExpectedProvider = "kimi" },
+			"model":     func(value *Binding) { value.ExpectedUpstreamModel += "-drift" },
+			"path":      func(value *Binding) { value.PublicPath = "/v1/responses" },
+		} {
+			t.Run(streaming.ExecutionProfileID+"/"+name, func(t *testing.T) {
+				drifted := streaming
+				mutate(&drifted)
+				_, validationErr := ValidateDeepSeekChatSSEForBinding(
+					drifted, "text/event-stream", strings.NewReader(validBody(streaming.ExpectedUpstreamModel)),
+				)
+				require.ErrorIs(t, validationErr, ErrInvalidDeepSeekSSE)
+				require.Equal(t, "probe_contract", DeepSeekSSEErrorCode(validationErr))
+			})
+		}
+	}
+}

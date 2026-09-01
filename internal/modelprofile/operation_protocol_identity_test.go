@@ -104,6 +104,26 @@ func TestResolveOperationProtocolIdentityUsesExplicitKimiChatBindingsOnly(t *tes
 	require.Equal(t, OperationProtocolIdentity{}, identity)
 }
 
+func TestResolveOperationProtocolIdentityUsesRepresentativeReuseBatchBindings(t *testing.T) {
+	for _, address := range [][3]string{
+		{"minimax.m3.token-plan", "1.7.0", "protocol.minimax-m3-openai-chat.v9"},
+		{"glm.5.3.api", "1.8.0", "protocol.glm-openai-chat.v5"},
+	} {
+		identity, found, err := ResolveOperationProtocolIdentity(address[0], address[1], OperationOpenAIChat)
+		require.NoError(t, err, address[0])
+		require.True(t, found, address[0])
+		require.Equal(t, OperationProtocolIdentity{
+			OperationID: OperationOpenAIChat, ProtocolProfileID: address[2],
+			ProtocolProfileVersion: ChatOperationProtocolBindingVersionV1,
+		}, identity, address[0])
+	}
+
+	identity, found, err := ResolveOperationProtocolIdentity("glm.5.3.api", "1.7.0", OperationOpenAIChat)
+	require.NoError(t, err)
+	require.False(t, found)
+	require.Equal(t, OperationProtocolIdentity{}, identity)
+}
+
 func TestExistingAttachmentProtocolCompatibilityIsExactAndDoesNotAuthorizePro(t *testing.T) {
 	require.True(t, IsImmutableExistingAttachmentOperationProtocolIdentity(
 		"deepseek.v4-flash.api", "1.5.0", OperationOpenAIChat,

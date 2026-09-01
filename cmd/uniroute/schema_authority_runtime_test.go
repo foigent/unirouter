@@ -13,6 +13,7 @@ import (
 )
 
 func TestRuntimeSchemaAuthorityRequiresExactArtifactLedgerBeforeStartup(t *testing.T) {
+	const futureMigration = "999999_future_contract"
 	expected := []string{
 		"000001_init_schema",
 		"000078_atomic_model_release_authoring",
@@ -41,9 +42,9 @@ func TestRuntimeSchemaAuthorityRequiresExactArtifactLedgerBeforeStartup(t *testi
 		},
 		{
 			name:        "future migration",
-			actual:      append(append([]string(nil), expected...), "000103_future_contract"),
+			actual:      append(append([]string(nil), expected...), futureMigration),
 			wantErr:     "does not match migration artifact",
-			wantDetails: "000103_future_contract",
+			wantDetails: futureMigration,
 		},
 		{
 			name:        "duplicate migration",

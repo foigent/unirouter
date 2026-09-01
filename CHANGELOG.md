@@ -4,6 +4,51 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.33] - 2026-09-01
+
+### Changed
+
+- Added append-only `glm.5.3.api@1.8.0` for the ordinary GLM open platform at
+  `https://open.bigmodel.cn/api/paas/v4`, using `base_relative` paths. Coding
+  Plan and generic HTTPS endpoints remain outside this exact identity.
+- Added separate MiniMax M3 and GLM 5.3 Function Tools Probe contracts over one
+  shared request-builder and adapter-normalized validator path. Exact output
+  limit, reasoning, tool-choice and MiniMax response-replay semantics remain
+  provider-specific and fail closed.
+- Added deterministic M103 Publication V1 artifacts for one compatible logical
+  plan containing the two exact bindings. The plan shares an M102 predecessor
+  and rollback boundary without collapsing provider, Profile, protocol or
+  Probe identities.
+
+### Scope
+
+- This metadata records a source batch only. M103 is not applied and no live
+  Probe, Approval, qualification, Release object, tag, artifact, Provider call,
+  Target deployment, route, traffic or Production state is created or changed.
+
+## [1.2.32] - 2026-09-01
+
+### Changed
+
+- Converged the exact DeepSeek V4 Flash and Pro OpenAI-compatible Chat v4
+  operation paths on one binding-selected lifecycle engine shared by Runtime
+  and capability Probe. Runtime retains its existing single-data-event,
+  first-`[DONE]` and clean-EOF compatibility policy; immutable Probe v1/v2
+  contracts retain their separate usage shapes, model/content assertions and
+  whole-body diagnostics.
+- Made the production DeepSeek streaming Probe consume the complete compiled
+  capability binding, while preserving Runtime-owned cache hit/miss usage,
+  guardrail, billing and delivery authority. The immutable generic DeepSeek
+  Flash attachment, historical DeepSeek paths and current Kimi identities and
+  behavior remain unchanged.
+
+### Scope
+
+- This metadata records a source batch only. It creates or updates no actual
+  Release object, tag, artifact, Publication, current pointer, Profile,
+  protocol, Probe contract, migration, route, Target deployment, Provider call
+  or Production state.
+
 ## [1.2.31] - 2026-09-01
 
 ### Changed

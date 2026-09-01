@@ -1,9 +1,12 @@
 package adapters
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"strconv"
 	"strings"
 
 	"github.com/uniroute/unirouter/internal/metering"
@@ -55,6 +58,415 @@ type ChatSSEEventAssembler struct {
 	maxDataBytes int
 	data         []byte
 	hasData      bool
+}
+
+type DeepSeekChatStreamRuntimeIdentity struct {
+	OperationID             string
+	ExecutionProfileID      string
+	ExecutionProfileVersion string
+	Provider                string
+	UpstreamModel           string
+	ProtocolProfileID       string
+	ProtocolProfileVersion  string
+	CacheUsageProfile       string
+}
+
+type DeepSeekChatStreamProbeIdentity struct {
+	OperationID             string
+	CapabilityID            string
+	ExecutionProfileID      string
+	ExecutionProfileVersion string
+	ProtocolProfileID       string
+	ProtocolProfileVersion  string
+	ProbeContractID         string
+	ProbeContractVersion    string
+	ExpectedProvider        string
+	ExpectedUpstreamModel   string
+	PublicPath              string
+}
+
+type deepSeekChatStreamPolicy uint8
+
+const (
+	deepSeekChatStreamRuntimeCompatibility deepSeekChatStreamPolicy = iota + 1
+	deepSeekChatStreamProbeSeparateUsage
+	deepSeekChatStreamProbeFinalChoiceUsage
+)
+
+// DeepSeekChatStreamMechanics is exact-scoped mechanical policy. Runtime and
+// Probe intentionally have different immutable acceptance policies; both use
+// the same lifecycle state over role-owned validated frame facts instead of
+// maintaining separate finish/usage/DONE state machines.
+type DeepSeekChatStreamMechanics struct {
+	policy            deepSeekChatStreamPolicy
+	expectedModel     string
+	cacheUsageProfile string
+	valid             bool
+}
+
+func ResolveDeepSeekRuntimeChatStreamMechanics(identity DeepSeekChatStreamRuntimeIdentity) (DeepSeekChatStreamMechanics, bool, error) {
+	expectedModel := ""
+	switch strings.TrimSpace(identity.ExecutionProfileID) + "\x00" + strings.TrimSpace(identity.ExecutionProfileVersion) {
+	case "deepseek.v4-flash.api\x001.5.0":
+		expectedModel = "deepseek-v4-flash"
+	case "deepseek.v4-pro.api\x001.5.0":
+		expectedModel = "deepseek-v4-pro"
+	default:
+		return DeepSeekChatStreamMechanics{}, false, nil
+	}
+	if modelprofile.IsImmutableExistingAttachmentOperationProtocolIdentity(
+		strings.TrimSpace(identity.ExecutionProfileID),
+		strings.TrimSpace(identity.ExecutionProfileVersion),
+		strings.TrimSpace(identity.OperationID),
+		strings.TrimSpace(identity.ProtocolProfileID),
+		strings.TrimSpace(identity.ProtocolProfileVersion),
+	) && strings.EqualFold(strings.TrimSpace(identity.Provider), "deepseek") &&
+		strings.TrimSpace(identity.UpstreamModel) == expectedModel &&
+		strings.TrimSpace(identity.CacheUsageProfile) == "cache-usage.deepseek-v4.v1" {
+		// This exact Flash attachment predates the DeepSeek v4 protocol binding.
+		// It must continue through the existing generic Runtime path; this
+		// convergence does not turn historical compatibility into a new binding.
+		return DeepSeekChatStreamMechanics{}, false, nil
+	}
+	if strings.TrimSpace(identity.OperationID) != modelprofile.OperationOpenAIChat ||
+		!strings.EqualFold(strings.TrimSpace(identity.Provider), "deepseek") ||
+		strings.TrimSpace(identity.UpstreamModel) != expectedModel ||
+		strings.TrimSpace(identity.ProtocolProfileID) != "protocol.deepseek-openai-chat.v4" ||
+		strings.TrimSpace(identity.ProtocolProfileVersion) != modelprofile.ChatOperationProtocolBindingVersionV1 ||
+		strings.TrimSpace(identity.CacheUsageProfile) != "cache-usage.deepseek-v4.v1" {
+		return DeepSeekChatStreamMechanics{}, false, fmt.Errorf("exact current DeepSeek Chat stream runtime identity mismatch")
+	}
+	return DeepSeekChatStreamMechanics{
+		policy: deepSeekChatStreamRuntimeCompatibility, expectedModel: expectedModel,
+		cacheUsageProfile: "cache-usage.deepseek-v4.v1", valid: true,
+	}, true, nil
+}
+
+func ResolveDeepSeekProbeChatStreamMechanics(identity DeepSeekChatStreamProbeIdentity) (DeepSeekChatStreamMechanics, bool, error) {
+	policy := deepSeekChatStreamPolicy(0)
+	switch strings.TrimSpace(identity.ProbeContractVersion) {
+	case "1.0.0":
+		policy = deepSeekChatStreamProbeSeparateUsage
+	case "2.0.0":
+		policy = deepSeekChatStreamProbeFinalChoiceUsage
+	default:
+		return DeepSeekChatStreamMechanics{}, false, nil
+	}
+	expectedModel := strings.TrimSpace(identity.ExpectedUpstreamModel)
+	profileKey := strings.TrimSpace(identity.ExecutionProfileID) + "\x00" + strings.TrimSpace(identity.ExecutionProfileVersion)
+	validProfile := (profileKey == "deepseek.v4-flash.api\x001.4.0" || profileKey == "deepseek.v4-flash.api\x001.5.0") && expectedModel == "deepseek-v4-flash"
+	validProfile = validProfile || profileKey == "deepseek.v4-pro.api\x001.5.0" && expectedModel == "deepseek-v4-pro"
+	protocol := strings.TrimSpace(identity.ProtocolProfileID)
+	validProtocol := protocol == "protocol.deepseek-openai-chat.v4" ||
+		(strings.TrimSpace(identity.ExecutionProfileID) == "deepseek.v4-flash.api" && protocol == "openai.chat_completions")
+	if strings.TrimSpace(identity.OperationID) != modelprofile.OperationOpenAIChat ||
+		strings.TrimSpace(identity.CapabilityID) != modelprofile.CapabilityStreaming || !validProfile || !validProtocol ||
+		strings.TrimSpace(identity.ProtocolProfileVersion) != modelprofile.ChatOperationProtocolBindingVersionV1 ||
+		strings.TrimSpace(identity.ProbeContractID) != "unirouter.capability-probe.deepseek-chat-sse.v1" ||
+		!strings.EqualFold(strings.TrimSpace(identity.ExpectedProvider), "deepseek") ||
+		strings.TrimSpace(identity.PublicPath) != "/v1/chat/completions" {
+		return DeepSeekChatStreamMechanics{}, false, fmt.Errorf("exact DeepSeek Chat stream Probe binding mismatch")
+	}
+	if policy == deepSeekChatStreamProbeSeparateUsage && profileKey != "deepseek.v4-flash.api\x001.4.0" {
+		return DeepSeekChatStreamMechanics{}, false, fmt.Errorf("historical DeepSeek Chat stream Probe binding mismatch")
+	}
+	return DeepSeekChatStreamMechanics{policy: policy, expectedModel: expectedModel, valid: true}, true, nil
+}
+
+type DeepSeekChatStreamPrepared struct {
+	ReportedModel     string
+	ChoiceCount       int
+	DeltaCount        int
+	ContentDeltaCount int
+	ContentInChunk    bool
+	FinishReason      string
+	HasUsage          bool
+	PromptTokens      int64
+	CompletionTokens  int64
+	TotalTokens       int64
+	rawUsage          json.RawMessage
+}
+
+type DeepSeekChatStreamFacts struct {
+	ChoiceCount  int
+	FinishReason string
+	HasUsage     bool
+}
+
+type DeepSeekChatStreamIssue string
+
+const (
+	DeepSeekChatStreamIssueJSON                DeepSeekChatStreamIssue = "json"
+	DeepSeekChatStreamIssueChoices             DeepSeekChatStreamIssue = "choices"
+	DeepSeekChatStreamIssueDelta               DeepSeekChatStreamIssue = "delta"
+	DeepSeekChatStreamIssueContent             DeepSeekChatStreamIssue = "content"
+	DeepSeekChatStreamIssueFinishReason        DeepSeekChatStreamIssue = "finish_reason"
+	DeepSeekChatStreamIssueFinishReasonChanged DeepSeekChatStreamIssue = "finish_reason_changed"
+	DeepSeekChatStreamIssueFinalUsage          DeepSeekChatStreamIssue = "final_usage"
+	DeepSeekChatStreamIssueUsageMixed          DeepSeekChatStreamIssue = "usage_mixed_with_choices"
+	DeepSeekChatStreamIssueUsage               DeepSeekChatStreamIssue = "usage"
+	DeepSeekChatStreamIssueUsageTotal          DeepSeekChatStreamIssue = "usage_total"
+	DeepSeekChatStreamIssueTerminalOrder       DeepSeekChatStreamIssue = "terminal_order"
+	DeepSeekChatStreamIssueDataAfterDone       DeepSeekChatStreamIssue = "data_after_done"
+	DeepSeekChatStreamIssueDataAfterUsage      DeepSeekChatStreamIssue = "data_after_usage"
+	DeepSeekChatStreamIssueIncomplete          DeepSeekChatStreamIssue = "incomplete"
+)
+
+type deepSeekChatStreamError struct {
+	issue DeepSeekChatStreamIssue
+	cause error
+}
+
+func (e *deepSeekChatStreamError) Error() string {
+	if e.cause == nil {
+		return fmt.Sprintf("invalid DeepSeek Chat stream mechanics: %s", e.issue)
+	}
+	return fmt.Sprintf("invalid DeepSeek Chat stream mechanics: %s: %v", e.issue, e.cause)
+}
+
+func (e *deepSeekChatStreamError) Unwrap() error { return e.cause }
+
+func invalidDeepSeekChatStream(issue DeepSeekChatStreamIssue, cause ...error) error {
+	err := &deepSeekChatStreamError{issue: issue}
+	if len(cause) > 0 {
+		err.cause = cause[0]
+	}
+	return err
+}
+
+func DeepSeekChatStreamIssueForError(err error) DeepSeekChatStreamIssue {
+	var streamErr *deepSeekChatStreamError
+	if errors.As(err, &streamErr) {
+		return streamErr.issue
+	}
+	return ""
+}
+
+func PrepareDeepSeekChatStreamEvent(data []byte, mechanics DeepSeekChatStreamMechanics) (DeepSeekChatStreamPrepared, error) {
+	if !mechanics.valid || mechanics.expectedModel == "" {
+		return DeepSeekChatStreamPrepared{}, fmt.Errorf("invalid DeepSeek Chat stream mechanics")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var chunk struct {
+		Model   string          `json:"model"`
+		Choices json.RawMessage `json:"choices"`
+		Usage   json.RawMessage `json:"usage"`
+	}
+	if err := decoder.Decode(&chunk); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return DeepSeekChatStreamPrepared{}, invalidDeepSeekChatStream(DeepSeekChatStreamIssueJSON, err)
+	}
+	prepared := DeepSeekChatStreamPrepared{ReportedModel: chunk.Model}
+	var choices []struct {
+		Delta        json.RawMessage `json:"delta"`
+		FinishReason json.RawMessage `json:"finish_reason"`
+	}
+	if len(chunk.Choices) == 0 || json.Unmarshal(chunk.Choices, &choices) != nil {
+		return prepared, invalidDeepSeekChatStream(DeepSeekChatStreamIssueChoices)
+	}
+	prepared.ChoiceCount = len(choices)
+	for _, choice := range choices {
+		var delta map[string]json.RawMessage
+		if len(choice.Delta) == 0 || json.Unmarshal(choice.Delta, &delta) != nil || delta == nil {
+			return prepared, invalidDeepSeekChatStream(DeepSeekChatStreamIssueDelta)
+		}
+		prepared.DeltaCount++
+		if raw, exists := delta["content"]; exists && !isJSONNullUsage(raw) {
+			var content string
+			if json.Unmarshal(raw, &content) != nil {
+				return prepared, invalidDeepSeekChatStream(DeepSeekChatStreamIssueContent)
+			}
+			if content != "" {
+				prepared.ContentInChunk = true
+				prepared.ContentDeltaCount++
+			}
+		}
+		if len(choice.FinishReason) > 0 && !isJSONNullUsage(choice.FinishReason) {
+			var finish string
+			if json.Unmarshal(choice.FinishReason, &finish) != nil || strings.TrimSpace(finish) == "" || strings.ContainsAny(finish, "\x00\r\n") {
+				return prepared, invalidDeepSeekChatStream(DeepSeekChatStreamIssueFinishReason)
+			}
+			if prepared.FinishReason != "" && prepared.FinishReason != finish {
+				return prepared, invalidDeepSeekChatStream(DeepSeekChatStreamIssueFinishReasonChanged)
+			}
+			prepared.FinishReason = finish
+		}
+	}
+	if len(chunk.Usage) > 0 && !isJSONNullUsage(chunk.Usage) {
+		prepared.HasUsage = true
+		prepared.rawUsage = append(json.RawMessage(nil), chunk.Usage...)
+	}
+	return prepared, nil
+}
+
+func ParseDeepSeekChatStreamUsage(prepared DeepSeekChatStreamPrepared) (DeepSeekChatStreamPrepared, error) {
+	if !prepared.HasUsage || len(prepared.rawUsage) == 0 {
+		return prepared, nil
+	}
+	prompt, completion, total, err := parseDeepSeekBaseUsage(prepared.rawUsage)
+	if err != nil {
+		return prepared, err
+	}
+	prepared.PromptTokens, prepared.CompletionTokens, prepared.TotalTokens = prompt, completion, total
+	return prepared, nil
+}
+
+func parseDeepSeekBaseUsage(raw json.RawMessage) (int64, int64, int64, error) {
+	var usage struct {
+		PromptTokens     json.Number `json:"prompt_tokens"`
+		CompletionTokens json.Number `json:"completion_tokens"`
+		TotalTokens      json.Number `json:"total_tokens"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&usage) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return 0, 0, 0, invalidDeepSeekChatStream(DeepSeekChatStreamIssueUsage)
+	}
+	values := []json.Number{usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens}
+	parsed := make([]int64, len(values))
+	for index, value := range values {
+		if value == "" || strings.ContainsAny(string(value), ".eE+") {
+			return 0, 0, 0, invalidDeepSeekChatStream(DeepSeekChatStreamIssueUsage)
+		}
+		integer, err := strconv.ParseInt(string(value), 10, 64)
+		if err != nil || integer < 0 {
+			return 0, 0, 0, invalidDeepSeekChatStream(DeepSeekChatStreamIssueUsage)
+		}
+		parsed[index] = integer
+	}
+	if parsed[0]+parsed[1] != parsed[2] {
+		return 0, 0, 0, invalidDeepSeekChatStream(DeepSeekChatStreamIssueUsageTotal)
+	}
+	return parsed[0], parsed[1], parsed[2], nil
+}
+
+type DeepSeekChatStreamState struct {
+	mechanics   DeepSeekChatStreamMechanics
+	finish      string
+	usageSeen   bool
+	done        bool
+	contentSeen bool
+}
+
+func NewDeepSeekChatStreamState(mechanics DeepSeekChatStreamMechanics) (*DeepSeekChatStreamState, error) {
+	if !mechanics.valid {
+		return nil, fmt.Errorf("invalid DeepSeek Chat stream mechanics")
+	}
+	return &DeepSeekChatStreamState{mechanics: mechanics}, nil
+}
+
+func (s *DeepSeekChatStreamState) BeginDataEvent() error {
+	if s == nil || !s.mechanics.valid {
+		return fmt.Errorf("DeepSeek Chat stream state is not initialized")
+	}
+	if s.done {
+		return invalidDeepSeekChatStream(DeepSeekChatStreamIssueDataAfterDone)
+	}
+	if s.mechanics.policy == deepSeekChatStreamProbeFinalChoiceUsage && s.usageSeen {
+		return invalidDeepSeekChatStream(DeepSeekChatStreamIssueDataAfterUsage)
+	}
+	return nil
+}
+
+func (s *DeepSeekChatStreamState) Accept(prepared DeepSeekChatStreamPrepared) error {
+	if err := s.BeginDataEvent(); err != nil {
+		return err
+	}
+	if err := s.acceptFacts(DeepSeekChatStreamFacts{
+		ChoiceCount: prepared.ChoiceCount, FinishReason: prepared.FinishReason, HasUsage: prepared.HasUsage,
+	}, prepared.ContentInChunk); err != nil {
+		return err
+	}
+	s.RecordContent(prepared.ContentDeltaCount)
+	return nil
+}
+
+func (s *DeepSeekChatStreamState) AcceptRuntimeFacts(facts DeepSeekChatStreamFacts) error {
+	if s == nil || !s.mechanics.valid || s.mechanics.policy != deepSeekChatStreamRuntimeCompatibility {
+		return fmt.Errorf("DeepSeek Chat stream runtime state is not initialized")
+	}
+	if s.done {
+		return invalidDeepSeekChatStream(DeepSeekChatStreamIssueDataAfterDone)
+	}
+	return s.acceptFacts(facts, false)
+}
+
+func (s *DeepSeekChatStreamState) acceptFacts(facts DeepSeekChatStreamFacts, contentInChunk bool) error {
+	if s.mechanics.policy == deepSeekChatStreamRuntimeCompatibility {
+		if facts.ChoiceCount > 0 {
+			// Runtime historically treated the most recent choice frame as the
+			// clean-EOF authority. A later nonterminal choice therefore clears an
+			// earlier finish; usage-only frames leave that choice fact unchanged.
+			s.finish = facts.FinishReason
+		}
+		s.usageSeen = s.usageSeen || facts.HasUsage
+		return nil
+	}
+	if facts.FinishReason != "" {
+		if s.finish != "" && s.finish != facts.FinishReason {
+			return invalidDeepSeekChatStream(DeepSeekChatStreamIssueFinishReasonChanged)
+		}
+		s.finish = facts.FinishReason
+	}
+	if s.mechanics.policy == deepSeekChatStreamProbeSeparateUsage {
+		if facts.ChoiceCount == 0 {
+			if s.usageSeen || !facts.HasUsage {
+				return invalidDeepSeekChatStream(DeepSeekChatStreamIssueFinalUsage)
+			}
+			s.usageSeen = true
+			return nil
+		}
+		if facts.HasUsage {
+			return invalidDeepSeekChatStream(DeepSeekChatStreamIssueUsageMixed)
+		}
+		return nil
+	}
+	if facts.ChoiceCount == 0 {
+		return invalidDeepSeekChatStream(DeepSeekChatStreamIssueFinalUsage)
+	}
+	if facts.HasUsage {
+		if s.usageSeen || facts.ChoiceCount != 1 || facts.FinishReason == "" || contentInChunk {
+			return invalidDeepSeekChatStream(DeepSeekChatStreamIssueFinalUsage)
+		}
+		s.usageSeen = true
+	}
+	return nil
+}
+
+func (s *DeepSeekChatStreamState) AcceptDone() error {
+	if s == nil || !s.mechanics.valid {
+		return fmt.Errorf("DeepSeek Chat stream state is not initialized")
+	}
+	if s.done {
+		return invalidDeepSeekChatStream(DeepSeekChatStreamIssueTerminalOrder)
+	}
+	if s.mechanics.policy != deepSeekChatStreamRuntimeCompatibility && (!s.usageSeen || s.finish == "") {
+		return invalidDeepSeekChatStream(DeepSeekChatStreamIssueTerminalOrder)
+	}
+	s.done = true
+	return nil
+}
+
+func (s *DeepSeekChatStreamState) RecordContent(count int) {
+	if s != nil && count > 0 {
+		s.contentSeen = true
+	}
+}
+
+func (s *DeepSeekChatStreamState) FinishEOF() error {
+	if s == nil || !s.mechanics.valid {
+		return fmt.Errorf("DeepSeek Chat stream state is not initialized")
+	}
+	if s.mechanics.policy == deepSeekChatStreamRuntimeCompatibility {
+		if s.done || s.finish != "" {
+			return nil
+		}
+		return invalidDeepSeekChatStream(DeepSeekChatStreamIssueIncomplete)
+	}
+	if !s.done || !s.usageSeen || s.finish == "" || !s.contentSeen {
+		return invalidDeepSeekChatStream(DeepSeekChatStreamIssueIncomplete)
+	}
+	return nil
 }
 
 func NewChatSSEEventAssembler(maxDataBytes int) (*ChatSSEEventAssembler, error) {
