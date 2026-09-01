@@ -485,6 +485,45 @@ func ValidateKimiChatSSE(
 	probeContractID, probeContractVersion, expectedModel, contentType string,
 	reader io.Reader,
 ) (KimiChatObservation, error) {
+	return validateKimiChatSSE(
+		probeContractID, probeContractVersion, expectedModel, contentType, reader, nil,
+	)
+}
+
+func ValidateKimiChatSSEForBinding(
+	binding Binding, contentType string, reader io.Reader,
+) (KimiChatObservation, error) {
+	if binding.ProbeContractID != KimiChatSSEProbeContractID {
+		return KimiChatObservation{}, invalidKimiChat("probe_contract")
+	}
+	mechanics, found, err := adapters.ResolveKimiProbeChatStreamMechanics(adapters.KimiChatStreamProbeIdentity{
+		OperationID: binding.OperationID, CapabilityID: binding.CapabilityID,
+		ExecutionProfileID: binding.ExecutionProfileID, ExecutionProfileVersion: binding.ExecutionProfileVersion,
+		ProtocolProfileID: binding.ProtocolProfileID, ProtocolProfileVersion: binding.ProtocolProfileVersion,
+		ProbeContractID: binding.ProbeContractID, ProbeContractVersion: binding.ProbeContractVersion,
+		ExpectedProvider: binding.ExpectedProvider, ExpectedUpstreamModel: binding.ExpectedUpstreamModel,
+		PublicPath: binding.PublicPath,
+	})
+	if err != nil || ((binding.ProbeContractVersion == KimiChatSSEProbeContractVersionV3 ||
+		binding.ProbeContractVersion == KimiChatSSEProbeContractVersionV4) && !found) {
+		return KimiChatObservation{}, invalidKimiChat("probe_contract", err)
+	}
+	if found {
+		return validateKimiChatSSE(
+			binding.ProbeContractID, binding.ProbeContractVersion, binding.ExpectedUpstreamModel,
+			contentType, reader, &mechanics,
+		)
+	}
+	return validateKimiChatSSE(
+		binding.ProbeContractID, binding.ProbeContractVersion, binding.ExpectedUpstreamModel,
+		contentType, reader, nil,
+	)
+}
+
+func validateKimiChatSSE(
+	probeContractID, probeContractVersion, expectedModel, contentType string,
+	reader io.Reader, mechanics *adapters.KimiChatStreamMechanics,
+) (KimiChatObservation, error) {
 	if probeContractID != KimiChatSSEProbeContractID ||
 		(probeContractVersion != KimiChatCoreProbeContractVersion &&
 			probeContractVersion != KimiChatSSEProbeContractVersionV2 &&
@@ -502,7 +541,19 @@ func ValidateKimiChatSSE(
 	limited := &io.LimitedReader{R: reader, N: KimiChatMaxResponseBytes + 1}
 	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 0, 64*1024), KimiChatMaxSSELineBytes)
-	scanner.Split(splitSSELines)
+	scanner.Split(adapters.SplitSSELines)
+	var assembler *adapters.ChatSSEEventAssembler
+	var sharedState *adapters.KimiChatStreamState
+	if mechanics != nil {
+		assembler, err = adapters.NewChatSSEEventAssembler(KimiChatMaxResponseBytes)
+		if err != nil {
+			return KimiChatObservation{}, invalidKimiChat("probe_contract", err)
+		}
+		sharedState, err = adapters.NewKimiChatStreamState(*mechanics)
+		if err != nil {
+			return KimiChatObservation{}, invalidKimiChat("probe_contract", err)
+		}
+	}
 	var observation KimiChatObservation
 	var content strings.Builder
 	var dataLines []string
@@ -547,13 +598,26 @@ func ValidateKimiChatSSE(
 			if observation.DoneSeen || !finished || !usageSeen || !topLevelUsageSeen {
 				return invalidKimiChat("terminal_order")
 			}
+			if sharedState != nil {
+				if sharedErr := sharedState.AcceptDone(); sharedErr != nil {
+					return invalidKimiChatForSharedStream(sharedErr)
+				}
+			}
 			observation.DoneSeen = true
 			return nil
 		}
 		if observation.DoneSeen || usageOnlySeen {
 			return invalidKimiChat("data_after_terminal")
 		}
-		if probeContractVersion == KimiChatSSEProbeContractVersionV2 ||
+		var prepared adapters.KimiChatStreamPrepared
+		var sharedPrepareErr error
+		if mechanics != nil {
+			prepared, sharedPrepareErr = adapters.PrepareKimiChatStreamEvent([]byte(payload), *mechanics)
+			if sharedPrepareErr != nil && adapters.KimiChatStreamIssueForError(sharedPrepareErr) != adapters.KimiChatStreamIssueUsage {
+				return invalidKimiChatForSharedStream(sharedPrepareErr)
+			}
+			payload = string(prepared.Body)
+		} else if probeContractVersion == KimiChatSSEProbeContractVersionV2 ||
 			probeContractVersion == KimiChatSSEProbeContractVersionV3 {
 			normalized, _, normalizeErr := adapters.NormalizeKimiK26ChatStreamChunk(
 				"kimi", expectedModel, "protocol.kimi-openai-chat.v5", []byte(payload),
@@ -563,7 +627,7 @@ func ValidateKimiChatSSE(
 			}
 			payload = string(normalized)
 		}
-		if probeContractVersion == KimiChatSSEProbeContractVersionV4 {
+		if mechanics == nil && probeContractVersion == KimiChatSSEProbeContractVersionV4 {
 			if validationErr := strictjson.Validate([]byte(payload)); validationErr != nil {
 				return invalidKimiChat("json", validationErr)
 			}
@@ -603,6 +667,14 @@ func ValidateKimiChatSSE(
 			}
 			topLevelUsageSeen = true
 			usageOnlySeen = true
+			if sharedPrepareErr != nil {
+				return invalidKimiChatForSharedStream(sharedPrepareErr)
+			}
+			if sharedState != nil {
+				if sharedErr := sharedState.Accept(prepared); sharedErr != nil {
+					return invalidKimiChatForSharedStream(sharedErr)
+				}
+			}
 			return nil
 		}
 		if len(chunk.Choices) != 1 || finished {
@@ -656,10 +728,34 @@ func ValidateKimiChatSSE(
 			}
 			topLevelUsageSeen = true
 		}
+		if sharedPrepareErr != nil {
+			return invalidKimiChatForSharedStream(sharedPrepareErr)
+		}
+		if sharedState != nil {
+			if sharedErr := sharedState.Accept(prepared); sharedErr != nil {
+				return invalidKimiChatForSharedStream(sharedErr)
+			}
+		}
 		return nil
 	}
 	for scanner.Scan() {
 		line := scanner.Text()
+		if assembler != nil {
+			event, ready, assembleErr := assembler.AcceptLine(line)
+			if assembleErr != nil {
+				if errors.Is(assembleErr, adapters.ErrChatSSEEventTooLarge) {
+					return observed(), invalidKimiChat("response_too_large")
+				}
+				return observed(), invalidKimiChat("unsupported_field", assembleErr)
+			}
+			if ready {
+				dataLines = append(dataLines, string(event.Data))
+				if err := process(); err != nil {
+					return observed(), err
+				}
+			}
+			continue
+		}
 		if line == "" {
 			if err := process(); err != nil {
 				return observed(), err
@@ -678,6 +774,15 @@ func ValidateKimiChatSSE(
 	if err := scanner.Err(); err != nil {
 		return observed(), invalidKimiChat("read", err)
 	}
+	if assembler != nil {
+		event, ready, assembleErr := assembler.Finish()
+		if assembleErr != nil {
+			return observed(), invalidKimiChat("read", assembleErr)
+		}
+		if ready {
+			dataLines = append(dataLines, string(event.Data))
+		}
+	}
 	if len(dataLines) != 0 {
 		if err := process(); err != nil {
 			return observed(), err
@@ -686,6 +791,11 @@ func ValidateKimiChatSSE(
 	if limited.N <= 0 {
 		return observed(), invalidKimiChat("response_too_large")
 	}
+	if sharedState != nil {
+		if sharedErr := sharedState.FinishEOF(); sharedErr != nil {
+			return observed(), invalidKimiChatForSharedStream(sharedErr)
+		}
+	}
 	if !observation.DoneSeen || strings.TrimSpace(content.String()) != "UNIROUTER_STREAM_PROBE_OK" {
 		return observed(), invalidKimiChat("content")
 	}
@@ -693,6 +803,31 @@ func ValidateKimiChatSSE(
 		return observed(), invalidKimiChat("reasoning_content")
 	}
 	return observed(), nil
+}
+
+func invalidKimiChatForSharedStream(err error) error {
+	switch adapters.KimiChatStreamIssueForError(err) {
+	case adapters.KimiChatStreamIssuePreparation:
+		return invalidKimiChat("delivery_shape", err)
+	case adapters.KimiChatStreamIssueDocument:
+		return invalidKimiChat("json", err)
+	case adapters.KimiChatStreamIssueChoices:
+		return invalidKimiChat("choices", err)
+	case adapters.KimiChatStreamIssueFinishReason:
+		return invalidKimiChat("finish_reason", err)
+	case adapters.KimiChatStreamIssueUsage:
+		return invalidKimiChat("usage", err)
+	case adapters.KimiChatStreamIssueUsageOrder:
+		return invalidKimiChat("usage_order", err)
+	case adapters.KimiChatStreamIssueUsageConflict:
+		return invalidKimiChat("usage_conflict", err)
+	case adapters.KimiChatStreamIssueTerminalOrder:
+		return invalidKimiChat("terminal_order", err)
+	case adapters.KimiChatStreamIssueDataAfterTerminal:
+		return invalidKimiChat("data_after_terminal", err)
+	default:
+		return invalidKimiChat("json", err)
+	}
 }
 
 func kimiJSONValuePresent(raw json.RawMessage) bool {

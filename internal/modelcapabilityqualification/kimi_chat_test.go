@@ -139,6 +139,26 @@ func TestKimiK27SSEProbeV4RequiresReasoningAndPreservesOlderContracts(t *testing
 	require.True(t, observation.DoneSeen)
 	require.True(t, observation.ReasoningObserved)
 	require.Equal(t, int64(2), observation.CachedTokens)
+	bindingObservation, err := ValidateKimiChatSSEForBinding(Binding{
+		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityStreaming,
+		ExecutionProfileID: "kimi.k2.7-code.api", ExecutionProfileVersion: "1.3.0",
+		ProtocolProfileID: "protocol.kimi-openai-chat.v5", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		ProbeContractID: KimiChatSSEProbeContractID, ProbeContractVersion: KimiChatSSEProbeContractVersionV4,
+		ExpectedProvider: "kimi", ExpectedUpstreamModel: "kimi-k2.7-code", PublicPath: "/v1/chat/completions",
+	}, "text/event-stream", strings.NewReader(body))
+	require.NoError(t, err)
+	require.True(t, bindingObservation.DoneSeen)
+	require.True(t, bindingObservation.ReasoningObserved)
+
+	_, err = ValidateKimiChatSSEForBinding(Binding{
+		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityStreaming,
+		ExecutionProfileID: "kimi.k2.7-code.api", ExecutionProfileVersion: "1.3.0",
+		ProtocolProfileID: "protocol.kimi-openai-chat.v5", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		ProbeContractID: KimiChatSSEProbeContractID, ProbeContractVersion: KimiChatSSEProbeContractVersionV4,
+		ExpectedProvider: "kimi", ExpectedUpstreamModel: "kimi-k2.7-code", PublicPath: "/v1/chat/completions",
+	}, "text/event-stream", strings.NewReader(strings.Replace(body, `"finish_reason":"stop"`, `"finish_reason":"length"`, 1)))
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "finish_reason", KimiChatErrorCode(err), "Probe v4 keeps its immutable stop-only grammar")
 
 	_, err = ValidateKimiChatSSE(
 		KimiChatSSEProbeContractID, KimiChatSSEProbeContractVersionV3,
@@ -632,4 +652,106 @@ func TestKimiChatSSEProbeRequiresTerminalUsageAndDone(t *testing.T) {
 		"kimi-k2.6", "text/event-stream", strings.NewReader(strings.Replace(body, "\n\ndata: [DONE]", "", 1)),
 	)
 	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+}
+
+func TestKimiChatSSEForBindingUsesCurrentSharedDeliveryMechanics(t *testing.T) {
+	binding := Binding{
+		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityStreaming,
+		ExecutionProfileID: "kimi.k2.6.api", ExecutionProfileVersion: "1.7.0",
+		ProtocolProfileID: "protocol.kimi-openai-chat.v5", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		ProbeContractID: KimiChatSSEProbeContractID, ProbeContractVersion: KimiChatSSEProbeContractVersionV3,
+		ExpectedProvider: "kimi", ExpectedUpstreamModel: "kimi-k2.6", PublicPath: "/v1/chat/completions",
+	}
+	body := strings.Join([]string{
+		`: keepalive`,
+		`data: {"model":"kimi-k2.6",`,
+		`data: "choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK","reasoning_content":""},"finish_reason":"stop","usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2}}]}`,
+		``,
+		`data: {"model":"kimi-k2.6","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2}}`,
+		``,
+		`data: [DONE]`, "",
+	}, "\r")
+	observation, err := ValidateKimiChatSSEForBinding(binding, "text/event-stream", strings.NewReader(body))
+	require.NoError(t, err)
+	require.True(t, observation.DoneSeen)
+	require.Equal(t, int64(2), observation.CachedTokens)
+	require.Equal(t, 3, observation.DataEventCount)
+
+	usageOnly := `data: {"model":"kimi-k2.6","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2}}`
+	for _, replacement := range []string{
+		`data: {"model":"kimi-k2.6","usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2}}`,
+		`data: {"model":"kimi-k2.6","choices":null,"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2}}`,
+	} {
+		variant, variantErr := ValidateKimiChatSSEForBinding(
+			binding, "text/event-stream", strings.NewReader(strings.Replace(body, usageOnly, replacement, 1)),
+		)
+		require.NoError(t, variantErr)
+		require.True(t, variant.DoneSeen)
+	}
+
+	binding.ProtocolProfileVersion = "2.0.0"
+	_, err = ValidateKimiChatSSEForBinding(binding, "text/event-stream", strings.NewReader(body))
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "probe_contract", KimiChatErrorCode(err))
+}
+
+func TestKimiK3SSEBindingPinsPostDoneAndWireDiagnostics(t *testing.T) {
+	binding := Binding{
+		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityStreaming,
+		ExecutionProfileID: "kimi.k3.api", ExecutionProfileVersion: "1.9.0",
+		ProtocolProfileID: "protocol.kimi-openai-chat.k3.v5", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		ProbeContractID: KimiChatSSEProbeContractID, ProbeContractVersion: KimiChatSSEProbeContractVersionV4,
+		ExpectedProvider: "kimi", ExpectedUpstreamModel: "kimi-k3", PublicPath: "/v1/chat/completions",
+	}
+	body := strings.Join([]string{
+		`data: {"model":"kimi-k3","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"private"},"finish_reason":null}],"usage":null}`,
+		`data: {"model":"kimi-k3","choices":[{"index":0,"delta":{"content":"UNIROUTER_STREAM_PROBE_OK"},"finish_reason":"stop","usage":{"prompt_tokens":8,"completion_tokens":4,"total_tokens":12,"cached_tokens":1,"completion_tokens_details":{"reasoning_tokens":2}}}]}`,
+		`data: {"model":"kimi-k3","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":4,"total_tokens":12,"cached_tokens":1,"completion_tokens_details":{"reasoning_tokens":2}}}`,
+		`data: [DONE]`, "",
+	}, "\n\n")
+
+	observation, err := ValidateKimiChatSSEForBinding(binding, "text/event-stream", strings.NewReader(body+": trailing comment\n\n"))
+	require.NoError(t, err)
+	require.True(t, observation.DoneSeen)
+	require.Equal(t, 4, observation.DataEventCount)
+	require.Equal(t, 2, observation.DeltaCount)
+	require.Positive(t, observation.ResponseBytes)
+
+	observation, err = ValidateKimiChatSSEForBinding(
+		binding, "text/event-stream", strings.NewReader(body+`data: {"private":"secret"}`+"\n\n"),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "data_after_terminal", KimiChatErrorCode(err))
+	require.True(t, observation.DoneSeen)
+	require.Equal(t, 5, observation.DataEventCount)
+	require.Positive(t, observation.ResponseBytes)
+
+	observation, err = ValidateKimiChatSSEForBinding(
+		binding, "text/event-stream", strings.NewReader(body+"data: [DONE]\n\n"),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "terminal_order", KimiChatErrorCode(err))
+	require.True(t, observation.DoneSeen)
+	require.Equal(t, 5, observation.DataEventCount)
+
+	observation, err = ValidateKimiChatSSEForBinding(
+		binding, "text/event-stream", strings.NewReader(body+"event: message\n\n"),
+	)
+	require.ErrorIs(t, err, ErrInvalidKimiChatProbe)
+	require.Equal(t, "unsupported_field", KimiChatErrorCode(err))
+	require.True(t, observation.DoneSeen)
+	require.Positive(t, observation.ResponseBytes)
+
+	for name, prefix := range map[string]string{
+		"leading BOM":     "\ufeff",
+		"whitespace line": " \n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			failed, probeErr := ValidateKimiChatSSEForBinding(binding, "text/event-stream", strings.NewReader(prefix+body))
+			require.ErrorIs(t, probeErr, ErrInvalidKimiChatProbe)
+			require.Equal(t, "unsupported_field", KimiChatErrorCode(probeErr))
+			require.False(t, failed.DoneSeen)
+			require.Positive(t, failed.ResponseBytes)
+		})
+	}
 }
