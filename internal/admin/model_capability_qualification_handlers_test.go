@@ -38,11 +38,12 @@ func TestModelCapabilityProbePreservesSafeContractFailureEvidence(t *testing.T) 
 	outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
 		Provider: "deepseek", BaseURL: "https://api.deepseek.com",
 		AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{}`),
-		UpstreamModel:         "deepseek-v4-flash",
-		ExpectedUpstreamModel: "deepseek-v4-flash",
-		EncryptedSecret:       encrypted,
-		ProbeContractID:       modelcapabilityqualification.DeepSeekChatSSEProbeContractID,
-		ProbeContractVersion:  modelcapabilityqualification.DeepSeekChatSSEProbeContractCurrentVersion,
+		UpstreamModel: "deepseek-v4-flash", OperationID: modelprofile.OperationOpenAIChat,
+		CapabilityID: "streaming", ExecutionProfileID: "deepseek.v4-flash.api", ExecutionProfileVersion: "1.5.0",
+		ProtocolProfileID: "protocol.deepseek-openai-chat.v4", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		ExpectedProvider: "deepseek", ExpectedUpstreamModel: "deepseek-v4-flash", PublicPath: "/v1/chat/completions",
+		EncryptedSecret: encrypted, ProbeContractID: modelcapabilityqualification.DeepSeekChatSSEProbeContractID,
+		ProbeContractVersion: modelcapabilityqualification.DeepSeekChatSSEProbeContractCurrentVersion,
 	}, "capability-probe-test")
 
 	require.True(t, outcome.ProviderSuccess)

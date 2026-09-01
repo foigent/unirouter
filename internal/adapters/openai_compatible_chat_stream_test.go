@@ -48,6 +48,134 @@ func TestSplitSSELinesAndAssemblerOwnWireFraming(t *testing.T) {
 	require.ErrorIs(t, err, ErrChatSSEEventTooLarge)
 }
 
+func exactDeepSeekRuntimeStreamIdentity(profileID string) DeepSeekChatStreamRuntimeIdentity {
+	model := "deepseek-v4-flash"
+	if profileID == "deepseek.v4-pro.api" {
+		model = "deepseek-v4-pro"
+	}
+	return DeepSeekChatStreamRuntimeIdentity{
+		OperationID: modelprofile.OperationOpenAIChat, ExecutionProfileID: profileID,
+		ExecutionProfileVersion: "1.5.0", Provider: "deepseek", UpstreamModel: model,
+		ProtocolProfileID:      "protocol.deepseek-openai-chat.v4",
+		ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		CacheUsageProfile:      "cache-usage.deepseek-v4.v1",
+	}
+}
+
+func exactDeepSeekProbeStreamIdentity(profileID, profileVersion, model, contractVersion string) DeepSeekChatStreamProbeIdentity {
+	return DeepSeekChatStreamProbeIdentity{
+		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityStreaming,
+		ExecutionProfileID: profileID, ExecutionProfileVersion: profileVersion,
+		ProtocolProfileID:      "protocol.deepseek-openai-chat.v4",
+		ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		ProbeContractID:        "unirouter.capability-probe.deepseek-chat-sse.v1", ProbeContractVersion: contractVersion,
+		ExpectedProvider: "deepseek", ExpectedUpstreamModel: model, PublicPath: "/v1/chat/completions",
+	}
+}
+
+func TestDeepSeekChatStreamResolversAreExactAndFailClosed(t *testing.T) {
+	for _, profileID := range []string{"deepseek.v4-flash.api", "deepseek.v4-pro.api"} {
+		identity := exactDeepSeekRuntimeStreamIdentity(profileID)
+		mechanics, found, err := ResolveDeepSeekRuntimeChatStreamMechanics(identity)
+		require.NoError(t, err)
+		require.True(t, found)
+		_, err = NewDeepSeekChatStreamState(mechanics)
+		require.NoError(t, err)
+
+		identity.ProtocolProfileID = "openai.chat_completions"
+		_, found, err = ResolveDeepSeekRuntimeChatStreamMechanics(identity)
+		if profileID == "deepseek.v4-flash.api" {
+			require.NoError(t, err, "the exact immutable generic Flash attachment keeps its existing Runtime path")
+		} else {
+			require.Error(t, err)
+		}
+		require.False(t, found)
+
+		identity.UpstreamModel = "deepseek-v4-drifted"
+		_, found, err = ResolveDeepSeekRuntimeChatStreamMechanics(identity)
+		require.Error(t, err, "near-miss generic identities remain fail-closed")
+		require.False(t, found)
+	}
+
+	current := exactDeepSeekProbeStreamIdentity("deepseek.v4-pro.api", "1.5.0", "deepseek-v4-pro", "2.0.0")
+	_, found, err := ResolveDeepSeekProbeChatStreamMechanics(current)
+	require.NoError(t, err)
+	require.True(t, found)
+	for _, mutate := range []func(*DeepSeekChatStreamProbeIdentity){
+		func(value *DeepSeekChatStreamProbeIdentity) { value.ExpectedProvider = "kimi" },
+		func(value *DeepSeekChatStreamProbeIdentity) { value.ExpectedUpstreamModel = "deepseek-v4-flash" },
+		func(value *DeepSeekChatStreamProbeIdentity) { value.PublicPath = "/v1/responses" },
+		func(value *DeepSeekChatStreamProbeIdentity) { value.ProtocolProfileID = "openai.chat_completions" },
+	} {
+		drifted := current
+		mutate(&drifted)
+		_, found, err = ResolveDeepSeekProbeChatStreamMechanics(drifted)
+		require.Error(t, err)
+		require.False(t, found)
+	}
+}
+
+func TestDeepSeekChatStreamLifecyclePoliciesPreserveRoleDifferences(t *testing.T) {
+	runtimeMechanics, found, err := ResolveDeepSeekRuntimeChatStreamMechanics(exactDeepSeekRuntimeStreamIdentity("deepseek.v4-flash.api"))
+	require.NoError(t, err)
+	require.True(t, found)
+	runtimeState, err := NewDeepSeekChatStreamState(runtimeMechanics)
+	require.NoError(t, err)
+	require.NoError(t, runtimeState.AcceptDone(), "Runtime historically accepts the first literal DONE without Probe evidence")
+	require.NoError(t, runtimeState.FinishEOF())
+
+	runtimeState, err = NewDeepSeekChatStreamState(runtimeMechanics)
+	require.NoError(t, err)
+	require.NoError(t, runtimeState.AcceptRuntimeFacts(DeepSeekChatStreamFacts{ChoiceCount: 1, FinishReason: "observed"}))
+	require.NoError(t, runtimeState.FinishEOF(), "Runtime historically accepts clean EOF after a supported finish")
+
+	runtimeState, err = NewDeepSeekChatStreamState(runtimeMechanics)
+	require.NoError(t, err)
+	require.NoError(t, runtimeState.AcceptRuntimeFacts(DeepSeekChatStreamFacts{ChoiceCount: 1, FinishReason: "observed"}))
+	require.NoError(t, runtimeState.AcceptRuntimeFacts(DeepSeekChatStreamFacts{HasUsage: true}), "usage-only facts do not clear the latest choice finish")
+	require.NoError(t, runtimeState.FinishEOF())
+
+	runtimeState, err = NewDeepSeekChatStreamState(runtimeMechanics)
+	require.NoError(t, err)
+	require.NoError(t, runtimeState.AcceptRuntimeFacts(DeepSeekChatStreamFacts{ChoiceCount: 1, FinishReason: "observed"}))
+	require.NoError(t, runtimeState.AcceptRuntimeFacts(DeepSeekChatStreamFacts{ChoiceCount: 1}), "a later nonterminal choice clears the earlier finish")
+	require.Error(t, runtimeState.FinishEOF(), "Runtime historically rejects clean EOF when the latest choice is nonterminal")
+
+	currentProbe, found, err := ResolveDeepSeekProbeChatStreamMechanics(
+		exactDeepSeekProbeStreamIdentity("deepseek.v4-flash.api", "1.5.0", "deepseek-v4-flash", "2.0.0"),
+	)
+	require.NoError(t, err)
+	require.True(t, found)
+	currentState, err := NewDeepSeekChatStreamState(currentProbe)
+	require.NoError(t, err)
+	content, err := PrepareDeepSeekChatStreamEvent([]byte(`{"model":"deepseek-v4-flash","choices":[{"delta":{"content":"ok"},"finish_reason":null}],"usage":null}`), currentProbe)
+	require.NoError(t, err)
+	require.NoError(t, currentState.Accept(content))
+	terminal, err := PrepareDeepSeekChatStreamEvent([]byte(`{"model":"deepseek-v4-flash","choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`), currentProbe)
+	require.NoError(t, err)
+	require.NoError(t, currentState.Accept(terminal))
+	require.Equal(t, DeepSeekChatStreamIssueDataAfterUsage, DeepSeekChatStreamIssueForError(currentState.BeginDataEvent()))
+	require.NoError(t, currentState.AcceptDone())
+	require.NoError(t, currentState.FinishEOF())
+
+	historicalProbe, found, err := ResolveDeepSeekProbeChatStreamMechanics(
+		exactDeepSeekProbeStreamIdentity("deepseek.v4-flash.api", "1.4.0", "deepseek-v4-flash", "1.0.0"),
+	)
+	require.NoError(t, err)
+	require.True(t, found)
+	historicalState, err := NewDeepSeekChatStreamState(historicalProbe)
+	require.NoError(t, err)
+	require.NoError(t, historicalState.Accept(content))
+	historicalFinish, err := PrepareDeepSeekChatStreamEvent([]byte(`{"model":"deepseek-v4-flash","choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":null}`), historicalProbe)
+	require.NoError(t, err)
+	require.NoError(t, historicalState.Accept(historicalFinish))
+	usageOnly, err := PrepareDeepSeekChatStreamEvent([]byte(`{"model":"deepseek-v4-flash","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`), historicalProbe)
+	require.NoError(t, err)
+	require.NoError(t, historicalState.Accept(usageOnly))
+	require.NoError(t, historicalState.AcceptDone())
+	require.NoError(t, historicalState.FinishEOF())
+}
+
 func TestCurrentKimiChatStreamMechanicsRequireExactRuntimeAndProbeBindings(t *testing.T) {
 	profiles := []struct {
 		profileID, profileVersion, model, protocol, probeVersion string

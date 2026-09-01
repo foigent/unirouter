@@ -200,7 +200,7 @@ func applyKimiChatDiagnostic(outcome *modelCapabilityProbeOutcome, err error) {
 	outcome.DiagnosticMember = diagnostic.Member
 }
 
-func kimiChatProbeBindingFromSnapshot(snapshot modelCapabilitySnapshot) modelcapabilityqualification.Binding {
+func modelCapabilityProbeBindingFromSnapshot(snapshot modelCapabilitySnapshot) modelcapabilityqualification.Binding {
 	return modelcapabilityqualification.Binding{
 		OperationID: snapshot.OperationID, CapabilityID: snapshot.CapabilityID,
 		ExecutionProfileID: snapshot.ExecutionProfileID, ExecutionProfileVersion: snapshot.ExecutionProfileVersion,
@@ -572,8 +572,8 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 	outcome.ProviderSuccess = true
 	switch snapshot.ProbeContractID {
 	case modelcapabilityqualification.DeepSeekChatSSEProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatSSEForModel(
-			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
+		observation, validationErr := modelcapabilityqualification.ValidateDeepSeekChatSSEForBinding(
+			modelCapabilityProbeBindingFromSnapshot(snapshot),
 			response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel
@@ -647,7 +647,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		}
 	case modelcapabilityqualification.KimiChatSSEProbeContractID:
 		observation, validationErr := modelcapabilityqualification.ValidateKimiChatSSEForBinding(
-			kimiChatProbeBindingFromSnapshot(snapshot),
+			modelCapabilityProbeBindingFromSnapshot(snapshot),
 			response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel
@@ -667,7 +667,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 	case modelcapabilityqualification.KimiChatReasoningProbeContractID,
 		modelcapabilityqualification.KimiChatReasoningEffortProbeContractID:
 		observation, validationErr := modelcapabilityqualification.ValidateKimiChatReasoningForBinding(
-			kimiChatProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
+			modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel
 		outcome.FinishReason = observation.FinishReason
@@ -684,7 +684,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		}
 	case modelcapabilityqualification.KimiChatFunctionToolsProbeContractID:
 		observation, validationErr := modelcapabilityqualification.ValidateKimiChatFunctionToolsForBinding(
-			kimiChatProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
+			modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel
 		outcome.FinishReason = observation.FinishReason
@@ -701,7 +701,7 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		}
 	case modelcapabilityqualification.KimiChatJSONObjectProbeContractID:
 		observation, validationErr := modelcapabilityqualification.ValidateKimiChatJSONObjectForBinding(
-			kimiChatProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
+			modelCapabilityProbeBindingFromSnapshot(snapshot), response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel
 		outcome.FinishReason = observation.FinishReason
