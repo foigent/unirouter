@@ -646,8 +646,8 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 			return outcome
 		}
 	case modelcapabilityqualification.KimiChatSSEProbeContractID:
-		observation, validationErr := modelcapabilityqualification.ValidateKimiChatSSE(
-			snapshot.ProbeContractID, snapshot.ProbeContractVersion, snapshot.ExpectedUpstreamModel,
+		observation, validationErr := modelcapabilityqualification.ValidateKimiChatSSEForBinding(
+			kimiChatProbeBindingFromSnapshot(snapshot),
 			response.Header.Get("Content-Type"), response.Body,
 		)
 		outcome.ReportedModel = observation.ReportedModel

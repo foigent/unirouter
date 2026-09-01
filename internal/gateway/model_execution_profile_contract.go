@@ -203,6 +203,13 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 		evidence.ImageAdmissionEstimateVersion = validation.ImageAdmissionEstimateVersion
 		evidence.AdmissionShadowBody = slices.Clone(validation.SanitizedBody)
 	}
+	streamNormalization, err := validateCurrentKimiChatStreamUsageRequest(envelope, plan)
+	if err != nil {
+		return modelExecutionProfileEvidence{}, err
+	}
+	if streamNormalization != "" && !slices.Contains(evidence.ProviderRequestNormalizations, streamNormalization) {
+		evidence.ProviderRequestNormalizations = append(evidence.ProviderRequestNormalizations, streamNormalization)
+	}
 
 	contract, modeled := modelprofile.ResolveReasoningContract(plan.ReasoningProfile)
 	if !modeled {
@@ -445,6 +452,52 @@ func validateChatExecutionProfileRequest(body []byte, plan modelrouting.Plan) (m
 		return modelExecutionProfileEvidence{}, err
 	}
 	return evidence, nil
+}
+
+func validateCurrentKimiChatStreamUsageRequest(envelope map[string]json.RawMessage, plan modelrouting.Plan) (string, error) {
+	if plan.ModelOperationID != modelprofile.OperationOpenAIChat {
+		return "", nil
+	}
+	expectedProtocol := ""
+	switch strings.TrimSpace(plan.ExecutionProfileID) + "\x00" + strings.TrimSpace(plan.ExecutionProfileVersion) {
+	case "kimi.k2.6.api\x001.7.0", "kimi.k2.7-code.api\x001.3.0":
+		expectedProtocol = "protocol.kimi-openai-chat.v5"
+	case "kimi.k3.api\x001.9.0":
+		expectedProtocol = "protocol.kimi-openai-chat.k3.v5"
+	default:
+		return "", nil
+	}
+	if strings.TrimSpace(plan.ModelProtocolProfile) != expectedProtocol ||
+		strings.TrimSpace(plan.CacheUsageProfile) != "cache-usage.kimi-platform.v1" {
+		return "", fmt.Errorf("exact current Kimi Chat stream request identity mismatch")
+	}
+	stream := false
+	if raw, exists := envelope["stream"]; exists && !isJSONNull(raw) {
+		if err := json.Unmarshal(raw, &stream); err != nil {
+			return "", fmt.Errorf("stream must be a boolean")
+		}
+	}
+	if !stream {
+		return "", nil
+	}
+	options := make(map[string]json.RawMessage)
+	if raw, exists := envelope["stream_options"]; exists && !isJSONNull(raw) {
+		if err := json.Unmarshal(raw, &options); err != nil || options == nil {
+			return "", fmt.Errorf("stream_options must be an object")
+		}
+	}
+	rawIncludeUsage, present := options["include_usage"]
+	if !present || isJSONNull(rawIncludeUsage) {
+		return "stream_options.include_usage=omitted->true", nil
+	}
+	var includeUsage bool
+	if err := json.Unmarshal(rawIncludeUsage, &includeUsage); err != nil {
+		return "", fmt.Errorf("stream_options.include_usage must be a boolean")
+	}
+	if !includeUsage {
+		return "", fmt.Errorf("stream_options.include_usage=false is not supported by exact current Kimi Chat streaming")
+	}
+	return "", nil
 }
 
 func requestHasFunctionTools(raw json.RawMessage) bool {

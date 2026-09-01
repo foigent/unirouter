@@ -893,6 +893,7 @@ func (relay *Relay) maintainExecutionLease(
 
 func modelExecutionPlanForProfile(profile modelprofile.Profile) modelrouting.Plan {
 	return modelrouting.Plan{
+		ModelOperationID:        modelprofile.OperationOpenAIChat,
 		ExecutionProfileID:      profile.ID,
 		ExecutionProfileVersion: profile.Version,
 		ReasoningProfile:        profile.ReasoningProfile,

@@ -1850,8 +1850,19 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 	}()
 
+	kimiStreamMechanics, currentKimiStream, kimiStreamSetupErr := adapters.ResolveKimiRuntimeChatStreamMechanics(
+		adapters.KimiChatStreamRuntimeIdentity{
+			OperationID: route.ModelOperationID, ExecutionProfileID: route.ExecutionProfileID,
+			ExecutionProfileVersion: route.ExecutionProfileVersion, Provider: route.Channel.Provider,
+			UpstreamModel: route.MappedModel, ProtocolProfileID: route.OperationProtocolProfileID,
+			ProtocolProfileVersion: route.OperationProtocolProfileVersion, CacheUsageProfile: route.CacheUsageProfile,
+		},
+	)
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), streamPolicy.MaxSSELineBytes)
+	if currentKimiStream {
+		scanner.Split(adapters.SplitSSELines)
+	}
 	type streamScanEvent struct {
 		line string
 		err  error
@@ -2002,6 +2013,18 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	providerTerminalObserved := false
 	providerFinishReasonObserved := false
 	exactStreamState := exactStreamStateForProtocol(route.ModelProtocolProfile)
+	var kimiStreamAssembler *adapters.ChatSSEEventAssembler
+	var kimiStreamState *adapters.KimiChatStreamState
+	if currentKimiStream && kimiStreamSetupErr == nil {
+		kimiStreamAssembler, kimiStreamSetupErr = adapters.NewChatSSEEventAssembler(streamPolicy.MaxSSELineBytes)
+	}
+	if currentKimiStream && kimiStreamSetupErr == nil {
+		kimiStreamState, kimiStreamSetupErr = adapters.NewKimiChatStreamState(kimiStreamMechanics)
+	}
+	if kimiStreamSetupErr != nil {
+		streamPayloadInvalid = true
+		streamTerminationCode = "upstream_stream_invalid_frame"
+	}
 	recordRouteHealth := func(action executionHealthAction) {
 		if routeHealthRecorded {
 			return
@@ -2021,7 +2044,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 	}
 
-	done := false
+	done := kimiStreamSetupErr != nil
 	skipRawEventSeparator := false
 	recordPartialDelivery := func() bool {
 		if deliveryPartialRecorded {
@@ -2168,14 +2191,16 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 		return true
 	}
-	enqueueGuardedFrame := func(data []byte, doneAfter, authoritativeUsage bool) bool {
-		normalized, normalizeErr := normalizeProviderStreamFrameForRoute(route, data)
-		if normalizeErr != nil {
-			streamPayloadInvalid = true
-			streamTerminationCode = "upstream_stream_invalid_frame"
-			return false
+	enqueueGuardedFrame := func(data []byte, doneAfter, authoritativeUsage, preparedForDelivery bool) bool {
+		if !preparedForDelivery {
+			normalized, normalizeErr := normalizeProviderStreamFrameForRoute(route, data)
+			if normalizeErr != nil {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+				return false
+			}
+			data = normalized
 		}
-		data = normalized
 		parsed, parseErr := parseGuardedStreamFrameForProtocol(data, route.ModelProtocolProfile)
 		if parseErr != nil || parsed.unsupported {
 			if streamGuardrailProfile.Enforced {
@@ -2216,6 +2241,61 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 		}
 		return true
 	}
+	processCurrentKimiEvent := func(data []byte) bool {
+		if string(data) == "[DONE]" {
+			if stateErr := kimiStreamState.AcceptDone(); stateErr != nil {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+				return false
+			}
+			if stateErr := exactStreamState.validateDone(); stateErr != nil {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+				return false
+			}
+			providerTerminalObserved = true
+			if !flushGuardrailBuffer() {
+				return false
+			}
+			done = true
+			return true
+		}
+		providerError, classifyErr := providerStreamErrorFrame(data)
+		if classifyErr != nil {
+			streamPayloadInvalid = true
+			streamTerminationCode = "upstream_stream_invalid_frame"
+			return false
+		}
+		if providerError {
+			providerStreamErrorObserved = true
+			streamTerminationCode = "upstream_stream_provider_error"
+			return false
+		}
+		prepared, prepareErr := adapters.PrepareKimiChatStreamEvent(data, kimiStreamMechanics)
+		if prepareErr != nil || kimiStreamState.Accept(prepared) != nil {
+			streamPayloadInvalid = true
+			streamTerminationCode = "upstream_stream_invalid_frame"
+			return false
+		}
+		frameData := prepared.Body
+		if prepared.HasTopLevelUsage {
+			streamUsage = prepared.TopLevelUsage
+			usedUpstreamUsage = true
+		}
+		if streamFrameNormalizer != nil {
+			frameData, prepareErr = streamFrameNormalizer.NormalizeStreamFrame(ctx, adapters.StreamChunkInput{
+				Data: frameData, Channel: route.Channel, RequestedModel: requestedModel,
+				UpstreamModel: route.MappedModel, CacheUsageProfile: route.CacheUsageProfile, State: streamState,
+			})
+			if prepareErr != nil || !json.Valid(frameData) {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+				return false
+			}
+		}
+		providerFrameObserved = true
+		return enqueueGuardedFrame(frameData, false, prepared.HasTopLevelUsage, true)
+	}
 	var scanErr error
 	firstSSELine := true
 streamLoop:
@@ -2231,6 +2311,15 @@ streamLoop:
 			}
 			if event.done {
 				scanErr = event.err
+				if kimiStreamAssembler != nil {
+					assembled, ready, assembleErr := kimiStreamAssembler.Finish()
+					if assembleErr != nil {
+						streamPayloadInvalid = true
+						streamTerminationCode = "upstream_stream_invalid_frame"
+					} else if ready && !processCurrentKimiEvent(assembled.Data) {
+						done = true
+					}
+				}
 				if !flushGuardrailBuffer() {
 					done = true
 				}
@@ -2266,6 +2355,19 @@ streamLoop:
 			streamPayloadInvalid = true
 			streamTerminationCode = "upstream_stream_invalid_frame"
 			done = true
+			continue
+		}
+		if kimiStreamAssembler != nil {
+			assembled, ready, assembleErr := kimiStreamAssembler.AcceptLine(line)
+			if assembleErr != nil {
+				streamPayloadInvalid = true
+				streamTerminationCode = "upstream_stream_invalid_frame"
+				done = true
+				continue
+			}
+			if ready && !processCurrentKimiEvent(assembled.Data) {
+				done = true
+			}
 			continue
 		}
 		field, hasField := parseSSEFieldLine(line)
@@ -2326,7 +2428,7 @@ streamLoop:
 				usedUpstreamUsage = true
 			}
 			if !chunk.Skip && len(chunk.Data) > 0 {
-				if !enqueueGuardedFrame(chunk.Data, chunk.Done, chunk.HasUsage) {
+				if !enqueueGuardedFrame(chunk.Data, chunk.Done, chunk.HasUsage, false) {
 					done = true
 				}
 			}
@@ -2426,7 +2528,7 @@ streamLoop:
 			}
 			providerFrameObserved = true
 			skipRawEventSeparator = true
-			if !enqueueGuardedFrame(frameData, false, hasUsage) {
+			if !enqueueGuardedFrame(frameData, false, hasUsage, false) {
 				done = true
 			}
 			continue
@@ -2478,7 +2580,16 @@ streamLoop:
 	// still follow it. Only a clean EOF after every choice has a supported
 	// finish_reason becomes terminal; a truncated stream without that proof
 	// continues to fail closed below.
-	if scanErr == nil && !providerTerminalObserved && streamTerminationCode == "" {
+	if scanErr == nil && currentKimiStream && streamTerminationCode == "" {
+		if stateErr := kimiStreamState.FinishEOF(); stateErr != nil {
+			streamPayloadInvalid = true
+			streamTerminationCode = "upstream_stream_invalid_frame"
+		} else {
+			providerTerminalObserved = true
+			done = true
+		}
+	}
+	if scanErr == nil && !currentKimiStream && !providerTerminalObserved && streamTerminationCode == "" {
 		if stateErr := exactStreamState.validateCleanEOF(providerFinishReasonObserved); stateErr != nil {
 			if exactStreamState != nil {
 				streamPayloadInvalid = true

@@ -28,6 +28,7 @@ import (
 	"github.com/uniroute/unirouter/internal/logger"
 	"github.com/uniroute/unirouter/internal/metering"
 	"github.com/uniroute/unirouter/internal/middleware"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/models"
 	"github.com/uniroute/unirouter/internal/money"
 	"github.com/uniroute/unirouter/internal/payloadpolicy"
@@ -2206,6 +2207,174 @@ func TestRelayStreamRequest_NoUpstreamUsage(t *testing.T) {
 
 	if !settleCalled {
 		t.Fatal("expected settle to be called")
+	}
+}
+
+func exactKimiK26StreamRoute() *RouteResult {
+	return exactKimiStreamRoute("kimi.k2.6.api")
+}
+
+func exactKimiStreamRoute(profileID string) *RouteResult {
+	profileVersion, mappedModel, protocol := "", "", ""
+	switch profileID {
+	case "kimi.k2.6.api":
+		profileVersion, mappedModel, protocol = "1.7.0", "kimi-k2.6", "protocol.kimi-openai-chat.v5"
+	case "kimi.k2.7-code.api":
+		profileVersion, mappedModel, protocol = "1.3.0", "kimi-k2.7-code", "protocol.kimi-openai-chat.v5"
+	case "kimi.k3.api":
+		profileVersion, mappedModel, protocol = "1.9.0", "kimi-k3", "protocol.kimi-openai-chat.k3.v5"
+	default:
+		panic("unsupported exact Kimi stream test profile: " + profileID)
+	}
+	return &RouteResult{
+		Channel:    models.Channel{ID: 1, Name: "kimi", Provider: "kimi", AdapterType: adapters.TypeOpenAICompatible},
+		ChannelKey: models.ChannelKey{ID: 1}, MappedModel: mappedModel,
+		ModelOperationID:   "openai.chat_completions.v1",
+		ExecutionProfileID: profileID, ExecutionProfileVersion: profileVersion,
+		CacheUsageProfile:               "cache-usage.kimi-platform.v1",
+		ModelProtocolProfile:            protocol,
+		OperationProtocolProfileID:      protocol,
+		OperationProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+	}
+}
+
+func TestRelayStreamRequest_CurrentKimiUsesSharedTerminalUsageAndDeliveryPreparation(t *testing.T) {
+	var settled billing.SettleRequest
+	relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+		settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+			settled = req
+			return &billing.SettleResult{SettleID: 1, Success: true}, nil
+		},
+	})
+	sse := strings.Join([]string{
+		`: keepalive`,
+		`data: {"id":"chunk","model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"hello","reasoning_content":""},"finish_reason":null}],"usage":null}`,
+		`data: {"id":"chunk","model":"kimi-k2.6","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2}}]}`,
+		`data: {"id":"chunk","model":"kimi-k2.6","choices":[],"usage":{"prompt_tokens":16,"completion_tokens":8,"total_tokens":24,"cached_tokens":2}}`,
+		`data: [DONE]`,
+		`data: {"private":"must-not-be-drained-or-delivered"}`, "",
+	}, "\r\n\r\n")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(sse))}
+	recorder := httptest.NewRecorder()
+	ctx := contextWithRouteAttempt(context.Background(), 1, 1)
+	ctx = contextWithAttemptID(ctx, "att-kimi-stream")
+
+	relay.relayStreamRequest(
+		ctx, recorder, resp, exactKimiK26StreamRoute(), "req-kimi-stream", 1, 1,
+		"kimi-public", "kimi-public", "127.0.0.1", []Message{{Role: "user", Content: "hello"}},
+		logger.New(logger.Fields{}), time.Now(), 64, adapters.NewOpenAICompatible(), "upstream-kimi-stream",
+	)
+
+	require.Equal(t, 16, settled.PromptTokens)
+	require.Equal(t, 8, settled.CompletionTokens)
+	require.Equal(t, metering.UsageSourceUpstream, settled.UsageSource)
+	require.NotContains(t, recorder.Body.String(), `"reasoning_content"`)
+	require.NotContains(t, recorder.Body.String(), "must-not-be-drained-or-delivered")
+	require.Contains(t, recorder.Body.String(), `"prompt_tokens_details":{"cached_tokens":2}`)
+	require.Equal(t, 1, strings.Count(recorder.Body.String(), "data: [DONE]"))
+}
+
+func TestRelayStreamRequest_CurrentKimiExactK27AndK3UseSharedFramingAndRuntimeFinishSet(t *testing.T) {
+	tests := []struct {
+		name, profileID, sse string
+	}{
+		{
+			name: "K2.7 bare CR and multi-data length finish", profileID: "kimi.k2.7-code.api",
+			sse: strings.Join([]string{
+				`data: {"id":"chunk","model":"kimi-k2.7-code",`,
+				`data: "choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}],"usage":null}`,
+				``,
+				`data: {"id":"chunk","model":"kimi-k2.7-code","choices":[{"index":0,"delta":{},"finish_reason":"length","usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16,"cached_tokens":3}}]}`,
+				``,
+				`data: {"id":"chunk","model":"kimi-k2.7-code","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16,"cached_tokens":3}}`,
+				``,
+				`data: [DONE]`, ``,
+			}, "\r"),
+		},
+		{
+			name: "K3 content filter finish", profileID: "kimi.k3.api",
+			sse: strings.Join([]string{
+				`data: {"id":"chunk","model":"kimi-k3","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}],"usage":null}`,
+				`data: {"id":"chunk","model":"kimi-k3","choices":[{"index":0,"delta":{},"finish_reason":"content_filter"}],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9,"cached_tokens":1}}`,
+				`data: [DONE]`, ``,
+			}, "\n\n"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var settled billing.SettleRequest
+			relay := newTestRelay(&testutil.MockDB{}, &mockBilling{
+				settleFn: func(_ context.Context, req billing.SettleRequest) (*billing.SettleResult, error) {
+					settled = req
+					return &billing.SettleResult{SettleID: 1, Success: true}, nil
+				},
+			})
+			resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(test.sse))}
+			recorder := httptest.NewRecorder()
+			ctx := contextWithRouteAttempt(context.Background(), 1, 1)
+			ctx = contextWithAttemptID(ctx, "att-kimi-exact")
+			relay.relayStreamRequest(
+				ctx, recorder, resp, exactKimiStreamRoute(test.profileID), "req-kimi-exact", 1, 1,
+				"kimi-public", "kimi-public", "127.0.0.1", []Message{{Role: "user", Content: "hello"}},
+				logger.New(logger.Fields{}), time.Now(), 64, adapters.NewOpenAICompatible(), "upstream-kimi-exact",
+			)
+			require.Equal(t, metering.UsageSourceUpstream, settled.UsageSource)
+			require.Positive(t, settled.PromptTokens)
+			require.Positive(t, settled.CompletionTokens)
+			require.Equal(t, 1, strings.Count(recorder.Body.String(), "data: [DONE]"))
+			require.NotContains(t, recorder.Body.String(), `"code":"stream_error.invalid_frame"`)
+		})
+	}
+}
+
+func TestRelayStreamRequest_CurrentKimiRejectsMissingDoneAndClassifiesProviderErrorFirst(t *testing.T) {
+	for _, test := range []struct {
+		name, sse, want string
+	}{
+		{
+			name: "missing done",
+			sse:  `data: {"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3,"cached_tokens":0}}` + "\n\n",
+			want: `"code":"stream_error.invalid_frame"`,
+		},
+		{
+			name: "missing top-level usage",
+			sse: strings.Join([]string{
+				`data: {"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop","usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3,"cached_tokens":0}}]}`,
+				`data: [DONE]`, ``,
+			}, "\n\n"),
+			want: `"code":"stream_error.invalid_frame"`,
+		},
+		{
+			name: "conflicting choice and top-level usage",
+			sse: strings.Join([]string{
+				`data: {"model":"kimi-k2.6","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop","usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3,"cached_tokens":0}}]}`,
+				`data: {"model":"kimi-k2.6","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4,"cached_tokens":0}}`,
+				`data: [DONE]`, ``,
+			}, "\n\n"),
+			want: `"code":"stream_error.invalid_frame"`,
+		},
+		{
+			name: "provider error before delivery preparation",
+			sse:  `data: {"error":{"type":"provider_error","message":"failed private-secret"}}` + "\n\n",
+			want: `"code":"upstream_error.stream_failed"`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			relay := newTestRelay(&testutil.MockDB{}, &mockBilling{})
+			resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(test.sse))}
+			recorder := httptest.NewRecorder()
+			ctx := contextWithRouteAttempt(context.Background(), 1, 1)
+			ctx = contextWithAttemptID(ctx, "att-kimi-invalid")
+			relay.relayStreamRequest(
+				ctx, recorder, resp, exactKimiK26StreamRoute(), "req-kimi-invalid", 1, 1,
+				"kimi-public", "kimi-public", "127.0.0.1", nil, logger.New(logger.Fields{}),
+				time.Now(), 64, adapters.NewOpenAICompatible(), "upstream-kimi-invalid",
+			)
+			require.Contains(t, recorder.Body.String(), test.want)
+			require.NotContains(t, recorder.Body.String(), "data: [DONE]")
+			require.NotContains(t, recorder.Body.String(), "private-secret")
+		})
 	}
 }
 
