@@ -109,6 +109,7 @@ func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t
 	bindings = append(bindings, modelcapabilityqualification.KimiK27CurrentBindings()...)
 	bindings = append(bindings, modelcapabilityqualification.KimiK3CurrentBindings()...)
 	bindings = append(bindings, modelcapabilityqualification.MiniMaxM3CurrentBindings()...)
+	bindings = append(bindings, modelcapabilityqualification.MiniMaxPAYGCurrentBindings()...)
 	bindings = append(bindings, modelcapabilityqualification.GLM53CurrentBindings()...)
 
 	uniqueSorted := func(values []string) []string {

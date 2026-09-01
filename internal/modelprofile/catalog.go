@@ -786,7 +786,10 @@ func immutableProfileExecutionIdentity(profileID, version string) (profileExecut
 // Endpoint shape and exceptional historical versions are frozen separately
 // below. The current/new-attachment pointer is deliberately not consulted, so
 // advancing or retiring it cannot reinterpret an addressable Profile.
-// Credential billing plans are connection identity, not model identity.
+// Settlement and credentials remain connection/deployment identity. When a
+// commercial access path changes the exact accepted endpoint, key or protocol
+// surface, a separate Profile ID may freeze that access contract without
+// turning billing behavior into a mutable model alias.
 var stableProfileProductIdentities = map[string]stableProfileProductIdentity{
 	UnverifiedProfileID:                 chatProviderProduct("custom", "custom", DefaultOutputCustomer),
 	"deepseek.v4-flash.api":             chatProviderProduct("deepseek", "cn", DefaultOutputPolicy, "deepseek-v4-flash"),
@@ -797,6 +800,9 @@ var stableProfileProductIdentities = map[string]stableProfileProductIdentity{
 	"minimax.m2.7.token-plan":           chatProviderProduct("minimax", "cn", DefaultOutputPolicy, "MiniMax-M2.7"),
 	"minimax.m2.5-highspeed.token-plan": chatProviderProduct("minimax", "cn", DefaultOutputPolicy, "MiniMax-M2.5-highspeed"),
 	"minimax.m3.token-plan":             chatProviderProduct("minimax", "cn", DefaultOutputPolicy, "MiniMax-M3"),
+	"minimax.m2.7.payg":                 chatProviderProduct("minimax", "cn", DefaultOutputPolicy, "MiniMax-M2.7"),
+	"minimax.m2.7-highspeed.payg":       chatProviderProduct("minimax", "cn", DefaultOutputPolicy, "MiniMax-M2.7-highspeed"),
+	"minimax.m3.payg":                   chatProviderProduct("minimax", "cn", DefaultOutputPolicy, "MiniMax-M3"),
 	"glm.5.3.api":                       chatProviderProduct("glm", "cn", DefaultOutputPolicy, "glm-5.3"),
 	"glm.5.2.api":                       chatProviderProduct("glm", "cn", DefaultOutputPolicy, "glm-5.2"),
 	"glm.5v-turbo.api":                  chatProviderProduct("glm", "cn", DefaultOutputPolicy, "glm-5v-turbo"),
@@ -973,6 +979,9 @@ var immutableProfileEndpointClassOverrides = map[string][]string{
 	"minimax.m3.token-plan@1.5.0":             {EndpointClassMiniMaxCNOpenAIV1},
 	"minimax.m3.token-plan@1.6.0":             {EndpointClassMiniMaxCNOpenAIV1},
 	"minimax.m3.token-plan@1.7.0":             {EndpointClassMiniMaxCNOpenAIV1},
+	"minimax.m2.7.payg@1.0.0":                 {EndpointClassMiniMaxCNOpenAIV1},
+	"minimax.m2.7-highspeed.payg@1.0.0":       {EndpointClassMiniMaxCNOpenAIV1},
+	"minimax.m3.payg@1.0.0":                   {EndpointClassMiniMaxCNOpenAIV1},
 	"glm.5.3.api@1.8.0":                       {EndpointClassGLMOfficialOpenAIV4},
 
 	"qwen.3.8-max.api@1.7.0":   {EndpointClassDashScopeBeijingWorkspacePayGo, EndpointClassDashScopeBeijingSharedPayGo},
@@ -1145,40 +1154,40 @@ func currentProfile(version string) currentProfileManifest {
 // immutable catalog manifests above. Retiring an ID here therefore cannot
 // invalidate or reinterpret its historical ID@version rows.
 var currentProfileManifests = map[string]currentProfileManifest{
-	UnverifiedProfileID:                 currentProfile(UnverifiedProfileVersion),
-	"deepseek.v4-flash.api":             currentProfile("1.5.0"),
-	"deepseek.v4-pro.api":               currentProfile("1.5.0"),
-	"kimi.k2.6.api":                     currentProfile("1.7.0"),
-	"kimi.k2.7-code.api":                currentProfile("1.3.0"),
-	"kimi.k3.api":                       currentProfile("1.9.0"),
-	"minimax.m2.7.token-plan":           currentProfile("1.5.0"),
-	"minimax.m2.5-highspeed.token-plan": currentProfile("1.5.0"),
-	"minimax.m3.token-plan":             currentProfile("1.7.0"),
-	"glm.5.3.api":                       currentProfile("1.8.0"),
-	"glm.5.2.api":                       currentProfile("1.7.0"),
-	"glm.5v-turbo.api":                  currentProfile("1.10.0"),
-	"qwen.3.8-max.api":                  currentProfile("1.8.0"),
-	"qwen.3.7-plus.api":                 currentProfile("1.7.0"),
-	"qwen.3.7-flash.api":                currentProfile("1.7.0"),
-	"gemini.3.7-flash.api":              currentProfile("1.7.0"),
-	"gemini.3.5-flash.api":              currentProfile("1.7.0"),
-	"gemini.3.5-flash-lite.api":         currentProfile("1.7.0"),
-	"mimo.v2.5-pro.api":                 currentProfile("1.5.0"),
-	"mimo.v2.5.api":                     currentProfile("1.6.0"),
-	"hy3.api":                           currentProfile("1.6.0"),
-	"openai.gpt-5.6-sol.chat":           currentProfile("1.0.0"),
-	"openai.gpt-5.6-sol.responses":      currentProfile("1.3.0"),
-	"openai.gpt-5.6-terra.chat":         currentProfile("1.0.0"),
-	"openai.gpt-5.6-terra.responses":    currentProfile("1.3.0"),
-	"openai.gpt-5.6-luna.chat":          currentProfile("1.0.0"),
-	"openai.gpt-5.6-luna.responses":     currentProfile("1.3.0"),
-	"xai.grok-4.6.api":                  currentProfile("1.1.0"),
-	"anthropic.claude-opus-5.api":       currentProfile("1.2.0"),
-	"anthropic.claude-sonnet-5.api":     currentProfile("1.4.0"),
-	"anthropic.claude-haiku-4.5.api":    currentProfile("1.2.0"),
-	"doubao.seed-evolving.api":          currentProfile("1.8.0"),
-	"doubao.seed-2.1-pro.api":           currentProfile("1.6.0"),
-	"doubao.seed-2.1-turbo.api":         currentProfile("1.6.0"),
+	UnverifiedProfileID:              currentProfile(UnverifiedProfileVersion),
+	"deepseek.v4-flash.api":          currentProfile("1.5.0"),
+	"deepseek.v4-pro.api":            currentProfile("1.5.0"),
+	"kimi.k2.6.api":                  currentProfile("1.7.0"),
+	"kimi.k2.7-code.api":             currentProfile("1.3.0"),
+	"kimi.k3.api":                    currentProfile("1.9.0"),
+	"minimax.m2.7.payg":              currentProfile("1.0.0"),
+	"minimax.m2.7-highspeed.payg":    currentProfile("1.0.0"),
+	"minimax.m3.payg":                currentProfile("1.0.0"),
+	"glm.5.3.api":                    currentProfile("1.8.0"),
+	"glm.5.2.api":                    currentProfile("1.7.0"),
+	"glm.5v-turbo.api":               currentProfile("1.10.0"),
+	"qwen.3.8-max.api":               currentProfile("1.8.0"),
+	"qwen.3.7-plus.api":              currentProfile("1.7.0"),
+	"qwen.3.7-flash.api":             currentProfile("1.7.0"),
+	"gemini.3.7-flash.api":           currentProfile("1.7.0"),
+	"gemini.3.5-flash.api":           currentProfile("1.7.0"),
+	"gemini.3.5-flash-lite.api":      currentProfile("1.7.0"),
+	"mimo.v2.5-pro.api":              currentProfile("1.5.0"),
+	"mimo.v2.5.api":                  currentProfile("1.6.0"),
+	"hy3.api":                        currentProfile("1.6.0"),
+	"openai.gpt-5.6-sol.chat":        currentProfile("1.0.0"),
+	"openai.gpt-5.6-sol.responses":   currentProfile("1.3.0"),
+	"openai.gpt-5.6-terra.chat":      currentProfile("1.0.0"),
+	"openai.gpt-5.6-terra.responses": currentProfile("1.3.0"),
+	"openai.gpt-5.6-luna.chat":       currentProfile("1.0.0"),
+	"openai.gpt-5.6-luna.responses":  currentProfile("1.3.0"),
+	"xai.grok-4.6.api":               currentProfile("1.1.0"),
+	"anthropic.claude-opus-5.api":    currentProfile("1.2.0"),
+	"anthropic.claude-sonnet-5.api":  currentProfile("1.4.0"),
+	"anthropic.claude-haiku-4.5.api": currentProfile("1.2.0"),
+	"doubao.seed-evolving.api":       currentProfile("1.8.0"),
+	"doubao.seed-2.1-pro.api":        currentProfile("1.6.0"),
+	"doubao.seed-2.1-turbo.api":      currentProfile("1.6.0"),
 }
 
 // The immutable addressable catalog is built only from stable/exact identity
@@ -2474,6 +2483,75 @@ func legacyConformantProviderProfiles() []Profile {
 // become routing or admission authority.
 func currentProviderProfiles() []Profile {
 	return []Profile{
+		{
+			ID: "minimax.m3.payg", Version: "1.0.0", Label: "MiniMax M3 PAYG 官方 API（OpenAI Chat Exact Function Tools）",
+			TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,
+			ReasoningProfile: "reasoning.minimax-m3-adaptive-embedded.v1", CacheUsageProfile: "cache-usage.minimax-openai.v1",
+			ProtocolProfile:       "protocol.minimax-m3-openai-chat.v9",
+			ProcessingTierPolicy:  ProcessingTierPolicyMiniMaxOpenAIChatV1,
+			ProviderContextWindow: 1_000_000, ProviderMaxOutput: 524_288,
+			DefaultContextWindow: 1_000_000, DefaultOutputLimit: 131_072,
+			ProviderCapabilities: []string{
+				CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityVision, CapabilityVideo,
+				CapabilityPromptCache, CapabilityServiceTier,
+			},
+			Capabilities: []string{
+				CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+				CapabilityToolChoiceAuto, CapabilityVision, CapabilityPromptCache, CapabilityCacheReadUsage,
+				CapabilityServiceTier,
+			},
+			AlwaysRequiredCapabilities: []string{CapabilityPromptCache, CapabilityCacheReadUsage},
+			Aliases:                    []string{"MiniMax M3", "MiniMax-M3", "minimax-m3"},
+			EvidenceRefs: []string{
+				"https://platform.minimaxi.com/docs/api-reference/text-chat-openai",
+				"https://platform.minimaxi.com/docs/api-reference/text-prompt-caching",
+				"https://platform.minimaxi.com/docs/guides/pricing-paygo",
+			},
+		},
+		{
+			ID: "minimax.m2.7.payg", Version: "1.0.0", Label: "MiniMax M2.7 PAYG 官方 API（OpenAI Chat Exact Function Tools）",
+			TokenizerProfileID: TokenizerMiniMaxM27ID, TokenizerProfileVersion: TokenizerMiniMaxM27Version,
+			ReasoningProfile: "reasoning.minimax-m2-required-embedded.v1", CacheUsageProfile: "cache-usage.minimax-openai.v1",
+			ProtocolProfile:       "protocol.minimax-m2-openai-chat.v7",
+			ProviderContextWindow: 204_800, ProviderMaxOutput: 204_800,
+			DefaultContextWindow: 204_800, DefaultOutputLimit: 65_536,
+			ProviderCapabilities: []string{
+				CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityPromptCache,
+			},
+			Capabilities: []string{
+				CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+				CapabilityToolChoiceAuto, CapabilityPromptCache, CapabilityCacheReadUsage,
+			},
+			AlwaysRequiredCapabilities: []string{CapabilityReasoning, CapabilityPromptCache, CapabilityCacheReadUsage},
+			Aliases:                    []string{"MiniMax M2.7", "MiniMax-M2.7", "minimax-m2.7"},
+			EvidenceRefs: []string{
+				"https://platform.minimaxi.com/docs/api-reference/text-chat-openai",
+				"https://platform.minimaxi.com/docs/api-reference/text-prompt-caching",
+				"https://platform.minimaxi.com/docs/guides/pricing-paygo",
+			},
+		},
+		{
+			ID: "minimax.m2.7-highspeed.payg", Version: "1.0.0", Label: "MiniMax M2.7 Highspeed PAYG 官方 API（OpenAI Chat Exact Function Tools）",
+			TokenizerProfileID: TokenizerMiniMaxM27ID, TokenizerProfileVersion: TokenizerMiniMaxM27Version,
+			ReasoningProfile: "reasoning.minimax-m2-required-embedded.v1", CacheUsageProfile: "cache-usage.minimax-openai.v1",
+			ProtocolProfile:       "protocol.minimax-m2-openai-chat.v7",
+			ProviderContextWindow: 204_800, ProviderMaxOutput: 204_800,
+			DefaultContextWindow: 204_800, DefaultOutputLimit: 65_536,
+			ProviderCapabilities: []string{
+				CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityPromptCache,
+			},
+			Capabilities: []string{
+				CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+				CapabilityToolChoiceAuto, CapabilityPromptCache, CapabilityCacheReadUsage,
+			},
+			AlwaysRequiredCapabilities: []string{CapabilityReasoning, CapabilityPromptCache, CapabilityCacheReadUsage},
+			Aliases:                    []string{"MiniMax M2.7 Highspeed", "MiniMax-M2.7-highspeed", "minimax-m2.7-highspeed"},
+			EvidenceRefs: []string{
+				"https://platform.minimaxi.com/docs/api-reference/text-chat-openai",
+				"https://platform.minimaxi.com/docs/api-reference/text-prompt-caching",
+				"https://platform.minimaxi.com/docs/guides/pricing-paygo",
+			},
+		},
 		{
 			ID: "glm.5.3.api", Version: "1.8.0", Label: "GLM-5.3 官方开放平台 API（精确 Function Tools）",
 			TokenizerProfileID: TokenizerByteUpperID, TokenizerProfileVersion: TokenizerByteUpperVersion,

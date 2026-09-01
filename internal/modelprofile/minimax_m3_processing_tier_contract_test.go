@@ -45,7 +45,7 @@ func TestMiniMaxM3ProcessingTierCandidateRemainsAppendOnlyAndHistorical(t *testi
 			currentVersion = profile.Version
 		}
 	}
-	require.Equal(t, "1.7.0", currentVersion)
+	require.Empty(t, currentVersion, "Token Plan is parked for new attachments")
 	require.Error(t, ValidateNewAttachment(historical.ID, historical.Version))
 	require.Error(t, ValidateNewAttachment(candidate.ID, candidate.Version))
 }

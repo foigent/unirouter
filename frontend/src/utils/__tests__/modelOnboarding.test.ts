@@ -68,7 +68,7 @@ describe('model onboarding profile composition', () => {
 
   it('derives a lowercase public ID while preserving a case-sensitive MiniMax upstream ID', () => {
     const options = reviewedModelOptions([profile({
-      id: 'minimax.m3.token-plan',
+      id: 'minimax.m3.payg',
       provider: 'minimax',
       endpoint_classes: ['minimax_cn_openai_v1'],
       aliases: ['MiniMax M3', 'MiniMax-M3'],
@@ -80,6 +80,25 @@ describe('model onboarding profile composition', () => {
       upstreamModelIDs: ['MiniMax-M3'],
       recommendedPublicModelID: 'minimax-m3',
       recommendedUpstreamModelID: 'MiniMax-M3',
+    });
+  });
+
+  it('shows GLM profiles only for the exact official open-platform endpoint class', () => {
+    const exact = profile({
+      id: 'glm.5.3.api', provider: 'glm', label: 'GLM-5.3 官方开放平台 API',
+      aliases: ['glm-5.3'], upstream_model_ids: ['glm-5.3'],
+      endpoint_classes: ['glm_official_openai_v4'],
+    });
+    const generic = profile({
+      id: 'glm.legacy.api', provider: 'glm', label: 'GLM legacy generic HTTPS',
+      aliases: ['glm-legacy'], upstream_model_ids: ['glm-legacy'],
+      endpoint_classes: ['provider_https'],
+    });
+    const options = reviewedModelOptions([exact, generic], providerPreset('glm'));
+    expect(options).toHaveLength(1);
+    expect(options[0]).toMatchObject({
+      key: 'glm.5.3.api@1.0.0', recommendedPublicModelID: 'glm-5.3',
+      recommendedUpstreamModelID: 'glm-5.3',
     });
   });
 

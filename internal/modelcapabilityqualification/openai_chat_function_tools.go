@@ -67,17 +67,57 @@ type openAIChatFunctionToolsBindingIdentity struct {
 	provider, upstreamModel, path string
 }
 
-var openAIChatFunctionToolsBindingIdentities = map[string]openAIChatFunctionToolsBindingIdentity{
-	MiniMaxChatFunctionToolsProbeContractID: {
+var openAIChatFunctionToolsBindingIdentities = map[string][]openAIChatFunctionToolsBindingIdentity{
+	MiniMaxChatFunctionToolsProbeContractID: {{
 		profileID: "minimax.m3.token-plan", profileVersion: "1.7.0",
 		protocolID: "protocol.minimax-m3-openai-chat.v9", protocolVersion: "1.0.0",
 		provider: "minimax", upstreamModel: "MiniMax-M3", path: "/v1/chat/completions",
+	}},
+	MiniMaxPAYGM3ChatFunctionToolsProbeContractID: {{
+		profileID: "minimax.m3.payg", profileVersion: "1.0.0",
+		protocolID: "protocol.minimax-m3-openai-chat.v9", protocolVersion: "1.0.0",
+		provider: "minimax", upstreamModel: "MiniMax-M3", path: "/v1/chat/completions",
+	}},
+	MiniMaxPAYGM2ChatFunctionToolsProbeContractID: {
+		{
+			profileID: "minimax.m2.7.payg", profileVersion: "1.0.0",
+			protocolID: "protocol.minimax-m2-openai-chat.v7", protocolVersion: "1.0.0",
+			provider: "minimax", upstreamModel: "MiniMax-M2.7", path: "/v1/chat/completions",
+		},
+		{
+			profileID: "minimax.m2.7-highspeed.payg", profileVersion: "1.0.0",
+			protocolID: "protocol.minimax-m2-openai-chat.v7", protocolVersion: "1.0.0",
+			provider: "minimax", upstreamModel: "MiniMax-M2.7-highspeed", path: "/v1/chat/completions",
+		},
 	},
-	GLMChatFunctionToolsProbeContractID: {
+	GLMChatFunctionToolsProbeContractID: {{
 		profileID: "glm.5.3.api", profileVersion: "1.8.0",
 		protocolID: "protocol.glm-openai-chat.v5", protocolVersion: "1.0.0",
 		provider: "glm", upstreamModel: "glm-5.3", path: "/v1/chat/completions",
-	},
+	}},
+}
+
+func openAIChatFunctionToolsIdentity(binding Binding) (openAIChatFunctionToolsBindingIdentity, bool) {
+	for _, candidate := range openAIChatFunctionToolsBindingIdentities[binding.ProbeContractID] {
+		if binding.ExecutionProfileID == candidate.profileID && binding.ExecutionProfileVersion == candidate.profileVersion &&
+			binding.ProtocolProfileID == candidate.protocolID && binding.ProtocolProfileVersion == candidate.protocolVersion &&
+			binding.ExpectedProvider == candidate.provider && binding.ExpectedUpstreamModel == candidate.upstreamModel &&
+			binding.PublicPath == candidate.path {
+			return candidate, true
+		}
+	}
+	return openAIChatFunctionToolsBindingIdentity{}, false
+}
+
+func isMiniMaxFunctionToolsProbe(contractID string) bool {
+	switch contractID {
+	case MiniMaxChatFunctionToolsProbeContractID,
+		MiniMaxPAYGM3ChatFunctionToolsProbeContractID,
+		MiniMaxPAYGM2ChatFunctionToolsProbeContractID:
+		return true
+	default:
+		return false
+	}
 }
 
 // BuildOpenAIChatFunctionToolsProbeRequest derives the exact fixed request
@@ -112,10 +152,15 @@ func BuildOpenAIChatFunctionToolsProbeRequest(binding Binding) ([]byte, error) {
 	payload[protocol.OutputLimitField] = 256
 	if reasoning.Mode == modelprofile.ReasoningModeRequired {
 		control := reasoning.ToggleControl
-		if control.Field != "thinking" || control.ProviderDefault != "enabled" || !slices.Contains(control.AllowedValues, "enabled") {
+		switch {
+		case control.Field == "":
+			// MiniMax M2 reasoning is an immutable provider-required default;
+			// there is deliberately no request toggle to synthesize.
+		case control.Field == "thinking" && control.ProviderDefault == "enabled" && slices.Contains(control.AllowedValues, "enabled"):
+			payload[control.Field] = map[string]string{"type": "enabled"}
+		default:
 			return nil, fmt.Errorf("%w: exact required-thinking contract", ErrUnsupported)
 		}
-		payload[control.Field] = map[string]string{"type": "enabled"}
 	}
 	switch {
 	case protocol.FunctionToolProviderDefaultChoice == "auto":
@@ -133,16 +178,14 @@ func BuildOpenAIChatFunctionToolsProbeRequest(binding Binding) ([]byte, error) {
 }
 
 func resolveOpenAIChatFunctionToolsBinding(binding Binding) (modelprofile.Profile, modelprofile.ChatProtocolContract, modelprofile.ReasoningContract, error) {
-	want, ok := openAIChatFunctionToolsBindingIdentities[binding.ProbeContractID]
+	want, ok := openAIChatFunctionToolsIdentity(binding)
 	if !ok || binding.ProbeContractVersion != OpenAIChatFunctionToolsProbeContractVersion ||
 		binding.OperationID != modelprofile.OperationOpenAIChat || binding.CapabilityID != modelprofile.CapabilityFunctionTools ||
-		binding.ExecutionProfileID != want.profileID || binding.ExecutionProfileVersion != want.profileVersion ||
-		binding.ProtocolProfileID != want.protocolID || binding.ProtocolProfileVersion != want.protocolVersion ||
-		binding.ExpectedProvider != want.provider || binding.ExpectedUpstreamModel != want.upstreamModel || binding.PublicPath != want.path {
+		binding.ExecutionProfileID != want.profileID || binding.ExecutionProfileVersion != want.profileVersion {
 		return modelprofile.Profile{}, modelprofile.ChatProtocolContract{}, modelprofile.ReasoningContract{}, fmt.Errorf("%w: exact function-tools binding", ErrUnsupported)
 	}
 	profile, ok := modelprofile.Lookup(binding.ExecutionProfileID, binding.ExecutionProfileVersion)
-	if !ok || !profile.Current || profile.Provider != binding.ExpectedProvider || profile.ProtocolProfile != binding.ProtocolProfileID ||
+	if !ok || profile.Provider != binding.ExpectedProvider || profile.ProtocolProfile != binding.ProtocolProfileID ||
 		!slices.Contains(profile.UpstreamModelIDs, binding.ExpectedUpstreamModel) ||
 		!slices.Contains(profile.Capabilities, modelprofile.CapabilityFunctionTools) {
 		return modelprofile.Profile{}, modelprofile.ChatProtocolContract{}, modelprofile.ReasoningContract{}, fmt.Errorf("%w: exact execution Profile", ErrUnsupported)
@@ -155,7 +198,7 @@ func resolveOpenAIChatFunctionToolsBinding(binding Binding) (modelprofile.Profil
 	if !ok || !protocol.FunctionToolsModeled || !protocol.FunctionTools || !protocol.FunctionToolParametersRequired {
 		return modelprofile.Profile{}, modelprofile.ChatProtocolContract{}, modelprofile.ReasoningContract{}, fmt.Errorf("%w: exact function-tools protocol", ErrUnsupported)
 	}
-	if binding.ProbeContractID == MiniMaxChatFunctionToolsProbeContractID &&
+	if isMiniMaxFunctionToolsProbe(binding.ProbeContractID) &&
 		(!protocol.FunctionToolInvocationCapabilitiesModeled || !protocol.ExactFunctionToolResponseModeled) {
 		return modelprofile.Profile{}, modelprofile.ChatProtocolContract{}, modelprofile.ReasoningContract{}, fmt.Errorf("%w: exact MiniMax function-tools invocation protocol", ErrUnsupported)
 	}
@@ -243,7 +286,7 @@ func ValidateNormalizedOpenAIChatFunctionToolsForBinding(
 		len(choice.Message.Name) != 0 || len(choice.Message.AudioContent) != 0 || len(choice.Message.ToolCalls) != 1 {
 		return observation, invalidOpenAIChatFunctionTools("tool_calls")
 	}
-	if binding.ProbeContractID == MiniMaxChatFunctionToolsProbeContractID {
+	if isMiniMaxFunctionToolsProbe(binding.ProbeContractID) {
 		var replayContent string
 		if len(choice.Message.Content) == 0 || json.Unmarshal(choice.Message.Content, &replayContent) != nil || strings.TrimSpace(replayContent) == "" {
 			return observation, invalidOpenAIChatFunctionTools("tool_calls")

@@ -148,7 +148,7 @@ func TestModelExecutionProfileCatalogAndExactAliasResolution(t *testing.T) {
 
 	profile, err := resolveModelExecutionProfile(" MiniMax_M2.7 ", "", "")
 	require.NoError(t, err)
-	require.Equal(t, "minimax.m2.7.token-plan", profile.ID)
+	require.Equal(t, "minimax.m2.7.payg", profile.ID)
 	require.Equal(t, 204_800, profile.DefaultContextWindow)
 	require.Equal(t, 65_536, profile.DefaultOutputLimit)
 	require.Contains(t, profile.ProviderCapabilities, "prompt_cache")

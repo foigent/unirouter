@@ -46,8 +46,10 @@ evidence, Release and Pricing Profile authorities and is summarized in
 
 ## 2. Exact product-identity candidate
 
-The candidate model count is **30**. Because each GPT model requires both
-Responses and Chat Completions, this expands to **33 surface-specific product
+The candidate upstream model count is **31**. Surface-specific and commercial
+access identities remain separate: the three parked MiniMax Token Plan rows
+are retained while three PAYG rows are current candidates, and each GPT model
+requires both Responses and Chat Completions. This yields **36 exact product
 identities**. `E`, `D`, `F` and `N` mean `execution_required`,
 `documentation_required`, `deferred` and `not_applicable` respectively.
 
@@ -77,9 +79,12 @@ Core columns are exact capability milestones:
 | `kimi.k2.6.api` | Kimi | CN | Kimi Platform OpenAI-compatible Chat | `kimi-k2.6` / pinned | E | E | E | E | E | E | E | E | E | E |
 | `kimi.k2.7-code.api` | Kimi | CN | Kimi Platform OpenAI-compatible Chat | `kimi-k2.7-code` / pinned; Coding subscription is a different commercial surface | E | E | E | E | E | E | E | E | E | E |
 | `kimi.k3.api` | Kimi | CN | Kimi Platform OpenAI-compatible Chat | `kimi-k3` / pinned | E | E | E | E | E | E | E | E | E | E |
-| `minimax.m3.token-plan` | MiniMax | CN | MiniMax OpenAI-compatible Chat / Token Plan | `MiniMax-M3` / pinned commercial identity | E | E | E | E | E | E | E | E | E | E |
-| `minimax.m2.5-highspeed.token-plan` | MiniMax | CN | MiniMax OpenAI-compatible Chat / Token Plan | `MiniMax-M2.5-highspeed` / pinned commercial identity | E | E | E | E | E | E | E | E | E | E |
-| `minimax.m2.7.token-plan` | MiniMax | CN | MiniMax OpenAI-compatible Chat / Token Plan | `MiniMax-M2.7` / pinned commercial identity | E | E | E | E | E | E | E | E | E | E |
+| `minimax.m3.payg` | MiniMax | CN | MiniMax OpenAI-compatible Chat / PAYG | `MiniMax-M3` / pinned commercial access identity | E | E | E | E | E | E | E | E | E | E |
+| `minimax.m2.7.payg` | MiniMax | CN | MiniMax OpenAI-compatible Chat / PAYG | `MiniMax-M2.7` / pinned commercial access identity | E | E | E | E | E | E | E | E | E | E |
+| `minimax.m2.7-highspeed.payg` | MiniMax | CN | MiniMax OpenAI-compatible Chat / PAYG | `MiniMax-M2.7-highspeed` / pinned commercial access identity | E | E | E | E | E | E | E | E | E | E |
+| `minimax.m3.token-plan` | MiniMax | CN | MiniMax OpenAI-compatible Chat / Token Plan | `MiniMax-M3` / pinned commercial identity | F | F | F | F | F | F | F | F | F | F |
+| `minimax.m2.5-highspeed.token-plan` | MiniMax | CN | MiniMax OpenAI-compatible Chat / Token Plan | `MiniMax-M2.5-highspeed` / pinned commercial identity | F | F | F | F | F | F | F | F | F | F |
+| `minimax.m2.7.token-plan` | MiniMax | CN | MiniMax OpenAI-compatible Chat / Token Plan | `MiniMax-M2.7` / pinned commercial identity | F | F | F | F | F | F | F | F | F | F |
 | `glm.5.3.api` | GLM | CN | OpenAI-compatible Chat | `glm-5.3` / pinned | E | E | E | E | E | E | E | E | E | E |
 | `glm.5.2.api` | GLM | CN | OpenAI-compatible Chat | `glm-5.2` / pinned | E | E | E | E | E | E | E | E | E | E |
 | `glm.5v-turbo.api` | GLM | CN | OpenAI-compatible Chat | `glm-5v-turbo` / pinned | E | E | E | E | E | E | E | E | E | E |
@@ -112,7 +117,7 @@ documented provider support alone cannot close or create it.
 
 ## 3. Exact additional-capability dispositions
 
-For all 33 identities, multimodal media, Partial Mode, Dynamic Tools, built-in
+For all 36 identities, multimodal media, Partial Mode, Dynamic Tools, built-in
 search and search charging are `documentation_required` unless an explicit
 product decision promotes an exact row. This requires truthful implementation-
 state verification and forbids inference from generic compatibility or provider

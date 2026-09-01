@@ -26,7 +26,7 @@ func TestMiniMaxM27RequiredReasoningHistoryRemainsAppendOnly(t *testing.T) {
 			currentVersion = profile.Version
 		}
 	}
-	require.Equal(t, "1.5.0", currentVersion)
+	require.Empty(t, currentVersion, "Token Plan is parked for new attachments")
 	require.Error(t, ValidateNewAttachment(candidate.ID, candidate.Version))
 	require.Error(t, ValidateNewAttachment(historical.ID, historical.Version))
 }

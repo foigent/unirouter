@@ -33,15 +33,18 @@ type chatOperationProtocolBindingKey struct {
 // validation contract, or reusing that contract from another Profile, does
 // not grant onboarding authority.
 var immutableChatOperationProtocolBindings = map[chatOperationProtocolBindingKey]string{
-	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.4.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:   ChatOperationProtocolBindingVersionV1,
-	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.5.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:   ChatOperationProtocolBindingVersionV1,
-	{ProfileID: "deepseek.v4-pro.api", ProfileVersion: "1.4.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:     ChatOperationProtocolBindingVersionV1,
-	{ProfileID: "deepseek.v4-pro.api", ProfileVersion: "1.5.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:     ChatOperationProtocolBindingVersionV1,
-	{ProfileID: "kimi.k2.6.api", ProfileVersion: "1.7.0", ProtocolProfileID: "protocol.kimi-openai-chat.v5"}:               ChatOperationProtocolBindingVersionV1,
-	{ProfileID: "kimi.k2.7-code.api", ProfileVersion: "1.3.0", ProtocolProfileID: "protocol.kimi-openai-chat.v5"}:          ChatOperationProtocolBindingVersionV1,
-	{ProfileID: "kimi.k3.api", ProfileVersion: "1.9.0", ProtocolProfileID: "protocol.kimi-openai-chat.k3.v5"}:              ChatOperationProtocolBindingVersionV1,
-	{ProfileID: "minimax.m3.token-plan", ProfileVersion: "1.7.0", ProtocolProfileID: "protocol.minimax-m3-openai-chat.v9"}: ChatOperationProtocolBindingVersionV1,
-	{ProfileID: "glm.5.3.api", ProfileVersion: "1.8.0", ProtocolProfileID: "protocol.glm-openai-chat.v5"}:                  ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.4.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:         ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "deepseek.v4-flash.api", ProfileVersion: "1.5.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:         ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "deepseek.v4-pro.api", ProfileVersion: "1.4.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:           ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "deepseek.v4-pro.api", ProfileVersion: "1.5.0", ProtocolProfileID: "protocol.deepseek-openai-chat.v4"}:           ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "kimi.k2.6.api", ProfileVersion: "1.7.0", ProtocolProfileID: "protocol.kimi-openai-chat.v5"}:                     ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "kimi.k2.7-code.api", ProfileVersion: "1.3.0", ProtocolProfileID: "protocol.kimi-openai-chat.v5"}:                ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "kimi.k3.api", ProfileVersion: "1.9.0", ProtocolProfileID: "protocol.kimi-openai-chat.k3.v5"}:                    ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "minimax.m3.token-plan", ProfileVersion: "1.7.0", ProtocolProfileID: "protocol.minimax-m3-openai-chat.v9"}:       ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "minimax.m3.payg", ProfileVersion: "1.0.0", ProtocolProfileID: "protocol.minimax-m3-openai-chat.v9"}:             ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "minimax.m2.7.payg", ProfileVersion: "1.0.0", ProtocolProfileID: "protocol.minimax-m2-openai-chat.v7"}:           ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "minimax.m2.7-highspeed.payg", ProfileVersion: "1.0.0", ProtocolProfileID: "protocol.minimax-m2-openai-chat.v7"}: ChatOperationProtocolBindingVersionV1,
+	{ProfileID: "glm.5.3.api", ProfileVersion: "1.8.0", ProtocolProfileID: "protocol.glm-openai-chat.v5"}:                        ChatOperationProtocolBindingVersionV1,
 }
 
 type operationProtocolIdentityKey struct {

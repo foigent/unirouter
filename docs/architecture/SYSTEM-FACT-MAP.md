@@ -8,30 +8,23 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.33 with PostgreSQL compatibility
-ceiling `000103_minimax_m3_glm53_function_tools_qualification`. It adds the
-exact official open-platform GLM 5.3 Profile, shared MiniMax M3/GLM 5.3
-Function Tools Probe mechanics under two exact provider contract identities,
-and one compatible declaration-owned Publication Plan. M103 is not applied or
-deployed and creates no live qualification or execution authority. M101 is the first
+Repository source candidate is version 1.2.34 with PostgreSQL compatibility
+ceiling `000104_minimax_payg_function_tools_qualification`. It adds three exact
+MiniMax PAYG Profiles and Function Tools bindings, explicit Chat operation
+identities, and a GLM onboarding endpoint-class correction. M104 is source-only
+here and creates no live qualification or execution authority. M101 is the first
 declaration-owned capability publication after the immutable M100 baseline,
-and M102 appends only the exact
-K3 Profile 1.9 Chat Core static contracts. Neither publication creates live
-qualification by itself. Development/test runs exact version 1.2.28/M102 main
-merge `16bf398aed4122c52a174a4d3340b4bc399cd3b7`, tree
-`a6efc7c13aadcb3fa235f3665b430fd94becf9aa`. The later-created exact Deployment
-6 received declared projections from the server-owned current bindings and now
-has eight receipt-aware capability qualifications. Release 27 and its stable
-slot establish only a development/test test route: public model 817 remains
-`staging` and `approved_catalog=false`, so this is not product maturity
-`released`, Production, Alias or global canonical authority. Fixed-SDK public
-delivery separately proves the bounded non-stream subset. Two initial public
-streaming requests returned provider HTTP 503; a separately authorized paired
-diagnosis later produced one successful direct stream and one successful
-UniRouter public SDK stream with the same semantic request digest. That closes
-the bounded point-in-time streaming checkpoint without establishing an SLA.
-Exact evidence is in
-`docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md`.
+and M102 appends only the exact K3 Profile 1.9 Chat Core static contracts.
+Development/test currently runs exact version 1.2.33/M103 main merge
+`a4e197fe34d4d151e72fac68658693746455e12f`, tree
+`aabe99aff780fca05089cf5dc3298c1778c8a448`, with M103 applied. M103 creates no
+qualification by itself. During the current bounded onboarding checkpoint,
+GLM-5.2 Deployment 8 completed operation Probe 7 with provider HTTP 200,
+reported model `glm-5.2`, 760 ms and state `live_probed`; no Function Tools
+capability qualification or Release follows from that operation evidence.
+Historical Kimi K3 Target evidence remains recorded in
+`docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md` and is not
+reinterpreted by M103 or M104.
 Stable, canary, frontend and Nginx share the frozen `unirouter` Compose project
 and exact configuration chain, and database, Redis and both backend readiness
 checks are healthy. These are development/test facts, not Production evidence.
@@ -108,8 +101,8 @@ tuple and does not project Dynamic Tools, JSON Schema, search or media. Profile
 1.8 remains historically addressable; M102 creates no Probe, Approval,
 qualification, Release, Alias, pricing, billing or traffic authority.
 
-M103 declares one exact `function_tools` binding each for MiniMax M3 Profile
-1.7/Chat v9 and GLM 5.3 Profile 1.8/Chat v5. The two bindings share bounded
+M103 declares one exact `function_tools` binding each for historical MiniMax M3
+Token Plan Profile 1.7/Chat v9 and GLM 5.3 Profile 1.8/Chat v5. The two bindings share bounded
 request construction, adapter-normalized response validation and cross-delivery
 mechanics, while retaining separate Probe contract identities for their exact
 output-limit, reasoning, tool-choice and response-replay semantics. GLM Profile
@@ -118,6 +111,15 @@ paths; it does not cover Coding Plan or generic HTTPS endpoints. M103 is one
 logical plan because both absent selectors share M102 as predecessor and the
 same static apply/rollback boundary; it creates no Probe, Approval,
 qualification, Release, Alias, pricing, billing, Provider or traffic authority.
+
+M104 appends exact `function_tools` bindings for MiniMax PAYG M3, M2.7 and
+M2.7 Highspeed Profiles 1.0. M3 has a PAYG-specific Probe identity; M2.7 and
+M2.7 Highspeed share one parameterized Probe contract whose exact Profile,
+protocol, upstream model and reported-model tuples remain separately
+whitelisted. M104 keeps M103 immutable, retires Token Plan current pointers
+without deleting historical identities, and guards all three PAYG Profiles on
+downgrade. It creates no live Probe, Approval, qualification, Release, Alias,
+pricing, billing, Provider, Target or traffic authority.
 
 On the exact 1.2.23 Target, Deployment 5 has six independently qualified K2.7
 Chat Core capabilities: function tools Probe 56 / Approval 48, JSON Object
