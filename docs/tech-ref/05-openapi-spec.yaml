@@ -1431,6 +1431,39 @@ paths:
         "413": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
 
+  /api/v1/model-deployment-releases/{releaseRef}/activate-successor:
+    x-unirouter-rbac:
+      post: [platform_admin, org_admin]
+    post:
+      tags: [Admin]
+      summary: Atomically activate a first immutable successor and its stable request identity
+      description: Expansion requiring the Gateway License. The sealed parentless successor release, exact predecessor and successor registry before-state, absent stable alias, caller-frozen project model-set before-state, initial stable Slot, registry cutover and durable audit/receipt all commit in one transaction. Active secondary aliases targeting the successor are rejected. This endpoint supports only the first canonical-to-alias cutover; it does not retarget an existing primary alias.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ModelDeploymentReleaseRef"
+        - $ref: "#/components/parameters/ModelDeploymentLifecycleIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelSuccessorCutoverRequest" }
+      responses:
+        "200":
+          description: Newly committed or exactly replayed immutable successor cutover receipt.
+          headers:
+            X-UniRouter-Idempotency-Replayed: { schema: { type: string, enum: ["true"] } }
+            X-UniRouter-Original-Request-ID: { $ref: "#/components/headers/OperationId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelSuccessorCutoverReceipt" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
   /api/v1/model-deployment-releases/{releaseRef}/start-canary:
     x-unirouter-rbac:
       post: [platform_admin, org_admin]
@@ -4824,6 +4857,76 @@ components:
         before_version: { type: integer, format: int64, minimum: 1 }
         after_stage: { type: string }
         after_version: { type: integer, format: int64, minimum: 1 }
+    ModelSuccessorCutoverRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_release_version, stable_request_model, predecessor_public_model_id, predecessor_model_name, expected_predecessor_lifecycle, expected_predecessor_approved_catalog, successor_public_model_id, successor_model_name, expected_successor_lifecycle, expected_successor_approved_catalog, expected_model_sets]
+      properties:
+        expected_release_version: { type: integer, format: int64, minimum: 1 }
+        stable_request_model: { type: string, minLength: 1, maxLength: 100 }
+        predecessor_public_model_id: { type: integer, format: int64, minimum: 1 }
+        predecessor_model_name: { type: string, minLength: 1, maxLength: 100 }
+        expected_predecessor_lifecycle: { type: string, enum: [ga, deprecated] }
+        expected_predecessor_approved_catalog: { type: boolean, enum: [true] }
+        successor_public_model_id: { type: integer, format: int64, minimum: 1 }
+        successor_model_name: { type: string, minLength: 1, maxLength: 100 }
+        expected_successor_lifecycle: { type: string, enum: [staging] }
+        expected_successor_approved_catalog: { type: boolean, enum: [false] }
+        expected_model_sets:
+          type: array
+          description: Complete model-set before-state frozen by the caller; an empty array explicitly proves no direct predecessor references.
+          items: { $ref: "#/components/schemas/ModelSuccessorExpectedModelSet" }
+        reason: { type: string, maxLength: 1000 }
+    ModelSuccessorExpectedModelSet:
+      type: object
+      additionalProperties: false
+      required: [model_set_id, before_alias_exists]
+      properties:
+        model_set_id: { type: integer, format: int64, minimum: 1 }
+        before_alias_exists: { type: boolean }
+    ModelSuccessorRegistryState:
+      type: object
+      additionalProperties: false
+      required: [public_model_id, model_name, lifecycle, approved_catalog]
+      properties:
+        public_model_id: { type: integer, format: int64, minimum: 1 }
+        model_name: { type: string }
+        lifecycle: { type: string, enum: [staging, ga, deprecated, retired] }
+        approved_catalog: { type: boolean }
+    ModelSuccessorAliasState:
+      type: object
+      additionalProperties: false
+      required: [alias, target_model, is_primary, status]
+      properties:
+        alias: { type: string }
+        target_model: { type: string }
+        is_primary: { type: boolean, enum: [true] }
+        status: { type: string, enum: [active] }
+    ModelSuccessorModelSetReceipt:
+      type: object
+      additionalProperties: false
+      required: [model_set_id, before_model_name, before_alias_exists, after_alias_name]
+      properties:
+        model_set_id: { type: integer, format: int64, minimum: 1 }
+        before_model_name: { type: string }
+        before_alias_exists: { type: boolean }
+        after_alias_name: { type: string }
+    ModelSuccessorCutoverReceipt:
+      type: object
+      additionalProperties: false
+      required: [contract_version, lifecycle, stable_request_model, predecessor_before, predecessor_after, successor_before, successor_after, alias_after, model_sets]
+      properties:
+        contract_version: { type: string, enum: [unirouter.model-successor-cutover-receipt.v1] }
+        lifecycle:
+          allOf: [{ $ref: "#/components/schemas/ModelDeploymentLifecycleReceipt" }]
+          description: Embedded initial activation receipt using contract_version unirouter.model-deployment-lifecycle-receipt.v2.
+        stable_request_model: { type: string }
+        predecessor_before: { $ref: "#/components/schemas/ModelSuccessorRegistryState" }
+        predecessor_after: { $ref: "#/components/schemas/ModelSuccessorRegistryState" }
+        successor_before: { $ref: "#/components/schemas/ModelSuccessorRegistryState" }
+        successor_after: { $ref: "#/components/schemas/ModelSuccessorRegistryState" }
+        alias_after: { $ref: "#/components/schemas/ModelSuccessorAliasState" }
+        model_sets: { type: array, items: { $ref: "#/components/schemas/ModelSuccessorModelSetReceipt" } }
     ModelDeploymentLifecycleQualificationReceipt:
       type: object
       additionalProperties: false
@@ -4857,7 +4960,10 @@ components:
       additionalProperties: false
       required: [contract_version, receipt_id, action, target_release_ref, customer_org_id, server_operation_id, original_http_status, idempotency_replay, slot, releases, qualifications, created_at, completed_at]
       properties:
-        contract_version: { type: string, enum: [unirouter.model-deployment-lifecycle-receipt.v1] }
+        contract_version:
+          type: string
+          enum: [unirouter.model-deployment-lifecycle-receipt.v1, unirouter.model-deployment-lifecycle-receipt.v2]
+          description: v2 is emitted only as the embedded receipt of the atomic first-successor cutover.
         receipt_id: { type: integer, format: int64, minimum: 1 }
         action: { type: string, enum: [activate_initial, start_canary, promote, cancel_canary, rollback_stable, cutover_legacy, rollback_legacy] }
         target_release_ref: { type: string }

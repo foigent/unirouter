@@ -125,6 +125,32 @@ func (e *Evaluator) EvaluateWithQuerier(ctx context.Context, q db.DBQuerier, inp
 // FilterModels applies one authoritative policy snapshot to a catalog. It is
 // used by GET /v1/models so catalog visibility cannot exceed call admission.
 func (e *Evaluator) FilterModels(ctx context.Context, input Input, candidates []string) ([]string, error) {
+	identities := make([]ModelIdentity, 0, len(candidates))
+	for _, candidate := range candidates {
+		identities = append(identities, ModelIdentity{RequestModel: candidate, ResolvedModel: candidate})
+	}
+	allowed, err := e.FilterModelIdentities(ctx, input, identities)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(allowed))
+	for _, identity := range allowed {
+		result = append(result, identity.RequestModel)
+	}
+	return result, nil
+}
+
+// ModelIdentity is the exact user request identity and immutable execution
+// identity pair evaluated for both discovery and real dispatch.
+type ModelIdentity struct {
+	RequestModel  string
+	ResolvedModel string
+}
+
+// FilterModelIdentities prevents catalog projection from authorizing a source
+// candidate and then renaming it. Policies see the same stable request and
+// resolved canonical identities that a subsequent gateway call will use.
+func (e *Evaluator) FilterModelIdentities(ctx context.Context, input Input, candidates []ModelIdentity) ([]ModelIdentity, error) {
 	if e == nil || e.db == nil || input.OrgID <= 0 || strings.TrimSpace(input.Endpoint) == "" {
 		return nil, fmt.Errorf("%w: evaluation_input", ErrInvalid)
 	}
@@ -136,10 +162,13 @@ func (e *Evaluator) FilterModels(ctx context.Context, input Input, candidates []
 	if err != nil {
 		return nil, err
 	}
-	result := make([]string, 0, len(candidates))
+	result := make([]ModelIdentity, 0, len(candidates))
 	for _, candidate := range candidates {
-		input.RequestedModel = candidate
-		input.ResolvedModel = candidate
+		input.RequestedModel = strings.TrimSpace(candidate.RequestModel)
+		input.ResolvedModel = strings.TrimSpace(candidate.ResolvedModel)
+		if input.RequestedModel == "" || input.ResolvedModel == "" {
+			continue
+		}
 		if EvaluatePolicies(input, policies).Allowed {
 			result = append(result, candidate)
 		}

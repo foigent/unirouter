@@ -480,6 +480,7 @@ func TestListApprovedModelCatalog_FiltersApprovedLifecycle(t *testing.T) {
 						*dest[15].(*time.Time) = now
 						*dest[16].(*time.Time) = now
 						*dest[17].(*string) = "company-chat-fast"
+						*dest[18].(*string) = "company-chat"
 						return nil
 					},
 				},
@@ -504,6 +505,70 @@ func TestListApprovedModelCatalog_FiltersApprovedLifecycle(t *testing.T) {
 	if resp["total"].(float64) != 1 {
 		t.Fatalf("expected total=1, got %v", resp["total"])
 	}
+	item := resp["data"].([]interface{})[0].(map[string]interface{})
+	if item["request_model"] != "company-chat" || item["canonical_model"] != "gpt-4o" || item["model_name"] != "gpt-4o" {
+		t.Fatalf("platform catalog must preserve canonical identity and project stable request identity: %#v", item)
+	}
+}
+
+func TestListApprovedModelCatalog_OrdinaryViewerSeesStableRequestIdentityOnly(t *testing.T) {
+	now := time.Now()
+	db := &testutil.MockDB{
+		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return &testutil.MockRow{ScanFn: func(dest ...any) error {
+				*dest[0].(*int) = 1
+				return nil
+			}}
+		},
+		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+			return &testutil.MockRows{Rows: []func(dest ...any) error{
+				func(dest ...any) error {
+					*dest[0].(*int64) = 22
+					*dest[1].(*int64) = 1
+					*dest[2].(*string) = "glm-5.2-20260902"
+					*dest[3].(*string) = "GLM-5.2"
+					*dest[4].(*string) = "glm"
+					*dest[5].(*string) = "ga"
+					*dest[6].(*int) = 128000
+					*dest[7].(*int) = 65536
+					*dest[8].(*string) = "chat,tools"
+					*dest[9].(*string) = "cn"
+					*dest[10].(*string) = "glm-5.2"
+					*dest[11].(*bool) = true
+					*dest[12].(*string) = ""
+					*dest[13].(*string) = "glm.5.2.api"
+					*dest[14].(*string) = "1.8.0"
+					*dest[15].(*time.Time) = now
+					*dest[16].(*time.Time) = now
+					*dest[17].(*string) = "glm-5.2,glm-secondary"
+					*dest[18].(*string) = "glm-5.2"
+					return nil
+				},
+			}}, nil
+		},
+	}
+	h := newTestHandler(db)
+	req := httptest.NewRequest(http.MethodGet, "/model-catalog?org_id=1", nil)
+	ctx := context.WithValue(req.Context(), middleware.CtxUserID, int64(7))
+	ctx = context.WithValue(ctx, middleware.CtxOrgID, int64(1))
+	ctx = context.WithValue(ctx, middleware.CtxUserRole, auth.RoleOrgViewer)
+	ctx = context.WithValue(ctx, middleware.CtxOrganizationRole, auth.RoleOrgViewer)
+	rec := httptest.NewRecorder()
+
+	h.ListApprovedModelCatalog(rec, req.WithContext(ctx))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var response struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	require.Len(t, response.Data, 1)
+	require.Equal(t, "glm-5.2", response.Data[0]["model_name"])
+	require.Equal(t, "glm-5.2", response.Data[0]["request_model"])
+	require.Equal(t, "", response.Data[0]["aliases"])
+	require.NotContains(t, response.Data[0], "canonical_model")
+	require.NotContains(t, rec.Body.String(), "glm-5.2-20260902")
+	require.NotContains(t, rec.Body.String(), "glm-secondary")
 }
 
 func TestListApprovedModelCatalog_RoutableOnlyRequiresStableActiveRelease(t *testing.T) {

@@ -119,6 +119,15 @@ type AccessResult struct {
 	Reason         string
 }
 
+// CallableModelIdentity binds catalog discovery to the same request/resolution
+// identity pair that call admission uses. SourceCandidate is retained only for
+// evidence; callers must expose RequestModel and execute ResolvedModel.
+type CallableModelIdentity struct {
+	SourceCandidate string
+	RequestModel    string
+	ResolvedModel   string
+}
+
 func IsValidLifecycle(lifecycle string) bool {
 	switch strings.TrimSpace(lifecycle) {
 	case LifecycleStaging, LifecycleGA, LifecycleDeprecated, LifecycleRetired:
@@ -328,13 +337,34 @@ func CheckAccess(ctx context.Context, q db.DBQuerier, orgID, projectID int64, re
 		return result, fmt.Errorf("org_id is required")
 	}
 
-	targetModel, alias, err := resolveAlias(ctx, q, orgID, requestedModel)
+	targetModel, alias, aliasIsPrimary, err := resolveAlias(ctx, q, orgID, requestedModel)
 	if err != nil {
 		return result, err
 	}
 	if alias != "" {
 		result.Alias = alias
 		result.ResolvedModel = targetModel
+		if !aliasIsPrimary {
+			primaryAlias, err := primaryAliasForTarget(ctx, q, orgID, targetModel)
+			if err != nil {
+				return result, err
+			}
+			if primaryAlias != "" {
+				result.Allowed = false
+				result.Reason = "primary_alias_required"
+				return result, ErrModelDenied
+			}
+		}
+	} else {
+		primaryAlias, err := primaryAliasForTarget(ctx, q, orgID, requestedModel)
+		if err != nil {
+			return result, err
+		}
+		if primaryAlias != "" {
+			result.Allowed = false
+			result.Reason = "primary_alias_required"
+			return result, ErrModelDenied
+		}
 	}
 
 	lifecycle, err := modelLifecycle(ctx, q, orgID, result.ResolvedModel)
@@ -374,6 +404,22 @@ func CheckAccess(ctx context.Context, q db.DBQuerier, orgID, projectID int64, re
 // does not apply approved_catalog: that flag controls catalog presentation,
 // while gateway call admission is governed by lifecycle and project model sets.
 func FilterCallableModels(ctx context.Context, q db.DBQuerier, orgID, projectID int64, requestedModels []string) ([]string, error) {
+	identities, err := ResolveCallableModelIdentities(ctx, q, orgID, projectID, requestedModels)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make([]string, 0, len(identities))
+	for _, identity := range identities {
+		allowed = append(allowed, identity.RequestModel)
+	}
+	return allowed, nil
+}
+
+// ResolveCallableModelIdentities projects an input candidate list into stable
+// request identities before lifecycle and project authorization. A canonical
+// successor guarded by a primary alias is never returned as a public request
+// identity, even when it was the source candidate of an API-key model list.
+func ResolveCallableModelIdentities(ctx context.Context, q db.DBQuerier, orgID, projectID int64, requestedModels []string) ([]CallableModelIdentity, error) {
 	if orgID <= 0 {
 		return nil, fmt.Errorf("org_id is required")
 	}
@@ -392,23 +438,34 @@ func FilterCallableModels(ctx context.Context, q db.DBQuerier, orgID, projectID 
 		normalized = append(normalized, model)
 	}
 	if len(normalized) == 0 {
-		return []string{}, nil
+		return []CallableModelIdentity{}, nil
 	}
 
 	rows, err := q.Query(ctx,
 		`WITH candidates AS (
-		   SELECT requested_model, ordinality
-		   FROM unnest($3::text[]) WITH ORDINALITY AS candidate(requested_model, ordinality)
+		   SELECT source_candidate, ordinality
+		   FROM unnest($3::text[]) WITH ORDINALITY AS candidate(source_candidate, ordinality)
 		 ),
 		 resolved AS (
-		   SELECT c.requested_model,
+		   SELECT c.source_candidate,
 		          c.ordinality,
-		          COALESCE(ma.target_model, c.requested_model) AS resolved_model
+		          COALESCE(primary_alias.alias, request_alias.alias, c.source_candidate) AS request_model,
+		          COALESCE(request_alias.target_model, c.source_candidate) AS resolved_model
 		   FROM candidates c
-		   LEFT JOIN model_aliases ma
-		     ON ma.org_id = $1::bigint
-		    AND ma.alias = c.requested_model
-		    AND ma.status = 'active'
+		   LEFT JOIN model_aliases request_alias
+		     ON request_alias.org_id = $1::bigint
+		    AND request_alias.alias = c.source_candidate
+		    AND request_alias.status = 'active'
+		   LEFT JOIN model_aliases primary_alias
+		     ON primary_alias.org_id = $1::bigint
+		    AND primary_alias.target_model = COALESCE(request_alias.target_model,c.source_candidate)
+		    AND primary_alias.status = 'active'
+		    AND primary_alias.is_primary
+		 ),
+		 unique_resolved AS (
+		   SELECT source_candidate,request_model,resolved_model,ordinality,
+		          ROW_NUMBER() OVER (PARTITION BY request_model ORDER BY ordinality) AS request_rank
+		   FROM resolved
 		 ),
 		 project_scope AS (
 		   SELECT EXISTS (
@@ -421,13 +478,14 @@ func FilterCallableModels(ctx context.Context, q db.DBQuerier, orgID, projectID 
 		       AND p.org_id = $1::bigint
 		   ) AS has_sets
 		 )
-		 SELECT r.requested_model
-		 FROM resolved r
+		 SELECT r.source_candidate,r.request_model,r.resolved_model
+		 FROM unique_resolved r
 		 CROSS JOIN project_scope ps
 		 LEFT JOIN model_registry mr
 		   ON mr.org_id = $1::bigint
 		  AND mr.model_name = r.resolved_model
 		 WHERE COALESCE(mr.lifecycle, '') <> 'retired'
+		   AND r.request_rank=1
 		   AND (
 		     $2::bigint <= 0
 		     OR NOT ps.has_sets
@@ -443,8 +501,8 @@ func FilterCallableModels(ctx context.Context, q db.DBQuerier, orgID, projectID 
 		       WHERE pms.project_id = $2::bigint
 		         AND p.org_id = $1::bigint
 		         AND (
-		           (msi.item_type = 'model' AND (msi.item_name = r.requested_model OR msi.item_name = r.resolved_model))
-		           OR (msi.item_type = 'alias' AND msi.item_name = r.requested_model)
+		           (msi.item_type = 'model' AND (msi.item_name = r.source_candidate OR msi.item_name = r.resolved_model))
+		           OR (msi.item_type = 'alias' AND msi.item_name = r.request_model)
 		         )
 		     )
 		   )
@@ -452,38 +510,55 @@ func FilterCallableModels(ctx context.Context, q db.DBQuerier, orgID, projectID 
 		orgID, projectID, normalized,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("filter callable models: %w", err)
+		return nil, fmt.Errorf("resolve callable model identities: %w", err)
 	}
 	defer rows.Close()
 
-	allowed := make([]string, 0, len(normalized))
+	allowed := make([]CallableModelIdentity, 0, len(normalized))
 	for rows.Next() {
-		var model string
-		if err := rows.Scan(&model); err != nil {
-			return nil, fmt.Errorf("scan callable model: %w", err)
+		var identity CallableModelIdentity
+		if err := rows.Scan(&identity.SourceCandidate, &identity.RequestModel, &identity.ResolvedModel); err != nil {
+			return nil, fmt.Errorf("scan callable model identity: %w", err)
 		}
-		allowed = append(allowed, model)
+		allowed = append(allowed, identity)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate callable models: %w", err)
+		return nil, fmt.Errorf("iterate callable model identities: %w", err)
 	}
 	return allowed, nil
 }
 
-func resolveAlias(ctx context.Context, q db.DBQuerier, orgID int64, requestedModel string) (targetModel, alias string, err error) {
+func resolveAlias(ctx context.Context, q db.DBQuerier, orgID int64, requestedModel string) (targetModel, alias string, isPrimary bool, err error) {
 	err = q.QueryRow(ctx,
-		`SELECT target_model
+		`SELECT target_model,is_primary
 		 FROM model_aliases
 		 WHERE org_id = $1 AND alias = $2 AND status = 'active'`,
 		orgID, requestedModel,
-	).Scan(&targetModel)
+	).Scan(&targetModel, &isPrimary)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", nil
+		return "", "", false, nil
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("resolve model alias: %w", err)
+		return "", "", false, fmt.Errorf("resolve model alias: %w", err)
 	}
-	return targetModel, requestedModel, nil
+	return targetModel, requestedModel, isPrimary, nil
+}
+
+func primaryAliasForTarget(ctx context.Context, q db.DBQuerier, orgID int64, targetModel string) (string, error) {
+	var alias string
+	err := q.QueryRow(ctx,
+		`SELECT alias
+		 FROM model_aliases
+		 WHERE org_id = $1 AND target_model = $2 AND status = 'active' AND is_primary`,
+		orgID, targetModel,
+	).Scan(&alias)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve primary model alias: %w", err)
+	}
+	return alias, nil
 }
 
 func modelLifecycle(ctx context.Context, q db.DBQuerier, orgID int64, modelName string) (string, error) {

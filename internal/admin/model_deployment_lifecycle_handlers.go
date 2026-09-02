@@ -21,6 +21,7 @@ type deploymentLifecycleApplication interface {
 	ListDeploymentReleaseAuthoringOptions(context.Context, int64) (runtimechange.DeploymentReleaseAuthoringOptions, error)
 	AuthorSealedDeploymentRelease(context.Context, runtimechange.DeploymentReleaseAuthoringCommand) (runtimechange.DeploymentReleaseAuthoringReceipt, error)
 	ApplyDeploymentLifecycle(context.Context, runtimechange.DeploymentLifecycleCommand) (runtimechange.DeploymentLifecycleReceipt, error)
+	ApplyModelSuccessorCutover(context.Context, runtimechange.ModelSuccessorCutoverCommand) (runtimechange.ModelSuccessorCutoverReceipt, error)
 }
 
 func (h *Handler) GetCanonicalDeploymentLifecycle(w http.ResponseWriter, r *http.Request) {

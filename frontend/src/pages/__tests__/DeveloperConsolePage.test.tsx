@@ -46,7 +46,7 @@ const KEYS = {
 
 const MODELS = {
   data: [
-    { id: 21, model_name: 'gpt-4o', display_name: 'Company Chat', provider_family: 'openai', lifecycle: 'deprecated', aliases: 'company-chat', context_length: 128000, capability_tags: 'chat,vision', data_residency: 'us', migration_recommendation: 'Migrate to gpt-4.1-mini' },
+    { id: 21, model_name: 'gpt-4o', request_model: 'company-chat', display_name: 'Company Chat', provider_family: 'openai', lifecycle: 'deprecated', aliases: 'company-chat', context_length: 128000, capability_tags: 'chat,vision', data_residency: 'us', migration_recommendation: 'Migrate to gpt-4.1-mini' },
   ],
   total: 1,
 };
@@ -378,6 +378,36 @@ describe('DeveloperConsolePage', () => {
     expect(screen.getByRole('combobox', { name: '调试模型' }).textContent).not.toContain('company-chat');
   });
 
+  it('uses only the stable request identity for an immutable successor', async () => {
+	  mockGetModelCatalog.mockResolvedValue({
+	    data: [{
+	      ...MODELS.data[0],
+	      model_name: 'glm-5.2',
+	      request_model: 'glm-5.2',
+	      aliases: 'glm-5.2,glm-secondary',
+	      display_name: 'GLM-5.2',
+	    }],
+	    total: 1,
+	  });
+	  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+	    choices: [{ message: { content: 'stable identity OK' }, finish_reason: 'stop' }],
+	  }), { status: 200 }));
+	  try {
+	    renderPage();
+	    await screen.findByText('GLM-5.2');
+	    const modelSelector = screen.getByRole('combobox', { name: '调试模型' });
+	    expect(modelSelector).toHaveTextContent('glm-5.2');
+	    expect(document.body.textContent).not.toContain('glm-5.2-20260902');
+	    expect(document.body.textContent).not.toContain('glm-secondary');
+	    fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
+	    await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
+	    await screen.findByText('stable identity OK');
+	    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe('glm-5.2');
+	  } finally {
+	    fetchMock.mockRestore();
+	  }
+	});
+
   it('requires reselection when refresh removes the selected model and clears its extension', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: 'replacement OK' }, finish_reason: 'stop' }],
@@ -389,7 +419,7 @@ describe('DeveloperConsolePage', () => {
       await chooseWorkbenchOption('thinking.type（可选）', /disabled/);
       await chooseWorkbenchOption('reasoning_effort（可选）', /^low$/);
       await chooseWorkbenchOption('能力场景', /Function Tool · required/);
-      mockGetModelCatalog.mockResolvedValue({ data: [{ ...MODELS.data[0], model_name: 'model-b', aliases: '', display_name: 'Replacement' }], total: 1 });
+      mockGetModelCatalog.mockResolvedValue({ data: [{ ...MODELS.data[0], model_name: 'model-b', request_model: 'model-b', aliases: '', display_name: 'Replacement' }], total: 1 });
       fireEvent.click(screen.getByText('刷新'));
       await screen.findByText('Replacement');
       expect(screen.getByRole('button', { name: /运行$/ }).hasAttribute('disabled')).toBe(true);

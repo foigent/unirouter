@@ -1,7 +1,15 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.38/M106. The current source adds an exact,
-> contract-validated GLM-5-Turbo connectivity Probe control that disables the
+> Repository source candidate is 1.2.39/M107. M107 adds a fail-closed,
+> first-successor-only cutover for a stable public request identity: one
+> transaction activates the successor's sealed initial Release, retires and
+> de-lists the predecessor, creates one immutable primary Alias, rewrites exact
+> model-set references and seals replayable child evidence. Catalog and
+> `/v1/models` project the stable request name after caller authorization,
+> while administrators retain the immutable canonical identity. M107 is a
+> runtime/governance migration, not Capability Publication M107; it neither
+> rewrites nor replays M104, M105 or M106. The existing exact,
+> contract-validated GLM-5-Turbo connectivity Probe control disables the
 > provider-default thinking mode without changing Profile, protocol,
 > Publication or route identity. M106 advances the three MiniMax
 > PAYG Profiles to append-only version 1.1.0 on the exact current official
@@ -19,9 +27,9 @@
 > Tools without reinterpreting history, and deterministic M105 Publication
 > artifacts. GLM-5V-Turbo is qualified only for pure-text Function Tools;
 > media-plus-tools and GLM-5.3-Flash remain outside the executable M105 binding
-> set. M104, M105 and M106 are source-only: none has been applied, and none
-> creates live Probe, Approval, qualification, Release, route or Target
-> authority. The MiniMax UI preset now selects the exact M106 endpoint class;
+> set. This 1.2.39 source candidate creates no live successor, Probe, Approval,
+> qualification, Release, route or Target authority. The MiniMax UI preset now
+> selects the exact M106 endpoint class;
 > Token Plan remains historical and outside the current attachment path.
 >
 > The development/test Target currently runs exact 1.2.37/M106 main merge

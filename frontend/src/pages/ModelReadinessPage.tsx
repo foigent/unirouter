@@ -13,14 +13,13 @@ import {
 import { ApiError } from '../api/transport';
 import { EmptyState, PageHeader, Surface } from '../ui';
 import { loadAllPages } from '../utils/loadAllPages';
-import { parseModelList } from '../utils/modelList';
 import ModelConnectionBackButton from '../components/ModelConnectionBackButton';
 import { projectOption } from '../utils/projectDisplay';
 
 const { Text, Title } = Typography;
 
 type Project = { id: number; name: string; slug?: string; status: string; current_user_membership_role?: string };
-type CatalogModel = { model_name: string; display_name?: string; aliases?: string | string[] };
+type CatalogModel = { model_name: string; request_model?: string; display_name?: string; aliases?: string | string[] };
 type WorkloadApplication = { application_ref: string; display_name: string; project_id: number; environment?: string; status: string };
 type ModelOption = { value: string; label: string };
 
@@ -235,10 +234,8 @@ export default function ModelReadinessPage({ embedded = false, forceConnectionMo
           routable_only: true,
         }));
         for (const model of catalog) {
-          options.set(model.model_name, model.display_name || model.model_name);
-          for (const alias of parseModelList(model.aliases)) {
-            options.set(alias, `${alias}（Alias → ${model.model_name}）`);
-          }
+          const requestModel = String(model.request_model || model.model_name || '').trim();
+          if (requestModel) options.set(requestModel, model.display_name || requestModel);
         }
       } catch {
         nextError = '当前项目的已启用模型目录暂时不可用，无法安全选择诊断模型。';

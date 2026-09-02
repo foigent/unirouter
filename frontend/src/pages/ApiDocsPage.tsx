@@ -13,7 +13,6 @@ import {
 } from '../navigation';
 import { useAuthStore } from '../store/auth';
 import { loadAllPages } from '../utils/loadAllPages';
-import { parseModelList } from '../utils/modelList';
 import { projectDisplayName } from '../utils/projectDisplay';
 import ProjectApiQuickstart from '../features/apiDocs/ProjectApiQuickstart';
 import {
@@ -195,6 +194,7 @@ const endpointGroups: EndpointGroup[] = [
       ['POST', '/api/v1/model-deployment-releases', '以服务端 baseline、精确 deployment/operation 选择和 Idempotency-Key 原子编写 sealed validated release；要求组织写角色与 Gateway License，但编写不会激活或改变流量'],
       ['GET', '/api/v1/model-deployment-releases/{releaseRef}', '读取一个 canonical v2 release、当前运行槽与服务端动作描述；platform_admin、org_admin、org_viewer 可读且不要求 Gateway License'],
       ['POST', '/api/v1/model-deployment-releases/{releaseRef}/activate-initial', '以 Idempotency-Key 将无父级 validated release 原子设为首个 stable；要求 Gateway License'],
+      ['POST', '/api/v1/model-deployment-releases/{releaseRef}/activate-successor', '以 Idempotency-Key 原子激活首个不可变 successor、稳定请求 Alias、目录和项目模型集；只支持首次 canonical-to-alias 切换，要求 Gateway License'],
       ['POST', '/api/v1/model-deployment-releases/{releaseRef}/start-canary', '以 release/slot 双版本和 Idempotency-Key 启动最高 50% 灰度；要求 Gateway License'],
       ['POST', '/api/v1/model-deployment-releases/{releaseRef}/promote', '把精确 active canary 提升为 stable；要求 Gateway License 和当前生产资格'],
       ['POST', '/api/v1/model-deployment-releases/{releaseRef}/cancel-canary', '无 License 也可执行的安全收缩：移除精确 canary 并保留 stable parent；仍要求组织写角色和 Idempotency-Key'],
@@ -404,6 +404,7 @@ interface ProjectOption {
 
 interface CatalogModelOption {
   model_name: string;
+  request_model?: string;
   aliases?: string | string[];
 }
 
@@ -458,10 +459,9 @@ export default function ApiDocsPage() {
   const visibleEndpointGroups = filterVisibleEndpointGroups(endpointGroups, authz, {
     agentCapabilities: agentCapabilitiesAvailable,
   });
-  const modelOptions = useMemo(() => Array.from(new Set(catalogModels.flatMap(model => [
-    model.model_name,
-    ...parseModelList(model.aliases),
-  ]).filter(Boolean))), [catalogModels]);
+  const modelOptions = useMemo(() => Array.from(new Set(catalogModels
+    .map(model => String(model.request_model || model.model_name || '').trim())
+    .filter(Boolean))), [catalogModels]);
   const targetErrorCode = useMemo(() => {
     if (!location.hash.startsWith('#error-')) return '';
     return decodeURIComponent(location.hash.slice('#error-'.length));

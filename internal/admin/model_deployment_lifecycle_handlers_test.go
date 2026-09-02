@@ -16,22 +16,37 @@ import (
 )
 
 type deploymentLifecycleApplicationStub struct {
-	state         runtimechange.DeploymentLifecycleState
-	options       runtimechange.DeploymentReleaseAuthoringOptions
-	inspectErr    error
-	listErr       error
-	authorReceipt runtimechange.DeploymentReleaseAuthoringReceipt
-	authorErr     error
-	receipt       runtimechange.DeploymentLifecycleReceipt
-	applyErr      error
-	inspectCalls  int
-	applyCalls    int
-	inspectRef    string
-	inspectOrgID  int64
-	command       runtimechange.DeploymentLifecycleCommand
-	authorCommand runtimechange.DeploymentReleaseAuthoringCommand
-	listCalls     int
-	authorCalls   int
+	state            runtimechange.DeploymentLifecycleState
+	options          runtimechange.DeploymentReleaseAuthoringOptions
+	inspectErr       error
+	listErr          error
+	authorReceipt    runtimechange.DeploymentReleaseAuthoringReceipt
+	authorErr        error
+	receipt          runtimechange.DeploymentLifecycleReceipt
+	successorReceipt runtimechange.ModelSuccessorCutoverReceipt
+	applyErr         error
+	successorErr     error
+	inspectCalls     int
+	applyCalls       int
+	inspectRef       string
+	inspectOrgID     int64
+	command          runtimechange.DeploymentLifecycleCommand
+	successorCommand runtimechange.ModelSuccessorCutoverCommand
+	authorCommand    runtimechange.DeploymentReleaseAuthoringCommand
+	listCalls        int
+	authorCalls      int
+}
+
+func (stub *deploymentLifecycleApplicationStub) ApplyModelSuccessorCutover(
+	_ context.Context,
+	command runtimechange.ModelSuccessorCutoverCommand,
+) (runtimechange.ModelSuccessorCutoverReceipt, error) {
+	stub.successorCommand = command
+	receipt := stub.successorReceipt
+	if receipt.Lifecycle.ServerOperationID == "" {
+		receipt.Lifecycle.ServerOperationID = command.ServerOperationID
+	}
+	return receipt, stub.successorErr
 }
 
 func (stub *deploymentLifecycleApplicationStub) InspectDeploymentLifecycle(

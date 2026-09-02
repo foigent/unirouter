@@ -113,6 +113,19 @@ func scanModelRegistryRowWithAliases(scan rowScanner) (map[string]interface{}, e
 	return item, nil
 }
 
+func scanModelRegistryRowWithAliasesAndRequestIdentity(scan rowScanner) (map[string]interface{}, string, error) {
+	var requestModel string
+	item, aliases, err := scanModelRegistryRowInternal(func(dest ...any) error {
+		dest = append(dest, &requestModel)
+		return scan(dest...)
+	}, true)
+	if err != nil {
+		return nil, "", err
+	}
+	item["aliases"] = splitCSV(aliases)
+	return item, requestModel, nil
+}
+
 func scanModelRegistryRowInternal(scan rowScanner, withAliases bool) (map[string]interface{}, string, error) {
 	var id, orgID int64
 	var modelName, displayName, providerFamily, lifecycle, capabilityTags, dataResidency, pricingModelName, migrationRecommendation string
@@ -144,13 +157,14 @@ func scanModelRegistryRowInternal(scan rowScanner, withAliases bool) (map[string
 func scanModelAliasRow(scan rowScanner) (map[string]interface{}, error) {
 	var id, orgID int64
 	var alias, targetModel, displayName, description, status string
+	var isPrimary bool
 	var createdAt, updatedAt time.Time
-	if err := scan(&id, &orgID, &alias, &targetModel, &displayName, &description, &status, &createdAt, &updatedAt); err != nil {
+	if err := scan(&id, &orgID, &alias, &targetModel, &displayName, &description, &status, &isPrimary, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{
 		"id": id, "org_id": orgID, "alias": alias, "target_model": targetModel,
-		"display_name": displayName, "description": description, "status": status,
+		"display_name": displayName, "description": description, "status": status, "is_primary": isPrimary,
 		"created_at": createdAt, "updated_at": updatedAt,
 	}, nil
 }
