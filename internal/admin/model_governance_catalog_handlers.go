@@ -167,7 +167,9 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 			item["canonical_model"] = canonicalModel
 		} else {
 			item["model_name"] = requestModel
-			item["aliases"] = ""
+			if requestModel != canonicalModel {
+				item["aliases"] = []string{}
+			}
 		}
 		items = append(items, item)
 	}

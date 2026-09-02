@@ -373,6 +373,8 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 	}
 
 	tables := []string{
+		"model_successor_cutover_receipt_model_sets",
+		"model_successor_cutover_receipts",
 		"xinsight_connector_phase_operations",
 		"xinsight_connector_control_bindings",
 		"xinsight_connector_operations",
@@ -505,6 +507,8 @@ func TruncateAll(t *testing.T, pool *pgxpool.Pool) {
 		table string
 		name  string
 	}{
+		{table: "model_successor_cutover_receipt_model_sets", name: "model_successor_cutover_receipt_model_sets_truncate_guard"},
+		{table: "model_successor_cutover_receipts", name: "model_successor_cutover_receipts_truncate_guard"},
 		{table: "runtime_change_events", name: "runtime_change_events_append_only"},
 		{table: "model_operation_production_approvals", name: "model_operation_production_approvals_append_only"},
 		{table: "model_operation_public_execution_bindings", name: "model_operation_public_execution_bindings_append_only"},

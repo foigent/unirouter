@@ -565,7 +565,7 @@ func TestListApprovedModelCatalog_OrdinaryViewerSeesStableRequestIdentityOnly(t 
 	require.Len(t, response.Data, 1)
 	require.Equal(t, "glm-5.2", response.Data[0]["model_name"])
 	require.Equal(t, "glm-5.2", response.Data[0]["request_model"])
-	require.Equal(t, "", response.Data[0]["aliases"])
+	require.Equal(t, []interface{}{}, response.Data[0]["aliases"])
 	require.NotContains(t, response.Data[0], "canonical_model")
 	require.NotContains(t, rec.Body.String(), "glm-5.2-20260902")
 	require.NotContains(t, rec.Body.String(), "glm-secondary")
