@@ -327,6 +327,7 @@ func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migration
 // Publication V1 owner path.
 func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
 	for _, publicationID := range []string{
+		"000106_minimax_official_cn_payg_endpoint_qualification",
 		"000105_glm_toggle_function_tools_qualification",
 		"000104_minimax_payg_function_tools_qualification",
 		"000103_minimax_m3_glm53_function_tools_qualification",

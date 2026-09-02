@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMiniMaxPAYGProfilesAreCurrentAndHistoricalTokenPlanProfilesRemainAddressable(t *testing.T) {
+func TestMiniMaxPAYGOfficialCNEndpointSuccessorsAreCurrentAndHistoricalProfilesRemainAddressable(t *testing.T) {
 	tests := []struct {
 		profileID, upstream, protocol string
 		contextWindow, maxOutput      int
@@ -16,12 +16,12 @@ func TestMiniMaxPAYGProfilesAreCurrentAndHistoricalTokenPlanProfilesRemainAddres
 		{"minimax.m2.7-highspeed.payg", "MiniMax-M2.7-highspeed", "protocol.minimax-m2-openai-chat.v7", 204_800, 204_800},
 	}
 	for _, test := range tests {
-		profile, ok := Lookup(test.profileID, "1.0.0")
+		profile, ok := Lookup(test.profileID, "1.1.0")
 		require.True(t, ok, test.profileID)
 		require.True(t, profile.Current)
 		require.Equal(t, "minimax", profile.Provider)
 		require.Equal(t, []string{test.upstream}, profile.UpstreamModelIDs)
-		require.Equal(t, []string{EndpointClassMiniMaxCNOpenAIV1}, profile.EndpointClasses)
+		require.Equal(t, []string{EndpointClassMiniMaxOfficialCNOpenAIV1}, profile.EndpointClasses)
 		require.Equal(t, test.protocol, profile.ProtocolProfile)
 		require.Equal(t, test.contextWindow, profile.ProviderContextWindow)
 		require.Equal(t, test.maxOutput, profile.ProviderMaxOutput)
@@ -35,6 +35,18 @@ func TestMiniMaxPAYGProfilesAreCurrentAndHistoricalTokenPlanProfilesRemainAddres
 		require.Equal(t, ChatOperationProtocolBindingVersionV1, identity.ProtocolProfileVersion)
 
 		require.NoError(t, ValidateProductBinding(profile, ProductBinding{
+			Provider: "minimax", BaseURL: "https://api.minimax.cn/v1",
+			AdapterType: "openai_compatible", EndpointPathMode: EndpointPathModeCanonicalV1,
+			OperationID: OperationOpenAIChat, ProtocolProfileID: identity.ProtocolProfileID,
+			ProtocolProfileVersion: identity.ProtocolProfileVersion, UpstreamModel: test.upstream,
+		}))
+
+		historical, ok := Lookup(test.profileID, "1.0.0")
+		require.True(t, ok, test.profileID)
+		require.False(t, historical.Current)
+		require.Equal(t, []string{EndpointClassMiniMaxCNOpenAIV1}, historical.EndpointClasses)
+		require.Error(t, ValidateNewAttachment(historical.ID, historical.Version))
+		require.NoError(t, ValidateProductBinding(historical, ProductBinding{
 			Provider: "minimax", BaseURL: "https://api.minimaxi.com/v1",
 			AdapterType: "openai_compatible", EndpointPathMode: EndpointPathModeCanonicalV1,
 			OperationID: OperationOpenAIChat, ProtocolProfileID: identity.ProtocolProfileID,
@@ -54,22 +66,25 @@ func TestMiniMaxPAYGProfilesAreCurrentAndHistoricalTokenPlanProfilesRemainAddres
 	}
 }
 
-func TestMiniMaxPAYGProfilesRejectNonExactEndpointAndUpstream(t *testing.T) {
-	profile, ok := Lookup("minimax.m2.7-highspeed.payg", "1.0.0")
+func TestMiniMaxPAYGProfilesRejectCrossedEndpointIdentityAndUpstream(t *testing.T) {
+	profile, ok := Lookup("minimax.m2.7-highspeed.payg", "1.1.0")
 	require.True(t, ok)
 	identity, found, err := ResolveOperationProtocolIdentity(profile.ID, profile.Version, OperationOpenAIChat)
 	require.NoError(t, err)
 	require.True(t, found)
 	binding := ProductBinding{
-		Provider: "minimax", BaseURL: "https://api.minimaxi.com/v1",
+		Provider: "minimax", BaseURL: "https://api.minimax.cn/v1",
 		AdapterType: "openai_compatible", EndpointPathMode: EndpointPathModeCanonicalV1,
 		OperationID: OperationOpenAIChat, ProtocolProfileID: identity.ProtocolProfileID,
 		ProtocolProfileVersion: identity.ProtocolProfileVersion, UpstreamModel: "MiniMax-M2.7-highspeed",
 	}
 
 	wrongEndpoint := binding
-	wrongEndpoint.BaseURL = "https://api.minimax.cn/v1"
+	wrongEndpoint.BaseURL = "https://api.minimaxi.com/v1"
 	require.Error(t, ValidateProductBinding(profile, wrongEndpoint))
+	historical, ok := Lookup("minimax.m2.7-highspeed.payg", "1.0.0")
+	require.True(t, ok)
+	require.Error(t, ValidateProductBinding(historical, binding))
 	wrongModel := binding
 	wrongModel.UpstreamModel = "MiniMax-M2.7"
 	require.Error(t, ValidateProductBinding(profile, wrongModel))

@@ -1,0 +1,26 @@
+{
+  "schema_version": "unirouter.capability-contract-publication.v1",
+  "publication_id": "000106_minimax_official_cn_payg_endpoint_qualification",
+  "expected_static_predecessor": "000105_glm_toggle_function_tools_qualification",
+  "expected_schema_predecessor": "000105_glm_toggle_function_tools_qualification",
+  "binding_appends": [
+    {"operation_id":"openai.chat_completions.v1","capability_id":"function_tools","execution_profile_id":"minimax.m3.payg","execution_profile_version":"1.1.0","protocol_profile_id":"protocol.minimax-m3-openai-chat.v9","protocol_profile_version":"1.0.0","probe_contract_id":"unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1","probe_contract_version":"1.0.0","expected_provider":"minimax","expected_upstream_model":"MiniMax-M3","public_path":"/v1/chat/completions","introduced_migration":"000106_minimax_official_cn_payg_endpoint_qualification"},
+    {"operation_id":"openai.chat_completions.v1","capability_id":"function_tools","execution_profile_id":"minimax.m2.7.payg","execution_profile_version":"1.1.0","protocol_profile_id":"protocol.minimax-m2-openai-chat.v7","protocol_profile_version":"1.0.0","probe_contract_id":"unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1","probe_contract_version":"1.0.0","expected_provider":"minimax","expected_upstream_model":"MiniMax-M2.7","public_path":"/v1/chat/completions","introduced_migration":"000106_minimax_official_cn_payg_endpoint_qualification"},
+    {"operation_id":"openai.chat_completions.v1","capability_id":"function_tools","execution_profile_id":"minimax.m2.7-highspeed.payg","execution_profile_version":"1.1.0","protocol_profile_id":"protocol.minimax-m2-openai-chat.v7","protocol_profile_version":"1.0.0","probe_contract_id":"unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1","probe_contract_version":"1.0.0","expected_provider":"minimax","expected_upstream_model":"MiniMax-M2.7-highspeed","public_path":"/v1/chat/completions","introduced_migration":"000106_minimax_official_cn_payg_endpoint_qualification"}
+  ],
+  "selector_transitions": [
+    {"operation_id":"openai.chat_completions.v1","capability_id":"function_tools","execution_profile_id":"minimax.m3.payg","execution_profile_version":"1.1.0","protocol_profile_id":"protocol.minimax-m3-openai-chat.v9","protocol_profile_version":"1.0.0","expected_predecessor":null,"final":{"probe_contract_id":"unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1","probe_contract_version":"1.0.0"}},
+    {"operation_id":"openai.chat_completions.v1","capability_id":"function_tools","execution_profile_id":"minimax.m2.7.payg","execution_profile_version":"1.1.0","protocol_profile_id":"protocol.minimax-m2-openai-chat.v7","protocol_profile_version":"1.0.0","expected_predecessor":null,"final":{"probe_contract_id":"unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1","probe_contract_version":"1.0.0"}},
+    {"operation_id":"openai.chat_completions.v1","capability_id":"function_tools","execution_profile_id":"minimax.m2.7-highspeed.payg","execution_profile_version":"1.1.0","protocol_profile_id":"protocol.minimax-m2-openai-chat.v7","protocol_profile_version":"1.0.0","expected_predecessor":null,"final":{"probe_contract_id":"unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1","probe_contract_version":"1.0.0"}}
+  ],
+  "declared_projection_effects": [
+    {"operation_id":"openai.chat_completions.v1","capability_id":"function_tools","execution_profile_id":"minimax.m3.payg","execution_profile_version":"1.1.0","protocol_profile_id":"protocol.minimax-m3-openai-chat.v9","protocol_profile_version":"1.0.0","expected_provider":"minimax","expected_upstream_model":"MiniMax-M3","expected_contract_ref":"","final_contract_ref":"capability_contract:unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1@1.0.0","allow_insert":true},
+    {"operation_id":"openai.chat_completions.v1","capability_id":"function_tools","execution_profile_id":"minimax.m2.7.payg","execution_profile_version":"1.1.0","protocol_profile_id":"protocol.minimax-m2-openai-chat.v7","protocol_profile_version":"1.0.0","expected_provider":"minimax","expected_upstream_model":"MiniMax-M2.7","expected_contract_ref":"","final_contract_ref":"capability_contract:unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1@1.0.0","allow_insert":true},
+    {"operation_id":"openai.chat_completions.v1","capability_id":"function_tools","execution_profile_id":"minimax.m2.7-highspeed.payg","execution_profile_version":"1.1.0","protocol_profile_id":"protocol.minimax-m2-openai-chat.v7","protocol_profile_version":"1.0.0","expected_provider":"minimax","expected_upstream_model":"MiniMax-M2.7-highspeed","expected_contract_ref":"","final_contract_ref":"capability_contract:unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1@1.0.0","allow_insert":true}
+  ],
+  "profile_attachment_guards": [
+    {"execution_profile_id":"minimax.m3.payg","execution_profile_version":"1.1.0"},
+    {"execution_profile_id":"minimax.m2.7.payg","execution_profile_version":"1.1.0"},
+    {"execution_profile_id":"minimax.m2.7-highspeed.payg","execution_profile_version":"1.1.0"}
+  ]
+}

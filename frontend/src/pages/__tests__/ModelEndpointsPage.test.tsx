@@ -479,14 +479,15 @@ describe('ModelEndpointsPage canonical deployment UI', () => {
     expect(providerPresetBaseURLError(
       'minimax',
       'openai.chat_completions.v1',
-      'https://api.minimaxi.com/v1/',
+      'https://api.minimax.cn/v1/',
     )).toBe('');
     for (const endpoint of [
       'https://arbitrary.example/v1',
-      'https://api.minimaxi.com',
-      'https://api.minimaxi.com/v1/chat/completions',
-      'https://api.minimaxi.com:443/v1',
-      'https://api.minimaxi.com/v1?',
+			'https://api.minimaxi.com/v1',
+      'https://api.minimax.cn',
+      'https://api.minimax.cn/v1/chat/completions',
+      'https://api.minimax.cn:443/v1',
+      'https://api.minimax.cn/v1?',
     ]) {
       expect(providerPresetBaseURLError(
         'minimax',

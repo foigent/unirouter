@@ -4,6 +4,30 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.37] - 2026-09-02
+
+### Changed
+
+- Added an append-only MiniMax China PAYG endpoint identity for the current
+  official `https://api.minimax.cn/v1` OpenAI-compatible Chat root while
+  preserving the historical `api.minimaxi.com/v1` class and all M104 evidence.
+- Advanced the three MiniMax PAYG Profiles to current version 1.1.0 without
+  changing model, protocol, function-tools, reasoning, cache or usage
+  semantics; the 1.0.0 Profiles remain addressable but cannot receive new
+  attachments.
+- Added deterministic M106 Publication V1 artifacts after M105 for the three
+  exact 1.1.0 Function Tools bindings. Existing M104 and M105 declarations are
+  not rewritten or replayed.
+- Updated the MiniMax onboarding preset and exact validation to use the new
+  endpoint identity, with control-plane, Probe and Gateway regression coverage.
+
+### Scope
+
+- This metadata records a Local source candidate only. M104, M105 and M106 are
+  not applied by this change, and no Provider call, Target rollout, capability
+  approval, model Release, tag, pricing, traffic or Production state is created
+  or changed. Token Plan remains historical and outside this batch.
+
 ## [1.2.36] - 2026-09-02
 
 ### Changed

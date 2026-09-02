@@ -81,6 +81,7 @@ func requiredEndpointPathMode(endpointClass string) string {
 		return EndpointPathModeBaseRelative
 	case EndpointClassOpenAIOfficialOrigin, EndpointClassOpenAIOfficialV1,
 		EndpointClassKimiPlatformOpenAIV1, EndpointClassMiniMaxCNOpenAIV1,
+		EndpointClassMiniMaxOfficialCNOpenAIV1,
 		EndpointClassXAIOfficialOpenAIV1, EndpointClassAnthropicOfficialOrigin,
 		EndpointClassDashScopeBeijingWorkspacePayGo, EndpointClassDashScopeBeijingSharedPayGo:
 		return EndpointPathModeCanonicalV1
@@ -170,7 +171,11 @@ func ClassifyEndpoint(provider, rawBaseURL string) (string, error) {
 			strings.TrimSuffix(parsed.EscapedPath(), "/") == "/v1" {
 			return EndpointClassMiniMaxCNOpenAIV1, nil
 		}
-		return "", fmt.Errorf("MiniMax endpoint must be the official China OpenAI API root")
+		if parsed.Port() == "" && strings.EqualFold(parsed.Hostname(), "api.minimax.cn") &&
+			strings.TrimSuffix(parsed.EscapedPath(), "/") == "/v1" {
+			return EndpointClassMiniMaxOfficialCNOpenAIV1, nil
+		}
+		return "", fmt.Errorf("MiniMax endpoint must be an exact reviewed China OpenAI API root")
 	}
 	if provider == "glm" {
 		if parsed.Port() == "" && strings.EqualFold(parsed.Hostname(), "open.bigmodel.cn") &&

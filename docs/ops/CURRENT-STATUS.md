@@ -1,9 +1,12 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.36/M105. Version 1.2.36 synchronizes the
-> repository fact sources and gate-required version metadata without changing
-> the existing M105 code, migration or Publication artifacts. M104
-> adds three exact MiniMax PAYG Profiles (M3, M2.7 and M2.7 Highspeed),
+> Repository source candidate is 1.2.37/M106. M106 advances the three MiniMax
+> PAYG Profiles to append-only version 1.1.0 on the exact current official
+> China endpoint `https://api.minimax.cn/v1`, while keeping their model,
+> protocol and capability semantics unchanged. The historical 1.0.0 Profiles,
+> `.minimaxi.com` endpoint class and M104 Publication remain addressable and
+> are not reinterpreted. M104 adds the original three exact MiniMax PAYG
+> Profiles (M3, M2.7 and M2.7 Highspeed),
 > explicit Chat operation identities, PAYG-specific Function Tools Probe
 > identities and deterministic M104 Publication artifacts. Historical Token
 > Plan Profiles and M103 remain addressable and are not rewritten. M105 adds
@@ -13,9 +16,10 @@
 > Tools without reinterpreting history, and deterministic M105 Publication
 > artifacts. GLM-5V-Turbo is qualified only for pure-text Function Tools;
 > media-plus-tools and GLM-5.3-Flash remain outside the executable M105 binding
-> set. M104 and M105 are source-only: neither has been applied, and neither
+> set. M104, M105 and M106 are source-only: none has been applied, and none
 > creates live Probe, Approval, qualification, Release, route or Target
-> authority.
+> authority. The MiniMax UI preset now selects the exact M106 endpoint class;
+> Token Plan remains historical and outside the current attachment path.
 >
 > The development/test Target currently runs exact 1.2.33/M103 main merge
 > `a4e197fe34d4d151e72fac68658693746455e12f`, tree

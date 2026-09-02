@@ -194,9 +194,9 @@ func MiniMaxM3CurrentBindings() []Binding {
 func MiniMaxPAYGCurrentBindings() []Binding {
 	bindings := make([]Binding, 0, 3)
 	for _, profile := range []struct{ id, version string }{
-		{"minimax.m3.payg", "1.0.0"},
-		{"minimax.m2.7.payg", "1.0.0"},
-		{"minimax.m2.7-highspeed.payg", "1.0.0"},
+		{"minimax.m3.payg", "1.1.0"},
+		{"minimax.m2.7.payg", "1.1.0"},
+		{"minimax.m2.7-highspeed.payg", "1.1.0"},
 	} {
 		bindings = append(bindings, mustResolveAll("openai.chat_completions.v1", profile.id, profile.version, "")...)
 	}

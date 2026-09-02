@@ -19,7 +19,8 @@ import (
 )
 
 func representativeReuseFunctionToolsBinding(contractID string) modelcapabilityqualification.Binding {
-	if contractID == modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID {
+	switch contractID {
+	case modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID:
 		return modelcapabilityqualification.Binding{
 			OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
 			ExecutionProfileID: "minimax.m3.token-plan", ExecutionProfileVersion: "1.7.0",
@@ -27,8 +28,23 @@ func representativeReuseFunctionToolsBinding(contractID string) modelcapabilityq
 			ProbeContractID: contractID, ProbeContractVersion: modelcapabilityqualification.OpenAIChatFunctionToolsProbeContractVersion,
 			ExpectedProvider: "minimax", ExpectedUpstreamModel: "MiniMax-M3", PublicPath: "/v1/chat/completions",
 		}
-	}
-	if contractID == modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID {
+	case modelcapabilityqualification.MiniMaxPAYGM3ChatFunctionToolsProbeContractID:
+		return modelcapabilityqualification.Binding{
+			OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
+			ExecutionProfileID: "minimax.m3.payg", ExecutionProfileVersion: "1.1.0",
+			ProtocolProfileID: "protocol.minimax-m3-openai-chat.v9", ProtocolProfileVersion: "1.0.0",
+			ProbeContractID: contractID, ProbeContractVersion: modelcapabilityqualification.OpenAIChatFunctionToolsProbeContractVersion,
+			ExpectedProvider: "minimax", ExpectedUpstreamModel: "MiniMax-M3", PublicPath: "/v1/chat/completions",
+		}
+	case modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID:
+		return modelcapabilityqualification.Binding{
+			OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
+			ExecutionProfileID: "minimax.m2.7.payg", ExecutionProfileVersion: "1.1.0",
+			ProtocolProfileID: "protocol.minimax-m2-openai-chat.v7", ProtocolProfileVersion: "1.0.0",
+			ProbeContractID: contractID, ProbeContractVersion: modelcapabilityqualification.OpenAIChatFunctionToolsProbeContractVersion,
+			ExpectedProvider: "minimax", ExpectedUpstreamModel: "MiniMax-M2.7", PublicPath: "/v1/chat/completions",
+		}
+	case modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID:
 		return modelcapabilityqualification.Binding{
 			OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
 			ExecutionProfileID: "glm.5.1.api", ExecutionProfileVersion: "1.0.0",
@@ -86,6 +102,8 @@ func TestGLM5VTextFunctionToolsQualificationCannotAuthorizeMediaByItself(t *test
 func TestRepresentativeReuseProbeRequestsPassExactProfileValidationAndAdmission(t *testing.T) {
 	for _, contractID := range []string{
 		modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.MiniMaxPAYGM3ChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID,
 	} {
@@ -101,7 +119,9 @@ func TestRepresentativeReuseProbeRequestsPassExactProfileValidationAndAdmission(
 
 		var payload map[string]interface{}
 		require.NoError(t, json.Unmarshal(body, &payload))
-		if contractID == modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID {
+		if contractID == modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID ||
+			contractID == modelcapabilityqualification.MiniMaxPAYGM3ChatFunctionToolsProbeContractID ||
+			contractID == modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID {
 			require.NotContains(t, payload, "tool_choice")
 			require.NotContains(t, payload, "thinking")
 		} else if contractID == modelcapabilityqualification.GLMChatFunctionToolsProbeContractID {
@@ -112,6 +132,25 @@ func TestRepresentativeReuseProbeRequestsPassExactProfileValidationAndAdmission(
 			require.NotContains(t, payload, "thinking")
 		}
 	}
+}
+
+func TestMiniMaxPAYGHighspeedSuccessorProbePassesExactProfileValidationAndAdmission(t *testing.T) {
+	binding := modelcapabilityqualification.Binding{
+		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
+		ExecutionProfileID: "minimax.m2.7-highspeed.payg", ExecutionProfileVersion: "1.1.0",
+		ProtocolProfileID: "protocol.minimax-m2-openai-chat.v7", ProtocolProfileVersion: "1.0.0",
+		ProbeContractID:      modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
+		ProbeContractVersion: modelcapabilityqualification.OpenAIChatFunctionToolsProbeContractVersion,
+		ExpectedProvider:     "minimax", ExpectedUpstreamModel: "MiniMax-M2.7-highspeed", PublicPath: "/v1/chat/completions",
+	}
+	body, err := modelcapabilityqualification.BuildOpenAIChatFunctionToolsProbeRequest(binding)
+	require.NoError(t, err)
+	plan := executionProfilePlan(t, binding.ExecutionProfileID, binding.ExecutionProfileVersion)
+	evidence, err := validateChatExecutionProfileRequest(body, plan)
+	require.NoError(t, err)
+	evidence.bindAdmissionBody(body)
+	_, err = estimateChatAdmissionForValidatedPlan(body, plan, evidence)
+	require.NoError(t, err)
 }
 
 func TestRepresentativeReuseSuccessfulProbeFixturesTraverseCanonicalRuntimeDelivery(t *testing.T) {

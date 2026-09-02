@@ -532,6 +532,7 @@ var legacyProviderProfiles = []Profile{
 func buildCatalog() []Profile {
 	result := append([]Profile{}, legacyProviderProfiles...)
 	result = append(result, currentProviderProfiles()...)
+	result = append(result, miniMaxOfficialCNPAYGEndpointSuccessorProfiles()...)
 	result = append(result, identityHardenedProviderProfiles()...)
 	result = append(result, locallyConformantProviderProfiles()...)
 	result = append(result, legacyConformantProviderProfiles()...)
@@ -577,6 +578,24 @@ func buildCatalog() []Profile {
 	return result
 }
 
+// miniMaxOfficialCNPAYGEndpointSuccessorProfiles keeps the reviewed PAYG
+// capability contracts immutable while advancing only their exact official
+// China endpoint identity. The 1.0.0 rows remain addressable for historical
+// attachments and M104 evidence.
+func miniMaxOfficialCNPAYGEndpointSuccessorProfiles() []Profile {
+	profiles := make([]Profile, 0, 3)
+	for _, documented := range currentProviderProfiles() {
+		switch documented.ID {
+		case "minimax.m3.payg", "minimax.m2.7.payg", "minimax.m2.7-highspeed.payg":
+			profile := clone(documented)
+			profile.Version = "1.1.0"
+			profile.Label += "（api.minimax.cn）"
+			profiles = append(profiles, profile)
+		}
+	}
+	return profiles
+}
+
 func derivedCatalogEvidenceState(profile Profile) string {
 	if profile.ID == UnverifiedProfileID {
 		return "unverified"
@@ -619,6 +638,7 @@ const (
 	EndpointClassDeepSeekOfficialOpenAI         = "deepseek_official_openai"
 	EndpointClassKimiPlatformOpenAIV1           = "kimi_platform_openai_v1"
 	EndpointClassMiniMaxCNOpenAIV1              = "minimax_cn_openai_v1"
+	EndpointClassMiniMaxOfficialCNOpenAIV1      = "minimax_official_cn_openai_v1"
 	EndpointClassGLMOfficialOpenAIV4            = "glm_official_openai_v4"
 	EndpointClassXAIOfficialOpenAIV1            = "xai_official_openai_v1"
 	EndpointClassAnthropicOfficialOrigin        = "anthropic_official_origin"
@@ -985,6 +1005,9 @@ var immutableProfileEndpointClassOverrides = map[string][]string{
 	"minimax.m2.7.payg@1.0.0":                 {EndpointClassMiniMaxCNOpenAIV1},
 	"minimax.m2.7-highspeed.payg@1.0.0":       {EndpointClassMiniMaxCNOpenAIV1},
 	"minimax.m3.payg@1.0.0":                   {EndpointClassMiniMaxCNOpenAIV1},
+	"minimax.m2.7.payg@1.1.0":                 {EndpointClassMiniMaxOfficialCNOpenAIV1},
+	"minimax.m2.7-highspeed.payg@1.1.0":       {EndpointClassMiniMaxOfficialCNOpenAIV1},
+	"minimax.m3.payg@1.1.0":                   {EndpointClassMiniMaxOfficialCNOpenAIV1},
 	"glm.5.3.api@1.8.0":                       {EndpointClassGLMOfficialOpenAIV4},
 	"glm.5.2.api@1.8.0":                       {EndpointClassGLMOfficialOpenAIV4},
 	"glm.5.1.api@1.0.0":                       {EndpointClassGLMOfficialOpenAIV4},
@@ -1168,9 +1191,9 @@ var currentProfileManifests = map[string]currentProfileManifest{
 	"kimi.k2.6.api":                  currentProfile("1.7.0"),
 	"kimi.k2.7-code.api":             currentProfile("1.3.0"),
 	"kimi.k3.api":                    currentProfile("1.9.0"),
-	"minimax.m2.7.payg":              currentProfile("1.0.0"),
-	"minimax.m2.7-highspeed.payg":    currentProfile("1.0.0"),
-	"minimax.m3.payg":                currentProfile("1.0.0"),
+	"minimax.m2.7.payg":              currentProfile("1.1.0"),
+	"minimax.m2.7-highspeed.payg":    currentProfile("1.1.0"),
+	"minimax.m3.payg":                currentProfile("1.1.0"),
 	"glm.5.3.api":                    currentProfile("1.8.0"),
 	"glm.5.2.api":                    currentProfile("1.8.0"),
 	"glm.5.1.api":                    currentProfile("1.0.0"),

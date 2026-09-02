@@ -10,7 +10,7 @@ export type ProviderPreset = {
   note: string;
   region?: string;
   apiSurface?: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
-  endpointClass?: 'provider_https' | 'openai_official_origin' | 'openai_official_v1' | 'gemini_openai_compatibility_v1beta' | 'deepseek_official_openai' | 'kimi_platform_openai_v1' | 'minimax_cn_openai_v1' | 'glm_official_openai_v4' | 'xai_official_openai_v1' | 'anthropic_official_origin' | 'doubao_ark_cn_beijing_openai_v3' | 'dashscope_cn_beijing_workspace_payg' | 'dashscope_cn_beijing_shared_payg';
+  endpointClass?: 'provider_https' | 'openai_official_origin' | 'openai_official_v1' | 'gemini_openai_compatibility_v1beta' | 'deepseek_official_openai' | 'kimi_platform_openai_v1' | 'minimax_cn_openai_v1' | 'minimax_official_cn_openai_v1' | 'glm_official_openai_v4' | 'xai_official_openai_v1' | 'anthropic_official_origin' | 'doubao_ark_cn_beijing_openai_v3' | 'dashscope_cn_beijing_workspace_payg' | 'dashscope_cn_beijing_shared_payg';
   editableBaseURL?: boolean;
 };
 
@@ -41,8 +41,8 @@ export const providerPresets: ProviderPreset[] = [
   },
   {
     value: 'minimax', label: 'MiniMax 官方（中国区）', provider: 'minimax', region: 'cn',
-    apiSurface: 'openai_chat_completions', baseURL: 'https://api.minimaxi.com/v1', adapterType: 'openai_compatible',
-    endpointClass: 'minimax_cn_openai_v1',
+    apiSurface: 'openai_chat_completions', baseURL: 'https://api.minimax.cn/v1', adapterType: 'openai_compatible',
+    endpointClass: 'minimax_official_cn_openai_v1',
     adapterConfig: { endpoint_path_mode: 'canonical_v1' },
     note: '当前模板只用于 MiniMax PAYG 普通按量 Key 的 OpenAI-compatible Chat 接入。Token Plan Key 与 PAYG Key 不可互换，Token Plan 继续作为独立后续接入路径。',
   },

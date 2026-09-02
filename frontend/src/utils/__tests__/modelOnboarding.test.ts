@@ -70,7 +70,7 @@ describe('model onboarding profile composition', () => {
     const options = reviewedModelOptions([profile({
       id: 'minimax.m3.payg',
       provider: 'minimax',
-      endpoint_classes: ['minimax_cn_openai_v1'],
+      endpoint_classes: ['minimax_official_cn_openai_v1'],
       aliases: ['MiniMax M3', 'MiniMax-M3'],
       upstream_model_ids: ['MiniMax-M3'],
     })], providerPreset('minimax'));
