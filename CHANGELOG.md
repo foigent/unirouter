@@ -4,6 +4,24 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.36] - 2026-09-02
+
+### Changed
+
+- Synchronized the architecture and codebase fact maps with the executable
+  `000105_glm_toggle_function_tools_qualification` schema ceiling and the
+  existing M105 GLM toggle-family source candidate.
+- Synchronized the current-status and model-capability status projections with
+  version 1.2.36/M105, together with the release-gate-required frontend version
+  mirrors. The M105 code, migration and Publication artifacts are unchanged.
+
+### Scope
+
+- This is a repository fact-source and release-metadata correction only. The
+  development/test Target remains exact 1.2.33/M103. No M104 or M105 apply,
+  Provider call, capability qualification, artifact, rollout, Release object,
+  tag, pricing, traffic or Production state is created or changed.
+
 ## [1.2.35] - 2026-09-02
 
 ### Changed
