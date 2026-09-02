@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -727,6 +728,12 @@ func canonicalOperationProbePayload(
 			delete(payload, "max_tokens")
 			payload["max_completion_tokens"] = 64
 			payload["thinking"] = thinking
+		} else if thinking, present, err := resolveGLM5TurboOperationProbeThinking(
+			executionProfileID, executionProfileVersion,
+		); err != nil {
+			return nil, err
+		} else if present {
+			payload["thinking"] = thinking
 		}
 		return json.Marshal(payload)
 	case modeloperation.IDEmbeddings:
@@ -744,6 +751,69 @@ func canonicalOperationProbePayload(
 	default:
 		return nil, errCanonicalOperationProbeUnsupported
 	}
+}
+
+func resolveGLM5TurboOperationProbeThinking(profileID, profileVersion string) (map[string]string, bool, error) {
+	const exactProfileID = "glm.5-turbo.api"
+	if profileID != exactProfileID {
+		return nil, false, nil
+	}
+	if profileVersion != "1.0.0" {
+		return nil, false, fmt.Errorf("unsupported GLM-5-Turbo operation probe profile %s@%s", profileID, profileVersion)
+	}
+	profile, ok := modelprofile.Lookup(profileID, profileVersion)
+	if !ok || profile.ID != profileID || profile.Version != profileVersion {
+		return nil, false, fmt.Errorf("GLM-5-Turbo operation probe profile is unavailable")
+	}
+	contract, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile)
+	if !ok || contract.ProfileID != profile.ReasoningProfile ||
+		contract.Mode != modelprofile.ReasoningModeToggle ||
+		contract.ToggleControl.Field != "thinking" ||
+		contract.ToggleControl.ProviderDefault != "enabled" ||
+		!slices.Contains(contract.ToggleControl.AllowedValues, "disabled") {
+		return nil, false, fmt.Errorf("GLM-5-Turbo operation probe reasoning contract is unavailable")
+	}
+	return map[string]string{"type": "disabled"}, true, nil
+}
+
+func canonicalOperationProbeRequestSummary(snapshot canonicalOperationProbeSnapshot) ([]byte, error) {
+	summary := map[string]interface{}{
+		"deployment_id": snapshot.DeploymentID, "connection_id": snapshot.ConnectionID,
+		"operation_id": snapshot.OperationID, "credential_binding_id": snapshot.CredentialBindingID,
+		"protocol_profile_id": snapshot.ProfileID, "protocol_profile_version": snapshot.ProfileVersion,
+		"execution_profile_id": snapshot.ExecutionProfileID, "execution_profile_version": snapshot.ExecutionProfileVersion,
+	}
+	body, err := canonicalOperationProbePayload(
+		modeloperation.ID(snapshot.OperationID), snapshot.UpstreamModel, "",
+		snapshot.ExecutionProfileID, snapshot.ExecutionProfileVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	var controls struct {
+		Stream              *bool `json:"stream"`
+		MaxTokens           *int  `json:"max_tokens"`
+		MaxCompletionTokens *int  `json:"max_completion_tokens"`
+		Thinking            *struct {
+			Type string `json:"type"`
+		} `json:"thinking"`
+	}
+	if err := json.Unmarshal(body, &controls); err != nil {
+		return nil, err
+	}
+	if controls.Stream != nil {
+		summary["stream"] = *controls.Stream
+	}
+	if controls.MaxTokens != nil {
+		summary["max_tokens"] = *controls.MaxTokens
+	}
+	if controls.MaxCompletionTokens != nil {
+		summary["max_completion_tokens"] = *controls.MaxCompletionTokens
+	}
+	if controls.Thinking != nil && controls.Thinking.Type != "" {
+		summary["thinking_type"] = controls.Thinking.Type
+	}
+	return json.Marshal(summary)
 }
 
 func canonicalOperationProbeResponseShape(operation modeloperation.ID, body []byte) bool {
@@ -846,11 +916,10 @@ func (h *Handler) persistCanonicalOperationProbe(
 			reasonCode = "configuration_changed_during_probe"
 		}
 	}
-	requestSummary, _ := json.Marshal(map[string]interface{}{
-		"deployment_id": snapshot.DeploymentID, "connection_id": snapshot.ConnectionID,
-		"operation_id": snapshot.OperationID, "credential_binding_id": snapshot.CredentialBindingID,
-		"protocol_profile_id": snapshot.ProfileID, "protocol_profile_version": snapshot.ProfileVersion,
-	})
+	requestSummary, err := canonicalOperationProbeRequestSummary(snapshot)
+	if err != nil {
+		return canonicalOperationProbeResponse{}, err
+	}
 	responseMetadata := map[string]interface{}{
 		"provider_success": outcome.ProviderSuccess, "current": current,
 		"reason_code": reasonCode, "provider_reason_code": outcome.ReasonCode,

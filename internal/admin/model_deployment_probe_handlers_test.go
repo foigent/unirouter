@@ -355,6 +355,55 @@ func TestCanonicalOperationProbePayloadUsesExactKimiK27RequiredThinking(t *testi
 	require.Error(t, err)
 }
 
+func TestCanonicalOperationProbePayloadUsesExactGLM5TurboDisabledThinking(t *testing.T) {
+	body, err := canonicalOperationProbePayload(
+		modeloperation.IDChatCompletions, "glm-5-turbo", "safe",
+		"glm.5-turbo.api", "1.0.0",
+	)
+	require.NoError(t, err)
+	var payload map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &payload))
+	require.JSONEq(t, `{"type":"disabled"}`, string(payload["thinking"]))
+	require.JSONEq(t, `1`, string(payload["max_tokens"]))
+	require.JSONEq(t, `false`, string(payload["stream"]))
+
+	neighbor, err := canonicalOperationProbePayload(
+		modeloperation.IDChatCompletions, "glm-5", "safe",
+		"glm.5.api", "1.0.0",
+	)
+	require.NoError(t, err)
+	payload = map[string]json.RawMessage{}
+	require.NoError(t, json.Unmarshal(neighbor, &payload))
+	require.NotContains(t, payload, "thinking")
+
+	_, err = canonicalOperationProbePayload(
+		modeloperation.IDChatCompletions, "glm-5-turbo", "safe",
+		"glm.5-turbo.api", "1.1.0",
+	)
+	require.Error(t, err)
+}
+
+func TestCanonicalOperationProbeRequestSummaryRecordsSafeExactControls(t *testing.T) {
+	summary, err := canonicalOperationProbeRequestSummary(canonicalOperationProbeSnapshot{
+		DeploymentID: 10, ConnectionID: 12, CredentialBindingID: 12,
+		OperationID: string(modeloperation.IDChatCompletions),
+		ProfileID:   "openai.chat_completions", ProfileVersion: "1.0.0",
+		ExecutionProfileID: "glm.5-turbo.api", ExecutionProfileVersion: "1.0.0",
+		UpstreamModel: "glm-5-turbo", EncryptedSecret: "must-not-appear",
+	})
+	require.NoError(t, err)
+	var fields map[string]interface{}
+	require.NoError(t, json.Unmarshal(summary, &fields))
+	require.Equal(t, "glm.5-turbo.api", fields["execution_profile_id"])
+	require.Equal(t, "1.0.0", fields["execution_profile_version"])
+	require.Equal(t, "disabled", fields["thinking_type"])
+	require.EqualValues(t, 1, fields["max_tokens"])
+	require.Equal(t, false, fields["stream"])
+	require.NotContains(t, fields, "messages")
+	require.NotContains(t, string(summary), "must-not-appear")
+	require.NotContains(t, string(summary), "UniRouter connectivity probe")
+}
+
 func TestCanonicalOperationProbeHandlerRejectsUnsupportedOperationBeforeStorageOrFallback(t *testing.T) {
 	handler := &Handler{}
 	for _, test := range []struct {

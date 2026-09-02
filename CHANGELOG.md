@@ -4,6 +4,26 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.38] - 2026-09-02
+
+### Changed
+
+- Bound the GLM-5-Turbo canonical connectivity Probe to its exact
+  `glm.5-turbo.api@1.0.0` reasoning contract and explicitly disables the
+  provider-default thinking mode. A Target differential request proved the
+  otherwise identical bounded request succeeds with this control after two
+  default-thinking requests reached the existing 15-second timeout.
+- Added a safe canonical Probe request summary containing the exact execution
+  Profile plus fixed `thinking`, output-limit and streaming controls, without
+  persisting prompts, response bodies or credential material.
+
+### Scope
+
+- This change does not alter model, protocol, Profile, Publication, Release,
+  Pricing or route identity and does not relax the canonical success criteria
+  or timeout. It records a source candidate only; Target rollout and re-Probe
+  remain separate evidence.
+
 ## [1.2.37] - 2026-09-02
 
 ### Changed

@@ -1,6 +1,9 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.37/M106. M106 advances the three MiniMax
+> Repository source candidate is 1.2.38/M106. The current source adds an exact,
+> contract-validated GLM-5-Turbo connectivity Probe control that disables the
+> provider-default thinking mode without changing Profile, protocol,
+> Publication or route identity. M106 advances the three MiniMax
 > PAYG Profiles to append-only version 1.1.0 on the exact current official
 > China endpoint `https://api.minimax.cn/v1`, while keeping their model,
 > protocol and capability semantics unchanged. The historical 1.0.0 Profiles,
@@ -21,14 +24,17 @@
 > authority. The MiniMax UI preset now selects the exact M106 endpoint class;
 > Token Plan remains historical and outside the current attachment path.
 >
-> The development/test Target currently runs exact 1.2.33/M103 main merge
-> `a4e197fe34d4d151e72fac68658693746455e12f`, tree
-> `aabe99aff780fca05089cf5dc3298c1778c8a448`. M103 is applied and the runtime
-> remains non-Production. During the bounded onboarding checkpoint, GLM-5.2
-> Deployment 8 completed one exact operation Probe (Probe 7): provider HTTP 200,
-> reported model `glm-5.2`, 760 ms, operation state `live_probed`. This is
-> operation-connectivity evidence only; it is not Function Tools qualification,
-> Release, canonical traffic, customer pricing or Production evidence.
+> The development/test Target currently runs exact 1.2.37/M106 main merge
+> `30cf34994c5e6fac854ce3cc5247ca2445a45d19`, tree
+> `f2597dc0c1cb2c0e94fb29d2006733bbda108c60`; M104, M105 and M106 are applied
+> and the runtime remains non-Production. GLM-5, GLM-5.1, GLM-5.3 and
+> GLM-5V-Turbo have current successful Operation and typed Function Tools
+> Probe evidence plus environment approval. GLM-5-Turbo has successful typed
+> Function Tools evidence and approval, but its default-thinking canonical
+> connectivity request twice reached the 15-second timeout; a bounded
+> single-variable Target diagnostic then succeeded in 941 ms with
+> `thinking.type=disabled`. This is development/test qualification evidence,
+> not Release, customer pricing, Production or long-term SLA proof.
 > **2026-08-31 Kimi K3 Chat Core Target closeout:** the exact development/test
 > Core subset reached `canary_live_verified` with bounded Probe/Approval and
 > fixed-SDK evidence. The batch used its authorized supplier-call allowance;
