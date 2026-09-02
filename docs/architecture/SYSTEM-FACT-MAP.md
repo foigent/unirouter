@@ -8,11 +8,13 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.34 with PostgreSQL compatibility
-ceiling `000104_minimax_payg_function_tools_qualification`. It adds three exact
+Repository source candidate is version 1.2.36 with PostgreSQL compatibility
+ceiling `000105_glm_toggle_function_tools_qualification`. M104 adds three exact
 MiniMax PAYG Profiles and Function Tools bindings, explicit Chat operation
-identities, and a GLM onboarding endpoint-class correction. M104 is source-only
-here and creates no live qualification or execution authority. M101 is the first
+identities, and a GLM onboarding endpoint-class correction. M105 appends five
+exact GLM toggle-family Profiles and pure-text Function Tools bindings over
+shared validator mechanics. M104 and M105 are source-only here and create no
+live qualification or execution authority. M101 is the first
 declaration-owned capability publication after the immutable M100 baseline,
 and M102 appends only the exact K3 Profile 1.9 Chat Core static contracts.
 Development/test currently runs exact version 1.2.33/M103 main merge
@@ -24,7 +26,7 @@ reported model `glm-5.2`, 760 ms and state `live_probed`; no Function Tools
 capability qualification or Release follows from that operation evidence.
 Historical Kimi K3 Target evidence remains recorded in
 `docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md` and is not
-reinterpreted by M103 or M104.
+reinterpreted by M103, M104 or M105.
 Stable, canary, frontend and Nginx share the frozen `unirouter` Compose project
 and exact configuration chain, and database, Redis and both backend readiness
 checks are healthy. These are development/test facts, not Production evidence.
@@ -120,6 +122,16 @@ whitelisted. M104 keeps M103 immutable, retires Token Plan current pointers
 without deleting historical identities, and guards all three PAYG Profiles on
 downgrade. It creates no live Probe, Approval, qualification, Release, Alias,
 pricing, billing, Provider, Target or traffic authority.
+
+M105 advances GLM-5.2 and GLM-5V-Turbo and appends exact GLM-5.1,
+GLM-5-Turbo and GLM-5 Profiles for the official open-platform Chat surface.
+The five exact tuples share one toggle-family Function Tools validator while
+retaining model-specific Profile, protocol, reasoning, evidence and approval
+identities. GLM-5V-Turbo is bound only for pure-text Function Tools;
+media-plus-tools and GLM-5.3-Flash remain outside the executable M105 binding
+set. M105 keeps M104 and all earlier Publications immutable and creates no live
+Probe, Approval, qualification, Release, Alias, pricing, billing, Provider,
+Target or traffic authority.
 
 On the exact 1.2.23 Target, Deployment 5 has six independently qualified K2.7
 Chat Core capabilities: function tools Probe 56 / Approval 48, JSON Object

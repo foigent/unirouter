@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-09-01.
+> Snapshot date: 2026-09-02.
 > This document is not a claim that every provider-documented feature is production supported.
 
 The current product-scope candidate is
@@ -17,7 +17,9 @@ Deployment 6, eight independent capability Probe/Approval qualifications and
 development/test Release 27. The Release and initial stable-slot activation
 establish only a test route. Public model 817 remains `staging` and outside the
 approved catalog, so no `released`, Production, Alias or global canonical claim
-is made. Repository source candidate 1.2.35/M105 builds on 1.2.34/M104. M104 adds three exact MiniMax PAYG
+is made. Repository source candidate 1.2.36/M105 retains the existing M105
+code, migration and Publication artifacts; 1.2.36 synchronizes repository fact
+sources and gate-required version metadata. M104 adds three exact MiniMax PAYG
 Profiles (M3, M2.7 and M2.7 Highspeed), explicit Chat operation bindings and
 one declaration-owned Function Tools plan over shared mechanics with separate
 M3 and parameterized M2 Probe identities. M105 advances GLM-5.2 and

@@ -1,6 +1,8 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.35/M105, building on 1.2.34/M104. M104
+> Repository source candidate is 1.2.36/M105. Version 1.2.36 synchronizes the
+> repository fact sources and gate-required version metadata without changing
+> the existing M105 code, migration or Publication artifacts. M104
 > adds three exact MiniMax PAYG Profiles (M3, M2.7 and M2.7 Highspeed),
 > explicit Chat operation identities, PAYG-specific Function Tools Probe
 > identities and deterministic M104 Publication artifacts. Historical Token
