@@ -1,36 +1,34 @@
 # UniRouter Current Status
 
-> Purpose: single current-state entrypoint for humans, executors, and reviewers.
-> Repository source candidate is 1.2.33/M103. It adds the exact official
-> open-platform GLM 5.3 Profile, two provider-specific MiniMax M3/GLM 5.3
-> Function Tools Probe contracts over one shared request/normalized-response
-> mechanics path, and one compatible declaration-owned Publication Plan. M103
-> is source-only here: it has not been applied and creates no live Probe,
-> Approval, qualification, Release, route or Target evidence. Development/test
-> runs exact 1.2.28/M102 merge
-> `16bf398aed4122c52a174a4d3340b4bc399cd3b7`, tree
-> `a6efc7c13aadcb3fa235f3665b430fd94becf9aa`. Stable/canary and frontend use
-> the exact 1.2.28 backend/frontend images, both backends are healthy, and the
-> ordered database ledger ends at M102. Exact Deployment 6 has eight current
-> K3 Profile 1.9 capability qualifications. Release 27 and its initial stable
-> activation establish a development/test test route only: public model 817
-> remains `staging` and unapproved for the catalog, so this is not capability
-> maturity `released`, Production, Alias or a global canonical switch.
-> Fixed `openai-python@3.5.0` with `max_retries=0` delivered non-stream text,
-> live `reasoning_effort=low`, auto/required tools, JSON Object and cache-read
-> evidence on the exact route. Public SDK streaming calls 414 and 415 each made
-> one provider attempt and returned HTTP 503. A separately authorized paired
-> diagnosis on 2026-09-01 then produced one successful direct provider stream
-> and public SDK call 421 through UniRouter with the same semantic request
-> digest. The diagnostic stopped at `4/20` execution slots and `2/20` provider
-> attempts (one direct, one UniRouter); the point-in-time success closes the
-> bounded streaming checkpoint but does not prove a streaming SLA. The original
-> batch used all 20 authorized supplier calls. Wallet movement and transactions
-> remain zero; both CNY 5 amounts are authorization ceilings, not supplier
-> invoices or `SupplierCostObservation`. Both temporary Keys and
-> `project_default` Grants are revoked and both Applications are archived. The
-> exact development/test Core subset is now `canary_live_verified`, not
-> capability maturity `released`, Production, Alias or canonical. Exact evidence:
+> Repository source candidate is 1.2.35/M105, building on 1.2.34/M104. M104
+> adds three exact MiniMax PAYG Profiles (M3, M2.7 and M2.7 Highspeed),
+> explicit Chat operation identities, PAYG-specific Function Tools Probe
+> identities and deterministic M104 Publication artifacts. Historical Token
+> Plan Profiles and M103 remain addressable and are not rewritten. M105 adds
+> append-only exact GLM Profiles for GLM-5.2, GLM-5.1, GLM-5-Turbo, GLM-5 and
+> GLM-5V-Turbo, an immutable toggle-family Function Tools Probe over shared
+> validator mechanics, immutable protocol successors that model Function
+> Tools without reinterpreting history, and deterministic M105 Publication
+> artifacts. GLM-5V-Turbo is qualified only for pure-text Function Tools;
+> media-plus-tools and GLM-5.3-Flash remain outside the executable M105 binding
+> set. M104 and M105 are source-only: neither has been applied, and neither
+> creates live Probe, Approval, qualification, Release, route or Target
+> authority.
+>
+> The development/test Target currently runs exact 1.2.33/M103 main merge
+> `a4e197fe34d4d151e72fac68658693746455e12f`, tree
+> `aabe99aff780fca05089cf5dc3298c1778c8a448`. M103 is applied and the runtime
+> remains non-Production. During the bounded onboarding checkpoint, GLM-5.2
+> Deployment 8 completed one exact operation Probe (Probe 7): provider HTTP 200,
+> reported model `glm-5.2`, 760 ms, operation state `live_probed`. This is
+> operation-connectivity evidence only; it is not Function Tools qualification,
+> Release, canonical traffic, customer pricing or Production evidence.
+> **2026-08-31 Kimi K3 Chat Core Target closeout:** the exact development/test
+> Core subset reached `canary_live_verified` with bounded Probe/Approval and
+> fixed-SDK evidence. The batch used its authorized supplier-call allowance;
+> temporary credentials and grants were revoked and applications archived.
+> This is not capability maturity `released`, Production, Alias or canonical
+> authority. Exact evidence:
 > `docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md`.
 > **2026-08-31 Kimi K2.7 Code Chat Core Target closeout:** development/test
 > previously ran exact 1.2.23/M101 main merge

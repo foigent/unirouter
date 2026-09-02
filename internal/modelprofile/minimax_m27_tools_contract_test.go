@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMiniMaxM27ExactFunctionToolsCandidateIsAppendOnlyAndCurrent(t *testing.T) {
+func TestMiniMaxM27ExactFunctionToolsCandidateRemainsAddressableButParked(t *testing.T) {
 	historical, ok := Lookup("minimax.m2.7.token-plan", "1.4.0")
 	require.True(t, ok)
 	require.Equal(t, "protocol.minimax-m2-openai-chat.v6", historical.ProtocolProfile)
@@ -45,7 +45,8 @@ func TestMiniMaxM27ExactFunctionToolsCandidateIsAppendOnlyAndCurrent(t *testing.
 
 	current, ok := Match("MiniMax-M2.7")
 	require.True(t, ok)
-	require.Equal(t, candidate.Version, current.Version)
+	require.Equal(t, "minimax.m2.7.payg", current.ID)
+	require.Equal(t, "1.0.0", current.Version)
 	require.Error(t, ValidateNewAttachment(historical.ID, historical.Version))
-	require.NoError(t, ValidateNewAttachment(candidate.ID, candidate.Version))
+	require.Error(t, ValidateNewAttachment(candidate.ID, candidate.Version))
 }

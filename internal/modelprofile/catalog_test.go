@@ -488,7 +488,7 @@ func TestCurrentProfilesExposeTypedProductIdentityWithoutDeploymentClaims(t *tes
 func TestMatchUsesExactNormalizedAliasNotSubstring(t *testing.T) {
 	profile, ok := Match(" MiniMax_M2.7 ")
 	require.True(t, ok)
-	require.Equal(t, "minimax.m2.7.token-plan", profile.ID)
+	require.Equal(t, "minimax.m2.7.payg", profile.ID)
 
 	profile, ok = Match("DeepSeek V4 Pro")
 	require.True(t, ok)
@@ -555,12 +555,13 @@ func TestMiniMaxOfficialLimitsAndExecutableCapabilitiesRemainExact(t *testing.T)
 
 	current, ok := Match("MiniMax-M2.7")
 	require.True(t, ok)
-	require.Equal(t, "1.5.0", current.Version)
+	require.Equal(t, "minimax.m2.7.payg", current.ID)
+	require.Equal(t, "1.0.0", current.Version)
 	require.Equal(t, "protocol.minimax-m2-openai-chat.v7", current.ProtocolProfile)
 	require.Equal(t, "cache-usage.minimax-openai.v1", current.CacheUsageProfile)
 	require.Equal(t, []string{EndpointClassMiniMaxCNOpenAIV1}, current.EndpointClasses)
 	require.Equal(t, []string{"MiniMax-M2.7"}, current.UpstreamModelIDs)
-	require.Equal(t, []string{"MiniMax M2.7", "MiniMax-M2.7"}, current.Aliases)
+	require.Equal(t, []string{"MiniMax M2.7", "MiniMax-M2.7", "minimax-m2.7"}, current.Aliases)
 	require.Contains(t, current.Capabilities, CapabilityStreaming)
 	require.Contains(t, current.Capabilities, CapabilityReasoning)
 	require.Contains(t, current.Capabilities, CapabilityPromptCache)
@@ -572,22 +573,13 @@ func TestMiniMaxOfficialLimitsAndExecutableCapabilitiesRemainExact(t *testing.T)
 	require.True(t, ok)
 	require.EqualValues(t, 204_800, contract.OutputLimitMax)
 
-	m25, ok := Match("MiniMax-M2.5-highspeed")
-	require.True(t, ok)
-	require.Equal(t, "1.5.0", m25.Version)
-	require.Equal(t, "protocol.minimax-m2-openai-chat.v7", m25.ProtocolProfile)
-	require.Equal(t, "cache-usage.minimax-openai.v1", m25.CacheUsageProfile)
-	require.Equal(t, []string{EndpointClassMiniMaxCNOpenAIV1}, m25.EndpointClasses)
-	require.Contains(t, m25.Capabilities, CapabilityReasoning)
-	require.Contains(t, m25.Capabilities, CapabilityPromptCache)
-	require.Contains(t, m25.Capabilities, CapabilityCacheReadUsage)
-	require.Equal(t, []string{
-		CapabilityReasoning, CapabilityPromptCache, CapabilityCacheReadUsage,
-	}, m25.AlwaysRequiredCapabilities)
+	_, ok = Match("MiniMax-M2.5-highspeed")
+	require.False(t, ok, "parked Token Plan identities are not new-attachment aliases")
 
 	currentM3, ok := Match("MiniMax-M3")
 	require.True(t, ok)
-	require.Equal(t, "1.7.0", currentM3.Version)
+	require.Equal(t, "minimax.m3.payg", currentM3.ID)
+	require.Equal(t, "1.0.0", currentM3.Version)
 	require.Equal(t, "protocol.minimax-m3-openai-chat.v9", currentM3.ProtocolProfile)
 	require.Equal(t, "cache-usage.minimax-openai.v1", currentM3.CacheUsageProfile)
 	require.Equal(t, []string{EndpointClassMiniMaxCNOpenAIV1}, currentM3.EndpointClasses)
@@ -653,7 +645,8 @@ func TestLegacyProviderBundlesRemainImmutableWhenTypedProtocolsAdvance(t *testin
 	require.False(t, ok)
 	miniMaxCurrent, ok := Match("MiniMax-M3")
 	require.True(t, ok)
-	require.Equal(t, "1.7.0", miniMaxCurrent.Version)
+	require.Equal(t, "minimax.m3.payg", miniMaxCurrent.ID)
+	require.Equal(t, "1.0.0", miniMaxCurrent.Version)
 	require.Equal(t, "protocol.minimax-m3-openai-chat.v9", miniMaxCurrent.ProtocolProfile)
 	require.Contains(t, miniMaxCurrent.Capabilities, CapabilityStreaming)
 	require.Contains(t, miniMaxCurrent.Capabilities, CapabilityReasoning)
@@ -902,8 +895,11 @@ func TestCurrentProviderProfilesPreserveDocumentedMaximumAndRequestDefault(t *te
 		protocolRef string
 	}{
 		{"glm-5.3", "glm.5.3.api", 1_000_000, 131_072, 65_536, "protocol.glm-openai-chat.v5"},
-		{"glm-5.2", "glm.5.2.api", 1_000_000, 131_072, 65_536, "protocol.glm-openai-chat.v5"},
-		{"glm-5v-turbo", "glm.5v-turbo.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.glm5v.v4"},
+		{"glm-5.2", "glm.5.2.api", 1_000_000, 131_072, 65_536, "protocol.glm-openai-chat.v6"},
+		{"glm-5.1", "glm.5.1.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.v6"},
+		{"glm-5-turbo", "glm.5-turbo.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.v6"},
+		{"glm-5", "glm.5.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.v6"},
+		{"glm-5v-turbo", "glm.5v-turbo.api", 200_000, 131_072, 65_536, "protocol.glm-openai-chat.glm5v.v5"},
 		{"qwen3.8-max", "qwen.3.8-max.api", 1_000_000, 131_072, 131_072, "protocol.qwen-openai-chat.v6"},
 		{"qwen3.7-plus", "qwen.3.7-plus.api", 1_000_000, 131_072, 131_072, "protocol.qwen-openai-chat.v6"},
 		{"qwen3.7-flash", "qwen.3.7-flash.api", 1_000_000, 131_072, 131_072, "protocol.qwen-openai-chat.flash.v6"},
@@ -924,7 +920,7 @@ func TestCurrentProviderProfilesPreserveDocumentedMaximumAndRequestDefault(t *te
 		{"doubao-seed-2-1-pro-260628", "doubao.seed-2.1-pro.api", 262_144, 262_144, 4_096, "protocol.doubao-seed-2.1-pro-openai-chat.v5"},
 		{"doubao-seed-2-1-turbo-260628", "doubao.seed-2.1-turbo.api", 262_144, 262_144, 4_096, "protocol.doubao-seed-2.1-turbo-openai-chat.v5"},
 	}
-	require.Len(t, tests, 22)
+	require.Len(t, tests, 25)
 	for _, test := range tests {
 		t.Run(test.model, func(t *testing.T) {
 			profile, ok := Match(test.model)
@@ -943,10 +939,16 @@ func TestCurrentProviderProfilesPreserveDocumentedMaximumAndRequestDefault(t *te
 					CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
 					CapabilityToolChoiceAuto, CapabilityJSONObject, CapabilityPromptCache,
 				}, profile.Capabilities)
-			} else if test.model == "glm-5.2" {
-				require.Equal(t, []string{CapabilityStreaming, "reasoning", "tools", "json_object", "prompt_cache"}, profile.Capabilities)
+			} else if slices.Contains([]string{"glm-5.2", "glm-5.1", "glm-5-turbo", "glm-5"}, test.model) {
+				require.Equal(t, []string{
+					CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+					CapabilityToolChoiceAuto, CapabilityJSONObject, CapabilityPromptCache,
+				}, profile.Capabilities)
 			} else if test.model == "glm-5v-turbo" {
-				require.Equal(t, []string{CapabilityStreaming, "reasoning", "tools", "prompt_cache", CapabilityVision, CapabilityVideo, CapabilityFiles}, profile.Capabilities)
+				require.Equal(t, []string{
+					CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+					CapabilityToolChoiceAuto, CapabilityPromptCache, CapabilityVision, CapabilityVideo, CapabilityFiles,
+				}, profile.Capabilities)
 			} else if test.model == "qwen3.8-max" {
 				require.Equal(t, []string{
 					CapabilityStreaming, "reasoning", CapabilityTools, CapabilityFunctionTools,
@@ -1728,9 +1730,12 @@ func TestGLM5VTurboVideoInputIsVersionedAndLocallyModeled(t *testing.T) {
 func TestGLM5VTurboFileInputIsVersionedAndLocallyModeled(t *testing.T) {
 	profile, ok := Match("glm-5v-turbo")
 	require.True(t, ok)
-	require.Equal(t, "1.10.0", profile.Version)
-	require.Equal(t, "protocol.glm-openai-chat.glm5v.v4", profile.ProtocolProfile)
-	require.Equal(t, []string{CapabilityStreaming, "reasoning", "tools", "prompt_cache", CapabilityVision, CapabilityVideo, CapabilityFiles}, profile.Capabilities)
+	require.Equal(t, "1.11.0", profile.Version)
+	require.Equal(t, "protocol.glm-openai-chat.glm5v.v5", profile.ProtocolProfile)
+	require.Equal(t, []string{
+		CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+		CapabilityToolChoiceAuto, CapabilityPromptCache, CapabilityVision, CapabilityVideo, CapabilityFiles,
+	}, profile.Capabilities)
 
 	contract, ok := ResolveChatProtocolContract(profile.ProtocolProfile)
 	require.True(t, ok)
@@ -1830,13 +1835,67 @@ func TestGLM52JSONObjectIsVersionedAndLocallyModeled(t *testing.T) {
 func TestGLM52CacheReadUsageIsVersionedAndLocallyModeled(t *testing.T) {
 	profile, ok := Match("glm-5.2")
 	require.True(t, ok)
-	require.Equal(t, "1.7.0", profile.Version)
+	require.Equal(t, "1.8.0", profile.Version)
 	require.Equal(t, "cache-usage.glm-openai.v1", profile.CacheUsageProfile)
-	require.Equal(t, []string{CapabilityStreaming, "reasoning", "tools", "json_object", "prompt_cache"}, profile.Capabilities)
+	require.Equal(t, []string{
+		CapabilityStreaming, CapabilityReasoning, CapabilityTools, CapabilityFunctionTools,
+		CapabilityToolChoiceAuto, CapabilityJSONObject, CapabilityPromptCache,
+	}, profile.Capabilities)
 	contract, ok := ResolveCacheUsageContract(profile.CacheUsageProfile)
 	require.True(t, ok)
 	require.Equal(t, CacheUsageWireOpenAICachedTokensV1, contract.WireSchema)
 	require.NoError(t, ValidateExecutableComponents(profile))
+}
+
+func TestGLMToggleFunctionToolsProfilesKeepExactReasoningAndMediaBoundaries(t *testing.T) {
+	for _, identity := range []struct {
+		model, profileID, version, reasoningID, protocolID string
+	}{
+		{"glm-5.2", "glm.5.2.api", "1.8.0", "reasoning.glm-5.2-thinking-toggle.v1", "protocol.glm-openai-chat.v6"},
+		{"glm-5.1", "glm.5.1.api", "1.0.0", "reasoning.glm-5-family-thinking-toggle.v1", "protocol.glm-openai-chat.v6"},
+		{"glm-5-turbo", "glm.5-turbo.api", "1.0.0", "reasoning.glm-5-family-thinking-toggle.v1", "protocol.glm-openai-chat.v6"},
+		{"glm-5", "glm.5.api", "1.0.0", "reasoning.glm-5-family-thinking-toggle.v1", "protocol.glm-openai-chat.v6"},
+		{"glm-5v-turbo", "glm.5v-turbo.api", "1.11.0", "reasoning.glm-5v-turbo-thinking-toggle.v1", "protocol.glm-openai-chat.glm5v.v5"},
+	} {
+		t.Run(identity.model, func(t *testing.T) {
+			profile, ok := Lookup(identity.profileID, identity.version)
+			require.True(t, ok)
+			require.True(t, profile.Current)
+			require.Equal(t, []string{identity.model}, profile.UpstreamModelIDs)
+			require.Equal(t, identity.reasoningID, profile.ReasoningProfile)
+			require.Equal(t, identity.protocolID, profile.ProtocolProfile)
+			require.Contains(t, profile.Capabilities, CapabilityFunctionTools)
+			require.Contains(t, profile.Capabilities, CapabilityToolChoiceAuto)
+			require.NoError(t, ValidateNewAttachment(profile.ID, profile.Version))
+			protocol, ok := ResolveChatProtocolContract(profile.ProtocolProfile)
+			require.True(t, ok)
+			require.True(t, protocol.FunctionToolInvocationCapabilitiesModeled)
+
+			reasoning, ok := ResolveReasoningContract(profile.ReasoningProfile)
+			require.True(t, ok)
+			require.Equal(t, ReasoningModeToggle, reasoning.Mode)
+			require.Equal(t, "enabled", reasoning.ToggleControl.ProviderDefault)
+			require.Equal(t, []string{"enabled", "disabled"}, reasoning.ToggleControl.AllowedValues)
+			if identity.reasoningID == "reasoning.glm-5-family-thinking-toggle.v1" {
+				require.Empty(t, reasoning.EffortControl.Field)
+				require.False(t, reasoning.ThinkingClearSupported)
+			}
+		})
+	}
+
+	text, _ := Match("glm-5")
+	require.NotContains(t, text.Capabilities, CapabilityVision)
+	multimodal, _ := Match("glm-5v-turbo")
+	require.Contains(t, multimodal.Capabilities, CapabilityVision)
+	require.Contains(t, multimodal.Capabilities, CapabilityVideo)
+	require.Contains(t, multimodal.Capabilities, CapabilityFiles)
+	historical, ok := Lookup("glm.5.3.api", "1.8.0")
+	require.True(t, ok)
+	require.Equal(t, "protocol.glm-openai-chat.v5", historical.ProtocolProfile)
+	historicalProtocol, ok := ResolveChatProtocolContract(historical.ProtocolProfile)
+	require.True(t, ok)
+	require.False(t, historicalProtocol.FunctionToolInvocationCapabilitiesModeled,
+		"M105 must not reinterpret the already published M103 protocol identity")
 }
 
 func TestGLM53StreamingProtocolIsVersionedAndLocallyModeled(t *testing.T) {

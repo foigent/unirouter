@@ -4,6 +4,59 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.35] - 2026-09-02
+
+### Changed
+
+- Added append-only exact official-open-platform Chat Profiles for GLM-5.1,
+  GLM-5-Turbo and GLM-5, and advanced GLM-5.2 and GLM-5V-Turbo without
+  reinterpreting their historical Profile versions.
+- Added one immutable toggle-family Function Tools Probe identity over the
+  existing shared OpenAI-compatible request-builder and normalized validator.
+  Each of the five model tuples retains exact reported-model checks, Profile,
+  protocol, reasoning, evidence and approval identity.
+- Added immutable GLM protocol successors that explicitly model Function Tools
+  for the new bindings while leaving the historical GLM-5.3 and GLM-5V-Turbo
+  protocol identities unchanged.
+- Added deterministic M105 Publication V1 declaration and generated migration
+  artifacts with M104 as the exact predecessor and five guarded bindings.
+  GLM-5V-Turbo's binding qualifies only pure-text Function Tools; vision,
+  video, files and media-plus-tools require independent capability evidence.
+- Kept GLM-5.3-Flash outside M105 because its multimodal operation and
+  Function Tools combination is not yet frozen as an exact executable
+  UniRouter contract.
+
+### Scope
+
+- This metadata records a Local source candidate only. M104 and M105 are not
+  applied and no Provider call, Target rollout, capability approval, Release,
+  pricing activation, tag, traffic or Production state is created or changed.
+
+## [1.2.34] - 2026-09-02
+
+### Changed
+
+- Added append-only MiniMax PAYG Profiles for M3, M2.7 and M2.7 Highspeed on
+  the exact official `api.minimaxi.com/v1` endpoint class. Each Profile freezes
+  its upstream model, limits, reasoning/cache semantics and explicit Chat
+  operation identity; historical Token Plan Profiles remain addressable but
+  are parked for new attachments.
+- Added PAYG-specific Function Tools Probe identities while retaining one
+  shared validator/mechanics path. M3 has its own exact contract; M2.7 and
+  M2.7 Highspeed share a parameterized contract with separate exact bindings,
+  reported-model checks, evidence and approvals.
+- Added deterministic M104 Publication V1 artifacts with M103 as the exact
+  predecessor and three guarded PAYG bindings. M103 and its historical
+  MiniMax/GLM evidence are not rewritten.
+- Corrected the GLM onboarding preset to select the existing exact
+  `glm_official_openai_v4` endpoint class instead of the generic HTTPS class.
+
+### Scope
+
+- This metadata records a source candidate only. M104 is not applied and no
+  Provider call, Target rollout, capability approval, Release, pricing
+  activation, tag, traffic or Production state is created or changed.
+
 ## [1.2.33] - 2026-09-01
 
 ### Changed

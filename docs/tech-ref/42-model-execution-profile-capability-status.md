@@ -17,10 +17,20 @@ Deployment 6, eight independent capability Probe/Approval qualifications and
 development/test Release 27. The Release and initial stable-slot activation
 establish only a test route. Public model 817 remains `staging` and outside the
 approved catalog, so no `released`, Production, Alias or global canonical claim
-is made. Repository source candidate 1.2.33/M103 adds the exact official
-open-platform GLM 5.3 Profile and one declaration-owned MiniMax M3/GLM 5.3
-Function Tools plan over shared qualification mechanics with separate Probe
-identities; M103 is not applied and is not the deployed Target artifact.
+is made. Repository source candidate 1.2.35/M105 builds on 1.2.34/M104. M104 adds three exact MiniMax PAYG
+Profiles (M3, M2.7 and M2.7 Highspeed), explicit Chat operation bindings and
+one declaration-owned Function Tools plan over shared mechanics with separate
+M3 and parameterized M2 Probe identities. M105 advances GLM-5.2 and
+GLM-5V-Turbo and adds GLM-5.1, GLM-5-Turbo and GLM-5 as exact official
+open-platform Chat Profiles. Those five exact identities share a toggle-family
+Function Tools Probe validator while preserving model-specific Profile,
+protocol, reasoning, evidence and approval identities. GLM-5V-Turbo's M105
+binding is pure-text Function Tools evidence and does not qualify media plus
+tools. GLM-5.3-Flash remains outside the executable M105 binding set pending a
+separate exact multimodal operation contract. Historical Token Plan Profiles and
+M103 remain addressable but are not eligible for new attachment. The
+development/test Target independently runs exact 1.2.33/M103; M104 and M105 are
+not applied and neither is the deployed Target artifact.
 Local, CI, artifact, Target, provider, SDK-delivery and customer-wallet evidence
 remain separate.
 
@@ -348,7 +358,7 @@ DeepSeek Flash Chat subset is `canary_live_verified` on development/test; it
 does not promote another model, prove full provider parity, constitute customer
 manual acceptance or change `release_state`.
 
-There are **30 upstream model entries and 33 current surface identities**.
+There are **33 upstream model entries and 36 current surface identities**.
 The table is a code projection of exact new-attachment pointers, not a Baseline
 approval or proof that each model satisfies the full capability matrix.
 Recorded local milestones cover bounded subsets. Local/CI, the historical
@@ -363,12 +373,15 @@ and Release claims still require their own exact identity/evidence.
 | `kimi.k2.6.api@1.7.0` | Kimi Platform Chat |
 | `kimi.k2.7-code.api@1.3.0` | Kimi Platform Chat |
 | `kimi.k3.api@1.9.0` | Kimi Platform Chat |
-| `minimax.m3.token-plan@1.7.0` | MiniMax CN Chat / Token Plan |
-| `minimax.m2.5-highspeed.token-plan@1.5.0` | MiniMax CN Chat / Token Plan |
-| `minimax.m2.7.token-plan@1.5.0` | MiniMax CN Chat / Token Plan |
+| `minimax.m3.payg@1.0.0` | MiniMax CN Chat / PAYG |
+| `minimax.m2.7.payg@1.0.0` | MiniMax CN Chat / PAYG |
+| `minimax.m2.7-highspeed.payg@1.0.0` | MiniMax CN Chat / PAYG |
 | `glm.5.3.api@1.8.0` | GLM official open-platform Chat |
-| `glm.5.2.api@1.7.0` | GLM CN Chat |
-| `glm.5v-turbo.api@1.10.0` | GLM CN Chat |
+| `glm.5.2.api@1.8.0` | GLM official open-platform Chat |
+| `glm.5.1.api@1.0.0` | GLM official open-platform Chat |
+| `glm.5-turbo.api@1.0.0` | GLM official open-platform Chat |
+| `glm.5.api@1.0.0` | GLM official open-platform Chat |
+| `glm.5v-turbo.api@1.11.0` | GLM official open-platform multimodal Chat; M105 qualifies pure-text Function Tools only |
 | `qwen.3.8-max.api@1.8.0` | DashScope Beijing Chat |
 | `qwen.3.7-plus.api@1.7.0` | DashScope Beijing Chat |
 | `qwen.3.7-flash.api@1.7.0` | DashScope Beijing Chat |
@@ -400,6 +413,27 @@ not executable here. Media/search/cache subsets do not imply full provider
 parity or a complete price contract. Official USD prices remain review drafts;
 nonstandard tiers cannot debit customer wallets. No entry is declared fully
 adapted, provider-live-verified or released by this table.
+
+## MiniMax PAYG M104 local candidate
+
+`minimax.m3.payg@1.0.0`, `minimax.m2.7.payg@1.0.0` and
+`minimax.m2.7-highspeed.payg@1.0.0` freeze three exact PAYG access identities
+on the official `https://api.minimaxi.com/v1` endpoint class. They reuse the
+reviewed M3 v9 and M2 v7 Chat protocol mechanics but retain exact upstream
+model IDs, limits, reasoning/cache contracts and explicit operation-protocol
+bindings. M3 has a new PAYG-specific Function Tools Probe identity; M2.7 and
+M2.7 Highspeed share one parameterized M2 Probe contract whose whitelist and
+reported-model validation remain exact for each binding.
+
+M104 appends three `function_tools` bindings with M103 as its exact
+predecessor. It does not rewrite or replay M103. Historical
+`minimax.*.token-plan` Profiles remain addressable for retained evidence and
+deployments, but they have no current pointer and cannot receive new
+attachments. Token Plan integration, M2.5 Highspeed PAYG, pricing activation,
+Target apply, Provider qualification, Release, deployment and Production are
+outside this source candidate. The GLM onboarding preset now names the existing
+`glm_official_openai_v4` endpoint class; it does not add or relax a GLM Profile
+or Publication binding.
 
 ### Historical DeepSeek Flash M92/local-M93 checkpoint — superseded
 
@@ -1947,9 +1981,10 @@ Earlier closed local milestone:
 
 `MiniMax-M2.5-highspeed × MiniMax CN OpenAI-compatible Chat Completions × function tools/tool history/response`.
 
-The current/new-attachment pointer selects
-`minimax.m2.5-highspeed.token-plan@1.5.0`; historical `@1.4.0` remains
-addressable with required embedded reasoning and automatic cache-read authority
+The parked Token Plan identity
+`minimax.m2.5-highspeed.token-plan@1.5.0` remains addressable, while neither it
+nor historical `@1.4.0` is eligible for new attachment. `@1.4.0` retains
+required embedded reasoning and automatic cache-read authority
 but only its former compatibility-level tool boundary. This model-data-only
 differential reuses the same reviewed MiniMax M2 v7 protocol as M2.7: non-stream
 function definitions require `name` and object-form `parameters`; omitted
@@ -1968,8 +2003,9 @@ Earlier closed local milestone:
 
 `MiniMax M2.7 × MiniMax CN OpenAI-compatible Chat Completions × function tools/tool history/response`.
 
-The current/new-attachment pointer selects `minimax.m2.7.token-plan@1.5.0`;
-historical `@1.4.0` remains addressable with required embedded reasoning and
+The parked Token Plan identity `minimax.m2.7.token-plan@1.5.0` and historical
+`@1.4.0` remain addressable but are not eligible for new attachment. Historical
+`@1.4.0` retains required embedded reasoning and
 automatic cache-read authority but only its former compatibility-level tool
 boundary. This append-only, same-provider/surface differential reuses the
 reviewed MiniMax exact-tools contract: non-stream function definitions require
@@ -1992,8 +2028,9 @@ Earlier closed local milestone:
 
 `MiniMax M3 × MiniMax CN OpenAI-compatible Chat Completions × function tools/tool history/response`.
 
-The current/new-attachment pointer selects `minimax.m3.token-plan@1.7.0`;
-historical `@1.6.0` remains addressable with its exact cache/tier/image/reasoning
+The parked Token Plan identity `minimax.m3.token-plan@1.7.0` and historical
+`@1.6.0` remain addressable but are not eligible for new attachment. Historical
+`@1.6.0` retains its exact cache/tier/image/reasoning
 contracts and its former compatibility-level function-tool boundary. The
 append-only v9 protocol follows the current MiniMax OpenAPI rather than generic
 OpenAI assumptions: it accepts only non-stream `tools` entries of type

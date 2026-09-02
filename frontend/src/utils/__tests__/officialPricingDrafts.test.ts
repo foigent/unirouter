@@ -68,6 +68,23 @@ describe('official onboarding pricing drafts', () => {
     }
   });
 
+  it('keeps new MiniMax PAYG and GLM family pricing fail closed', () => {
+    for (const [profileID, model] of [
+      ['minimax.m3.payg', 'MiniMax-M3'],
+      ['minimax.m2.7.payg', 'MiniMax-M2.7'],
+      ['minimax.m2.7-highspeed.payg', 'MiniMax-M2.7-highspeed'],
+      ['glm.5.1.api', 'glm-5.1'],
+      ['glm.5-turbo.api', 'glm-5-turbo'],
+      ['glm.5.api', 'glm-5'],
+    ]) {
+      expect(officialPricingDraftFor(profileID, model, 'cn')).toMatchObject({
+        state: 'manual_review_required',
+        reason: expect.stringMatching(/禁止|人工复核/),
+      });
+    }
+    expect(officialPricingDraftFor('minimax.m2.7.payg', 'MiniMax-M2.7-highspeed', 'cn')).toBeUndefined();
+  });
+
   it('keeps MiMo domestic RMB prices and models the current free cache write as zero', () => {
     for (const [profileID, upstreamModelID, input, output, cacheRead] of [
       ['mimo.v2.5-pro.api', 'mimo-v2.5-pro', '3', '6', '0.025'],

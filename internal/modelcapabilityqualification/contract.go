@@ -13,34 +13,37 @@ import (
 )
 
 const (
-	DeepSeekChatSSEProbeContractID              = "unirouter.capability-probe.deepseek-chat-sse.v1"
-	DeepSeekChatSSEProbeContractVersionV1       = "1.0.0"
-	DeepSeekChatSSEProbeContractCurrentVersion  = "2.0.0"
-	DeepSeekChatReasoningProbeContractID        = "unirouter.capability-probe.deepseek-chat-reasoning.v1"
-	DeepSeekChatReasoningEffortProbeContractID  = "unirouter.capability-probe.deepseek-chat-reasoning-effort.v1"
-	DeepSeekChatReasoningProbeContractVersion   = "1.0.0"
-	DeepSeekChatFunctionToolsProbeContractID    = "unirouter.capability-probe.deepseek-chat-function-tools.v1"
-	DeepSeekChatFunctionToolsProbeContractV2    = "2.0.0"
-	DeepSeekChatJSONObjectProbeContractID       = "unirouter.capability-probe.deepseek-chat-json-object.v1"
-	DeepSeekChatCoreProbeContractVersion        = "1.0.0"
-	KimiChatSSEProbeContractID                  = "unirouter.capability-probe.kimi-chat-sse.v1"
-	KimiChatSSEProbeContractVersionV2           = "2.0.0"
-	KimiChatSSEProbeContractVersionV3           = "3.0.0"
-	KimiChatSSEProbeContractVersionV4           = "4.0.0"
-	KimiChatReasoningProbeContractID            = "unirouter.capability-probe.kimi-chat-reasoning.v1"
-	KimiChatReasoningEffortProbeContractID      = "unirouter.capability-probe.kimi-chat-reasoning-effort.v1"
-	KimiChatReasoningEffortProbeContractVersion = "1.0.0"
-	KimiChatFunctionToolsProbeContractID        = "unirouter.capability-probe.kimi-chat-function-tools.v1"
-	KimiChatJSONObjectProbeContractID           = "unirouter.capability-probe.kimi-chat-json-object.v1"
-	KimiChatCoreProbeContractVersion            = "1.0.0"
-	KimiChatCoreProbeContractVersionV2          = "2.0.0"
-	KimiChatFunctionToolsProbeContractVersionV3 = "3.0.0"
-	KimiChatFunctionToolsProbeContractVersionV4 = "4.0.0"
-	MiniMaxChatFunctionToolsProbeContractID     = "unirouter.capability-probe.minimax-chat-function-tools.v1"
-	GLMChatFunctionToolsProbeContractID         = "unirouter.capability-probe.glm-chat-function-tools.v1"
-	OpenAIChatFunctionToolsProbeContractVersion = "1.0.0"
-	ProbeSourceKind                             = "admin.model_capability_probe.v1"
-	ApprovalSourceKind                          = "admin.model_capability_routing_approval.v1"
+	DeepSeekChatSSEProbeContractID                = "unirouter.capability-probe.deepseek-chat-sse.v1"
+	DeepSeekChatSSEProbeContractVersionV1         = "1.0.0"
+	DeepSeekChatSSEProbeContractCurrentVersion    = "2.0.0"
+	DeepSeekChatReasoningProbeContractID          = "unirouter.capability-probe.deepseek-chat-reasoning.v1"
+	DeepSeekChatReasoningEffortProbeContractID    = "unirouter.capability-probe.deepseek-chat-reasoning-effort.v1"
+	DeepSeekChatReasoningProbeContractVersion     = "1.0.0"
+	DeepSeekChatFunctionToolsProbeContractID      = "unirouter.capability-probe.deepseek-chat-function-tools.v1"
+	DeepSeekChatFunctionToolsProbeContractV2      = "2.0.0"
+	DeepSeekChatJSONObjectProbeContractID         = "unirouter.capability-probe.deepseek-chat-json-object.v1"
+	DeepSeekChatCoreProbeContractVersion          = "1.0.0"
+	KimiChatSSEProbeContractID                    = "unirouter.capability-probe.kimi-chat-sse.v1"
+	KimiChatSSEProbeContractVersionV2             = "2.0.0"
+	KimiChatSSEProbeContractVersionV3             = "3.0.0"
+	KimiChatSSEProbeContractVersionV4             = "4.0.0"
+	KimiChatReasoningProbeContractID              = "unirouter.capability-probe.kimi-chat-reasoning.v1"
+	KimiChatReasoningEffortProbeContractID        = "unirouter.capability-probe.kimi-chat-reasoning-effort.v1"
+	KimiChatReasoningEffortProbeContractVersion   = "1.0.0"
+	KimiChatFunctionToolsProbeContractID          = "unirouter.capability-probe.kimi-chat-function-tools.v1"
+	KimiChatJSONObjectProbeContractID             = "unirouter.capability-probe.kimi-chat-json-object.v1"
+	KimiChatCoreProbeContractVersion              = "1.0.0"
+	KimiChatCoreProbeContractVersionV2            = "2.0.0"
+	KimiChatFunctionToolsProbeContractVersionV3   = "3.0.0"
+	KimiChatFunctionToolsProbeContractVersionV4   = "4.0.0"
+	MiniMaxChatFunctionToolsProbeContractID       = "unirouter.capability-probe.minimax-chat-function-tools.v1"
+	MiniMaxPAYGM3ChatFunctionToolsProbeContractID = "unirouter.capability-probe.minimax-payg-m3-chat-function-tools.v1"
+	MiniMaxPAYGM2ChatFunctionToolsProbeContractID = "unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1"
+	GLMChatFunctionToolsProbeContractID           = "unirouter.capability-probe.glm-chat-function-tools.v1"
+	GLMToggleChatFunctionToolsProbeContractID     = "unirouter.capability-probe.glm-toggle-chat-function-tools.v1"
+	OpenAIChatFunctionToolsProbeContractVersion   = "1.0.0"
+	ProbeSourceKind                               = "admin.model_capability_probe.v1"
+	ApprovalSourceKind                            = "admin.model_capability_routing_approval.v1"
 )
 
 var ErrUnsupported = errors.New("model capability qualification contract is unsupported")
@@ -188,8 +191,34 @@ func MiniMaxM3CurrentBindings() []Binding {
 	return mustResolveAll("openai.chat_completions.v1", "minimax.m3.token-plan", "1.7.0", "")
 }
 
+func MiniMaxPAYGCurrentBindings() []Binding {
+	bindings := make([]Binding, 0, 3)
+	for _, profile := range []struct{ id, version string }{
+		{"minimax.m3.payg", "1.0.0"},
+		{"minimax.m2.7.payg", "1.0.0"},
+		{"minimax.m2.7-highspeed.payg", "1.0.0"},
+	} {
+		bindings = append(bindings, mustResolveAll("openai.chat_completions.v1", profile.id, profile.version, "")...)
+	}
+	return bindings
+}
+
 func GLM53CurrentBindings() []Binding {
 	return mustResolveAll("openai.chat_completions.v1", "glm.5.3.api", "1.8.0", "")
+}
+
+func GLMToggleCurrentBindings() []Binding {
+	bindings := make([]Binding, 0, 5)
+	for _, profile := range []struct{ id, version string }{
+		{"glm.5.2.api", "1.8.0"},
+		{"glm.5.1.api", "1.0.0"},
+		{"glm.5-turbo.api", "1.0.0"},
+		{"glm.5.api", "1.0.0"},
+		{"glm.5v-turbo.api", "1.11.0"},
+	} {
+		bindings = append(bindings, mustResolveAll("openai.chat_completions.v1", profile.id, profile.version, "")...)
+	}
+	return bindings
 }
 
 func mustResolve(operationID, capabilityID, profileID, profileVersion, protocolID, protocolVersion string) Binding {

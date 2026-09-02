@@ -10,7 +10,7 @@ import (
 )
 
 func representativeFunctionToolsBinding(contractID string) Binding {
-	identity := openAIChatFunctionToolsBindingIdentities[contractID]
+	identity := openAIChatFunctionToolsBindingIdentities[contractID][0]
 	return Binding{
 		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
 		ExecutionProfileID: identity.profileID, ExecutionProfileVersion: identity.profileVersion,
@@ -18,6 +18,70 @@ func representativeFunctionToolsBinding(contractID string) Binding {
 		ProbeContractID: contractID, ProbeContractVersion: OpenAIChatFunctionToolsProbeContractVersion,
 		ExpectedProvider: identity.provider, ExpectedUpstreamModel: identity.upstreamModel, PublicPath: identity.path,
 	}
+}
+
+func exactFunctionToolsBinding(contractID string, identity openAIChatFunctionToolsBindingIdentity) Binding {
+	return Binding{
+		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
+		ExecutionProfileID: identity.profileID, ExecutionProfileVersion: identity.profileVersion,
+		ProtocolProfileID: identity.protocolID, ProtocolProfileVersion: identity.protocolVersion,
+		ProbeContractID: contractID, ProbeContractVersion: OpenAIChatFunctionToolsProbeContractVersion,
+		ExpectedProvider: identity.provider, ExpectedUpstreamModel: identity.upstreamModel, PublicPath: identity.path,
+	}
+}
+
+func TestMiniMaxPAYGFunctionToolsContractEnumeratesExactM3AndM2Bindings(t *testing.T) {
+	for contractID, identities := range map[string][]openAIChatFunctionToolsBindingIdentity{
+		MiniMaxPAYGM3ChatFunctionToolsProbeContractID: openAIChatFunctionToolsBindingIdentities[MiniMaxPAYGM3ChatFunctionToolsProbeContractID],
+		MiniMaxPAYGM2ChatFunctionToolsProbeContractID: openAIChatFunctionToolsBindingIdentities[MiniMaxPAYGM2ChatFunctionToolsProbeContractID],
+	} {
+		for _, identity := range identities {
+			binding := exactFunctionToolsBinding(contractID, identity)
+			body, err := BuildOpenAIChatFunctionToolsProbeRequest(binding)
+			require.NoError(t, err)
+			var payload map[string]interface{}
+			require.NoError(t, json.Unmarshal(body, &payload))
+			require.Equal(t, identity.upstreamModel, payload["model"])
+
+			response := `{"id":"chatcmpl-probe","object":"chat.completion","model":"` + identity.upstreamModel + `","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":"<think>probe</think>","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`
+			observation, err := ValidateNormalizedOpenAIChatFunctionToolsForBinding(binding, "application/json", strings.NewReader(response))
+			require.NoError(t, err)
+			require.Equal(t, identity.upstreamModel, observation.ReportedModel)
+		}
+	}
+
+	forged := exactFunctionToolsBinding(MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
+		openAIChatFunctionToolsBindingIdentities[MiniMaxPAYGM2ChatFunctionToolsProbeContractID][0])
+	forged.ExpectedUpstreamModel = "MiniMax-M2.7-highspeed"
+	_, err := BuildOpenAIChatFunctionToolsProbeRequest(forged)
+	require.ErrorIs(t, err, ErrUnsupported)
+}
+
+func TestGLMToggleFunctionToolsContractEnumeratesFiveExactBindings(t *testing.T) {
+	identities := openAIChatFunctionToolsBindingIdentities[GLMToggleChatFunctionToolsProbeContractID]
+	require.Len(t, identities, 5)
+	for _, identity := range identities {
+		t.Run(identity.upstreamModel, func(t *testing.T) {
+			binding := exactFunctionToolsBinding(GLMToggleChatFunctionToolsProbeContractID, identity)
+			body, err := BuildOpenAIChatFunctionToolsProbeRequest(binding)
+			require.NoError(t, err)
+			var payload map[string]interface{}
+			require.NoError(t, json.Unmarshal(body, &payload))
+			require.Equal(t, identity.upstreamModel, payload["model"])
+			require.Equal(t, "auto", payload["tool_choice"])
+			require.NotContains(t, payload, "thinking", "toggle-family probe uses the immutable provider default")
+
+			response := `{"id":"chatcmpl-probe","object":"chat.completion","model":"` + identity.upstreamModel + `","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"exact reasoning trace","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`
+			observation, err := ValidateNormalizedOpenAIChatFunctionToolsForBinding(binding, "application/json", strings.NewReader(response))
+			require.NoError(t, err)
+			require.Equal(t, identity.upstreamModel, observation.ReportedModel)
+		})
+	}
+
+	forged := exactFunctionToolsBinding(GLMToggleChatFunctionToolsProbeContractID, identities[0])
+	forged.ExpectedUpstreamModel = identities[1].upstreamModel
+	_, err := BuildOpenAIChatFunctionToolsProbeRequest(forged)
+	require.ErrorIs(t, err, ErrUnsupported)
 }
 
 func TestRepresentativeFunctionToolsProbeRequestsShareMechanicsAndKeepExactContracts(t *testing.T) {

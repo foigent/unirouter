@@ -495,6 +495,14 @@ var reasoningContracts = map[string]ReasoningContract{
 		ThinkingClearSupported:       true,
 		ThinkingClearProviderDefault: true,
 	},
+	"reasoning.glm-5-family-thinking-toggle.v1": {
+		ProfileID: "reasoning.glm-5-family-thinking-toggle.v1",
+		Mode:      ReasoningModeToggle,
+		ToggleControl: ReasoningControlContract{
+			Field: "thinking", AllowedValues: []string{"enabled", "disabled"}, ProviderDefault: "enabled",
+		},
+		DefaultAuthority: ReasoningDefaultProvider,
+	},
 	"reasoning.glm-5.3-required.v1": {
 		ProfileID: "reasoning.glm-5.3-required.v1",
 		Mode:      ReasoningModeRequired,

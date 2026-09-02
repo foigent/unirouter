@@ -6,13 +6,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/adapters"
 	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/modelrouting"
 	"github.com/uniroute/unirouter/internal/models"
+	"github.com/uniroute/unirouter/internal/routingpolicy"
 )
 
 func representativeReuseFunctionToolsBinding(contractID string) modelcapabilityqualification.Binding {
@@ -25,6 +28,15 @@ func representativeReuseFunctionToolsBinding(contractID string) modelcapabilityq
 			ExpectedProvider: "minimax", ExpectedUpstreamModel: "MiniMax-M3", PublicPath: "/v1/chat/completions",
 		}
 	}
+	if contractID == modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID {
+		return modelcapabilityqualification.Binding{
+			OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
+			ExecutionProfileID: "glm.5.1.api", ExecutionProfileVersion: "1.0.0",
+			ProtocolProfileID: "protocol.glm-openai-chat.v6", ProtocolProfileVersion: "1.0.0",
+			ProbeContractID: contractID, ProbeContractVersion: modelcapabilityqualification.OpenAIChatFunctionToolsProbeContractVersion,
+			ExpectedProvider: "glm", ExpectedUpstreamModel: "glm-5.1", PublicPath: "/v1/chat/completions",
+		}
+	}
 	return modelcapabilityqualification.Binding{
 		OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
 		ExecutionProfileID: "glm.5.3.api", ExecutionProfileVersion: "1.8.0",
@@ -34,10 +46,48 @@ func representativeReuseFunctionToolsBinding(contractID string) modelcapabilityq
 	}
 }
 
+func TestGLM5VTextFunctionToolsQualificationCannotAuthorizeMediaByItself(t *testing.T) {
+	encKey := []byte("0123456789abcdef0123456789abcdef")
+	plan := executionTestPlan(t, modelrouting.ModeCanonical, modeloperation.IDChatCompletions,
+		"https://open.bigmodel.cn/api/paas/v4", encKey, nil)
+	setExecutionTestProfile(t, &plan, "glm.5v-turbo.api", "1.11.0")
+	plan.Routes[0].Provider = "glm"
+	plan.Routes[0].UpstreamModel = "glm-5v-turbo"
+	relay := NewRelay(executionTestDB(), nil, nil, &mockBilling{}, nil, encKey)
+	require.NoError(t, relay.SetModelExecutionRuntime(
+		modelrouting.ModeCanonical, &executionPlannerStub{plan: plan}, &executionCoordinatorStub{}, routingpolicy.Default(),
+	))
+
+	body := []byte(`{"model":"public-model","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.test/layout.png"}},{"type":"text","text":"Inspect this layout with the tool"}]}],"tools":[{"type":"function","function":{"name":"inspect_layout","description":"Inspect a layout","parameters":{"type":"object","properties":{}}}}],"tool_choice":"auto","max_tokens":128}`)
+	explicitOutput := 128
+	batch, err := relay.prepareModelExecutionRoutes(
+		context.Background(), modeloperation.IDChatCompletions, adapters.EndpointChatCompletions,
+		"public-model", "public-model", "req-glm5v-media-tools-boundary",
+		modelExecutionRequestLimits{EstimatedInputTokens: 1, ExplicitOutputTokens: &explicitOutput, EstimateVersion: chatAdmissionEstimateVersion},
+		body, time.Now(),
+	)
+	require.NoError(t, err)
+	want := map[string]bool{
+		modelprofile.CapabilityFunctionTools: false,
+		modelprofile.CapabilityTools:         false,
+		modelprofile.CapabilityVision:        false,
+	}
+	for _, requirement := range batch.plan.CapabilityRequirements {
+		if _, exists := want[requirement.CapabilityID]; exists {
+			want[requirement.CapabilityID] = true
+		}
+	}
+	for capability, found := range want {
+		require.True(t, found, "missing independent capability requirement %s", capability)
+	}
+	require.Equal(t, batch.plan.CapabilityRequirements, batch.routes[0].compat.PlanCapabilityRequirements)
+}
+
 func TestRepresentativeReuseProbeRequestsPassExactProfileValidationAndAdmission(t *testing.T) {
 	for _, contractID := range []string{
 		modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID,
 		modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
+		modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID,
 	} {
 		binding := representativeReuseFunctionToolsBinding(contractID)
 		body, err := modelcapabilityqualification.BuildOpenAIChatFunctionToolsProbeRequest(binding)
@@ -54,9 +104,12 @@ func TestRepresentativeReuseProbeRequestsPassExactProfileValidationAndAdmission(
 		if contractID == modelcapabilityqualification.MiniMaxChatFunctionToolsProbeContractID {
 			require.NotContains(t, payload, "tool_choice")
 			require.NotContains(t, payload, "thinking")
-		} else {
+		} else if contractID == modelcapabilityqualification.GLMChatFunctionToolsProbeContractID {
 			require.Equal(t, "auto", payload["tool_choice"])
 			require.Equal(t, "enabled", payload["thinking"].(map[string]interface{})["type"])
+		} else {
+			require.Equal(t, "auto", payload["tool_choice"])
+			require.NotContains(t, payload, "thinking")
 		}
 	}
 }
@@ -74,6 +127,11 @@ func TestRepresentativeReuseSuccessfulProbeFixturesTraverseCanonicalRuntimeDeliv
 			name: "glm generic runtime response", contractID: modelcapabilityqualification.GLMChatFunctionToolsProbeContractID,
 			provider: "glm",
 			body:     `{"id":"chatcmpl-glm","object":"chat.completion","model":"glm-5.3","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`,
+		},
+		{
+			name: "glm toggle normalized response with reasoning", contractID: modelcapabilityqualification.GLMToggleChatFunctionToolsProbeContractID,
+			provider: "glm",
+			body:     `{"id":"chatcmpl-glm","object":"chat.completion","model":"glm-5.1","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"exact reasoning trace","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

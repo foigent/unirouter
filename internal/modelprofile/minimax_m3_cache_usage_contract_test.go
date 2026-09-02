@@ -47,7 +47,8 @@ func TestMiniMaxM3CacheReadProfileRemainsAppendOnlyAndHistorical(t *testing.T) {
 
 	current, ok := Match("MiniMax-M3")
 	require.True(t, ok)
-	require.Equal(t, "1.7.0", current.Version)
+	require.Equal(t, "minimax.m3.payg", current.ID)
+	require.Equal(t, "1.0.0", current.Version)
 	require.Error(t, ValidateNewAttachment(historical.ID, historical.Version))
 	require.Error(t, ValidateNewAttachment(candidate.ID, candidate.Version))
 }

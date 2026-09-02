@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMiniMaxM3ExactFunctionToolsCandidateIsAppendOnlyAndCurrent(t *testing.T) {
+func TestMiniMaxM3ExactFunctionToolsCandidateRemainsAddressableButParked(t *testing.T) {
 	historical, ok := Lookup("minimax.m3.token-plan", "1.6.0")
 	require.True(t, ok)
 	require.Equal(t, "protocol.minimax-m3-openai-chat.v8", historical.ProtocolProfile)
@@ -50,9 +50,10 @@ func TestMiniMaxM3ExactFunctionToolsCandidateIsAppendOnlyAndCurrent(t *testing.T
 
 	current, ok := Match("MiniMax-M3")
 	require.True(t, ok)
-	require.Equal(t, candidate.Version, current.Version)
+	require.Equal(t, "minimax.m3.payg", current.ID)
+	require.Equal(t, "1.0.0", current.Version)
 	require.Error(t, ValidateNewAttachment(historical.ID, historical.Version))
-	require.NoError(t, ValidateNewAttachment(candidate.ID, candidate.Version))
+	require.Error(t, ValidateNewAttachment(candidate.ID, candidate.Version))
 }
 
 func TestFunctionToolProviderDefaultRequiresModeledFunctionToolsAndCanonicalValue(t *testing.T) {

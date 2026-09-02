@@ -26,7 +26,7 @@ func TestMiniMaxM3EmbeddedReasoningHistoryRemainsAppendOnly(t *testing.T) {
 			currentVersion = profile.Version
 		}
 	}
-	require.Equal(t, "1.7.0", currentVersion)
+	require.Empty(t, currentVersion, "Token Plan is parked for new attachments")
 	require.Error(t, ValidateNewAttachment("minimax.m3.token-plan", "1.3.0"))
 	require.Error(t, ValidateNewAttachment("minimax.m3.token-plan", "1.2.0"))
 }

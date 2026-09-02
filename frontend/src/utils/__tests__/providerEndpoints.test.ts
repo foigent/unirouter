@@ -14,7 +14,10 @@ describe('provider endpoint presets', () => {
       adapterConfig: { endpoint_path_mode: 'canonical_v1' },
     });
     expect(providerPreset('mimo')).toMatchObject({ provider: 'mimo', baseURL: 'https://api.xiaomimimo.com/v1' });
-    expect(providerPreset('glm')).toMatchObject({ provider: 'glm', baseURL: 'https://open.bigmodel.cn/api/paas/v4' });
+    expect(providerPreset('glm')).toMatchObject({
+      provider: 'glm', baseURL: 'https://open.bigmodel.cn/api/paas/v4',
+      endpointClass: 'glm_official_openai_v4', adapterConfig: { endpoint_path_mode: 'base_relative' },
+    });
     expect(providerPreset('gemini')).toMatchObject({
       provider: 'gemini', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
       endpointClass: 'gemini_openai_compatibility_v1beta',
@@ -122,6 +125,10 @@ describe('provider endpoint presets', () => {
     expect(providerPresetAdapterConfigMatches(providerPreset('minimax'), {
       endpoint_path_mode: 'base_relative',
     })).toBe(false);
+    expect(providerPresetAdapterConfigMatches(providerPreset('glm'), {
+      endpoint_path_mode: 'base_relative',
+    })).toBe(true);
+    expect(providerPresetAdapterConfigMatches(providerPreset('glm'), {})).toBe(false);
     expect(providerPresetAdapterConfigMatches(providerPreset('xai'), {})).toBe(true);
 		expect(providerPresetAdapterConfigMatches(providerPreset('xai'), {
       endpoint_path_mode: 'base_relative',
