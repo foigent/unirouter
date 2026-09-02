@@ -3983,7 +3983,7 @@ func (relay *Relay) writeAuthorizedModelList(w http.ResponseWriter, r *http.Requ
 			projectID = *apiKey.ProjectID
 		}
 	}
-	allowedModels, err := modelgov.FilterCallableModels(r.Context(), relay.db, orgID, projectID, candidates)
+	allowedIdentities, err := modelgov.ResolveCallableModelIdentities(r.Context(), relay.db, orgID, projectID, candidates)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to resolve authorized models")
 		return
@@ -4003,16 +4003,34 @@ func (relay *Relay) writeAuthorizedModelList(w http.ResponseWriter, r *http.Requ
 		if claims := middleware.GetAgentCapabilityFromContext(r.Context()); claims != nil {
 			input.AgentID = claims.AgentID
 		}
-		allowedModels, err = relay.modelAuthorization.FilterModels(r.Context(), input, allowedModels)
+		policyIdentities := make([]modelauthz.ModelIdentity, 0, len(allowedIdentities))
+		for _, identity := range allowedIdentities {
+			policyIdentities = append(policyIdentities, modelauthz.ModelIdentity{
+				RequestModel: identity.RequestModel, ResolvedModel: identity.ResolvedModel,
+			})
+		}
+		policyIdentities, err = relay.modelAuthorization.FilterModelIdentities(r.Context(), input, policyIdentities)
 		if err != nil {
 			writeError(w, http.StatusServiceUnavailable, "server_error", "server_error.model_authorization_unavailable", "Model authorization is temporarily unavailable")
 			return
 		}
+		allowedIdentities = allowedIdentities[:0]
+		for _, identity := range policyIdentities {
+			allowedIdentities = append(allowedIdentities, modelgov.CallableModelIdentity{
+				RequestModel: identity.RequestModel, ResolvedModel: identity.ResolvedModel,
+			})
+		}
+	}
+	allowedModels := make([]string, 0, len(allowedIdentities))
+	resolvedModels := make([]string, 0, len(allowedIdentities))
+	for _, identity := range allowedIdentities {
+		allowedModels = append(allowedModels, identity.RequestModel)
+		resolvedModels = append(resolvedModels, identity.ResolvedModel)
 	}
 
 	var executionProfiles map[string]publicModelExecutionProfile
 	if requestIncludesModelExecutionProfiles(r.URL.Query()["include"]) {
-		executionProfiles, err = relay.loadPublicModelExecutionProfiles(r.Context(), orgID, allowedModels)
+		executionProfiles, err = relay.loadPublicModelExecutionProfiles(r.Context(), orgID, resolvedModels)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "server_error", "server_error.internal_error", "Failed to resolve model execution profiles")
 			return
@@ -4020,13 +4038,13 @@ func (relay *Relay) writeAuthorizedModelList(w http.ResponseWriter, r *http.Requ
 	}
 
 	listedModels := make([]map[string]interface{}, 0, len(allowedModels))
-	for _, model := range allowedModels {
+	for _, identity := range allowedIdentities {
 		listedModel := map[string]interface{}{
-			"id":       model,
+			"id":       identity.RequestModel,
 			"object":   "model",
 			"owned_by": "uniroute",
 		}
-		if executionProfile, ok := executionProfiles[model]; ok {
+		if executionProfile, ok := executionProfiles[identity.ResolvedModel]; ok {
 			listedModel["x_unirouter_execution"] = executionProfile
 		}
 		listedModels = append(listedModels, listedModel)

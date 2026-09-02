@@ -4,6 +4,35 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.39] - 2026-09-03
+
+### Changed
+
+- Added a fail-closed first-successor cutover for stable public model request
+  identities. The exact command activates the successor's sealed initial
+  Release, retires and de-lists the predecessor, creates one immutable primary
+  Alias, rewrites affected model-set entries and records complete child
+  evidence in one PostgreSQL transaction.
+- Added authorization-aware request-identity projection for model Catalog and
+  `/v1/models`. Ordinary users receive the stable request name while
+  administrators retain the immutable canonical successor identity for audit.
+  Direct ordinary execution of a canonical successor protected by a primary
+  Alias is rejected.
+- Added database guards for primary Alias and completed predecessor/successor
+  immutability, deterministic replay and ambiguous-commit recovery, plus a
+  guarded M107 downgrade that refuses to discard durable successor authority.
+- Updated Developer Console, API Docs and readiness selectors to consume the
+  server-owned request identity without exposing the dated canonical successor
+  as a second ordinary model.
+
+### Scope
+
+- M107 is a model-governance and Runtime lifecycle schema change, not a new
+  Capability Publication. It reuses the existing GLM-5.2 Profile, Probe and
+  applied M105 binding. This source batch does not create the GLM successor,
+  activate a Release or route, call a Provider, deploy to Target or claim
+  Production readiness.
+
 ## [1.2.38] - 2026-09-02
 
 ### Changed

@@ -133,8 +133,11 @@ func TestCheckAccess_ResolvesAliasAllowedByProjectSet(t *testing.T) {
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
 			return &testutil.MockRow{ScanFn: func(dest ...any) error {
 				switch {
-				case strings.Contains(sql, "FROM model_aliases"):
+				case strings.Contains(sql, "alias = $2"):
 					*dest[0].(*string) = "gpt-4o"
+					*dest[1].(*bool) = false
+				case strings.Contains(sql, "target_model = $2") && strings.Contains(sql, "is_primary"):
+					return pgx.ErrNoRows
 				case strings.Contains(sql, "FROM model_registry"):
 					*dest[0].(*string) = LifecycleGA
 				case strings.Contains(sql, "model_set_items"):
@@ -218,8 +221,14 @@ func TestFilterCallableModels_UsesOneQueryForManyCandidates(t *testing.T) {
 				t.Fatalf("unexpected normalized candidates: %#v", args[2])
 			}
 			return &testutil.MockRows{Rows: []func(dest ...any) error{
-				func(dest ...any) error { *dest[0].(*string) = "model-000"; return nil },
-				func(dest ...any) error { *dest[0].(*string) = "model-127"; return nil },
+				func(dest ...any) error {
+					*dest[0].(*string), *dest[1].(*string), *dest[2].(*string) = "model-000", "model-000", "model-000"
+					return nil
+				},
+				func(dest ...any) error {
+					*dest[0].(*string), *dest[1].(*string), *dest[2].(*string) = "model-127", "model-127", "model-127"
+					return nil
+				},
 			}}, nil
 		},
 	}
@@ -242,8 +251,73 @@ func TestFilterCallableModels_QueryError(t *testing.T) {
 	}}
 
 	_, err := FilterCallableModels(context.Background(), database, 1, 0, []string{"model"})
-	if err == nil || !strings.Contains(err.Error(), "filter callable models") {
+	if err == nil || !strings.Contains(err.Error(), "resolve callable model identities") {
 		t.Fatalf("expected wrapped batch query error, got %v", err)
+	}
+}
+
+func TestCheckAccess_DirectPrimarySuccessorRequiresStableAlias(t *testing.T) {
+	database := &testutil.MockDB{QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			switch {
+			case strings.Contains(sql, "alias = $2"):
+				return pgx.ErrNoRows
+			case strings.Contains(sql, "target_model = $2") && strings.Contains(sql, "is_primary"):
+				*dest[0].(*string) = "glm-5.2"
+				return nil
+			default:
+				t.Fatalf("unexpected query: %s", sql)
+				return nil
+			}
+		}}
+	}}
+
+	result, err := CheckAccess(context.Background(), database, 1, 0, "glm-5.2-20260902")
+	if !errors.Is(err, ErrModelDenied) || result.Allowed || result.Reason != "primary_alias_required" {
+		t.Fatalf("expected canonical successor denial, result=%+v err=%v", result, err)
+	}
+}
+
+func TestCheckAccess_SecondaryAliasCannotBypassPrimaryStableIdentity(t *testing.T) {
+	database := &testutil.MockDB{QueryRowFn: func(_ context.Context, sql string, _ ...any) pgx.Row {
+		return &testutil.MockRow{ScanFn: func(dest ...any) error {
+			switch {
+			case strings.Contains(sql, "alias = $2"):
+				*dest[0].(*string) = "glm-5.2-20260902"
+				*dest[1].(*bool) = false
+				return nil
+			case strings.Contains(sql, "target_model = $2") && strings.Contains(sql, "is_primary"):
+				*dest[0].(*string) = "glm-5.2"
+				return nil
+			default:
+				t.Fatalf("unexpected query: %s", sql)
+				return nil
+			}
+		}}
+	}}
+
+	result, err := CheckAccess(context.Background(), database, 1, 0, "glm-secondary")
+	if !errors.Is(err, ErrModelDenied) || result.Allowed || result.Reason != "primary_alias_required" {
+		t.Fatalf("expected secondary alias denial, result=%+v err=%v", result, err)
+	}
+}
+
+func TestResolveCallableModelIdentities_ProjectsCanonicalSuccessorBeforeAuthorization(t *testing.T) {
+	database := &testutil.MockDB{QueryFn: func(_ context.Context, sql string, _ ...any) (pgx.Rows, error) {
+		if !strings.Contains(sql, "primary_alias.is_primary") || !strings.Contains(sql, "COALESCE(primary_alias.alias, request_alias.alias") || !strings.Contains(sql, "PARTITION BY request_model") {
+			t.Fatalf("missing primary request identity projection: %s", sql)
+		}
+		return &testutil.MockRows{Rows: []func(dest ...any) error{
+			func(dest ...any) error {
+				*dest[0].(*string), *dest[1].(*string), *dest[2].(*string) =
+					"glm-5.2-20260902", "glm-5.2", "glm-5.2-20260902"
+				return nil
+			},
+		}}, nil
+	}}
+	identities, err := ResolveCallableModelIdentities(context.Background(), database, 1, 0, []string{"glm-5.2-20260902"})
+	if err != nil || len(identities) != 1 || identities[0].RequestModel != "glm-5.2" || identities[0].ResolvedModel != "glm-5.2-20260902" {
+		t.Fatalf("unexpected identities=%+v err=%v", identities, err)
 	}
 }
 

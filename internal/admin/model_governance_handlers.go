@@ -533,6 +533,14 @@ SELECT EXISTS (
 	query := fmt.Sprintf("UPDATE model_registry SET %s WHERE id = $%d AND org_id = $%d", strings.Join(sets, ", "), argIdx, argIdx+1)
 	tag, err := tx.Exec(r.Context(), query, args...)
 	if err != nil {
+		if strings.Contains(err.Error(), "completed model successor predecessor") ||
+			strings.Contains(err.Error(), "completed primary model successor") {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "Completed model successor lifecycle state is immutable",
+				"code":  "completed_model_successor_state_immutable",
+			})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
 		return
 	}

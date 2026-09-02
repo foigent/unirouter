@@ -33,6 +33,7 @@ func registerModelDeploymentRoutes(mux *http.ServeMux, handler *admin.Handler, g
 	mux.Handle("POST /api/v1/model-deployment-releases", guards.write(handler.AuthorCanonicalDeploymentRelease))
 	mux.Handle("GET /api/v1/model-deployment-releases/{releaseRef}", guards.read(handler.GetCanonicalDeploymentLifecycle))
 	mux.Handle("POST /api/v1/model-deployment-releases/{releaseRef}/activate-initial", guards.write(handler.ActivateInitialCanonicalDeploymentLifecycle))
+	mux.Handle("POST /api/v1/model-deployment-releases/{releaseRef}/activate-successor", guards.write(handler.ActivateModelSuccessor))
 	mux.Handle("POST /api/v1/model-deployment-releases/{releaseRef}/start-canary", guards.write(handler.StartCanonicalDeploymentCanary))
 	mux.Handle("POST /api/v1/model-deployment-releases/{releaseRef}/promote", guards.write(handler.PromoteCanonicalDeploymentCanary))
 	mux.Handle("POST /api/v1/model-deployment-releases/{releaseRef}/cancel-canary", guards.safety(handler.CancelCanonicalDeploymentCanary))

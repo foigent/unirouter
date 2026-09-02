@@ -8,17 +8,24 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.38 with PostgreSQL compatibility
-ceiling `000106_minimax_official_cn_payg_endpoint_qualification`. M104 adds three exact
+Repository source candidate is version 1.2.39 with PostgreSQL compatibility
+ceiling `000107_stable_model_successor_cutover`. M107 adds a first-successor-only,
+transactional stable request identity cutover over the existing Release,
+registry, Alias and model-set authorities. It activates one sealed initial
+Release, retires the predecessor, creates one immutable primary Alias, moves
+exact model-set references and records complete replayable evidence in the same
+transaction. Authorization-aware Catalog and `/v1/models` projections expose
+the stable request identity to ordinary callers while keeping immutable
+canonical successors available to administrators. M107 is not a Capability
+Publication and does not reinterpret M104, M105 or M106. M104 adds three exact
 MiniMax PAYG Profiles and Function Tools bindings, explicit Chat operation
 identities, and a GLM onboarding endpoint-class correction. M105 appends five
 exact GLM toggle-family Profiles and pure-text Function Tools bindings over
 shared validator mechanics. M106 appends three current MiniMax PAYG Profile
 1.1.0 identities on the exact `https://api.minimax.cn/v1` endpoint and reuses
 the existing M3 v9, M2 v7 and Function Tools mechanics; historical Profile
-1.0.0 and M104 identities remain addressable. M104, M105 and M106 are
-source-only here and create no
-live qualification or execution authority. M101 is the first
+1.0.0 and M104 identities remain addressable. This 1.2.39 source candidate
+creates no live successor, qualification or execution authority. M101 is the first
 declaration-owned capability publication after the immutable M100 baseline,
 and M102 appends only the exact K3 Profile 1.9 Chat Core static contracts.
 Development/test currently runs exact version 1.2.33/M103 main merge
@@ -30,7 +37,7 @@ reported model `glm-5.2`, 760 ms and state `live_probed`; no Function Tools
 capability qualification or Release follows from that operation evidence.
 Historical Kimi K3 Target evidence remains recorded in
 `docs/ops/evidence/V1-KIMI-K3-CHAT-CORE-TARGET-20260831.md` and is not
-reinterpreted by M103, M104, M105 or M106.
+reinterpreted by M103, M104, M105, M106 or M107.
 Stable, canary, frontend and Nginx share the frozen `unirouter` Compose project
 and exact configuration chain, and database, Redis and both backend readiness
 checks are healthy. These are development/test facts, not Production evidence.

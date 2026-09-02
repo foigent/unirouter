@@ -125,6 +125,37 @@
 
 精确同名但已退役时返回 `model_retired`，不能通过换大小写或分隔符绕过生命周期。
 
+### 6.1 稳定请求身份与不可变 successor
+
+当已有稳定请求名必须绑定新的不可变公共模型身份时，用户请求身份与
+canonical 审计身份必须分离：
+
+```text
+稳定请求名 glm-5.2
+  → primary Alias
+  → canonical successor glm-5.2-20260902
+  → 精确 Deployment / Profile / Release
+```
+
+- successor 在切换前保持 `staging + approved_catalog=false`；可以完成
+  Deployment、Probe、approval 和 sealed initial Release，但不能预先获得
+  stable Slot，也不能仅靠目录隐藏阻止直接执行。
+- 首次切换由一个服务端领域命令完成：锁定并核对旧、新模型、Alias、
+  Release/Slot 和受影响 model-set 的完整 before-state，在同一 PostgreSQL
+  事务中激活 successor stable Slot、退役并下架 predecessor、创建一个
+  immutable primary Alias、把直接 model-set 引用改为稳定 Alias，并写入
+  完整不可变收据。任一步失败时不得留下半切换状态。
+- 普通 Gateway 调用若绕过稳定请求名直接指定受 primary Alias 保护的
+  canonical successor，必须 fail closed。`/v1/models`、项目 Catalog、
+  Developer Console 和 API Docs 在完成调用者授权后投影 `request_model`；
+  只有管理员投影可以同时显示 canonical identity 和历史关系。
+- primary Alias 不能通过通用 Alias CRUD 改写或停用。已经完成切换的
+  predecessor 不能复活，successor 不能回到 staging 或被直接删除；后续
+  Alias retarget 是新的版本化生命周期问题，不属于 first-cutover v1。
+- 请求重放返回相同收据；commit 结果不明确时只通过 parent lifecycle
+  receipt 与完整 child evidence 回读恢复。提交后的读回故障不自动回滚
+  已生效身份，必须依据不可变收据确认新状态后 forward-fix。
+
 ## 7. 真实检测合同
 
 - 单项检测只发送一个公共模型；模型映射后把精确 `upstream_model` 发给供应商。

@@ -91,6 +91,7 @@ var (
 		"model_deployment_lifecycle_receipt_releases",
 		"model_deployment_lifecycle_receipts",
 		"model_deployment_release_authoring_receipts",
+		"model_successor_cutover_receipt_model_sets", "model_successor_cutover_receipts",
 		"model_deployment_capabilities", "model_deployment_operations", "model_deployment_probes",
 		"model_capability_probes", "model_capability_routing_approvals",
 		"model_operation_production_approvals",
@@ -135,6 +136,10 @@ var (
 		{Table: "model_deployment_lifecycle_receipt_releases", Name: "model_deployment_lifecycle_receipt_releases_append_only"},
 		{Table: "model_deployment_lifecycle_receipts", Name: "model_deployment_lifecycle_receipts_immutable"},
 		{Table: "model_deployment_release_authoring_receipts", Name: "model_deployment_release_authoring_receipts_immutable"},
+		{Table: "model_successor_cutover_receipts", Name: "model_successor_cutover_receipts_immutable"},
+		{Table: "model_successor_cutover_receipt_model_sets", Name: "model_successor_cutover_receipt_model_sets_immutable"},
+		{Table: "model_aliases", Name: "model_aliases_primary_successor_guard"},
+		{Table: "model_registry", Name: "model_registry_completed_successor_guard"},
 		{Table: "runtime_change_events", Name: "runtime_change_events_append_only"},
 		{Table: "model_operation_production_approvals", Name: "model_operation_production_approvals_append_only"},
 		{Table: "model_operation_public_execution_bindings", Name: "model_operation_public_execution_bindings_append_only"},
@@ -165,7 +170,11 @@ var (
 		Table: "project_members", Name: "project_members_legacy_role_compatibility",
 	}
 	projectMemberRoleCompatibilityFunction = "normalize_project_members_role_from_legacy_write"
-	workloadEnvironmentImmutableTrigger    = TriggerRef{
+	successorCompletionGuardTrigger        = TriggerRef{
+		Table: "model_deployment_lifecycle_receipts", Name: "model_deployment_successor_completion_guard",
+	}
+	successorCompletionGuardFunction    = "validate_model_successor_parent_completion"
+	workloadEnvironmentImmutableTrigger = TriggerRef{
 		Table: "workload_applications", Name: "workload_applications_identity_tuple_immutable",
 	}
 	workloadEnvironmentImmutableFunction      = "preserve_workload_identity_tuple"
@@ -478,6 +487,9 @@ func Build(snapshot Snapshot, target TargetIdentity, currentSourceInstance, next
 		return Plan{}, err
 	}
 	if err := validateResetDeleteTriggers(snapshot.Triggers); err != nil {
+		return Plan{}, err
+	}
+	if err := validateSuccessorCompletionGuardTrigger(snapshot.Triggers); err != nil {
 		return Plan{}, err
 	}
 	if err := validateLegacyRoleCompatibilityTrigger(snapshot.Triggers); err != nil {
@@ -940,6 +952,23 @@ func validateResetDeleteTriggers(triggers []TriggerState) error {
 		}
 	}
 	return nil
+}
+
+func validateSuccessorCompletionGuardTrigger(triggers []TriggerState) error {
+	identity := successorCompletionGuardTrigger.Table + "." + successorCompletionGuardTrigger.Name
+	for _, trigger := range triggers {
+		if trigger.Table+"."+trigger.Name != identity {
+			continue
+		}
+		definition := strings.ToLower(trigger.Definition)
+		if trigger.Enabled == "O" &&
+			strings.Contains(definition, "before update") &&
+			strings.Contains(definition, strings.ToLower(successorCompletionGuardFunction)) {
+			return nil
+		}
+		break
+	}
+	return fmt.Errorf("%w: successor_completion_guard", ErrInvalid)
 }
 
 func validateLegacyRoleCompatibilityTrigger(triggers []TriggerState) error {

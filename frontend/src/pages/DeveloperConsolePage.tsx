@@ -74,6 +74,7 @@ interface ApiKey {
 interface CatalogModel {
   id: number;
   model_name: string;
+  request_model?: string;
   display_name?: string;
   provider_family?: string;
   lifecycle: string;
@@ -246,14 +247,9 @@ export default function DeveloperConsolePage() {
   const noProjectDescription = '请联系组织管理员或项目管理员把你的账号加入项目后，再使用项目工作台。';
 
   const modelOptions = useMemo(() => {
-    const aliases = new Set<string>();
-    const modelNames = new Set<string>();
-    models.forEach(model => {
-      splitCSV(model.aliases).forEach(alias => aliases.add(alias));
-      if (model.model_name) modelNames.add(model.model_name);
-    });
-    const values = [...Array.from(aliases).sort(), ...Array.from(modelNames).sort()];
-    return values.filter((value, index) => values.indexOf(value) === index);
+    return Array.from(new Set(models
+      .map(model => String(model.request_model || model.model_name || '').trim())
+      .filter(Boolean))).sort();
   }, [models]);
 
   useEffect(() => {
@@ -706,11 +702,6 @@ export default function DeveloperConsolePage() {
         <div className="ur-dev-model-name">
           <Text strong>{record.display_name || value}</Text>
           <Text type="tertiary" size="small">{value}</Text>
-          {splitCSV(record.aliases).length > 0 && (
-            <div className="ur-chip-row">
-              {splitCSV(record.aliases).slice(0, 3).map(alias => <StatusTag key={alias} status="alias">{alias}</StatusTag>)}
-            </div>
-          )}
           {record.lifecycle === 'deprecated' && record.migration_recommendation && (
             <div className="ur-dev-migration">
               <IconAlertTriangle />

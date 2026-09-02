@@ -135,7 +135,8 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 		        mr.context_length, mr.output_limit, mr.capability_tags, mr.data_residency,
 		        mr.pricing_model_name, mr.approved_catalog, mr.migration_recommendation,
 		        mr.execution_profile_id, mr.execution_profile_version,
-		        mr.created_at, mr.updated_at, COALESCE(string_agg(DISTINCT ma.alias, ','), '') AS aliases
+		        mr.created_at, mr.updated_at, COALESCE(string_agg(DISTINCT ma.alias, ','), '') AS aliases,
+		        COALESCE(MAX(ma.alias) FILTER (WHERE ma.is_primary), mr.model_name) AS request_model
 		 FROM model_registry mr
 		 LEFT JOIN model_aliases ma ON ma.org_id = mr.org_id AND ma.target_model = mr.model_name AND ma.status = 'active'
 		 %s
@@ -153,11 +154,22 @@ func (h *Handler) ListApprovedModelCatalog(w http.ResponseWriter, r *http.Reques
 	defer rows.Close()
 
 	items := make([]map[string]interface{}, 0)
+	canSeeCanonical := auth.RoleIn(organizationRole, auth.RolePlatformAdmin, auth.RoleOrgAdmin)
 	for rows.Next() {
-		item, err := scanModelRegistryRowWithAliases(rows.Scan)
+		item, requestModel, err := scanModelRegistryRowWithAliasesAndRequestIdentity(rows.Scan)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Scan failed"})
 			return
+		}
+		canonicalModel, _ := item["model_name"].(string)
+		item["request_model"] = requestModel
+		if canSeeCanonical {
+			item["canonical_model"] = canonicalModel
+		} else {
+			item["model_name"] = requestModel
+			if requestModel != canonicalModel {
+				item["aliases"] = []string{}
+			}
 		}
 		items = append(items, item)
 	}

@@ -247,9 +247,10 @@ describe('ModelReadinessPage', () => {
     await waitFor(() => expect(mocks.getModelCatalog).toHaveBeenCalledWith(1, 100, { project_id: 12, routable_only: true }));
 
     fireEvent.click(screen.getByRole('combobox', { name: '模型或 Alias' }));
-    expect(await screen.findByText('project-b-alias（Alias → project-b-model）')).toBeTruthy();
+	    expect((await screen.findAllByText('Project B')).length).toBeGreaterThan(0);
+	    expect(screen.queryByText('project-b-alias（Alias → project-b-model）')).toBeNull();
     projectACatalog.resolve({ data: [{ model_name: 'project-a-model', display_name: 'Project A', aliases: ['project-a-alias'] }], total: 1 });
-    await waitFor(() => expect(screen.queryByText('project-a-alias（Alias → project-a-model）')).toBeNull());
+	    await waitFor(() => expect(screen.queryByText('Project A')).toBeNull());
   });
 
   it('uses searchable existing-object selectors instead of manual model and application refs', async () => {
@@ -260,7 +261,8 @@ describe('ModelReadinessPage', () => {
     expect(mocks.listModelDeployments).not.toHaveBeenCalled();
     expect(screen.queryByRole('textbox', { name: '模型或 Alias' })).toBeNull();
     fireEvent.click(screen.getByRole('combobox', { name: '模型或 Alias' }));
-    expect(await screen.findByText('chat-default（Alias → company-chat）')).toBeTruthy();
+	    expect(await screen.findByText('Company Chat')).toBeTruthy();
+	    expect(screen.queryByText('chat-default（Alias → company-chat）')).toBeNull();
     fireEvent.click(screen.getByRole('combobox', { name: '谁来调用' }));
     fireEvent.click(await screen.findByText('应用 / Agent'));
     expect(await screen.findByRole('combobox', { name: '应用 / Agent' })).toBeTruthy();

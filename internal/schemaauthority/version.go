@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000106_minimax_official_cn_payg_endpoint_qualification"
+const LatestSupportedMigration = "000107_stable_model_successor_cutover"

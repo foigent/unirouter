@@ -299,6 +299,15 @@ func newRoutableTestRelay(t *testing.T, model string, b *mockBilling) *Relay {
 
 // --- HandleModels tests ---
 
+func setCallableModelIdentity(dest []any, model string) error {
+	*dest[0].(*string) = model
+	if len(dest) == 3 {
+		*dest[1].(*string) = model
+		*dest[2].(*string) = model
+	}
+	return nil
+}
+
 func TestHandleModels_WithAllowedModels(t *testing.T) {
 	db := &testutil.MockDB{
 		QueryRowFn: func(ctx context.Context, sql string, args ...any) pgx.Row {
@@ -308,8 +317,8 @@ func TestHandleModels_WithAllowedModels(t *testing.T) {
 		QueryFn: func(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 			require.Contains(t, sql, "WITH candidates AS")
 			return &testutil.MockRows{Rows: []func(dest ...any) error{
-				func(dest ...any) error { *dest[0].(*string) = "gpt-4o"; return nil },
-				func(dest ...any) error { *dest[0].(*string) = "gpt-3.5-turbo"; return nil },
+				func(dest ...any) error { return setCallableModelIdentity(dest, "gpt-4o") },
+				func(dest ...any) error { return setCallableModelIdentity(dest, "gpt-3.5-turbo") },
 			}}, nil
 		},
 	}
@@ -335,6 +344,40 @@ func TestHandleModels_WithAllowedModels(t *testing.T) {
 	}
 }
 
+func TestHandleModels_ProjectsPrimarySuccessorToStableRequestIdentity(t *testing.T) {
+	database := &testutil.MockDB{QueryFn: func(_ context.Context, query string, _ ...any) (pgx.Rows, error) {
+		require.Contains(t, query, "primary_alias.is_primary")
+		return &testutil.MockRows{Rows: []func(dest ...any) error{
+			func(dest ...any) error {
+				*dest[0].(*string) = "glm-5.2-20260902"
+				*dest[1].(*string) = "glm-5.2"
+				*dest[2].(*string) = "glm-5.2-20260902"
+				return nil
+			},
+		}}, nil
+	}}
+	relay := newTestRelay(database, &mockBilling{})
+	request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	request = request.WithContext(context.WithValue(request.Context(), middleware.CtxAPIKey, &models.ApiKey{
+		ID: 11, OrgID: 7, AllowedModels: "glm-5.2-20260902",
+	}))
+	recorder := httptest.NewRecorder()
+
+	relay.HandleModels(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var response struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, []struct {
+		ID string `json:"id"`
+	}{{ID: "glm-5.2"}}, response.Data)
+	require.NotContains(t, recorder.Body.String(), "glm-5.2-20260902")
+}
+
 func TestHandleModels_FallbackToModelPrices(t *testing.T) {
 	queryCount := 0
 	db := &testutil.MockDB{
@@ -347,16 +390,16 @@ func TestHandleModels_FallbackToModelPrices(t *testing.T) {
 			if strings.Contains(sql, "FROM model_prices") {
 				return &testutil.MockRows{
 					Rows: []func(dest ...any) error{
-						func(dest ...any) error { *dest[0].(*string) = "gpt-4o"; return nil },
-						func(dest ...any) error { *dest[0].(*string) = "claude-3"; return nil },
+						func(dest ...any) error { return setCallableModelIdentity(dest, "gpt-4o") },
+						func(dest ...any) error { return setCallableModelIdentity(dest, "claude-3") },
 					},
 				}, nil
 			}
 			require.Contains(t, sql, "WITH candidates AS")
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
-					func(dest ...any) error { *dest[0].(*string) = "gpt-4o"; return nil },
-					func(dest ...any) error { *dest[0].(*string) = "claude-3"; return nil },
+					func(dest ...any) error { return setCallableModelIdentity(dest, "gpt-4o") },
+					func(dest ...any) error { return setCallableModelIdentity(dest, "claude-3") },
 				},
 			}, nil
 		},
@@ -424,8 +467,7 @@ func TestHandleModels_EmptyAllowedModels(t *testing.T) {
 			return &testutil.MockRows{
 				Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*string) = "gpt-4o"
-						return nil
+						return setCallableModelIdentity(dest, "gpt-4o")
 					},
 				},
 			}, nil
@@ -458,12 +500,10 @@ func TestHandleModels_ProjectModelSetExcludesModelsDeniedAtCallAdmission(t *test
 			if strings.Contains(sql, "FROM model_prices") {
 				return &testutil.MockRows{Rows: []func(dest ...any) error{
 					func(dest ...any) error {
-						*dest[0].(*string) = "DeepSeek-V4-Flash"
-						return nil
+						return setCallableModelIdentity(dest, "DeepSeek-V4-Flash")
 					},
 					func(dest ...any) error {
-						*dest[0].(*string) = "kimi-k2.6"
-						return nil
+						return setCallableModelIdentity(dest, "kimi-k2.6")
 					},
 				}}, nil
 			}
@@ -472,8 +512,7 @@ func TestHandleModels_ProjectModelSetExcludesModelsDeniedAtCallAdmission(t *test
 			require.Equal(t, projectID, args[1])
 			return &testutil.MockRows{Rows: []func(dest ...any) error{
 				func(dest ...any) error {
-					*dest[0].(*string) = "DeepSeek-V4-Flash"
-					return nil
+					return setCallableModelIdentity(dest, "DeepSeek-V4-Flash")
 				},
 			}}, nil
 		},
@@ -513,8 +552,7 @@ func TestHandleModels_ProjectModelSetIntersectsExplicitKeyAllowlist(t *testing.T
 			require.Equal(t, []string{"DeepSeek-V4-Flash", "kimi-k2.6"}, args[2])
 			return &testutil.MockRows{Rows: []func(dest ...any) error{
 				func(dest ...any) error {
-					*dest[0].(*string) = "DeepSeek-V4-Flash"
-					return nil
+					return setCallableModelIdentity(dest, "DeepSeek-V4-Flash")
 				},
 			}}, nil
 		},
@@ -554,8 +592,7 @@ func TestHandleModels_NoProjectExcludesRetiredModel(t *testing.T) {
 			require.Equal(t, []string{"active-model", "retired-model"}, args[2])
 			return &testutil.MockRows{Rows: []func(dest ...any) error{
 				func(dest ...any) error {
-					*dest[0].(*string) = "active-model"
-					return nil
+					return setCallableModelIdentity(dest, "active-model")
 				},
 			}}, nil
 		},

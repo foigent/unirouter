@@ -201,3 +201,29 @@ func TestEvaluatePoliciesAllowRulesCannotGrantPastExplicitDeny(t *testing.T) {
 		t.Fatalf("deny was widened by an allow rule: %#v", decision)
 	}
 }
+
+func TestEvaluatePoliciesUsesStableAndResolvedSuccessorIdentitiesSymmetrically(t *testing.T) {
+	tests := []struct {
+		name  string
+		allow string
+		deny  string
+	}{
+		{name: "stable deny overrides canonical allow", allow: "glm-5.2-20260902", deny: "glm-5.2"},
+		{name: "canonical deny overrides stable allow", allow: "glm-5.2", deny: "glm-5.2-20260902"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			input := Input{
+				Environment: "development", Endpoint: "/v1/models",
+				RequestedModel: "glm-5.2", ResolvedModel: "glm-5.2-20260902",
+			}
+			decision := EvaluatePolicies(input, []Policy{
+				{AuthorizationRef: "allow", SubjectType: SubjectProject, SubjectRef: "2", Effect: EffectAllow, AllowedModels: []string{tc.allow}, AllowedEndpoints: []string{"/v1/models"}, Status: StatusActive},
+				{AuthorizationRef: "deny", SubjectType: SubjectAPIKey, SubjectRef: "3", Effect: EffectDeny, AllowedModels: []string{tc.deny}, AllowedEndpoints: []string{"/v1/models"}, Status: StatusActive},
+			})
+			if decision.Allowed || decision.Reason != "explicit_deny" {
+				t.Fatalf("stable/resolved identity pair widened policy: %#v", decision)
+			}
+		})
+	}
+}

@@ -398,7 +398,7 @@ func TestGLMToggleM105ActualArtifactsGuardedRoundTripPreservesM104Integration(t 
 	migrationDir := testdb.MigrationsDir(t)
 	artifactLedger, err := schemaauthority.ExpectedLedger(migrationDir)
 	require.NoError(t, err)
-	require.Equal(t, "000106_minimax_official_cn_payg_endpoint_qualification", artifactLedger[len(artifactLedger)-1])
+	require.Equal(t, schemaauthority.LatestSupportedMigration, artifactLedger[len(artifactLedger)-1])
 	require.NoError(t, VerifyArtifactPublicationInventory(migrationDir, artifactLedger))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 
@@ -504,7 +504,7 @@ func TestMiniMaxOfficialCNPAYGM106ActualArtifactsGuardedRoundTripPreservesM105In
 	migrationDir := testdb.MigrationsDir(t)
 	artifactLedger, err := schemaauthority.ExpectedLedger(migrationDir)
 	require.NoError(t, err)
-	require.Equal(t, "000106_minimax_official_cn_payg_endpoint_qualification", artifactLedger[len(artifactLedger)-1])
+	require.Equal(t, schemaauthority.LatestSupportedMigration, artifactLedger[len(artifactLedger)-1])
 	require.NoError(t, VerifyArtifactPublicationInventory(migrationDir, artifactLedger))
 	require.NoError(t, migrate.RunThrough(ctx, pool, migrationDir, BaselineMigrationM100))
 

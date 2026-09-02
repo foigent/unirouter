@@ -635,6 +635,26 @@ func insertDeploymentLifecycleAudit(
 	legacyPlanHash string,
 	deploymentPlanHash string,
 ) (int64, error) {
+	return insertDeploymentLifecycleAuditVersion(
+		ctx, tx, receiptID, command, target, slot, releases, qualifications,
+		legacyPlanHash, deploymentPlanHash, DeploymentLifecycleReceiptContractVersion, nil,
+	)
+}
+
+func insertDeploymentLifecycleAuditVersion(
+	ctx context.Context,
+	tx pgx.Tx,
+	receiptID int64,
+	command DeploymentLifecycleCommand,
+	target DeploymentRelease,
+	slot DeploymentLifecycleSlotReceipt,
+	releases []DeploymentLifecycleReleaseReceipt,
+	qualifications []DeploymentLifecycleQualificationReceipt,
+	legacyPlanHash string,
+	deploymentPlanHash string,
+	contractVersion string,
+	extra map[string]interface{},
+) (int64, error) {
 	beforeSlot := map[string]interface{}{
 		"stable_release_id":   slot.BeforeStableReleaseID,
 		"canary_release_id":   slot.BeforeCanaryReleaseID,
@@ -653,7 +673,7 @@ func insertDeploymentLifecycleAudit(
 	}
 	payload := map[string]interface{}{
 		"receipt_id":          receiptID,
-		"contract_version":    DeploymentLifecycleReceiptContractVersion,
+		"contract_version":    contractVersion,
 		"server_operation_id": command.ServerOperationID,
 		"action":              command.Mutation.Action,
 		"runtime_mutation":    "bounded_route_assignment",
@@ -666,6 +686,9 @@ func insertDeploymentLifecycleAudit(
 	}
 	if deploymentPlanHash != "" {
 		payload["deployment_plan_hash"] = deploymentPlanHash
+	}
+	for key, value := range extra {
+		payload[key] = value
 	}
 	detail, err := json.Marshal(payload)
 	if err != nil {

@@ -179,6 +179,7 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 	for _, path := range []string{
 		"/api/v1/model-deployment-releases",
 		"/api/v1/model-deployment-releases/rcr_route-one/activate-initial",
+		"/api/v1/model-deployment-releases/rcr_route-one/activate-successor",
 		"/api/v1/model-deployment-releases/rcr_route-one/start-canary",
 		"/api/v1/model-deployment-releases/rcr_route-one/promote",
 		"/api/v1/model-deployment-releases/rcr_route-one/rollback-stable",
@@ -193,6 +194,12 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 		viewer := serve(missingLicenseMux, http.MethodPost, path, `{}`, auth.RoleOrgViewer)
 		require.Equal(t, http.StatusForbidden, viewer.Code, "path=%s body=%s", path, viewer.Body.String())
 		require.NotContains(t, viewer.Body.String(), "license_error", "RBAC must reject before lifecycle License admission")
+	}
+	for _, role := range []string{auth.RolePlatformAdmin, auth.RoleOrgAdmin} {
+		response := serve(validMux, http.MethodPost,
+			"/api/v1/model-deployment-releases/rcr_route-one/activate-successor", `{}`, role)
+		require.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
+		require.Contains(t, response.Body.String(), "idempotency_required")
 	}
 
 	cancelPath := "/api/v1/model-deployment-releases/rcr_route-one/cancel-canary"
@@ -279,6 +286,7 @@ func TestCanonicalDeploymentLifecycleContractParityAcrossOpenAPIAndDocs(t *testi
 		licenseDescription string
 	}{
 		{readPath + "/activate-initial", "Expansion requiring the Gateway License"},
+		{readPath + "/activate-successor", "Expansion requiring the Gateway License"},
 		{readPath + "/start-canary", "Expansion requiring the Gateway License"},
 		{readPath + "/promote", "Expansion requiring the Gateway License"},
 		{readPath + "/cancel-canary", "Safety contraction available without a Gateway License"},
@@ -324,6 +332,9 @@ func TestCanonicalDeploymentLifecycleContractParityAcrossOpenAPIAndDocs(t *testi
 
 	backendDocs, err := os.ReadFile("main.go")
 	require.NoError(t, err)
+	backendRoutes, err := os.ReadFile("model_deployment_routes.go")
+	require.NoError(t, err)
+	backendDocs = append(backendDocs, backendRoutes...)
 	frontendDocs, err := os.ReadFile("../../frontend/src/pages/ApiDocsPage.tsx")
 	require.NoError(t, err)
 	frontendClient, err := os.ReadFile("../../frontend/src/api/modelDeploymentLifecycle.ts")

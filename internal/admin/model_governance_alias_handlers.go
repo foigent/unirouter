@@ -24,7 +24,7 @@ func (h *Handler) ListModelAliases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := h.db.Query(r.Context(),
-		`SELECT id, org_id, alias, target_model, display_name, description, status, created_at, updated_at
+		`SELECT id, org_id, alias, target_model, display_name, description, status, is_primary, created_at, updated_at
 		 FROM model_aliases WHERE org_id = $1 ORDER BY alias ASC LIMIT $2 OFFSET $3`,
 		orgID, pageSize, offset)
 	if err != nil {
@@ -95,6 +95,13 @@ func (h *Handler) CreateModelAlias(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{"error": "Alias already exists"})
+			return
+		}
+		if strings.Contains(err.Error(), "completed model successor accepts only its primary stable alias") {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "Completed model successors accept only their primary stable alias",
+				"code":  "model_successor_secondary_alias_forbidden",
+			})
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Create failed"})
@@ -175,8 +182,9 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	var beforeOrgID int64
+	var beforePrimary bool
 	var beforeAlias, beforeTargetModel, beforeDisplayName, beforeDescription, beforeStatus string
-	beforeQuery := `SELECT org_id, alias, target_model, display_name, description, status FROM model_aliases WHERE id = $1`
+	beforeQuery := `SELECT org_id, alias, target_model, display_name, description, status, is_primary FROM model_aliases WHERE id = $1`
 	beforeArgs := []interface{}{id}
 	if scope.constrained {
 		beforeQuery += ` AND org_id = $2`
@@ -184,9 +192,16 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 	}
 	beforeQuery += ` FOR UPDATE`
 	if err := tx.QueryRow(r.Context(), beforeQuery, beforeArgs...).Scan(
-		&beforeOrgID, &beforeAlias, &beforeTargetModel, &beforeDisplayName, &beforeDescription, &beforeStatus,
+		&beforeOrgID, &beforeAlias, &beforeTargetModel, &beforeDisplayName, &beforeDescription, &beforeStatus, &beforePrimary,
 	); err != nil {
 		writeModelGovernanceLookupError(w, err, "Alias")
+		return
+	}
+	if beforePrimary {
+		writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error": "Primary successor aliases are immutable; use the reviewed successor lifecycle",
+			"code":  "primary_model_alias_immutable",
+		})
 		return
 	}
 	sets = append(sets, "updated_at = NOW()")
@@ -194,6 +209,13 @@ func (h *Handler) UpdateModelAlias(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf("UPDATE model_aliases SET %s WHERE id = $%d AND org_id = $%d", strings.Join(sets, ", "), argIdx, argIdx+1)
 	tag, err := tx.Exec(r.Context(), query, args...)
 	if err != nil {
+		if strings.Contains(err.Error(), "completed model successor accepts only its primary stable alias") {
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "Completed model successors accept only their primary stable alias",
+				"code":  "model_successor_secondary_alias_forbidden",
+			})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": "Update failed"})
 		return
 	}
