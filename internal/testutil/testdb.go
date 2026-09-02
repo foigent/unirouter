@@ -319,13 +319,33 @@ func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migration
 	return runStrictTestArtifactInstall(ctx, pool, migrationsDir)
 }
 
-// RewindCapabilityPublicationsForLegacyMigrationTest removes declaration-owned
-// test publications in reverse ledger order when a historical rollback fixture
-// must establish the M100 schema ceiling first. It executes each generated,
-// guarded down migration only when that exact publication is present;
-// production recovery continues to require the original Plan and the supported
-// Publication V1 owner path.
+// RewindCapabilityPublicationsForLegacyMigrationTest first removes known
+// trailing ordinary test migrations and then removes declaration-owned test
+// publications in reverse ledger order when a historical rollback fixture must
+// establish the M100 schema ceiling. Every guarded down migration runs only
+// when that exact ledger entry is present; production recovery continues to
+// require the supported migration or Publication V1 owner path.
 func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
+	for _, migrationID := range []string{
+		"000107_stable_model_successor_cutover",
+	} {
+		var applied bool
+		if err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, migrationID,
+		).Scan(&applied); err != nil {
+			return fmt.Errorf("query trailing legacy-test migration %s: %w", migrationID, err)
+		}
+		if !applied {
+			continue
+		}
+		down, err := os.ReadFile(filepath.Join(migrationsDir, migrationID+".down.sql"))
+		if err != nil {
+			return fmt.Errorf("read trailing legacy-test migration rollback %s: %w", migrationID, err)
+		}
+		if _, err := pool.Exec(ctx, string(down)); err != nil {
+			return fmt.Errorf("rewind trailing legacy-test migration %s: %w", migrationID, err)
+		}
+	}
 	for _, publicationID := range []string{
 		"000106_minimax_official_cn_payg_endpoint_qualification",
 		"000105_glm_toggle_function_tools_qualification",
