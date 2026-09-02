@@ -17,9 +17,9 @@ Deployment 6, eight independent capability Probe/Approval qualifications and
 development/test Release 27. The Release and initial stable-slot activation
 establish only a test route. Public model 817 remains `staging` and outside the
 approved catalog, so no `released`, Production, Alias or global canonical claim
-is made. Repository source candidate 1.2.36/M105 retains the existing M105
-code, migration and Publication artifacts; 1.2.36 synchronizes repository fact
-sources and gate-required version metadata. M104 adds three exact MiniMax PAYG
+is made. Repository source candidate 1.2.37/M106 retains the existing M104/M105
+history and appends the current MiniMax PAYG official-China endpoint successor.
+M104 adds three exact MiniMax PAYG
 Profiles (M3, M2.7 and M2.7 Highspeed), explicit Chat operation bindings and
 one declaration-owned Function Tools plan over shared mechanics with separate
 M3 and parameterized M2 Probe identities. M105 advances GLM-5.2 and
@@ -29,10 +29,13 @@ Function Tools Probe validator while preserving model-specific Profile,
 protocol, reasoning, evidence and approval identities. GLM-5V-Turbo's M105
 binding is pure-text Function Tools evidence and does not qualify media plus
 tools. GLM-5.3-Flash remains outside the executable M105 binding set pending a
-separate exact multimodal operation contract. Historical Token Plan Profiles and
-M103 remain addressable but are not eligible for new attachment. The
-development/test Target independently runs exact 1.2.33/M103; M104 and M105 are
-not applied and neither is the deployed Target artifact.
+separate exact multimodal operation contract. M106 advances the three PAYG
+Profiles to append-only version 1.1.0 on `https://api.minimax.cn/v1`, reusing
+their existing protocol and Function Tools mechanics. Their 1.0.0 identities,
+the historical `.minimaxi.com` endpoint class, Token Plan Profiles and M103
+remain addressable but are not eligible for new attachment. The
+development/test Target independently runs exact 1.2.33/M103; M104, M105 and
+M106 are not applied and none is the deployed Target artifact.
 Local, CI, artifact, Target, provider, SDK-delivery and customer-wallet evidence
 remain separate.
 
@@ -375,9 +378,9 @@ and Release claims still require their own exact identity/evidence.
 | `kimi.k2.6.api@1.7.0` | Kimi Platform Chat |
 | `kimi.k2.7-code.api@1.3.0` | Kimi Platform Chat |
 | `kimi.k3.api@1.9.0` | Kimi Platform Chat |
-| `minimax.m3.payg@1.0.0` | MiniMax CN Chat / PAYG |
-| `minimax.m2.7.payg@1.0.0` | MiniMax CN Chat / PAYG |
-| `minimax.m2.7-highspeed.payg@1.0.0` | MiniMax CN Chat / PAYG |
+| `minimax.m3.payg@1.1.0` | MiniMax official CN Chat / PAYG |
+| `minimax.m2.7.payg@1.1.0` | MiniMax official CN Chat / PAYG |
+| `minimax.m2.7-highspeed.payg@1.1.0` | MiniMax official CN Chat / PAYG |
 | `glm.5.3.api@1.8.0` | GLM official open-platform Chat |
 | `glm.5.2.api@1.8.0` | GLM official open-platform Chat |
 | `glm.5.1.api@1.0.0` | GLM official open-platform Chat |
@@ -416,7 +419,7 @@ parity or a complete price contract. Official USD prices remain review drafts;
 nonstandard tiers cannot debit customer wallets. No entry is declared fully
 adapted, provider-live-verified or released by this table.
 
-## MiniMax PAYG M104 local candidate
+## MiniMax PAYG M104 history and M106 endpoint successor
 
 `minimax.m3.payg@1.0.0`, `minimax.m2.7.payg@1.0.0` and
 `minimax.m2.7-highspeed.payg@1.0.0` freeze three exact PAYG access identities
@@ -431,11 +434,18 @@ M104 appends three `function_tools` bindings with M103 as its exact
 predecessor. It does not rewrite or replay M103. Historical
 `minimax.*.token-plan` Profiles remain addressable for retained evidence and
 deployments, but they have no current pointer and cannot receive new
-attachments. Token Plan integration, M2.5 Highspeed PAYG, pricing activation,
-Target apply, Provider qualification, Release, deployment and Production are
-outside this source candidate. The GLM onboarding preset now names the existing
-`glm_official_openai_v4` endpoint class; it does not add or relax a GLM Profile
-or Publication binding.
+attachments.
+
+M106 keeps all three M104 Profile 1.0.0 identities addressable on the historical
+`https://api.minimaxi.com/v1` class and appends Profile 1.1.0 successors on the
+current official `https://api.minimax.cn/v1` class. Only the current pointer and
+exact endpoint identity advance: upstream model IDs, M3 v9/M2 v7 protocols,
+Probe identities, capability grammar, limits, reasoning, cache and usage
+semantics are unchanged. M106 follows M105 and adds three exact 1.1.0
+`function_tools` bindings; it does not rewrite or replay M104/M105. Token Plan
+integration, M2.5 Highspeed PAYG, pricing activation, Target apply, Provider
+qualification, model Release, deployment and Production are outside this Local
+source candidate.
 
 ### Historical DeepSeek Flash M92/local-M93 checkpoint — superseded
 

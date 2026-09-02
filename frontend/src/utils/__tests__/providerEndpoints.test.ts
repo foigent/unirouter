@@ -10,7 +10,7 @@ describe('provider endpoint presets', () => {
   it('keeps custom providers discoverable without treating presets as an allowlist', () => {
     expect(providerPresets[0].value).toBe('custom');
     expect(providerPreset('minimax')).toMatchObject({
-      provider: 'minimax', baseURL: 'https://api.minimaxi.com/v1', endpointClass: 'minimax_cn_openai_v1',
+      provider: 'minimax', baseURL: 'https://api.minimax.cn/v1', endpointClass: 'minimax_official_cn_openai_v1',
       adapterConfig: { endpoint_path_mode: 'canonical_v1' },
     });
     expect(providerPreset('mimo')).toMatchObject({ provider: 'mimo', baseURL: 'https://api.xiaomimimo.com/v1' });

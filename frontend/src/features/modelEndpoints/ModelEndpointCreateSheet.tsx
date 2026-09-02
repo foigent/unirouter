@@ -234,8 +234,8 @@ export function providerPresetBaseURLError(
       const parsed = new URL(baseURL);
       const authority = baseURL.slice('https://'.length).split('/')[0];
       return parsed.protocol === 'https:'
-        && parsed.hostname.toLowerCase() === 'api.minimaxi.com'
-        && authority.toLowerCase() === 'api.minimaxi.com'
+        && parsed.hostname.toLowerCase() === 'api.minimax.cn'
+        && authority.toLowerCase() === 'api.minimax.cn'
         && !parsed.port
         && !parsed.username
         && !parsed.password
@@ -243,9 +243,9 @@ export function providerPresetBaseURLError(
         && !parsed.hash
         && parsed.pathname.replace(/\/$/u, '') === '/v1'
         ? ''
-        : 'MiniMax 中国区官方模板要求精确使用 https://api.minimaxi.com/v1';
+        : 'MiniMax 中国区官方模板要求精确使用 https://api.minimax.cn/v1';
     } catch {
-      return 'MiniMax 中国区官方模板要求精确使用 https://api.minimaxi.com/v1';
+      return 'MiniMax 中国区官方模板要求精确使用 https://api.minimax.cn/v1';
     }
   }
   if (presetValue === 'xai') {

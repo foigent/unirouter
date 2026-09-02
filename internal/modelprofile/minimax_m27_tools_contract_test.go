@@ -46,7 +46,7 @@ func TestMiniMaxM27ExactFunctionToolsCandidateRemainsAddressableButParked(t *tes
 	current, ok := Match("MiniMax-M2.7")
 	require.True(t, ok)
 	require.Equal(t, "minimax.m2.7.payg", current.ID)
-	require.Equal(t, "1.0.0", current.Version)
+	require.Equal(t, "1.1.0", current.Version)
 	require.Error(t, ValidateNewAttachment(historical.ID, historical.Version))
 	require.Error(t, ValidateNewAttachment(candidate.ID, candidate.Version))
 }
