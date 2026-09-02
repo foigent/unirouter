@@ -96,7 +96,7 @@ func TestBuildSupportsExactCurrentSchemaAndRejectsPreviousOrFutureMax(t *testing
 	if plan.Summary.TableCount != 125 || plan.Summary.ResetCandidateCount != 113 || plan.Summary.ReviewRequiredCount != 0 {
 		t.Fatalf("current schema changed reviewed table classification: %+v", plan.Summary)
 	}
-	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+5 {
+	if plan.Schema.TriggerCount != len(resetDeleteTriggers)+6 {
 		t.Fatalf("current schema compatibility trigger missing from reset contract: %+v", plan.Schema)
 	}
 	if plan.SelectedAdmin.OrganizationRole != "platform_admin" || plan.SelectedAdmin.Role != "platform_admin" {
@@ -258,6 +258,15 @@ func TestBuildRejectsUnreviewedFKCycleAndMissingGuardTrigger(t *testing.T) {
 		t.Fatalf("missing lifecycle receipt reset trigger error = %v", err)
 	}
 
+	missingSuccessorCompletionGuard := completeSnapshot()
+	missingSuccessorCompletionGuard.Triggers = slices.DeleteFunc(missingSuccessorCompletionGuard.Triggers, func(trigger TriggerState) bool {
+		return trigger.Name == successorCompletionGuardTrigger.Name
+	})
+	if _, err := Build(missingSuccessorCompletionGuard, testTarget(), "source-a", "source-b", time.Unix(0, 0)); err == nil ||
+		!strings.Contains(err.Error(), "successor_completion_guard") {
+		t.Fatalf("missing successor completion guard error = %v", err)
+	}
+
 	missingAuthoringReceiptTrigger := completeSnapshot()
 	missingAuthoringReceiptTrigger.Triggers = slices.DeleteFunc(missingAuthoringReceiptTrigger.Triggers, func(trigger TriggerState) bool {
 		return trigger.Name == "model_deployment_release_authoring_receipts_immutable"
@@ -392,6 +401,13 @@ func completeSnapshot() Snapshot {
 			Enabled:    "O",
 		})
 	}
+	triggers = append(triggers, TriggerState{
+		Table: successorCompletionGuardTrigger.Table,
+		Name:  successorCompletionGuardTrigger.Name,
+		Definition: "CREATE TRIGGER " + successorCompletionGuardTrigger.Name +
+			" BEFORE UPDATE ON public.model_deployment_lifecycle_receipts EXECUTE FUNCTION " + successorCompletionGuardFunction + "()",
+		Enabled: "O",
+	})
 	triggers = append(triggers, TriggerState{
 		Table: legacyRoleCompatibilityTrigger.Table,
 		Name:  legacyRoleCompatibilityTrigger.Name,

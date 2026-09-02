@@ -135,7 +135,6 @@ var (
 		{Table: "model_deployment_lifecycle_receipt_qualifications", Name: "model_deployment_lifecycle_receipt_qualifications_append_only"},
 		{Table: "model_deployment_lifecycle_receipt_releases", Name: "model_deployment_lifecycle_receipt_releases_append_only"},
 		{Table: "model_deployment_lifecycle_receipts", Name: "model_deployment_lifecycle_receipts_immutable"},
-		{Table: "model_deployment_lifecycle_receipts", Name: "model_deployment_successor_completion_guard"},
 		{Table: "model_deployment_release_authoring_receipts", Name: "model_deployment_release_authoring_receipts_immutable"},
 		{Table: "model_successor_cutover_receipts", Name: "model_successor_cutover_receipts_immutable"},
 		{Table: "model_successor_cutover_receipt_model_sets", Name: "model_successor_cutover_receipt_model_sets_immutable"},
@@ -171,7 +170,11 @@ var (
 		Table: "project_members", Name: "project_members_legacy_role_compatibility",
 	}
 	projectMemberRoleCompatibilityFunction = "normalize_project_members_role_from_legacy_write"
-	workloadEnvironmentImmutableTrigger    = TriggerRef{
+	successorCompletionGuardTrigger        = TriggerRef{
+		Table: "model_deployment_lifecycle_receipts", Name: "model_deployment_successor_completion_guard",
+	}
+	successorCompletionGuardFunction    = "validate_model_successor_parent_completion"
+	workloadEnvironmentImmutableTrigger = TriggerRef{
 		Table: "workload_applications", Name: "workload_applications_identity_tuple_immutable",
 	}
 	workloadEnvironmentImmutableFunction      = "preserve_workload_identity_tuple"
@@ -484,6 +487,9 @@ func Build(snapshot Snapshot, target TargetIdentity, currentSourceInstance, next
 		return Plan{}, err
 	}
 	if err := validateResetDeleteTriggers(snapshot.Triggers); err != nil {
+		return Plan{}, err
+	}
+	if err := validateSuccessorCompletionGuardTrigger(snapshot.Triggers); err != nil {
 		return Plan{}, err
 	}
 	if err := validateLegacyRoleCompatibilityTrigger(snapshot.Triggers); err != nil {
@@ -946,6 +952,23 @@ func validateResetDeleteTriggers(triggers []TriggerState) error {
 		}
 	}
 	return nil
+}
+
+func validateSuccessorCompletionGuardTrigger(triggers []TriggerState) error {
+	identity := successorCompletionGuardTrigger.Table + "." + successorCompletionGuardTrigger.Name
+	for _, trigger := range triggers {
+		if trigger.Table+"."+trigger.Name != identity {
+			continue
+		}
+		definition := strings.ToLower(trigger.Definition)
+		if trigger.Enabled == "O" &&
+			strings.Contains(definition, "before update") &&
+			strings.Contains(definition, strings.ToLower(successorCompletionGuardFunction)) {
+			return nil
+		}
+		break
+	}
+	return fmt.Errorf("%w: successor_completion_guard", ErrInvalid)
 }
 
 func validateLegacyRoleCompatibilityTrigger(triggers []TriggerState) error {
