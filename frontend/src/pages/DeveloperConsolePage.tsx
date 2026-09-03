@@ -722,7 +722,7 @@ export default function DeveloperConsolePage() {
 
   const logColumns = [
     { title: 'Request ID', dataIndex: 'request_id', key: 'request_id', render: (value: string) => <Text code copyable={{ content: value }}>{value}</Text> },
-    { title: '模型', dataIndex: 'model', key: 'model' },
+    { title: '模型', key: 'model', render: (_: unknown, record: CallLog) => record.requested_model || record.model },
     { title: '状态', dataIndex: 'status_code', key: 'status_code', render: (value: number) => <StatusTag status={value}>{value}</StatusTag> },
     { title: 'Token', dataIndex: 'total_tokens', key: 'total_tokens', render: (value: number) => compactNumber(value || 0) },
     { title: '费用', dataIndex: 'cost_micros', key: 'cost_micros', render: (value: string) => <MoneyText micros={value || '0'} precision={6} tone="cost" /> },
@@ -1179,7 +1179,9 @@ export default function DeveloperConsolePage() {
               <div className="ur-dev-lookup-grid">
                 <div><Text type="tertiary">状态</Text><StatusTag status={lookupResult.status_code}>{lookupResult.status_code}</StatusTag></div>
                 <div><Text type="tertiary">模型</Text><strong>{lookupResult.requested_model || lookupResult.model}</strong></div>
-                <div><Text type="tertiary">路由模型</Text><strong>{lookupResult.model}</strong></div>
+                {isOrgAdminRole(organizationRole) && (
+                  <div><Text type="tertiary">路由模型</Text><strong>{lookupResult.model}</strong></div>
+                )}
                 <div><Text type="tertiary">供应商</Text><strong>{lookupResult.provider || '-'}</strong></div>
                 <div><Text type="tertiary">通道</Text><strong>{lookupResult.channel || '-'}</strong></div>
                 <div><Text type="tertiary">Token</Text><strong>{compactNumber(lookupResult.total_tokens || 0)}</strong></div>

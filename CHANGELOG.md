@@ -4,6 +4,23 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.48] - 2026-09-04
+
+### Fixed
+
+- Developer Console recent calls display the actual requested model, falling
+  back to the retained model only for historical records without that field.
+  Request lookup reserves the separately labeled canonical route identity for
+  existing organization/platform administrator views; audit records are unchanged.
+- Extended the existing reuse regression through exact Profile admission and
+  outbound preparation for current MiniMax/GLM Function Tools Probe and Console
+  requests. Omitted controls remain omitted, explicit auto is not silently
+  rewritten, and existing role-specific response validators remain independent.
+- No parser extraction, Profile/Probe identity, Publication, migration, routing,
+  credential, customer pricing or Production change. Prior UI successes retain
+  their original artifact identities; this source version is not deployment or
+  supplier-budget evidence.
+
 ## [1.2.47] - 2026-09-04
 
 ### Fixed
