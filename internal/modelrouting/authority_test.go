@@ -53,7 +53,7 @@ func TestAuthorityRejectsStructuralExclusionEvenWhenAnotherRouteIsHealthy(t *tes
 	if len(plan.Routes) != 1 {
 		t.Fatalf("healthy route count = %d, want 1", len(plan.Routes))
 	}
-	ready, structural := authorityPlanReady(plan, nil)
+	ready, structural := authorityPlanReady(value, plan, nil)
 	if ready || len(structural) != 1 || structural[0] != "stale_revision" {
 		t.Fatalf("authority accepted partial manifest: ready=%v structural=%v plan=%#v", ready, structural, plan)
 	}
@@ -61,19 +61,59 @@ func TestAuthorityRejectsStructuralExclusionEvenWhenAnotherRouteIsHealthy(t *tes
 
 func TestAuthorityAllowsOnlyExplicitOperationalUnavailability(t *testing.T) {
 	operational := Plan{Exclusions: []Exclusion{{Reason: "administratively_disabled"}, {Reason: "key_cooldown"}}}
-	ready, structural := authorityPlanReady(operational, ErrNoRoute)
+	ready, structural := authorityPlanReady(snapshot{}, operational, ErrNoRoute)
 	if !ready || len(structural) != 0 {
 		t.Fatalf("operationally unavailable authority rejected: ready=%v structural=%v", ready, structural)
 	}
 	for _, reason := range []string{"binding_probe_missing", "stale_revision", "explicit_binding_missing", ""} {
 		plan := Plan{Exclusions: []Exclusion{{Reason: reason}}}
-		ready, structural = authorityPlanReady(plan, ErrNoRoute)
+		ready, structural = authorityPlanReady(snapshot{}, plan, ErrNoRoute)
 		if ready || len(structural) != 1 {
 			t.Fatalf("structural reason %q accepted: ready=%v structural=%v", reason, ready, structural)
 		}
 	}
-	ready, structural = authorityPlanReady(Plan{}, errors.New("boom"))
+	ready, structural = authorityPlanReady(snapshot{}, Plan{}, errors.New("boom"))
 	if ready || len(structural) != 0 {
 		t.Fatalf("unexpected error accepted: ready=%v structural=%v", ready, structural)
+	}
+}
+
+func TestAuthorityPermitsOnlyExactPendingCapabilityApprovalAtStartup(t *testing.T) {
+	value := canonicalFixture()
+	for index := range value.Canonical {
+		delete(value.Canonical[index].Capabilities, "tools")
+		value.Canonical[index].CapabilityApprovalPending = map[string]bool{"tools": true}
+	}
+	request := requestFor(ModeCanonical, "authority-capability-bootstrap")
+	plan, err := buildPlan(value, request, routingpolicy.Default())
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("ordinary planner error = %v, want ErrNoRoute", err)
+	}
+	ready, structural := authorityPlanReady(value, plan, err)
+	if !ready || len(structural) != 0 {
+		t.Fatalf("exact pending approval rejected: ready=%v structural=%v plan=%#v", ready, structural, plan)
+	}
+
+	value.Canonical[0].CapabilityApprovalPending["tools"] = false
+	ready, structural = authorityPlanReady(value, plan, err)
+	if ready || len(structural) != 1 || structural[0] != "unsupported_capability:tools" {
+		t.Fatalf("projection drift accepted: ready=%v structural=%v", ready, structural)
+	}
+
+	value = canonicalFixture()
+	value.CapabilityRequirements = append(value.CapabilityRequirements, CapabilityRequirement{
+		CapabilityID: "reasoning", Origins: []string{CapabilityOriginProfileAlwaysRequired},
+	})
+	for index := range value.Canonical {
+		delete(value.Canonical[index].Capabilities, "tools")
+		value.Canonical[index].CapabilityApprovalPending = map[string]bool{"tools": true}
+	}
+	plan, err = buildPlan(value, request, routingpolicy.Default())
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("ordinary planner error with hidden projection drift = %v, want ErrNoRoute", err)
+	}
+	ready, structural = authorityPlanReady(value, plan, err)
+	if ready || len(structural) != 1 || structural[0] != "unsupported_capability:tools" {
+		t.Fatalf("later required projection drift accepted: ready=%v structural=%v", ready, structural)
 	}
 }

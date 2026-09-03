@@ -325,6 +325,7 @@ type canonicalCandidate struct {
 	PublicQualificationState   string
 	Bindings                   []canonicalBinding
 	Capabilities               map[string]capabilitySnapshot
+	CapabilityApprovalPending  map[string]bool
 	Manifest                   *manifestItem
 }
 

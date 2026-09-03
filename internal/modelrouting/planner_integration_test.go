@@ -265,6 +265,69 @@ func TestPlannerAndCutoverSelectTheSamePreferredCapabilityApprovalIntegration(t 
 	}
 }
 
+func TestAuthorityCapabilityApprovalBootstrapUsesExactLiveProjectionIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	fixture := integrationfixture.InsertModelCapabilityQualification(t, pool, "authority-bootstrap")
+	ctx := context.Background()
+	load := func() snapshot {
+		candidates := []canonicalCandidate{{
+			DeploymentID: fixture.DeploymentID,
+			Provider:     "deepseek", UpstreamModel: "deepseek-v4-flash",
+			PublicPath:                "/v1/chat/completions",
+			Capabilities:              make(map[string]capabilitySnapshot),
+			CapabilityApprovalPending: make(map[string]bool),
+		}}
+		tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+		require.NoError(t, err)
+		require.NoError(t, loadCapabilities(ctx, tx, fixture.OrgID, fixture.ModelID,
+			"openai.chat_completions.v1", "deepseek.v4-flash.api", "1.4.0",
+			[]string{"streaming"}, candidates))
+		require.NoError(t, tx.Rollback(ctx))
+		return snapshot{Canonical: candidates}
+	}
+	plan := Plan{Exclusions: []Exclusion{{
+		DeploymentID: fixture.DeploymentID, Reason: "unsupported_capability:streaming",
+	}}}
+
+	value := load()
+	require.Empty(t, value.Canonical[0].Capabilities)
+	require.True(t, value.Canonical[0].CapabilityApprovalPending["streaming"])
+	ready, structural := authorityPlanReady(value, plan, ErrNoRoute)
+	require.True(t, ready)
+	require.Empty(t, structural)
+
+	_, err := pool.Exec(ctx, `
+DELETE FROM model_deployment_capabilities
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='streaming'`, fixture.DeploymentID)
+	require.NoError(t, err)
+	value = load()
+	ready, structural = authorityPlanReady(value, plan, ErrNoRoute)
+	require.False(t, ready)
+	require.Equal(t, []string{"unsupported_capability:streaming"}, structural)
+
+	_, err = pool.Exec(ctx, `
+INSERT INTO model_deployment_capabilities (
+  deployment_id,operation_id,capability_id,support_state,evidence_state,evidence_ref,revision)
+VALUES ($1,'openai.chat_completions.v1','streaming','enabled','declared',
+        'capability_contract:unirouter.capability-probe.deepseek-chat-sse.v1@2.0.0',1)`, fixture.DeploymentID)
+	require.NoError(t, err)
+	_, approvalID, approvedAt := integrationfixture.AppendModelCapabilityProbeApproval(t, pool, fixture, 1, "authority-bootstrap")
+	_, err = pool.Exec(ctx, `
+UPDATE model_deployment_capabilities
+   SET evidence_state='production_approved',evidence_ref=$2,verified_at=$3,
+       revision=revision+1
+ WHERE deployment_id=$1 AND operation_id='openai.chat_completions.v1'
+   AND capability_id='streaming'`, fixture.DeploymentID,
+		"capability_approval:"+fmt.Sprint(approvalID), approvedAt)
+	require.NoError(t, err)
+	value = load()
+	require.False(t, value.Canonical[0].CapabilityApprovalPending["streaming"])
+	capability, ok := value.Canonical[0].Capabilities["streaming"]
+	require.True(t, ok)
+	require.Equal(t, "production_approved", capability.EvidenceState)
+}
+
 func insertPlannerProbe(
 	t *testing.T,
 	pool *pgxpool.Pool,

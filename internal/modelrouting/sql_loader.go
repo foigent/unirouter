@@ -508,6 +508,7 @@ SELECT deployment.id,deployment.public_model_id,deployment.connection_id,
 			candidate.OperationPresent = candidate.OperationID != ""
 			candidate.OperationVerifiedAt = operationVerifiedAt
 			candidate.Capabilities = make(map[string]capabilitySnapshot)
+			candidate.CapabilityApprovalPending = make(map[string]bool)
 			if item, found := manifestByDeployment[candidate.DeploymentID]; found {
 				copy := item
 				candidate.Manifest = &copy
@@ -572,6 +573,7 @@ SELECT capability.deployment_id,capability.capability_id,capability.support_stat
        capability.evidence_state,capability.evidence_ref,
        capability.verified_at,capability.revision,
        current_contract.probe_contract_id,current_contract.probe_contract_version,
+	   contract.expected_provider,contract.expected_upstream_model,contract.public_path,
        qualification.approval_id,qualification.approved_at
   FROM model_deployment_capabilities capability
   JOIN model_deployments deployment ON deployment.id=capability.deployment_id
@@ -595,6 +597,15 @@ SELECT capability.deployment_id,capability.capability_id,capability.support_stat
    AND qualification.protocol_profile_version=operation.protocol_profile_version
    AND qualification.probe_contract_id=current_contract.probe_contract_id
    AND qualification.probe_contract_version=current_contract.probe_contract_version
+  LEFT JOIN model_capability_probe_contract_bindings contract
+    ON contract.operation_id=current_contract.operation_id
+   AND contract.capability_id=current_contract.capability_id
+   AND contract.execution_profile_id=current_contract.execution_profile_id
+   AND contract.execution_profile_version=current_contract.execution_profile_version
+   AND contract.protocol_profile_id=current_contract.protocol_profile_id
+   AND contract.protocol_profile_version=current_contract.protocol_profile_version
+   AND contract.probe_contract_id=current_contract.probe_contract_id
+   AND contract.probe_contract_version=current_contract.probe_contract_version
  WHERE deployment.customer_org_id=$1 AND deployment.public_model_id=$2
 	AND capability.operation_id=$3`+capabilityFilter+`
  ORDER BY capability.deployment_id,capability.capability_id`, arguments...)
@@ -610,15 +621,31 @@ SELECT capability.deployment_id,capability.capability_id,capability.support_stat
 		var deploymentID int64
 		var item capabilitySnapshot
 		var probeContractID, probeContractVersion *string
+		var expectedProvider, expectedUpstreamModel, expectedPublicPath *string
 		var approvalID *int64
 		var approvedAt *time.Time
 		if err := rows.Scan(&deploymentID, &item.ID, &item.SupportState, &item.EvidenceState,
 			&item.EvidenceRef, &item.VerifiedAt, &item.Revision,
-			&probeContractID, &probeContractVersion, &approvalID, &approvedAt); err != nil {
+			&probeContractID, &probeContractVersion,
+			&expectedProvider, &expectedUpstreamModel, &expectedPublicPath,
+			&approvalID, &approvedAt); err != nil {
 			return fmt.Errorf("%w: scan capability evidence: %v", ErrUnavailable, err)
+		}
+		position, exists := positions[deploymentID]
+		if !exists {
+			continue
+		}
+		candidate := &candidates[position]
+		if candidate.CapabilityApprovalPending == nil {
+			candidate.CapabilityApprovalPending = make(map[string]bool)
 		}
 		if probeContractID != nil {
 			if approvalID == nil || approvedAt == nil || *approvalID <= 0 {
+				candidate.CapabilityApprovalPending[item.ID] =
+					item.SupportState == "enabled" && item.EvidenceState != "production_approved" &&
+						expectedProvider != nil && *expectedProvider == candidate.Provider &&
+						expectedUpstreamModel != nil && *expectedUpstreamModel == candidate.UpstreamModel &&
+						expectedPublicPath != nil && *expectedPublicPath == candidate.PublicPath
 				continue
 			}
 			item.SupportState = "enabled"
@@ -627,9 +654,7 @@ SELECT capability.deployment_id,capability.capability_id,capability.support_stat
 			item.VerifiedAt = approvedAt
 			item.Revision = *approvalID
 		}
-		if position, exists := positions[deploymentID]; exists {
-			candidates[position].Capabilities[item.ID] = item
-		}
+		candidate.Capabilities[item.ID] = item
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("%w: iterate capability evidence: %v", ErrUnavailable, err)
