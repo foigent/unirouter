@@ -4,6 +4,25 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.44] - 2026-09-04
+
+### Fixed
+
+- Bound startup-only pending capability approval to the selected sealed Release,
+  its exact revisions and Profile/Protocol identity, and the canonical operation
+  catalog path. Established Chat Releases may keep their intentionally empty
+  public-execution path while the immutable capability Probe binding remains
+  exact for `/v1/chat/completions`.
+- Treated a predecessor projection's inherited `production_approved` text as
+  pending when no current exact capability qualification exists. It cannot grant
+  ordinary routing authority; the request planner remains fail-closed until the
+  current Probe and approval are recorded.
+
+### Not included
+
+- No migration, Profile, Probe, Publication, Release, credential, endpoint,
+  fallback, administrator-account or Production contract changes are introduced.
+
 ## [1.2.43] - 2026-09-03
 
 ### Fixed

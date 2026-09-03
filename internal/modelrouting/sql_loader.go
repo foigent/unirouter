@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/uniroute/unirouter/internal/adapters"
+	"github.com/uniroute/unirouter/internal/modeloperation"
 	"github.com/uniroute/unirouter/internal/modelprofile"
 )
 
@@ -641,11 +642,10 @@ SELECT capability.deployment_id,capability.capability_id,capability.support_stat
 		}
 		if probeContractID != nil {
 			if approvalID == nil || approvedAt == nil || *approvalID <= 0 {
-				candidate.CapabilityApprovalPending[item.ID] =
-					item.SupportState == "enabled" && item.EvidenceState != "production_approved" &&
-						expectedProvider != nil && *expectedProvider == candidate.Provider &&
-						expectedUpstreamModel != nil && *expectedUpstreamModel == candidate.UpstreamModel &&
-						expectedPublicPath != nil && *expectedPublicPath == candidate.PublicPath
+				candidate.CapabilityApprovalPending[item.ID] = capabilityApprovalPending(
+					*candidate, operationID, item, expectedProvider, expectedUpstreamModel,
+					expectedPublicPath, approvalID, approvedAt,
+				)
 				continue
 			}
 			item.SupportState = "enabled"
@@ -660,6 +660,39 @@ SELECT capability.deployment_id,capability.capability_id,capability.support_stat
 		return fmt.Errorf("%w: iterate capability evidence: %v", ErrUnavailable, err)
 	}
 	return nil
+}
+
+func capabilityApprovalPending(
+	candidate canonicalCandidate,
+	operationID string,
+	capability capabilitySnapshot,
+	expectedProvider, expectedUpstreamModel, expectedPublicPath *string,
+	approvalID *int64,
+	approvedAt *time.Time,
+) bool {
+	// A partially shaped approval is drift, not a qualification bootstrap.
+	// The current exact qualification is the only approval authority; mutable
+	// projection text may still describe a predecessor contract and therefore
+	// cannot either authorize routing or prevent this startup-only pending fact.
+	if approvalID != nil || approvedAt != nil || capability.SupportState != "enabled" ||
+		expectedProvider == nil || *expectedProvider != candidate.Provider ||
+		expectedUpstreamModel == nil || *expectedUpstreamModel != candidate.UpstreamModel {
+		return false
+	}
+	manifest := candidate.Manifest
+	if manifest == nil || manifest.DeploymentID != candidate.DeploymentID ||
+		manifest.ModelOperationID != operationID ||
+		manifest.ExpectedConnectionRevision != candidate.ConnectionRevision ||
+		manifest.ExpectedDeploymentRevision != candidate.DeploymentRevision ||
+		manifest.ExpectedOperationRevision != candidate.OperationRevision ||
+		manifest.ProtocolProfileID != candidate.ProtocolProfileID ||
+		manifest.ProtocolProfileVersion != candidate.ProtocolProfileVersion ||
+		manifest.PublicPath != candidate.PublicPath ||
+		manifest.ExecutorContractVersion != candidate.ExecutorContractVersion {
+		return false
+	}
+	definition, ok := modeloperation.LookupID(modeloperation.ID(operationID))
+	return ok && expectedPublicPath != nil && *expectedPublicPath == definition.Path
 }
 
 func mappedModel(publicModel string, raw json.RawMessage) string {
