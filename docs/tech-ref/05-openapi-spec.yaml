@@ -1168,7 +1168,7 @@ paths:
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
-        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] } }
       responses:
         "200":
           description: Sanitized current qualification, preferred approval and latest probe projection.
@@ -1190,7 +1190,7 @@ paths:
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
-        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] } }
       requestBody:
         required: true
         content:
@@ -1224,7 +1224,7 @@ paths:
       parameters:
         - { name: deploymentID, in: path, required: true, schema: { type: integer, format: int64, minimum: 1 } }
         - { name: operationID, in: path, required: true, schema: { type: string, enum: [openai.chat_completions.v1] } }
-        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] } }
+        - { name: capabilityID, in: path, required: true, schema: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] } }
       requestBody:
         required: true
         content:
@@ -5119,7 +5119,7 @@ components:
     ModelCapabilityProbeView:
       type: object
       additionalProperties: false
-      required: [capability_probe_id, success, provider_success, current, status_code, latency_ms, tested_at]
+      required: [capability_probe_id, success, provider_success, current, status_code, latency_ms, cache_read_counter_observed, cached_tokens, tested_at]
       properties:
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         credential_binding_id: { type: integer, format: int64, minimum: 1 }
@@ -5136,6 +5136,8 @@ components:
         prompt_tokens: { type: integer, format: int64, minimum: 0 }
         completion_tokens: { type: integer, format: int64, minimum: 0 }
         total_tokens: { type: integer, format: int64, minimum: 0 }
+        cache_read_counter_observed: { type: boolean, description: True only when the exact provider response explicitly reported prompt_tokens_details.cached_tokens; false is distinct from an explicit zero counter. }
+        cached_tokens: { type: integer, format: int64, minimum: 0, description: Sanitized provider-reported cache-read tokens. Interpret zero only together with cache_read_counter_observed. }
         reasoning_observed: { type: boolean, description: The fixed typed probe observed non-empty reasoning content; private reasoning text is never returned. }
         tool_call_observed: { type: boolean, description: The fixed typed probe observed the exact expected function call; arguments are not returned. }
         structured_output_observed: { type: boolean, description: The fixed typed probe observed the exact expected JSON object; content is not returned. }
@@ -5148,7 +5150,7 @@ components:
         contract_version: { type: string, enum: [unirouter.model-capability-qualification.v1] }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
         support_state: { type: string, enum: [enabled, unsupported] }
         support_revision: { type: integer, format: int64, minimum: 1 }
         execution_profile_id: { type: string, enum: [deepseek.v4-flash.api, deepseek.v4-pro.api, glm.5-turbo.api, glm.5.api, glm.5.1.api, glm.5.2.api, glm.5.3.api, glm.5v-turbo.api, kimi.k2.6.api, kimi.k2.7-code.api, kimi.k3.api, minimax.m2.7-highspeed.payg, minimax.m2.7.payg, minimax.m3.payg, minimax.m3.token-plan] }
@@ -5168,12 +5170,12 @@ components:
     ModelCapabilityProbeResult:
       type: object
       additionalProperties: false
-      required: [capability_probe_id, deployment_id, operation_id, capability_id, success, provider_success, current, stale, reason_code, provider_reason_code, status_code, latency_ms]
+      required: [capability_probe_id, deployment_id, operation_id, capability_id, success, provider_success, current, stale, reason_code, provider_reason_code, status_code, latency_ms, cache_read_counter_observed, cached_tokens]
       properties:
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
         success: { type: boolean }
         provider_success: { type: boolean }
         current: { type: boolean }
@@ -5189,6 +5191,8 @@ components:
         prompt_tokens: { type: integer, format: int64, minimum: 0 }
         completion_tokens: { type: integer, format: int64, minimum: 0 }
         total_tokens: { type: integer, format: int64, minimum: 0 }
+        cache_read_counter_observed: { type: boolean }
+        cached_tokens: { type: integer, format: int64, minimum: 0 }
         reasoning_observed: { type: boolean }
         tool_call_observed: { type: boolean }
         structured_output_observed: { type: boolean }
@@ -5233,6 +5237,9 @@ components:
         - usage_conflict
         - cached_tokens
         - cached_tokens_conflict
+        - cache_usage
+        - cache_miss
+        - reasoning
         - reasoning_tokens
         - probe_contract
     ModelCapabilityApprovalResult:
@@ -5244,7 +5251,7 @@ components:
         capability_probe_id: { type: integer, format: int64, minimum: 1 }
         deployment_id: { type: integer, format: int64, minimum: 1 }
         operation_id: { type: string, enum: [openai.chat_completions.v1] }
-        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object] }
+        capability_id: { type: string, enum: [streaming, reasoning, reasoning_effort, tools, function_tools, tool_choice_auto, tool_choice_named, tool_choice_required, json_object, prompt_cache, cache_read_usage] }
         qualified: { type: boolean }
         qualification_state: { type: string }
         evidence_ref: { type: string, pattern: '^capability_approval:[1-9][0-9]*$' }

@@ -50,29 +50,31 @@ type modelCapabilityApprovalRequest struct {
 }
 
 type modelCapabilityProbeResult struct {
-	CapabilityProbeID  int64  `json:"capability_probe_id"`
-	DeploymentID       int64  `json:"deployment_id"`
-	OperationID        string `json:"operation_id"`
-	CapabilityID       string `json:"capability_id"`
-	Success            bool   `json:"success"`
-	ProviderSuccess    bool   `json:"provider_success"`
-	Current            bool   `json:"current"`
-	Stale              bool   `json:"stale"`
-	ReasonCode         string `json:"reason_code"`
-	ProviderReasonCode string `json:"provider_reason_code"`
-	ContractErrorCode  string `json:"contract_error_code,omitempty"`
-	DiagnosticMember   string `json:"diagnostic_member,omitempty"`
-	StatusCode         int    `json:"status_code"`
-	LatencyMS          int64  `json:"latency_ms"`
-	ReportedModel      string `json:"reported_model,omitempty"`
-	FinishReason       string `json:"finish_reason,omitempty"`
-	PromptTokens       int64  `json:"prompt_tokens,omitempty"`
-	CompletionTokens   int64  `json:"completion_tokens,omitempty"`
-	TotalTokens        int64  `json:"total_tokens,omitempty"`
-	ReasoningObserved  bool   `json:"reasoning_observed,omitempty"`
-	ToolCallObserved   bool   `json:"tool_call_observed,omitempty"`
-	StructuredObserved bool   `json:"structured_output_observed,omitempty"`
-	EvidenceRef        string `json:"evidence_ref,omitempty"`
+	CapabilityProbeID        int64  `json:"capability_probe_id"`
+	DeploymentID             int64  `json:"deployment_id"`
+	OperationID              string `json:"operation_id"`
+	CapabilityID             string `json:"capability_id"`
+	Success                  bool   `json:"success"`
+	ProviderSuccess          bool   `json:"provider_success"`
+	Current                  bool   `json:"current"`
+	Stale                    bool   `json:"stale"`
+	ReasonCode               string `json:"reason_code"`
+	ProviderReasonCode       string `json:"provider_reason_code"`
+	ContractErrorCode        string `json:"contract_error_code,omitempty"`
+	DiagnosticMember         string `json:"diagnostic_member,omitempty"`
+	StatusCode               int    `json:"status_code"`
+	LatencyMS                int64  `json:"latency_ms"`
+	ReportedModel            string `json:"reported_model,omitempty"`
+	FinishReason             string `json:"finish_reason,omitempty"`
+	PromptTokens             int64  `json:"prompt_tokens,omitempty"`
+	CompletionTokens         int64  `json:"completion_tokens,omitempty"`
+	TotalTokens              int64  `json:"total_tokens,omitempty"`
+	CacheReadCounterObserved bool   `json:"cache_read_counter_observed"`
+	CachedTokens             int64  `json:"cached_tokens"`
+	ReasoningObserved        bool   `json:"reasoning_observed,omitempty"`
+	ToolCallObserved         bool   `json:"tool_call_observed,omitempty"`
+	StructuredObserved       bool   `json:"structured_output_observed,omitempty"`
+	EvidenceRef              string `json:"evidence_ref,omitempty"`
 }
 
 type modelCapabilityApprovalResult struct {
@@ -112,25 +114,27 @@ type modelCapabilityQualificationView struct {
 }
 
 type modelCapabilityProbeView struct {
-	CapabilityProbeID   int64     `json:"capability_probe_id"`
-	CredentialBindingID int64     `json:"credential_binding_id,omitempty"`
-	Success             bool      `json:"success"`
-	ProviderSuccess     bool      `json:"provider_success"`
-	Current             bool      `json:"current"`
-	StatusCode          int       `json:"status_code"`
-	LatencyMS           int64     `json:"latency_ms"`
-	ReportedModel       string    `json:"reported_model,omitempty"`
-	ErrorSummary        string    `json:"error_summary,omitempty"`
-	ContractErrorCode   string    `json:"contract_error_code,omitempty"`
-	DiagnosticMember    string    `json:"diagnostic_member,omitempty"`
-	FinishReason        string    `json:"finish_reason,omitempty"`
-	PromptTokens        int64     `json:"prompt_tokens,omitempty"`
-	CompletionTokens    int64     `json:"completion_tokens,omitempty"`
-	TotalTokens         int64     `json:"total_tokens,omitempty"`
-	ReasoningObserved   bool      `json:"reasoning_observed,omitempty"`
-	ToolCallObserved    bool      `json:"tool_call_observed,omitempty"`
-	StructuredObserved  bool      `json:"structured_output_observed,omitempty"`
-	TestedAt            time.Time `json:"tested_at"`
+	CapabilityProbeID        int64     `json:"capability_probe_id"`
+	CredentialBindingID      int64     `json:"credential_binding_id,omitempty"`
+	Success                  bool      `json:"success"`
+	ProviderSuccess          bool      `json:"provider_success"`
+	Current                  bool      `json:"current"`
+	StatusCode               int       `json:"status_code"`
+	LatencyMS                int64     `json:"latency_ms"`
+	ReportedModel            string    `json:"reported_model,omitempty"`
+	ErrorSummary             string    `json:"error_summary,omitempty"`
+	ContractErrorCode        string    `json:"contract_error_code,omitempty"`
+	DiagnosticMember         string    `json:"diagnostic_member,omitempty"`
+	FinishReason             string    `json:"finish_reason,omitempty"`
+	PromptTokens             int64     `json:"prompt_tokens,omitempty"`
+	CompletionTokens         int64     `json:"completion_tokens,omitempty"`
+	TotalTokens              int64     `json:"total_tokens,omitempty"`
+	CacheReadCounterObserved bool      `json:"cache_read_counter_observed"`
+	CachedTokens             int64     `json:"cached_tokens"`
+	ReasoningObserved        bool      `json:"reasoning_observed,omitempty"`
+	ToolCallObserved         bool      `json:"tool_call_observed,omitempty"`
+	StructuredObserved       bool      `json:"structured_output_observed,omitempty"`
+	TestedAt                 time.Time `json:"tested_at"`
 }
 
 type modelCapabilitySnapshot struct {
@@ -173,25 +177,27 @@ type modelCapabilitySnapshot struct {
 }
 
 type modelCapabilityProbeOutcome struct {
-	ProviderSuccess    bool
-	ContractSuccess    bool
-	StatusCode         int
-	LatencyMS          int64
-	ReasonCode         string
-	ContractErrorCode  string
-	DiagnosticMember   string
-	ReportedModel      string
-	FinishReason       string
-	PromptTokens       int64
-	CompletionTokens   int64
-	TotalTokens        int64
-	ResponseBytes      int
-	DataEventCount     int
-	DeltaCount         int
-	ReasoningObserved  bool
-	ToolCallObserved   bool
-	StructuredObserved bool
-	RequestSummary     map[string]interface{}
+	ProviderSuccess          bool
+	ContractSuccess          bool
+	StatusCode               int
+	LatencyMS                int64
+	ReasonCode               string
+	ContractErrorCode        string
+	DiagnosticMember         string
+	ReportedModel            string
+	FinishReason             string
+	PromptTokens             int64
+	CompletionTokens         int64
+	TotalTokens              int64
+	CacheReadCounterObserved bool
+	CachedTokens             int64
+	ResponseBytes            int
+	DataEventCount           int
+	DeltaCount               int
+	ReasoningObserved        bool
+	ToolCallObserved         bool
+	StructuredObserved       bool
+	RequestSummary           map[string]interface{}
 }
 
 func applyKimiChatDiagnostic(outcome *modelCapabilityProbeOutcome, err error) {
@@ -738,7 +744,10 @@ func (h *Handler) executeModelCapabilityProbe(ctx context.Context, snapshot mode
 		outcome.PromptTokens = observation.PromptTokens
 		outcome.CompletionTokens = observation.CompletionTokens
 		outcome.TotalTokens = observation.TotalTokens
+		outcome.CacheReadCounterObserved = observation.CacheReadCounterObserved
+		outcome.CachedTokens = observation.CachedTokens
 		outcome.ResponseBytes = observation.ResponseBytes
+		outcome.ReasoningObserved = observation.ReasoningObserved
 		outcome.ToolCallObserved = observation.ToolCallObserved
 		if validationErr != nil {
 			outcome.LatencyMS = time.Since(started).Milliseconds()
@@ -1040,10 +1049,12 @@ func (h *Handler) persistModelCapabilityProbe(ctx context.Context, actorID int64
 		"diagnostic_member":   outcome.DiagnosticMember,
 		"response_bytes":      outcome.ResponseBytes, "data_event_count": outcome.DataEventCount,
 		"delta_count": outcome.DeltaCount, "finish_reason": outcome.FinishReason,
-		"reasoning_observed":         outcome.ReasoningObserved,
-		"tool_call_observed":         outcome.ToolCallObserved,
-		"structured_output_observed": outcome.StructuredObserved,
-		"usage":                      map[string]int64{"prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": outcome.TotalTokens},
+		"reasoning_observed":          outcome.ReasoningObserved,
+		"cache_read_counter_observed": outcome.CacheReadCounterObserved,
+		"cached_tokens":               outcome.CachedTokens,
+		"tool_call_observed":          outcome.ToolCallObserved,
+		"structured_output_observed":  outcome.StructuredObserved,
+		"usage":                       map[string]int64{"prompt_tokens": outcome.PromptTokens, "completion_tokens": outcome.CompletionTokens, "total_tokens": outcome.TotalTokens},
 	})
 	fingerprint := modelCapabilityProbeFingerprint(snapshot, outcome, sourceRef)
 	errorSummary := ""
@@ -1112,6 +1123,7 @@ UPDATE model_deployment_capabilities
 		StatusCode: outcome.StatusCode, LatencyMS: outcome.LatencyMS, ReportedModel: outcome.ReportedModel,
 		FinishReason: outcome.FinishReason, PromptTokens: outcome.PromptTokens,
 		CompletionTokens: outcome.CompletionTokens, TotalTokens: outcome.TotalTokens,
+		CacheReadCounterObserved: outcome.CacheReadCounterObserved, CachedTokens: outcome.CachedTokens,
 		ReasoningObserved: outcome.ReasoningObserved, ToolCallObserved: outcome.ToolCallObserved,
 		StructuredObserved: outcome.StructuredObserved,
 	}
@@ -1240,6 +1252,7 @@ func modelCapabilityProbeFingerprint(snapshot modelCapabilitySnapshot, outcome m
 		strconv.FormatInt(snapshot.OperationRevision, 10), strconv.FormatInt(snapshot.CapabilitySupportRevision, 10),
 		strconv.FormatInt(snapshot.CredentialBindingID, 10), strconv.FormatInt(snapshot.CredentialRevision, 10),
 		strconv.FormatBool(outcome.ContractSuccess), strconv.Itoa(outcome.StatusCode), outcome.ReasonCode,
+		strconv.FormatBool(outcome.CacheReadCounterObserved), strconv.FormatInt(outcome.CachedTokens, 10),
 	}, "\x00")
 	digest := sha256.Sum256([]byte(payload))
 	return "sha256:" + hex.EncodeToString(digest[:])
@@ -1502,13 +1515,15 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 	if err == nil {
 		latest.Current = latestCurrent
 		var summary struct {
-			FinishReason       string `json:"finish_reason"`
-			ContractErrorCode  string `json:"contract_error_code"`
-			DiagnosticMember   string `json:"diagnostic_member"`
-			ReasoningObserved  bool   `json:"reasoning_observed"`
-			ToolCallObserved   bool   `json:"tool_call_observed"`
-			StructuredObserved bool   `json:"structured_output_observed"`
-			Usage              struct {
+			FinishReason             string `json:"finish_reason"`
+			ContractErrorCode        string `json:"contract_error_code"`
+			DiagnosticMember         string `json:"diagnostic_member"`
+			ReasoningObserved        bool   `json:"reasoning_observed"`
+			CacheReadCounterObserved bool   `json:"cache_read_counter_observed"`
+			CachedTokens             int64  `json:"cached_tokens"`
+			ToolCallObserved         bool   `json:"tool_call_observed"`
+			StructuredObserved       bool   `json:"structured_output_observed"`
+			Usage                    struct {
 				PromptTokens     int64 `json:"prompt_tokens"`
 				CompletionTokens int64 `json:"completion_tokens"`
 				TotalTokens      int64 `json:"total_tokens"`
@@ -1522,6 +1537,8 @@ SELECT probe.capability_probe_id,probe.credential_binding_id,probe.success,
 		latest.ContractErrorCode = diagnostic.Code
 		latest.DiagnosticMember = diagnostic.Member
 		latest.ReasoningObserved = summary.ReasoningObserved
+		latest.CacheReadCounterObserved = summary.CacheReadCounterObserved
+		latest.CachedTokens = summary.CachedTokens
 		latest.ToolCallObserved = summary.ToolCallObserved
 		latest.StructuredObserved = summary.StructuredObserved
 		latest.PromptTokens = summary.Usage.PromptTokens

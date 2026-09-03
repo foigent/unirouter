@@ -330,6 +330,54 @@ func TestRepresentativeFunctionToolsProbeRejectsRawDuplicatesBeforeMiniMaxEnvelo
 	}
 }
 
+func TestMiniMaxRuntimeCapabilityProbePreservesCachePresenceAndReasoningWithoutPrivateText(t *testing.T) {
+	encryptionKey := []byte("0123456789abcdef01234567")
+	encrypted, err := auth.EncryptKey([]byte("provider-secret"), encryptionKey)
+	require.NoError(t, err)
+
+	handler := NewHandler(nil, "capability-jwt", encryptionKey, nil)
+	handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(request *http.Request) (*http.Response, error) {
+		body, readErr := io.ReadAll(request.Body)
+		require.NoError(t, readErr)
+		var payload struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		require.NoError(t, json.Unmarshal(body, &payload))
+		require.Len(t, payload.Messages, 1)
+		require.Greater(t, len(payload.Messages[0].Content), 10_000)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"model":"MiniMax-M3","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":"<think>private runtime reasoning</think>","tool_calls":[{"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":600,"completion_tokens":7,"total_tokens":607,"prompt_tokens_details":{"cached_tokens":128}}}`,
+			)),
+		}, nil
+	}))
+
+	outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
+		Provider: "minimax", BaseURL: "https://api.minimax.cn/v1",
+		AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`),
+		UpstreamModel: "MiniMax-M3", OperationID: modelprofile.OperationOpenAIChat,
+		CapabilityID: modelprofile.CapabilityPromptCache, ExecutionProfileID: "minimax.m3.payg", ExecutionProfileVersion: "1.2.0",
+		ProtocolProfileID: "protocol.minimax-m3-openai-chat.v9", ProtocolProfileVersion: modelprofile.ChatOperationProtocolBindingVersionV1,
+		ExpectedProvider: "minimax", ExpectedUpstreamModel: "MiniMax-M3", PublicPath: "/v1/chat/completions",
+		EncryptedSecret: encrypted, ProbeContractID: modelcapabilityqualification.MiniMaxPAYGM3ChatFunctionToolsProbeContractID,
+		ProbeContractVersion: modelcapabilityqualification.OpenAIChatRuntimeFunctionToolsProbeContractV2,
+	}, "minimax-runtime-capability-probe-test")
+
+	require.True(t, outcome.ProviderSuccess)
+	require.True(t, outcome.ContractSuccess)
+	require.True(t, outcome.CacheReadCounterObserved)
+	require.Equal(t, int64(128), outcome.CachedTokens)
+	require.True(t, outcome.ReasoningObserved)
+	require.True(t, outcome.ToolCallObserved)
+	safeOutcome, err := json.Marshal(outcome)
+	require.NoError(t, err)
+	require.NotContains(t, string(safeOutcome), "private runtime reasoning")
+}
+
 func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 	encryptionKey := []byte("0123456789abcdef01234567")
 	encrypted, err := auth.EncryptKey([]byte("provider-secret"), encryptionKey)

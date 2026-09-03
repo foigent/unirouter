@@ -775,6 +775,120 @@ func TestCanonicalRoutingRequiresEveryQwenExtensionCapabilityEvidence(t *testing
 	}
 }
 
+func TestOpenAIChatFunctionToolAutoRequiresEveryPublishedRuntimeCapability(t *testing.T) {
+	tests := []struct {
+		name                      string
+		profileID, profileVersion string
+		required                  []string
+	}{
+		{
+			name: "MiniMax M3", profileID: "minimax.m3.payg", profileVersion: "1.2.0",
+			required: []string{
+				modelprofile.CapabilityCacheReadUsage,
+				modelprofile.CapabilityFunctionTools,
+				modelprofile.CapabilityPromptCache,
+				modelprofile.CapabilityReasoning,
+				modelprofile.CapabilityToolChoiceAuto,
+				modelprofile.CapabilityTools,
+			},
+		},
+		{
+			name: "MiniMax M2.7", profileID: "minimax.m2.7.payg", profileVersion: "1.2.0",
+			required: []string{
+				modelprofile.CapabilityCacheReadUsage,
+				modelprofile.CapabilityFunctionTools,
+				modelprofile.CapabilityPromptCache,
+				modelprofile.CapabilityReasoning,
+				modelprofile.CapabilityToolChoiceAuto,
+				modelprofile.CapabilityTools,
+			},
+		},
+		{
+			name: "MiniMax M2.7 highspeed", profileID: "minimax.m2.7-highspeed.payg", profileVersion: "1.2.0",
+			required: []string{
+				modelprofile.CapabilityCacheReadUsage,
+				modelprofile.CapabilityFunctionTools,
+				modelprofile.CapabilityPromptCache,
+				modelprofile.CapabilityReasoning,
+				modelprofile.CapabilityToolChoiceAuto,
+				modelprofile.CapabilityTools,
+			},
+		},
+		{name: "GLM 5.3", profileID: "glm.5.3.api", profileVersion: "1.8.0"},
+		{name: "GLM 5.2", profileID: "glm.5.2.api", profileVersion: "1.8.0"},
+		{name: "GLM 5.1", profileID: "glm.5.1.api", profileVersion: "1.0.0"},
+		{name: "GLM 5 Turbo", profileID: "glm.5-turbo.api", profileVersion: "1.0.0"},
+		{name: "GLM 5", profileID: "glm.5.api", profileVersion: "1.0.0"},
+		{name: "GLM 5V Turbo", profileID: "glm.5v-turbo.api", profileVersion: "1.11.0"},
+	}
+	glmRequired := []string{
+		modelprofile.CapabilityFunctionTools,
+		modelprofile.CapabilityReasoning,
+		modelprofile.CapabilityToolChoiceAuto,
+		modelprofile.CapabilityTools,
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			profile, ok := modelprofile.Lookup(test.profileID, test.profileVersion)
+			if !ok {
+				t.Fatalf("missing exact Profile %s@%s", test.profileID, test.profileVersion)
+			}
+			required := test.required
+			if len(required) == 0 {
+				required = glmRequired
+			}
+			requestRequirements := invocationRequirements(
+				modelprofile.CapabilityFunctionTools,
+				modelprofile.CapabilityReasoning,
+				modelprofile.CapabilityToolChoiceAuto,
+				modelprofile.CapabilityTools,
+			)
+			requestRequirements[2].FunctionToolChoice = &FunctionToolChoiceConstraint{
+				DeclaredFunctionNames: []string{"unirouter_ui_echo"},
+			}
+			resolved, err := ResolveCapabilityRequirements(profile, Request{InvocationCapabilities: requestRequirements})
+			if err != nil {
+				t.Fatalf("resolve exact function-tool auto requirements: %v", err)
+			}
+			if got := capabilityIDs(resolved); !slices.Equal(got, required) {
+				t.Fatalf("resolved capabilities = %v, want %v", got, required)
+			}
+
+			buildFixture := func(omitted string) snapshot {
+				value := canonicalFixture()
+				verified := value.DBNow.Add(-time.Minute)
+				for index := range value.Canonical {
+					value.Canonical[index].Capabilities = make(map[string]capabilitySnapshot, len(required))
+					for _, capability := range required {
+						if capability == omitted {
+							continue
+						}
+						value.Canonical[index].Capabilities[capability] = capabilitySnapshot{
+							ID: capability, SupportState: "enabled", EvidenceState: "production_approved",
+							EvidenceRef: "fixture://m110/" + capability, VerifiedAt: &verified, Revision: 110,
+						}
+					}
+				}
+				value.CapabilityRequirements = resolved
+				value.CapabilitiesResolved = true
+				return value
+			}
+			request := requestFor(ModeCanonical, "m110-"+test.profileID)
+			request.InvocationCapabilities = requestRequirements
+			plan, err := buildPlan(buildFixture(""), request, routingpolicy.Default())
+			if err != nil || len(plan.Routes) == 0 {
+				t.Fatalf("fully evidenced route = %#v, %v", plan, err)
+			}
+			for _, omitted := range required {
+				plan, err := buildPlan(buildFixture(omitted), request, routingpolicy.Default())
+				if !errors.Is(err, ErrNoRoute) || len(plan.Routes) != 0 {
+					t.Fatalf("route without %s evidence = %#v, %v", omitted, plan, err)
+				}
+			}
+		})
+	}
+}
+
 func TestExactPublicProfileSupportedCapabilitiesDoNotBecomeInvocationRequirements(t *testing.T) {
 	reasoning, ok := modelprofile.Lookup("openai.gpt-5.6-sol.responses", "1.2.0")
 	if !ok {

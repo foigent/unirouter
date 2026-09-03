@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-09-02.
+> Snapshot date: 2026-09-03.
 > This document is not a claim that every provider-documented feature is production supported.
 
 The current product-scope candidate is
@@ -9,16 +9,18 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-Development/test runs exact 1.2.28/M102 merge
-`16bf398aed4122c52a174a4d3340b4bc399cd3b7`, tree
-`a6efc7c13aadcb3fa235f3665b430fd94becf9aa`. M102 published only the exact K3
-Profile 1.9 Chat Core static contracts; later Target actions created exact
-Deployment 6, eight independent capability Probe/Approval qualifications and
-development/test Release 27. The Release and initial stable-slot activation
-establish only a test route. Public model 817 remains `staging` and outside the
-approved catalog, so no `released`, Production, Alias or global canonical claim
-is made. Repository source candidate 1.2.37/M106 retains the existing M104/M105
-history and appends the current MiniMax PAYG official-China endpoint successor.
+Development/test currently runs exact 1.2.41/M109 main merge
+`a031cb81f611fa660ec63d30343dca0390c341d1`, tree
+`015d96819657204b1a6bd2e7e5aa6dae4689c237`, with M104 through M109 applied.
+Repository source candidate 1.2.42/M110 retains that history and appends one
+runtime-composition Publication for three MiniMax PAYG and six GLM exact Chat
+Profiles. M110 advances existing provider-family Probe contracts to v2 and adds
+the reasoning, tools, function-tools and automatic tool-choice bindings required
+by canonical Function Tools planning; MiniMax additionally receives independent
+prompt-cache and cache-read-usage bindings. It creates no Probe, Approval,
+Release, route or Target authority by itself. Initial Developer Console checks
+for MiniMax M3 and GLM-5.3 stopped at fail-closed no-route planning with zero
+provider attempts; no UI success is claimed yet.
 M104 adds three exact MiniMax PAYG
 Profiles (M3, M2.7 and M2.7 Highspeed), explicit Chat operation bindings and
 one declaration-owned Function Tools plan over shared mechanics with separate
@@ -33,9 +35,10 @@ separate exact multimodal operation contract. M106 advances the three PAYG
 Profiles to append-only version 1.1.0 on `https://api.minimax.cn/v1`, reusing
 their existing protocol and Function Tools mechanics. Their 1.0.0 identities,
 the historical `.minimaxi.com` endpoint class, Token Plan Profiles and M103
-remain addressable but are not eligible for new attachment. The
-development/test Target independently runs exact 1.2.33/M103; M104, M105 and
-M106 are not applied and none is the deployed Target artifact.
+remain addressable but are not eligible for new attachment. M108 advances the
+same PAYG identities to Profile 1.2 with threshold-aware cache reporting; M109
+adds only the staging-predecessor successor operation and does not reinterpret
+the capability history.
 Local, CI, artifact, Target, provider, SDK-delivery and customer-wallet evidence
 remain separate.
 

@@ -42,6 +42,7 @@ const (
 	GLMChatFunctionToolsProbeContractID           = "unirouter.capability-probe.glm-chat-function-tools.v1"
 	GLMToggleChatFunctionToolsProbeContractID     = "unirouter.capability-probe.glm-toggle-chat-function-tools.v1"
 	OpenAIChatFunctionToolsProbeContractVersion   = "1.0.0"
+	OpenAIChatRuntimeFunctionToolsProbeContractV2 = "2.0.0"
 	ProbeSourceKind                               = "admin.model_capability_probe.v1"
 	ApprovalSourceKind                            = "admin.model_capability_routing_approval.v1"
 )
