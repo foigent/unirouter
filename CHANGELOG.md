@@ -15,6 +15,10 @@ those build identities do not replace the product version.
 - The server's exact Profile remains the request-validation authority. No
   Profile, Probe, Publication, migration, routing or credential contract changed;
   this metadata update does not claim a Release or Production deployment.
+- Corrected an existing stream-health test's timing assumption: half-open lease
+  renewal is valid while waiting for response headers. The regression now
+  exercises that ordering explicitly while retaining terminal health checks;
+  production execution code is unchanged.
 
 ## [1.2.45] - 2026-09-04
 
