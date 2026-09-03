@@ -4,6 +4,25 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.43] - 2026-09-03
+
+### Fixed
+
+- Kept the startup route-authority gate fail-closed while allowing a sealed
+  release to start when its exact published capability contract and enabled
+  deployment projection are intact and only the immutable routing approval is
+  still pending. This lets the control plane perform the formal Probe and
+  approval steps without making the unqualified route customer-routable.
+- Continued to reject missing or disabled projections, contract/product
+  mismatches and malformed production evidence as structural startup failures.
+  The ordinary request planner still returns no route until the exact
+  capability qualification has been approved.
+
+### Not included
+
+- No migration, Profile, Probe, Publication, Release, credential, fallback,
+  administrator-account or Production contract changes are introduced.
+
 ## [1.2.42] - 2026-09-03
 
 ### Changed

@@ -309,7 +309,7 @@ func checkAuthorityRelease(
 			Stage: release.Stage, OperationID: operationID,
 			Routable: loadErr == nil && len(plan.Routes) > 0 && len(operationIssues) == 0,
 		}
-		planReady, structuralExclusions := authorityPlanReady(plan, loadErr)
+		planReady, structuralExclusions := authorityPlanReady(value, plan, loadErr)
 		structuralExclusions = appendUniqueAuthorityReasons(structuralExclusions, operationIssues...)
 		for _, reason := range structuralExclusions {
 			addAuthorityIssue(report, "route_evidence_incomplete", item.ModelName, release.Ref, operationID, reason)
@@ -325,12 +325,12 @@ func checkAuthorityRelease(
 	return nil
 }
 
-func authorityPlanReady(plan Plan, err error) (bool, []string) {
-	structural := authorityStructuralExclusions(plan.Exclusions)
+func authorityPlanReady(value snapshot, plan Plan, err error) (bool, []string) {
+	structural := authorityStructuralExclusions(value, plan.Exclusions)
 	if len(structural) != 0 {
 		return false, structural
 	}
-	return err == nil || (errors.Is(err, ErrNoRoute) && authorityExclusionsAreOperational(plan.Exclusions)), nil
+	return err == nil || (errors.Is(err, ErrNoRoute) && authorityExclusionsAreOperational(value, plan.Exclusions)), nil
 }
 
 func authorityReleaseOperations(ctx context.Context, tx pgx.Tx, release authorityRelease) ([]string, error) {
@@ -458,11 +458,14 @@ func appendUniqueAuthorityReasons(existing []string, additional ...string) []str
 	return existing
 }
 
-func authorityExclusionsAreOperational(exclusions []Exclusion) bool {
+func authorityExclusionsAreOperational(value snapshot, exclusions []Exclusion) bool {
 	if len(exclusions) == 0 {
 		return false
 	}
 	for _, exclusion := range exclusions {
+		if authorityCapabilityApprovalPending(value, exclusion) {
+			continue
+		}
 		switch exclusion.Reason {
 		case "administratively_disabled", "credential_unavailable", "channel_inactive",
 			"circuit_recovery_pending", "probe_sample_not_selected", "circuit_unavailable",
@@ -474,11 +477,38 @@ func authorityExclusionsAreOperational(exclusions []Exclusion) bool {
 	return true
 }
 
-func authorityStructuralExclusions(exclusions []Exclusion) []string {
+func authorityCapabilityApprovalPending(value snapshot, exclusion Exclusion) bool {
+	const prefix = "unsupported_capability:"
+	capabilityID := strings.TrimSpace(strings.TrimPrefix(exclusion.Reason, prefix))
+	if exclusion.DeploymentID <= 0 || !strings.HasPrefix(exclusion.Reason, prefix) || capabilityID == "" {
+		return false
+	}
+	for _, candidate := range value.Canonical {
+		if candidate.DeploymentID == exclusion.DeploymentID {
+			if !candidate.CapabilityApprovalPending[capabilityID] {
+				return false
+			}
+			for _, required := range capabilityIDs(value.CapabilityRequirements) {
+				if capability, approved := candidate.Capabilities[required]; approved &&
+					capability.SupportState == "enabled" &&
+					capability.EvidenceState == "production_approved" && capability.VerifiedAt != nil {
+					continue
+				}
+				if !candidate.CapabilityApprovalPending[required] {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func authorityStructuralExclusions(value snapshot, exclusions []Exclusion) []string {
 	result := make([]string, 0)
 	seen := make(map[string]struct{})
 	for _, exclusion := range exclusions {
-		if authorityExclusionsAreOperational([]Exclusion{exclusion}) {
+		if authorityExclusionsAreOperational(value, []Exclusion{exclusion}) {
 			continue
 		}
 		reason := strings.TrimSpace(exclusion.Reason)
