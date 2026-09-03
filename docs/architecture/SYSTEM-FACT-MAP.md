@@ -8,7 +8,7 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.40 with PostgreSQL compatibility
+Repository source candidate is version 1.2.41 with PostgreSQL compatibility
 ceiling `000109_staging_model_successor_cutover`. M108 is the append-only
 Capability Publication for three exact MiniMax PAYG Profile 1.2 identities and
 their threshold-aware cache-usage contract. M109 extends M107 with a separate
@@ -23,13 +23,15 @@ exact GLM toggle-family Profiles and pure-text Function Tools bindings over
 shared validator mechanics. M106 appends three current MiniMax PAYG Profile
 1.1.0 identities on the exact `https://api.minimax.cn/v1` endpoint and reuses
 the existing M3 v9, M2 v7 and Function Tools mechanics; historical Profile
-1.0.0 and M104 identities remain addressable. This 1.2.40 source candidate
-creates no live successor, qualification or execution authority. M101 is the first
+1.0.0 and M104 identities remain addressable. This 1.2.41 source candidate
+adds the missing guarded Canonical Release Workspace action for the existing
+M109 contract and creates no live successor, qualification or execution
+authority. M101 is the first
 declaration-owned capability publication after the immutable M100 baseline,
 and M102 appends only the exact K3 Profile 1.9 Chat Core static contracts.
-Development/test currently runs exact version 1.2.39/M107 main merge
-`1378e0af7358fe448c6d7fb346cf284daca89b3f`, tree
-`cdf72ef967fed94555f4d8aa48e21b7219c914b4`, with M104 through M107 applied. M107 creates no
+Development/test currently runs exact version 1.2.40/M109 main merge
+`37e2a4898d9b7f8150417b2a1072d314eea3438e`, tree
+`13989e082bd7a80facad055b22125eb22d339d70`, with M104 through M109 applied. M107 creates no
 qualification by itself. During the current bounded onboarding checkpoint,
 GLM-5.2 Deployment 8 completed operation Probe 7 with provider HTTP 200,
 reported model `glm-5.2`, 760 ms and state `live_probed`; no Function Tools
