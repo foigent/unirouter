@@ -4,6 +4,19 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.41] - 2026-09-03
+
+### Changed
+
+- Added the missing Canonical Release Workspace action for the existing M109
+  never-activated staging successor contract. The UI restricts predecessor
+  choices to the same exact upstream model and operation, reads the complete
+  model-set before-state immediately before submission and uses the formal
+  idempotent atomic cutover endpoint.
+- Preserved the M109 Release, registry, Alias, model-set and receipt contracts;
+  this change adds no Profile, Probe, Publication, migration or routing
+  authority and does not modify administrator identities or credentials.
+
 ## [1.2.40] - 2026-09-03
 
 ### Changed

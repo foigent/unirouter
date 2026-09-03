@@ -31,6 +31,11 @@ import {
   type CanonicalDeploymentReleaseCollection,
   type CanonicalDeploymentReleaseSelectionOption,
 } from '../../api/modelDeploymentReleases';
+import {
+  modelSuccessorCutoverApi,
+  type StagingModelSuccessorCutoverReceipt,
+  type StagingModelSuccessorCutoverRequest,
+} from '../../api/modelSuccessorCutover';
 import { ApiError } from '../../api/transport';
 import { EmptyState, StatusTag, Surface } from '../../ui';
 import { formatDateTime } from '../../utils/formatDate';
@@ -45,10 +50,12 @@ type Props = {
 };
 
 type MutationIntent = { fingerprint: string; idempotencyKey: string };
+type StagingSuccessorMutationIntent = MutationIntent & { input: StagingModelSuccessorCutoverRequest };
 
 type ReceiptState =
   | { kind: 'authoring'; value: CanonicalDeploymentReleaseAuthoringReceipt }
-  | { kind: 'lifecycle'; value: CanonicalDeploymentLifecycleReceipt };
+  | { kind: 'lifecycle'; value: CanonicalDeploymentLifecycleReceipt }
+  | { kind: 'staging_successor'; value: StagingModelSuccessorCutoverReceipt };
 
 const actionLabels: Record<CanonicalDeploymentLifecycleActionDescriptor['action'], string> = {
   activate_initial: '首次启用',
@@ -153,6 +160,22 @@ function LifecycleReceiptPanel({ receipt }: { receipt: CanonicalDeploymentLifecy
   </Surface>;
 }
 
+function StagingSuccessorReceiptPanel({ receipt }: { receipt: StagingModelSuccessorCutoverReceipt }) {
+  return <Surface
+    title={`Staging successor cutover 收据 #${receipt.lifecycle.receipt_id}`}
+    description="一个事务完成首个 stable Slot、旧 staging canonical 退役、稳定 Alias、model-set 转换与审计。"
+  >
+    <Descriptions row size="small" data={[
+      { key: 'Stable request identity', value: <Text code>{receipt.stable_request_model}</Text> },
+      { key: 'Predecessor', value: <Text code>{receipt.predecessor_before.model_name} · {receipt.predecessor_before.lifecycle} → {receipt.predecessor_after.lifecycle}</Text> },
+      { key: 'Successor', value: <Text code>{receipt.successor_before.model_name} · {receipt.successor_before.lifecycle} → {receipt.successor_after.lifecycle}</Text> },
+      { key: 'Alias', value: <Text code>{receipt.alias_after.alias} → {receipt.alias_after.target_model}</Text> },
+      { key: 'Model sets', value: `${receipt.model_sets.length} 个完整 before-state 已转换` },
+      { key: '幂等结论', value: receipt.lifecycle.idempotency_replay ? '安全重放原收据' : '首次完成' },
+    ]} />
+  </Surface>;
+}
+
 export default function ModelReleaseWorkspace({
   canManage,
   selectedReleaseRef,
@@ -174,6 +197,10 @@ export default function ModelReleaseWorkspace({
   const [canaryBasisPoints, setCanaryBasisPoints] = useState(500);
   const [mutatingAction, setMutatingAction] = useState('');
   const [receipt, setReceipt] = useState<ReceiptState | null>(null);
+  const [stagingPredecessorID, setStagingPredecessorID] = useState(0);
+  const [stagingCutoverReason, setStagingCutoverReason] = useState('');
+  const [stagingCutoverRunning, setStagingCutoverRunning] = useState(false);
+  const stagingCutoverIntent = useRef<StagingSuccessorMutationIntent | null>(null);
   const collectionVersion = useRef(0);
   const lifecycleVersion = useRef(0);
   const authorIntent = useRef<MutationIntent | null>(null);
@@ -228,6 +255,12 @@ export default function ModelReleaseWorkspace({
 
   useEffect(() => { void loadLifecycle(effectiveReleaseRef); }, [effectiveReleaseRef, loadLifecycle]);
 
+  useEffect(() => {
+    setStagingPredecessorID(0);
+    setStagingCutoverReason('');
+    stagingCutoverIntent.current = null;
+  }, [lifecycle?.release.release_ref]);
+
   const refreshFacts = useCallback(async (releaseRef = effectiveReleaseRef) => {
     await Promise.all([
       loadCollection(),
@@ -237,6 +270,32 @@ export default function ModelReleaseWorkspace({
   }, [effectiveReleaseRef, loadCollection, loadLifecycle, onCanonicalStateChanged]);
 
   const authorOption = collection?.models.find(option => option.public_model.id === authorModelID);
+  const lifecycleModel = collection?.models.find(option =>
+    option.public_model.id === lifecycle?.release.public_model_id);
+  const stagingPredecessors = useMemo(() => {
+    if (!collection || !lifecycle || !lifecycleModel) return [];
+    const releaseOwners = new Set(collection.releases.map(item => item.public_model_id));
+    const successorRoutes = new Set(lifecycleModel.selection_options.map(option =>
+      `${option.upstream_model || ''}\u0000${option.operation_id}`));
+    return collection.models.filter(option =>
+      option.public_model.id !== lifecycle.release.public_model_id
+      && option.public_model.lifecycle === 'staging'
+      && !option.authoring.slot.exists
+      && !releaseOwners.has(option.public_model.id)
+      && option.selection_options.some(selection =>
+        successorRoutes.has(`${selection.upstream_model || ''}\u0000${selection.operation_id}`)));
+  }, [collection, lifecycle, lifecycleModel]);
+  const selectedStagingPredecessor = stagingPredecessors.find(option =>
+    option.public_model.id === stagingPredecessorID);
+  const stagingSuccessorReady = Boolean(
+    canManage
+    && lifecycle
+    && lifecycle.release.stage === 'validated'
+    && !lifecycle.slot.exists
+    && lifecycleModel?.public_model.lifecycle === 'staging'
+    && selectedStagingPredecessor
+    && stagingCutoverReason.trim(),
+  );
 
   const openAuthor = () => {
     const initial = collection?.models.find(option => option.authoring.available)
@@ -311,6 +370,83 @@ export default function ModelReleaseWorkspace({
     } finally {
       setAuthoring(false);
     }
+  };
+
+  const submitStagingSuccessorCutover = async () => {
+    if (!lifecycle || !lifecycleModel || !selectedStagingPredecessor || !stagingSuccessorReady) return;
+    const predecessor = selectedStagingPredecessor.public_model;
+    const successor = lifecycleModel.public_model;
+    setStagingCutoverRunning(true);
+    try {
+      const stableInput: Omit<StagingModelSuccessorCutoverRequest, 'expected_model_sets'> = {
+        expected_release_version: lifecycle.release.version,
+        stable_request_model: predecessor.model_name,
+        predecessor_public_model_id: predecessor.id,
+        predecessor_model_name: predecessor.model_name,
+        expected_predecessor_lifecycle: 'staging',
+        expected_predecessor_approved_catalog: false,
+        successor_public_model_id: successor.id,
+        successor_model_name: successor.model_name,
+        expected_successor_lifecycle: 'staging',
+        expected_successor_approved_catalog: false,
+        reason: stagingCutoverReason.trim(),
+      };
+      const stableFingerprint = JSON.stringify(stableInput);
+      if (!stagingCutoverIntent.current
+        || !stagingCutoverIntent.current.fingerprint.startsWith(`${stableFingerprint}\u0000`)) {
+        const expectedModelSets = await modelSuccessorCutoverApi.snapshotModelSets(predecessor.model_name);
+        const input: StagingModelSuccessorCutoverRequest = { ...stableInput, expected_model_sets: expectedModelSets };
+        stagingCutoverIntent.current = {
+          fingerprint: `${stableFingerprint}\u0000${JSON.stringify(expectedModelSets)}`,
+          idempotencyKey: newIdempotencyKey('lifecycle'),
+          input,
+        };
+      }
+      const result = await modelSuccessorCutoverApi.activateStagingSuccessor(
+        lifecycle.release.release_ref,
+        stagingCutoverIntent.current.input,
+        stagingCutoverIntent.current.idempotencyKey,
+      );
+      stagingCutoverIntent.current = null;
+      setReceipt({ kind: 'staging_successor', value: result });
+      setStagingPredecessorID(0);
+      setStagingCutoverReason('');
+      Toast.success(result.lifecycle.idempotency_replay
+        ? '已安全重放原 staging successor 收据'
+        : '已原子完成 staging successor 切换');
+      try {
+        await refreshFacts(lifecycle.release.release_ref);
+      } catch (refreshError) {
+        Toast.warning(`Staging successor 已成功完成，但关联 canonical 状态刷新不完整：${errorText(refreshError, '请手动刷新')}`);
+      }
+    } catch (error) {
+      if (shouldRotateIntent(error)) stagingCutoverIntent.current = null;
+      Toast.error(errorText(error, 'Staging successor cutover 失败'));
+      if (error instanceof ApiError && error.status === 409) {
+        try {
+          await refreshFacts(lifecycle.release.release_ref);
+        } catch {
+          // Preserve the original conflict as the actionable result.
+        }
+      }
+    } finally {
+      setStagingCutoverRunning(false);
+    }
+  };
+
+  const confirmStagingSuccessorCutover = () => {
+    if (!lifecycle || !selectedStagingPredecessor || !stagingSuccessorReady) return;
+    Modal.confirm({
+      title: '原子激活 Staging successor？',
+      content: <div>
+        <p>稳定请求身份：<Text code>{selectedStagingPredecessor.public_model.model_name}</Text></p>
+        <p>旧 staging canonical：<Text code>{selectedStagingPredecessor.public_model.model_name}</Text></p>
+        <p>不可变 successor：<Text code>{lifecycle.release.model_name}</Text></p>
+        <p>提交前将重新读取完整 model-set before-state；服务端随后在一个事务中验证 Release、Slot、Alias、registry 与 model-set 状态。</p>
+      </div>,
+      okText: '原子激活 Staging successor',
+      onOk: submitStagingSuccessorCutover,
+    });
   };
 
   const descriptorInputReady = (descriptor: CanonicalDeploymentLifecycleActionDescriptor) =>
@@ -560,6 +696,56 @@ export default function ModelReleaseWorkspace({
           onClick={() => confirmLifecycle(descriptor)}
         >{actionLabels[descriptor.action]}</Button>) : <Text type="tertiary">只读视图不提供 lifecycle 写操作。</Text>}
       </Space>
+      {canManage && lifecycle.release.stage === 'validated' && !lifecycle.slot.exists
+        && lifecycleModel?.public_model.lifecycle === 'staging' && <Surface
+        title="Never-activated staging successor"
+        description="仅用于替换从未获得 Slot、sealed/executable predecessor Release 或 active Alias 的 staging canonical；服务端在一个事务中重新核对全部 before-state。"
+      >
+        <Space vertical align="start" style={{ width: '100%' }}>
+          <label style={{ width: '100%' }}>
+            <Text strong>Predecessor staging canonical</Text>
+            <Select
+              aria-label="Staging predecessor"
+              value={stagingPredecessorID || undefined}
+              onChange={value => {
+                setStagingPredecessorID(Number(value));
+                stagingCutoverIntent.current = null;
+              }}
+              optionList={stagingPredecessors.map(option => ({
+                value: option.public_model.id,
+                label: `${option.public_model.display_name || option.public_model.model_name} · ${option.public_model.model_name}`,
+              }))}
+              placeholder="选择将被原子退役的旧 staging canonical"
+              style={{ width: '100%', marginTop: 8 }}
+            />
+          </label>
+          {selectedStagingPredecessor && <Descriptions row size="small" data={[
+            { key: 'Stable request model', value: <Text code>{selectedStagingPredecessor.public_model.model_name}</Text> },
+            { key: 'Immutable successor', value: <Text code>{lifecycle.release.model_name}</Text> },
+            { key: 'Release', value: <Text code>{lifecycle.release.release_ref}@{lifecycle.release.version}</Text> },
+          ]} />}
+          <label style={{ width: '100%' }}>
+            <Text strong>Cutover reason</Text>
+            <TextArea
+              aria-label="Staging successor cutover reason"
+              value={stagingCutoverReason}
+              maxCount={1000}
+              onChange={value => {
+                setStagingCutoverReason(value);
+                stagingCutoverIntent.current = null;
+              }}
+              placeholder="记录为什么该 never-activated staging identity 必须由当前 immutable successor 替换"
+              style={{ marginTop: 8 }}
+            />
+          </label>
+          <Button
+            type="primary"
+            loading={stagingCutoverRunning}
+            disabled={!stagingSuccessorReady || stagingCutoverRunning}
+            onClick={confirmStagingSuccessorCutover}
+          >原子激活 Staging successor</Button>
+        </Space>
+      </Surface>}
       <Space wrap style={{ marginTop: 10 }}>
         {lifecycle.actions.map(descriptor => <Tag key={`${descriptor.action}:${descriptor.reason_code}`} color={descriptor.available ? 'green' : 'grey'}>
           {descriptor.action}: {descriptor.reason_code}
@@ -569,6 +755,7 @@ export default function ModelReleaseWorkspace({
 
     {receipt?.kind === 'authoring' && <AuthoringReceiptPanel receipt={receipt.value} />}
     {receipt?.kind === 'lifecycle' && <LifecycleReceiptPanel receipt={receipt.value} />}
+    {receipt?.kind === 'staging_successor' && <StagingSuccessorReceiptPanel receipt={receipt.value} />}
 
     <SideSheet
       title="编排 Canonical Release"

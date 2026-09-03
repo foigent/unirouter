@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   rollbackStable: vi.fn(),
   cutoverLegacy: vi.fn(),
   rollbackLegacy: vi.fn(),
+  snapshotModelSets: vi.fn(),
+  activateStagingSuccessor: vi.fn(),
 }));
 
 vi.mock('../../../api/modelDeploymentReleases', () => ({
@@ -31,6 +33,13 @@ vi.mock('../../../api/modelDeploymentLifecycle', () => ({
     rollbackStable: mocks.rollbackStable,
     cutoverLegacy: mocks.cutoverLegacy,
     rollbackLegacy: mocks.rollbackLegacy,
+  },
+}));
+
+vi.mock('../../../api/modelSuccessorCutover', () => ({
+  modelSuccessorCutoverApi: {
+    snapshotModelSets: mocks.snapshotModelSets,
+    activateStagingSuccessor: mocks.activateStagingSuccessor,
   },
 }));
 
@@ -275,6 +284,151 @@ describe('ModelReleaseWorkspace', () => {
     mocks.rollbackStable.mockResolvedValue(lifecycleReceipt('rollback_stable'));
     mocks.cutoverLegacy.mockResolvedValue(lifecycleReceipt('cutover_legacy'));
     mocks.rollbackLegacy.mockResolvedValue(lifecycleReceipt('rollback_legacy'));
+    mocks.snapshotModelSets.mockResolvedValue([]);
+  });
+
+  it('atomically cuts over a compatible never-activated staging predecessor with a fresh complete model-set snapshot', async () => {
+    let confirmation: any;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      confirmation = config;
+      return { destroy: vi.fn(), update: vi.fn() } as any;
+    });
+    const predecessor = {
+      public_model: {
+        id: 962,
+        model_name: 'minimax-m3',
+        display_name: 'MiniMax M3 PAYG',
+        lifecycle: 'staging',
+      },
+      authoring: {
+        ...collection.models[0].authoring,
+        slot: {
+          exists: false,
+          public_model_id: 962,
+          model_name: 'minimax-m3',
+          canary_basis_points: 0,
+          version: 0,
+        },
+        baseline: { kind: 'initial', expected_slot_version: 0 },
+      },
+      selection_options: [{
+        deployment_id: 15,
+        operation_id: 'openai.chat_completions.v1',
+        upstream_model: 'MiniMax-M3',
+        connection_name: 'MiniMax official',
+      }],
+    };
+    const successor = {
+      ...predecessor,
+      public_model: {
+        id: 988,
+        model_name: 'minimax-m3-20260903',
+        display_name: 'MiniMax M3',
+        lifecycle: 'staging',
+      },
+      selection_options: [{
+        ...predecessor.selection_options[0],
+        deployment_id: 19,
+      }],
+    };
+    const successorRelease = {
+      ...release,
+      id: 90,
+      release_ref: 'rcr_minimax_m3_successor',
+      public_model_id: 988,
+      model_name: 'minimax-m3-20260903',
+      stage: 'validated',
+      version: 2,
+      parent_stable_release_id: undefined,
+      candidate: {
+        ...release.candidate,
+        public_model_id: 988,
+        model_name: 'minimax-m3-20260903',
+      },
+    };
+    mocks.releaseList.mockResolvedValue({
+      ...collection,
+      models: [predecessor, successor],
+      releases: [{
+        ...successorRelease,
+        baseline_hash: undefined,
+        candidate: undefined,
+        reason: undefined,
+        created_by: undefined,
+        created_at: undefined,
+        canary_basis_points: undefined,
+      }],
+    });
+    mocks.current.mockResolvedValue({
+      contract_version: 'unirouter.model-deployment-lifecycle-receipt.v1',
+      release: successorRelease,
+      slot: {
+        exists: false,
+        public_model_id: 988,
+        model_name: 'minimax-m3-20260903',
+        canary_basis_points: 0,
+        version: 0,
+      },
+      actions: [descriptor('activate_initial')],
+    });
+    mocks.snapshotModelSets.mockResolvedValue([{ model_set_id: 3, before_alias_exists: false }]);
+    const cutoverReceipt = {
+      contract_version: 'unirouter.model-successor-cutover-receipt.v2',
+      predecessor_authority_mode: 'never_activated_staging',
+      stable_request_model: 'minimax-m3',
+      predecessor_before: { public_model_id: 962, model_name: 'minimax-m3', lifecycle: 'staging', approved_catalog: false },
+      predecessor_after: { public_model_id: 962, model_name: 'minimax-m3', lifecycle: 'retired', approved_catalog: false },
+      successor_before: { public_model_id: 988, model_name: 'minimax-m3-20260903', lifecycle: 'staging', approved_catalog: false },
+      successor_after: { public_model_id: 988, model_name: 'minimax-m3-20260903', lifecycle: 'ga', approved_catalog: true },
+      alias_after: { alias: 'minimax-m3', target_model: 'minimax-m3-20260903', is_primary: true, status: 'active' },
+      model_sets: [{ model_set_id: 3, before_model_name: 'minimax-m3', before_alias_exists: false, after_alias_name: 'minimax-m3' }],
+      lifecycle: { ...lifecycleReceipt('activate_initial'), contract_version: 'unirouter.model-deployment-lifecycle-receipt.v3' },
+    };
+    mocks.activateStagingSuccessor
+      .mockRejectedValueOnce(new Error('connection reset after request write'))
+      .mockResolvedValueOnce(cutoverReceipt);
+
+    renderWorkspace({ selectedReleaseRef: successorRelease.release_ref });
+
+    expect(await screen.findByText('minimax-m3-20260903 · rcr_minimax_m3_successor')).toBeTruthy();
+    expect(await screen.findByText('Never-activated staging successor')).toBeTruthy();
+    fireEvent.click(await screen.findByText('选择将被原子退役的旧 staging canonical'));
+    fireEvent.click(await screen.findByText('MiniMax M3 PAYG · minimax-m3'));
+    fireEvent.change(screen.getByLabelText('Staging successor cutover reason'), {
+      target: { value: 'Replace the never-activated staging canonical with the exact qualified successor.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '原子激活 Staging successor' }));
+    await act(async () => { await confirmation.onOk(); });
+
+    fireEvent.click(screen.getByRole('button', { name: '原子激活 Staging successor' }));
+    await act(async () => { await confirmation.onOk(); });
+
+    expect(mocks.snapshotModelSets).toHaveBeenCalledTimes(1);
+    expect(mocks.snapshotModelSets).toHaveBeenCalledWith('minimax-m3');
+    expect(mocks.activateStagingSuccessor).toHaveBeenNthCalledWith(
+      2,
+      'rcr_minimax_m3_successor',
+      {
+        expected_release_version: 2,
+        stable_request_model: 'minimax-m3',
+        predecessor_public_model_id: 962,
+        predecessor_model_name: 'minimax-m3',
+        expected_predecessor_lifecycle: 'staging',
+        expected_predecessor_approved_catalog: false,
+        successor_public_model_id: 988,
+        successor_model_name: 'minimax-m3-20260903',
+        expected_successor_lifecycle: 'staging',
+        expected_successor_approved_catalog: false,
+        expected_model_sets: [{ model_set_id: 3, before_alias_exists: false }],
+        reason: 'Replace the never-activated staging canonical with the exact qualified successor.',
+      },
+      expect.stringMatching(/^ui-model-release-lifecycle-/),
+    );
+    expect(mocks.activateStagingSuccessor.mock.calls[0][2]).toBe(
+      mocks.activateStagingSuccessor.mock.calls[1][2],
+    );
+    expect(await screen.findByText('Staging successor cutover 收据 #501')).toBeTruthy();
+    expect(screen.getByText('minimax-m3 → minimax-m3-20260903')).toBeTruthy();
   });
 
   it('echoes the server baseline and ordered selection options into authoring without auto-running lifecycle', async () => {

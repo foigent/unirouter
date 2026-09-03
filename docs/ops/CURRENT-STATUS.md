@@ -1,6 +1,6 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.40/M109. M108 appends one compatible
+> Repository source candidate is 1.2.41/M109. M108 appends one compatible
 > Publication for the three exact MiniMax PAYG Profile 1.2 successors. Their
 > cache-usage contract requires `cached_tokens` at or above the documented
 > 512-token provider-input cache threshold, accepts an absent counter only
@@ -31,14 +31,17 @@
 > Tools without reinterpreting history, and deterministic M105 Publication
 > artifacts. GLM-5V-Turbo is qualified only for pure-text Function Tools;
 > media-plus-tools and GLM-5.3-Flash remain outside the executable M105 binding
-> set. This 1.2.40 source candidate creates no live successor, Probe, Approval,
+> set. This 1.2.41 source candidate adds the missing guarded Canonical Release
+> Workspace action for M109, including a fresh complete model-set before-state
+> read immediately before the formal idempotent cutover call. It creates no
+> live successor, Probe, Approval,
 > qualification, Release, route or Target authority. The MiniMax UI preset now
 > selects the exact M106 endpoint class;
 > Token Plan remains historical and outside the current attachment path.
 >
-> The development/test Target currently runs exact 1.2.39/M107 main merge
-> `1378e0af7358fe448c6d7fb346cf284daca89b3f`, tree
-> `cdf72ef967fed94555f4d8aa48e21b7219c914b4`; M104 through M107 are applied
+> The development/test Target currently runs exact 1.2.40/M109 main merge
+> `37e2a4898d9b7f8150417b2a1072d314eea3438e`, tree
+> `13989e082bd7a80facad055b22125eb22d339d70`; M104 through M109 are applied
 > and the runtime remains non-Production. GLM-5, GLM-5.1, GLM-5.3 and
 > GLM-5V-Turbo have current successful Operation and typed Function Tools
 > Probe evidence plus environment approval. GLM-5-Turbo has successful typed
