@@ -4,6 +4,22 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.46] - 2026-09-04
+
+### Fixed
+
+- Added an explicit Provider-default Function Tool scenario to Developer
+  Console. It sends the existing fixed function definition without `tool_choice`,
+  so contracts that express automatic choice by omission are usable without
+  changing explicit auto/required/named requests or guessing from model names.
+- The server's exact Profile remains the request-validation authority. No
+  Profile, Probe, Publication, migration, routing or credential contract changed;
+  this metadata update does not claim a Release or Production deployment.
+- Corrected an existing stream-health test's timing assumption: half-open lease
+  renewal is valid while waiting for response headers. The regression now
+  exercises that ordering explicitly while retaining terminal health checks;
+  production execution code is unchanged.
+
 ## [1.2.45] - 2026-09-04
 
 ### Fixed

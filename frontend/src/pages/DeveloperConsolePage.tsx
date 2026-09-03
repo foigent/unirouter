@@ -537,6 +537,7 @@ export default function DeveloperConsolePage() {
           : playgroundScenario === 'function_named'
             ? { type: 'function', function: { name: 'unirouter_ui_echo' } }
             : undefined;
+      const functionToolsRequested = playgroundScenario === 'function_default' || toolChoice !== undefined;
       const response = await fetch('/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -550,7 +551,8 @@ export default function DeveloperConsolePage() {
           ...(maxTokensText ? { max_tokens: Number(maxTokensText) } : {}),
           ...(playgroundThinking ? { thinking: { type: playgroundThinking } } : {}),
           ...(playgroundReasoningEffort ? { reasoning_effort: playgroundReasoningEffort } : {}),
-          ...(toolChoice ? { tools: [functionTool], tool_choice: toolChoice } : {}),
+          ...(functionToolsRequested ? { tools: [functionTool] } : {}),
+          ...(toolChoice ? { tool_choice: toolChoice } : {}),
           ...(playgroundScenario === 'json_object' ? { response_format: { type: 'json_object' } } : {}),
         }),
       });
@@ -1050,6 +1052,7 @@ export default function DeveloperConsolePage() {
                         }}
                         optionList={[
                           { label: '普通文本', value: 'text' },
+                          { label: 'Function Tool · Provider default', value: 'function_default' },
                           { label: 'Function Tool · auto', value: 'function_auto' },
                           { label: 'Function Tool · required', value: 'function_required' },
                           { label: 'Function Tool · named', value: 'function_named' },
@@ -1059,6 +1062,9 @@ export default function DeveloperConsolePage() {
                   </div>
                   <Text type="tertiary">这些字段仅在显式填写时发送；thinking 与 reasoning_effort 是供应商或 surface 扩展，并非所有模型都支持。值域和输出上限仍由精确 Profile 校验；留空不是零输出，也不是供应商最大输出。</Text>
                   {maxTokensInvalid && <Text type="danger">max_tokens 必须是正整数。</Text>}
+                  {playgroundScenario === 'function_default' && <Text type="tertiary">
+                    仅发送 tools，不发送 tool_choice；是否采用默认 auto 仍由服务端精确 Profile 校验，不代表强制调用工具。
+                  </Text>}
                   {!modelGovernanceLicensed && <Text type="warning">{modelGovernanceRestriction} 调试仍可使用管理员提供的现有模型或别名。</Text>}
                   <TextArea
                     value={playgroundPrompt}

@@ -1414,6 +1414,8 @@ func TestModelExecutionStreamHealthIsRecordedOnlyAtProviderTerminalState(t *test
 			plan.Routes[0].Evidence.ProbeLeaseTokenHash = "sha256:" + strings.Repeat("a", 64)
 			planner := &executionPlannerStub{plan: plan}
 			var accepted atomic.Bool
+			renewedBeforeAcceptance := make(chan struct{})
+			var firstRenewal sync.Once
 			reader := &delayedSegmentReader{segments: test.segments, delay: 25 * time.Millisecond}
 			coordinator := &executionCoordinatorStub{}
 			coordinator.authorizeFn = func(_ modelrouting.Plan, route modelrouting.Route, identity modelexecution.AttemptIdentity) (modelexecution.Decision, error) {
@@ -1425,12 +1427,17 @@ func TestModelExecutionStreamHealthIsRecordedOnlyAtProviderTerminalState(t *test
 				}, err
 			}
 			coordinator.renewFn = func(modelexecution.Decision) (modelexecution.HealthResult, error) {
+				// A dispatched half-open attempt must retain its lease while
+				// waiting for headers, not only after response acceptance.
 				if !accepted.Load() {
-					t.Error("probe lease renewed before response_accepted was durably completed")
+					firstRenewal.Do(func() { close(renewedBeforeAcceptance) })
 				}
 				return modelexecution.HealthResult{Status: modelexecution.Applied}, nil
 			}
 			coordinator.successFn = func(modelexecution.Decision) (modelexecution.HealthResult, error) {
+				if !accepted.Load() {
+					t.Error("terminal success recorded before response_accepted was durably completed")
+				}
 				status := test.successStatus
 				if status == "" {
 					status = modelexecution.Applied
@@ -1449,7 +1456,17 @@ func TestModelExecutionStreamHealthIsRecordedOnlyAtProviderTerminalState(t *test
 				},
 			}
 			relay := NewRelay(p6f11RelayDB(), nil, nil, billingStub, nil, encKey)
-			relay.providerHTTPDoer = &http.Client{Transport: executionRoundTripFunc(func(*http.Request) (*http.Response, error) {
+			relay.providerHTTPDoer = &http.Client{Transport: executionRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+				// Exercise the pre-header renewal deterministically instead of
+				// assuming headers always arrive before the first timer tick.
+				select {
+				case <-renewedBeforeAcceptance:
+				case <-request.Context().Done():
+					return nil, request.Context().Err()
+				case <-time.After(time.Second):
+					t.Error("half-open lease was not renewed while waiting for headers")
+					return nil, errors.New("missing pre-header lease renewal")
+				}
 				return &http.Response{
 					StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}},
 					Body: io.NopCloser(reader),
@@ -1462,7 +1479,7 @@ func TestModelExecutionStreamHealthIsRecordedOnlyAtProviderTerminalState(t *test
 			recorder := httptest.NewRecorder()
 			relay.HandleChatCompletion(recorder, executionRequest(http.MethodPost, "/v1/chat/completions", "req-stream-terminal", `{"model":"public-model","messages":[{"role":"user","content":"hello"}],"stream":true}`))
 			if !accepted.Load() || coordinator.renewCount.Load() == 0 {
-				t.Fatalf("headers/lease ordering missing: accepted=%t renew=%d", accepted.Load(), coordinator.renewCount.Load())
+				t.Fatalf("accepted response/lease renewal missing: accepted=%t renew=%d", accepted.Load(), coordinator.renewCount.Load())
 			}
 			if coordinator.successCount.Load() != test.wantSuccess || coordinator.providerCount.Load() != test.wantProviderErr {
 				t.Fatalf("terminal health mismatch: success=%d provider_failure=%d", coordinator.successCount.Load(), coordinator.providerCount.Load())

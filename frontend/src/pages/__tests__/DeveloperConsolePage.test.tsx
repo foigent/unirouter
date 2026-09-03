@@ -228,7 +228,12 @@ describe('DeveloperConsolePage', () => {
     }
   });
 
-  it('sends only the fixed function-tool scenario and renders tool_calls', async () => {
+  it.each([
+    { choice: 'Provider default', expected: undefined },
+    { choice: 'auto', expected: 'auto' },
+    { choice: 'required', expected: 'required' },
+    { choice: 'named', expected: { type: 'function', function: { name: 'unirouter_ui_echo' } } },
+  ])('sends the fixed function-tool $choice scenario without guessing provider semantics', async ({ choice, expected }) => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       id: 'chatcmpl-ui-tool',
       choices: [{
@@ -244,15 +249,21 @@ describe('DeveloperConsolePage', () => {
       renderPage();
       await screen.findByText('Company Chat');
       fireEvent.change(screen.getByPlaceholderText('粘贴项目访问凭证'), { target: { value: 'sk-ui-fixture' } });
-      await chooseWorkbenchOption('能力场景', /Function Tool · required/);
+      await chooseWorkbenchOption('能力场景', new RegExp(`Function Tool · ${choice}$`));
       await userEvent.click(screen.getByRole('button', { name: /运行$/ }));
       await screen.findByText(/unirouter_ui_echo/u);
       const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
       expect(payload.stream).toBe(false);
-      expect(payload.tool_choice).toBe('required');
+      if (expected === undefined) {
+        expect(payload).not.toHaveProperty('tool_choice');
+        expect(screen.getByText(/仅发送 tools，不发送 tool_choice/)).toBeTruthy();
+      } else {
+        expect(payload.tool_choice).toEqual(expected);
+      }
       expect(payload.tools).toHaveLength(1);
       expect(payload.tools[0].function.name).toBe('unirouter_ui_echo');
       expect(payload).not.toHaveProperty('response_format');
+      expect(payload).not.toHaveProperty('thinking');
     } finally {
       fetchMock.mockRestore();
     }
