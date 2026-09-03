@@ -54,7 +54,32 @@ func runtimeChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics, bo
 	if err != nil || found {
 		return mechanics, found, err
 	}
-	return glmRuntimeChatNonStreamMechanics(in)
+	mechanics, found, err = glmRuntimeChatNonStreamMechanics(in)
+	if err != nil || found {
+		return mechanics, found, err
+	}
+	return miniMaxHighspeedRuntimeChatNonStreamMechanics(in)
+}
+
+func miniMaxHighspeedToolCallIndexScope(provider, upstreamModel, protocolProfile string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), "minimax") &&
+		strings.TrimSpace(upstreamModel) == "MiniMax-M2.7-highspeed" &&
+		strings.TrimSpace(protocolProfile) == "protocol.minimax-m2-openai-chat.v7"
+}
+
+func miniMaxHighspeedRuntimeChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics, bool, error) {
+	if in.Endpoint != EndpointChatCompletions ||
+		strings.TrimSpace(in.ExecutionProfileID) != "minimax.m2.7-highspeed.payg" ||
+		strings.TrimSpace(in.ExecutionProfileVersion) != "1.2.0" {
+		return ChatNonStreamMechanics{}, false, nil
+	}
+	if !miniMaxHighspeedToolCallIndexScope(in.Channel.Provider, in.UpstreamModel, in.ProtocolProfile) ||
+		strings.TrimSpace(in.ModelOperationID) != modelprofile.OperationOpenAIChat ||
+		strings.TrimSpace(in.OperationProtocolProfileID) != "protocol.minimax-m2-openai-chat.v7" ||
+		strings.TrimSpace(in.OperationProtocolProfileVersion) != modelprofile.ChatOperationProtocolBindingVersionV1 {
+		return ChatNonStreamMechanics{}, false, fmt.Errorf("exact MiniMax Highspeed Chat runtime identity mismatch")
+	}
+	return ChatNonStreamMechanics{RejectDuplicateMembers: true, NormalizeToolCallIndex: true}, true, nil
 }
 
 func glmRuntimeChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics, bool, error) {
@@ -171,9 +196,16 @@ func PrepareOpenAICompatibleChatNonStreamDocument(
 		return prepared, errInvalidChatNonStreamMechanics
 	}
 	if mechanics.NormalizeToolCallIndex {
-		normalized, changed, err := NormalizeOpenAICompatibleChatToolCallIndex(
-			provider, upstreamModel, protocolProfile, body,
-		)
+		var normalized []byte
+		var changed bool
+		var err error
+		if miniMaxHighspeedToolCallIndexScope(provider, upstreamModel, protocolProfile) {
+			// Only the exact current Profile selector enables these mechanics.
+			// Keep the exported triple-only normalizer's historical scope intact.
+			normalized, changed, err = normalizeOpenAICompatibleChatToolCallIndexDocument(body)
+		} else {
+			normalized, changed, err = NormalizeOpenAICompatibleChatToolCallIndex(provider, upstreamModel, protocolProfile, body)
+		}
 		if err != nil {
 			prepared.DeliveryIssue = ChatNonStreamToolCallNormalizationInvalid
 			return prepared, nil

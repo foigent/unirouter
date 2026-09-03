@@ -4,6 +4,21 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.47] - 2026-09-04
+
+### Fixed
+
+- Reused the shared non-stream child tool-call index normalizer for the exact
+  MiniMax M2.7 Highspeed PAYG Profile 1.2 Chat tuple. Only non-null lexical
+  non-negative integer indexes are removed; malformed values retain valid
+  Provider usage but remain unavailable for delivery or qualification.
+- Closed the typed Highspeed Probe's residual-index validation gap. Runtime
+  still rejects unknown siblings, and duplicate JSON fails before usage parsing.
+  Historical Profiles, exported legacy scopes and streaming indexes are unchanged.
+- No new Profile, Probe identity, Publication, migration, route, credential or
+  Production authority is introduced. Local fixtures do not establish live UI
+  success; the existing failed Highspeed request remains retained evidence.
+
 ## [1.2.46] - 2026-09-04
 
 ### Fixed
