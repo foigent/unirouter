@@ -16,7 +16,7 @@ func TestMiniMaxPAYGOfficialCNEndpointSuccessorsAreCurrentAndHistoricalProfilesR
 		{"minimax.m2.7-highspeed.payg", "MiniMax-M2.7-highspeed", "protocol.minimax-m2-openai-chat.v7", 204_800, 204_800},
 	}
 	for _, test := range tests {
-		profile, ok := Lookup(test.profileID, "1.1.0")
+		profile, ok := Lookup(test.profileID, "1.2.0")
 		require.True(t, ok, test.profileID)
 		require.True(t, profile.Current)
 		require.Equal(t, "minimax", profile.Provider)
@@ -67,7 +67,7 @@ func TestMiniMaxPAYGOfficialCNEndpointSuccessorsAreCurrentAndHistoricalProfilesR
 }
 
 func TestMiniMaxPAYGProfilesRejectCrossedEndpointIdentityAndUpstream(t *testing.T) {
-	profile, ok := Lookup("minimax.m2.7-highspeed.payg", "1.1.0")
+	profile, ok := Lookup("minimax.m2.7-highspeed.payg", "1.2.0")
 	require.True(t, ok)
 	identity, found, err := ResolveOperationProtocolIdentity(profile.ID, profile.Version, OperationOpenAIChat)
 	require.NoError(t, err)

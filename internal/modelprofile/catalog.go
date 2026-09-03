@@ -533,6 +533,7 @@ func buildCatalog() []Profile {
 	result := append([]Profile{}, legacyProviderProfiles...)
 	result = append(result, currentProviderProfiles()...)
 	result = append(result, miniMaxOfficialCNPAYGEndpointSuccessorProfiles()...)
+	result = append(result, miniMaxCacheThresholdSuccessorProfiles()...)
 	result = append(result, identityHardenedProviderProfiles()...)
 	result = append(result, locallyConformantProviderProfiles()...)
 	result = append(result, legacyConformantProviderProfiles()...)
@@ -592,6 +593,22 @@ func miniMaxOfficialCNPAYGEndpointSuccessorProfiles() []Profile {
 			profile.Label += "（api.minimax.cn）"
 			profiles = append(profiles, profile)
 		}
+	}
+	return profiles
+}
+
+// miniMaxCacheThresholdSuccessorProfiles preserves the exact official China
+// PAYG endpoint and function-tools contracts while binding the provider's
+// documented 512-token cache-read reporting eligibility to a new immutable
+// Profile address. Historical 1.0.0/1.1.0 evidence remains unchanged.
+func miniMaxCacheThresholdSuccessorProfiles() []Profile {
+	profiles := make([]Profile, 0, 3)
+	for _, previous := range miniMaxOfficialCNPAYGEndpointSuccessorProfiles() {
+		profile := clone(previous)
+		profile.Version = "1.2.0"
+		profile.Label += "（512-token cache-read eligibility）"
+		profile.CacheUsageProfile = "cache-usage.minimax-openai.v2"
+		profiles = append(profiles, profile)
 	}
 	return profiles
 }
@@ -1008,6 +1025,9 @@ var immutableProfileEndpointClassOverrides = map[string][]string{
 	"minimax.m2.7.payg@1.1.0":                 {EndpointClassMiniMaxOfficialCNOpenAIV1},
 	"minimax.m2.7-highspeed.payg@1.1.0":       {EndpointClassMiniMaxOfficialCNOpenAIV1},
 	"minimax.m3.payg@1.1.0":                   {EndpointClassMiniMaxOfficialCNOpenAIV1},
+	"minimax.m2.7.payg@1.2.0":                 {EndpointClassMiniMaxOfficialCNOpenAIV1},
+	"minimax.m2.7-highspeed.payg@1.2.0":       {EndpointClassMiniMaxOfficialCNOpenAIV1},
+	"minimax.m3.payg@1.2.0":                   {EndpointClassMiniMaxOfficialCNOpenAIV1},
 	"glm.5.3.api@1.8.0":                       {EndpointClassGLMOfficialOpenAIV4},
 	"glm.5.2.api@1.8.0":                       {EndpointClassGLMOfficialOpenAIV4},
 	"glm.5.1.api@1.0.0":                       {EndpointClassGLMOfficialOpenAIV4},
@@ -1191,9 +1211,9 @@ var currentProfileManifests = map[string]currentProfileManifest{
 	"kimi.k2.6.api":                  currentProfile("1.7.0"),
 	"kimi.k2.7-code.api":             currentProfile("1.3.0"),
 	"kimi.k3.api":                    currentProfile("1.9.0"),
-	"minimax.m2.7.payg":              currentProfile("1.1.0"),
-	"minimax.m2.7-highspeed.payg":    currentProfile("1.1.0"),
-	"minimax.m3.payg":                currentProfile("1.1.0"),
+	"minimax.m2.7.payg":              currentProfile("1.2.0"),
+	"minimax.m2.7-highspeed.payg":    currentProfile("1.2.0"),
+	"minimax.m3.payg":                currentProfile("1.2.0"),
 	"glm.5.3.api":                    currentProfile("1.8.0"),
 	"glm.5.2.api":                    currentProfile("1.8.0"),
 	"glm.5.1.api":                    currentProfile("1.0.0"),
@@ -3917,6 +3937,12 @@ func ValidateExecutableComponents(profile Profile) error {
 }
 
 func validateCacheUsageContractShape(contract CacheUsageContract) error {
+	if contract.ReadCounterRequiredAtOrAbovePromptTokens < 0 {
+		return fmt.Errorf("cache-read counter threshold must be nonnegative")
+	}
+	if contract.ReadCounterRequiredAtOrAbovePromptTokens > 0 && !contract.RequireReadCounter {
+		return fmt.Errorf("cache-read counter threshold requires an enforced read counter")
+	}
 	if !contract.RequireReadCounter {
 		return nil
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/uniroute/unirouter/internal/modelcapabilitypublication"
 	"github.com/uniroute/unirouter/internal/modelcapabilityqualification"
 	"gopkg.in/yaml.v3"
 )
@@ -136,12 +137,44 @@ func TestOpenAPIModelCapabilityQualificationIdentityEnumsMatchCompiledBindings(t
 		compiled["probe_contract_id"] = append(compiled["probe_contract_id"], binding.ProbeContractID)
 		compiled["probe_contract_version"] = append(compiled["probe_contract_version"], binding.ProbeContractVersion)
 	}
+	declarations, err := modelcapabilitypublication.CompiledDeclarations()
+	if err != nil {
+		t.Fatalf("read compiled capability Publications: %v", err)
+	}
+	for _, declaration := range declarations {
+		for _, binding := range declaration.BindingAppends {
+			compiled["operation_id"] = append(compiled["operation_id"], binding.OperationID)
+			compiled["capability_id"] = append(compiled["capability_id"], binding.CapabilityID)
+			compiled["execution_profile_id"] = append(compiled["execution_profile_id"], binding.ExecutionProfileID)
+			compiled["execution_profile_version"] = append(compiled["execution_profile_version"], binding.ExecutionProfileVersion)
+			compiled["protocol_profile_id"] = append(compiled["protocol_profile_id"], binding.ProtocolProfileID)
+			compiled["protocol_profile_version"] = append(compiled["protocol_profile_version"], binding.ProtocolProfileVersion)
+			compiled["probe_contract_id"] = append(compiled["probe_contract_id"], binding.ProbeContractID)
+			compiled["probe_contract_version"] = append(compiled["probe_contract_version"], binding.ProbeContractVersion)
+		}
+	}
 
 	for name, values := range compiled {
 		got := uniqueSorted(openAPIFlowEnum(t, schema, name))
 		want := uniqueSorted(values)
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("ModelCapabilityQualification.%s enum drifted from compiled bindings: got=%v want=%v", name, got, want)
+		}
+	}
+}
+
+func TestOpenAPIStagingSuccessorReceiptNarrowsEmbeddedLifecycleIdentity(t *testing.T) {
+	specBytes, err := os.ReadFile("../../docs/tech-ref/05-openapi-spec.yaml")
+	if err != nil {
+		t.Fatalf("read OpenAPI spec: %v", err)
+	}
+	schema := openAPISchemaSection(t, string(specBytes), "StagingModelSuccessorCutoverReceipt")
+	for _, exact := range []string{
+		`contract_version: { type: string, enum: [unirouter.model-deployment-lifecycle-receipt.v3] }`,
+		`action: { type: string, enum: [activate_initial] }`,
+	} {
+		if !strings.Contains(schema, exact) {
+			t.Fatalf("staging successor receipt does not narrow embedded lifecycle with %q", exact)
 		}
 	}
 }

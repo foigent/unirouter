@@ -55,6 +55,7 @@ const organizationModelRouteSafetyWrites = new Set([
 const organizationModelDeploymentLifecycleWrites = new Set([
   'POST /api/v1/model-deployment-releases/{releaseRef}/activate-initial',
   'POST /api/v1/model-deployment-releases/{releaseRef}/activate-successor',
+  'POST /api/v1/model-deployment-releases/{releaseRef}/activate-staging-successor',
   'POST /api/v1/model-deployment-releases/{releaseRef}/start-canary',
   'POST /api/v1/model-deployment-releases/{releaseRef}/promote',
   'POST /api/v1/model-deployment-releases/{releaseRef}/cancel-canary',

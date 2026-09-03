@@ -17,6 +17,21 @@ import (
 // validated successor release activation and stable request identity switch in
 // one database transaction.
 func (h *Handler) ActivateModelSuccessor(w http.ResponseWriter, r *http.Request) {
+	h.activateModelSuccessor(w, r, modelSuccessorCutoverMutation)
+}
+
+// ActivateStagingModelSuccessor atomically replaces a never-activated staging
+// canonical candidate with its first immutable successor. It uses a distinct
+// receipt and idempotency namespace from the published-predecessor command.
+func (h *Handler) ActivateStagingModelSuccessor(w http.ResponseWriter, r *http.Request) {
+	h.activateModelSuccessor(w, r, stagingModelSuccessorCutoverMutation)
+}
+
+func (h *Handler) activateModelSuccessor(
+	w http.ResponseWriter,
+	r *http.Request,
+	buildMutation func(string, modelSuccessorCutoverRequest) (runtimechange.ModelSuccessorCutoverMutation, error),
+) {
 	identity := middleware.GetRequestIdentityFromContext(r.Context())
 	if !identity.IdempotencyKeyPresent || identity.IdempotencyKeyHash == "" {
 		writeCanonicalDeploymentLifecycleError(w, errCanonicalDeploymentLifecycleIdempotencyRequired)
@@ -36,7 +51,7 @@ func (h *Handler) ActivateModelSuccessor(w http.ResponseWriter, r *http.Request)
 		writeModelSuccessorCutoverError(w, err)
 		return
 	}
-	mutation, err := modelSuccessorCutoverMutation(r.PathValue("releaseRef"), request)
+	mutation, err := buildMutation(r.PathValue("releaseRef"), request)
 	if err != nil {
 		writeModelSuccessorCutoverError(w, err)
 		return

@@ -287,9 +287,9 @@ type openAIUsageWire struct {
 	TotalTokens      *int            `json:"total_tokens"`
 	CachedTokens     json.RawMessage `json:"cached_tokens,omitempty"`
 	PromptDetails    *struct {
-		CachedTokens             *int `json:"cached_tokens"`
-		CacheWriteTokens         *int `json:"cache_write_tokens"`
-		CacheCreationInputTokens *int `json:"cache_creation_input_tokens"`
+		CachedTokens             json.RawMessage `json:"cached_tokens"`
+		CacheWriteTokens         *int            `json:"cache_write_tokens"`
+		CacheCreationInputTokens *int            `json:"cache_creation_input_tokens"`
 	} `json:"prompt_tokens_details,omitempty"`
 	PromptCacheHitTokens  *int `json:"prompt_cache_hit_tokens,omitempty"`
 	PromptCacheMissTokens *int `json:"prompt_cache_miss_tokens,omitempty"`
@@ -339,8 +339,18 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 	promptTokens := *wire.PromptTokens
 	completionTokens := valueOrZero(wire.CompletionTokens)
 	totalTokens := valueOrZero(wire.TotalTokens)
-
 	cacheContract, cacheModeled := modelprofile.ResolveCacheUsageContract(strings.TrimSpace(cacheUsageProfile))
+	var promptCachedTokens int
+	var promptCachedReported, promptCachedNull bool
+	if cacheModeled && wire.PromptDetails != nil {
+		var promptCachedErr error
+		promptCachedTokens, promptCachedReported, promptCachedNull, promptCachedErr = parseOptionalUsageCounterPresence(
+			wire.PromptDetails.CachedTokens, "prompt_tokens_details.cached_tokens",
+		)
+		if promptCachedErr != nil {
+			return Usage{}, cacheModeled, promptCachedErr
+		}
+	}
 	if cacheModeled && cacheContract.WireSchema == modelprofile.CacheUsageWireMoonshotCachedTokensV1 {
 		cachedTokens, cacheReported, err := parseOptionalUsageCounter(wire.CachedTokens, "cached_tokens")
 		if err != nil {
@@ -350,14 +360,11 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 			(wire.PromptDetails != nil && (wire.PromptDetails.CacheWriteTokens != nil || wire.PromptDetails.CacheCreationInputTokens != nil)) {
 			return Usage{}, true, fmt.Errorf("Kimi cache profile requires top-level cached_tokens instead of another cache schema")
 		}
-		if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
-			if err := validateOptionalUsageCounters(optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens}); err != nil {
-				return Usage{}, true, err
-			}
+		if promptCachedReported {
 			if !cacheReported {
 				return Usage{}, true, fmt.Errorf("Kimi cache profile requires top-level cached_tokens instead of another cache schema")
 			}
-			if *wire.PromptDetails.CachedTokens != cachedTokens {
+			if promptCachedTokens != cachedTokens {
 				return Usage{}, true, fmt.Errorf("Kimi cached_tokens mirror contradicts the provider-owned top-level counter")
 			}
 		}
@@ -395,14 +402,11 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 		if cacheReported && (wire.PromptCacheHitTokens == nil || wire.PromptCacheMissTokens == nil) {
 			return Usage{}, true, fmt.Errorf("DeepSeek prompt-cache usage requires both hit and miss counters")
 		}
-		if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
-			if err := validateOptionalUsageCounters(optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens}); err != nil {
-				return Usage{}, true, err
-			}
+		if promptCachedReported {
 			if !cacheReported {
 				return Usage{}, true, fmt.Errorf("DeepSeek cache profile requires prompt_cache_hit_tokens and prompt_cache_miss_tokens instead of another cache schema")
 			}
-			if *wire.PromptDetails.CachedTokens != valueOrZero(wire.PromptCacheHitTokens) {
+			if promptCachedTokens != valueOrZero(wire.PromptCacheHitTokens) {
 				return Usage{}, true, fmt.Errorf("DeepSeek cached_tokens mirror contradicts the provider-owned hit counter")
 			}
 		}
@@ -442,13 +446,12 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 		var cachedReported, creationReported bool
 		if wire.PromptDetails != nil {
 			if err := validateOptionalUsageCounters(
-				optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens},
 				optionalUsageCounter{name: "prompt_tokens_details.cache_creation_input_tokens", value: wire.PromptDetails.CacheCreationInputTokens},
 			); err != nil {
 				return Usage{}, true, err
 			}
-			if wire.PromptDetails.CachedTokens != nil {
-				cachedTokens, cachedReported = *wire.PromptDetails.CachedTokens, true
+			if promptCachedReported {
+				cachedTokens, cachedReported = promptCachedTokens, true
 			}
 			if wire.PromptDetails.CacheCreationInputTokens != nil {
 				creationTokens, creationReported = *wire.PromptDetails.CacheCreationInputTokens, true
@@ -479,17 +482,16 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 			(wire.PromptDetails != nil && wire.PromptDetails.CacheCreationInputTokens != nil) {
 			return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details cached_tokens/cache_write_tokens without another cache schema", cacheContract.ProfileID)
 		}
-		if wire.PromptDetails != nil && (wire.PromptDetails.CachedTokens != nil || wire.PromptDetails.CacheWriteTokens != nil) {
+		if wire.PromptDetails != nil && (promptCachedReported || wire.PromptDetails.CacheWriteTokens != nil) {
 			if err := validateOptionalUsageCounters(
-				optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens},
 				optionalUsageCounter{name: "prompt_tokens_details.cache_write_tokens", value: wire.PromptDetails.CacheWriteTokens},
 			); err != nil {
 				return Usage{}, true, err
 			}
-			cached := valueOrZero(wire.PromptDetails.CachedTokens)
+			cached := promptCachedTokens
 			written := valueOrZero(wire.PromptDetails.CacheWriteTokens)
 			status := CacheUsageStatusReadWriteReported
-			if wire.PromptDetails.CachedTokens == nil {
+			if !promptCachedReported {
 				status = CacheUsageStatusWriteReported
 			} else if wire.PromptDetails.CacheWriteTokens == nil {
 				status = CacheUsageStatusReadReported
@@ -512,11 +514,11 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 			(wire.PromptDetails != nil && (wire.PromptDetails.CacheWriteTokens != nil || wire.PromptDetails.CacheCreationInputTokens != nil)) {
 			return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details.cached_tokens without another cache schema", cacheContract.ProfileID)
 		}
-		if wire.PromptDetails != nil && wire.PromptDetails.CachedTokens != nil {
-			if err := validateOptionalUsageCounters(optionalUsageCounter{name: "prompt_tokens_details.cached_tokens", value: wire.PromptDetails.CachedTokens}); err != nil {
-				return Usage{}, true, err
-			}
-			cached := *wire.PromptDetails.CachedTokens
+		if promptCachedNull && cacheContract.ReadCounterRequiredAtOrAbovePromptTokens > 0 {
+			return Usage{}, true, fmt.Errorf("cache profile %s rejects null prompt_tokens_details.cached_tokens", cacheContract.ProfileID)
+		}
+		if promptCachedReported {
+			cached := promptCachedTokens
 			usage, err := NewCacheAwareUsage(
 				promptTokens,
 				promptTokens-cached,
@@ -530,7 +532,8 @@ func ParseOpenAICompatibleUsageWithCacheProfile(data []byte, endpoint Endpoint, 
 			)
 			return usage, true, err
 		}
-		if cacheContract.RequireReadCounter {
+		if cacheContract.RequireReadCounter && (cacheContract.ReadCounterRequiredAtOrAbovePromptTokens == 0 ||
+			promptTokens >= cacheContract.ReadCounterRequiredAtOrAbovePromptTokens) {
 			return Usage{}, true, fmt.Errorf("cache profile %s requires prompt_tokens_details.cached_tokens, including an authoritative zero", cacheContract.ProfileID)
 		}
 	}
@@ -561,17 +564,25 @@ func validateOpenAIUsageCoreWire(wire *openAIUsageWire) error {
 }
 
 func parseOptionalUsageCounter(raw json.RawMessage, name string) (int, bool, error) {
-	if len(raw) == 0 || isJSONNullUsage(raw) {
-		return 0, false, nil
+	value, reported, _, err := parseOptionalUsageCounterPresence(raw, name)
+	return value, reported, err
+}
+
+func parseOptionalUsageCounterPresence(raw json.RawMessage, name string) (int, bool, bool, error) {
+	if len(raw) == 0 {
+		return 0, false, false, nil
+	}
+	if isJSONNullUsage(raw) {
+		return 0, false, true, nil
 	}
 	var value int
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return 0, false, fmt.Errorf("%s must be an integer", name)
+		return 0, false, false, fmt.Errorf("%s must be an integer", name)
 	}
 	if err := validateOptionalUsageCounters(optionalUsageCounter{name: name, value: &value}); err != nil {
-		return 0, false, err
+		return 0, false, false, err
 	}
-	return value, true, nil
+	return value, true, false, nil
 }
 
 func isJSONNullUsage(raw json.RawMessage) bool {

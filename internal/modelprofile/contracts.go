@@ -131,12 +131,13 @@ func (contract ReasoningContract) EffortRequestObjectField() string {
 // evidence that may become billing truth. Unknown cache-like fields remain
 // untrusted and receive no discount.
 type CacheUsageContract struct {
-	ProfileID          string
-	Mode               string
-	WireSchema         string
-	ReportsRead        bool
-	ReportsCreation    bool
-	RequireReadCounter bool
+	ProfileID                                string
+	Mode                                     string
+	WireSchema                               string
+	ReportsRead                              bool
+	ReportsCreation                          bool
+	RequireReadCounter                       bool
+	ReadCounterRequiredAtOrAbovePromptTokens int
 }
 
 var reasoningContracts = map[string]ReasoningContract{
@@ -802,6 +803,12 @@ var cacheUsageContracts = map[string]CacheUsageContract{
 		ProfileID: "cache-usage.minimax-openai.v1",
 		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireOpenAICachedTokensV1,
 		ReportsRead: true, RequireReadCounter: true,
+	},
+	"cache-usage.minimax-openai.v2": {
+		ProfileID: "cache-usage.minimax-openai.v2",
+		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireOpenAICachedTokensV1,
+		ReportsRead: true, RequireReadCounter: true,
+		ReadCounterRequiredAtOrAbovePromptTokens: 512,
 	},
 	"cache-usage.kimi-platform.v1": {
 		ProfileID: "cache-usage.kimi-platform.v1",

@@ -1060,6 +1060,11 @@ func TestOpenAICompatibleParseResponse_CacheUsageFixtures(t *testing.T) {
 			prompt: 10, uncached: 10, status: CacheUsageStatusNotReported,
 		},
 		{
+			name:   "unmodeled negative cached counter is ignored",
+			body:   `{"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":-1}}}`,
+			prompt: 10, uncached: 10, status: CacheUsageStatusNotReported,
+		},
+		{
 			name:   "unmodeled invalid read-write partition is ignored",
 			body:   `{"usage":{"prompt_tokens":100,"completion_tokens":1,"total_tokens":101,"prompt_tokens_details":{"cached_tokens":80,"cache_write_tokens":21}}}`,
 			prompt: 100, uncached: 100, status: CacheUsageStatusNotReported,

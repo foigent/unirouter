@@ -11,7 +11,31 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const modelSuccessorLifecycleOperationScope = "model_deployment.lifecycle.activate_initial.successor.v1"
+const (
+	modelSuccessorLifecycleOperationScope        = "model_deployment.lifecycle.activate_initial.successor.v1"
+	stagingModelSuccessorLifecycleOperationScope = "model_deployment.lifecycle.activate_initial.staging-successor.v2"
+)
+
+type modelSuccessorContractIdentity struct {
+	lifecycleVersion string
+	childVersion     string
+	operationScope   string
+}
+
+func successorContractIdentity(mutation ModelSuccessorCutoverMutation) modelSuccessorContractIdentity {
+	if mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
+		return modelSuccessorContractIdentity{
+			lifecycleVersion: StagingModelSuccessorLifecycleReceiptContractVersion,
+			childVersion:     StagingModelSuccessorCutoverReceiptContractVersion,
+			operationScope:   stagingModelSuccessorLifecycleOperationScope,
+		}
+	}
+	return modelSuccessorContractIdentity{
+		lifecycleVersion: ModelSuccessorLifecycleReceiptContractVersion,
+		childVersion:     ModelSuccessorCutoverReceiptContractVersion,
+		operationScope:   modelSuccessorLifecycleOperationScope,
+	}
+}
 
 type successorCutoverRegistryState struct {
 	ModelSuccessorRegistryState
@@ -34,6 +58,7 @@ func (m *Manager) ApplyModelSuccessorCutover(
 		return ModelSuccessorCutoverReceipt{}, err
 	}
 	defer tx.Rollback(ctx)
+	contractIdentity := successorContractIdentity(command.Mutation)
 	// Take governance writer locks before the receipt claim establishes the
 	// repeatable-read snapshot. This closes absent-alias and model-set insert
 	// races without inventing a second coordination protocol.
@@ -90,13 +115,20 @@ func (m *Manager) ApplyModelSuccessorCutover(
 	if err := requireNoActiveSuccessorAliases(ctx, tx, command.CustomerOrgID, command.Mutation.SuccessorModelName); err != nil {
 		return ModelSuccessorCutoverReceipt{}, err
 	}
+	predecessorAuthoritySnapshot := map[string]int64(nil)
+	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
+		predecessorAuthoritySnapshot, err = requireNeverActivatedSuccessorPredecessor(ctx, tx, command)
+		if err != nil {
+			return ModelSuccessorCutoverReceipt{}, err
+		}
+	}
 	modelSets, err := lockModelSuccessorModelSets(ctx, tx, command)
 	if err != nil {
 		return ModelSuccessorCutoverReceipt{}, err
 	}
 	if err := insertModelSuccessorCutoverEvidence(
 		ctx, tx, claim.ReceiptID, command, predecessorBefore, successorBefore,
-		modelSets,
+		modelSets, predecessorAuthoritySnapshot,
 	); err != nil {
 		return ModelSuccessorCutoverReceipt{}, err
 	}
@@ -153,24 +185,27 @@ func (m *Manager) ApplyModelSuccessorCutover(
 		Alias: command.Mutation.StableRequestModel, TargetModel: command.Mutation.SuccessorModelName,
 		IsPrimary: true, Status: "active",
 	}
-	extra := map[string]interface{}{
-		"successor_cutover": map[string]interface{}{
-			"contract_version":     ModelSuccessorCutoverReceiptContractVersion,
-			"stable_request_model": command.Mutation.StableRequestModel,
-			"predecessor_before":   predecessorBefore.ModelSuccessorRegistryState,
-			"predecessor_after":    predecessorAfter,
-			"successor_before":     successorBefore.ModelSuccessorRegistryState,
-			"successor_after":      successorAfter,
-			"alias_after":          aliasAfter,
-			"model_set_count":      len(modelSets),
-			"model_sets_before":    modelSuccessorModelSetsBeforeManifest(modelSets),
-			"model_sets_after":     modelSuccessorModelSetsAfterManifest(modelSets),
-		},
+	successorAudit := map[string]interface{}{
+		"contract_version":     contractIdentity.childVersion,
+		"stable_request_model": command.Mutation.StableRequestModel,
+		"predecessor_before":   predecessorBefore.ModelSuccessorRegistryState,
+		"predecessor_after":    predecessorAfter,
+		"successor_before":     successorBefore.ModelSuccessorRegistryState,
+		"successor_after":      successorAfter,
+		"alias_after":          aliasAfter,
+		"model_set_count":      len(modelSets),
+		"model_sets_before":    modelSuccessorModelSetsBeforeManifest(modelSets),
+		"model_sets_after":     modelSuccessorModelSetsAfterManifest(modelSets),
 	}
+	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
+		successorAudit["predecessor_authority_mode"] = command.Mutation.PredecessorAuthorityMode
+		successorAudit["predecessor_authority_snapshot"] = predecessorAuthoritySnapshot
+	}
+	extra := map[string]interface{}{"successor_cutover": successorAudit}
 	auditID, err := insertDeploymentLifecycleAuditVersion(
 		ctx, tx, claim.ReceiptID, lifecycleCommand, targetAfter, slotReceipt,
 		releaseReceipts, qualificationReceipts, "", "",
-		ModelSuccessorLifecycleReceiptContractVersion, extra,
+		contractIdentity.lifecycleVersion, extra,
 	)
 	if err != nil {
 		return ModelSuccessorCutoverReceipt{}, err
@@ -182,7 +217,7 @@ func (m *Manager) ApplyModelSuccessorCutover(
 		return ModelSuccessorCutoverReceipt{}, err
 	}
 	lifecycleReceipt := DeploymentLifecycleReceipt{
-		ContractVersion: ModelSuccessorLifecycleReceiptContractVersion,
+		ContractVersion: contractIdentity.lifecycleVersion,
 		ReceiptID:       claim.ReceiptID, Action: DeploymentLifecycleActivateInitial,
 		TargetReleaseRef: targetAfter.ReleaseRef, CustomerOrgID: command.CustomerOrgID,
 		ActorUserID: command.ActorUserID, ServerOperationID: command.ServerOperationID,
@@ -191,11 +226,15 @@ func (m *Manager) ApplyModelSuccessorCutover(
 		CreatedAt: claim.CreatedAt.UTC(), CompletedAt: completedAt.UTC(),
 	}
 	receipt := ModelSuccessorCutoverReceipt{
-		ContractVersion: ModelSuccessorCutoverReceiptContractVersion,
-		Lifecycle:       lifecycleReceipt, StableRequestModel: command.Mutation.StableRequestModel,
+		ContractVersion:              contractIdentity.childVersion,
+		PredecessorAuthoritySnapshot: predecessorAuthoritySnapshot,
+		Lifecycle:                    lifecycleReceipt, StableRequestModel: command.Mutation.StableRequestModel,
 		PredecessorBefore: predecessorBefore.ModelSuccessorRegistryState,
 		PredecessorAfter:  predecessorAfter, SuccessorBefore: successorBefore.ModelSuccessorRegistryState,
 		SuccessorAfter: successorAfter, AliasAfter: aliasAfter, ModelSets: modelSets,
+	}
+	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
+		receipt.PredecessorAuthorityMode = command.Mutation.PredecessorAuthorityMode
 	}
 	if err := tx.Commit(ctx); err != nil {
 		if recovered, ok, recoveryErr := m.recoverModelSuccessorCutoverReceipt(ctx, command); recoveryErr != nil {
@@ -229,6 +268,7 @@ func claimModelSuccessorLifecycleReceipt(
 	command ModelSuccessorCutoverCommand,
 ) (bool, deploymentLifecycleReceiptClaim, error) {
 	var claim deploymentLifecycleReceiptClaim
+	contractIdentity := successorContractIdentity(command.Mutation)
 	err := tx.QueryRow(ctx, `
 INSERT INTO model_deployment_lifecycle_receipts (
   contract_version,customer_org_id,actor_user_id,actor_org_id,
@@ -241,8 +281,8 @@ VALUES ($1,$2,$3,$4,$5,'activate_initial',$6,$7,$8,$9,$10,0,0,$11,$12,$13,$14)
 ON CONFLICT (customer_org_id,actor_user_id,operation_scope,idempotency_key_hash)
 DO NOTHING
 RETURNING receipt_id,request_fingerprint,server_operation_id,status,created_at`,
-		ModelSuccessorLifecycleReceiptContractVersion, command.CustomerOrgID,
-		command.ActorUserID, command.ActorOrgID, modelSuccessorLifecycleOperationScope,
+		contractIdentity.lifecycleVersion, command.CustomerOrgID,
+		command.ActorUserID, command.ActorOrgID, contractIdentity.operationScope,
 		command.IdempotencyKeyHash, command.RequestFingerprint, command.ServerOperationID,
 		command.Mutation.ReleaseRef, command.Mutation.ExpectedReleaseVersion,
 		command.Mutation.Reason, command.Mutation.PredecessorPublicModelID,
@@ -264,7 +304,7 @@ SELECT receipt_id,request_fingerprint,server_operation_id,status,created_at
   FROM model_deployment_lifecycle_receipts
  WHERE customer_org_id=$1 AND actor_user_id=$2 AND operation_scope=$3
    AND idempotency_key_hash=$4
- FOR SHARE`, command.CustomerOrgID, command.ActorUserID, modelSuccessorLifecycleOperationScope,
+	 FOR SHARE`, command.CustomerOrgID, command.ActorUserID, contractIdentity.operationScope,
 		command.IdempotencyKeyHash,
 	).Scan(&claim.ReceiptID, &claim.RequestFingerprint, &claim.ServerOperationID, &claim.Status, &claim.CreatedAt)
 	if err != nil {
@@ -345,6 +385,66 @@ SELECT alias FROM model_aliases
 	return nil
 }
 
+func requireNeverActivatedSuccessorPredecessor(
+	ctx context.Context,
+	tx pgx.Tx,
+	command ModelSuccessorCutoverCommand,
+) (map[string]int64, error) {
+	var slotCount, authoritativeReleaseCount, activeAliasCount, completedSuccessorReceiptCount int64
+	err := tx.QueryRow(ctx, `
+SELECT
+  (SELECT COUNT(*) FROM runtime_change_slots slot
+    WHERE slot.public_model_id=$1 OR slot.model_name=$2),
+  (SELECT COUNT(*) FROM runtime_change_releases release
+    WHERE release.public_model_id=$1
+      AND (release.route_items_sealed_at IS NOT NULL
+        OR release.stage IN ('validated','shadow','canary','active','rolled_back'))),
+  (SELECT COUNT(*) FROM model_aliases alias
+    WHERE alias.org_id=$3 AND alias.status='active'
+      AND (alias.alias=$2 OR alias.target_model=$2)),
+  (SELECT COUNT(*)
+     FROM model_successor_cutover_receipts child
+     JOIN model_deployment_lifecycle_receipts parent
+       ON parent.receipt_id=child.lifecycle_receipt_id AND parent.status='completed'
+    WHERE child.customer_org_id=$3
+      AND (child.predecessor_public_model_id=$1 OR child.successor_public_model_id=$1))`,
+		command.Mutation.PredecessorPublicModelID,
+		command.Mutation.PredecessorModelName,
+		command.CustomerOrgID,
+	).Scan(&slotCount, &authoritativeReleaseCount, &activeAliasCount, &completedSuccessorReceiptCount)
+	if err != nil {
+		return nil, lifecycleWriteError("read never-activated successor predecessor authority", err)
+	}
+	snapshot := map[string]int64{
+		"runtime_slot_count":                 slotCount,
+		"sealed_or_executable_release_count": authoritativeReleaseCount,
+		"active_alias_count":                 activeAliasCount,
+		"completed_successor_receipt_count":  completedSuccessorReceiptCount,
+	}
+	if slotCount != 0 || authoritativeReleaseCount != 0 || activeAliasCount != 0 || completedSuccessorReceiptCount != 0 {
+		return nil, fmt.Errorf("%w: staging predecessor has prior execution or successor authority", ErrConflict)
+	}
+	return snapshot, nil
+}
+
+func validNeverActivatedPredecessorAuthoritySnapshot(snapshot map[string]int64) bool {
+	if len(snapshot) != 4 {
+		return false
+	}
+	for _, key := range []string{
+		"runtime_slot_count",
+		"sealed_or_executable_release_count",
+		"active_alias_count",
+		"completed_successor_receipt_count",
+	} {
+		value, ok := snapshot[key]
+		if !ok || value != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func lockModelSuccessorModelSets(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -416,7 +516,9 @@ func insertModelSuccessorCutoverEvidence(
 	predecessor successorCutoverRegistryState,
 	successor successorCutoverRegistryState,
 	modelSets []ModelSuccessorModelSetReceipt,
+	predecessorAuthoritySnapshot map[string]int64,
 ) error {
+	contractIdentity := successorContractIdentity(command.Mutation)
 	beforeManifest, err := json.Marshal(modelSuccessorModelSetsBeforeManifest(modelSets))
 	if err != nil {
 		return lifecycleWriteError("marshal model successor before manifest", err)
@@ -424,6 +526,16 @@ func insertModelSuccessorCutoverEvidence(
 	afterManifest, err := json.Marshal(modelSuccessorModelSetsAfterManifest(modelSets))
 	if err != nil {
 		return lifecycleWriteError("marshal model successor after manifest", err)
+	}
+	var authorityMode interface{}
+	var authoritySnapshot interface{}
+	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
+		snapshot, marshalErr := json.Marshal(predecessorAuthoritySnapshot)
+		if marshalErr != nil {
+			return lifecycleWriteError("marshal model successor predecessor authority", marshalErr)
+		}
+		authorityMode = command.Mutation.PredecessorAuthorityMode
+		authoritySnapshot = string(snapshot)
 	}
 	if _, err := tx.Exec(ctx, `
 INSERT INTO model_successor_cutover_receipts (
@@ -435,14 +547,15 @@ INSERT INTO model_successor_cutover_receipts (
   successor_before_lifecycle,successor_before_approved_catalog,
   successor_after_lifecycle,successor_after_approved_catalog,
   alias_before_exists,alias_after_target_model,alias_after_status,alias_after_is_primary,
-  model_set_count,model_sets_before,model_sets_after)
+  model_set_count,model_sets_before,model_sets_after,
+  predecessor_authority_mode,predecessor_authority_snapshot)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'retired',FALSE,$9,$10,$11,$12,'ga',TRUE,
-        FALSE,$10,'active',TRUE,$13,$14::jsonb,$15::jsonb)`,
-		receiptID, ModelSuccessorCutoverReceiptContractVersion, command.CustomerOrgID,
+        FALSE,$10,'active',TRUE,$13,$14::jsonb,$15::jsonb,$16,$17::jsonb)`,
+		receiptID, contractIdentity.childVersion, command.CustomerOrgID,
 		command.Mutation.StableRequestModel, predecessor.PublicModelID, predecessor.ModelName,
 		predecessor.Lifecycle, predecessor.ApprovedCatalog, successor.PublicModelID,
 		successor.ModelName, successor.Lifecycle, successor.ApprovedCatalog,
-		len(modelSets), string(beforeManifest), string(afterManifest),
+		len(modelSets), string(beforeManifest), string(afterManifest), authorityMode, authoritySnapshot,
 	); err != nil {
 		return lifecycleWriteError("insert model successor cutover evidence", err)
 	}
@@ -529,12 +642,29 @@ func readModelSuccessorCutoverReceipt(
 	if err != nil {
 		return ModelSuccessorCutoverReceipt{}, err
 	}
-	if lifecycle.ContractVersion != ModelSuccessorLifecycleReceiptContractVersion || lifecycle.Action != DeploymentLifecycleActivateInitial {
+	var operationScope string
+	if err := store.QueryRow(ctx, `SELECT operation_scope FROM model_deployment_lifecycle_receipts WHERE receipt_id=$1`, receiptID).Scan(&operationScope); err != nil {
+		return ModelSuccessorCutoverReceipt{}, lifecycleWriteError("read model successor lifecycle scope", err)
+	}
+	var expectedChildVersion, expectedAuthorityMode string
+	switch {
+	case lifecycle.ContractVersion == ModelSuccessorLifecycleReceiptContractVersion && operationScope == modelSuccessorLifecycleOperationScope:
+		expectedChildVersion = ModelSuccessorCutoverReceiptContractVersion
+		expectedAuthorityMode = ModelSuccessorPredecessorPublished
+	case lifecycle.ContractVersion == StagingModelSuccessorLifecycleReceiptContractVersion && operationScope == stagingModelSuccessorLifecycleOperationScope:
+		expectedChildVersion = StagingModelSuccessorCutoverReceiptContractVersion
+		expectedAuthorityMode = ModelSuccessorPredecessorNeverActivated
+	default:
+		return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: model successor lifecycle receipt identity", ErrUnavailable)
+	}
+	if lifecycle.Action != DeploymentLifecycleActivateInitial {
 		return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: model successor lifecycle receipt identity", ErrUnavailable)
 	}
 	result := ModelSuccessorCutoverReceipt{Lifecycle: lifecycle}
 	var modelSetCount int
 	var aliasBeforeExists bool
+	var storedAuthorityMode *string
+	var storedAuthoritySnapshot []byte
 	err = store.QueryRow(ctx, `
 SELECT contract_version,stable_request_model,
        predecessor_public_model_id,predecessor_model_name,
@@ -544,7 +674,7 @@ SELECT contract_version,stable_request_model,
        successor_before_lifecycle,successor_before_approved_catalog,
        successor_after_lifecycle,successor_after_approved_catalog,
        alias_before_exists,alias_after_target_model,alias_after_status,alias_after_is_primary,
-       model_set_count
+       model_set_count,predecessor_authority_mode,predecessor_authority_snapshot
   FROM model_successor_cutover_receipts
  WHERE lifecycle_receipt_id=$1`, receiptID).Scan(
 		&result.ContractVersion, &result.StableRequestModel,
@@ -555,7 +685,7 @@ SELECT contract_version,stable_request_model,
 		&result.SuccessorBefore.Lifecycle, &result.SuccessorBefore.ApprovedCatalog,
 		&result.SuccessorAfter.Lifecycle, &result.SuccessorAfter.ApprovedCatalog,
 		&aliasBeforeExists, &result.AliasAfter.TargetModel, &result.AliasAfter.Status,
-		&result.AliasAfter.IsPrimary, &modelSetCount,
+		&result.AliasAfter.IsPrimary, &modelSetCount, &storedAuthorityMode, &storedAuthoritySnapshot,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: missing model successor child receipt", ErrUnavailable)
@@ -566,8 +696,20 @@ SELECT contract_version,stable_request_model,
 	result.PredecessorAfter.PublicModelID, result.PredecessorAfter.ModelName = result.PredecessorBefore.PublicModelID, result.PredecessorBefore.ModelName
 	result.SuccessorAfter.PublicModelID, result.SuccessorAfter.ModelName = result.SuccessorBefore.PublicModelID, result.SuccessorBefore.ModelName
 	result.AliasAfter.Alias = result.StableRequestModel
-	if result.ContractVersion != ModelSuccessorCutoverReceiptContractVersion || aliasBeforeExists {
+	if result.ContractVersion != expectedChildVersion || aliasBeforeExists {
 		return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: invalid model successor child receipt", ErrUnavailable)
+	}
+	if expectedAuthorityMode == ModelSuccessorPredecessorPublished {
+		if storedAuthorityMode != nil || len(storedAuthoritySnapshot) != 0 {
+			return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: published successor receipt has staging authority evidence", ErrUnavailable)
+		}
+	} else {
+		if storedAuthorityMode == nil || *storedAuthorityMode != expectedAuthorityMode ||
+			json.Unmarshal(storedAuthoritySnapshot, &result.PredecessorAuthoritySnapshot) != nil ||
+			!validNeverActivatedPredecessorAuthoritySnapshot(result.PredecessorAuthoritySnapshot) {
+			return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: invalid staging predecessor authority evidence", ErrUnavailable)
+		}
+		result.PredecessorAuthorityMode = expectedAuthorityMode
 	}
 	rows, err := store.Query(ctx, `
 SELECT model_set_id,before_model_name,before_alias_exists,after_alias_name
@@ -620,12 +762,13 @@ func (m *Manager) recoverModelSuccessorCutoverReceipt(
 	command ModelSuccessorCutoverCommand,
 ) (ModelSuccessorCutoverReceipt, bool, error) {
 	var claim deploymentLifecycleReceiptClaim
+	contractIdentity := successorContractIdentity(command.Mutation)
 	err := m.db.QueryRow(ctx, `
 SELECT receipt_id,request_fingerprint,server_operation_id,status,created_at
   FROM model_deployment_lifecycle_receipts
  WHERE customer_org_id=$1 AND actor_user_id=$2 AND operation_scope=$3
    AND idempotency_key_hash=$4`, command.CustomerOrgID, command.ActorUserID,
-		modelSuccessorLifecycleOperationScope, command.IdempotencyKeyHash,
+		contractIdentity.operationScope, command.IdempotencyKeyHash,
 	).Scan(&claim.ReceiptID, &claim.RequestFingerprint, &claim.ServerOperationID, &claim.Status, &claim.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ModelSuccessorCutoverReceipt{}, false, nil

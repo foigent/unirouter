@@ -140,6 +140,11 @@ canonical 审计身份必须分离：
 - successor 在切换前保持 `staging + approved_catalog=false`；可以完成
   Deployment、Probe、approval 和 sealed initial Release，但不能预先获得
   stable Slot，也不能仅靠目录隐藏阻止直接执行。
+- 已经发布过的 predecessor 与从未激活的 staging predecessor 使用不同的
+  receipt version、operation scope 和 idempotency namespace。后者只有在
+  `Slot=0`、sealed/可执行 Release=0、active Alias=0、completed successor
+  receipt=0 时才允许切换；失败 Probe 与 Deployment 历史可以保留，但不能
+  被误解释为执行权威。
 - 首次切换由一个服务端领域命令完成：锁定并核对旧、新模型、Alias、
   Release/Slot 和受影响 model-set 的完整 before-state，在同一 PostgreSQL
   事务中激活 successor stable Slot、退役并下架 predecessor、创建一个
@@ -151,7 +156,9 @@ canonical 审计身份必须分离：
   只有管理员投影可以同时显示 canonical identity 和历史关系。
 - primary Alias 不能通过通用 Alias CRUD 改写或停用。已经完成切换的
   predecessor 不能复活，successor 不能回到 staging 或被直接删除；后续
-  Alias retarget 是新的版本化生命周期问题，不属于 first-cutover v1。
+  Alias retarget 是新的版本化生命周期问题，不属于任何 first-cutover
+  合同。published predecessor v1 与 never-activated staging predecessor v2
+  不能交叉重放或共用 parent/child receipt。
 - 请求重放返回相同收据；commit 结果不明确时只通过 parent lifecycle
   receipt 与完整 child evidence 回读恢复。提交后的读回故障不自动回滚
   已生效身份，必须依据不可变收据确认新状态后 forward-fix。

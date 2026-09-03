@@ -10,14 +10,20 @@ const (
 	// ModelSuccessorLifecycleReceiptContractVersion distinguishes the larger
 	// atomic successor command from an ordinary initial deployment activation.
 	// The embedded runtime transition remains activate_initial.
-	ModelSuccessorLifecycleReceiptContractVersion = "unirouter.model-deployment-lifecycle-receipt.v2"
-	ModelSuccessorCutoverReceiptContractVersion   = "unirouter.model-successor-cutover-receipt.v1"
+	ModelSuccessorLifecycleReceiptContractVersion        = "unirouter.model-deployment-lifecycle-receipt.v2"
+	ModelSuccessorCutoverReceiptContractVersion          = "unirouter.model-successor-cutover-receipt.v1"
+	StagingModelSuccessorLifecycleReceiptContractVersion = "unirouter.model-deployment-lifecycle-receipt.v3"
+	StagingModelSuccessorCutoverReceiptContractVersion   = "unirouter.model-successor-cutover-receipt.v2"
+
+	ModelSuccessorPredecessorPublished      = "published"
+	ModelSuccessorPredecessorNeverActivated = "never_activated_staging"
 )
 
 // ModelSuccessorCutoverMutation is intentionally limited to the first
 // successor of a stable canonical request identity. A later primary-alias
 // retarget needs an explicit authorization-carrier migration contract.
 type ModelSuccessorCutoverMutation struct {
+	PredecessorAuthorityMode           string                           `json:"-"`
 	ReleaseRef                         string                           `json:"release_ref"`
 	ExpectedReleaseVersion             int64                            `json:"expected_release_version"`
 	StableRequestModel                 string                           `json:"stable_request_model"`
@@ -71,18 +77,24 @@ type ModelSuccessorModelSetReceipt struct {
 }
 
 type ModelSuccessorCutoverReceipt struct {
-	ContractVersion    string                          `json:"contract_version"`
-	Lifecycle          DeploymentLifecycleReceipt      `json:"lifecycle"`
-	StableRequestModel string                          `json:"stable_request_model"`
-	PredecessorBefore  ModelSuccessorRegistryState     `json:"predecessor_before"`
-	PredecessorAfter   ModelSuccessorRegistryState     `json:"predecessor_after"`
-	SuccessorBefore    ModelSuccessorRegistryState     `json:"successor_before"`
-	SuccessorAfter     ModelSuccessorRegistryState     `json:"successor_after"`
-	AliasAfter         ModelSuccessorAliasState        `json:"alias_after"`
-	ModelSets          []ModelSuccessorModelSetReceipt `json:"model_sets"`
+	ContractVersion              string                          `json:"contract_version"`
+	PredecessorAuthorityMode     string                          `json:"predecessor_authority_mode,omitempty"`
+	PredecessorAuthoritySnapshot map[string]int64                `json:"predecessor_authority_snapshot,omitempty"`
+	Lifecycle                    DeploymentLifecycleReceipt      `json:"lifecycle"`
+	StableRequestModel           string                          `json:"stable_request_model"`
+	PredecessorBefore            ModelSuccessorRegistryState     `json:"predecessor_before"`
+	PredecessorAfter             ModelSuccessorRegistryState     `json:"predecessor_after"`
+	SuccessorBefore              ModelSuccessorRegistryState     `json:"successor_before"`
+	SuccessorAfter               ModelSuccessorRegistryState     `json:"successor_after"`
+	AliasAfter                   ModelSuccessorAliasState        `json:"alias_after"`
+	ModelSets                    []ModelSuccessorModelSetReceipt `json:"model_sets"`
 }
 
 func NormalizeModelSuccessorCutoverMutation(mutation ModelSuccessorCutoverMutation) (ModelSuccessorCutoverMutation, error) {
+	mutation.PredecessorAuthorityMode = strings.TrimSpace(mutation.PredecessorAuthorityMode)
+	if mutation.PredecessorAuthorityMode == "" {
+		mutation.PredecessorAuthorityMode = ModelSuccessorPredecessorPublished
+	}
 	mutation.ReleaseRef = strings.TrimSpace(strings.ToLower(mutation.ReleaseRef))
 	mutation.StableRequestModel = strings.TrimSpace(mutation.StableRequestModel)
 	mutation.PredecessorModelName = strings.TrimSpace(mutation.PredecessorModelName)
@@ -104,6 +116,11 @@ func NormalizeModelSuccessorCutoverMutation(mutation ModelSuccessorCutoverMutati
 			return ModelSuccessorCutoverMutation{}, fmt.Errorf("%w: expected model-set snapshot", ErrInvalid)
 		}
 	}
+	publishedPredecessor := mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorPublished &&
+		(mutation.ExpectedPredecessorLifecycle == "ga" || mutation.ExpectedPredecessorLifecycle == "deprecated") &&
+		mutation.ExpectedPredecessorApprovedCatalog
+	neverActivatedPredecessor := mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated &&
+		mutation.ExpectedPredecessorLifecycle == "staging" && !mutation.ExpectedPredecessorApprovedCatalog
 	if !releaseRefPattern.MatchString(mutation.ReleaseRef) || mutation.ExpectedReleaseVersion <= 0 ||
 		mutation.PredecessorPublicModelID <= 0 || mutation.SuccessorPublicModelID <= 0 ||
 		mutation.PredecessorPublicModelID == mutation.SuccessorPublicModelID ||
@@ -112,8 +129,7 @@ func NormalizeModelSuccessorCutoverMutation(mutation ModelSuccessorCutoverMutati
 		!validSuccessorModelIdentity(mutation.SuccessorModelName) ||
 		mutation.StableRequestModel != mutation.PredecessorModelName ||
 		mutation.SuccessorModelName == mutation.StableRequestModel ||
-		(mutation.ExpectedPredecessorLifecycle != "ga" && mutation.ExpectedPredecessorLifecycle != "deprecated") ||
-		!mutation.ExpectedPredecessorApprovedCatalog ||
+		(!publishedPredecessor && !neverActivatedPredecessor) ||
 		mutation.ExpectedSuccessorLifecycle != "staging" || mutation.ExpectedSuccessorApprovedCatalog ||
 		len(mutation.Reason) > 1000 || strings.ContainsAny(mutation.Reason, "\x00\r\n") {
 		return ModelSuccessorCutoverMutation{}, fmt.Errorf("%w: model successor cutover mutation", ErrInvalid)
