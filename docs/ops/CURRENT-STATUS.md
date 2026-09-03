@@ -1,6 +1,9 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.42/M110. M110 appends one compatible
+> Repository source candidate is 1.2.45/M110. The current candidate exposes the
+> existing cache qualification controls and removes documented non-authoritative
+> GLM response request-ID metadata only for six exact current Chat tuples; this
+> is not new Provider/UI success evidence. M110 appends one compatible
 > Capability Publication for the exact runtime Function Tools composition of
 > three MiniMax PAYG Profile 1.2 models and six current GLM models. It advances
 > their existing provider-family Probe contracts to v2 and supplies the

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Modal } from '@douyinfe/semi-ui';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanonicalModelApplication, CanonicalOperation } from '../../../api/modelDeployments';
-import ModelCapabilityQualificationPanel from '../ModelCapabilityQualificationPanel';
+import ModelCapabilityQualificationPanel, { isQualifiedCapabilityID } from '../ModelCapabilityQualificationPanel';
 
 const mocks = vi.hoisted(() => ({
   getQualification: vi.fn(),
@@ -82,6 +82,83 @@ describe('ModelCapabilityQualificationPanel', () => {
       Modal.destroyAll();
       await Promise.resolve();
     });
+  });
+
+  it.each([
+    ['cache_read_usage', '缓存读取计量', 0],
+    ['prompt_cache', 'Prompt Cache 能力', 128],
+  ] as const)('renders the published %s workflow without inventing a provider identity', async (capabilityID, shortName, cachedTokens) => {
+    let confirmationConfig: any;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config: any) => {
+      confirmationConfig = config;
+      return { destroy: vi.fn(), update: vi.fn() } as any;
+    });
+    mocks.getQualification.mockResolvedValue({
+      ...baseQualification,
+      capability_id: capabilityID,
+      state: 'probed_awaiting_approval',
+      latest_probe: {
+        capability_probe_id: 505, success: true, provider_success: true, current: true,
+        status_code: 200, latency_ms: 120, tested_at: '2026-09-04T01:00:00Z',
+        cache_read_counter_observed: true, cached_tokens: cachedTokens,
+      },
+    });
+    mocks.probeCapability.mockResolvedValue({ success: true, current: true });
+
+    expect(isQualifiedCapabilityID(capabilityID)).toBe(true);
+    expect(isQualifiedCapabilityID('unpublished_cache_mode')).toBe(false);
+    render(<ModelCapabilityQualificationPanel
+      selected={selected} operation={operation} canManage canApprove gatewayLicensed
+      gatewayRestriction="" capabilityID={capabilityID}
+    />);
+
+    expect(await screen.findByText(`cache read usage: ${cachedTokens} tokens`)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`运行${shortName}探测`) }));
+    expect(confirmationConfig.title).toBe(`运行${shortName}探测？`);
+    await act(async () => { await confirmationConfig.onOk(); });
+    expect(mocks.probeCapability).toHaveBeenCalledWith(
+      41, 'openai.chat_completions.v1', capabilityID, { credential_binding_id: 91 },
+    );
+    expect(mocks.approveCapability).not.toHaveBeenCalled();
+  });
+
+  it.each([false, undefined])('does not turn an unobserved cache counter (%s) into zero', async observed => {
+    mocks.getQualification.mockResolvedValue({
+      ...baseQualification, capability_id: 'cache_read_usage', state: 'probe_failed',
+      qualification_state: 'probe_failed',
+      latest_probe: {
+        capability_probe_id: 506, success: false, provider_success: true, current: true,
+        status_code: 200, latency_ms: 120, tested_at: '2026-09-04T01:00:00Z',
+        cache_read_counter_observed: observed, cached_tokens: 0,
+      },
+    });
+    render(<ModelCapabilityQualificationPanel
+      selected={selected} operation={operation} canManage canApprove gatewayLicensed
+      gatewayRestriction="" capabilityID="cache_read_usage"
+    />);
+    expect(await screen.findByText('cache read usage: not_reported')).toBeInTheDocument();
+    expect(screen.queryByText('cache read usage: 0 tokens')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '批准在当前环境进入路由池' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a server-declared prompt-cache miss unapproved even with an explicit zero counter', async () => {
+    mocks.getQualification.mockResolvedValue({
+      ...baseQualification, capability_id: 'prompt_cache', state: 'probe_failed',
+      qualification_state: 'probe_failed', probe_available: false,
+      latest_probe: {
+        capability_probe_id: 507, success: false, provider_success: true, current: true,
+        status_code: 200, latency_ms: 120, tested_at: '2026-09-04T01:00:00Z',
+        cache_read_counter_observed: true, cached_tokens: 0, contract_error_code: 'cache_miss',
+      },
+    });
+    render(<ModelCapabilityQualificationPanel
+      selected={selected} operation={operation} canManage canApprove gatewayLicensed
+      gatewayRestriction="" capabilityID="prompt_cache"
+    />);
+    expect(await screen.findByText('cache read usage: 0 tokens')).toBeInTheDocument();
+    expect(screen.getByText('合同校验：cache_miss')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /运行Prompt Cache/u })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '批准在当前环境进入路由池' })).not.toBeInTheDocument();
   });
 
   it('keeps probe and approval separate while presenting the real-call and cost boundary', async () => {

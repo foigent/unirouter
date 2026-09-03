@@ -19,8 +19,9 @@ var errInvalidChatNonStreamMechanics = errors.New("invalid OpenAI-compatible Cha
 type ChatNonStreamDeliveryIssue string
 
 const (
-	ChatNonStreamDeliveryIssueNone            ChatNonStreamDeliveryIssue = ""
-	ChatNonStreamToolCallNormalizationInvalid ChatNonStreamDeliveryIssue = "tool_call_normalization_invalid"
+	ChatNonStreamDeliveryIssueNone             ChatNonStreamDeliveryIssue = ""
+	ChatNonStreamToolCallNormalizationInvalid  ChatNonStreamDeliveryIssue = "tool_call_normalization_invalid"
+	ChatNonStreamRequestIDNormalizationInvalid ChatNonStreamDeliveryIssue = "request_id_normalization_invalid"
 )
 
 // ChatNonStreamMechanics is selected by existing exact runtime or Probe
@@ -29,6 +30,7 @@ const (
 type ChatNonStreamMechanics struct {
 	RejectDuplicateMembers bool
 	NormalizeToolCallIndex bool
+	NormalizeRequestID     bool
 }
 
 // ChatNonStreamPrepared contains only the bytes prepared for the caller's
@@ -41,10 +43,50 @@ type ChatNonStreamPrepared struct {
 }
 
 func validateChatNonStreamMechanics(mechanics ChatNonStreamMechanics) error {
-	if mechanics.NormalizeToolCallIndex && !mechanics.RejectDuplicateMembers {
+	if (mechanics.NormalizeToolCallIndex || mechanics.NormalizeRequestID) && !mechanics.RejectDuplicateMembers {
 		return errInvalidChatNonStreamMechanics
 	}
 	return nil
+}
+
+func runtimeChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics, bool, error) {
+	mechanics, found, err := kimiRuntimeChatNonStreamMechanics(in)
+	if err != nil || found {
+		return mechanics, found, err
+	}
+	return glmRuntimeChatNonStreamMechanics(in)
+}
+
+func glmRuntimeChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics, bool, error) {
+	if in.Endpoint != EndpointChatCompletions {
+		return ChatNonStreamMechanics{}, false, nil
+	}
+	expectedModel, expectedProtocol := "", ""
+	switch strings.TrimSpace(in.ExecutionProfileID) + "\x00" + strings.TrimSpace(in.ExecutionProfileVersion) {
+	case "glm.5.3.api\x001.8.0":
+		expectedModel, expectedProtocol = "glm-5.3", "protocol.glm-openai-chat.v5"
+	case "glm.5.2.api\x001.8.0":
+		expectedModel, expectedProtocol = "glm-5.2", "protocol.glm-openai-chat.v6"
+	case "glm.5.1.api\x001.0.0":
+		expectedModel, expectedProtocol = "glm-5.1", "protocol.glm-openai-chat.v6"
+	case "glm.5-turbo.api\x001.0.0":
+		expectedModel, expectedProtocol = "glm-5-turbo", "protocol.glm-openai-chat.v6"
+	case "glm.5.api\x001.0.0":
+		expectedModel, expectedProtocol = "glm-5", "protocol.glm-openai-chat.v6"
+	case "glm.5v-turbo.api\x001.11.0":
+		expectedModel, expectedProtocol = "glm-5v-turbo", "protocol.glm-openai-chat.glm5v.v5"
+	default:
+		return ChatNonStreamMechanics{}, false, nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(in.Channel.Provider), "glm") ||
+		strings.TrimSpace(in.UpstreamModel) != expectedModel ||
+		strings.TrimSpace(in.ModelOperationID) != modelprofile.OperationOpenAIChat ||
+		strings.TrimSpace(in.ProtocolProfile) != expectedProtocol ||
+		strings.TrimSpace(in.OperationProtocolProfileID) != expectedProtocol ||
+		strings.TrimSpace(in.OperationProtocolProfileVersion) != modelprofile.ChatOperationProtocolBindingVersionV1 {
+		return ChatNonStreamMechanics{}, false, fmt.Errorf("exact GLM Chat runtime identity mismatch")
+	}
+	return ChatNonStreamMechanics{RejectDuplicateMembers: true, NormalizeRequestID: true}, true, nil
 }
 
 func kimiRuntimeChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics, bool, error) {
@@ -108,8 +150,8 @@ func ValidateOpenAICompatibleChatNonStreamDocument(body []byte, mechanics ChatNo
 }
 
 // PrepareOpenAICompatibleChatNonStreamDocument applies only the existing exact
-// non-stream child tool-call-index normalization. It assumes the caller has
-// already run the selected ambiguity check. Any normalizer failure over the
+// non-stream child tool-call-index or non-authoritative request-id normalization.
+// It assumes the caller has already run the selected ambiguity check. Any normalizer failure over the
 // same syntactically valid bytes is deliberately returned as a closed delivery
 // issue so runtime can retain provider usage before its canonical guardrail
 // rejects the original body. Probe v4 maps the same issue to delivery_shape.
@@ -122,20 +164,43 @@ func PrepareOpenAICompatibleChatNonStreamDocument(
 	if err := validateChatNonStreamMechanics(mechanics); err != nil {
 		return prepared, err
 	}
-	if !mechanics.NormalizeToolCallIndex {
+	if !mechanics.NormalizeToolCallIndex && !mechanics.NormalizeRequestID {
 		return prepared, nil
 	}
 	if protocolProfileVersion != modelprofile.ChatOperationProtocolBindingVersionV1 {
 		return prepared, errInvalidChatNonStreamMechanics
 	}
-	normalized, changed, err := NormalizeOpenAICompatibleChatToolCallIndex(
-		provider, upstreamModel, protocolProfile, body,
-	)
-	if err != nil {
-		prepared.DeliveryIssue = ChatNonStreamToolCallNormalizationInvalid
-		return prepared, nil
+	if mechanics.NormalizeToolCallIndex {
+		normalized, changed, err := NormalizeOpenAICompatibleChatToolCallIndex(
+			provider, upstreamModel, protocolProfile, body,
+		)
+		if err != nil {
+			prepared.DeliveryIssue = ChatNonStreamToolCallNormalizationInvalid
+			return prepared, nil
+		}
+		prepared.Body, prepared.Changed = normalized, changed
 	}
-	prepared.Body = normalized
-	prepared.Changed = changed
+	if mechanics.NormalizeRequestID {
+		object, err := decodeOpenAICompatibleChatNonStreamObject(prepared.Body)
+		if err != nil {
+			prepared.DeliveryIssue = ChatNonStreamRequestIDNormalizationInvalid
+			return prepared, nil
+		}
+		if value, present := object["request_id"]; present {
+			// GLM documents this non-canonical metadata as a string. It is
+			// discarded, never adopted as request/trace authority. The existing
+			// response-body limit bounds it; input/header ID limits do not apply.
+			if _, ok := value.(string); !ok {
+				prepared.DeliveryIssue = ChatNonStreamRequestIDNormalizationInvalid
+				return prepared, nil
+			}
+			delete(object, "request_id")
+			normalized, err := json.Marshal(object)
+			if err != nil {
+				return prepared, err
+			}
+			prepared.Body, prepared.Changed = normalized, true
+		}
+	}
 	return prepared, nil
 }

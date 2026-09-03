@@ -344,6 +344,14 @@ func ValidateNormalizedOpenAIChatFunctionToolsForBinding(
 	if err := json.Unmarshal(body, &normalizedEnvelope); err != nil || normalizedEnvelope == nil {
 		return observation, invalidOpenAIChatFunctionTools("json")
 	}
+	if binding.ExpectedProvider == "glm" {
+		// The exact adapter preparation removes documented string metadata.
+		// A retained value is malformed or was not normalized by that exact
+		// authority, so it cannot qualify merely because struct decoding skips it.
+		if _, present := normalizedEnvelope["request_id"]; present {
+			return observation, invalidOpenAIChatFunctionTools("delivery_shape")
+		}
+	}
 	for _, providerEnvelopeField := range []string{
 		"base_resp", "input_sensitive", "output_sensitive", "input_sensitive_type", "output_sensitive_type", "output_sensitive_int",
 	} {

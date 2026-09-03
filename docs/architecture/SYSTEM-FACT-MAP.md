@@ -8,7 +8,7 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
-Repository source candidate is version 1.2.42 with PostgreSQL compatibility
+Repository source candidate is version 1.2.45 with PostgreSQL compatibility
 ceiling `000110_openai_chat_runtime_capability_qualification`. M110 is one
 append-only Capability Publication for the exact runtime Function Tools
 composition of the current three MiniMax PAYG and six GLM model Profiles. It
@@ -18,7 +18,12 @@ required by canonical planning. MiniMax additionally receives separate
 prompt-cache and cache-read-usage bindings whose sanitized evidence preserves
 counter presence and whose prompt-cache success requires a positive hit. M110
 has no Profile attachment guard and creates no dynamic qualification or route
-authority. M108 is the append-only
+authority. The current adapter preparation normalizes only documented string
+`request_id` metadata for six exact current GLM Chat tuples; it does not adopt
+that metadata as request, trace or billing authority. Invalid metadata withholds
+delivery while preserving independently valid Provider usage. Cache qualification
+controls expose existing server-owned actions, not new frontend eligibility.
+M108 is the append-only
 Capability Publication for three exact MiniMax PAYG Profile 1.2 identities and
 their threshold-aware cache-usage contract. M109 extends M107 with a separate
 v3/v2 receipt pair and operation scope only for replacing a never-activated,

@@ -15,7 +15,7 @@ const { Text } = Typography;
 
 export type QualifiedCapabilityID = 'streaming' | 'reasoning' | 'reasoning_effort' |
   'tools' | 'function_tools' | 'tool_choice_auto' | 'tool_choice_named' |
-  'tool_choice_required' | 'json_object';
+  'tool_choice_required' | 'json_object' | 'cache_read_usage' | 'prompt_cache';
 
 const capabilityPresentation: Record<QualifiedCapabilityID, {
   title: string;
@@ -84,6 +84,18 @@ const capabilityPresentation: Record<QualifiedCapabilityID, {
     description: '验证当前精确部署接受 response_format=json_object，并返回严格可解析的目标对象。',
     defaultReason: '已审阅当前环境的 JSON Object 探测证据', emptyEvidence: '尚未运行 typed json_object probe。',
     probeContractSummary: '服务端固定 JSON 提示和 response_format=json_object；响应必须是无重复字段的精确对象。',
+  },
+  cache_read_usage: {
+    title: '能力验证 · 缓存读取计量', shortName: '缓存读取计量',
+    description: '验证当前精确部署在缓存适用请求中明确报告缓存读取计数；显式零与未报告是不同证据。',
+    defaultReason: '已审阅当前环境的缓存读取计量探测证据', emptyEvidence: '尚未运行 typed cache_read_usage probe。',
+    probeContractSummary: '服务端固定缓存适用请求并校验供应商输入 token 门槛及缓存计数；显式零可证明计数报告，但不证明缓存命中。',
+  },
+  prompt_cache: {
+    title: '能力验证 · Prompt Cache', shortName: 'Prompt Cache 能力',
+    description: '验证当前精确部署在服务端固定请求中实际发生缓存命中；报告零计数不足以取得此资格。',
+    defaultReason: '已审阅当前环境的 Prompt Cache 命中探测证据', emptyEvidence: '尚未运行 typed prompt_cache probe。',
+    probeContractSummary: '服务端固定缓存适用请求并要求正的缓存命中计数；一次未命中不会自动重试，也不会由前端放宽资格。',
   },
 };
 
@@ -322,6 +334,9 @@ export default function ModelCapabilityQualificationPanel(props: Props) {
             {qualification.latest_probe.tool_call_observed && <Text>tool call evidence: observed</Text>}
             {qualification.latest_probe.structured_output_observed && <Text>structured output evidence: observed</Text>}
             {qualification.latest_probe.total_tokens !== undefined && <Text>usage: {qualification.latest_probe.prompt_tokens || 0} + {qualification.latest_probe.completion_tokens || 0} = {qualification.latest_probe.total_tokens}</Text>}
+            {qualification.latest_probe.cache_read_counter_observed === true && qualification.latest_probe.cached_tokens !== undefined
+              ? <Text>cache read usage: {qualification.latest_probe.cached_tokens} tokens</Text>
+              : (capabilityID === 'cache_read_usage' || capabilityID === 'prompt_cache') && <Text>cache read usage: not_reported</Text>}
           </Space>
           {qualification.latest_probe.error_summary && <Text type="danger">{qualification.latest_probe.error_summary}</Text>}
           {qualification.latest_probe.contract_error_code && <Text type="danger">
