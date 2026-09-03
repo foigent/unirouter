@@ -4,6 +4,30 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.42] - 2026-09-03
+
+### Changed
+
+- Added M110 as one append-only Capability Publication for the exact MiniMax
+  PAYG M3/M2.7/M2.7-highspeed and GLM 5.3/5.2/5.1/5-Turbo/5/5V-Turbo Chat
+  runtime capability compositions required by canonical Function Tools calls.
+- Advanced the existing provider-family Function Tools Probe contracts to v2
+  for the current exact Profiles. The shared validator proves the tool call,
+  provider-specific reasoning evidence and usage while retaining separate
+  provider/model identities.
+- Added MiniMax cache qualification that distinguishes an explicitly reported
+  zero cache-read counter from a missing counter and requires a real positive
+  cache hit only for `prompt_cache`. Sanitized probe evidence records counter
+  presence and value without storing provider response content.
+- Preserved fail-closed routing: M110 creates static contracts only; every exact
+  capability still requires its own current Probe and routing approval before a
+  route can satisfy the composed invocation.
+
+### Not included
+
+- No Token Plan, multimodal, pricing, Production, Alias, credential, fallback
+  or administrator-account changes are introduced.
+
 ## [1.2.41] - 2026-09-03
 
 ### Changed

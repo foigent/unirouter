@@ -1,6 +1,17 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.41/M109. M108 appends one compatible
+> Repository source candidate is 1.2.42/M110. M110 appends one compatible
+> Capability Publication for the exact runtime Function Tools composition of
+> three MiniMax PAYG Profile 1.2 models and six current GLM models. It advances
+> their existing provider-family Probe contracts to v2 and supplies the
+> reasoning, tools, function-tools and automatic tool-choice bindings required
+> by the canonical planner; MiniMax additionally receives exact prompt-cache and
+> cache-read-usage bindings. Provider-specific model/Profile/protocol identities
+> remain independent. Cache evidence preserves missing versus explicit zero,
+> and only `prompt_cache` requires an observed positive hit. M110 contains no
+> Profile attachment guard because every Profile predates this Publication.
+> M110 creates no live Probe, Approval, Release, route or Target authority by
+> itself. M108 appends one compatible
 > Publication for the three exact MiniMax PAYG Profile 1.2 successors. Their
 > cache-usage contract requires `cached_tokens` at or above the documented
 > 512-token provider-input cache threshold, accepts an absent counter only
@@ -31,7 +42,7 @@
 > Tools without reinterpreting history, and deterministic M105 Publication
 > artifacts. GLM-5V-Turbo is qualified only for pure-text Function Tools;
 > media-plus-tools and GLM-5.3-Flash remain outside the executable M105 binding
-> set. This 1.2.41 source candidate adds the missing guarded Canonical Release
+> set. The preceding 1.2.41 source candidate added the missing guarded Canonical Release
 > Workspace action for M109, including a fresh complete model-set before-state
 > read immediately before the formal idempotent cutover call. It creates no
 > live successor, Probe, Approval,
@@ -39,9 +50,9 @@
 > selects the exact M106 endpoint class;
 > Token Plan remains historical and outside the current attachment path.
 >
-> The development/test Target currently runs exact 1.2.40/M109 main merge
-> `37e2a4898d9b7f8150417b2a1072d314eea3438e`, tree
-> `13989e082bd7a80facad055b22125eb22d339d70`; M104 through M109 are applied
+> The development/test Target currently runs exact 1.2.41/M109 main merge
+> `a031cb81f611fa660ec63d30343dca0390c341d1`, tree
+> `015d96819657204b1a6bd2e7e5aa6dae4689c237`; M104 through M109 are applied
 > and the runtime remains non-Production. GLM-5, GLM-5.1, GLM-5.3 and
 > GLM-5V-Turbo have current successful Operation and typed Function Tools
 > Probe evidence plus environment approval. GLM-5-Turbo has successful typed
@@ -49,7 +60,13 @@
 > connectivity request twice reached the 15-second timeout; a bounded
 > single-variable Target diagnostic then succeeded in 941 ms with
 > `thinking.type=disabled`. This is development/test qualification evidence,
-> not Release, customer pricing, Production or long-term SLA proof.
+> not Release, customer pricing, Production or long-term SLA proof. The first
+> real Developer Console Function Tools checks for MiniMax M3 and GLM-5.3 were
+> correctly rejected before provider dispatch because the planner found no
+> route carrying the full invocation capability composition; provider attempts
+> and supplier cost remained zero. M110 is the exact fail-closed correction for
+> that static qualification gap, not evidence that Target or UI validation has
+> already succeeded.
 > **2026-08-31 Kimi K3 Chat Core Target closeout:** the exact development/test
 > Core subset reached `canary_live_verified` with bounded Probe/Approval and
 > fixed-SDK evidence. The batch used its authorized supplier-call allowance;

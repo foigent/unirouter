@@ -330,6 +330,7 @@ func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, poo
 		migrationID string
 		kind        string
 	}{
+		{migrationID: "000110_openai_chat_runtime_capability_qualification", kind: "capability publication test artifact"},
 		{migrationID: "000109_staging_model_successor_cutover", kind: "trailing legacy-test migration"},
 		{migrationID: "000108_minimax_cache_threshold_qualification", kind: "capability publication test artifact"},
 		{migrationID: "000107_stable_model_successor_cutover", kind: "trailing legacy-test migration"},

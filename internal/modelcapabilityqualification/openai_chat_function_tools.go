@@ -52,13 +52,16 @@ func OpenAIChatFunctionToolsErrorCode(err error) string {
 }
 
 type OpenAIChatFunctionToolsObservation struct {
-	ReportedModel    string
-	FinishReason     string
-	PromptTokens     int64
-	CompletionTokens int64
-	TotalTokens      int64
-	ToolCallObserved bool
-	ResponseBytes    int
+	ReportedModel            string
+	FinishReason             string
+	PromptTokens             int64
+	CompletionTokens         int64
+	TotalTokens              int64
+	CacheReadCounterObserved bool
+	CachedTokens             int64
+	ReasoningObserved        bool
+	ToolCallObserved         bool
+	ResponseBytes            int
 }
 
 type openAIChatFunctionToolsBindingIdentity struct {
@@ -175,6 +178,43 @@ func isMiniMaxFunctionToolsProbe(contractID string) bool {
 	}
 }
 
+func openAIChatRuntimeCapabilityAllowed(binding Binding) bool {
+	var capabilities []string
+	switch binding.ProbeContractID {
+	case MiniMaxPAYGM3ChatFunctionToolsProbeContractID, MiniMaxPAYGM2ChatFunctionToolsProbeContractID:
+		capabilities = []string{
+			modelprofile.CapabilityCacheReadUsage,
+			modelprofile.CapabilityFunctionTools,
+			modelprofile.CapabilityPromptCache,
+			modelprofile.CapabilityReasoning,
+			modelprofile.CapabilityToolChoiceAuto,
+			modelprofile.CapabilityTools,
+		}
+		if binding.ExecutionProfileVersion != "1.2.0" {
+			return false
+		}
+	case GLMChatFunctionToolsProbeContractID, GLMToggleChatFunctionToolsProbeContractID:
+		capabilities = []string{
+			modelprofile.CapabilityFunctionTools,
+			modelprofile.CapabilityReasoning,
+			modelprofile.CapabilityToolChoiceAuto,
+			modelprofile.CapabilityTools,
+		}
+	default:
+		return false
+	}
+	return slices.Contains(capabilities, binding.CapabilityID)
+}
+
+func openAIChatRuntimeProbePrompt() string {
+	// The provider-reported prompt token count, not this local construction,
+	// is the qualification authority. A deterministic long prefix makes the
+	// request eligible for MiniMax's documented 512-token automatic-cache
+	// threshold while remaining well inside the bounded response contract.
+	return strings.Repeat("unirouter-cache-eligible-prefix ", 700) +
+		"Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."
+}
+
 // BuildOpenAIChatFunctionToolsProbeRequest derives the exact fixed request
 // from the complete immutable Binding and the selected Profile contracts. The
 // two provider contracts deliberately keep separate identities because their
@@ -185,9 +225,13 @@ func BuildOpenAIChatFunctionToolsProbeRequest(binding Binding) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	prompt := "Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."
+	if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 && isMiniMaxFunctionToolsProbe(binding.ProbeContractID) {
+		prompt = openAIChatRuntimeProbePrompt()
+	}
 	payload := map[string]interface{}{
 		"model":    binding.ExpectedUpstreamModel,
-		"messages": []map[string]string{{"role": "user", "content": "Call unirouter_probe_echo with value UNIROUTER_TOOL_PROBE_OK. Do not answer directly."}},
+		"messages": []map[string]string{{"role": "user", "content": prompt}},
 		"stream":   false,
 		"tools": []map[string]interface{}{{
 			"type": "function",
@@ -234,15 +278,21 @@ func BuildOpenAIChatFunctionToolsProbeRequest(binding Binding) ([]byte, error) {
 
 func resolveOpenAIChatFunctionToolsBinding(binding Binding) (modelprofile.Profile, modelprofile.ChatProtocolContract, modelprofile.ReasoningContract, error) {
 	want, ok := openAIChatFunctionToolsIdentity(binding)
-	if !ok || binding.ProbeContractVersion != OpenAIChatFunctionToolsProbeContractVersion ||
-		binding.OperationID != modelprofile.OperationOpenAIChat || binding.CapabilityID != modelprofile.CapabilityFunctionTools ||
+	versionAllowed := binding.ProbeContractVersion == OpenAIChatFunctionToolsProbeContractVersion &&
+		binding.CapabilityID == modelprofile.CapabilityFunctionTools
+	if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 {
+		versionAllowed = openAIChatRuntimeCapabilityAllowed(binding)
+	}
+	if !ok || !versionAllowed ||
+		binding.OperationID != modelprofile.OperationOpenAIChat ||
 		binding.ExecutionProfileID != want.profileID || binding.ExecutionProfileVersion != want.profileVersion {
 		return modelprofile.Profile{}, modelprofile.ChatProtocolContract{}, modelprofile.ReasoningContract{}, fmt.Errorf("%w: exact function-tools binding", ErrUnsupported)
 	}
 	profile, ok := modelprofile.Lookup(binding.ExecutionProfileID, binding.ExecutionProfileVersion)
 	if !ok || profile.Provider != binding.ExpectedProvider || profile.ProtocolProfile != binding.ProtocolProfileID ||
 		!slices.Contains(profile.UpstreamModelIDs, binding.ExpectedUpstreamModel) ||
-		!slices.Contains(profile.Capabilities, modelprofile.CapabilityFunctionTools) {
+		!slices.Contains(profile.Capabilities, modelprofile.CapabilityFunctionTools) ||
+		!slices.Contains(profile.Capabilities, binding.CapabilityID) {
 		return modelprofile.Profile{}, modelprofile.ChatProtocolContract{}, modelprofile.ReasoningContract{}, fmt.Errorf("%w: exact execution Profile", ErrUnsupported)
 	}
 	identity, found, err := modelprofile.ResolveOperationProtocolIdentity(profile.ID, profile.Version, binding.OperationID)
@@ -309,6 +359,7 @@ func ValidateNormalizedOpenAIChatFunctionToolsForBinding(
 			Message      struct {
 				Role         string          `json:"role"`
 				Content      json.RawMessage `json:"content"`
+				Reasoning    json.RawMessage `json:"reasoning_content"`
 				Name         json.RawMessage `json:"name"`
 				AudioContent json.RawMessage `json:"audio_content"`
 				ToolCalls    []struct {
@@ -346,6 +397,18 @@ func ValidateNormalizedOpenAIChatFunctionToolsForBinding(
 		if len(choice.Message.Content) == 0 || json.Unmarshal(choice.Message.Content, &replayContent) != nil || strings.TrimSpace(replayContent) == "" {
 			return observation, invalidOpenAIChatFunctionTools("tool_calls")
 		}
+		if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 {
+			if !hasExactEmbeddedThinking(replayContent) {
+				return observation, invalidOpenAIChatFunctionTools("reasoning")
+			}
+			observation.ReasoningObserved = true
+		}
+	} else if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 {
+		var reasoning string
+		if len(choice.Message.Reasoning) == 0 || json.Unmarshal(choice.Message.Reasoning, &reasoning) != nil || strings.TrimSpace(reasoning) == "" {
+			return observation, invalidOpenAIChatFunctionTools("reasoning")
+		}
+		observation.ReasoningObserved = true
 	}
 	call := choice.Message.ToolCalls[0]
 	if strings.TrimSpace(call.ID) == "" || call.Type != "function" || call.Function.Name != "unirouter_probe_echo" {
@@ -359,42 +422,93 @@ func ValidateNormalizedOpenAIChatFunctionToolsForBinding(
 	if err := decodeOneJSON(arguments, &decodedArguments); err != nil || len(decodedArguments) != 1 || decodedArguments["value"] != "UNIROUTER_TOOL_PROBE_OK" {
 		return observation, invalidOpenAIChatFunctionTools("tool_arguments")
 	}
-	prompt, completion, total, err := parseOpenAIChatFunctionToolsUsage(payload.Usage)
+	prompt, completion, total, cacheObserved, cached, err := parseOpenAIChatFunctionToolsUsage(payload.Usage)
 	if err != nil {
 		return observation, invalidOpenAIChatFunctionTools("usage", err)
 	}
 	observation.PromptTokens = prompt
 	observation.CompletionTokens = completion
 	observation.TotalTokens = total
+	observation.CacheReadCounterObserved = cacheObserved
+	observation.CachedTokens = cached
+	if binding.ProbeContractVersion == OpenAIChatRuntimeFunctionToolsProbeContractV2 && isMiniMaxFunctionToolsProbe(binding.ProbeContractID) {
+		if prompt < 512 || !cacheObserved || cached < 0 || cached > prompt {
+			return observation, invalidOpenAIChatFunctionTools("cache_usage")
+		}
+		if binding.CapabilityID == modelprofile.CapabilityPromptCache && cached == 0 {
+			return observation, invalidOpenAIChatFunctionTools("cache_miss")
+		}
+	}
 	observation.ToolCallObserved = true
 	return observation, nil
 }
 
-func parseOpenAIChatFunctionToolsUsage(raw json.RawMessage) (int64, int64, int64, error) {
+func hasExactEmbeddedThinking(content string) bool {
+	const openTag, closeTag = "<think>", "</think>"
+	if strings.Count(content, openTag) != 1 || strings.Count(content, closeTag) != 1 {
+		return false
+	}
+	start := strings.Index(content, openTag)
+	if start < 0 {
+		return false
+	}
+	remainder := content[start+len(openTag):]
+	end := strings.Index(remainder, closeTag)
+	if end < 0 || strings.TrimSpace(remainder[:end]) == "" {
+		return false
+	}
+	return true
+}
+
+func parseOpenAIChatFunctionToolsUsage(raw json.RawMessage) (int64, int64, int64, bool, int64, error) {
 	var usage struct {
 		PromptTokens     json.Number `json:"prompt_tokens"`
 		CompletionTokens json.Number `json:"completion_tokens"`
 		TotalTokens      json.Number `json:"total_tokens"`
+		PromptDetails    *struct {
+			CachedTokens json.RawMessage `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	if decoder.Decode(&usage) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		return 0, 0, 0, errors.New("invalid usage object")
+		return 0, 0, 0, false, 0, errors.New("invalid usage object")
 	}
 	values := []json.Number{usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens}
 	parsed := make([]int64, len(values))
 	for index, value := range values {
 		if value == "" || strings.ContainsAny(string(value), ".eE+") {
-			return 0, 0, 0, errors.New("usage counters must be decimal integers")
+			return 0, 0, 0, false, 0, errors.New("usage counters must be decimal integers")
 		}
 		integer, err := strconv.ParseInt(string(value), 10, 64)
 		if err != nil || integer < 0 {
-			return 0, 0, 0, errors.New("usage counters must be non-negative")
+			return 0, 0, 0, false, 0, errors.New("usage counters must be non-negative")
 		}
 		parsed[index] = integer
 	}
 	if parsed[0] <= 0 || parsed[1] <= 0 || parsed[0]+parsed[1] != parsed[2] {
-		return 0, 0, 0, errors.New("usage total mismatch")
+		return 0, 0, 0, false, 0, errors.New("usage total mismatch")
 	}
-	return parsed[0], parsed[1], parsed[2], nil
+	var cachedRaw json.RawMessage
+	if usage.PromptDetails != nil {
+		cachedRaw = bytes.TrimSpace(usage.PromptDetails.CachedTokens)
+	}
+	cacheObserved := len(cachedRaw) > 0 && !bytes.Equal(cachedRaw, []byte("null"))
+	var cached int64
+	if cacheObserved {
+		for _, value := range cachedRaw {
+			if value < '0' || value > '9' {
+				return 0, 0, 0, false, 0, errors.New("cached_tokens must be a decimal integer")
+			}
+		}
+		if len(cachedRaw) == 0 {
+			return 0, 0, 0, false, 0, errors.New("cached_tokens must be a decimal integer")
+		}
+		var err error
+		cached, err = strconv.ParseInt(string(cachedRaw), 10, 64)
+		if err != nil || cached < 0 || cached > parsed[0] {
+			return 0, 0, 0, false, 0, errors.New("cached_tokens must be within prompt_tokens")
+		}
+	}
+	return parsed[0], parsed[1], parsed[2], cacheObserved, cached, nil
 }
