@@ -319,56 +319,43 @@ func InstallExactTestArtifact(ctx context.Context, pool *pgxpool.Pool, migration
 	return runStrictTestArtifactInstall(ctx, pool, migrationsDir)
 }
 
-// RewindCapabilityPublicationsForLegacyMigrationTest first removes known
-// trailing ordinary test migrations and then removes declaration-owned test
-// publications in reverse ledger order when a historical rollback fixture must
-// establish the M100 schema ceiling. Every guarded down migration runs only
-// when that exact ledger entry is present; production recovery continues to
-// require the supported migration or Publication V1 owner path.
+// RewindCapabilityPublicationsForLegacyMigrationTest removes known trailing
+// ordinary test migrations and declaration-owned test publications in exact
+// reverse schema order when a historical rollback fixture must establish the
+// M100 schema ceiling. Every guarded down migration runs only when that exact
+// ledger entry is present; production recovery continues to require the
+// supported migration or Publication V1 owner path.
 func RewindCapabilityPublicationsForLegacyMigrationTest(ctx context.Context, pool *pgxpool.Pool, migrationsDir string) error {
-	for _, migrationID := range []string{
-		"000107_stable_model_successor_cutover",
+	for _, rollback := range []struct {
+		migrationID string
+		kind        string
+	}{
+		{migrationID: "000109_staging_model_successor_cutover", kind: "trailing legacy-test migration"},
+		{migrationID: "000108_minimax_cache_threshold_qualification", kind: "capability publication test artifact"},
+		{migrationID: "000107_stable_model_successor_cutover", kind: "trailing legacy-test migration"},
+		{migrationID: "000106_minimax_official_cn_payg_endpoint_qualification", kind: "capability publication test artifact"},
+		{migrationID: "000105_glm_toggle_function_tools_qualification", kind: "capability publication test artifact"},
+		{migrationID: "000104_minimax_payg_function_tools_qualification", kind: "capability publication test artifact"},
+		{migrationID: "000103_minimax_m3_glm53_function_tools_qualification", kind: "capability publication test artifact"},
+		{migrationID: "000102_kimi_k3_chat_core_qualification", kind: "capability publication test artifact"},
+		{migrationID: "000101_kimi_k27_chat_core_qualification", kind: "capability publication test artifact"},
 	} {
+		migrationID := rollback.migrationID
 		var applied bool
 		if err := pool.QueryRow(ctx,
 			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, migrationID,
 		).Scan(&applied); err != nil {
-			return fmt.Errorf("query trailing legacy-test migration %s: %w", migrationID, err)
+			return fmt.Errorf("query %s %s: %w", rollback.kind, migrationID, err)
 		}
 		if !applied {
 			continue
 		}
 		down, err := os.ReadFile(filepath.Join(migrationsDir, migrationID+".down.sql"))
 		if err != nil {
-			return fmt.Errorf("read trailing legacy-test migration rollback %s: %w", migrationID, err)
+			return fmt.Errorf("read %s rollback %s: %w", rollback.kind, migrationID, err)
 		}
 		if _, err := pool.Exec(ctx, string(down)); err != nil {
-			return fmt.Errorf("rewind trailing legacy-test migration %s: %w", migrationID, err)
-		}
-	}
-	for _, publicationID := range []string{
-		"000106_minimax_official_cn_payg_endpoint_qualification",
-		"000105_glm_toggle_function_tools_qualification",
-		"000104_minimax_payg_function_tools_qualification",
-		"000103_minimax_m3_glm53_function_tools_qualification",
-		"000102_kimi_k3_chat_core_qualification",
-		"000101_kimi_k27_chat_core_qualification",
-	} {
-		var applied bool
-		if err := pool.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, publicationID,
-		).Scan(&applied); err != nil {
-			return fmt.Errorf("query capability publication test ledger %s: %w", publicationID, err)
-		}
-		if !applied {
-			continue
-		}
-		down, err := os.ReadFile(filepath.Join(migrationsDir, publicationID+".down.sql"))
-		if err != nil {
-			return fmt.Errorf("read capability publication test rollback %s: %w", publicationID, err)
-		}
-		if _, err := pool.Exec(ctx, string(down)); err != nil {
-			return fmt.Errorf("rewind capability publication test artifact %s: %w", publicationID, err)
+			return fmt.Errorf("rewind %s %s: %w", rollback.kind, migrationID, err)
 		}
 	}
 	return nil
