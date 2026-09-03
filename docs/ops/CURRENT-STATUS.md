@@ -1,14 +1,18 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.39/M107. M107 adds a fail-closed,
-> first-successor-only cutover for a stable public request identity: one
-> transaction activates the successor's sealed initial Release, retires and
-> de-lists the predecessor, creates one immutable primary Alias, rewrites exact
-> model-set references and seals replayable child evidence. Catalog and
-> `/v1/models` project the stable request name after caller authorization,
-> while administrators retain the immutable canonical identity. M107 is a
-> runtime/governance migration, not Capability Publication M107; it neither
-> rewrites nor replays M104, M105 or M106. The existing exact,
+> Repository source candidate is 1.2.40/M109. M108 appends one compatible
+> Publication for the three exact MiniMax PAYG Profile 1.2 successors. Their
+> cache-usage contract requires `cached_tokens` at or above the documented
+> 512-token provider-input cache threshold, accepts an absent counter only
+> below that threshold without granting cache authority, and rejects explicit
+> null, invalid or impossible counters. Historical Profile 1.1/M106 bindings
+> and evidence remain immutable. M109 adds an independently versioned atomic
+> cutover only for a canonical predecessor that is still staging and has never
+> obtained a Runtime Slot, sealed/executable Release, active Alias or completed
+> successor receipt. Published-predecessor M107 receipts, response shape and
+> idempotency scope remain unchanged. M108 is a Capability Publication; M109 is
+> a runtime/governance migration. Neither creates live Probe, Approval,
+> Release, Alias, route or Target authority by itself. The existing exact,
 > contract-validated GLM-5-Turbo connectivity Probe control disables the
 > provider-default thinking mode without changing Profile, protocol,
 > Publication or route identity. M106 advances the three MiniMax
@@ -27,14 +31,14 @@
 > Tools without reinterpreting history, and deterministic M105 Publication
 > artifacts. GLM-5V-Turbo is qualified only for pure-text Function Tools;
 > media-plus-tools and GLM-5.3-Flash remain outside the executable M105 binding
-> set. This 1.2.39 source candidate creates no live successor, Probe, Approval,
+> set. This 1.2.40 source candidate creates no live successor, Probe, Approval,
 > qualification, Release, route or Target authority. The MiniMax UI preset now
 > selects the exact M106 endpoint class;
 > Token Plan remains historical and outside the current attachment path.
 >
-> The development/test Target currently runs exact 1.2.37/M106 main merge
-> `30cf34994c5e6fac854ce3cc5247ca2445a45d19`, tree
-> `f2597dc0c1cb2c0e94fb29d2006733bbda108c60`; M104, M105 and M106 are applied
+> The development/test Target currently runs exact 1.2.39/M107 main merge
+> `1378e0af7358fe448c6d7fb346cf284daca89b3f`, tree
+> `cdf72ef967fed94555f4d8aa48e21b7219c914b4`; M104 through M107 are applied
 > and the runtime remains non-Production. GLM-5, GLM-5.1, GLM-5.3 and
 > GLM-5V-Turbo have current successful Operation and typed Function Tools
 > Probe evidence plus environment approval. GLM-5-Turbo has successful typed

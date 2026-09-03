@@ -31,8 +31,21 @@ type modelSuccessorCutoverRequest struct {
 }
 
 func modelSuccessorCutoverMutation(releaseRef string, request modelSuccessorCutoverRequest) (runtimechange.ModelSuccessorCutoverMutation, error) {
+	return modelSuccessorCutoverMutationForMode(releaseRef, request, runtimechange.ModelSuccessorPredecessorPublished)
+}
+
+func stagingModelSuccessorCutoverMutation(releaseRef string, request modelSuccessorCutoverRequest) (runtimechange.ModelSuccessorCutoverMutation, error) {
+	return modelSuccessorCutoverMutationForMode(releaseRef, request, runtimechange.ModelSuccessorPredecessorNeverActivated)
+}
+
+func modelSuccessorCutoverMutationForMode(
+	releaseRef string,
+	request modelSuccessorCutoverRequest,
+	predecessorAuthorityMode string,
+) (runtimechange.ModelSuccessorCutoverMutation, error) {
 	mutation, err := runtimechange.NormalizeModelSuccessorCutoverMutation(runtimechange.ModelSuccessorCutoverMutation{
-		ReleaseRef: releaseRef, ExpectedReleaseVersion: request.ExpectedReleaseVersion,
+		PredecessorAuthorityMode: predecessorAuthorityMode,
+		ReleaseRef:               releaseRef, ExpectedReleaseVersion: request.ExpectedReleaseVersion,
 		StableRequestModel:                 request.StableRequestModel,
 		PredecessorPublicModelID:           request.PredecessorPublicModelID,
 		PredecessorModelName:               request.PredecessorModelName,
@@ -64,7 +77,11 @@ func modelSuccessorCutoverFingerprint(mutation runtimechange.ModelSuccessorCutov
 		return "", err
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte("unirouter.model-successor-cutover.request.v1"))
+	fingerprintDomain := "unirouter.model-successor-cutover.request.v1"
+	if normalized.PredecessorAuthorityMode == runtimechange.ModelSuccessorPredecessorNeverActivated {
+		fingerprintDomain = "unirouter.model-successor-cutover.request.v2"
+	}
+	_, _ = mac.Write([]byte(fingerprintDomain))
 	_, _ = mac.Write([]byte{0})
 	_, _ = mac.Write(wire)
 	return "hmac-sha256:" + hex.EncodeToString(mac.Sum(nil)), nil

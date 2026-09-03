@@ -556,9 +556,9 @@ func TestMiniMaxOfficialLimitsAndExecutableCapabilitiesRemainExact(t *testing.T)
 	current, ok := Match("MiniMax-M2.7")
 	require.True(t, ok)
 	require.Equal(t, "minimax.m2.7.payg", current.ID)
-	require.Equal(t, "1.1.0", current.Version)
+	require.Equal(t, "1.2.0", current.Version)
 	require.Equal(t, "protocol.minimax-m2-openai-chat.v7", current.ProtocolProfile)
-	require.Equal(t, "cache-usage.minimax-openai.v1", current.CacheUsageProfile)
+	require.Equal(t, "cache-usage.minimax-openai.v2", current.CacheUsageProfile)
 	require.Equal(t, []string{EndpointClassMiniMaxOfficialCNOpenAIV1}, current.EndpointClasses)
 	require.Equal(t, []string{"MiniMax-M2.7"}, current.UpstreamModelIDs)
 	require.Equal(t, []string{"MiniMax M2.7", "MiniMax-M2.7", "minimax-m2.7"}, current.Aliases)
@@ -579,9 +579,9 @@ func TestMiniMaxOfficialLimitsAndExecutableCapabilitiesRemainExact(t *testing.T)
 	currentM3, ok := Match("MiniMax-M3")
 	require.True(t, ok)
 	require.Equal(t, "minimax.m3.payg", currentM3.ID)
-	require.Equal(t, "1.1.0", currentM3.Version)
+	require.Equal(t, "1.2.0", currentM3.Version)
 	require.Equal(t, "protocol.minimax-m3-openai-chat.v9", currentM3.ProtocolProfile)
-	require.Equal(t, "cache-usage.minimax-openai.v1", currentM3.CacheUsageProfile)
+	require.Equal(t, "cache-usage.minimax-openai.v2", currentM3.CacheUsageProfile)
 	require.Equal(t, []string{EndpointClassMiniMaxOfficialCNOpenAIV1}, currentM3.EndpointClasses)
 	require.Contains(t, currentM3.Capabilities, CapabilityReasoning)
 	require.Contains(t, currentM3.Capabilities, CapabilityVision)
@@ -646,7 +646,7 @@ func TestLegacyProviderBundlesRemainImmutableWhenTypedProtocolsAdvance(t *testin
 	miniMaxCurrent, ok := Match("MiniMax-M3")
 	require.True(t, ok)
 	require.Equal(t, "minimax.m3.payg", miniMaxCurrent.ID)
-	require.Equal(t, "1.1.0", miniMaxCurrent.Version)
+	require.Equal(t, "1.2.0", miniMaxCurrent.Version)
 	require.Equal(t, "protocol.minimax-m3-openai-chat.v9", miniMaxCurrent.ProtocolProfile)
 	require.Contains(t, miniMaxCurrent.Capabilities, CapabilityStreaming)
 	require.Contains(t, miniMaxCurrent.Capabilities, CapabilityReasoning)
@@ -3129,11 +3129,17 @@ func TestMandatoryCacheReadCounterRequiresReadReportingAndKnownWire(t *testing.T
 		{RequireReadCounter: true, WireSchema: CacheUsageWireOpenAICachedTokensV1},
 		{RequireReadCounter: true, ReportsRead: true, WireSchema: CacheUsageWireDeepSeekHitMissV1},
 		{RequireReadCounter: true, ReportsRead: true, WireSchema: "unknown.cache.wire.v1"},
+		{ReportsRead: true, WireSchema: CacheUsageWireOpenAICachedTokensV1, ReadCounterRequiredAtOrAbovePromptTokens: 512},
+		{RequireReadCounter: true, ReportsRead: true, WireSchema: CacheUsageWireOpenAICachedTokensV1, ReadCounterRequiredAtOrAbovePromptTokens: -1},
 	}
 	for _, contract := range tests {
 		require.Error(t, validateCacheUsageContractShape(contract))
 	}
 	require.NoError(t, validateCacheUsageContractShape(CacheUsageContract{}), "zero-value historical behavior must remain unchanged")
+	require.NoError(t, validateCacheUsageContractShape(CacheUsageContract{
+		RequireReadCounter: true, ReportsRead: true, WireSchema: CacheUsageWireOpenAICachedTokensV1,
+		ReadCounterRequiredAtOrAbovePromptTokens: 512,
+	}))
 }
 
 func mustChatProtocolContract(t *testing.T, profileID string) ChatProtocolContract {

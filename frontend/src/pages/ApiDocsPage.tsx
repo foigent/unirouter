@@ -195,6 +195,7 @@ const endpointGroups: EndpointGroup[] = [
       ['GET', '/api/v1/model-deployment-releases/{releaseRef}', '读取一个 canonical v2 release、当前运行槽与服务端动作描述；platform_admin、org_admin、org_viewer 可读且不要求 Gateway License'],
       ['POST', '/api/v1/model-deployment-releases/{releaseRef}/activate-initial', '以 Idempotency-Key 将无父级 validated release 原子设为首个 stable；要求 Gateway License'],
       ['POST', '/api/v1/model-deployment-releases/{releaseRef}/activate-successor', '以 Idempotency-Key 原子激活首个不可变 successor、稳定请求 Alias、目录和项目模型集；只支持首次 canonical-to-alias 切换，要求 Gateway License'],
+      ['POST', '/api/v1/model-deployment-releases/{releaseRef}/activate-staging-successor', '以独立 Idempotency namespace 原子替换从未获得 Slot、sealed/可执行 Release、Alias 或既有 successor receipt 的 staging canonical，并建立首个稳定请求身份；要求 Gateway License'],
       ['POST', '/api/v1/model-deployment-releases/{releaseRef}/start-canary', '以 release/slot 双版本和 Idempotency-Key 启动最高 50% 灰度；要求 Gateway License'],
       ['POST', '/api/v1/model-deployment-releases/{releaseRef}/promote', '把精确 active canary 提升为 stable；要求 Gateway License 和当前生产资格'],
       ['POST', '/api/v1/model-deployment-releases/{releaseRef}/cancel-canary', '无 License 也可执行的安全收缩：移除精确 canary 并保留 stable parent；仍要求组织写角色和 Idempotency-Key'],

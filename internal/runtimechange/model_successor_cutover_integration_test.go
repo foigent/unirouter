@@ -299,9 +299,150 @@ func (row successorRecoveryRow) Scan(dest ...any) error {
 	return nil
 }
 
+func TestNeverActivatedStagingModelSuccessorCutoverAtomicIntegration(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	manager, err := runtimechange.NewManager(
+		&recordingBeginTxPool{Pool: pool}, unusedDeploymentSnapshotBuilder{}, routingpolicy.Default(),
+	)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	seed := createCanonicalDeploymentFixture(t, pool, "staging-successor-seed", "active", 100, 100)
+	predecessor := seed
+	predecessor.ModelName = "minimax-m2.7"
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO model_registry (
+  org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,
+  context_length,output_limit)
+VALUES ($1,$2,'MiniMax M2.7','minimax','staging',FALSE,204800,65536)
+RETURNING id`, predecessor.OrgID, predecessor.ModelName).Scan(&predecessor.PublicModelID))
+	predecessor = createAdditionalDeploymentFixture(
+		t, pool, predecessor, "staging-successor-predecessor", "active", 100, 100,
+	)
+
+	successor := predecessor
+	successor.ModelName = "minimax-m2.7-20260903"
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO model_registry (
+  org_id,model_name,display_name,provider_family,lifecycle,approved_catalog,
+  context_length,output_limit)
+VALUES ($1,$2,'MiniMax M2.7','minimax','staging',FALSE,204800,65536)
+RETURNING id`, successor.OrgID, successor.ModelName).Scan(&successor.PublicModelID))
+	successor = createAdditionalDeploymentFixture(
+		t, pool, successor, "staging-successor-target", "active", 100, 100,
+	)
+	makeSoleInitialCustomer(t, pool, successor.OrgID)
+	sealed := sealInitialDeploymentRoutes(
+		t, pool, manager, successor, []runtimechange.DeploymentRoute{deploymentRoute(successor)},
+		"rcr_minimax_m27_staging_successor",
+	)
+
+	command := runtimechange.ModelSuccessorCutoverCommand{
+		Mutation: runtimechange.ModelSuccessorCutoverMutation{
+			PredecessorAuthorityMode: runtimechange.ModelSuccessorPredecessorNeverActivated,
+			ReleaseRef:               sealed.ReleaseRef, ExpectedReleaseVersion: sealed.Version,
+			StableRequestModel:           predecessor.ModelName,
+			PredecessorPublicModelID:     predecessor.PublicModelID,
+			PredecessorModelName:         predecessor.ModelName,
+			ExpectedPredecessorLifecycle: "staging", ExpectedPredecessorApprovedCatalog: false,
+			SuccessorPublicModelID:     successor.PublicModelID,
+			SuccessorModelName:         successor.ModelName,
+			ExpectedSuccessorLifecycle: "staging", ExpectedSuccessorApprovedCatalog: false,
+			ExpectedModelSets: []runtimechange.ModelSuccessorExpectedModelSet{},
+			Reason:            "replace never-activated staging identity",
+		},
+		CustomerOrgID: successor.OrgID, ActorUserID: successor.UserID, ActorOrgID: successor.OrgID,
+		IdempotencyKeyHash: strings.Repeat("7", 64),
+		RequestFingerprint: "hmac-sha256:" + strings.Repeat("8", 64),
+		ServerOperationID:  "op_minimax_m27_staging_successor",
+		Audit: runtimechange.DeploymentLifecycleAudit{
+			RequestID: "op_minimax_m27_staging_successor", Source: "admin_console", IP: "127.0.0.1",
+		},
+	}
+
+	_, err = pool.Exec(ctx, `
+INSERT INTO runtime_change_slots (
+  public_model_id,model_name,stable_release_id,canary_basis_points,slot_version)
+VALUES ($1,$2,NULL,0,1)`, predecessor.PublicModelID, predecessor.ModelName)
+	require.NoError(t, err)
+	_, err = manager.ApplyModelSuccessorCutover(ctx, command)
+	require.ErrorContains(t, err, "staging predecessor has prior execution or successor authority")
+	_, err = pool.Exec(ctx, `DELETE FROM runtime_change_slots WHERE public_model_id=$1`, predecessor.PublicModelID)
+	require.NoError(t, err)
+
+	receipt, err := manager.ApplyModelSuccessorCutover(ctx, command)
+	require.NoError(t, err)
+	require.Equal(t, runtimechange.StagingModelSuccessorCutoverReceiptContractVersion, receipt.ContractVersion)
+	require.Equal(t, runtimechange.StagingModelSuccessorLifecycleReceiptContractVersion, receipt.Lifecycle.ContractVersion)
+	require.Equal(t, runtimechange.ModelSuccessorPredecessorNeverActivated, receipt.PredecessorAuthorityMode)
+	require.Equal(t, map[string]int64{
+		"runtime_slot_count":                 0,
+		"sealed_or_executable_release_count": 0,
+		"active_alias_count":                 0,
+		"completed_successor_receipt_count":  0,
+	}, receipt.PredecessorAuthoritySnapshot)
+	require.Empty(t, receipt.ModelSets)
+
+	var predecessorLifecycle, successorLifecycle, aliasTarget string
+	var predecessorCatalog, successorCatalog, primary bool
+	require.NoError(t, pool.QueryRow(ctx, `SELECT lifecycle,approved_catalog FROM model_registry WHERE id=$1`, predecessor.PublicModelID).Scan(&predecessorLifecycle, &predecessorCatalog))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT lifecycle,approved_catalog FROM model_registry WHERE id=$1`, successor.PublicModelID).Scan(&successorLifecycle, &successorCatalog))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT target_model,is_primary FROM model_aliases WHERE org_id=$1 AND alias=$2`, successor.OrgID, predecessor.ModelName).Scan(&aliasTarget, &primary))
+	require.Equal(t, "retired", predecessorLifecycle)
+	require.False(t, predecessorCatalog)
+	require.Equal(t, "ga", successorLifecycle)
+	require.True(t, successorCatalog)
+	require.Equal(t, successor.ModelName, aliasTarget)
+	require.True(t, primary)
+
+	replay := command
+	replay.ServerOperationID = "op_minimax_m27_staging_successor_replay"
+	replay.Audit.RequestID = replay.ServerOperationID
+	replayed, err := manager.ApplyModelSuccessorCutover(ctx, replay)
+	require.NoError(t, err)
+	require.True(t, replayed.Lifecycle.IdempotencyReplay)
+	require.Equal(t, receipt.Lifecycle.ReceiptID, replayed.Lifecycle.ReceiptID)
+
+	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(downSQL))
+	require.ErrorContains(t, err, "durable v2 successor authority")
+}
+
+func TestStagingModelSuccessorMigrationGuardedRoundTripWithoutEvidence(t *testing.T) {
+	pool := testutil.SetupMigratedTestDB(t)
+	ctx := context.Background()
+	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(downSQL))
+	require.NoError(t, err)
+
+	var m108Count, m109Count int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FILTER (WHERE version='000108_minimax_cache_threshold_qualification'),
+       COUNT(*) FILTER (WHERE version='000109_staging_model_successor_cutover')
+  FROM schema_migrations`).Scan(&m108Count, &m109Count))
+	require.Equal(t, 1, m108Count)
+	require.Zero(t, m109Count)
+	var authorityColumnCount int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=current_schema() AND table_name='model_successor_cutover_receipts'
+   AND column_name IN ('predecessor_authority_mode','predecessor_authority_snapshot')`).Scan(&authorityColumnCount))
+	require.Zero(t, authorityColumnCount)
+}
+
 func TestStableModelSuccessorCutoverMigrationGuardedRoundTripWithoutEvidence(t *testing.T) {
 	pool := testutil.SetupMigratedTestDB(t)
 	ctx := context.Background()
+	m109DownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000109_staging_model_successor_cutover.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(m109DownSQL))
+	require.NoError(t, err)
+	m108DownSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000108_minimax_cache_threshold_qualification.down.sql"))
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(m108DownSQL))
+	require.NoError(t, err)
 	downSQL, err := os.ReadFile(filepath.Join(testutil.MigrationsDir(t), "000107_stable_model_successor_cutover.down.sql"))
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, string(downSQL))

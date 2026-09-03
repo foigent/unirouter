@@ -81,6 +81,10 @@ var openAIChatFunctionToolsBindingIdentities = map[string][]openAIChatFunctionTo
 		profileID: "minimax.m3.payg", profileVersion: "1.1.0",
 		protocolID: "protocol.minimax-m3-openai-chat.v9", protocolVersion: "1.0.0",
 		provider: "minimax", upstreamModel: "MiniMax-M3", path: "/v1/chat/completions",
+	}, {
+		profileID: "minimax.m3.payg", profileVersion: "1.2.0",
+		protocolID: "protocol.minimax-m3-openai-chat.v9", protocolVersion: "1.0.0",
+		provider: "minimax", upstreamModel: "MiniMax-M3", path: "/v1/chat/completions",
 	}},
 	MiniMaxPAYGM2ChatFunctionToolsProbeContractID: {
 		{
@@ -100,6 +104,16 @@ var openAIChatFunctionToolsBindingIdentities = map[string][]openAIChatFunctionTo
 		},
 		{
 			profileID: "minimax.m2.7-highspeed.payg", profileVersion: "1.1.0",
+			protocolID: "protocol.minimax-m2-openai-chat.v7", protocolVersion: "1.0.0",
+			provider: "minimax", upstreamModel: "MiniMax-M2.7-highspeed", path: "/v1/chat/completions",
+		},
+		{
+			profileID: "minimax.m2.7.payg", profileVersion: "1.2.0",
+			protocolID: "protocol.minimax-m2-openai-chat.v7", protocolVersion: "1.0.0",
+			provider: "minimax", upstreamModel: "MiniMax-M2.7", path: "/v1/chat/completions",
+		},
+		{
+			profileID: "minimax.m2.7-highspeed.payg", profileVersion: "1.2.0",
 			protocolID: "protocol.minimax-m2-openai-chat.v7", protocolVersion: "1.0.0",
 			provider: "minimax", upstreamModel: "MiniMax-M2.7-highspeed", path: "/v1/chat/completions",
 		},

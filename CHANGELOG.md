@@ -4,6 +4,30 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.40] - 2026-09-03
+
+### Changed
+
+- Added the append-only MiniMax PAYG cache-usage contract v2 and Profile 1.2
+  successors. Missing `cached_tokens` is accepted only for provider inputs below
+  the documented 512-token cache threshold; explicit null, invalid counters and
+  missing counters at or above the threshold remain fail-closed.
+- Added M108 as one compatible Publication for the three exact MiniMax PAYG
+  Function Tools Profile successors while preserving M104/M106 bindings and
+  all prior qualification evidence.
+- Added an independently versioned, atomic cutover for never-activated staging
+  canonical models. It requires exact zero Slot, authoritative Release, active
+  Alias and prior successor-receipt evidence before replacing the staging
+  identity with its first immutable successor.
+- Preserved the existing published-predecessor successor receipt, idempotency
+  scope and response shape; the staging command uses lifecycle receipt v3,
+  child receipt v2 and a separate operation scope.
+
+### Not included
+
+- No Token Plan, multimodal, pricing, Production, global Alias precedence or
+  provider fallback changes are introduced.
+
 ## [1.2.39] - 2026-09-03
 
 ### Changed

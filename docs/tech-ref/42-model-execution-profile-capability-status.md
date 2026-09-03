@@ -378,9 +378,9 @@ and Release claims still require their own exact identity/evidence.
 | `kimi.k2.6.api@1.7.0` | Kimi Platform Chat |
 | `kimi.k2.7-code.api@1.3.0` | Kimi Platform Chat |
 | `kimi.k3.api@1.9.0` | Kimi Platform Chat |
-| `minimax.m3.payg@1.1.0` | MiniMax official CN Chat / PAYG |
-| `minimax.m2.7.payg@1.1.0` | MiniMax official CN Chat / PAYG |
-| `minimax.m2.7-highspeed.payg@1.1.0` | MiniMax official CN Chat / PAYG |
+| `minimax.m3.payg@1.2.0` | MiniMax official CN Chat / PAYG; cached-token counter is mandatory only at the documented 512-token cache threshold |
+| `minimax.m2.7.payg@1.2.0` | MiniMax official CN Chat / PAYG; cached-token counter is mandatory only at the documented 512-token cache threshold |
+| `minimax.m2.7-highspeed.payg@1.2.0` | MiniMax official CN Chat / PAYG; cached-token counter is mandatory only at the documented 512-token cache threshold |
 | `glm.5.3.api@1.8.0` | GLM official open-platform Chat |
 | `glm.5.2.api@1.8.0` | GLM official open-platform Chat |
 | `glm.5.1.api@1.0.0` | GLM official open-platform Chat |

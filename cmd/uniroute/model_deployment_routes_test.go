@@ -180,6 +180,7 @@ func TestRegisterModelDeploymentRoutesEnforcesRoleAndGatewayLicenseBoundaries(t 
 		"/api/v1/model-deployment-releases",
 		"/api/v1/model-deployment-releases/rcr_route-one/activate-initial",
 		"/api/v1/model-deployment-releases/rcr_route-one/activate-successor",
+		"/api/v1/model-deployment-releases/rcr_route-one/activate-staging-successor",
 		"/api/v1/model-deployment-releases/rcr_route-one/start-canary",
 		"/api/v1/model-deployment-releases/rcr_route-one/promote",
 		"/api/v1/model-deployment-releases/rcr_route-one/rollback-stable",
@@ -287,6 +288,7 @@ func TestCanonicalDeploymentLifecycleContractParityAcrossOpenAPIAndDocs(t *testi
 	}{
 		{readPath + "/activate-initial", "Expansion requiring the Gateway License"},
 		{readPath + "/activate-successor", "Expansion requiring the Gateway License"},
+		{readPath + "/activate-staging-successor", "Expansion requiring the Gateway License"},
 		{readPath + "/start-canary", "Expansion requiring the Gateway License"},
 		{readPath + "/promote", "Expansion requiring the Gateway License"},
 		{readPath + "/cancel-canary", "Safety contraction available without a Gateway License"},
