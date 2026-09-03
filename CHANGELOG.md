@@ -14,11 +14,15 @@ those build identities do not replace the product version.
   qualification authority is introduced in the frontend.
 - Displayed observed cache-read counters without converting absent evidence to
   zero or interpreting a zero counter as a cache hit.
+- Removed only the documented non-authoritative GLM `request_id` response
+  metadata through shared adapter preparation for six exact current Chat
+  tuples. Malformed metadata still withholds delivery while preserving valid
+  Provider usage; unknown siblings and historical/generic tuples are unchanged.
 
 ### Not included
 
-- No backend, Profile, Probe, Publication, migration, route, credential,
-  administrator-account or Production contract changes are introduced.
+- No new Profile, protocol, Probe identity, Publication, migration, route,
+  credential, administrator-account or Production authority is introduced.
 
 ## [1.2.44] - 2026-09-04
 
