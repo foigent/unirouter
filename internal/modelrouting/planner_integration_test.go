@@ -273,9 +273,16 @@ func TestAuthorityCapabilityApprovalBootstrapUsesExactLiveProjectionIntegration(
 		candidates := []canonicalCandidate{{
 			DeploymentID: fixture.DeploymentID,
 			Provider:     "deepseek", UpstreamModel: "deepseek-v4-flash",
-			PublicPath:                "/v1/chat/completions",
+			ConnectionRevision: 1, DeploymentRevision: 1, OperationRevision: 1,
+			OperationID:       "openai.chat_completions.v1",
+			ProtocolProfileID: "protocol.deepseek-openai-chat.v4", ProtocolProfileVersion: "1.0.0",
 			Capabilities:              make(map[string]capabilitySnapshot),
 			CapabilityApprovalPending: make(map[string]bool),
+			Manifest: &manifestItem{
+				DeploymentID: fixture.DeploymentID, ModelOperationID: "openai.chat_completions.v1",
+				ExpectedConnectionRevision: 1, ExpectedDeploymentRevision: 1, ExpectedOperationRevision: 1,
+				ProtocolProfileID: "protocol.deepseek-openai-chat.v4", ProtocolProfileVersion: "1.0.0",
+			},
 		}}
 		tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 		require.NoError(t, err)
