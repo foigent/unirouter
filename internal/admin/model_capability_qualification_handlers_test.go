@@ -378,6 +378,36 @@ func TestMiniMaxRuntimeCapabilityProbePreservesCachePresenceAndReasoningWithoutP
 	require.NotContains(t, string(safeOutcome), "private runtime reasoning")
 }
 
+func TestMiniMaxHighspeedCapabilityProbeUsesSharedToolIndexPreparation(t *testing.T) {
+	encryptionKey := []byte("0123456789abcdef01234567")
+	encrypted, err := auth.EncryptKey([]byte("provider-secret"), encryptionKey)
+	require.NoError(t, err)
+	for _, rawIndex := range []string{`0`, `999999999999999999999999999`, `null`, `"0"`, `-1`} {
+		t.Run(rawIndex, func(t *testing.T) {
+			handler := NewHandler(nil, "capability-jwt", encryptionKey, nil)
+			handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(request *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}},
+					Body: io.NopCloser(strings.NewReader(`{"model":"MiniMax-M2.7-highspeed","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":"<think>private fixture</think>","tool_calls":[{"index":` + rawIndex + `,"id":"call_1","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_TOOL_PROBE_OK\"}"}}]}}],"usage":{"prompt_tokens":600,"completion_tokens":7,"total_tokens":607,"prompt_tokens_details":{"cached_tokens":128}}}`))}, nil
+			}))
+			outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
+				Provider: "minimax", BaseURL: "https://api.minimax.cn/v1",
+				AdapterType: adapters.TypeOpenAICompatible, AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`),
+				UpstreamModel: "MiniMax-M2.7-highspeed", OperationID: modelprofile.OperationOpenAIChat,
+				CapabilityID: modelprofile.CapabilityFunctionTools, ExecutionProfileID: "minimax.m2.7-highspeed.payg", ExecutionProfileVersion: "1.2.0",
+				ProtocolProfileID: "protocol.minimax-m2-openai-chat.v7", ProtocolProfileVersion: "1.0.0",
+				ExpectedProvider: "minimax", ExpectedUpstreamModel: "MiniMax-M2.7-highspeed", PublicPath: "/v1/chat/completions",
+				EncryptedSecret: encrypted, ProbeContractID: modelcapabilityqualification.MiniMaxPAYGM2ChatFunctionToolsProbeContractID,
+				ProbeContractVersion: modelcapabilityqualification.OpenAIChatRuntimeFunctionToolsProbeContractV2,
+			}, "highspeed-tool-index-fixture")
+			require.True(t, outcome.ProviderSuccess)
+			require.Equal(t, rawIndex == `0` || rawIndex == `999999999999999999999999999`, outcome.ContractSuccess)
+			safe, err := json.Marshal(outcome)
+			require.NoError(t, err)
+			require.NotContains(t, string(safe), "private fixture")
+		})
+	}
+}
+
 func TestKimiK26CapabilityProbesUseExactProviderOwnedContracts(t *testing.T) {
 	encryptionKey := []byte("0123456789abcdef01234567")
 	encrypted, err := auth.EncryptKey([]byte("provider-secret"), encryptionKey)

@@ -371,8 +371,9 @@ func ValidateNormalizedOpenAIChatFunctionToolsForBinding(
 				Name         json.RawMessage `json:"name"`
 				AudioContent json.RawMessage `json:"audio_content"`
 				ToolCalls    []struct {
-					ID       string `json:"id"`
-					Type     string `json:"type"`
+					Index    json.RawMessage `json:"index"`
+					ID       string          `json:"id"`
+					Type     string          `json:"type"`
 					Function struct {
 						Name      string `json:"name"`
 						Arguments string `json:"arguments"`
@@ -419,6 +420,12 @@ func ValidateNormalizedOpenAIChatFunctionToolsForBinding(
 		observation.ReasoningObserved = true
 	}
 	call := choice.Message.ToolCalls[0]
+	if binding.ExecutionProfileID == "minimax.m2.7-highspeed.payg" && binding.ExecutionProfileVersion == "1.2.0" && len(call.Index) != 0 {
+		// The exact adapter removes only valid non-semantic child indexes.
+		// Never qualify a residual value merely because typed decoding ignores it.
+		// Binding validation above already establishes the complete exact tuple.
+		return observation, invalidOpenAIChatFunctionTools("delivery_shape")
+	}
 	if strings.TrimSpace(call.ID) == "" || call.Type != "function" || call.Function.Name != "unirouter_probe_echo" {
 		return observation, invalidOpenAIChatFunctionTools("tool_call_identity")
 	}

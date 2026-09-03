@@ -271,6 +271,10 @@ func NormalizeOpenAICompatibleChatToolCallIndex(provider, upstreamModel, protoco
 	if !openAICompatibleChatToolCallIndexScope(provider, upstreamModel, protocolProfile) {
 		return body, false, nil
 	}
+	return normalizeOpenAICompatibleChatToolCallIndexDocument(body)
+}
+
+func normalizeOpenAICompatibleChatToolCallIndexDocument(body []byte) ([]byte, bool, error) {
 	// Validate before any map decoding so ordinary and escaped-equivalent
 	// duplicate members cannot be collapsed while the safe index is removed.
 	if err := strictjson.Validate(body); err != nil {

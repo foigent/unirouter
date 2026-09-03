@@ -1,11 +1,14 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.46/M110. Developer Console adds an explicit
-> Provider-default Function Tool scenario that omits `tool_choice`, preserving
-> the existing exact server contract and all explicit-choice scenarios. Target
-> 1.2.45 has all nine models' required qualifications; real Function Tools UI
-> evidence is currently 6/9 (the six GLM models). MiniMax UI completion remains
-> pending this same-contract request-construction fix. The prior candidate exposes
+> Repository source candidate is 1.2.47/M110. The exact current MiniMax Highspeed
+> Chat tuple reuses non-stream child tool-call index normalization; its typed
+> Probe rejects residual invalid indexes instead of ignoring them. The source
+> change introduces no new Profile, Probe identity or Publication. Real Function
+> Tools UI evidence is currently 8/9: six GLM models on Target 1.2.45 and MiniMax
+> M3/M2.7 on Target 1.2.46. Highspeed's retained 502 identifies a child index;
+> its actual value/type was not captured and live success remains unproven.
+> Developer Console's Provider-default scenario omits `tool_choice` without
+> changing explicit-choice semantics. The prior candidate exposes
 > cache qualification controls and normalizes non-authoritative GLM request-ID
 > metadata only for six exact current Chat tuples. M110 appends one compatible
 > Capability Publication for the exact runtime Function Tools composition of
