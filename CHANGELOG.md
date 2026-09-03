@@ -4,6 +4,22 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.45] - 2026-09-04
+
+### Fixed
+
+- Exposed the already-published `cache_read_usage` and `prompt_cache` typed
+  qualification workflows in the model execution target UI. Probe and approval
+  remain separate server-owned actions; no provider/model allowlist or new
+  qualification authority is introduced in the frontend.
+- Displayed observed cache-read counters without converting absent evidence to
+  zero or interpreting a zero counter as a cache hit.
+
+### Not included
+
+- No backend, Profile, Probe, Publication, migration, route, credential,
+  administrator-account or Production contract changes are introduced.
+
 ## [1.2.44] - 2026-09-04
 
 ### Fixed
