@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	modelSuccessorLifecycleOperationScope        = "model_deployment.lifecycle.activate_initial.successor.v1"
-	stagingModelSuccessorLifecycleOperationScope = "model_deployment.lifecycle.activate_initial.staging-successor.v2"
+	modelSuccessorLifecycleOperationScope         = "model_deployment.lifecycle.activate_initial.successor.v1"
+	stagingModelSuccessorLifecycleOperationScope  = "model_deployment.lifecycle.activate_initial.staging-successor.v2"
+	repeatedModelSuccessorLifecycleOperationScope = "model_deployment.lifecycle.activate_initial.primary-successor.v3"
 )
 
 type modelSuccessorContractIdentity struct {
@@ -23,6 +24,13 @@ type modelSuccessorContractIdentity struct {
 }
 
 func successorContractIdentity(mutation ModelSuccessorCutoverMutation) modelSuccessorContractIdentity {
+	if mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorPrimaryAlias {
+		return modelSuccessorContractIdentity{
+			lifecycleVersion: RepeatedModelSuccessorLifecycleReceiptContractVersion,
+			childVersion:     RepeatedModelSuccessorCutoverReceiptContractVersion,
+			operationScope:   repeatedModelSuccessorLifecycleOperationScope,
+		}
+	}
 	if mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
 		return modelSuccessorContractIdentity{
 			lifecycleVersion: StagingModelSuccessorLifecycleReceiptContractVersion,
@@ -43,8 +51,8 @@ type successorCutoverRegistryState struct {
 }
 
 // ApplyModelSuccessorCutover atomically activates a successor's first stable
-// release and replaces the first stable canonical request identity with one
-// primary alias. It deliberately does not implement later alias retargeting.
+// release and creates or advances one primary stable request identity. Ordinary
+// Alias CRUD remains unable to perform this coordinated lifecycle transition.
 func (m *Manager) ApplyModelSuccessorCutover(
 	ctx context.Context,
 	command ModelSuccessorCutoverCommand,
@@ -109,13 +117,21 @@ func (m *Manager) ApplyModelSuccessorCutover(
 	if err != nil {
 		return ModelSuccessorCutoverReceipt{}, err
 	}
-	if err := requireModelSuccessorAliasAbsent(ctx, tx, command.CustomerOrgID, command.Mutation.StableRequestModel); err != nil {
-		return ModelSuccessorCutoverReceipt{}, err
+	if command.Mutation.PredecessorAuthorityMode != ModelSuccessorPredecessorPrimaryAlias {
+		if err := requireModelSuccessorAliasAbsent(ctx, tx, command.CustomerOrgID, command.Mutation.StableRequestModel); err != nil {
+			return ModelSuccessorCutoverReceipt{}, err
+		}
 	}
 	if err := requireNoActiveSuccessorAliases(ctx, tx, command.CustomerOrgID, command.Mutation.SuccessorModelName); err != nil {
 		return ModelSuccessorCutoverReceipt{}, err
 	}
 	predecessorAuthoritySnapshot := map[string]int64(nil)
+	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorPrimaryAlias {
+		predecessorAuthoritySnapshot, err = requirePrimaryAliasPredecessor(ctx, tx, command)
+		if err != nil {
+			return ModelSuccessorCutoverReceipt{}, err
+		}
+	}
 	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
 		predecessorAuthoritySnapshot, err = requireNeverActivatedSuccessorPredecessor(ctx, tx, command)
 		if err != nil {
@@ -197,7 +213,7 @@ func (m *Manager) ApplyModelSuccessorCutover(
 		"model_sets_before":    modelSuccessorModelSetsBeforeManifest(modelSets),
 		"model_sets_after":     modelSuccessorModelSetsAfterManifest(modelSets),
 	}
-	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
+	if command.Mutation.PredecessorAuthorityMode != ModelSuccessorPredecessorPublished {
 		successorAudit["predecessor_authority_mode"] = command.Mutation.PredecessorAuthorityMode
 		successorAudit["predecessor_authority_snapshot"] = predecessorAuthoritySnapshot
 	}
@@ -233,7 +249,7 @@ func (m *Manager) ApplyModelSuccessorCutover(
 		PredecessorAfter:  predecessorAfter, SuccessorBefore: successorBefore.ModelSuccessorRegistryState,
 		SuccessorAfter: successorAfter, AliasAfter: aliasAfter, ModelSets: modelSets,
 	}
-	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
+	if command.Mutation.PredecessorAuthorityMode != ModelSuccessorPredecessorPublished {
 		receipt.PredecessorAuthorityMode = command.Mutation.PredecessorAuthorityMode
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -453,12 +469,12 @@ func lockModelSuccessorModelSets(
 	rows, err := tx.Query(ctx, `
 SELECT ms.id,EXISTS (
   SELECT 1 FROM model_set_items alias_item
-   WHERE alias_item.model_set_id=ms.id AND alias_item.item_type='alias' AND alias_item.item_name=$2)
+   WHERE alias_item.model_set_id=ms.id AND alias_item.item_type='alias' AND alias_item.item_name=$3)
   FROM model_sets ms
   JOIN model_set_items model_item ON model_item.model_set_id=ms.id
  WHERE ms.org_id=$1 AND model_item.item_type='model' AND model_item.item_name=$2
  ORDER BY ms.id
- FOR UPDATE OF ms,model_item`, command.CustomerOrgID, command.Mutation.PredecessorModelName)
+ FOR UPDATE OF ms,model_item`, command.CustomerOrgID, command.Mutation.PredecessorModelName, command.Mutation.StableRequestModel)
 	if err != nil {
 		return nil, lifecycleWriteError("lock successor model sets", err)
 	}
@@ -529,7 +545,7 @@ func insertModelSuccessorCutoverEvidence(
 	}
 	var authorityMode interface{}
 	var authoritySnapshot interface{}
-	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated {
+	if command.Mutation.PredecessorAuthorityMode != ModelSuccessorPredecessorPublished {
 		snapshot, marshalErr := json.Marshal(predecessorAuthoritySnapshot)
 		if marshalErr != nil {
 			return lifecycleWriteError("marshal model successor predecessor authority", marshalErr)
@@ -550,12 +566,13 @@ INSERT INTO model_successor_cutover_receipts (
   model_set_count,model_sets_before,model_sets_after,
   predecessor_authority_mode,predecessor_authority_snapshot)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'retired',FALSE,$9,$10,$11,$12,'ga',TRUE,
-        FALSE,$10,'active',TRUE,$13,$14::jsonb,$15::jsonb,$16,$17::jsonb)`,
+        $18,$10,'active',TRUE,$13,$14::jsonb,$15::jsonb,$16,$17::jsonb)`,
 		receiptID, contractIdentity.childVersion, command.CustomerOrgID,
 		command.Mutation.StableRequestModel, predecessor.PublicModelID, predecessor.ModelName,
 		predecessor.Lifecycle, predecessor.ApprovedCatalog, successor.PublicModelID,
 		successor.ModelName, successor.Lifecycle, successor.ApprovedCatalog,
 		len(modelSets), string(beforeManifest), string(afterManifest), authorityMode, authoritySnapshot,
+		command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorPrimaryAlias,
 	); err != nil {
 		return lifecycleWriteError("insert model successor cutover evidence", err)
 	}
@@ -603,7 +620,18 @@ UPDATE model_registry
 	if tag.RowsAffected() != 1 {
 		return fmt.Errorf("%w: successor registry state changed", ErrConflict)
 	}
-	if _, err := tx.Exec(ctx, `
+	if command.Mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorPrimaryAlias {
+		tag, err = tx.Exec(ctx, `UPDATE model_aliases SET target_model=$4,updated_at=transaction_timestamp()
+ WHERE id=$1 AND org_id=$2 AND alias=$3 AND target_model=$5 AND status='active' AND is_primary`,
+			command.Mutation.ExpectedPrimaryAliasID, command.CustomerOrgID, command.Mutation.StableRequestModel,
+			command.Mutation.SuccessorModelName, command.Mutation.PredecessorModelName)
+		if err != nil {
+			return lifecycleWriteError("advance primary successor alias", err)
+		}
+		if tag.RowsAffected() != 1 {
+			return fmt.Errorf("%w: primary alias before-state drift", ErrConflict)
+		}
+	} else if _, err := tx.Exec(ctx, `
 INSERT INTO model_aliases (
   org_id,alias,target_model,display_name,description,status,is_primary,created_at,updated_at)
 VALUES ($1,$2,$3,$4,'Immutable successor stable request identity','active',TRUE,
@@ -654,6 +682,9 @@ func readModelSuccessorCutoverReceipt(
 	case lifecycle.ContractVersion == StagingModelSuccessorLifecycleReceiptContractVersion && operationScope == stagingModelSuccessorLifecycleOperationScope:
 		expectedChildVersion = StagingModelSuccessorCutoverReceiptContractVersion
 		expectedAuthorityMode = ModelSuccessorPredecessorNeverActivated
+	case lifecycle.ContractVersion == RepeatedModelSuccessorLifecycleReceiptContractVersion && operationScope == repeatedModelSuccessorLifecycleOperationScope:
+		expectedChildVersion = RepeatedModelSuccessorCutoverReceiptContractVersion
+		expectedAuthorityMode = ModelSuccessorPredecessorPrimaryAlias
 	default:
 		return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: model successor lifecycle receipt identity", ErrUnavailable)
 	}
@@ -696,18 +727,25 @@ SELECT contract_version,stable_request_model,
 	result.PredecessorAfter.PublicModelID, result.PredecessorAfter.ModelName = result.PredecessorBefore.PublicModelID, result.PredecessorBefore.ModelName
 	result.SuccessorAfter.PublicModelID, result.SuccessorAfter.ModelName = result.SuccessorBefore.PublicModelID, result.SuccessorBefore.ModelName
 	result.AliasAfter.Alias = result.StableRequestModel
-	if result.ContractVersion != expectedChildVersion || aliasBeforeExists {
+	if result.ContractVersion != expectedChildVersion || aliasBeforeExists != (expectedAuthorityMode == ModelSuccessorPredecessorPrimaryAlias) {
 		return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: invalid model successor child receipt", ErrUnavailable)
 	}
 	if expectedAuthorityMode == ModelSuccessorPredecessorPublished {
 		if storedAuthorityMode != nil || len(storedAuthoritySnapshot) != 0 {
 			return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: published successor receipt has staging authority evidence", ErrUnavailable)
 		}
-	} else {
+	} else if expectedAuthorityMode == ModelSuccessorPredecessorNeverActivated {
 		if storedAuthorityMode == nil || *storedAuthorityMode != expectedAuthorityMode ||
 			json.Unmarshal(storedAuthoritySnapshot, &result.PredecessorAuthoritySnapshot) != nil ||
 			!validNeverActivatedPredecessorAuthoritySnapshot(result.PredecessorAuthoritySnapshot) {
 			return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: invalid staging predecessor authority evidence", ErrUnavailable)
+		}
+		result.PredecessorAuthorityMode = expectedAuthorityMode
+	} else {
+		if storedAuthorityMode == nil || *storedAuthorityMode != expectedAuthorityMode ||
+			json.Unmarshal(storedAuthoritySnapshot, &result.PredecessorAuthoritySnapshot) != nil ||
+			!validPrimaryAliasAuthoritySnapshot(result.PredecessorAuthoritySnapshot) {
+			return ModelSuccessorCutoverReceipt{}, fmt.Errorf("%w: invalid primary alias authority evidence", ErrUnavailable)
 		}
 		result.PredecessorAuthorityMode = expectedAuthorityMode
 	}

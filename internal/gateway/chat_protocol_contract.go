@@ -608,6 +608,11 @@ func validateModeledFunctionTools(envelope map[string]json.RawMessage, contract 
 	}
 	slices.Sort(result.DeclaredNames)
 	result.ToolsRequested = len(functionNames) > 0
+	if contract.StreamContract.FunctionToolDeltas && jsonBooleanField(envelope["stream"]) {
+		if raw, present := envelope["n"]; present && strings.TrimSpace(string(raw)) != "1" {
+			return result, fmt.Errorf("stream function tools require n=1")
+		}
+	}
 	if result.ToolsRequested && contract.FunctionToolsRequireNonStream && jsonBooleanField(envelope["stream"]) {
 		return result, fmt.Errorf("function tools require stream=false for protocol profile %s", contract.ProfileID)
 	}

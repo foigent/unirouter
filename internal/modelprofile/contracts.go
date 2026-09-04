@@ -138,6 +138,8 @@ type CacheUsageContract struct {
 	ReportsCreation                          bool
 	RequireReadCounter                       bool
 	ReadCounterRequiredAtOrAbovePromptTokens int
+	// Only explicit stream transport context may omit a cache counter.
+	StreamReadCounterOptional bool
 }
 
 var reasoningContracts = map[string]ReasoningContract{
@@ -764,6 +766,15 @@ var reasoningContracts = map[string]ReasoningContract{
 		ActiveStreamingUnsupported:      true,
 		AssistantToolHistoryReplayField: "content",
 	},
+	"reasoning.minimax-m27-required-embedded.v2": {
+		ProfileID:                   "reasoning.minimax-m27-required-embedded.v2",
+		Mode:                        ReasoningModeRequired,
+		ResponseThinkingTextMode:    ReasoningResponseThinkingEmbedded,
+		DefaultAuthority:            ReasoningDefaultProvider,
+		SplitOutputField:            "reasoning_split",
+		SplitOutputProviderDefault:  false,
+		SplitOutputEnabledSupported: false,
+	},
 	"reasoning.minimax-m2-required-embedded.v1": {
 		ProfileID:                       "reasoning.minimax-m2-required-embedded.v1",
 		Mode:                            ReasoningModeRequired,
@@ -803,6 +814,13 @@ var cacheUsageContracts = map[string]CacheUsageContract{
 		ProfileID: "cache-usage.minimax-openai.v1",
 		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireOpenAICachedTokensV1,
 		ReportsRead: true, RequireReadCounter: true,
+	},
+	"cache-usage.minimax-m27-openai.v3": {
+		ProfileID: "cache-usage.minimax-m27-openai.v3",
+		Mode:      CacheUsageModeAutomatic, WireSchema: CacheUsageWireOpenAICachedTokensV1,
+		ReportsRead: true, RequireReadCounter: true,
+		ReadCounterRequiredAtOrAbovePromptTokens: 512,
+		StreamReadCounterOptional:                true,
 	},
 	"cache-usage.minimax-openai.v2": {
 		ProfileID: "cache-usage.minimax-openai.v2",

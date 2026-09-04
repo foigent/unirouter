@@ -1,0 +1,13 @@
+: Constructed qualification fixture from the captured 2026-09-04 wire shape.
+: Probe name, argument value, request ID and content are synthetic. Not raw replay.
+data: {"id":"m27-fixture","object":"chat.completion.chunk","created":1788499786,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"role":"assistant","content":"<think>Use the supplied tool.</think>","name":"MiniMax AI","audio_content":""}}],"usage":null,"input_sensitive":false,"output_sensitive":false}
+
+data: {"id":"m27-fixture","object":"chat.completion.chunk","created":1788499786,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"role":"assistant","name":"MiniMax AI","tool_calls":[{"index":0,"id":"call_echo","type":"function","function":{"name":"unirouter_probe_echo","arguments":"{\"value\":\"UNIROUTER_"}}]}}],"usage":null}
+
+data: {"id":"m27-fixture","object":"chat.completion.chunk","created":1788499786,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"TOOL_PROBE_OK\"}"}}]}}],"usage":null}
+
+data: {"id":"m27-fixture","object":"chat.completion.chunk","created":1788499786,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"role":"assistant","name":"MiniMax AI","audio_content":""},"finish_reason":"tool_calls"}],"usage":null}
+
+data: {"id":"m27-fixture","object":"chat.completion.chunk","created":1788499786,"model":"MiniMax-M2.7","choices":[],"usage":{"prompt_tokens":5585,"completion_tokens":149,"total_tokens":5734,"total_characters":0,"completion_tokens_details":{"reasoning_tokens":27}},"base_resp":{"status_code":0,"status_msg":""}}
+
+: End of constructed fixture; no additional event.

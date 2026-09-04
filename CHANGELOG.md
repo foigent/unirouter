@@ -4,6 +4,24 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.50] - 2026-09-04
+
+### Changed
+
+- Integrated the previously reviewed M111 MiniMax M2.7 PAYG Profile 1.3
+  streaming Function Tools candidate: bounded shared tool-delta assembly,
+  exact auto/thinking/history/usage rules, and a static append-only Publication.
+  Existing identities and their non-stream acceptance remain unchanged.
+- M112 extends the existing successor command with an exact primary-Alias
+  before-state. Qualified revisions of the same verified model product may
+  advance repeatedly; Slot activation, registry, Alias, model-set delta and
+  immutable receipts commit together. Ordinary Alias writers remain fenced.
+  Historical replay does not revert the current target; down refuses new
+  durable receipts. No new table, parallel lifecycle or Agent SDK is introduced.
+- Source and local test evidence do not imply Publication apply, Target rollout,
+  real Agent task success, Provider charges or Production readiness. The GLM
+  stream-tools path remains a separate next composition, not a claimed result.
+
 ## [1.2.49] - 2026-09-04
 
 ### Changed

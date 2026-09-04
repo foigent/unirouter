@@ -1,7 +1,7 @@
 # Model Execution Profile And Capability Status
 
 > Status: accepted architecture direction and current implementation gap inventory.
-> Snapshot date: 2026-09-03.
+> Source snapshot date: 2026-09-04; dated Target evidence below is historical.
 > This document is not a claim that every provider-documented feature is production supported.
 
 The current product-scope candidate is
@@ -9,10 +9,20 @@ The current product-scope candidate is
 It is not yet an immutable approved Baseline. This document and the runtime
 authorities project what the repository can currently do.
 
-Development/test currently runs exact 1.2.41/M109 main merge
+The retained earlier development/test checkpoint ran exact 1.2.41/M109 main merge
 `a031cb81f611fa660ec63d30343dca0390c341d1`, tree
 `015d96819657204b1a6bd2e7e5aa6dae4689c237`, with M104 through M109 applied.
-Repository source candidate 1.2.42/M110 retains that history and appends one
+Repository source candidate 1.2.50/M112 integrates M111 MiniMax M2.7 PAYG Profile 1.3 with
+streaming Function Tools, explicit auto and correlated tool-result history.
+Five new exact bindings use a streaming Probe; cache reporting and prompt-cache
+use two separate non-stream bindings and require new exact qualification.
+Core stream usage may omit cache counters without implying zero or a cache hit.
+M111 is a local static candidate, not an applied Publication or OpenClaw task
+acceptance. Retained nine-model non-stream UI evidence is recorded in
+`docs/ops/CURRENT-STATUS.md`; it does not establish streaming Agent compatibility.
+M112 adds repeatable stable-identity cutover to the existing domain command;
+it does not add qualification, widen model semantics or create a Publication.
+The preceding M110 retains that history and appends one
 runtime-composition Publication for three MiniMax PAYG and six GLM exact Chat
 Profiles. M110 advances existing provider-family Probe contracts to v2 and adds
 the reasoning, tools, function-tools and automatic tool-choice bindings required
@@ -20,7 +30,7 @@ by canonical Function Tools planning; MiniMax additionally receives independent
 prompt-cache and cache-read-usage bindings. It creates no Probe, Approval,
 Release, route or Target authority by itself. Initial Developer Console checks
 for MiniMax M3 and GLM-5.3 stopped at fail-closed no-route planning with zero
-provider attempts; no UI success is claimed yet.
+provider attempts at that earlier checkpoint.
 M104 adds three exact MiniMax PAYG
 Profiles (M3, M2.7 and M2.7 Highspeed), explicit Chat operation bindings and
 one declaration-owned Function Tools plan over shared mechanics with separate
@@ -382,7 +392,7 @@ and Release claims still require their own exact identity/evidence.
 | `kimi.k2.7-code.api@1.3.0` | Kimi Platform Chat |
 | `kimi.k3.api@1.9.0` | Kimi Platform Chat |
 | `minimax.m3.payg@1.2.0` | MiniMax official CN Chat / PAYG; cached-token counter is mandatory only at the documented 512-token cache threshold |
-| `minimax.m2.7.payg@1.2.0` | MiniMax official CN Chat / PAYG; cached-token counter is mandatory only at the documented 512-token cache threshold |
+| `minimax.m2.7.payg@1.3.0` | MiniMax official CN Chat / PAYG; streaming Function Tools and explicit auto; stream cache counter may be absent without authority, non-stream counter remains mandatory at the 512-token threshold |
 | `minimax.m2.7-highspeed.payg@1.2.0` | MiniMax official CN Chat / PAYG; cached-token counter is mandatory only at the documented 512-token cache threshold |
 | `glm.5.3.api@1.8.0` | GLM official open-platform Chat |
 | `glm.5.2.api@1.8.0` | GLM official open-platform Chat |

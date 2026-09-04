@@ -218,6 +218,8 @@ type ChatStreamContract struct {
 	DeltaOpaqueFields         []string
 	FinishReasons             []string
 	ReasoningOpaqueAnswerFlow bool
+	// Opt-in to bounded shared function-tool deltas; zero preserves old streams.
+	FunctionToolDeltas bool
 }
 
 const (
@@ -912,6 +914,16 @@ func miniMaxM2FunctionToolsContract(profileID string) ChatProtocolContract {
 	return miniMaxExactFunctionToolsContract(miniMaxM2CacheReadChatContract(profileID))
 }
 
+func miniMaxM27StreamFunctionToolsContract(profileID string) ChatProtocolContract {
+	contract := miniMaxM2FunctionToolsContract(profileID)
+	contract.FunctionToolsRequireNonStream = false
+	contract.FunctionToolChoices = []string{"auto"}
+	contract.FunctionToolChoicesRequiringTools = []string{"auto"}
+	contract.StreamContract.FunctionToolDeltas = true
+	contract.StreamContract.FinishReasons = []string{"stop", "length", "tool_calls"}
+	return contract
+}
+
 func glmOpenAIChatV5Contract(profileID string) ChatProtocolContract {
 	return ChatProtocolContract{
 		ProfileID:        profileID,
@@ -1186,6 +1198,7 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.minimax-m2-openai-chat.v5":            miniMaxM2EmbeddedReasoningChatContract("protocol.minimax-m2-openai-chat.v5"),
 	"protocol.minimax-m2-openai-chat.v6":            miniMaxM2CacheReadChatContract("protocol.minimax-m2-openai-chat.v6"),
 	"protocol.minimax-m2-openai-chat.v7":            miniMaxM2FunctionToolsContract("protocol.minimax-m2-openai-chat.v7"),
+	"protocol.minimax-m27-openai-chat.v1":           miniMaxM27StreamFunctionToolsContract("protocol.minimax-m27-openai-chat.v1"),
 	"protocol.minimax-m3-openai-chat.v4":            miniMaxChatContract("protocol.minimax-m3-openai-chat.v4", true, 524_288),
 	"protocol.minimax-m3-openai-chat.v5":            miniMaxM3EmbeddedReasoningChatContract("protocol.minimax-m3-openai-chat.v5"),
 	"protocol.minimax-m3-openai-chat.v6":            miniMaxM3InlineJPEGContract("protocol.minimax-m3-openai-chat.v6"),

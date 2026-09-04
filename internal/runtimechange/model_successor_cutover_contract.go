@@ -10,18 +10,21 @@ const (
 	// ModelSuccessorLifecycleReceiptContractVersion distinguishes the larger
 	// atomic successor command from an ordinary initial deployment activation.
 	// The embedded runtime transition remains activate_initial.
-	ModelSuccessorLifecycleReceiptContractVersion        = "unirouter.model-deployment-lifecycle-receipt.v2"
-	ModelSuccessorCutoverReceiptContractVersion          = "unirouter.model-successor-cutover-receipt.v1"
-	StagingModelSuccessorLifecycleReceiptContractVersion = "unirouter.model-deployment-lifecycle-receipt.v3"
-	StagingModelSuccessorCutoverReceiptContractVersion   = "unirouter.model-successor-cutover-receipt.v2"
+	ModelSuccessorLifecycleReceiptContractVersion         = "unirouter.model-deployment-lifecycle-receipt.v2"
+	ModelSuccessorCutoverReceiptContractVersion           = "unirouter.model-successor-cutover-receipt.v1"
+	StagingModelSuccessorLifecycleReceiptContractVersion  = "unirouter.model-deployment-lifecycle-receipt.v3"
+	StagingModelSuccessorCutoverReceiptContractVersion    = "unirouter.model-successor-cutover-receipt.v2"
+	RepeatedModelSuccessorLifecycleReceiptContractVersion = "unirouter.model-deployment-lifecycle-receipt.v4"
+	RepeatedModelSuccessorCutoverReceiptContractVersion   = "unirouter.model-successor-cutover-receipt.v3"
 
 	ModelSuccessorPredecessorPublished      = "published"
 	ModelSuccessorPredecessorNeverActivated = "never_activated_staging"
+	ModelSuccessorPredecessorPrimaryAlias   = "primary_alias"
 )
 
-// ModelSuccessorCutoverMutation is intentionally limited to the first
-// successor of a stable canonical request identity. A later primary-alias
-// retarget needs an explicit authorization-carrier migration contract.
+// ModelSuccessorCutoverMutation replaces either a first canonical identity or
+// the exact current primary-Alias target. Historical modes retain their wire
+// representation; repeated cutovers add an explicit expected authority snapshot.
 type ModelSuccessorCutoverMutation struct {
 	PredecessorAuthorityMode           string                           `json:"-"`
 	ReleaseRef                         string                           `json:"release_ref"`
@@ -36,6 +39,9 @@ type ModelSuccessorCutoverMutation struct {
 	ExpectedSuccessorLifecycle         string                           `json:"expected_successor_lifecycle"`
 	ExpectedSuccessorApprovedCatalog   bool                             `json:"expected_successor_approved_catalog"`
 	ExpectedModelSets                  []ModelSuccessorExpectedModelSet `json:"expected_model_sets"`
+	ExpectedPrimaryAliasID             int64                            `json:"expected_primary_alias_id,omitempty"`
+	ExpectedPredecessorSlotVersion     int64                            `json:"expected_predecessor_slot_version,omitempty"`
+	ExpectedPredecessorReleaseRef      string                           `json:"expected_predecessor_release_ref,omitempty"`
 	Reason                             string                           `json:"reason,omitempty"`
 }
 
@@ -102,6 +108,7 @@ func NormalizeModelSuccessorCutoverMutation(mutation ModelSuccessorCutoverMutati
 	mutation.ExpectedPredecessorLifecycle = strings.TrimSpace(mutation.ExpectedPredecessorLifecycle)
 	mutation.ExpectedSuccessorLifecycle = strings.TrimSpace(mutation.ExpectedSuccessorLifecycle)
 	mutation.Reason = strings.TrimSpace(mutation.Reason)
+	mutation.ExpectedPredecessorReleaseRef = strings.TrimSpace(strings.ToLower(mutation.ExpectedPredecessorReleaseRef))
 	if mutation.ExpectedModelSets == nil {
 		return ModelSuccessorCutoverMutation{}, fmt.Errorf("%w: expected model-set snapshot is required", ErrInvalid)
 	}
@@ -121,15 +128,23 @@ func NormalizeModelSuccessorCutoverMutation(mutation ModelSuccessorCutoverMutati
 		mutation.ExpectedPredecessorApprovedCatalog
 	neverActivatedPredecessor := mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorNeverActivated &&
 		mutation.ExpectedPredecessorLifecycle == "staging" && !mutation.ExpectedPredecessorApprovedCatalog
+	repeatedPredecessor := mutation.PredecessorAuthorityMode == ModelSuccessorPredecessorPrimaryAlias &&
+		mutation.ExpectedPredecessorLifecycle == "ga" && mutation.ExpectedPredecessorApprovedCatalog &&
+		mutation.StableRequestModel != mutation.PredecessorModelName &&
+		mutation.ExpectedPrimaryAliasID > 0 && mutation.ExpectedPredecessorSlotVersion > 0 &&
+		releaseRefPattern.MatchString(mutation.ExpectedPredecessorReleaseRef)
+	firstAuthority := mutation.StableRequestModel == mutation.PredecessorModelName &&
+		mutation.ExpectedPrimaryAliasID == 0 && mutation.ExpectedPredecessorSlotVersion == 0 &&
+		mutation.ExpectedPredecessorReleaseRef == "" && (publishedPredecessor || neverActivatedPredecessor)
 	if !releaseRefPattern.MatchString(mutation.ReleaseRef) || mutation.ExpectedReleaseVersion <= 0 ||
 		mutation.PredecessorPublicModelID <= 0 || mutation.SuccessorPublicModelID <= 0 ||
 		mutation.PredecessorPublicModelID == mutation.SuccessorPublicModelID ||
 		!validSuccessorModelIdentity(mutation.StableRequestModel) ||
 		!validSuccessorModelIdentity(mutation.PredecessorModelName) ||
 		!validSuccessorModelIdentity(mutation.SuccessorModelName) ||
-		mutation.StableRequestModel != mutation.PredecessorModelName ||
 		mutation.SuccessorModelName == mutation.StableRequestModel ||
-		(!publishedPredecessor && !neverActivatedPredecessor) ||
+		mutation.SuccessorModelName == mutation.PredecessorModelName ||
+		(!firstAuthority && !repeatedPredecessor) ||
 		mutation.ExpectedSuccessorLifecycle != "staging" || mutation.ExpectedSuccessorApprovedCatalog ||
 		len(mutation.Reason) > 1000 || strings.ContainsAny(mutation.Reason, "\x00\r\n") {
 		return ModelSuccessorCutoverMutation{}, fmt.Errorf("%w: model successor cutover mutation", ErrInvalid)

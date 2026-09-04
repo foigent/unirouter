@@ -28,6 +28,9 @@ func TestModelSuccessorFingerprintPreservesPublishedV1WireAndSeparatesStagingV2(
 	publishedWire, err := json.Marshal(published)
 	require.NoError(t, err)
 	require.NotContains(t, string(publishedWire), "predecessor_authority_mode")
+	require.NotContains(t, string(publishedWire), "expected_primary_alias_id")
+	require.NotContains(t, string(publishedWire), "expected_predecessor_slot_version")
+	require.NotContains(t, string(publishedWire), "expected_predecessor_release_ref")
 	publishedFingerprint, err := modelSuccessorCutoverFingerprint(published, "hash-secret")
 	require.NoError(t, err)
 
@@ -41,6 +44,35 @@ func TestModelSuccessorFingerprintPreservesPublishedV1WireAndSeparatesStagingV2(
 	stagingFingerprint, err := modelSuccessorCutoverFingerprint(staging, "hash-secret")
 	require.NoError(t, err)
 	require.NotEqual(t, publishedFingerprint, stagingFingerprint)
+}
+
+func TestRepeatedSuccessorFingerprintPinsEveryBeforeStateField(t *testing.T) {
+	request := modelSuccessorCutoverRequest{
+		PredecessorAuthorityMode: runtimechange.ModelSuccessorPredecessorPrimaryAlias,
+		ExpectedPrimaryAliasID:   7, ExpectedPredecessorSlotVersion: 2, ExpectedPredecessorReleaseRef: "rcr_previous",
+		ExpectedReleaseVersion: 2, StableRequestModel: "glm-5.2",
+		PredecessorPublicModelID: 11, PredecessorModelName: "glm-5.2-old",
+		ExpectedPredecessorLifecycle: "ga", ExpectedPredecessorApprovedCatalog: true,
+		SuccessorPublicModelID: 12, SuccessorModelName: "glm-5.2-next",
+		ExpectedSuccessorLifecycle: "staging", ExpectedModelSets: []runtimechange.ModelSuccessorExpectedModelSet{},
+	}
+	mutation, err := modelSuccessorCutoverMutation("rcr_next", request)
+	require.NoError(t, err)
+	want, err := modelSuccessorCutoverFingerprint(mutation, "test-only-secret")
+	require.NoError(t, err)
+	for _, mutate := range []func(*runtimechange.ModelSuccessorCutoverMutation){
+		func(m *runtimechange.ModelSuccessorCutoverMutation) { m.ExpectedPrimaryAliasID++ },
+		func(m *runtimechange.ModelSuccessorCutoverMutation) { m.ExpectedPredecessorSlotVersion++ },
+		func(m *runtimechange.ModelSuccessorCutoverMutation) { m.ExpectedPredecessorReleaseRef = "rcr_another" },
+	} {
+		changed := mutation
+		mutate(&changed)
+		got, err := modelSuccessorCutoverFingerprint(changed, "test-only-secret")
+		require.NoError(t, err)
+		require.NotEqual(t, want, got)
+	}
+	_, err = stagingModelSuccessorCutoverMutation("rcr_next", request)
+	require.Error(t, err)
 }
 
 func TestActivateModelSuccessorUsesAtomicApplicationCommand(t *testing.T) {

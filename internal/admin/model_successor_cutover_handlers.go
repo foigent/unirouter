@@ -13,7 +13,7 @@ import (
 	"github.com/uniroute/unirouter/internal/strictjson"
 )
 
-// ActivateModelSuccessor performs the only supported first-cutover command:
+// ActivateModelSuccessor performs the controlled canonical or primary-Alias cutover:
 // validated successor release activation and stable request identity switch in
 // one database transaction.
 func (h *Handler) ActivateModelSuccessor(w http.ResponseWriter, r *http.Request) {

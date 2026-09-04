@@ -1,0 +1,298 @@
+{
+  "schema_version": "unirouter.capability-contract-publication.v1",
+  "publication_id": "000111_minimax_m27_stream_function_tools_qualification",
+  "expected_static_predecessor": "000110_openai_chat_runtime_capability_qualification",
+  "expected_schema_predecessor": "000110_openai_chat_runtime_capability_qualification",
+  "binding_appends": [
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "cache_read_usage",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "probe_contract_id": "unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1",
+      "probe_contract_version": "2.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "public_path": "/v1/chat/completions",
+      "introduced_migration": "000111_minimax_m27_stream_function_tools_qualification"
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "function_tools",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "probe_contract_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "public_path": "/v1/chat/completions",
+      "introduced_migration": "000111_minimax_m27_stream_function_tools_qualification"
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "prompt_cache",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "probe_contract_id": "unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1",
+      "probe_contract_version": "2.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "public_path": "/v1/chat/completions",
+      "introduced_migration": "000111_minimax_m27_stream_function_tools_qualification"
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "reasoning",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "probe_contract_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "public_path": "/v1/chat/completions",
+      "introduced_migration": "000111_minimax_m27_stream_function_tools_qualification"
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "streaming",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "probe_contract_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "public_path": "/v1/chat/completions",
+      "introduced_migration": "000111_minimax_m27_stream_function_tools_qualification"
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "tool_choice_auto",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "probe_contract_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "public_path": "/v1/chat/completions",
+      "introduced_migration": "000111_minimax_m27_stream_function_tools_qualification"
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "tools",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+      "probe_contract_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "public_path": "/v1/chat/completions",
+      "introduced_migration": "000111_minimax_m27_stream_function_tools_qualification"
+    }
+  ],
+  "selector_transitions": [
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "cache_read_usage",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_predecessor": null,
+      "final": {
+        "probe_contract_id": "unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1",
+        "probe_contract_version": "2.0.0"
+      }
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "function_tools",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_predecessor": null,
+      "final": {
+        "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+        "probe_contract_version": "1.0.0"
+      }
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "prompt_cache",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_predecessor": null,
+      "final": {
+        "probe_contract_id": "unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1",
+        "probe_contract_version": "2.0.0"
+      }
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "reasoning",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_predecessor": null,
+      "final": {
+        "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+        "probe_contract_version": "1.0.0"
+      }
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "streaming",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_predecessor": null,
+      "final": {
+        "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+        "probe_contract_version": "1.0.0"
+      }
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "tool_choice_auto",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_predecessor": null,
+      "final": {
+        "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+        "probe_contract_version": "1.0.0"
+      }
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "tools",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_predecessor": null,
+      "final": {
+        "probe_contract_id": "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1",
+        "probe_contract_version": "1.0.0"
+      }
+    }
+  ],
+  "declared_projection_effects": [
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "cache_read_usage",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "expected_contract_ref": "",
+      "final_contract_ref": "capability_contract:unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1@2.0.0",
+      "allow_insert": true
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "function_tools",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "expected_contract_ref": "",
+      "final_contract_ref": "capability_contract:unirouter.capability-probe.minimax-m27-chat-stream-tools.v1@1.0.0",
+      "allow_insert": true
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "prompt_cache",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "expected_contract_ref": "",
+      "final_contract_ref": "capability_contract:unirouter.capability-probe.minimax-payg-m2-chat-function-tools.v1@2.0.0",
+      "allow_insert": true
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "reasoning",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "expected_contract_ref": "",
+      "final_contract_ref": "capability_contract:unirouter.capability-probe.minimax-m27-chat-stream-tools.v1@1.0.0",
+      "allow_insert": true
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "streaming",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "expected_contract_ref": "",
+      "final_contract_ref": "capability_contract:unirouter.capability-probe.minimax-m27-chat-stream-tools.v1@1.0.0",
+      "allow_insert": true
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "tool_choice_auto",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "expected_contract_ref": "",
+      "final_contract_ref": "capability_contract:unirouter.capability-probe.minimax-m27-chat-stream-tools.v1@1.0.0",
+      "allow_insert": true
+    },
+    {
+      "operation_id": "openai.chat_completions.v1",
+      "capability_id": "tools",
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0",
+      "protocol_profile_id": "protocol.minimax-m27-openai-chat.v1",
+      "protocol_profile_version": "1.0.0",
+      "expected_provider": "minimax",
+      "expected_upstream_model": "MiniMax-M2.7",
+      "expected_contract_ref": "",
+      "final_contract_ref": "capability_contract:unirouter.capability-probe.minimax-m27-chat-stream-tools.v1@1.0.0",
+      "allow_insert": true
+    }
+  ],
+  "profile_attachment_guards": [
+    {
+      "execution_profile_id": "minimax.m2.7.payg",
+      "execution_profile_version": "1.3.0"
+    }
+  ]
+}

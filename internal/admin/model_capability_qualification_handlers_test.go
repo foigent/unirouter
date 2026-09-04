@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -376,6 +377,47 @@ func TestMiniMaxRuntimeCapabilityProbePreservesCachePresenceAndReasoningWithoutP
 	safeOutcome, err := json.Marshal(outcome)
 	require.NoError(t, err)
 	require.NotContains(t, string(safeOutcome), "private runtime reasoning")
+}
+
+func TestMiniMaxM27StreamCapabilityProbeUsesExactSharedMechanics(t *testing.T) {
+	key := []byte("0123456789abcdef01234567")
+	encrypted, err := auth.EncryptKey([]byte("fixture-only"), key)
+	require.NoError(t, err)
+	fixture, err := os.ReadFile("../adapters/testdata/minimax_m27_stream_tools.sse")
+	require.NoError(t, err)
+	for _, invalidSibling := range []bool{false, true} {
+		handler := NewHandler(nil, "fixture-jwt", key, nil)
+		handler.SetModelDeploymentProbeHTTPDoer(canonicalOperationProbeDoerFunc(func(request *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(request.Body)
+			require.NoError(t, err)
+			var payload map[string]interface{}
+			require.NoError(t, json.Unmarshal(body, &payload))
+			require.Equal(t, true, payload["stream"])
+			require.Equal(t, "auto", payload["tool_choice"])
+			require.Equal(t, "https://api.minimax.cn/v1/chat/completions", request.URL.String())
+			response := string(fixture)
+			if invalidSibling {
+				response = strings.Replace(response, `"usage":{"prompt_tokens"`, `"unexpected":true,"usage":{"prompt_tokens"`, 1)
+			}
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(response))}, nil
+		}))
+		outcome := handler.executeModelCapabilityProbe(context.Background(), modelCapabilitySnapshot{
+			Provider: "minimax", BaseURL: "https://api.minimax.cn/v1", AdapterType: adapters.TypeOpenAICompatible,
+			AdapterConfig: json.RawMessage(`{"endpoint_path_mode":"base_relative"}`),
+			UpstreamModel: "MiniMax-M2.7", OperationID: modelprofile.OperationOpenAIChat, CapabilityID: modelprofile.CapabilityFunctionTools,
+			ExecutionProfileID: "minimax.m2.7.payg", ExecutionProfileVersion: "1.3.0",
+			ProtocolProfileID: "protocol.minimax-m27-openai-chat.v1", ProtocolProfileVersion: "1.0.0",
+			ExpectedProvider: "minimax", ExpectedUpstreamModel: "MiniMax-M2.7", PublicPath: "/v1/chat/completions",
+			EncryptedSecret: encrypted, ProbeContractID: modelcapabilityqualification.MiniMaxM27StreamFunctionToolsProbeContractID, ProbeContractVersion: "1.0.0",
+		}, "m27-local-fixture")
+		require.True(t, outcome.ProviderSuccess)
+		require.Equal(t, !invalidSibling, outcome.ContractSuccess)
+		require.Equal(t, int64(5585), outcome.PromptTokens)
+		require.False(t, outcome.CacheReadCounterObserved)
+		safe, err := json.Marshal(outcome)
+		require.NoError(t, err)
+		require.NotContains(t, string(safe), "<think>")
+	}
 }
 
 func TestMiniMaxHighspeedCapabilityProbeUsesSharedToolIndexPreparation(t *testing.T) {

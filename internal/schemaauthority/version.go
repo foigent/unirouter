@@ -3,4 +3,4 @@
 // runner or product-domain policy.
 package schemaauthority
 
-const LatestSupportedMigration = "000110_openai_chat_runtime_capability_qualification"
+const LatestSupportedMigration = "000112_repeat_model_successor_cutover"
