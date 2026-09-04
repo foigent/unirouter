@@ -4,6 +4,24 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.49] - 2026-09-04
+
+### Changed
+
+- Added optional caller-authorized Chat preflight using canonical Profile,
+  capability and route preparation plus the same credential-free outbound
+  shaping and context checks as execution. It never dispatches, decrypts,
+  reserves execution quota/funds, claims a lease or creates execution evidence.
+  Its safe snapshot explicitly separates unchecked live/response/Agent behavior.
+- Client metadata projects sealed stable Release limits and the existing
+  Profile request default separately. OpenClaw sync preserves valid user
+  overrides and experimental ceilings, rejects conflicting or unbound defaults,
+  and reports non-secret parameter provenance before an optional config write.
+- No Profile, Probe, Publication, schema ceiling, credential, Pricing or
+  Production change. Fourteen-client local request regressions and no-network
+  installed-client checks do not claim completed real Agent tasks. The separate
+  unpublished M111 stream-tools candidate is not included in this source batch.
+
 ## [1.2.48] - 2026-09-04
 
 ### Fixed

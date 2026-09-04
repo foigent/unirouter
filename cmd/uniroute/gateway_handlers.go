@@ -84,6 +84,13 @@ func prepareGatewayPublicModelRequest(
 	relay *gateway.Relay,
 	outboxService *outbox.Service,
 ) (*http.Request, bool) {
+	return prepareGatewayAuthorizedModelRequest(w, r, pool, relay, outboxService, true)
+}
+
+func prepareGatewayAuthorizedModelRequest(
+	w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool,
+	relay *gateway.Relay, outboxService *outbox.Service, recordCall bool,
+) (*http.Request, bool) {
 	requestID := middleware.GetRequestIDFromContext(r.Context())
 	writeError := func(status int, code, message string) {
 		gatewayerror.Write(w, r.URL.Path, requestID, status, code, message)
@@ -132,7 +139,7 @@ func prepareGatewayPublicModelRequest(
 		writeError(http.StatusServiceUnavailable, "server_error.model_governance_unavailable", "Model governance is temporarily unavailable")
 		return nil, false
 	}
-	if access.Lifecycle == "" {
+	if recordCall && access.Lifecycle == "" {
 		recordUnregisteredModelAudit(r.Context(), pool, outboxService, apiKey, requestedModel, projectID)
 	}
 	resolvedModel := strings.TrimSpace(access.ResolvedModel)
@@ -145,13 +152,51 @@ func prepareGatewayPublicModelRequest(
 		return nil, false
 	}
 	if !decision.Allowed {
-		recordModelAuthorizationDenial(r.Context(), pool, outboxService, apiKey, decision)
+		if recordCall {
+			recordModelAuthorizationDenial(r.Context(), pool, outboxService, apiKey, decision)
+		}
 		writeError(http.StatusForbidden, "auth_error.model_call_not_authorized", "Model call is outside the active enterprise authorization policy")
 		return nil, false
 	}
 	r = r.WithContext(modelauthz.WithDecision(r.Context(), decision))
 	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxModelAlias, requestedModel))
+	if !recordCall {
+		// Preflight examines the identical canonical Chat document as dispatch,
+		// but emits no model-call/denial receipt and never executes a request.
+		rewritten, rewriteErr := rewriteGovernedModel(body, resolvedModel)
+		if rewriteErr != nil {
+			writeError(http.StatusBadRequest, "validation_error.invalid_request", "Invalid Chat document")
+			return nil, false
+		}
+		r, rewriteErr = payloadpolicy.ReplaceRequestBody(r, rewritten)
+		if rewriteErr != nil {
+			writeError(http.StatusServiceUnavailable, "server_error.payload_capacity_exceeded", "Payload capacity is temporarily unavailable")
+			return nil, false
+		}
+	}
 	return r, true
+}
+
+func newGatewayChatPreflightHandler(pool *pgxpool.Pool, relay *gateway.Relay) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		governed, ok := prepareGatewayAuthorizedModelRequest(w, r, pool, relay, nil, false)
+		if ok {
+			relay.HandleChatPreflight(w, governed)
+		}
+	}
+}
+
+// The preflight URL does not grant a new operation. Every live authentication
+// and endpoint authorization sees the fixed real Chat operation, including the
+// second authentication after buffering. No caller header can choose a target.
+func chatPreflightOperation(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		request := r.Clone(r.Context())
+		request.URL.Path = "/v1/chat/completions"
+		request.URL.RawPath = ""
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, request)
+	})
 }
 
 func prepareGatewayModelRequest(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, relay *gateway.Relay, outboxService *outbox.Service) (*http.Request, bool) {

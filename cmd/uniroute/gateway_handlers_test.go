@@ -74,6 +74,59 @@ func TestAPIKeyAllowsOnlyExactRequestedPublicModel(t *testing.T) {
 	}
 }
 
+func TestChatPreflightBindsBothAuthenticationsToRealChat(t *testing.T) {
+	for _, allowed := range []bool{true, false} {
+		calls, dispatched := 0, false
+		auth := func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Path != "/v1/chat/completions" || r.URL.RawPath != "" {
+					t.Fatalf("preflight used another operation: %s", r.URL.Path)
+				}
+				if !allowed {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				next.ServeHTTP(w, r)
+			})
+		}
+		body := payloadpolicy.RequestMiddleware(payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), payloadpolicy.ProfileChatRequest, nil)
+		handler := chatPreflightOperation(middleware.GatewayAuthAcrossBufferedBody(auth, body)(middleware.StrictJSONIngress(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, retained := payloadpolicy.BodyFromContext(r.Context()); !retained {
+				t.Fatal("body not retained")
+			}
+			dispatched = true
+			w.WriteHeader(http.StatusNoContent)
+		}))))
+		request := httptest.NewRequest("POST", "/v1/chat/completions/preflight", strings.NewReader(`{"model":"model","messages":[]}`))
+		request.Header.Set("X-Target-Endpoint", "/v1/models")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, request)
+		if allowed && (calls != 2 || !dispatched || w.Code != 204) {
+			t.Fatalf("auth calls=%d dispatched=%t status=%d", calls, dispatched, w.Code)
+		}
+		if !allowed && (calls != 1 || dispatched || w.Code != 403) {
+			t.Fatalf("denied operation dispatched")
+		}
+		if request.URL.Path != "/v1/chat/completions/preflight" {
+			t.Fatal("mutated original request URL")
+		}
+	}
+}
+
+func TestChatPreflightScopeDenialDoesNotWriteExecutionEvidence(t *testing.T) {
+	r := httptest.NewRequest("POST", "/v1/chat/completions/preflight", strings.NewReader(`{"model":"private-model","messages":[]}`))
+	r = r.WithContext(context.WithValue(r.Context(), middleware.CtxAPIKey, &models.ApiKey{OrgID: 1, AllowedModels: "allowed-model"}))
+	retain := payloadpolicy.RequestMiddleware(payloadpolicy.MustNewBudget(payloadpolicy.DefaultLimits()), payloadpolicy.ProfileChatRequest, nil)
+	w := httptest.NewRecorder()
+	// Nil DB/Relay makes a scope-before-governance or receipt regression fail.
+	handler := chatPreflightOperation(retain(middleware.StrictJSONIngress(newGatewayChatPreflightHandler(nil, nil))))
+	handler.ServeHTTP(w, r)
+	if w.Code != 403 || strings.Contains(w.Body.String(), "private-model") {
+		t.Fatalf("scope denial=%d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestPrepareGatewayModelRequestRejectsScopeBeforeGovernance(t *testing.T) {
 	t.Parallel()
 	const requestedModel = "private-catalog-marker"

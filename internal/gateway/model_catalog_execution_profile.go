@@ -12,16 +12,18 @@ import (
 const publicModelExecutionProfileInclude = "execution_profile"
 
 type publicModelExecutionProfile struct {
-	Status                string   `json:"status"`
-	DisplayName           string   `json:"display_name"`
-	ProfileID             string   `json:"profile_id,omitempty"`
-	ProfileVersion        string   `json:"profile_version,omitempty"`
-	ProtocolProfile       string   `json:"protocol_profile,omitempty"`
-	ContextWindow         int      `json:"context_window,omitempty"`
-	MaxOutputTokens       int      `json:"max_output_tokens,omitempty"`
-	Capabilities          []string `json:"capabilities,omitempty"`
-	ReasoningMode         string   `json:"reasoning_mode,omitempty"`
-	ReasoningEffortValues []string `json:"reasoning_effort_values,omitempty"`
+	Status                     string   `json:"status"`
+	Source                     string   `json:"source,omitempty"`
+	DisplayName                string   `json:"display_name"`
+	ProfileID                  string   `json:"profile_id,omitempty"`
+	ProfileVersion             string   `json:"profile_version,omitempty"`
+	ProtocolProfile            string   `json:"protocol_profile,omitempty"`
+	ContextWindow              int      `json:"context_window,omitempty"`
+	MaxOutputTokens            int      `json:"max_output_tokens,omitempty"`
+	RequestDefaultOutputTokens int      `json:"request_default_output_tokens,omitempty"`
+	Capabilities               []string `json:"capabilities,omitempty"`
+	ReasoningMode              string   `json:"reasoning_mode,omitempty"`
+	ReasoningEffortValues      []string `json:"reasoning_effort_values,omitempty"`
 }
 
 func requestIncludesModelExecutionProfiles(includeValues []string) bool {
@@ -57,14 +59,24 @@ WITH candidates AS (
 SELECT resolved.requested_model,
        COALESCE(NULLIF(BTRIM(registry.display_name), ''), resolved.requested_model),
        registry.id IS NOT NULL,
-       COALESCE(registry.context_length, 0),
-       COALESCE(registry.output_limit, 0),
-       COALESCE(registry.execution_profile_id, ''),
-       COALESCE(registry.execution_profile_version, '')
+       COALESCE(CASE WHEN slot.stable_release_id IS NOT NULL THEN stable.public_context_limit ELSE registry.context_length END, 0),
+       COALESCE(CASE WHEN slot.stable_release_id IS NOT NULL THEN stable.public_output_limit ELSE registry.output_limit END, 0),
+       COALESCE(CASE WHEN slot.stable_release_id IS NOT NULL THEN stable.execution_profile_id ELSE registry.execution_profile_id END, ''),
+       COALESCE(CASE WHEN slot.stable_release_id IS NOT NULL THEN stable.execution_profile_version ELSE registry.execution_profile_version END, ''),
+       CASE WHEN slot.stable_release_id IS NOT NULL THEN 'stable_release' ELSE 'registry' END,
+       COALESCE(slot.stable_release_id IS NULL OR (
+         slot.public_model_id = registry.id AND stable.public_model_id = registry.id
+         AND stable.model_name = registry.model_name
+         AND stable.candidate_version = 'unirouter.runtime-change-candidate.v2'
+         AND stable.stage = 'active' AND stable.route_items_sealed_at IS NOT NULL
+         AND stable.route_items_hash <> '' AND stable.route_items_count > 0
+       ), false)
 FROM resolved
 LEFT JOIN model_registry registry
   ON registry.org_id = $1::bigint
  AND registry.model_name = resolved.resolved_model
+LEFT JOIN runtime_change_slots slot ON slot.model_name = registry.model_name
+LEFT JOIN runtime_change_releases stable ON stable.id = slot.stable_release_id
 ORDER BY resolved.ordinality`, orgID, models)
 	if err != nil {
 		return nil, fmt.Errorf("query public model execution profiles: %w", err)
@@ -77,18 +89,26 @@ ORDER BY resolved.ordinality`, orgID, models)
 			modelID, displayName, profileID, profileVersion string
 			registered                                      bool
 			contextWindow, outputLimit                      int
+			source                                          string
+			sourceValid                                     bool
 		)
-		if err := rows.Scan(&modelID, &displayName, &registered, &contextWindow, &outputLimit, &profileID, &profileVersion); err != nil {
+		if err := rows.Scan(&modelID, &displayName, &registered, &contextWindow, &outputLimit, &profileID, &profileVersion, &source, &sourceValid); err != nil {
 			return nil, fmt.Errorf("scan public model execution profile: %w", err)
 		}
 
 		metadata := publicModelExecutionProfile{
 			Status:         "unregistered",
+			Source:         source,
 			DisplayName:    displayName,
 			ProfileID:      strings.TrimSpace(profileID),
 			ProfileVersion: strings.TrimSpace(profileVersion),
 		}
 		if !registered {
+			result[modelID] = metadata
+			continue
+		}
+		if !sourceValid {
+			metadata.Status = "invalid"
 			result[modelID] = metadata
 			continue
 		}
@@ -110,6 +130,9 @@ ORDER BY resolved.ordinality`, orgID, models)
 		metadata.Status = "verified"
 		metadata.ContextWindow = contextWindow
 		metadata.MaxOutputTokens = outputLimit
+		if source == "stable_release" {
+			metadata.RequestDefaultOutputTokens = modelprofile.DefaultRequestOutputLimit(profile, outputLimit)
+		}
 		metadata.Capabilities = slices.Clone(profile.Capabilities)
 		if reasoning, ok := modelprofile.ResolveReasoningContract(profile.ReasoningProfile); ok {
 			metadata.ReasoningMode = reasoning.Mode

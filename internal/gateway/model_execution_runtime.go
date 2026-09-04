@@ -374,6 +374,11 @@ func (relay *Relay) prepareModelExecutionPlan(
 		},
 	})
 	if err != nil {
+		// The canonical planner retains exclusions in its no-route snapshot.
+		// Never serialize this internal Plan; preflight projects safe reasons.
+		if errors.Is(err, modelrouting.ErrNoRoute) {
+			return &preparedModelExecutionBatch{plan: plan}, err
+		}
 		return nil, err
 	}
 	if err := requireModelExecutionDispatchWired(operation, plan); err != nil {
@@ -417,8 +422,6 @@ func (relay *Relay) materializeModelExecutionRoutes(
 		return fmt.Errorf("model execution route materialization is not configured")
 	}
 	plan := batch.plan
-	limits := batch.limits
-	body := batch.providerRequestBody
 	maximumInputEstimate := batch.limits.EstimatedInputTokens
 	limitExcluded := 0
 	outputLimitUnsupported := 0
@@ -435,42 +438,18 @@ func (relay *Relay) materializeModelExecutionRoutes(
 			relay.recordTraceEvent(ctx, requestID, "provider.adapter_unknown", "provider", "error", publicModel, requestedModel, &compat, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"failure_kind": "configuration"})
 			continue
 		}
-		routeLimits := limits
-		providerDownstreamBody := body
-		if limits.ProviderOutputLimit > 0 && endpoint == adapters.EndpointChatCompletions {
-			field, supported := providerOutputLimitField(plan, route, plan.RequiredCapabilities)
-			if !supported {
+		providerDownstreamBody, routeLimits, prepareErr := prepareExecutionRouteBody(endpoint, batch, route)
+		if prepareErr != nil {
+			if errors.Is(prepareErr, errModelExecutionOutputLimitRequired) {
 				outputLimitUnsupported++
 				relay.recordTraceEvent(ctx, requestID, "provider.output_limit_unsupported", "provider", "error", publicModel, requestedModel, &compat, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"failure_kind": "configuration"})
 				continue
 			}
-			var injectErr error
-			providerDownstreamBody, injectErr = injectChatOutputLimit(body, field, limits.ProviderOutputLimit)
-			if injectErr != nil {
-				return injectErr
+			if errors.Is(prepareErr, errModelExecutionContextLimitExceeded) {
+				limitExcluded++
+				continue
 			}
-			injectedEvidence := batch.profileEvidence
-			if len(injectedEvidence.AdmissionShadowBody) > 0 {
-				injectedEvidence.AdmissionShadowBody, injectErr = injectChatOutputLimit(
-					injectedEvidence.AdmissionShadowBody, field, limits.ProviderOutputLimit,
-				)
-				if injectErr != nil {
-					return injectErr
-				}
-			}
-			injectedEvidence.bindAdmissionBody(providerDownstreamBody)
-			injectedAdmission, admissionErr := estimateChatAdmissionForValidatedPlan(providerDownstreamBody, plan, injectedEvidence)
-			if admissionErr != nil {
-				return admissionErr
-			}
-			if injectedAdmission.InputTokens > routeLimits.EstimatedInputTokens {
-				routeLimits.EstimatedInputTokens = injectedAdmission.InputTokens
-				routeLimits.EstimateVersion = injectedAdmission.Version
-			}
-		}
-		if !routeLimits.routeFits(plan, route) {
-			limitExcluded++
-			continue
+			return prepareErr
 		}
 		upstreamRequest, buildErr := adapter.BuildRequest(ctx, adapters.RequestInput{
 			Endpoint: endpoint, DownstreamBody: providerDownstreamBody, RequestedModel: requestedModel,
@@ -486,23 +465,13 @@ func (relay *Relay) materializeModelExecutionRoutes(
 			relay.recordTraceEvent(ctx, requestID, "provider.request_body_unavailable", "provider", "error", publicModel, requestedModel, &compat, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"failure_kind": "configuration"})
 			continue
 		}
-		var providerAdmission requestAdmissionEstimate
-		var admissionErr error
-		if endpoint == adapters.EndpointEmbeddings {
-			providerAdmission, admissionErr = estimateProviderEmbeddingsAdmission(actualBody)
-		} else {
-			providerAdmission, admissionErr = estimateProviderJSONAdmissionForPlan(actualBody, plan)
-		}
+		routeLimits, admissionErr := validateExecutionOutboundLimits(endpoint, actualBody, plan, route, routeLimits)
 		if admissionErr != nil {
+			if errors.Is(admissionErr, errModelExecutionContextLimitExceeded) {
+				limitExcluded++
+				continue
+			}
 			relay.recordTraceEvent(ctx, requestID, "provider.request_body_unmeasurable", "provider", "error", publicModel, requestedModel, &compat, 0, elapsedMilliseconds(requestStart), map[string]interface{}{"failure_kind": "configuration"})
-			continue
-		}
-		if providerAdmission.InputTokens > routeLimits.EstimatedInputTokens {
-			routeLimits.EstimatedInputTokens = providerAdmission.InputTokens
-			routeLimits.EstimateVersion = providerAdmission.Version
-		}
-		if !routeLimits.routeFits(plan, route) {
-			limitExcluded++
 			continue
 		}
 		if routeLimits.EstimatedInputTokens > maximumInputEstimate {
@@ -524,6 +493,63 @@ func (relay *Relay) materializeModelExecutionRoutes(
 		return fmt.Errorf("%w: no locally executable route", modelrouting.ErrNoRoute)
 	}
 	return nil
+}
+
+// These helpers have no dispatch effects. Preflight and real execution must
+// measure the same injected body and the actual adapter-shaped outbound body.
+func prepareExecutionRouteBody(endpoint adapters.Endpoint, batch *preparedModelExecutionBatch, route modelrouting.Route) ([]byte, modelExecutionRequestLimits, error) {
+	plan, limits := batch.plan, batch.limits
+	body := batch.providerRequestBody
+	if limits.ProviderOutputLimit > 0 && endpoint == adapters.EndpointChatCompletions {
+		field, supported := providerOutputLimitField(plan, route, plan.RequiredCapabilities)
+		if !supported {
+			return nil, limits, errModelExecutionOutputLimitRequired
+		}
+		var err error
+		body, err = injectChatOutputLimit(body, field, limits.ProviderOutputLimit)
+		if err != nil {
+			return nil, limits, err
+		}
+		evidence := batch.profileEvidence
+		if len(evidence.AdmissionShadowBody) > 0 {
+			evidence.AdmissionShadowBody, err = injectChatOutputLimit(evidence.AdmissionShadowBody, field, limits.ProviderOutputLimit)
+			if err != nil {
+				return nil, limits, err
+			}
+		}
+		evidence.bindAdmissionBody(body)
+		admission, err := estimateChatAdmissionForValidatedPlan(body, plan, evidence)
+		if err != nil {
+			return nil, limits, err
+		}
+		if admission.InputTokens > limits.EstimatedInputTokens {
+			limits.EstimatedInputTokens, limits.EstimateVersion = admission.InputTokens, admission.Version
+		}
+	}
+	if !limits.routeFits(plan, route) {
+		return nil, limits, errModelExecutionContextLimitExceeded
+	}
+	return body, limits, nil
+}
+
+func validateExecutionOutboundLimits(endpoint adapters.Endpoint, body []byte, plan modelrouting.Plan, route modelrouting.Route, limits modelExecutionRequestLimits) (modelExecutionRequestLimits, error) {
+	var admission requestAdmissionEstimate
+	var err error
+	if endpoint == adapters.EndpointEmbeddings {
+		admission, err = estimateProviderEmbeddingsAdmission(body)
+	} else {
+		admission, err = estimateProviderJSONAdmissionForPlan(body, plan)
+	}
+	if err != nil {
+		return limits, err
+	}
+	if admission.InputTokens > limits.EstimatedInputTokens {
+		limits.EstimatedInputTokens, limits.EstimateVersion = admission.InputTokens, admission.Version
+	}
+	if !limits.routeFits(plan, route) {
+		return limits, errModelExecutionContextLimitExceeded
+	}
+	return limits, nil
 }
 
 func (relay *Relay) prepareModelExecutionRoutes(

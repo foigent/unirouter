@@ -10,6 +10,7 @@
 |------|------|-------|
 | Main server | `cmd/uniroute/main.go` | Loads config, connects Postgres/Redis, runs migrations, wires gateway/admin routes, starts background cleanup and alerts |
 | Main tests | `cmd/uniroute/main_test.go` | Top-level route behavior tests |
+| Request preflight and client projection | `internal/gateway/chat_preflight.go`, `internal/gateway/model_catalog_execution_profile.go`, `cmd/uniroute-openclaw-sync` | Optional same-caller Chat preparation without dispatch effects; safe routing reasons, stable Release/default provenance and override-aware client config. Static Profile verification is not a request-combination qualification. |
 | Config | `internal/config/config.go` | Environment config and validation, including secrets, optional license, trace/retention, Runtime Status integration metadata, stream transport, weighted workload admission and application-authoritative payload limits |
 | Database | `internal/db/postgres.go` | pgx pool setup and health |
 | Redis | `internal/redisx/redis.go` | Redis setup, health, wallet cache helpers |

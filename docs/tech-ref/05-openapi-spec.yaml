@@ -425,6 +425,46 @@ paths:
         "502": { $ref: "#/components/responses/PublicAnthropicError" }
         "503": { $ref: "#/components/responses/PublicAnthropicRetryableError" }
 
+  /v1/chat/completions/preflight:
+    post:
+      tags: [Gateway]
+      summary: Optional caller-authorized Chat request preflight (no Provider call)
+      description: |
+        Accepts the actual Chat document and uses the same Chat endpoint/key,
+        Agent capability, Grant, IP, license, model governance and authorization
+        gates. Canonical Profile normalization, capability derivation, route
+        planning, output-default injection and final OpenAI-compatible outbound
+        token bounds are evaluated without decrypting a credential, dispatching,
+        claiming a lease, reserving quota/funds or writing execution evidence.
+        A positive result is only a local snapshot, not an execution entitlement
+        or an Agent compatibility promise. Content-policy transformations and
+        compression, dynamic execution quotas, live credentials, Provider
+        behavior and response delivery are not checked. Real execution repeats
+        its normal checks. No internal route, canonical successor, prompt or
+        credential material is returned. This endpoint is optional; normal SDK
+        requests need not call it. Other adapters/protocols are not inferred.
+      security:
+        - gatewayKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatCompletionRequest" }
+      responses:
+        "200":
+          description: Local admissibility snapshot, including explicit reasons and unchecked boundaries
+          headers:
+            X-Request-ID: { $ref: "#/components/headers/OperationId" }
+            Cache-Control: { schema: { type: string, enum: [no-store] } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatPreflightResult" }
+        "400": { $ref: "#/components/responses/PublicOpenAIError" }
+        "401": { $ref: "#/components/responses/PublicOpenAIError" }
+        "403": { $ref: "#/components/responses/PublicOpenAIError" }
+        "413": { $ref: "#/components/responses/PublicOpenAIError" }
+        "503": { $ref: "#/components/responses/PublicOpenAIRetryableError" }
+
   /v1/models:
     get:
       tags: [Gateway]
@@ -438,6 +478,12 @@ paths:
         sync. Only repository-reviewed executable capabilities receive limits;
         unregistered, unverified or invalid profile bindings are explicitly
         labeled and never inherit provider-advertised capabilities.
+        `verified` validates the selected static Profile and limits; it does not
+        qualify a request combination. A canonical stable Release projects its
+        sealed Profile/limits and request default with `source=stable_release`.
+        Registry-only history has `source=registry` and no active request default.
+        An invalid stable source never falls back to mutable registry metadata.
+        Stable projection is not a mixed stable/canary or live routing contract.
       security:
         - gatewayKey: []
       parameters:
@@ -6794,13 +6840,21 @@ components:
         status:
           type: string
           enum: [verified, unverified, invalid, unregistered]
-          description: Only verified entries carry executable limits and capabilities.
+          description: Static Profile and limit validation only; not a request-combination or live-route qualification.
+        source:
+          type: string
+          enum: [stable_release, registry]
+          description: Provenance of the exact Profile and hard ceilings. Registry metadata does not prove activation.
         display_name: { type: string }
         profile_id: { type: string }
         profile_version: { type: string }
         protocol_profile: { type: string }
         context_window: { type: integer, minimum: 1 }
         max_output_tokens: { type: integer, minimum: 1 }
+        request_default_output_tokens:
+          type: integer
+          minimum: 1
+          description: Existing Profile policy default narrowed by the stable sealed public output ceiling; not necessarily a Provider recommendation. Absent without a valid stable Release.
         capabilities:
           type: array
           uniqueItems: true
@@ -6819,6 +6873,25 @@ components:
         object: { type: string, enum: [model] }
         owned_by: { type: string, enum: [uniroute] }
         x_unirouter_execution: { $ref: "#/components/schemas/PublicModelExecutionProjection" }
+    ChatPreflightResult:
+      type: object
+      additionalProperties: false
+      required: [object, request_model, operation, locally_admissible, required_capabilities, reasons, not_checked]
+      properties:
+        object: { type: string, enum: [chat.completion.preflight] }
+        request_model: { type: string }
+        operation: { type: string, enum: [openai.chat_completions.v1] }
+        locally_admissible: { type: boolean }
+        snapshot_at: { type: string, format: date-time }
+        profile_id: { type: string }
+        profile_version: { type: string }
+        protocol_profile: { type: string }
+        context_window: { type: integer, minimum: 1 }
+        max_output_tokens: { type: integer, minimum: 1 }
+        request_default_output_tokens: { type: integer, minimum: 1 }
+        required_capabilities: { type: array, items: { type: string } }
+        reasons: { type: array, uniqueItems: true, items: { type: string } }
+        not_checked: { type: array, items: { type: string } }
     PublicModelList:
       type: object
       additionalProperties: false

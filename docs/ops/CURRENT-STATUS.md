@@ -1,6 +1,12 @@
 # UniRouter Current Status
 
-> Repository source candidate is 1.2.48/M110. Developer Console recent calls use
+> Repository source candidate is 1.2.49/M110. Optional Chat preflight reuses
+> caller authorization and canonical request/route preparation without Provider
+> I/O or execution writes. Client sync separates stable sealed limits, Profile
+> request defaults and user overrides. Static verification is not live route or
+> Agent-task qualification. M111 stream-tools remains a separate unpublished
+> candidate; this source batch creates no Publication or Target evidence.
+> Developer Console recent calls use
 > the actual requested model; canonical lookup details are limited to existing
 > organization/platform administrator views. Current nine-model Probe/Console
 > request regressions also cover exact admission and outbound payloads without
