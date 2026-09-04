@@ -73,6 +73,10 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 	applyBuildRuntimeMetadata(cfg)
+	httpRuntime, err := newHTTPRuntime(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize HTTP runtime: %v", err)
+	}
 	trustBundle, err := applyReleaseTrust(cfg)
 	if err != nil {
 		log.Fatalf("Failed to load release trust: %v", err)
@@ -119,6 +123,11 @@ func main() {
 	if err := requireExactRuntimeSchema(context.Background(), postgres.Pool, expectedSchemaLedger); err != nil {
 		log.Fatalf("Schema authority startup gate failed: %v", err)
 	}
+	ledgerBytes, err := json.Marshal(expectedSchemaLedger)
+	if err != nil {
+		log.Fatalf("Schema authority identity failed: %v", err)
+	}
+	httpRuntime.schemaDigest = fmt.Sprintf("%x", sha256.Sum256(ledgerBytes))
 	if err := modelcapabilitypublication.VerifyRuntimeStaticProjection(context.Background(), postgres.Pool, expectedSchemaLedger); err != nil {
 		log.Fatalf("Capability-contract static projection startup gate failed: %v", err)
 	}
@@ -467,7 +476,11 @@ func main() {
 	sharedPolicyBilling.SetTerminalHooks(terminalHookSvc)
 	settlementRecoveryCtx, stopSettlementRecovery := context.WithCancel(context.Background())
 	defer stopSettlementRecovery()
-	go billingSvc.RunSettlementRecoveryLoop(settlementRecoveryCtx, 10*time.Second, 100)
+	settlementRecoveryDone := make(chan struct{})
+	go func() {
+		defer close(settlementRecoveryDone)
+		billingSvc.RunSettlementRecoveryLoop(settlementRecoveryCtx, 10*time.Second, 100)
+	}()
 	admissionCtrl := middleware.NewDefaultAdmissionController()
 	initialFilterCtx, cancelInitialFilterLoad := context.WithTimeout(context.Background(), 10*time.Second)
 	initialSensitiveWords, initialSensitiveVersion, err := loadSensitiveWords(initialFilterCtx, postgres.Pool)
@@ -704,25 +717,27 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, r *http.Request) {
+		if httpRuntime.status().State != "serving" {
+			writeRuntimeHealth(w, http.StatusServiceUnavailable, "not_ready", "draining", httpRuntime)
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 
 		if err := postgres.Health(ctx); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, `{"status":"not_ready","error":"database"}`)
+			writeRuntimeHealth(w, http.StatusServiceUnavailable, "not_ready", "database", httpRuntime)
 			return
 		}
 		if err := redisClient.Health(ctx); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, `{"status":"not_ready","error":"redis"}`)
+			writeRuntimeHealth(w, http.StatusServiceUnavailable, "not_ready", "redis", httpRuntime)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"ok","db":"ok","redis":"ok"}`)
+		if httpRuntime.status().State != "serving" {
+			writeRuntimeHealth(w, http.StatusServiceUnavailable, "not_ready", "draining", httpRuntime)
+			return
+		}
+		writeRuntimeHealth(w, http.StatusOK, "ok", "", httpRuntime)
 	})
 
 	// Root endpoint
@@ -1266,7 +1281,7 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	mux.Handle("POST /api/v1/channels/{id}/test", platformRoute(legacyModelMutationRetired))
 	mux.Handle("GET /api/v1/channels/{id}/provider-models", licensedRoute(licensing.FeatureGateway, platformRoute)(adminHandler.ListChannelProviderModels))
 	mux.Handle("GET /api/v1/wallet/transactions/export", billingRoute(adminHandler.ExportWalletTransactions))
-	metricsHandler := middleware.MetricsMiddleware(mux)
+	metricsHandler := middleware.MetricsMiddleware(httpRuntime.handler(mux))
 	corsHandler := middleware.CORSWithOptions(middleware.CORSOptions{
 		AllowedOrigins: cfg.AdminCORSAllowedOrigins,
 	})(metricsHandler)
@@ -1284,6 +1299,9 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	}
 
 	// Start server in goroutine
+	runtimeStatus := httpRuntime.status()
+	log.Printf("HTTP runtime instance=%s request_lifetime_seconds=%d drain_timeout_seconds=%d",
+		runtimeStatus.Instance, runtimeStatus.RequestLifetimeSeconds, runtimeStatus.DrainTimeoutSeconds)
 	go func() {
 		log.Printf("UniRoute server starting on %s", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -1296,20 +1314,29 @@ table{border-collapse:collapse;width:100%;margin-top:16px}th,td{border:1px solid
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("Shutting down server...")
+	signal.Stop(quit)
+	ctx, cancel := context.WithTimeout(context.Background(), httpRuntime.drainTimeout)
+	defer cancel()
+	if err := httpRuntime.drainHTTP(ctx, srv); err != nil {
+		log.Printf("HTTP runtime drain incomplete: %v active_requests=%d", err, httpRuntime.status().ActiveRequests)
+	}
+	// HTTP handlers may still need these services to persist terminal evidence.
+	// Stop them only after handler drain, retaining their durable recovery leases.
 	stopXInsightConnectorRuntime()
 	stopSettlementRecovery()
 	stopCompletedFeedRetention()
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.ShutdownTimeoutSecs)*time.Second)
-	defer cancel()
-	select {
-	case <-xInsightConnectorRuntimeDone:
-	case <-ctx.Done():
-		log.Printf("X-Insight Connector runtime did not stop before shutdown timeout")
-	}
-
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+	for _, worker := range []struct {
+		name string
+		done <-chan struct{}
+	}{
+		{"X-Insight Connector runtime", xInsightConnectorRuntimeDone},
+		{"settlement recovery", settlementRecoveryDone},
+	} {
+		select {
+		case <-worker.done:
+		case <-ctx.Done():
+			log.Printf("%s did not stop before shutdown deadline", worker.name)
+		}
 	}
 	if stopAsyncMedia != nil {
 		stopAsyncMedia()

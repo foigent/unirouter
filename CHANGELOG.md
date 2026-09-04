@@ -4,6 +4,22 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.52] - 2026-09-05
+
+### Changed
+
+- Added per-process HTTP admission/drain accounting and runtime/schema identity
+  in readiness. Accepted streaming handlers retain their contexts and terminal
+  dependencies during planned shutdown; timeout cancellation is reported as an
+  incomplete drain. Effective drain covers supported request lifetimes.
+- Added a directory-mounted Nginx membership carrier and explicit same-schema
+  withdrawal helper with exact predecessor/config checks, old-worker observation
+  and fail-closed ambiguity handling. It never stops a backend automatically.
+  Slow old proxy connections abort rollout rather than being forcibly closed.
+- Aligned default Compose stop grace with application drain. Initial carrier
+  installation remains a bootstrap boundary. No schema or Publication change;
+  source tests do not by themselves establish Target continuity or Agent success.
+
 ## [1.2.51] - 2026-09-04
 
 ### Changed

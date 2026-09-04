@@ -1,5 +1,15 @@
 # UniRouter Current Status
 
+> Source candidate 1.2.52 retains M113 and introduces the first same-schema
+> continuity slice: process admission/drain, readiness identity, dependency-safe
+> shutdown and explicit directory-carrier Nginx withdrawal. Initial carrier
+> installation is a bootstrap boundary; direct debug ports are outside the
+> ingress contract. Runtime lease, immutable dynamic Profiles, Release pinning
+> and online Publication remain subsequent slices, not completed architecture.
+> Local HTTP/SSE and controller recovery tests are separate from Target rollout
+> and real OpenClaw evidence. The execution scope now uses existing DeepSeek,
+> Kimi, MiniMax and GLM models; Bailian/Qwen and Hermes are deferred by the user.
+
 > Repository source candidate is 1.2.51/M113. M113 appends six GLM exact streaming
 > Function Tools Profile successors and 30 static bindings. Bounded SSE/tool
 > assembly is shared with M111, but reasoning/terminal policies remain exact;

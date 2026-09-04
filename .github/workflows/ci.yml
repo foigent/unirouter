@@ -247,6 +247,9 @@ jobs:
       
       - name: Run go vet
         run: go vet ./...
+
+      - name: Check runtime ingress failure recovery
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/test-runtime-ingress.py
       
       - name: Run tests
         # Includes the untagged 000039 tenant-isolation migration regression.

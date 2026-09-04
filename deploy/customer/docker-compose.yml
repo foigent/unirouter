@@ -42,6 +42,7 @@ services:
     logging: *unirouter-json-logging
 
   backend:
+    stop_grace_period: ${UNIROUTER_STOP_GRACE_PERIOD:-35m}
     image: ${UNIROUTER_BACKEND_IMAGE:?Set the signed release backend image reference}
     environment:
       LISTEN_PORT: 8080

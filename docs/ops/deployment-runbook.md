@@ -12,6 +12,10 @@
 
 ---
 
+Same-schema runtime withdrawal and the explicit first-install boundary are
+documented in [RUNTIME-CONTINUITY.md](RUNTIME-CONTINUITY.md). Schema-changing
+legacy Publication still uses the maintenance procedure below.
+
 ## 一、环境要求
 
 | 组件 | 版本 | 说明 |
