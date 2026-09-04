@@ -118,7 +118,7 @@ func TestMiniMaxM27CacheReadUsageRejectsMissingOrConflictingAuthority(t *testing
 
 func TestMiniMaxM27CacheReadStreamFreezesNormalizedFramesAndCleanEOF(t *testing.T) {
 	adapter := adapters.NewOpenAICompatible()
-	state := exactStreamStateForProtocol(miniMaxM27CacheProtocol)
+	state := exactStreamStateForProtocol(miniMaxM27CacheProtocol, "")
 	require.NotNil(t, state)
 	rawFrames := []string{
 		`{"id":"chunk-1","object":"chat.completion.chunk","model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"role":"assistant","content":"<think>work</think>","name":"MiniMax AI","audio_content":""},"finish_reason":null}],"usage":null,"input_sensitive":false,"output_sensitive":false,"base_resp":{"status_code":0,"status_msg":"success"}}`,
@@ -141,7 +141,7 @@ func TestMiniMaxM27CacheReadStreamFreezesNormalizedFramesAndCleanEOF(t *testing.
 	}
 	require.NoError(t, state.validateCleanEOF(true), "clean EOF must retain terminal cache authority")
 
-	combinedState := exactStreamStateForProtocol(miniMaxM27CacheProtocol)
+	combinedState := exactStreamStateForProtocol(miniMaxM27CacheProtocol, "")
 	combinedRaw := []byte(`{"id":"chunk-2","object":"chat.completion.chunk","model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"role":"assistant","content":"answer","name":"MiniMax AI","audio_content":null},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":7,"total_tokens":107,"prompt_tokens_details":{"cached_tokens":0}},"input_sensitive":false,"output_sensitive":false,"base_resp":{"status_code":0,"status_msg":"success"}}`)
 	combined, err := adapter.NormalizeStreamFrame(context.Background(), adapters.StreamChunkInput{
 		Data: combinedRaw, Channel: models.Channel{Provider: "minimax"}, CacheUsageProfile: miniMaxM27CacheProfile,
@@ -160,7 +160,7 @@ func TestMiniMaxM27CacheReadStreamFreezesNormalizedFramesAndCleanEOF(t *testing.
 	require.NoError(t, combinedState.accept(combinedFrame, true))
 	require.NoError(t, combinedState.validateCleanEOF(true))
 
-	missing := exactStreamStateForProtocol(miniMaxM27CacheProtocol)
+	missing := exactStreamStateForProtocol(miniMaxM27CacheProtocol, "")
 	finish, err := parseGuardedStreamFrameForProtocol(
 		[]byte(`{"choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}],"usage":null}`),
 		miniMaxM27CacheProtocol,

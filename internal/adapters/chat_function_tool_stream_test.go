@@ -10,8 +10,27 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/uniroute/unirouter/internal/metering"
+	"github.com/uniroute/unirouter/internal/modelprofile"
 	"github.com/uniroute/unirouter/internal/models"
 )
+
+func TestFunctionToolStreamTextPolicyIsContractSelected(t *testing.T) {
+	glm, _ := modelprofile.ResolveChatProtocolContract("protocol.glm-openai-chat.v7")
+	mini, _ := modelprofile.ResolveChatProtocolContract("protocol.minimax-m27-openai-chat.v1")
+	for _, value := range []string{`"thinking"`, `null`, `""`, `12`, `{}`, `[]`} {
+		wire := []byte(`{"id":"x","created":1,"object":"chat.completion.chunk","model":"glm-5.3","choices":[{"index":0,"delta":{"reasoning_content":` + value + `}}]}`)
+		_, err := ParseFunctionToolStreamFactsForContract(wire, glm.StreamContract)
+		if value == `"thinking"` || value == `null` || value == `""` {
+			require.NoError(t, err)
+		} else {
+			require.Error(t, err)
+		}
+		_, err = ParseFunctionToolStreamFactsForContract(wire, mini.StreamContract)
+		require.Error(t, err)
+		_, err = ParseFunctionToolStreamFacts(wire)
+		require.Error(t, err, "immutable M111 does not gain GLM acceptance")
+	}
+}
 
 func TestFunctionToolStreamRejectsNullMetadataAndUnboundedIdentity(t *testing.T) {
 	_, err := ParseFunctionToolStreamFacts([]byte(`{"id":"x","object":"chat.completion.chunk","created":null,"model":"MiniMax-M2.7","choices":[]}`))

@@ -108,7 +108,7 @@ func TestDoubaoSeed21ProStreamingCandidateNormalizesProviderPayloadAndPlanOnce(t
 }
 
 func TestDoubaoSeed21ProExactStreamFramesEnforceReasoningPhasesAndTerminalUsage(t *testing.T) {
-	state := exactStreamStateForProtocol(doubaoSeed21ProStreamProtocol)
+	state := exactStreamStateForProtocol(doubaoSeed21ProStreamProtocol, "")
 	require.NotNil(t, state)
 	frames := []string{
 		`{"object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"summary"},"finish_reason":null}]}`,
@@ -135,7 +135,7 @@ func TestDoubaoSeed21ProExactStreamFramesEnforceReasoningPhasesAndTerminalUsage(
 		require.True(t, frame.unsupported, raw)
 	}
 
-	missingUsage := exactStreamStateForProtocol(doubaoSeed21ProStreamProtocol)
+	missingUsage := exactStreamStateForProtocol(doubaoSeed21ProStreamProtocol, "")
 	finished, err := parseGuardedStreamFrameForProtocol(
 		[]byte(`{"choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}]}`),
 		doubaoSeed21ProStreamProtocol,

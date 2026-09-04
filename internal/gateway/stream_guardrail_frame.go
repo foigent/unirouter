@@ -55,14 +55,14 @@ type exactStreamProtocolState struct {
 	sawTerminalUsage bool
 }
 
-func exactStreamStateForProtocol(protocolProfile string) *exactStreamProtocolState {
+func exactStreamStateForProtocol(protocolProfile, expectedUpstreamModel string) *exactStreamProtocolState {
 	contract, ok := modelprofile.ResolveChatProtocolContract(protocolProfile)
 	if !ok || !contract.StreamContract.ResponseModeled {
 		return nil
 	}
 	state := &exactStreamProtocolState{contract: contract.StreamContract}
 	if contract.StreamContract.FunctionToolDeltas {
-		state.functionTools = adapters.NewFunctionToolStreamState("MiniMax-M2.7")
+		state.functionTools = adapters.NewFunctionToolStreamState(expectedUpstreamModel)
 	}
 	return state
 }
@@ -72,7 +72,7 @@ func (state *exactStreamProtocolState) accept(frame *guardedStreamFrame, authori
 		return nil
 	}
 	if state.functionTools != nil {
-		facts, err := adapters.ParseFunctionToolStreamFacts(frame.raw)
+		facts, err := adapters.ParseFunctionToolStreamFactsForContract(frame.raw, state.contract)
 		if err != nil {
 			return err
 		}
@@ -134,20 +134,31 @@ func (state *exactStreamProtocolState) validateDone() error {
 // same frozen request-name authority as complete non-stream responses before
 // disclosing the first identity. Do not derive an allowlist from provider data.
 func validateFunctionToolStreamInvocation(route *RouteResult, data []byte) error {
-	facts, err := adapters.ParseFunctionToolStreamFacts(data)
+	if route == nil {
+		return fmt.Errorf("missing stream invocation authority")
+	}
+	contract, ok := modelprofile.ResolveChatProtocolContract(route.ModelProtocolProfile)
+	if !ok {
+		return fmt.Errorf("missing stream contract authority")
+	}
+	facts, err := adapters.ParseFunctionToolStreamFactsForContract(data, contract.StreamContract)
 	if err != nil {
 		return err
 	}
 	if len(facts.Tools) == 0 {
 		return nil
 	}
-	if route == nil {
-		return fmt.Errorf("missing stream invocation authority")
-	}
+	hasConstraint := false
 	for _, requirement := range route.PlanCapabilityRequirements {
 		if requirement.FunctionToolChoice != nil && requirement.CapabilityID != modelprofile.CapabilityToolChoiceAuto && requirement.CapabilityID != modelprofile.CapabilityFunctionTools {
 			return fmt.Errorf("inapplicable stream invocation constraint")
 		}
+		hasConstraint = hasConstraint || requirement.FunctionToolChoice != nil
+	}
+	// Streaming authority must not depend on the separate non-stream response
+	// contract's ExactFunctionToolResponseModeled flag.
+	if !hasConstraint {
+		return fmt.Errorf("missing frozen stream invocation constraint")
 	}
 	var names []string
 	for _, tool := range facts.Tools {
@@ -312,7 +323,7 @@ func parseExactGuardedStreamFrame(data []byte, contract modelprofile.ChatStreamC
 	}
 	allowedDeltaFields := append([]string{"role"}, contract.DeltaTextFields...)
 	if contract.FunctionToolDeltas {
-		if _, err := adapters.ParseFunctionToolStreamFacts(data); err != nil {
+		if _, err := adapters.ParseFunctionToolStreamFactsForContract(data, contract); err != nil {
 			return nil, err
 		}
 		allowedDeltaFields = append(allowedDeltaFields, "tool_calls")

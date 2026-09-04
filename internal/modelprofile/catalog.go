@@ -532,6 +532,7 @@ var legacyProviderProfiles = []Profile{
 func buildCatalog() []Profile {
 	result := append([]Profile{}, legacyProviderProfiles...)
 	result = append(result, currentProviderProfiles()...)
+	result = append(result, glmStreamFunctionToolsSuccessorProfiles()...)
 	result = append(result, miniMaxOfficialCNPAYGEndpointSuccessorProfiles()...)
 	result = append(result, miniMaxCacheThresholdSuccessorProfiles()...)
 	for _, profile := range miniMaxCacheThresholdSuccessorProfiles() {
@@ -1045,6 +1046,12 @@ var immutableProfileEndpointClassOverrides = map[string][]string{
 	"glm.5-turbo.api@1.0.0":                   {EndpointClassGLMOfficialOpenAIV4},
 	"glm.5.api@1.0.0":                         {EndpointClassGLMOfficialOpenAIV4},
 	"glm.5v-turbo.api@1.11.0":                 {EndpointClassGLMOfficialOpenAIV4},
+	"glm.5.3.api@1.9.0":                       {EndpointClassGLMOfficialOpenAIV4},
+	"glm.5.2.api@1.9.0":                       {EndpointClassGLMOfficialOpenAIV4},
+	"glm.5.1.api@1.1.0":                       {EndpointClassGLMOfficialOpenAIV4},
+	"glm.5-turbo.api@1.1.0":                   {EndpointClassGLMOfficialOpenAIV4},
+	"glm.5.api@1.1.0":                         {EndpointClassGLMOfficialOpenAIV4},
+	"glm.5v-turbo.api@1.12.0":                 {EndpointClassGLMOfficialOpenAIV4},
 
 	"qwen.3.8-max.api@1.7.0":   {EndpointClassDashScopeBeijingWorkspacePayGo, EndpointClassDashScopeBeijingSharedPayGo},
 	"qwen.3.8-max.api@1.8.0":   {EndpointClassDashScopeBeijingWorkspacePayGo, EndpointClassDashScopeBeijingSharedPayGo},
@@ -1225,12 +1232,12 @@ var currentProfileManifests = map[string]currentProfileManifest{
 	"minimax.m2.7.payg":              currentProfile("1.3.0"),
 	"minimax.m2.7-highspeed.payg":    currentProfile("1.2.0"),
 	"minimax.m3.payg":                currentProfile("1.2.0"),
-	"glm.5.3.api":                    currentProfile("1.8.0"),
-	"glm.5.2.api":                    currentProfile("1.8.0"),
-	"glm.5.1.api":                    currentProfile("1.0.0"),
-	"glm.5-turbo.api":                currentProfile("1.0.0"),
-	"glm.5.api":                      currentProfile("1.0.0"),
-	"glm.5v-turbo.api":               currentProfile("1.11.0"),
+	"glm.5.3.api":                    currentProfile("1.9.0"),
+	"glm.5.2.api":                    currentProfile("1.9.0"),
+	"glm.5.1.api":                    currentProfile("1.1.0"),
+	"glm.5-turbo.api":                currentProfile("1.1.0"),
+	"glm.5.api":                      currentProfile("1.1.0"),
+	"glm.5v-turbo.api":               currentProfile("1.12.0"),
 	"qwen.3.8-max.api":               currentProfile("1.8.0"),
 	"qwen.3.7-plus.api":              currentProfile("1.7.0"),
 	"qwen.3.7-flash.api":             currentProfile("1.7.0"),

@@ -96,7 +96,7 @@ func TestDoubaoSeed21TurboStreamingCandidateUsesOnePlanAndProviderPayload(t *tes
 }
 
 func TestDoubaoSeed21TurboExactStreamContractUsesSharedArkTerminalState(t *testing.T) {
-	state := exactStreamStateForProtocol(doubaoSeed21TurboStreamProtocol)
+	state := exactStreamStateForProtocol(doubaoSeed21TurboStreamProtocol, "")
 	require.NotNil(t, state)
 	for _, raw := range []string{
 		`{"choices":[{"index":0,"delta":{"reasoning_content":"summary"},"finish_reason":null}]}`,
@@ -111,7 +111,7 @@ func TestDoubaoSeed21TurboExactStreamContractUsesSharedArkTerminalState(t *testi
 	}
 	require.NoError(t, state.validateDone())
 
-	missingUsage := exactStreamStateForProtocol(doubaoSeed21TurboStreamProtocol)
+	missingUsage := exactStreamStateForProtocol(doubaoSeed21TurboStreamProtocol, "")
 	finished, err := parseGuardedStreamFrameForProtocol(
 		[]byte(`{"choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}]}`),
 		doubaoSeed21TurboStreamProtocol,

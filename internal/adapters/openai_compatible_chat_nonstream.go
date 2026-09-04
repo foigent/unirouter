@@ -100,6 +100,18 @@ func glmRuntimeChatNonStreamMechanics(in ResponseInput) (ChatNonStreamMechanics,
 		expectedModel, expectedProtocol = "glm-5", "protocol.glm-openai-chat.v6"
 	case "glm.5v-turbo.api\x001.11.0":
 		expectedModel, expectedProtocol = "glm-5v-turbo", "protocol.glm-openai-chat.glm5v.v5"
+	case "glm.5.3.api\x001.9.0":
+		expectedModel, expectedProtocol = "glm-5.3", "protocol.glm-openai-chat.v7"
+	case "glm.5.2.api\x001.9.0":
+		expectedModel, expectedProtocol = "glm-5.2", "protocol.glm-openai-chat.v7"
+	case "glm.5.1.api\x001.1.0":
+		expectedModel, expectedProtocol = "glm-5.1", "protocol.glm-openai-chat.v7"
+	case "glm.5-turbo.api\x001.1.0":
+		expectedModel, expectedProtocol = "glm-5-turbo", "protocol.glm-openai-chat.v7"
+	case "glm.5.api\x001.1.0":
+		expectedModel, expectedProtocol = "glm-5", "protocol.glm-openai-chat.v7"
+	case "glm.5v-turbo.api\x001.12.0":
+		expectedModel, expectedProtocol = "glm-5v-turbo", "protocol.glm-openai-chat.glm5v.v6"
 	default:
 		return ChatNonStreamMechanics{}, false, nil
 	}

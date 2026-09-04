@@ -1329,6 +1329,8 @@ var chatProtocolContracts = map[string]ChatProtocolContract{
 	"protocol.glm-openai-chat.glm5v.v5": glmExactFunctionToolsContract(glm5VChatV4Contract("protocol.glm-openai-chat.glm5v.v5")),
 	"protocol.glm-openai-chat.v5":       glmOpenAIChatV5Contract("protocol.glm-openai-chat.v5"),
 	"protocol.glm-openai-chat.v6":       glmExactFunctionToolsContract(glmOpenAIChatV5Contract("protocol.glm-openai-chat.v6")),
+	"protocol.glm-openai-chat.v7":       glmStreamFunctionToolsContract(glmOpenAIChatV5Contract("protocol.glm-openai-chat.v7")),
+	"protocol.glm-openai-chat.glm5v.v6": glmStreamFunctionToolsContract(glm5VChatV4Contract("protocol.glm-openai-chat.glm5v.v6")),
 	"protocol.glm-openai-chat.v4": {
 		ProfileID:                       "protocol.glm-openai-chat.v4",
 		StreamingModeled:                true,

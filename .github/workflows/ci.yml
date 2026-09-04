@@ -105,7 +105,7 @@ jobs:
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.backend == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-backend
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -306,6 +306,7 @@ jobs:
           test_pattern+='|TestVersionedModelExecutionProfilesMigrationIntegration'
           test_pattern+='|TestModelExecutionPlanFreezeFence.*Integration|TestExactPublicExecutionBindings.*Integration'
           test_pattern+='|TestModelCapabilityQualification.*Integration'
+          test_pattern+='|TestGLMM113ActualArtifactsGuardedRoundTripIntegration'
           test_pattern+='|TestPlannerAndCutoverSelectTheSamePreferredCapabilityApprovalIntegration'
           test_pattern+='|TestPreDispatchValidatesBoundCapabilityApprovalInsteadOfLatestIntegration'
           test_pattern+='|TestOfficialRateSourceCurrencyDraftMigrationGuardsUSDReviewEvidence'
@@ -327,6 +328,7 @@ jobs:
             ./internal/customercontext ./internal/modelrouteauthority \
             ./internal/billing ./internal/modelexecution ./internal/modelrouting ./internal/middleware ./internal/completedfeed \
             ./internal/gateway ./internal/outbox ./internal/terminalhook \
+            ./internal/modelcapabilitypublication \
             -run "$test_pattern" -count=1 -timeout=20m
 
           # These packages intentionally share and reset the dedicated Redis

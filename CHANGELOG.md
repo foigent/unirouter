@@ -4,6 +4,21 @@ All product releases follow Semantic Versioning (`MAJOR.MINOR.PATCH`). Deploymen
 artifacts additionally retain an immutable runtime version and exact Git commit;
 those build identities do not replace the product version.
 
+## [1.2.51] - 2026-09-04
+
+### Changed
+
+- Appended exact streamed Function Tools contracts for GLM-5.3/5.2/5.1/5-Turbo/
+  5/5V-Turbo, preserving model, endpoint, parameter and media boundaries.
+  M113 supplies one compatible static declaration with 30 independent bindings,
+  following M111 publication and ordinary M112 schema migration.
+- Shared bounded stream/tool assembly is selected by the exact contract and
+  frozen upstream identity. GLM reasoning_content, terminal choice/usage and
+  DONE remain separate from M111 embedded thinking and complete clean EOF.
+  Frozen request tool constraints apply before identity disclosure.
+- Constructed cross-client/Probe/Runtime regressions do not imply Provider
+  qualification, Target apply, rollout, useful-task success or Production.
+
 ## [1.2.50] - 2026-09-04
 
 ### Changed

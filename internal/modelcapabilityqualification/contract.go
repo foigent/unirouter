@@ -42,6 +42,7 @@ const (
 	MiniMaxM27StreamFunctionToolsProbeContractID  = "unirouter.capability-probe.minimax-m27-chat-stream-tools.v1"
 	GLMChatFunctionToolsProbeContractID           = "unirouter.capability-probe.glm-chat-function-tools.v1"
 	GLMToggleChatFunctionToolsProbeContractID     = "unirouter.capability-probe.glm-toggle-chat-function-tools.v1"
+	GLMStreamFunctionToolsProbeContractID         = "unirouter.capability-probe.glm-chat-stream-tools.v1"
 	OpenAIChatFunctionToolsProbeContractVersion   = "1.0.0"
 	OpenAIChatRuntimeFunctionToolsProbeContractV2 = "2.0.0"
 	ProbeSourceKind                               = "admin.model_capability_probe.v1"

@@ -2013,7 +2013,7 @@ func (relay *Relay) relayStreamRequest(ctx context.Context, w http.ResponseWrite
 	providerFrameObserved := false
 	providerTerminalObserved := false
 	providerFinishReasonObserved := false
-	exactStreamState := exactStreamStateForProtocol(route.ModelProtocolProfile)
+	exactStreamState := exactStreamStateForProtocol(route.ModelProtocolProfile, route.MappedModel)
 	var functionToolAssembler *adapters.ChatSSEEventAssembler
 	var functionToolSetupErr error
 	if exactStreamState != nil && exactStreamState.functionTools != nil {
