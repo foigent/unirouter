@@ -200,6 +200,11 @@ paths:
     get:
       tags: [Health]
       summary: Readiness check
+      description: >-
+        Requires serving admission state and healthy PostgreSQL/Redis. The
+        runtime object reports process instance, state, active_requests,
+        schema_ledger_digest, request_lifetime_seconds and drain_timeout_seconds.
+        Readiness alone does not withdraw Nginx ingress or prove fleet support.
       responses:
         "200":
           $ref: "#/components/responses/JSON"

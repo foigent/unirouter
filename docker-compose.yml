@@ -38,6 +38,8 @@ services:
       retries: 5
 
   backend:
+    # Must exceed the effective application drain reported by /health/ready.
+    stop_grace_period: ${UNIROUTER_STOP_GRACE_PERIOD:-35m}
     build:
       context: .
       dockerfile: Dockerfile

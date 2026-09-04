@@ -26,6 +26,19 @@ Readiness is an explanation of those authorities. It is not another lifecycle.
 
 ### Startup and cutover authority
 
+Same-schema planned shutdown owns an explicit process instance and synchronized
+HTTP admission/drain boundary. Readiness includes exact schema-ledger digest,
+state, active handler count and effective request/drain deadlines. Ingress must
+withdraw a backend from every managed upstream and observe old Nginx workers
+exit before signaling it. The supported directory carrier keeps atomic file
+updates visible inside Nginx; installing it on the old single-file deployment
+is a bootstrap boundary. A slow old proxy connection aborts the bounded rollout
+without stopping the backend. Direct debug-port clients are outside this
+ingress continuity contract. Accepted handlers retain terminal dependencies;
+only after their completion/cancellation may settlement/outbox services stop.
+This slice does not authorize online schema/Publication changes or add fleet
+compatibility leases. Model Slot remains independent from runtime generation.
+
 `MODEL_ROUTE_AUTHORITY` selects process behavior but is never accepted as proof
 that database state is ready. An operator prepares `verify` for one explicit
 customer with `uniroute model-route-authority apply --customer-org-id <id>` and

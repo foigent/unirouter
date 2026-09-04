@@ -8,6 +8,15 @@
 
 UniRouter is a modular monolith with one public gateway and one administration API. It is not a collection of independently deployable services. PostgreSQL owns durable control-plane and evidence state; Redis owns short-lived admission, routing-health, cache, and coordination state.
 
+`cmd/uniroute/http_runtime.go` owns process-local HTTP admission/drain accounting
+and a finite accepted-handler lifetime. Readiness exposes that instance and its
+verified schema-ledger digest; neither is a fleet compatibility lease.
+`scripts/runtime-ingress.py` explicitly changes the installed directory-mounted
+Nginx membership and observes old-worker exit before an operator may stop a
+backend. Same-schema continuity retains terminal dependency workers until HTTP
+responsibility closes. The exact bootstrap and direct-port boundaries are in
+`docs/ops/RUNTIME-CONTINUITY.md`; Publication and Model Slot are unchanged.
+
 Optional Chat preflight reuses the canonical request/route authorities and
 credential-free outbound preparation, without execution effects or a persisted
 client-ready state. Static model metadata and live request eligibility remain
@@ -15,7 +24,7 @@ distinct. Opt-in client metadata projects a stable Release's sealed Profile and
 hard limits separately from its Profile-owned request default; local experiment
 limits are client configuration, never another server parameter authority.
 
-Repository source candidate is version 1.2.51 with PostgreSQL compatibility
+Repository source candidate is version 1.2.52 with PostgreSQL compatibility
 ceiling `000113_glm_stream_function_tools_qualification`. M113 appends six GLM
 streaming Function Tools Profile successors and 30 static bindings. It shares
 bounded SSE/tool assembly with M111 while retaining GLM reasoning_content/DONE
